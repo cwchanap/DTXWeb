@@ -6,7 +6,7 @@ import { Editor } from './scenes/Editor';
 //  https://newdocs.phaser.io/docs/3.70.0/Phaser.Types.Core.GameConfig
 export const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
-    width: 1920,
+    width: 640,
     height: 1080,
     parent: 'game-container',
     backgroundColor: '#028af8',

@@ -1,12 +1,15 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	let email = '';
 	let password = '';
 
 	const handleSubmit = (event: Event) => {
 		event.preventDefault();
-		// Handle the form submission
+		// Simulate login process
 		console.log('Email:', email);
 		console.log('Password:', password);
+		// On successful login, redirect to dashboard
+		goto('/app');
 	};
 </script>
 

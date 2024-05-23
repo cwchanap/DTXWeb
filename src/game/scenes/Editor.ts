@@ -4,28 +4,38 @@ interface LaneConfig {
 	name: string;
 }
 
+interface Data {
+    measureCount?: number;
+}
+
 export class Editor extends Scene {
 	private laneConfigs: LaneConfig[] = [
-		{ name: 'Left Cymbal' },
-		{ name: 'High Hat' },
-		{ name: 'High Hat Pedal' },
-		{ name: 'Left Bass Drum' },
-		{ name: 'Snare' },
-		{ name: 'High Tom' },
-		{ name: 'Bass Drum' },
-		{ name: 'Low Tom' },
-		{ name: 'Floor Tom' },
-		{ name: 'Right Cymbal' },
-		{ name: 'Ride' }
+		{ name: 'LC' },
+		{ name: 'HH' },
+		{ name: 'LP' },
+		{ name: 'LB' },
+		{ name: 'SN' },
+		{ name: 'HT' },
+		{ name: 'BD' },
+		{ name: 'LT' },
+		{ name: 'FT' },
+		{ name: 'CY' },
+		{ name: 'RD' }
 	];
 
-	private measureCount = 9;
 	private cellsPerMeasure = 16;
 	private cellWidth = 50;
+	private cellHeight = 25;
+	private bottomMargin = 40;
+    public static key = 'Editor';
 
-	constructor() {
-		super({ key: 'Editor' });
+	constructor(private measureCount: number = 9) {
+		super({ key: Editor.key });
 	}
+
+    init(data: Data) {
+        this.measureCount = data.measureCount || this.measureCount;
+    }
 
 	preload() {
 		// Preload assets if any
@@ -33,15 +43,14 @@ export class Editor extends Scene {
 
 	create() {
 		// Constants for grid dimensions
-		const cellHeight = 25;
 		const cellMargin = 2; // Margin between cells
-		const measureHeight = cellHeight * this.cellsPerMeasure;
+		const measureHeight = this.cellHeight * this.cellsPerMeasure;
 		const laneHeight = this.measureCount * measureHeight;
 
 		// Calculate total width based on lane configurations
 		const totalWidth = this.laneConfigs.reduce((acc) => acc + this.cellWidth, 0);
 		const offsetX = (this.scale.width - totalWidth) / 2;
-		const offsetY = this.scale.height - 40; // Adjusted for indicators
+		const offsetY = this.scale.height - this.bottomMargin; // Adjusted for indicators
 
 		const graphics = this.add.graphics();
 		graphics.lineStyle(1, 0x888888, 1); // Light grey for cells
@@ -75,56 +84,57 @@ export class Editor extends Scene {
 
 		// Draw horizontal lines for cells and measures
 		for (let j = 0; j <= this.measureCount * this.cellsPerMeasure; j++) {
-			const y = offsetY - j * cellHeight;
+			const y = offsetY - j * this.cellHeight;
 			const isMeasureLine = j % this.cellsPerMeasure === 0;
 			graphics.lineStyle(isMeasureLine ? 4 : 1, isMeasureLine ? 0xffffff : 0x888888, 1); // Thicker border for measures
 			graphics.moveTo(offsetX, y);
 			graphics.lineTo(offsetX + totalWidth, y); // Ensure the line extends the full width
 			graphics.strokePath();
 
-            if (isMeasureLine && j < this.measureCount * this.cellsPerMeasure) {
-                const measureNumber = j / this.cellsPerMeasure + 1;
-                this.add.text(offsetX + totalWidth / 2, y - this.cellsPerMeasure * cellHeight / 2, `${measureNumber}`, {
-                    fontSize: '96px',
-                    color: '#ffffff',
-                }).setOrigin(0.5).setAlpha(0.5);
-            }
+			if (isMeasureLine && j < this.measureCount * this.cellsPerMeasure) {
+				const measureNumber = j / this.cellsPerMeasure + 1;
+				this.add
+					.text(
+						offsetX + totalWidth / 2,
+						y - (this.cellsPerMeasure * this.cellHeight) / 2,
+						`${measureNumber}`,
+						{
+							fontSize: '96px',
+							color: '#ffffff'
+						}
+					)
+					.setOrigin(0.5)
+					.setAlpha(0.5);
+			}
 		}
 
 		// Enable input events
-		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+		this.input.on('pointerdown', (pointer: Input.Pointer) => {
 			const x = pointer.x - offsetX;
 			const y = pointer.y - offsetY;
 
 			// Calculate the clicked cell
-			let laneIndex = -1;
-			let accumulatedWidth = 0;
-			for (let i = 0; i < this.laneConfigs.length; i++) {
-				accumulatedWidth += this.cellWidth;
-				if (x < accumulatedWidth) {
-					laneIndex = i;
-					break;
-				}
-			}
-			const cellIndex = Math.floor(y / cellHeight);
+			const laneIndex = Math.floor(x / this.cellWidth);
+			const cellIndex = Math.floor(-y / this.cellHeight);
 
 			// Validate the click is within the grid bounds
 			if (
 				laneIndex >= 0 &&
 				laneIndex < this.laneConfigs.length &&
-				cellIndex * cellHeight < laneHeight
+				cellIndex >= 0 &&
+				cellIndex < this.measureCount * this.cellsPerMeasure
 			) {
 				// Draw the note in the clicked cell
-				this.drawNote(laneIndex, cellIndex, cellHeight, cellMargin, offsetX, offsetY);
+				this.drawNote(laneIndex, cellIndex, cellMargin, offsetX, offsetY);
 			}
 		});
 
 		// Make the scene scrollable
 		this.cameras.main.setBounds(
 			0,
-			-laneHeight + this.cameras.main.height - 40,
-			this.scale.width,                 
-			laneHeight + this.cameras.main.height
+			-laneHeight + this.cameras.main.height - this.bottomMargin,
+			this.scale.width,
+			laneHeight + this.bottomMargin
 		);
 		this.cameras.main.setScroll(0, 0);
 
@@ -145,18 +155,18 @@ export class Editor extends Scene {
 	drawNote(
 		laneIndex: number,
 		cellIndex: number,
-		cellHeight: number,
 		cellMargin: number,
 		offsetX: number,
 		offsetY: number
 	) {
-		const x =
-			offsetX +
-			this.laneConfigs.slice(0, laneIndex).reduce((acc) => acc + this.cellWidth, 0) +
-			cellMargin;
-		const y = offsetY + cellIndex * cellHeight + cellMargin;
+		const x = offsetX + this.cellWidth * laneIndex + cellMargin;
+		const y =
+			offsetY -
+			cellIndex * this.cellHeight -
+			cellMargin +
+			this.cameras.main.scrollY - this.cellHeight;
 		const width = this.cellWidth - cellMargin * 2;
-		const height = cellHeight - cellMargin * 2;
+		const height = this.cellHeight - cellMargin * 2;
 
 		const noteKey = `note-${laneIndex}-${cellIndex}`;
 		const existingNote = this.children.getByName(noteKey);

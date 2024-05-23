@@ -1,6 +1,7 @@
 import { GameObjects, Scene } from 'phaser';
 
 import { EventBus } from '../EventBus';
+import { Editor } from './Editor';
 
 export class MainMenu extends Scene {
 	background!: GameObjects.Image;
@@ -30,7 +31,7 @@ export class MainMenu extends Scene {
 			.setDepth(100)
 			.setInteractive({ useHandCursor: true })
             .on('pointerdown', () => {
-                this.scene.start('Editor');
+                this.scene.start(Editor.key);
             })
 		;
 

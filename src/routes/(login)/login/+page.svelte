@@ -1,13 +1,21 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+    import { supabase } from '@/lib/supabase';
 	let email = '';
 	let password = '';
 
-	const handleSubmit = (event: Event) => {
+	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
 		// Simulate login process
-		console.log('Email:', email);
-		console.log('Password:', password);
+		const {data, error} = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+
+        if (error) {
+            console.error('Error logging in:', error.message);
+            return;
+        }
 		// On successful login, redirect to dashboard
 		goto('/app');
 	};

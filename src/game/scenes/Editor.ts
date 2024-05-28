@@ -1,41 +1,46 @@
 import { Scene, Input } from 'phaser';
+import { EventBus } from '../EventBus';
 
 interface LaneConfig {
 	name: string;
+	noteColor: string;
 }
 
 interface Data {
-    measureCount?: number;
+	measureCount?: number;
 }
 
 export class Editor extends Scene {
 	private laneConfigs: LaneConfig[] = [
-		{ name: 'LC' },
-		{ name: 'HH' },
-		{ name: 'LP' },
-		{ name: 'LB' },
-		{ name: 'SN' },
-		{ name: 'HT' },
-		{ name: 'BD' },
-		{ name: 'LT' },
-		{ name: 'FT' },
-		{ name: 'CY' },
-		{ name: 'RD' }
+		{ name: 'LC', noteColor: '#A20814' },
+		{ name: 'HH', noteColor: '#0D1CDE' },
+		{ name: 'LP', noteColor: '#DE0DB8' },
+		{ name: 'LB', noteColor: '#567DCB' },
+		{ name: 'SN', noteColor: '#EFEC1B' },
+		{ name: 'HT', noteColor: '#45EF1B' },
+		{ name: 'BD', noteColor: '#567DCB' },
+		{ name: 'LT', noteColor: '#EF1B2B' },
+		{ name: 'FT', noteColor: '#FA7E0A' },
+		{ name: 'CY', noteColor: '#1424C4' },
+		{ name: 'RD', noteColor: '#14BFC4' }
 	];
 
 	private cellsPerMeasure = 16;
 	private cellWidth = 50;
 	private cellHeight = 25;
 	private bottomMargin = 40;
-    public static key = 'Editor';
+	public static key = 'Editor';
+
+	private isEditing = false;
+	private isDragging = false;
 
 	constructor(private measureCount: number = 9) {
 		super({ key: Editor.key });
 	}
 
-    init(data: Data) {
-        this.measureCount = data.measureCount || this.measureCount;
-    }
+	init(data: Data) {
+		this.measureCount = data.measureCount || this.measureCount;
+	}
 
 	preload() {
 		// Preload assets if any
@@ -61,14 +66,12 @@ export class Editor extends Scene {
 		this.laneConfigs.forEach((laneConfig, index) => {
 			graphics.moveTo(currentX, offsetY);
 			graphics.lineTo(currentX, offsetY - laneHeight);
-			graphics.strokePath();
 			currentX += this.cellWidth;
 		});
 
 		// Draw the last vertical line
 		graphics.moveTo(currentX, offsetY);
 		graphics.lineTo(currentX, offsetY - laneHeight);
-		graphics.strokePath();
 
 		// Lane indicators
 		currentX = offsetX;
@@ -89,7 +92,6 @@ export class Editor extends Scene {
 			graphics.lineStyle(isMeasureLine ? 4 : 1, isMeasureLine ? 0xffffff : 0x888888, 1); // Thicker border for measures
 			graphics.moveTo(offsetX, y);
 			graphics.lineTo(offsetX + totalWidth, y); // Ensure the line extends the full width
-			graphics.strokePath();
 
 			if (isMeasureLine && j < this.measureCount * this.cellsPerMeasure) {
 				const measureNumber = j / this.cellsPerMeasure + 1;
@@ -108,6 +110,8 @@ export class Editor extends Scene {
 			}
 		}
 
+		graphics.strokePath();
+
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
 			const x = pointer.x - offsetX;
@@ -122,7 +126,8 @@ export class Editor extends Scene {
 				laneIndex >= 0 &&
 				laneIndex < this.laneConfigs.length &&
 				cellIndex >= 0 &&
-				cellIndex < this.measureCount * this.cellsPerMeasure
+				cellIndex < this.measureCount * this.cellsPerMeasure &&
+				this.isEditing
 			) {
 				// Draw the note in the clicked cell
 				this.drawNote(laneIndex, cellIndex, cellMargin, offsetX, offsetY);
@@ -138,6 +143,28 @@ export class Editor extends Scene {
 		);
 		this.cameras.main.setScroll(0, 0);
 
+		// Enable drag scrolling
+		let startY = 0;
+		let startScrollY = 0;
+
+		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+			if (this.isEditing) return;
+			this.isDragging = true;
+			startY = pointer.y;
+			startScrollY = this.cameras.main.scrollY;
+		});
+
+		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+			if (this.isDragging) {
+				const deltaY = 3 * (pointer.y - startY);
+				this.cameras.main.scrollY = startScrollY - deltaY;
+			}
+		});
+
+		this.input.on('pointerup', () => {
+			this.isDragging = false;
+		});
+
 		this.input.on(
 			'wheel',
 			(
@@ -150,6 +177,8 @@ export class Editor extends Scene {
 				this.cameras.main.scrollY += deltaY * 0.1;
 			}
 		);
+
+		EventBus.emit('current-scene-ready', this);
 	}
 
 	drawNote(
@@ -164,7 +193,8 @@ export class Editor extends Scene {
 			offsetY -
 			cellIndex * this.cellHeight -
 			cellMargin +
-			this.cameras.main.scrollY - this.cellHeight;
+			this.cameras.main.scrollY -
+			this.cellHeight;
 		const width = this.cellWidth - cellMargin * 2;
 		const height = this.cellHeight - cellMargin * 2;
 

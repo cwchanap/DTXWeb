@@ -8,7 +8,7 @@ export class MainMenu extends Scene {
 	logo!: GameObjects.Image;
 	title!: GameObjects.Text;
 	logoTween!: Phaser.Tweens.Tween | null;
-    toEditor!: GameObjects.Text;
+	toEditor!: GameObjects.Text;
 
 	constructor() {
 		super('MainMenu');
@@ -17,7 +17,7 @@ export class MainMenu extends Scene {
 	create() {
 		const height = this.game.canvas.height;
 		const width = this.game.canvas.width;
-        
+
 		this.title = this.add
 			.text(width / 2, height / 2 + 150, 'Start', {
 				fontFamily: 'Arial Black',
@@ -30,10 +30,7 @@ export class MainMenu extends Scene {
 			.setOrigin(0.5)
 			.setDepth(100)
 			.setInteractive({ useHandCursor: true })
-            .on('pointerdown', () => {
-                this.scene.start(Editor.key);
-            })
-		;
+			.on('pointerdown', () => {});
 
 		EventBus.emit('current-scene-ready', this);
 	}

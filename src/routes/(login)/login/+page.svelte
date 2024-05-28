@@ -1,23 +1,25 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-    import { supabase } from '@/lib/supabase';
+	import store from '@/lib/store';
+	import { supabase } from '@/lib/supabase';
+
 	let email = '';
 	let password = '';
 
 	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
 		// Simulate login process
-		const {data, error} = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
+		const { data, error } = await supabase.auth.signInWithPassword({
+			email,
+			password
+		});
 
-        if (error) {
-            console.error('Error logging in:', error.message);
-            return;
-        }
-		// On successful login, redirect to dashboard
-		goto('/app');
+		if (error) {
+			console.error('Error logging in:', error.message);
+			return;
+		} else {
+			goto('/app');
+		}
 	};
 </script>
 

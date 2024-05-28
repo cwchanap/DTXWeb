@@ -5,9 +5,10 @@
 	import store from '@/lib/store';
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy } from 'svelte';
+	import EditorTab from '@/lib/components/EditorTab.svelte';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
-	let measureCount = 9;
+
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
 		return scene;
@@ -19,31 +20,15 @@
 		currentScene = value;
 	});
 
-	function handleMeasureChange(event: any) {
-		phaserRef.scene?.scene.start(Editor.key, { measureCount: measureCount });
-	}
-
 	onDestroy(() => {
 		unsubscribe();
 	});
 </script>
 
 <div id="app" class="flex min-h-screen flex-row space-y-4 p-16">
-	<div class="flex-1 pt-14">
+	<div class="flex-1 pt-16">
 		{#if currentScene === Editor.key}
-			<div class="flex flex-col space-y-2">
-				<div class="flex items-center space-x-2">
-					<label class="w-1/3 text-gray-700" for="measure-input">
-						Number of Measures:</label
-					>
-					<input
-						id="measure-input"
-						type="number"
-						bind:value={measureCount}
-						on:change={handleMeasureChange}
-					/>
-				</div>
-			</div>
+			<EditorTab />
 		{/if}
 	</div>
 	<div class="flex-1 p-5">

@@ -1,7 +1,7 @@
 import { GameObjects, Scene } from 'phaser';
 
 import { EventBus } from '../EventBus';
-import { Editor } from './Editor';
+import EventType from '../EventType';
 
 export class MainMenu extends Scene {
 	background!: GameObjects.Image;
@@ -32,6 +32,6 @@ export class MainMenu extends Scene {
 			.setInteractive({ useHandCursor: true })
 			.on('pointerdown', () => {});
 
-		EventBus.emit('current-scene-ready', this);
+		EventBus.emit(EventType.SCENE_READY, this);
 	}
 }

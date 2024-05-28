@@ -1,9 +1,10 @@
 import { Scene, Input } from 'phaser';
 import { EventBus } from '../EventBus';
+import EventType from '../EventType';
 
 interface LaneConfig {
 	name: string;
-	noteColor: string;
+	noteColor: number;
 }
 
 interface Data {
@@ -12,17 +13,17 @@ interface Data {
 
 export class Editor extends Scene {
 	private laneConfigs: LaneConfig[] = [
-		{ name: 'LC', noteColor: '#A20814' },
-		{ name: 'HH', noteColor: '#0D1CDE' },
-		{ name: 'LP', noteColor: '#DE0DB8' },
-		{ name: 'LB', noteColor: '#567DCB' },
-		{ name: 'SN', noteColor: '#EFEC1B' },
-		{ name: 'HT', noteColor: '#45EF1B' },
-		{ name: 'BD', noteColor: '#567DCB' },
-		{ name: 'LT', noteColor: '#EF1B2B' },
-		{ name: 'FT', noteColor: '#FA7E0A' },
-		{ name: 'CY', noteColor: '#1424C4' },
-		{ name: 'RD', noteColor: '#14BFC4' }
+		{ name: 'LC', noteColor: 0xa20814 },
+		{ name: 'HH', noteColor: 0x0d1cde },
+		{ name: 'LP', noteColor: 0xde0db8 },
+		{ name: 'LB', noteColor: 0x567dcb },
+		{ name: 'SN', noteColor: 0xefec1b },
+		{ name: 'HT', noteColor: 0x45ef1b },
+		{ name: 'BD', noteColor: 0x567dcb },
+		{ name: 'LT', noteColor: 0xef1b2b },
+		{ name: 'FT', noteColor: 0xfa7e0a },
+		{ name: 'CY', noteColor: 0x1424c4 },
+		{ name: 'RD', noteColor: 0x14bfc4 }
 	];
 
 	private cellsPerMeasure = 16;
@@ -89,7 +90,7 @@ export class Editor extends Scene {
 		for (let j = 0; j <= this.measureCount * this.cellsPerMeasure; j++) {
 			const y = offsetY - j * this.cellHeight;
 			const isMeasureLine = j % this.cellsPerMeasure === 0;
-			graphics.lineStyle(isMeasureLine ? 4 : 1, isMeasureLine ? 0xffffff : 0x888888, 1); // Thicker border for measures
+			graphics.lineStyle(isMeasureLine ? 6 : 2, isMeasureLine ? 0xffffff : 0x888888, 1); // Thicker border for measures
 			graphics.moveTo(offsetX, y);
 			graphics.lineTo(offsetX + totalWidth, y); // Ensure the line extends the full width
 
@@ -178,7 +179,15 @@ export class Editor extends Scene {
 			}
 		);
 
-		EventBus.emit('current-scene-ready', this);
+		this.input.keyboard?.on('keydown-Q', (event: KeyboardEvent) => {
+			this.isEditing = !this.isEditing;
+		});
+
+		EventBus.emit(EventType.SCENE_READY, this);
+		EventBus.on(EventType.MEASURE_UPDATE, (measureCount: number) => {
+			this.measureCount = measureCount;
+			this.restart({ measureCount });
+		});
 	}
 
 	drawNote(
@@ -207,7 +216,7 @@ export class Editor extends Scene {
 		} else {
 			// Otherwise, create a new note
 			const graphics = this.add.graphics();
-			graphics.fillStyle(0xff0000, 1); // Red color for the note
+			graphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1); // Red color for the note
 			graphics.fillRect(x, y, width, height);
 			graphics.setName(noteKey);
 		}
@@ -215,5 +224,15 @@ export class Editor extends Scene {
 
 	update() {
 		// Update logic if needed
+	}
+
+	restart(data: Data = {}) {
+		EventBus.off(EventType.MEASURE_UPDATE);
+		this.input.off('pointerdown');
+		this.input.off('pointermove');
+		this.input.off('pointerup');
+		this.input.off('wheel');
+		this.input.keyboard?.off('keydown-Q');
+		this.scene.restart(data);
 	}
 }

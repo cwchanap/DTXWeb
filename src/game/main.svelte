@@ -12,6 +12,7 @@
 	import { EventBus } from './EventBus';
 	import Phaser from 'phaser';
 	import { config } from './main';
+	import EventType from './EventType';
 
 	const StartGame = (parent: string) => {
 		return new Phaser.Game({ ...config, parent: parent });
@@ -26,7 +27,7 @@
 
 	onMount(() => {
 		phaserRef.game = StartGame('game-container');
-		EventBus.on('current-scene-ready', (scene_instance: Scene) => {
+		EventBus.on(EventType.SCENE_READY, (scene_instance: Scene) => {
 			phaserRef.scene = scene_instance;
 			if (currentActiveScene) {
 				currentActiveScene(scene_instance);

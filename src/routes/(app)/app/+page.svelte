@@ -3,5 +3,5 @@
 </script>
 
 <div>
-    Hello World
+    x
 </div>

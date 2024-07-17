@@ -4,7 +4,6 @@
 	import AuthGuard from '@/lib/components/AuthGuard.svelte';
 
 	let isSidebarCollapsed = false;
-	export let pageTitle = 'Dashboard';
 
 	const toggleSidebar = () => {
 		isSidebarCollapsed = !isSidebarCollapsed;
@@ -36,10 +35,12 @@
 					{/if}
 				</button>
 			</div>
-			<nav class="mt-4 space-y-4">
-				<a href="/app/chart" class="block px-4 py-2 hover:bg-gray-700">My Chart</a>
-				<a href="/app/score" class="block px-4 py-2 hover:bg-gray-700">Score</a>
-			</nav>
+            {#if !isSidebarCollapsed}
+                <nav class="mt-4 space-y-4">
+                    <a href="/app/chart" class="block px-4 py-2 hover:bg-gray-700">My Chart</a>
+                    <a href="/app/score" class="block px-4 py-2 hover:bg-gray-700">Score</a>
+                </nav>
+            {/if}
 		</aside>
 
 		<!-- Main Content -->

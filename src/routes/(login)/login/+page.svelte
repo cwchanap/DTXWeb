@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import store from '@/lib/store';
 	import { supabase } from '@/lib/supabase';
+	import { onMount } from 'svelte';
 
 	let email = '';
 	let password = '';
@@ -21,6 +22,14 @@
 			goto('/app');
 		}
 	};
+
+    onMount(async () => {
+        // Redirect to app if user is already logged in
+        const {data } = await supabase.auth.getSession();
+        if (data.session) {
+            goto('/app');
+        }
+    });
 </script>
 
 <div class="flex min-h-screen items-center justify-center bg-gray-100">

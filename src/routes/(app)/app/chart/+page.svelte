@@ -16,10 +16,9 @@
 		try {
 			const response = await fetch(`/api/simfiles?page=${page}&page_size=${pageSize}`);
 			const data = await response.json();
-            items = [...items, ...data.items];
-            next = data.next;
-            page++;
-			
+			items = [...items, ...data.items];
+			next = data.next;
+			page++;
 		} catch (error) {
 			console.error('Failed to load items:', error);
 		} finally {
@@ -45,7 +44,12 @@
 </script>
 
 <div class="container mx-auto p-4">
-    <h2 class="text-2xl font-bold mb-4">{pageTitle}</h2>    
+	<div class="mb-4 flex items-center justify-between">
+		<h1 class="text-2xl font-bold">{pageTitle}</h1>
+		<a href="/app/chart/upload" class="rounded bg-blue-600 p-2 text-white hover:bg-blue-500">
+			Upload Simfiles
+		</a>
+	</div>
 	<div class="space-y-4">
 		<!-- Changed from grid to space-y for vertical spacing -->
 		{#each items as item}

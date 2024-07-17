@@ -1,9 +1,14 @@
 <!-- src/routes/new-page/+page.svelte -->
 <script lang="ts">
-	import { SimFile } from "@/lib/chart/simFile";
+	import { SimFile } from '@/lib/chart/simFile';
 
 	let dropzoneActive = false;
-	let simfile: SimFile | undefined  = undefined;
+	let simfile: SimFile | undefined = undefined;
+	let isCollapsed = true;
+
+	function toggleCollapse() {
+		isCollapsed = !isCollapsed;
+	}
 
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault();
@@ -29,16 +34,16 @@
 
 		if (event.dataTransfer?.files) {
 			simfile = new SimFile(filterFiles(event.dataTransfer.files));
-            await simfile.parse();
+			await simfile.parse();
 		}
-
 	}
 
 	async function handleFileInput(event: Event) {
 		const input = event.target as HTMLInputElement;
 		if (input.files) {
 			simfile = new SimFile(filterFiles(input.files));
-            await simfile.parse();
+			await simfile.parse();
+			simfile = simfile;
 		}
 	}
 </script>
@@ -70,23 +75,54 @@
 			/>
 		</div>
 	{:else}
-		<h2 class="mb-4 text-xl font-bold">Uploaded Files</h2>
-        <div class="card bg-white shadow-lg rounded-lg p-4">
-            <h3 class="text-xl font-bold mb-2">{simfile.title}</h3>
-            <div class="levels mb-4">
-                <div class="level">
-                    <span class="font-semibold">Level 1:</span> {simfile.level_1}
-                </div>
-            </div>
-            <div class="file-info mb-2">
-                <span class="font-semibold">Uploaded File:</span> 
-                {#each simfile.files as file}
-                    <div class="file">
-                        <span>{file.name}</span>
-                    </div>
-                {/each}
-            </div>
-        </div>
+		<h1 class="mb-4 text-2xl font-bold">Uploaded Folders</h1>
+		<div class="card rounded-lg bg-white p-4 shadow-lg">
+			<h3 class="mb-2 text-xl font-bold">Song Title: {simfile.title}</h3>
+			<div class="levels mb-4">
+				<div class="level">
+					{#each Object.values(simfile.levels) as level}
+						<div class="level-item">
+							<div class="card mb-4 rounded-lg bg-gray-100 p-2">
+								<h4 class="text-sm font-bold">{level.label}</h4>
+								<p class="text-xs">{level.label}</p>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+			<button
+				on:click={toggleCollapse}
+				class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
+			>
+				{#if isCollapsed}
+					Show Uploaded Files
+				{:else}
+					Hide Uploaded Files
+				{/if}
+			</button>
+			{#if !isCollapsed}
+				<table class="min-w-full leading-normal">
+					<thead>
+						<tr>
+							<th
+								class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
+							>
+								File Name
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each simfile.files as file}
+							<tr>
+								<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
+									{file.name}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</div>
 		<div class="mt-4 flex justify-center">
 			<button
 				class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
@@ -99,17 +135,16 @@
 			<button
 				class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 				on:click={async () => {
-                    if (!simfile) return;
-                    const zip = simfile.getZip();
-                    const blob = await zip.generateAsync({ type: 'blob' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = simfile.title + '.zip';
-                    a.click();
-                    URL.revokeObjectURL(url);
-
-                }}
+					if (!simfile) return;
+					const zip = simfile.getZip();
+					const blob = await zip.generateAsync({ type: 'blob' });
+					const url = URL.createObjectURL(blob);
+					const a = document.createElement('a');
+					a.href = url;
+					a.download = simfile.title + '.zip';
+					a.click();
+					URL.revokeObjectURL(url);
+				}}
 			>
 				Download zip
 			</button>

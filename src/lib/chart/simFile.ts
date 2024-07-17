@@ -7,13 +7,7 @@ interface DtxLevel {
 
 export class SimFile {
     public title!: string;
-    public levels = {
-        1: {} as DtxLevel,
-        2: {} as DtxLevel,
-        3: {} as DtxLevel,
-        4: {} as DtxLevel,
-        5: {} as DtxLevel,
-    };
+    public levels: { [key: number]: DtxLevel } = {};
 
 	constructor(public files: File[]) {}
 
@@ -52,8 +46,8 @@ export class SimFile {
         const content = await file.text();
         const lines = content.split('\r\n');
 
-        const title_line = lines.find((line) => line.startsWith('#TITLE: '));
-        this.title = title_line ? title_line.split('#TITLE: ')[1] : '';
+        const title_line = lines.find((line) => line.startsWith('#TITLE '));
+        this.title = title_line ? title_line.split('#TITLE ')[1] : '';
 
         [1, 2, 3, 4, 5].forEach((level) => {
             const level_line = lines.find((line) => line.startsWith(`#L${level}LABEL `));
@@ -64,6 +58,5 @@ export class SimFile {
                 this.levels[level] = { label, file };
             }
         });
-        console.log(this);
     }
 }

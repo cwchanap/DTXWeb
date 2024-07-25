@@ -1,8 +1,9 @@
 import JSZip from 'jszip';
+import { DTXFile } from './dtx';
 
 interface DtxLevel {
     label: string;
-    file: string;
+    file: DTXFile;
 }
 
 export class SimFile {
@@ -49,14 +50,30 @@ export class SimFile {
         const title_line = lines.find((line) => line.startsWith('#TITLE '));
         this.title = title_line ? title_line.split('#TITLE ')[1] : '';
 
-        [1, 2, 3, 4, 5].forEach((level) => {
+        const promises = [1, 2, 3, 4, 5].map(async (level) => {
             const level_line = lines.find((line) => line.startsWith(`#L${level}LABEL `));
             const file_line = lines.find((line) => line.startsWith(`#L${level}FILE `));
             if (level_line && file_line) {
                 const label = level_line.split(' ')[1];
-                const file = file_line.split(' ')[1];
-                this.levels[level] = { label, file };
+                const file_name = file_line.split(' ')[1];
+                const file = this.files.find((f) => f.name === file_name);
+                if (!file) {
+                    throw new Error(`File ${file_name} not found`);
+                }
+                const dtx = new DTXFile(file, label);
+                await dtx.parse();
+                this.levels[level] = { label, file: dtx  };
             }
         });
+
+        await Promise.all(promises);
+    }
+
+    public getHighestLevel() {
+        const highest = this.levels[5] || this.levels[4] || this.levels[3] || this.levels[2] || this.levels[1];
+        if (!highest) {
+            throw new Error('No levels found');
+        }
+        return highest.file;
     }
 }

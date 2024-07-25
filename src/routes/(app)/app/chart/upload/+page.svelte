@@ -1,10 +1,13 @@
 <!-- src/routes/new-page/+page.svelte -->
 <script lang="ts">
+	import type { DTXFile } from '@/lib/chart/dtx';
 	import { SimFile } from '@/lib/chart/simFile';
+	import { supabase } from '@/lib/supabase';
 
 	let dropzoneActive = false;
 	let simfile: SimFile | undefined = undefined;
 	let isCollapsed = true;
+    let highestDtx: DTXFile | undefined = undefined;
 
 	function toggleCollapse() {
 		isCollapsed = !isCollapsed;
@@ -44,12 +47,43 @@
 			simfile = new SimFile(filterFiles(input.files));
 			await simfile.parse();
 			simfile = simfile;
+            highestDtx = simfile.getHighestLevel();
 		}
 	}
+
+    async function uploadFile() {
+        if (!simfile) return;
+        const dtx = simfile.getHighestLevel();
+        const { data: simFileData, error } = await supabase
+            .from('simfiles')
+            .insert({ title: simfile.title, author: dtx.artist, bpm: dtx.bpm })
+            .select().single();
+        if (error) {
+            console.error('Error creating simfiles:', error.message);
+            return;
+        }
+        if (simFileData) {
+            const { data: dtxData, error} = await supabase
+                .from('dtx_file')
+                .insert(Object.values(simfile.levels).map((value, index, array) => {
+                    return {
+                        level: value.file.level,
+                        simfile_id: simFileData.id,
+                    }
+                })
+            );
+            if (error) {
+                console.error('Error creating dtx_file:', error.message);
+                return;
+            }
+        }
+        console.log('Uploaded successfully');
+    }
+
 </script>
 
 <div class="container mx-auto flex flex-col p-4" style="height: 90vh;">
-	{#if !simfile}
+	{#if !simfile || !highestDtx}
 		<h1 class="mb-4 text-2xl font-bold">Upload Folders</h1>
 
 		<div
@@ -78,13 +112,15 @@
 		<h1 class="mb-4 text-2xl font-bold">Uploaded Folders</h1>
 		<div class="card rounded-lg bg-white p-4 shadow-lg">
 			<h3 class="mb-2 text-xl font-bold">Song Title: {simfile.title}</h3>
+			<h4 class="mb-2 text-lg font-bold">Artist: {highestDtx.artist}</h4>
+			<h4 class="mb-2 text-lg font-bold">BPM: {highestDtx.bpm}</h4>
 			<div class="levels mb-4">
 				<div class="level">
 					{#each Object.values(simfile.levels) as level}
 						<div class="level-item">
 							<div class="card mb-4 rounded-lg bg-gray-100 p-2">
-								<h4 class="text-sm font-bold">{level.label}</h4>
-								<p class="text-xs">{level.label}</p>
+								<h4 class="text-sm font-bold">{level.file.difficulty}</h4>
+								<p class="text-xs">{level.file.level}</p>
 							</div>
 						</div>
 					{/each}
@@ -147,6 +183,14 @@
 				}}
 			>
 				Download zip
+			</button>
+		</div>
+		<div class="mt-4 flex justify-center">
+			<button
+				class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+				on:click={uploadFile}
+			>
+				Upload
 			</button>
 		</div>
 	{/if}

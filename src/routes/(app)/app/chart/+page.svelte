@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { supabase } from '@/lib/supabase';
 	import { onMount } from 'svelte';
 
 	export let pageSize: number;
 	let pageTitle = 'My Chart';
 
 	let items: any = [];
-	let page = 1;
+	let page = 0;
 	let loading = false;
 	let next = true;
 
@@ -14,10 +15,19 @@
 		loading = true;
 
 		try {
-			const response = await fetch(`/api/simfiles?page=${page}&page_size=${pageSize}`);
-			const data = await response.json();
-			items = [...items, ...data.items];
-			next = data.next;
+			// const response = await fetch(`/api/simfiles?page=${page}&page_size=${pageSize}`);
+            const {data, error} = await supabase.from('simfiles').select('*').range(page, pageSize);
+			// const data = await response.json();
+            if (error) {
+                console.error('Failed to load items:', error);
+                return;
+            }
+            if (!data || data.length === 0) {
+                next = false;
+                console.error('No data returned');
+                return;
+            }
+			items = [...items, ...data];
 			page++;
 		} catch (error) {
 			console.error('Failed to load items:', error);

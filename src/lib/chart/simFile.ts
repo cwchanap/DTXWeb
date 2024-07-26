@@ -8,7 +8,7 @@ interface DtxLevel {
 
 export class SimFile {
     public title!: string;
-    public levels: { [key: number]: DtxLevel } = {};
+    public levels: { [key: number]: DtxLevel | undefined } = {};
 
 	constructor(public files: File[]) {}
 
@@ -58,7 +58,7 @@ export class SimFile {
                 const file_name = file_line.split(' ')[1];
                 const file = this.files.find((f) => f.name === file_name);
                 if (!file) {
-                    throw new Error(`File ${file_name} not found`);
+                    return;
                 }
                 const dtx = new DTXFile(file, label);
                 await dtx.parse();

@@ -65,7 +65,7 @@
 			return;
 		}
 		if (simFileData) {
-			const { error } = await supabase.from('dtx_file').insert(
+			const { error } = await supabase.from('dtx_files').insert(
 				Object.values(simfile.levels).map((value, index, array) => {
 					return {
 						level: value.file.level,
@@ -74,7 +74,7 @@
 				})
 			);
 			if (error) {
-				console.error('Error creating dtx_file:', error.message);
+				console.error('Error creating dtx_files:', error.message);
 				return;
 			}
 		}
@@ -93,8 +93,10 @@
 			on:dragover={handleDragOver}
 			on:dragleave={handleDragLeave}
 			on:drop={handleDrop}
-			on:click={() => document.getElementById('fileInput').click()}
-			role="region"
+			on:click={() => document.getElementById('fileInput')?.click()}
+			on:keydown={(e) => e.key === 'Enter' && document.getElementById('fileInput')?.click()}
+			role="button"
+			tabindex="0"
 			aria-label="Drop zone"
 		>
 			<p>Drag and drop zip files here, or click to select files</p>
@@ -120,12 +122,14 @@
 			<div class="levels mb-4">
 				<div class="level">
 					{#each Object.values(simfile.levels) as level}
-						<div class="level-item">
-							<div class="card mb-4 rounded-lg bg-gray-100 p-2">
-								<h4 class="text-sm font-bold">{level.file.difficulty}</h4>
-								<p class="text-xs">{level.file.level}</p>
+						{#if level}
+							<div class="level-item">
+								<div class="card mb-4 rounded-lg bg-gray-100 p-2">
+									<h4 class="text-sm font-bold">{level.file.difficulty}</h4>
+									<p class="text-xs">{level.file.level}</p>
+								</div>
 							</div>
-						</div>
+						{/if}
 					{/each}
 				</div>
 			</div>

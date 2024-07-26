@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { supabase } from '@/lib/supabase';
 	import { onMount } from 'svelte';
+	import type { Database } from '@/types/supabase.types';
 
 	export let pageSize: number;
 	let pageTitle = 'My Chart';
 
-	let items: any = [];
+	let items: Database['public']['Tables']['simfiles']['Row'][] = [];
 	let page = 0;
 	let loading = false;
 	let next = true;
@@ -16,17 +17,20 @@
 
 		try {
 			// const response = await fetch(`/api/simfiles?page=${page}&page_size=${pageSize}`);
-            const {data, error} = await supabase.from('simfiles').select('*').range(page, pageSize);
+			const { data, error } = await supabase
+				.from('simfiles')
+				.select(`id, title, bpm, dtx_files(level)`)
+				.range(page, pageSize);
 			// const data = await response.json();
-            if (error) {
-                console.error('Failed to load items:', error);
-                return;
-            }
-            if (!data || data.length === 0) {
-                next = false;
-                console.error('No data returned');
-                return;
-            }
+			if (error) {
+				console.error('Failed to load items:', error);
+				return;
+			}
+			if (!data || data.length === 0) {
+				next = false;
+				console.error('No data returned');
+				return;
+			}
 			items = [...items, ...data];
 			page++;
 		} catch (error) {
@@ -66,7 +70,7 @@
 			<div class="w-full rounded border p-4 shadow">
 				<!-- Added w-full to make it occupy full width -->
 				<h2 class="text-xl font-bold">{item.title}</h2>
-				<p>{item.description}</p>
+				<p>{item.bpm}</p>
 			</div>
 		{/each}
 	</div>

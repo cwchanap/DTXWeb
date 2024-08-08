@@ -4,6 +4,8 @@
 	import type { DTXFile } from '@/lib/chart/dtx';
 	import { SimFile } from '@/lib/chart/simFile';
 	import { supabase } from '@/lib/supabase';
+	import { v4 as uuidv4 } from 'uuid';
+	import { PREVIEW_BUCKET_NAME } from '@/constant';
 
 	let dropzoneActive = false;
 	let simfile: SimFile | undefined = undefined;
@@ -55,29 +57,67 @@
 	async function uploadFile() {
 		if (!simfile) return;
 		const dtx = simfile.getHighestLevel();
+		const previewFile = simfile.getPreviewFile();
+		const {
+			data: { user }
+		} = await supabase.auth.getUser();
+
+		if (!user) {
+			console.error('User not found');
+			return;
+		}
+
+		// Upload preview image to Supabase storage
+		let previewUrl = '';
+		if (previewFile) {
+			const previewHash = uuidv4();
+			previewUrl = `${user.id}/${previewHash}.jpg`;
+
+			const { data, error: uploadError } = await supabase.storage
+				.from(PREVIEW_BUCKET_NAME)
+				.upload(previewUrl, previewFile, {
+					contentType: 'image/jpeg'
+				});
+
+			if (uploadError) {
+				console.error('Error uploading preview image:', uploadError.message);
+				return;
+			}
+		}
+
+		// Insert simfile data into the database
 		const { data: simFileData, error } = await supabase
 			.from('simfiles')
-			.insert({ title: simfile.title, author: dtx.artist, bpm: dtx.bpm })
+			.insert({
+				title: simfile.title,
+				author: dtx.artist,
+				bpm: dtx.bpm,
+				preview_url: previewUrl // Add the preview URL to the simfile record
+			})
 			.select()
 			.single();
+
 		if (error) {
 			console.error('Error creating simfiles:', error.message);
 			return;
 		}
+
 		if (simFileData) {
 			const { error } = await supabase.from('dtx_files').insert(
-				Object.values(simfile.levels).map((value, index, array) => {
-					return {
+				Object.values(simfile.levels)
+					.filter((value): value is NonNullable<typeof value> => value !== undefined)
+					.map((value) => ({
 						level: value.file.level,
 						simfile_id: simFileData.id
-					};
-				})
+					}))
 			);
+
 			if (error) {
 				console.error('Error creating dtx_files:', error.message);
 				return;
 			}
 		}
+
 		goto('/app/chart');
 	}
 </script>

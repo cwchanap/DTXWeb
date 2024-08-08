@@ -8,10 +8,11 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
-	interface HTMLInputElement extends HTMLElement {
-		webkitdirectory: boolean;
-		directory: boolean;
-	}
+}
+declare namespace svelte.JSX {
+    interface SvelteInputProps {
+        webkitdirectory?: boolean;
+    }
 }
 
 export { };

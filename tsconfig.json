@@ -15,6 +15,7 @@
             "@/game/*": ["./src/game/*"],
             "@/lib/*": ["./src/lib/*"],
             "@/types/*": ["./src/types/*"],
+			"@/constant": ["./src/constant.ts"]
         }
 	}
 	// Path aliases are handled by https://kit.svelte.dev/docs/configuration#alias

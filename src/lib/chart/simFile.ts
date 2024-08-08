@@ -77,12 +77,16 @@ export class SimFile {
         return highest.file;
     }
 
-    public getPreview() {
+    public getPreviewFile() {
         const preview = this.getHighestLevel().preview;
         const previewFile = this.files.find((file) => file.name === preview);
         if (!previewFile) {
             throw new Error('Preview file not found');
         }
-        return URL.createObjectURL(previewFile);
+        return previewFile;
+    }
+
+    public getPreview() {
+        return URL.createObjectURL(this.getPreviewFile());
     }
 }

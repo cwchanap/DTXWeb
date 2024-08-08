@@ -10,6 +10,7 @@ const config = {
 	darkMode: 'class',
 	content: [
 		'./src/**/*.{html,js,svelte,ts}',
+		'./node_modules/flowbite-svelte-icons/**/*.{html,js,svelte,ts}',
 		// 3. Append the path to the Skeleton package
 		join(require.resolve(
 			'@skeletonlabs/skeleton'),
@@ -20,11 +21,11 @@ const config = {
 		extend: {},
 	},
 
-    plugins: [
-        skeleton({
-            themes: { preset: [ "skeleton" ] }
-        })
-    ]    
+	plugins: [
+		skeleton({
+			themes: { preset: ["skeleton"] }
+		})
+	]
 } satisfies Config;
 
 export default config;

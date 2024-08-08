@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { supabase } from '@/lib/supabase';
-	import type { Database } from '@/types/supabase.types';
+	import type { Tables } from '@/types/supabase.types';
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import { goto } from '$app/navigation';
+	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 
 	export let pageSize: number;
 
-	let items: Database['public']['Tables']['simfiles']['Row'][] = [];
+	let items: Tables<'simfiles'>[] = [];
 	let page = 0;
 	let loading = false;
 	let next = true;
@@ -28,7 +29,7 @@
 		try {
 			const { data, error } = await supabase
 				.from('simfiles')
-				.select(`id, title, bpm, preview_url, dtx_files(level)`)
+				.select(`id, title, author, bpm, preview_url, dtx_files(level)`)
 				.order('created_at', { ascending: false })
 				.filter('user_id', 'eq', user.id)
 				.range(page * pageSize, (page + 1) * pageSize - 1);
@@ -74,30 +75,18 @@
 		<div
 			class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6 shadow-md"
 		>
-			<div class="absolute right-2 top-2">
+			<div class="mb-2 flex items-center justify-between">
+				<h2 class="text-2xl font-bold">{item.title}</h2>
 				<button
 					class="text-gray-500 hover:text-gray-700 focus:outline-none"
 					on:click={() => goto(`/app/chart/${item.id}`)}
 				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-6 w-6"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-						/>
-					</svg>
+					<DotsVerticalOutline size="xl" />
 				</button>
 			</div>
 			<div>
-				<h2 class="mb-2 text-2xl font-bold">{item.title}</h2>
-				<p class="text-lg">BPM: {item.bpm}</p>
+				<p class="mb-2 text-lg text-gray-600">{item.author}</p>
+				<p class="mb-2 text-lg">BPM: {item.bpm}</p>
 			</div>
 			{#if item.preview_url}
 				<img

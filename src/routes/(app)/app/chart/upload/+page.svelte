@@ -90,7 +90,7 @@
 			.from('simfiles')
 			.insert({
 				title: simfile.title,
-				author: dtx.artist,
+				artist: dtx.artist,
 				bpm: dtx.bpm,
 				preview_url: previewUrl, // Add the preview URL to the simfile record
 				user_id: user.id

@@ -1,36 +1,30 @@
-<script>
+<script lang="ts">
+	import ChartList from '@/components/ChartList.svelte';
+	import { onMount } from 'svelte';
+
 	export let data;
+	let pageSize: number;
+	onMount(() => {
+		const itemsOnScreen = Math.ceil(window.innerHeight / 200);
+		pageSize = itemsOnScreen * 2;
+	});
 </script>
 
 <div class="min-h-screen bg-gray-100">
 	<header class="bg-indigo-600">
 		<div class="container mx-auto px-4 py-6">
-			<h1 class="text-3xl font-bold text-white">Welcome to My Web App</h1>
+			<h1 class="text-3xl font-bold text-white">Welcome to Hapadona's DTX Blog</h1>
 		</div>
 	</header>
 
 	<main class="container mx-auto px-4 py-8">
 		<section class="mb-8">
-			<h2 class="mb-4 text-2xl font-bold">Introduction</h2>
-			<p class="text-gray-700">
-				Welcome to our web app! Here you can find various resources and information about
-				what we offer. We aim to provide the best service and experience for our users. Stay
-				tuned for more updates and features!
-			</p>
+			<h2 class="mb-4 text-2xl font-bold">Latest News</h2>
+			<p class="text-gray-700">No news yet.</p>
 		</section>
 		<section class="mb-8">
-			<h2 class="mb-4 text-2xl font-bold">Latest Blog Posts</h2>
-			<div class="space-y-4">
-				{#each data.simfiles as post}
-					<article class="rounded-lg bg-white p-4 shadow-md">
-						<h3 class="text-xl font-bold">Blog Post Title 1</h3>
-						<p class="text-gray-700">
-							This is a summary of the first blog post. It provides an overview of the
-							content...
-						</p>
-					</article>
-				{/each}
-			</div>
+			<h2 class="mb-4 text-2xl font-bold">Latest Simfiles</h2>
+			<ChartList isBlog={true} {pageSize} />
 		</section>
 	</main>
 </div>

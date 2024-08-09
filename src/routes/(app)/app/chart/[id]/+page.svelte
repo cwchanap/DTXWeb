@@ -70,7 +70,6 @@
 	<button on:click={goBack} class="mb-4 text-blue-500 hover:text-blue-700">
 		&larr; Back to List
 	</button>
-
 	{#if loading}
 		<p>Loading...</p>
 	{:else if error}
@@ -83,7 +82,7 @@
 					<p><span class="font-semibold"> BPM: </span>{simfile.bpm}</p>
 				</div>
 				<div>
-					<p><span class="font-semibold"> Artist: </span>{simfile.author || 'N/A'}</p>
+					<p><span class="font-semibold"> Artist: </span>{simfile.artist || 'N/A'}</p>
 				</div>
 			</div>
 			<div class="mt-4">

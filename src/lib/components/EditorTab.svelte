@@ -5,7 +5,7 @@
 	let measureCount = 9;
 	let bpm = 120;
 	let title = '';
-	let author = '';
+	let artist = '';
 	let comment = '';
 
 	function handleMeasureChange() {
@@ -19,8 +19,8 @@
 		<input class="w-2/3" type="text" bind:value={title} />
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Author:</label>
-		<input class="w-2/3" type="text" bind:value={author} />
+		<label class="w-1/3 text-gray-700" for="measure-input">Artist:</label>
+		<input class="w-2/3" type="text" bind:value={artist} />
 	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-1/3 text-gray-700" for="measure-input">Comment:</label>

@@ -5,7 +5,7 @@
 	let pageSize: number;
 
 	onMount(() => {
-		const itemsOnScreen = Math.ceil(window.innerHeight / 100);
+		const itemsOnScreen = Math.ceil(window.innerHeight / 200);
 		pageSize = itemsOnScreen * 2;
 	});
 </script>

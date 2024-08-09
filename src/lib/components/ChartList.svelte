@@ -96,14 +96,14 @@
 	type="text"
 	placeholder="Search by artist"
 	bind:value={artistFilter}
-	class="mb-4 rounded border p-2"
+	class="mb-4 w-1/2 rounded border p-2"
 	on:input={handleSearchInput}
 />
 <input
 	type="text"
 	placeholder="Search by song name"
 	bind:value={songNameFilter}
-	class="mb-4 rounded border p-2"
+	class="mb-4 w-1/2 rounded border p-2"
 	on:input={handleSearchInput}
 />
 {#if loading}

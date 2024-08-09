@@ -126,11 +126,11 @@
 					<img
 						src={getPreviewUrl(item.preview_url)}
 						alt={`Preview for ${item.title}`}
-						class="mb-4 h-40 w-full rounded-lg object-cover"
+						class="mb-4 h-60 w-full rounded-lg object-cover"
 					/>
 				{:else}
 					<div
-						class="mb-4 flex h-40 w-full items-center justify-center rounded-lg bg-gray-200"
+						class="mb-4 flex h-60 w-full items-center justify-center rounded-lg bg-gray-200"
 					>
 						<span class="text-gray-500">No preview available</span>
 					</div>
@@ -143,7 +143,7 @@
 						href={item.download_url}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="text-blue-500 hover:underline"
+						class="mt-4 text-blue-500 hover:underline"
 					>
 						Download
 					</a>

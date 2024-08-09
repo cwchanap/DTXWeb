@@ -5,10 +5,10 @@
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import { goto } from '$app/navigation';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
+	import { formatLevelDisplay } from '@/lib/utils';
 
 	export let pageSize: number;
 	export let isBlog = false;
-	export let authorName: string;
 
 	let items: Tables<'simfiles'>[] = [];
 	let page = 0;
@@ -16,6 +16,7 @@
 	let next = true;
 	let initialLoad = true;
 	let artistFilter: string = '';
+	let songNameFilter: string = '';
 	let searchTimeout: NodeJS.Timeout;
 
 	$: if (pageSize && initialLoad) {
@@ -32,6 +33,7 @@
 				.select(`id, title, artist, bpm, preview_url, download_url, dtx_files(level)`)
 				.order('created_at', { ascending: false })
 				.ilike('artist', `%${artistFilter}%`)
+				.ilike('title', `%${songNameFilter}%`)
 				.range(page * pageSize, (page + 1) * pageSize - 1);
 
 			if (!isBlog) {
@@ -97,6 +99,13 @@
 	class="mb-4 rounded border p-2"
 	on:input={handleSearchInput}
 />
+<input
+	type="text"
+	placeholder="Search by song name"
+	bind:value={songNameFilter}
+	class="mb-4 rounded border p-2"
+	on:input={handleSearchInput}
+/>
 {#if loading}
 	<div class="mt-4 text-center">
 		<p>Loading more items...</p>
@@ -136,19 +145,21 @@
 					</div>
 				{/if}
 				<div class="mt-4 text-sm text-gray-600">
-					Level: {item.dtx_files?.map((file) => file.level).join(' / ') || 'N/A'}
+					Level: {formatLevelDisplay(item.dtx_files)}
 				</div>
-				{#if item.download_url}
-					<a
-						href={item.download_url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="mt-4 text-blue-500 hover:underline"
-					>
-						Download
-					</a>
-				{:else}
-					<div class="mt-4 text-sm text-gray-600">Download not available</div>
+				{#if isBlog}
+					{#if item.download_url}
+						<a
+							href={item.download_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="mt-4 text-blue-500 hover:underline"
+						>
+							Download
+						</a>
+					{:else}
+						<div class="mt-4 text-sm text-gray-600">Download not available</div>
+					{/if}
 				{/if}
 			</div>
 		{/each}

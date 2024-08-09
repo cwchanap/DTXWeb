@@ -5,6 +5,7 @@
 	import type { Tables } from '@/types/supabase.types';
 	import { goto } from '$app/navigation';
 	import { getToastStore } from '@skeletonlabs/skeleton';
+	import { formatLevelDisplay } from '@/lib/utils';
 
 	const toastStore = getToastStore();
 
@@ -87,16 +88,16 @@
 			</div>
 			<div class="mt-4">
 				<p>
-					<span class="font-semibold"> Level: </span>{simfile.dtx_files
-						?.map((file) => file.level)
-						.join(' / ') || 'N/A'}
+					<span class="font-semibold"> Level: </span>{formatLevelDisplay(
+						simfile.dtx_files
+					)}
 				</p>
 			</div>
 			<div class="mt-4">
-				<label for="download_line" class="mb-2 block">Download Link:</label>
+				<label for="download_link" class="mb-2 block">Download Link:</label>
 
 				<input
-					id="download_line"
+					id="download_link"
 					type="text"
 					bind:value={downloadLink}
 					class="mb-4 w-full rounded border p-2"

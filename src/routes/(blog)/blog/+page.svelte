@@ -1,8 +1,7 @@
 <script lang="ts">
-	import ChartList from '@/components/ChartList.svelte';
+	import ChartList from '@/lib/components/ChartList.svelte';
 	import { onMount } from 'svelte';
 
-	export let data;
 	let pageSize: number;
 	onMount(() => {
 		const itemsOnScreen = Math.ceil(window.innerHeight / 200);

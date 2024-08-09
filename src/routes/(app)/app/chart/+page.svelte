@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ChartList from '@/components/ChartList.svelte';
+	import ChartList from '@/lib/components/ChartList.svelte';
 	import { onMount } from 'svelte';
 
 	let pageSize: number;

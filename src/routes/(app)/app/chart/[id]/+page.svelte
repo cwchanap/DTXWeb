@@ -95,11 +95,12 @@
 			</div>
 			<div class="mt-4">
 				<label for="download_line" class="mb-2 block">Download Link:</label>
+
 				<input
 					id="download_line"
 					type="text"
 					bind:value={downloadLink}
-					class="mb-4 rounded border p-2"
+					class="mb-4 w-full rounded border p-2"
 				/>
 
 				<label for="video_preview_link" class="mb-2 block">Video Preview Link:</label>
@@ -107,7 +108,7 @@
 					id="video_preview_link"
 					type="text"
 					bind:value={videoPreviewLink}
-					class="rounded border p-2"
+					class="w-full rounded border p-2"
 				/>
 			</div>
 

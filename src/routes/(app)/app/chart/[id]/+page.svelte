@@ -6,6 +6,9 @@
 	import { goto } from '$app/navigation';
 	import { getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { formatLevelDisplay } from '@/lib/utils';
+	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
+	import type { SimFile } from '@/lib/chart/simFile';
+	import type { DTXFile } from '@/lib/chart/dtx';
 
 	const toastStore = getToastStore();
 
@@ -16,6 +19,9 @@
 	let videoPreviewLink: string | null = null;
 	let publishDate: string;
 	let isPublished: boolean;
+	let updatedHighestDtx: DTXFile | null = null;
+	let updatedSimfile: SimFile | null = null;
+	let displayId: number | null = null;
 
 	onMount(async () => {
 		const { id } = $page.params;
@@ -36,6 +42,7 @@
 			videoPreviewLink = data?.video_preview_url;
 			publishDate = data?.publish_date;
 			isPublished = data?.is_published;
+			displayId = data?.display_id;
 		} catch (e: any) {
 			error = e.message;
 		} finally {
@@ -49,14 +56,23 @@
 
 	async function updateSimfile() {
 		const { id } = $page.params;
+		let updateFields: any = {
+			download_url: downloadLink,
+			video_preview_url: videoPreviewLink,
+			publish_date: publishDate,
+			is_published: isPublished,
+			display_id: displayId
+		};
+
+		if (updatedSimfile && updatedHighestDtx) {
+			updateFields.bpm = updatedHighestDtx.bpm;
+			updateFields.artist = updatedHighestDtx.artist;
+			updateFields.title = updatedSimfile.title;
+		}
+
 		const { data, error } = await supabase
 			.from('simfiles')
-			.update({
-				download_url: downloadLink,
-				video_preview_url: videoPreviewLink,
-				publish_date: publishDate,
-				is_published: isPublished
-			})
+			.update(updateFields)
 			.eq('id', id)
 			.select();
 
@@ -74,6 +90,16 @@
 			});
 		}
 	}
+
+	function onFileUpload(newSimfile: SimFile, newHighestDtx: DTXFile) {
+		updatedSimfile = newSimfile;
+		updatedHighestDtx = newHighestDtx;
+		if (simfile) {
+			simfile.bpm = newHighestDtx.bpm;
+			simfile.artist = newHighestDtx.artist;
+			simfile.title = newSimfile.title;
+		}
+	}
 </script>
 
 <div class="container mx-auto p-4">
@@ -87,56 +113,88 @@
 	{:else if simfile}
 		<div class="flex-grow rounded-lg bg-white p-6 shadow-md">
 			<h1 class="mb-4 text-2xl font-bold">{simfile.title}</h1>
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p><span class="font-semibold"> BPM: </span>{simfile.bpm}</p>
+			<div class="mt-4 grid grid-cols-8 gap-4">
+				<div class="col-span-1 flex items-center">
+					<label for="bpm" class="mr-2 block">BPM:</label>
 				</div>
-				<div>
-					<p><span class="font-semibold"> Artist: </span>{simfile.artist || 'N/A'}</p>
+				<div class="col-span-7">
+					{simfile.bpm}
 				</div>
-			</div>
-			<div class="mt-4">
-				<p>
-					<span class="font-semibold"> Level: </span>{formatLevelDisplay(
-						simfile.dtx_files
-					)}
-				</p>
-			</div>
-
-			<div class="mt-4">
-				<label for="download_link" class="mb-2 block">Download Link:</label>
-
-				<input
-					id="download_link"
-					type="text"
-					bind:value={downloadLink}
-					class="mb-4 w-full rounded border p-2"
-				/>
-
-				<label for="video_preview_link" class="mb-2 block">Video Preview Link:</label>
-				<input
-					id="video_preview_link"
-					type="text"
-					bind:value={videoPreviewLink}
-					class="w-full rounded border p-2"
-				/>
-			</div>
-			<div class="mt-4">
-				<div class="mt-4 flex items-center">
+				<div class="col-span-1 flex items-center">
+					<label for="artist" class="mr-2 block">Artist:</label>
+				</div>
+				<div class="col-span-7">
+					{simfile.artist || 'N/A'}
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label for="level" class="mr-2 block">Level:</label>
+				</div>
+				<div class="col-span-7">
+					{formatLevelDisplay(simfile.dtx_files)}
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label for="display_id" class="mr-2 block">Display ID:</label>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="display_id"
+						type="text"
+						bind:value={displayId}
+						class="mb-4 w-full rounded border p-2"
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
 					<label for="publish_date" class="mb-2 mr-2 block">Publish Date:</label>
+				</div>
+				<div class="col-span-7">
 					<input
 						id="publish_date"
 						type="date"
 						bind:value={publishDate}
-						class="mb-4 rounded border p-2"
+						class="mb-4 w-full rounded border p-2"
 					/>
 				</div>
-				<div class="mt-4 flex items-center">
+				<div class="col-span-1 flex items-center">
 					<label for="is_published" class="mb-2 mr-2 block">Published:</label>
-					<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={isPublished} />
+				</div>
+				<div class="col-span-7">
+					<SlideToggle
+						name="slide-large"
+						active="bg-primary-500"
+						bind:checked={isPublished}
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label for="download_link" class="mb-2 mr-2 block">Download Link:</label>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="download_link"
+						type="text"
+						bind:value={downloadLink}
+						class="mb-4 w-full rounded border p-2"
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label for="video_preview_link" class="mb-2 mr-2 block"
+						>Video Preview Link:</label
+					>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="video_preview_link"
+						type="text"
+						bind:value={videoPreviewLink}
+						class="mb-4 w-full rounded border p-2"
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label for="folder_upload" class="mb-2 mr-2 block">Upload Folder:</label>
+				</div>
+				<div class="col-span-7">
+					<ChartFolderUpload large={false} {onFileUpload} />
 				</div>
 			</div>
-
 			<button
 				on:click={updateSimfile}
 				class="mt-4 rounded bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700"

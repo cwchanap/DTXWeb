@@ -6,42 +6,14 @@
 	import { supabase } from '@/lib/supabase';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
+	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
 
-	let dropzoneActive = false;
 	let simfile: SimFile | undefined = undefined;
 	let isCollapsed = true;
 	let highestDtx: DTXFile | undefined = undefined;
 
 	function toggleCollapse() {
 		isCollapsed = !isCollapsed;
-	}
-
-	function handleDragOver(event: DragEvent) {
-		event.preventDefault();
-		dropzoneActive = true;
-	}
-
-	function handleDragLeave(event: DragEvent) {
-		event.preventDefault();
-		dropzoneActive = false;
-	}
-
-	function filterFiles(files: FileList) {
-		return Array.from(files).filter((file) =>
-			new Set(['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa']).has(
-				file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-			)
-		);
-	}
-
-	async function handleDrop(event: DragEvent) {
-		event.preventDefault();
-		dropzoneActive = false;
-
-		if (event.dataTransfer?.files) {
-			simfile = new SimFile(filterFiles(event.dataTransfer.files));
-			await simfile.parse();
-		}
 	}
 
 	async function handleFileInput(event: Event) {
@@ -85,6 +57,11 @@
 			}
 		}
 
+		const { data: countData, error: _ } = await supabase
+			.from('simfiles')
+			.select('id.count()')
+			.eq('user_id', user.id);
+
 		// Insert simfile data into the database
 		const { data: simFileData, error } = await supabase
 			.from('simfiles')
@@ -93,7 +70,8 @@
 				artist: dtx.artist,
 				bpm: dtx.bpm,
 				preview_url: previewUrl, // Add the preview URL to the simfile record
-				user_id: user.id
+				user_id: user.id,
+				display_id: countData ? countData[0].count + 1 : null
 			})
 			.select()
 			.single();
@@ -109,7 +87,8 @@
 					.filter((value): value is NonNullable<typeof value> => value !== undefined)
 					.map((value) => ({
 						level: value.file.level,
-						simfile_id: simFileData.id
+						simfile_id: simFileData.id,
+						label: value.file.difficulty
 					}))
 			);
 
@@ -121,36 +100,18 @@
 
 		goto('/app/chart');
 	}
+
+	function onFileUpload(newSimfile: SimFile, newHighestDtx: DTXFile) {
+		simfile = newSimfile;
+		highestDtx = newHighestDtx;
+		console.log(simfile, highestDtx);
+	}
 </script>
 
 <div class="container mx-auto flex flex-col p-4" style="height: 90vh;">
 	{#if !simfile || !highestDtx}
 		<h1 class="mb-4 text-2xl font-bold">Upload Folders</h1>
-
-		<div
-			class="dropzone flex flex-1 items-center justify-center {dropzoneActive
-				? 'active'
-				: ''}"
-			on:dragover={handleDragOver}
-			on:dragleave={handleDragLeave}
-			on:drop={handleDrop}
-			on:click={() => document.getElementById('fileInput')?.click()}
-			on:keydown={(e) => e.key === 'Enter' && document.getElementById('fileInput')?.click()}
-			role="button"
-			tabindex="0"
-			aria-label="Drop zone"
-		>
-			<p>Drag and drop zip files here, or click to select files</p>
-			<input
-				id="fileInput"
-				type="file"
-				webkitdirectory
-				directory
-				multiple
-				on:change={handleFileInput}
-				class="hidden"
-			/>
-		</div>
+		<ChartFolderUpload large={true} {onFileUpload} />
 	{:else}
 		<h1 class="mb-4 text-2xl font-bold">Uploaded Folders</h1>
 		<div class="card rounded-lg bg-white p-4 shadow-lg">
@@ -243,16 +204,3 @@
 		</div>
 	{/if}
 </div>
-
-<style>
-	.dropzone {
-		border: 2px dashed #ccc;
-		padding: 20px;
-		text-align: center;
-		transition: background-color 0.3s;
-		height: calc(100vh - 64px); /* Adjust 64px to the height of your navbar */
-	}
-	.dropzone.active {
-		background-color: #e0f7fa;
-	}
-</style>

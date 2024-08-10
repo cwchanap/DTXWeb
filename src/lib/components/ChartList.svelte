@@ -5,7 +5,7 @@
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
-	import { getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
+	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	export let pageSize: number;
 	export let isBlog = false;
 
@@ -22,6 +22,7 @@
 	let hideUnpublished = false;
 
 	const toastStore = getToastStore();
+	const modalStore = getModalStore();
 
 	$: if (pageSize && initialLoad) {
 		loadItems();
@@ -30,7 +31,7 @@
 
 	$: if (hideUnpublished) {
 		items = items.filter((item) => item.is_published);
-	} 
+	}
 
 	function toggleDropdown(id: number, event: MouseEvent) {
 		event.stopPropagation();
@@ -76,7 +77,7 @@
 			let query = supabase
 				.from('simfiles')
 				.select(
-					`id, title, artist, bpm, preview_url, download_url, is_published, dtx_files(level)`
+					`id, title, artist, bpm, preview_url, download_url, is_published, display_id, dtx_files(level)`
 				)
 				.order('publish_date', { ascending: false })
 				.ilike('artist', `%${artistFilter}%`)
@@ -147,6 +148,45 @@
 		}
 	}
 
+	function openDeleteModal(id: number, preview_url?: string) {
+		modalStore.trigger({
+			type: 'confirm',
+			title: 'Please Confirm',
+			body: 'Are you sure you want to proceed with deletion? This action is irreversible.',
+			response: async (confirmed: boolean) => {
+				if (confirmed) {
+					if (preview_url) {
+						const { error: deletePreviewError } = await supabase.storage
+							.from(PREVIEW_BUCKET_NAME)
+							.remove([preview_url]);
+						if (deletePreviewError) {
+							toastStore.trigger({
+								message: 'Failed to delete preview',
+								background: 'variant-filled-error',
+								timeout: 3000
+							});
+						}
+					}
+					const { error } = await supabase.from('simfiles').delete().eq('id', id);
+					if (error) {
+						toastStore.trigger({
+							message: 'Failed to delete chart',
+							background: 'variant-filled-error',
+							timeout: 3000
+						});
+					} else {
+						toastStore.trigger({
+							message: 'Chart deleted',
+							background: 'variant-filled-success',
+							timeout: 3000
+						});
+						items = items.filter((item) => item.id !== id);
+					}
+				}
+			}
+		});
+	}
+
 	onMount(() => {
 		window.addEventListener('scroll', handleScroll);
 		document.addEventListener('click', handleGlobalClick);
@@ -171,22 +211,24 @@
 	class="mb-4 w-1/2 rounded border p-2"
 	on:input={handleSearchInput}
 />
-<div class="mb-4 flex items-center">
-	<label for="is_published" class="mb-2 mr-2 block">Hide unpublished:</label>
-	<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={hideUnpublished} />
-</div>
+{#if !isBlog}
+	<div class="mb-4 flex items-center">
+		<label for="is_published" class="mb-2 mr-2 block">Hide unpublished:</label>
+		<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={hideUnpublished} />
+	</div>
+{/if}
 {#if loading}
 	<div class="mt-4 text-center">
 		<p>Loading more items...</p>
 	</div>
 {:else}
 	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-		{#each items as item}
+		{#each items as item (item.id)}
 			<div
 				class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6 shadow-md"
 			>
 				<div class="mb-2 flex items-center justify-between">
-					<h2 class="text-2xl font-bold">{item.title}</h2>
+					<h2 class="text-2xl font-bold">{item.display_id}. {item.title}</h2>
 					{#if !isBlog}
 						<div class="relative">
 							<button
@@ -214,6 +256,7 @@
 										>
 											Edit
 										</a>
+
 										<button
 											on:click={() =>
 												togglePublishChart(item.id, item.is_published)}
@@ -221,6 +264,15 @@
 											role="menuitem"
 										>
 											{item.is_published ? 'Unpublish' : 'Publish'}
+										</button>
+
+										<button
+											on:click={() =>
+												openDeleteModal(item.id, item.preview_url)}
+											class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+											role="menuitem"
+										>
+											Delete
 										</button>
 									</div>
 								</div>

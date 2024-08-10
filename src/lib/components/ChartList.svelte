@@ -5,7 +5,6 @@
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
-	import { clickOutside } from '@/lib/utils';
 	import { getToastStore } from '@skeletonlabs/skeleton';
 	export let pageSize: number;
 	export let isBlog = false;

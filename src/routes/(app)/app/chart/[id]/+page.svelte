@@ -4,7 +4,7 @@
 	import { supabase } from '@/lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { goto } from '$app/navigation';
-	import { getToastStore } from '@skeletonlabs/skeleton';
+	import { getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { formatLevelDisplay } from '@/lib/utils';
 
 	const toastStore = getToastStore();
@@ -14,6 +14,8 @@
 	let error: string | null = null;
 	let downloadLink: string | null = null;
 	let videoPreviewLink: string | null = null;
+	let publishDate: string;
+	let isPublished: boolean;
 
 	onMount(async () => {
 		const { id } = $page.params;
@@ -32,6 +34,8 @@
 			simfile = data;
 			downloadLink = data?.download_url;
 			videoPreviewLink = data?.video_preview_url;
+			publishDate = data?.publish_date;
+			isPublished = data?.is_published;
 		} catch (e: any) {
 			error = e.message;
 		} finally {
@@ -47,7 +51,12 @@
 		const { id } = $page.params;
 		const { data, error } = await supabase
 			.from('simfiles')
-			.update({ download_url: downloadLink, video_preview_url: videoPreviewLink })
+			.update({
+				download_url: downloadLink,
+				video_preview_url: videoPreviewLink,
+				publish_date: publishDate,
+				is_published: isPublished
+			})
 			.eq('id', id)
 			.select();
 
@@ -93,6 +102,7 @@
 					)}
 				</p>
 			</div>
+
 			<div class="mt-4">
 				<label for="download_link" class="mb-2 block">Download Link:</label>
 
@@ -110,6 +120,21 @@
 					bind:value={videoPreviewLink}
 					class="w-full rounded border p-2"
 				/>
+			</div>
+			<div class="mt-4">
+				<div class="mt-4 flex items-center">
+					<label for="publish_date" class="mb-2 mr-2 block">Publish Date:</label>
+					<input
+						id="publish_date"
+						type="date"
+						bind:value={publishDate}
+						class="mb-4 rounded border p-2"
+					/>
+				</div>
+				<div class="mt-4 flex items-center">
+					<label for="is_published" class="mb-2 mr-2 block">Published:</label>
+					<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={isPublished} />
+				</div>
 			</div>
 
 			<button

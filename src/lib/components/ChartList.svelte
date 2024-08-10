@@ -5,7 +5,7 @@
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
-	import { getToastStore } from '@skeletonlabs/skeleton';
+	import { getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	export let pageSize: number;
 	export let isBlog = false;
 
@@ -19,6 +19,7 @@
 	let searchTimeout: NodeJS.Timeout;
 	let openDropdownId: number | null = null;
 	let dropdownPosition: { x: number; y: number } | null = null;
+	let hideUnpublished = false;
 
 	const toastStore = getToastStore();
 
@@ -27,18 +28,22 @@
 		initialLoad = false;
 	}
 
-    function toggleDropdown(id: number, event: MouseEvent) {
-        event.stopPropagation();
-        if (openDropdownId === id) {
-            closeDropdown();
-        } else {
-            openDropdownId = id;
-            dropdownPosition = {
-                x: event.clientX,
-                y: event.clientY
-            };
-        }
-    }
+	$: if (hideUnpublished) {
+		items = items.filter((item) => item.is_published);
+	} 
+
+	function toggleDropdown(id: number, event: MouseEvent) {
+		event.stopPropagation();
+		if (openDropdownId === id) {
+			closeDropdown();
+		} else {
+			openDropdownId = id;
+			dropdownPosition = {
+				x: event.clientX,
+				y: event.clientY
+			};
+		}
+	}
 
 	async function togglePublishChart(id: number, published: boolean) {
 		const { error } = await supabase
@@ -166,6 +171,10 @@
 	class="mb-4 w-1/2 rounded border p-2"
 	on:input={handleSearchInput}
 />
+<div class="mb-4 flex items-center">
+	<label for="is_published" class="mb-2 mr-2 block">Hide unpublished:</label>
+	<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={hideUnpublished} />
+</div>
 {#if loading}
 	<div class="mt-4 text-center">
 		<p>Loading more items...</p>

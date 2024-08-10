@@ -3,10 +3,10 @@
 	import { supabase } from '@/lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
-	import { goto } from '$app/navigation';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
-
+	import { clickOutside } from '@/lib/utils';
+	import { getToastStore } from '@skeletonlabs/skeleton';
 	export let pageSize: number;
 	export let isBlog = false;
 
@@ -18,10 +18,51 @@
 	let artistFilter: string = '';
 	let songNameFilter: string = '';
 	let searchTimeout: NodeJS.Timeout;
+	let openDropdownId: number | null = null;
+	let dropdownPosition: { x: number; y: number } | null = null;
+
+	const toastStore = getToastStore();
 
 	$: if (pageSize && initialLoad) {
 		loadItems();
 		initialLoad = false;
+	}
+
+    function toggleDropdown(id: number, event: MouseEvent) {
+        event.stopPropagation();
+        if (openDropdownId === id) {
+            closeDropdown();
+        } else {
+            openDropdownId = id;
+            dropdownPosition = {
+                x: event.clientX,
+                y: event.clientY
+            };
+        }
+    }
+
+	async function togglePublishChart(id: number, published: boolean) {
+		const { error } = await supabase
+			.from('simfiles')
+			.update({ is_published: !published })
+			.eq('id', id);
+
+		if (error) {
+			toastStore.trigger({
+				message: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
+				background: 'variant-filled-error',
+				timeout: 3000
+			});
+		} else {
+			toastStore.trigger({
+				message: `Chart ${published ? 'unpublished' : 'published'}`,
+				background: 'variant-filled-success',
+				timeout: 3000
+			});
+			items = items.map((item) => (item.id === id ? { ...item, is_published: true } : item));
+		}
+		openDropdownId = null;
+		dropdownPosition = null;
 	}
 
 	async function loadItems() {
@@ -30,8 +71,10 @@
 		try {
 			let query = supabase
 				.from('simfiles')
-				.select(`id, title, artist, bpm, preview_url, download_url, dtx_files(level)`)
-				.order('created_at', { ascending: false })
+				.select(
+					`id, title, artist, bpm, preview_url, download_url, is_published, dtx_files(level)`
+				)
+				.order('publish_date', { ascending: false })
 				.ilike('artist', `%${artistFilter}%`)
 				.ilike('title', `%${songNameFilter}%`)
 				.range(page * pageSize, (page + 1) * pageSize - 1);
@@ -42,6 +85,8 @@
 				} = await supabase.auth.getUser();
 				if (!user) return;
 				query = query.eq('user_id', user.id);
+			} else {
+				query = query.eq('is_published', true);
 			}
 
 			const { data, error } = await query;
@@ -84,10 +129,26 @@
 		}, 500);
 	}
 
+	function closeDropdown() {
+		openDropdownId = null;
+		dropdownPosition = null;
+	}
+
+	function handleGlobalClick(event: MouseEvent) {
+		if (openDropdownId !== null) {
+			const dropdownElement = document.getElementById(`dropdown-${openDropdownId}`);
+			if (dropdownElement && !dropdownElement.contains(event.target as Node)) {
+				closeDropdown();
+			}
+		}
+	}
+
 	onMount(() => {
 		window.addEventListener('scroll', handleScroll);
+		document.addEventListener('click', handleGlobalClick);
 		return () => {
 			window.removeEventListener('scroll', handleScroll);
+			document.removeEventListener('click', handleGlobalClick);
 		};
 	});
 </script>
@@ -119,12 +180,44 @@
 				<div class="mb-2 flex items-center justify-between">
 					<h2 class="text-2xl font-bold">{item.title}</h2>
 					{#if !isBlog}
-						<button
-							class="text-gray-500 hover:text-gray-700 focus:outline-none"
-							on:click={() => goto(`/app/chart/${item.id}`)}
-						>
-							<DotsVerticalOutline size="xl" />
-						</button>
+						<div class="relative">
+							<button
+								class="text-gray-500 hover:text-gray-700 focus:outline-none"
+								on:click={(event) => toggleDropdown(item.id, event)}
+							>
+								<DotsVerticalOutline size="xl" />
+							</button>
+							{#if openDropdownId === item.id && dropdownPosition}
+								<div
+									id="dropdown-{item.id}"
+									class="fixed z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+									style="left: {dropdownPosition.x}px; top: {dropdownPosition.y}px;"
+								>
+									<div
+										class="py-1"
+										role="menu"
+										aria-orientation="vertical"
+										aria-labelledby="options-menu"
+									>
+										<a
+											href={`/app/chart/${item.id}`}
+											class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+											role="menuitem"
+										>
+											Edit
+										</a>
+										<button
+											on:click={() =>
+												togglePublishChart(item.id, item.is_published)}
+											class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+											role="menuitem"
+										>
+											{item.is_published ? 'Unpublish' : 'Publish'}
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
 					{/if}
 				</div>
 				<div>

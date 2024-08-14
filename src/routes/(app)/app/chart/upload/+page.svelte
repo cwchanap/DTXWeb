@@ -16,16 +16,6 @@
 		isCollapsed = !isCollapsed;
 	}
 
-	async function handleFileInput(event: Event) {
-		const input = event.target as HTMLInputElement;
-		if (input.files) {
-			simfile = new SimFile(filterFiles(input.files));
-			await simfile.parse();
-			simfile = simfile;
-			highestDtx = simfile.getHighestLevel();
-		}
-	}
-
 	async function uploadFile() {
 		if (!simfile) return;
 		const dtx = simfile.getHighestLevel();

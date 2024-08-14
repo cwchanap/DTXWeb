@@ -13,6 +13,7 @@ interface Data {
 
 export class Editor extends Scene {
 	private laneConfigs: LaneConfig[] = [
+		{ name: 'BPM', noteColor: 0x000000 },
 		{ name: 'LC', noteColor: 0xa20814 },
 		{ name: 'HH', noteColor: 0x0d1cde },
 		{ name: 'LP', noteColor: 0xde0db8 },

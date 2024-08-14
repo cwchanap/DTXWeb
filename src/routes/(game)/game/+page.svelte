@@ -26,24 +26,24 @@
 </script>
 
 <div id="app" class="flex min-h-screen flex-row space-y-4 p-16">
-	<div class="flex-1 pt-16">
+	<div class="w-[25%] pt-16">
 		{#if currentScene === Editor.key}
 			<EditorTab />
 		{/if}
 	</div>
-	<div class="flex-1 p-5">
+	<div class="w-[55%] p-5 flex justify-center">
 		<Main {phaserRef} {currentActiveScene} />
 	</div>
-	<div class="flex flex-1 flex-col items-end justify-end p-16">
+	<div class="flex w-[20%] flex-col items-end justify-end p-16">
 		<button
-			class="focus:outline-non mt-5 w-1/4 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+			class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
 			on:click={() => {
 				phaserRef.scene?.scene.start(Editor.key);
 				store.activeScene.set(Editor.key);
 			}}>Editor</button
 		>
 		<button
-			class="focus:outline-non mt-5 w-1/4 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+			class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
 			on:click={() => {
 				goto('/');
 				store.activeScene.set(null);

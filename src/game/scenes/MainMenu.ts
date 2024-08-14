@@ -10,8 +10,10 @@ export class MainMenu extends Scene {
 	logoTween!: Phaser.Tweens.Tween | null;
 	toEditor!: GameObjects.Text;
 
+	public static key = 'MainMenu';
+
 	constructor() {
-		super('MainMenu');
+		super(MainMenu.key);
 	}
 
 	create() {
@@ -30,7 +32,9 @@ export class MainMenu extends Scene {
 			.setOrigin(0.5)
 			.setDepth(100)
 			.setInteractive({ useHandCursor: true })
-			.on('pointerdown', () => {});
+			.on('pointerdown', () => {
+				alert('Under construction');
+			});
 
 		EventBus.emit(EventType.SCENE_READY, this);
 	}

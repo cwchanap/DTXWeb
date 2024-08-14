@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { EventBus } from '@/game/EventBus';
 	import EventType from '@/game/EventType';
+	import { DTXFile } from '@/lib/chart/dtx';
 
+	export let dtxFile: DTXFile | null = null;
 	let measureCount = 9;
-	let bpm = 120;
-	let title = '';
-	let artist = '';
-	let comment = '';
+	$: title = dtxFile ? dtxFile.title : '';
+	$: artist = dtxFile ? dtxFile.artist : '';
+	$: comment = dtxFile ? dtxFile.comment : '';
+	$: bpm = dtxFile ? dtxFile.bpm : 120;
 
 	function handleMeasureChange() {
 		EventBus.emit(EventType.MEASURE_UPDATE, measureCount);

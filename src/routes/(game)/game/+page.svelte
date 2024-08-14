@@ -5,7 +5,6 @@
 	import store from '@/lib/store';
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy } from 'svelte';
-	import EditorTab from '@/lib/components/EditorTab.svelte';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 
@@ -25,20 +24,16 @@
 	});
 </script>
 
-<div id="app" class="flex min-h-screen flex-row space-y-4 p-16">
-	<div class="w-[25%] pt-16">
-		{#if currentScene === Editor.key}
-			<EditorTab />
-		{/if}
-	</div>
-	<div class="w-[55%] p-5 flex justify-center">
+<div class="flex flex-row">
+	<div class="w-[25%] pt-16" />
+	<div class="flex w-[55%] justify-center p-5">
 		<Main {phaserRef} {currentActiveScene} />
 	</div>
 	<div class="flex w-[20%] flex-col items-end justify-end p-16">
 		<button
 			class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
 			on:click={() => {
-				phaserRef.scene?.scene.start(Editor.key);
+				goto('/editor');
 				store.activeScene.set(Editor.key);
 			}}>Editor</button
 		>
@@ -51,12 +46,3 @@
 		>
 	</div>
 </div>
-
-<style>
-	#app {
-		width: 100%;
-		height: 100vh;
-		/* overflow: hidden; */
-		/* display: flex; */
-	}
-</style>

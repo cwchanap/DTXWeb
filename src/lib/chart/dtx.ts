@@ -5,6 +5,7 @@ export class DTXFile {
     title!: string;
     bpm!: number;
     preview!: string;
+    comment!: string;
 
     constructor(private file?: File, public difficulty?: string) { }
 

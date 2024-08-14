@@ -5,6 +5,7 @@
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
+	import { popup } from '@skeletonlabs/skeleton';
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	export let pageSize: number = 12;
 	export let isBlog = false;
@@ -16,27 +17,12 @@
 	let artistFilter: string = '';
 	let songNameFilter: string = '';
 	let searchTimeout: NodeJS.Timeout;
-	let openDropdownId: number | null = null;
-	let dropdownPosition: { x: number; y: number } | null = null;
 	let hideUnpublished = false;
 
 	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
 	$: filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
-
-	function toggleDropdown(id: number, event: MouseEvent) {
-		event.stopPropagation();
-		if (openDropdownId === id) {
-			closeDropdown();
-		} else {
-			openDropdownId = id;
-			dropdownPosition = {
-				x: event.clientX,
-				y: event.clientY
-			};
-		}
-	}
 
 	async function togglePublishChart(id: number, published: boolean) {
 		const { error } = await supabase
@@ -67,7 +53,8 @@
 			let query = supabase
 				.from('simfiles')
 				.select(
-					`id, title, artist, bpm, preview_url, download_url, is_published, display_id, dtx_files(level)`, {count: 'exact'}
+					`id, title, artist, bpm, preview_url, download_url, is_published, display_id, dtx_files(level)`,
+					{ count: 'exact' }
 				)
 				.order('publish_date', { ascending: false })
 				.ilike('artist', `%${artistFilter}%`)
@@ -117,20 +104,6 @@
 			currentPage = 1;
 			loadItems();
 		}, 500);
-	}
-
-	function closeDropdown() {
-		openDropdownId = null;
-		dropdownPosition = null;
-	}
-
-	function handleGlobalClick(event: MouseEvent) {
-		if (openDropdownId !== null) {
-			const dropdownElement = document.getElementById(`dropdown-${openDropdownId}`);
-			if (dropdownElement && !dropdownElement.contains(event.target as Node)) {
-				closeDropdown();
-			}
-		}
 	}
 
 	function openDeleteModal(id: number, preview_url?: string) {
@@ -213,50 +186,51 @@
 						<div class="relative">
 							<button
 								class="text-gray-500 hover:text-gray-700 focus:outline-none"
-								on:click={(event) => toggleDropdown(item.id, event)}
+								use:popup={{
+									event: 'click',
+									target: 'popupFeatured-' + item.id,
+									placement: 'bottom'
+								}}
 							>
 								<DotsVerticalOutline size="xl" />
 							</button>
-							{#if openDropdownId === item.id && dropdownPosition}
+
+							<div
+								class="fixed z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+								data-popup="popupFeatured-{item.id}"
+							>
 								<div
-									id="dropdown-{item.id}"
-									class="fixed z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
-									style="left: {dropdownPosition.x}px; top: {dropdownPosition.y}px;"
+									class="py-1"
+									role="menu"
+									aria-orientation="vertical"
+									aria-labelledby="options-menu"
 								>
-									<div
-										class="py-1"
-										role="menu"
-										aria-orientation="vertical"
-										aria-labelledby="options-menu"
+									<a
+										href={`/app/chart/${item.id}`}
+										class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+										role="menuitem"
 									>
-										<a
-											href={`/app/chart/${item.id}`}
-											class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-											role="menuitem"
-										>
-											Edit
-										</a>
+										Edit
+									</a>
 
-										<button
-											on:click={() =>
-												togglePublishChart(item.id, item.is_published)}
-											class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-											role="menuitem"
-										>
-											{item.is_published ? 'Unpublish' : 'Publish'}
-										</button>
+									<button
+										on:click={() =>
+											togglePublishChart(item.id, item.is_published)}
+										class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+										role="menuitem"
+									>
+										{item.is_published ? 'Unpublish' : 'Publish'}
+									</button>
 
-										<button
-											on:click={() =>
-												openDeleteModal(item.id, item.preview_url)}
-											class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-											role="menuitem"
-										>
-											Delete
-										</button>
-									</div>
+									<button
+										on:click={() => openDeleteModal(item.id, item.preview_url)}
+										class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+										role="menuitem"
+									>
+										Delete
+									</button>
 								</div>
-							{/if}
+							</div>
 						</div>
 					{/if}
 				</div>

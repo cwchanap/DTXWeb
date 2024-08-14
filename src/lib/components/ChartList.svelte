@@ -6,14 +6,13 @@
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
-	export let pageSize: number;
+	export let pageSize: number = 12;
 	export let isBlog = false;
 
 	let items: Tables<'simfiles'>[] = [];
-	let page = 0;
+	let currentPage = 1;
+	let totalPages = 1;
 	let loading = false;
-	let next = true;
-	let initialLoad = true;
 	let artistFilter: string = '';
 	let songNameFilter: string = '';
 	let searchTimeout: NodeJS.Timeout;
@@ -24,14 +23,7 @@
 	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
-	$: if (pageSize && initialLoad) {
-		loadItems();
-		initialLoad = false;
-	}
-
-	$: if (hideUnpublished) {
-		items = items.filter((item) => item.is_published);
-	}
+	$: filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
 
 	function toggleDropdown(id: number, event: MouseEvent) {
 		event.stopPropagation();
@@ -64,25 +56,23 @@
 				background: 'variant-filled-success',
 				timeout: 3000
 			});
-			items = items.map((item) => (item.id === id ? { ...item, is_published: true } : item));
 		}
 		openDropdownId = null;
 		dropdownPosition = null;
 	}
 
 	async function loadItems() {
-		if (loading || !next) return;
 		loading = true;
 		try {
 			let query = supabase
 				.from('simfiles')
 				.select(
-					`id, title, artist, bpm, preview_url, download_url, is_published, display_id, dtx_files(level)`
+					`id, title, artist, bpm, preview_url, download_url, is_published, display_id, dtx_files(level)`, {count: 'exact'}
 				)
 				.order('publish_date', { ascending: false })
 				.ilike('artist', `%${artistFilter}%`)
 				.ilike('title', `%${songNameFilter}%`)
-				.range(page * pageSize, (page + 1) * pageSize - 1);
+				.range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
 
 			if (!isBlog) {
 				const {
@@ -94,18 +84,14 @@
 				query = query.eq('is_published', true);
 			}
 
-			const { data, error } = await query;
+			const { data, error, count } = await query;
 
 			if (error) {
 				console.error('Failed to load items:', error);
 				return;
 			}
-			if (!data || data.length === 0) {
-				next = false;
-				return;
-			}
-			items = [...items, ...data];
-			page++;
+			items = data || [];
+			totalPages = Math.ceil((count || 0) / pageSize);
 		} catch (error) {
 			console.error('Failed to load items:', error);
 		} finally {
@@ -113,8 +99,9 @@
 		}
 	}
 
-	function handleScroll() {
-		if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 && !loading) {
+	function changePage(newPage: number) {
+		if (newPage >= 1 && newPage <= totalPages) {
+			currentPage = newPage;
 			loadItems();
 		}
 	}
@@ -127,9 +114,7 @@
 	function handleSearchInput() {
 		clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => {
-			next = true;
-			page = 0;
-			items = [];
+			currentPage = 1;
 			loadItems();
 		}, 500);
 	}
@@ -180,7 +165,7 @@
 							background: 'variant-filled-success',
 							timeout: 3000
 						});
-						items = items.filter((item) => item.id !== id);
+						// items = items.filter((item) => item.id !== id);
 					}
 				}
 			}
@@ -188,12 +173,7 @@
 	}
 
 	onMount(() => {
-		window.addEventListener('scroll', handleScroll);
-		document.addEventListener('click', handleGlobalClick);
-		return () => {
-			window.removeEventListener('scroll', handleScroll);
-			document.removeEventListener('click', handleGlobalClick);
-		};
+		loadItems();
 	});
 </script>
 
@@ -223,7 +203,7 @@
 	</div>
 {:else}
 	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-		{#each items as item (item.id)}
+		{#each filteredItems as item (item.id)}
 			<div
 				class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6 shadow-md"
 			>
@@ -317,9 +297,20 @@
 			</div>
 		{/each}
 	</div>
-	{#if !next}
-		<div class="mt-4 text-center">
-			<p>No more items to load.</p>
-		</div>
-	{/if}
+	<!-- Pagination controls -->
+	<div class="mt-6 flex justify-center">
+		<button
+			class="mr-2 rounded bg-blue-500 px-4 py-2 text-white"
+			on:click={() => changePage(currentPage - 1)}
+			disabled={currentPage === 1}>Previous</button
+		>
+		<span class="mx-4 self-center">
+			Page {currentPage} of {totalPages}
+		</span>
+		<button
+			class="ml-2 rounded bg-blue-500 px-4 py-2 text-white"
+			on:click={() => changePage(currentPage + 1)}
+			disabled={currentPage === totalPages}>Next</button
+		>
+	</div>
 {/if}

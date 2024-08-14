@@ -1,12 +1,5 @@
 <script lang="ts">
 	import ChartList from '@/lib/components/ChartList.svelte';
-	import { onMount } from 'svelte';
-
-	let pageSize: number;
-	onMount(() => {
-		const itemsOnScreen = Math.ceil(window.innerHeight / 200);
-		pageSize = itemsOnScreen * 2;
-	});
 </script>
 
 <div class="min-h-screen bg-gray-100">
@@ -23,7 +16,7 @@
 		</section>
 		<section class="mb-8">
 			<h2 class="mb-4 text-2xl font-bold">Latest Simfiles</h2>
-			<ChartList isBlog={true} {pageSize} />
+			<ChartList isBlog={true}/>
 		</section>
 	</main>
 </div>

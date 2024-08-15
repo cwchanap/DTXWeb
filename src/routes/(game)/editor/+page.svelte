@@ -11,7 +11,6 @@
 	import { MainMenu } from '@/game/scenes/MainMenu';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
-	let dtxFile: DTXFile | null = null;
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -30,23 +29,31 @@
 
 	async function importFile(event: Event) {
 		const file = (event.target as HTMLInputElement).files?.[0];
-		console.log('importFile', file);
-		dtxFile = new DTXFile(file);
-		await dtxFile.parse();
-		dtxFile = dtxFile;
+		const t = new DTXFile(file);
+		await t.parse();
+		store.currentDtxFile.set(t);
 	}
 
 	function exportFile() {
-		dtxFile?.export();
+		store.currentDtxFile.subscribe((dtxFile) => {
+			console.log(dtxFile);
+			dtxFile?.export();
+		})();
+	}
+
+	function newFile() {
+		store.currentDtxFile.set(new DTXFile());
 	}
 
 	onMount(() => {
 		store.activeScene.set(Editor.key);
+		newFile();
 	});
 </script>
 
 <div data-popup="file-menu">
-	<div class="btn-group-vertical absolute mt-1 rounded border border-gray-300 bg-white shadow-lg">
+	<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
+		<button class="hover:bg-gray-100" on:click={newFile}>New</button>
 		<FileButton name="files" button="hover:bg-gray-100" accept=".dtx" on:change={importFile}
 			>Open</FileButton
 		>
@@ -66,7 +73,7 @@
 	</div>
 	<div class="row-span-1 flex flex-row">
 		<div class="w-[25%] pt-16">
-			<EditorTab {dtxFile} />
+			<EditorTab />
 		</div>
 		<div class="flex w-[55%] justify-center p-5">
 			<Main {phaserRef} {currentActiveScene} />

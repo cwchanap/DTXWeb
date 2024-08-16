@@ -44,8 +44,6 @@
 				timeout: 3000
 			});
 		}
-		openDropdownId = null;
-		dropdownPosition = null;
 	}
 
 	async function loadItems() {
@@ -139,7 +137,7 @@
 							background: 'variant-filled-success',
 							timeout: 3000
 						});
-						// items = items.filter((item) => item.id !== id);
+						filteredItems = filteredItems.filter((item) => item.id !== id);
 					}
 				}
 			}
@@ -197,7 +195,7 @@
 							</button>
 
 							<div
-								class="fixed z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+								class="z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
 								data-popup="popupFeatured-{item.id}"
 							>
 								<div

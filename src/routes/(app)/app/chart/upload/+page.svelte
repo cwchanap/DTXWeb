@@ -7,6 +7,7 @@
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
+	import ChartDetail from '@/lib/components/ChartDetail.svelte';
 
 	let simfile: SimFile | undefined = undefined;
 	let isCollapsed = true;
@@ -16,7 +17,13 @@
 		isCollapsed = !isCollapsed;
 	}
 
-	async function uploadFile() {
+	async function uploadFile(
+		displayId: number,
+		isPublished: boolean,
+		publishDate: string,
+		downloadUrl: string,
+		videoPreviewUrl: string
+	) {
 		if (!simfile) return;
 		const dtx = simfile.getHighestLevel();
 		const previewFile = simfile.getPreviewFile();
@@ -47,11 +54,6 @@
 			}
 		}
 
-		const { data: countData, error: _ } = await supabase
-			.from('simfiles')
-			.select('id.count()')
-			.eq('user_id', user.id);
-
 		// Insert simfile data into the database
 		const { data: simFileData, error } = await supabase
 			.from('simfiles')
@@ -61,7 +63,11 @@
 				bpm: dtx.bpm,
 				preview_url: previewUrl, // Add the preview URL to the simfile record
 				user_id: user.id,
-				display_id: countData ? countData[0].count + 1 : null
+				display_id: displayId,
+				is_published: isPublished,
+				publish_date: publishDate,
+				download_url: downloadUrl,
+				video_preview_url: videoPreviewUrl
 			})
 			.select()
 			.single();
@@ -104,93 +110,102 @@
 		<ChartFolderUpload large={true} {onFileUpload} />
 	{:else}
 		<h1 class="mb-4 text-2xl font-bold">Uploaded Folders</h1>
-		<div class="card rounded-lg bg-white p-4 shadow-lg">
-			<h3 class="mb-2 text-xl font-bold">Song Title: {simfile.title}</h3>
-			<h4 class="mb-2 text-lg font-bold">Artist: {highestDtx.artist}</h4>
-			<h4 class="mb-2 text-lg font-bold">BPM: {highestDtx.bpm}</h4>
-			<div class="mb-4 flex items-center justify-center">
-				<img src={simfile.getPreview()} alt="Uploaded Image" class="mb-4" />
-			</div>
-			<div class="levels mb-4">
-				<div class="level">
-					{#each Object.values(simfile.levels) as level}
-						{#if level}
-							<div class="level-item">
-								<div class="card mb-4 rounded-lg bg-gray-100 p-2">
-									<h4 class="text-sm font-bold">{level.file.difficulty}</h4>
-									<p class="text-xs">{level.file.level}</p>
-								</div>
-							</div>
-						{/if}
-					{/each}
+		<ChartDetail
+			simfile={{
+				bpm: highestDtx.bpm,
+				artist: highestDtx.artist,
+				title: simfile.title,
+				dtx_files: Object.values(simfile.levels).map((value) => ({
+					level: value?.file.level,
+					label: value?.label
+				}))
+			}}
+			on:onSave={(e) =>
+				uploadFile(
+					e.detail.displayId,
+					e.detail.isPublished,
+					e.detail.publishDate,
+					e.detail.downloadUrl,
+					e.detail.videoPreviewUrl
+				)}
+		>
+			<svelte:fragment slot="preview">
+				<div class="col-span-8 mb-4 items-center justify-center">
+					<img
+						src={simfile.getPreview()}
+						alt="Uploaded Image"
+						class="mb-4"
+						width="250"
+						height="250"
+					/>
 				</div>
-			</div>
-			<button
-				on:click={toggleCollapse}
-				class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
-			>
-				{#if isCollapsed}
-					Show Uploaded Files
-				{:else}
-					Hide Uploaded Files
-				{/if}
-			</button>
-			{#if !isCollapsed}
-				<table class="min-w-full leading-normal">
-					<thead>
-						<tr>
-							<th
-								class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
-							>
-								File Name
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each simfile.files as file}
+			</svelte:fragment>
+			<svelte:fragment slot="folder_upload">
+				<div class="col-span-8">
+					<div class="mt-4">
+						<button
+							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+							on:click={() => (simfile = undefined)}
+						>
+							Clear Files
+						</button>
+					</div>
+					<div class="mt-4">
+						<button
+							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+							on:click={async () => {
+								if (!simfile) return;
+								const zip = simfile.getZip();
+								const blob = await zip.generateAsync({ type: 'blob' });
+								const url = URL.createObjectURL(blob);
+								const a = document.createElement('a');
+								a.href = url;
+								a.download = simfile.title + '.zip';
+								a.click();
+								URL.revokeObjectURL(url);
+							}}
+						>
+							Download zip
+						</button>
+					</div>
+					<div class="mt-4">
+						<button
+							on:click={toggleCollapse}
+							class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
+						>
+							{#if isCollapsed}
+								Show Uploaded Files
+							{:else}
+								Hide Uploaded Files
+							{/if}
+						</button>
+					</div>
+				</div>
+
+				{#if !isCollapsed}
+					<table class="col-span-8 min-w-full leading-normal">
+						<thead>
 							<tr>
-								<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
-									{file.name}
-								</td>
+								<th
+									class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
+								>
+									File Name
+								</th>
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</div>
-		<div class="mt-4 flex justify-center">
-			<button
-				class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-				on:click={() => (simfile = undefined)}
-			>
-				Clear Files
-			</button>
-		</div>
-		<div class="mt-4 flex justify-center">
-			<button
-				class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-				on:click={async () => {
-					if (!simfile) return;
-					const zip = simfile.getZip();
-					const blob = await zip.generateAsync({ type: 'blob' });
-					const url = URL.createObjectURL(blob);
-					const a = document.createElement('a');
-					a.href = url;
-					a.download = simfile.title + '.zip';
-					a.click();
-					URL.revokeObjectURL(url);
-				}}
-			>
-				Download zip
-			</button>
-		</div>
-		<div class="mt-4 flex justify-center">
-			<button
-				class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-				on:click={uploadFile}
-			>
-				Upload
-			</button>
-		</div>
+						</thead>
+						<tbody>
+							{#each simfile.files as file}
+								<tr>
+									<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
+										{file.name}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</svelte:fragment>
+			<svelte:fragment slot="save">Upload</svelte:fragment>
+		</ChartDetail>
 	{/if}
 </div>

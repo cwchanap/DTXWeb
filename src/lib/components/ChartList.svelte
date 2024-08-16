@@ -7,6 +7,7 @@
 	import { formatLevelDisplay } from '@/lib/utils';
 	import { popup } from '@skeletonlabs/skeleton';
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
+	import { _ } from 'svelte-i18n';
 	export let pageSize: number = 12;
 	export let isBlog = false;
 
@@ -152,14 +153,14 @@
 
 <input
 	type="text"
-	placeholder="Search by artist"
+	placeholder={$_('blog.search_artist')}
 	bind:value={artistFilter}
 	class="mb-4 w-1/2 rounded border p-2"
 	on:input={handleSearchInput}
 />
 <input
 	type="text"
-	placeholder="Search by song name"
+	placeholder={$_('blog.search_song_name')}
 	bind:value={songNameFilter}
 	class="mb-4 w-1/2 rounded border p-2"
 	on:input={handleSearchInput}
@@ -252,7 +253,7 @@
 					</div>
 				{/if}
 				<div class="mt-4 text-sm text-gray-600">
-					Level: {formatLevelDisplay(item.dtx_files)}
+					{$_('blog.level')}: {formatLevelDisplay(item.dtx_files)}
 				</div>
 				{#if isBlog}
 					{#if item.download_url}
@@ -262,7 +263,7 @@
 							rel="noopener noreferrer"
 							class="mt-4 text-blue-500 hover:underline"
 						>
-							Download
+							{$_('blog.download')}
 						</a>
 					{:else}
 						<div class="mt-4 text-sm text-gray-600">Download not available</div>
@@ -276,15 +277,15 @@
 		<button
 			class="mr-2 rounded bg-blue-500 px-4 py-2 text-white"
 			on:click={() => changePage(currentPage - 1)}
-			disabled={currentPage === 1}>Previous</button
+			disabled={currentPage === 1}>{$_('blog.pagination.previous')}</button
 		>
 		<span class="mx-4 self-center">
-			Page {currentPage} of {totalPages}
+			{$_('blog.pagination.page', { values: { currentPage, totalPages } })}
 		</span>
 		<button
 			class="ml-2 rounded bg-blue-500 px-4 py-2 text-white"
 			on:click={() => changePage(currentPage + 1)}
-			disabled={currentPage === totalPages}>Next</button
+			disabled={currentPage === totalPages}>{$_('blog.pagination.next')}</button
 		>
 	</div>
 {/if}

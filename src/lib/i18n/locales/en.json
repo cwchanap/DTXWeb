@@ -1,0 +1,18 @@
+{
+    "blog": {
+		"level": "Level",
+		"download": "Download",
+		"search_artist": "search by artist",
+		"search_song_name": "search by song name",
+		"change_language": "Language",
+		"welcome_message": "Welcome to Hapadona's DTX Blog",
+		"latest_news": "Latest News",
+		"latest_simfiles": "Latest Simfiles",
+		"no_news_yet": "No news yet.",
+		"pagination": {
+			"previous": "Previous",
+			"next": "Next",
+			"page": "Page {currentPage} of {totalPages}"
+		}
+	}
+}

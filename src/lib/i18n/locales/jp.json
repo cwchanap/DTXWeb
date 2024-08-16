@@ -1,0 +1,18 @@
+{
+    "blog": {
+        "level": "レベル",
+        "download": "ダウンロード",
+        "search_artist": "アーティストで検索",
+        "search_song_name": "曲名で検索",
+        "change_language": "言語",
+        "welcome_message": "Hapadona's DTX ブログ へようこそ",
+        "latest_news": "最新のニュース",
+        "latest_simfiles": "最新のシミュレーターファイル",
+        "no_news_yet": "ニュースはまだありません。",
+        "pagination": {
+            "previous": "前へ",
+            "next": "次へ",
+            "page": "ページ {currentPage} / {totalPages}"
+        }
+    }
+}

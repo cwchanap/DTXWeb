@@ -52,9 +52,18 @@
 							class="w-full text-center"
 						/>
 					</td>
+
 					<td class="border border-gray-300 px-2 py-1"
 						>{#if chip.file}
-							{chip.file.name}
+							<button
+								on:click={() => {
+									if (chip.file) {
+										new Audio(URL.createObjectURL(chip.file)).play();
+									}
+								}}
+							>
+								{chip.file.name}
+							</button>
 						{:else}
 							<FileButton
 								on:change={(e) => {
@@ -63,6 +72,7 @@
 								name="file"
 								button="btn-sm variant-soft-primary"
 								accept="audio/*"
+								style="display: none;"
 							/>
 						{/if}</td
 					>

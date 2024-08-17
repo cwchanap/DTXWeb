@@ -5,12 +5,14 @@
 	import store from '@/lib/store';
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy, onMount } from 'svelte';
-	import EditorTab from '@/lib/components/EditorTab.svelte';
-	import { popup, FileButton } from '@skeletonlabs/skeleton';
+	import MainTab from '@/lib/components/editor/MainTab.svelte';
+	import { popup, FileButton, TabGroup, Tab } from '@skeletonlabs/skeleton';
 	import { DTXFile } from '@/lib/chart/dtx';
 	import { MainMenu } from '@/game/scenes/MainMenu';
+	import SoundTab from '@/lib/components/editor/SoundTab.svelte';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
+	let currentTab: number = 0;
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -72,8 +74,18 @@
 		<div class="h-8 border-l border-gray-300"></div>
 	</div>
 	<div class="row-span-1 flex flex-row">
-		<div class="w-[25%] pt-16">
-			<EditorTab />
+		<div class="w-[25%] pt-4">
+			<TabGroup border="">
+				<Tab class="hover:bg-gray-100 w-1/4" bind:group={currentTab} name="main" value="{0}">Main</Tab>
+				<Tab class="hover:bg-gray-100 w-1/4" bind:group={currentTab} name="sound" value="{1}">Sound</Tab>
+				<svelte:fragment slot="panel">
+					{#if currentTab === 0}
+						<MainTab />
+					{:else if currentTab === 1}
+						<SoundTab />
+					{/if}
+				</svelte:fragment>
+			</TabGroup>
 		</div>
 		<div class="flex w-[55%] justify-center p-5">
 			<Main {phaserRef} {currentActiveScene} />

@@ -1,6 +1,7 @@
 import { Scene } from "phaser";
 import { MainMenu } from "./scenes/MainMenu";
 import store from "@/lib/store";
+import { get } from "svelte/store";
 
 export class Preloader extends Scene {
     constructor() {
@@ -9,9 +10,8 @@ export class Preloader extends Scene {
 
     init() {
         this.load.on('complete', () => {
-            (store.activeScene.subscribe((scene) => {
-                this.scene.start(scene || MainMenu.key);
-            }))();
+            const activeScene = get(store.activeScene);
+            this.scene.start(activeScene || MainMenu.key);
         });
     }
 

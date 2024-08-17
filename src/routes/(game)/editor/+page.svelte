@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Game, type Scene } from 'phaser';
+	import { type Scene } from 'phaser';
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
 	import { goto } from '$app/navigation';
 	import store from '@/lib/store';
@@ -10,6 +10,7 @@
 	import { DTXFile } from '@/lib/chart/dtx';
 	import { MainMenu } from '@/game/scenes/MainMenu';
 	import SoundTab from '@/lib/components/editor/SoundTab.svelte';
+	import { get } from 'svelte/store';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = 0;
@@ -34,13 +35,12 @@
 		const t = new DTXFile(file);
 		await t.parse();
 		store.currentDtxFile.set(t);
+		store.currentSoundChip.set(t.parseSoundChips());
 	}
 
 	function exportFile() {
-		store.currentDtxFile.subscribe((dtxFile) => {
-			console.log(dtxFile);
-			dtxFile?.export();
-		})();
+		const dtxFile = get(store.currentDtxFile);
+		dtxFile?.export();
 	}
 
 	function newFile() {
@@ -82,7 +82,7 @@
 					{#if currentTab === 0}
 						<MainTab />
 					{:else if currentTab === 1}
-						<SoundTab />
+						<SoundTab/>
 					{/if}
 				</svelte:fragment>
 			</TabGroup>

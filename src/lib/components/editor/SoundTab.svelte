@@ -1,33 +1,73 @@
 <script lang="ts">
-	interface SoundChip {
-		id: number;
-		volume: number;
-		file: string;
-	}
+	import type { SoundChip } from '@/lib/chart/dtx';
+	import { FileButton } from '@skeletonlabs/skeleton';
+	import store from '@/lib/store';
 
-	let chips: SoundChip[] = [];
+	let soundChips: SoundChip[] = [];
+
+	store.currentSoundChip.subscribe((value) => (soundChips = value));
 </script>
 
 <div class="flex flex-col space-y-2">
 	<button
 		class="w-1/2 rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 		on:click={() => {
-			chips = [...chips, { id: chips.length, volume: 1, file: '' }];
+			store.currentSoundChip.set([
+				...soundChips,
+				{ label: '', id: soundChips.length, volume: 100, position: 0, file: undefined }
+			]);
 		}}>New Sound</button
 	>
 
-	<table class="w-full border-collapse">
-		<tr class="bg-white">
-			<th class="w-1/4 border border-gray-300">ID</th>
-			<th class="w-1/4 border border-gray-300">Volume</th>
-			<th class="w-1/2 border border-gray-300">File</th>
-		</tr>
-		{#each chips as chip}
+	<div class="overflow-auto" style="max-height: 80vh;">
+		<table class="w-full border-collapse">
 			<tr class="bg-white">
-				<td class="border border-gray-300 px-2 py-1">{chip.id}</td>
-				<td class="border border-gray-300 px-2 py-1">{chip.volume}</td>
-				<td class="border border-gray-300 px-2 py-1">{chip.file}</td>
+				<th class="w-[15%] border border-gray-300 text-center">Label</th>
+				<th class="w-[10%] border border-gray-300 text-center">ID</th>
+				<th class="w-[15%] border border-gray-300 text-center">Volume</th>
+				<th class="w-[15%] border border-gray-300 text-center">Position</th>
+				<th class="w-[45%] border border-gray-300 text-center">File</th>
 			</tr>
-		{/each}
-	</table>
+			{#each soundChips as chip}
+				<tr class="bg-white">
+					<td class="border border-gray-300 px-2 py-1">
+						<input type="text" bind:value={chip.label} class="w-full text-center" />
+					</td>
+					<td class="border border-gray-300 px-2 py-1">
+						<input type="number" bind:value={chip.id} class="w-full text-center" />
+					</td>
+					<td class="border border-gray-300 px-2 py-1">
+						<input
+							type="number"
+							bind:value={chip.volume}
+							min="0"
+							max="100"
+							class="w-full text-center"
+						/>
+					</td>
+					<td class="border border-gray-300 px-2 py-1">
+						<input
+							type="number"
+							bind:value={chip.position}
+							class="w-full text-center"
+						/>
+					</td>
+					<td class="border border-gray-300 px-2 py-1"
+						>{#if chip.file}
+							{chip.file.name}
+						{:else}
+							<FileButton
+								on:change={(e) => {
+									chip.file = e.target.files?.[0];
+								}}
+								name="file"
+								button="btn-sm variant-soft-primary"
+								accept="audio/*"
+							/>
+						{/if}</td
+					>
+				</tr>
+			{/each}
+		</table>
+	</div>
 </div>

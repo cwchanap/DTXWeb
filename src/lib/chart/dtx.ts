@@ -1,3 +1,10 @@
+export interface SoundChip {
+    label: string;
+    id: number;
+    volume: number;
+    position: number;
+    file: File | undefined;
+}
 
 export class DTXFile {
     level!: number;
@@ -6,6 +13,8 @@ export class DTXFile {
     bpm!: number;
     preview!: string;
     comment!: string;
+    soundChips!: SoundChip[];
+    lines!: string[];
 
     constructor(private file?: File, public difficulty?: string) { }
 
@@ -24,6 +33,22 @@ export class DTXFile {
         this.level = parseInt(remove_prefix('#DLEVEL: '));
         this.bpm = parseInt(remove_prefix('#BPM: '));
         this.preview = remove_prefix('#PREIMAGE: ');
+
+        this.lines = lines;
+    }
+
+    parseSoundChips() {
+        const wavLines = this.lines.filter((line) => line.startsWith('#WAV'));
+        this.soundChips = wavLines.map((line) => {
+            const id = line.split('#WAV')[1].split(':')[0];
+            const volumeLine = this.lines.find((l) => l.startsWith(`#VOLUME${id}: `));
+            const volume = volumeLine ? parseInt(volumeLine.split(`#VOLUME${id}: `)[1]) : 100;
+            const positionLine = this.lines.find((l) => l.startsWith(`#POSITION${id}: `));
+            const position = positionLine ? parseInt(positionLine.split(`#POSITION${id}: `)[1]) : 0;
+            const soundFile = line.split(`#WAV${id}: `)[1];
+            return { label: '', id: parseInt(id, 36), volume, position, file: undefined };
+        });
+        return this.soundChips;
     }
 
     async export(): Promise<void> {

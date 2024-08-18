@@ -10,30 +10,30 @@ export class SimFile {
     public title!: string;
     public levels: { [key: number]: DtxLevel | undefined } = {};
 
-	constructor(public files: File[]) {}
+    constructor(public files: File[]) { }
 
     public async parse() {
         // search for `def` file
         const defFile = this.files.find((file) => file.name.endsWith('.def'));
         if (!defFile) {
             throw new Error('No .def file found');
-        }        
+        }
         await this.parseHeader(defFile);
     }
 
-	public static async parseFromZip(file: string) {
-		const zip = new JSZip();
-		const zipContent = await zip.loadAsync(file);
-		const extracted = [];
+    public static async parseFromZip(file: string) {
+        const zip = new JSZip();
+        const zipContent = await zip.loadAsync(file);
+        const extracted = [];
 
-		for (const [name, zipEntry] of Object.entries(zipContent.files)) {
-			if (!zipEntry.dir) {
-				const file = await zipEntry.async('blob');
+        for (const [name, zipEntry] of Object.entries(zipContent.files)) {
+            if (!zipEntry.dir) {
+                const file = await zipEntry.async('blob');
                 extracted.push(new File([file], name));
-			}
-		}
+            }
+        }
         return new SimFile(extracted);
-	}
+    }
 
     public getZip() {
         const zip = new JSZip();
@@ -62,7 +62,7 @@ export class SimFile {
                 }
                 const dtx = new DTXFile(file, label);
                 await dtx.parse();
-                this.levels[level] = { label, file: dtx  };
+                this.levels[level] = { label, file: dtx };
             }
         });
 
@@ -86,7 +86,20 @@ export class SimFile {
         return previewFile;
     }
 
+    public getSoundPreviewFile() {
+        const preview = this.getHighestLevel().soundPreview;
+        const previewFile = this.files.find((file) => file.name === preview);
+        if (!previewFile) {
+            throw new Error('Preview file not found');
+        }
+        return previewFile;
+    }
+
     public getPreview() {
         return URL.createObjectURL(this.getPreviewFile());
+    }
+
+    public getSoundPreview() {
+        return URL.createObjectURL(this.getSoundPreviewFile());
     }
 }

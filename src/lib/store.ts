@@ -5,9 +5,11 @@ import type { SoundChip } from '@/lib/chart/dtx';
 const activeScene = writable<string | null>(null);
 const currentDtxFile = writable<DTXFile | null>(null);
 const currentSoundChip = writable<SoundChip[]>([]);
+const playingAudio = writable<HTMLAudioElement | null>(null);
 
 export default {
 	activeScene,
 	currentDtxFile,
-	currentSoundChip
+	currentSoundChip,
+	playingAudio
 };

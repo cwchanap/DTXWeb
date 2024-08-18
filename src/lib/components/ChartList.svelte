@@ -2,12 +2,13 @@
 	import { onMount } from 'svelte';
 	import { supabase } from '@/lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
-	import { PREVIEW_BUCKET_NAME } from '@/constant';
-	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
+	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
+	import { DotsVerticalOutline, PlaySolid } from 'flowbite-svelte-icons';
 	import { formatLevelDisplay } from '@/lib/utils';
 	import { popup } from '@skeletonlabs/skeleton';
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { _ } from 'svelte-i18n';
+	import ImageAudio from './ImageAudio.svelte';
 	export let pageSize: number = 12;
 	export let isBlog = false;
 
@@ -52,7 +53,7 @@
 			let query = supabase
 				.from('simfiles')
 				.select(
-					`id, title, artist, bpm, preview_url, download_url, is_published, display_id, dtx_files(level)`,
+					`id, title, artist, bpm, preview_url, sound_preview_url, download_url, is_published, display_id, dtx_files(level)`,
 					{ count: 'exact' }
 				)
 				.order('publish_date', { ascending: false })
@@ -97,6 +98,12 @@
 			.publicUrl;
 	}
 
+	function getSoundPreviewUrl(sound_preview_url: string | null) {
+		if (!sound_preview_url) return null;
+		return supabase.storage.from(SOUND_PREVIEW_BUCKET_NAME).getPublicUrl(`${sound_preview_url}`)
+			.data.publicUrl;
+	}
+
 	function handleSearchInput() {
 		clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => {
@@ -105,7 +112,7 @@
 		}, 500);
 	}
 
-	function openDeleteModal(id: number, preview_url?: string) {
+	function openDeleteModal(id: number, preview_url?: string, sound_preview_url?: string) {
 		modalStore.trigger({
 			type: 'confirm',
 			title: 'Please Confirm',
@@ -119,6 +126,18 @@
 						if (deletePreviewError) {
 							toastStore.trigger({
 								message: 'Failed to delete preview',
+								background: 'variant-filled-error',
+								timeout: 3000
+							});
+						}
+					}
+					if (sound_preview_url) {
+						const { error: deleteSoundPreviewError } = await supabase.storage
+							.from(SOUND_PREVIEW_BUCKET_NAME)
+							.remove([sound_preview_url]);
+						if (deleteSoundPreviewError) {
+							toastStore.trigger({
+								message: 'Failed to delete sound preview',
 								background: 'variant-filled-error',
 								timeout: 3000
 							});
@@ -222,7 +241,12 @@
 									</button>
 
 									<button
-										on:click={() => openDeleteModal(item.id, item.preview_url)}
+										on:click={() =>
+											openDeleteModal(
+												item.id,
+												item.preview_url,
+												item.sound_preview_url
+											)}
 										class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
 										role="menuitem"
 									>
@@ -238,11 +262,12 @@
 					<p class="mb-2 text-lg">BPM: {item.bpm}</p>
 				</div>
 				{#if item.preview_url}
-					<img
-						src={getPreviewUrl(item.preview_url)}
-						alt={`Preview for ${item.title}`}
-						class="mb-4 h-60 w-full rounded-lg object-cover"
-					/>
+					<div class="relative">
+						<ImageAudio
+							previewUrl={getPreviewUrl(item.preview_url)}
+							soundPreviewUrl={getSoundPreviewUrl(item.sound_preview_url)}
+						/>
+					</div>
 				{:else}
 					<div
 						class="mb-4 flex h-60 w-full items-center justify-center rounded-lg bg-gray-200"

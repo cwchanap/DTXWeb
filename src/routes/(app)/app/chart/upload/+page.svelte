@@ -5,9 +5,11 @@
 	import { SimFile } from '@/lib/chart/simFile';
 	import { supabase } from '@/lib/supabase';
 	import { v4 as uuidv4 } from 'uuid';
-	import { PREVIEW_BUCKET_NAME } from '@/constant';
+	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
 	import ChartDetail from '@/lib/components/ChartDetail.svelte';
+	import { PlaySolid } from 'flowbite-svelte-icons';
+	import ImageAudio from '@/lib/components/ImageAudio.svelte';
 
 	let simfile: SimFile | undefined = undefined;
 	let isCollapsed = true;
@@ -27,6 +29,7 @@
 		if (!simfile) return;
 		const dtx = simfile.getHighestLevel();
 		const previewFile = simfile.getPreviewFile();
+		const soundPreviewFile = simfile.getSoundPreviewFile();
 		const {
 			data: { user }
 		} = await supabase.auth.getUser();
@@ -38,8 +41,8 @@
 
 		// Upload preview image to Supabase storage
 		let previewUrl = '';
+		const previewHash = uuidv4();
 		if (previewFile) {
-			const previewHash = uuidv4();
 			previewUrl = `${user.id}/${previewHash}.jpg`;
 
 			const { data, error: uploadError } = await supabase.storage
@@ -54,6 +57,21 @@
 			}
 		}
 
+		let soundPreviewUrl = '';
+		if (soundPreviewFile) {
+			soundPreviewUrl = `${user.id}/${previewHash}.mp3`;
+			const { data, error: uploadError } = await supabase.storage
+				.from(SOUND_PREVIEW_BUCKET_NAME)
+				.upload(soundPreviewUrl, soundPreviewFile, {
+					contentType: 'audio/mp3'
+				});
+
+			if (uploadError) {
+				console.error('Error uploading sound preview file:', uploadError.message);
+				return;
+			}
+		}
+
 		// Insert simfile data into the database
 		const { data: simFileData, error } = await supabase
 			.from('simfiles')
@@ -61,7 +79,8 @@
 				title: simfile.title,
 				artist: dtx.artist,
 				bpm: dtx.bpm,
-				preview_url: previewUrl, // Add the preview URL to the simfile record
+				preview_url: previewUrl,
+				sound_preview_url: soundPreviewUrl,
 				user_id: user.id,
 				display_id: displayId,
 				is_published: isPublished,
@@ -130,15 +149,13 @@
 				)}
 		>
 			<svelte:fragment slot="preview">
-				<div class="col-span-8 mb-4 items-center justify-center">
-					<img
-						src={simfile.getPreview()}
-						alt="Uploaded Image"
-						class="mb-4"
-						width="250"
-						height="250"
+				<div class="col-span-2 items-center justify-center">
+					<ImageAudio
+						previewUrl={simfile.getPreview()}
+						soundPreviewUrl={simfile.getSoundPreview()}
 					/>
 				</div>
+				<div class="col-span-6"/>
 			</svelte:fragment>
 			<svelte:fragment slot="folder_upload">
 				<div class="col-span-8">

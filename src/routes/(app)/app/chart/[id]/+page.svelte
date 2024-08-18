@@ -4,8 +4,7 @@
 	import { supabase } from '@/lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { goto } from '$app/navigation';
-	import { getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
-	import { formatLevelDisplay } from '@/lib/utils';
+	import { getToastStore } from '@skeletonlabs/skeleton';
 	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
 	import type { SimFile } from '@/lib/chart/simFile';
 	import type { DTXFile } from '@/lib/chart/dtx';

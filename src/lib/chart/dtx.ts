@@ -12,6 +12,7 @@ export class DTXFile {
     title!: string;
     bpm!: number;
     preview!: string;
+    soundPreview!: string;
     comment!: string;
     soundChips!: SoundChip[];
     lines!: string[];
@@ -35,6 +36,7 @@ export class DTXFile {
         this.level = parseInt(remove_prefix('#DLEVEL: '));
         this.bpm = parseInt(remove_prefix('#BPM: '));
         this.preview = remove_prefix('#PREIMAGE: ');
+        this.soundPreview = remove_prefix('#PREVIEW: ');
 
         this.lines = lines;
     }

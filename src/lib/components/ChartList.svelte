@@ -271,6 +271,7 @@
 		{/each}
 	</div>
 	<!-- Pagination controls -->
+
 	<div class="mt-6 flex justify-center">
 		<button
 			class="mr-2 rounded bg-blue-500 px-4 py-2 text-white"
@@ -285,5 +286,13 @@
 			on:click={() => changePage(currentPage + 1)}
 			disabled={currentPage === totalPages}>{$_('blog.pagination.next')}</button
 		>
+		<input
+			type="number"
+			min="1"
+			max={totalPages}
+			bind:value={currentPage}
+			class="mx-2 w-16 rounded border p-1"
+			on:change={() => changePage(currentPage)}
+		/>
 	</div>
 {/if}

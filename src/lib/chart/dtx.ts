@@ -18,12 +18,14 @@ export class DTXFile {
 
     constructor(private file?: File, public difficulty?: string) { }
 
-    async parse() {
+    async parse(encoding: string = 'shift-jis') {
         if (!this.file) {
             console.error('File is not set');
             return;
         }
-        const content = await this.file.text();
+        const arrayBuffer = await this.file.arrayBuffer();
+        const decoder = new TextDecoder(encoding);
+        const content = decoder.decode(arrayBuffer);
         const lines = content.split('\r\n');
 
         const remove_prefix = (prefix: string) => lines.find((line) => line.startsWith(prefix))?.split(prefix)[1] || '';

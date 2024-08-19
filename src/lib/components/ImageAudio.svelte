@@ -15,12 +15,6 @@
 			isPlaying = false;
 		}
 	});
-
-	onMount(() => {
-		if (soundPreviewUrl) {
-			audio = new Audio(soundPreviewUrl);
-		}
-	});
 </script>
 
 <div class="relative">

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { PlaySolid, PauseSolid } from 'flowbite-svelte-icons';
+	import { PlaySolid, PauseSolid, DotsHorizontalOutline } from 'flowbite-svelte-icons';
 	import store from '../store';
 	import { get } from 'svelte/store';
-	import { onMount } from 'svelte';
 
 	export let previewUrl: string;
 	export let soundPreviewUrl: string | null;
 	let isPlaying = false;
+	let isLoading = false;
 
 	let audio: HTMLAudioElement | null = null;
 
@@ -24,12 +24,13 @@
 	{#if soundPreviewUrl}
 		<button
 			class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
-			on:click={() => {
+			on:click={async () => {
 				if (isPlaying) {
 					audio?.pause();
 					isPlaying = false;
 					store.playingAudio.set(null);
 				} else {
+					isLoading = true;
 					const playingAudio = get(store.playingAudio);
 					if (playingAudio) {
 						playingAudio.pause();
@@ -41,8 +42,9 @@
 						audio.remove();
 					}
 					audio = new Audio(soundPreviewUrl);
-					audio.play();
+					await audio.play();
 					isPlaying = true;
+					isLoading = false;
 					store.playingAudio.set(audio);
 					audio.addEventListener('ended', () => {
 						store.playingAudio.set(null);
@@ -50,9 +52,12 @@
 					});
 				}
 			}}
+			disabled={isLoading}
 		>
 			{#if isPlaying}
 				<PauseSolid size="xl" />
+			{:else if isLoading}
+				<DotsHorizontalOutline size="xl" />
 			{:else}
 				<PlaySolid size="xl" />
 			{/if}

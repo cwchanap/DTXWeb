@@ -1,0 +1,3 @@
+supabase
+click
+python-dotenv

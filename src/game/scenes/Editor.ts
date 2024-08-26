@@ -45,7 +45,7 @@ export class Editor extends Scene {
 	private isDragging = false;
 	private notes: Note[] = [];
 
-	constructor(private measureCount: number = 9) {
+	constructor(private measureCount: number = 10) {
 		super({ key: Editor.key });
 	}
 
@@ -214,11 +214,15 @@ export class Editor extends Scene {
 			this.notes = notes;
 			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
 			if (maxMeasure > this.measureCount) {
-				this.measureCount = maxMeasure;
+				this.measureCount = maxMeasure + 1;
 				this.restart({ measureCount: this.measureCount });
 			}
 		});
 
+		EventBus.on(EventType.MEASURE_GOTO, (measure: number) => {
+			const y =  measure * this.cellHeight * this.cellsPerMeasure;
+			this.cameras.main.scrollY = -y - this.bottomMargin;
+		});
 	}
 
 	drawNotes() {

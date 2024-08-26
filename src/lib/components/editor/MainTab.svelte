@@ -6,12 +6,13 @@
 	import { DTXFile } from '@/lib/chart/dtx';
 
 	let dtxFile: DTXFile | null;
-	let measureCount = 9;
+	let measureCount = 10;
 	let title = '';
 	let artist = '';
 	let comment = '';
 	let bpm = 0;
 	let level = 0;
+	let gotoMeasure = 0;
 
 	$: {
 		if (dtxFile) {
@@ -26,6 +27,10 @@
 
 	function handleMeasureChange() {
 		EventBus.emit(EventType.MEASURE_UPDATE, measureCount);
+	}
+
+	function handleGotoMeasure() {
+		EventBus.emit(EventType.MEASURE_GOTO, gotoMeasure);
 	}
 
 	onMount(() => {
@@ -89,5 +94,18 @@
 			bind:value={measureCount}
 			on:change={handleMeasureChange}
 		/>
+	</div>
+	<div class="flex items-center space-x-2">
+		<label class="w-1/3 text-gray-700" for="measure-input">Go to Measure:</label>
+		<input
+			type="number"
+			class="rounded-md border border-gray-300 px-2 py-1"
+			min="0"
+			max="499"
+			bind:value={gotoMeasure}
+		/>
+		<button class="rounded-md border border-gray-300 px-2 py-1" on:click={handleGotoMeasure}
+			>Go</button
+		>
 	</div>
 </div>

@@ -43,7 +43,10 @@ export class Editor extends Scene {
 
 	private isEditing = false;
 	private isDragging = false;
+	private isPreviewing = false;
 	private notes: Note[] = [];
+	private bpm: number = 120;
+	private previewTween: Phaser.Tweens.Tween | null = null;
 
 	constructor(private measureCount: number = 10) {
 		super({ key: Editor.key });
@@ -131,6 +134,7 @@ export class Editor extends Scene {
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
+			if (this.isPreviewing || !this.isEditing) return;
 			const x = pointer.x - this.offsetX;	
 			const y = pointer.worldY - this.offsetY;
 
@@ -143,8 +147,7 @@ export class Editor extends Scene {
 				laneIndex >= 0 &&
 				laneIndex < this.laneConfigs.length &&
 				cellIndex >= 0 &&
-				cellIndex < this.measureCount * this.cellsPerMeasure &&
-				this.isEditing
+				cellIndex < this.measureCount * this.cellsPerMeasure
 			) {
 				// Draw the note in the clicked cell
 				this.drawNote(laneIndex, cellIndex, '00');
@@ -223,6 +226,17 @@ export class Editor extends Scene {
 			const y =  measure * this.cellHeight * this.cellsPerMeasure;
 			this.cameras.main.scrollY = -y - this.bottomMargin;
 		});
+		
+		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
+			this.isPreviewing = true;
+			this.bpm = bpm;
+			this.startPreviewPan();
+		});
+
+		EventBus.on(EventType.STOP_PREVIEW, () => {
+			this.isPreviewing = false;
+			this.stopPreviewPan();
+		});
 	}
 
 	drawNotes() {
@@ -282,6 +296,32 @@ export class Editor extends Scene {
 			});
 			text.setOrigin(0.5, 0.5)
 			text.setName(noteKey);
+		}
+	}
+
+	startPreviewPan() {
+		this.stopPreviewPan();
+
+		const duration = (60 * 4 / this.bpm) * 1000; // Convert to milliseconds
+		const totalDistance = this.measureCount * this.cellHeight * this.cellsPerMeasure;
+
+		this.previewTween = this.tweens.add({
+			targets: this.cameras.main,
+			scrollY: -totalDistance,
+			duration: duration * this.measureCount,
+			ease: 'Linear',
+			repeat: -1,
+			yoyo: false,
+			onComplete: () => {
+				this.cameras.main.scrollY = 0;
+			}
+		});
+	}
+
+	stopPreviewPan() {
+		if (this.previewTween) {
+			this.previewTween.stop();
+			this.previewTween = null;
 		}
 	}
 

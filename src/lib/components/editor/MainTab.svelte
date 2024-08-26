@@ -4,15 +4,17 @@
 	import { onMount } from 'svelte';
 	import store from '@/lib/store';
 	import { DTXFile } from '@/lib/chart/dtx';
+	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
 
 	let dtxFile: DTXFile | null;
 	let measureCount = 10;
 	let title = '';
 	let artist = '';
 	let comment = '';
-	let bpm = 0;
+	let bpm = 120;
 	let level = 0;
 	let gotoMeasure = 0;
+	let isPreviewing = false;
 
 	$: {
 		if (dtxFile) {
@@ -31,6 +33,15 @@
 
 	function handleGotoMeasure() {
 		EventBus.emit(EventType.MEASURE_GOTO, gotoMeasure);
+	}
+
+	function handlePlay() {
+		isPreviewing = !isPreviewing;
+		if (isPreviewing) {
+			EventBus.emit(EventType.START_PREVIEW, bpm);
+		} else {
+			EventBus.emit(EventType.STOP_PREVIEW);
+		}
 	}
 
 	onMount(() => {
@@ -106,6 +117,12 @@
 		/>
 		<button class="rounded-md border border-gray-300 px-2 py-1" on:click={handleGotoMeasure}
 			>Go</button
+		>
+	</div>
+	<div class="flex items-center space-x-2">
+		<label class="w-1/3 text-gray-700" for="measure-input">Preview: </label>
+		<button class="rounded-md border border-gray-300 px-2 py-1" on:click={handlePlay}
+			>{#if isPreviewing}<StopSolid />{:else}<PlaySolid />{/if}</button
 		>
 	</div>
 </div>

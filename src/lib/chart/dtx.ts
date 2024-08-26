@@ -1,3 +1,6 @@
+import { EventBus } from "@/game/EventBus";
+import EventType from "@/game/EventType";
+
 export interface SoundChip {
     label: string;
     id: number;
@@ -53,6 +56,22 @@ export class DTXFile {
             return { label: '', id: parseInt(id, 36), volume, position, file: undefined };
         });
         return this.soundChips;
+    }
+
+    parseNotes() {
+        const noteLines = this.lines.filter(line => /^#\d+/.test(line));
+        if (noteLines.length > 0) {
+            const notes = noteLines.map(line => {
+                const [header, pattern] = line.split(': ', 2);
+                const measure = parseInt(header.slice(1, 4));
+                const laneID = header.slice(4, 6);
+                return { measure, laneID, pattern };
+            });
+            EventBus.emit(EventType.NOTE_IMPORT, notes);
+            return notes;
+        } else {
+            console.log('No note line found.');
+        }
     }
 
     async export(): Promise<void> {

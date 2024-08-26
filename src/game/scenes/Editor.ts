@@ -5,6 +5,13 @@ import EventType from '../EventType';
 interface LaneConfig {
 	name: string;
 	noteColor: number;
+	id: string;
+}
+
+interface Note {
+	measure: number;
+	laneID: string;
+	pattern: string;
 }
 
 interface Data {
@@ -13,28 +20,30 @@ interface Data {
 
 export class Editor extends Scene {
 	private laneConfigs: LaneConfig[] = [
-		{ name: 'BPM', noteColor: 0x000000 },
-		{ name: 'LC', noteColor: 0xa20814 },
-		{ name: 'HH', noteColor: 0x0d1cde },
-		{ name: 'LP', noteColor: 0xde0db8 },
-		{ name: 'LB', noteColor: 0x567dcb },
-		{ name: 'SN', noteColor: 0xefec1b },
-		{ name: 'HT', noteColor: 0x45ef1b },
-		{ name: 'BD', noteColor: 0x567dcb },
-		{ name: 'LT', noteColor: 0xef1b2b },
-		{ name: 'FT', noteColor: 0xfa7e0a },
-		{ name: 'CY', noteColor: 0x1424c4 },
-		{ name: 'RD', noteColor: 0x14bfc4 }
+		{ name: 'BPM', noteColor: 0x000000, id: '08' },
+		{ name: 'LC', noteColor: 0xa20814, id: '1A' },
+		{ name: 'HH', noteColor: 0x0d1cde, id: '18' },
+		{ name: 'LP', noteColor: 0xde0db8, id: '1B' },
+		{ name: 'LB', noteColor: 0x567dcb, id: '1C' },
+		{ name: 'SN', noteColor: 0xefec1b, id: '12' },
+		{ name: 'HT', noteColor: 0x45ef1b, id: '14' },
+		{ name: 'BD', noteColor: 0x567dcb, id: '13' },
+		{ name: 'LT', noteColor: 0xef1b2b, id: '15' },
+		{ name: 'FT', noteColor: 0xfa7e0a, id: '17' },
+		{ name: 'CY', noteColor: 0x1424c4, id: '16' },
+		{ name: 'RD', noteColor: 0x14bfc4, id: '19' }
 	];
 
 	private cellsPerMeasure = 16;
 	private cellWidth = 50;
 	private cellHeight = 25;
 	private bottomMargin = 40;
+	private cellMargin = 2;
 	public static key = 'Editor';
 
 	private isEditing = false;
 	private isDragging = false;
+	private notes: Note[] = [];
 
 	constructor(private measureCount: number = 9) {
 		super({ key: Editor.key });
@@ -48,38 +57,44 @@ export class Editor extends Scene {
 		// Preload assets if any
 	}
 
+	get totalWidth() {
+		return this.laneConfigs.reduce((acc) => acc + this.cellWidth, 0);
+	}
+
+	get offsetX() {
+		return (this.scale.width - this.totalWidth) / 2;
+	}
+
+	get offsetY() {
+		return this.scale.height - this.bottomMargin;
+	}
+
 	create() {
 		// Constants for grid dimensions
-		const cellMargin = 2; // Margin between cells
 		const measureHeight = this.cellHeight * this.cellsPerMeasure;
 		const laneHeight = this.measureCount * measureHeight;
-
-		// Calculate total width based on lane configurations
-		const totalWidth = this.laneConfigs.reduce((acc) => acc + this.cellWidth, 0);
-		const offsetX = (this.scale.width - totalWidth) / 2;
-		const offsetY = this.scale.height - this.bottomMargin; // Adjusted for indicators
 
 		const graphics = this.add.graphics();
 		graphics.lineStyle(1, 0x888888, 1); // Light grey for cells
 		graphics.lineStyle(2, 0xffffff, 1); // White for measure lines
 
 		// Draw vertical lanes
-		let currentX = offsetX;
+		let currentX = this.offsetX;
 		this.laneConfigs.forEach((laneConfig, index) => {
-			graphics.moveTo(currentX, offsetY);
-			graphics.lineTo(currentX, offsetY - laneHeight);
+			graphics.moveTo(currentX, this.offsetY);
+			graphics.lineTo(currentX, this.offsetY - laneHeight);
 			currentX += this.cellWidth;
 		});
 
 		// Draw the last vertical line
-		graphics.moveTo(currentX, offsetY);
-		graphics.lineTo(currentX, offsetY - laneHeight);
+		graphics.moveTo(currentX, this.offsetY);
+		graphics.lineTo(currentX, this.offsetY - laneHeight);
 
 		// Lane indicators
-		currentX = offsetX;
+		currentX = this.offsetX;
 		this.laneConfigs.forEach((laneConfig, index) => {
 			this.add
-				.text(currentX + this.cellWidth / 2, offsetY + 20, laneConfig.name, {
+				.text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
 					fontSize: '16px',
 					color: '#ffffff'
 				})
@@ -89,17 +104,17 @@ export class Editor extends Scene {
 
 		// Draw horizontal lines for cells and measures
 		for (let j = 0; j <= this.measureCount * this.cellsPerMeasure; j++) {
-			const y = offsetY - j * this.cellHeight;
+			const y = this.offsetY - j * this.cellHeight;
 			const isMeasureLine = j % this.cellsPerMeasure === 0;
-			graphics.lineStyle(isMeasureLine ? 6 : 2, isMeasureLine ? 0xffffff : 0x888888, 1); // Thicker border for measures
-			graphics.moveTo(offsetX, y);
-			graphics.lineTo(offsetX + totalWidth, y); // Ensure the line extends the full width
+			graphics.lineStyle(isMeasureLine ? 5 : 2, isMeasureLine ? 0xffffff : 0x888888, isMeasureLine ? 1 : 0.5); // Thicker border for measures
+			graphics.moveTo(this.offsetX, y);
+			graphics.lineTo(this.offsetX + this.totalWidth, y); // Ensure the line extends the full width
 
 			if (isMeasureLine && j < this.measureCount * this.cellsPerMeasure) {
-				const measureNumber = j / this.cellsPerMeasure + 1;
+				const measureNumber = j / this.cellsPerMeasure;
 				this.add
 					.text(
-						offsetX + totalWidth / 2,
+						this.offsetX + this.totalWidth / 2,
 						y - (this.cellsPerMeasure * this.cellHeight) / 2,
 						`${measureNumber}`,
 						{
@@ -116,8 +131,8 @@ export class Editor extends Scene {
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
-			const x = pointer.x - offsetX;
-			const y = pointer.y - offsetY;
+			const x = pointer.x - this.offsetX;	
+			const y = pointer.worldY - this.offsetY;
 
 			// Calculate the clicked cell
 			const laneIndex = Math.floor(x / this.cellWidth);
@@ -132,7 +147,12 @@ export class Editor extends Scene {
 				this.isEditing
 			) {
 				// Draw the note in the clicked cell
-				this.drawNote(laneIndex, cellIndex, cellMargin, offsetX, offsetY);
+				this.drawNote(laneIndex, cellIndex, '00');
+				this.notes.push({
+					measure: cellIndex / this.cellsPerMeasure,
+					laneID: this.laneConfigs[laneIndex].id,
+					pattern: '00'
+				});
 			}
 		});
 
@@ -148,6 +168,7 @@ export class Editor extends Scene {
 		// Enable drag scrolling
 		let startY = 0;
 		let startScrollY = 0;
+		this.drawNotes();
 
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 			if (this.isEditing) return;
@@ -189,37 +210,74 @@ export class Editor extends Scene {
 			this.measureCount = measureCount;
 			this.restart({ measureCount });
 		});
+		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[]) => {
+			this.notes = notes;
+			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
+			if (maxMeasure > this.measureCount) {
+				this.measureCount = maxMeasure;
+				this.restart({ measureCount: this.measureCount });
+			}
+		});
+
 	}
+
+	drawNotes() {
+		this.notes.forEach((note) => {
+			const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
+
+			if (laneIndex === -1) return;
+
+			const patterns = note.pattern.match(/.{1,2}/g);
+			if (!patterns) return;
+			const patternCount = patterns.length;
+
+			patterns?.forEach((pattern, index) => {
+				if (pattern === '00') return;
+				const cellIndex = note.measure * this.cellsPerMeasure + index * 16 / patternCount;
+				
+				this.drawNote(laneIndex, cellIndex, pattern);
+			});
+		});
+	}
+		
 
 	drawNote(
 		laneIndex: number,
 		cellIndex: number,
-		cellMargin: number,
-		offsetX: number,
-		offsetY: number
+		noteId: string
 	) {
-		const x = offsetX + this.cellWidth * laneIndex + cellMargin;
+		const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
 		const y =
-			offsetY -
-			cellIndex * this.cellHeight -
-			cellMargin +
-			this.cameras.main.scrollY -
+			this.offsetY -
+			cellIndex * this.cellHeight +
+			this.cellMargin -
 			this.cellHeight;
-		const width = this.cellWidth - cellMargin * 2;
-		const height = this.cellHeight - cellMargin * 2;
+		const width = this.cellWidth - this.cellMargin * 2;
+		const height = this.cellHeight - this.cellMargin * 2;
 
 		const noteKey = `note-${laneIndex}-${cellIndex}`;
 		const existingNote = this.children.getByName(noteKey);
 
 		if (existingNote) {
 			// If the note already exists, remove it
-			existingNote.destroy();
+			this.children.getAll('name', noteKey).forEach((note) => {
+				note.destroy();
+			});
 		} else {
 			// Otherwise, create a new note
 			const graphics = this.add.graphics();
 			graphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1); // Red color for the note
 			graphics.fillRect(x, y, width, height);
 			graphics.setName(noteKey);
+
+			// draw text with note Id at the center of the note
+			const text =this.add.text(x + width / 2, y + height / 2, noteId, {
+				fontSize: '16px',
+				color: '#ffffff',
+				align: 'center',
+			});
+			text.setOrigin(0.5, 0.5)
+			text.setName(noteKey);
 		}
 	}
 

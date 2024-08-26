@@ -33,8 +33,8 @@
 					<td class="border border-gray-300 px-2 py-1">
 						<input type="text" bind:value={chip.label} class="w-full text-center" />
 					</td>
-					<td class="border border-gray-300 px-2 py-1">
-						<input type="number" bind:value={chip.id} class="w-full text-center" />
+					<td class="border border-gray-300 px-2 py-1 text-center">
+						<span>{chip.id.toString(36).toUpperCase().padStart(2, '0')}</span>
 					</td>
 					<td class="border border-gray-300 px-2 py-1">
 						<input

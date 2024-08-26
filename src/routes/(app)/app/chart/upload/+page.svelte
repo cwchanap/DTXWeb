@@ -119,7 +119,6 @@
 	function onFileUpload(newSimfile: SimFile, newHighestDtx: DTXFile) {
 		simfile = newSimfile;
 		highestDtx = newHighestDtx;
-		console.log(simfile, highestDtx);
 	}
 </script>
 

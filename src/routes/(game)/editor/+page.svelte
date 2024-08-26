@@ -34,6 +34,7 @@
 		const file = (event.target as HTMLInputElement).files?.[0];
 		const t = new DTXFile(file);
 		await t.parse();
+		t.parseNotes();
 		store.currentDtxFile.set(t);
 		store.currentSoundChip.set(t.parseSoundChips());
 	}

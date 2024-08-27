@@ -6,7 +6,7 @@ export interface SoundChip {
     id: number;
     volume: number;
     position: number;
-    file: File | undefined;
+    file: string |undefined;
 }
 
 export class DTXFile {
@@ -53,7 +53,7 @@ export class DTXFile {
             const positionLine = this.lines.find((l) => l.startsWith(`#POSITION${id}: `));
             const position = positionLine ? parseInt(positionLine.split(`#POSITION${id}: `)[1]) : 0;
             const soundFile = line.split(`#WAV${id}: `)[1];
-            return { label: '', id: parseInt(id, 36), volume, position, file: undefined };
+            return { label: '', id: parseInt(id, 36), volume, position, file: soundFile };
         });
         return this.soundChips;
     }

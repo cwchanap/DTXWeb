@@ -8,7 +8,6 @@
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
 	import ChartDetail from '@/lib/components/ChartDetail.svelte';
-	import { PlaySolid } from 'flowbite-svelte-icons';
 	import ImageAudio from '@/lib/components/ImageAudio.svelte';
 
 	let simfile: SimFile | undefined = undefined;

@@ -3,6 +3,7 @@
 	import { SimFile } from '../chart/simFile';
 
 	export let large = false;
+	export let hidden = false;
 	let simfile: SimFile;
 	let dropzoneActive = false;
 	let highestDtx: DTXFile;
@@ -48,6 +49,7 @@
 	}
 </script>
 
+
 {#if large}
 	<div
 		class="dropzone flex flex-1 items-center justify-center {dropzoneActive ? 'active' : ''}"
@@ -77,7 +79,7 @@
 		type="file"
 		webkitdirectory
 		directory
-		class="mb-4 w-full rounded border p-2"
+		class="mb-4 w-full rounded border p-2 {hidden ? 'hidden' : ''}"
 		on:change={handleFileInput}
 	/>
 {/if}

@@ -6,11 +6,13 @@
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy, onMount } from 'svelte';
 	import MainTab from '@/lib/components/editor/MainTab.svelte';
-	import { popup, FileButton, TabGroup, Tab } from '@skeletonlabs/skeleton';
+	import { popup, TabGroup, Tab } from '@skeletonlabs/skeleton';
 	import { DTXFile } from '@/lib/chart/dtx';
 	import { MainMenu } from '@/game/scenes/MainMenu';
 	import SoundTab from '@/lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
+	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
+	import type { SimFile } from '@/lib/chart/simFile';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = 0;
@@ -30,15 +32,6 @@
 		unsubscribe();
 	});
 
-	async function importFile(event: Event) {
-		const file = (event.target as HTMLInputElement).files?.[0];
-		const t = new DTXFile(file);
-		await t.parse();
-		t.parseNotes();
-		store.currentDtxFile.set(t);
-		store.currentSoundChip.set(t.parseSoundChips());
-	}
-
 	function exportFile() {
 		const dtxFile = get(store.currentDtxFile);
 		dtxFile?.export();
@@ -46,6 +39,14 @@
 
 	function newFile() {
 		store.currentDtxFile.set(new DTXFile());
+	}
+
+	async function onFileUpload(simfile: SimFile, highestDtx: DTXFile) {
+		await highestDtx.parse();
+		highestDtx.parseNotes();
+		store.currentDtxFile.set(highestDtx);
+		store.currentSimfile.set(simfile);
+		store.currentSoundChip.set(highestDtx.parseSoundChips());
 	}
 
 	onMount(() => {
@@ -57,10 +58,12 @@
 <div data-popup="file-menu">
 	<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
 		<button class="hover:bg-gray-100" on:click={newFile}>New</button>
-		<FileButton name="files" button="hover:bg-gray-100" accept=".dtx" on:change={importFile}
-			>Open</FileButton
+		<button
+			class="hover:bg-gray-100"
+			on:click={() => document.getElementById('folder_upload')?.click()}>Import</button
 		>
 		<button class="hover:bg-gray-100" on:click={exportFile}>Export</button>
+		<ChartFolderUpload {onFileUpload} hidden={true} />
 	</div>
 </div>
 
@@ -77,13 +80,17 @@
 	<div class="row-span-1 flex flex-row">
 		<div class="w-[25%] pt-4">
 			<TabGroup border="">
-				<Tab class="hover:bg-gray-100 w-1/4" bind:group={currentTab} name="main" value="{0}">Main</Tab>
-				<Tab class="hover:bg-gray-100 w-1/4" bind:group={currentTab} name="sound" value="{1}">Sound</Tab>
+				<Tab class="w-1/4 hover:bg-gray-100" bind:group={currentTab} name="main" value={0}
+					>Main</Tab
+				>
+				<Tab class="w-1/4 hover:bg-gray-100" bind:group={currentTab} name="sound" value={1}
+					>Sound</Tab
+				>
 				<svelte:fragment slot="panel">
 					{#if currentTab === 0}
 						<MainTab />
 					{:else if currentTab === 1}
-						<SoundTab/>
+						<SoundTab />
 					{/if}
 				</svelte:fragment>
 			</TabGroup>

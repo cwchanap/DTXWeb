@@ -1,6 +1,8 @@
 import { Scene, Input } from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
+import { get } from 'svelte/store';
+import store from '@/lib/store';
 
 interface LaneConfig {
 	name: string;
@@ -31,7 +33,8 @@ export class Editor extends Scene {
 		{ name: 'LT', noteColor: 0xef1b2b, id: '15' },
 		{ name: 'FT', noteColor: 0xfa7e0a, id: '17' },
 		{ name: 'CY', noteColor: 0x1424c4, id: '16' },
-		{ name: 'RD', noteColor: 0x14bfc4, id: '19' }
+		{ name: 'RD', noteColor: 0x14bfc4, id: '19' },
+		{ name: 'BGM', noteColor: 0x222222, id: '01' }
 	];
 
 	private cellsPerMeasure = 16;
@@ -44,9 +47,10 @@ export class Editor extends Scene {
 	private isEditing = false;
 	private isDragging = false;
 	private isPreviewing = false;
-	private notes: Note[] = [];
-	private bpm: number = 120;
+	private notes: Record<string, Note[]> = {};
 	private previewTween: Phaser.Tweens.Tween | null = null;
+	private audioTimeouts: Phaser.Time.TimerEvent[] = [];
+	private soundChips: Record<string, Phaser.Sound.WebAudioSound> = {};
 
 	constructor(private measureCount: number = 10) {
 		super({ key: Editor.key });
@@ -58,6 +62,27 @@ export class Editor extends Scene {
 
 	preload() {
 		// Preload assets if any
+
+		// Load the BGM audio file
+		const simfile = get(store.currentSimfile);
+
+		// Load sound chip samples
+		const soundChips = get(store.currentSoundChip);
+		if (soundChips) {
+			Object.entries(soundChips).forEach(([key, soundChip]) => {
+				if (!soundChip.file) return;
+				const soundFile = simfile?.files.find((f) => f.name === soundChip.file);
+				if (!soundFile) return;
+
+				if (soundChip.file.endsWith('.xa')) {
+					// For XA files, we'll load them as arraybuffer and decode later
+					this.load.binary(`soundchip_${soundChip.id}`, URL.createObjectURL(soundFile));
+				} else {
+					// For other formats, load as usual
+					this.load.audio(`soundchip_${soundChip.id}`, URL.createObjectURL(soundFile));
+				}
+			});
+		}
 	}
 
 	get totalWidth() {
@@ -135,7 +160,7 @@ export class Editor extends Scene {
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
 			if (this.isPreviewing || !this.isEditing) return;
-			const x = pointer.x - this.offsetX;	
+			const x = pointer.x - this.offsetX;
 			const y = pointer.worldY - this.offsetY;
 
 			// Calculate the clicked cell
@@ -151,8 +176,12 @@ export class Editor extends Scene {
 			) {
 				// Draw the note in the clicked cell
 				this.drawNote(laneIndex, cellIndex, '00');
-				this.notes.push({
-					measure: cellIndex / this.cellsPerMeasure,
+				const measure = Math.floor(cellIndex / this.cellsPerMeasure);
+				if (!(measure in this.notes)) {
+					this.notes[measure] = [];
+				}
+				this.notes[measure].push({
+					measure: measure,
 					laneID: this.laneConfigs[laneIndex].id,
 					pattern: '00'
 				});
@@ -172,6 +201,13 @@ export class Editor extends Scene {
 		let startY = 0;
 		let startScrollY = 0;
 		this.drawNotes();
+
+		const soundChips = get(store.currentSoundChip);
+		if (soundChips) {
+			Object.keys(soundChips).forEach(key => {
+				this.soundChips[key] = this.sound.add(`soundchip_${key}`) as Phaser.Sound.WebAudioSound;
+			});
+		}
 
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 			if (this.isEditing) return;
@@ -214,7 +250,12 @@ export class Editor extends Scene {
 			this.restart({ measureCount });
 		});
 		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[]) => {
-			this.notes = notes;
+			notes.forEach((note) => {
+				if (!(note.measure in this.notes)) {
+					this.notes[note.measure] = [];
+				}
+				this.notes[note.measure].push(note);
+			});
 			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
 			if (maxMeasure > this.measureCount) {
 				this.measureCount = maxMeasure + 1;
@@ -223,14 +264,13 @@ export class Editor extends Scene {
 		});
 
 		EventBus.on(EventType.MEASURE_GOTO, (measure: number) => {
-			const y =  measure * this.cellHeight * this.cellsPerMeasure;
+			const y = measure * this.cellHeight * this.cellsPerMeasure;
 			this.cameras.main.scrollY = -y - this.bottomMargin;
 		});
-		
+
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
 			this.isPreviewing = true;
-			this.bpm = bpm;
-			this.startPreviewPan();
+			this.startPreviewPan(bpm);
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
@@ -240,24 +280,26 @@ export class Editor extends Scene {
 	}
 
 	drawNotes() {
-		this.notes.forEach((note) => {
-			const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
+		for (const [measure, notes] of Object.entries(this.notes)) {
+			notes.forEach((note) => {
+				const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
 
-			if (laneIndex === -1) return;
+				if (laneIndex === -1) return;
 
-			const patterns = note.pattern.match(/.{1,2}/g);
-			if (!patterns) return;
-			const patternCount = patterns.length;
+				const patterns = note.pattern.match(/.{1,2}/g);
+				if (!patterns) return;
+				const patternCount = patterns.length;
 
-			patterns?.forEach((pattern, index) => {
-				if (pattern === '00') return;
-				const cellIndex = note.measure * this.cellsPerMeasure + index * 16 / patternCount;
-				
-				this.drawNote(laneIndex, cellIndex, pattern);
+				patterns?.forEach((pattern, index) => {
+					if (pattern === '00') return;
+					const cellIndex = note.measure * this.cellsPerMeasure + index * 16 / patternCount;
+
+					this.drawNote(laneIndex, cellIndex, pattern);
+				});
 			});
-		});
+		}
 	}
-		
+
 
 	drawNote(
 		laneIndex: number,
@@ -289,7 +331,7 @@ export class Editor extends Scene {
 			graphics.setName(noteKey);
 
 			// draw text with note Id at the center of the note
-			const text =this.add.text(x + width / 2, y + height / 2, noteId, {
+			const text = this.add.text(x + width / 2, y + height / 2, noteId, {
 				fontSize: '16px',
 				color: '#ffffff',
 				align: 'center',
@@ -299,10 +341,13 @@ export class Editor extends Scene {
 		}
 	}
 
-	startPreviewPan() {
+	startPreviewPan(bpm: number) {
+		const simfile = get(store.currentSimfile);
+		const bgm = simfile?.files.find((f) => f.name === 'bgm.ogg');
+		const soundChips = get(store.currentSoundChip);
 		this.stopPreviewPan();
 
-		const duration = (60 * 4 / this.bpm) * 1000; // Convert to milliseconds
+		const duration = (60 * 4 / bpm) * 1000; // Convert to milliseconds
 		const totalDistance = this.measureCount * this.cellHeight * this.cellsPerMeasure;
 
 		this.previewTween = this.tweens.add({
@@ -314,7 +359,7 @@ export class Editor extends Scene {
 			yoyo: false,
 			onComplete: () => {
 				this.cameras.main.scrollY = 0;
-			}
+			},
 		});
 	}
 
@@ -331,6 +376,10 @@ export class Editor extends Scene {
 
 	restart(data: Data = {}) {
 		EventBus.off(EventType.MEASURE_UPDATE);
+		EventBus.off(EventType.NOTE_IMPORT);
+		EventBus.off(EventType.MEASURE_GOTO);
+		EventBus.off(EventType.START_PREVIEW);
+		EventBus.off(EventType.STOP_PREVIEW);
 		this.input.off('pointerdown');
 		this.input.off('pointermove');
 		this.input.off('pointerup');

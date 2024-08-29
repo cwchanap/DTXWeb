@@ -1,8 +1,9 @@
-import { Scene, Input } from 'phaser';
+import { Scene, Input, Sound } from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '@/lib/store';
+import { XAaudioContext } from '@/lib/utils';
 
 interface LaneConfig {
 	name: string;
@@ -50,7 +51,7 @@ export class Editor extends Scene {
 	private notes: Record<string, Note[]> = {};
 	private previewTween: Phaser.Tweens.Tween | null = null;
 	private audioTimeouts: Phaser.Time.TimerEvent[] = [];
-	private soundChips: Record<string, Phaser.Sound.WebAudioSound> = {};
+	private soundChips: Record<string, Sound.WebAudioSound> = {};
 
 	constructor(private measureCount: number = 10) {
 		super({ key: Editor.key });
@@ -74,13 +75,20 @@ export class Editor extends Scene {
 				const soundFile = simfile?.files.find((f) => f.name === soundChip.file);
 				if (!soundFile) return;
 
+				const cacheKey = `soundchip_${soundChip.file}`;
+
 				if (soundChip.file.endsWith('.xa')) {
-					// For XA files, we'll load them as arraybuffer and decode later
-					this.load.binary(`soundchip_${soundChip.id}`, URL.createObjectURL(soundFile));
+					// For XA files, we'll load them with custom audio context
+					this.load.audio({
+						key: cacheKey,
+						url: [URL.createObjectURL(soundFile)],
+						context: XAaudioContext
+					});
 				} else {
 					// For other formats, load as usual
-					this.load.audio(`soundchip_${soundChip.id}`, URL.createObjectURL(soundFile));
+					this.load.audio(cacheKey, URL.createObjectURL(soundFile));
 				}
+				console.log("Loaded sound chip", cacheKey);
 			});
 		}
 	}
@@ -98,6 +106,7 @@ export class Editor extends Scene {
 	}
 
 	create() {
+		const audioContext = new AudioContext();
 		// Constants for grid dimensions
 		const measureHeight = this.cellHeight * this.cellsPerMeasure;
 		const laneHeight = this.measureCount * measureHeight;
@@ -203,9 +212,13 @@ export class Editor extends Scene {
 		this.drawNotes();
 
 		const soundChips = get(store.currentSoundChip);
+		const simfile = get(store.currentSimfile);
 		if (soundChips) {
-			Object.keys(soundChips).forEach(key => {
-				this.soundChips[key] = this.sound.add(`soundchip_${key}`) as Phaser.Sound.WebAudioSound;
+			Object.entries(soundChips).forEach(([key, soundChip]) => {
+				const cacheKey = `soundchip_${soundChip.file}`;
+				const soundFile = simfile?.files.find((f) => f.name === soundChip.file);
+				if (!soundFile) return;
+				this.soundChips[key] = this.sound.add(cacheKey) as Sound.WebAudioSound;
 			});
 		}
 

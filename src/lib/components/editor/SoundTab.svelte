@@ -3,19 +3,29 @@
 	import { FileButton } from '@skeletonlabs/skeleton';
 	import store from '@/lib/store';
 	import type { SimFile } from '@/lib/chart/simFile';
+	import { XAaudioContext } from '@/lib/utils';
 
 	let soundChips: SoundChip[] = [];
-    let simfile: SimFile | null = null;
+	let simfile: SimFile | null = null;
+	let audioContext: AudioContext = new window.AudioContext();
 
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
-    store.currentSimfile.subscribe((value) => (simfile = value));
+	store.currentSimfile.subscribe((value) => (simfile = value));
 
-    function createAudio(file: string) {
-        const soundFile = simfile?.files.find((f) => f.name === file);
-        if (soundFile) {
-            return new Audio(URL.createObjectURL(soundFile));
-        }
-    }
+	async function playAudio(file: string) {
+		const soundFile = simfile?.files.find((f) => f.name === file);
+		if (soundFile) {
+			if (soundFile.name.endsWith('.xa')) {
+				const source = XAaudioContext.createBufferSource();
+				source.buffer = await XAaudioContext.decodeAudioData(await soundFile.arrayBuffer());
+				source.connect(XAaudioContext.destination);
+				source.start();
+			} else {
+				const audio = new Audio(URL.createObjectURL(soundFile));
+				audio.play();
+			}
+		}
+	}
 </script>
 
 <div class="flex flex-col space-y-2">
@@ -68,8 +78,7 @@
 							<button
 								on:click={() => {
 									if (chip.file) {
-                                        const audio = createAudio(chip.file);
-                                        audio?.play();
+										playAudio(chip.file);
 									}
 								}}
 							>

@@ -3,11 +3,10 @@
 	import { FileButton } from '@skeletonlabs/skeleton';
 	import store from '@/lib/store';
 	import type { SimFile } from '@/lib/chart/simFile';
-	import { XAaudioContext } from '@/lib/utils';
+	import { XAaudioContext } from '@/lib/audioDecoder';
 
 	let soundChips: SoundChip[] = [];
 	let simfile: SimFile | null = null;
-	let audioContext: AudioContext = new window.AudioContext();
 
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
 	store.currentSimfile.subscribe((value) => (simfile = value));

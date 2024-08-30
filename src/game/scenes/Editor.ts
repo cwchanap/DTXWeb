@@ -3,7 +3,7 @@ import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '@/lib/store';
-import { XAaudioContext } from '@/lib/utils';
+import { XAaudioContext } from '@/lib/audioDecoder';
 
 interface LaneConfig {
 	name: string;
@@ -70,12 +70,16 @@ export class Editor extends Scene {
 		// Load sound chip samples
 		const soundChips = get(store.currentSoundChip);
 		if (soundChips) {
+			const addedKey = new Set();
 			Object.entries(soundChips).forEach(([key, soundChip]) => {
 				if (!soundChip.file) return;
 				const soundFile = simfile?.files.find((f) => f.name === soundChip.file);
 				if (!soundFile) return;
 
 				const cacheKey = `soundchip_${soundChip.file}`;
+
+				if (addedKey.has(cacheKey)) return;
+				addedKey.add(cacheKey);
 
 				if (soundChip.file.endsWith('.xa')) {
 					// For XA files, we'll load them with custom audio context
@@ -88,7 +92,6 @@ export class Editor extends Scene {
 					// For other formats, load as usual
 					this.load.audio(cacheKey, URL.createObjectURL(soundFile));
 				}
-				console.log("Loaded sound chip", cacheKey);
 			});
 		}
 	}
@@ -106,7 +109,6 @@ export class Editor extends Scene {
 	}
 
 	create() {
-		const audioContext = new AudioContext();
 		// Constants for grid dimensions
 		const measureHeight = this.cellHeight * this.cellsPerMeasure;
 		const laneHeight = this.measureCount * measureHeight;
@@ -264,10 +266,10 @@ export class Editor extends Scene {
 		});
 		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[]) => {
 			notes.forEach((note) => {
-				if (!(note.measure in this.notes)) {
-					this.notes[note.measure] = [];
+				if (!(note.laneID in this.notes)) {
+					this.notes[note.laneID] = [];
 				}
-				this.notes[note.measure].push(note);
+				this.notes[note.laneID].push(note);
 			});
 			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
 			if (maxMeasure > this.measureCount) {
@@ -358,7 +360,6 @@ export class Editor extends Scene {
 		const simfile = get(store.currentSimfile);
 		const bgm = simfile?.files.find((f) => f.name === 'bgm.ogg');
 		const soundChips = get(store.currentSoundChip);
-		this.stopPreviewPan();
 
 		const duration = (60 * 4 / bpm) * 1000; // Convert to milliseconds
 		const totalDistance = this.measureCount * this.cellHeight * this.cellsPerMeasure;
@@ -381,6 +382,30 @@ export class Editor extends Scene {
 			this.previewTween.stop();
 			this.previewTween = null;
 		}
+	}
+
+	scheduleAudioPlayback(bpm: number) {
+		const secondsPerBeat = 60 / bpm;
+
+		// Schedule BGM
+		const bgm = this.sound.get('bgm.ogg');
+
+		// Example: Play a sound chip sample after 2 measures
+		// const sampleKey = Object.keys(this.soundChips)[0]; // Just an example, use the appropriate key
+		// if (this.soundChips[sampleKey]) {
+		// 	const event = this.time.delayedCall(2 * 4 * secondsPerBeat * 1000, () => {
+		// 		this.soundChips[sampleKey].play();
+		// 	});
+		// 	this.audioEvents.push(event);
+		// }
+
+		// You can add more scheduled playbacks here
+		// For example, to play a sound at measure 3, beat 2:
+		// const measureBeat = 3 * 4 + 2; // 3 measures * 4 beats + 2 beats
+		// const event = this.time.delayedCall(measureBeat * secondsPerBeat * 1000, () => {
+		//     this.soundChips['another_sample'].play();
+		// });
+		// this.audioEvents.push(event);
 	}
 
 	update() {

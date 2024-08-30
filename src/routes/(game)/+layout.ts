@@ -3,3 +3,9 @@ Sveltekit renders the page in the server this causes some errors with native bro
 This line of code is to tell sveltekit to not render the page in the server and only in the client.
 */
 export const ssr = false;
+
+import init from "xa_decoder";
+
+export const load = async () => {
+	await init({});
+}

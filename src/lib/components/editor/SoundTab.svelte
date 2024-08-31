@@ -12,9 +12,9 @@
 	store.currentSimfile.subscribe((value) => (simfile = value));
 
 	async function playAudio(file: string) {
-		const soundFile = simfile?.files.find((f) => f.name === file);
+		const soundFile = simfile?.files.find((f) => f.name.toLowerCase() === file.toLowerCase());
 		if (soundFile) {
-			if (soundFile.name.endsWith('.xa')) {
+			if (soundFile.name.toLowerCase().endsWith('.xa')) {
 				const source = XAaudioContext.createBufferSource();
 				source.buffer = await XAaudioContext.decodeAudioData(await soundFile.arrayBuffer());
 				source.connect(XAaudioContext.destination);

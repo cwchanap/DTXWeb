@@ -5,11 +5,13 @@ import { get } from 'svelte/store';
 import store from '@/lib/store';
 import { XAaudioContext } from '@/lib/browser/audioDecoder';
 import { LaneMeasureNote } from '@/lib/chart/note';
+import type { SoundChip } from '@/lib/chart/dtx';
 
 interface LaneConfig {
 	name: string;
 	noteColor: number;
 	id: string;
+	playable: boolean;
 }
 
 interface Note {
@@ -24,20 +26,20 @@ interface Data {
 
 export class Editor extends Scene {
 	private laneConfigs: LaneConfig[] = [
-		{ name: 'BPM', noteColor: 0x000000, id: '08' },
-		{ name: 'LC', noteColor: 0xa20814, id: '1A' },
-		{ name: 'HH', noteColor: 0x0d1cde, id: '18' },
-		{ name: 'HHC', noteColor: 0x0d1cde, id: '11' },
-		{ name: 'LP', noteColor: 0xde0db8, id: '1B' },
-		{ name: 'LB', noteColor: 0x567dcb, id: '1C' },
-		{ name: 'SN', noteColor: 0xefec1b, id: '12' },
-		{ name: 'HT', noteColor: 0x45ef1b, id: '14' },
-		{ name: 'BD', noteColor: 0x567dcb, id: '13' },
-		{ name: 'LT', noteColor: 0xef1b2b, id: '15' },
-		{ name: 'FT', noteColor: 0xfa7e0a, id: '17' },
-		{ name: 'CY', noteColor: 0x1424c4, id: '16' },
-		{ name: 'RD', noteColor: 0x14bfc4, id: '19' },
-		{ name: 'BGM', noteColor: 0x222222, id: '01' }
+		{ name: 'BPM', noteColor: 0x000000, id: '08', playable: false },
+		{ name: 'LC', noteColor: 0xa20814, id: '1A', playable: true },
+		{ name: 'HH', noteColor: 0x0d1cde, id: '18', playable: true },
+		{ name: 'HHC', noteColor: 0x0d1cde, id: '11', playable: true },
+		{ name: 'LP', noteColor: 0xde0db8, id: '1B', playable: true },
+		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true },
+		{ name: 'SN', noteColor: 0xefec1b, id: '12', playable: true },
+		{ name: 'HT', noteColor: 0x45ef1b, id: '14', playable: true },
+		{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true },
+		{ name: 'LT', noteColor: 0xef1b2b, id: '15', playable: true },
+		{ name: 'FT', noteColor: 0xfa7e0a, id: '17', playable: true },
+		{ name: 'CY', noteColor: 0x1424c4, id: '16', playable: true },
+		{ name: 'RD', noteColor: 0x14bfc4, id: '19', playable: true },
+		{ name: 'BGM', noteColor: 0x222222, id: '01', playable: false }
 	];
 
 	private cellsPerMeasure = 16;
@@ -52,9 +54,8 @@ export class Editor extends Scene {
 	private isPreviewing = false;
 	private notes: Record<string, Note[]> = {};
 	private previewTween: Phaser.Tweens.Tween | null = null;
-	private audioTimeouts: Phaser.Time.TimerEvent[] = [];
-	private soundChips: Record<string, Sound.WebAudioSound> = {};
 	private measureLength: number[] = [];
+	private playingAudio: Phaser.Sound.WebAudioSound[] = [];
 
 	constructor(private measureCount: number = 10) {
 		super({ key: Editor.key });
@@ -76,15 +77,16 @@ export class Editor extends Scene {
 			const addedKey = new Set();
 			Object.entries(soundChips).forEach(([key, soundChip]) => {
 				if (!soundChip.file) return;
-				const soundFile = simfile?.files.find((f) => f.name === soundChip.file);
+				const soundFile = simfile?.files.find((f) => f.name.toLowerCase() === soundChip.file?.toLowerCase());
 				if (!soundFile) return;
 
-				const cacheKey = `soundchip_${soundChip.file}`;
+				const cacheKey = this.getCacheKey(soundChip);
 
 				if (addedKey.has(cacheKey)) return;
 				addedKey.add(cacheKey);
-
-				if (soundChip.file.endsWith('.xa')) {
+				console.log(soundChip.file)
+				if (soundChip.file.toLowerCase().endsWith('.xa')) {
+					console.log(cacheKey)
 					// For XA files, we'll load them with custom audio context
 					this.load.audio({
 						key: cacheKey,
@@ -203,10 +205,10 @@ export class Editor extends Scene {
 		const simfile = get(store.currentSimfile);
 		if (soundChips) {
 			Object.entries(soundChips).forEach(([key, soundChip]) => {
-				const cacheKey = `soundchip_${soundChip.file}`;
-				const soundFile = simfile?.files.find((f) => f.name === soundChip.file);
+				const cacheKey = this.getCacheKey(soundChip);
+				const soundFile = simfile?.files.find((f) => f.name.toLowerCase() === soundChip.file?.toLowerCase());
 				if (!soundFile) return;
-				this.soundChips[key] = this.sound.add(cacheKey) as Sound.WebAudioSound;
+				this.sound.add(cacheKey) as Sound.WebAudioSound;
 			});
 		}
 
@@ -273,6 +275,7 @@ export class Editor extends Scene {
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
 			this.isPreviewing = true;
 			this.startPreviewPan(bpm);
+			this.scheduleAudioPlayback(bpm);
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
@@ -281,9 +284,17 @@ export class Editor extends Scene {
 		});
 	}
 
+	getCacheKey(soundChip: SoundChip) {
+		return `soundchip_${soundChip.file}`;
+	}
+
+	getTotalMesaureLength(measure: number) {
+		if (this.measureLength.length === 0) return this.measureCount;
+		return this.measureLength.slice(0, measure).reduce((acc, length) => acc + length, 0);
+	}
+
 	getTotalMesaureOffest(measure: number) {
-		if (this.measureLength.length === 0) return this.measureCount * this.cellHeight * this.cellsPerMeasure;
-		return this.measureLength.slice(0, measure).reduce((acc, length) => acc + length, 0) * this.cellHeight * this.cellsPerMeasure;
+		return this.getTotalMesaureLength(measure) * this.cellHeight * this.cellsPerMeasure;
 	}
 
 	parseMesaureLength() {
@@ -309,8 +320,6 @@ export class Editor extends Scene {
 				const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 
 				laneMeasureNote.notes.forEach((noteChip) => {
-					// const cellIndex = (note.measure + noteChip.position) * this.cellsPerMeasure;
-
 					this.drawNote(note.measure, laneIndex, noteChip.position, noteChip.noteID);
 				});
 			});
@@ -388,12 +397,8 @@ export class Editor extends Scene {
 	}
 
 	startPreviewPan(bpm: number) {
-		const simfile = get(store.currentSimfile);
-		const bgm = simfile?.files.find((f) => f.name === 'bgm.ogg');
-		const soundChips = get(store.currentSoundChip);
-
 		const duration = (60 * 4 / bpm) * 1000; // Convert to milliseconds
-		const totalDistance = this.measureCount * this.cellHeight * this.cellsPerMeasure;
+		const totalDistance = this.getTotalMesaureOffest(this.measureCount);
 
 		this.previewTween = this.tweens.add({
 			targets: this.cameras.main,
@@ -413,30 +418,38 @@ export class Editor extends Scene {
 			this.previewTween.stop();
 			this.previewTween = null;
 		}
+
+		this.time.removeAllEvents()
+		this.playingAudio.forEach((audio) => {
+			audio.stop();
+		});
+		this.playingAudio = [];
+	}
+
+	scheduleNotePlayback(note: Note, secondsPerMeasure: number) {
+		const measureLength = this.measureLength[note.measure] || 1;
+		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
+
+		laneMeasureNote.notes.forEach((noteChip) => {
+			this.time.delayedCall((this.getTotalMesaureLength(note.measure) + noteChip.position) * secondsPerMeasure * 1000, () => {
+				const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
+				if (soundChip) {
+					const audio = this.sound.get(this.getCacheKey(soundChip));
+					this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
+					audio.play();
+				}
+			});
+		});
 	}
 
 	scheduleAudioPlayback(bpm: number) {
-		const secondsPerBeat = 60 / bpm;
+		const secondsPerMeasure = 60 * 4 / bpm;
 
-		// Schedule BGM
-		const bgm = this.sound.get('bgm.ogg');
+		this.notes['01'].forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure));
 
-		// Example: Play a sound chip sample after 2 measures
-		// const sampleKey = Object.keys(this.soundChips)[0]; // Just an example, use the appropriate key
-		// if (this.soundChips[sampleKey]) {
-		// 	const event = this.time.delayedCall(2 * 4 * secondsPerBeat * 1000, () => {
-		// 		this.soundChips[sampleKey].play();
-		// 	});
-		// 	this.audioEvents.push(event);
-		// }
-
-		// You can add more scheduled playbacks here
-		// For example, to play a sound at measure 3, beat 2:
-		// const measureBeat = 3 * 4 + 2; // 3 measures * 4 beats + 2 beats
-		// const event = this.time.delayedCall(measureBeat * secondsPerBeat * 1000, () => {
-		//     this.soundChips['another_sample'].play();
-		// });
-		// this.audioEvents.push(event);
+		this.laneConfigs.filter((lane) => lane.playable).forEach((lane) => {
+			this.notes[lane.id].forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure));
+		});
 	}
 
 	update() {

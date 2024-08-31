@@ -18,6 +18,7 @@ interface Note {
 	measure: number;
 	laneID: string;
 	pattern: string;
+	laneMeasureNote?: LaneMeasureNote;
 }
 
 interface Data {
@@ -84,9 +85,7 @@ export class Editor extends Scene {
 
 				if (addedKey.has(cacheKey)) return;
 				addedKey.add(cacheKey);
-				console.log(soundChip.file)
 				if (soundChip.file.toLowerCase().endsWith('.xa')) {
-					console.log(cacheKey)
 					// For XA files, we'll load them with custom audio context
 					this.load.audio({
 						key: cacheKey,
@@ -274,8 +273,9 @@ export class Editor extends Scene {
 
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
 			this.isPreviewing = true;
-			this.startPreviewPan(bpm);
-			this.scheduleAudioPlayback(bpm);
+			const currentMeasure = Math.floor(-this.cameras.main.scrollY / (this.cellHeight * this.cellsPerMeasure));
+			this.startPreviewPan(bpm, currentMeasure);
+			this.scheduleAudioPlayback(bpm, currentMeasure);
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
@@ -396,10 +396,13 @@ export class Editor extends Scene {
 		}
 	}
 
-	startPreviewPan(bpm: number) {
+	startPreviewPan(bpm: number, currentMeasure: number) {
 		const duration = (60 * 4 / bpm) * 1000; // Convert to milliseconds
-		const totalDistance = this.getTotalMesaureOffest(this.measureCount);
 
+		const targetY = - this.getTotalMesaureOffest(currentMeasure) - this.bottomMargin; // Target Y position for the nearest measure
+		const totalDistance = this.getTotalMesaureOffest(this.measureCount) - targetY;
+
+		this.cameras.main.scrollY = targetY;
 		this.previewTween = this.tweens.add({
 			targets: this.cameras.main,
 			scrollY: -totalDistance,
@@ -426,12 +429,14 @@ export class Editor extends Scene {
 		this.playingAudio = [];
 	}
 
-	scheduleNotePlayback(note: Note, secondsPerMeasure: number) {
+	scheduleNotePlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {
 		const measureLength = this.measureLength[note.measure] || 1;
 		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 
 		laneMeasureNote.notes.forEach((noteChip) => {
-			this.time.delayedCall((this.getTotalMesaureLength(note.measure) + noteChip.position) * secondsPerMeasure * 1000, () => {
+			const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureLength(startMeasure) + noteChip.position) * secondsPerMeasure * 1000;
+
+			this.time.delayedCall(delay, () => {
 				const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
 				if (soundChip) {
 					const audio = this.sound.get(this.getCacheKey(soundChip));
@@ -442,13 +447,34 @@ export class Editor extends Scene {
 		});
 	}
 
-	scheduleAudioPlayback(bpm: number) {
+	scheduleBGMPlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {
+		const measureLength = this.measureLength[note.measure] || 1;
+		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
+
+		laneMeasureNote.notes.forEach((noteChip) => {
+			const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureOffest(startMeasure) + noteChip.position) * secondsPerMeasure;
+			const seek = (this.getTotalMesaureLength(startMeasure) - this.getTotalMesaureOffest(note.measure) - noteChip.position) * secondsPerMeasure;
+
+			const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
+			if (soundChip) {
+				const audio = this.sound.get(this.getCacheKey(soundChip));
+				this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
+				audio.play({
+					delay: (note.measure >= startMeasure) ? delay : 0,
+					seek: (note.measure >= startMeasure) ? 0 : seek
+				});
+			}
+		});
+	}
+
+	scheduleAudioPlayback(bpm: number, currentMeasure: number) {
 		const secondsPerMeasure = 60 * 4 / bpm;
 
-		this.notes['01'].forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure));
-
+		this.notes['01'].forEach((note) => this.scheduleBGMPlayback(note, secondsPerMeasure, currentMeasure));
 		this.laneConfigs.filter((lane) => lane.playable).forEach((lane) => {
-			this.notes[lane.id].forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure));
+			this.notes[lane.id].filter(
+				(note) => note.measure >= currentMeasure
+			).forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure, currentMeasure));
 		});
 	}
 

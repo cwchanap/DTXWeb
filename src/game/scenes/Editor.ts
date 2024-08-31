@@ -68,12 +68,13 @@ export class Editor extends Scene {
 
 	preload() {
 		// Preload assets if any
-
+		console.log("Preload sound")
 		// Load the BGM audio file
 		const simfile = get(store.currentSimfile);
 
 		// Load sound chip samples
 		const soundChips = get(store.currentSoundChip);
+
 		if (soundChips) {
 			const addedKey = new Set();
 			Object.entries(soundChips).forEach(([key, soundChip]) => {
@@ -82,6 +83,7 @@ export class Editor extends Scene {
 				if (!soundFile) return;
 
 				const cacheKey = this.getCacheKey(soundChip);
+				this.cache.audio.remove(cacheKey);
 
 				if (addedKey.has(cacheKey)) return;
 				addedKey.add(cacheKey);
@@ -252,6 +254,8 @@ export class Editor extends Scene {
 			this.restart({ measureCount });
 		});
 		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[]) => {
+			this.notes = {};
+			this.sound.removeAll();
 			notes.forEach((note) => {
 				if (!(note.laneID in this.notes)) {
 					this.notes[note.laneID] = [];
@@ -330,12 +334,12 @@ export class Editor extends Scene {
 		const cellsPerMeasure = this.cellsPerMeasure * (this.measureLength[measure] || 1);
 
 		// Draw the measure line
-		graphics.lineStyle(5, 0xffffff, 1);
+		graphics.lineStyle(6, 0xffffff, 1);
 		graphics.moveTo(this.offsetX, yStart);
 		graphics.lineTo(this.offsetX + this.totalWidth, yStart);
 
-		graphics.lineStyle(2, 0x888888, 0.5);
 		for (let i = 0; i < cellsPerMeasure; i++) {
+			graphics.lineStyle((i * 4 % cellsPerMeasure == 0) ? 4 : 2, 0x888888, 0.5);
 			graphics.moveTo(this.offsetX, yStart);
 			graphics.lineTo(this.offsetX + this.totalWidth, yStart);
 			yStart -= this.cellHeight;
@@ -401,8 +405,6 @@ export class Editor extends Scene {
 
 		const targetY = - this.getTotalMesaureOffest(currentMeasure) - this.bottomMargin; // Target Y position for the nearest measure
 		const totalDistance = this.getTotalMesaureOffest(this.measureCount) - targetY;
-
-		console.log(targetY, totalDistance, currentMeasure, this.getTotalMesaureLength(currentMeasure))
 
 		this.cameras.main.scrollY = targetY;
 		this.previewTween = this.tweens.add({

@@ -5,6 +5,7 @@
 	import store from '@/lib/store';
 	import { DTXFile } from '@/lib/chart/dtx';
 	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
+	import { get, writable } from 'svelte/store';
 
 	let dtxFile: DTXFile | null;
 	let measureCount = 10;
@@ -14,7 +15,7 @@
 	let bpm = 120;
 	let level = 0;
 	let gotoMeasure = 0;
-	let isPreviewing = false;
+	let isPreviewing = false
 
 	$: {
 		if (dtxFile) {
@@ -42,9 +43,13 @@
 		} else {
 			EventBus.emit(EventType.STOP_PREVIEW);
 		}
+		store.isPreviewing.set(isPreviewing);
 	}
 
 	onMount(() => {
+		store.isPreviewing.subscribe((value) => {
+			isPreviewing = value;
+		});
 		return store.currentDtxFile.subscribe((value) => {
 			dtxFile = value;
 			title = dtxFile?.title ?? '';

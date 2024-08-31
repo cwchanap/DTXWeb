@@ -8,11 +8,13 @@ const currentDtxFile = writable<DTXFile | null>(null);
 const currentSimfile = writable<SimFile | null>(null);
 const currentSoundChip = writable<SoundChip[]>([]);
 const playingAudio = writable<HTMLAudioElement | null>(null);
+const isPreviewing = writable<boolean>(false);
 
 export default {
 	activeScene,
 	currentDtxFile,
 	currentSimfile,
 	currentSoundChip,
-	playingAudio
+	playingAudio,
+	isPreviewing
 };

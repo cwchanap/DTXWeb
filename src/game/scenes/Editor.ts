@@ -289,7 +289,7 @@ export class Editor extends Scene {
 	}
 
 	getTotalMesaureLength(measure: number) {
-		if (this.measureLength.length === 0) return this.measureCount;
+		if (this.measureLength.length === 0) return measure;
 		return this.measureLength.slice(0, measure).reduce((acc, length) => acc + length, 0);
 	}
 
@@ -402,6 +402,8 @@ export class Editor extends Scene {
 		const targetY = - this.getTotalMesaureOffest(currentMeasure) - this.bottomMargin; // Target Y position for the nearest measure
 		const totalDistance = this.getTotalMesaureOffest(this.measureCount) - targetY;
 
+		console.log(targetY, totalDistance, currentMeasure, this.getTotalMesaureLength(currentMeasure))
+
 		this.cameras.main.scrollY = targetY;
 		this.previewTween = this.tweens.add({
 			targets: this.cameras.main,
@@ -435,7 +437,6 @@ export class Editor extends Scene {
 
 		laneMeasureNote.notes.forEach((noteChip) => {
 			const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureLength(startMeasure) + noteChip.position) * secondsPerMeasure * 1000;
-
 			this.time.delayedCall(delay, () => {
 				const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
 				if (soundChip) {
@@ -471,10 +472,13 @@ export class Editor extends Scene {
 		const secondsPerMeasure = 60 * 4 / bpm;
 
 		this.notes['01'].forEach((note) => this.scheduleBGMPlayback(note, secondsPerMeasure, currentMeasure));
+
 		this.laneConfigs.filter((lane) => lane.playable).forEach((lane) => {
-			this.notes[lane.id].filter(
-				(note) => note.measure >= currentMeasure
-			).forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure, currentMeasure));
+			if (this.notes[lane.id]) {
+				this.notes[lane.id].filter(
+					(note) => note.measure >= currentMeasure
+				).forEach((note) => this.scheduleNotePlayback(note, secondsPerMeasure, currentMeasure));
+			}
 		});
 	}
 

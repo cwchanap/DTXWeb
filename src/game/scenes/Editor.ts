@@ -3,7 +3,8 @@ import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '@/lib/store';
-import { XAaudioContext } from '@/lib/audioDecoder';
+import { XAaudioContext } from '@/lib/browser/audioDecoder';
+import { LaneMeasureNote } from '@/lib/chart/note';
 
 interface LaneConfig {
 	name: string;
@@ -26,6 +27,7 @@ export class Editor extends Scene {
 		{ name: 'BPM', noteColor: 0x000000, id: '08' },
 		{ name: 'LC', noteColor: 0xa20814, id: '1A' },
 		{ name: 'HH', noteColor: 0x0d1cde, id: '18' },
+		{ name: 'HHC', noteColor: 0x0d1cde, id: '11' },
 		{ name: 'LP', noteColor: 0xde0db8, id: '1B' },
 		{ name: 'LB', noteColor: 0x567dcb, id: '1C' },
 		{ name: 'SN', noteColor: 0xefec1b, id: '12' },
@@ -52,6 +54,7 @@ export class Editor extends Scene {
 	private previewTween: Phaser.Tweens.Tween | null = null;
 	private audioTimeouts: Phaser.Time.TimerEvent[] = [];
 	private soundChips: Record<string, Sound.WebAudioSound> = {};
+	private measureLength: number[] = [];
 
 	constructor(private measureCount: number = 10) {
 		super({ key: Editor.key });
@@ -109,6 +112,8 @@ export class Editor extends Scene {
 	}
 
 	create() {
+		console.log("Create Scene")
+		this.parseMesaureLength();
 		// Constants for grid dimensions
 		const measureHeight = this.cellHeight * this.cellsPerMeasure;
 		const laneHeight = this.measureCount * measureHeight;
@@ -142,28 +147,10 @@ export class Editor extends Scene {
 		});
 
 		// Draw horizontal lines for cells and measures
-		for (let j = 0; j <= this.measureCount * this.cellsPerMeasure; j++) {
-			const y = this.offsetY - j * this.cellHeight;
-			const isMeasureLine = j % this.cellsPerMeasure === 0;
-			graphics.lineStyle(isMeasureLine ? 5 : 2, isMeasureLine ? 0xffffff : 0x888888, isMeasureLine ? 1 : 0.5); // Thicker border for measures
-			graphics.moveTo(this.offsetX, y);
-			graphics.lineTo(this.offsetX + this.totalWidth, y); // Ensure the line extends the full width
-
-			if (isMeasureLine && j < this.measureCount * this.cellsPerMeasure) {
-				const measureNumber = j / this.cellsPerMeasure;
-				this.add
-					.text(
-						this.offsetX + this.totalWidth / 2,
-						y - (this.cellsPerMeasure * this.cellHeight) / 2,
-						`${measureNumber}`,
-						{
-							fontSize: '96px',
-							color: '#ffffff'
-						}
-					)
-					.setOrigin(0.5)
-					.setAlpha(0.5);
-			}
+		let y = this.offsetY;
+		for (let j = 0; j <= this.measureCount; j++) {
+			this.drawMeasure(j, y, graphics);
+			y -= this.cellHeight * this.cellsPerMeasure * (this.measureLength[j] || 1);
 		}
 
 		graphics.strokePath();
@@ -271,11 +258,12 @@ export class Editor extends Scene {
 				}
 				this.notes[note.laneID].push(note);
 			});
+			this.parseMesaureLength();
 			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
 			if (maxMeasure > this.measureCount) {
 				this.measureCount = maxMeasure + 1;
-				this.restart({ measureCount: this.measureCount });
 			}
+			this.restart({ measureCount: this.measureCount });
 		});
 
 		EventBus.on(EventType.MEASURE_GOTO, (measure: number) => {
@@ -294,43 +282,86 @@ export class Editor extends Scene {
 		});
 	}
 
+	getTotalMesaureOffest(measure: number) {
+		return this.measureLength.slice(0, measure).reduce((acc, length) => acc + length, 0) * this.cellHeight * this.cellsPerMeasure;
+	}
+
+	parseMesaureLength() {
+		if (!this.notes['02']) return;
+
+		let currentMeasureLength = 1;
+		for (let i = 0; i < this.measureCount; i++) {
+			const note = this.notes['02'].find((note) => note.measure === i)
+			if (note) {
+				currentMeasureLength = parseFloat(note.pattern);
+			}
+			this.measureLength[i] = currentMeasureLength;
+		}
+	}
+
 	drawNotes() {
 		for (const [measure, notes] of Object.entries(this.notes)) {
 			notes.forEach((note) => {
 				const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
 
 				if (laneIndex === -1) return;
+				const measureLength = this.measureLength[note.measure] || 1;
+				const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 
-				const patterns = note.pattern.match(/.{1,2}/g);
-				if (!patterns) return;
-				const patternCount = patterns.length;
+				laneMeasureNote.notes.forEach((noteChip) => {
+					// const cellIndex = (note.measure + noteChip.position) * this.cellsPerMeasure;
 
-				patterns?.forEach((pattern, index) => {
-					if (pattern === '00') return;
-					const cellIndex = note.measure * this.cellsPerMeasure + index * 16 / patternCount;
-
-					this.drawNote(laneIndex, cellIndex, pattern);
+					this.drawNote(note.measure, laneIndex, noteChip.position, noteChip.noteID);
 				});
 			});
 		}
 	}
 
+	drawMeasure(measure: number, yStart: number, graphics: Phaser.GameObjects.Graphics) {
+		const cellsPerMeasure = this.cellsPerMeasure * (this.measureLength[measure] || 1);
+
+		// Draw the measure line
+		graphics.lineStyle(5, 0xffffff, 1);
+		graphics.moveTo(this.offsetX, yStart);
+		graphics.lineTo(this.offsetX + this.totalWidth, yStart);
+
+		graphics.lineStyle(2, 0x888888, 0.5);
+		for (let i = 0; i < cellsPerMeasure; i++) {
+			graphics.moveTo(this.offsetX, yStart);
+			graphics.lineTo(this.offsetX + this.totalWidth, yStart);
+			yStart -= this.cellHeight;
+		}
+
+		this.add
+			.text(
+				this.offsetX + this.totalWidth / 2,
+				yStart + (this.cellsPerMeasure * this.cellHeight) / 2,
+				`${measure}`,
+				{
+					fontSize: '96px',
+					color: '#ffffff'
+				}
+			)
+			.setOrigin(0.5)
+			.setAlpha(0.5);
+	}
 
 	drawNote(
+		measure: number,
 		laneIndex: number,
-		cellIndex: number,
+		cellOffset: number,
 		noteId: string
 	) {
 		const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
 		const y =
 			this.offsetY -
-			cellIndex * this.cellHeight +
+			(this.getTotalMesaureOffest(measure) + (cellOffset) * this.cellHeight * this.cellsPerMeasure) +
 			this.cellMargin -
 			this.cellHeight;
 		const width = this.cellWidth - this.cellMargin * 2;
 		const height = this.cellHeight - this.cellMargin * 2;
 
-		const noteKey = `note-${laneIndex}-${cellIndex}`;
+		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
 		const existingNote = this.children.getByName(noteKey);
 
 		if (existingNote) {
@@ -413,6 +444,7 @@ export class Editor extends Scene {
 	}
 
 	restart(data: Data = {}) {
+		console.log("Restart Scene, data", data)
 		EventBus.off(EventType.MEASURE_UPDATE);
 		EventBus.off(EventType.NOTE_IMPORT);
 		EventBus.off(EventType.MEASURE_GOTO);

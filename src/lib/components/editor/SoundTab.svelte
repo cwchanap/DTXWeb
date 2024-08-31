@@ -3,7 +3,7 @@
 	import { FileButton } from '@skeletonlabs/skeleton';
 	import store from '@/lib/store';
 	import type { SimFile } from '@/lib/chart/simFile';
-	import { XAaudioContext } from '@/lib/audioDecoder';
+	import { XAaudioContext } from '@/lib/browser/audioDecoder';
 
 	let soundChips: SoundChip[] = [];
 	let simfile: SimFile | null = null;

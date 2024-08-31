@@ -115,8 +115,7 @@ export class Editor extends Scene {
 		console.log("Create Scene")
 		this.parseMesaureLength();
 		// Constants for grid dimensions
-		const measureHeight = this.cellHeight * this.cellsPerMeasure;
-		const laneHeight = this.measureCount * measureHeight;
+		const laneHeight = this.getTotalMesaureOffest(this.measureCount);
 
 		const graphics = this.add.graphics();
 		graphics.lineStyle(1, 0x888888, 1); // Light grey for cells
@@ -283,6 +282,7 @@ export class Editor extends Scene {
 	}
 
 	getTotalMesaureOffest(measure: number) {
+		if (this.measureLength.length === 0) return this.measureCount * this.cellHeight * this.cellsPerMeasure;
 		return this.measureLength.slice(0, measure).reduce((acc, length) => acc + length, 0) * this.cellHeight * this.cellsPerMeasure;
 	}
 

@@ -9,6 +9,7 @@ const currentSimfile = writable<SimFile | null>(null);
 const currentSoundChip = writable<SoundChip[]>([]);
 const playingAudio = writable<HTMLAudioElement | null>(null);
 const isPreviewing = writable<boolean>(false);
+const playSpeed = writable<number>(1);
 
 export default {
 	activeScene,
@@ -16,5 +17,6 @@ export default {
 	currentSimfile,
 	currentSoundChip,
 	playingAudio,
-	isPreviewing
+	isPreviewing,
+	playSpeed
 };

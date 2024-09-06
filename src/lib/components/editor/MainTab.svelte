@@ -5,7 +5,6 @@
 	import store from '@/lib/store';
 	import { DTXFile } from '@/lib/chart/dtx';
 	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
-	import { get, writable } from 'svelte/store';
 
 	let dtxFile: DTXFile | null;
 	let measureCount = 10;
@@ -15,7 +14,8 @@
 	let bpm = 120;
 	let level = 0;
 	let gotoMeasure = 0;
-	let isPreviewing = false
+	let isPreviewing = false;
+	let playSpeed = 1;
 
 	$: {
 		if (dtxFile) {
@@ -36,6 +36,10 @@
 		EventBus.emit(EventType.MEASURE_GOTO, gotoMeasure);
 	}
 
+	function handlePlaySpeedChange() {
+		store.playSpeed.set(playSpeed);
+	}
+
 	function handlePlay() {
 		isPreviewing = !isPreviewing;
 		if (isPreviewing) {
@@ -49,6 +53,9 @@
 	onMount(() => {
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
+		});
+		store.playSpeed.subscribe((value) => {
+			playSpeed = value;
 		});
 		return store.currentDtxFile.subscribe((value) => {
 			dtxFile = value;
@@ -88,7 +95,12 @@
 	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-1/3 text-gray-700" for="measure-input">BPM:</label>
-		<input class="rounded-md border border-gray-300 px-2 py-1" type="number" bind:value={bpm} />
+		<input
+			class="rounded-md border border-gray-300 px-2 py-1"
+			type="number"
+			bind:value={bpm}
+			disabled={isPreviewing}
+		/>
 	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-1/3 text-gray-700" for="measure-input">Level:</label>
@@ -109,8 +121,21 @@
 			max="499"
 			bind:value={measureCount}
 			on:change={handleMeasureChange}
+			disabled={isPreviewing}
 		/>
 	</div>
+	<div class="flex items-center space-x-2">
+		<label class="w-1/3 text-gray-700" for="measure-input">Play Speed:</label>
+		<input
+			type="number"
+			class="rounded-md border border-gray-300 px-2 py-1"
+			min="0"
+			max="10"
+			bind:value={playSpeed}
+			on:change={handlePlaySpeedChange}
+			disabled={isPreviewing}
+		/>
+	</div>	
 	<div class="flex items-center space-x-2">
 		<label class="w-1/3 text-gray-700" for="measure-input">Go to Measure:</label>
 		<input
@@ -119,9 +144,12 @@
 			min="0"
 			max="499"
 			bind:value={gotoMeasure}
+			disabled={isPreviewing}
 		/>
-		<button class="rounded-md border border-gray-300 px-2 py-1" on:click={handleGotoMeasure}
-			>Go</button
+		<button
+			class="rounded-md border border-gray-300 px-2 py-1"
+			on:click={handleGotoMeasure}
+			disabled={isPreviewing}>Go</button
 		>
 	</div>
 	<div class="flex items-center space-x-2">

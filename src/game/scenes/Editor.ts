@@ -45,9 +45,10 @@ export class Editor extends Scene {
 
 	private cellsPerMeasure = 16;
 	private cellWidth = 50;
-	private cellHeight = 25;
 	private bottomMargin = 40;
 	private cellMargin = 2;
+	private playSpeed = 1;
+	private noteSize = 25;
 	public static key = 'Editor';
 
 	private isEditing = false;
@@ -64,6 +65,10 @@ export class Editor extends Scene {
 
 	init(data: Data) {
 		this.measureCount = data.measureCount || this.measureCount;
+
+		store.playSpeed.subscribe((value) => {
+			this.playSpeed = value;
+		});
 	}
 
 	preload() {
@@ -114,8 +119,13 @@ export class Editor extends Scene {
 		return this.scale.height - this.bottomMargin;
 	}
 
+	get cellHeight() {
+		return 25 * this.playSpeed;
+	}
+
 	create() {
 		console.log("Create Scene")
+
 		this.parseMesaureLength();
 		// Constants for grid dimensions
 		const laneHeight = this.getTotalMesaureOffest(this.measureCount);
@@ -370,9 +380,9 @@ export class Editor extends Scene {
 			this.offsetY -
 			(this.getTotalMesaureOffest(measure) + (cellOffset) * this.cellHeight * this.cellsPerMeasure) +
 			this.cellMargin -
-			this.cellHeight;
+			this.noteSize;
 		const width = this.cellWidth - this.cellMargin * 2;
-		const height = this.cellHeight - this.cellMargin * 2;
+		const height = this.noteSize - this.cellMargin * 2;
 
 		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
 		const existingNote = this.children.getByName(noteKey);

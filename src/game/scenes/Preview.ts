@@ -82,10 +82,10 @@ export class Preview extends BaseGame {
 
     create() {
         console.log("Create Preview Scene")
-        
+
         this.drawPanel();
         this.drawNotes();
-        
+
         const soundChips = get(store.currentSoundChip);
         const simfile = get(store.currentSimfile);
 
@@ -134,6 +134,15 @@ export class Preview extends BaseGame {
 
     getCacheKey(soundChip: SoundChip) {
         return `soundchip_${soundChip.file}`;
+    }
+
+    override setCameraBounds(laneHeight: number) {
+        this.cameras.main.setBounds(
+            0,
+            -laneHeight - this.bottomMargin,
+            this.scale.width,
+            laneHeight + this.bottomMargin
+        );
     }
 
     scheduleBGMPlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {

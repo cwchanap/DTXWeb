@@ -114,13 +114,18 @@ export abstract class BaseGame extends Scene {
 
         // Draw horizontal lines for cells and measures
         let y = this.offsetY;
-        for (let j = 0; j <= this.measureCount; j++) {
+        for (let j = 0; j < this.measureCount; j++) {
             this.drawMeasure(j, y, graphics);
             y -= this.cellHeight * this.cellsPerMeasure * (this.measureLength[j] || 1);
         }
+        this.drawMesaureLine(graphics, y);
 
         graphics.strokePath();
 
+        this.setCameraBounds(laneHeight);
+    }
+
+    setCameraBounds(laneHeight: number) {
 		this.cameras.main.setBounds(
 			0,
 			-laneHeight + this.cameras.main.height - this.bottomMargin,
@@ -129,13 +134,17 @@ export abstract class BaseGame extends Scene {
 		);
     }
 
+    drawMesaureLine(graphics: Phaser.GameObjects.Graphics, yStart: number) {
+        graphics.lineStyle(6, 0xffffff, 0.5);
+        graphics.moveTo(this.offsetX, yStart);
+        graphics.lineTo(this.offsetX + this.totalWidth, yStart);
+    }
+
     drawMeasure(measure: number, yStart: number, graphics: Phaser.GameObjects.Graphics) {
         const cellsPerMeasure = this.cellsPerMeasure * (this.measureLength[measure] || 1);
 
         // Draw the measure line
-        graphics.lineStyle(6, 0xffffff, 1);
-        graphics.moveTo(this.offsetX, yStart);
-        graphics.lineTo(this.offsetX + this.totalWidth, yStart);
+        this.drawMesaureLine(graphics, yStart);
 
         for (let i = 0; i < cellsPerMeasure; i++) {
             graphics.lineStyle((i * 4 % cellsPerMeasure == 0) ? 4 : 2, 0x888888, 0.5);

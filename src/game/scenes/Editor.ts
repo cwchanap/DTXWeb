@@ -3,6 +3,8 @@ import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { BaseGame, type Note } from './BaseGame';
 import { Preview } from './Preview';
+import { get } from 'svelte/store';
+import store from '@/lib/store';
 
 interface Data {
 	measureCount?: number;
@@ -105,7 +107,7 @@ export class Editor extends BaseGame {
 
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.MEASURE_UPDATE, (measureCount: number) => {
-			this.measureCount = measureCount;
+			this.measureCount = get(store.measureCount);
 			this.restart({ measureCount });
 		});
 		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[]) => {
@@ -122,6 +124,7 @@ export class Editor extends BaseGame {
 			if (maxMeasure > this.measureCount) {
 				this.measureCount = maxMeasure + 1;
 			}
+			store.measureCount.set(this.measureCount);
 			this.restart({ measureCount: this.measureCount });
 		});
 

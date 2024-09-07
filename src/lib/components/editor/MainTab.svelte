@@ -29,6 +29,7 @@
 	}
 
 	function handleMeasureChange() {
+		store.measureCount.set(measureCount);
 		EventBus.emit(EventType.MEASURE_UPDATE, measureCount);
 	}
 
@@ -56,6 +57,9 @@
 		});
 		store.playSpeed.subscribe((value) => {
 			playSpeed = value;
+		});
+		store.measureCount.subscribe((value) => {
+			measureCount = value;
 		});
 		return store.currentDtxFile.subscribe((value) => {
 			dtxFile = value;

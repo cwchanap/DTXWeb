@@ -109,6 +109,7 @@ export abstract class BaseGame extends Scene {
     }
 
     drawPanel() {
+        this.drawFooter();
         this.panelContainer = this.add.container(0, 0);
         const scrollableHeight = this.laneHeight + this.bottomMargin;
         this.panelContainer.setSize(this.scale.width, scrollableHeight);

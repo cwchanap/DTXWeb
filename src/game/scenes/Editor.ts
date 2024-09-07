@@ -29,7 +29,6 @@ export class Editor extends BaseGame {
 	create() {
 		console.log("Create Editor Scene")
 
-		this.drawFooter();
 		this.drawPanel();
 		this.drawNotes();
 

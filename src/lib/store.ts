@@ -11,6 +11,7 @@ const playingAudio = writable<HTMLAudioElement | null>(null);
 const isPreviewing = writable<boolean>(false);
 const playSpeed = writable<number>(1);
 
+
 export default {
 	activeScene,
 	currentDtxFile,

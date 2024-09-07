@@ -1,6 +1,3 @@
-import { EventBus } from "@/game/EventBus";
-import EventType from "@/game/EventType";
-
 export interface SoundChip {
     label: string;
     id: number;
@@ -77,7 +74,6 @@ export class DTXFile {
                 const laneID = header.slice(4, 6);
                 return { measure, laneID, pattern };
             });
-            EventBus.emit(EventType.NOTE_IMPORT, notes);
             return notes;
         } else {
             console.log('No note line found.');

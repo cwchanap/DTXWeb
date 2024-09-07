@@ -17,7 +17,9 @@ interface Data {
 
 
 export class Preview extends BaseGame {
-    public static key = 'Preview';
+    static key = 'Preview';
+    static bgmNoteID = '01';
+    static bpmNoteID = '08';
     private playSpeed = 1;
     private bpm = 0;
     private startMeasure = 0;
@@ -118,7 +120,7 @@ export class Preview extends BaseGame {
 
         const secondsPerMeasure = 60 * 4 / this.bpm;
 
-        this.notes['01'].forEach((note) => this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure));
+        this.notes[Preview.bgmNoteID].forEach((note) => this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure));
 
         this.laneConfigs.filter((lane) => lane.playable).forEach((lane) => {
             if (this.notes[lane.id]) {
@@ -141,7 +143,7 @@ export class Preview extends BaseGame {
             0,
             -laneHeight - this.bottomMargin,
             this.scale.width,
-            laneHeight + this.bottomMargin
+            laneHeight + this.bottomMargin + this.cameras.main.height
         );
     }
 

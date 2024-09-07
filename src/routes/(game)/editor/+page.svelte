@@ -2,7 +2,6 @@
 	import { type Scene } from 'phaser';
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
 	import { goto } from '$app/navigation';
-	import store from '@/lib/store';
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy, onMount } from 'svelte';
 	import MainTab from '@/lib/components/editor/MainTab.svelte';
@@ -13,9 +12,13 @@
 	import { get } from 'svelte/store';
 	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
 	import type { SimFile } from '@/lib/chart/simFile';
+	import EventType from '@/game/EventType';
+	import store from '@/lib/store';
+	import { EventBus } from '@/game/EventBus';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = 0;
+	let isPreviewing = false;
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -43,14 +46,19 @@
 
 	async function onFileUpload(simfile: SimFile, highestDtx: DTXFile) {
 		await highestDtx.parse();
-		highestDtx.parseNotes();
+		const notes = highestDtx.parseNotes();
+		highestDtx.parseBPMChanges();
 		store.currentDtxFile.set(highestDtx);
 		store.currentSimfile.set(simfile);
 		store.currentSoundChip.set(highestDtx.parseSoundChips());
+		EventBus.emit(EventType.NOTE_IMPORT, notes);
 	}
 
 	onMount(() => {
 		store.activeScene.set(Editor.key);
+		store.isPreviewing.subscribe((value) => {
+			isPreviewing = value;
+		});
 		newFile();
 	});
 </script>
@@ -83,9 +91,14 @@
 				<Tab class="w-1/4 hover:bg-gray-100" bind:group={currentTab} name="main" value={0}
 					>Main</Tab
 				>
-				<Tab class="w-1/4 hover:bg-gray-100" bind:group={currentTab} name="sound" value={1}
-					>Sound</Tab
-				>
+				{#if !isPreviewing}
+					<Tab
+						class="w-1/4 hover:bg-gray-100"
+						bind:group={currentTab}
+						name="sound"
+						value={1}>Sound</Tab
+					>
+				{/if}
 				<svelte:fragment slot="panel">
 					{#if currentTab === 0}
 						<MainTab />

@@ -16,6 +16,7 @@ export interface Note {
 }
 
 export abstract class BaseGame extends Scene {
+    static measureLengthNoteID = '02';
     protected cellsPerMeasure = 16;
     protected cellWidth = 50;
     protected cellHeight = 25;
@@ -67,11 +68,11 @@ export abstract class BaseGame extends Scene {
     }
 
 	parseMesaureLength() {
-		if (!this.notes['02']) return;
+		if (!this.notes[BaseGame.measureLengthNoteID]) return;
 
 		let currentMeasureLength = 1;
 		for (let i = 0; i < this.measureCount; i++) {
-			const note = this.notes['02'].find((note) => note.measure === i)
+			const note = this.notes[BaseGame.measureLengthNoteID].find((note) => note.measure === i)
 			if (note) {
 				currentMeasureLength = parseFloat(note.pattern);
 			}

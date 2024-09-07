@@ -102,8 +102,10 @@ export class Preview extends BaseGame {
 
         const duration = (60 * 4 / this.bpm) * 1000; // Convert to milliseconds
 
-        const targetY = - this.getTotalMesaureOffest(this.startMeasure) - this.bottomMargin; // Target Y position for the nearest measure
-        const totalDistance = this.getTotalMesaureOffest(this.measureCount) - targetY;
+        const targetY = this.getTotalMesaureOffest(this.startMeasure) + this.bottomMargin; // Target Y position for the nearest measure
+        const totalDistance = this.getTotalMesaureOffest(this.measureCount) + targetY;
+
+        this.panelContainer.setPosition(0, targetY, totalDistance);
 
         this.previewTween = this.tweens.add({
             targets: this.panelContainer,

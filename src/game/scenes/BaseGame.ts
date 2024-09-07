@@ -147,9 +147,8 @@ export abstract class BaseGame extends Scene {
         const mask = this.make.graphics();
         mask.fillStyle(0xffffff);
         mask.fillRect(0, 0, this.scale.width, this.scale.height - this.bottomMargin);
-        
         this.panelContainer.setMask(mask.createGeometryMask());
-    }   
+    }
 
     setCameraBounds() {
 		this.cameras.main.setBounds(

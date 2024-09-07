@@ -127,13 +127,11 @@ export class Editor extends BaseGame {
 		});
 
 		EventBus.on(EventType.MEASURE_GOTO, (measure: number) => {
-			const y = measure * this.cellHeight * this.cellsPerMeasure;
-			this.cameras.main.scrollY = -y - this.bottomMargin;
+			this.panelContainer.y = measure * this.cellHeight * this.cellsPerMeasure;
 		});
 
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
-			const currentMeasure = Math.floor(-this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure));
-			console.log("Start Preview", currentMeasure, this.cameras.main.scrollY);
+			const currentMeasure = Math.floor(this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure));
 			this.scene.stop();
 			this.scene.start(Preview.key, {
 				bpm: bpm,

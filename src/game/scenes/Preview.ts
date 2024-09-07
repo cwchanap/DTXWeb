@@ -105,16 +105,15 @@ export class Preview extends BaseGame {
         const targetY = - this.getTotalMesaureOffest(this.startMeasure) - this.bottomMargin; // Target Y position for the nearest measure
         const totalDistance = this.getTotalMesaureOffest(this.measureCount) - targetY;
 
-        this.cameras.main.scrollY = targetY;
         this.previewTween = this.tweens.add({
-            targets: this.cameras.main,
-            scrollY: -totalDistance,
+            targets: this.panelContainer,
+            y: totalDistance,
             duration: duration * this.measureCount,
             ease: 'Linear',
             repeat: -1,
             yoyo: false,
             onComplete: () => {
-                this.cameras.main.scrollY = 0;
+                this.panelContainer.setPosition(0, 0);
             },
         });
 
@@ -138,12 +137,12 @@ export class Preview extends BaseGame {
         return `soundchip_${soundChip.file}`;
     }
 
-    override setCameraBounds(laneHeight: number) {
+    override setCameraBounds() {
         this.cameras.main.setBounds(
             0,
-            -laneHeight - this.bottomMargin,
+            -this.laneHeight - this.bottomMargin,
             this.scale.width,
-            laneHeight + this.bottomMargin + this.cameras.main.height
+            this.laneHeight + this.bottomMargin + this.cameras.main.height
         );
     }
 

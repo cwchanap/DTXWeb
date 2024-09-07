@@ -15,9 +15,11 @@ export class XAAudioContext extends AudioContext {
                 data.length,
                 format.samples_rate
             );
-            const channelData = audioBuffer.getChannelData(0);
-            for (let i = 0; i < data.length; i++) {
-                channelData[i] = data[i] / 32768;
+            for (let i = 0; i < format.channels; i++) {
+                const channelData = audioBuffer.getChannelData(i);
+                for (let j = 0; j < data.length; j++) {
+                    channelData[j] = data[j] / 32768;
+                }
             }
             successCallback?.(audioBuffer);
             return Promise.resolve(audioBuffer);

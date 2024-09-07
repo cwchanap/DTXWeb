@@ -29,8 +29,16 @@ export class Editor extends BaseGame {
 	create() {
 		console.log("Create Editor Scene")
 
+		this.drawFooter();
 		this.drawPanel();
 		this.drawNotes();
+
+		// // Make the scene scrollable
+		// this.cameras.main.setScroll(0, 0);
+
+		// Enable drag scrolling
+		let startY = 0;
+		let startScrollY = 0;
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
@@ -63,24 +71,19 @@ export class Editor extends BaseGame {
 			}
 		});
 
-		// Make the scene scrollable
-		this.cameras.main.setScroll(0, 0);
-
-		// Enable drag scrolling
-		let startY = 0;
-		let startScrollY = 0;
-
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 			if (this.isEditing) return;
 			this.isDragging = true;
 			startY = pointer.y;
-			startScrollY = this.cameras.main.scrollY;
+			startScrollY = this.panelContainer.y;
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
 			if (this.isDragging) {
 				const deltaY = 3 * (pointer.y - startY);
-				this.cameras.main.scrollY = startScrollY - deltaY;
+				let newY = startScrollY + deltaY;
+				newY = Phaser.Math.Clamp(newY, 0, this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin);
+				this.panelContainer.y = newY;
 			}
 		});
 
@@ -88,18 +91,13 @@ export class Editor extends BaseGame {
 			this.isDragging = false;
 		});
 
-		this.input.on(
-			'wheel',
-			(
-				pointer: Phaser.Input.Pointer,
-				gameObjects: any,
-				deltaX: number,
-				deltaY: number,
-				deltaZ: number
-			) => {
-				this.cameras.main.scrollY += deltaY * 0.1;
+		this.input.on('wheel', (pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => {
+			if (pointer.y < this.scale.height - this.bottomMargin) {
+				let newY = this.panelContainer.y - deltaY * 0.5;
+				newY = Phaser.Math.Clamp(newY, 0, this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin);
+				this.panelContainer.y = newY;
 			}
-		);
+		});
 
 		this.input.keyboard?.on('keydown-Q', (event: KeyboardEvent) => {
 			this.isEditing = !this.isEditing;
@@ -134,7 +132,8 @@ export class Editor extends BaseGame {
 		});
 
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
-			const currentMeasure = Math.floor(-this.cameras.main.scrollY / (this.cellHeight * this.cellsPerMeasure));
+			const currentMeasure = Math.floor(-this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure));
+			console.log("Start Preview", currentMeasure, this.cameras.main.scrollY);
 			this.scene.stop();
 			this.scene.start(Preview.key, {
 				bpm: bpm,

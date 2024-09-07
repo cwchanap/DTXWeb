@@ -1,5 +1,5 @@
 import { LaneMeasureNote } from "@/lib/chart/note";
-import { Scene } from "phaser";
+import { Scene, GameObjects } from "phaser";
 
 interface LaneConfig {
     name: string;
@@ -24,9 +24,12 @@ export abstract class BaseGame extends Scene {
     protected cellMargin = 2;
     protected noteSize = 25;
 
+    protected panelContainer!: GameObjects.Container;
+    protected footerContainer!: GameObjects.Container;
     protected abstract measureLength: number[];
     protected abstract measureCount: number;
     protected abstract notes: Record<string, Note[]>;
+
 
     get totalWidth() {
         return this.laneConfigs.reduce((acc) => acc + this.cellWidth, 0);
@@ -38,6 +41,10 @@ export abstract class BaseGame extends Scene {
 
     get offsetY() {
         return this.scale.height - this.bottomMargin;
+    }
+
+    get laneHeight() {
+        return this.getTotalMesaureOffest(this.measureCount)
     }
 
     protected laneConfigs: LaneConfig[] = [
@@ -80,10 +87,34 @@ export abstract class BaseGame extends Scene {
 		}
 	}
 
+    drawFooter() {
+        this.footerContainer = this.add.container(0, 0);
+        this.footerContainer.setSize(this.scale.width, this.bottomMargin);
+        // Lane indicators
+        let currentX = this.offsetX;
+        this.laneConfigs.forEach((laneConfig, index) => {
+            const text = this.add
+                .text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
+                    fontSize: '16px',
+                    color: '#ffffff'
+                })
+                .setOrigin(0.5);
+            this.footerContainer.add(text);
+            currentX += this.cellWidth;
+        });
+        const graphics = this.add.graphics();
+        this.drawMesaureLine(graphics, this.offsetY);
+        graphics.strokePath();
+        this.footerContainer.add(graphics);
+    }
+
     drawPanel() {
+        this.panelContainer = this.add.container(0, 0);
+        const scrollableHeight = this.laneHeight + this.bottomMargin;
+        this.panelContainer.setSize(this.scale.width, scrollableHeight);
+
         this.parseMesaureLength();
         // Constants for grid dimensions
-        const laneHeight = this.getTotalMesaureOffest(this.measureCount);
 
         const graphics = this.add.graphics();
         graphics.lineStyle(1, 0x888888, 1); // Light grey for cells
@@ -93,25 +124,13 @@ export abstract class BaseGame extends Scene {
         let currentX = this.offsetX;
         this.laneConfigs.forEach((laneConfig, index) => {
             graphics.moveTo(currentX, this.offsetY);
-            graphics.lineTo(currentX, this.offsetY - laneHeight);
+            graphics.lineTo(currentX, this.offsetY - this.laneHeight);
             currentX += this.cellWidth;
         });
 
         // Draw the last vertical line
         graphics.moveTo(currentX, this.offsetY);
-        graphics.lineTo(currentX, this.offsetY - laneHeight);
-
-        // Lane indicators
-        currentX = this.offsetX;
-        this.laneConfigs.forEach((laneConfig, index) => {
-            this.add
-                .text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
-                    fontSize: '16px',
-                    color: '#ffffff'
-                })
-                .setOrigin(0.5);
-            currentX += this.cellWidth;
-        });
+        graphics.lineTo(currentX, this.offsetY - this.laneHeight);
 
         // Draw horizontal lines for cells and measures
         let y = this.offsetY;
@@ -119,19 +138,25 @@ export abstract class BaseGame extends Scene {
             this.drawMeasure(j, y, graphics);
             y -= this.cellHeight * this.cellsPerMeasure * (this.measureLength[j] || 1);
         }
-        this.drawMesaureLine(graphics, y);
 
         graphics.strokePath();
 
-        this.setCameraBounds(laneHeight);
-    }
+        this.panelContainer.add(graphics);
+        this.setCameraBounds();
 
-    setCameraBounds(laneHeight: number) {
+        const mask = this.make.graphics();
+        mask.fillStyle(0xffffff);
+        mask.fillRect(0, 0, this.scale.width, this.scale.height - this.bottomMargin);
+        
+        this.panelContainer.setMask(mask.createGeometryMask());
+    }   
+
+    setCameraBounds() {
 		this.cameras.main.setBounds(
 			0,
-			-laneHeight + this.cameras.main.height - this.bottomMargin,
+			-this.laneHeight + this.cameras.main.height - this.bottomMargin,
 			this.scale.width,
-			laneHeight + this.bottomMargin
+			this.laneHeight + this.bottomMargin
 		);
     }
 
@@ -144,9 +169,6 @@ export abstract class BaseGame extends Scene {
     drawMeasure(measure: number, yStart: number, graphics: Phaser.GameObjects.Graphics) {
         const cellsPerMeasure = this.cellsPerMeasure * (this.measureLength[measure] || 1);
 
-        // Draw the measure line
-        this.drawMesaureLine(graphics, yStart);
-
         for (let i = 0; i < cellsPerMeasure; i++) {
             graphics.lineStyle((i * 4 % cellsPerMeasure == 0) ? 4 : 2, 0x888888, 0.5);
             graphics.moveTo(this.offsetX, yStart);
@@ -154,7 +176,9 @@ export abstract class BaseGame extends Scene {
             yStart -= this.cellHeight;
         }
 
-        this.add
+        this.drawMesaureLine(graphics, yStart);        
+
+        const text = this.add
             .text(
                 this.offsetX + this.totalWidth / 2,
                 yStart + (this.cellsPerMeasure * this.cellHeight) / 2,
@@ -166,6 +190,7 @@ export abstract class BaseGame extends Scene {
             )
             .setOrigin(0.5)
             .setAlpha(0.5);
+        this.panelContainer.add(text);
     }
 
 	drawNotes() {
@@ -213,7 +238,7 @@ export abstract class BaseGame extends Scene {
             graphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1); // Red color for the note
             graphics.fillRect(x, y, width, height);
             graphics.setName(noteKey);
-
+            this.panelContainer.add(graphics);
             // draw text with note Id at the center of the note
             const text = this.add.text(x + width / 2, y + height / 2, noteId, {
                 fontSize: '16px',
@@ -222,6 +247,7 @@ export abstract class BaseGame extends Scene {
             });
             text.setOrigin(0.5, 0.5)
             text.setName(noteKey);
+            this.panelContainer.add(text);
         }
     }
 }

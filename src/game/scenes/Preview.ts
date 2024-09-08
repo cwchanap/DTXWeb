@@ -110,7 +110,7 @@ export class Preview extends BaseGame {
         this.previewTween = this.tweens.add({
             targets: this.panelContainer,
             y: totalDistance,
-            duration: duration * this.measureCount,
+            duration: duration * this.getTotalMesaureLength(this.measureCount),
             ease: 'Linear',
             repeat: -1,
             yoyo: false,

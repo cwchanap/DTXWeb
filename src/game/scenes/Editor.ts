@@ -32,12 +32,13 @@ export class Editor extends BaseGame {
 		this.drawPanel();
 		this.drawNotes();
 
-		// // Make the scene scrollable
-		// this.cameras.main.setScroll(0, 0);
-
 		// Enable drag scrolling
 		let startY = 0;
 		let startScrollY = 0;
+
+		const clampY = (newY: number) => {
+			return Phaser.Math.Clamp(newY, 0, this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin);
+		}
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
@@ -81,8 +82,7 @@ export class Editor extends BaseGame {
 			if (this.isDragging) {
 				const deltaY = 3 * (pointer.y - startY);
 				let newY = startScrollY + deltaY;
-				newY = Phaser.Math.Clamp(newY, 0, this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin);
-				this.panelContainer.y = newY;
+				this.panelContainer.y = clampY(newY);
 			}
 		});
 
@@ -93,8 +93,7 @@ export class Editor extends BaseGame {
 		this.input.on('wheel', (pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => {
 			if (pointer.y < this.scale.height - this.bottomMargin) {
 				let newY = this.panelContainer.y - deltaY * 0.5;
-				newY = Phaser.Math.Clamp(newY, 0, this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin);
-				this.panelContainer.y = newY;
+				this.panelContainer.y = clampY(newY);
 			}
 		});
 
@@ -126,7 +125,7 @@ export class Editor extends BaseGame {
 		});
 
 		EventBus.on(EventType.MEASURE_GOTO, (measure: number) => {
-			this.panelContainer.y = measure * this.cellHeight * this.cellsPerMeasure;
+			this.panelContainer.y = clampY(this.getTotalMesaureOffest(measure));
 		});
 
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {

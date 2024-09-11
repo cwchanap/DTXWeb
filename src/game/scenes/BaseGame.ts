@@ -64,7 +64,6 @@ export abstract class BaseGame extends Scene {
         { name: 'BGM', noteColor: 0x222222, id: '01', playable: false }
     ];
 
-
     getTotalMesaureLength(measure: number) {
         if (this.measureLength.length === 0) return measure;
         return this.measureLength.slice(0, measure).reduce((acc, length) => acc + length, 0);

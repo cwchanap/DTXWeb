@@ -1,105 +1,131 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
+import { CLOUDFLARE_STORAGE_URL } from '@/constant';
 
 interface DtxLevel {
-    label: string;
-    file: DTXFile;
+	label: string;
+	file: DTXFile;
 }
 
 export class SimFile {
-    public title!: string;
-    public levels: { [key: number]: DtxLevel | undefined } = {};
+	private isParseFromRemoteURL: boolean = false;
+	private simFileID: string = '';
+	public title!: string;
+	public levels: { [key: number]: DtxLevel | undefined } = {};
 
-    constructor(public files: File[]) { }
+	constructor(public files: File[]) {}
 
-    public async parse() {
-        // search for `def` file
-        const defFile = this.files.find((file) => file.name.endsWith('.def'));
-        if (!defFile) {
-            throw new Error('No .def file found');
-        }
-        await this.parseHeader(defFile);
-    }
+	public async parse() {
+		// search for `def` file
+		const defFile = this.files.find((file) => file.name.endsWith('.def'));
+		if (!defFile) {
+			throw new Error('No .def file found');
+		}
+		await this.parseHeader(defFile);
+	}
 
-    public static async parseFromZip(file: string) {
-        const zip = new JSZip();
-        const zipContent = await zip.loadAsync(file);
-        const extracted = [];
+	public static async parseFromZip(file: string) {
+		const zip = new JSZip();
+		const zipContent = await zip.loadAsync(file);
+		const extracted = [];
 
-        for (const [name, zipEntry] of Object.entries(zipContent.files)) {
-            if (!zipEntry.dir) {
-                const file = await zipEntry.async('blob');
-                extracted.push(new File([file], name));
-            }
-        }
-        return new SimFile(extracted);
-    }
+		for (const [name, zipEntry] of Object.entries(zipContent.files)) {
+			if (!zipEntry.dir) {
+				const file = await zipEntry.async('blob');
+				extracted.push(new File([file], name));
+			}
+		}
+		return new SimFile(extracted);
+	}
 
-    public getZip() {
-        const zip = new JSZip();
-        for (const file of this.files) {
-            zip.file(file.name, file);
-        }
-        return zip;
-    }
+	public static async parseFromRemoteURL(simfileID: string) {
+		const response = await fetch(`${CLOUDFLARE_STORAGE_URL}/${simfileID}/SET.def`);
+		const file = new File([await response.blob()], 'SET.def');
+		const simFile = new SimFile([file]);
+		simFile.isParseFromRemoteURL = true;
+		simFile.simFileID = simfileID;
+		await simFile.parse();
+		return simFile;
+	}
 
-    public async parseHeader(file: File) {
-        const content = await file.text();
-        const lines = content.split('\r\n');
+	public getZip() {
+		const zip = new JSZip();
+		for (const file of this.files) {
+			zip.file(file.name, file);
+		}
+		return zip;
+	}
 
-        const title_line = lines.find((line) => line.startsWith('#TITLE '));
-        this.title = title_line ? title_line.split('#TITLE ')[1] : '';
+	public async parseHeader(file: File) {
+		const content = await file.text();
+		const lines = content.split('\r\n');
 
-        const promises = [1, 2, 3, 4, 5].map(async (level) => {
-            const level_line = lines.find((line) => line.startsWith(`#L${level}LABEL `));
-            const file_line = lines.find((line) => line.startsWith(`#L${level}FILE `));
-            if (level_line && file_line) {
-                const label = level_line.split(' ')[1];
-                const file_name = file_line.split(' ')[1];
-                const file = this.files.find((f) => f.name === file_name);
-                if (!file) {
-                    return;
-                }
-                const dtx = new DTXFile(file, label);
-                await dtx.parse();
-                this.levels[level] = { label, file: dtx };
-            }
-        });
+		const title_line = lines.find((line) => line.startsWith('#TITLE '));
+		this.title = title_line ? title_line.split('#TITLE ')[1] : '';
 
-        await Promise.all(promises);
-    }
+		const promises = [1, 2, 3, 4, 5].map(async (level) => {
+			const level_line = lines.find((line) => line.startsWith(`#L${level}LABEL `));
+			const file_line = lines.find((line) => line.startsWith(`#L${level}FILE `));
+			if (level_line && file_line) {
+				const label = level_line.split(' ')[1];
+				const file_name = file_line.split(' ')[1];
+				let file;
+				if (!this.isParseFromRemoteURL) {
+					file = this.files.find((f) => f.name === file_name);
+				} else {
+					const response = await fetch(
+						`${CLOUDFLARE_STORAGE_URL}/${this.simFileID}/${file_name}`
+					);
+					file = new File([await response.blob()], file_name);
+				}
+				if (!file) {
+					return;
+				}
+				const dtx = new DTXFile(file, label);
+				await dtx.parse();
+				this.levels[level] = { label, file: dtx };
+			}
+		});
 
-    public getHighestLevel() {
-        const highest = this.levels[5] || this.levels[4] || this.levels[3] || this.levels[2] || this.levels[1];
-        if (!highest) {
-            throw new Error('No levels found');
-        }
-        return highest.file;
-    }
+		await Promise.all(promises);
+	}
 
-    public getPreviewFile() {
-        const preview = this.getHighestLevel().preview;
-        const previewFile = this.files.find((file) => file.name === preview);
-        if (!previewFile) {
-            throw new Error('Preview file not found');
-        }
-        return previewFile;
-    }
+	public getLevel(level: number | undefined) {
+		return level ? this.levels[level]?.file : this.getHighestLevel();
+	}
 
-    public getSoundPreviewFile() {
-        const preview = this.getHighestLevel().soundPreview;
-        const previewFile = this.files.find((file) => file.name === preview);
-        if (!previewFile) {
-            throw new Error('Preview file not found');
-        }
-        return previewFile;
-    }
+	public getHighestLevel() {
+		const highest =
+			this.levels[5] || this.levels[4] || this.levels[3] || this.levels[2] || this.levels[1];
+		if (!highest) {
+			throw new Error('No levels found');
+		}
+		return highest.file;
+	}
 
-    public getPreview() {
-        return URL.createObjectURL(this.getPreviewFile());
-    }
+	public getPreviewFile() {
+		const preview = this.getHighestLevel().preview;
+		const previewFile = this.files.find((file) => file.name === preview);
+		if (!previewFile) {
+			throw new Error('Preview file not found');
+		}
+		return previewFile;
+	}
 
-    public getSoundPreview() {
-        return URL.createObjectURL(this.getSoundPreviewFile());
-    }
+	public getSoundPreviewFile() {
+		const preview = this.getHighestLevel().soundPreview;
+		const previewFile = this.files.find((file) => file.name === preview);
+		if (!previewFile) {
+			throw new Error('Preview file not found');
+		}
+		return previewFile;
+	}
+
+	public getPreview() {
+		return URL.createObjectURL(this.getPreviewFile());
+	}
+
+	public getSoundPreview() {
+		return URL.createObjectURL(this.getSoundPreviewFile());
+	}
 }

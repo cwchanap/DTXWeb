@@ -18,17 +18,24 @@ export class DTXFile {
     bpmNotes: Record<string, number>[] = [];
     lines!: string[];
 
-    constructor(private file?: File, public difficulty?: string) { }
+    constructor(private file?: File | string, public difficulty?: string) { }
 
     async parse(encoding: string = 'shift-jis') {
-        if (!this.file) {
+        if (typeof this.file === 'string') {
+            this.parseFromText(this.file);
+        } else if (this.file instanceof File) {
+            const arrayBuffer = await this.file.arrayBuffer();
+            const decoder = new TextDecoder(encoding);
+            const content = decoder.decode(arrayBuffer);
+            this.parseFromText(content);
+        } else {
             console.error('File is not set');
             return;
         }
-        const arrayBuffer = await this.file.arrayBuffer();
-        const decoder = new TextDecoder(encoding);
-        const content = decoder.decode(arrayBuffer);
-        const lines = content.split('\r\n');
+    }
+
+    async parseFromText(text: string) {
+        const lines = text.split('\r\n');
 
         const remove_prefix = (prefix: string) => lines.find((line) => line.startsWith(prefix))?.split(prefix)[1] || '';
 

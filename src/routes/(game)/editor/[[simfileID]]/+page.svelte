@@ -11,14 +11,17 @@
 	import SoundTab from '@/lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
 	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
-	import type { SimFile } from '@/lib/chart/simFile';
+	import { SimFile } from '@/lib/chart/simFile';
 	import EventType from '@/game/EventType';
 	import store from '@/lib/store';
 	import { EventBus } from '@/game/EventBus';
+	import { page } from '$app/stores';
+	import { CLOUDFLARE_STORAGE_URL } from '@/constant';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = 0;
 	let isPreviewing = false;
+	let simfileID: string;
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -54,12 +57,22 @@
 		EventBus.emit(EventType.NOTE_IMPORT, notes);
 	}
 
-	onMount(() => {
+	onMount(async () => {
 		store.activeScene.set(Editor.key);
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		newFile();
+		simfileID = $page.params.simfileID;
+		if (!simfileID) {
+			newFile();
+		} else if (simfileID === 'demo') {
+			const simfile = SimFile.parseFromRemoteURL(simfileID)
+
+			// const text = await fetch(`${CLOUDFLARE_STORAGE_URL}/${simfileID}/${simfile.getHighestLevel().}`).then((res) => res.text());
+			// const dtxFile = new DTXFile(text);
+			// store.currentDtxFile.set(dtxFile);
+			// await dtxFile.parse();
+		}
 	});
 </script>
 

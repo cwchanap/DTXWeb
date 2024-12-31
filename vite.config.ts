@@ -16,5 +16,8 @@ export default defineConfig({
 		globals: true,
 		environment: 'jsdom',
 		setupFiles: ['./src/tests/setup.ts']
-	}
+	},
+    optimizeDeps: {
+        exclude: ['xa_decoder']
+    }
 });

@@ -67,11 +67,7 @@
 			newFile();
 		} else if (simfileID === 'demo') {
 			const simfile = SimFile.parseFromRemoteURL(simfileID)
-
-			// const text = await fetch(`${CLOUDFLARE_STORAGE_URL}/${simfileID}/${simfile.getHighestLevel().}`).then((res) => res.text());
-			// const dtxFile = new DTXFile(text);
-			// store.currentDtxFile.set(dtxFile);
-			// await dtxFile.parse();
+            
 		}
 	});
 </script>

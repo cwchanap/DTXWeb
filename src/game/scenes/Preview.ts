@@ -72,7 +72,7 @@ export class Preview extends BaseGame {
                     this.load.audio({
                         key: cacheKey,
                         url: [URL.createObjectURL(soundFile)],
-                        context: XAaudioContext
+                        context: XAaudioContext,
                     });
                 } else {
                     // For other formats, load as usual
@@ -156,15 +156,17 @@ export class Preview extends BaseGame {
             const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureLength(startMeasure) + noteChip.position) * secondsPerMeasure;
             const seek = (this.getTotalMesaureLength(startMeasure) - this.getTotalMesaureLength(note.measure) - noteChip.position) * secondsPerMeasure;
 
-            const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
-            if (soundChip) {
-                const audio = this.sound.get(this.getCacheKey(soundChip));
-                this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
-                audio.play({
-                    delay: (note.measure >= startMeasure) ? delay : 0,
-                    seek: (note.measure >= startMeasure) ? 0 : seek
-                });
-            }
+            this.time.delayedCall(delay * 1000, () => {
+                const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
+                if (soundChip) {
+                    const audio = this.sound.get(this.getCacheKey(soundChip));
+                    this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
+                    audio.play({
+                        // delay: (note.measure >= startMeasure) ? delay : 0,
+                        seek: (note.measure >= startMeasure) ? 0 : seek
+                    });
+                }
+            });
         });
     }
 
@@ -173,8 +175,9 @@ export class Preview extends BaseGame {
         const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 
         laneMeasureNote.notes.forEach((noteChip) => {
-            const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureLength(startMeasure) + noteChip.position) * secondsPerMeasure * 1000;
-            this.time.delayedCall(delay, () => {
+            const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureLength(startMeasure) + noteChip.position) * secondsPerMeasure;
+            // const platformAdjustment = navigator.userAgent.includes('Windows') ? 200 : 0;
+            this.time.delayedCall(delay * 1000, () => {
                 const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));
                 if (soundChip) {
                     const audio = this.sound.get(this.getCacheKey(soundChip));

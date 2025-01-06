@@ -16,6 +16,7 @@ export class Editor extends BaseGame {
 	private isEditing = false;
 	private isDragging = false;
 	protected notes: Record<string, Note[]> = {};
+    protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
 
 	constructor(protected measureCount: number = 10) {
@@ -106,7 +107,7 @@ export class Editor extends BaseGame {
 			this.measureCount = get(store.measureCount);
 			this.restart({ measureCount });
 		});
-		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[]) => {
+		EventBus.on(EventType.NOTE_IMPORT, (notes: Note[], bpmNotes: Record<string, number>) => {
 			this.notes = {};
 			this.sound.removeAll();
 			notes.forEach((note) => {
@@ -121,6 +122,7 @@ export class Editor extends BaseGame {
 				this.measureCount = maxMeasure + 1;
 			}
 			store.measureCount.set(this.measureCount);
+            this.bpmNotes = bpmNotes;
 			this.restart({ measureCount: this.measureCount });
 		});
 
@@ -133,6 +135,7 @@ export class Editor extends BaseGame {
 			this.scene.stop();
 			this.scene.start(Preview.key, {
 				bpm: bpm,
+                bpmNotes: this.bpmNotes,
 				notes: this.notes,
 				measureCount: this.measureCount,
 				startMeasure: currentMeasure

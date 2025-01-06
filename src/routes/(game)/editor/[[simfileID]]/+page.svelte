@@ -50,11 +50,11 @@
 	async function onFileUpload(simfile: SimFile, highestDtx: DTXFile) {
 		await highestDtx.parse();
 		const notes = highestDtx.parseNotes();
-		highestDtx.parseBPMChanges();
+		const bpmNotes = highestDtx.parseBPMChanges();
 		store.currentDtxFile.set(highestDtx);
 		store.currentSimfile.set(simfile);
 		store.currentSoundChip.set(highestDtx.parseSoundChips());
-		EventBus.emit(EventType.NOTE_IMPORT, notes);
+		EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 	}
 
 	onMount(async () => {

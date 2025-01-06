@@ -15,7 +15,6 @@ export class DTXFile {
     soundPreview!: string;
     comment!: string;
     soundChips!: SoundChip[];
-    bpmNotes: Record<string, number>[] = [];
     lines!: string[];
 
     constructor(private file?: File | string, public difficulty?: string) { }
@@ -65,11 +64,13 @@ export class DTXFile {
 
     parseBPMChanges() {
         const bpmLines = this.lines.filter(line => line.startsWith('#BPM'));
-        this.bpmNotes = bpmLines.map(line => {
+        const bpmNotes: Record<string, number> = {}
+        bpmLines.forEach(line => {
             const [header, bpm] = line.split(': ', 2);
             const noteID = header.slice(4, 6);
-            return { [noteID]: parseFloat(bpm) };
+            bpmNotes[noteID] = parseFloat(bpm);
         });
+        return bpmNotes;
     }
 
     parseNotes() {

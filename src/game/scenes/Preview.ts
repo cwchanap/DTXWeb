@@ -12,6 +12,7 @@ interface Data {
     measureCount: number;
     notes: Record<string, Note[]>;
     bpm: number;
+    bpmNotes: Record<string, number>;
     startMeasure: number;
 }
 
@@ -29,6 +30,7 @@ export class Preview extends BaseGame {
     private previewTween: Phaser.Tweens.Tween | null = null;
     protected measureLength: number[] = [];
     protected notes: Record<string, Note[]> = {};
+    protected bpmNotes: Record<string, number> = {};
 
     constructor() {
         super({ key: Preview.key });
@@ -38,6 +40,7 @@ export class Preview extends BaseGame {
         this.measureCount = data.measureCount;
         this.notes = data.notes;
         this.bpm = data.bpm;
+        this.bpmNotes = data.bpmNotes;
         this.startMeasure = data.startMeasure;
 
         store.playSpeed.subscribe((value) => {
@@ -100,8 +103,6 @@ export class Preview extends BaseGame {
             });
         }
 
-        const duration = (60 * 4 / this.bpm) * 1000; // Convert to milliseconds
-
         const targetY = this.getTotalMesaureOffest(this.startMeasure) + this.bottomMargin; // Target Y position for the nearest measure
         const totalDistance = this.getTotalMesaureOffest(this.measureCount) + targetY;
 
@@ -110,7 +111,7 @@ export class Preview extends BaseGame {
         this.previewTween = this.tweens.add({
             targets: this.panelContainer,
             y: totalDistance,
-            duration: duration * this.getTotalMesaureLength(this.measureCount),
+            duration: this.getTimeElapsed(this.measureCount) * 1000,
             ease: 'Linear',
             repeat: -1,
             yoyo: false,
@@ -133,6 +134,40 @@ export class Preview extends BaseGame {
 
         EventBus.emit(EventType.SCENE_READY, this);
         EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
+    }
+
+    getTimeElapsed(measure: number) {
+        let elapsedTime = 0;
+        let currentBPM = this.bpm;
+    
+        for (let i = 0; i <= measure; i++) {
+            const measureLength = this.measureLength[i] || 1;
+            const bpmNotes = this.notes[Preview.bpmNoteID]?.filter(note => note.measure === i) || [];
+    
+            if (bpmNotes.length === 0) {
+                // No BPM changes in this measure, use the current BPM for the whole measure
+                elapsedTime += (60 / currentBPM) * 4 * measureLength;
+            } else {
+                // Calculate time for each segment within the measure
+                let lastPosition = 0;
+                bpmNotes.forEach(note => {
+                    const pattern = note.pattern;
+                    const segmentCount = pattern.length / 2;
+                    for (let j = 0; j < segmentCount; j++) {
+                        const noteId = pattern.substring(j * 2, j * 2 + 2);
+                        if (noteId !== '00') {
+                            const position = j / segmentCount;
+                            elapsedTime += (60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
+                            currentBPM = this.bpmNotes[noteId];
+                            lastPosition = position;
+                        }
+                    }
+                });
+                // Add the remaining time in the measure after the last BPM change
+                elapsedTime += (60 / currentBPM) * 4 * (1 - lastPosition) * measureLength;
+            }
+        }
+        return elapsedTime;
     }
 
     getCacheKey(soundChip: SoundChip) {

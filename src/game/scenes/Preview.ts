@@ -136,7 +136,7 @@ export class Preview extends BaseGame {
         EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
     }
 
-    getTimeElapsed(measure: number) {
+    getTimeElapsed(measure: number, noteChipPosition: number = 0) {
         let elapsedTime = 0;
         let currentBPM = this.bpm;
     
@@ -167,6 +167,10 @@ export class Preview extends BaseGame {
                 elapsedTime += (60 / currentBPM) * 4 * (1 - lastPosition) * measureLength;
             }
         }
+    
+        // Add the time offset for the current noteChip position within the measure
+        elapsedTime += (60 / currentBPM) * 4 * noteChipPosition * (this.measureLength[measure] || 1);
+    
         return elapsedTime;
     }
 
@@ -210,7 +214,7 @@ export class Preview extends BaseGame {
         const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 
         laneMeasureNote.notes.forEach((noteChip) => {
-            const delay = (this.getTotalMesaureLength(note.measure) - this.getTotalMesaureLength(startMeasure) + noteChip.position) * secondsPerMeasure;
+            const delay = (this.getTimeElapsed(note.measure, noteChip.position) - this.getTimeElapsed(startMeasure));
             // const platformAdjustment = navigator.userAgent.includes('Windows') ? 200 : 0;
             this.time.delayedCall(delay * 1000, () => {
                 const soundChip = get(store.currentSoundChip).find((chip) => chip.id === parseInt(noteChip.noteID, 36));

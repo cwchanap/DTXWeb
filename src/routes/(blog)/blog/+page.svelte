@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ChartList from '@/lib/components/ChartList.svelte';
+	import ChartList from '$lib/components/ChartList.svelte';
 	import { locale, locales } from 'svelte-i18n';
 	import { _ } from 'svelte-i18n';
 	import { popup } from '@skeletonlabs/skeleton';

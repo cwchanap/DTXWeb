@@ -2,10 +2,10 @@ import { Scene, Input, Sound } from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
-import store from '@/lib/store';
-import { XAaudioContext } from '@/lib/browser/audioDecoder';
-import { LaneMeasureNote } from '@/lib/chart/note';
-import type { SoundChip } from '@/lib/chart/dtx';
+import store from '$lib/store';
+import { XAaudioContext } from '$lib/browser/audioDecoder';
+import { LaneMeasureNote } from '$lib/chart/note';
+import type { SoundChip } from '$lib/chart/dtx';
 import { BaseGame, type Note } from './BaseGame';
 
 interface Data {

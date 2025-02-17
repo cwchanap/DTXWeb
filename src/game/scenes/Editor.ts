@@ -4,7 +4,7 @@ import EventType from '../EventType';
 import { BaseGame, type Note } from './BaseGame';
 import { Preview } from './Preview';
 import { get } from 'svelte/store';
-import store from '@/lib/store';
+import store from '$lib/store';
 
 interface Data {
 	measureCount?: number;

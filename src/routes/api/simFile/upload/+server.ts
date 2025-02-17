@@ -3,8 +3,8 @@ import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import { DTXFILE_BUCKET_NAME } from '@/constant';
 import path from 'path';
-import s3 from '@/lib/server/s3Client';
-import logger from '@/lib/server/logger';
+import s3 from '$lib/server/s3Client';
+import logger from '$lib/server/logger';
 
 // Define validation schema for multiple files
 const formSchema = z.object({

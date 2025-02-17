@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
-import type { DTXFile } from '@/lib/chart/dtx';
-import type { SoundChip } from '@/lib/chart/dtx';
+import type { DTXFile } from '$lib/chart/dtx';
+import type { SoundChip } from '$lib/chart/dtx';
 import type { SimFile } from './chart/simFile';
 
 const activeScene = writable<string | null>(null);

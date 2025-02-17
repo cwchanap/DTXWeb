@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { supabase } from '@/lib/supabase';
+	import { supabase } from '$lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { goto } from '$app/navigation';
 	import { getToastStore } from '@skeletonlabs/skeleton';
-	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
-	import type { SimFile } from '@/lib/chart/simFile';
-	import type { DTXFile } from '@/lib/chart/dtx';
-	import ChartDetail from '@/lib/components/ChartDetail.svelte';
+	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
+	import type { SimFile } from '$lib/chart/simFile';
+	import type { DTXFile } from '$lib/chart/dtx';
+	import ChartDetail from '$lib/components/ChartDetail.svelte';
 
 	const toastStore = getToastStore();
 

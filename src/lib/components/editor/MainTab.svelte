@@ -2,8 +2,8 @@
 	import { EventBus } from '@/game/EventBus';
 	import EventType from '@/game/EventType';
 	import { onMount } from 'svelte';
-	import store from '@/lib/store';
-	import { DTXFile } from '@/lib/chart/dtx';
+	import store from '$lib/store';
+	import { DTXFile } from '$lib/chart/dtx';
 	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
 
 	let dtxFile: DTXFile | null;

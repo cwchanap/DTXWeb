@@ -1,4 +1,4 @@
-import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import { CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ACCESS_KEY_ID, CLOUDFLARE_ACCESS_KEY_SECRET } from '$env/static/private';
 
 const s3 = new S3Client({
@@ -9,5 +9,5 @@ const s3 = new S3Client({
         secretAccessKey: CLOUDFLARE_ACCESS_KEY_SECRET
     },
 });
-console.log(await s3.send(new ListBucketsCommand({})));
+
 export default s3;

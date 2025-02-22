@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { supabase } from '@/lib/supabase';
+	import { supabase } from '$lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline, PlaySolid } from 'flowbite-svelte-icons';
-	import { formatLevelDisplay } from '@/lib/utils';
+	import { formatLevelDisplay } from '$lib/utils';
 	import { popup } from '@skeletonlabs/skeleton';
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { _ } from 'svelte-i18n';

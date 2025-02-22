@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ChartList from '@/lib/components/ChartList.svelte';
+	import ChartList from '$lib/components/ChartList.svelte';
 </script>
 
 <div class="container mx-auto p-4">

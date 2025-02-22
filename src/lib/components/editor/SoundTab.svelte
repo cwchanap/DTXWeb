@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { SoundChip } from '@/lib/chart/dtx';
+	import type { SoundChip } from '$lib/chart/dtx';
 	import { FileButton } from '@skeletonlabs/skeleton';
-	import store from '@/lib/store';
-	import type { SimFile } from '@/lib/chart/simFile';
-	import { XAaudioContext } from '@/lib/browser/audioDecoder';
+	import store from '$lib/store';
+	import type { SimFile } from '$lib/chart/simFile';
+	import { XAaudioContext } from '$lib/browser/audioDecoder';
 
 	let soundChips: SoundChip[] = [];
 	let simfile: SimFile | null = null;

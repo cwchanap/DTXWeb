@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '@/lib/chart/note';
+import { LaneMeasureNote } from '$lib/chart/note';
 import { Scene, GameObjects } from 'phaser';
 
 interface LaneConfig {

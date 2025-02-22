@@ -1,7 +1,7 @@
 <script>
-	import { supabase } from '@/lib/supabase';
+	import { supabase } from '$lib/supabase';
 	import { goto } from '$app/navigation';
-	import AuthGuard from '@/lib/components/AuthGuard.svelte';
+	import AuthGuard from '$lib/components/AuthGuard.svelte';
 
 	let isSidebarCollapsed = false;
 

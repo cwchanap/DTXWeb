@@ -1,14 +1,15 @@
 <!-- src/routes/new-page/+page.svelte -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import type { DTXFile } from '@/lib/chart/dtx';
-	import { SimFile } from '@/lib/chart/simFile';
-	import { supabase } from '@/lib/supabase';
+	import type { DTXFile } from '$lib/chart/dtx';
+	import { SimFile } from '$lib/chart/simFile';
+	import { supabase } from '$lib/supabase';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
-	import ChartFolderUpload from '@/lib/components/ChartFolderUpload.svelte';
-	import ChartDetail from '@/lib/components/ChartDetail.svelte';
-	import ImageAudio from '@/lib/components/ImageAudio.svelte';
+	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
+	import ChartDetail from '$lib/components/ChartDetail.svelte';
+	import ImageAudio from '$lib/components/ImageAudio.svelte';
+	import { filterFiles } from '$lib/utils';
 
 	let simfile: SimFile | undefined = undefined;
 	let isCollapsed = true;
@@ -96,6 +97,7 @@
 		}
 
 		if (simFileData) {
+			// Insert dtx_files data into the database
 			const { error } = await supabase.from('dtx_files').insert(
 				Object.values(simfile.levels)
 					.filter((value): value is NonNullable<typeof value> => value !== undefined)
@@ -110,6 +112,40 @@
 				console.error('Error creating dtx_files:', error.message);
 				return;
 			}
+		}
+
+		// Upload simfile to s3
+		const formData = new FormData();
+		for (const file of filterFiles(simfile.files, [
+			'.dtx',
+			'.ogg',
+			'.def',
+			'.jpg',
+			'.avi',
+			'.mp4',
+			'.mp3',
+			'.xa'
+		])) {
+			if (!file.name.endsWith('.ogg')) {
+                const fileName = file.name.split('/').pop();
+                if (!fileName) {
+                    console.error('Error getting file name:', file.name);
+                    return;
+                }
+                const newFile = new File([file], fileName, { type: file.type });
+				formData.append('files', newFile);
+			}
+		}
+		formData.append('simFileId', simFileData.id.toString());
+
+		const response = await fetch('/api/simFile/upload', {
+			method: 'POST',
+			body: formData
+		});
+
+		if (!response.ok) {
+			console.error('Error uploading simfile to s3:', response.statusText);
+			return;
 		}
 
 		goto('/app/chart');
@@ -153,7 +189,7 @@
 						soundPreviewUrl={simfile.getSoundPreview()}
 					/>
 				</div>
-				<div class="col-span-6"/>
+				<div class="col-span-6" />
 			</svelte:fragment>
 			<svelte:fragment slot="folder_upload">
 				<div class="col-span-8">

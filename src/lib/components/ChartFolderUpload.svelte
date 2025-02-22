@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { DTXFile } from '../chart/dtx';
 	import { SimFile } from '../chart/simFile';
+    import { filterFiles } from '../utils';
 
 	export let large = false;
 	export let hidden = false;
@@ -19,12 +20,8 @@
 		dropzoneActive = false;
 	}
 
-	function filterFiles(files: FileList) {
-		return Array.from(files).filter((file) =>
-			new Set(['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa']).has(
-				file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-			)
-		);
+	function filterSimFiles(files: FileList) {
+        return filterFiles(files, ['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa']);
 	}
 
 	async function handleDrop(event: DragEvent) {
@@ -32,7 +29,7 @@
 		dropzoneActive = false;
 
 		if (event.dataTransfer?.files) {
-			simfile = new SimFile(filterFiles(event.dataTransfer.files));
+			simfile = new SimFile(filterSimFiles(event.dataTransfer.files));
 			await simfile.parse();
 		}
 	}
@@ -40,7 +37,7 @@
 	async function handleFileInput(event: Event) {
 		const input = event.target as HTMLInputElement;
 		if (input.files) {
-			simfile = new SimFile(filterFiles(input.files));
+			simfile = new SimFile(filterSimFiles(input.files));
 			await simfile.parse();
 			simfile = simfile;
 			highestDtx = simfile.getHighestLevel();

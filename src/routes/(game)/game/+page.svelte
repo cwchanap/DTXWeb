@@ -2,7 +2,7 @@
 	import type { Scene } from 'phaser';
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
 	import { goto } from '$app/navigation';
-	import store from '@/lib/store';
+	import store from '$lib/store';
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy } from 'svelte';
 

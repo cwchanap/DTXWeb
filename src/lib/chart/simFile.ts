@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
-const { VITE_CLOUDFLARE_R2_PUBLIC_URL } = import.meta.env;
+import { PUBLIC_CLOUDFLARE_R2_PUBLIC_URL} from '$env/static/public';
 
 interface DtxLevel {
 	label: string;
@@ -39,7 +39,7 @@ export class SimFile {
 	}
 
 	public static async parseFromRemoteURL(simfileID: string) {
-		const response = await fetch(`${VITE_CLOUDFLARE_R2_PUBLIC_URL}/${simfileID}/SET.def`);
+		const response = await fetch(`${PUBLIC_CLOUDFLARE_R2_PUBLIC_URL}/${simfileID}/SET.def`);
 		const file = new File([await response.blob()], 'SET.def');
 		const simFile = new SimFile([file]);
 		simFile.isParseFromRemoteURL = true;
@@ -74,7 +74,7 @@ export class SimFile {
 					file = this.files.find((f) => f.name === file_name);
 				} else {
 					const response = await fetch(
-						`${VITE_CLOUDFLARE_R2_PUBLIC_URL}/${this.simFileID}/${file_name}`
+						`${PUBLIC_CLOUDFLARE_R2_PUBLIC_URL}/${this.simFileID}/${file_name}`
 					);
 					file = new File([await response.blob()], file_name);
 				}

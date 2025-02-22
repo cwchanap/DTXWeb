@@ -127,7 +127,13 @@
 			'.xa'
 		])) {
 			if (!file.name.endsWith('.ogg')) {
-				formData.append('files', file);
+                const fileName = file.name.split('/').pop();
+                if (!fileName) {
+                    console.error('Error getting file name:', file.name);
+                    return;
+                }
+                const newFile = new File([file], fileName, { type: file.type });
+				formData.append('files', newFile);
 			}
 		}
 		formData.append('simFileId', simFileData.id.toString());

@@ -32,6 +32,7 @@ export async function POST({ request }: { request: Request }) {
                 const arrayBuffer = await file.arrayBuffer();
                 const buffer = Buffer.from(arrayBuffer);
 
+                logger.info('Uploading file:', file.name);
                 await s3.send(
                     new PutObjectCommand({
                         Bucket: DTXFILE_BUCKET_NAME,

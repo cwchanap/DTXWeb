@@ -1,6 +1,0 @@
-2025-02-16T19:54:24.201Z [info]: Uploading files
-2025-02-16T19:54:24.291Z [error]: Upload error: write EPROTO 404FBE0202000000:error:0A000410:SSL routines:ssl3_read_bytes:sslv3 alert handshake failure:../deps/openssl/openssl/ssl/record/rec_layer_s3.c:1590:SSL alert number 40
-
-2025-02-16T20:00:42.154Z [info]: Uploading files
-2025-02-16T20:00:42.240Z [error]: Upload error: write EPROTO 404FBE0202000000:error:0A000410:SSL routines:ssl3_read_bytes:sslv3 alert handshake failure:../deps/openssl/openssl/ssl/record/rec_layer_s3.c:1590:SSL alert number 40
-

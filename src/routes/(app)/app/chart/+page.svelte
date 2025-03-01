@@ -1,5 +1,17 @@
 <script lang="ts">
 	import ChartList from '$lib/components/ChartList.svelte';
+	import { onMount } from 'svelte';
+
+	onMount(() => {
+		console.log('mounted');
+		fetch('/api/simFile/list')
+			.then((data) => {
+				console.log(data);
+			})
+			.catch((err) => {
+				console.error(err);
+			});
+	});
 </script>
 
 <div class="container mx-auto p-4">

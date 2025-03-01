@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline, PlaySolid } from 'flowbite-svelte-icons';
@@ -9,22 +10,32 @@
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { _ } from 'svelte-i18n';
 	import ImageAudio from './ImageAudio.svelte';
-	export let pageSize: number = 12;
-	export let isBlog = false;
+	import type { SupabaseClient } from '@supabase/supabase-js';
+	interface Props {
+		pageSize?: number;
+		isBlog?: boolean;
+        supabase: SupabaseClient;
+	}
 
-	let items: Tables<'simfiles'>[] = [];
-	let currentPage = 1;
-	let totalPages = 1;
-	let loading = false;
-	let artistFilter: string = '';
-	let songNameFilter: string = '';
+	let { supabase, pageSize = 12, isBlog = false }: Props = $props();
+
+	let items: Tables<'simfiles'>[] = $state([]);
+	let currentPage = $state(1);
+	let totalPages = $state(1);
+	let loading = $state(false);
+	let artistFilter: string = $state('');
+	let songNameFilter: string = $state('');
 	let searchTimeout: NodeJS.Timeout;
-	let hideUnpublished = false;
+	let hideUnpublished = $state(false);
 
 	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
-	$: filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
+	let filteredItems = $state<Tables<'simfiles'>[]>([]);
+	run(() => {
+		filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
+	});
+
 
 	async function togglePublishChart(id: number, published: boolean) {
 		const { error } = await supabase
@@ -173,14 +184,14 @@
 	placeholder={$_('blog.search_artist')}
 	bind:value={artistFilter}
 	class="mb-4 w-1/2 rounded border p-2"
-	on:input={handleSearchInput}
+	oninput={handleSearchInput}
 />
 <input
 	type="text"
 	placeholder={$_('blog.search_song_name')}
 	bind:value={songNameFilter}
 	class="mb-4 w-1/2 rounded border p-2"
-	on:input={handleSearchInput}
+	oninput={handleSearchInput}
 />
 {#if !isBlog}
 	<div class="mb-4 flex items-center">
@@ -232,7 +243,7 @@
 									</a>
 
 									<button
-										on:click={() =>
+										onclick={() =>
 											togglePublishChart(item.id, item.is_published)}
 										class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
 										role="menuitem"
@@ -241,7 +252,7 @@
 									</button>
 
 									<button
-										on:click={() =>
+										onclick={() =>
 											openDeleteModal(
 												item.id,
 												item.preview_url,
@@ -300,7 +311,7 @@
 	<div class="mt-6 flex justify-center">
 		<button
 			class="mr-2 rounded bg-blue-500 px-4 py-2 text-white"
-			on:click={() => changePage(currentPage - 1)}
+			onclick={() => changePage(currentPage - 1)}
 			disabled={currentPage === 1}>{$_('blog.pagination.previous')}</button
 		>
 		<span class="mx-4 self-center">
@@ -308,7 +319,7 @@
 		</span>
 		<button
 			class="ml-2 rounded bg-blue-500 px-4 py-2 text-white"
-			on:click={() => changePage(currentPage + 1)}
+			onclick={() => changePage(currentPage + 1)}
 			disabled={currentPage === totalPages}>{$_('blog.pagination.next')}</button
 		>
 		<input
@@ -317,7 +328,7 @@
 			max={totalPages}
 			bind:value={currentPage}
 			class="mx-2 w-16 rounded border p-1"
-			on:change={() => changePage(currentPage)}
+			onchange={() => changePage(currentPage)}
 		/>
 	</div>
 {/if}

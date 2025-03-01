@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { EventBus } from '@/game/EventBus';
 	import EventType from '@/game/EventType';
 	import { onMount } from 'svelte';
@@ -6,18 +8,18 @@
 	import { DTXFile } from '$lib/chart/dtx';
 	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
 
-	let dtxFile: DTXFile | null;
-	let measureCount = 10;
-	let title = '';
-	let artist = '';
-	let comment = '';
-	let bpm = 120;
-	let level = 0;
-	let gotoMeasure = 0;
-	let isPreviewing = false;
-	let playSpeed = 1;
+	let dtxFile: DTXFile | null = $state();
+	let measureCount = $state(10);
+	let title = $state('');
+	let artist = $state('');
+	let comment = $state('');
+	let bpm = $state(120);
+	let level = $state(0);
+	let gotoMeasure = $state(0);
+	let isPreviewing = $state(false);
+	let playSpeed = $state(1);
 
-	$: {
+	run(() => {
 		if (dtxFile) {
 			dtxFile.title = title;
 			dtxFile.artist = artist;
@@ -26,7 +28,7 @@
 			dtxFile.level = level;
 			store.currentDtxFile.set(dtxFile);
 		}
-	}
+	});
 
 	function handleMeasureChange() {
 		store.measureCount.set(measureCount);
@@ -124,7 +126,7 @@
 			min="0"
 			max="499"
 			bind:value={measureCount}
-			on:change={handleMeasureChange}
+			onchange={handleMeasureChange}
 			disabled={isPreviewing}
 		/>
 	</div>
@@ -136,7 +138,7 @@
 			min="0"
 			max="10"
 			bind:value={playSpeed}
-			on:change={handlePlaySpeedChange}
+			onchange={handlePlaySpeedChange}
 			disabled={isPreviewing}
 		/>
 	</div>	
@@ -152,13 +154,13 @@
 		/>
 		<button
 			class="rounded-md border border-gray-300 px-2 py-1"
-			on:click={handleGotoMeasure}
+			onclick={handleGotoMeasure}
 			disabled={isPreviewing}>Go</button
 		>
 	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-1/3 text-gray-700" for="measure-input">Preview: </label>
-		<button class="rounded-md border border-gray-300 px-2 py-1" on:click={handlePlay}
+		<button class="rounded-md border border-gray-300 px-2 py-1" onclick={handlePlay}
 			>{#if isPreviewing}<StopSolid />{:else}<PlaySolid />{/if}</button
 		>
 	</div>

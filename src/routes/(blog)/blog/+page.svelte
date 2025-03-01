@@ -4,10 +4,14 @@
 	import { _ } from 'svelte-i18n';
 	import { popup } from '@skeletonlabs/skeleton';
 
+    let { data } = $props();
+    let { supabase } = $derived(data);
+
 	const localeMap: Record<string, string> = {
 		en: 'English',
 		jp: '日本語'
 	};
+    
 </script>
 
 <div class="min-h-screen bg-gray-100">
@@ -30,7 +34,7 @@
 	<div data-popup="language-selector">
 		<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
 			{#each $locales as l}
-				<button class="hover:bg-gray-100" on:click={() => locale.set(l)}
+				<button class="hover:bg-gray-100" onclick={() => locale.set(l)}
 					>{localeMap[l]}</button
 				>
 			{/each}
@@ -44,7 +48,7 @@
 		</section>
 		<section class="mb-8">
 			<h2 class="mb-4 text-2xl font-bold">{$_('blog.latest_simfiles')}</h2>
-			<ChartList isBlog={true} />
+			<ChartList supabase={supabase} isBlog={true} />
 		</section>
 	</main>
 </div>

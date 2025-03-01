@@ -8,14 +8,26 @@
 		dtx_files: Partial<Tables<'dtx_files'>>[];
 	};
 
-	export let simfile: Partial<simFileWithDtxFiles> | null = null;
-	$: dtxFiles = (simfile?.dtx_files || []) as Tables<'dtx_files'>[];
+	interface Props {
+		simfile?: Partial<simFileWithDtxFiles> | null;
+		preview?: import('svelte').Snippet;
+		folder_upload?: import('svelte').Snippet;
+		save?: import('svelte').Snippet;
+	}
 
-	let displayId: number = simfile?.display_id || 0;
-	let publishDate: string = simfile?.publish_date || dayjs().format('YYYY-MM-DD');
-	let isPublished: boolean = simfile?.is_published || true;
-	let downloadUrl: string = simfile?.download_url || '';
-	let videoPreviewUrl: string = simfile?.video_preview_url || '';
+	let {
+		simfile = null,
+		preview,
+		folder_upload,
+		save
+	}: Props = $props();
+	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
+
+	let displayId: number = $state(simfile?.display_id || 0);
+	let publishDate: string = $state(simfile?.publish_date || dayjs().format('YYYY-MM-DD'));
+	let isPublished: boolean = $state(simfile?.is_published || true);
+	let downloadUrl: string = $state(simfile?.download_url || '');
+	let videoPreviewUrl: string = $state(simfile?.video_preview_url || '');
 
 	const onSave = createEventDispatcher();
 </script>
@@ -23,7 +35,7 @@
 <div class="flex-grow rounded-lg bg-white p-6 shadow-md">
 	<h1 class="mb-4 text-2xl font-bold">{simfile?.title}</h1>
 	<div class="mt-4 grid grid-cols-8 gap-4">
-		<slot name="preview" />
+		{@render preview?.()}
 		<div class="col-span-1 flex items-center">
 			<label for="bpm" class="mr-2 block">BPM:</label>
 		</div>
@@ -99,10 +111,10 @@
 				class="mb-4 w-full rounded border p-2"
 			/>
 		</div>
-		<slot name="folder_upload" />
+		{@render folder_upload?.()}
 	</div>
 	<button
-		on:click={() =>
+		onclick={() =>
 			onSave('onSave', {
 				displayId,
 				publishDate,
@@ -112,6 +124,6 @@
 			})}
 		class="mt-4 rounded bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700"
 	>
-		<slot name="save">Update</slot>
+		{#if save}{@render save()}{:else}Update{/if}
 	</button>
 </div>

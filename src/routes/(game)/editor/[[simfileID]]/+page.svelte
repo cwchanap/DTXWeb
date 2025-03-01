@@ -19,8 +19,8 @@
 	import { CLOUDFLARE_STORAGE_URL } from '@/constant';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
-	let currentTab: number = 0;
-	let isPreviewing = false;
+	let currentTab: number = $state(0);
+	let isPreviewing = $state(false);
 	let simfileID: string;
 
 	// Event emitted from the PhaserGame component
@@ -74,12 +74,12 @@
 
 <div data-popup="file-menu">
 	<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
-		<button class="hover:bg-gray-100" on:click={newFile}>New</button>
+		<button class="hover:bg-gray-100" onclick={newFile}>New</button>
 		<button
 			class="hover:bg-gray-100"
-			on:click={() => document.getElementById('folder_upload')?.click()}>Import</button
+			onclick={() => document.getElementById('folder_upload')?.click()}>Import</button
 		>
-		<button class="hover:bg-gray-100" on:click={exportFile}>Export</button>
+		<button class="hover:bg-gray-100" onclick={exportFile}>Export</button>
 		<ChartFolderUpload {onFileUpload} hidden={true} />
 	</div>
 </div>
@@ -108,13 +108,15 @@
 						value={1}>Sound</Tab
 					>
 				{/if}
-				<svelte:fragment slot="panel">
-					{#if currentTab === 0}
-						<MainTab />
-					{:else if currentTab === 1}
-						<SoundTab />
-					{/if}
-				</svelte:fragment>
+				{#snippet panel()}
+							
+						{#if currentTab === 0}
+							<MainTab />
+						{:else if currentTab === 1}
+							<SoundTab />
+						{/if}
+					
+							{/snippet}
 			</TabGroup>
 		</div>
 		<div class="flex w-[55%] justify-center p-5">
@@ -123,14 +125,14 @@
 		<div class="flex w-[20%] flex-col items-end justify-end p-16">
 			<button
 				class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-				on:click={() => {
+				onclick={() => {
 					goto('/game');
 					store.activeScene.set(MainMenu.key);
 				}}>Game</button
 			>
 			<button
 				class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-				on:click={() => {
+				onclick={() => {
 					goto('/');
 					store.activeScene.set(null);
 				}}>Main</button

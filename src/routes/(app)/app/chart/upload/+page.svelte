@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import type { DTXFile } from '$lib/chart/dtx';
 	import { SimFile } from '$lib/chart/simFile';
-	import { supabase } from '$lib/supabase';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
@@ -11,9 +10,12 @@
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { filterFiles } from '$lib/utils';
 
-	let simfile: SimFile | undefined = undefined;
-	let isCollapsed = true;
-	let highestDtx: DTXFile | undefined = undefined;
+    let { data } = $props();
+    let { supabase } = $derived(data);
+
+	let simfile: SimFile | undefined = $state(undefined);
+	let isCollapsed = $state(true);
+	let highestDtx: DTXFile | undefined = $state(undefined);
 
 	function toggleCollapse() {
 		isCollapsed = !isCollapsed;
@@ -182,29 +184,32 @@
 					e.detail.videoPreviewUrl
 				)}
 		>
-			<svelte:fragment slot="preview">
-				<div class="col-span-2 items-center justify-center">
-					<ImageAudio
-						previewUrl={simfile.getPreview()}
-						soundPreviewUrl={simfile.getSoundPreview()}
-					/>
-				</div>
-				<div class="col-span-6" />
-			</svelte:fragment>
-			<svelte:fragment slot="folder_upload">
-				<div class="col-span-8">
-					<div class="mt-4">
-						<button
-							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-							on:click={() => (simfile = undefined)}
-						>
-							Clear Files
-						</button>
+			{#snippet preview()}
+					
+					<div class="col-span-2 items-center justify-center">
+						<ImageAudio
+							previewUrl={simfile.getPreview()}
+							soundPreviewUrl={simfile.getSoundPreview()}
+						/>
 					</div>
-					<div class="mt-4">
-						<button
-							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-							on:click={async () => {
+					<div class="col-span-6"></div>
+				
+					{/snippet}
+			{#snippet folder_upload()}
+					
+					<div class="col-span-8">
+						<div class="mt-4">
+							<button
+								class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+								onclick={() => (simfile = undefined)}
+							>
+								Clear Files
+							</button>
+						</div>
+						<div class="mt-4">
+							<button
+								class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+								onclick={async () => {
 								if (!simfile) return;
 								const zip = simfile.getZip();
 								const blob = await zip.generateAsync({ type: 'blob' });
@@ -215,48 +220,51 @@
 								a.click();
 								URL.revokeObjectURL(url);
 							}}
-						>
-							Download zip
-						</button>
+							>
+								Download zip
+							</button>
+						</div>
+						<div class="mt-4">
+							<button
+								onclick={toggleCollapse}
+								class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
+							>
+								{#if isCollapsed}
+									Show Uploaded Files
+								{:else}
+									Hide Uploaded Files
+								{/if}
+							</button>
+						</div>
 					</div>
-					<div class="mt-4">
-						<button
-							on:click={toggleCollapse}
-							class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
-						>
-							{#if isCollapsed}
-								Show Uploaded Files
-							{:else}
-								Hide Uploaded Files
-							{/if}
-						</button>
-					</div>
-				</div>
 
-				{#if !isCollapsed}
-					<table class="col-span-8 min-w-full leading-normal">
-						<thead>
-							<tr>
-								<th
-									class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
-								>
-									File Name
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each simfile.files as file}
+					{#if !isCollapsed}
+						<table class="col-span-8 min-w-full leading-normal">
+							<thead>
 								<tr>
-									<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
-										{file.name}
-									</td>
+									<th
+										class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
+									>
+										File Name
+									</th>
 								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
-			</svelte:fragment>
-			<svelte:fragment slot="save">Upload</svelte:fragment>
+							</thead>
+							<tbody>
+								{#each simfile.files as file}
+									<tr>
+										<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
+											{file.name}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				
+					{/snippet}
+			{#snippet save()}
+						Upload
+					{/snippet}
 		</ChartDetail>
 	{/if}
 </div>

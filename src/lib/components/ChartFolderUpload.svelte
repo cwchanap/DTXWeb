@@ -3,12 +3,16 @@
 	import { SimFile } from '../chart/simFile';
     import { filterFiles } from '../utils';
 
-	export let large = false;
-	export let hidden = false;
 	let simfile: SimFile;
-	let dropzoneActive = false;
+	let dropzoneActive = $state(false);
 	let highestDtx: DTXFile;
-	export let onFileUpload: (simfile: SimFile, highestDtx: DTXFile) => void; // Add this
+	interface Props {
+		large?: boolean;
+		hidden?: boolean;
+		onFileUpload: (simfile: SimFile, highestDtx: DTXFile) => void; // Add this
+	}
+
+	let { large = false, hidden = false, onFileUpload }: Props = $props();
 
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault();
@@ -50,11 +54,11 @@
 {#if large}
 	<div
 		class="dropzone flex flex-1 items-center justify-center {dropzoneActive ? 'active' : ''}"
-		on:dragover={handleDragOver}
-		on:dragleave={handleDragLeave}
-		on:drop={handleDrop}
-		on:click={() => document.getElementById('fileInput')?.click()}
-		on:keydown={(e) => e.key === 'Enter' && document.getElementById('fileInput')?.click()}
+		ondragover={handleDragOver}
+		ondragleave={handleDragLeave}
+		ondrop={handleDrop}
+		onclick={() => document.getElementById('fileInput')?.click()}
+		onkeydown={(e) => e.key === 'Enter' && document.getElementById('fileInput')?.click()}
 		role="button"
 		tabindex="0"
 		aria-label="Drop zone"
@@ -66,7 +70,7 @@
 			webkitdirectory
 			directory
 			multiple
-			on:change={handleFileInput}
+			onchange={handleFileInput}
 			class="hidden"
 		/>
 	</div>
@@ -77,7 +81,7 @@
 		webkitdirectory
 		directory
 		class="mb-4 w-full rounded border p-2 {hidden ? 'hidden' : ''}"
-		on:change={handleFileInput}
+		onchange={handleFileInput}
 	/>
 {/if}
 

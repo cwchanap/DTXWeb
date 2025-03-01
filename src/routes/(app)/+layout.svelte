@@ -1,9 +1,10 @@
-<script>
-	import { supabase } from '$lib/supabase';
+<script lang="ts">
 	import { goto } from '$app/navigation';
-	import AuthGuard from '$lib/components/AuthGuard.svelte';
 
-	let isSidebarCollapsed = false;
+	let { data, children } = $props();
+    let { supabase } = $derived(data);
+
+	let isSidebarCollapsed = $state(false);
 
 	const toggleSidebar = () => {
 		isSidebarCollapsed = !isSidebarCollapsed;
@@ -20,14 +21,14 @@
 	};
 </script>
 
-<AuthGuard>
+<!-- <AuthGuard> -->
 	<div class="flex min-h-screen">
 		<!-- Sidebar -->
 		<aside
 			class={`bg-gray-800 text-white ${isSidebarCollapsed ? 'collapsed-sidebar' : 'expanded-sidebar'}`}
 		>
 			<div class="p-4">
-				<button on:click={toggleSidebar} class="text-white focus:outline-none">
+				<button onclick={toggleSidebar} class="text-white focus:outline-none">
 					{#if isSidebarCollapsed}
 						&#x25B6; <!-- Right arrow -->
 					{:else}
@@ -50,20 +51,20 @@
 				<div class="container mx-auto flex items-center justify-between px-4 py-4">
 					<h1 class="flex-grow text-xl font-bold">My App</h1>
 					<nav class="flex space-x-4">
-						<button on:click={navigateToProfile} class="hover:underline">Profile</button
+						<button onclick={navigateToProfile} class="hover:underline">Profile</button
 						>
-						<button on:click={logout} class="hover:underline">Logout</button>
+						<button onclick={logout} class="hover:underline">Logout</button>
 					</nav>
 				</div>
 			</header>
 
 			<!-- Main Page Content -->
 			<main class="p-4">
-				<slot />
+				{@render children?.()}
 			</main>
 		</div>
 	</div>
-</AuthGuard>
+<!-- </AuthGuard> -->
 
 <style>
 	.collapsed-sidebar {

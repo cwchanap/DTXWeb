@@ -3,12 +3,17 @@
 	import store from '../store';
 	import { get } from 'svelte/store';
 
-	export let previewUrl: string;
-	export let soundPreviewUrl: string | null;
-	let isPlaying = false;
-	let isLoading = false;
+	interface Props {
+		previewUrl: string;
+		soundPreviewUrl: string | null;
+		preview?: import('svelte').Snippet;
+	}
 
-	let audio: HTMLAudioElement | null = null;
+	let { previewUrl, soundPreviewUrl, preview }: Props = $props();
+	let isPlaying = $state(false);
+	let isLoading = $state(false);
+
+	let audio: HTMLAudioElement | null = $state(null);
 
 	store.playingAudio.subscribe((audio) => {
 		if (audio === null) {
@@ -18,13 +23,13 @@
 </script>
 
 <div class="relative">
-	<slot name="preview">
+	{#if preview}{@render preview()}{:else}
 		<img src={previewUrl} alt="Preview" class="mb-4 h-60 w-full rounded-lg object-cover" />
-	</slot>
+	{/if}
 	{#if soundPreviewUrl}
 		<button
 			class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
-			on:click={async () => {
+			onclick={async () => {
 				if (isPlaying) {
 					audio?.pause();
 					isPlaying = false;

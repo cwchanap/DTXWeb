@@ -1,5 +1,3 @@
-<!-- @migration-task Error while migrating Svelte code: `<tr>` cannot be a child of `<table>`. `<table>` only allows these children: `<caption>`, `<colgroup>`, `<tbody>`, `<thead>`, `<tfoot>`, `<style>`, `<script>`, `<template>`. The browser will 'repair' the HTML (by moving, removing, or inserting elements) which breaks Svelte's assumptions about the structure of your components.
-https://svelte.dev/e/node_invalid_placement -->
 <script lang="ts">
 	import type { SoundChip } from '$lib/chart/dtx';
 	import { FileButton } from '@skeletonlabs/skeleton';
@@ -42,63 +40,65 @@ https://svelte.dev/e/node_invalid_placement -->
 
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
-			<tr class="bg-white">
-				<th class="w-[15%] border border-gray-300 text-center">Label</th>
-				<th class="w-[10%] border border-gray-300 text-center">ID</th>
-				<th class="w-[15%] border border-gray-300 text-center">Volume</th>
-				<th class="w-[15%] border border-gray-300 text-center">Position</th>
-				<th class="w-[45%] border border-gray-300 text-center">File</th>
-			</tr>
-			{#each soundChips as chip}
-				<tr class="bg-white">
-					<td class="border border-gray-300 px-2 py-1">
-						<input type="text" bind:value={chip.label} class="w-full text-center" />
-					</td>
-					<td class="border border-gray-300 px-2 py-1 text-center">
-						<span>{chip.id.toString(36).toUpperCase().padStart(2, '0')}</span>
-					</td>
-					<td class="border border-gray-300 px-2 py-1">
-						<input
-							type="number"
-							bind:value={chip.volume}
-							min="0"
-							max="100"
-							class="w-full text-center"
-						/>
-					</td>
-					<td class="border border-gray-300 px-2 py-1">
-						<input
-							type="number"
-							bind:value={chip.position}
-							class="w-full text-center"
-						/>
-					</td>
-
-					<td class="border border-gray-300 px-2 py-1"
-						>{#if chip.file}
-							<button
-								on:click={() => {
-									if (chip.file) {
-										playAudio(chip.file);
-									}
-								}}
-							>
-								{chip.file}
-							</button>
-						{:else}
-							<FileButton
-								on:change={(e) => {
-									chip.file = e.target.files?.[0];
-								}}
-								name="file"
-								button="btn-sm variant-soft-primary"
-								accept="audio/*"
-								style="display: none;"
+			<thead class="bg-white">
+				<tr><td class="w-[15%] border border-gray-300 text-center">Label</td></tr>
+				<tr><td class="w-[10%] border border-gray-300 text-center">ID</td></tr>
+				<tr><td class="w-[15%] border border-gray-300 text-center">Volume</td></tr>
+				<tr><td class="w-[15%] border border-gray-300 text-center">Position</td></tr>
+				<tr><td class="w-[45%] border border-gray-300 text-center">File</td></tr>
+			</thead>
+			<tbody>
+				{#each soundChips as chip}
+					<tr class="bg-white">
+						<td class="border border-gray-300 px-2 py-1">
+							<input type="text" bind:value={chip.label} class="w-full text-center" />
+						</td>
+						<td class="border border-gray-300 px-2 py-1 text-center">
+							<span>{chip.id.toString(36).toUpperCase().padStart(2, '0')}</span>
+						</td>
+						<td class="border border-gray-300 px-2 py-1">
+							<input
+								type="number"
+								bind:value={chip.volume}
+								min="0"
+								max="100"
+								class="w-full text-center"
 							/>
-						{/if}</td
-					>
-				</tr>
-			{/each}
+						</td>
+						<td class="border border-gray-300 px-2 py-1">
+							<input
+								type="number"
+								bind:value={chip.position}
+								class="w-full text-center"
+							/>
+						</td>
+
+						<td class="border border-gray-300 px-2 py-1"
+							>{#if chip.file}
+								<button
+									on:click={() => {
+										if (chip.file) {
+											playAudio(chip.file);
+										}
+									}}
+								>
+									{chip.file}
+								</button>
+							{:else}
+								<FileButton
+									on:change={(e) => {
+										chip.file = e.target.files?.[0];
+									}}
+									name="file"
+									button="btn-sm variant-soft-primary"
+									accept="audio/*"
+									style="display: none;"
+								/>
+							{/if}</td
+						>
+					</tr>
+				{/each}
+			</tbody>
 		</table>
 	</div>
 </div>

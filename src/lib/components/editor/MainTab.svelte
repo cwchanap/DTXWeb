@@ -141,7 +141,7 @@
 			onchange={handlePlaySpeedChange}
 			disabled={isPreviewing}
 		/>
-	</div>	
+	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-1/3 text-gray-700" for="measure-input">Go to Measure:</label>
 		<input

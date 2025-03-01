@@ -1,8 +1,8 @@
 <script lang="ts">
 	import ChartList from '$lib/components/ChartList.svelte';
 
-    let { data } = $props();
-    let { supabase } = $derived(data)
+	let { data } = $props();
+	let { supabase } = $derived(data);
 </script>
 
 <div class="container mx-auto p-4">
@@ -12,5 +12,5 @@
 			Upload Simfiles
 		</a>
 	</div>
-	<ChartList supabase={supabase}/>
+	<ChartList {supabase} />
 </div>

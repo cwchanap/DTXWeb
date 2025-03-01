@@ -66,8 +66,7 @@
 		if (!simfileID) {
 			newFile();
 		} else if (simfileID === 'demo') {
-			const simfile = SimFile.parseFromRemoteURL(simfileID)
-            
+			const simfile = SimFile.parseFromRemoteURL(simfileID);
 		}
 	});
 </script>
@@ -109,14 +108,12 @@
 					>
 				{/if}
 				{#snippet panel()}
-							
-						{#if currentTab === 0}
-							<MainTab />
-						{:else if currentTab === 1}
-							<SoundTab />
-						{/if}
-					
-							{/snippet}
+					{#if currentTab === 0}
+						<MainTab />
+					{:else if currentTab === 1}
+						<SoundTab />
+					{/if}
+				{/snippet}
 			</TabGroup>
 		</div>
 		<div class="flex w-[55%] justify-center p-5">

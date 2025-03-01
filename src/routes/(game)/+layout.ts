@@ -4,8 +4,8 @@ This line of code is to tell sveltekit to not render the page in the server and 
 */
 export const ssr = false;
 
-import init from "xa_decoder";
+import init from 'xa_decoder';
 
 export const load = async () => {
 	await init({});
-}
+};

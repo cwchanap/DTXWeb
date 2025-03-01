@@ -1,9 +1,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import wasm from "vite-plugin-wasm";
-import topLevelAwait from "vite-plugin-top-level-await";
+import wasm from 'vite-plugin-wasm';
+import topLevelAwait from 'vite-plugin-top-level-await';
 import { defineConfig } from 'vite';
 import path from 'path';
-
 
 export default defineConfig({
 	plugins: [wasm(), topLevelAwait(), sveltekit()],
@@ -17,7 +16,7 @@ export default defineConfig({
 		environment: 'jsdom',
 		setupFiles: ['./src/tests/setup.ts']
 	},
-    optimizeDeps: {
-        exclude: ['xa_decoder']
-    }
+	optimizeDeps: {
+		exclude: ['xa_decoder']
+	}
 });

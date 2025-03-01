@@ -1,11 +1,13 @@
 <script lang="ts">
+	import { preventDefault } from 'svelte/legacy';
+
 	import { goto } from '$app/navigation';
 	import store from '$lib/store';
 	import { supabase } from '$lib/supabase';
 	import { onMount } from 'svelte';
 
-	let email = '';
-	let password = '';
+	let email = $state('');
+	let password = $state('');
 
 	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
@@ -35,7 +37,7 @@
 <div class="flex min-h-screen items-center justify-center bg-gray-100">
 	<div class="w-full max-w-md space-y-6 rounded-lg bg-white p-8 shadow-md">
 		<h2 class="text-center text-2xl font-bold">Login</h2>
-		<form on:submit|preventDefault={handleSubmit} class="space-y-6">
+		<form onsubmit={preventDefault(handleSubmit)} class="space-y-6">
 			<div>
 				<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
 				<input

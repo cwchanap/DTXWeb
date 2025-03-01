@@ -12,9 +12,9 @@
 
 	const toastStore = getToastStore();
 
-	let simfile: Tables<'simfiles'> | null = null;
-	let loading = true;
-	let error: string | null = null;
+	let simfile: Tables<'simfiles'> | null = $state(null);
+	let loading = $state(true);
+	let error: string | null = $state(null);
 	let updatedHighestDtx: DTXFile | null = null;
 	let updatedSimfile: SimFile | null = null;
 
@@ -99,7 +99,7 @@
 </script>
 
 <div class="container mx-auto p-4">
-	<button on:click={goBack} class="mb-4 text-blue-500 hover:text-blue-700">
+	<button onclick={goBack} class="mb-4 text-blue-500 hover:text-blue-700">
 		&larr; Back to List
 	</button>
 	{#if loading}
@@ -118,14 +118,16 @@
 					e.detail.videoPreviewUrl
 				)}
 		>
-			<svelte:fragment slot="folder_upload">
-				<div class="col-span-1 flex items-center">
-					<label for="folder_upload" class="mb-2 mr-2 block">Upload Folder:</label>
-				</div>
-				<div class="col-span-7">
-					<ChartFolderUpload large={false} {onFileUpload} />
-				</div>
-			</svelte:fragment>
+			{#snippet folder_upload()}
+									
+					<div class="col-span-1 flex items-center">
+						<label for="folder_upload" class="mb-2 mr-2 block">Upload Folder:</label>
+					</div>
+					<div class="col-span-7">
+						<ChartFolderUpload large={false} {onFileUpload} />
+					</div>
+				
+									{/snippet}
 		</ChartDetail>
 	{:else}
 		<p class="text-red-500">Simfile not found</p>

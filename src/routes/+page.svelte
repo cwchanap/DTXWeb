@@ -34,20 +34,20 @@
 			<h2 class="mb-4 text-2xl font-bold">Links</h2>
 			<div class="flex flex-col items-center space-y-4">
 				<button
-					on:click={navigateToBlog}
+					onclick={navigateToBlog}
 					class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
 				>
 					Go to simfile repo
 				</button>
 				{#if false}
 					<button
-						on:click={navigateToLogin}
+						onclick={navigateToLogin}
 						class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
 					>
 						Login
 					</button>
 					<button
-						on:click={handleSecondButtonClick}
+						onclick={handleSecondButtonClick}
 						class="rounded-lg bg-gray-600 px-4 py-2 text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
 					>
 						Game

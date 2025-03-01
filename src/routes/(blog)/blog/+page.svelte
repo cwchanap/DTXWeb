@@ -30,7 +30,7 @@
 	<div data-popup="language-selector">
 		<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
 			{#each $locales as l}
-				<button class="hover:bg-gray-100" on:click={() => locale.set(l)}
+				<button class="hover:bg-gray-100" onclick={() => locale.set(l)}
 					>{localeMap[l]}</button
 				>
 			{/each}

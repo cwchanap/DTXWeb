@@ -1,9 +1,17 @@
+<script lang="ts">
+	interface Props {
+		children?: import('svelte').Snippet;
+	}
+
+	let { children }: Props = $props();
+</script>
+
 <svelte:head>
 	<title>Game</title>
 </svelte:head>
 
 <div id="app" class="min-h-screen px-16 py-4">
-	<slot />
+	{@render children?.()}
 </div>
 
 <style>

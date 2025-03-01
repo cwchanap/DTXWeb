@@ -2,8 +2,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { supabase } from '../supabase';
+	interface Props {
+		children?: import('svelte').Snippet;
+	}
 
-	let isAuthenticated = false;
+	let { children }: Props = $props();
+
+	let isAuthenticated = $state(false);
 
 	onMount(async () => {
 		const { data, error } = await supabase.auth.getSession()
@@ -19,5 +24,5 @@
 		<div class="text-2xl font-bold">Loading...</div>
 	</div>
 {:else}
-	<slot />
+	{@render children?.()}
 {/if}

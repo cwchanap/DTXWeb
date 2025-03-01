@@ -1,47 +1,17 @@
 <script lang="ts">
-	import { preventDefault } from 'svelte/legacy';
-
-	import { goto } from '$app/navigation';
-	import store from '$lib/store';
-	import { supabase } from '$lib/supabase';
-	import { onMount } from 'svelte';
-
 	let email = $state('');
 	let password = $state('');
-
-	const handleSubmit = async (event: Event) => {
-		event.preventDefault();
-		// Simulate login process
-		const { data, error } = await supabase.auth.signInWithPassword({
-			email,
-			password
-		});
-
-		if (error) {
-			console.error('Error logging in:', error.message);
-			return;
-		} else {
-			goto('/app');
-		}
-	};
-
-    onMount(async () => {
-        // Redirect to app if user is already logged in
-        const {data } = await supabase.auth.getSession();
-        if (data.session) {
-            goto('/app');
-        }
-    });
 </script>
 
 <div class="flex min-h-screen items-center justify-center bg-gray-100">
 	<div class="w-full max-w-md space-y-6 rounded-lg bg-white p-8 shadow-md">
 		<h2 class="text-center text-2xl font-bold">Login</h2>
-		<form onsubmit={preventDefault(handleSubmit)} class="space-y-6">
+		<form method="POST" action="?/login" class="space-y-6">
 			<div>
 				<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
 				<input
 					type="email"
+                    name="email"
 					id="email"
 					bind:value={email}
 					required
@@ -54,6 +24,7 @@
 				>
 				<input
 					type="password"
+                    name="password"
 					id="password"
 					bind:value={password}
 					required

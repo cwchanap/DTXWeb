@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { goto } from '$app/navigation';
 	import { getToastStore } from '@skeletonlabs/skeleton';
@@ -17,6 +16,8 @@
 	let error: string | null = $state(null);
 	let updatedHighestDtx: DTXFile | null = null;
 	let updatedSimfile: SimFile | null = null;
+	let { data } = $props();
+	let { supabase } = $derived(data);
 
 	onMount(async () => {
 		const { id } = $page.params;
@@ -119,15 +120,13 @@
 				)}
 		>
 			{#snippet folder_upload()}
-									
-					<div class="col-span-1 flex items-center">
-						<label for="folder_upload" class="mb-2 mr-2 block">Upload Folder:</label>
-					</div>
-					<div class="col-span-7">
-						<ChartFolderUpload large={false} {onFileUpload} />
-					</div>
-				
-									{/snippet}
+				<div class="col-span-1 flex items-center">
+					<label for="folder_upload" class="mb-2 mr-2 block">Upload Folder:</label>
+				</div>
+				<div class="col-span-7">
+					<ChartFolderUpload large={false} {onFileUpload} />
+				</div>
+			{/snippet}
 		</ChartDetail>
 	{:else}
 		<p class="text-red-500">Simfile not found</p>

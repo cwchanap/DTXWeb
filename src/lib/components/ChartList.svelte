@@ -2,7 +2,6 @@
 	import { run } from 'svelte/legacy';
 
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/supabase';
 	import type { Tables } from '@/types/supabase.types';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline, PlaySolid } from 'flowbite-svelte-icons';
@@ -11,12 +10,14 @@
 	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { _ } from 'svelte-i18n';
 	import ImageAudio from './ImageAudio.svelte';
+	import type { SupabaseClient } from '@supabase/supabase-js';
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
+        supabase: SupabaseClient;
 	}
 
-	let { pageSize = 12, isBlog = false }: Props = $props();
+	let { supabase, pageSize = 12, isBlog = false }: Props = $props();
 
 	let items: Tables<'simfiles'>[] = $state([]);
 	let currentPage = $state(1);
@@ -30,10 +31,11 @@
 	const toastStore = getToastStore();
 	const modalStore = getModalStore();
 
-	let filteredItems;
+	let filteredItems = $state<Tables<'simfiles'>[]>([]);
 	run(() => {
 		filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
 	});
+
 
 	async function togglePublishChart(id: number, published: boolean) {
 		const { error } = await supabase

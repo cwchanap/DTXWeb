@@ -1,12 +1,8 @@
 <script lang="ts">
-	import { supabase } from '$lib/supabase';
 	import { goto } from '$app/navigation';
-	import AuthGuard from '$lib/components/AuthGuard.svelte';
-	interface Props {
-		children?: import('svelte').Snippet;
-	}
 
-	let { children }: Props = $props();
+	let { data, children } = $props();
+    let { supabase } = $derived(data);
 
 	let isSidebarCollapsed = $state(false);
 
@@ -25,7 +21,7 @@
 	};
 </script>
 
-<AuthGuard>
+<!-- <AuthGuard> -->
 	<div class="flex min-h-screen">
 		<!-- Sidebar -->
 		<aside
@@ -68,7 +64,7 @@
 			</main>
 		</div>
 	</div>
-</AuthGuard>
+<!-- </AuthGuard> -->
 
 <style>
 	.collapsed-sidebar {

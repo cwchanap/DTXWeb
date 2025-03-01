@@ -3,7 +3,6 @@ import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
-import logger from './lib/server/logger';
 import { json } from '@sveltejs/kit';
 
 const supabase: Handle = async ({ event, resolve }) => {
@@ -68,9 +67,6 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	const { session, user } = await event.locals.safeGetSession();
 	event.locals.session = session;
 	event.locals.user = user;
-
-	logger.info('Path url: ', { message: event.url.pathname});
-    logger.info('Session: ', { message: session});
 
 	if (!event.locals.session && event.url.pathname.startsWith('/app')) {
 		redirect(303, '/login');

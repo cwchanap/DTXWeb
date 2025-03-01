@@ -3,13 +3,15 @@
 	import { goto } from '$app/navigation';
 	import type { DTXFile } from '$lib/chart/dtx';
 	import { SimFile } from '$lib/chart/simFile';
-	import { supabase } from '$lib/supabase';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { filterFiles } from '$lib/utils';
+
+    let { data } = $props();
+    let { supabase } = $derived(data);
 
 	let simfile: SimFile | undefined = $state(undefined);
 	let isCollapsed = $state(true);

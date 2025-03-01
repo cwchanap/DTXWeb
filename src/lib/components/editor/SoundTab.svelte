@@ -5,7 +5,7 @@
 	import type { SimFile } from '$lib/chart/simFile';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
 
-	let soundChips: SoundChip[] = [];
+	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;
 
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
@@ -30,7 +30,7 @@
 <div class="flex flex-col space-y-2">
 	<button
 		class="w-1/2 rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-		on:click={() => {
+		onclick={() => {
 			store.currentSoundChip.set([
 				...soundChips,
 				{ label: '', id: soundChips.length, volume: 100, position: 0, file: undefined }
@@ -76,7 +76,7 @@
 						<td class="border border-gray-300 px-2 py-1"
 							>{#if chip.file}
 								<button
-									on:click={() => {
+									onclick={() => {
 										if (chip.file) {
 											playAudio(chip.file);
 										}

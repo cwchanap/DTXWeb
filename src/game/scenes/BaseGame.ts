@@ -88,6 +88,8 @@ export abstract class BaseGame extends Scene {
 		return totalHeight * measureLength;
 	}
 
+	// This method is meant to be overridden by subclasses
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	getCellHeight(measure: number, cell: number) {
 		return this.cellHeight;
 	}
@@ -112,7 +114,7 @@ export abstract class BaseGame extends Scene {
 		this.footerContainer.setSize(this.scale.width, this.bottomMargin);
 		// Lane indicators
 		let currentX = this.offsetX;
-		this.laneConfigs.forEach((laneConfig, index) => {
+		this.laneConfigs.forEach((laneConfig) => {
 			const text = this.add
 				.text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
 					fontSize: '16px',
@@ -143,7 +145,7 @@ export abstract class BaseGame extends Scene {
 
 		// Draw vertical lanes
 		let currentX = this.offsetX;
-		this.laneConfigs.forEach((laneConfig, index) => {
+		this.laneConfigs.forEach(() => {
 			graphics.moveTo(currentX, this.offsetY);
 			graphics.lineTo(currentX, this.offsetY - this.laneHeight);
 			currentX += this.cellWidth;
@@ -225,7 +227,7 @@ export abstract class BaseGame extends Scene {
 	}
 
 	drawNotes() {
-		for (const [measure, notes] of Object.entries(this.notes)) {
+		for (const [, notes] of Object.entries(this.notes)) {
 			notes.forEach((note) => {
 				const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
 

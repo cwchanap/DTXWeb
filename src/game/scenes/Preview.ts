@@ -60,7 +60,7 @@ export class Preview extends BaseGame {
 
 		if (soundChips) {
 			const addedKey = new Set();
-			Object.entries(soundChips).forEach(([key, soundChip]) => {
+			Object.entries(soundChips).forEach(([, soundChip]) => {
 				if (!soundChip.file) return;
 				const soundFile = simfile?.files.find(
 					(f) => f.name.toLowerCase() === soundChip.file?.toLowerCase()
@@ -97,7 +97,7 @@ export class Preview extends BaseGame {
 		const simfile = get(store.currentSimfile);
 
 		if (soundChips) {
-			Object.entries(soundChips).forEach(([key, soundChip]) => {
+			Object.entries(soundChips).forEach(([, soundChip]) => {
 				const cacheKey = this.getCacheKey(soundChip);
 				const soundFile = simfile?.files.find(
 					(f) => f.name.toLowerCase() === soundChip.file?.toLowerCase()

@@ -8,7 +8,7 @@
 	import { DTXFile } from '$lib/chart/dtx';
 	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
 
-	let dtxFile: DTXFile | null = $state();
+	let dtxFile: DTXFile | null = $state(null);
 	let measureCount = $state(10);
 	let title = $state('');
 	let artist = $state('');

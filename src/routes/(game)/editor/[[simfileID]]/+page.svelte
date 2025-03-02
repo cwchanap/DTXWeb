@@ -15,8 +15,7 @@
 	import EventType from '@/game/EventType';
 	import store from '$lib/store';
 	import { EventBus } from '@/game/EventBus';
-	import { page } from '$app/stores';
-	import { CLOUDFLARE_STORAGE_URL } from '@/constant';
+	import { page } from '$app/state';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -62,7 +61,7 @@
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		simfileID = $page.params.simfileID;
+		simfileID = page.params.simfileID;
 		if (!simfileID) {
 			newFile();
 		} else if (simfileID === 'demo') {

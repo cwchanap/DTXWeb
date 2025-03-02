@@ -1,4 +1,4 @@
-import { Scene, Input, Sound } from 'phaser';
+import { Sound } from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
@@ -112,10 +112,13 @@ export class Preview extends BaseGame {
 
 		this.panelContainer.setPosition(0, targetY, totalDistance);
 
+		// Calculate duration based on BPM changes
+		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
+
 		this.previewTween = this.tweens.add({
 			targets: this.panelContainer,
 			y: totalDistance,
-			duration: this.getTimeElapsed(this.measureCount) * 1000,
+			duration: totalDuration,
 			ease: 'Linear',
 			repeat: -1,
 			yoyo: false,
@@ -150,7 +153,8 @@ export class Preview extends BaseGame {
 		let elapsedTime = 0;
 		let currentBPM = this.bpm;
 
-		for (let i = 0; i <= measure; i++) {
+		// Calculate time for completed measures (up to but not including the current measure)
+		for (let i = 0; i < measure; i++) {
 			const measureLength = this.measureLength[i] || 1;
 			const bpmNotes =
 				this.notes[Preview.bpmNoteID]?.filter((note) => note.measure === i) || [];
@@ -178,9 +182,46 @@ export class Preview extends BaseGame {
 				elapsedTime += (60 / currentBPM) * 4 * (1 - lastPosition) * measureLength;
 			}
 		}
-		// Add the time offset for the current noteChip position within the measure
-		elapsedTime +=
-			(60 / currentBPM) * 4 * noteChipPosition * (this.measureLength[measure] || 1);
+
+		// Calculate time within the current measure up to the noteChipPosition
+		if (noteChipPosition > 0) {
+			const measureLength = this.measureLength[measure] || 1;
+			const bpmNotes =
+				this.notes[Preview.bpmNoteID]?.filter((note) => note.measure === measure) || [];
+
+			if (bpmNotes.length === 0) {
+				// No BPM changes in this measure
+				elapsedTime += (60 / currentBPM) * 4 * noteChipPosition * measureLength;
+			} else {
+				// Calculate time for each segment within the measure up to noteChipPosition
+				let lastPosition = 0;
+				bpmNotes.forEach((note) => {
+					const pattern = note.pattern;
+					const segmentCount = pattern.length / 2;
+					for (let j = 0; j < segmentCount; j++) {
+						const position = j / segmentCount;
+						if (position > noteChipPosition) {
+							// Past the noteChipPosition, stop calculating
+							break;
+						}
+
+						const noteId = pattern.substring(j * 2, j * 2 + 2);
+						if (noteId !== '00') {
+							elapsedTime +=
+								(60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
+							currentBPM = this.bpmNotes[noteId];
+							lastPosition = position;
+						}
+					}
+				});
+
+				// Add time from last BPM change to noteChipPosition
+				if (noteChipPosition > lastPosition) {
+					elapsedTime +=
+						(60 / currentBPM) * 4 * (noteChipPosition - lastPosition) * measureLength;
+				}
+			}
+		}
 
 		return elapsedTime;
 	}
@@ -203,14 +244,20 @@ export class Preview extends BaseGame {
 		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 
 		laneMeasureNote.notes.forEach((noteChip) => {
-			const delay =
-				this.getTimeElapsed(note.measure - 1, noteChip.position) -
-				this.getTimeElapsed(startMeasure - 1);
-			const seek =
-				this.getTimeElapsed(startMeasure - 1) -
-				this.getTimeElapsed(note.measure - 1, noteChip.position);
+			// Calculate the absolute time of this note from the beginning
+			const noteAbsoluteTime = this.getTimeElapsed(note.measure, noteChip.position);
 
-			this.time.delayedCall(delay * 1000, () => {
+			// Calculate the absolute time of the start measure
+			const startTime = this.getTimeElapsed(startMeasure);
+
+			// The delay is the difference between when the note should play and when we start
+			const delay = noteAbsoluteTime - startTime;
+
+			// Calculate seek if we're starting after this note should have played
+			const seek = delay < 0 ? -delay : 0;
+
+			// BGM notes need to play even if they're before the start point (with seek)
+			this.time.delayedCall(Math.max(0, delay) * 1000, () => {
 				const soundChip = get(store.currentSoundChip).find(
 					(chip) => chip.id === parseInt(noteChip.noteID, 36)
 				);
@@ -218,8 +265,7 @@ export class Preview extends BaseGame {
 					const audio = this.sound.get(this.getCacheKey(soundChip));
 					this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 					audio.play({
-						// delay: (note.measure >= startMeasure) ? delay : 0,
-						seek: note.measure >= startMeasure ? 0 : seek
+						seek: seek
 					});
 				}
 			});
@@ -230,58 +276,87 @@ export class Preview extends BaseGame {
 		const measureLength = this.measureLength[note.measure] || 1;
 		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
 		laneMeasureNote.notes.forEach((noteChip) => {
-			const delay =
-				this.getTimeElapsed(note.measure - 1, noteChip.position) -
-				this.getTimeElapsed(startMeasure - 1);
-			// const platformAdjustment = navigator.userAgent.includes('Windows') ? 200 : 0;
-			this.time.delayedCall(delay * 1000, () => {
-				const soundChip = get(store.currentSoundChip).find(
-					(chip) => chip.id === parseInt(noteChip.noteID, 36)
-				);
-				if (soundChip) {
-					const audio = this.sound.get(this.getCacheKey(soundChip));
-					this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
-					audio.play();
-				}
-			});
+			// Calculate the absolute time of this note from the beginning
+			const noteAbsoluteTime = this.getTimeElapsed(note.measure, noteChip.position);
+
+			// Calculate the absolute time of the start measure
+			const startTime = this.getTimeElapsed(startMeasure);
+
+			// The delay is the difference between when the note should play and when we start
+			const delay = noteAbsoluteTime - startTime;
+
+			// Only schedule notes that will play after the start time
+			if (delay >= 0) {
+				this.time.delayedCall(delay * 1000, () => {
+					const soundChip = get(store.currentSoundChip).find(
+						(chip) => chip.id === parseInt(noteChip.noteID, 36)
+					);
+					if (soundChip) {
+						const audio = this.sound.get(this.getCacheKey(soundChip));
+						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
+						audio.play();
+					}
+				});
+			}
 		});
 	}
 
 	getCellHeight(measure: number, cell: number): number {
 		// For given measure and cell, calculate the height of the cell based on the BPM
-		let height = 0;
 		const referenceBPM = 120;
-		// Find the last BPM change before the current measure
-		const bpmNote = this.notes[Preview.bpmNoteID]?.findLast((note) => note.measure <= measure);
 
-		if (!bpmNote) {
-			// No BPM changes in this measure, use the current BPM for the whole measure
-			return this.cellHeight;
+		// Find all BPM notes that apply to this measure
+		const measureBpmNotes = this.notes[Preview.bpmNoteID]
+			?.filter((note) => note.measure <= measure)
+			.sort((a, b) => {
+				// Sort by measure (ascending)
+				if (a.measure !== b.measure) return a.measure - b.measure;
+				// For notes in the same measure, we'll handle them later
+				return 0;
+			});
+
+		if (!measureBpmNotes || measureBpmNotes.length === 0) {
+			// No BPM changes, use the default BPM
+			return (this.cellHeight / this.bpm) * referenceBPM;
 		}
-		// Calculate height for each segment within the measure
 
-		const pattern = bpmNote.pattern;
-		const segmentCount = pattern.length / 2;
-		let lastNoteId = undefined;
-		for (let j = 0; j < segmentCount; j++) {
-			const noteId = pattern.substring(j * 2, j * 2 + 2);
-			if (
-				(bpmNote.measure === measure && (j * 16) / segmentCount <= cell) ||
-				bpmNote.measure < measure
-			) {
+		// Find the most recent BPM change before or at our current cell position
+		const lastBpmNote = measureBpmNotes[measureBpmNotes.length - 1];
+		let currentBPM = this.bpm; // Default to the initial BPM
+
+		if (lastBpmNote.measure < measure) {
+			// BPM change in a previous measure, need to find the last BPM in that measure
+			const pattern = lastBpmNote.pattern;
+			const segmentCount = pattern.length / 2;
+
+			for (let j = 0; j < segmentCount; j++) {
+				const noteId = pattern.substring(j * 2, j * 2 + 2);
 				if (noteId !== '00') {
-					lastNoteId = noteId;
+					currentBPM = this.bpmNotes[noteId];
+				}
+			}
+		} else if (lastBpmNote.measure === measure) {
+			// BPM change in the current measure
+			const pattern = lastBpmNote.pattern;
+			const segmentCount = pattern.length / 2;
+
+			// Find the last BPM change before or at our cell position
+			for (let j = 0; j < segmentCount; j++) {
+				const cellPosition = Math.floor((j * this.cellsPerMeasure) / segmentCount);
+				if (cellPosition > cell) {
+					break; // This BPM change is after our current cell
+				}
+
+				const noteId = pattern.substring(j * 2, j * 2 + 2);
+				if (noteId !== '00') {
+					currentBPM = this.bpmNotes[noteId];
 				}
 			}
 		}
 
-		if (!lastNoteId) {
-			return this.cellHeight;
-		}
-		const bpm = this.bpmNotes[lastNoteId];
-		height = (this.cellHeight / bpm) * referenceBPM;
-
-		return height;
+		// Calculate the adjusted cell height based on the BPM
+		// Slower BPM = taller cells, faster BPM = shorter cells
+		return (this.cellHeight / currentBPM) * referenceBPM;
 	}
 
 	cleanUp() {

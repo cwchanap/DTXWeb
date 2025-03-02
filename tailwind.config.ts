@@ -1,4 +1,3 @@
-
 import { join } from 'path';
 import type { Config } from 'tailwindcss';
 
@@ -12,18 +11,15 @@ const config = {
 		'./src/**/*.{html,js,svelte,ts}',
 		'./node_modules/flowbite-svelte-icons/**/*.{html,js,svelte,ts}',
 		// 3. Append the path to the Skeleton package
-		join(require.resolve(
-			'@skeletonlabs/skeleton'),
-			'../**/*.{html,js,svelte,ts}'
-		)
+		join(require.resolve('@skeletonlabs/skeleton'), '../**/*.{html,js,svelte,ts}')
 	],
 	theme: {
-		extend: {},
+		extend: {}
 	},
 
 	plugins: [
 		skeleton({
-			themes: { preset: ["skeleton"] }
+			themes: { preset: ['skeleton'] }
 		})
 	]
 } satisfies Config;

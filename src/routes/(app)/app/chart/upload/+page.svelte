@@ -10,8 +10,8 @@
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { filterFiles } from '$lib/utils';
 
-    let { data } = $props();
-    let { supabase } = $derived(data);
+	let { data } = $props();
+	let { supabase } = $derived(data);
 
 	let simfile: SimFile | undefined = $state(undefined);
 	let isCollapsed = $state(true);
@@ -129,12 +129,12 @@
 			'.xa'
 		])) {
 			if (!file.name.endsWith('.ogg')) {
-                const fileName = file.name.split('/').pop();
-                if (!fileName) {
-                    console.error('Error getting file name:', file.name);
-                    return;
-                }
-                const newFile = new File([file], fileName, { type: file.type });
+				const fileName = file.name.split('/').pop();
+				if (!fileName) {
+					console.error('Error getting file name:', file.name);
+					return;
+				}
+				const newFile = new File([file], fileName, { type: file.type });
 				formData.append('files', newFile);
 			}
 		}
@@ -185,31 +185,28 @@
 				)}
 		>
 			{#snippet preview()}
-					
-					<div class="col-span-2 items-center justify-center">
-						<ImageAudio
-							previewUrl={simfile.getPreview()}
-							soundPreviewUrl={simfile.getSoundPreview()}
-						/>
-					</div>
-					<div class="col-span-6"></div>
-				
-					{/snippet}
+				<div class="col-span-2 items-center justify-center">
+					<ImageAudio
+						previewUrl={simfile.getPreview()}
+						soundPreviewUrl={simfile.getSoundPreview()}
+					/>
+				</div>
+				<div class="col-span-6"></div>
+			{/snippet}
 			{#snippet folder_upload()}
-					
-					<div class="col-span-8">
-						<div class="mt-4">
-							<button
-								class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-								onclick={() => (simfile = undefined)}
-							>
-								Clear Files
-							</button>
-						</div>
-						<div class="mt-4">
-							<button
-								class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-								onclick={async () => {
+				<div class="col-span-8">
+					<div class="mt-4">
+						<button
+							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+							onclick={() => (simfile = undefined)}
+						>
+							Clear Files
+						</button>
+					</div>
+					<div class="mt-4">
+						<button
+							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+							onclick={async () => {
 								if (!simfile) return;
 								const zip = simfile.getZip();
 								const blob = await zip.generateAsync({ type: 'blob' });
@@ -220,51 +217,50 @@
 								a.click();
 								URL.revokeObjectURL(url);
 							}}
-							>
-								Download zip
-							</button>
-						</div>
-						<div class="mt-4">
-							<button
-								onclick={toggleCollapse}
-								class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
-							>
-								{#if isCollapsed}
-									Show Uploaded Files
-								{:else}
-									Hide Uploaded Files
-								{/if}
-							</button>
-						</div>
+						>
+							Download zip
+						</button>
 					</div>
+					<div class="mt-4">
+						<button
+							onclick={toggleCollapse}
+							class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
+						>
+							{#if isCollapsed}
+								Show Uploaded Files
+							{:else}
+								Hide Uploaded Files
+							{/if}
+						</button>
+					</div>
+				</div>
 
-					{#if !isCollapsed}
-						<table class="col-span-8 min-w-full leading-normal">
-							<thead>
+				{#if !isCollapsed}
+					<table class="col-span-8 min-w-full leading-normal">
+						<thead>
+							<tr>
+								<th
+									class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
+								>
+									File Name
+								</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each simfile.files as file}
 								<tr>
-									<th
-										class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
-									>
-										File Name
-									</th>
+									<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
+										{file.name}
+									</td>
 								</tr>
-							</thead>
-							<tbody>
-								{#each simfile.files as file}
-									<tr>
-										<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
-											{file.name}
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{/if}
-				
-					{/snippet}
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			{/snippet}
 			{#snippet save()}
-						Upload
-					{/snippet}
+				Upload
+			{/snippet}
 		</ChartDetail>
 	{/if}
 </div>

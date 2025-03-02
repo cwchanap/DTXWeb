@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
-import { PUBLIC_CLOUDFLARE_R2_PUBLIC_URL} from '$env/static/public';
+import { PUBLIC_CLOUDFLARE_R2_PUBLIC_URL } from '$env/static/public';
 
 interface DtxLevel {
 	label: string;

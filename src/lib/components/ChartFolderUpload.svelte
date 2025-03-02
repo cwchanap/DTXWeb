@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { DTXFile } from '../chart/dtx';
 	import { SimFile } from '../chart/simFile';
-    import { filterFiles } from '../utils';
+	import { filterFiles } from '../utils';
 
 	let simfile: SimFile;
 	let dropzoneActive = $state(false);
@@ -25,7 +25,7 @@
 	}
 
 	function filterSimFiles(files: FileList) {
-        return filterFiles(files, ['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa']);
+		return filterFiles(files, ['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa']);
 	}
 
 	async function handleDrop(event: DragEvent) {
@@ -37,7 +37,7 @@
 			await simfile.parse();
 		}
 	}
-	
+
 	async function handleFileInput(event: Event) {
 		const input = event.target as HTMLInputElement;
 		if (input.files) {
@@ -49,7 +49,6 @@
 		}
 	}
 </script>
-
 
 {#if large}
 	<div

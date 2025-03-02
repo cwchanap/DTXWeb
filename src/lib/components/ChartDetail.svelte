@@ -15,12 +15,7 @@
 		save?: import('svelte').Snippet;
 	}
 
-	let {
-		simfile = null,
-		preview,
-		folder_upload,
-		save
-	}: Props = $props();
+	let { simfile = null, preview, folder_upload, save }: Props = $props();
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
 
 	let displayId: number = $state(simfile?.display_id || 0);
@@ -80,7 +75,7 @@
 				id="publish_date"
 				type="date"
 				bind:value={publishDate}
-				class="mb-4 w-1/7 rounded border p-2"
+				class="w-1/7 mb-4 rounded border p-2"
 			/>
 		</div>
 		<div class="col-span-1 flex items-center">

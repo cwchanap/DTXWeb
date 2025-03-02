@@ -76,9 +76,9 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		redirect(303, '/app');
 	}
 
-    if (!event.locals.session && event.url.pathname.startsWith('/api/simFile')) {
-        return json({ error: 'Unauthorized' }, { status: 401 });
-    }
+	if (!event.locals.session && event.url.pathname.startsWith('/api/simFile')) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
 
 	return resolve(event);
 };

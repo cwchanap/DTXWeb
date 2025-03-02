@@ -16,7 +16,7 @@ export class Editor extends BaseGame {
 	private isEditing = false;
 	private isDragging = false;
 	protected notes: Record<string, Note[]> = {};
-    protected bpmNotes: Record<string, number> = {};
+	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
 
 	constructor(protected measureCount: number = 10) {
@@ -28,7 +28,7 @@ export class Editor extends BaseGame {
 	}
 
 	create() {
-		console.log("Create Editor Scene")
+		console.log('Create Editor Scene');
 
 		this.drawPanel();
 		this.drawNotes();
@@ -38,8 +38,12 @@ export class Editor extends BaseGame {
 		let startScrollY = 0;
 
 		const clampY = (newY: number) => {
-			return Phaser.Math.Clamp(newY, 0, this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin);
-		}
+			return Phaser.Math.Clamp(
+				newY,
+				0,
+				this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin
+			);
+		};
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
@@ -82,7 +86,7 @@ export class Editor extends BaseGame {
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
 			if (this.isDragging) {
 				const deltaY = 3 * (pointer.y - startY);
-				let newY = startScrollY + deltaY;
+				const newY = startScrollY + deltaY;
 				this.panelContainer.y = clampY(newY);
 			}
 		});
@@ -91,12 +95,15 @@ export class Editor extends BaseGame {
 			this.isDragging = false;
 		});
 
-		this.input.on('wheel', (pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => {
-			if (pointer.y < this.scale.height - this.bottomMargin) {
-				let newY = this.panelContainer.y - deltaY * 0.5;
-				this.panelContainer.y = clampY(newY);
+		this.input.on(
+			'wheel',
+			(pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => {
+				if (pointer.y < this.scale.height - this.bottomMargin) {
+					const newY = this.panelContainer.y - deltaY * 0.5;
+					this.panelContainer.y = clampY(newY);
+				}
 			}
-		});
+		);
 
 		this.input.keyboard?.on('keydown-Q', (event: KeyboardEvent) => {
 			this.isEditing = !this.isEditing;
@@ -122,7 +129,7 @@ export class Editor extends BaseGame {
 				this.measureCount = maxMeasure + 1;
 			}
 			store.measureCount.set(this.measureCount);
-            this.bpmNotes = bpmNotes;
+			this.bpmNotes = bpmNotes;
 			this.restart({ measureCount: this.measureCount });
 		});
 
@@ -131,11 +138,13 @@ export class Editor extends BaseGame {
 		});
 
 		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
-			const currentMeasure = Math.floor(this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure));
+			const currentMeasure = Math.floor(
+				this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
+			);
 			this.scene.stop();
 			this.scene.start(Preview.key, {
 				bpm: bpm,
-                bpmNotes: this.bpmNotes,
+				bpmNotes: this.bpmNotes,
 				notes: this.notes,
 				measureCount: this.measureCount,
 				startMeasure: currentMeasure
@@ -153,7 +162,7 @@ export class Editor extends BaseGame {
 	}
 
 	restart(data: Data = {}) {
-		console.log("Restart Scene, data", data)
+		console.log('Restart Scene, data', data);
 		EventBus.off(EventType.MEASURE_UPDATE);
 		EventBus.off(EventType.NOTE_IMPORT);
 		EventBus.off(EventType.MEASURE_GOTO);

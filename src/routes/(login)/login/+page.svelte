@@ -11,7 +11,7 @@
 				<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
 				<input
 					type="email"
-                    name="email"
+					name="email"
 					id="email"
 					bind:value={email}
 					required
@@ -24,7 +24,7 @@
 				>
 				<input
 					type="password"
-                    name="password"
+					name="password"
 					id="password"
 					bind:value={password}
 					required

@@ -4,14 +4,13 @@
 	import { _ } from 'svelte-i18n';
 	import { popup } from '@skeletonlabs/skeleton';
 
-    let { data } = $props();
-    let { supabase } = $derived(data);
+	let { data } = $props();
+	let { supabase } = $derived(data);
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
 		jp: '日本語'
 	};
-    
 </script>
 
 <div class="min-h-screen bg-gray-100">
@@ -48,7 +47,7 @@
 		</section>
 		<section class="mb-8">
 			<h2 class="mb-4 text-2xl font-bold">{$_('blog.latest_simfiles')}</h2>
-			<ChartList supabase={supabase} isBlog={true} />
+			<ChartList {supabase} isBlog={true} />
 		</section>
 	</main>
 </div>

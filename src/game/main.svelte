@@ -18,16 +18,18 @@
 		return new Phaser.Game({ ...config, parent: parent });
 	};
 
-
 	interface Props {
 		phaserRef?: TPhaserRef;
 		currentActiveScene: (scene: Scene) => void;
 	}
 
-	let { phaserRef = $bindable({
-		game: null,
-		scene: null
-	}), currentActiveScene }: Props = $props();
+	let {
+		phaserRef = $bindable({
+			game: null,
+			scene: null
+		}),
+		currentActiveScene
+	}: Props = $props();
 
 	onMount(() => {
 		phaserRef.game = StartGame('game-container');

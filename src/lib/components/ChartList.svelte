@@ -14,7 +14,7 @@
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
-        supabase: SupabaseClient;
+		supabase: SupabaseClient;
 	}
 
 	let { supabase, pageSize = 12, isBlog = false }: Props = $props();
@@ -35,7 +35,6 @@
 	run(() => {
 		filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
 	});
-
 
 	async function togglePublishChart(id: number, published: boolean) {
 		const { error } = await supabase

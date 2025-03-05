@@ -15,3 +15,6 @@ Object.defineProperty(window, 'matchMedia', {
 		dispatchEvent: vi.fn()
 	}))
 });
+
+vi.mock('phaser');
+vi.mock('svelte/store');

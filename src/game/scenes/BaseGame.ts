@@ -69,13 +69,27 @@ export abstract class BaseGame extends Scene {
 	}
 
 	getTotalMesaureOffest(measure: number) {
-		return this.getTotalMesaureLength(measure) * this.cellHeight * this.cellsPerMeasure;
+		let totalOffset = 0;
+		for (let i = 0; i < measure; i++) {
+			totalOffset += this.getMeasureHeight(i);
+		}
+		return totalOffset;
 	}
 
 	getMeasureHeight(measure: number) {
-		return this.cellHeight * this.cellsPerMeasure * (this.measureLength[measure] || 1);
+		const measureLength = this.measureLength[measure] || 1;
+		let totalHeight = 0;
+
+		// Sum up the height of each cell in the measure
+		for (let i = 0; i < this.cellsPerMeasure; i++) {
+			totalHeight += this.getCellHeight(measure, i);
+		}
+
+		return totalHeight * measureLength;
 	}
 
+	// This method is meant to be overridden by subclasses
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	getCellHeight(measure: number, cell: number) {
 		return this.cellHeight;
 	}
@@ -100,7 +114,7 @@ export abstract class BaseGame extends Scene {
 		this.footerContainer.setSize(this.scale.width, this.bottomMargin);
 		// Lane indicators
 		let currentX = this.offsetX;
-		this.laneConfigs.forEach((laneConfig, index) => {
+		this.laneConfigs.forEach((laneConfig) => {
 			const text = this.add
 				.text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
 					fontSize: '16px',
@@ -131,7 +145,7 @@ export abstract class BaseGame extends Scene {
 
 		// Draw vertical lanes
 		let currentX = this.offsetX;
-		this.laneConfigs.forEach((laneConfig, index) => {
+		this.laneConfigs.forEach(() => {
 			graphics.moveTo(currentX, this.offsetY);
 			graphics.lineTo(currentX, this.offsetY - this.laneHeight);
 			currentX += this.cellWidth;
@@ -175,37 +189,45 @@ export abstract class BaseGame extends Scene {
 	}
 
 	drawMeasure(measure: number, yStart: number, graphics: Phaser.GameObjects.Graphics) {
-		const cellsPerMeasure = this.cellsPerMeasure * (this.measureLength[measure] || 1);
+		const measureLength = this.measureLength[measure] || 1;
+		const cellsPerMeasure = this.cellsPerMeasure * measureLength;
 
 		let y = yStart;
+		let currentMeasureHeight = 0;
+
+		// Draw horizontal lines for each cell in the measure
 		for (let i = 0; i < cellsPerMeasure; i++) {
+			const cellHeight = this.getCellHeight(measure, i % this.cellsPerMeasure);
+
+			// Use thicker lines for beat divisions and measure boundaries
 			graphics.lineStyle((i * 4) % cellsPerMeasure == 0 ? 4 : 2, 0x888888, 0.5);
 			graphics.moveTo(this.offsetX, y);
 			graphics.lineTo(this.offsetX + this.totalWidth, y);
-			y -= this.getCellHeight(measure, i);
+
+			y -= cellHeight;
+			currentMeasureHeight += cellHeight;
 		}
 
+		// Draw the measure boundary line
 		this.drawMesaureLine(graphics, yStart);
 
+		// Calculate the middle of the measure for placing the measure number text
+		const measureMiddleY = yStart - currentMeasureHeight / 2;
+
 		const text = this.add
-			.text(
-				this.offsetX + this.totalWidth / 2,
-				y + (this.cellsPerMeasure * this.cellHeight) / 2,
-				`${measure}`,
-				{
-					fontSize: '96px',
-					color: '#ffffff'
-				}
-			)
+			.text(this.offsetX + this.totalWidth / 2, measureMiddleY, `${measure}`, {
+				fontSize: '96px',
+				color: '#ffffff'
+			})
 			.setOrigin(0.5)
 			.setAlpha(0.5);
 		this.panelContainer.add(text);
 
-		return yStart - y;
+		return currentMeasureHeight;
 	}
 
 	drawNotes() {
-		for (const [measure, notes] of Object.entries(this.notes)) {
+		for (const [, notes] of Object.entries(this.notes)) {
 			notes.forEach((note) => {
 				const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
 
@@ -226,12 +248,23 @@ export abstract class BaseGame extends Scene {
 
 	drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string) {
 		const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
-		const y =
-			this.offsetY -
-			(this.getTotalMesaureOffest(measure) +
-				cellOffset * this.cellHeight * this.cellsPerMeasure) +
-			this.cellMargin -
-			this.noteSize;
+
+		// Calculate Y position based on measure offset and cell position
+		const yOffset = this.getTotalMesaureOffest(measure);
+
+		// Calculate the position within the measure
+		const measureLength = this.measureLength[measure] || 1;
+		const cellsInMeasure = this.cellsPerMeasure * measureLength;
+		const cellPosition = Math.floor(cellOffset * cellsInMeasure);
+
+		// Add offsets for each cell up to the note position
+		let cellsYOffset = 0;
+		for (let i = 0; i < cellPosition; i++) {
+			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
+		}
+
+		const y = this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
+
 		const width = this.cellWidth - this.cellMargin * 2;
 		const height = this.noteSize - this.cellMargin * 2;
 
@@ -246,11 +279,12 @@ export abstract class BaseGame extends Scene {
 		} else {
 			// Otherwise, create a new note
 			const graphics = this.add.graphics();
-			graphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1); // Red color for the note
+			graphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1);
 			graphics.fillRect(x, y, width, height);
 			graphics.setName(noteKey);
 			this.panelContainer.add(graphics);
-			// draw text with note Id at the center of the note
+
+			// Draw text with noteId at the center of the note
 			const text = this.add.text(x + width / 2, y + height / 2, noteId, {
 				fontSize: '16px',
 				color: '#ffffff',

@@ -97,7 +97,12 @@ export class Editor extends BaseGame {
 
 		this.input.on(
 			'wheel',
-			(pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => {
+			(
+				pointer: Phaser.Input.Pointer,
+				gameObjects: Phaser.GameObjects.GameObject[],
+				deltaX: number,
+				deltaY: number
+			) => {
 				if (pointer.y < this.scale.height - this.bottomMargin) {
 					const newY = this.panelContainer.y - deltaY * 0.5;
 					this.panelContainer.y = clampY(newY);
@@ -105,7 +110,7 @@ export class Editor extends BaseGame {
 			}
 		);
 
-		this.input.keyboard?.on('keydown-Q', (event: KeyboardEvent) => {
+		this.input.keyboard?.on('keydown-Q', () => {
 			this.isEditing = !this.isEditing;
 		});
 

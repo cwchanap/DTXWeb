@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { run } from 'svelte/legacy';
-
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import type { Tables } from '@/types/supabase.types';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { DotsVerticalOutline, PlaySolid } from 'flowbite-svelte-icons';
@@ -32,7 +30,9 @@
 	const modalStore = getModalStore();
 
 	let filteredItems = $state<Tables<'simfiles'>[]>([]);
-	run(() => {
+
+	// Replace the run() function with a reactive effect using $effect
+	$effect(() => {
 		filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
 	});
 

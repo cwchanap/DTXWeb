@@ -8,7 +8,7 @@
 	import { DTXFile } from '$lib/chart/dtx';
 	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
 
-	let dtxFile: DTXFile | null = $state();
+	let dtxFile: DTXFile | null = $state(null);
 	let measureCount = $state(10);
 	let title = $state('');
 	let artist = $state('');
@@ -75,43 +75,51 @@
 </script>
 
 <div class="flex flex-col space-y-2">
+	<!-- Text input fields (full width) -->
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Title:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="title-input">Title:</label>
 		<input
-			class="w-2/3 rounded-md border border-gray-300 px-2 py-1"
+			id="title-input"
+			class="w-[85%] rounded-md border border-gray-300 px-2 py-1 2xl:w-2/3"
 			type="text"
 			bind:value={title}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Artist:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="artist-input">Artist:</label>
 		<input
-			class="w-2/3 rounded-md border border-gray-300 px-2 py-1"
+			id="artist-input"
+			class="w-[85%] rounded-md border border-gray-300 px-2 py-1 2xl:w-2/3"
 			type="text"
 			bind:value={artist}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Comment:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="comment-input">Comment:</label>
 		<input
-			class="w-2/3 rounded-md border border-gray-300 px-2 py-1"
+			id="comment-input"
+			class="w-[85%] rounded-md border border-gray-300 px-2 py-1 2xl:w-2/3"
 			type="text"
 			bind:value={comment}
 		/>
 	</div>
+
+	<!-- Numeric input fields (fixed width) -->
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">BPM:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="bpm-input">BPM:</label>
 		<input
-			class="rounded-md border border-gray-300 px-2 py-1"
+			id="bpm-input"
+			class="w-24 rounded-md border border-gray-300 px-2 py-1"
 			type="number"
 			bind:value={bpm}
 			disabled={isPreviewing}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Level:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="level-input">Level:</label>
 		<input
-			class="rounded-md border border-gray-300 px-2 py-1"
+			id="level-input"
+			class="w-24 rounded-md border border-gray-300 px-2 py-1"
 			type="number"
 			min="0"
 			max="999"
@@ -119,10 +127,13 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Number of Measures:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="measure-input"
+			>Number of Measures:</label
+		>
 		<input
+			id="measure-input"
 			type="number"
-			class="rounded-md border border-gray-300 px-2 py-1"
+			class="w-24 rounded-md border border-gray-300 px-2 py-1"
 			min="0"
 			max="499"
 			bind:value={measureCount}
@@ -131,10 +142,11 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Play Speed:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="speed-input">Play Speed:</label>
 		<input
+			id="speed-input"
 			type="number"
-			class="rounded-md border border-gray-300 px-2 py-1"
+			class="w-24 rounded-md border border-gray-300 px-2 py-1"
 			min="0"
 			max="10"
 			bind:value={playSpeed}
@@ -143,24 +155,30 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Go to Measure:</label>
-		<input
-			type="number"
-			class="rounded-md border border-gray-300 px-2 py-1"
-			min="0"
-			max="499"
-			bind:value={gotoMeasure}
-			disabled={isPreviewing}
-		/>
-		<button
-			class="rounded-md border border-gray-300 px-2 py-1"
-			onclick={handleGotoMeasure}
-			disabled={isPreviewing}>Go</button
-		>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="goto-input">Go to Measure:</label>
+		<div class="flex items-center space-x-2">
+			<input
+				id="goto-input"
+				type="number"
+				class="w-24 rounded-md border border-gray-300 px-2 py-1"
+				min="0"
+				max="499"
+				bind:value={gotoMeasure}
+				disabled={isPreviewing}
+			/>
+			<button
+				class="rounded-md border border-gray-300 px-2 py-1"
+				onclick={handleGotoMeasure}
+				disabled={isPreviewing}>Go</button
+			>
+		</div>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-1/3 text-gray-700" for="measure-input">Preview: </label>
-		<button class="rounded-md border border-gray-300 px-2 py-1" onclick={handlePlay}
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="preview-button">Preview: </label>
+		<button
+			id="preview-button"
+			class="rounded-md border border-gray-300 px-2 py-1"
+			onclick={handlePlay}
 			>{#if isPreviewing}<StopSolid />{:else}<PlaySolid />{/if}</button
 		>
 	</div>

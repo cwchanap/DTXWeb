@@ -15,8 +15,7 @@
 	import EventType from '@/game/EventType';
 	import store from '$lib/store';
 	import { EventBus } from '@/game/EventBus';
-	import { page } from '$app/stores';
-	import { CLOUDFLARE_STORAGE_URL } from '@/constant';
+	import { page } from '$app/state';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -62,7 +61,7 @@
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		simfileID = $page.params.simfileID;
+		simfileID = page.params.simfileID;
 		if (!simfileID) {
 			newFile();
 		} else if (simfileID === 'demo') {
@@ -93,15 +92,21 @@
 		</button>
 		<div class="h-8 border-l border-gray-300"></div>
 	</div>
-	<div class="row-span-1 flex flex-row">
-		<div class="w-[25%] pt-4">
+
+	<!-- Main content area - change to flex column on small screens, row on larger screens -->
+	<div class="row-span-1 flex flex-col 2xl:flex-row">
+		<!-- Left tab panel - full width on small screens, 25% on large screens -->
+		<div class="w-full pt-4 2xl:w-[25%]">
 			<TabGroup border="">
-				<Tab class="w-1/4 hover:bg-gray-100" bind:group={currentTab} name="main" value={0}
-					>Main</Tab
+				<Tab
+					class="w-[15%] hover:bg-gray-100 2xl:w-1/4"
+					bind:group={currentTab}
+					name="main"
+					value={0}>Main</Tab
 				>
 				{#if !isPreviewing}
 					<Tab
-						class="w-1/4 hover:bg-gray-100"
+						class="w-[15%] hover:bg-gray-100 2xl:w-1/4"
 						bind:group={currentTab}
 						name="sound"
 						value={1}>Sound</Tab
@@ -116,19 +121,25 @@
 				{/snippet}
 			</TabGroup>
 		</div>
-		<div class="flex w-[55%] justify-center p-5">
+
+		<!-- Center game component - full width on small screens, 55% on large screens -->
+		<div class="flex w-full justify-center p-5 2xl:w-[55%]">
 			<Main {phaserRef} {currentActiveScene} />
 		</div>
-		<div class="flex w-[20%] flex-col items-end justify-end p-16">
+
+		<!-- Right button panel - full width on small screens, 20% on large screens -->
+		<div
+			class="flex w-full flex-col items-center justify-center p-4 2xl:w-[20%] 2xl:items-end 2xl:justify-end 2xl:p-16"
+		>
 			<button
-				class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+				class="mt-5 w-full max-w-xs rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none"
 				onclick={() => {
 					goto('/game');
 					store.activeScene.set(MainMenu.key);
 				}}>Game</button
 			>
 			<button
-				class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+				class="mt-5 w-full max-w-xs rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none"
 				onclick={() => {
 					goto('/');
 					store.activeScene.set(null);

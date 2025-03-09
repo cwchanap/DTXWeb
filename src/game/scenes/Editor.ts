@@ -146,19 +146,22 @@ export class Editor extends BaseGame {
 			const currentMeasure = Math.floor(
 				this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
 			);
-			this.scene.stop();
-			this.scene.start(Preview.key, {
+			this.scene.pause();
+			this.scene.launch(Preview.key, {
 				bpm: bpm,
 				bpmNotes: this.bpmNotes,
 				notes: this.notes,
 				measureCount: this.measureCount,
 				startMeasure: currentMeasure
 			});
+			this.scene.switch(Preview.key);
+			this.scene.setVisible(false);
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
 			this.scene.stop(Preview.key);
-			this.restart();
+			this.scene.resume();
+			this.scene.setVisible(true);
 		});
 	}
 

@@ -19,7 +19,6 @@ describe('Preview.getTimeElapsed', () => {
 
 		// Add the getTimeElapsed method to our minimal instance
 		preview.getTimeElapsed = Preview.prototype.getTimeElapsed;
-		preview.getTimeForPartialMeasure = Preview.prototype.getTimeForPartialMeasure;
 	});
 
 	it('should calculate correct time for a simple case with constant BPM', () => {

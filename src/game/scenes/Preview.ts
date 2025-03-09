@@ -7,7 +7,7 @@ import { XAaudioContext } from '$lib/browser/audioDecoder';
 import { LaneMeasureNote } from '$lib/chart/note';
 import type { SoundChip } from '$lib/chart/dtx';
 import { BaseGame, type Note } from './BaseGame';
-import type { LaneConfig } from '../interface';
+import { AssetName, type LaneConfig } from '../interface';
 
 interface Data {
 	measureCount: number;
@@ -35,6 +35,7 @@ export class Preview extends BaseGame {
 
 	constructor() {
 		super({ key: Preview.key });
+		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
 	}
 
 	init(data: Data) {
@@ -368,7 +369,7 @@ export class Preview extends BaseGame {
 			const icon = this.add.sprite(
 				currentX + this.cellWidth / 2,
 				this.offsetY + 30,
-				this.laneIconsSpritesheet,
+				AssetName.LANE_ICONS,
 				laneConfig.iconFrameIndex
 			);
 

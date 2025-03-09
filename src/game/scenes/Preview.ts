@@ -164,19 +164,20 @@ export class Preview extends BaseGame {
 			} else {
 				// Calculate time for each segment within the measure
 				let lastPosition = 0;
-				bpmNotes.forEach((note) => {
-					const pattern = note.pattern;
-					const segmentCount = pattern.length / 2;
-					for (let j = 0; j < segmentCount; j++) {
-						const noteId = pattern.substring(j * 2, j * 2 + 2);
-						if (noteId !== '00') {
-							const position = j / segmentCount;
-							elapsedTime +=
-								(60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
-							currentBPM = this.bpmNotes[noteId];
-							lastPosition = position;
-						}
-					}
+				bpmNotes.forEach((bpmNote) => {
+					//Use LaneMeasureNote to get the position of the note
+					const laneMeasureNote = new LaneMeasureNote(
+						bpmNote.measure,
+						bpmNote.pattern,
+						measureLength
+					);
+					laneMeasureNote.notes.forEach((note) => {
+						const position = note.position;
+						elapsedTime +=
+							(60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
+						currentBPM = this.bpmNotes[note.noteID];
+						lastPosition = position;
+					});
 				});
 				// Add the remaining time in the measure after the last BPM change
 				elapsedTime += (60 / currentBPM) * 4 * (1 - lastPosition) * measureLength;
@@ -191,34 +192,34 @@ export class Preview extends BaseGame {
 
 			if (bpmNotes.length === 0) {
 				// No BPM changes in this measure
-				elapsedTime += (60 / currentBPM) * 4 * noteChipPosition * measureLength;
+				elapsedTime += (60 / currentBPM) * 4 * noteChipPosition;
 			} else {
 				// Calculate time for each segment within the measure up to noteChipPosition
 				let lastPosition = 0;
-				bpmNotes.forEach((note) => {
-					const pattern = note.pattern;
-					const segmentCount = pattern.length / 2;
-					for (let j = 0; j < segmentCount; j++) {
-						const position = j / segmentCount;
+				bpmNotes.forEach((bpmNote) => {
+					const laneMeasureNote = new LaneMeasureNote(
+						bpmNote.measure,
+						bpmNote.pattern,
+						measureLength
+					);
+					laneMeasureNote.notes.forEach((note) => {
+						const position = note.position;
 						if (position > noteChipPosition) {
 							// Past the noteChipPosition, stop calculating
-							break;
+							return;
 						}
-
-						const noteId = pattern.substring(j * 2, j * 2 + 2);
+						const noteId = note.noteID;
 						if (noteId !== '00') {
-							elapsedTime +=
-								(60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
+							elapsedTime += (60 / currentBPM) * 4 * (position - lastPosition);
 							currentBPM = this.bpmNotes[noteId];
 							lastPosition = position;
 						}
-					}
+					});
 				});
 
 				// Add time from last BPM change to noteChipPosition
 				if (noteChipPosition > lastPosition) {
-					elapsedTime +=
-						(60 / currentBPM) * 4 * (noteChipPosition - lastPosition) * measureLength;
+					elapsedTime += (60 / currentBPM) * 4 * (noteChipPosition - lastPosition);
 				}
 			}
 		}

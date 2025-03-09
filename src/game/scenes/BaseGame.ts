@@ -200,7 +200,7 @@ export abstract class BaseGame extends Scene {
 			const cellHeight = this.getCellHeight(measure, i % this.cellsPerMeasure);
 
 			// Use thicker lines for beat divisions and measure boundaries
-			graphics.lineStyle((i * 4) % cellsPerMeasure == 0 ? 4 : 2, 0x888888, 0.5);
+			graphics.lineStyle(i % 4 == 0 ? 4 : 2, 0x888888, 0.5);
 			graphics.moveTo(this.offsetX, y);
 			graphics.lineTo(this.offsetX + this.totalWidth, y);
 
@@ -253,9 +253,7 @@ export abstract class BaseGame extends Scene {
 		const yOffset = this.getTotalMesaureOffest(measure);
 
 		// Calculate the position within the measure
-		const measureLength = this.measureLength[measure] || 1;
-		const cellsInMeasure = this.cellsPerMeasure * measureLength;
-		const cellPosition = Math.floor(cellOffset * cellsInMeasure);
+		const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
 
 		// Add offsets for each cell up to the note position
 		let cellsYOffset = 0;

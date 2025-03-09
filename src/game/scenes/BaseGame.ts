@@ -1,12 +1,7 @@
 import { LaneMeasureNote } from '$lib/chart/note';
 import { Scene, GameObjects } from 'phaser';
-
-interface LaneConfig {
-	name: string;
-	noteColor: number;
-	id: string;
-	playable: boolean;
-}
+import { AssetName, type LaneConfig } from '../interface';
+import { getAssetPath } from '../utils';
 
 export interface Note {
 	measure: number;
@@ -48,20 +43,27 @@ export abstract class BaseGame extends Scene {
 
 	protected laneConfigs: LaneConfig[] = [
 		{ name: 'BPM', noteColor: 0x000000, id: '08', playable: false },
-		{ name: 'LC', noteColor: 0xa20814, id: '1A', playable: true },
-		{ name: 'HH', noteColor: 0x0d1cde, id: '18', playable: true },
-		{ name: 'HHC', noteColor: 0x0d1cde, id: '11', playable: true },
-		{ name: 'LP', noteColor: 0xde0db8, id: '1B', playable: true },
-		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true },
-		{ name: 'SN', noteColor: 0xefec1b, id: '12', playable: true },
-		{ name: 'HT', noteColor: 0x45ef1b, id: '14', playable: true },
-		{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true },
-		{ name: 'LT', noteColor: 0xef1b2b, id: '15', playable: true },
-		{ name: 'FT', noteColor: 0xfa7e0a, id: '17', playable: true },
-		{ name: 'CY', noteColor: 0x1424c4, id: '16', playable: true },
-		{ name: 'RD', noteColor: 0x14bfc4, id: '19', playable: true },
+		{ name: 'LC', noteColor: 0xa20814, id: '1A', playable: true, iconFrameIndex: 0 },
+		{ name: 'HH', noteColor: 0x0d1cde, id: '18', playable: true, iconFrameIndex: 1 },
+		{ name: 'HHC', noteColor: 0x0d1cde, id: '11', playable: true, iconFrameIndex: 1 },
+		{ name: 'LP', noteColor: 0xde0db8, id: '1B', playable: true, iconFrameIndex: 9 },
+		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true, iconFrameIndex: 9 },
+		{ name: 'SN', noteColor: 0xefec1b, id: '12', playable: true, iconFrameIndex: 4 },
+		{ name: 'HT', noteColor: 0x45ef1b, id: '14', playable: true, iconFrameIndex: 5 },
+		{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true, iconFrameIndex: 8 },
+		{ name: 'LT', noteColor: 0xef1b2b, id: '15', playable: true, iconFrameIndex: 6 },
+		{ name: 'FT', noteColor: 0xfa7e0a, id: '17', playable: true, iconFrameIndex: 7 },
+		{ name: 'CY', noteColor: 0x1424c4, id: '16', playable: true, iconFrameIndex: 2 },
+		{ name: 'RD', noteColor: 0x14bfc4, id: '19', playable: true, iconFrameIndex: 3 },
 		{ name: 'BGM', noteColor: 0x222222, id: '01', playable: false }
 	];
+
+	preload() {
+		this.load.spritesheet(AssetName.LANE_ICONS, getAssetPath(AssetName.LANE_ICONS), {
+			frameWidth: 96,
+			frameHeight: 96
+		});
+	}
 
 	getTotalMesaureLength(measure: number) {
 		if (this.measureLength.length === 0) return measure;
@@ -109,21 +111,21 @@ export abstract class BaseGame extends Scene {
 		}
 	}
 
+	abstract drawFooterLane(laneConfig: LaneConfig, currentX: number): void;
+
 	drawFooter() {
 		this.footerContainer = this.add.container(0, 0);
 		this.footerContainer.setSize(this.scale.width, this.bottomMargin);
+
 		// Lane indicators
 		let currentX = this.offsetX;
 		this.laneConfigs.forEach((laneConfig) => {
-			const text = this.add
-				.text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
-					fontSize: '16px',
-					color: '#ffffff'
-				})
-				.setOrigin(0.5);
-			this.footerContainer.add(text);
+			// Add the icon sprite from the spritesheet
+			this.drawFooterLane(laneConfig, currentX);
+
 			currentX += this.cellWidth;
 		});
+
 		const graphics = this.add.graphics();
 		this.drawMesaureLine(graphics, this.offsetY);
 		graphics.strokePath();

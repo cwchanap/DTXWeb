@@ -7,6 +7,7 @@ import { XAaudioContext } from '$lib/browser/audioDecoder';
 import { LaneMeasureNote } from '$lib/chart/note';
 import type { SoundChip } from '$lib/chart/dtx';
 import { BaseGame, type Note } from './BaseGame';
+import type { LaneConfig } from '../interface';
 
 interface Data {
 	measureCount: number;
@@ -358,6 +359,29 @@ export class Preview extends BaseGame {
 		// Calculate the adjusted cell height based on the BPM
 		// Slower BPM = taller cells, faster BPM = shorter cells
 		return (this.cellHeight / currentBPM) * referenceBPM;
+	}
+
+	drawFooterLane(laneConfig: LaneConfig, currentX: number) {
+		const iconFrameIndex = laneConfig.iconFrameIndex;
+
+		if (iconFrameIndex !== undefined) {
+			const icon = this.add.sprite(
+				currentX + this.cellWidth / 2,
+				this.offsetY + 30,
+				this.laneIconsSpritesheet,
+				laneConfig.iconFrameIndex
+			);
+
+			// Scale the icon to fit the lane width
+			const scale = Math.min(this.cellWidth / icon.width, 0.45); // 0.45 is to make it a bit smaller than the lane
+			icon.setScale(scale);
+
+			// Center the icon in the lane
+			icon.setOrigin(0.5);
+
+			// Add to the footer container
+			this.footerContainer.add(icon);
+		}
 	}
 
 	cleanUp() {

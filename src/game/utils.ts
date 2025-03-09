@@ -1,0 +1,20 @@
+import { PUBLIC_CLOUDFLARE_R2_PUBLIC_URL } from '$env/static/public';
+import { AssetName } from './interface';
+
+/**
+ * Returns the appropriate asset path based on current environment
+ * @param assetPath The relative path to the asset
+ * @returns Full path to the asset
+ */
+export function getAssetPath(assetName: AssetName): string {
+	const assetsMap: Record<string, string> = {
+		[AssetName.LANE_ICONS]: `skin/default/Graphics/7_pads.png`
+	};
+
+	// Check if we're in production environment
+	const isProd = import.meta.env.PROD;
+
+	const baseUrl = isProd ? PUBLIC_CLOUDFLARE_R2_PUBLIC_URL : '';
+
+	return `${baseUrl}/${assetsMap[assetName]}`;
+}

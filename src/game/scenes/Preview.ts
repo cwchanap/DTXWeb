@@ -8,6 +8,7 @@ import { LaneMeasureNote } from '$lib/chart/note';
 import type { SoundChip } from '$lib/chart/dtx';
 import { BaseGame, type Note } from './BaseGame';
 import { AssetName, type LaneConfig } from '../interface';
+import { getAssetPath } from '../utils';
 
 interface Data {
 	measureCount: number;
@@ -87,6 +88,11 @@ export class Preview extends BaseGame {
 				}
 			});
 		}
+
+		this.load.spritesheet(AssetName.LANE_ICONS, getAssetPath(AssetName.LANE_ICONS), {
+			frameWidth: 96,
+			frameHeight: 96
+		});
 	}
 
 	create() {

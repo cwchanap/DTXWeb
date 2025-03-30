@@ -1,7 +1,6 @@
 import { LaneMeasureNote } from '$lib/chart/note';
 import { Scene, GameObjects } from 'phaser';
-import { AssetName, type LaneConfig } from '../interface';
-import { getAssetPath } from '../utils';
+import { type LaneConfig } from '../interface';
 
 export interface Note {
 	measure: number;
@@ -58,12 +57,7 @@ export abstract class BaseGame extends Scene {
 		{ name: 'BGM', noteColor: 0x222222, id: '01', playable: false }
 	];
 
-	preload() {
-		this.load.spritesheet(AssetName.LANE_ICONS, getAssetPath(AssetName.LANE_ICONS), {
-			frameWidth: 96,
-			frameHeight: 96
-		});
-	}
+	preload() {}
 
 	getTotalMesaureLength(measure: number) {
 		if (this.measureLength.length === 0) return measure;

@@ -93,10 +93,16 @@ export class Preview extends BaseGame {
 			frameWidth: 96,
 			frameHeight: 96
 		});
+
+		// Load the drum chips spritesheet as a regular image
+		this.load.image(AssetName.DRUM_CHIPS, getAssetPath(AssetName.DRUM_CHIPS));
 	}
 
 	create() {
 		console.log('Create Preview Scene');
+
+		// Create animations for each note type
+		this.createNoteAnimations();
 
 		this.drawPanel();
 		this.drawNotes();
@@ -388,6 +394,160 @@ export class Preview extends BaseGame {
 
 			// Add to the footer container
 			this.footerContainer.add(icon);
+		}
+	}
+
+	createNoteAnimations() {
+		// Create custom frames for the spritesheet since each note has different width
+		const texture = this.textures.get(AssetName.DRUM_CHIPS);
+		const frameHeight = 64; // Height of each note graphic
+		const totalRows = 11; // Number of rows in the spritesheet (0-10)
+
+		// For this spritesheet, we need to handle it differently
+		// The spritesheet has 12 columns (one for each note type)
+		// Each column has 11 frames (0-10)
+		// The columns are arranged in order of the note types
+		// We need to map each note type to its column index
+
+		// Define the order of note types in the spritesheet (from left to right)
+		const noteOrder = [
+			'13', // Right BassDrum
+			'19', // RideCymbal
+			'12', // Snare
+			'14', // HighTom
+			'15', // LowTom
+			'17', // FloorTom
+			'16', // Right Cymbal
+			'11', // HiHatClose
+			'1C', // LeftBassDrum
+			'1A', // LeftCymbal
+			'18', // HiHatOpen
+			'1B' // LeftPedal
+		];
+
+		// Calculate the x position for each note type in the spritesheet
+		const columnPositions: Record<string, number> = {};
+		let currentX = 0;
+
+		// Calculate the x position for each note type based on its order in the spritesheet
+		noteOrder.forEach((noteId) => {
+			const laneConfig = this.laneConfigs.find((lc) => lc.id === noteId);
+			if (laneConfig && laneConfig.width) {
+				columnPositions[noteId] = currentX;
+				currentX += laneConfig.width;
+			}
+		});
+
+		// Create animations for each note type with playable lanes
+		this.laneConfigs.forEach((laneConfig) => {
+			if (!laneConfig.playable || !laneConfig.width) return;
+
+			const laneId = laneConfig.id;
+			const frameWidth = laneConfig.width;
+			const xPosition = columnPositions[laneId];
+
+			// Create frames for this note type
+			for (let row = 0; row < totalRows; row++) {
+				texture.add(
+					`${laneId}_${row}`, // Frame name: e.g., "11_0" for HiHatClose frame 0
+					0, // Source image index
+					xPosition, // x position in the spritesheet based on column
+					row * frameHeight, // y position based on row
+					frameWidth, // Width of this note type
+					frameHeight // Height is fixed
+				);
+			}
+
+			// Create base animation (animation 1) - frames 2-9
+			this.anims.create({
+				key: `note-${laneId}-base`,
+				frames: [
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_2` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_3` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_4` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_5` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_6` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_7` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_8` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_9` }
+				],
+				frameRate: 12,
+				repeat: -1
+			});
+
+			// Create overlay animation (animation 2) - frames 0, 1, 10
+			this.anims.create({
+				key: `note-${laneId}-overlay`,
+				frames: [
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_0` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_1` },
+					{ key: AssetName.DRUM_CHIPS, frame: `${laneId}_10` }
+				],
+				frameRate: 8,
+				repeat: -1
+			});
+		});
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	override drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string) {
+		const laneConfig = this.laneConfigs[laneIndex];
+		const laneId = laneConfig.id;
+
+		// In Preview mode, only show animated notes for playable lanes with defined width
+		if (!laneConfig.playable || !laneConfig.width) {
+			// Skip drawing non-playable or non-animated notes
+			return;
+		}
+
+		const x = this.offsetX + this.cellWidth * laneIndex + this.cellWidth / 2;
+
+		// Calculate Y position based on measure offset and cell position
+		const yOffset = this.getTotalMesaureOffest(measure);
+
+		// Calculate the position within the measure
+		const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
+
+		// Add offsets for each cell up to the note position
+		let cellsYOffset = 0;
+		for (let i = 0; i < cellPosition; i++) {
+			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
+		}
+
+		const y = this.offsetY - (yOffset + cellsYOffset);
+
+		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
+		const existingNote = this.children.getByName(noteKey);
+
+		if (existingNote) {
+			// If the note already exists, remove it
+			this.children.getAll('name', noteKey).forEach((note) => {
+				note.destroy();
+			});
+		} else {
+			// Create a container for the note sprites
+			const container = this.add.container(x, y);
+			container.setName(noteKey);
+
+			// Calculate scale based on the cell width and note width
+			const scale = Math.min((this.cellWidth - this.cellMargin * 2) / laneConfig.width, 1);
+
+			// Create base animation sprite
+			const baseSprite = this.add.sprite(0, 0, AssetName.DRUM_CHIPS);
+			baseSprite.setOrigin(0.5, 0.5);
+			baseSprite.setScale(scale);
+			baseSprite.play(`note-${laneId}-base`);
+			container.add(baseSprite);
+
+			// Create overlay animation sprite
+			const overlaySprite = this.add.sprite(0, 0, AssetName.DRUM_CHIPS);
+			overlaySprite.setOrigin(0.5, 0.5);
+			overlaySprite.setScale(scale);
+			overlaySprite.play(`note-${laneId}-overlay`);
+			container.add(overlaySprite);
+
+			// Add the container to the panel
+			this.panelContainer.add(container);
 		}
 	}
 

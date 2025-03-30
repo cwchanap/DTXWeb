@@ -42,18 +42,25 @@ export abstract class BaseGame extends Scene {
 
 	protected laneConfigs: LaneConfig[] = [
 		{ name: 'BPM', noteColor: 0x000000, id: '08', playable: false },
-		{ name: 'LC', noteColor: 0xa20814, id: '1A', playable: true, iconFrameIndex: 0 },
-		{ name: 'HH', noteColor: 0x0d1cde, id: '18', playable: true, iconFrameIndex: 1 },
-		{ name: 'HHC', noteColor: 0x0d1cde, id: '11', playable: true, iconFrameIndex: 1 },
-		{ name: 'LP', noteColor: 0xde0db8, id: '1B', playable: true, iconFrameIndex: 9 },
-		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true, iconFrameIndex: 9 },
-		{ name: 'SN', noteColor: 0xefec1b, id: '12', playable: true, iconFrameIndex: 4 },
-		{ name: 'HT', noteColor: 0x45ef1b, id: '14', playable: true, iconFrameIndex: 5 },
-		{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true, iconFrameIndex: 8 },
-		{ name: 'LT', noteColor: 0xef1b2b, id: '15', playable: true, iconFrameIndex: 6 },
-		{ name: 'FT', noteColor: 0xfa7e0a, id: '17', playable: true, iconFrameIndex: 7 },
-		{ name: 'CY', noteColor: 0x1424c4, id: '16', playable: true, iconFrameIndex: 2 },
-		{ name: 'RD', noteColor: 0x14bfc4, id: '19', playable: true, iconFrameIndex: 3 },
+		{ name: 'LC', noteColor: 0xa20814, id: '1A', playable: true, iconFrameIndex: 0, width: 74 },
+		{ name: 'HH', noteColor: 0x0d1cde, id: '18', playable: true, iconFrameIndex: 1, width: 48 },
+		{
+			name: 'HHC',
+			noteColor: 0x0d1cde,
+			id: '11',
+			playable: true,
+			iconFrameIndex: 1,
+			width: 56
+		},
+		{ name: 'LP', noteColor: 0xde0db8, id: '1B', playable: true, iconFrameIndex: 9, width: 58 },
+		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true, iconFrameIndex: 9, width: 48 },
+		{ name: 'SN', noteColor: 0xefec1b, id: '12', playable: true, iconFrameIndex: 4, width: 64 },
+		{ name: 'HT', noteColor: 0x45ef1b, id: '14', playable: true, iconFrameIndex: 5, width: 56 },
+		{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true, iconFrameIndex: 8, width: 70 },
+		{ name: 'LT', noteColor: 0xef1b2b, id: '15', playable: true, iconFrameIndex: 6, width: 56 },
+		{ name: 'FT', noteColor: 0xfa7e0a, id: '17', playable: true, iconFrameIndex: 7, width: 56 },
+		{ name: 'CY', noteColor: 0x1424c4, id: '16', playable: true, iconFrameIndex: 2, width: 74 },
+		{ name: 'RD', noteColor: 0x14bfc4, id: '19', playable: true, iconFrameIndex: 3, width: 58 },
 		{ name: 'BGM', noteColor: 0x222222, id: '01', playable: false }
 	];
 

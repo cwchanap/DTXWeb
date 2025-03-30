@@ -8,7 +8,8 @@ import { AssetName } from './interface';
  */
 export function getAssetPath(assetName: AssetName): string {
 	const assetsMap: Record<string, string> = {
-		[AssetName.LANE_ICONS]: `skin/default/Graphics/7_pads.png`
+		[AssetName.LANE_ICONS]: `skin/default/Graphics/7_pads.png`,
+		[AssetName.DRUM_CHIPS]: `skin/default/Graphics/7_chips_drums.png`
 	};
 
 	// Check if we're in production environment

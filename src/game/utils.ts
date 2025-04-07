@@ -1,4 +1,4 @@
-import { PUBLIC_CLOUDFLARE_R2_PUBLIC_URL } from '$env/static/public';
+import { PUBLIC_SKIN_BUCKET_URL } from '$env/static/public';
 import { AssetName } from './interface';
 
 /**
@@ -15,7 +15,7 @@ export function getAssetPath(assetName: AssetName): string {
 	// Check if we're in production environment
 	const isProd = import.meta.env.PROD;
 
-	const baseUrl = isProd ? PUBLIC_CLOUDFLARE_R2_PUBLIC_URL : '';
+	const baseUrl = isProd ? PUBLIC_SKIN_BUCKET_URL : '';
 
 	return `${baseUrl}/${assetsMap[assetName]}`;
 }

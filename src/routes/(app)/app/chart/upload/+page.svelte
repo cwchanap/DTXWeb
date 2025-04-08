@@ -123,7 +123,6 @@
 			'.ogg',
 			'.def',
 			'.jpg',
-			'.avi',
 			'.mp4',
 			'.mp3',
 			'.xa'
@@ -186,10 +185,12 @@
 		>
 			{#snippet preview()}
 				<div class="col-span-2 items-center justify-center">
-					<ImageAudio
-						previewUrl={simfile.getPreview()}
-						soundPreviewUrl={simfile.getSoundPreview()}
-					/>
+					{#if simfile}
+						<ImageAudio
+							previewUrl={simfile.getPreview()}
+							soundPreviewUrl={simfile.getSoundPreview()}
+						/>
+					{/if}
 				</div>
 				<div class="col-span-6"></div>
 			{/snippet}
@@ -235,7 +236,7 @@
 					</div>
 				</div>
 
-				{#if !isCollapsed}
+				{#if !isCollapsed && simfile}
 					<table class="col-span-8 min-w-full leading-normal">
 						<thead>
 							<tr>

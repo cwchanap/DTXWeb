@@ -112,13 +112,13 @@
 						value={1}>Sound</Tab
 					>
 				{/if}
-				{#snippet panel()}
+				<svelte:fragment slot="panel">
 					{#if currentTab === 0}
 						<MainTab />
 					{:else if currentTab === 1}
 						<SoundTab />
 					{/if}
-				{/snippet}
+				</svelte:fragment>
 			</TabGroup>
 		</div>
 

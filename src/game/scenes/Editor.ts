@@ -5,6 +5,7 @@ import { BaseGame, type Note } from './BaseGame';
 import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '$lib/store';
+import type { LaneConfig } from '../interface';
 
 interface Data {
 	measureCount?: number;
@@ -182,5 +183,15 @@ export class Editor extends BaseGame {
 		this.input.off('wheel');
 		this.input.keyboard?.off('keydown-Q');
 		this.scene.restart(data);
+	}
+
+	drawFooterLane(laneConfig: LaneConfig, currentX: number) {
+		const text = this.add
+			.text(currentX + this.cellWidth / 2, this.offsetY + 20, laneConfig.name, {
+				fontSize: '16px',
+				color: '#ffffff'
+			})
+			.setOrigin(0.5);
+		this.footerContainer.add(text);
 	}
 }

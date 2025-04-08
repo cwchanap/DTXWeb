@@ -21,10 +21,11 @@
 		simfile?: Partial<simFileWithDtxFiles> | null;
 		preview?: import('svelte').Snippet;
 		folder_upload?: import('svelte').Snippet;
+		asset_files?: import('svelte').Snippet;
 		save?: import('svelte').Snippet;
 	}
 
-	let { simfile = null, preview, folder_upload, save }: Props = $props();
+	let { simfile = null, preview, folder_upload, asset_files, save }: Props = $props();
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
 
 	let displayId: number = $state(simfile?.display_id || 0);
@@ -179,73 +180,8 @@
 		{@render folder_upload?.()}
 	</div>
 
-	<!-- Uploaded Asset Files Section -->
-	<div class="mt-8">
-		<Accordion>
-			<AccordionItem class="bg-green-100">
-				<svelte:fragment slot="lead">
-					<i class="fa-solid fa-folder-open"></i>
-				</svelte:fragment>
-				<svelte:fragment slot="summary">Uploaded Asset Files</svelte:fragment>
-				<svelte:fragment slot="content">
-					{#if isLoadingFiles}
-						<div class="flex justify-center py-4">
-							<p>Loading files...</p>
-						</div>
-					{:else if fileLoadError}
-						<div class="py-4 text-red-500">
-							<p>{fileLoadError}</p>
-							<button
-								class="mt-2 rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-								onclick={loadAssetFiles}
-							>
-								Retry
-							</button>
-						</div>
-					{:else if assetFiles.length === 0}
-						<div class="py-4">
-							<p>No asset files found for this simfile.</p>
-						</div>
-					{:else}
-						<div class="overflow-x-auto">
-							<table class="w-full table-auto border border-black">
-								<thead>
-									<tr class="border-b border-black">
-										<th class="px-4 py-2 text-left">File Name</th>
-										<th class="px-4 py-2 text-left">Size</th>
-										<th class="px-4 py-2 text-left">Last Modified</th>
-										<th class="px-4 py-2 text-center">Actions</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each assetFiles as file}
-										<tr class="border-b border-gray-300 hover:bg-gray-50">
-											<td class="px-4 py-2">{file.fileName}</td>
-											<td class="px-4 py-2">{formatFileSize(file.size)}</td>
-											<td class="px-4 py-2"
-												>{formatDate(file.lastModified)}</td
-											>
-											<td class="px-4 py-2 text-center">
-												<a
-													href={getDownloadUrl(file.key)}
-													target="_blank"
-													download={file.fileName}
-													class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200"
-													title="Download file"
-												>
-													<DownloadSolid size="sm" />
-												</a>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				</svelte:fragment>
-			</AccordionItem>
-		</Accordion>
-	</div>
+	<!-- Placeholder for asset_files snippet -->
+	{@render asset_files?.()}
 
 	<button
 		onclick={() =>

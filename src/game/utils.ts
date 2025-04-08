@@ -8,14 +8,14 @@ import { AssetName } from './interface';
  */
 export function getAssetPath(assetName: AssetName): string {
 	const assetsMap: Record<string, string> = {
-		[AssetName.LANE_ICONS]: `skin/default/Graphics/7_pads.png`,
-		[AssetName.DRUM_CHIPS]: `skin/default/Graphics/7_chips_drums.png`
+		[AssetName.LANE_ICONS]: `default/Graphics/7_pads.png`,
+		[AssetName.DRUM_CHIPS]: `default/Graphics/7_chips_drums.png`
 	};
 
 	// Check if we're in production environment
 	const isProd = import.meta.env.PROD;
 
-	const baseUrl = isProd ? PUBLIC_SKIN_BUCKET_URL : '';
+	const baseUrl = isProd ? PUBLIC_SKIN_BUCKET_URL : 'skin/';
 
 	return `${baseUrl}/${assetsMap[assetName]}`;
 }

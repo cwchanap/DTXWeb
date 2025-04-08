@@ -1,9 +1,39 @@
-export interface SoundChip {
+import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+
+export class SoundChip {
 	label: string;
 	id: number;
 	volume: number;
 	position: number;
-	file: string | undefined;
+	fileName: string;
+	file?: File;
+
+	constructor(
+		label: string,
+		id: number,
+		volume: number,
+		position: number,
+		fileName: string,
+		file?: File
+	) {
+		this.label = label;
+		this.id = id;
+		this.volume = volume;
+		this.position = position;
+		this.fileName = fileName;
+
+		if (file) {
+			this.file = file;
+		}
+	}
+
+	async fetchRemote(simfileID: string) {
+		if (!this.fileName) {
+			return;
+		}
+		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/${this.fileName}`);
+		this.file = new File([await response.blob()], this.fileName);
+	}
 }
 
 export class DTXFile {
@@ -61,7 +91,7 @@ export class DTXFile {
 			const positionLine = this.lines.find((l) => l.startsWith(`#POSITION${id}: `));
 			const position = positionLine ? parseInt(positionLine.split(`#POSITION${id}: `)[1]) : 0;
 			const soundFile = line.split(`#WAV${id}: `)[1];
-			return { label: '', id: parseInt(id, 36), volume, position, file: soundFile };
+			return new SoundChip('', parseInt(id, 36), volume, position, soundFile);
 		});
 		return this.soundChips;
 	}

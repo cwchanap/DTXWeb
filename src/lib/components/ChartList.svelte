@@ -201,19 +201,19 @@
 	type="text"
 	placeholder={$_('blog.search_artist')}
 	bind:value={artistFilter}
-	class="mb-4 w-1/2 rounded border p-2"
+	class="mb-4 w-1/2 rounded-sm border p-2"
 	oninput={handleSearchInput}
 />
 <input
 	type="text"
 	placeholder={$_('blog.search_song_name')}
 	bind:value={songNameFilter}
-	class="mb-4 w-1/2 rounded border p-2"
+	class="mb-4 w-1/2 rounded-sm border p-2"
 	oninput={handleSearchInput}
 />
 {#if !isBlog}
 	<div class="mb-4 flex items-center">
-		<label for="is_published" class="mb-2 mr-2 block">Hide unpublished:</label>
+		<label for="is_published" class="mr-2 mb-2 block">Hide unpublished:</label>
 		<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={hideUnpublished} />
 	</div>
 {/if}
@@ -239,7 +239,7 @@
 
 	<div class="mt-6 flex justify-center">
 		<button
-			class="mr-2 rounded bg-blue-500 px-4 py-2 text-white"
+			class="mr-2 rounded-sm bg-blue-500 px-4 py-2 text-white"
 			onclick={() => changePage(currentPage - 1)}
 			disabled={currentPage === 1}>{$_('blog.pagination.previous')}</button
 		>
@@ -247,7 +247,7 @@
 			{$_('blog.pagination.page', { values: { currentPage, totalPages } })}
 		</span>
 		<button
-			class="ml-2 rounded bg-blue-500 px-4 py-2 text-white"
+			class="ml-2 rounded-sm bg-blue-500 px-4 py-2 text-white"
 			onclick={() => changePage(currentPage + 1)}
 			disabled={currentPage === totalPages}>{$_('blog.pagination.next')}</button
 		>
@@ -256,7 +256,7 @@
 			min="1"
 			max={totalPages}
 			bind:value={currentPage}
-			class="mx-2 w-16 rounded border p-1"
+			class="mx-2 w-16 rounded-sm border p-1"
 			onchange={() => changePage(currentPage)}
 		/>
 	</div>

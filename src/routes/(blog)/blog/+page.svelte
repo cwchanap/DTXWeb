@@ -23,7 +23,7 @@
 					target: 'language-selector',
 					placement: 'bottom'
 				}}
-				class="rounded bg-indigo-500 px-4 py-2 text-white hover:bg-indigo-700"
+				class="rounded-sm bg-indigo-500 px-4 py-2 text-white hover:bg-indigo-700"
 			>
 				{$_('blog.change_language')}
 			</button>
@@ -31,7 +31,7 @@
 	</header>
 
 	<div data-popup="language-selector">
-		<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
+		<div class="btn-group-vertical mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
 			{#each $locales as l}
 				<button class="hover:bg-gray-100" onclick={() => locale.set(l)}
 					>{localeMap[l]}</button

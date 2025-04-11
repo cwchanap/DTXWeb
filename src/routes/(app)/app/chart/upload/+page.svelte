@@ -194,7 +194,7 @@
 				<div class="col-span-8">
 					<div class="mt-4">
 						<button
-							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+							class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 							onclick={() => (simfile = undefined)}
 						>
 							Clear Files
@@ -202,7 +202,7 @@
 					</div>
 					<div class="mt-4">
 						<button
-							class="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+							class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 							onclick={async () => {
 								if (!simfile) return;
 								const zip = simfile.getZip();

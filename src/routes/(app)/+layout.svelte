@@ -28,7 +28,7 @@
 		class={`bg-gray-800 text-white ${isSidebarCollapsed ? 'collapsed-sidebar' : 'expanded-sidebar'}`}
 	>
 		<div class="p-4">
-			<button onclick={toggleSidebar} class="text-white focus:outline-none">
+			<button onclick={toggleSidebar} class="text-white focus:outline-hidden">
 				{#if isSidebarCollapsed}
 					&#x25B6; <!-- Right arrow -->
 				{:else}
@@ -49,7 +49,7 @@
 		<!-- Top Navigation Bar -->
 		<header class="bg-indigo-600 text-white">
 			<div class="container mx-auto flex items-center justify-between px-4 py-4">
-				<h1 class="flex-grow text-xl font-bold">My App</h1>
+				<h1 class="grow text-xl font-bold">My App</h1>
 				<nav class="flex space-x-4">
 					<button onclick={navigateToProfile} class="hover:underline">Profile</button>
 					<button onclick={logout} class="hover:underline">Logout</button>

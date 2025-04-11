@@ -79,7 +79,7 @@
 		type="file"
 		webkitdirectory
 		directory
-		class="mb-4 w-full rounded border p-2 {hidden ? 'hidden' : ''}"
+		class="mb-4 w-full rounded-sm border p-2 {hidden ? 'hidden' : ''}"
 		onchange={handleFileInput}
 	/>
 {/if}

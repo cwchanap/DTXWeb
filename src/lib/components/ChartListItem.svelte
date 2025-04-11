@@ -30,7 +30,7 @@
 		{#if !isBlog}
 			<div class="relative">
 				<button
-					class="text-gray-500 hover:text-gray-700 focus:outline-none"
+					class="text-gray-500 hover:text-gray-700 focus:outline-hidden"
 					use:popup={{
 						event: 'click',
 						target: 'popupFeatured-' + item.id,
@@ -41,7 +41,7 @@
 				</button>
 
 				<div
-					class="z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+					class="ring-opacity-5 z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black"
 					data-popup="popupFeatured-{item.id}"
 				>
 					<div

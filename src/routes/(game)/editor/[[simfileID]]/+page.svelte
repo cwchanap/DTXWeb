@@ -102,7 +102,7 @@
 </script>
 
 <div data-popup="file-menu">
-	<div class="btn-group-vertical mt-1 rounded border border-gray-300 bg-white shadow-lg">
+	<div class="btn-group-vertical mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
 		<button class="hover:bg-gray-100" onclick={newFile}>New</button>
 		<button
 			class="hover:bg-gray-100"
@@ -113,11 +113,11 @@
 	</div>
 </div>
 
-<div class="grid h-screen grid-cols-1 grid-rows-[auto,1fr]">
+<div class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]">
 	<div class="relative row-span-1 flex flex-row items-center border-b-2 border-gray-400">
 		<button
 			use:popup={{ event: 'click', target: 'file-menu', placement: 'bottom' }}
-			class="w-1/12 rounded bg-gray-200 py-2 hover:bg-gray-300"
+			class="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
 		>
 			File
 		</button>
@@ -163,14 +163,14 @@
 			class="flex w-full flex-col items-center justify-center p-4 2xl:w-[20%] 2xl:items-end 2xl:justify-end 2xl:p-16"
 		>
 			<button
-				class="mt-5 w-full max-w-xs rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none"
+				class="mt-5 w-full max-w-xs rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-hidden"
 				onclick={() => {
 					goto('/game');
 					store.activeScene.set(MainMenu.key);
 				}}>Game</button
 			>
 			<button
-				class="mt-5 w-full max-w-xs rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none"
+				class="mt-5 w-full max-w-xs rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-hidden"
 				onclick={() => {
 					goto('/');
 					store.activeScene.set(null);

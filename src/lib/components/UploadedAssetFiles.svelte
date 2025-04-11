@@ -149,7 +149,7 @@
 					<div class="p-4 text-red-500">
 						<p>{fileLoadError}</p>
 						<button
-							class="mt-2 rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+							class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
 							onclick={loadAssetFiles}
 						>
 							Retry
@@ -183,12 +183,12 @@
 									<td class="px-4 py-2">
 										{#if file.status === 'new'}
 											<span
-												class="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+												class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
 												>New</span
 											>
 										{:else if file.status === 'replacing'}
 											<span
-												class="rounded bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
+												class="rounded-sm bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
 												>Replacing</span
 											>
 										{:else}

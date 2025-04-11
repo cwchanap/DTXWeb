@@ -29,7 +29,7 @@
 
 <div class="flex flex-col space-y-2">
 	<button
-		class="w-1/2 rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+		class="w-1/2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 		onclick={() => {
 			store.currentSoundChip.set([
 				...soundChips,

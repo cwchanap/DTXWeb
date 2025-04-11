@@ -9,17 +9,14 @@
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { filterFiles } from '$lib/utils';
+	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 
 	let { data } = $props();
 	let { supabase } = $derived(data);
 
 	let simfile: SimFile | undefined = $state(undefined);
-	let isCollapsed = $state(true);
 	let highestDtx: DTXFile | undefined = $state(undefined);
-
-	function toggleCollapse() {
-		isCollapsed = !isCollapsed;
-	}
+	let simfileId: string | null = $state(null);
 
 	async function uploadFile(
 		displayId: number,
@@ -172,6 +169,7 @@
 					label: value?.label
 				}))
 			}}
+			{supabase}
 			on:onSave={(e) =>
 				uploadFile(
 					e.detail.displayId,
@@ -220,41 +218,11 @@
 							Download zip
 						</button>
 					</div>
-					<div class="mt-4">
-						<button
-							onclick={toggleCollapse}
-							class="focus:shadow-outline mb-4 transform rounded bg-blue-500 px-4 py-2 font-bold text-white transition-colors duration-150 ease-in-out hover:bg-blue-700 focus:outline-none"
-						>
-							{#if isCollapsed}
-								Show Uploaded Files
-							{:else}
-								Hide Uploaded Files
-							{/if}
-						</button>
-					</div>
 				</div>
-
-				{#if !isCollapsed && simfile}
-					<table class="col-span-8 min-w-full leading-normal">
-						<thead>
-							<tr>
-								<th
-									class="border-b-2 border-gray-200 bg-gray-100 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700"
-								>
-									File Name
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each simfile.files as file}
-								<tr>
-									<td class="border-b border-gray-200 bg-white px-5 py-5 text-sm">
-										{file.name}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+			{/snippet}
+			{#snippet asset_files()}
+				{#if simfile}
+					<UploadedAssetFiles userFiles={simfile.files} />
 				{/if}
 			{/snippet}
 			{#snippet save()}

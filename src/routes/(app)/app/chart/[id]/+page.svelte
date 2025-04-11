@@ -8,10 +8,7 @@
 	import type { SimFile } from '$lib/chart/simFile';
 	import type { DTXFile } from '$lib/chart/dtx';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-	import { DownloadSolid } from 'flowbite-svelte-icons';
-	import dayjs from 'dayjs';
-	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 
 	const toastStore = getToastStore();
 
@@ -20,19 +17,13 @@
 	let error: string | null = $state(null);
 	let updatedHighestDtx: DTXFile | null = $state(null);
 	let updatedSimfile: SimFile | null = $state(null);
+	let userUploadedFiles: File[] = $state([]);
 	let { data } = $props();
 	let { supabase } = $derived(data);
-
-	let assetFiles = $state<
-		{ fileName: string; size: number; lastModified: string; key: string }[]
-	>([]);
-	let isLoadingFiles = $state(false);
-	let fileLoadError = $state<string | null>(null);
 
 	onMount(async () => {
 		const { id } = $page.params;
 		await loadSimfileDetails(id);
-		await loadAssetFiles();
 	});
 
 	async function loadSimfileDetails(id: string) {
@@ -50,47 +41,6 @@
 		} finally {
 			loading = false;
 		}
-	}
-
-	async function loadAssetFiles() {
-		if (!simfile?.id) return;
-
-		isLoadingFiles = true;
-		fileLoadError = null;
-
-		try {
-			const response = await fetch(`/api/simFile/listFiles/${simfile.id}`);
-
-			if (!response.ok) {
-				throw new Error(`Error fetching files: ${response.statusText}`);
-			}
-
-			const data = await response.json();
-			assetFiles = data.files;
-		} catch (err) {
-			console.error('Error loading asset files:', err);
-			fileLoadError = err instanceof Error ? err.message : 'Error loading files';
-		} finally {
-			isLoadingFiles = false;
-		}
-	}
-
-	function formatFileSize(bytes: number): string {
-		if (bytes === 0) return '0 Bytes';
-
-		const k = 1024;
-		const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-	}
-
-	function formatDate(dateString: string): string {
-		return dayjs(dateString).format('YYYY-MM-DD HH:mm');
-	}
-
-	function getDownloadUrl(key: string): string {
-		return `${PUBLIC_SIMFILE_BUCKET_URL}/${key}`;
 	}
 
 	function goBack() {
@@ -148,6 +98,11 @@
 			simfile.artist = newHighestDtx.artist;
 			simfile.title = newSimfile.title;
 		}
+
+		// Update the user uploaded files
+		if (newSimfile && newSimfile.files) {
+			userUploadedFiles = newSimfile.files;
+		}
 	}
 </script>
 
@@ -162,6 +117,7 @@
 	{:else if simfile}
 		<ChartDetail
 			{simfile}
+			supabase={data.supabase}
 			on:onSave={(e) =>
 				updateSimfile(
 					e.detail.displayId,
@@ -179,81 +135,12 @@
 					<ChartFolderUpload large={false} {onFileUpload} />
 				</div>
 			{/snippet}
-
 			{#snippet asset_files()}
-				<!-- Uploaded Asset Files Section -->
-				<div class="mt-8">
-					<Accordion>
-						<AccordionItem class="bg-green-100">
-							<svelte:fragment slot="lead">
-								<i class="fa-solid fa-folder-open"></i>
-							</svelte:fragment>
-							<svelte:fragment slot="summary">Uploaded Asset Files</svelte:fragment>
-							<svelte:fragment slot="content">
-								{#if isLoadingFiles}
-									<div class="flex justify-center py-4">
-										<p>Loading files...</p>
-									</div>
-								{:else if fileLoadError}
-									<div class="py-4 text-red-500">
-										<p>{fileLoadError}</p>
-										<button
-											class="mt-2 rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-											onclick={loadAssetFiles}
-										>
-											Retry
-										</button>
-									</div>
-								{:else if assetFiles.length === 0}
-									<div class="py-4">
-										<p>No asset files found for this simfile.</p>
-									</div>
-								{:else}
-									<div class="overflow-x-auto">
-										<table class="w-full table-auto border border-black">
-											<thead>
-												<tr class="border-b border-black">
-													<th class="px-4 py-2 text-left">File Name</th>
-													<th class="px-4 py-2 text-left">Size</th>
-													<th class="px-4 py-2 text-left"
-														>Last Modified</th
-													>
-													<th class="px-4 py-2 text-center">Actions</th>
-												</tr>
-											</thead>
-											<tbody>
-												{#each assetFiles as file}
-													<tr
-														class="border-b border-gray-300 hover:bg-gray-50"
-													>
-														<td class="px-4 py-2">{file.fileName}</td>
-														<td class="px-4 py-2"
-															>{formatFileSize(file.size)}</td
-														>
-														<td class="px-4 py-2"
-															>{formatDate(file.lastModified)}</td
-														>
-														<td class="px-4 py-2 text-center">
-															<a
-																href={getDownloadUrl(file.key)}
-																target="_blank"
-																download={file.fileName}
-																class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200"
-																title="Download file"
-															>
-																<DownloadSolid size="sm" />
-															</a>
-														</td>
-													</tr>
-												{/each}
-											</tbody>
-										</table>
-									</div>
-								{/if}
-							</svelte:fragment>
-						</AccordionItem>
-					</Accordion>
-				</div>
+				<UploadedAssetFiles
+					simfileId={simfile?.id?.toString() || ''}
+					{supabase}
+					userFiles={userUploadedFiles}
+				/>
 			{/snippet}
 		</ChartDetail>
 	{:else}

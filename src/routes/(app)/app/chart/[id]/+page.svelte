@@ -8,14 +8,16 @@
 	import type { SimFile } from '$lib/chart/simFile';
 	import type { DTXFile } from '$lib/chart/dtx';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
+	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 
 	const toastStore = getToastStore();
 
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);
 	let error: string | null = $state(null);
-	let updatedHighestDtx: DTXFile | null = null;
-	let updatedSimfile: SimFile | null = null;
+	let updatedHighestDtx: DTXFile | null = $state(null);
+	let updatedSimfile: SimFile | null = $state(null);
+	let userUploadedFiles: File[] = $state([]);
 	let { data } = $props();
 	let { supabase } = $derived(data);
 
@@ -96,6 +98,11 @@
 			simfile.artist = newHighestDtx.artist;
 			simfile.title = newSimfile.title;
 		}
+
+		// Update the user uploaded files
+		if (newSimfile && newSimfile.files) {
+			userUploadedFiles = newSimfile.files;
+		}
 	}
 </script>
 
@@ -110,6 +117,7 @@
 	{:else if simfile}
 		<ChartDetail
 			{simfile}
+			supabase={data.supabase}
 			on:onSave={(e) =>
 				updateSimfile(
 					e.detail.displayId,
@@ -126,6 +134,13 @@
 				<div class="col-span-7">
 					<ChartFolderUpload large={false} {onFileUpload} />
 				</div>
+			{/snippet}
+			{#snippet asset_files()}
+				<UploadedAssetFiles
+					simfileId={simfile?.id?.toString() || ''}
+					{supabase}
+					userFiles={userUploadedFiles}
+				/>
 			{/snippet}
 		</ChartDetail>
 	{:else}

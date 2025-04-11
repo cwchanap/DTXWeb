@@ -50,9 +50,13 @@
 		await highestDtx.parse();
 		const notes = highestDtx.parseNotes();
 		const bpmNotes = highestDtx.parseBPMChanges();
+		const soundChips = highestDtx.parseSoundChips();
+		soundChips.forEach((soundChip) => {
+			soundChip.file = simfile.files.find((f) => f.name === soundChip.fileName);
+		});
 		store.currentDtxFile.set(highestDtx);
 		store.currentSimfile.set(simfile);
-		store.currentSoundChip.set(highestDtx.parseSoundChips());
+		store.currentSoundChip.set(soundChips);
 		EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 	}
 
@@ -64,8 +68,35 @@
 		simfileID = page.params.simfileID;
 		if (!simfileID) {
 			newFile();
-		} else if (simfileID === 'demo') {
-			const simfile = SimFile.parseFromRemoteURL(simfileID);
+			return;
+		}
+
+		try {
+			// Load simfile from remote URL
+			const simfile = await SimFile.parseFromRemoteURL(simfileID);
+
+			// Get the highest level DTX file from the simfile
+			const highestDtx = simfile.getHighestLevel();
+
+			// Parse notes and BPM changes
+			const notes = highestDtx.parseNotes();
+			const bpmNotes = highestDtx.parseBPMChanges();
+			const soundChips = highestDtx.parseSoundChips();
+
+			// Set the current DTX file and simfile in the store
+			store.currentDtxFile.set(highestDtx);
+			store.currentSimfile.set(simfile);
+			store.currentSoundChip.set(soundChips);
+
+			soundChips.forEach(async (soundChip) => {
+				await soundChip.fetchRemote(simfileID);
+			});
+
+			// Emit note import event
+			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+		} catch (error) {
+			console.error('Error loading simfile:', error);
+			newFile(); // Fallback to new file if loading fails
 		}
 	});
 </script>

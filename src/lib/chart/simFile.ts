@@ -76,6 +76,9 @@ export class SimFile {
 					const response = await fetch(
 						`${PUBLIC_SIMFILE_BUCKET_URL}/${this.simFileID}/${file_name}`
 					);
+					if (!response.ok) {
+						return;
+					}
 					file = new File([await response.blob()], file_name);
 				}
 				if (!file) {

@@ -55,36 +55,29 @@ export class Preview extends BaseGame {
 	preload() {
 		// Preload assets if any
 		console.log('Preload sound');
-		// Load the BGM audio file
-		const simfile = get(store.currentSimfile);
-
 		// Load sound chip samples
 		const soundChips = get(store.currentSoundChip);
 
 		if (soundChips) {
 			const addedKey = new Set();
 			Object.entries(soundChips).forEach(([, soundChip]) => {
-				if (!soundChip.file) return;
-				const soundFile = simfile?.files.find(
-					(f) => f.name.toLowerCase() === soundChip.file?.toLowerCase()
-				);
-				if (!soundFile) return;
+				if (!soundChip.fileName || !soundChip.file) return;
 
 				const cacheKey = this.getCacheKey(soundChip);
 				this.cache.audio.remove(cacheKey);
 
 				if (addedKey.has(cacheKey)) return;
 				addedKey.add(cacheKey);
-				if (soundChip.file.toLowerCase().endsWith('.xa')) {
+				if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
 					// For XA files, we'll load them with custom audio context
 					this.load.audio({
 						key: cacheKey,
-						url: [URL.createObjectURL(soundFile)],
+						url: [URL.createObjectURL(soundChip.file)],
 						context: XAaudioContext
 					});
 				} else {
 					// For other formats, load as usual
-					this.load.audio(cacheKey, URL.createObjectURL(soundFile));
+					this.load.audio(cacheKey, URL.createObjectURL(soundChip.file));
 				}
 			});
 		}
@@ -114,7 +107,7 @@ export class Preview extends BaseGame {
 			Object.entries(soundChips).forEach(([, soundChip]) => {
 				const cacheKey = this.getCacheKey(soundChip);
 				const soundFile = simfile?.files.find(
-					(f) => f.name.toLowerCase() === soundChip.file?.toLowerCase()
+					(f) => f.name.toLowerCase() === soundChip.fileName.toLowerCase()
 				);
 				if (!soundFile) return;
 				this.sound.add(cacheKey) as Sound.WebAudioSound;

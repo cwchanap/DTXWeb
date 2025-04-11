@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { SlideToggle } from '@skeletonlabs/skeleton';
 	import type { Tables } from '@/types/supabase.types';
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, onMount } from 'svelte';
 	import dayjs from 'dayjs';
+	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 
 	type simFileWithDtxFiles = Tables<'simfiles'> & {
 		dtx_files: Partial<Tables<'dtx_files'>>[];
@@ -12,10 +13,12 @@
 		simfile?: Partial<simFileWithDtxFiles> | null;
 		preview?: import('svelte').Snippet;
 		folder_upload?: import('svelte').Snippet;
+		asset_files?: import('svelte').Snippet;
 		save?: import('svelte').Snippet;
+		supabase?: any;
 	}
 
-	let { simfile = null, preview, folder_upload, save }: Props = $props();
+	let { simfile = null, preview, folder_upload, asset_files, save, supabase }: Props = $props();
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
 
 	let displayId: number = $state(simfile?.display_id || 0);
@@ -116,6 +119,10 @@
 		</div>
 		{@render folder_upload?.()}
 	</div>
+
+	<!-- Asset Files Section -->
+	{@render asset_files?.()}
+
 	<button
 		onclick={() =>
 			onSave('onSave', {

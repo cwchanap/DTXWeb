@@ -4,13 +4,8 @@
 	import { DownloadCloud } from '@lucide/svelte';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 
-	let {
-		simfileId = '',
-		supabase = null,
-		userFiles = []
-	} = $props<{
+	let { simfileId = '', userFiles = [] } = $props<{
 		simfileId?: string;
-		supabase?: any;
 		userFiles?: Array<File>;
 	}>();
 
@@ -63,13 +58,13 @@
 	});
 
 	$effect(() => {
-		if (simfileId && supabase) {
+		if (simfileId) {
 			loadAssetFiles();
 		}
 	});
 
 	async function loadAssetFiles() {
-		if (!simfileId || !supabase) return;
+		if (!simfileId) return;
 
 		isLoadingFiles = true;
 		fileLoadError = null;
@@ -141,8 +136,52 @@
 		}
 	}
 
+	// Upload a single file
+	async function uploadFile(fileName: string, fileToUpload: File): Promise<boolean> {
+		try {
+			// Update status to uploading
+			uploadProgress[fileName] = 'uploading';
+
+			// Create a new file without the first level directory name
+			let fileNameWithoutDir = fileName;
+			// Check if the file name has a directory structure
+			if (fileName.includes('/')) {
+				// Remove the first directory level
+				fileNameWithoutDir = fileName.split('/').slice(1).join('/');
+			}
+
+			// Create a new File object with the modified name
+			const modifiedFile = new File([fileToUpload], fileNameWithoutDir, {
+				type: fileToUpload.type
+			});
+
+			// Create form data for the API
+			const formData = new FormData();
+			formData.append('file', modifiedFile);
+			formData.append('simFileId', simfileId);
+
+			// Send the request
+			const response = await fetch('/api/simFile/upload', {
+				method: 'POST',
+				body: formData
+			});
+
+			if (!response.ok) {
+				throw new Error(`Upload failed: ${response.statusText}`);
+			}
+
+			// Update status to success
+			uploadProgress[fileName] = 'success';
+			return true;
+		} catch (error) {
+			console.error(`Error uploading ${fileName}:`, error);
+			uploadProgress[fileName] = 'error';
+			return false;
+		}
+	}
+
 	// Upload selected files
-	async function uploadSelectedFiles() {
+	export async function uploadSelectedFiles() {
 		if (selectedFiles.size === 0 || !simfileId) return;
 
 		isUploading = true;
@@ -157,44 +196,7 @@
 			const fileToUpload = mergedFiles.find((f) => f.name === fileName)?.userFile;
 			if (!fileToUpload) continue;
 
-			try {
-				// Update status to uploading
-				uploadProgress[fileName] = 'uploading';
-
-				// Create a new file without the first level directory name
-				let fileNameWithoutDir = fileName;
-				// Check if the file name has a directory structure
-				if (fileName.includes('/')) {
-					// Remove the first directory level
-					fileNameWithoutDir = fileName.split('/').slice(1).join('/');
-				}
-
-				// Create a new File object with the modified name
-				const modifiedFile = new File([fileToUpload], fileNameWithoutDir, {
-					type: fileToUpload.type
-				});
-
-				// Create form data for the API
-				const formData = new FormData();
-				formData.append('file', modifiedFile);
-				formData.append('simFileId', simfileId);
-
-				// Send the request
-				const response = await fetch('/api/simFile/upload', {
-					method: 'POST',
-					body: formData
-				});
-
-				if (!response.ok) {
-					throw new Error(`Upload failed: ${response.statusText}`);
-				}
-
-				// Update status to success
-				uploadProgress[fileName] = 'success';
-			} catch (error) {
-				console.error(`Error uploading ${fileName}:`, error);
-				uploadProgress[fileName] = 'error';
-			}
+			await uploadFile(fileName, fileToUpload);
 		}
 
 		// Refresh the file list after uploads
@@ -408,7 +410,7 @@
 						</table>
 
 						<!-- Bulk upload button -->
-						{#if selectedFiles.size > 0}
+						{#if selectedFiles.size > 0 && simfileId}
 							<div class="absolute right-4 bottom-4">
 								<button
 									class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"

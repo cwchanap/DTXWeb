@@ -133,7 +133,6 @@
 			{#snippet asset_files()}
 				<UploadedAssetFiles
 					simfileId={simfile?.id?.toString() || ''}
-					{supabase}
 					userFiles={userUploadedFiles}
 				/>
 			{/snippet}

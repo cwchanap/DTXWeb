@@ -17,6 +17,8 @@
 	let simfile: SimFile | undefined = $state(undefined);
 	let highestDtx: DTXFile | undefined = $state(undefined);
 	let simfileId: string | null = $state(null);
+	let uploadedAssetFilesRef: UploadedAssetFiles | undefined = $state(undefined);
+	let shouldUploadFiles = $state(false);
 
 	async function uploadFile(
 		displayId: number,
@@ -111,46 +113,34 @@
 				console.error('Error creating dtx_files:', error.message);
 				return;
 			}
+
+			// Set the simfileId to trigger file uploads
+			simfileId = simFileData.id.toString();
+
+			// Trigger the file upload in the UploadedAssetFiles component
+			shouldUploadFiles = true;
 		}
-
-		// Upload simfile to s3
-		const formData = new FormData();
-		for (const file of filterFiles(simfile.files, [
-			'.dtx',
-			'.ogg',
-			'.def',
-			'.jpg',
-			'.mp4',
-			'.mp3',
-			'.xa'
-		])) {
-			const fileName = file.name.split('/').pop();
-			if (!fileName) {
-				console.error('Error getting file name:', file.name);
-				return;
-			}
-			const newFile = new File([file], fileName, { type: file.type });
-			formData.append('files', newFile);
-		}
-		formData.append('simFileId', simFileData.id.toString());
-
-		const response = await fetch('/api/simFile/upload', {
-			method: 'POST',
-			body: formData
-		});
-
-		if (!response.ok) {
-			console.error('Error uploading simfile to s3:', response.statusText);
-			return;
-		}
-
-		goto('/app/chart');
 	}
 
 	function onFileUpload(newSimfile: SimFile, newHighestDtx: DTXFile) {
 		simfile = newSimfile;
 		highestDtx = newHighestDtx;
 	}
+
+	// Use a regular effect to avoid infinite loops
+	$effect(() => {
+		// Only run this once when shouldUploadFiles becomes true
+		if (shouldUploadFiles && uploadedAssetFilesRef && simfileId) {
+			// Immediately set shouldUploadFiles to false to prevent multiple triggers
+			shouldUploadFiles = false;
+
+			if (uploadedAssetFilesRef) {
+				uploadedAssetFilesRef.uploadSelectedFiles().then(() => {
+					goto('/app/chart');
+				});
+			}
+		}
+	});
 </script>
 
 <div class="container mx-auto flex flex-col p-4" style="height: 90vh;">
@@ -221,7 +211,11 @@
 			{/snippet}
 			{#snippet asset_files()}
 				{#if simfile}
-					<UploadedAssetFiles userFiles={simfile.files} />
+					<UploadedAssetFiles
+						bind:this={uploadedAssetFilesRef}
+						simfileId={simfileId || ''}
+						userFiles={simfile.files}
+					/>
 				{/if}
 			{/snippet}
 			{#snippet save()}

@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
-	import { formatLevelDisplay } from '$lib/utils';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
-	import { Switch } from '@skeletonlabs/skeleton-svelte';
+	import { Modal, Switch } from '@skeletonlabs/skeleton-svelte';
 	import ChartListItem from './ChartListItem.svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
 	import IconX from '@lucide/svelte/icons/x';
@@ -138,51 +137,43 @@
 		}, 500);
 	}
 
-	function openDeleteModal(id: number, preview_url?: string, sound_preview_url?: string) {
-		modalStore.trigger({
-			type: 'confirm',
-			title: 'Please Confirm',
-			body: 'Are you sure you want to proceed with deletion? This action is irreversible.',
-			response: async (confirmed: boolean) => {
-				if (confirmed) {
-					if (preview_url) {
-						const { error: deletePreviewError } = await supabase.storage
-							.from(PREVIEW_BUCKET_NAME)
-							.remove([preview_url]);
-						if (deletePreviewError) {
-							toastStore.error({
-								title: 'Failed to delete preview',
-								duration: 3000
-							});
-						}
-					}
-					if (sound_preview_url) {
-						const { error: deleteSoundPreviewError } = await supabase.storage
-							.from(SOUND_PREVIEW_BUCKET_NAME)
-							.remove([sound_preview_url]);
-						if (deleteSoundPreviewError) {
-							toastStore.error({
-								title: 'Failed to delete sound preview',
-								duration: 3000
-							});
-						}
-					}
-					const { error } = await supabase.from('simfiles').delete().eq('id', id);
-					if (error) {
-						toastStore.error({
-							title: 'Failed to delete chart',
-							duration: 3000
-						});
-					} else {
-						toastStore.success({
-							title: 'Chart deleted',
-							duration: 3000
-						});
-						filteredItems = filteredItems.filter((item) => item.id !== id);
-					}
-				}
+	async function onFileDelete(id: number, preview_url?: string, sound_preview_url?: string) {
+		if (preview_url) {
+			const { error: deletePreviewError } = await supabase.storage
+				.from(PREVIEW_BUCKET_NAME)
+				.remove([preview_url]);
+			if (deletePreviewError) {
+				toastStore.error({
+					title: 'Failed to delete preview',
+					duration: 3000
+				});
 			}
-		});
+		}
+		if (sound_preview_url) {
+			const { error: deleteSoundPreviewError } = await supabase.storage
+				.from(SOUND_PREVIEW_BUCKET_NAME)
+				.remove([sound_preview_url]);
+			if (deleteSoundPreviewError) {
+				toastStore.error({
+					title: 'Failed to delete sound preview',
+					duration: 3000
+				});
+			}
+		}
+		const { error } = await supabase.from('simfiles').delete().eq('id', id);
+		if (error) {
+			toastStore.error({
+				title: 'Failed to delete chart',
+				duration: 3000
+			});
+		} else {
+			toastStore.success({
+				title: 'Chart deleted',
+				duration: 3000
+			});
+			filteredItems = filteredItems.filter((item) => item.id !== id);
+		}
+		loadItems();
 	}
 
 	onMount(() => {
@@ -224,10 +215,9 @@
 				{item}
 				{isBlog}
 				{togglePublishChart}
-				{openDeleteModal}
+				{onFileDelete}
 				{getPreviewUrl}
 				{getSoundPreviewUrl}
-				{formatLevelDisplay}
 			/>
 		{/each}
 	</div>

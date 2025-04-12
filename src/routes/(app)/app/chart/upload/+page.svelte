@@ -169,7 +169,6 @@
 					label: value?.label
 				}))
 			}}
-			{supabase}
 			on:onSave={(e) =>
 				uploadFile(
 					e.detail.displayId,

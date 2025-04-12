@@ -3,31 +3,25 @@
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import ImageAudio from './ImageAudio.svelte';
 	import type { Tables } from '@/types/supabase.types';
-	import { Popover } from '@skeletonlabs/skeleton-svelte';
+	import { Modal, Popover } from '@skeletonlabs/skeleton-svelte';
+	import { formatLevelDisplay } from '$lib/utils';
 
-	interface DtxFile {
-		level: number | string;
-	}
-
-	let {
-		item,
-		isBlog,
-		togglePublishChart,
-		openDeleteModal,
-		getPreviewUrl,
-		getSoundPreviewUrl,
-		formatLevelDisplay
-	} = $props<{
-		item: Tables<'simfiles'>;
-		isBlog: boolean;
-		togglePublishChart: (id: number, published: boolean) => Promise<void>;
-		openDeleteModal: (id: number, preview_url?: string, sound_preview_url?: string) => void;
-		getPreviewUrl: (preview_url: string) => string;
-		getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
-		formatLevelDisplay: (dtx_files: { level: number | string }[]) => string;
-	}>();
+	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
+		$props<{
+			item: Tables<'simfiles'>;
+			isBlog: boolean;
+			togglePublishChart: (id: number, published: boolean) => Promise<void>;
+			getPreviewUrl: (preview_url: string) => string;
+			getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
+			onFileDelete: (id: number, preview_url?: string, sound_preview_url?: string) => void;
+		}>();
 
 	let popoverOpen = $state(false);
+	let openState = $state(false);
+
+	function modalClose() {
+		openState = false;
+	}
 </script>
 
 <div
@@ -71,7 +65,7 @@
 								{item.is_published ? 'Unpublish' : 'Publish'}
 							</button>
 
-							<button
+							<!-- <button
 								onclick={() =>
 									openDeleteModal(
 										item.id,
@@ -82,7 +76,45 @@
 								role="menuitem"
 							>
 								Delete
-							</button>
+							</button> -->
+							<Modal
+								open={openState}
+								onOpenChange={(e) => (openState = e.open)}
+								triggerBase="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+								contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+								backdropClasses="backdrop-blur-sm"
+							>
+								{#snippet trigger()}Delete{/snippet}
+								{#snippet content()}
+									<header class="flex justify-between">
+										<h4 class="h4">Delete Chart</h4>
+									</header>
+									<article>
+										<p class="opacity-60">
+											Are you sure you want to delete this chart?
+										</p>
+									</article>
+									<footer class="flex justify-end gap-4">
+										<button
+											type="button"
+											class="btn preset-tonal"
+											onclick={modalClose}>Cancel</button
+										>
+										<button
+											type="button"
+											class="btn preset-filled"
+											onclick={() => {
+												modalClose();
+												onFileDelete(
+													item.id,
+													item.preview_url,
+													item.sound_preview_url
+												);
+											}}>Confirm</button
+										>
+									</footer>
+								{/snippet}
+							</Modal>
 						</div>
 					{/snippet}
 				</Popover>
@@ -106,7 +138,7 @@
 		</div>
 	{/if}
 	<div class="mt-4 text-sm text-gray-600">
-		{$_('blog.level')}: {formatLevelDisplay((item as { dtx_files: DtxFile[] }).dtx_files)}
+		{$_('blog.level')}: {formatLevelDisplay(item.dtx_files)}
 	</div>
 	{#if isBlog}
 		{#if item.download_url}

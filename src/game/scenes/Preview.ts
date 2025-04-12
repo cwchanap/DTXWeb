@@ -110,6 +110,17 @@ export class Preview extends BaseGame {
 			});
 		}
 
+		this.startPreview();
+
+		EventBus.emit(EventType.SCENE_READY, this);
+		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
+		EventBus.on(EventType.RESUME_PREVIEW, (data: { startMeasure: number }) => {
+			this.startMeasure = data.startMeasure;
+			this.startPreview();
+		});
+	}
+
+	startPreview() {
 		const targetY = this.getTotalMesaureOffest(this.startMeasure) + this.bottomMargin; // Target Y position for the nearest measure
 		const totalDistance = this.getTotalMesaureOffest(this.measureCount) + targetY;
 
@@ -147,9 +158,6 @@ export class Preview extends BaseGame {
 						);
 				}
 			});
-
-		EventBus.emit(EventType.SCENE_READY, this);
-		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
 	}
 
 	getTimeElapsed(measure: number, noteChipPosition: number = 0) {
@@ -550,5 +558,7 @@ export class Preview extends BaseGame {
 			audio.stop();
 		});
 		this.playingAudio = [];
+
+		this.time.removeAllEvents();
 	}
 }

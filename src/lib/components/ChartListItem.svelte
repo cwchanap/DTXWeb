@@ -8,7 +8,7 @@
 
 	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
 		$props<{
-			item: Tables<'simfiles'>;
+			item: Partial<Tables<'simfiles'>>;
 			isBlog: boolean;
 			togglePublishChart: (id: number, published: boolean) => Promise<void>;
 			getPreviewUrl: (preview_url: string) => string;
@@ -41,7 +41,6 @@
 					{#snippet trigger()}
 						<EllipsisVertical />
 					{/snippet}
-
 					{#snippet content()}
 						<div
 							class="py-1"

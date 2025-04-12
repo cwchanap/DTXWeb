@@ -28,7 +28,7 @@
 	{/if}
 	{#if soundPreviewUrl}
 		<button
-			class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
+			class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
 			onclick={async () => {
 				if (isPlaying) {
 					audio?.pause();

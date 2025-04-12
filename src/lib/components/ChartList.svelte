@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
-	import { formatLevelDisplay } from '$lib/utils';
-	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { _ } from 'svelte-i18n';
+	import toastStore from '@/lib/toaster';
+	import { Modal, Switch } from '@skeletonlabs/skeleton-svelte';
 	import ChartListItem from './ChartListItem.svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
+	import IconX from '@lucide/svelte/icons/x';
+	import IconCheck from '@lucide/svelte/icons/check';
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
@@ -44,10 +46,6 @@
 	let songNameFilter: string = $state('');
 	let searchTimeout: NodeJS.Timeout;
 	let hideUnpublished = $state(false);
-
-	const toastStore = getToastStore();
-	const modalStore = getModalStore();
-
 	let filteredItems = $state<SimfileWithDtx[]>([]);
 
 	// Replace the run() function with a reactive effect using $effect
@@ -62,16 +60,14 @@
 			.eq('id', id);
 
 		if (error) {
-			toastStore.trigger({
-				message: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
-				background: 'variant-filled-error',
-				timeout: 3000
+			toastStore.error({
+				title: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
+				duration: 3000
 			});
 		} else {
-			toastStore.trigger({
-				message: `Chart ${published ? 'unpublished' : 'published'}`,
-				background: 'variant-filled-success',
-				timeout: 3000
+			toastStore.success({
+				title: `Chart ${published ? 'unpublished' : 'published'}`,
+				duration: 3000
 			});
 		}
 	}
@@ -141,55 +137,43 @@
 		}, 500);
 	}
 
-	function openDeleteModal(id: number, preview_url?: string, sound_preview_url?: string) {
-		modalStore.trigger({
-			type: 'confirm',
-			title: 'Please Confirm',
-			body: 'Are you sure you want to proceed with deletion? This action is irreversible.',
-			response: async (confirmed: boolean) => {
-				if (confirmed) {
-					if (preview_url) {
-						const { error: deletePreviewError } = await supabase.storage
-							.from(PREVIEW_BUCKET_NAME)
-							.remove([preview_url]);
-						if (deletePreviewError) {
-							toastStore.trigger({
-								message: 'Failed to delete preview',
-								background: 'variant-filled-error',
-								timeout: 3000
-							});
-						}
-					}
-					if (sound_preview_url) {
-						const { error: deleteSoundPreviewError } = await supabase.storage
-							.from(SOUND_PREVIEW_BUCKET_NAME)
-							.remove([sound_preview_url]);
-						if (deleteSoundPreviewError) {
-							toastStore.trigger({
-								message: 'Failed to delete sound preview',
-								background: 'variant-filled-error',
-								timeout: 3000
-							});
-						}
-					}
-					const { error } = await supabase.from('simfiles').delete().eq('id', id);
-					if (error) {
-						toastStore.trigger({
-							message: 'Failed to delete chart',
-							background: 'variant-filled-error',
-							timeout: 3000
-						});
-					} else {
-						toastStore.trigger({
-							message: 'Chart deleted',
-							background: 'variant-filled-success',
-							timeout: 3000
-						});
-						filteredItems = filteredItems.filter((item) => item.id !== id);
-					}
-				}
+	async function onFileDelete(id: number, preview_url?: string, sound_preview_url?: string) {
+		if (preview_url) {
+			const { error: deletePreviewError } = await supabase.storage
+				.from(PREVIEW_BUCKET_NAME)
+				.remove([preview_url]);
+			if (deletePreviewError) {
+				toastStore.error({
+					title: 'Failed to delete preview',
+					duration: 3000
+				});
 			}
-		});
+		}
+		if (sound_preview_url) {
+			const { error: deleteSoundPreviewError } = await supabase.storage
+				.from(SOUND_PREVIEW_BUCKET_NAME)
+				.remove([sound_preview_url]);
+			if (deleteSoundPreviewError) {
+				toastStore.error({
+					title: 'Failed to delete sound preview',
+					duration: 3000
+				});
+			}
+		}
+		const { error } = await supabase.from('simfiles').delete().eq('id', id);
+		if (error) {
+			toastStore.error({
+				title: 'Failed to delete chart',
+				duration: 3000
+			});
+		} else {
+			toastStore.success({
+				title: 'Chart deleted',
+				duration: 3000
+			});
+			filteredItems = filteredItems.filter((item) => item.id !== id);
+		}
+		loadItems();
 	}
 
 	onMount(() => {
@@ -201,20 +185,23 @@
 	type="text"
 	placeholder={$_('blog.search_artist')}
 	bind:value={artistFilter}
-	class="mb-4 w-1/2 rounded border p-2"
+	class="mb-4 w-1/2 rounded-sm border p-2"
 	oninput={handleSearchInput}
 />
 <input
 	type="text"
 	placeholder={$_('blog.search_song_name')}
 	bind:value={songNameFilter}
-	class="mb-4 w-1/2 rounded border p-2"
+	class="mb-4 w-1/2 rounded-sm border p-2"
 	oninput={handleSearchInput}
 />
 {#if !isBlog}
 	<div class="mb-4 flex items-center">
-		<label for="is_published" class="mb-2 mr-2 block">Hide unpublished:</label>
-		<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={hideUnpublished} />
+		<label for="is_published" class="mr-2 mb-2 block">Hide unpublished:</label>
+		<Switch checked={hideUnpublished} onCheckedChange={(e) => (hideUnpublished = e.checked)}>
+			{#snippet inactiveChild()}<IconX size="14" />{/snippet}
+			{#snippet activeChild()}<IconCheck size="14" />{/snippet}
+		</Switch>
 	</div>
 {/if}
 {#if loading}
@@ -228,10 +215,9 @@
 				{item}
 				{isBlog}
 				{togglePublishChart}
-				{openDeleteModal}
+				{onFileDelete}
 				{getPreviewUrl}
 				{getSoundPreviewUrl}
-				{formatLevelDisplay}
 			/>
 		{/each}
 	</div>
@@ -239,7 +225,7 @@
 
 	<div class="mt-6 flex justify-center">
 		<button
-			class="mr-2 rounded bg-blue-500 px-4 py-2 text-white"
+			class="mr-2 rounded-sm bg-blue-500 px-4 py-2 text-white"
 			onclick={() => changePage(currentPage - 1)}
 			disabled={currentPage === 1}>{$_('blog.pagination.previous')}</button
 		>
@@ -247,7 +233,7 @@
 			{$_('blog.pagination.page', { values: { currentPage, totalPages } })}
 		</span>
 		<button
-			class="ml-2 rounded bg-blue-500 px-4 py-2 text-white"
+			class="ml-2 rounded-sm bg-blue-500 px-4 py-2 text-white"
 			onclick={() => changePage(currentPage + 1)}
 			disabled={currentPage === totalPages}>{$_('blog.pagination.next')}</button
 		>
@@ -256,7 +242,7 @@
 			min="1"
 			max={totalPages}
 			bind:value={currentPage}
-			class="mx-2 w-16 rounded border p-1"
+			class="mx-2 w-16 rounded-sm border p-1"
 			onchange={() => changePage(currentPage)}
 		/>
 	</div>

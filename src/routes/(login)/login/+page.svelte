@@ -15,7 +15,7 @@
 					id="email"
 					bind:value={email}
 					required
-					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 focus:outline-hidden"
 				/>
 			</div>
 			<div>
@@ -28,13 +28,13 @@
 					id="password"
 					bind:value={password}
 					required
-					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 focus:outline-hidden"
 				/>
 			</div>
 			<div>
 				<button
 					type="submit"
-					class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+					class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-hidden"
 				>
 					Login
 				</button>

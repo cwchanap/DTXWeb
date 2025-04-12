@@ -31,14 +31,14 @@
 	</div>
 	<div class="flex w-[20%] flex-col items-end justify-end p-16">
 		<button
-			class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+			class="focus:outline-non mt-5 w-full rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
 			onclick={() => {
 				goto('/editor');
 				store.activeScene.set(Editor.key);
 			}}>Editor</button
 		>
 		<button
-			class="focus:outline-non mt-5 w-full rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+			class="focus:outline-non mt-5 w-full rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
 			onclick={() => {
 				goto('/');
 				store.activeScene.set(null);

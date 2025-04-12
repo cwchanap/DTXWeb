@@ -6,7 +6,7 @@
 	import { onMount } from 'svelte';
 	import store from '$lib/store';
 	import { DTXFile } from '$lib/chart/dtx';
-	import { PlaySolid, StopSolid } from 'flowbite-svelte-icons';
+	import { Play, CirclePause } from '@lucide/svelte/icons';
 
 	let dtxFile: DTXFile | null = $state(null);
 	let measureCount = $state(10);
@@ -179,7 +179,7 @@
 			id="preview-button"
 			class="rounded-md border border-gray-300 px-2 py-1"
 			onclick={handlePlay}
-			>{#if isPreviewing}<StopSolid />{:else}<PlaySolid />{/if}</button
+			>{#if isPreviewing}<CirclePause />{:else}<Play />{/if}</button
 		>
 	</div>
 </div>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { SoundChip } from '$lib/chart/dtx';
-	import { FileButton } from '@skeletonlabs/skeleton';
+	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
 	import store from '$lib/store';
 	import type { SimFile } from '$lib/chart/simFile';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
@@ -29,7 +29,7 @@
 
 <div class="flex flex-col space-y-2">
 	<button
-		class="w-1/2 rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+		class="w-1/2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 		onclick={() => {
 			store.currentSoundChip.set([
 				...soundChips,
@@ -85,12 +85,12 @@
 									{chip.file}
 								</button>
 							{:else}
-								<FileButton
+								<FileUpload
 									on:change={(e) => {
 										chip.file = e.target.files?.[0];
 									}}
 									name="file"
-									button="btn-sm variant-soft-primary"
+									button="btn-sm preset-tonal-primary"
 									accept="audio/*"
 									style="display: none;"
 								/>

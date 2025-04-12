@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { PlaySolid, PauseSolid, DotsHorizontalOutline } from 'flowbite-svelte-icons';
 	import store from '../store';
 	import { get } from 'svelte/store';
+
+	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
 
 	interface Props {
 		previewUrl: string;
@@ -28,7 +29,7 @@
 	{/if}
 	{#if soundPreviewUrl}
 		<button
-			class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
+			class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
 			onclick={async () => {
 				if (isPlaying) {
 					audio?.pause();
@@ -60,11 +61,11 @@
 			disabled={isLoading}
 		>
 			{#if isPlaying}
-				<PauseSolid size="xl" />
+				<CirclePause />
 			{:else if isLoading}
-				<DotsHorizontalOutline size="xl" />
+				<Ellipsis />
 			{:else}
-				<PlaySolid size="xl" />
+				<Play />
 			{/if}
 		</button>
 	{/if}

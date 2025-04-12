@@ -1,25 +1,27 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import ImageAudio from './ImageAudio.svelte';
-	import { popup } from '@skeletonlabs/skeleton';
 	import type { Tables } from '@/types/supabase.types';
+	import { Modal, Popover } from '@skeletonlabs/skeleton-svelte';
+	import { formatLevelDisplay } from '$lib/utils';
+	import { EllipsisVertical } from '@lucide/svelte/icons';
 
-	interface DtxFile {
-		level: number | string;
+	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
+		$props<{
+			item: Tables<'simfiles'>;
+			isBlog: boolean;
+			togglePublishChart: (id: number, published: boolean) => Promise<void>;
+			getPreviewUrl: (preview_url: string) => string;
+			getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
+			onFileDelete: (id: number, preview_url?: string, sound_preview_url?: string) => void;
+		}>();
+
+	let popoverOpen = $state(false);
+	let openState = $state(false);
+
+	function modalClose() {
+		openState = false;
 	}
-
-	export let item: Tables<'simfiles'>;
-	export let isBlog: boolean;
-	export let togglePublishChart: (id: number, published: boolean) => Promise<void>;
-	export let openDeleteModal: (
-		id: number,
-		preview_url?: string,
-		sound_preview_url?: string
-	) => void;
-	export let getPreviewUrl: (preview_url: string) => string;
-	export let getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
-	export let formatLevelDisplay: (dtx_files: { level: number | string }[]) => string;
 </script>
 
 <div
@@ -29,53 +31,81 @@
 		<h2 class="text-2xl font-bold">{item.display_id}. {item.title}</h2>
 		{#if !isBlog}
 			<div class="relative">
-				<button
-					class="text-gray-500 hover:text-gray-700 focus:outline-none"
-					use:popup={{
-						event: 'click',
-						target: 'popupFeatured-' + item.id,
-						placement: 'bottom'
-					}}
+				<Popover
+					open={popoverOpen}
+					onOpenChange={(details) => (popoverOpen = details.open)}
+					positioning={{ placement: 'bottom-end' }}
+					triggerBase="text-gray-500 hover:text-gray-700 focus:outline-hidden"
+					contentBase="p-0 w-48 z-50"
 				>
-					<DotsVerticalOutline size="xl" />
-				</button>
+					{#snippet trigger()}
+						<EllipsisVertical />
+					{/snippet}
 
-				<div
-					class="z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
-					data-popup="popupFeatured-{item.id}"
-				>
-					<div
-						class="py-1"
-						role="menu"
-						aria-orientation="vertical"
-						aria-labelledby="options-menu"
-					>
-						<a
-							href={`/app/chart/${item.id}`}
-							class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
+					{#snippet content()}
+						<div
+							class="py-1"
+							role="menu"
+							aria-orientation="vertical"
+							aria-labelledby="options-menu"
 						>
-							Edit
-						</a>
+							<a
+								href={`/app/chart/${item.id}`}
+								class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+								role="menuitem"
+							>
+								Edit
+							</a>
 
-						<button
-							on:click={() => togglePublishChart(item.id, item.is_published)}
-							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
-						>
-							{item.is_published ? 'Unpublish' : 'Publish'}
-						</button>
+							<button
+								onclick={() => togglePublishChart(item.id, item.is_published)}
+								class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+								role="menuitem"
+							>
+								{item.is_published ? 'Unpublish' : 'Publish'}
+							</button>
 
-						<button
-							on:click={() =>
-								openDeleteModal(item.id, item.preview_url, item.sound_preview_url)}
-							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
-						>
-							Delete
-						</button>
-					</div>
-				</div>
+							<Modal
+								open={openState}
+								onOpenChange={(e) => (openState = e.open)}
+								triggerBase="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+								contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+								backdropClasses="backdrop-blur-sm"
+							>
+								{#snippet trigger()}Delete{/snippet}
+								{#snippet content()}
+									<header class="flex justify-between">
+										<h4 class="h4">Delete Chart</h4>
+									</header>
+									<article>
+										<p class="opacity-60">
+											Are you sure you want to delete this chart?
+										</p>
+									</article>
+									<footer class="flex justify-end gap-4">
+										<button
+											type="button"
+											class="btn preset-tonal"
+											onclick={modalClose}>Cancel</button
+										>
+										<button
+											type="button"
+											class="btn preset-filled"
+											onclick={() => {
+												modalClose();
+												onFileDelete(
+													item.id,
+													item.preview_url,
+													item.sound_preview_url
+												);
+											}}>Confirm</button
+										>
+									</footer>
+								{/snippet}
+							</Modal>
+						</div>
+					{/snippet}
+				</Popover>
 			</div>
 		{/if}
 	</div>
@@ -96,7 +126,7 @@
 		</div>
 	{/if}
 	<div class="mt-4 text-sm text-gray-600">
-		{$_('blog.level')}: {formatLevelDisplay((item as { dtx_files: DtxFile[] }).dtx_files)}
+		{$_('blog.level')}: {formatLevelDisplay(item.dtx_files)}
 	</div>
 	{#if isBlog}
 		{#if item.download_url}

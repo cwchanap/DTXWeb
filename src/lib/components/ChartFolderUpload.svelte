@@ -1,47 +1,28 @@
 <script lang="ts">
+	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
 	import type { DTXFile } from '../chart/dtx';
 	import { SimFile } from '../chart/simFile';
 	import { filterFiles } from '../utils';
+	import IconDropzone from '@lucide/svelte/icons/image-plus';
+	import IconFile from '@lucide/svelte/icons/paperclip';
+	import IconRemove from '@lucide/svelte/icons/circle-x';
 
 	let simfile: SimFile;
-	let dropzoneActive = $state(false);
 	let highestDtx: DTXFile;
 	interface Props {
 		large?: boolean;
-		hidden?: boolean;
+		button?: import('svelte').Snippet;
 		onFileUpload: (simfile: SimFile, highestDtx: DTXFile) => void; // Add this
 	}
 
-	let { large = false, hidden = false, onFileUpload }: Props = $props();
+	let { large = false, button, onFileUpload }: Props = $props();
+	const acceptFilesType = ['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa'];
 
-	function handleDragOver(event: DragEvent) {
-		event.preventDefault();
-		dropzoneActive = true;
-	}
-
-	function handleDragLeave(event: DragEvent) {
-		event.preventDefault();
-		dropzoneActive = false;
-	}
-
-	function filterSimFiles(files: FileList) {
-		return filterFiles(files, ['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa']);
-	}
-
-	async function handleDrop(event: DragEvent) {
-		event.preventDefault();
-		dropzoneActive = false;
-
-		if (event.dataTransfer?.files) {
-			simfile = new SimFile(filterSimFiles(event.dataTransfer.files));
-			await simfile.parse();
-		}
-	}
-
-	async function handleFileInput(event: Event) {
-		const input = event.target as HTMLInputElement;
-		if (input.files) {
-			simfile = new SimFile(filterSimFiles(input.files));
+	async function handleFileInput(details: any) {
+		const { acceptedFiles } = details;
+		const filteredFiles = filterFiles(acceptedFiles, acceptFilesType);
+		if (filteredFiles.length > 0) {
+			simfile = new SimFile(filteredFiles);
 			await simfile.parse();
 			simfile = simfile;
 			highestDtx = simfile.getHighestLevel();
@@ -51,48 +32,13 @@
 </script>
 
 {#if large}
-	<div
-		class="dropzone flex flex-1 items-center justify-center {dropzoneActive ? 'active' : ''}"
-		ondragover={handleDragOver}
-		ondragleave={handleDragLeave}
-		ondrop={handleDrop}
-		onclick={() => document.getElementById('fileInput')?.click()}
-		onkeydown={(e) => e.key === 'Enter' && document.getElementById('fileInput')?.click()}
-		role="button"
-		tabindex="0"
-		aria-label="Drop zone"
-	>
-		<p>Drag and drop zip files here, or click to select files</p>
-		<input
-			id="fileInput"
-			type="file"
-			webkitdirectory
-			directory
-			multiple
-			onchange={handleFileInput}
-			class="hidden"
-		/>
-	</div>
+	<FileUpload onFileChange={handleFileInput} directory maxFiles={99} classes="w-full h-full">
+		{#snippet iconInterface()}<IconDropzone class="size-8" />{/snippet}
+		{#snippet iconFile()}<IconFile class="size-4" />{/snippet}
+		{#snippet iconFileRemove()}<IconRemove class="size-4" />{/snippet}
+	</FileUpload>
 {:else}
-	<input
-		id="folder_upload"
-		type="file"
-		webkitdirectory
-		directory
-		class="mb-4 w-full rounded border p-2 {hidden ? 'hidden' : ''}"
-		onchange={handleFileInput}
-	/>
+	<FileUpload onFileChange={handleFileInput} directory maxFiles={99}>
+		{@render button?.()}
+	</FileUpload>
 {/if}
-
-<style>
-	.dropzone {
-		border: 2px dashed #ccc;
-		padding: 20px;
-		text-align: center;
-		transition: background-color 0.3s;
-		height: calc(100vh - 64px); /* Adjust 64px to the height of your navbar */
-	}
-	.dropzone.active {
-		background-color: #e0f7fa;
-	}
-</style>

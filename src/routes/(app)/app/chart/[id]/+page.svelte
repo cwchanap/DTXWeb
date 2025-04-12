@@ -3,14 +3,12 @@
 	import { onMount } from 'svelte';
 	import type { Tables } from '@/types/supabase.types';
 	import { goto } from '$app/navigation';
-	import { getToastStore } from '@skeletonlabs/skeleton';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import type { SimFile } from '$lib/chart/simFile';
 	import type { DTXFile } from '$lib/chart/dtx';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
-
-	const toastStore = getToastStore();
+	import toastStore from '@/lib/toaster';
 
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);
@@ -76,16 +74,14 @@
 			.select();
 
 		if (!data || error) {
-			toastStore.trigger({
-				message: 'Error updating simfile',
-				background: 'variant-filled-error',
-				timeout: 5000
+			toastStore.error({
+				title: 'Error updating simfile',
+				duration: 5000
 			});
 		} else {
-			toastStore.trigger({
-				message: 'Simfile updated successfully',
-				background: 'variant-filled-success',
-				timeout: 5000
+			toastStore.success({
+				title: 'Simfile updated successfully',
+				duration: 5000
 			});
 		}
 	}
@@ -108,7 +104,7 @@
 
 <div class="container mx-auto p-4">
 	<button onclick={goBack} class="mb-4 text-blue-500 hover:text-blue-700">
-		&larr; Back to List
+		← Back to List
 	</button>
 	{#if loading}
 		<p>Loading...</p>
@@ -117,7 +113,6 @@
 	{:else if simfile}
 		<ChartDetail
 			{simfile}
-			supabase={data.supabase}
 			on:onSave={(e) =>
 				updateSimfile(
 					e.detail.displayId,
@@ -129,7 +124,7 @@
 		>
 			{#snippet folder_upload()}
 				<div class="col-span-1 flex items-center">
-					<label for="folder_upload" class="mb-2 mr-2 block">Upload Folder:</label>
+					<label for="folder_upload" class="mr-2 mb-2 block">Upload Folder:</label>
 				</div>
 				<div class="col-span-7">
 					<ChartFolderUpload large={false} {onFileUpload} />

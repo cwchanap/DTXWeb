@@ -2,24 +2,32 @@
 	import { _ } from 'svelte-i18n';
 	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import ImageAudio from './ImageAudio.svelte';
-	import { popup } from '@skeletonlabs/skeleton';
 	import type { Tables } from '@/types/supabase.types';
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
 
 	interface DtxFile {
 		level: number | string;
 	}
 
-	export let item: Tables<'simfiles'>;
-	export let isBlog: boolean;
-	export let togglePublishChart: (id: number, published: boolean) => Promise<void>;
-	export let openDeleteModal: (
-		id: number,
-		preview_url?: string,
-		sound_preview_url?: string
-	) => void;
-	export let getPreviewUrl: (preview_url: string) => string;
-	export let getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
-	export let formatLevelDisplay: (dtx_files: { level: number | string }[]) => string;
+	let {
+		item,
+		isBlog,
+		togglePublishChart,
+		openDeleteModal,
+		getPreviewUrl,
+		getSoundPreviewUrl,
+		formatLevelDisplay
+	} = $props<{
+		item: Tables<'simfiles'>;
+		isBlog: boolean;
+		togglePublishChart: (id: number, published: boolean) => Promise<void>;
+		openDeleteModal: (id: number, preview_url?: string, sound_preview_url?: string) => void;
+		getPreviewUrl: (preview_url: string) => string;
+		getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
+		formatLevelDisplay: (dtx_files: { level: number | string }[]) => string;
+	}>();
+
+	let popoverOpen = $state(false);
 </script>
 
 <div
@@ -29,53 +37,55 @@
 		<h2 class="text-2xl font-bold">{item.display_id}. {item.title}</h2>
 		{#if !isBlog}
 			<div class="relative">
-				<button
-					class="text-gray-500 hover:text-gray-700 focus:outline-hidden"
-					use:popup={{
-						event: 'click',
-						target: 'popupFeatured-' + item.id,
-						placement: 'bottom'
-					}}
+				<Popover
+					open={popoverOpen}
+					onOpenChange={(details) => (popoverOpen = details.open)}
+					positioning={{ placement: 'bottom-end' }}
+					triggerBase="text-gray-500 hover:text-gray-700 focus:outline-hidden"
+					contentBase="p-0 w-48 z-50"
 				>
-					<DotsVerticalOutline size="xl" />
-				</button>
+					{#snippet trigger()}
+						<DotsVerticalOutline size="xl" />
+					{/snippet}
 
-				<div
-					class="ring-opacity-5 z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black"
-					data-popup="popupFeatured-{item.id}"
-				>
-					<div
-						class="py-1"
-						role="menu"
-						aria-orientation="vertical"
-						aria-labelledby="options-menu"
-					>
-						<a
-							href={`/app/chart/${item.id}`}
-							class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
+					{#snippet content()}
+						<div
+							class="py-1"
+							role="menu"
+							aria-orientation="vertical"
+							aria-labelledby="options-menu"
 						>
-							Edit
-						</a>
+							<a
+								href={`/app/chart/${item.id}`}
+								class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+								role="menuitem"
+							>
+								Edit
+							</a>
 
-						<button
-							on:click={() => togglePublishChart(item.id, item.is_published)}
-							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
-						>
-							{item.is_published ? 'Unpublish' : 'Publish'}
-						</button>
+							<button
+								onclick={() => togglePublishChart(item.id, item.is_published)}
+								class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+								role="menuitem"
+							>
+								{item.is_published ? 'Unpublish' : 'Publish'}
+							</button>
 
-						<button
-							on:click={() =>
-								openDeleteModal(item.id, item.preview_url, item.sound_preview_url)}
-							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
-						>
-							Delete
-						</button>
-					</div>
-				</div>
+							<button
+								onclick={() =>
+									openDeleteModal(
+										item.id,
+										item.preview_url,
+										item.sound_preview_url
+									)}
+								class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+								role="menuitem"
+							>
+								Delete
+							</button>
+						</div>
+					{/snippet}
+				</Popover>
 			</div>
 		{/if}
 	</div>

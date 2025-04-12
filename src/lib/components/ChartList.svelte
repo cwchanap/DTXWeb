@@ -2,10 +2,13 @@
 	import { onMount } from 'svelte';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { formatLevelDisplay } from '$lib/utils';
-	import { getModalStore, getToastStore, SlideToggle } from '@skeletonlabs/skeleton';
 	import { _ } from 'svelte-i18n';
+	import toastStore from '@/lib/toaster';
+	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import ChartListItem from './ChartListItem.svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
+	import IconX from '@lucide/svelte/icons/x';
+	import IconCheck from '@lucide/svelte/icons/check';
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
@@ -44,10 +47,6 @@
 	let songNameFilter: string = $state('');
 	let searchTimeout: NodeJS.Timeout;
 	let hideUnpublished = $state(false);
-
-	const toastStore = getToastStore();
-	const modalStore = getModalStore();
-
 	let filteredItems = $state<SimfileWithDtx[]>([]);
 
 	// Replace the run() function with a reactive effect using $effect
@@ -62,16 +61,14 @@
 			.eq('id', id);
 
 		if (error) {
-			toastStore.trigger({
-				message: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
-				background: 'variant-filled-error',
-				timeout: 3000
+			toastStore.error({
+				title: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
+				duration: 3000
 			});
 		} else {
-			toastStore.trigger({
-				message: `Chart ${published ? 'unpublished' : 'published'}`,
-				background: 'variant-filled-success',
-				timeout: 3000
+			toastStore.success({
+				title: `Chart ${published ? 'unpublished' : 'published'}`,
+				duration: 3000
 			});
 		}
 	}
@@ -153,10 +150,9 @@
 							.from(PREVIEW_BUCKET_NAME)
 							.remove([preview_url]);
 						if (deletePreviewError) {
-							toastStore.trigger({
-								message: 'Failed to delete preview',
-								background: 'variant-filled-error',
-								timeout: 3000
+							toastStore.error({
+								title: 'Failed to delete preview',
+								duration: 3000
 							});
 						}
 					}
@@ -165,25 +161,22 @@
 							.from(SOUND_PREVIEW_BUCKET_NAME)
 							.remove([sound_preview_url]);
 						if (deleteSoundPreviewError) {
-							toastStore.trigger({
-								message: 'Failed to delete sound preview',
-								background: 'variant-filled-error',
-								timeout: 3000
+							toastStore.error({
+								title: 'Failed to delete sound preview',
+								duration: 3000
 							});
 						}
 					}
 					const { error } = await supabase.from('simfiles').delete().eq('id', id);
 					if (error) {
-						toastStore.trigger({
-							message: 'Failed to delete chart',
-							background: 'variant-filled-error',
-							timeout: 3000
+						toastStore.error({
+							title: 'Failed to delete chart',
+							duration: 3000
 						});
 					} else {
-						toastStore.trigger({
-							message: 'Chart deleted',
-							background: 'variant-filled-success',
-							timeout: 3000
+						toastStore.success({
+							title: 'Chart deleted',
+							duration: 3000
 						});
 						filteredItems = filteredItems.filter((item) => item.id !== id);
 					}
@@ -214,7 +207,10 @@
 {#if !isBlog}
 	<div class="mb-4 flex items-center">
 		<label for="is_published" class="mr-2 mb-2 block">Hide unpublished:</label>
-		<SlideToggle name="slide-large" active="bg-primary-500" bind:checked={hideUnpublished} />
+		<Switch checked={hideUnpublished} onCheckedChange={(e) => (hideUnpublished = e.checked)}>
+			{#snippet inactiveChild()}<IconX size="14" />{/snippet}
+			{#snippet activeChild()}<IconCheck size="14" />{/snippet}
+		</Switch>
 	</div>
 {/if}
 {#if loading}

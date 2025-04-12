@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-	import { DownloadSolid } from 'flowbite-svelte-icons';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import dayjs from 'dayjs';
+	import { DownloadCloud } from '@lucide/svelte';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 
 	let {
@@ -23,6 +23,7 @@
 	let isLoadingFiles = $state(false);
 	let fileLoadError = $state<string | null>(null);
 	let mergedFiles = $derived(getMergedFiles());
+	let value: string[] = $state([]);
 
 	$effect(() => {
 		if (simfileId && supabase) {
@@ -129,18 +130,22 @@
 
 <div class="mt-8">
 	<Accordion
-		class="overflow-hidden rounded-lg border-2 border-gray-300"
-		autocollapse={false}
+		{value}
+		rounded="rounded-lg"
 		padding="p-0"
+		spaceY="space-y-0"
+		base="overflow-hidden border-2 border-gray-300"
+		collapsible
+		onValueChange={(e) => (value = e.value)}
 	>
-		<AccordionItem class="bg-white">
-			<svelte:fragment slot="lead">
+		<Accordion.Item value="asset-files" panelPadding="p-0">
+			{#snippet lead()}
 				<i class="fa-solid fa-file-lines"></i>
-			</svelte:fragment>
-			<svelte:fragment slot="summary"
-				><h3 class="my-4 text-lg font-semibold">Asset Files Section</h3></svelte:fragment
-			>
-			<svelte:fragment slot="content">
+			{/snippet}
+			{#snippet control()}
+				<h3 class="my-4 text-lg font-semibold">Asset Files Section</h3>
+			{/snippet}
+			{#snippet panel()}
 				{#if isLoadingFiles && simfileId}
 					<div class="flex justify-center p-4">
 						<p>Loading files...</p>
@@ -204,7 +209,7 @@
 												class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200"
 												title="Download file"
 											>
-												<DownloadSolid size="sm" />
+												<DownloadCloud />
 											</a>
 										{:else}
 											<span class="text-gray-400">-</span>
@@ -215,7 +220,7 @@
 						</tbody>
 					</table>
 				{/if}
-			</svelte:fragment>
-		</AccordionItem>
+			{/snippet}
+		</Accordion.Item>
 	</Accordion>
 </div>

@@ -30,9 +30,9 @@
 		<div class="p-4">
 			<button onclick={toggleSidebar} class="text-white focus:outline-hidden">
 				{#if isSidebarCollapsed}
-					&#x25B6; <!-- Right arrow -->
+					▶ <!-- Right arrow -->
 				{:else}
-					&#x25C0; <!-- Left arrow -->
+					◀ <!-- Left arrow -->
 				{/if}
 			</button>
 		</div>

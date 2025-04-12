@@ -5,7 +5,6 @@
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy, onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
-	import { popup, TabGroup, Tab } from '@skeletonlabs/skeleton';
 	import { DTXFile } from '$lib/chart/dtx';
 	import { MainMenu } from '@/game/scenes/MainMenu';
 	import SoundTab from '$lib/components/editor/SoundTab.svelte';
@@ -102,7 +101,7 @@
 </script>
 
 <div data-popup="file-menu">
-	<div class="btn-group-vertical mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
+	<div class="-vertical mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
 		<button class="hover:bg-gray-100" onclick={newFile}>New</button>
 		<button
 			class="hover:bg-gray-100"
@@ -116,7 +115,7 @@
 <div class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]">
 	<div class="relative row-span-1 flex flex-row items-center border-b-2 border-gray-400">
 		<button
-			use:popup={{ event: 'click', target: 'file-menu', placement: 'bottom' }}
+			use:popup={{ event: 'click', target: 'file-m    enu', placement: 'bottom' }}
 			class="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
 		>
 			File
@@ -128,29 +127,38 @@
 	<div class="row-span-1 flex flex-col 2xl:flex-row">
 		<!-- Left tab panel - full width on small screens, 25% on large screens -->
 		<div class="w-full pt-4 2xl:w-[25%]">
-			<TabGroup border="">
-				<Tab
-					class="w-[15%] hover:bg-gray-100 2xl:w-1/4"
-					bind:group={currentTab}
-					name="main"
-					value={0}>Main</Tab
-				>
-				{#if !isPreviewing}
-					<Tab
-						class="w-[15%] hover:bg-gray-100 2xl:w-1/4"
-						bind:group={currentTab}
-						name="sound"
-						value={1}>Sound</Tab
+			<div class="tab-container">
+				<!-- Tab controls -->
+				<div class="tab-list flex">
+					<button
+						class="w-[15%] px-4 py-2 hover:bg-gray-100 2xl:w-1/4 {currentTab === 0
+							? 'bg-primary-500 text-white'
+							: 'bg-gray-100'}"
+						onclick={() => (currentTab = 0)}
 					>
-				{/if}
-				<svelte:fragment slot="panel">
+						Main
+					</button>
+					{#if !isPreviewing}
+						<button
+							class="w-[15%] px-4 py-2 hover:bg-gray-100 2xl:w-1/4 {currentTab === 1
+								? 'bg-primary-500 text-white'
+								: 'bg-gray-100'}"
+							onclick={() => (currentTab = 1)}
+						>
+							Sound
+						</button>
+					{/if}
+				</div>
+
+				<!-- Tab panels -->
+				<div class="tab-content mt-4">
 					{#if currentTab === 0}
 						<MainTab />
 					{:else if currentTab === 1}
 						<SoundTab />
 					{/if}
-				</svelte:fragment>
-			</TabGroup>
+				</div>
+			</div>
 		</div>
 
 		<!-- Center game component - full width on small screens, 55% on large screens -->

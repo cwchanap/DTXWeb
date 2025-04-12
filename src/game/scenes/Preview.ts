@@ -60,7 +60,7 @@ export class Preview extends BaseGame {
 
 		if (soundChips) {
 			const addedKey = new Set();
-			Object.entries(soundChips).forEach(([, soundChip]) => {
+			soundChips.forEach((soundChip) => {
 				if (!soundChip.fileName || !soundChip.file) return;
 
 				const cacheKey = this.getCacheKey(soundChip);
@@ -101,15 +101,11 @@ export class Preview extends BaseGame {
 		this.drawNotes();
 
 		const soundChips = get(store.currentSoundChip);
-		const simfile = get(store.currentSimfile);
 
 		if (soundChips) {
-			Object.entries(soundChips).forEach(([, soundChip]) => {
+			soundChips.forEach((soundChip) => {
+				if (!soundChip.fileName || !soundChip.file) return;
 				const cacheKey = this.getCacheKey(soundChip);
-				const soundFile = simfile?.files.find(
-					(f) => f.name.toLowerCase() === soundChip.fileName.toLowerCase()
-				);
-				if (!soundFile) return;
 				this.sound.add(cacheKey) as Sound.WebAudioSound;
 			});
 		}
@@ -235,7 +231,7 @@ export class Preview extends BaseGame {
 	}
 
 	getCacheKey(soundChip: SoundChip) {
-		return `soundchip_${soundChip.file}`;
+		return `soundchip_${soundChip.fileName.toLowerCase()}`;
 	}
 
 	override setCameraBounds() {
@@ -299,7 +295,7 @@ export class Preview extends BaseGame {
 					const soundChip = get(store.currentSoundChip).find(
 						(chip) => chip.id === parseInt(noteChip.noteID, 36)
 					);
-					if (soundChip) {
+					if (soundChip && soundChip.file) {
 						const audio = this.sound.get(this.getCacheKey(soundChip));
 						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 						audio.play();

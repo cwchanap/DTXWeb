@@ -20,7 +20,7 @@ export class SoundChip {
 		this.id = id;
 		this.volume = volume;
 		this.position = position;
-		this.fileName = fileName;
+		this.fileName = fileName.toLowerCase();
 
 		if (file) {
 			this.file = file;
@@ -29,9 +29,14 @@ export class SoundChip {
 
 	async fetchRemote(simfileID: string) {
 		if (!this.fileName) {
+			console.error('Sound chip file name is not set');
 			return;
 		}
 		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/${this.fileName}`);
+		if (!response.ok) {
+			console.error(`Failed to fetch sound chip: ${this.fileName}`);
+			return;
+		}
 		this.file = new File([await response.blob()], this.fileName);
 	}
 }

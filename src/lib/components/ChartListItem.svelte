@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import { DotsVerticalOutline } from 'flowbite-svelte-icons';
 	import ImageAudio from './ImageAudio.svelte';
 	import type { Tables } from '@/types/supabase.types';
 	import { Modal, Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
+	import { EllipsisVertical } from '@lucide/svelte/icons';
 
 	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
 		$props<{
@@ -39,7 +39,7 @@
 					contentBase="p-0 w-48 z-50"
 				>
 					{#snippet trigger()}
-						<DotsVerticalOutline size="xl" />
+						<EllipsisVertical />
 					{/snippet}
 
 					{#snippet content()}
@@ -65,18 +65,6 @@
 								{item.is_published ? 'Unpublish' : 'Publish'}
 							</button>
 
-							<!-- <button
-								onclick={() =>
-									openDeleteModal(
-										item.id,
-										item.preview_url,
-										item.sound_preview_url
-									)}
-								class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-								role="menuitem"
-							>
-								Delete
-							</button> -->
 							<Modal
 								open={openState}
 								onOpenChange={(e) => (openState = e.open)}

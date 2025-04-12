@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { PlaySolid, PauseSolid, DotsHorizontalOutline } from 'flowbite-svelte-icons';
 	import store from '../store';
 	import { get } from 'svelte/store';
+
+	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
 
 	interface Props {
 		previewUrl: string;
@@ -60,11 +61,11 @@
 			disabled={isLoading}
 		>
 			{#if isPlaying}
-				<PauseSolid size="xl" />
+				<CirclePause />
 			{:else if isLoading}
-				<DotsHorizontalOutline size="xl" />
+				<Ellipsis />
 			{:else}
-				<PlaySolid size="xl" />
+				<Play />
 			{/if}
 		</button>
 	{/if}

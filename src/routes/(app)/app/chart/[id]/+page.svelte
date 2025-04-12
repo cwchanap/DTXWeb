@@ -9,6 +9,7 @@
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 	import toastStore from '@/lib/toaster';
+	import IconUpload from '@lucide/svelte/icons/upload';
 
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);
@@ -127,7 +128,14 @@
 					<label for="folder_upload" class="mr-2 mb-2 block">Upload Folder:</label>
 				</div>
 				<div class="col-span-7">
-					<ChartFolderUpload large={false} {onFileUpload} />
+					<ChartFolderUpload {onFileUpload}>
+						{#snippet button()}
+							<button class="btn preset-filled">
+								<IconUpload class="size-4" />
+								<span>Select File</span>
+							</button>
+						{/snippet}
+					</ChartFolderUpload>
 				</div>
 			{/snippet}
 			{#snippet asset_files()}

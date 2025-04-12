@@ -15,6 +15,7 @@
 	import store from '$lib/store';
 	import { EventBus } from '@/game/EventBus';
 	import { page } from '$app/state';
+	import { FileUpload, Popover } from '@skeletonlabs/skeleton-svelte';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -100,26 +101,33 @@
 	});
 </script>
 
-<div data-popup="file-menu">
-	<div class="-vertical mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
-		<button class="hover:bg-gray-100" onclick={newFile}>New</button>
-		<button
-			class="hover:bg-gray-100"
-			onclick={() => document.getElementById('folder_upload')?.click()}>Import</button
-		>
-		<button class="hover:bg-gray-100" onclick={exportFile}>Export</button>
-		<ChartFolderUpload {onFileUpload} hidden={true} />
-	</div>
-</div>
-
 <div class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]">
 	<div class="relative row-span-1 flex flex-row items-center border-b-2 border-gray-400">
-		<button
-			use:popup={{ event: 'click', target: 'file-m    enu', placement: 'bottom' }}
-			class="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+		<Popover
+			positioning={{ placement: 'bottom-start' }}
+			contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
+			classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+			triggerClasses="w-full"
 		>
-			File
-		</button>
+			{#snippet trigger()}
+				<span>File</span>
+			{/snippet}
+			{#snippet content()}
+				<div class="flex flex-col">
+					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={newFile}
+						>New</button
+					>
+					<ChartFolderUpload {onFileUpload}>
+						{#snippet button()}
+							<button class="px-4 py-2 text-left hover:bg-gray-100">Import</button>
+						{/snippet}
+					</ChartFolderUpload>
+					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={exportFile}
+						>Export</button
+					>
+				</div>
+			{/snippet}
+		</Popover>
 		<div class="h-8 border-l border-gray-300"></div>
 	</div>
 

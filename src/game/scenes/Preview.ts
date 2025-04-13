@@ -498,7 +498,7 @@ export class Preview extends BaseGame {
 
 	updateCameraZoom() {
 		this.cameras.main.setOrigin(0.5, 1);
-		this.cameras.main.setZoom(2 / this.playSpeed, this.playSpeed);
+		this.cameras.main.setZoom(1 / this.playSpeed, this.playSpeed);
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars

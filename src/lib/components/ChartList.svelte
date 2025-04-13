@@ -3,11 +3,15 @@
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
-	import { Modal, Switch } from '@skeletonlabs/skeleton-svelte';
+	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import ChartListItem from './ChartListItem.svelte';
+	import ChartListTableItem from './ChartListTableItem.svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
 	import IconX from '@lucide/svelte/icons/x';
 	import IconCheck from '@lucide/svelte/icons/check';
+	import IconTable from '@lucide/svelte/icons/table';
+	import IconGrid from '@lucide/svelte/icons/grid';
+
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
@@ -47,6 +51,7 @@
 	let searchTimeout: NodeJS.Timeout;
 	let hideUnpublished = $state(false);
 	let filteredItems = $state<SimfileWithDtx[]>([]);
+	let viewMode = $state<'card' | 'table'>('card');
 
 	// Replace the run() function with a reactive effect using $effect
 	$effect(() => {
@@ -195,32 +200,88 @@
 	class="mb-4 w-1/2 rounded-sm border p-2"
 	oninput={handleSearchInput}
 />
-{#if !isBlog}
-	<div class="mb-4 flex items-center">
-		<label for="is_published" class="mr-2 mb-2 block">Hide unpublished:</label>
-		<Switch checked={hideUnpublished} onCheckedChange={(e) => (hideUnpublished = e.checked)}>
-			{#snippet inactiveChild()}<IconX size="14" />{/snippet}
-			{#snippet activeChild()}<IconCheck size="14" />{/snippet}
-		</Switch>
+<div class="mb-4 flex items-center justify-between">
+	<div class="flex items-center">
+		{#if !isBlog}
+			<div class="mr-6 flex items-center">
+				<label for="is_published" class="mr-2 mb-2 block">Hide unpublished:</label>
+				<Switch
+					checked={hideUnpublished}
+					onCheckedChange={(e) => (hideUnpublished = e.checked)}
+				>
+					{#snippet inactiveChild()}<IconX size="14" />{/snippet}
+					{#snippet activeChild()}<IconCheck size="14" />{/snippet}
+				</Switch>
+			</div>
+		{/if}
 	</div>
-{/if}
+	<div class="flex items-center">
+		<span class="mr-2">View:</span>
+		<div class="flex rounded border">
+			<button
+				class="flex items-center justify-center p-2 {viewMode === 'card'
+					? 'bg-blue-100'
+					: 'hover:bg-gray-100'}"
+				onclick={() => (viewMode = 'card')}
+			>
+				<IconGrid size="18" />
+			</button>
+			<button
+				class="flex items-center justify-center p-2 {viewMode === 'table'
+					? 'bg-blue-100'
+					: 'hover:bg-gray-100'}"
+				onclick={() => (viewMode = 'table')}
+			>
+				<IconTable size="18" />
+			</button>
+		</div>
+	</div>
+</div>
 {#if loading}
 	<div class="mt-4 text-center">
 		<p>Loading more items...</p>
 	</div>
 {:else}
-	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-		{#each filteredItems as item (item.id)}
-			<ChartListItem
-				{item}
-				{isBlog}
-				{togglePublishChart}
-				{onFileDelete}
-				{getPreviewUrl}
-				{getSoundPreviewUrl}
-			/>
-		{/each}
-	</div>
+	{#if viewMode === 'card'}
+		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			{#each filteredItems as item (item.id)}
+				<ChartListItem
+					{item}
+					{isBlog}
+					{togglePublishChart}
+					{onFileDelete}
+					{getPreviewUrl}
+					{getSoundPreviewUrl}
+				/>
+			{/each}
+		</div>
+	{:else}
+		<div class="overflow-x-auto rounded-lg border">
+			<table class="w-full table-auto">
+				<thead class="bg-gray-50 text-xs text-gray-700 uppercase">
+					<tr>
+						<th class="px-4 py-3 text-center">ID</th>
+						<th class="px-4 py-3">Title</th>
+						<th class="px-4 py-3">Artist</th>
+						<th class="px-4 py-3 text-center">BPM</th>
+						<th class="px-4 py-3 text-center">Publish Date</th>
+						<th class="px-4 py-3 text-center">
+							Level
+							<div class="text-[10px] font-normal text-gray-500 normal-case">
+								bas/adv/ext/mas/other
+							</div>
+						</th>
+						<th class="px-4 py-3 text-center">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each filteredItems as item (item.id)}
+						<ChartListTableItem {item} {isBlog} {togglePublishChart} {onFileDelete} />
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
 	<!-- Pagination controls -->
 
 	<div class="mt-6 flex justify-center">

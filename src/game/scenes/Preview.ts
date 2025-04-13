@@ -48,7 +48,11 @@ export class Preview extends BaseGame {
 
 		store.playSpeed.subscribe((value) => {
 			this.playSpeed = value;
-			this.cellHeight *= this.playSpeed;
+
+			// Update camera zoom based on play speed
+			if (this.cameras && this.cameras.main) {
+				this.updateCameraZoom();
+			}
 		});
 	}
 
@@ -128,6 +132,9 @@ export class Preview extends BaseGame {
 
 		// Calculate duration based on BPM changes
 		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
+
+		// Update camera zoom based on current play speed
+		this.updateCameraZoom();
 
 		this.previewTween = this.tweens.add({
 			targets: this.panelContainer,
@@ -249,6 +256,9 @@ export class Preview extends BaseGame {
 			this.scale.width,
 			this.laneHeight + this.bottomMargin + this.cameras.main.height
 		);
+
+		// Initialize camera zoom
+		this.updateCameraZoom();
 	}
 
 	scheduleBGMPlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {
@@ -486,6 +496,11 @@ export class Preview extends BaseGame {
 		});
 	}
 
+	updateCameraZoom() {
+		this.cameras.main.setOrigin(0.5, 1);
+		this.cameras.main.setZoom(2 / this.playSpeed, this.playSpeed);
+	}
+
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	override drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string) {
 		const laneConfig = this.laneConfigs[laneIndex];
@@ -551,6 +566,7 @@ export class Preview extends BaseGame {
 	cleanUp() {
 		if (this.previewTween) {
 			this.previewTween.stop();
+			this.previewTween.destroy();
 			this.previewTween = null;
 		}
 
@@ -558,6 +574,11 @@ export class Preview extends BaseGame {
 			audio.stop();
 		});
 		this.playingAudio = [];
+
+		// Reset camera zoom (both x and y to 1)
+		if (this.cameras && this.cameras.main) {
+			this.cameras.main.setZoom(1, 1);
+		}
 
 		this.time.removeAllEvents();
 	}

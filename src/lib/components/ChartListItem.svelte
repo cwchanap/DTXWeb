@@ -24,88 +24,78 @@
 	}
 </script>
 
-<div
-	class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6 shadow-md"
->
+<div class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6">
 	<div class="mb-2 flex items-center justify-between">
 		<h2 class="text-2xl font-bold">{item.display_id}. {item.title}</h2>
 		{#if !isBlog}
-			<div class="relative">
-				<Popover
-					open={popoverOpen}
-					onOpenChange={(details) => (popoverOpen = details.open)}
-					positioning={{ placement: 'bottom-end' }}
-					triggerBase="text-gray-500 hover:text-gray-700 focus:outline-hidden"
-					contentBase="p-0 w-48 z-50"
-				>
-					{#snippet trigger()}
-						<EllipsisVertical />
-					{/snippet}
-					{#snippet content()}
-						<div
-							class="py-1"
-							role="menu"
-							aria-orientation="vertical"
-							aria-labelledby="options-menu"
+			<Popover
+				open={popoverOpen}
+				onOpenChange={(details) => (popoverOpen = details.open)}
+				positioning={{ placement: 'bottom-start' }}
+				contentBase="w-48 p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
+			>
+				{#snippet trigger()}
+					<EllipsisVertical />
+				{/snippet}
+				{#snippet content()}
+					<div class="py-1">
+						<a
+							href={`/app/chart/${item.id}`}
+							class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+							role="menuitem"
 						>
-							<a
-								href={`/app/chart/${item.id}`}
-								class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-								role="menuitem"
-							>
-								Edit
-							</a>
+							Edit
+						</a>
 
-							<button
-								onclick={() => togglePublishChart(item.id, item.is_published)}
-								class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-								role="menuitem"
-							>
-								{item.is_published ? 'Unpublish' : 'Publish'}
-							</button>
+						<button
+							onclick={() => togglePublishChart(item.id, item.is_published)}
+							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+							role="menuitem"
+						>
+							{item.is_published ? 'Unpublish' : 'Publish'}
+						</button>
 
-							<Modal
-								open={openState}
-								onOpenChange={(e) => (openState = e.open)}
-								triggerBase="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-								contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
-								backdropClasses="backdrop-blur-sm"
-							>
-								{#snippet trigger()}Delete{/snippet}
-								{#snippet content()}
-									<header class="flex justify-between">
-										<h4 class="h4">Delete Chart</h4>
-									</header>
-									<article>
-										<p class="opacity-60">
-											Are you sure you want to delete this chart?
-										</p>
-									</article>
-									<footer class="flex justify-end gap-4">
-										<button
-											type="button"
-											class="btn preset-tonal"
-											onclick={modalClose}>Cancel</button
-										>
-										<button
-											type="button"
-											class="btn preset-filled"
-											onclick={() => {
-												modalClose();
-												onFileDelete(
-													item.id,
-													item.preview_url,
-													item.sound_preview_url
-												);
-											}}>Confirm</button
-										>
-									</footer>
-								{/snippet}
-							</Modal>
-						</div>
-					{/snippet}
-				</Popover>
-			</div>
+						<Modal
+							open={openState}
+							onOpenChange={(e) => (openState = e.open)}
+							triggerBase="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+							contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+							backdropClasses="backdrop-blur-sm"
+						>
+							{#snippet trigger()}Delete{/snippet}
+							{#snippet content()}
+								<header class="flex justify-between">
+									<h4 class="h4">Delete Chart</h4>
+								</header>
+								<article>
+									<p class="opacity-60">
+										Are you sure you want to delete this chart?
+									</p>
+								</article>
+								<footer class="flex justify-end gap-4">
+									<button
+										type="button"
+										class="btn preset-tonal"
+										onclick={modalClose}>Cancel</button
+									>
+									<button
+										type="button"
+										class="btn preset-filled"
+										onclick={() => {
+											modalClose();
+											onFileDelete(
+												item.id,
+												item.preview_url,
+												item.sound_preview_url
+											);
+										}}>Confirm</button
+									>
+								</footer>
+							{/snippet}
+						</Modal>
+					</div>
+				{/snippet}
+			</Popover>
 		{/if}
 	</div>
 	<div>

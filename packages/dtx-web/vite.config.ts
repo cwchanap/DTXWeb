@@ -12,12 +12,12 @@ export default defineConfig({
 			'@': path.resolve(__dirname, 'src')
 		}
 	},
-	test: {
-		globals: true,
-		environment: 'jsdom',
-		setupFiles: ['./src/tests/setup.ts']
-	},
 	optimizeDeps: {
 		exclude: ['xa_decoder']
+	},
+	server: {
+		fs: {
+			allow: [path.resolve(__dirname, '../../')]
+		}
 	}
 });

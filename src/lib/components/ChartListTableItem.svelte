@@ -1,32 +1,41 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import ImageAudio from './ImageAudio.svelte';
 	import type { Tables } from '@/types/supabase.types';
-	import { Modal, Popover } from '@skeletonlabs/skeleton-svelte';
+	import { Modal, Popover, Tooltip } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
-	import { EllipsisVertical } from '@lucide/svelte/icons';
+	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
 
-	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
-		$props<{
-			item: Partial<Tables<'simfiles'>>;
-			isBlog: boolean;
-			togglePublishChart: (id: number, published: boolean) => Promise<void>;
-			getPreviewUrl: (preview_url: string) => string;
-			getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
-			onFileDelete: (id: number, preview_url?: string, sound_preview_url?: string) => void;
-		}>();
+	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
+		item: Partial<Tables<'simfiles'>>;
+		isBlog: boolean;
+		togglePublishChart: (id: number, published: boolean) => Promise<void>;
+		onFileDelete: (id: number, preview_url?: string, sound_preview_url?: string) => void;
+	}>();
 
 	let popoverOpen = $state(false);
 	let openState = $state(false);
+	let tooltipOpen = $state(false);
 
 	function modalClose() {
 		openState = false;
 	}
+
+	// Format the publish date
+	function formatDate(dateString: string | undefined | null): string {
+		if (!dateString) return 'N/A';
+		const date = new Date(dateString);
+		return date.toLocaleDateString();
+	}
 </script>
 
-<div class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6">
-	<div class="mb-2 flex items-center justify-between">
-		<h2 class="text-2xl font-bold">{item.display_id}. {item.title}</h2>
+<tr class="border-b hover:bg-gray-50">
+	<td class="px-4 py-3 text-center">{item.display_id || 'N/A'}</td>
+	<td class="px-4 py-3">{item.title || 'N/A'}</td>
+	<td class="px-4 py-3">{item.artist || 'N/A'}</td>
+	<td class="px-4 py-3 text-center">{item.bpm || 'N/A'}</td>
+	<td class="px-4 py-3 text-center">{formatDate(item.publish_date)}</td>
+	<td class="px-4 py-3 text-center">{formatLevelDisplay(item.dtx_files)}</td>
+	<td class="px-4 py-3 text-center">
 		{#if !isBlog}
 			<Popover
 				open={popoverOpen}
@@ -35,7 +44,9 @@
 				contentBase="w-48 p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
 			>
 				{#snippet trigger()}
-					<EllipsisVertical />
+					<button class="rounded p-1 hover:bg-gray-100">
+						<EllipsisVertical />
+					</button>
 				{/snippet}
 				{#snippet content()}
 					<div class="py-1">
@@ -96,39 +107,27 @@
 					</div>
 				{/snippet}
 			</Popover>
-		{/if}
-	</div>
-	<div>
-		<p class="mb-2 text-lg text-gray-600">{item.artist}</p>
-		<p class="mb-2 text-lg">BPM: {item.bpm}</p>
-	</div>
-	{#if item.preview_url}
-		<div class="relative">
-			<ImageAudio
-				previewUrl={getPreviewUrl(item.preview_url)}
-				soundPreviewUrl={getSoundPreviewUrl(item.sound_preview_url) ?? undefined}
-			/>
-		</div>
-	{:else}
-		<div class="mb-4 flex h-60 w-full items-center justify-center rounded-lg bg-gray-200">
-			<span class="text-gray-500">No preview available</span>
-		</div>
-	{/if}
-	<div class="mt-4 text-sm text-gray-600">
-		{$_('blog.level')}: {formatLevelDisplay(item.dtx_files)}
-	</div>
-	{#if isBlog}
-		{#if item.download_url}
+		{:else if item.download_url}
 			<a
-				href={item.download_url ?? undefined}
+				href={item.download_url}
 				target="_blank"
 				rel="noopener noreferrer"
-				class="mt-4 text-blue-500 hover:underline"
+				class="inline-flex items-center justify-center rounded-full bg-blue-100 p-2 text-blue-600 hover:bg-blue-200"
+				title="Download Simfile"
 			>
-				{$_('blog.download')}
+				<Tooltip
+					open={tooltipOpen}
+					onOpenChange={(e) => (tooltipOpen = e.open)}
+					positioning={{ placement: 'top' }}
+					triggerBase="underline"
+					contentBase="card preset-filled p-2"
+					openDelay={200}
+					arrow
+				>
+					{#snippet trigger()}<ExternalLink size="16" />{/snippet}
+					{#snippet content()}Download Simfile{/snippet}
+				</Tooltip>
 			</a>
-		{:else}
-			<div class="mt-4 text-sm text-gray-600">Download not available</div>
 		{/if}
-	{/if}
-</div>
+	</td>
+</tr>

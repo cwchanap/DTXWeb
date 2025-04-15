@@ -147,11 +147,10 @@
 			id="speed-input"
 			type="number"
 			class="w-24 rounded-md border border-gray-300 px-2 py-1"
-			min="0"
+			min="1"
 			max="10"
 			bind:value={playSpeed}
 			onchange={handlePlaySpeedChange}
-			disabled={isPreviewing}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">

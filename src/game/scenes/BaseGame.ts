@@ -50,10 +50,10 @@ export abstract class BaseGame extends Scene {
 			id: '11',
 			playable: true,
 			iconFrameIndex: 1,
-			width: 56
+			width: 48
 		},
 		{ name: 'LP', noteColor: 0xde0db8, id: '1B', playable: true, iconFrameIndex: 9, width: 58 },
-		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true, iconFrameIndex: 9, width: 48 },
+		{ name: 'LB', noteColor: 0x567dcb, id: '1C', playable: true, iconFrameIndex: 9, width: 58 },
 		{ name: 'SN', noteColor: 0xefec1b, id: '12', playable: true, iconFrameIndex: 4, width: 64 },
 		{ name: 'HT', noteColor: 0x45ef1b, id: '14', playable: true, iconFrameIndex: 5, width: 56 },
 		{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true, iconFrameIndex: 8, width: 70 },

@@ -148,19 +148,28 @@ export class Editor extends BaseGame {
 				this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
 			);
 			this.scene.pause();
-			this.scene.launch(Preview.key, {
-				bpm: bpm,
-				bpmNotes: this.bpmNotes,
-				notes: this.notes,
-				measureCount: this.measureCount,
-				startMeasure: currentMeasure
-			});
-			this.scene.switch(Preview.key);
 			this.scene.setVisible(false);
+
+			if (this.scene.isPaused(Preview.key)) {
+				this.scene.setVisible(true, Preview.key);
+				this.scene.resume(Preview.key);
+				EventBus.emit(EventType.RESUME_PREVIEW, {
+					startMeasure: currentMeasure
+				});
+			} else {
+				this.scene.launch(Preview.key, {
+					bpm: bpm,
+					bpmNotes: this.bpmNotes,
+					notes: this.notes,
+					measureCount: this.measureCount,
+					startMeasure: currentMeasure
+				});
+			}
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
-			this.scene.stop(Preview.key);
+			this.scene.pause(Preview.key);
+			this.scene.setVisible(false, Preview.key);
 			this.scene.resume();
 			this.scene.setVisible(true);
 		});

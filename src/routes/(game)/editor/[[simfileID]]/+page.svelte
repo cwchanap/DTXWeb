@@ -15,7 +15,7 @@
 	import store from '$lib/store';
 	import { EventBus } from '@/game/EventBus';
 	import { page } from '$app/state';
-	import { FileUpload, Popover } from '@skeletonlabs/skeleton-svelte';
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);

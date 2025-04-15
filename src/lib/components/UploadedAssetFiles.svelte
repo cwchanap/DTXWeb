@@ -10,7 +10,11 @@
 	}>();
 
 	// Ensure userFiles is always an array of File objects
-	const safeUserFiles = $derived<File[]>(Array.isArray(userFiles) ? userFiles : []);
+	const safeUserFiles = $derived<File[]>(
+		Array.isArray(userFiles)
+			? userFiles.map((f: File) => new File([f], f.name.toLowerCase(), f))
+			: []
+	);
 
 	let assetFiles = $state<
 		{ fileName: string; size: number; lastModified: string; key: string }[]

@@ -48,7 +48,11 @@ export class Preview extends BaseGame {
 
 		store.playSpeed.subscribe((value) => {
 			this.playSpeed = value;
-			this.cellHeight *= this.playSpeed;
+
+			// Update camera zoom based on play speed
+			if (this.cameras && this.cameras.main) {
+				this.updateCameraZoom();
+			}
 		});
 	}
 
@@ -60,7 +64,7 @@ export class Preview extends BaseGame {
 
 		if (soundChips) {
 			const addedKey = new Set();
-			Object.entries(soundChips).forEach(([, soundChip]) => {
+			soundChips.forEach((soundChip) => {
 				if (!soundChip.fileName || !soundChip.file) return;
 
 				const cacheKey = this.getCacheKey(soundChip);
@@ -101,19 +105,26 @@ export class Preview extends BaseGame {
 		this.drawNotes();
 
 		const soundChips = get(store.currentSoundChip);
-		const simfile = get(store.currentSimfile);
 
 		if (soundChips) {
-			Object.entries(soundChips).forEach(([, soundChip]) => {
+			soundChips.forEach((soundChip) => {
+				if (!soundChip.fileName || !soundChip.file) return;
 				const cacheKey = this.getCacheKey(soundChip);
-				const soundFile = simfile?.files.find(
-					(f) => f.name.toLowerCase() === soundChip.fileName.toLowerCase()
-				);
-				if (!soundFile) return;
 				this.sound.add(cacheKey) as Sound.WebAudioSound;
 			});
 		}
 
+		this.startPreview();
+
+		EventBus.emit(EventType.SCENE_READY, this);
+		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
+		EventBus.on(EventType.RESUME_PREVIEW, (data: { startMeasure: number }) => {
+			this.startMeasure = data.startMeasure;
+			this.startPreview();
+		});
+	}
+
+	startPreview() {
 		const targetY = this.getTotalMesaureOffest(this.startMeasure) + this.bottomMargin; // Target Y position for the nearest measure
 		const totalDistance = this.getTotalMesaureOffest(this.measureCount) + targetY;
 
@@ -121,6 +132,9 @@ export class Preview extends BaseGame {
 
 		// Calculate duration based on BPM changes
 		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
+
+		// Update camera zoom based on current play speed
+		this.updateCameraZoom();
 
 		this.previewTween = this.tweens.add({
 			targets: this.panelContainer,
@@ -151,9 +165,6 @@ export class Preview extends BaseGame {
 						);
 				}
 			});
-
-		EventBus.emit(EventType.SCENE_READY, this);
-		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
 	}
 
 	getTimeElapsed(measure: number, noteChipPosition: number = 0) {
@@ -235,7 +246,7 @@ export class Preview extends BaseGame {
 	}
 
 	getCacheKey(soundChip: SoundChip) {
-		return `soundchip_${soundChip.file}`;
+		return `soundchip_${soundChip.fileName.toLowerCase()}`;
 	}
 
 	override setCameraBounds() {
@@ -245,6 +256,9 @@ export class Preview extends BaseGame {
 			this.scale.width,
 			this.laneHeight + this.bottomMargin + this.cameras.main.height
 		);
+
+		// Initialize camera zoom
+		this.updateCameraZoom();
 	}
 
 	scheduleBGMPlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {
@@ -299,7 +313,7 @@ export class Preview extends BaseGame {
 					const soundChip = get(store.currentSoundChip).find(
 						(chip) => chip.id === parseInt(noteChip.noteID, 36)
 					);
-					if (soundChip) {
+					if (soundChip && soundChip.file) {
 						const audio = this.sound.get(this.getCacheKey(soundChip));
 						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 						audio.play();
@@ -482,6 +496,11 @@ export class Preview extends BaseGame {
 		});
 	}
 
+	updateCameraZoom() {
+		this.cameras.main.setOrigin(0.5, 1);
+		this.cameras.main.setZoom(1 / this.playSpeed, this.playSpeed);
+	}
+
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	override drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string) {
 		const laneConfig = this.laneConfigs[laneIndex];
@@ -547,6 +566,7 @@ export class Preview extends BaseGame {
 	cleanUp() {
 		if (this.previewTween) {
 			this.previewTween.stop();
+			this.previewTween.destroy();
 			this.previewTween = null;
 		}
 
@@ -554,5 +574,12 @@ export class Preview extends BaseGame {
 			audio.stop();
 		});
 		this.playingAudio = [];
+
+		// Reset camera zoom (both x and y to 1)
+		if (this.cameras && this.cameras.main) {
+			this.cameras.main.setZoom(1, 1);
+		}
+
+		this.time.removeAllEvents();
 	}
 }

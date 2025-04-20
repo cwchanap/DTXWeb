@@ -39,8 +39,8 @@ export class SimFile {
 	}
 
 	public static async parseFromRemoteURL(simfileID: string) {
-		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/SET.def`);
-		const file = new File([await response.blob()], 'SET.def');
+		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/set.def`);
+		const file = new File([await response.blob()], 'set.def');
 		const simFile = new SimFile([file]);
 		simFile.isParseFromRemoteURL = true;
 		simFile.simFileID = simfileID;

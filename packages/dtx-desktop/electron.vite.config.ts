@@ -10,6 +10,7 @@ export default defineConfig({
 		plugins: [externalizeDepsPlugin()]
 	},
 	renderer: {
+		// @ts-ignore
 		plugins: [tailwindcss(), svelte()]
 	}
 });

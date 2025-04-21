@@ -1,12 +1,11 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import wasm from 'vite-plugin-wasm';
-import topLevelAwait from 'vite-plugin-top-level-await';
 import { defineConfig } from 'vite';
 import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-	plugins: [wasm(), topLevelAwait(), tailwindcss(), sveltekit()],
+	plugins: [wasm(), tailwindcss(), sveltekit()],
 	resolve: {
 		alias: {
 			'@': path.resolve(__dirname, 'src')

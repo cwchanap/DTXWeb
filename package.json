@@ -30,7 +30,7 @@
 	"dependencies": {},
 	"workspaces": [
 		"packages/dtx-web",
-		"packages/r2-worker",
+		"packages/worker",
 		"packages/dtx-desktop"
 	]
 }

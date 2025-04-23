@@ -1,0 +1,24 @@
+{
+	"name": "worker",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build && vite build --ssr",
+		"preview": "$npm_execpath run build && wrangler dev dist-server/index.js",
+		"deploy": "$npm_execpath run build && wrangler deploy dist-server/index.js",
+		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
+	},
+	"dependencies": {
+		"@aws-sdk/client-s3": "^3.787.0",
+		"hono": "^4.7.7",
+		"zod": "^3.24.3"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "^1.0.8",
+		"@hono/vite-build": "^1.6.0",
+		"@hono/zod-validator": "^0.4.3",
+		"vite": "^6.3.2",
+		"vite-plugin-ssr-hot-reload": "^0.5.0",
+		"wrangler": "^4.12.0"
+	}
+}

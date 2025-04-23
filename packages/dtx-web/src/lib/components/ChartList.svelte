@@ -6,16 +6,15 @@
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import ChartListItem from './ChartListItem.svelte';
 	import ChartListTableItem from './ChartListTableItem.svelte';
-	import type { SupabaseClient } from '@supabase/supabase-js';
 	import IconX from '@lucide/svelte/icons/x';
 	import IconCheck from '@lucide/svelte/icons/check';
 	import IconTable from '@lucide/svelte/icons/table';
 	import IconGrid from '@lucide/svelte/icons/grid';
+	import { supabase } from '../supabase';
 
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
-		supabase: SupabaseClient;
 	}
 
 	interface DtxFile {
@@ -40,7 +39,7 @@
 		dtx_files?: Partial<DtxFile>[];
 	}
 
-	let { supabase, pageSize = 12, isBlog = false }: Props = $props();
+	let { pageSize = 12, isBlog = false }: Props = $props();
 
 	let items: SimfileWithDtx[] = $state([]);
 	let currentPage = $state(1);
@@ -48,7 +47,7 @@
 	let loading = $state(false);
 	let artistFilter: string = $state('');
 	let songNameFilter: string = $state('');
-	let searchTimeout: NodeJS.Timeout;
+	let searchTimeout: ReturnType<typeof setTimeout>;
 	let hideUnpublished = $state(false);
 	let filteredItems = $state<SimfileWithDtx[]>([]);
 	let viewMode = $state<'card' | 'table'>('card');

@@ -3,6 +3,8 @@
 	import dayjs from 'dayjs';
 	import { DownloadCloud } from '@lucide/svelte';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+	import { supabase } from '../supabase';
+	import { PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
 
 	let { simfileId = '', userFiles = [] } = $props<{
 		simfileId?: string;
@@ -164,10 +166,15 @@
 			formData.append('file', modifiedFile);
 			formData.append('simFileId', simfileId);
 
+			const jwt = (await supabase.auth.getSession())?.data.session?.access_token;
+
 			// Send the request
-			const response = await fetch('/api/simFile/upload', {
+			const response = await fetch(`${PUBLIC_CLOUDFARE_WORKER_URL}/api/simFile/upload`, {
 				method: 'POST',
-				body: formData
+				body: formData,
+				headers: {
+					Authorization: `Bearer ${jwt}`
+				}
 			});
 
 			if (!response.ok) {
@@ -195,13 +202,15 @@
 			uploadProgress[fileName] = 'pending';
 		});
 
-		// Process each selected file one by one
-		for (const fileName of selectedFiles) {
+		const uploadPromises = [...selectedFiles].map((fileName) => {
 			const fileToUpload = mergedFiles.find((f) => f.name === fileName)?.userFile;
-			if (!fileToUpload) continue;
+			if (!fileToUpload) return;
 
-			await uploadFile(fileName, fileToUpload);
-		}
+			return uploadFile(fileName, fileToUpload);
+		});
+
+		// Wait for all uploads to complete
+		await Promise.all(uploadPromises);
 
 		// Refresh the file list after uploads
 		await loadAssetFiles();

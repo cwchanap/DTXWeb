@@ -18,7 +18,7 @@
 	let { large = false, button, onFileUpload }: Props = $props();
 	const acceptFilesType = ['.ogg', '.dtx', '.def', '.jpg', '.avi', '.mp4', '.mp3', '.xa'];
 
-	async function handleFileInput(details: any) {
+	async function handleFileInput(details: { acceptedFiles: File[] }) {
 		const { acceptedFiles } = details;
 		const filteredFiles = filterFiles(acceptedFiles, acceptFilesType);
 		if (filteredFiles.length > 0) {

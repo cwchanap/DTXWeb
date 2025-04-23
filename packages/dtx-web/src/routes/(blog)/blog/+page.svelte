@@ -3,8 +3,6 @@
 	import { locale, locales } from 'svelte-i18n';
 	import { _ } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
-	let { data } = $props();
-	let { supabase } = $derived(data);
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
@@ -53,7 +51,7 @@
 		</section>
 		<section class="mb-8">
 			<h2 class="mb-4 text-2xl font-bold">{$_('blog.latest_simfiles')}</h2>
-			<ChartList {supabase} isBlog={true} />
+			<ChartList isBlog={true} />
 		</section>
 	</main>
 </div>

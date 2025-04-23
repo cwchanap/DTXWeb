@@ -12,5 +12,10 @@
 			"binding": "DTXFILE_BUCKET",
 			"bucket_name": "simfile-dtx"
 		}
-	]
+	],
+	"observability": {
+		"logs": {
+			"enabled": true
+		}
+	}
 }

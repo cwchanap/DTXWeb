@@ -34,6 +34,10 @@ export class Preview extends BaseGame {
 	protected notes: Record<string, Note[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 
+	// Additional containers for separating elements with different scaling
+	protected gridContainer!: Phaser.GameObjects.Container; // For grid lines that will scale
+	protected notesContainer!: Phaser.GameObjects.Container; // For notes that won't scale
+
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
@@ -101,6 +105,10 @@ export class Preview extends BaseGame {
 		// Create animations for each note type
 		this.createNoteAnimations();
 
+		// Initialize containers that will be used in drawPanel
+		this.gridContainer = this.add.container(0, 0);
+		this.notesContainer = this.add.container(0, 0);
+
 		this.drawPanel();
 		this.drawNotes();
 
@@ -124,11 +132,99 @@ export class Preview extends BaseGame {
 		});
 	}
 
-	startPreview() {
-		const targetY = this.getTotalMesaureOffest(this.startMeasure) + this.bottomMargin; // Target Y position for the nearest measure
-		const totalDistance = this.getTotalMesaureOffest(this.measureCount) + targetY;
+	override drawPanel() {
+		// Call super.drawFooter() to set up the footer container
+		this.drawFooter();
 
-		this.panelContainer.setPosition(0, targetY, totalDistance);
+		// Create panel container
+		this.panelContainer = this.add.container(0, 0);
+		const scrollableHeight = this.laneHeight + this.bottomMargin;
+		this.panelContainer.setSize(this.scale.width, scrollableHeight);
+
+		// Set up the container hierarchy
+		this.panelContainer.add(this.gridContainer);
+		this.panelContainer.add(this.notesContainer);
+
+		// Parse measure lengths
+		this.parseMesaureLength();
+
+		// Draw grid lines into the gridContainer
+		this.drawGridLines();
+
+		// Set camera bounds and add mask for scrolling
+		this.setCameraBounds();
+
+		const mask = this.make.graphics();
+		mask.fillStyle(0xffffff);
+		mask.fillRect(0, 0, this.scale.width, this.scale.height - this.bottomMargin);
+		this.panelContainer.setMask(mask.createGeometryMask());
+	}
+
+	// Helper method to draw grid lines into gridContainer
+	drawGridLines() {
+		// Create separate graphics objects for vertical and horizontal lines
+		// This ensures proper rendering with different line styles
+		const verticalLines = this.add.graphics();
+		const horizontalLines = this.add.graphics();
+		const measureLines = this.add.graphics();
+
+		// Set line styles
+		verticalLines.lineStyle(1, 0x888888, 1); // Light grey for cells
+		horizontalLines.lineStyle(1, 0x888888, 1); // Light grey for cells
+		measureLines.lineStyle(2, 0xffffff, 1); // White for measure lines
+
+		// Draw vertical lanes
+		let currentX = this.offsetX;
+		this.laneConfigs.forEach(() => {
+			verticalLines.moveTo(currentX, this.offsetY);
+			verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
+			currentX += this.cellWidth;
+		});
+
+		// Draw the last vertical line
+		verticalLines.moveTo(currentX, this.offsetY);
+		verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
+
+		// Draw horizontal lines for measures
+		let y = this.offsetY;
+		for (let j = 0; j < this.measureCount; j++) {
+			const measureHeight = this.getMeasureHeight(j);
+
+			// Draw the measure line
+			measureLines.moveTo(this.offsetX, y);
+			measureLines.lineTo(this.offsetX + this.totalWidth, y);
+
+			// Draw cell lines within each measure (subdivisions)
+			const cellsPerMeasure = this.cellsPerMeasure;
+			const cellHeight = measureHeight / cellsPerMeasure;
+
+			for (let i = 1; i < cellsPerMeasure; i++) {
+				const cellY = y - i * cellHeight;
+				horizontalLines.moveTo(this.offsetX, cellY);
+				horizontalLines.lineTo(this.offsetX + this.totalWidth, cellY);
+			}
+
+			// Update y for the next measure
+			y -= measureHeight;
+		}
+
+		// Stroke all paths and add to gridContainer
+		verticalLines.strokePath();
+		horizontalLines.strokePath();
+		measureLines.strokePath();
+
+		this.gridContainer.add(verticalLines);
+		this.gridContainer.add(horizontalLines);
+		this.gridContainer.add(measureLines);
+	}
+
+	startPreview() {
+		const targetY =
+			this.getTotalMesaureOffest(this.startMeasure) * this.playSpeed + this.bottomMargin; // Target Y position for the nearest measure
+		const totalDistance =
+			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed + targetY;
+
+		this.panelContainer.setPosition(0, targetY);
 
 		// Calculate duration based on BPM changes
 		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
@@ -498,7 +594,21 @@ export class Preview extends BaseGame {
 
 	updateCameraZoom() {
 		this.cameras.main.setOrigin(0.5, 1);
-		this.cameras.main.setZoom(1, this.playSpeed);
+
+		// Apply scale to grid container only
+		if (this.gridContainer) {
+			this.gridContainer.setScale(1, this.playSpeed);
+		}
+
+		// Ensure notes container maintains normal scale
+		if (this.notesContainer) {
+			this.notesContainer.setScale(1, this.playSpeed);
+			this.notesContainer
+				.getAll()
+				.forEach((obj) =>
+					(obj as Phaser.GameObjects.Graphics).setScale(1, 1 / this.playSpeed)
+				);
+		}
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -558,8 +668,8 @@ export class Preview extends BaseGame {
 			overlaySprite.play(`note-${laneId}-overlay`);
 			container.add(overlaySprite);
 
-			// Add the container to the panel
-			this.panelContainer.add(container);
+			// Add the container to the notes container instead of panel container
+			this.notesContainer.add(container);
 		}
 	}
 
@@ -575,9 +685,13 @@ export class Preview extends BaseGame {
 		});
 		this.playingAudio = [];
 
-		// Reset camera zoom (both x and y to 1)
+		// Reset all container scales
+		if (this.gridContainer) this.gridContainer.setScale(1);
+		if (this.notesContainer) this.notesContainer.setScale(1);
+
+		// Reset camera zoom
 		if (this.cameras && this.cameras.main) {
-			this.cameras.main.setZoom(1, 1);
+			this.cameras.main.setZoom(1);
 		}
 
 		this.time.removeAllEvents();

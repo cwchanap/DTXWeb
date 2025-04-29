@@ -51,11 +51,18 @@ export class Preview extends BaseGame {
 		this.startMeasure = data.startMeasure;
 
 		store.playSpeed.subscribe((value) => {
+			const oldPlaySpeed = this.playSpeed;
 			this.playSpeed = value;
 
 			// Update camera zoom based on play speed
 			if (this.cameras && this.cameras.main) {
 				this.updateCameraZoom();
+			}
+
+			// Update tween if it exists
+			if (this.previewTween) {
+				// Use our consolidated method to recreate the tween with current position and progress
+				this.createPreviewTween((this.panelContainer.y / oldPlaySpeed) * value);
 			}
 		});
 	}
@@ -221,28 +228,15 @@ export class Preview extends BaseGame {
 	startPreview() {
 		const targetY =
 			this.getTotalMesaureOffest(this.startMeasure) * this.playSpeed + this.bottomMargin; // Target Y position for the nearest measure
-		const totalDistance =
-			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed + targetY;
 
+		// Set the panel to the starting position
 		this.panelContainer.setPosition(0, targetY);
-
-		// Calculate duration based on BPM changes
-		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
 
 		// Update camera zoom based on current play speed
 		this.updateCameraZoom();
 
-		this.previewTween = this.tweens.add({
-			targets: this.panelContainer,
-			y: totalDistance,
-			duration: totalDuration,
-			ease: 'Linear',
-			repeat: -1,
-			yoyo: false,
-			onComplete: () => {
-				this.panelContainer.setPosition(0, 0);
-			}
-		});
+		// Create a new preview tween starting from the beginning (0 progress)
+		this.createPreviewTween(targetY);
 
 		const secondsPerMeasure = (60 * 4) / this.bpm;
 
@@ -388,6 +382,50 @@ export class Preview extends BaseGame {
 				}
 			});
 		});
+	}
+
+	/**
+	 * Creates a tween animation for preview scrolling
+	 * @param startY - The starting Y position of the panel
+	 */
+	createPreviewTween(startY: number) {
+		// Calculate target distances
+		const targetY =
+			this.getTotalMesaureOffest(this.startMeasure + 1) * this.playSpeed + this.bottomMargin;
+		const totalDistance =
+			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed + startY;
+
+		console.log('targetY', targetY, 'startY', startY);
+
+		// Calculate total duration based on BPM
+		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
+
+		// Clean up existing tween if any
+		if (this.previewTween) {
+			this.previewTween.stop();
+			this.previewTween.destroy();
+			this.previewTween = null;
+		}
+
+		// Set the panel position if different from current
+		this.panelContainer.setPosition(0, startY);
+
+		// Create a new tween
+		this.previewTween = this.tweens.add({
+			targets: this.panelContainer,
+			y: totalDistance,
+			duration: totalDuration,
+			ease: 'Linear',
+			repeat: -1,
+			repeatDelay: 0,
+			holdDelayedCalls: false,
+			yoyo: false,
+			onComplete: () => {
+				this.panelContainer.setPosition(0, 0);
+			}
+		});
+
+		return this.previewTween;
 	}
 
 	scheduleNotePlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {

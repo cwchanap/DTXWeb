@@ -8,14 +8,6 @@ const DEFAULT_SERVER_URL = 'http://localhost:5173';
 const SERVER_URL = import.meta.env.VITE_DTX_SERVER_URL || DEFAULT_SERVER_URL;
 const WEB_APP_LOGIN_URL = `${SERVER_URL}/login?redirect=desktop`;
 
-// Log the server URL in development mode
-if (import.meta.env.DEV) {
-	console.log(`Using server URL: ${SERVER_URL}`);
-	if (!import.meta.env.VITE_DTX_SERVER_URL) {
-		console.warn('VITE_DTX_SERVER_URL not found, using default:', DEFAULT_SERVER_URL);
-	}
-}
-
 export const authService = {
 	/**
 	 * Initiates the login process by opening the web app login page in browser
@@ -23,11 +15,6 @@ export const authService = {
 	login: async (): Promise<void> => {
 		try {
 			authStore.setLoading(true);
-
-			// Log the URL we're opening (in development mode)
-			if (import.meta.env.DEV) {
-				console.log(`Opening login URL: ${WEB_APP_LOGIN_URL}`);
-			}
 
 			// Use Electron's ipcRenderer to send a request to the main process
 			await window.electron.ipcRenderer.send('open-external-url', WEB_APP_LOGIN_URL);

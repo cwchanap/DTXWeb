@@ -96,12 +96,17 @@ if (!gotTheLock) {
 		function handleProtocolUrl(url: string) {
 			try {
 				const parsedUrl = new URL(url);
+
 				if (parsedUrl.hostname === 'auth-callback') {
 					// Extract token from URL query parameters
 					const token = parsedUrl.searchParams.get('token');
+
 					if (token && BrowserWindow.getAllWindows().length > 0) {
+						// Get main window
+						const mainWindow = BrowserWindow.getAllWindows()[0];
+
 						// Send the token to the renderer process
-						BrowserWindow.getAllWindows()[0].webContents.send('auth-callback', token);
+						mainWindow.webContents.send('auth-callback', token);
 					}
 				}
 			} catch (error) {

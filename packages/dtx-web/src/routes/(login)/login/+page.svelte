@@ -1,44 +1,116 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
+	import { Loader } from '@lucide/svelte';
+
+	// Get form action data which may contain error messages
+	let { form } = $props();
+
 	let email = $state('');
 	let password = $state('');
+	let isLoading = $state(false);
+	let redirectToDesktop = $state(false);
+	let isCheckingAuthState = $state(true);
+
+	// Use derived state to include server-side errors
+	let error = $derived(form?.error || '');
+
+	// Check for desktop redirect parameter
+	onMount(() => {
+		if (browser) {
+			// Check if we're redirecting from desktop app
+			const redirectParam = $page.url.searchParams.get('redirect');
+			redirectToDesktop = redirectParam === 'desktop';
+			isCheckingAuthState = false;
+		}
+	});
+
+	// Handle form submission
+	const handleSubmit = () => {
+		isLoading = true;
+		return true; // Allow the form to submit
+	};
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-gray-100">
-	<div class="w-full max-w-md space-y-6 rounded-lg bg-white p-8 shadow-md">
-		<h2 class="text-center text-2xl font-bold">Login</h2>
-		<form method="POST" action="?/login" class="space-y-6">
-			<div>
-				<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
-				<input
-					type="email"
-					name="email"
-					id="email"
-					bind:value={email}
-					required
-					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 focus:outline-hidden"
-				/>
+<div class="mt-16 flex justify-center">
+	<div class="w-full max-w-md rounded-lg bg-white p-6 shadow-md">
+		{#if isCheckingAuthState}
+			<!-- Show loading state while checking auth -->
+			<div class="flex flex-col items-center py-8">
+				<Loader size={32} class="mb-4 animate-spin text-indigo-500" />
+				<p>Checking login status...</p>
 			</div>
-			<div>
-				<label for="password" class="block text-sm font-medium text-gray-700"
-					>Password</label
+		{:else}
+			<h1 class="mb-6 text-center text-2xl font-bold">
+				{redirectToDesktop ? 'Login to Desktop App' : 'Login'}
+			</h1>
+
+			{#if error}
+				<div
+					class="mb-6 border-l-4 border-red-500 bg-red-100 p-4 text-red-700"
+					role="alert"
 				>
-				<input
-					type="password"
-					name="password"
-					id="password"
-					bind:value={password}
-					required
-					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 focus:outline-hidden"
-				/>
-			</div>
-			<div>
-				<button
-					type="submit"
-					class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-hidden"
-				>
-					Login
-				</button>
-			</div>
-		</form>
+					<p>{error}</p>
+				</div>
+			{/if}
+
+			<form action="?/login" method="POST" class="space-y-4" onsubmit={handleSubmit}>
+				<div>
+					<label for="email" class="mb-1 block text-sm font-medium text-gray-700"
+						>Email</label
+					>
+					<input
+						type="email"
+						id="email"
+						name="email"
+						bind:value={email}
+						required
+						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:ring-indigo-500 focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="password" class="mb-1 block text-sm font-medium text-gray-700"
+						>Password</label
+					>
+					<input
+						type="password"
+						id="password"
+						name="password"
+						bind:value={password}
+						required
+						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:ring-indigo-500 focus:outline-none"
+					/>
+				</div>
+
+				{#if redirectToDesktop}
+					<input type="hidden" name="redirect" value="desktop" />
+				{/if}
+
+				<div>
+					<button
+						type="submit"
+						disabled={isLoading}
+						class="w-full rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"
+					>
+						{#if isLoading}
+							<span class="flex items-center justify-center">
+								<Loader size={16} class="mr-2 animate-spin" />
+								Processing...
+							</span>
+						{:else}
+							Login
+						{/if}
+					</button>
+				</div>
+			</form>
+
+			{#if redirectToDesktop}
+				<div class="mt-6 text-center text-sm text-gray-500">
+					<p>You'll be redirected back to the desktop app after login.</p>
+				</div>
+			{/if}
+		{/if}
 	</div>
 </div>

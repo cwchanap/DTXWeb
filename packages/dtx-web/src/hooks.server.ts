@@ -68,14 +68,25 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	event.locals.session = session;
 	event.locals.user = user;
 
+	// Check for redirect parameters in the URL
+	const url = new URL(event.request.url);
+	const redirectParam = url.searchParams.get('redirect');
+
+	// Handle unauthenticated access to protected pages
 	if (!event.locals.session && event.url.pathname.startsWith('/app')) {
-		redirect(303, '/login');
+		// Pass any redirect parameter to the login page
+		const redirectUrl = redirectParam ? `/login?redirect=${redirectParam}` : '/login';
+		redirect(303, redirectUrl);
 	}
 
+	// Handle authenticated access to login page - preserve any redirect parameter
 	if (event.locals.session && event.url.pathname === '/login') {
-		redirect(303, '/app');
+		// If there's a desktop redirect parameter, preserve it
+		const redirectUrl = redirectParam === 'desktop' ? '/app?redirect=desktop' : '/app';
+		redirect(303, redirectUrl);
 	}
 
+	// Handle unauthenticated API access
 	if (!event.locals.session && event.url.pathname.startsWith('/api/simFile')) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}

@@ -11,6 +11,7 @@ export default defineConfig({
 	},
 	renderer: {
 		// @ts-ignore
-		plugins: [tailwindcss(), svelte()]
+		plugins: [tailwindcss(), svelte()],
+		envDir: '../../'
 	}
 });

@@ -1,0 +1,36 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Preferred Syntax and Patterns
+
+Utilize early returns for code readability.
+Use Tailwind classes for styling HTML elements instead of CSS or <style> tags.
+Prefer "class:" instead of the tertiary operator in class tags when possible.
+Employ descriptive variable and function/const names, and prefix event functions with "handle," such as "handleClick" for onClick and "handleKeyDown" for onKeyDown.
+Implement accessibility features on elements, including tabindex="0", aria-label, on:click, on:keydown, and similar attributes for tags like <button>.
+Use consts instead of functions, and define a type if possible.
+
+Styling
+
+Don't modify base.css import.
+Use Skeleton svelte UI component if possible. Use Tailwind CSS with Skeleton for styling if no corresponding functionality avilable in skeleton. 
+Utilize Tailwind's utility classes directly in the markup
+For complex components, consider using Tailwind's @apply directive in a scoped <style> block
+Use dynamic classes with template literals when necessary:
+svelteCopy
+<div class={`bg-blue-500 p-4 ${isActive ? 'opacity-100' : 'opacity-50'}`}></div>
+
+Imports
+
+Use aliased imports where applicable (as defined in svelte.config.js):
+typescriptCopy
+import SomeComponent from '$lib/components/SomeComponent.svelte';
+import { someUtil } from '$lib/utils';
+
+Code quality
+
+Use ESLint with the recommended Svelte and TypeScript configurations
+Implement Prettier for consistent code formatting
+Conduct regular code reviews to maintain code quality and consistency

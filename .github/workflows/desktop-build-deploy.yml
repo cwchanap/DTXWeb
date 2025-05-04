@@ -1,0 +1,161 @@
+name: Windows Desktop App Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build:
+    name: Build Windows Electron App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Windows Desktop App
+        run: |
+          cd packages/dtx-desktop
+          npm run build
+          npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p dist/artifacts
+          copy packages/dtx-desktop/release/*.exe dist/artifacts/
+          copy packages/dtx-desktop/release/latest.yml dist/artifacts/latest-win.yml
+        shell: pwsh
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-app-win
+          path: dist/artifacts/
+          retention-days: 5
+
+  deploy:
+    name: Deploy to Cloudflare R2
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-app-win
+          path: dist/artifacts
+
+      - name: Set Release Version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=$(date +'%Y%m%d%H%M%S')
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Prepare Deployment Files
+        run: |
+          mkdir -p dist/deploy
+          TAG_VERSION=${{ env.VERSION }}
+
+          # Copy and rename files with version in the name
+          for file in dist/artifacts/*; do
+            filename=$(basename "$file")
+            if [[ $filename == *.exe ]]; then
+              cp "$file" "dist/deploy/drumery-desktop-win-${TAG_VERSION}.exe"
+            elif [[ $filename == latest-win.yml ]]; then
+              cp "$file" "dist/deploy/latest-win.yml"
+            fi
+          done
+
+          # Create a latest.json file for auto-updates
+          cat > dist/deploy/latest.json << EOF
+          {
+            "version": "$TAG_VERSION",
+            "notes": "Release version $TAG_VERSION",
+            "platforms": {
+              "win64": {
+                "file": "drumery-desktop-win-${TAG_VERSION}.exe",
+                "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-win-${TAG_VERSION}.exe"
+              }
+            }
+          }
+          EOF
+
+          # List all deployment files
+          ls -la dist/deploy/
+        shell: bash
+
+      - name: Setup Node.js for Wrangler
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy to Cloudflare R2 using Wrangler
+        run: |
+          # Create temporary wrangler.toml file
+          cat > wrangler.toml << EOF
+          name = "drumery-desktop"
+
+          [[r2_buckets]]
+          binding = "MY_BUCKET"
+          bucket_name = "${{ vars.R2_BUCKET }}"
+          EOF
+
+          # Upload each file with appropriate content-type and cache-control
+          for file in dist/deploy/*; do
+            filename=$(basename "$file")
+            content_type="application/octet-stream"
+            
+            if [[ $filename == *.exe ]]; then
+              content_type="application/vnd.microsoft.portable-executable"
+            elif [[ $filename == *.yml ]] || [[ $filename == *.json ]]; then
+              content_type="application/json"
+            fi
+            
+            echo "Uploading $filename with content-type: $content_type"
+            wrangler r2 object put "${{ vars.R2_BUCKET }}/$filename" --file="$file" \
+              --content-type="$content_type" \
+              --metadata='{"cache-control":"public, max-age=86400"}'
+          done
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Create Release (for tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
+          name: Release ${{ env.VERSION }}
+          files: |
+            dist/deploy/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

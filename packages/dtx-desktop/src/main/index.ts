@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron';
+import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { URL } from 'url';
@@ -77,7 +77,7 @@ if (!gotTheLock) {
 		});
 
 		// Windows protocol handler (for when app is not running)
-		app.on('second-instance', (event, commandLine) => {
+		app.on('second-instance', (_, commandLine) => {
 			// Someone tried to run a second instance, we should focus our window.
 			if (BrowserWindow.getAllWindows().length > 0) {
 				const mainWindow = BrowserWindow.getAllWindows()[0];

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import type { SoundChip } from '$lib/chart/dtx';
+	import { SoundChip } from '$lib/chart/dtx';
 	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
 	import store from '$lib/store';
 	import type { SimFile } from '$lib/chart/simFile';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
+	import { file } from 'jszip';
 
 	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;
@@ -33,7 +34,7 @@
 		onclick={() => {
 			store.currentSoundChip.set([
 				...soundChips,
-				{ label: '', id: soundChips.length, volume: 100, position: 0, file: undefined }
+				new SoundChip('', SoundChip.length, 100, 0, file.name)
 			]);
 		}}>New Sound</button
 	>

@@ -23,7 +23,17 @@ export default defineConfig({
 		},
 		env: {
 			// Set the environment to production for testing
-			PUBLIC_SKIN_BUCKET_URL: 'http://localhost:5173/skin'
+			PUBLIC_SKIN_BUCKET_URL: 'http://localhost:5173/skin',
+			PUBLIC_SUPABASE_URL: 'http://localhost:5173',
+			PUBLIC_SUPABASE_ANON_KEY: 'my_awesome_anon_key',
+			PUBLIC_CLOUDFLARE_R2_PUBLIC_URL: 'http://localhost:5173',
+			PUBLIC_SIMFILE_BUCKET_URL: 'http://localhost:5173',
+			PUBLIC_CLOUDFARE_WORKER_URL: 'http://localhost:5173',
+			SUPABASE_PROJECT_ID: 'my_awesome_project_id',
+			CLOUDFLARE_ACCOUNT_ID: 'my_awesome_account_id',
+			CLOUDFLARE_ACCESS_KEY_ID: 'my_awsome_key_id',
+			CLOUDFLARE_ACCESS_KEY_SECRET: 'my_awsome_key_secret',
+			VITE_DTX_SERVER_URL: 'http://localhost:5173'
 		}
 	},
 	resolve: {

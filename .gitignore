@@ -12,3 +12,9 @@ sample/
 static/skin/
 
 packages/**/__mocks__
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

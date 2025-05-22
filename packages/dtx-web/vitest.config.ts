@@ -34,6 +34,9 @@ export default defineConfig({
 			CLOUDFLARE_ACCESS_KEY_ID: 'my_awsome_key_id',
 			CLOUDFLARE_ACCESS_KEY_SECRET: 'my_awsome_key_secret',
 			VITE_DTX_SERVER_URL: 'http://localhost:5173'
+		},
+		typecheck: {
+			tsconfig: './tsconfig.test.json'
 		}
 	},
 	resolve: {

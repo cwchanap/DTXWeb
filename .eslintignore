@@ -12,3 +12,7 @@ src/types/supabase.types.ts
 pnpm-lock.yaml
 package-lock.json
 yarn.lock
+
+dist/
+out/
+dist-server/

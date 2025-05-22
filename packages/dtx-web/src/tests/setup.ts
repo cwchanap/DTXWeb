@@ -16,5 +16,8 @@ Object.defineProperty(window, 'matchMedia', {
 	}))
 });
 
+// Use the global mock for Phaser
+// The moduleDirectories config in vitest.config.ts should make this work
 vi.mock('phaser');
+
 vi.mock('svelte/store');

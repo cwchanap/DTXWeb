@@ -4,14 +4,15 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - master
   workflow_dispatch: # Allows manual triggering
 
 jobs:
   build:
     name: Cross-Platform Electron Build
     runs-on: ubuntu-latest
+    container:
+      image: electronuserland/builder:wine
+      options: --user 1001
 
     steps:
       - name: Checkout Repository
@@ -26,24 +27,17 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Install Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libnotify-dev libgconf-2-4 libnss3 libxss1 libasound2 libxtst6 xvfb
-
       - name: Build Electron App for Windows
         run: |
-          cd packages/dtx-desktop
-          npm run build
-          npm run build:win
+          npm run build:win -w=dtx-desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Organize Artifacts
         run: |
           mkdir -p dist/artifacts
-          cp packages/dtx-desktop/release/*.exe dist/artifacts/
-          cp packages/dtx-desktop/release/latest.yml dist/artifacts/latest-win.yml
+          cp packages/dtx-desktop/dist/*.exe dist/artifacts/
+          cp packages/dtx-desktop/dist/latest.yml dist/artifacts/latest.yml
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -81,27 +75,16 @@ jobs:
 
       - name: Prepare Deployment Files
         run: |
-          mkdir -p dist/deploy
           TAG_VERSION=${{ env.VERSION }}
 
-          # Copy and rename files with version in the name
-          for file in dist/artifacts/*; do
-            filename=$(basename "$file")
-            if [[ $filename == *.exe ]]; then
-              cp "$file" "dist/deploy/drumery-desktop-win-${TAG_VERSION}.exe"
-            elif [[ $filename == latest-win.yml ]]; then
-              cp "$file" "dist/deploy/latest-win.yml"
-            fi
-          done
-
           # Create a latest.json file for auto-updates
-          cat > dist/deploy/latest.json << EOF
+          cat > dist/artifacts/latest.json << EOF
           {
             "version": "$TAG_VERSION",
             "notes": "Release version $TAG_VERSION",
             "platforms": {
               "win64": {
-                "file": "drumery-desktop-win-${TAG_VERSION}.exe",
+                "file": "ddtx-desktop-1.0.0-setup.exe",
                 "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-win-${TAG_VERSION}.exe"
               }
             }
@@ -109,7 +92,7 @@ jobs:
           EOF
 
           # List all deployment files
-          ls -la dist/deploy/
+          ls -la dist/artifacts/
         shell: bash
 
       - name: Setup Node.js for Wrangler
@@ -132,7 +115,7 @@ jobs:
           EOF
 
           # Upload each file with appropriate content-type and cache-control
-          for file in dist/deploy/*; do
+          for file in dist/artifacts/*; do
             filename=$(basename "$file")
             content_type="application/octet-stream"
             
@@ -144,8 +127,7 @@ jobs:
             
             echo "Uploading $filename with content-type: $content_type"
             wrangler r2 object put "${{ vars.R2_BUCKET }}/$filename" --file="$file" \
-              --content-type="$content_type" \
-              --metadata='{"cache-control":"public, max-age=86400"}'
+              --content-type="$content_type"
           done
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -160,6 +142,6 @@ jobs:
           prerelease: false
           name: Release ${{ env.VERSION }}
           files: |
-            dist/deploy/*
+            dist/artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

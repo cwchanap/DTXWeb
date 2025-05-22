@@ -10,3 +10,5 @@ node_modules
 CLAUDE.md
 sample/
 static/skin/
+
+packages/**/__mocks__

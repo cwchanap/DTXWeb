@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Versions from './components/Versions.svelte';
 	import Login from './components/Login.svelte';
+	import Workspace from './components/Workspace.svelte';
 	import { authStore } from './stores/authStore';
 	import { authService } from './services/authService';
 	import { onMount, onDestroy } from 'svelte';
@@ -47,6 +48,10 @@
 		</div>
 
 		{#if $authStore.isAuthenticated}
+			<div class="mb-10">
+				<Workspace />
+			</div>
+
 			<div class="rounded-xl bg-white p-6 shadow-md dark:bg-slate-800">
 				<div
 					class="mb-4 flex items-center gap-2 border-b border-slate-200 pb-2 dark:border-slate-700"

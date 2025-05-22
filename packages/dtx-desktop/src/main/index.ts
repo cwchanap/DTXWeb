@@ -1,7 +1,9 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron';
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { URL } from 'url';
+import fs from 'fs';
+import path from 'path';
 
 function createWindow(): void {
 	// Create the browser window.
@@ -60,6 +62,33 @@ if (!gotTheLock) {
 		// Handle external URL opening request from renderer
 		ipcMain.on('open-external-url', (_event, url) => {
 			shell.openExternal(url);
+		});
+
+		// Handle directory selection dialog
+		ipcMain.handle('select-directory', async () => {
+			const result = await dialog.showOpenDialog({
+				properties: ['openDirectory']
+			});
+			return result;
+		});
+
+		// Handle listing directories in a path
+		ipcMain.handle('list-directories', async (_event, dirPath) => {
+			try {
+				console.log('Listing directories in:', dirPath);
+				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+				// Filter only directories
+				const directories = entries
+					.filter((entry) => entry.isDirectory())
+					.map((dir) => dir.name);
+
+				console.log('Found directories:', directories);
+				return directories;
+			} catch (error) {
+				console.error('Error listing directories:', error);
+				return [];
+			}
 		});
 
 		// Register custom protocol handler (dtx://)

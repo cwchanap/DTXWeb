@@ -8,7 +8,6 @@ export default defineConfig({
 		environment: 'jsdom',
 		globals: true,
 		setupFiles: ['./src/tests/setup.ts'],
-		include: ['src/**/*.{test,spec}.{js,ts}'],
 		// Ensure we're using the client version of Svelte for testing
 		server: {
 			deps: {
@@ -34,9 +33,6 @@ export default defineConfig({
 			CLOUDFLARE_ACCESS_KEY_ID: 'my_awsome_key_id',
 			CLOUDFLARE_ACCESS_KEY_SECRET: 'my_awsome_key_secret',
 			VITE_DTX_SERVER_URL: 'http://localhost:5173'
-		},
-		typecheck: {
-			tsconfig: './tsconfig.test.json'
 		}
 	},
 	resolve: {

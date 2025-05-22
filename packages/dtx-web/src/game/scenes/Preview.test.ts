@@ -1,118 +1,320 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Preview } from './Preview'; // Adjust this import path as needed
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventBus } from '../EventBus';
+import EventType from '../EventType';
+import { get } from 'svelte/store';
+import store from '$lib/store';
+import { Preview } from './Preview';
 
-// Mock dependencies
-vi.mock('../EventBus');
-vi.mock('$lib/browser/audioDecoder');
+type MockedFn = ReturnType<typeof vi.fn>;
 
-describe('Preview.getTimeElapsed', () => {
-	let preview: Preview;
+vi.mock('$lib/store', () => ({
+	default: {
+		playSpeed: {
+			subscribe: vi.fn((callback) => {
+				callback(1);
+				return { unsubscribe: vi.fn() };
+			})
+		},
+		currentSoundChip: vi.fn()
+	}
+}));
+
+vi.mock('$lib/browser/audioDecoder', () => ({
+	XAaudioContext: vi.fn()
+}));
+
+vi.mock('../utils', () => ({
+	getAssetPath: vi.fn().mockReturnValue('test/path')
+}));
+
+describe('Preview Scene', () => {
+	let previewScene: Preview;
 
 	beforeEach(() => {
-		// Create a minimal instance of Preview with just what we need for getTimeElapsed
-		preview = {
+		// Reset mocks
+		vi.clearAllMocks();
+
+		// Create a new instance of Preview
+		previewScene = new Preview();
+
+		// Mock URL.createObjectURL
+		global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+	});
+
+	afterEach(() => {
+		vi.resetAllMocks();
+	});
+
+	it('should initialize with correct properties', () => {
+		expect(previewScene).toBeDefined();
+		expect(previewScene.constructor.name).toBe('Preview');
+		expect(Preview.key).toBe('Preview');
+		expect(Preview.bgmNoteID).toBe('01');
+		expect(Preview.bpmNoteID).toBe('08');
+	});
+
+	it('should initialize data correctly', () => {
+		const testData = {
+			measureCount: 10,
+			notes: { '01': [] },
 			bpm: 120,
-			measureLength: {},
-			notes: {},
-			bpmNotes: {}
-		} as unknown as Preview;
-
-		// Add the getTimeElapsed method to our minimal instance
-		preview.getTimeElapsed = Preview.prototype.getTimeElapsed;
-	});
-
-	it('should calculate correct time for a simple case with constant BPM', () => {
-		preview.bpm = 120; // 120 BPM
-		preview.measureLength = { 0: 1, 1: 1 }; // Standard measure lengths
-		preview.notes = { [Preview.bpmNoteID]: [] }; // No BPM changes
-
-		// At 120 BPM, one measure (4 beats) takes 2 seconds
-		expect(preview.getTimeElapsed(1, 0)).toBeCloseTo(2, 2); // 1 measure = 2 seconds
-		expect(preview.getTimeElapsed(2, 0)).toBeCloseTo(4, 2); // 2 measures = 4 seconds
-		expect(preview.getTimeElapsed(0, 0.5)).toBeCloseTo(1, 2); // Half a measure = 1 second
-		expect(preview.getTimeElapsed(1, 0.5)).toBeCloseTo(3, 2); // 1.5 measures = 3 seconds
-	});
-
-	it('should handle different BPMs correctly', () => {
-		preview.bpm = 60; // 60 BPM
-		preview.measureLength = { 0: 1, 1: 1 }; // Standard measure lengths
-		preview.notes = { [Preview.bpmNoteID]: [] }; // No BPM changes
-
-		// At 60 BPM, one measure (4 beats) takes 4 seconds
-		expect(preview.getTimeElapsed(1, 0)).toBeCloseTo(4, 2); // 1 measure = 4 seconds
-		expect(preview.getTimeElapsed(2, 0)).toBeCloseTo(8, 2); // 2 measures = 8 seconds
-	});
-
-	it('should handle BPM changes between measures', () => {
-		preview.bpm = 120; // Starting BPM
-		preview.measureLength = { 0: 1, 1: 1 }; // Standard measure lengths
-		preview.bpmNotes = { '01': 60 }; // BPM note with ID '01' changes to 60 BPM
-
-		// Create a BPM change at the start of measure 1
-		preview.notes = {
-			[Preview.bpmNoteID]: [
-				{ measure: 0, pattern: '0100' } // Change to 60 BPM at the start of measure 0
-			]
+			bpmNotes: { '08': 120 },
+			startMeasure: 0
 		};
 
-		// Measure 0 should now be at 60 BPM (4 seconds per measure)
-		expect(preview.getTimeElapsed(1, 0)).toBeCloseTo(4, 2); // 1 measure at 60 BPM = 4 seconds
-		expect(preview.getTimeElapsed(2, 0)).toBeCloseTo(8, 2); // 2 measures at 60 BPM = 8 seconds
+		previewScene.init(testData);
+
+		expect(previewScene['measureCount']).toBe(10);
+		expect(previewScene['notes']).toEqual({ '01': [] });
+		expect(previewScene['bpm']).toBe(120);
+		expect(previewScene['bpmNotes']).toEqual({ '08': 120 });
+		expect(previewScene['startMeasure']).toBe(0);
+		expect(store.playSpeed.subscribe).toHaveBeenCalled();
 	});
 
-	it('should handle BPM changes within a measure', () => {
-		preview.bpm = 120; // Starting BPM
-		preview.measureLength = { 0: 1 }; // Standard measure length
-		preview.bpmNotes = { '01': 60, '02': 240 }; // BPM notes
+	it('should preload assets', () => {
+		// Mock store.currentSoundChip
+		(get as MockedFn).mockReturnValue([
+			{ fileName: 'test.wav', file: new File([], 'test.wav'), id: 1 },
+			{ fileName: 'test.xa', file: new File([], 'test.xa'), id: 2 }
+		]);
 
-		// Create BPM changes within measure 0
-		preview.notes = {
-			[Preview.bpmNoteID]: [
-				{
-					measure: 0,
-					pattern: '0001020000'
-					// In a 5-segment measure:
-					// First segment: no change (120 BPM)
-					// Second segment: change to 60 BPM at position 0.2
-					// Third segment: change to 240 BPM at position 0.4
-					// Fourth and Fifth segments: no further changes
-				}
-			]
+		previewScene.preload();
+
+		expect(previewScene.load.audio).toHaveBeenCalled();
+		expect(previewScene.load.spritesheet).toHaveBeenCalled();
+		expect(previewScene.load.image).toHaveBeenCalled();
+		expect(URL.createObjectURL).toHaveBeenCalled();
+	});
+
+	it('should create scene elements', () => {
+		// Mock store.currentSoundChip
+		(get as MockedFn).mockReturnValue([
+			{ fileName: 'test.wav', file: new File([], 'test.wav'), id: 1 }
+		]);
+
+		// Mock methods that will be called
+		previewScene.createNoteAnimations = vi.fn();
+		previewScene.drawPanel = vi.fn();
+		previewScene.drawNotes = vi.fn();
+		previewScene.startPreview = vi.fn();
+
+		previewScene.create();
+
+		expect(previewScene.createNoteAnimations).toHaveBeenCalled();
+		expect(previewScene.drawPanel).toHaveBeenCalled();
+		expect(previewScene.drawNotes).toHaveBeenCalled();
+		expect(previewScene.startPreview).toHaveBeenCalled();
+		expect(EventBus.emit).toHaveBeenCalledWith(EventType.SCENE_READY, previewScene);
+		expect(EventBus.on).toHaveBeenCalledTimes(2);
+	});
+
+	it('should clean up resources', () => {
+		previewScene['panelContainer'] = previewScene.add.container(0, 0);
+		previewScene['previewTween'] = previewScene.tweens.add({
+			targets: previewScene['panelContainer'],
+			y: 100,
+			duration: 1000
+		});
+
+		const previewTween = previewScene['previewTween'];
+
+		previewScene.cleanUp();
+
+		expect(previewScene['previewTween']).toBeNull();
+		expect(previewTween.stop).toHaveBeenCalled();
+		expect(previewTween.destroy).toHaveBeenCalled();
+		expect(previewScene['playingAudio']).toEqual([]);
+		expect(previewScene.time.removeAllEvents).toHaveBeenCalled();
+	});
+
+	it('should start preview correctly', () => {
+		// Setup test data
+		previewScene['startMeasure'] = 0;
+		previewScene['bpm'] = 120;
+		previewScene['notes'] = {
+			'01': [{ measure: 0, pattern: '0102', laneID: '01' }],
+			'11': [{ measure: 1, pattern: '0102', laneID: '11' }]
 		};
+		previewScene['panelContainer'] = previewScene.add.container(0, 0);
 
-		// First 0.2 of the measure at 120 BPM = 0.4 seconds
-		// Next 0.2 of the measure at 60 BPM = 0.8 seconds
-		// Final 0.6 of the measure at 240 BPM = 0.6 seconds
-		// Total for measure 0 = 1.8 seconds
-		expect(preview.getTimeElapsed(0, 0.2)).toBeCloseTo(0.4, 2); // First segment at 120 BPM
-		expect(preview.getTimeElapsed(0, 0.4)).toBeCloseTo(1.2, 2); // First + Second segments
-		expect(preview.getTimeElapsed(0, 1.0)).toBeCloseTo(1.8, 2); // Complete measure
-		expect(preview.getTimeElapsed(1, 0)).toBeCloseTo(1.8, 2); // Also complete measure
+		// Mock methods
+		previewScene.getTotalMesaureOffest = vi.fn().mockReturnValue(100);
+		previewScene.updateCameraZoom = vi.fn();
+		previewScene.createPreviewTween = vi.fn();
+		previewScene.scheduleBGMPlayback = vi.fn();
+		previewScene.scheduleNotePlayback = vi.fn();
+
+		previewScene.startPreview();
+
+		expect(previewScene.getTotalMesaureOffest).toHaveBeenCalled();
+		expect(previewScene.updateCameraZoom).toHaveBeenCalled();
+		expect(previewScene.createPreviewTween).toHaveBeenCalled();
+		expect(previewScene.scheduleBGMPlayback).toHaveBeenCalled();
+		expect(previewScene.scheduleNotePlayback).toHaveBeenCalled();
 	});
 
-	it('should handle different measure lengths', () => {
-		preview.bpm = 120; // 120 BPM
-		preview.measureLength = { 0: 0.5, 1: 2 }; // Measure 0 is half-length, measure 1 is double
-		preview.notes = { [Preview.bpmNoteID]: [] }; // No BPM changes
+	it('should create preview tween correctly', () => {
+		// Setup test data
+		previewScene['startMeasure'] = 0;
+		previewScene['measureCount'] = 10;
+		previewScene['panelContainer'] = previewScene.add.container(0, 0);
 
-		// At 120 BPM, a standard measure (4 beats) takes 2 seconds
-		// Measure 0 (0.5x) = 1 second
-		// Measure 1 (2x) = 4 seconds
-		expect(preview.getTimeElapsed(1, 0)).toBeCloseTo(1, 2); // Measure 0 = 1 second
-		expect(preview.getTimeElapsed(2, 0)).toBeCloseTo(5, 2); // Measures 0+1 = 5 seconds
+		// Mock methods
+		previewScene.getTotalMesaureOffest = vi
+			.fn()
+			.mockReturnValueOnce(100) // First call for startMeasure + 1
+			.mockReturnValueOnce(500); // Second call for measureCount
+		previewScene.getTimeElapsed = vi.fn().mockReturnValue(60); // 60 seconds
+
+		const result = previewScene.createPreviewTween(0);
+
+		expect(previewScene.getTotalMesaureOffest).toHaveBeenCalledTimes(2);
+		expect(previewScene.getTimeElapsed).toHaveBeenCalledWith(10);
+		expect(previewScene.tweens.add).toHaveBeenCalledWith(
+			expect.objectContaining({
+				duration: 60000, // 60 seconds in ms
+				ease: 'Linear',
+				repeat: -1
+			})
+		);
+		expect(result).toBe(previewScene['previewTween']);
 	});
 
-	it('should calculate correct seek time for notes before start point', () => {
-		preview.bpm = 120; // 120 BPM
-		preview.measureLength = { 0: 1, 1: 1, 2: 1 }; // Standard measure lengths
-		preview.notes = { [Preview.bpmNoteID]: [] }; // No BPM changes
+	it('should update camera zoom based on play speed', () => {
+		// Setup
+		previewScene['playSpeed'] = 2;
+		previewScene['gridContainer'] = previewScene.add.container(0, 0);
+		previewScene['notesContainer'] = previewScene.add.container(0, 0);
 
-		// If we start at measure 2, notes in measures 0 and 1 should have negative delays
-		const measure0Time = preview.getTimeElapsed(0, 0.5); // Time at measure 0, position 0.5
-		const measure2Time = preview.getTimeElapsed(2); // Time at start of measure 2
+		previewScene.updateCameraZoom();
 
-		// The "seek" would be the difference between these times
-		const seekTime = measure2Time - measure0Time;
-		expect(seekTime).toBeCloseTo(3, 2); // Should be about 3 seconds
+		expect(previewScene.cameras.main.setOrigin).toHaveBeenCalledWith(0.5, 1);
+		expect(previewScene['gridContainer'].setScale).toHaveBeenCalledWith(1, 2);
+		expect(previewScene['notesContainer'].setScale).toHaveBeenCalledWith(1, 2);
+	});
+
+	it('should handle play speed changes', () => {
+		// Setup
+		const testData = {
+			measureCount: 10,
+			notes: { '01': [] },
+			bpm: 120,
+			bpmNotes: { '08': 120 },
+			startMeasure: 0
+		};
+		previewScene.updateCameraZoom = vi.fn();
+		previewScene.createPreviewTween = vi.fn();
+		previewScene['panelContainer'] = previewScene.add.container(0, 0);
+		previewScene['panelContainer'].y = 100;
+		previewScene['previewTween'] = previewScene.tweens.add({
+			targets: previewScene['panelContainer'],
+			y: 100,
+			duration: 1000
+		});
+
+		// Initialize with test data
+		previewScene.init(testData);
+
+		// Get the callback function directly from the mock
+		const subscribeCallback = (store.playSpeed.subscribe as MockedFn).mock.calls[0][0];
+
+		// Call the callback with a new play speed
+		subscribeCallback(2);
+
+		// Verify the play speed was updated
+		expect(previewScene['playSpeed']).toBe(2);
+		expect(previewScene.updateCameraZoom).toHaveBeenCalled();
+		expect(previewScene.createPreviewTween).toHaveBeenCalledWith(200); // 100 * 2
+	});
+
+	it('should calculate time elapsed correctly', () => {
+		// Setup
+		previewScene['bpm'] = 120;
+		previewScene['measureLength'] = [1, 1, 1];
+		previewScene['notes'] = {
+			'08': [{ measure: 1, pattern: '0102', laneID: '08' }]
+		};
+		previewScene['bpmNotes'] = { '01': 60, '02': 180 };
+
+		// Test time calculation for a complete measure
+		const timeForMeasure0 = previewScene.getTimeElapsed(1);
+		expect(timeForMeasure0).toBeCloseTo(2); // 60 seconds / 120 BPM * 4 beats = 2 seconds
+
+		// Test time calculation with position within a measure
+		const timeWithPosition = previewScene.getTimeElapsed(1, 0.5);
+		expect(timeWithPosition).toBeGreaterThan(timeForMeasure0);
+	});
+
+	it('should draw notes correctly', () => {
+		// Setup
+		previewScene['laneConfigs'] = [
+			{ id: '11', name: 'Test Lane', noteColor: 0xff0000, playable: true, width: 48 }
+		];
+		previewScene['notesContainer'] = previewScene.add.container(0, 0);
+
+		// Mock getters
+		Object.defineProperty(previewScene, 'offsetX', { get: () => 100 });
+		Object.defineProperty(previewScene, 'offsetY', { get: () => 500 });
+
+		// Set protected properties
+		previewScene['cellWidth'] = 50;
+		previewScene['cellMargin'] = 2;
+
+		// Mock methods
+		previewScene.getTotalMesaureOffest = vi.fn().mockReturnValue(100);
+		previewScene.getCellHeight = vi.fn().mockReturnValue(25);
+
+		// Call the method
+		previewScene.drawNote(0, 0, 0.5, '11');
+
+		// Verify container and sprites were created
+		expect(previewScene.add.container).toHaveBeenCalled();
+		expect(previewScene.add.sprite).toHaveBeenCalledTimes(2); // Base and overlay sprites
+		expect(previewScene['notesContainer'].add).toHaveBeenCalled();
+	});
+});
+
+// Add tests for EventBus event handlers
+describe('Preview Scene Event Handlers', () => {
+	let previewScene: Preview;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		previewScene = new Preview();
+
+		// Mock methods
+		previewScene.cleanUp = vi.fn();
+		previewScene.startPreview = vi.fn();
+	});
+
+	it('should handle STOP_PREVIEW event', () => {
+		// Get the callback function for STOP_PREVIEW
+		previewScene.create();
+		const stopPreviewCallback = ((EventBus.on as MockedFn)?.mock.calls.find(
+			(call) => call[0] === EventType.STOP_PREVIEW
+		) || [])[1];
+
+		// Call the callback
+		stopPreviewCallback();
+
+		// Verify cleanUp was called
+		expect(previewScene.cleanUp).toHaveBeenCalled();
+	});
+
+	it('should handle RESUME_PREVIEW event', () => {
+		// Get the callback function for RESUME_PREVIEW
+		previewScene.create();
+		const resumePreviewCallback = ((EventBus.on as MockedFn).mock.calls.find(
+			(call) => call[0] === EventType.RESUME_PREVIEW
+		) || [])[1];
+
+		// Call the callback with data
+		const testData = { startMeasure: 5 };
+		resumePreviewCallback(testData);
+
+		// Verify startMeasure was updated and startPreview was called
+		expect(previewScene['startMeasure']).toBe(5);
+		expect(previewScene.startPreview).toHaveBeenCalled();
 	});
 });

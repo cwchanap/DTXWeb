@@ -16,7 +16,15 @@ export default defineConfig({
 			}
 		},
 		// Exclude playwright tests
-		exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**']
+		exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+		deps: {
+			// Tell Vitest to look for modules in the root directory as well
+			moduleDirectories: ['node_modules', path.resolve(__dirname, '../..')]
+		},
+		env: {
+			// Set the environment to production for testing
+			PUBLIC_SKIN_BUCKET_URL: 'http://localhost:5173/skin'
+		}
 	},
 	resolve: {
 		alias: {

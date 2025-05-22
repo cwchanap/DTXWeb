@@ -8,7 +8,7 @@
 		"prepare": "husky || true"
 	},
 	"lint-staged": {
-		"*": "prettier --write ."
+		"*": "npm run format"
 	},
 	"devDependencies": {
 		"@types/eslint": "^8.56.0",

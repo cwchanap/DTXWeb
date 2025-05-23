@@ -3,7 +3,6 @@ import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { URL } from 'url';
 import fs from 'fs';
-import path from 'path';
 
 function createWindow(): void {
 	// Create the browser window.

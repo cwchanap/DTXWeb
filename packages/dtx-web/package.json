@@ -10,13 +10,13 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"gen-types": "npx supabase gen types --lang=typescript --project-id 'hdnwvpusmxrfrfjayogr' --schema public > src/types/supabase.types.ts",
 		"test": "vitest --run",
-		"prepare": "ln -sf ../../.env .env && ln -sf ../../__mocks__ __mocks__"
+		"prepare": "ln -sf ../../.env .env"
 	},
 	"devDependencies": {
 		"@iconify/svelte": "^4.2.0",
 		"@lucide/svelte": "^0.501.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
-		"@skeletonlabs/skeleton-svelte": "^1.2.1",
+		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/adapter-vercel": "^5.7.0",
 		"@sveltejs/kit": "^2.20.7",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",

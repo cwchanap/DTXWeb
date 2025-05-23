@@ -1,12 +1,11 @@
 <script lang="ts">
-	import Versions from './components/Versions.svelte';
 	import Login from './components/Login.svelte';
 	import Workspace from './components/Workspace.svelte';
 	import Navbar from './components/Navbar.svelte';
+	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
 	import { authService } from './services/authService';
 	import { onMount, onDestroy } from 'svelte';
-	import { Info } from '@lucide/svelte';
 
 	// Try to restore the session on app start
 	onMount(() => {
@@ -39,16 +38,11 @@
 			<div class="mb-10">
 				<Workspace />
 			</div>
+		{/if}
 
-			<div class="rounded-xl bg-white p-6 shadow-md dark:bg-slate-800">
-				<div
-					class="mb-4 flex items-center gap-2 border-b border-slate-200 pb-2 dark:border-slate-700"
-				>
-					<Info size={20} class="text-slate-500" />
-					<h2 class="text-xl font-semibold">Application Info</h2>
-				</div>
-				<Versions />
-			</div>
+		<!-- Add the versions modal component -->
+		{#if $authStore.isAuthenticated}
+			<VersionsModal />
 		{/if}
 	</div>
 </main>

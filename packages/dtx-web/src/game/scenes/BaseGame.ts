@@ -2,13 +2,6 @@ import { LaneMeasureNote } from '$lib/chart/note';
 import { Scene, GameObjects } from 'phaser';
 import { type LaneConfig } from '../interface';
 
-export interface Note {
-	measure: number;
-	laneID: string;
-	pattern: string;
-	laneMeasureNote?: LaneMeasureNote;
-}
-
 export abstract class BaseGame extends Scene {
 	static measureLengthNoteID = '02';
 	protected cellsPerMeasure = 16;
@@ -22,7 +15,7 @@ export abstract class BaseGame extends Scene {
 	protected footerContainer!: GameObjects.Container;
 	protected abstract measureLength: number[];
 	protected abstract measureCount: number;
-	protected abstract notes: Record<string, Note[]>;
+	protected abstract notes: Record<string, LaneMeasureNote[]>;
 
 	get totalWidth() {
 		return this.laneConfigs.reduce((acc) => acc + this.cellWidth, 0);
@@ -235,14 +228,14 @@ export abstract class BaseGame extends Scene {
 				const laneIndex = this.laneConfigs.findIndex((lane) => lane.id === note.laneID);
 
 				if (laneIndex === -1) return;
-				const measureLength = this.measureLength[note.measure] || 1;
-				const laneMeasureNote = new LaneMeasureNote(
-					note.measure,
-					note.pattern,
-					measureLength
-				);
+				// Set the measureLength for the note if it's not already set
+				if (note.measureLength === 1) {
+					note.measureLength = this.measureLength[note.measure] || 1;
+					// Make sure notes are parsed with the correct measureLength
+					note.parseNote();
+				}
 
-				laneMeasureNote.notes.forEach((noteChip) => {
+				note.notes.forEach((noteChip: { noteID: string; position: number }) => {
 					this.drawNote(note.measure, laneIndex, noteChip.position, noteChip.noteID);
 				});
 			});

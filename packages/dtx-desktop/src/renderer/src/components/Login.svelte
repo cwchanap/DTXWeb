@@ -1,14 +1,10 @@
 <script lang="ts">
 	import { authStore } from '../stores/authStore';
 	import { authService } from '../services/authService';
-	import { Loader, LogOut, LogIn, User, AlertCircle } from '@lucide/svelte';
+	import { Loader, LogIn, User, AlertCircle } from '@lucide/svelte';
 
 	const handleLogin = async () => {
 		await authService.login();
-	};
-
-	const handleLogout = () => {
-		authService.logout();
 	};
 </script>
 
@@ -21,31 +17,6 @@
 			<p class="mt-4 text-slate-600 dark:text-slate-400">
 				Connecting to authentication service...
 			</p>
-		</div>
-	{:else if $authStore.isAuthenticated}
-		<div class="flex flex-col items-center py-8">
-			<div
-				class="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900"
-			>
-				<User size={40} class="text-blue-500 dark:text-blue-300" />
-			</div>
-			<div class="mb-6 text-center">
-				<h3 class="mb-1 text-xl font-semibold">
-					Welcome, {$authStore.user?.name || 'User'}
-				</h3>
-				<p class="text-sm text-slate-600 dark:text-slate-400">{$authStore.user?.email}</p>
-			</div>
-			<button
-				class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 px-6
-				py-2.5 font-medium text-white shadow-md transition
-				duration-150 ease-in-out hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-				on:click={handleLogout}
-				tabindex="0"
-				aria-label="Logout"
-			>
-				<LogOut size={20} />
-				Sign Out
-			</button>
 		</div>
 	{:else}
 		<div class="flex w-full max-w-md flex-col items-center py-8">
@@ -82,7 +53,7 @@
 				class="flex h-12 w-64 items-center justify-center gap-2 rounded-lg
 				bg-gradient-to-r from-blue-500 to-indigo-600 font-medium text-white shadow-md transition
 				duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-				on:click={handleLogin}
+				onclick={handleLogin}
 				tabindex="0"
 				aria-label="Login"
 			>

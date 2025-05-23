@@ -11,8 +11,6 @@ CLAUDE.md
 sample/
 static/skin/
 
-packages/**/__mocks__
-
 # Playwright
 /test-results/
 /playwright-report/

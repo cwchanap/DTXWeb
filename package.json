@@ -34,8 +34,5 @@
 		"packages/worker",
 		"packages/dtx-desktop",
 		"packages/common"
-	],
-	"optionalDependencies": {
-		"@rollup/rollup-linux-x64-gnu": "^4.41.0"
-	}
+	]
 }

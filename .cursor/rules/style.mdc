@@ -25,7 +25,7 @@ svelteCopy
 Imports
 
 Use aliased imports where applicable (as defined in svelte.config.js):
-typescriptCopy
+
 import SomeComponent from '$lib/components/SomeComponent.svelte';
 import { someUtil } from '$lib/utils';
 

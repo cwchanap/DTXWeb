@@ -31,6 +31,9 @@ const GameObjects = {
 		setScale: ReturnType<typeof vi.fn>;
 		getAll: ReturnType<typeof vi.fn>;
 		setName: ReturnType<typeof vi.fn>;
+		getByName: ReturnType<typeof vi.fn>;
+		list: unknown[];
+		y: number;
 
 		constructor() {
 			this.add = vi.fn();
@@ -40,6 +43,9 @@ const GameObjects = {
 			this.setScale = vi.fn();
 			this.getAll = vi.fn().mockReturnValue([]);
 			this.setName = vi.fn();
+			this.getByName = vi.fn();
+			this.list = [];
+			this.y = 0;
 		}
 	},
 	Graphics: class MockGraphics {
@@ -50,6 +56,10 @@ const GameObjects = {
 		lineTo: ReturnType<typeof vi.fn>;
 		strokePath: ReturnType<typeof vi.fn>;
 		createGeometryMask: ReturnType<typeof vi.fn>;
+		clear: ReturnType<typeof vi.fn>;
+		strokeRect: ReturnType<typeof vi.fn>;
+		setName: ReturnType<typeof vi.fn>;
+		name: string;
 
 		constructor() {
 			this.fillStyle = vi.fn().mockReturnThis();
@@ -59,6 +69,10 @@ const GameObjects = {
 			this.lineTo = vi.fn().mockReturnThis();
 			this.strokePath = vi.fn().mockReturnThis();
 			this.createGeometryMask = vi.fn().mockReturnValue({});
+			this.clear = vi.fn().mockReturnThis();
+			this.strokeRect = vi.fn().mockReturnThis();
+			this.setName = vi.fn().mockReturnThis();
+			this.name = '';
 		}
 	},
 	Sprite: class MockSprite {
@@ -79,6 +93,27 @@ const GameObjects = {
 		constructor() {
 			this.setOrigin = vi.fn().mockReturnThis();
 			this.setAlpha = vi.fn().mockReturnThis();
+		}
+	},
+	Rectangle: class MockRectangle {
+		setPosition: ReturnType<typeof vi.fn>;
+		setSize: ReturnType<typeof vi.fn>;
+		setVisible: ReturnType<typeof vi.fn>;
+		setStrokeStyle: ReturnType<typeof vi.fn>;
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+
+		constructor() {
+			this.setPosition = vi.fn().mockReturnThis();
+			this.setSize = vi.fn().mockReturnThis();
+			this.setVisible = vi.fn().mockReturnThis();
+			this.setStrokeStyle = vi.fn().mockReturnThis();
+			this.x = 0;
+			this.y = 0;
+			this.width = 0;
+			this.height = 0;
 		}
 	}
 };
@@ -132,18 +167,23 @@ const Scene = class MockScene {
 		Object.assign(this, config);
 	}
 
-	sound = {
-		add: vi.fn().mockReturnValue(new Sound.WebAudioSound()),
-		get: vi.fn()
+	input = {
+		keyboard: {
+			createCursorKeys: vi.fn(),
+			on: vi.fn(),
+			off: vi.fn()
+		},
+		on: vi.fn(),
+		off: vi.fn(),
+		setDefaultCursor: vi.fn()
 	};
-
-	input = { keyboard: { createCursorKeys: vi.fn() } };
 	add = {
 		gameObject: vi.fn().mockReturnValue(new GameObjects.GameObject()),
 		container: vi.fn().mockReturnValue(new GameObjects.Container()),
 		graphics: vi.fn().mockReturnValue(new GameObjects.Graphics()),
 		sprite: vi.fn().mockReturnValue(new GameObjects.Sprite()),
-		text: vi.fn().mockReturnValue(new GameObjects.Text())
+		text: vi.fn().mockReturnValue(new GameObjects.Text()),
+		rectangle: vi.fn().mockReturnValue(new GameObjects.Rectangle())
 	};
 
 	make = {
@@ -200,6 +240,21 @@ const Scene = class MockScene {
 		getAll: vi.fn().mockReturnValue([])
 	};
 
+	scene = {
+		pause: vi.fn(),
+		setVisible: vi.fn(),
+		isPaused: vi.fn().mockReturnValue(false),
+		resume: vi.fn(),
+		launch: vi.fn(),
+		restart: vi.fn()
+	};
+
+	sound = {
+		add: vi.fn().mockReturnValue(new Sound.WebAudioSound()),
+		get: vi.fn(),
+		removeAll: vi.fn()
+	};
+
 	// Common Scene methods
 	init() {}
 	preload() {}
@@ -207,5 +262,41 @@ const Scene = class MockScene {
 	update() {}
 };
 
-export { Scene, GameObjects, Sound, Tweens, Events };
-export default { Scene, GameObjects, Sound, Tweens, Events };
+// Mock Phaser.Geom
+const Geom = {
+	Rectangle: class MockGeomRectangle {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+
+		constructor(x = 0, y = 0, width = 0, height = 0) {
+			this.x = x;
+			this.y = y;
+			this.width = width;
+			this.height = height;
+		}
+
+		static Overlaps(rectA, rectB): boolean {
+			// Simple overlap detection for testing
+			return !(
+				rectA.x + rectA.width < rectB.x ||
+				rectB.x + rectB.width < rectA.x ||
+				rectA.y + rectA.height < rectB.y ||
+				rectB.y + rectB.height < rectA.y
+			);
+		}
+	}
+};
+
+// Mock global Phaser object
+const Phaser = {
+	GameObjects,
+	Geom
+};
+
+// Make Phaser available globally for tests
+globalThis.Phaser = Phaser;
+
+export { Scene, GameObjects, Sound, Tweens, Events, Geom };
+export default { Scene, GameObjects, Sound, Tweens, Events, Geom };

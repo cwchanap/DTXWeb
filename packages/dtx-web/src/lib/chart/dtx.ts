@@ -1,4 +1,5 @@
 import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+import { LaneMeasureNote } from './note';
 
 export class SoundChip {
 	label: string;
@@ -112,18 +113,19 @@ export class DTXFile {
 		return bpmNotes;
 	}
 
-	parseNotes() {
+	parseNotes(): LaneMeasureNote[] {
 		const noteLines = this.lines.filter((line) => /^#\d+/.test(line));
 		if (noteLines.length > 0) {
 			const notes = noteLines.map((line) => {
 				const [header, pattern] = line.split(': ', 2);
 				const measure = parseInt(header.slice(1, 4));
 				const laneID = header.slice(4, 6);
-				return { measure, laneID, pattern };
+				return new LaneMeasureNote(measure, laneID, pattern);
 			});
 			return notes;
 		} else {
 			console.log('No note line found.');
+			return [];
 		}
 	}
 

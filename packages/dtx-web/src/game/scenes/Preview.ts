@@ -6,13 +6,13 @@ import store from '$lib/store';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
 import { LaneMeasureNote } from '$lib/chart/note';
 import type { SoundChip } from '$lib/chart/dtx';
-import { BaseGame, type Note } from './BaseGame';
+import { BaseGame } from './BaseGame';
 import { AssetName, type LaneConfig } from '../interface';
 import { getAssetPath } from '../utils';
 
 interface Data {
 	measureCount: number;
-	notes: Record<string, Note[]>;
+	notes: Record<string, LaneMeasureNote[]>;
 	bpm: number;
 	bpmNotes: Record<string, number>;
 	startMeasure: number;
@@ -31,7 +31,7 @@ export class Preview extends BaseGame {
 	private playingAudio: Phaser.Sound.WebAudioSound[] = [];
 	private previewTween: Phaser.Tweens.Tween | null = null;
 	protected measureLength: number[] = [];
-	protected notes: Record<string, Note[]> = {};
+	protected notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 
 	// Additional containers for separating elements with different scaling
@@ -273,13 +273,12 @@ export class Preview extends BaseGame {
 				// Calculate time for each segment within the measure
 				let lastPosition = 0;
 				bpmNotes.forEach((bpmNote) => {
-					//Use LaneMeasureNote to get the position of the note
-					const laneMeasureNote = new LaneMeasureNote(
-						bpmNote.measure,
-						bpmNote.pattern,
-						measureLength
-					);
-					laneMeasureNote.notes.forEach((note) => {
+					// Set the measureLength for the note
+					if (bpmNote.measureLength === 1) {
+						bpmNote.measureLength = measureLength;
+						bpmNote.parseNote();
+					}
+					bpmNote.notes.forEach((note: { noteID: string; position: number }) => {
 						const position = note.position;
 						elapsedTime +=
 							(60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
@@ -305,12 +304,12 @@ export class Preview extends BaseGame {
 				// Calculate time for each segment within the measure up to noteChipPosition
 				let lastPosition = 0;
 				bpmNotes.forEach((bpmNote) => {
-					const laneMeasureNote = new LaneMeasureNote(
-						bpmNote.measure,
-						bpmNote.pattern,
-						measureLength
-					);
-					laneMeasureNote.notes.forEach((note) => {
+					// Set the measureLength for the note
+					if (bpmNote.measureLength === 1) {
+						bpmNote.measureLength = measureLength;
+						bpmNote.parseNote();
+					}
+					bpmNote.notes.forEach((note: { noteID: string; position: number }) => {
 						const position = note.position;
 						if (position > noteChipPosition) {
 							// Past the noteChipPosition, stop calculating
@@ -351,11 +350,14 @@ export class Preview extends BaseGame {
 		this.updateCameraZoom();
 	}
 
-	scheduleBGMPlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {
-		const measureLength = this.measureLength[note.measure] || 1;
-		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
+	scheduleBGMPlayback(note: LaneMeasureNote, secondsPerMeasure: number, startMeasure: number) {
+		// Set the measureLength for the note if it's not already set
+		if (note.measureLength === 1) {
+			note.measureLength = this.measureLength[note.measure] || 1;
+			note.parseNote();
+		}
 
-		laneMeasureNote.notes.forEach((noteChip) => {
+		note.notes.forEach((noteChip: { noteID: string; position: number }) => {
 			// Calculate the absolute time of this note from the beginning
 			const noteAbsoluteTime = this.getTimeElapsed(note.measure, noteChip.position);
 
@@ -428,10 +430,14 @@ export class Preview extends BaseGame {
 		return this.previewTween;
 	}
 
-	scheduleNotePlayback(note: Note, secondsPerMeasure: number, startMeasure: number) {
-		const measureLength = this.measureLength[note.measure] || 1;
-		const laneMeasureNote = new LaneMeasureNote(note.measure, note.pattern, measureLength);
-		laneMeasureNote.notes.forEach((noteChip) => {
+	scheduleNotePlayback(note: LaneMeasureNote, secondsPerMeasure: number, startMeasure: number) {
+		// Set the measureLength for the note if it's not already set
+		if (note.measureLength === 1) {
+			note.measureLength = this.measureLength[note.measure] || 1;
+			note.parseNote();
+		}
+
+		note.notes.forEach((noteChip: { noteID: string; position: number }) => {
 			// Calculate the absolute time of this note from the beginning
 			const noteAbsoluteTime = this.getTimeElapsed(note.measure, noteChip.position);
 
@@ -657,7 +663,7 @@ export class Preview extends BaseGame {
 		// In Preview mode, only show animated notes for playable lanes with defined width
 		if (!laneConfig.playable || !laneConfig.width) {
 			// Skip drawing non-playable or non-animated notes
-			return;
+			return false;
 		}
 
 		const x = this.offsetX + this.cellWidth * laneIndex + this.cellWidth / 2;
@@ -684,6 +690,7 @@ export class Preview extends BaseGame {
 			this.children.getAll('name', noteKey).forEach((note) => {
 				note.destroy();
 			});
+			return false;
 		} else {
 			// Create a container for the note sprites
 			const container = this.add.container(x, y);
@@ -708,6 +715,7 @@ export class Preview extends BaseGame {
 
 			// Add the container to the notes container instead of panel container
 			this.notesContainer.add(container);
+			return true;
 		}
 	}
 

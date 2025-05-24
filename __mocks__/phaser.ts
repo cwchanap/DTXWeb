@@ -132,12 +132,15 @@ const Scene = class MockScene {
 		Object.assign(this, config);
 	}
 
-	sound = {
-		add: vi.fn().mockReturnValue(new Sound.WebAudioSound()),
-		get: vi.fn()
+	input = {
+		keyboard: {
+			createCursorKeys: vi.fn(),
+			on: vi.fn(),
+			off: vi.fn()
+		},
+		on: vi.fn(),
+		off: vi.fn()
 	};
-
-	input = { keyboard: { createCursorKeys: vi.fn() } };
 	add = {
 		gameObject: vi.fn().mockReturnValue(new GameObjects.GameObject()),
 		container: vi.fn().mockReturnValue(new GameObjects.Container()),
@@ -198,6 +201,21 @@ const Scene = class MockScene {
 	children = {
 		getByName: vi.fn(),
 		getAll: vi.fn().mockReturnValue([])
+	};
+
+	scene = {
+		pause: vi.fn(),
+		setVisible: vi.fn(),
+		isPaused: vi.fn().mockReturnValue(false),
+		resume: vi.fn(),
+		launch: vi.fn(),
+		restart: vi.fn()
+	};
+
+	sound = {
+		add: vi.fn().mockReturnValue(new Sound.WebAudioSound()),
+		get: vi.fn(),
+		removeAll: vi.fn()
 	};
 
 	// Common Scene methods

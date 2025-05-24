@@ -263,15 +263,10 @@ export abstract class BaseGame extends Scene {
 		const height = this.noteSize - this.cellMargin * 2;
 
 		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
-		const existingNote = this.children.getByName(noteKey);
+		const existingNote = this.panelContainer.getByName(noteKey);
 
-		if (existingNote) {
-			// If the note already exists, remove it
-			this.children.getAll('name', noteKey).forEach((note) => {
-				note.destroy();
-			});
-		} else {
-			// Otherwise, create a new note
+		if (!existingNote) {
+			// If the note already exists, do nothing. Otherwise, create a new note
 			const graphics = this.add.graphics();
 			graphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1);
 			graphics.fillRect(x, y, width, height);
@@ -287,6 +282,9 @@ export abstract class BaseGame extends Scene {
 			text.setOrigin(0.5, 0.5);
 			text.setName(noteKey);
 			this.panelContainer.add(text);
+			return true;
+		} else {
+			return false;
 		}
 	}
 }

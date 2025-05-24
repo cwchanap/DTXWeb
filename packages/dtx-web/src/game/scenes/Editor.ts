@@ -17,6 +17,7 @@ export class Editor extends BaseGame {
 
 	private isEditing = false;
 	private isDragging = false;
+	private contextMenuHandler: ((e: Event) => void) | null = null;
 	protected notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -31,6 +32,9 @@ export class Editor extends BaseGame {
 
 	create() {
 		console.log('Create Editor Scene');
+
+		// Disable browser context menu on the game canvas
+		this.disableBrowserContextMenu();
 
 		this.drawPanel();
 		this.drawNotes();
@@ -49,7 +53,13 @@ export class Editor extends BaseGame {
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
-			if (!this.isEditing) return;
+			if (!this.isEditing) {
+				this.isDragging = true;
+				startY = pointer.y;
+				startScrollY = this.panelContainer.y;
+				return;
+			}
+
 			const x = pointer.x - this.offsetX;
 
 			// Calculate the absolute Y position by accounting for the container's position (scrolling)
@@ -73,24 +83,47 @@ export class Editor extends BaseGame {
 				// Calculate the position within the measure
 				const cellOffset = (cellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
 
-				// Draw the note in the clicked cell with correct parameters
-				// The drawNote method expects (measure, laneIndex, cellOffset, noteId)
-				this.drawNote(measure, laneIndex, cellOffset, '00');
-
-				if (!(measure in this.notes)) {
-					this.notes[measure] = [];
+				// Check if it's a right-click (pointer.rightButtonDown())
+				if (pointer.rightButtonDown()) {
+					// Check if there's a note at this position
+					const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
+					const existingNote = this.panelContainer.getByName(noteKey);
+					if (existingNote) {
+						// Remove the note from the display
+						this.panelContainer.getAll('name', noteKey).forEach((note) => {
+							note.destroy();
+						});
+						// Remove the note from this.notes
+						const laneId = this.laneConfigs[laneIndex].id;
+						if (measure in this.notes) {
+							// Find and remove the note with matching measure, laneID, and position
+							this.notes[measure] = this.notes[measure].filter(
+								(note) =>
+									!(
+										note.laneID === laneId &&
+										note.notes.some(
+											(n) => Math.abs(n.position - cellOffset) < 0.001
+										)
+									)
+							);
+						}
+					}
+				} else {
+					// Left-click: Add a note (existing behavior)
+					// Draw the note in the clicked cell with correct parameters
+					// The drawNote method expects (measure, laneIndex, cellOffset, noteId)
+					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '00');
+					if (noteAdded) {
+						if (!(measure in this.notes)) {
+							this.notes[measure] = [];
+						}
+						this.notes[measure].push(
+							new LaneMeasureNote(measure, this.laneConfigs[laneIndex].id, '00')
+						);
+					}
 				}
-				this.notes[measure].push(
-					new LaneMeasureNote(measure, this.laneConfigs[laneIndex].id, '00')
-				);
 			}
-		});
-
-		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-			if (this.isEditing) return;
-			this.isDragging = true;
-			startY = pointer.y;
-			startScrollY = this.panelContainer.y;
+			console.log(this.notes);
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
@@ -191,6 +224,11 @@ export class Editor extends BaseGame {
 		// Update logic if needed
 	}
 
+	shutdown() {
+		// Clean up context menu event listener when scene shuts down
+		this.enableBrowserContextMenu();
+	}
+
 	restart(data: Data = {}) {
 		console.log('Restart Scene, data', data);
 		EventBus.off(EventType.MEASURE_UPDATE);
@@ -203,6 +241,8 @@ export class Editor extends BaseGame {
 		this.input.off('pointerup');
 		this.input.off('wheel');
 		this.input.keyboard?.off('keydown-Q');
+		// Re-enable browser context menu when restarting
+		this.enableBrowserContextMenu();
 		this.scene.restart(data);
 	}
 
@@ -214,5 +254,30 @@ export class Editor extends BaseGame {
 			})
 			.setOrigin(0.5);
 		this.footerContainer.add(text);
+	}
+
+	private disableBrowserContextMenu() {
+		// Get the game canvas element
+		const gameContainer = document.getElementById('game-container');
+		if (gameContainer) {
+			// Create the context menu handler
+			this.contextMenuHandler = (e: Event) => {
+				e.preventDefault();
+				return false;
+			};
+
+			// Add event listener to prevent context menu
+			gameContainer.addEventListener('contextmenu', this.contextMenuHandler);
+		}
+	}
+
+	private enableBrowserContextMenu() {
+		// Get the game canvas element
+		const gameContainer = document.getElementById('game-container');
+		if (gameContainer && this.contextMenuHandler) {
+			// Remove the event listener
+			gameContainer.removeEventListener('contextmenu', this.contextMenuHandler);
+			this.contextMenuHandler = null;
+		}
 	}
 }

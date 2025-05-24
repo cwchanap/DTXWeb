@@ -133,8 +133,26 @@ describe('Preview Scene', () => {
 		previewScene['startMeasure'] = 0;
 		previewScene['bpm'] = 120;
 		previewScene['notes'] = {
-			'01': [{ measure: 0, pattern: '0102', laneID: '01' }],
-			'11': [{ measure: 1, pattern: '0102', laneID: '11' }]
+			'01': [
+				{
+					measure: 0,
+					pattern: '0102',
+					laneID: '01',
+					measureLength: 1,
+					notes: [],
+					parseNote: vi.fn()
+				}
+			],
+			'11': [
+				{
+					measure: 1,
+					pattern: '0102',
+					laneID: '11',
+					measureLength: 1,
+					notes: [],
+					parseNote: vi.fn()
+				}
+			]
 		};
 		previewScene['panelContainer'] = previewScene.add.container(0, 0);
 
@@ -232,8 +250,22 @@ describe('Preview Scene', () => {
 		// Setup
 		previewScene['bpm'] = 120;
 		previewScene['measureLength'] = [1, 1, 1];
+
+		// Create proper LaneMeasureNote instances with parsed notes
+		const bpmNote = {
+			measure: 1,
+			pattern: '0102',
+			laneID: '08',
+			measureLength: 1,
+			notes: [
+				{ noteID: '01', position: 0 },
+				{ noteID: '02', position: 0.5 }
+			],
+			parseNote: vi.fn()
+		};
+
 		previewScene['notes'] = {
-			'08': [{ measure: 1, pattern: '0102', laneID: '08' }]
+			'08': [bpmNote]
 		};
 		previewScene['bpmNotes'] = { '01': 60, '02': 180 };
 

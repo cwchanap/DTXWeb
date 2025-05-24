@@ -3,6 +3,8 @@ import { Editor } from './Editor';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 
+type MockedFn = ReturnType<typeof vi.fn>;
+
 // Mock the dependencies
 vi.mock('../EventBus');
 vi.mock('$lib/store', () => ({
@@ -128,5 +130,62 @@ describe('Editor Scene', () => {
 		editorScene.create();
 
 		expect(EventBus.emit).toHaveBeenCalledWith(EventType.SCENE_READY, editorScene);
+	});
+
+	it('should update cursor when toggling editing mode', () => {
+		// Setup
+		editorScene.create();
+		const setDefaultCursorSpy = vi.spyOn(editorScene.input, 'setDefaultCursor');
+
+		// Simulate Q key press to toggle editing mode
+		const keyboardOnMock = editorScene.input.keyboard?.on as MockedFn;
+		const keyboardHandler = keyboardOnMock.mock.calls.find(
+			(call) => call[0] === 'keydown-Q'
+		)?.[1];
+
+		expect(keyboardHandler).toBeDefined();
+
+		// Toggle editing mode on
+		keyboardHandler?.();
+		expect(setDefaultCursorSpy).toHaveBeenCalled();
+
+		// Toggle editing mode off
+		keyboardHandler?.();
+		expect(setDefaultCursorSpy).toHaveBeenCalledWith('default');
+
+		setDefaultCursorSpy.mockRestore();
+	});
+
+	it('should update cursor color when hovering over different lanes in editing mode', () => {
+		// Setup
+		editorScene.create();
+		editorScene['isEditing'] = true; // Set editing mode
+		const setDefaultCursorSpy = vi.spyOn(editorScene.input, 'setDefaultCursor');
+
+		// Find the pointermove handler
+		const inputOnMock = editorScene.input.on as MockedFn;
+		const pointermoveHandler = inputOnMock.mock.calls.find(
+			(call) => call[0] === 'pointermove'
+		)?.[1];
+
+		expect(pointermoveHandler).toBeDefined();
+
+		// Mock pointer over different lanes
+		const mockPointer = {
+			x: 100, // This should correspond to a specific lane
+			y: 300
+		};
+
+		// Mock the offsetX getter
+		Object.defineProperty(editorScene, 'offsetX', { get: () => 50 });
+		editorScene['cellWidth'] = 50;
+
+		// Simulate pointer move
+		pointermoveHandler?.(mockPointer);
+
+		// Should have called setDefaultCursor with a custom cursor
+		expect(setDefaultCursorSpy).toHaveBeenCalled();
+
+		setDefaultCursorSpy.mockRestore();
 	});
 });

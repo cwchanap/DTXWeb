@@ -663,7 +663,7 @@ export class Preview extends BaseGame {
 		// In Preview mode, only show animated notes for playable lanes with defined width
 		if (!laneConfig.playable || !laneConfig.width) {
 			// Skip drawing non-playable or non-animated notes
-			return;
+			return false;
 		}
 
 		const x = this.offsetX + this.cellWidth * laneIndex + this.cellWidth / 2;
@@ -690,6 +690,7 @@ export class Preview extends BaseGame {
 			this.children.getAll('name', noteKey).forEach((note) => {
 				note.destroy();
 			});
+			return false;
 		} else {
 			// Create a container for the note sprites
 			const container = this.add.container(x, y);
@@ -714,6 +715,7 @@ export class Preview extends BaseGame {
 
 			// Add the container to the notes container instead of panel container
 			this.notesContainer.add(container);
+			return true;
 		}
 	}
 

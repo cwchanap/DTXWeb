@@ -139,7 +139,8 @@ const Scene = class MockScene {
 			off: vi.fn()
 		},
 		on: vi.fn(),
-		off: vi.fn()
+		off: vi.fn(),
+		setDefaultCursor: vi.fn()
 	};
 	add = {
 		gameObject: vi.fn().mockReturnValue(new GameObjects.GameObject()),

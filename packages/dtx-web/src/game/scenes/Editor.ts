@@ -18,6 +18,7 @@ export class Editor extends BaseGame {
 	private isEditing = false;
 	private isDragging = false;
 	private contextMenuHandler: ((e: Event) => void) | null = null;
+	private currentLaneIndex = -1;
 	protected notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -123,7 +124,6 @@ export class Editor extends BaseGame {
 					}
 				}
 			}
-			console.log(this.notes);
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
@@ -131,6 +131,19 @@ export class Editor extends BaseGame {
 				const deltaY = 3 * (pointer.y - startY);
 				const newY = startScrollY + deltaY;
 				this.panelContainer.y = clampY(newY);
+			} else if (this.isEditing) {
+				// Update cursor color based on hovered lane
+				const x = pointer.x - this.offsetX;
+				const laneIndex = Math.floor(x / this.cellWidth);
+
+				// Only update if we're hovering over a valid lane and it's different from current
+				if (
+					laneIndex >= 0 &&
+					laneIndex < this.laneConfigs.length &&
+					laneIndex !== this.currentLaneIndex
+				) {
+					this.updateCursorForLane(laneIndex);
+				}
 			}
 		});
 
@@ -155,6 +168,7 @@ export class Editor extends BaseGame {
 
 		this.input.keyboard?.on('keydown-Q', () => {
 			this.isEditing = !this.isEditing;
+			this.updateCursorForEditingMode();
 		});
 
 		EventBus.emit(EventType.SCENE_READY, this);
@@ -225,6 +239,8 @@ export class Editor extends BaseGame {
 	}
 
 	shutdown() {
+		// Reset cursor to default when shutting down
+		this.input.setDefaultCursor('default');
 		// Clean up context menu event listener when scene shuts down
 		this.enableBrowserContextMenu();
 	}
@@ -241,6 +257,8 @@ export class Editor extends BaseGame {
 		this.input.off('pointerup');
 		this.input.off('wheel');
 		this.input.keyboard?.off('keydown-Q');
+		// Reset cursor to default when restarting
+		this.input.setDefaultCursor('default');
 		// Re-enable browser context menu when restarting
 		this.enableBrowserContextMenu();
 		this.scene.restart(data);
@@ -278,6 +296,68 @@ export class Editor extends BaseGame {
 			// Remove the event listener
 			gameContainer.removeEventListener('contextmenu', this.contextMenuHandler);
 			this.contextMenuHandler = null;
+		}
+	}
+
+	private createNoteCursor(laneIndex: number): string {
+		try {
+			// Use the same dimensions as the actual notes
+			const noteWidth = this.cellWidth - this.cellMargin * 2; // 46 pixels
+			const noteHeight = this.noteSize - this.cellMargin * 2; // 21 pixels
+
+			// Create a canvas to draw the note cursor
+			const canvas = document.createElement('canvas');
+			canvas.width = noteWidth;
+			canvas.height = noteHeight;
+			const ctx = canvas.getContext('2d');
+
+			if (!ctx) return 'default';
+
+			// Get the note color for this lane
+			const noteColor = this.laneConfigs[laneIndex]?.noteColor || 0xffffff;
+
+			// Convert hex color to RGB
+			const r = (noteColor >> 16) & 255;
+			const g = (noteColor >> 8) & 255;
+			const b = noteColor & 255;
+
+			// Draw a rectangle that matches the exact note appearance
+			ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+			ctx.fillRect(0, 0, noteWidth, noteHeight);
+
+			// Add a white border to make it more visible
+			ctx.strokeStyle = 'white';
+			ctx.lineWidth = 1;
+			ctx.strokeRect(0, 0, noteWidth, noteHeight);
+
+			// Convert canvas to data URL
+			const dataUrl = canvas.toDataURL();
+			// Center the cursor hotspot
+			return `url(${dataUrl}) ${noteWidth / 2} ${noteHeight / 2}, auto`;
+		} catch (error) {
+			// Fallback for test environments or browsers without canvas support
+			console.warn('Canvas not supported, using default cursor');
+			return 'crosshair';
+		}
+	}
+
+	private updateCursorForEditingMode() {
+		if (this.isEditing) {
+			// Set cursor based on current lane or default note cursor
+			const laneIndex = this.currentLaneIndex >= 0 ? this.currentLaneIndex : 0;
+			const noteCursor = this.createNoteCursor(laneIndex);
+			this.input.setDefaultCursor(noteCursor);
+		} else {
+			// Reset to default cursor when not editing
+			this.input.setDefaultCursor('default');
+		}
+	}
+
+	private updateCursorForLane(laneIndex: number) {
+		if (this.isEditing && laneIndex >= 0 && laneIndex < this.laneConfigs.length) {
+			this.currentLaneIndex = laneIndex;
+			const noteCursor = this.createNoteCursor(laneIndex);
+			this.input.setDefaultCursor(noteCursor);
 		}
 	}
 }

@@ -61,7 +61,18 @@ export class Editor extends BaseGame {
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
 			if (!this.isEditing) {
-				// Start selection instead of scrolling
+				// Check if user clicked on an existing note for single selection
+				const clickedNote = this.getClickedNote(pointer);
+
+				if (clickedNote) {
+					// Single note selection
+					this.clearSelection();
+					this.selectedNotes.add(clickedNote.name);
+					this.highlightSelectedNote(clickedNote);
+					return;
+				}
+
+				// Start drag selection if no note was clicked
 				this.isSelecting = true;
 				this.selectionStartX = pointer.x;
 				this.selectionStartY = pointer.y;
@@ -494,6 +505,36 @@ export class Editor extends BaseGame {
 		const adjustedY = y + this.panelContainer.y;
 
 		return new Phaser.Geom.Rectangle(x, adjustedY, width, height);
+	}
+
+	private getClickedNote(pointer: Phaser.Input.Pointer): Phaser.GameObjects.Graphics | null {
+		// Check all notes to see if the pointer clicked on one
+		let clickedNote: Phaser.GameObjects.Graphics | null = null;
+
+		this.panelContainer.list.forEach((child) => {
+			if (
+				child.name &&
+				child.name.startsWith('note-') &&
+				child instanceof Phaser.GameObjects.Graphics
+			) {
+				// Calculate note bounds
+				const noteBounds = this.calculateNoteBounds(child.name);
+
+				if (noteBounds) {
+					// Check if the pointer is within the note bounds
+					if (
+						pointer.x >= noteBounds.x &&
+						pointer.x <= noteBounds.x + noteBounds.width &&
+						pointer.y >= noteBounds.y &&
+						pointer.y <= noteBounds.y + noteBounds.height
+					) {
+						clickedNote = child;
+					}
+				}
+			}
+		});
+
+		return clickedNote;
 	}
 
 	private highlightSelectedNote(noteGraphics: Phaser.GameObjects.Graphics) {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Editor } from './Editor';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
+import { GameObjects } from 'phaser';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 
@@ -269,5 +270,87 @@ describe('Editor Scene', () => {
 		// Should have ended selection
 		expect(editorScene['isSelecting']).toBe(false);
 		expect(editorScene['selectionRectangle'].setVisible).toHaveBeenCalledWith(false);
+	});
+
+	it('should select single note when clicking on it in non-editing mode', () => {
+		const editorScene = new Editor();
+		editorScene.create();
+
+		// Create a proper mock note that will pass the instanceof check
+		const mockNote = {
+			name: 'note-1-0-0.5',
+			// Add the methods that Graphics objects need
+			lineStyle: vi.fn().mockReturnThis(),
+			strokeRect: vi.fn().mockReturnThis(),
+			constructor: { name: 'Graphics' }
+		} as unknown as Phaser.GameObjects.Graphics;
+		// Make it pass the instanceof check
+		Object.setPrototypeOf(mockNote, GameObjects.Graphics.prototype);
+
+		editorScene['panelContainer'].list = [mockNote];
+
+		// Mock the calculateNoteBounds method to return bounds for our test note
+		const calculateNoteBoundsSpy = vi.spyOn(editorScene as never, 'calculateNoteBounds');
+		calculateNoteBoundsSpy.mockReturnValue({
+			x: 100,
+			y: 200,
+			width: 46,
+			height: 21
+		});
+
+		// Get the pointerdown handler
+		const inputOnMock = editorScene.input.on as MockedFn;
+		const pointerdownHandler = inputOnMock.mock.calls.find(
+			(call) => call[0] === 'pointerdown'
+		)?.[1];
+
+		expect(pointerdownHandler).toBeDefined();
+
+		// Mock pointer clicking on the note
+		const mockPointer = {
+			x: 120, // Within note bounds (100-146)
+			y: 210, // Within note bounds (200-221)
+			rightButtonDown: vi.fn().mockReturnValue(false)
+		};
+
+		// Simulate pointer down on the note in non-editing mode
+		pointerdownHandler?.(mockPointer);
+
+		// Should have selected the note
+		expect(editorScene['selectedNotes'].has('note-1-0-0.5')).toBe(true);
+		expect(editorScene['isSelecting']).toBe(false); // Should not start drag selection
+
+		calculateNoteBoundsSpy.mockRestore();
+	});
+
+	it('should start drag selection when clicking on empty area in non-editing mode', () => {
+		const editorScene = new Editor();
+		editorScene.create();
+
+		// Mock empty panelContainer
+		editorScene['panelContainer'].list = [];
+
+		// Get the pointerdown handler
+		const inputOnMock = editorScene.input.on as MockedFn;
+		const pointerdownHandler = inputOnMock.mock.calls.find(
+			(call) => call[0] === 'pointerdown'
+		)?.[1];
+
+		expect(pointerdownHandler).toBeDefined();
+
+		// Mock pointer clicking on empty area
+		const mockPointer = {
+			x: 300,
+			y: 400,
+			rightButtonDown: vi.fn().mockReturnValue(false)
+		};
+
+		// Simulate pointer down on empty area in non-editing mode
+		pointerdownHandler?.(mockPointer);
+
+		// Should have started drag selection
+		expect(editorScene['isSelecting']).toBe(true);
+		expect(editorScene['selectionStartX']).toBe(300);
+		expect(editorScene['selectionStartY']).toBe(400);
 	});
 });

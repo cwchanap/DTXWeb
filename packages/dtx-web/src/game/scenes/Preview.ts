@@ -226,17 +226,11 @@ export class Preview extends BaseGame {
 	}
 
 	startPreview() {
-		const targetY =
-			this.getTotalMesaureOffest(this.startMeasure) * this.playSpeed + this.bottomMargin; // Target Y position for the nearest measure
-
-		// Set the panel to the starting position
-		this.panelContainer.setPosition(0, targetY);
-
 		// Update camera zoom based on current play speed
 		this.updateCameraZoom();
 
 		// Create a new preview tween starting from the beginning (0 progress)
-		this.createPreviewTween(targetY);
+		this.createPreviewTween();
 
 		const secondsPerMeasure = (60 * 4) / this.bpm;
 
@@ -390,17 +384,15 @@ export class Preview extends BaseGame {
 	 * Creates a tween animation for preview scrolling
 	 * @param startY - The starting Y position of the panel
 	 */
-	createPreviewTween(startY: number) {
+	createPreviewTween(startY: number | undefined = undefined) {
 		// Calculate target distances
-		const targetY =
-			this.getTotalMesaureOffest(this.startMeasure + 1) * this.playSpeed + this.bottomMargin;
-		const totalDistance =
-			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed + startY;
-
-		console.log('targetY', targetY, 'startY', startY);
+		const targetY = this.getTotalMesaureOffest(this.startMeasure) * this.playSpeed;
+		const totalDistance = this.getTotalMesaureOffest(this.measureCount) * this.playSpeed;
 
 		// Calculate total duration based on BPM
-		const totalDuration = this.getTimeElapsed(this.measureCount) * 1000;
+		const totalDuration =
+			(this.getTimeElapsed(this.measureCount) - this.getTimeElapsed(this.startMeasure)) *
+			1000;
 
 		// Clean up existing tween if any
 		if (this.previewTween) {
@@ -410,7 +402,7 @@ export class Preview extends BaseGame {
 		}
 
 		// Set the panel position if different from current
-		this.panelContainer.setPosition(0, startY);
+		this.panelContainer.setPosition(0, startY || targetY);
 
 		// Create a new tween
 		this.previewTween = this.tweens.add({
@@ -421,10 +413,7 @@ export class Preview extends BaseGame {
 			repeat: -1,
 			repeatDelay: 0,
 			holdDelayedCalls: false,
-			yoyo: false,
-			onComplete: () => {
-				this.panelContainer.setPosition(0, 0);
-			}
+			yoyo: false
 		});
 
 		return this.previewTween;

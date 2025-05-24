@@ -16,7 +16,11 @@ export class Editor extends BaseGame {
 	public static key = 'Editor';
 
 	private isEditing = false;
-	private isDragging = false;
+	private isSelecting = false;
+	private selectionStartX = 0;
+	private selectionStartY = 0;
+	private selectionRectangle!: Phaser.GameObjects.Rectangle;
+	private selectedNotes: Set<string> = new Set();
 	private contextMenuHandler: ((e: Event) => void) | null = null;
 	private currentLaneIndex = -1;
 	protected notes: Record<string, LaneMeasureNote[]> = {};
@@ -40,10 +44,12 @@ export class Editor extends BaseGame {
 		this.drawPanel();
 		this.drawNotes();
 
-		// Enable drag scrolling
-		let startY = 0;
-		let startScrollY = 0;
+		// Initialize selection rectangle (initially hidden)
+		this.selectionRectangle = this.add.rectangle(0, 0, 0, 0, 0x1d7196, 0.3);
+		this.selectionRectangle.setStrokeStyle(2, 0x1d7196, 1);
+		this.selectionRectangle.setVisible(false);
 
+		// Helper function for clamping Y position (still needed for wheel scrolling)
 		const clampY = (newY: number) => {
 			return Phaser.Math.Clamp(
 				newY,
@@ -55,9 +61,18 @@ export class Editor extends BaseGame {
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
 			if (!this.isEditing) {
-				this.isDragging = true;
-				startY = pointer.y;
-				startScrollY = this.panelContainer.y;
+				// Start selection instead of scrolling
+				this.isSelecting = true;
+				this.selectionStartX = pointer.x;
+				this.selectionStartY = pointer.y;
+
+				// Clear previous selection
+				this.clearSelection();
+
+				// Position and show selection rectangle
+				this.selectionRectangle.setPosition(pointer.x, pointer.y);
+				this.selectionRectangle.setSize(0, 0);
+				this.selectionRectangle.setVisible(true);
 				return;
 			}
 
@@ -127,10 +142,11 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-			if (this.isDragging) {
-				const deltaY = 3 * (pointer.y - startY);
-				const newY = startScrollY + deltaY;
-				this.panelContainer.y = clampY(newY);
+			if (this.isSelecting && !this.isEditing) {
+				// Update selection rectangle size and position
+				this.updateSelectionRectangle(pointer);
+				// Find and highlight selected notes
+				this.updateSelectedNotes();
 			} else if (this.isEditing) {
 				// Update cursor color based on hovered lane
 				const x = pointer.x - this.offsetX;
@@ -148,7 +164,12 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointerup', () => {
-			this.isDragging = false;
+			if (this.isSelecting) {
+				// Finalize selection
+				this.isSelecting = false;
+				this.selectionRectangle.setVisible(false);
+				// Keep selected notes highlighted for future actions
+			}
 		});
 
 		this.input.on(
@@ -358,6 +379,140 @@ export class Editor extends BaseGame {
 			this.currentLaneIndex = laneIndex;
 			const noteCursor = this.createNoteCursor(laneIndex);
 			this.input.setDefaultCursor(noteCursor);
+		}
+	}
+
+	private clearSelection() {
+		// Clear visual highlighting of previously selected notes
+		this.selectedNotes.forEach((noteKey) => {
+			const noteGraphics = this.panelContainer.getByName(noteKey);
+			if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
+				// Reset to original color by redrawing the note
+				const parts = noteKey.split('-');
+				const laneIndex = parseInt(parts[1]);
+				const measure = parseInt(parts[2]);
+				const cellOffset = parseFloat(parts[3]);
+
+				if (laneIndex >= 0 && laneIndex < this.laneConfigs.length) {
+					// Calculate original note position
+					const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
+					const yOffset = this.getTotalMesaureOffest(measure);
+					const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
+
+					let cellsYOffset = 0;
+					for (let i = 0; i < cellPosition; i++) {
+						cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
+					}
+
+					const y =
+						this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
+					const width = this.cellWidth - this.cellMargin * 2;
+					const height = this.noteSize - this.cellMargin * 2;
+
+					// Clear and redraw the note
+					noteGraphics.clear();
+					noteGraphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1);
+					noteGraphics.fillRect(x, y, width, height);
+				}
+			}
+		});
+		this.selectedNotes.clear();
+	}
+
+	private updateSelectionRectangle(pointer: Phaser.Input.Pointer) {
+		// Calculate the width and height from start position to current position
+		const width = pointer.x - this.selectionStartX;
+		const height = pointer.y - this.selectionStartY;
+
+		// Update the rectangle size
+		this.selectionRectangle.setSize(Math.abs(width), Math.abs(height));
+
+		// Update position to handle reverse dragging
+		const x = width < 0 ? pointer.x : this.selectionStartX;
+		const y = height < 0 ? pointer.y : this.selectionStartY;
+		this.selectionRectangle.setPosition(x + Math.abs(width) / 2, y + Math.abs(height) / 2);
+	}
+
+	private updateSelectedNotes() {
+		// Clear previous selection highlighting
+		this.clearSelection();
+
+		// Create a rectangle for overlap detection
+		const width = Math.abs(this.selectionRectangle.width);
+		const height = Math.abs(this.selectionRectangle.height);
+		const x = this.selectionRectangle.x - width / 2;
+		const y = this.selectionRectangle.y - height / 2;
+
+		const selectionRect = new Phaser.Geom.Rectangle(x, y, width, height);
+
+		// Find all notes that overlap with the selection rectangle
+		this.panelContainer.list.forEach((child) => {
+			if (
+				child.name &&
+				child.name.startsWith('note-') &&
+				child instanceof Phaser.GameObjects.Graphics
+			) {
+				// Calculate note bounds manually based on how notes are drawn
+				const noteBounds = this.calculateNoteBounds(child.name);
+
+				// Check if the note overlaps with the selection rectangle
+				if (noteBounds && Phaser.Geom.Rectangle.Overlaps(selectionRect, noteBounds)) {
+					// Add to selection
+					this.selectedNotes.add(child.name);
+
+					// Highlight the selected note
+					this.highlightSelectedNote(child);
+				}
+			}
+		});
+	}
+
+	private calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
+		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
+		const parts = noteKey.split('-');
+		if (parts.length !== 4) return null;
+
+		const laneIndex = parseInt(parts[1]);
+		const measure = parseInt(parts[2]);
+		const cellOffset = parseFloat(parts[3]);
+
+		// Calculate note position using the same logic as drawNote
+		const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
+		const yOffset = this.getTotalMesaureOffest(measure);
+		const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
+
+		let cellsYOffset = 0;
+		for (let i = 0; i < cellPosition; i++) {
+			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
+		}
+
+		const y = this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
+		const width = this.cellWidth - this.cellMargin * 2;
+		const height = this.noteSize - this.cellMargin * 2;
+
+		// Account for panelContainer position (scrolling)
+		const adjustedY = y + this.panelContainer.y;
+
+		return new Phaser.Geom.Rectangle(x, adjustedY, width, height);
+	}
+
+	private highlightSelectedNote(noteGraphics: Phaser.GameObjects.Graphics) {
+		// Calculate the note bounds to draw the highlight border
+		const bounds = this.calculateNoteBounds(noteGraphics.name);
+		if (bounds) {
+			// Draw a yellow border around the note
+			noteGraphics.lineStyle(3, 0xffff00, 1);
+			// Use the original note position (without panelContainer adjustment for drawing)
+			const originalBounds = this.calculateNoteBounds(noteGraphics.name);
+			if (originalBounds) {
+				const adjustedY = originalBounds.y - this.panelContainer.y;
+				noteGraphics.strokeRect(
+					originalBounds.x,
+					adjustedY,
+					originalBounds.width,
+					originalBounds.height
+				);
+			}
 		}
 	}
 }

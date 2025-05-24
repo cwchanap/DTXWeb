@@ -188,4 +188,86 @@ describe('Editor Scene', () => {
 
 		setDefaultCursorSpy.mockRestore();
 	});
+
+	it('should start selection when dragging in non-editing mode', () => {
+		const editorScene = new Editor();
+		editorScene.create();
+
+		// Get the pointerdown handler
+		const inputOnMock = editorScene.input.on as MockedFn;
+		const pointerdownHandler = inputOnMock.mock.calls.find(
+			(call) => call[0] === 'pointerdown'
+		)?.[1];
+
+		expect(pointerdownHandler).toBeDefined();
+
+		// Mock pointer for non-editing mode
+		const mockPointer = {
+			x: 100,
+			y: 200,
+			rightButtonDown: vi.fn().mockReturnValue(false)
+		};
+
+		// Simulate pointer down in non-editing mode (isEditing = false)
+		pointerdownHandler?.(mockPointer);
+
+		// Should have started selection
+		expect(editorScene['isSelecting']).toBe(true);
+		expect(editorScene['selectionStartX']).toBe(100);
+		expect(editorScene['selectionStartY']).toBe(200);
+	});
+
+	it('should update selection rectangle during drag', () => {
+		const editorScene = new Editor();
+		editorScene.create();
+
+		// Start selection first
+		editorScene['isSelecting'] = true;
+		editorScene['selectionStartX'] = 100;
+		editorScene['selectionStartY'] = 200;
+
+		// Get the pointermove handler
+		const inputOnMock = editorScene.input.on as MockedFn;
+		const pointermoveHandler = inputOnMock.mock.calls.find(
+			(call) => call[0] === 'pointermove'
+		)?.[1];
+
+		expect(pointermoveHandler).toBeDefined();
+
+		// Mock pointer move
+		const mockPointer = {
+			x: 150,
+			y: 250
+		};
+
+		// Simulate pointer move during selection
+		pointermoveHandler?.(mockPointer);
+
+		// Should have updated selection rectangle
+		expect(editorScene['selectionRectangle'].setSize).toHaveBeenCalled();
+		expect(editorScene['selectionRectangle'].setPosition).toHaveBeenCalled();
+	});
+
+	it('should end selection on pointer up', () => {
+		const editorScene = new Editor();
+		editorScene.create();
+
+		// Start selection first
+		editorScene['isSelecting'] = true;
+
+		// Get the pointerup handler
+		const inputOnMock = editorScene.input.on as MockedFn;
+		const pointerupHandler = inputOnMock.mock.calls.find(
+			(call) => call[0] === 'pointerup'
+		)?.[1];
+
+		expect(pointerupHandler).toBeDefined();
+
+		// Simulate pointer up
+		pointerupHandler?.();
+
+		// Should have ended selection
+		expect(editorScene['isSelecting']).toBe(false);
+		expect(editorScene['selectionRectangle'].setVisible).toHaveBeenCalledWith(false);
+	});
 });

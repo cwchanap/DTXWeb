@@ -62,7 +62,10 @@ export class Preview extends BaseGame {
 			// Update tween if it exists
 			if (this.previewTween) {
 				// Use our consolidated method to recreate the tween with current position and progress
-				this.createPreviewTween((this.panelContainer.y / oldPlaySpeed) * value);
+				const cameraScaleOffset = this.cameras.main.height * (oldPlaySpeed - 1);
+				this.createPreviewTween(
+					((this.panelContainer.y + cameraScaleOffset) / oldPlaySpeed) * value
+				);
 			}
 		});
 	}
@@ -145,8 +148,7 @@ export class Preview extends BaseGame {
 
 		// Create panel container
 		this.panelContainer = this.add.container(0, 0);
-		const scrollableHeight = this.laneHeight + this.bottomMargin;
-		this.panelContainer.setSize(this.scale.width, scrollableHeight);
+		this.panelContainer.setSize(this.scale.width, this.laneHeight);
 
 		// Set up the container hierarchy
 		this.panelContainer.add(this.gridContainer);
@@ -386,8 +388,10 @@ export class Preview extends BaseGame {
 	 */
 	createPreviewTween(startY: number | undefined = undefined) {
 		// Calculate target distances
+		const cameraScaleOffset = this.cameras.main.height * (this.playSpeed - 1);
 		const targetY = this.getTotalMesaureOffest(this.startMeasure) * this.playSpeed;
-		const totalDistance = this.getTotalMesaureOffest(this.measureCount) * this.playSpeed;
+		const totalDistance =
+			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed - cameraScaleOffset;
 
 		// Calculate total duration based on BPM
 		const totalDuration =
@@ -402,7 +406,7 @@ export class Preview extends BaseGame {
 		}
 
 		// Set the panel position if different from current
-		this.panelContainer.setPosition(0, startY || targetY);
+		this.panelContainer.setPosition(0, startY || targetY - cameraScaleOffset);
 
 		// Create a new tween
 		this.previewTween = this.tweens.add({
@@ -626,8 +630,6 @@ export class Preview extends BaseGame {
 	}
 
 	updateCameraZoom() {
-		this.cameras.main.setOrigin(0.5, 1);
-
 		// Apply scale to grid container only
 		if (this.gridContainer) {
 			this.gridContainer.setScale(1, this.playSpeed);

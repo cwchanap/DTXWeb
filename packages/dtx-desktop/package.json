@@ -17,7 +17,8 @@
 		"build:win": "npm run build && electron-builder --win",
 		"build:mac": "npm run build && electron-builder --mac",
 		"build:linux": "npm run build && electron-builder --linux",
-		"prepare": "ln -sf ../../.env .env"
+		"prepare": "ln -sf ../../.env .env",
+		"test": "vitest --run"
 	},
 	"dependencies": {
 		"@electron-toolkit/preload": "^3.0.2",
@@ -33,13 +34,16 @@
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
 		"@tailwindcss/vite": "^4.1.4",
+		"@testing-library/jest-dom": "^6.6.3",
 		"electron": "35.2.0",
 		"electron-builder": "^26.0.12",
 		"electron-vite": "^3.1.0",
+		"jsdom": "^26.1.0",
 		"svelte": "^5.28.1",
 		"svelte-check": "^4.1.6",
 		"tailwindcss": "^4.1.4",
 		"typescript": "^5.8.3",
-		"vite": "^6.3.2"
+		"vite": "^6.3.2",
+		"vitest": "^3.1.4"
 	}
 }

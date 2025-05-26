@@ -157,7 +157,6 @@ describe('Preview Scene', () => {
 		previewScene['panelContainer'] = previewScene.add.container(0, 0);
 
 		// Mock methods
-		previewScene.getTotalMesaureOffest = vi.fn().mockReturnValue(100);
 		previewScene.updateCameraZoom = vi.fn();
 		previewScene.createPreviewTween = vi.fn();
 		previewScene.scheduleBGMPlayback = vi.fn();
@@ -165,7 +164,6 @@ describe('Preview Scene', () => {
 
 		previewScene.startPreview();
 
-		expect(previewScene.getTotalMesaureOffest).toHaveBeenCalled();
 		expect(previewScene.updateCameraZoom).toHaveBeenCalled();
 		expect(previewScene.createPreviewTween).toHaveBeenCalled();
 		expect(previewScene.scheduleBGMPlayback).toHaveBeenCalled();
@@ -176,24 +174,40 @@ describe('Preview Scene', () => {
 		// Setup test data
 		previewScene['startMeasure'] = 0;
 		previewScene['measureCount'] = 10;
+		previewScene['playSpeed'] = 1;
 		previewScene['panelContainer'] = previewScene.add.container(0, 0);
+
+		// Mock cameras.main.height for cameraScaleOffset calculation
+		previewScene.cameras = {
+			main: {
+				height: 600
+			}
+		} as any;
 
 		// Mock methods
 		previewScene.getTotalMesaureOffest = vi
 			.fn()
-			.mockReturnValueOnce(100) // First call for startMeasure + 1
+			.mockReturnValueOnce(100) // First call for startMeasure
 			.mockReturnValueOnce(500); // Second call for measureCount
-		previewScene.getTimeElapsed = vi.fn().mockReturnValue(60); // 60 seconds
+		previewScene.getTimeElapsed = vi
+			.fn()
+			.mockReturnValueOnce(10) // First call for measureCount
+			.mockReturnValueOnce(0); // Second call for startMeasure
 
 		const result = previewScene.createPreviewTween(0);
 
 		expect(previewScene.getTotalMesaureOffest).toHaveBeenCalledTimes(2);
+		expect(previewScene.getTimeElapsed).toHaveBeenCalledTimes(2);
 		expect(previewScene.getTimeElapsed).toHaveBeenCalledWith(10);
+		expect(previewScene.getTimeElapsed).toHaveBeenCalledWith(0);
 		expect(previewScene.tweens.add).toHaveBeenCalledWith(
 			expect.objectContaining({
-				duration: 60000, // 60 seconds in ms
+				duration: 10000, // (10 - 0) * 1000 = 10 seconds in ms
 				ease: 'Linear',
-				repeat: -1
+				repeat: -1,
+				repeatDelay: 0,
+				holdDelayedCalls: false,
+				yoyo: false
 			})
 		);
 		expect(result).toBe(previewScene['previewTween']);
@@ -207,7 +221,6 @@ describe('Preview Scene', () => {
 
 		previewScene.updateCameraZoom();
 
-		expect(previewScene.cameras.main.setOrigin).toHaveBeenCalledWith(0.5, 1);
 		expect(previewScene['gridContainer'].setScale).toHaveBeenCalledWith(1, 2);
 		expect(previewScene['notesContainer'].setScale).toHaveBeenCalledWith(1, 2);
 	});

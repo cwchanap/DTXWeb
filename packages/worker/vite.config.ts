@@ -8,10 +8,8 @@ import path from 'path';
 export default defineConfig(({ command }) => {
 	const plugins: PluginOption[] = [];
 	if (command === 'serve') {
-		//@ts-expect-error vite plugin
 		plugins.push(ssrHotReload(), cloudflare());
 	} else {
-		//@ts-expect-error vite plugin
 		plugins.push(build({ outputDir: 'dist-server' }));
 	}
 	return {

@@ -74,7 +74,9 @@ describe('ChartListItem Component Logic', () => {
 	// Mock functions for props
 	const mockTogglePublishChart = vi.fn().mockResolvedValue(undefined);
 	const mockGetPreviewUrl = vi.fn().mockImplementation((url) => `https://example.com/${url}`);
-	const mockGetSoundPreviewUrl = vi.fn().mockImplementation((url) => (url ? `https://example.com/${url}` : null));
+	const mockGetSoundPreviewUrl = vi
+		.fn()
+		.mockImplementation((url) => (url ? `https://example.com/${url}` : null));
 	const mockOnFileDelete = vi.fn();
 
 	beforeEach(() => {

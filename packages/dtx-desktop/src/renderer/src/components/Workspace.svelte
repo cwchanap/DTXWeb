@@ -1,18 +1,24 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { workspaceStore } from '../stores/workspaceStore';
+	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { Folder, FolderOpen, Loader, RefreshCw, X } from '@lucide/svelte';
+	import { Folder, FolderOpen, Loader, RefreshCw, X, FolderTree } from '@lucide/svelte';
+	import WorkspaceTree from './WorkspaceTree.svelte';
+	import SubWorkspaceItem from './SubWorkspaceItem.svelte';
 
 	let isLoading = $state(false);
 	let workspacePath = $state('');
-	let folders = $state<string[]>([]);
+	let currentSubWorkspace = $state<string | null>(null);
+	let subWorkspaces = $state<string[]>([]);
+	let treeStructure = $state<TreeNode[]>([]);
 	let error = $state('');
 
 	// Subscribe to the workspace store
 	const unsubscribe = workspaceStore.subscribe((state) => {
 		workspacePath = state.path || '';
-		folders = state.folders;
+		currentSubWorkspace = state.currentSubWorkspace;
+		subWorkspaces = state.subWorkspaces;
+		treeStructure = state.treeStructure;
 		isLoading = state.isLoading;
 		error = state.error || '';
 	});
@@ -22,9 +28,10 @@
 		await workspaceService.selectWorkspace();
 	};
 
-	// Handle refreshing the workspace folders
+	// Handle refreshing the workspace
 	const handleRefreshWorkspace = async () => {
-		await workspaceService.loadWorkspaceFolders();
+		await workspaceService.loadSubWorkspaces();
+		await workspaceService.loadTreeStructure();
 	};
 
 	// Handle clearing the workspace
@@ -32,10 +39,11 @@
 		workspaceService.clearWorkspace();
 	};
 
-	// Load workspace folders on mount if a path is already set
+	// Load workspace data on mount if a path is already set
 	onMount(() => {
 		if (workspacePath) {
-			void workspaceService.loadWorkspaceFolders();
+			void workspaceService.loadSubWorkspaces();
+			void workspaceService.loadTreeStructure();
 		}
 
 		return unsubscribe;
@@ -131,28 +139,49 @@
 			</button>
 		</div>
 
-		{#if folders.length > 0}
-			<div>
-				<h3 class="mb-2 text-lg font-medium">Folders</h3>
-				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-					{#each folders as folder}
-						<button
-							class="flex cursor-pointer flex-col items-center rounded-lg border border-slate-200 p-3 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/50"
-							tabindex="0"
-							aria-label={`Open folder ${folder}`}
-						>
-							<Folder size={24} class="mb-2 text-blue-500 dark:text-blue-400" />
-							<span class="w-full truncate text-center text-sm">{folder}</span>
-						</button>
+		<!-- Sub-workspaces Section -->
+		{#if subWorkspaces.length > 0}
+			<div class="mb-6">
+				<h3 class="mb-3 flex items-center gap-2 text-lg font-medium">
+					<FolderTree size={20} class="text-green-500 dark:text-green-400" />
+					Sub-workspaces
+				</h3>
+				<div class="space-y-2">
+					{#each subWorkspaces as subWorkspace}
+						<SubWorkspaceItem
+							{subWorkspace}
+							isActive={currentSubWorkspace === subWorkspace}
+						/>
 					{/each}
 				</div>
 			</div>
-		{:else}
-			<div
-				class="rounded-lg bg-slate-50 p-4 text-slate-700 dark:bg-slate-700/30 dark:text-slate-300"
-			>
-				<p>No folders found in the selected workspace.</p>
-			</div>
 		{/if}
+
+		<!-- Tree Structure Section -->
+		<div class="mb-6">
+			<h3 class="mb-3 text-lg font-medium">
+				{currentSubWorkspace
+					? `Tree: ${currentSubWorkspace.replace(/^DTXFiles\./, '')}`
+					: 'Workspace Tree'}
+			</h3>
+			<div class="mb-2 text-sm text-slate-600 dark:text-slate-400">
+				{currentSubWorkspace
+					? 'Showing contents of selected sub-workspace'
+					: 'Showing all folders in workspace'}
+			</div>
+			{#if treeStructure.length > 0}
+				<div
+					class="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
+				>
+					<WorkspaceTree nodes={treeStructure} />
+				</div>
+			{:else}
+				<div
+					class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
+				>
+					No folders found
+				</div>
+			{/if}
+		</div>
 	{/if}
 </div>

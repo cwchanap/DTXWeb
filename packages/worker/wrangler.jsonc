@@ -17,5 +17,9 @@
 		"logs": {
 			"enabled": true
 		}
+	},
+	"vars": {
+		"CORS_ORIGIN": "https://hapadona.vercel.app",
+		"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co"
 	}
 }

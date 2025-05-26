@@ -1,18 +1,51 @@
 import { writable } from 'svelte/store';
 
+export interface TreeNode {
+	name: string;
+	path: string;
+	isExpanded: boolean;
+	isLoading: boolean;
+	children: TreeNode[];
+	hasChildren: boolean;
+}
+
 interface WorkspaceState {
 	path: string | null;
-	folders: string[];
+	currentSubWorkspace: string | null;
+	subWorkspaces: string[];
+	treeStructure: TreeNode[];
 	isLoading: boolean;
 	error: string | null;
 }
 
 const initialState: WorkspaceState = {
 	path: null,
-	folders: [],
+	currentSubWorkspace: null,
+	subWorkspaces: [],
+	treeStructure: [],
 	isLoading: false,
 	error: null
 };
+
+// Helper function to update tree nodes recursively
+function updateTreeNodeRecursive(
+	nodes: TreeNode[],
+	targetPath: string,
+	updates: Partial<TreeNode>
+): TreeNode[] {
+	return nodes.map((node) => {
+		if (node.path === targetPath) {
+			return { ...node, ...updates };
+		}
+		if (node.children.length > 0) {
+			return {
+				...node,
+				children: updateTreeNodeRecursive(node.children, targetPath, updates)
+			};
+		}
+		return node;
+	});
+}
 
 function createWorkspaceStore() {
 	// Try to restore workspace path from localStorage
@@ -34,12 +67,31 @@ function createWorkspaceStore() {
 			// Update store
 			update((state) => ({ ...state, path, error: null }));
 		},
-		setFolders: (folders: string[]) => update((state) => ({ ...state, folders, error: null })),
+		setCurrentSubWorkspace: (subWorkspace: string | null) => {
+			update((state) => ({ ...state, currentSubWorkspace: subWorkspace }));
+		},
+		setSubWorkspaces: (subWorkspaces: string[]) =>
+			update((state) => ({ ...state, subWorkspaces, error: null })),
+		setTreeStructure: (treeStructure: TreeNode[]) =>
+			update((state) => ({ ...state, treeStructure, error: null })),
+		updateTreeNode: (nodePath: string, updates: Partial<TreeNode>) => {
+			update((state) => ({
+				...state,
+				treeStructure: updateTreeNodeRecursive(state.treeStructure, nodePath, updates)
+			}));
+		},
 		setLoading: (isLoading: boolean) => update((state) => ({ ...state, isLoading })),
 		setError: (error: string) => update((state) => ({ ...state, error })),
 		clearWorkspace: () => {
 			localStorage.removeItem('workspace_path');
-			update((state) => ({ ...state, path: null, folders: [], error: null }));
+			update((state) => ({
+				...state,
+				path: null,
+				currentSubWorkspace: null,
+				subWorkspaces: [],
+				treeStructure: [],
+				error: null
+			}));
 		},
 		reset: () => set(initialState)
 	};

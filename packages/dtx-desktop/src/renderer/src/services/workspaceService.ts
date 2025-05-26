@@ -1,4 +1,4 @@
-import { workspaceStore } from '../stores/workspaceStore';
+import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 
 export const workspaceService = {
 	/**
@@ -22,8 +22,9 @@ export const workspaceService = {
 			console.log('Selected path:', selectedPath);
 			workspaceStore.setPath(selectedPath);
 
-			// Load folders in the selected directory
-			await workspaceService.loadWorkspaceFolders();
+			// Load sub-workspaces and tree structure in the selected directory
+			await workspaceService.loadSubWorkspaces();
+			await workspaceService.loadTreeStructure();
 		} catch (error) {
 			console.error('Failed to select workspace:', error);
 			workspaceStore.setError('Failed to select workspace directory');
@@ -33,40 +34,145 @@ export const workspaceService = {
 	},
 
 	/**
-	 * Loads the list of folders in the current workspace
+	 * Loads the list of sub-workspaces (folders with DTXFiles. prefix) in the current workspace
 	 */
-	loadWorkspaceFolders: async (): Promise<void> => {
+	loadSubWorkspaces: async (): Promise<void> => {
 		try {
-			// Get the current path from the store using a proper subscription
+			// Get the current path from the store
 			let currentPath: string | null = null;
 			const unsubscribe = workspaceStore.subscribe((state) => {
 				currentPath = state.path;
 			});
-			unsubscribe(); // Unsubscribe immediately after getting the value
-
-			console.log('Current workspace path:', currentPath);
+			unsubscribe();
 
 			if (!currentPath) {
-				workspaceStore.setFolders([]);
+				workspaceStore.setSubWorkspaces([]);
 				return;
 			}
 
-			workspaceStore.setLoading(true);
-
 			// Use Electron's ipcRenderer to get folders in the workspace
-			console.log('Invoking list-directories with path:', currentPath);
 			const folders = await window.electron.ipcRenderer.invoke(
 				'list-directories',
 				currentPath
 			);
-			console.log('Received folders from main process:', folders);
-			workspaceStore.setFolders(folders);
+
+			// Filter only sub-workspaces (folders with DTXFiles. prefix)
+			const subWorkspaces = folders.filter((folder: string) =>
+				folder.startsWith('DTXFiles.')
+			);
+			workspaceStore.setSubWorkspaces(subWorkspaces);
 		} catch (error) {
-			console.error('Failed to load workspace folders:', error);
-			workspaceStore.setError('Failed to load folders from workspace');
-		} finally {
-			workspaceStore.setLoading(false);
+			console.error('Failed to load sub-workspaces:', error);
+			workspaceStore.setError('Failed to load sub-workspaces');
 		}
+	},
+
+	/**
+	 * Loads the tree structure for the current workspace or sub-workspace
+	 * Shows all folders in workspace, or contents of selected sub-workspace
+	 */
+	loadTreeStructure: async (): Promise<void> => {
+		try {
+			// Get the current path from the store
+			let currentPath: string | null = null;
+			let currentSubWorkspace: string | null = null;
+			let subWorkspaces: string[] = [];
+			const unsubscribe = workspaceStore.subscribe((state) => {
+				currentPath = state.path;
+				currentSubWorkspace = state.currentSubWorkspace;
+				subWorkspaces = state.subWorkspaces;
+			});
+			unsubscribe();
+
+			if (!currentPath) {
+				workspaceStore.setTreeStructure([]);
+				return;
+			}
+
+			if (currentSubWorkspace) {
+				// If a sub-workspace is selected, show its contents
+				const subWorkspacePath = `${currentPath}/${currentSubWorkspace}`;
+				const treeData = await window.electron.ipcRenderer.invoke(
+					'load-tree-structure',
+					subWorkspacePath
+				);
+				workspaceStore.setTreeStructure(treeData);
+			} else {
+				// If no sub-workspace is selected, show all folders in the workspace
+				const treeData = await window.electron.ipcRenderer.invoke(
+					'load-tree-structure',
+					currentPath
+				);
+				workspaceStore.setTreeStructure(treeData);
+			}
+		} catch (error) {
+			console.error('Failed to load tree structure:', error);
+			workspaceStore.setError('Failed to load tree structure');
+		}
+	},
+
+	/**
+	 * Expands a tree node and loads its children
+	 */
+	expandTreeNode: async (nodePath: string): Promise<void> => {
+		try {
+			// Get current node state to check if children are already loaded
+			let currentNode: TreeNode | null = null;
+			const unsubscribe = workspaceStore.subscribe((state) => {
+				const findNode = (nodes: TreeNode[], path: string): TreeNode | null => {
+					for (const node of nodes) {
+						if (node.path === path) return node;
+						const found = findNode(node.children, path);
+						if (found) return found;
+					}
+					return null;
+				};
+				currentNode = findNode(state.treeStructure, nodePath);
+			});
+			unsubscribe();
+
+			if (!currentNode) return;
+
+			// If children are already loaded, just expand
+			if (currentNode.children.length > 0) {
+				workspaceStore.updateTreeNode(nodePath, { isExpanded: true });
+				return;
+			}
+
+			// Set loading state for the node
+			workspaceStore.updateTreeNode(nodePath, { isLoading: true });
+
+			const children = await window.electron.ipcRenderer.invoke(
+				'load-tree-structure',
+				nodePath
+			);
+
+			// Update the node with children and expanded state
+			workspaceStore.updateTreeNode(nodePath, {
+				isExpanded: true,
+				isLoading: false,
+				children: children,
+				hasChildren: children.length > 0
+			});
+		} catch (error) {
+			console.error('Failed to expand tree node:', error);
+			workspaceStore.updateTreeNode(nodePath, { isLoading: false });
+		}
+	},
+
+	/**
+	 * Collapses a tree node
+	 */
+	collapseTreeNode: (nodePath: string): void => {
+		workspaceStore.updateTreeNode(nodePath, { isExpanded: false });
+	},
+
+	/**
+	 * Sets the current sub-workspace
+	 */
+	setCurrentSubWorkspace: async (subWorkspace: string | null): Promise<void> => {
+		workspaceStore.setCurrentSubWorkspace(subWorkspace);
+		await workspaceService.loadTreeStructure();
 	},
 
 	/**

@@ -90,6 +90,49 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle loading tree structure with lazy loading
+		ipcMain.handle('load-tree-structure', async (_event, dirPath) => {
+			try {
+				console.log('Loading tree structure for:', dirPath);
+				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+				// Filter only directories and create tree nodes
+				const treeNodes = await Promise.all(
+					entries
+						.filter((entry) => entry.isDirectory())
+						.map(async (dir) => {
+							const fullPath = `${dirPath}/${dir.name}`;
+
+							// Check if directory has subdirectories
+							let hasChildren = false;
+							try {
+								const subEntries = await fs.promises.readdir(fullPath, {
+									withFileTypes: true
+								});
+								hasChildren = subEntries.some((entry) => entry.isDirectory());
+							} catch (error) {
+								console.warn('Could not check subdirectories for:', fullPath);
+							}
+
+							return {
+								name: dir.name,
+								path: fullPath,
+								isExpanded: false,
+								isLoading: false,
+								children: [],
+								hasChildren
+							};
+						})
+				);
+
+				console.log('Generated tree nodes:', treeNodes);
+				return treeNodes;
+			} catch (error) {
+				console.error('Error loading tree structure:', error);
+				return [];
+			}
+		});
+
 		// Register custom protocol handler (dtx://)
 		const PROTOCOL = 'dtx';
 

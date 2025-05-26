@@ -13,15 +13,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { tick } from 'svelte';
 
 // Mock modules that would be imported by the component
-vi.mock('svelte-i18n', () => ({
-	_: () => (key: string) => key
-}));
-
-vi.mock('@skeletonlabs/skeleton-svelte', () => ({
-	Modal: vi.fn(),
-	Popover: vi.fn()
-}));
-
+vi.mock('svelte-i18n');
+vi.mock('@skeletonlabs/skeleton-svelte');
+vi.mock('@lucide/svelte/icons');
 vi.mock('$lib/components/ImageAudio.svelte', () => ({}));
 
 vi.mock('$lib/utils', () => ({
@@ -31,10 +25,6 @@ vi.mock('$lib/utils', () => ({
 		}
 		return 'N/A';
 	}
-}));
-
-vi.mock('@lucide/svelte/icons', () => ({
-	EllipsisVertical: vi.fn()
 }));
 
 // Test data

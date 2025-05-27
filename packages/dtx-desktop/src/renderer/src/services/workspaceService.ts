@@ -180,5 +180,19 @@ export const workspaceService = {
 	 */
 	clearWorkspace: (): void => {
 		workspaceStore.clearWorkspace();
+	},
+
+	/**
+	 * Selects a song and shows song details
+	 */
+	selectSong: (song: TreeNode): void => {
+		workspaceStore.selectSong(song);
+	},
+
+	/**
+	 * Closes song details and returns to workspace view
+	 */
+	closeSongDetails: (): void => {
+		workspaceStore.closeSongDetails();
 	}
 };

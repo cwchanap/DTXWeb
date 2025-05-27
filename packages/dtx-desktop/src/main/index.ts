@@ -97,36 +97,52 @@ if (!gotTheLock) {
 				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
 				// Filter only directories and create tree nodes
+				const allDirectories = entries.filter((entry) => entry.isDirectory());
+
 				const treeNodes = await Promise.all(
-					entries
-						.filter((entry) => entry.isDirectory())
-						.map(async (dir) => {
-							const fullPath = `${dirPath}/${dir.name}`;
+					allDirectories.map(async (dir) => {
+						const fullPath = `${dirPath}/${dir.name}`;
 
-							// Check if directory has subdirectories
-							let hasChildren = false;
-							try {
-								const subEntries = await fs.promises.readdir(fullPath, {
-									withFileTypes: true
-								});
-								hasChildren = subEntries.some((entry) => entry.isDirectory());
-							} catch (error) {
-								console.warn('Could not check subdirectories for:', fullPath);
-							}
+						// Check if directory has subdirectories
+						let hasChildren = false;
+						let containsDtxFiles = false;
 
-							return {
-								name: dir.name,
-								path: fullPath,
-								isExpanded: false,
-								isLoading: false,
-								children: [],
-								hasChildren
-							};
-						})
+						try {
+							const subEntries = await fs.promises.readdir(fullPath, {
+								withFileTypes: true
+							});
+
+							// Check for subdirectories
+							hasChildren = subEntries.some((entry) => entry.isDirectory());
+
+							// Check for .dtx files
+							containsDtxFiles = subEntries.some(
+								(entry) =>
+									entry.isFile() && entry.name.toLowerCase().endsWith('.dtx')
+							);
+						} catch (error) {
+							console.warn('Could not check subdirectories for:', fullPath);
+						}
+
+						return {
+							name: dir.name,
+							path: fullPath,
+							isExpanded: false,
+							isLoading: false,
+							children: [],
+							hasChildren: containsDtxFiles ? false : hasChildren, // Don't show children for folders with .dtx files
+							containsDtxFiles
+						};
+					})
 				);
 
-				console.log('Generated tree nodes:', treeNodes);
-				return treeNodes;
+				// Filter nodes: show DTXFiles folders and folders containing .dtx files
+				const filteredNodes = treeNodes.filter(
+					(node) => node.name.startsWith('DTXFiles.') || node.containsDtxFiles
+				);
+
+				console.log('Generated tree nodes:', filteredNodes);
+				return filteredNodes;
 			} catch (error) {
 				console.error('Error loading tree structure:', error);
 				return [];

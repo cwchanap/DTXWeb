@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { Folder, FolderOpen, Loader, RefreshCw, X, FolderTree } from '@lucide/svelte';
+	import { Folder, FolderOpen, Loader, RefreshCw, X } from '@lucide/svelte';
 	import WorkspaceTree from './WorkspaceTree.svelte';
 	import SubWorkspaceItem from './SubWorkspaceItem.svelte';
 	import SongDetails from './SongDetails.svelte';
@@ -151,12 +151,8 @@
 
 			<!-- Sub-workspaces Section -->
 			{#if subWorkspaces.length > 0}
-				<div class="mb-6">
-					<h3 class="mb-3 flex items-center gap-2 text-lg font-medium">
-						<FolderTree size={20} class="text-green-500 dark:text-green-400" />
-						Sub-workspaces
-					</h3>
-					<div class="space-y-2">
+				<div class="mb-4">
+					<div class="space-y-1">
 						{#each subWorkspaces as subWorkspace}
 							<SubWorkspaceItem
 								{subWorkspace}

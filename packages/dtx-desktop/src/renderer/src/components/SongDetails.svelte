@@ -32,9 +32,23 @@
 	</div>
 
 	<div class="space-y-4">
-		<!-- Song Name -->
+		<!-- Song Title from SET.def -->
+		{#if song.songTitle}
+			<div>
+				<h3 class="mb-2 text-lg font-medium text-slate-700 dark:text-slate-300">
+					Song Title
+				</h3>
+				<div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+					<span class="text-lg font-semibold text-slate-800 dark:text-slate-200"
+						>{song.songTitle}</span
+					>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Folder Name -->
 		<div>
-			<h3 class="mb-2 text-lg font-medium text-slate-700 dark:text-slate-300">Song Name</h3>
+			<h3 class="mb-2 text-lg font-medium text-slate-700 dark:text-slate-300">Folder Name</h3>
 			<div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
 				<span class="font-mono text-sm text-slate-600 dark:text-slate-400">{song.name}</span
 				>
@@ -50,15 +64,26 @@
 			</div>
 		</div>
 
-		<!-- Placeholder for future content -->
+		<!-- Additional song information -->
 		<div
 			class="rounded-lg border-2 border-dashed border-slate-200 p-8 text-center dark:border-slate-700"
 		>
 			<Music size={48} class="mx-auto mb-4 text-slate-400" />
-			<p class="text-slate-500 dark:text-slate-400">Song details will be displayed here</p>
-			<p class="mt-2 text-sm text-slate-400 dark:text-slate-500">
-				DTX file parsing and metadata coming soon...
-			</p>
+			{#if song.songTitle}
+				<p class="text-slate-500 dark:text-slate-400">
+					Song title loaded from SET.def file
+				</p>
+				<p class="mt-2 text-sm text-slate-400 dark:text-slate-500">
+					Additional DTX file parsing and metadata coming soon...
+				</p>
+			{:else}
+				<p class="text-slate-500 dark:text-slate-400">
+					No SET.def file found in this folder
+				</p>
+				<p class="mt-2 text-sm text-slate-400 dark:text-slate-500">
+					DTX file parsing and metadata coming soon...
+				</p>
+			{/if}
 		</div>
 
 		<!-- Back to Workspace Button -->

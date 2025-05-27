@@ -76,11 +76,9 @@ export const workspaceService = {
 			// Get the current path from the store
 			let currentPath: string | null = null;
 			let currentSubWorkspace: string | null = null;
-			let subWorkspaces: string[] = [];
 			const unsubscribe = workspaceStore.subscribe((state) => {
 				currentPath = state.path;
 				currentSubWorkspace = state.currentSubWorkspace;
-				subWorkspaces = state.subWorkspaces;
 			});
 			unsubscribe();
 

@@ -8,6 +8,7 @@ export interface TreeNode {
 	children: TreeNode[];
 	hasChildren: boolean;
 	containsDtxFiles?: boolean; // New property to identify folders with .dtx files
+	songTitle?: string | null; // Song title from SET.def file
 }
 
 interface WorkspaceState {

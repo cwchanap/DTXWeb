@@ -3,6 +3,7 @@ import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { URL } from 'url';
 import fs from 'fs';
+import { SimFile } from '@dtx/common';
 
 function createWindow(): void {
 	// Create the browser window.
@@ -106,6 +107,7 @@ if (!gotTheLock) {
 						// Check if directory has subdirectories
 						let hasChildren = false;
 						let containsDtxFiles = false;
+						let songTitle: string | null = null;
 
 						try {
 							const subEntries = await fs.promises.readdir(fullPath, {
@@ -120,6 +122,33 @@ if (!gotTheLock) {
 								(entry) =>
 									entry.isFile() && entry.name.toLowerCase().endsWith('.dtx')
 							);
+
+							// If folder contains .dtx files, check for SET.def and read song title
+							if (containsDtxFiles) {
+								const setDefFile = subEntries.find(
+									(entry) =>
+										entry.isFile() && entry.name.toLowerCase() === 'set.def'
+								);
+
+								if (setDefFile) {
+									try {
+										const setDefPath = `${fullPath}/${setDefFile.name}`;
+										const setDefContent = await fs.promises.readFile(
+											setDefPath,
+											'utf-8'
+										);
+
+										// Create a File object from the content to use with SimFile
+										const file = new File([setDefContent], 'set.def');
+										const simFile = new SimFile([file]);
+										await simFile.parseHeader(file);
+										songTitle = simFile.title || null;
+										console.log('Song title:', songTitle);
+									} catch (error) {
+										console.warn('Could not read SET.def file:', error);
+									}
+								}
+							}
 						} catch (error) {
 							console.warn('Could not check subdirectories for:', fullPath);
 						}
@@ -131,7 +160,8 @@ if (!gotTheLock) {
 							isLoading: false,
 							children: [],
 							hasChildren: containsDtxFiles ? false : hasChildren, // Don't show children for folders with .dtx files
-							containsDtxFiles
+							containsDtxFiles,
+							songTitle
 						};
 					})
 				);
@@ -146,6 +176,18 @@ if (!gotTheLock) {
 			} catch (error) {
 				console.error('Error loading tree structure:', error);
 				return [];
+			}
+		});
+
+		// Handle reading file contents
+		ipcMain.handle('read-file', async (_event, filePath) => {
+			try {
+				console.log('Reading file:', filePath);
+				const content = await fs.promises.readFile(filePath, 'utf-8');
+				return content;
+			} catch (error) {
+				console.error('Error reading file:', error);
+				throw error;
 			}
 		});
 

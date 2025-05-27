@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { DTXFile } from './dtx';
+import { DTXFile } from './dtx.js';
 
 interface DtxLevel {
 	label: string;

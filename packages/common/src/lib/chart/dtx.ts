@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from './note';
+import { LaneMeasureNote } from './note.js';
 
 export class SoundChip {
 	label: string;

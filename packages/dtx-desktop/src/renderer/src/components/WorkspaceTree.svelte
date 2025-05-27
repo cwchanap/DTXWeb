@@ -75,8 +75,15 @@
 				<Folder size={16} class="text-blue-500 dark:text-blue-400" />
 			{/if}
 
-			<!-- Folder Name -->
-			<span class="truncate text-slate-700 dark:text-slate-300">{node.name}</span>
+			<!-- Folder Name and Song Title -->
+			<div class="flex flex-col truncate">
+				<span class="truncate text-slate-700 dark:text-slate-300">{node.name}</span>
+				{#if node.songTitle}
+					<span class="truncate text-xs text-slate-500 italic dark:text-slate-400">
+						{node.songTitle}
+					</span>
+				{/if}
+			</div>
 		</button>
 
 		<!-- Render children if expanded (but not for folders containing .dtx files) -->

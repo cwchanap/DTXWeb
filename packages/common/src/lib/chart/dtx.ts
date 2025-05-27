@@ -1,4 +1,3 @@
-import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 import { LaneMeasureNote } from './note';
 
 export class SoundChip {
@@ -28,12 +27,12 @@ export class SoundChip {
 		}
 	}
 
-	async fetchRemote(simfileID: string) {
+	async fetchRemote(simfileID: string, bucketUrl: string) {
 		if (!this.fileName) {
 			console.error('Sound chip file name is not set');
 			return;
 		}
-		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/${this.fileName}`);
+		const response = await fetch(`${bucketUrl}/${simfileID}/${this.fileName}`);
 		if (!response.ok) {
 			console.error(`Failed to fetch sound chip: ${this.fileName}`);
 			return;

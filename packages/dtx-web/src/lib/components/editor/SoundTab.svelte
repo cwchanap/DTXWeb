@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { SoundChip } from '$lib/chart/dtx';
 	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
 	import store from '$lib/store';
-	import type { SimFile } from '$lib/chart/simFile';
+	import { SoundChip, type SimFile } from '@dtx/common';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
 	import { file } from 'jszip';
 

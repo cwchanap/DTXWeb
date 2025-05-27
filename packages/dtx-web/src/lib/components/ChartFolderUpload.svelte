@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
-	import type { DTXFile } from '../chart/dtx';
-	import { SimFile } from '../chart/simFile';
+	import { SimFile, type DTXFile } from '@dtx/common';
 	import { filterFiles } from '../utils';
 	import IconDropzone from '@lucide/svelte/icons/image-plus';
 	import IconFile from '@lucide/svelte/icons/paperclip';

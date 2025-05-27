@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
-import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 
 interface DtxLevel {
 	label: string;
@@ -10,10 +9,18 @@ interface DtxLevel {
 export class SimFile {
 	private isParseFromRemoteURL: boolean = false;
 	private simFileID: string = '';
+	private bucketUrl: string = '';
 	public title!: string;
 	public levels: { [key: number]: DtxLevel | undefined } = {};
 
-	constructor(public files: File[]) {}
+	constructor(
+		public files: File[],
+		bucketUrl?: string
+	) {
+		if (bucketUrl) {
+			this.bucketUrl = bucketUrl;
+		}
+	}
 
 	public async parse() {
 		// search for `def` file
@@ -24,7 +31,7 @@ export class SimFile {
 		await this.parseHeader(defFile);
 	}
 
-	public static async parseFromZip(file: string) {
+	public static async parseFromZip(file: string, bucketUrl?: string) {
 		const zip = new JSZip();
 		const zipContent = await zip.loadAsync(file);
 		const extracted = [];
@@ -35,13 +42,13 @@ export class SimFile {
 				extracted.push(new File([file], name));
 			}
 		}
-		return new SimFile(extracted);
+		return new SimFile(extracted, bucketUrl);
 	}
 
-	public static async parseFromRemoteURL(simfileID: string) {
-		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/set.def`);
+	public static async parseFromRemoteURL(simfileID: string, bucketUrl: string) {
+		const response = await fetch(`${bucketUrl}/${simfileID}/set.def`);
 		const file = new File([await response.blob()], 'set.def');
-		const simFile = new SimFile([file]);
+		const simFile = new SimFile([file], bucketUrl);
 		simFile.isParseFromRemoteURL = true;
 		simFile.simFileID = simfileID;
 		await simFile.parse();
@@ -74,7 +81,7 @@ export class SimFile {
 					file = this.files.find((f) => f.name === file_name);
 				} else {
 					const response = await fetch(
-						`${PUBLIC_SIMFILE_BUCKET_URL}/${this.simFileID}/${file_name}`
+						`${this.bucketUrl}/${this.simFileID}/${file_name}`
 					);
 					if (!response.ok) {
 						return;

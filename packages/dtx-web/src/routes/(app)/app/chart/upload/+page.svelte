@@ -1,8 +1,7 @@
 <!-- src/routes/new-page/+page.svelte -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import type { DTXFile } from '$lib/chart/dtx';
-	import { SimFile } from '$lib/chart/simFile';
+	import { SimFile, type DTXFile } from '@dtx/common';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';

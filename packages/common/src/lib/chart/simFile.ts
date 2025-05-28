@@ -74,9 +74,6 @@ export class SimFile {
 				const decoder = new TextDecoder(encoding);
 				const content = decoder.decode(arrayBuffer);
 
-				console.log(`Trying encoding: ${encoding}`);
-				console.log(`Content preview (first 100 chars):`, content.substring(0, 100));
-
 				// Check if the content looks valid (contains expected DTX header patterns)
 				if (
 					content.includes('#TITLE') ||
@@ -85,15 +82,12 @@ export class SimFile {
 				) {
 					// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
 					const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
-					console.log(`Null byte ratio for ${encoding}:`, nullByteRatio);
 					if (nullByteRatio < 0.1) {
 						// Less than 10% null bytes
-						console.log(`Successfully detected encoding: ${encoding}`);
 						return content;
 					}
 				}
 			} catch (error) {
-				console.log(`Failed to decode with ${encoding}:`, error);
 				// Continue to next encoding if this one fails
 				continue;
 			}

@@ -133,13 +133,11 @@ if (!gotTheLock) {
 								if (setDefFile) {
 									try {
 										const setDefPath = `${fullPath}/${setDefFile.name}`;
-										const setDefContent = await fs.promises.readFile(
-											setDefPath,
-											'utf-8'
-										);
+										// Read as buffer to preserve original encoding
+										const setDefBuffer = await fs.promises.readFile(setDefPath);
 
-										// Create a File object from the content to use with SimFile
-										const file = new File([setDefContent], 'set.def');
+										// Create a File object from the buffer to use with SimFile
+										const file = new File([setDefBuffer], 'set.def');
 										const simFile = new SimFile([file]);
 										await simFile.parseHeader(file);
 										songTitle = simFile.title || null;
@@ -171,7 +169,6 @@ if (!gotTheLock) {
 					(node) => node.name.startsWith('DTXFiles.') || node.containsDtxFiles
 				);
 
-				console.log('Generated tree nodes:', filteredNodes);
 				return filteredNodes;
 			} catch (error) {
 				console.error('Error loading tree structure:', error);

@@ -63,16 +63,57 @@ export class SimFile {
 		return zip;
 	}
 
-	public async parseHeader(file: File) {
-		const content = await file.text();
-		const lines = content.split('\r\n');
+	private async readFileWithEncoding(file: File): Promise<string> {
+		const arrayBuffer = await file.arrayBuffer();
 
-		const title_line = lines.find((line) => line.startsWith('#TITLE '));
+		// List of encodings to try in order
+		const encodings = ['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'];
+
+		for (const encoding of encodings) {
+			try {
+				const decoder = new TextDecoder(encoding);
+				const content = decoder.decode(arrayBuffer);
+
+				console.log(`Trying encoding: ${encoding}`);
+				console.log(`Content preview (first 100 chars):`, content.substring(0, 100));
+
+				// Check if the content looks valid (contains expected DTX header patterns)
+				if (
+					content.includes('#TITLE') ||
+					content.includes('#L1LABEL') ||
+					content.includes('#L1FILE')
+				) {
+					// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
+					const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
+					console.log(`Null byte ratio for ${encoding}:`, nullByteRatio);
+					if (nullByteRatio < 0.1) {
+						// Less than 10% null bytes
+						console.log(`Successfully detected encoding: ${encoding}`);
+						return content;
+					}
+				}
+			} catch (error) {
+				console.log(`Failed to decode with ${encoding}:`, error);
+				// Continue to next encoding if this one fails
+				continue;
+			}
+		}
+
+		// Fallback to UTF-8 if nothing else works
+		const decoder = new TextDecoder('utf-8');
+		return decoder.decode(arrayBuffer);
+	}
+
+	public async parseHeader(file: File) {
+		const content = await this.readFileWithEncoding(file);
+		const lines = content.split(/\r?\n/);
+
+		const title_line = lines.find((line: string) => line.startsWith('#TITLE '));
 		this.title = title_line ? title_line.split('#TITLE ')[1] : '';
 
 		const promises = [1, 2, 3, 4, 5].map(async (level) => {
-			const level_line = lines.find((line) => line.startsWith(`#L${level}LABEL `));
-			const file_line = lines.find((line) => line.startsWith(`#L${level}FILE `));
+			const level_line = lines.find((line: string) => line.startsWith(`#L${level}LABEL `));
+			const file_line = lines.find((line: string) => line.startsWith(`#L${level}FILE `));
 			if (level_line && file_line) {
 				const label = level_line.split(' ')[1];
 				const file_name = file_line.split(' ')[1];

@@ -69,21 +69,9 @@
 			class="rounded-lg border-2 border-dashed border-slate-200 p-8 text-center dark:border-slate-700"
 		>
 			<Music size={48} class="mx-auto mb-4 text-slate-400" />
-			{#if song.songTitle}
-				<p class="text-slate-500 dark:text-slate-400">
-					Song title loaded from SET.def file
-				</p>
-				<p class="mt-2 text-sm text-slate-400 dark:text-slate-500">
-					Additional DTX file parsing and metadata coming soon...
-				</p>
-			{:else}
-				<p class="text-slate-500 dark:text-slate-400">
-					No SET.def file found in this folder
-				</p>
-				<p class="mt-2 text-sm text-slate-400 dark:text-slate-500">
-					DTX file parsing and metadata coming soon...
-				</p>
-			{/if}
+			<p class="mt-2 text-sm text-slate-400 dark:text-slate-500">
+				Additional DTX file parsing and metadata coming soon...
+			</p>
 		</div>
 
 		<!-- Back to Workspace Button -->

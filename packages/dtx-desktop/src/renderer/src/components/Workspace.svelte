@@ -6,6 +6,7 @@
 	import WorkspaceTree from './WorkspaceTree.svelte';
 	import SubWorkspaceItem from './SubWorkspaceItem.svelte';
 	import SongDetails from './SongDetails.svelte';
+	import SimFileList from './SimFileList.svelte';
 
 	let isLoading = $state(false);
 	let workspacePath = $state('');
@@ -188,6 +189,19 @@
 						No folders found
 					</div>
 				{/if}
+			</div>
+
+			<!-- SimFile List Section -->
+			<div class="mb-6">
+				<h3 class="mb-3 text-lg font-medium">Online SimFiles</h3>
+				<div class="mb-2 text-sm text-slate-600 dark:text-slate-400">
+					Your uploaded simFiles from the cloud
+				</div>
+				<div
+					class="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50"
+				>
+					<SimFileList />
+				</div>
 			</div>
 		{/if}
 	</div>

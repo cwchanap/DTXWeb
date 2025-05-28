@@ -17,27 +17,7 @@
 		isBlog?: boolean;
 	}
 
-	interface DtxFile {
-		level: number | string;
-	}
-
-	interface SimfileWithDtx {
-		id: number;
-		title: string;
-		artist: string;
-		bpm: number;
-		preview_url: string | null;
-		sound_preview_url: string | null;
-		download_url: string | null;
-		is_published: boolean;
-		display_id: number | null;
-		created_at?: string;
-		publish_date?: string;
-		updated_at?: string;
-		user_id?: string;
-		video_preview_url?: string | null;
-		dtx_files?: Partial<DtxFile>[];
-	}
+	import type { SimfileWithDtx } from '@dtx/common';
 
 	let { pageSize = 12, isBlog = false }: Props = $props();
 

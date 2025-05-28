@@ -12,6 +12,7 @@ export default defineConfig({
 	renderer: {
 		// @ts-ignore
 		plugins: [tailwindcss(), svelte()],
-		envDir: '../../'
+		envDir: '../../',
+		envPrefix: ['VITE_', 'PUBLIC_']
 	}
 });

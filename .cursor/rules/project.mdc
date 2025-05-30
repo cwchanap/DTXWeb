@@ -28,5 +28,5 @@ Your responses should focus on providing correct, best practice, DRY principle (
 
 Running commands in specific package
 
-You can user `-w={package name}` flag to run command in specific package. For example, `npm run dev -w=dtx-desktop` will run the dev command in the `dtx-desktop` package.
+You can use `-w={package name}` flag to run command in specific package. For example, `npm run dev -w=dtx-desktop` will run the dev command in the `dtx-desktop` package.
 

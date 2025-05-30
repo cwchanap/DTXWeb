@@ -10,14 +10,19 @@
 	import { onMount, onDestroy } from 'svelte';
 
 	// Try to restore the session on app start
-	onMount(() => {
-		// Set up the protocol handler callback
-		window.electron.ipcRenderer.on('auth-callback', (_event, token) => {
-			authService.handleAuthCallback(token);
+	onMount(async () => {
+		// Set up the magic link result handler (new approach)
+		window.electron.ipcRenderer.on('magic-link-result', async (_event, result) => {
+			await authService.handleMagicLinkResult(result);
+		});
+
+		// Set up the legacy protocol handler callback
+		window.electron.ipcRenderer.on('auth-callback', async (_event, tokens) => {
+			await authService.handleAuthCallback(tokens);
 		});
 
 		// Try to restore session
-		authService.restoreSession();
+		await authService.restoreSession();
 	});
 
 	// Reactive statement to fetch simFile data when user becomes authenticated

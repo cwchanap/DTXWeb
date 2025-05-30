@@ -22,26 +22,34 @@
 		}
 	});
 
-	// Function to redirect to desktop with session info
+	// Function to redirect to desktop with magic link
 	async function redirectToDesktopWithSession() {
 		if (!browser) return;
 
 		try {
-			// Get the session from Supabase
-			const sessionResponse = await data.supabase.auth.getSession();
+			// Generate magic link for desktop authentication
+			const response = await fetch('/api/auth/generate-magic-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
 
-			const session = sessionResponse.data.session;
-
-			if (!session) {
-				throw new Error('No session found');
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to generate magic link');
 			}
 
-			// Get the access token from the session
-			const token = session.access_token;
+			const { magicLinkUrl } = await response.json();
 
-			// Redirect to desktop app with token
-			// Use an absolute URL with protocol explicitly specified
-			const redirectUrl = `dtx://auth-callback?token=${token}`;
+			if (!magicLinkUrl) {
+				throw new Error('No magic link received');
+			}
+
+			console.log('Generated magic link for desktop authentication');
+
+			// Redirect to desktop app with magic link
+			const redirectUrl = `dtx://auth-callback?magic_link=${encodeURIComponent(magicLinkUrl)}`;
 
 			// Try to redirect
 			redirectAttempted = true;

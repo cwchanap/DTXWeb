@@ -12,6 +12,15 @@ vi.mock('../stores/authStore', () => ({
 	}
 }));
 
+// Mock the supabaseService
+vi.mock('./supabaseService', () => ({
+	storeSessionData: vi.fn(),
+	getStoredSessionData: vi.fn(),
+	clearStoredSessionData: vi.fn(),
+	validateSession: vi.fn(),
+	getCurrentSession: vi.fn()
+}));
+
 describe('AuthService', () => {
 	beforeEach(() => {
 		// Clear all mocks before each test
@@ -24,6 +33,7 @@ describe('AuthService', () => {
 
 		// Reset electron IPC mock
 		(window.electron.ipcRenderer.send as any).mockClear();
+		(window.electron.ipcRenderer.invoke as any).mockClear();
 
 		// Reset console mocks
 		(console.error as any).mockClear();
@@ -74,7 +84,9 @@ describe('AuthService', () => {
 	});
 
 	describe('handleAuthCallback', () => {
-		const mockToken = 'header.mocked-token.signature';
+		const mockAccessToken = 'header.mocked-access-token.signature';
+		const mockRefreshToken = 'header.mocked-refresh-token.signature';
+		const mockTokens = { accessToken: mockAccessToken, refreshToken: mockRefreshToken };
 		const mockUserData = {
 			id: '123',
 			email: 'test@example.com',
@@ -85,19 +97,29 @@ describe('AuthService', () => {
 			(global.atob as any).mockReturnValue(JSON.stringify(mockUserData));
 		});
 
-		it('should process valid token and set user data', () => {
+		it('should process valid tokens and set user data', async () => {
+			// Import the mocked functions
+			const { storeSessionData } = await import('./supabaseService');
+
 			// Act
-			authService.handleAuthCallback(mockToken);
+			await authService.handleAuthCallback(mockTokens);
 
 			// Assert
-			expect(global.atob).toHaveBeenCalledWith('mocked-token');
+			expect(global.atob).toHaveBeenCalledWith('mocked-access-token');
+			expect(storeSessionData).toHaveBeenCalledWith({
+				access_token: mockAccessToken,
+				refresh_token: mockRefreshToken,
+				user: mockUserData
+			});
 			expect(authStore.setUser).toHaveBeenCalledWith(mockUserData);
-			expect(window.localStorage.setItem).toHaveBeenCalledWith('auth_token', mockToken);
 		});
 
-		it('should handle empty token', () => {
+		it('should handle missing access token', async () => {
 			// Act
-			authService.handleAuthCallback('');
+			await authService.handleAuthCallback({
+				accessToken: '',
+				refreshToken: mockRefreshToken
+			});
 
 			// Assert
 			expect(console.error).toHaveBeenCalledWith(
@@ -109,9 +131,12 @@ describe('AuthService', () => {
 			expect(window.localStorage.setItem).not.toHaveBeenCalled();
 		});
 
-		it('should handle null token', () => {
+		it('should handle missing refresh token', async () => {
 			// Act
-			authService.handleAuthCallback(null as any);
+			await authService.handleAuthCallback({
+				accessToken: mockAccessToken,
+				refreshToken: ''
+			});
 
 			// Assert
 			expect(console.error).toHaveBeenCalledWith(
@@ -121,15 +146,18 @@ describe('AuthService', () => {
 			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
 		});
 
-		it('should handle invalid token format', () => {
+		it('should handle invalid token format', async () => {
 			// Arrange
-			const invalidToken = 'invalid-token-without-dots';
+			const invalidTokens = {
+				accessToken: 'invalid-token-without-dots',
+				refreshToken: mockRefreshToken
+			};
 			(global.atob as any).mockImplementation(() => {
 				throw new Error('Invalid base64');
 			});
 
 			// Act
-			authService.handleAuthCallback(invalidToken);
+			await authService.handleAuthCallback(invalidTokens);
 
 			// Assert
 			expect(console.error).toHaveBeenCalledWith(
@@ -139,12 +167,12 @@ describe('AuthService', () => {
 			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
 		});
 
-		it('should handle JSON parsing errors', () => {
+		it('should handle JSON parsing errors', async () => {
 			// Arrange
 			(global.atob as any).mockReturnValue('invalid-json');
 
 			// Act
-			authService.handleAuthCallback(mockToken);
+			await authService.handleAuthCallback(mockTokens);
 
 			// Assert
 			expect(console.error).toHaveBeenCalledWith(
@@ -154,9 +182,12 @@ describe('AuthService', () => {
 			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
 		});
 
-		it('should handle token with insufficient parts', () => {
+		it('should handle token with insufficient parts', async () => {
 			// Arrange
-			const tokenWithOnePart = 'single-part-token';
+			const tokensWithOnePart = {
+				accessToken: 'single-part-token',
+				refreshToken: mockRefreshToken
+			};
 			(global.atob as any).mockImplementation((input) => {
 				if (input === undefined) {
 					throw new Error('Cannot decode undefined');
@@ -165,7 +196,7 @@ describe('AuthService', () => {
 			});
 
 			// Act
-			authService.handleAuthCallback(tokenWithOnePart);
+			await authService.handleAuthCallback(tokensWithOnePart);
 
 			// Assert
 			expect(console.error).toHaveBeenCalledWith(
@@ -175,14 +206,14 @@ describe('AuthService', () => {
 			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
 		});
 
-		it('should not store token or set user on error', () => {
+		it('should not store tokens or set user on error', async () => {
 			// Arrange
 			(global.atob as any).mockImplementation(() => {
 				throw new Error('Decode failed');
 			});
 
 			// Act
-			authService.handleAuthCallback(mockToken);
+			await authService.handleAuthCallback(mockTokens);
 
 			// Assert
 			expect(window.localStorage.setItem).not.toHaveBeenCalled();
@@ -191,50 +222,92 @@ describe('AuthService', () => {
 	});
 
 	describe('restoreSession', () => {
-		const mockToken = 'header.mocked-token.signature';
+		const mockAccessToken = 'header.mocked-access-token.signature';
+		const mockRefreshToken = 'header.mocked-refresh-token.signature';
 		const mockUserData = {
 			id: '123',
 			email: 'test@example.com',
 			name: 'Test User'
 		};
 
-		it('should restore session from valid stored token', () => {
+		it('should restore session from valid stored tokens', async () => {
+			// Import the mocked functions
+			const { getStoredSessionData, validateSession } = await import('./supabaseService');
+
 			// Arrange
-			(window.localStorage.getItem as any).mockReturnValue(mockToken);
-			(global.atob as any).mockReturnValue(JSON.stringify(mockUserData));
+			(getStoredSessionData as any).mockReturnValue({
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				userData: mockUserData
+			});
+			(validateSession as any).mockResolvedValue(true);
 
 			// Act
-			const result = authService.restoreSession();
+			const result = await authService.restoreSession();
 
 			// Assert
-			expect(window.localStorage.getItem).toHaveBeenCalledWith('auth_token');
-			expect(global.atob).toHaveBeenCalledWith('mocked-token');
-			expect(authStore.setUser).toHaveBeenCalledWith(mockUserData);
+			expect(getStoredSessionData).toHaveBeenCalled();
+			expect(validateSession).toHaveBeenCalled();
+			expect(authStore.setUser).toHaveBeenCalledWith({
+				id: '123',
+				email: 'test@example.com',
+				name: 'test@example.com' // Falls back to email since user_metadata.name is not set
+			});
 			expect(result).toBe(true);
 		});
 
-		it('should return false when no token is stored', () => {
+		it('should return false when no session data is stored', async () => {
+			// Import the mocked functions
+			const { getStoredSessionData } = await import('./supabaseService');
+
 			// Arrange
-			(window.localStorage.getItem as any).mockReturnValue(null);
+			(getStoredSessionData as any).mockReturnValue(null);
 
 			// Act
-			const result = authService.restoreSession();
+			const result = await authService.restoreSession();
 
 			// Assert
-			expect(window.localStorage.getItem).toHaveBeenCalledWith('auth_token');
+			expect(getStoredSessionData).toHaveBeenCalled();
 			expect(authStore.setUser).not.toHaveBeenCalled();
 			expect(result).toBe(false);
 		});
 
-		it('should handle invalid stored token gracefully', () => {
+		it('should return false when session validation fails', async () => {
+			// Import the mocked functions
+			const { getStoredSessionData, validateSession, clearStoredSessionData } = await import(
+				'./supabaseService'
+			);
+
 			// Arrange
-			(window.localStorage.getItem as any).mockReturnValue('invalid-token');
-			(global.atob as any).mockImplementation(() => {
-				throw new Error('Invalid base64');
+			(getStoredSessionData as any).mockReturnValue({
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				userData: mockUserData
+			});
+			(validateSession as any).mockResolvedValue(false);
+
+			// Act
+			const result = await authService.restoreSession();
+
+			// Assert
+			expect(getStoredSessionData).toHaveBeenCalled();
+			expect(validateSession).toHaveBeenCalled();
+			expect(clearStoredSessionData).toHaveBeenCalled();
+			expect(authStore.setUser).not.toHaveBeenCalled();
+			expect(result).toBe(false);
+		});
+
+		it('should handle errors during session restoration', async () => {
+			// Import the mocked functions
+			const { getStoredSessionData } = await import('./supabaseService');
+
+			// Arrange
+			(getStoredSessionData as any).mockImplementation(() => {
+				throw new Error('Storage error');
 			});
 
 			// Act
-			const result = authService.restoreSession();
+			const result = await authService.restoreSession();
 
 			// Assert
 			expect(console.error).toHaveBeenCalledWith(
@@ -242,60 +315,24 @@ describe('AuthService', () => {
 				expect.any(Error)
 			);
 			expect(authStore.setUser).not.toHaveBeenCalled();
-			expect(result).toBe(false);
-		});
-
-		it('should handle JSON parsing errors during restoration', () => {
-			// Arrange
-			(window.localStorage.getItem as any).mockReturnValue(mockToken);
-			(global.atob as any).mockReturnValue('invalid-json');
-
-			// Act
-			const result = authService.restoreSession();
-
-			// Assert
-			expect(console.error).toHaveBeenCalledWith(
-				'Failed to restore session:',
-				expect.any(Error)
-			);
-			expect(result).toBe(false);
-		});
-
-		it('should handle empty string token in localStorage', () => {
-			// Arrange
-			(window.localStorage.getItem as any).mockReturnValue('');
-
-			// Act
-			const result = authService.restoreSession();
-
-			// Assert
-			expect(authStore.setUser).not.toHaveBeenCalled();
-			expect(result).toBe(false);
-		});
-
-		it('should handle token with insufficient parts during restoration', () => {
-			// Arrange
-			(window.localStorage.getItem as any).mockReturnValue('invalid-token');
-
-			// Act
-			const result = authService.restoreSession();
-
-			// Assert
-			expect(console.error).toHaveBeenCalledWith(
-				'Failed to restore session:',
-				expect.any(Error)
-			);
 			expect(result).toBe(false);
 		});
 	});
 
 	describe('logout', () => {
-		it('should clear localStorage and call store logout', () => {
+		it('should clear session and call store logout', async () => {
+			// Import the mocked functions
+			const { clearStoredSessionData } = await import('./supabaseService');
+
+			// Arrange
+			(window.electron.ipcRenderer.invoke as any).mockResolvedValue(true);
+
 			// Act
-			authService.logout();
+			await authService.logout();
 
 			// Assert
-			expect(window.localStorage.removeItem).toHaveBeenCalledWith('auth_token');
+			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('logout-session');
+			expect(clearStoredSessionData).toHaveBeenCalled();
 			expect(authStore.logout).toHaveBeenCalled();
 		});
 	});

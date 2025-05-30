@@ -3,8 +3,8 @@
 	import { authService } from '../services/authService';
 	import { Music, LogOut, User } from '@lucide/svelte';
 
-	const handleLogout = () => {
-		authService.logout();
+	const handleLogout = async () => {
+		await authService.logout();
 	};
 </script>
 

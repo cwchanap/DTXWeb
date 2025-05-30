@@ -1,4 +1,3 @@
-import { supabase } from './supabaseService';
 import type { SimfileWithDtx } from '@dtx/common';
 
 const CACHE_KEY = 'simfiles_cache';
@@ -13,7 +12,7 @@ export interface SimFileServiceResult {
 
 class SimFileService {
 	/**
-	 * Fetches all simFiles for the authenticated user from Supabase
+	 * Fetches all simFiles for the authenticated user from Supabase via main process
 	 * Includes caching logic similar to CharList.svelte
 	 */
 	async fetchUserSimFiles(): Promise<SimFileServiceResult> {
@@ -27,40 +26,18 @@ class SimFileService {
 				};
 			}
 
-			// Get authenticated user
-			const {
-				data: { user },
-				error: authError
-			} = await supabase.auth.getUser();
+			// Call main process to fetch simFiles
+			const result = await window.electron.ipcRenderer.invoke('fetch-user-simfiles');
 
-			if (authError) {
-				throw new Error(`Authentication error: ${authError.message}`);
+			if (result.error) {
+				return result;
 			}
-
-			if (!user) {
-				throw new Error('User not authenticated');
-			}
-
-			// Fetch simFiles from Supabase - based on ChartList.svelte query
-			const { data, error } = await supabase
-				.from('simfiles')
-				.select(
-					`id, title, artist, bpm, preview_url, sound_preview_url, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level)`
-				)
-				.eq('user_id', user.id)
-				.order('publish_date', { ascending: false });
-
-			if (error) {
-				throw new Error(`Failed to fetch simFiles: ${error.message}`);
-			}
-
-			const simFiles = data || [];
 
 			// Cache the result
-			this.setCachedData(simFiles);
+			this.setCachedData(result.data);
 
 			return {
-				data: simFiles,
+				data: result.data,
 				fromCache: false
 			};
 		} catch (error) {
@@ -74,7 +51,7 @@ class SimFileService {
 	}
 
 	/**
-	 * Fetches published simFiles for blog/public view
+	 * Fetches published simFiles for blog/public view via main process
 	 */
 	async fetchPublishedSimFiles(): Promise<SimFileServiceResult> {
 		try {
@@ -89,26 +66,18 @@ class SimFileService {
 				};
 			}
 
-			// Fetch published simFiles from Supabase
-			const { data, error } = await supabase
-				.from('simfiles')
-				.select(
-					`id, title, artist, bpm, preview_url, sound_preview_url, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level)`
-				)
-				.eq('is_published', true)
-				.order('publish_date', { ascending: false });
+			// Call main process to fetch published simFiles
+			const result = await window.electron.ipcRenderer.invoke('fetch-published-simfiles');
 
-			if (error) {
-				throw new Error(`Failed to fetch published simFiles: ${error.message}`);
+			if (result.error) {
+				return result;
 			}
 
-			const simFiles = data || [];
-
 			// Cache the result
-			this.setCachedData(simFiles, cacheKey, timestampKey);
+			this.setCachedData(result.data, cacheKey, timestampKey);
 
 			return {
-				data: simFiles,
+				data: result.data,
 				fromCache: false
 			};
 		} catch (error) {
@@ -189,22 +158,17 @@ class SimFileService {
 	}
 
 	/**
-	 * Gets preview URL for a simFile (similar to ChartList.svelte)
+	 * Gets preview URL for a simFile via main process
 	 */
-	getPreviewUrl(preview_url: string): string {
-		const PREVIEW_BUCKET_NAME = 'simfile-previews';
-		return supabase.storage.from(PREVIEW_BUCKET_NAME).getPublicUrl(`${preview_url}`).data
-			.publicUrl;
+	async getPreviewUrl(preview_url: string): Promise<string> {
+		return await window.electron.ipcRenderer.invoke('get-preview-url', preview_url);
 	}
 
 	/**
-	 * Gets sound preview URL for a simFile (similar to ChartList.svelte)
+	 * Gets sound preview URL for a simFile via main process
 	 */
-	getSoundPreviewUrl(sound_preview_url: string | null): string | null {
-		if (!sound_preview_url) return null;
-		const SOUND_PREVIEW_BUCKET_NAME = 'simfile-sound-previews';
-		return supabase.storage.from(SOUND_PREVIEW_BUCKET_NAME).getPublicUrl(`${sound_preview_url}`)
-			.data.publicUrl;
+	async getSoundPreviewUrl(sound_preview_url: string | null): Promise<string | null> {
+		return await window.electron.ipcRenderer.invoke('get-sound-preview-url', sound_preview_url);
 	}
 }
 

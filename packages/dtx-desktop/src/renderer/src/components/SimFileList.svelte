@@ -2,9 +2,36 @@
 	import { simFileStore } from '../stores/simFileStore';
 	import { simFileService } from '../services/simFileService';
 	import { RefreshCw, Music, Calendar, User } from '@lucide/svelte';
+	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 
 	// Subscribe to the simFile store
-	$: simFileState = $simFileStore;
+	let simFileState = $derived($simFileStore);
+
+	// Pagination state
+	let currentPage = $state(1);
+	let pageSize = $state(10);
+
+	// Calculate paginated data
+	let paginatedSimFiles = $derived(sliceData(simFileState.userSimFiles, currentPage, pageSize));
+	let totalPages = $derived(Math.ceil(simFileState.userSimFiles.length / pageSize));
+
+	// Function to slice data for current page
+	function sliceData(data: any[], page: number, size: number) {
+		const start = (page - 1) * size;
+		const end = start + size;
+		return data.slice(start, end);
+	}
+
+	// Handle page changes
+	function handlePageChange(event: { page: number }) {
+		currentPage = event.page;
+	}
+
+	// Handle page size changes
+	function handlePageSizeChange(event: { pageSize: number }) {
+		pageSize = event.pageSize;
+		currentPage = 1; // Reset to first page when page size changes
+	}
 
 	// Function to refresh simFile data
 	async function refreshSimFiles() {
@@ -34,12 +61,28 @@
 <div class="simfile-list p-4">
 	<div class="mb-4 flex items-center justify-between">
 		<h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">
-			My SimFiles ({simFileState.userSimFiles.length})
+			My SimFiles ({simFileState.userSimFiles.length} total, showing {paginatedSimFiles.length}
+			on page {currentPage} of {totalPages})
 		</h2>
 		<div class="flex items-center gap-2">
 			{#if simFileState.fromCache}
 				<span class="text-sm text-slate-500 dark:text-slate-400"> Cached data </span>
 			{/if}
+
+			<!-- Page Size Selector -->
+			{#if simFileState.userSimFiles.length > 5}
+				<select
+					bind:value={pageSize}
+					onchange={() => handlePageSizeChange({ pageSize })}
+					class="rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-700"
+				>
+					<option value={5}>5 per page</option>
+					<option value={10}>10 per page</option>
+					<option value={20}>20 per page</option>
+					<option value={50}>50 per page</option>
+				</select>
+			{/if}
+
 			<button
 				onclick={refreshSimFiles}
 				disabled={simFileState.isLoading}
@@ -75,7 +118,7 @@
 		</div>
 	{:else}
 		<div class="grid gap-3">
-			{#each simFileState.userSimFiles as simFile (simFile.id)}
+			{#each paginatedSimFiles as simFile (simFile.id)}
 				<div
 					class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-800"
 				>
@@ -129,6 +172,25 @@
 				</div>
 			{/each}
 		</div>
+
+		<!-- Pagination Component -->
+		{#if simFileState.userSimFiles.length > pageSize}
+			<div class="mt-6 flex justify-center">
+				<Pagination
+					data={simFileState.userSimFiles}
+					page={currentPage}
+					{pageSize}
+					onPageChange={handlePageChange}
+					onPageSizeChange={handlePageSizeChange}
+					siblingCount={2}
+					showFirstLastButtons={true}
+					classes="flex items-center gap-2"
+					buttonBase="btn btn-sm"
+					buttonActive="preset-filled-primary-500"
+					buttonInactive="preset-tonal-surface"
+				/>
+			</div>
+		{/if}
 	{/if}
 
 	{#if simFileState.lastUpdated}
@@ -137,10 +199,3 @@
 		</div>
 	{/if}
 </div>
-
-<style>
-	.simfile-list {
-		max-height: 400px;
-		overflow-y: auto;
-	}
-</style>

@@ -12,6 +12,8 @@
 		"pagination": {
 			"previous": "Previous",
 			"next": "Next",
+			"first": "First",
+			"last": "Last",
 			"page": "Page {currentPage} of {totalPages}"
 		}
 	}

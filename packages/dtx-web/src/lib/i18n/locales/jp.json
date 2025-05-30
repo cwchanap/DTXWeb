@@ -12,6 +12,8 @@
 		"pagination": {
 			"previous": "前へ",
 			"next": "次へ",
+			"first": "最初",
+			"last": "最後",
 			"page": "ページ {currentPage} / {totalPages}"
 		}
 	}

@@ -86,30 +86,6 @@ describe('SimFileService', () => {
 		});
 	});
 
-	describe('fetchPublishedSimFiles', () => {
-		it('should fetch published simFiles from main process', async () => {
-			const mockData = [
-				{
-					id: '1',
-					title: 'Published Song',
-					artist: 'Test Artist',
-					is_published: true
-				}
-			];
-
-			mockInvoke.mockResolvedValue({
-				data: mockData,
-				fromCache: false,
-				error: null
-			});
-
-			const result = await simFileService.fetchPublishedSimFiles();
-
-			expect(mockInvoke).toHaveBeenCalledWith('fetch-published-simfiles');
-			expect(result.data).toEqual(mockData);
-		});
-	});
-
 	describe('getPreviewUrl', () => {
 		it('should get preview URL from main process', async () => {
 			const mockUrl = 'https://example.com/preview.jpg';
@@ -149,10 +125,6 @@ describe('SimFileService', () => {
 
 			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache');
 			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_timestamp');
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith('published_simfiles_cache');
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith(
-				'published_simfiles_cache_timestamp'
-			);
 		});
 
 		it('should refresh user simFiles by clearing cache and fetching new data', async () => {

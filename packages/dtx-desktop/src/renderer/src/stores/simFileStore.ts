@@ -3,7 +3,6 @@ import type { SimfileWithDtx } from '@dtx/common';
 
 interface SimFileState {
 	userSimFiles: SimfileWithDtx[];
-	publishedSimFiles: SimfileWithDtx[];
 	isLoading: boolean;
 	error: string | null;
 	lastUpdated: Date | null;
@@ -12,7 +11,6 @@ interface SimFileState {
 
 const initialState: SimFileState = {
 	userSimFiles: [],
-	publishedSimFiles: [],
 	isLoading: false,
 	error: null,
 	lastUpdated: null,
@@ -45,18 +43,6 @@ function createSimFileStore() {
 			update((state) => ({
 				...state,
 				userSimFiles,
-				isLoading: false,
-				error: null,
-				lastUpdated: new Date(),
-				fromCache
-			}));
-		},
-
-		// Set published simFiles
-		setPublishedSimFiles: (publishedSimFiles: SimfileWithDtx[], fromCache: boolean = false) => {
-			update((state) => ({
-				...state,
-				publishedSimFiles,
 				isLoading: false,
 				error: null,
 				lastUpdated: new Date(),
@@ -107,9 +93,7 @@ function createSimFileStore() {
 		getSimFileById: (id: number): SimfileWithDtx | undefined => {
 			let simFile: SimfileWithDtx | undefined;
 			update((state) => {
-				simFile =
-					state.userSimFiles.find((sf) => sf.id === id) ||
-					state.publishedSimFiles.find((sf) => sf.id === id);
+				simFile = state.userSimFiles.find((sf: SimfileWithDtx) => sf.id === id);
 				return state; // Don't modify the store
 			});
 			return simFile;

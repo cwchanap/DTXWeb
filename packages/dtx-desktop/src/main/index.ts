@@ -158,43 +158,6 @@ async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 	}
 }
 
-async function fetchPublishedSimFiles(): Promise<SimFileServiceResult> {
-	try {
-		// Ensure auth is initialized (even for public data, we need a valid client)
-		const isAuthReady = await ensureSupabaseAuth();
-		if (!isAuthReady) {
-			throw new Error('Authentication not available. Please log in first.');
-		}
-
-		// Fetch published simFiles from Supabase
-		const { data, error } = await supabaseClient!
-			.from('simfiles')
-			.select(
-				`id, title, artist, bpm, preview_url, sound_preview_url, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level)`
-			)
-			.eq('is_published', true)
-			.order('publish_date', { ascending: false });
-
-		if (error) {
-			throw new Error(`Failed to fetch published simFiles: ${error.message}`);
-		}
-
-		const simFiles = data || [];
-
-		return {
-			data: simFiles,
-			fromCache: false
-		};
-	} catch (error) {
-		console.error('Error fetching published simFiles:', error);
-		return {
-			data: [],
-			fromCache: false,
-			error: error instanceof Error ? error.message : 'Unknown error occurred'
-		};
-	}
-}
-
 function getPreviewUrl(preview_url: string): string {
 	if (!supabaseClient) {
 		throw new Error('Supabase client not initialized');
@@ -468,10 +431,6 @@ if (!gotTheLock) {
 		// SimFile service handlers
 		ipcMain.handle('fetch-user-simfiles', async () => {
 			return await fetchUserSimFiles();
-		});
-
-		ipcMain.handle('fetch-published-simfiles', async () => {
-			return await fetchPublishedSimFiles();
 		});
 
 		ipcMain.handle('get-preview-url', async (_event, preview_url: string) => {

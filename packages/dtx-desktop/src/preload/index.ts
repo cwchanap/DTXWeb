@@ -24,7 +24,6 @@ const extendedElectronAPI = {
 				'get-current-session',
 				'logout-session',
 				'fetch-user-simfiles',
-				'fetch-published-simfiles',
 				'get-preview-url',
 				'get-sound-preview-url'
 			];

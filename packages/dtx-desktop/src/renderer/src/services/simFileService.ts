@@ -51,46 +51,6 @@ class SimFileService {
 	}
 
 	/**
-	 * Fetches published simFiles for blog/public view via main process
-	 */
-	async fetchPublishedSimFiles(): Promise<SimFileServiceResult> {
-		try {
-			// Check cache first (using different cache key for published)
-			const cacheKey = 'published_simfiles_cache';
-			const timestampKey = 'published_simfiles_cache_timestamp';
-			const cachedResult = this.getCachedData(cacheKey, timestampKey);
-			if (cachedResult) {
-				return {
-					data: cachedResult,
-					fromCache: true
-				};
-			}
-
-			// Call main process to fetch published simFiles
-			const result = await window.electron.ipcRenderer.invoke('fetch-published-simfiles');
-
-			if (result.error) {
-				return result;
-			}
-
-			// Cache the result
-			this.setCachedData(result.data, cacheKey, timestampKey);
-
-			return {
-				data: result.data,
-				fromCache: false
-			};
-		} catch (error) {
-			console.error('Error fetching published simFiles:', error);
-			return {
-				data: [],
-				fromCache: false,
-				error: error instanceof Error ? error.message : 'Unknown error occurred'
-			};
-		}
-	}
-
-	/**
 	 * Gets cached simFiles data if it exists and is still valid
 	 */
 	private getCachedData(
@@ -145,8 +105,6 @@ class SimFileService {
 	clearCache(): void {
 		localStorage.removeItem(CACHE_KEY);
 		localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-		localStorage.removeItem('published_simfiles_cache');
-		localStorage.removeItem('published_simfiles_cache_timestamp');
 	}
 
 	/**

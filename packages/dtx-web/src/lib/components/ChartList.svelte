@@ -26,8 +26,7 @@
 	let totalPages = $state(1);
 	let totalCount = $state(0);
 	let loading = $state(false);
-	let artistFilter: string = $state('');
-	let songNameFilter: string = $state('');
+	let searchFilter: string = $state('');
 	let searchTimeout: ReturnType<typeof setTimeout>;
 	let hideUnpublished = $state(false);
 	let filteredItems = $state<SimfileWithDtx[]>([]);
@@ -67,9 +66,12 @@
 					{ count: 'exact' }
 				)
 				.order('publish_date', { ascending: false })
-				.ilike('artist', `%${artistFilter}%`)
-				.ilike('title', `%${songNameFilter}%`)
 				.range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+
+			// Apply search filter to both artist and title if search term is provided
+			if (searchFilter.trim()) {
+				query = query.or(`artist.ilike.%${searchFilter}%,title.ilike.%${searchFilter}%`);
+			}
 
 			if (!isBlog) {
 				const {
@@ -181,16 +183,9 @@
 
 <input
 	type="text"
-	placeholder={$_('blog.search_artist')}
-	bind:value={artistFilter}
-	class="mb-4 w-1/2 rounded-sm border p-2"
-	oninput={handleSearchInput}
-/>
-<input
-	type="text"
-	placeholder={$_('blog.search_song_name')}
-	bind:value={songNameFilter}
-	class="mb-4 w-1/2 rounded-sm border p-2"
+	placeholder={$_('blog.search_song_or_artist')}
+	bind:value={searchFilter}
+	class="mb-4 w-full rounded-sm border p-2"
 	oninput={handleSearchInput}
 />
 <div class="mb-4 flex items-center justify-between">

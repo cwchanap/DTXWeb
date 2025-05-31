@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Music, X, ArrowLeft } from '@lucide/svelte';
+	import { Music, X, ArrowLeft, Link, Calendar, User } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 
 	interface Props {
@@ -63,6 +63,65 @@
 				>
 			</div>
 		</div>
+
+		<!-- Linked SimFile Information -->
+		{#if song.linkedSimFile}
+			<div>
+				<h3
+					class="mb-2 flex items-center gap-2 text-lg font-medium text-slate-700 dark:text-slate-300"
+				>
+					<Link size={18} class="text-green-500 dark:text-green-400" />
+					Linked Remote SimFile
+				</h3>
+				<div class="rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<span class="font-semibold text-green-800 dark:text-green-200">
+								{song.linkedSimFile.title}
+							</span>
+							<span
+								class="rounded bg-green-200 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-800 dark:text-green-200"
+							>
+								Linked
+							</span>
+						</div>
+						<div
+							class="flex items-center gap-4 text-sm text-green-700 dark:text-green-300"
+						>
+							<div class="flex items-center gap-1">
+								<User size="14" />
+								{song.linkedSimFile.artist}
+							</div>
+							<div class="flex items-center gap-1">
+								<Music size="14" />
+								{song.linkedSimFile.bpm} BPM
+							</div>
+							{#if song.linkedSimFile.publish_date}
+								<div class="flex items-center gap-1">
+									<Calendar size="14" />
+									{new Date(song.linkedSimFile.publish_date).toLocaleDateString()}
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+			</div>
+		{:else if song.containsDtxFiles}
+			<div>
+				<h3 class="mb-2 text-lg font-medium text-slate-700 dark:text-slate-300">
+					Remote SimFile Status
+				</h3>
+				<div class="rounded-lg bg-yellow-50 p-4 dark:bg-yellow-900/20">
+					<div class="flex items-center gap-2">
+						<Music size={16} class="text-yellow-600 dark:text-yellow-400" />
+						<span class="text-sm text-yellow-800 dark:text-yellow-200">
+							No linked remote simFile found. This local song is not yet uploaded to
+							the cloud.
+						</span>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Additional song information -->
 		<div

@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { simFileStore } from '../stores/simFileStore';
 	import { simFileService } from '../services/simFileService';
-	import { RefreshCw, Music, Calendar, User } from '@lucide/svelte';
+	import { workspaceStore } from '../stores/workspaceStore';
+	import { RefreshCw, Music, Calendar, User, Link } from '@lucide/svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 
 	// Subscribe to the simFile store
 	let simFileState = $derived($simFileStore);
+	let workspaceState = $derived($workspaceStore);
 
 	// Pagination state
 	let currentPage = $state(1);
@@ -55,6 +57,27 @@
 	// Format date for display
 	function formatDate(dateString: string): string {
 		return new Date(dateString).toLocaleDateString();
+	}
+
+	// Check if a simFile is linked to any local folder
+	function isSimFileLinked(simFileId: number): boolean {
+		if (!workspaceState.treeStructure) return false;
+
+		const checkNodes = (nodes: any[]): boolean => {
+			for (const node of nodes) {
+				if (node.linkedSimFileId === simFileId) {
+					return true;
+				}
+				if (node.children && node.children.length > 0) {
+					if (checkNodes(node.children)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		};
+
+		return checkNodes(workspaceState.treeStructure);
 	}
 </script>
 
@@ -154,6 +177,14 @@
 							{/if}
 						</div>
 						<div class="flex items-center gap-2">
+							{#if isSimFileLinked(simFile.id)}
+								<span
+									class="flex items-center gap-1 rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+								>
+									<Link size="12" />
+									Linked
+								</span>
+							{/if}
 							{#if simFile.is_published}
 								<span
 									class="rounded bg-green-100 px-2 py-1 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-300"

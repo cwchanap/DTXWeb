@@ -9,6 +9,8 @@ export interface TreeNode {
 	hasChildren: boolean;
 	containsDtxFiles?: boolean; // New property to identify folders with .dtx files
 	songTitle?: string | null; // Song title from SET.def file
+	linkedSimFileId?: number | null; // ID of linked remote simFile
+	linkedSimFile?: any | null; // Full linked remote simFile data
 }
 
 interface WorkspaceState {
@@ -113,6 +115,24 @@ function createWorkspaceStore() {
 				...state,
 				selectedSong: null,
 				showSongDetails: false
+			}));
+		},
+		linkSimFileToFolder: (folderPath: string, simFile: any) => {
+			update((state) => ({
+				...state,
+				treeStructure: updateTreeNodeRecursive(state.treeStructure, folderPath, {
+					linkedSimFileId: simFile.id,
+					linkedSimFile: simFile
+				})
+			}));
+		},
+		unlinkSimFileFromFolder: (folderPath: string) => {
+			update((state) => ({
+				...state,
+				treeStructure: updateTreeNodeRecursive(state.treeStructure, folderPath, {
+					linkedSimFileId: null,
+					linkedSimFile: null
+				})
 			}));
 		},
 		reset: () => set(initialState)

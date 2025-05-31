@@ -1,4 +1,6 @@
 import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
+import { simFileStore } from '../stores/simFileStore';
+import { linkingService } from './linkingService';
 
 export const workspaceService = {
 	/**
@@ -95,6 +97,9 @@ export const workspaceService = {
 					subWorkspacePath
 				);
 				workspaceStore.setTreeStructure(treeData);
+
+				// Trigger auto-linking after tree structure is loaded
+				workspaceService.triggerAutoLinking();
 			} else {
 				// If no sub-workspace is selected, show all folders in the workspace
 				const treeData = await window.electron.ipcRenderer.invoke(
@@ -102,10 +107,73 @@ export const workspaceService = {
 					currentPath
 				);
 				workspaceStore.setTreeStructure(treeData);
+
+				// Trigger auto-linking after tree structure is loaded
+				workspaceService.triggerAutoLinking();
 			}
 		} catch (error) {
 			console.error('Failed to load tree structure:', error);
 			workspaceStore.setError('Failed to load tree structure');
+		}
+	},
+
+	/**
+	 * Triggers automatic linking between remote simFiles and local folders
+	 */
+	triggerAutoLinking: (): void => {
+		// Get current simFile state
+		let currentSimFileState: any = null;
+		const unsubscribeSimFile = simFileStore.subscribe((state) => {
+			currentSimFileState = state;
+		});
+		unsubscribeSimFile();
+
+		// Get current workspace state
+		let currentWorkspaceState: any = null;
+		const unsubscribeWorkspace = workspaceStore.subscribe((state) => {
+			currentWorkspaceState = state;
+		});
+		unsubscribeWorkspace();
+
+		// Only proceed if we have both remote simFiles and local tree structure
+		if (
+			currentSimFileState?.userSimFiles?.length > 0 &&
+			currentWorkspaceState?.treeStructure?.length > 0
+		) {
+			console.log('Triggering automatic linking from workspace service...');
+			linkingService.autoLinkSimFilesToFolders(
+				currentSimFileState.userSimFiles,
+				currentWorkspaceState.treeStructure
+			);
+		} else {
+			console.log('Skipping auto-linking from workspace service: insufficient data', {
+				remoteSimFiles: currentSimFileState?.userSimFiles?.length || 0,
+				localFolders: currentWorkspaceState?.treeStructure?.length || 0
+			});
+		}
+	},
+
+	/**
+	 * Triggers automatic linking for a specific set of newly loaded nodes
+	 * @param newNodes Array of newly loaded TreeNodes
+	 */
+	triggerAutoLinkingForNewNodes: (newNodes: TreeNode[]): void => {
+		// Get current simFile state
+		let currentSimFileState: any = null;
+		const unsubscribeSimFile = simFileStore.subscribe((state) => {
+			currentSimFileState = state;
+		});
+		unsubscribeSimFile();
+
+		// Only proceed if we have remote simFiles and new nodes
+		if (currentSimFileState?.userSimFiles?.length > 0 && newNodes?.length > 0) {
+			console.log('Triggering automatic linking for newly loaded nodes...');
+			linkingService.linkSimFilesToNewNodes(currentSimFileState.userSimFiles, newNodes);
+		} else {
+			console.log('Skipping auto-linking for new nodes: insufficient data', {
+				remoteSimFiles: currentSimFileState?.userSimFiles?.length || 0,
+				newNodes: newNodes?.length || 0
+			});
 		}
 	},
 
@@ -152,6 +220,9 @@ export const workspaceService = {
 				children: children,
 				hasChildren: children.length > 0
 			});
+
+			// Trigger auto-linking for newly loaded children (more efficient than full tree scan)
+			workspaceService.triggerAutoLinkingForNewNodes(children);
 		} catch (error) {
 			console.error('Failed to expand tree node:', error);
 			workspaceStore.updateTreeNode(nodePath, { isLoading: false });
@@ -171,6 +242,7 @@ export const workspaceService = {
 	setCurrentSubWorkspace: async (subWorkspace: string | null): Promise<void> => {
 		workspaceStore.setCurrentSubWorkspace(subWorkspace);
 		await workspaceService.loadTreeStructure();
+		// Note: loadTreeStructure already triggers auto-linking, so no need to call it again here
 	},
 
 	/**

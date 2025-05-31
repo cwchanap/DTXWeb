@@ -7,6 +7,8 @@ export interface TreeNode {
 	isLoading: boolean;
 	children: TreeNode[];
 	hasChildren: boolean;
+	containsDtxFiles?: boolean; // New property to identify folders with .dtx files
+	songTitle?: string | null; // Song title from SET.def file
 }
 
 interface WorkspaceState {
@@ -16,6 +18,8 @@ interface WorkspaceState {
 	treeStructure: TreeNode[];
 	isLoading: boolean;
 	error: string | null;
+	selectedSong: TreeNode | null;
+	showSongDetails: boolean;
 }
 
 const initialState: WorkspaceState = {
@@ -24,7 +28,9 @@ const initialState: WorkspaceState = {
 	subWorkspaces: [],
 	treeStructure: [],
 	isLoading: false,
-	error: null
+	error: null,
+	selectedSong: null,
+	showSongDetails: false
 };
 
 // Helper function to update tree nodes recursively
@@ -90,7 +96,23 @@ function createWorkspaceStore() {
 				currentSubWorkspace: null,
 				subWorkspaces: [],
 				treeStructure: [],
-				error: null
+				error: null,
+				selectedSong: null,
+				showSongDetails: false
+			}));
+		},
+		selectSong: (song: TreeNode) => {
+			update((state) => ({
+				...state,
+				selectedSong: song,
+				showSongDetails: true
+			}));
+		},
+		closeSongDetails: () => {
+			update((state) => ({
+				...state,
+				selectedSong: null,
+				showSongDetails: false
 			}));
 		},
 		reset: () => set(initialState)

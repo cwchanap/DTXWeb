@@ -5,7 +5,7 @@
 	import EventType from '@/game/EventType';
 	import { onMount } from 'svelte';
 	import store from '$lib/store';
-	import { DTXFile } from '$lib/chart/dtx';
+	import { DTXFile } from '@dtx/common';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
 
 	let dtxFile: DTXFile | null = $state(null);

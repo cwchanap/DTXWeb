@@ -8,7 +8,6 @@
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"gen-types": "npx supabase gen types --lang=typescript --project-id 'hdnwvpusmxrfrfjayogr' --schema public > src/types/supabase.types.ts",
 		"test": "vitest --run",
 		"prepare": "ln -sf ../../.env .env"
 	},
@@ -41,6 +40,7 @@
 		"@supabase/ssr": "^0.6.1",
 		"@supabase/supabase-js": "^2.49.4",
 		"@vercel/analytics": "^1.5.0",
+		"@dtx/common": "*",
 		"dayjs": "^1.11.13",
 		"jszip": "^3.10.1",
 		"phaser": "^3.88.2",

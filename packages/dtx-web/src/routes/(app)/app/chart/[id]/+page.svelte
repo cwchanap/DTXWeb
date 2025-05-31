@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import type { Tables } from '@/types/supabase.types';
+	import type { Tables } from '@dtx/common';
 	import { goto } from '$app/navigation';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
-	import type { SimFile } from '$lib/chart/simFile';
-	import type { DTXFile } from '$lib/chart/dtx';
+	import type { SimFile, DTXFile } from '@dtx/common';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 	import toastStore from '@/lib/toaster';

@@ -4,7 +4,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
 	main: {
-		plugins: [externalizeDepsPlugin()]
+		plugins: [externalizeDepsPlugin()],
+		envPrefix: ['VITE_', 'PUBLIC_']
 	},
 	preload: {
 		plugins: [externalizeDepsPlugin()]
@@ -12,6 +13,7 @@ export default defineConfig({
 	renderer: {
 		// @ts-ignore
 		plugins: [tailwindcss(), svelte()],
-		envDir: '../../'
+		envDir: '../../',
+		envPrefix: ['VITE_', 'PUBLIC_']
 	}
 });

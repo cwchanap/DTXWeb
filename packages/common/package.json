@@ -1,5 +1,5 @@
 {
-	"name": "common",
+	"name": "@dtx/common",
 	"version": "0.0.1",
 	"scripts": {
 		"dev": "vite dev",
@@ -24,7 +24,9 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
-			"svelte": "./dist/index.js"
+			"svelte": "./dist/index.js",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
 		}
 	},
 	"peerDependencies": {
@@ -43,5 +45,8 @@
 	},
 	"keywords": [
 		"svelte"
-	]
+	],
+	"dependencies": {
+		"jszip": "^3.10.1"
+	}
 }

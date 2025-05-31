@@ -3,7 +3,7 @@
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
-	import { Switch } from '@skeletonlabs/skeleton-svelte';
+	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
 	import ChartListItem from './ChartListItem.svelte';
 	import ChartListTableItem from './ChartListTableItem.svelte';
 	import IconX from '@lucide/svelte/icons/x';
@@ -17,33 +17,14 @@
 		isBlog?: boolean;
 	}
 
-	interface DtxFile {
-		level: number | string;
-	}
-
-	interface SimfileWithDtx {
-		id: number;
-		title: string;
-		artist: string;
-		bpm: number;
-		preview_url: string | null;
-		sound_preview_url: string | null;
-		download_url: string | null;
-		is_published: boolean;
-		display_id: number | null;
-		created_at?: string;
-		publish_date?: string;
-		updated_at?: string;
-		user_id?: string;
-		video_preview_url?: string | null;
-		dtx_files?: Partial<DtxFile>[];
-	}
+	import type { SimfileWithDtx } from '@dtx/common';
 
 	let { pageSize = 12, isBlog = false }: Props = $props();
 
 	let items: SimfileWithDtx[] = $state([]);
 	let currentPage = $state(1);
 	let totalPages = $state(1);
+	let totalCount = $state(0);
 	let loading = $state(false);
 	let artistFilter: string = $state('');
 	let songNameFilter: string = $state('');
@@ -107,7 +88,8 @@
 				return;
 			}
 			items = data || [];
-			totalPages = Math.ceil((count || 0) / pageSize);
+			totalCount = count || 0;
+			totalPages = Math.ceil(totalCount / pageSize);
 		} catch (error) {
 			console.error('Failed to load items:', error);
 		} finally {
@@ -120,6 +102,18 @@
 			currentPage = newPage;
 			loadItems();
 		}
+	}
+
+	// Handle page changes from Skeleton UI Pagination
+	function handlePageChange(event: { page: number }) {
+		changePage(event.page);
+	}
+
+	// Handle page size changes from Skeleton UI Pagination
+	function handlePageSizeChange(event: { pageSize: number }) {
+		pageSize = event.pageSize;
+		currentPage = 1; // Reset to first page when page size changes
+		loadItems();
 	}
 
 	function getPreviewUrl(preview_url: string) {
@@ -214,25 +208,43 @@
 			</div>
 		{/if}
 	</div>
-	<div class="flex items-center">
-		<span class="mr-2">View:</span>
-		<div class="flex rounded border">
-			<button
-				class="flex items-center justify-center p-2 {viewMode === 'card'
-					? 'bg-blue-100'
-					: 'hover:bg-gray-100'}"
-				onclick={() => (viewMode = 'card')}
+	<div class="flex items-center gap-4">
+		<!-- Page Size Selector -->
+		<div class="flex items-center">
+			<span class="mr-2 text-sm">Items per page:</span>
+			<select
+				bind:value={pageSize}
+				onchange={() => handlePageSizeChange({ pageSize })}
+				class="rounded border border-gray-300 px-2 py-1 text-sm"
 			>
-				<IconGrid size="18" />
-			</button>
-			<button
-				class="flex items-center justify-center p-2 {viewMode === 'table'
-					? 'bg-blue-100'
-					: 'hover:bg-gray-100'}"
-				onclick={() => (viewMode = 'table')}
-			>
-				<IconTable size="18" />
-			</button>
+				<option value={6}>6</option>
+				<option value={12}>12</option>
+				<option value={24}>24</option>
+				<option value={48}>48</option>
+			</select>
+		</div>
+
+		<!-- View Mode Selector -->
+		<div class="flex items-center">
+			<span class="mr-2">View:</span>
+			<div class="flex rounded border">
+				<button
+					class="flex items-center justify-center p-2 {viewMode === 'card'
+						? 'bg-blue-100'
+						: 'hover:bg-gray-100'}"
+					onclick={() => (viewMode = 'card')}
+				>
+					<IconGrid size="18" />
+				</button>
+				<button
+					class="flex items-center justify-center p-2 {viewMode === 'table'
+						? 'bg-blue-100'
+						: 'hover:bg-gray-100'}"
+					onclick={() => (viewMode = 'table')}
+				>
+					<IconTable size="18" />
+				</button>
+			</div>
 		</div>
 	</div>
 </div>
@@ -281,29 +293,36 @@
 			</table>
 		</div>
 	{/if}
-	<!-- Pagination controls -->
-
-	<div class="mt-6 flex justify-center">
-		<button
-			class="mr-2 rounded-sm bg-blue-500 px-4 py-2 text-white"
-			onclick={() => changePage(currentPage - 1)}
-			disabled={currentPage === 1}>{$_('blog.pagination.previous')}</button
-		>
-		<span class="mx-4 self-center">
-			{$_('blog.pagination.page', { values: { currentPage, totalPages } })}
-		</span>
-		<button
-			class="ml-2 rounded-sm bg-blue-500 px-4 py-2 text-white"
-			onclick={() => changePage(currentPage + 1)}
-			disabled={currentPage === totalPages}>{$_('blog.pagination.next')}</button
-		>
-		<input
-			type="number"
-			min="1"
-			max={totalPages}
-			bind:value={currentPage}
-			class="mx-2 w-16 rounded-sm border p-1"
-			onchange={() => changePage(currentPage)}
-		/>
-	</div>
+	<!-- Skeleton UI Pagination Component -->
+	{#if totalPages > 1}
+		<div class="mt-6 flex justify-center">
+			<Pagination
+				data={items}
+				count={totalCount}
+				page={currentPage}
+				{pageSize}
+				onPageChange={handlePageChange}
+				onPageSizeChange={handlePageSizeChange}
+				siblingCount={2}
+				showFirstLastButtons={true}
+				classes="flex items-center gap-2"
+				buttonBase="btn btn-sm"
+				buttonActive="preset-filled-primary-500"
+				buttonInactive="preset-tonal-surface"
+			>
+				{#snippet labelFirst()}
+					{$_('blog.pagination.first')}
+				{/snippet}
+				{#snippet labelPrevious()}
+					{$_('blog.pagination.previous')}
+				{/snippet}
+				{#snippet labelNext()}
+					{$_('blog.pagination.next')}
+				{/snippet}
+				{#snippet labelLast()}
+					{$_('blog.pagination.last')}
+				{/snippet}
+			</Pagination>
+		</div>
+	{/if}
 {/if}

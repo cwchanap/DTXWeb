@@ -6,7 +6,7 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote } from '$lib/chart/note';
+import { LaneMeasureNote } from '@dtx/common';
 
 interface Data {
 	measureCount?: number;

@@ -5,13 +5,13 @@
 	import { Editor } from '@/game/scenes/Editor';
 	import { onDestroy, onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
-	import { DTXFile } from '$lib/chart/dtx';
+	import { DTXFile, SimFile } from '@dtx/common';
 	import { MainMenu } from '@/game/scenes/MainMenu';
 	import SoundTab from '$lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
-	import { SimFile } from '$lib/chart/simFile';
 	import EventType from '@/game/EventType';
+	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import store from '$lib/store';
 	import { EventBus } from '@/game/EventBus';
 	import { page } from '$app/state';
@@ -73,7 +73,7 @@
 
 		try {
 			// Load simfile from remote URL
-			const simfile = await SimFile.parseFromRemoteURL(simfileID);
+			const simfile = await SimFile.parseFromRemoteURL(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
 
 			// Get the highest level DTX file from the simfile
 			const highestDtx = simfile.getHighestLevel();
@@ -89,7 +89,7 @@
 			store.currentSoundChip.set(soundChips);
 
 			soundChips.forEach(async (soundChip) => {
-				await soundChip.fetchRemote(simfileID);
+				await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
 			});
 
 			// Emit note import event

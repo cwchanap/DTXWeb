@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
-import { DTXFile } from './dtx';
-import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+import { DTXFile } from './dtx.js';
 
 interface DtxLevel {
 	label: string;
@@ -10,10 +9,18 @@ interface DtxLevel {
 export class SimFile {
 	private isParseFromRemoteURL: boolean = false;
 	private simFileID: string = '';
+	private bucketUrl: string = '';
 	public title!: string;
 	public levels: { [key: number]: DtxLevel | undefined } = {};
 
-	constructor(public files: File[]) {}
+	constructor(
+		public files: File[],
+		bucketUrl?: string
+	) {
+		if (bucketUrl) {
+			this.bucketUrl = bucketUrl;
+		}
+	}
 
 	public async parse() {
 		// search for `def` file
@@ -24,7 +31,7 @@ export class SimFile {
 		await this.parseHeader(defFile);
 	}
 
-	public static async parseFromZip(file: string) {
+	public static async parseFromZip(file: string, bucketUrl?: string) {
 		const zip = new JSZip();
 		const zipContent = await zip.loadAsync(file);
 		const extracted = [];
@@ -35,13 +42,13 @@ export class SimFile {
 				extracted.push(new File([file], name));
 			}
 		}
-		return new SimFile(extracted);
+		return new SimFile(extracted, bucketUrl);
 	}
 
-	public static async parseFromRemoteURL(simfileID: string) {
-		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/set.def`);
+	public static async parseFromRemoteURL(simfileID: string, bucketUrl: string) {
+		const response = await fetch(`${bucketUrl}/${simfileID}/set.def`);
 		const file = new File([await response.blob()], 'set.def');
-		const simFile = new SimFile([file]);
+		const simFile = new SimFile([file], bucketUrl);
 		simFile.isParseFromRemoteURL = true;
 		simFile.simFileID = simfileID;
 		await simFile.parse();
@@ -56,16 +63,51 @@ export class SimFile {
 		return zip;
 	}
 
-	public async parseHeader(file: File) {
-		const content = await file.text();
-		const lines = content.split('\r\n');
+	private async readFileWithEncoding(file: File): Promise<string> {
+		const arrayBuffer = await file.arrayBuffer();
 
-		const title_line = lines.find((line) => line.startsWith('#TITLE '));
+		// List of encodings to try in order
+		const encodings = ['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'];
+
+		for (const encoding of encodings) {
+			try {
+				const decoder = new TextDecoder(encoding);
+				const content = decoder.decode(arrayBuffer);
+
+				// Check if the content looks valid (contains expected DTX header patterns)
+				if (
+					content.includes('#TITLE') ||
+					content.includes('#L1LABEL') ||
+					content.includes('#L1FILE')
+				) {
+					// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
+					const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
+					if (nullByteRatio < 0.1) {
+						// Less than 10% null bytes
+						return content;
+					}
+				}
+			} catch (error) {
+				// Continue to next encoding if this one fails
+				continue;
+			}
+		}
+
+		// Fallback to UTF-8 if nothing else works
+		const decoder = new TextDecoder('utf-8');
+		return decoder.decode(arrayBuffer);
+	}
+
+	public async parseHeader(file: File) {
+		const content = await this.readFileWithEncoding(file);
+		const lines = content.split(/\r?\n/);
+
+		const title_line = lines.find((line: string) => line.startsWith('#TITLE '));
 		this.title = title_line ? title_line.split('#TITLE ')[1] : '';
 
 		const promises = [1, 2, 3, 4, 5].map(async (level) => {
-			const level_line = lines.find((line) => line.startsWith(`#L${level}LABEL `));
-			const file_line = lines.find((line) => line.startsWith(`#L${level}FILE `));
+			const level_line = lines.find((line: string) => line.startsWith(`#L${level}LABEL `));
+			const file_line = lines.find((line: string) => line.startsWith(`#L${level}FILE `));
 			if (level_line && file_line) {
 				const label = level_line.split(' ')[1];
 				const file_name = file_line.split(' ')[1];
@@ -74,7 +116,7 @@ export class SimFile {
 					file = this.files.find((f) => f.name === file_name);
 				} else {
 					const response = await fetch(
-						`${PUBLIC_SIMFILE_BUCKET_URL}/${this.simFileID}/${file_name}`
+						`${this.bucketUrl}/${this.simFileID}/${file_name}`
 					);
 					if (!response.ok) {
 						return;

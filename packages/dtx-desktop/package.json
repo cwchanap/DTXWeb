@@ -21,9 +21,11 @@
 		"test": "vitest --run"
 	},
 	"dependencies": {
+		"@dtx/common": "*",
 		"@electron-toolkit/preload": "^3.0.2",
 		"@electron-toolkit/utils": "^4.0.0",
 		"@lucide/svelte": "^0.507.0",
+		"@supabase/supabase-js": "^2.49.8",
 		"electron-updater": "^6.6.2"
 	},
 	"devDependencies": {

@@ -14,7 +14,19 @@ const extendedElectronAPI = {
 		// Add our custom IPC handlers
 		invoke: (channel: string, ...args: any[]) => {
 			// Whitelist channels that can be invoked
-			const validChannels = ['select-directory', 'list-directories', 'load-tree-structure'];
+			const validChannels = [
+				'select-directory',
+				'list-directories',
+				'load-tree-structure',
+				'read-file',
+				'verify-magic-link',
+				'validate-session',
+				'get-current-session',
+				'logout-session',
+				'fetch-user-simfiles',
+				'get-preview-url',
+				'get-sound-preview-url'
+			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);
 			}

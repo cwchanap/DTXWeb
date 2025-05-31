@@ -5,18 +5,52 @@
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
 	import { authService } from './services/authService';
+	import { simFileService } from './services/simFileService';
+	import { simFileStore } from './stores/simFileStore';
 	import { onMount, onDestroy } from 'svelte';
 
 	// Try to restore the session on app start
-	onMount(() => {
-		// Set up the protocol handler callback
-		window.electron.ipcRenderer.on('auth-callback', (_event, token) => {
-			authService.handleAuthCallback(token);
+	onMount(async () => {
+		// Set up the magic link result handler (new approach)
+		window.electron.ipcRenderer.on('magic-link-result', async (_event, result) => {
+			await authService.handleMagicLinkResult(result);
+		});
+
+		// Set up the legacy protocol handler callback
+		window.electron.ipcRenderer.on('auth-callback', async (_event, tokens) => {
+			await authService.handleAuthCallback(tokens);
 		});
 
 		// Try to restore session
-		authService.restoreSession();
+		await authService.restoreSession();
 	});
+
+	// Reactive statement to fetch simFile data when user becomes authenticated
+	$: if ($authStore.isAuthenticated && $authStore.user) {
+		fetchSimFileData();
+	}
+
+	// Function to fetch simFile data
+	async function fetchSimFileData() {
+		try {
+			simFileStore.setLoading(true);
+			const result = await simFileService.fetchUserSimFiles();
+
+			if (result.error) {
+				simFileStore.setError(result.error);
+			} else {
+				simFileStore.setUserSimFiles(result.data, result.fromCache);
+				console.log(
+					`Loaded ${result.data.length} simFiles ${result.fromCache ? 'from cache' : 'from server'}`
+				);
+			}
+		} catch (error) {
+			console.error('Failed to fetch simFile data:', error);
+			simFileStore.setError(
+				error instanceof Error ? error.message : 'Failed to load simFiles'
+			);
+		}
+	}
 
 	// Clean up listener when component is destroyed
 	onDestroy(() => {

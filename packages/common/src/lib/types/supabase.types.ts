@@ -206,3 +206,41 @@ export type Enums<
 	: PublicEnumNameOrOptions extends keyof PublicSchema['Enums']
 		? PublicSchema['Enums'][PublicEnumNameOrOptions]
 		: never;
+
+export type CompositeTypes<
+	PublicCompositeTypeNameOrOptions extends
+		| keyof PublicSchema['CompositeTypes']
+		| { schema: keyof Database },
+	CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+		schema: keyof Database;
+	}
+		? keyof Database[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
+		: never = never
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+	? Database[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
+	: PublicCompositeTypeNameOrOptions extends keyof PublicSchema['CompositeTypes']
+		? PublicSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
+		: never;
+
+// Additional interfaces for simFile data
+export interface DtxFile {
+	level: number | string;
+}
+
+export interface SimfileWithDtx {
+	id: number;
+	title: string;
+	artist: string;
+	bpm: number;
+	preview_url: string | null;
+	sound_preview_url: string | null;
+	download_url: string | null;
+	is_published: boolean;
+	display_id: number | null;
+	created_at?: string;
+	publish_date?: string;
+	updated_at?: string;
+	user_id?: string;
+	video_preview_url?: string | null;
+	dtx_files?: Partial<DtxFile>[];
+}

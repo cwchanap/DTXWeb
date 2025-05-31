@@ -1,5 +1,4 @@
-import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-import { LaneMeasureNote } from './note';
+import { LaneMeasureNote } from './note.js';
 
 export class SoundChip {
 	label: string;
@@ -28,12 +27,12 @@ export class SoundChip {
 		}
 	}
 
-	async fetchRemote(simfileID: string) {
+	async fetchRemote(simfileID: string, bucketUrl: string) {
 		if (!this.fileName) {
 			console.error('Sound chip file name is not set');
 			return;
 		}
-		const response = await fetch(`${PUBLIC_SIMFILE_BUCKET_URL}/${simfileID}/${this.fileName}`);
+		const response = await fetch(`${bucketUrl}/${simfileID}/${this.fileName}`);
 		if (!response.ok) {
 			console.error(`Failed to fetch sound chip: ${this.fileName}`);
 			return;
@@ -58,18 +57,66 @@ export class DTXFile {
 		public difficulty?: string
 	) {}
 
-	async parse(encoding: string = 'shift-jis') {
+	async parse(encoding?: string) {
 		if (typeof this.file === 'string') {
 			this.parseFromText(this.file);
 		} else if (this.file instanceof File) {
-			const arrayBuffer = await this.file.arrayBuffer();
-			const decoder = new TextDecoder(encoding);
-			const content = decoder.decode(arrayBuffer);
+			const content = encoding
+				? await this.parseWithSpecificEncoding(encoding)
+				: await this.parseWithEncodingDetection();
 			this.parseFromText(content);
 		} else {
 			console.error('File is not set');
 			return;
 		}
+	}
+
+	private async parseWithSpecificEncoding(encoding: string): Promise<string> {
+		if (!(this.file instanceof File)) {
+			throw new Error('File is not set');
+		}
+		const arrayBuffer = await this.file.arrayBuffer();
+		const decoder = new TextDecoder(encoding);
+		return decoder.decode(arrayBuffer);
+	}
+
+	private async parseWithEncodingDetection(): Promise<string> {
+		if (!(this.file instanceof File)) {
+			throw new Error('File is not set');
+		}
+		const arrayBuffer = await this.file.arrayBuffer();
+
+		// List of encodings to try in order
+		const encodings = ['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'];
+
+		for (const encoding of encodings) {
+			try {
+				const decoder = new TextDecoder(encoding);
+				const content = decoder.decode(arrayBuffer);
+
+				// Check if the content looks valid (contains expected DTX header patterns)
+				if (
+					content.includes('#TITLE:') ||
+					content.includes('#ARTIST:') ||
+					content.includes('#BPM:') ||
+					content.includes('#WAV')
+				) {
+					// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
+					const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
+					if (nullByteRatio < 0.1) {
+						// Less than 10% null bytes
+						return content;
+					}
+				}
+			} catch (error) {
+				// Continue to next encoding if this one fails
+				continue;
+			}
+		}
+
+		// Fallback to shift-jis (original default) if nothing else works
+		const decoder = new TextDecoder('shift-jis');
+		return decoder.decode(arrayBuffer);
 	}
 
 	async parseFromText(text: string) {

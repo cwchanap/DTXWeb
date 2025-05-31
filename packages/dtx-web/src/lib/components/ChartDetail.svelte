@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { Tables } from '@/types/supabase.types';
+	import type { Tables } from '@dtx/common';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';

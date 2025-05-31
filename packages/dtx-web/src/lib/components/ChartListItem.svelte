@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
 	import ImageAudio from './ImageAudio.svelte';
-	import type { Tables } from '@/types/supabase.types';
+	import type { Tables } from '@dtx/common';
 	import { Modal, Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';

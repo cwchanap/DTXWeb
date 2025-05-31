@@ -1,4 +1,4 @@
-import type { Tables } from '@/types/supabase.types';
+import type { Tables } from '@dtx/common';
 
 export function formatLevelDisplay(dtx_files: Tables<'dtx_files'>[]) {
 	return (

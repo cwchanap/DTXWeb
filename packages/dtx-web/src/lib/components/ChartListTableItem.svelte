@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import type { Tables } from '@/types/supabase.types';
+	import type { Tables } from '@dtx/common';
 	import { Modal, Popover, Tooltip } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
 	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';

@@ -92,9 +92,11 @@
 <main
 	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 px-8 pt-16 pb-8 text-slate-800 dark:from-slate-900 dark:to-slate-800 dark:text-slate-100"
 >
-	<div class="mx-auto max-w-3xl">
+	<div class="mx-auto w-full">
 		{#if !$authStore.isAuthenticated}
-			<div class="mb-10 overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800">
+			<div
+				class="mx-auto mb-10 max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800"
+			>
 				<Login />
 			</div>
 		{:else}

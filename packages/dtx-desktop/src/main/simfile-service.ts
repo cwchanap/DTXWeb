@@ -1,4 +1,4 @@
-import { type SimfileWithDtx } from '@dtx/common';
+import { type SimfileWithDtx } from '@dtx/common/node';
 import { ensureSupabaseAuth, getSupabaseClient } from './auth';
 
 // SimFile service functions

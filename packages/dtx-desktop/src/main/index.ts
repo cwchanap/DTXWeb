@@ -84,6 +84,38 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle listing files in a directory
+		ipcMain.handle('list-files', async (_event, dirPath) => {
+			try {
+				console.log('Listing files in:', dirPath);
+				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+				// Get all files with their stats
+				const files = await Promise.all(
+					entries
+						.filter((entry) => entry.isFile())
+						.map(async (file) => {
+							const filePath = `${dirPath}/${file.name}`;
+							const stats = await fs.promises.stat(filePath);
+							return {
+								fileName: file.name,
+								size: stats.size,
+								lastModified: stats.mtime.toISOString(),
+								key: filePath // Use full path as key for local files
+							};
+						})
+				);
+
+				return { files };
+			} catch (error) {
+				console.error('Error listing files:', error);
+				return {
+					files: [],
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
+		});
+
 		// Handle magic link verification in main process
 		ipcMain.handle('verify-magic-link', async (_event, magicLinkUrl) => {
 			return await verifyMagicLink(magicLinkUrl);

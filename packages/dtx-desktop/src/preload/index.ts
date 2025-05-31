@@ -19,6 +19,7 @@ const extendedElectronAPI = {
 				'list-directories',
 				'load-tree-structure',
 				'read-file',
+				'list-files',
 				'verify-magic-link',
 				'validate-session',
 				'get-current-session',

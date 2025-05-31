@@ -22,22 +22,23 @@ export const linkingService = {
 
 		let linkCount = 0;
 
-		// Try to match each remote simFile with local folders
-		remoteSimFiles.forEach((simFile) => {
-			const matchingFolder = linkingService.findMatchingFolder(simFile, foldersWithSongs);
-			if (matchingFolder) {
-				// Check if this folder is already linked to avoid duplicate linking
-				if (!matchingFolder.linkedSimFileId) {
-					console.log(
-						`Linking simFile "${simFile.title}" to folder "${matchingFolder.name}"`
-					);
-					workspaceStore.linkSimFileToFolder(matchingFolder.path, simFile);
-					linkCount++;
-				} else {
-					console.log(
-						`Folder "${matchingFolder.name}" is already linked to simFile ID ${matchingFolder.linkedSimFileId}`
-					);
-				}
+		// Try to find the best matching remote simFile for each local folder
+		foldersWithSongs.forEach((folder) => {
+			// Skip if folder is already linked
+			if (folder.linkedSimFileId) {
+				console.log(
+					`Folder "${folder.name}" is already linked to simFile ID ${folder.linkedSimFileId}`
+				);
+				return;
+			}
+
+			const matchingSimFile = linkingService.findMatchingSimFile(folder, remoteSimFiles);
+			if (matchingSimFile) {
+				console.log(
+					`Linking folder "${folder.name}" to simFile "${matchingSimFile.title}"`
+				);
+				workspaceStore.linkSimFileToFolder(folder.path, matchingSimFile);
+				linkCount++;
 			}
 		});
 
@@ -91,12 +92,65 @@ export const linkingService = {
 			return normalizedFolderTitle === normalizedSimFileTitle;
 		});
 
+		// console.log('Exact match:', match, simFile.title, normalizedSimFileTitle);
+
 		// If no exact match, try fuzzy matching
 		if (!match) {
 			match = localFolders.find((folder) => {
 				if (!folder.songTitle) return false;
 				return linkingService.isFuzzyMatch(simFile.title, folder.songTitle);
 			});
+		}
+
+		return match || null;
+	},
+
+	/**
+	 * Finds a remote simFile that matches the given local folder by song title
+	 * @param folder Local folder to match
+	 * @param remoteSimFiles Array of remote simFiles
+	 * @returns Matching SimfileWithDtx or null if no match found
+	 */
+	findMatchingSimFile: (
+		folder: TreeNode,
+		remoteSimFiles: SimfileWithDtx[]
+	): SimfileWithDtx | null => {
+		if (!folder.songTitle) {
+			return null;
+		}
+
+		// Normalize the folder title for comparison
+		const normalizedFolderTitle = linkingService.normalizeTitle(folder.songTitle);
+
+		// Try to find exact match first
+		let match = remoteSimFiles.find((simFile) => {
+			if (!simFile.title) return false;
+			const normalizedSimFileTitle = linkingService.normalizeTitle(simFile.title);
+			return normalizedSimFileTitle === normalizedFolderTitle;
+		});
+
+		// If no exact match, try fuzzy matching and find the best match
+		if (!match) {
+			let bestMatch: SimfileWithDtx | null = null;
+			let bestSimilarity = 0;
+
+			remoteSimFiles.forEach((simFile) => {
+				if (!simFile.title) return;
+
+				if (linkingService.isFuzzyMatch(folder.songTitle!, simFile.title)) {
+					const similarity = linkingService.calculateSimilarity(
+						linkingService.normalizeTitle(folder.songTitle!),
+						linkingService.normalizeTitle(simFile.title)
+					);
+
+					if (similarity > bestSimilarity) {
+						bestSimilarity = similarity;
+						bestMatch = simFile;
+					}
+				}
+			});
+
+			match = bestMatch;
 		}
 
 		return match || null;
@@ -132,7 +186,8 @@ export const linkingService = {
 
 		// Check similarity using Levenshtein distance
 		const similarity = linkingService.calculateSimilarity(normalized1, normalized2);
-		return similarity > 0.8; // 80% similarity threshold
+		// console.log('Similarity:', similarity, normalized1, normalized2);
+		return similarity > 0.95; // 80% similarity threshold
 	},
 
 	/**
@@ -216,22 +271,23 @@ export const linkingService = {
 
 		let linkCount = 0;
 
-		// Try to match each remote simFile with the new local folders
-		remoteSimFiles.forEach((simFile) => {
-			const matchingFolder = linkingService.findMatchingFolder(simFile, newFoldersWithSongs);
-			if (matchingFolder) {
-				// Check if this folder is already linked to avoid duplicate linking
-				if (!matchingFolder.linkedSimFileId) {
-					console.log(
-						`Linking simFile "${simFile.title}" to newly loaded folder "${matchingFolder.name}"`
-					);
-					workspaceStore.linkSimFileToFolder(matchingFolder.path, simFile);
-					linkCount++;
-				} else {
-					console.log(
-						`Newly loaded folder "${matchingFolder.name}" is already linked to simFile ID ${matchingFolder.linkedSimFileId}`
-					);
-				}
+		// Try to find the best matching remote simFile for each newly loaded folder
+		newFoldersWithSongs.forEach((folder) => {
+			// Skip if folder is already linked
+			if (folder.linkedSimFileId) {
+				console.log(
+					`Newly loaded folder "${folder.name}" is already linked to simFile ID ${folder.linkedSimFileId}`
+				);
+				return;
+			}
+
+			const matchingSimFile = linkingService.findMatchingSimFile(folder, remoteSimFiles);
+			if (matchingSimFile) {
+				console.log(
+					`Linking newly loaded folder "${folder.name}" to simFile "${matchingSimFile.title}"`
+				);
+				workspaceStore.linkSimFileToFolder(folder.path, matchingSimFile);
+				linkCount++;
 			}
 		});
 

@@ -101,90 +101,105 @@ describe('LinkingService', () => {
 		});
 	});
 
-	describe('findMatchingFolder', () => {
-		const mockFolders: TreeNode[] = [
+	describe('findMatchingSimFile', () => {
+		const mockSimFiles: SimfileWithDtx[] = [
 			{
-				name: 'Exact Match',
-				path: '/path/exact',
+				id: 1,
+				title: 'Test Song',
+				artist: 'Test Artist',
+				bpm: 120,
+				preview_url: null,
+				sound_preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				dtx_files: []
+			},
+			{
+				id: 2,
+				title: 'Test Song Extended Version',
+				artist: 'Test Artist',
+				bpm: 120,
+				preview_url: null,
+				sound_preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				dtx_files: []
+			}
+		];
+
+		it('should find exact matches', () => {
+			const mockFolder: TreeNode = {
+				name: 'Test Folder',
+				path: '/path/test',
 				isExpanded: false,
 				isLoading: false,
 				children: [],
 				hasChildren: false,
 				containsDtxFiles: true,
 				songTitle: 'Test Song'
-			},
-			{
-				name: 'Fuzzy Match',
-				path: '/path/fuzzy',
+			};
+
+			const result = linkingService.findMatchingSimFile(mockFolder, mockSimFiles);
+			expect(result).toBeTruthy();
+			expect(result?.title).toBe('Test Song');
+		});
+
+		it('should find fuzzy matches when exact match not found', () => {
+			const mockFolder: TreeNode = {
+				name: 'Test Folder',
+				path: '/path/test',
 				isExpanded: false,
 				isLoading: false,
 				children: [],
 				hasChildren: false,
 				containsDtxFiles: true,
-				songTitle: 'Test Song Extended Version'
-			}
-		];
-
-		it('should find exact matches', () => {
-			const mockSimFile: SimfileWithDtx = {
-				id: 1,
-				title: 'Test Song',
-				artist: 'Test Artist',
-				bpm: 120,
-				preview_url: null,
-				sound_preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				dtx_files: []
+				songTitle: 'Test Song'
 			};
 
-			const result = linkingService.findMatchingFolder(mockSimFile, mockFolders);
+			const simFilesWithoutExact = mockSimFiles.slice(1); // Remove exact match
+			const result = linkingService.findMatchingSimFile(mockFolder, simFilesWithoutExact);
 			expect(result).toBeTruthy();
-			expect(result?.name).toBe('Exact Match');
-		});
-
-		it('should find fuzzy matches when exact match not found', () => {
-			const mockSimFile: SimfileWithDtx = {
-				id: 1,
-				title: 'Test Song',
-				artist: 'Test Artist',
-				bpm: 120,
-				preview_url: null,
-				sound_preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				dtx_files: []
-			};
-
-			const foldersWithoutExact = mockFolders.slice(1); // Remove exact match
-			const result = linkingService.findMatchingFolder(mockSimFile, foldersWithoutExact);
-			expect(result).toBeTruthy();
-			expect(result?.name).toBe('Fuzzy Match');
+			expect(result?.title).toBe('Test Song Extended Version');
 		});
 
 		it('should return null when no match found', () => {
-			const mockSimFile: SimfileWithDtx = {
-				id: 1,
-				title: 'Completely Different Song',
-				artist: 'Test Artist',
-				bpm: 120,
-				preview_url: null,
-				sound_preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				dtx_files: []
+			const mockFolder: TreeNode = {
+				name: 'Test Folder',
+				path: '/path/test',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'Completely Different Song'
 			};
 
-			const result = linkingService.findMatchingFolder(mockSimFile, mockFolders);
+			const result = linkingService.findMatchingSimFile(mockFolder, mockSimFiles);
 			expect(result).toBeNull();
+		});
+
+		it('should find the best match when multiple fuzzy matches exist', () => {
+			const mockFolder: TreeNode = {
+				name: 'Test Folder',
+				path: '/path/test',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'Test Song Extended'
+			};
+
+			const result = linkingService.findMatchingSimFile(mockFolder, mockSimFiles);
+			expect(result).toBeTruthy();
+			expect(result?.title).toBe('Test Song Extended Version'); // Should pick the better match
 		});
 	});
 
 	describe('autoLinkSimFilesToFolders', () => {
-		it('should link matching simFiles to folders', () => {
+		it('should link matching folders to simFiles', () => {
 			const mockSimFiles: SimfileWithDtx[] = [
 				{
 					id: 1,
@@ -258,7 +273,7 @@ describe('LinkingService', () => {
 	});
 
 	describe('linkSimFilesToNewNodes', () => {
-		it('should link simFiles to newly loaded nodes', () => {
+		it('should link newly loaded folders to simFiles', () => {
 			const mockSimFiles: SimfileWithDtx[] = [
 				{
 					id: 1,

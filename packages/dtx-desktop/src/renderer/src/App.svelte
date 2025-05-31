@@ -7,6 +7,8 @@
 	import { authService } from './services/authService';
 	import { simFileService } from './services/simFileService';
 	import { simFileStore } from './stores/simFileStore';
+	import { workspaceStore } from './stores/workspaceStore';
+	import { linkingService } from './services/linkingService';
 	import { onMount, onDestroy } from 'svelte';
 
 	// Try to restore the session on app start
@@ -43,12 +45,39 @@
 				console.log(
 					`Loaded ${result.data.length} simFiles ${result.fromCache ? 'from cache' : 'from server'}`
 				);
+
+				// Trigger automatic linking after simFiles are loaded
+				triggerAutoLinking(result.data);
 			}
 		} catch (error) {
 			console.error('Failed to fetch simFile data:', error);
 			simFileStore.setError(
 				error instanceof Error ? error.message : 'Failed to load simFiles'
 			);
+		}
+	}
+
+	// Function to trigger automatic linking between remote simFiles and local folders
+	function triggerAutoLinking(remoteSimFiles: any[]) {
+		// Get current workspace state
+		let currentWorkspaceState: any = null;
+		const unsubscribe = workspaceStore.subscribe((state) => {
+			currentWorkspaceState = state;
+		});
+		unsubscribe();
+
+		// Only proceed if we have both remote simFiles and local tree structure
+		if (remoteSimFiles.length > 0 && currentWorkspaceState?.treeStructure?.length > 0) {
+			console.log('Triggering automatic linking...');
+			linkingService.autoLinkSimFilesToFolders(
+				remoteSimFiles,
+				currentWorkspaceState.treeStructure
+			);
+		} else {
+			console.log('Skipping auto-linking: insufficient data', {
+				remoteSimFiles: remoteSimFiles.length,
+				localFolders: currentWorkspaceState?.treeStructure?.length || 0
+			});
 		}
 	}
 
@@ -63,9 +92,11 @@
 <main
 	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 px-8 pt-16 pb-8 text-slate-800 dark:from-slate-900 dark:to-slate-800 dark:text-slate-100"
 >
-	<div class="mx-auto max-w-3xl">
+	<div class="mx-auto w-full">
 		{#if !$authStore.isAuthenticated}
-			<div class="mb-10 overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800">
+			<div
+				class="mx-auto mb-10 max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800"
+			>
 				<Login />
 			</div>
 		{:else}

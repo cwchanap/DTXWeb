@@ -1,5 +1,13 @@
 <script lang="ts">
-	import { ChevronRight, ChevronDown, Folder, FolderOpen, Loader, Music } from '@lucide/svelte';
+	import {
+		ChevronRight,
+		ChevronDown,
+		Folder,
+		FolderOpen,
+		Loader,
+		Music,
+		Link
+	} from '@lucide/svelte';
 	import { workspaceService } from '../services/workspaceService';
 	import type { TreeNode } from '../stores/workspaceStore';
 	import WorkspaceTree from './WorkspaceTree.svelte';
@@ -44,7 +52,9 @@
 	<div class="tree-node">
 		<button
 			class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm transition-colors {node.containsDtxFiles
-				? 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
+				? node.linkedSimFileId
+					? 'cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20'
+					: 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
 				: 'hover:bg-slate-100 dark:hover:bg-slate-700'}"
 			style={getIndentStyle(level)}
 			onclick={() => handleToggleNode(node)}
@@ -68,7 +78,12 @@
 
 			<!-- Folder/Song Icon -->
 			{#if node.containsDtxFiles}
-				<Music size={16} class="text-purple-500 dark:text-purple-400" />
+				<Music
+					size={16}
+					class={node.linkedSimFileId
+						? 'text-green-500 dark:text-green-400'
+						: 'text-purple-500 dark:text-purple-400'}
+				/>
 			{:else if node.isExpanded}
 				<FolderOpen size={16} class="text-blue-500 dark:text-blue-400" />
 			{:else}
@@ -76,7 +91,7 @@
 			{/if}
 
 			<!-- Folder Name and Song Title -->
-			<div class="flex flex-col truncate">
+			<div class="flex flex-1 flex-col truncate">
 				<span class="truncate text-slate-700 dark:text-slate-300">{node.name}</span>
 				{#if node.songTitle}
 					<span class="truncate text-xs text-slate-500 italic dark:text-slate-400">
@@ -84,6 +99,14 @@
 					</span>
 				{/if}
 			</div>
+
+			<!-- Linked Indicator -->
+			{#if node.containsDtxFiles && node.linkedSimFileId}
+				<div class="flex items-center gap-1">
+					<Link size={12} class="text-green-500 dark:text-green-400" />
+					<span class="text-xs text-green-600 dark:text-green-400">Linked</span>
+				</div>
+			{/if}
 		</button>
 
 		<!-- Render children if expanded (but not for folders containing .dtx files) -->

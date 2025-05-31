@@ -2,13 +2,20 @@
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import dayjs from 'dayjs';
 	import { DownloadCloud } from '@lucide/svelte';
-	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import { supabase } from '../supabase';
-	import { PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
+	import type { SupabaseClient } from '@supabase/supabase-js';
 
-	let { simfileId = '', userFiles = [] } = $props<{
+	let {
+		simfileId = '',
+		userFiles = [],
+		supabaseClient,
+		simfileBucketUrl,
+		cloudflareWorkerUrl
+	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
+		supabaseClient: SupabaseClient;
+		simfileBucketUrl: string;
+		cloudflareWorkerUrl: string;
 	}>();
 
 	// Ensure userFiles is always an array of File objects
@@ -107,7 +114,7 @@
 	}
 
 	function getDownloadUrl(key: string): string {
-		return `${PUBLIC_SIMFILE_BUCKET_URL}/${key}`;
+		return `${simfileBucketUrl}/${key}`;
 	}
 
 	// Toggle selection of a file
@@ -166,10 +173,10 @@
 			formData.append('file', modifiedFile);
 			formData.append('simFileId', simfileId);
 
-			const jwt = (await supabase.auth.getSession())?.data.session?.access_token;
+			const jwt = (await supabaseClient.auth.getSession())?.data.session?.access_token;
 
 			// Send the request
-			const response = await fetch(`${PUBLIC_CLOUDFARE_WORKER_URL}/api/simFile/upload`, {
+			const response = await fetch(`${cloudflareWorkerUrl}/api/simFile/upload`, {
 				method: 'POST',
 				body: formData,
 				headers: {

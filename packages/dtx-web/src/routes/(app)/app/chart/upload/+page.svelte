@@ -1,14 +1,14 @@
 <!-- src/routes/new-page/+page.svelte -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { SimFile, type DTXFile } from '@dtx/common';
+	import { SimFile, type DTXFile, UploadedAssetFiles } from '@dtx/common';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { filterFiles } from '$lib/utils';
-	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
+	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
 
 	let { data } = $props();
 	let { supabase } = $derived(data);
@@ -214,6 +214,9 @@
 						bind:this={uploadedAssetFilesRef}
 						simfileId={simfileId || ''}
 						userFiles={simfile.files}
+						supabaseClient={supabase}
+						simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
+						cloudflareWorkerUrl={PUBLIC_CLOUDFARE_WORKER_URL}
 					/>
 				{/if}
 			{/snippet}

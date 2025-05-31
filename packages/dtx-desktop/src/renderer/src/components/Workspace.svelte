@@ -60,47 +60,48 @@
 	});
 </script>
 
-{#if showSongDetails && selectedSong}
-	<SongDetails song={selectedSong} />
-{:else}
-	<div
-		class="grid h-[calc(100vh-8rem)] w-full grid-cols-[10%_90%] overflow-hidden rounded-xl bg-white shadow-md dark:bg-slate-800"
+<div
+	class="grid h-[calc(100vh-8rem)] w-full grid-cols-[10%_90%] overflow-hidden rounded-xl bg-white shadow-md dark:bg-slate-800"
+>
+	<!-- Navigation Rail -->
+	<Navigation.Rail
+		value={activeTab}
+		onValueChange={(newValue) => (activeTab = newValue)}
+		background="bg-slate-50 dark:bg-slate-900"
+		padding="p-4"
+		width="w-full"
+		classes="border-r border-slate-200 dark:border-slate-700"
+		tilesJustify="justify-center"
+		tilesItems="items-center"
 	>
-		<!-- Navigation Rail -->
-		<Navigation.Rail
-			value={activeTab}
-			onValueChange={(newValue) => (activeTab = newValue)}
-			background="bg-slate-50 dark:bg-slate-900"
-			padding="p-4"
-			width="w-full"
-			classes="border-r border-slate-200 dark:border-slate-700"
-			tilesJustify="justify-center"
-			tilesItems="items-center"
-		>
-			{#snippet tiles()}
-				<Navigation.Tile
-					id="workspace"
-					label="Local"
-					labelExpanded="Local Workspace"
-					padding="p-4"
-					gap="gap-3"
-				>
-					<HardDrive size={32} />
-				</Navigation.Tile>
-				<Navigation.Tile
-					id="online"
-					label="Cloud"
-					labelExpanded="Online SimFiles"
-					padding="p-4"
-					gap="gap-3"
-				>
-					<Cloud size={32} />
-				</Navigation.Tile>
-			{/snippet}
-		</Navigation.Rail>
+		{#snippet tiles()}
+			<Navigation.Tile
+				id="workspace"
+				label="Local"
+				labelExpanded="Local Workspace"
+				padding="p-4"
+				gap="gap-3"
+			>
+				<HardDrive size={32} />
+			</Navigation.Tile>
+			<Navigation.Tile
+				id="online"
+				label="Cloud"
+				labelExpanded="Online SimFiles"
+				padding="p-4"
+				gap="gap-3"
+			>
+				<Cloud size={32} />
+			</Navigation.Tile>
+		{/snippet}
+	</Navigation.Rail>
 
-		<!-- Main Content Area -->
-		<div class="flex flex-col overflow-hidden bg-white dark:bg-slate-800">
+	<!-- Main Content Area -->
+	<div class="flex flex-col overflow-hidden bg-white dark:bg-slate-800">
+		{#if showSongDetails && selectedSong}
+			<!-- Song Details View -->
+			<SongDetails song={selectedSong} />
+		{:else}
 			<!-- Header -->
 			<div
 				class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
@@ -260,6 +261,6 @@
 					</div>
 				{/if}
 			</div>
-		</div>
+		{/if}
 	</div>
-{/if}
+</div>

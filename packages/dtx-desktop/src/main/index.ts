@@ -75,7 +75,6 @@ if (!gotTheLock) {
 		// Handle reading file contents
 		ipcMain.handle('read-file', async (_event, filePath) => {
 			try {
-				console.log('Reading file:', filePath);
 				const content = await fs.promises.readFile(filePath, 'utf-8');
 				return content;
 			} catch (error) {
@@ -160,13 +159,51 @@ if (!gotTheLock) {
 					throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
 				}
 
+				// Get the current session to extract JWT token
+				const { getCurrentSession, getSupabaseClient } = await import('./auth');
+				const session = getCurrentSession();
+				const supabaseClient = getSupabaseClient();
+
+				if (!session || !supabaseClient) {
+					throw new Error('User not authenticated');
+				}
+
+				// Get fresh session to ensure token is valid
+				const {
+					data: { session: currentSession },
+					error: sessionError
+				} = await supabaseClient.auth.getSession();
+
+				if (sessionError || !currentSession) {
+					throw new Error('Failed to get valid session');
+				}
+
 				const url = `${apiBaseUrl}/api/simFile/listFiles/${simfileId}`;
 				console.log('Fetching asset files from:', url);
 
-				const response = await fetch(url);
+				// Create session cookies that SvelteKit expects
+				const sessionCookies = [
+					`sb-hdnwvpusmxrfrfjayogr-auth-token=${JSON.stringify({
+						access_token: currentSession.access_token,
+						refresh_token: currentSession.refresh_token,
+						expires_at: currentSession.expires_at,
+						expires_in: currentSession.expires_in,
+						token_type: currentSession.token_type,
+						user: currentSession.user
+					})}; Path=/; HttpOnly; SameSite=Lax`
+				];
+
+				const response = await fetch(url, {
+					headers: {
+						Cookie: sessionCookies.join('; '),
+						'Content-Type': 'application/json'
+					}
+				});
 
 				if (!response.ok) {
-					throw new Error(`Error fetching files: ${response.statusText}`);
+					const errorText = await response.text();
+					console.error('API Error Response:', errorText);
+					throw new Error(`Error fetching files: ${response.statusText} - ${errorText}`);
 				}
 
 				const data = await response.json();

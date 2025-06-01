@@ -158,13 +158,14 @@ export const linkingService = {
 
 	/**
 	 * Normalizes a title for comparison by removing special characters, extra spaces, and converting to lowercase
+	 * Preserves Japanese characters (hiragana, katakana, kanji) and ASCII alphanumeric characters
 	 * @param title Title to normalize
 	 * @returns Normalized title
 	 */
 	normalizeTitle: (title: string): string => {
 		return title
 			.toLowerCase()
-			.replace(/[^\w\s]/g, '') // Remove special characters
+			.replace(/[^\w\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') // Remove special characters but keep Japanese
 			.replace(/\s+/g, ' ') // Replace multiple spaces with single space
 			.trim();
 	},

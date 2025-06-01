@@ -22,12 +22,47 @@ describe('LinkingService', () => {
 	});
 
 	describe('normalizeTitle', () => {
-		it('should normalize titles correctly', () => {
+		it('should normalize ASCII titles correctly', () => {
 			expect(linkingService.normalizeTitle('Test Song!')).toBe('test song');
 			expect(linkingService.normalizeTitle('  Multiple   Spaces  ')).toBe('multiple spaces');
 			expect(linkingService.normalizeTitle('Special@#$%Characters')).toBe(
 				'specialcharacters'
 			);
+		});
+
+		it('should preserve Japanese characters', () => {
+			// Hiragana
+			expect(linkingService.normalizeTitle('あいうえお')).toBe('あいうえお');
+			expect(linkingService.normalizeTitle('ひらがな！')).toBe('ひらがな');
+
+			// Katakana
+			expect(linkingService.normalizeTitle('アイウエオ')).toBe('アイウエオ');
+			expect(linkingService.normalizeTitle('カタカナ♪')).toBe('カタカナ');
+
+			// Kanji
+			expect(linkingService.normalizeTitle('桜')).toBe('桜');
+			expect(linkingService.normalizeTitle('音楽ゲーム')).toBe('音楽ゲーム');
+			expect(linkingService.normalizeTitle('日本語の歌')).toBe('日本語の歌');
+		});
+
+		it('should handle mixed Japanese and ASCII titles', () => {
+			expect(linkingService.normalizeTitle('BEMANI 音楽')).toBe('bemani 音楽');
+			expect(linkingService.normalizeTitle('DDR ダンスダンスレボリューション')).toBe(
+				'ddr ダンスダンスレボリューション'
+			);
+			expect(linkingService.normalizeTitle('Test 桜 Song!')).toBe('test 桜 song');
+		});
+
+		it('should remove special characters but keep Japanese', () => {
+			expect(linkingService.normalizeTitle('音楽♪ゲーム！')).toBe('音楽ゲーム');
+			expect(linkingService.normalizeTitle('桜@#$%咲く')).toBe('桜咲く');
+			expect(linkingService.normalizeTitle('アニメ★ソング')).toBe('アニメソング');
+		});
+
+		it('should handle completely Japanese titles', () => {
+			expect(linkingService.normalizeTitle('千本桜')).toBe('千本桜');
+			expect(linkingService.normalizeTitle('ボーカロイド')).toBe('ボーカロイド');
+			expect(linkingService.normalizeTitle('はつねみく')).toBe('はつねみく');
 		});
 	});
 
@@ -196,6 +231,82 @@ describe('LinkingService', () => {
 			expect(result).toBeTruthy();
 			expect(result?.title).toBe('Test Song Extended Version'); // Should pick the better match
 		});
+
+		it('should match Japanese titles exactly', () => {
+			const japaneseSimFiles: SimfileWithDtx[] = [
+				{
+					id: 1,
+					title: '千本桜',
+					artist: 'Test Artist',
+					bpm: 120,
+					preview_url: null,
+					sound_preview_url: null,
+					download_url: null,
+					is_published: true,
+					display_id: null,
+					dtx_files: []
+				},
+				{
+					id: 2,
+					title: 'ボーカロイド',
+					artist: 'Test Artist',
+					bpm: 120,
+					preview_url: null,
+					sound_preview_url: null,
+					download_url: null,
+					is_published: true,
+					display_id: null,
+					dtx_files: []
+				}
+			];
+
+			const mockFolder: TreeNode = {
+				name: 'Japanese Song Folder',
+				path: '/path/japanese',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: '千本桜'
+			};
+
+			const result = linkingService.findMatchingSimFile(mockFolder, japaneseSimFiles);
+			expect(result).toBeTruthy();
+			expect(result?.title).toBe('千本桜');
+		});
+
+		it('should match mixed Japanese and ASCII titles', () => {
+			const mixedSimFiles: SimfileWithDtx[] = [
+				{
+					id: 1,
+					title: 'BEMANI 音楽',
+					artist: 'Test Artist',
+					bpm: 120,
+					preview_url: null,
+					sound_preview_url: null,
+					download_url: null,
+					is_published: true,
+					display_id: null,
+					dtx_files: []
+				}
+			];
+
+			const mockFolder: TreeNode = {
+				name: 'Mixed Song Folder',
+				path: '/path/mixed',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'BEMANI 音楽'
+			};
+
+			const result = linkingService.findMatchingSimFile(mockFolder, mixedSimFiles);
+			expect(result).toBeTruthy();
+			expect(result?.title).toBe('BEMANI 音楽');
+		});
 	});
 
 	describe('autoLinkSimFilesToFolders', () => {
@@ -316,6 +427,41 @@ describe('LinkingService', () => {
 			expect(linkingService.calculateSimilarity('test', 'test')).toBe(1);
 			expect(linkingService.calculateSimilarity('test', 'testing')).toBeGreaterThan(0.5);
 			expect(linkingService.calculateSimilarity('abc', 'xyz')).toBeLessThan(0.5);
+		});
+	});
+
+	describe('unlinkSimFileFromFolder', () => {
+		it('should call workspaceStore.unlinkSimFileFromFolder with correct path', () => {
+			const folderPath = '/path/to/folder';
+
+			linkingService.unlinkSimFileFromFolder(folderPath);
+
+			expect(workspaceStore.unlinkSimFileFromFolder).toHaveBeenCalledWith(folderPath);
+		});
+	});
+
+	describe('linkSimFileToFolder', () => {
+		it('should call workspaceStore.linkSimFileToFolder with correct parameters', () => {
+			const mockSimFile: SimfileWithDtx = {
+				id: 1,
+				title: 'Test Song',
+				artist: 'Test Artist',
+				bpm: 120,
+				preview_url: null,
+				sound_preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				dtx_files: []
+			};
+			const folderPath = '/path/to/folder';
+
+			linkingService.linkSimFileToFolder(mockSimFile, folderPath);
+
+			expect(workspaceStore.linkSimFileToFolder).toHaveBeenCalledWith(
+				folderPath,
+				mockSimFile
+			);
 		});
 	});
 });

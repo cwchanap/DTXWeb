@@ -6,9 +6,11 @@
 		FolderOpen,
 		Loader,
 		Music,
-		Link
+		Link,
+		Unlink
 	} from '@lucide/svelte';
 	import { workspaceService } from '../services/workspaceService';
+	import { linkingService } from '../services/linkingService';
 	import type { TreeNode } from '../stores/workspaceStore';
 	import WorkspaceTree from './WorkspaceTree.svelte';
 
@@ -43,6 +45,11 @@
 		workspaceService.selectSong(song);
 	};
 
+	const handleUnlinkFolder = (event: Event, node: TreeNode) => {
+		event.stopPropagation(); // Prevent triggering the folder click
+		linkingService.unlinkSimFileFromFolder(node.path);
+	};
+
 	const getIndentStyle = (level: number) => {
 		return `padding-left: ${level * 20}px`;
 	};
@@ -50,64 +57,78 @@
 
 {#each nodes as node}
 	<div class="tree-node">
-		<button
-			class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm transition-colors {node.containsDtxFiles
-				? node.linkedSimFileId
-					? 'cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20'
-					: 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
-				: 'hover:bg-slate-100 dark:hover:bg-slate-700'}"
-			style={getIndentStyle(level)}
-			onclick={() => handleToggleNode(node)}
-			disabled={node.isLoading}
-		>
-			<!-- Expand/Collapse Icon -->
-			<div class="flex h-4 w-4 items-center justify-center">
-				{#if node.isLoading}
-					<Loader size={12} class="animate-spin text-slate-500" />
-				{:else if node.hasChildren && !node.containsDtxFiles}
-					{#if node.isExpanded}
-						<ChevronDown size={14} class="text-slate-500" />
+		<div class="flex w-full items-center gap-2">
+			<button
+				class="flex flex-1 items-center gap-2 rounded px-2 py-1 text-left text-sm transition-colors {node.containsDtxFiles
+					? node.linkedSimFileId
+						? 'cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20'
+						: 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
+					: 'hover:bg-slate-100 dark:hover:bg-slate-700'}"
+				style={getIndentStyle(level)}
+				onclick={() => handleToggleNode(node)}
+				disabled={node.isLoading}
+			>
+				<!-- Expand/Collapse Icon -->
+				<div class="flex h-4 w-4 items-center justify-center">
+					{#if node.isLoading}
+						<Loader size={12} class="animate-spin text-slate-500" />
+					{:else if node.hasChildren && !node.containsDtxFiles}
+						{#if node.isExpanded}
+							<ChevronDown size={14} class="text-slate-500" />
+						{:else}
+							<ChevronRight size={14} class="text-slate-500" />
+						{/if}
 					{:else}
-						<ChevronRight size={14} class="text-slate-500" />
+						<!-- Empty space for alignment -->
+						<div class="h-4 w-4"></div>
 					{/if}
-				{:else}
-					<!-- Empty space for alignment -->
-					<div class="h-4 w-4"></div>
-				{/if}
-			</div>
-
-			<!-- Folder/Song Icon -->
-			{#if node.containsDtxFiles}
-				<Music
-					size={16}
-					class={node.linkedSimFileId
-						? 'text-green-500 dark:text-green-400'
-						: 'text-purple-500 dark:text-purple-400'}
-				/>
-			{:else if node.isExpanded}
-				<FolderOpen size={16} class="text-blue-500 dark:text-blue-400" />
-			{:else}
-				<Folder size={16} class="text-blue-500 dark:text-blue-400" />
-			{/if}
-
-			<!-- Folder Name and Song Title -->
-			<div class="flex flex-1 flex-col truncate">
-				<span class="truncate text-slate-700 dark:text-slate-300">{node.name}</span>
-				{#if node.songTitle}
-					<span class="truncate text-xs text-slate-500 italic dark:text-slate-400">
-						{node.songTitle}
-					</span>
-				{/if}
-			</div>
-
-			<!-- Linked Indicator -->
-			{#if node.containsDtxFiles && node.linkedSimFileId}
-				<div class="flex items-center gap-1">
-					<Link size={12} class="text-green-500 dark:text-green-400" />
-					<span class="text-xs text-green-600 dark:text-green-400">Linked</span>
 				</div>
+
+				<!-- Folder/Song Icon -->
+				{#if node.containsDtxFiles}
+					<Music
+						size={16}
+						class={node.linkedSimFileId
+							? 'text-green-500 dark:text-green-400'
+							: 'text-purple-500 dark:text-purple-400'}
+					/>
+				{:else if node.isExpanded}
+					<FolderOpen size={16} class="text-blue-500 dark:text-blue-400" />
+				{:else}
+					<Folder size={16} class="text-blue-500 dark:text-blue-400" />
+				{/if}
+
+				<!-- Folder Name and Song Title -->
+				<div class="flex flex-1 flex-col truncate">
+					<span class="truncate text-slate-700 dark:text-slate-300">{node.name}</span>
+					{#if node.songTitle}
+						<span class="truncate text-xs text-slate-500 italic dark:text-slate-400">
+							{node.songTitle}
+						</span>
+					{/if}
+				</div>
+
+				<!-- Linked Indicator -->
+				{#if node.containsDtxFiles && node.linkedSimFileId}
+					<div class="flex items-center gap-1">
+						<Link size={12} class="text-green-500 dark:text-green-400" />
+						<span class="text-xs text-green-600 dark:text-green-400">Linked</span>
+					</div>
+				{/if}
+			</button>
+
+			<!-- Unlink Button (outside main button) -->
+			{#if node.containsDtxFiles && node.linkedSimFileId}
+				<button
+					class="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+					onclick={(event) => handleUnlinkFolder(event, node)}
+					title="Unlink from cloud"
+					aria-label="Unlink folder from cloud simFile"
+				>
+					<Unlink size={10} />
+				</button>
 			{/if}
-		</button>
+		</div>
 
 		<!-- Render children if expanded (but not for folders containing .dtx files) -->
 		{#if node.isExpanded && node.children.length > 0 && !node.containsDtxFiles}

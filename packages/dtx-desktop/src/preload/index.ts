@@ -26,7 +26,8 @@ const extendedElectronAPI = {
 				'logout-session',
 				'fetch-user-simfiles',
 				'get-preview-url',
-				'get-sound-preview-url'
+				'get-sound-preview-url',
+				'load-asset-files'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

@@ -10,6 +10,7 @@
 	import toastStore from '@/lib/toaster';
 	import IconUpload from '@lucide/svelte/icons/upload';
 	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
+	import { loadAssetFiles } from '$lib/services/assetFileService';
 
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);
@@ -145,7 +146,7 @@
 					supabaseClient={data.supabase}
 					simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 					cloudflareWorkerUrl={PUBLIC_CLOUDFARE_WORKER_URL}
-					apiBaseUrl=""
+					{loadAssetFiles}
 				/>
 			{/snippet}
 		</ChartDetail>

@@ -152,6 +152,31 @@ if (!gotTheLock) {
 			}
 		);
 
+		// Handle loading asset files from API
+		ipcMain.handle('load-asset-files', async (_event, simfileId: string) => {
+			try {
+				const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
+				if (!apiBaseUrl) {
+					throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
+				}
+
+				const url = `${apiBaseUrl}/api/simFile/listFiles/${simfileId}`;
+				console.log('Fetching asset files from:', url);
+
+				const response = await fetch(url);
+
+				if (!response.ok) {
+					throw new Error(`Error fetching files: ${response.statusText}`);
+				}
+
+				const data = await response.json();
+				return data.files;
+			} catch (error) {
+				console.error('Error loading asset files:', error);
+				throw error;
+			}
+		});
+
 		// Register custom protocol handler (dtx://)
 		const PROTOCOL = 'dtx';
 

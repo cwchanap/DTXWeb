@@ -9,6 +9,7 @@
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { filterFiles } from '$lib/utils';
 	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
+	import { loadAssetFiles } from '$lib/services/assetFileService';
 
 	let { data } = $props();
 	let { supabase } = $derived(data);
@@ -217,7 +218,7 @@
 						supabaseClient={supabase}
 						simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 						cloudflareWorkerUrl={PUBLIC_CLOUDFARE_WORKER_URL}
-						apiBaseUrl=""
+						{loadAssetFiles}
 					/>
 				{/if}
 			{/snippet}

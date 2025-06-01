@@ -3,6 +3,7 @@
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { UploadedAssetFiles } from '@dtx/common';
 	import { onMount } from 'svelte';
+	import { loadAssetFiles } from '../services/assetFileService';
 
 	interface Props {
 		song: TreeNode;
@@ -220,7 +221,7 @@
 					supabaseClient={mockSupabaseClient}
 					simfileBucketUrl=""
 					cloudflareWorkerUrl=""
-					apiBaseUrl={import.meta.env.VITE_DTX_SERVER_URL || ''}
+					{loadAssetFiles}
 				/>
 			{/if}
 		</div>

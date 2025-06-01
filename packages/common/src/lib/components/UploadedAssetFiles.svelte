@@ -10,14 +10,16 @@
 		supabaseClient,
 		simfileBucketUrl,
 		cloudflareWorkerUrl,
-		apiBaseUrl = ''
+		loadAssetFiles
 	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
 		supabaseClient: SupabaseClient;
 		simfileBucketUrl: string;
 		cloudflareWorkerUrl: string;
-		apiBaseUrl?: string;
+		loadAssetFiles: (
+			simfileId: string
+		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;
 	}>();
 
 	// Ensure userFiles is always an array of File objects
@@ -74,29 +76,18 @@
 
 	$effect(() => {
 		if (simfileId) {
-			loadAssetFiles();
+			loadAssetFilesInternal();
 		}
 	});
 
-	async function loadAssetFiles() {
+	async function loadAssetFilesInternal() {
 		if (!simfileId) return;
 
 		isLoadingFiles = true;
 		fileLoadError = null;
 
 		try {
-			const url = apiBaseUrl
-				? `${apiBaseUrl}/api/simFile/listFiles/${simfileId}`
-				: `/api/simFile/listFiles/${simfileId}`;
-
-			const response = await fetch(url);
-
-			if (!response.ok) {
-				throw new Error(`Error fetching files: ${response.statusText}`);
-			}
-
-			const data = await response.json();
-			assetFiles = data.files;
+			assetFiles = await loadAssetFiles(simfileId);
 		} catch (err) {
 			console.error('Error loading asset files:', err);
 			fileLoadError = err instanceof Error ? err.message : 'Error loading files';
@@ -226,7 +217,7 @@
 		await Promise.all(uploadPromises);
 
 		// Refresh the file list after uploads
-		await loadAssetFiles();
+		await loadAssetFilesInternal();
 
 		// Reset upload state
 		isUploading = false;
@@ -329,7 +320,7 @@
 						<p>{fileLoadError}</p>
 						<button
 							class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-							onclick={loadAssetFiles}
+							onclick={loadAssetFilesInternal}
 						>
 							Retry
 						</button>

@@ -9,13 +9,15 @@
 		userFiles = [],
 		supabaseClient,
 		simfileBucketUrl,
-		cloudflareWorkerUrl
+		cloudflareWorkerUrl,
+		apiBaseUrl = ''
 	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
 		supabaseClient: SupabaseClient;
 		simfileBucketUrl: string;
 		cloudflareWorkerUrl: string;
+		apiBaseUrl?: string;
 	}>();
 
 	// Ensure userFiles is always an array of File objects
@@ -83,7 +85,11 @@
 		fileLoadError = null;
 
 		try {
-			const response = await fetch(`/api/simFile/listFiles/${simfileId}`);
+			const url = apiBaseUrl
+				? `${apiBaseUrl}/api/simFile/listFiles/${simfileId}`
+				: `/api/simFile/listFiles/${simfileId}`;
+
+			const response = await fetch(url);
 
 			if (!response.ok) {
 				throw new Error(`Error fetching files: ${response.statusText}`);

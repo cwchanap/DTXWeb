@@ -217,6 +217,7 @@
 						supabaseClient={supabase}
 						simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 						cloudflareWorkerUrl={PUBLIC_CLOUDFARE_WORKER_URL}
+						apiBaseUrl=""
 					/>
 				{/if}
 			{/snippet}

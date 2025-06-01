@@ -220,6 +220,7 @@
 					supabaseClient={mockSupabaseClient}
 					simfileBucketUrl=""
 					cloudflareWorkerUrl=""
+					apiBaseUrl={import.meta.env.VITE_DTX_SERVER_URL || ''}
 				/>
 			{/if}
 		</div>

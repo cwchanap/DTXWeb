@@ -33,4 +33,4 @@ jobs:
         run: rm packages/dtx-web/tsconfig.json
 
       - name: Run unit tests
-        run: npm run test --workspaces --if-present
+        run: npm run build -w=@dtx/common && npm run test --workspaces --if-present

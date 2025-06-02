@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import type { SimFile, DTXFile } from '@dtx/common';
-	import { UploadedAssetFiles } from '@dtx/common';
+	import { UploadedAssetFiles } from '@dtx/common/components';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import toastStore from '@/lib/toaster';
 	import IconUpload from '@lucide/svelte/icons/upload';

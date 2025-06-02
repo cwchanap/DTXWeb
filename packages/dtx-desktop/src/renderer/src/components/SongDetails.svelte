@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Music, ArrowLeft, Link } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
-	import { UploadedAssetFiles } from '@dtx/common';
+	import { UploadedAssetFiles } from '@dtx/common/components';
 	import { onMount } from 'svelte';
 	import { loadAssetFiles } from '../services/assetFileService';
 

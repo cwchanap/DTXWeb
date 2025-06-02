@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { SimFile } from '@dtx/common/node';
+import { SimFile } from '@dtx/common';
 
 export interface TreeNode {
 	name: string;

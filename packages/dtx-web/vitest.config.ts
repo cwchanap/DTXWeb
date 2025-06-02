@@ -11,7 +11,7 @@ export default defineConfig({
 		// Ensure we're using the client version of Svelte for testing
 		server: {
 			deps: {
-				inline: [/^svelte/]
+				inline: [/^svelte/, /@dtx\/common/]
 			}
 		},
 		// Exclude playwright tests

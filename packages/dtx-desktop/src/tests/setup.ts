@@ -50,6 +50,3 @@ global.console = {
 
 // Mock atob for base64 decoding
 global.atob = vi.fn();
-
-// Use global mocks
-vi.mock('svelte/store');

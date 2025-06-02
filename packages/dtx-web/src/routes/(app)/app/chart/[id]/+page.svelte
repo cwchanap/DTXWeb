@@ -5,10 +5,12 @@
 	import { goto } from '$app/navigation';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import type { SimFile, DTXFile } from '@dtx/common';
+	import { UploadedAssetFiles } from '@dtx/common';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
-	import UploadedAssetFiles from '$lib/components/UploadedAssetFiles.svelte';
 	import toastStore from '@/lib/toaster';
 	import IconUpload from '@lucide/svelte/icons/upload';
+	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
+	import { loadAssetFiles } from '$lib/services/assetFileService';
 
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);
@@ -141,6 +143,10 @@
 				<UploadedAssetFiles
 					simfileId={simfile?.id?.toString() || ''}
 					userFiles={userUploadedFiles}
+					supabaseClient={data.supabase}
+					simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
+					cloudflareWorkerUrl={PUBLIC_CLOUDFARE_WORKER_URL}
+					{loadAssetFiles}
 				/>
 			{/snippet}
 		</ChartDetail>

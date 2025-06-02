@@ -4,6 +4,7 @@
 		"download": "Download",
 		"search_artist": "search by artist",
 		"search_song_name": "search by song name",
+		"search_song_or_artist": "search by song name or artist",
 		"change_language": "Language",
 		"welcome_message": "Welcome to Hapadona's DTX Blog",
 		"latest_news": "Latest News",

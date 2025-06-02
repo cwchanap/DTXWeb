@@ -15,7 +15,6 @@ vi.mock('$lib/store', () => ({
 		}
 	}
 }));
-vi.mock('svelte/store');
 vi.mock('$lib/browser/audioDecoder', () => ({
 	XAaudioContext: vi.fn()
 }));

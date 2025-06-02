@@ -29,6 +29,7 @@ jobs:
 
       - name: Build Electron App for Windows
         run: |
+          npm run build -w=@dtx/common
           npm run build:win -w=dtx-desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

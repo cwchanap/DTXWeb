@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { Music, ArrowLeft, Link } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
+	import { UploadedAssetFiles } from '@dtx/common';
+	import { onMount } from 'svelte';
+	import { loadAssetFiles } from '../services/assetFileService';
 
 	interface Props {
 		song: TreeNode;
@@ -8,9 +11,79 @@
 
 	let { song }: Props = $props();
 
+	// State for local files
+	let localFiles = $state<File[]>([]);
+	let isLoadingFiles = $state(false);
+	let fileLoadError = $state<string | null>(null);
+
 	const handleClose = () => {
 		workspaceStore.closeSongDetails();
 	};
+
+	// Load local files from the song folder
+	const loadLocalFiles = async () => {
+		if (!song.path) return;
+
+		isLoadingFiles = true;
+		fileLoadError = null;
+
+		try {
+			const result = await window.electron.ipcRenderer.invoke('list-files', song.path);
+
+			if (result.error) {
+				throw new Error(result.error);
+			}
+
+			// Convert file info to File objects for compatibility with UploadedAssetFiles
+			const files = await Promise.all(
+				result.files.map(async (fileInfo: any) => {
+					try {
+						// Read file content as buffer
+						const content = await window.electron.ipcRenderer.invoke(
+							'read-file',
+							fileInfo.key
+						);
+						// Create File object
+						return new File([content], fileInfo.fileName, {
+							lastModified: new Date(fileInfo.lastModified).getTime()
+						});
+					} catch (error) {
+						console.warn(`Could not read file ${fileInfo.fileName}:`, error);
+						// Create empty File object as fallback
+						return new File([''], fileInfo.fileName, {
+							lastModified: new Date(fileInfo.lastModified).getTime()
+						});
+					}
+				})
+			);
+
+			localFiles = files;
+		} catch (error) {
+			console.error('Error loading local files:', error);
+			fileLoadError = error instanceof Error ? error.message : 'Failed to load files';
+		} finally {
+			isLoadingFiles = false;
+		}
+	};
+
+	// Load files when component mounts or song changes
+	onMount(() => {
+		loadLocalFiles();
+	});
+
+	// Reload files when song changes
+	$effect(() => {
+		if (song.path) {
+			loadLocalFiles();
+		}
+	});
+
+	// Mock Supabase client for local-only functionality
+	const mockSupabaseClient = {
+		auth: {
+			getSession: () => Promise.resolve({ data: { session: null }, error: null })
+		}
+	} as any;
 </script>
 
 <!-- Header -->
@@ -119,6 +192,39 @@
 				</div>
 			</div>
 		{/if}
+
+		<!-- Local Asset Files Section -->
+		<div class="rounded-lg bg-slate-50 p-4 dark:bg-slate-800/50">
+			<h3 class="mb-4 text-lg font-semibold text-slate-800 dark:text-slate-200">
+				Local Asset Files
+			</h3>
+
+			{#if isLoadingFiles}
+				<div class="flex justify-center p-4">
+					<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
+				</div>
+			{:else if fileLoadError}
+				<div class="p-4 text-red-500">
+					<p>{fileLoadError}</p>
+					<button
+						class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+						onclick={loadLocalFiles}
+					>
+						Retry
+					</button>
+				</div>
+			{:else}
+				<!-- Use UploadedAssetFiles component for local files display -->
+				<UploadedAssetFiles
+					simfileId={song.linkedSimFileId?.toString() || ''}
+					userFiles={localFiles}
+					supabaseClient={mockSupabaseClient}
+					simfileBucketUrl=""
+					cloudflareWorkerUrl=""
+					{loadAssetFiles}
+				/>
+			{/if}
+		</div>
 
 		<!-- Additional song information -->
 		<div

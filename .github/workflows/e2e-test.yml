@@ -2,8 +2,7 @@ name: Playwright Tests
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
+
 jobs:
   test:
     timeout-minutes: 60
@@ -15,7 +14,7 @@ jobs:
         with:
           node-version: lts/*
       - name: Install dependencies
-        run: npm ci
+        run: npm ci && npm run build -w=@dtx/common
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
       - name: Run Playwright tests

@@ -20,4 +20,10 @@ Object.defineProperty(window, 'matchMedia', {
 // The moduleDirectories config in vitest.config.ts should make this work
 vi.mock('phaser');
 
+// Use global mock for svelte/store
 vi.mock('svelte/store');
+
+vi.mock('@dtx/common');
+
+// Global mocks are now handled by the __mocks__ folder
+// - @dtx/common is mocked in __mocks__/@dtx/common.ts

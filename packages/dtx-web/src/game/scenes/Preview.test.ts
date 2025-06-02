@@ -15,7 +15,12 @@ vi.mock('$lib/store', () => ({
 				return { unsubscribe: vi.fn() };
 			})
 		},
-		currentSoundChip: vi.fn()
+		currentSoundChip: {
+			subscribe: vi.fn((callback) => {
+				callback([]);
+				return { unsubscribe: vi.fn() };
+			})
+		}
 	}
 }));
 

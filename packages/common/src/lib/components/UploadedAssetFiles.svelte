@@ -2,13 +2,24 @@
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import dayjs from 'dayjs';
 	import { DownloadCloud } from '@lucide/svelte';
-	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import { supabase } from '../supabase';
-	import { PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
+	import type { SupabaseClient } from '@supabase/supabase-js';
 
-	let { simfileId = '', userFiles = [] } = $props<{
+	let {
+		simfileId = '',
+		userFiles = [],
+		supabaseClient,
+		simfileBucketUrl,
+		cloudflareWorkerUrl,
+		loadAssetFiles
+	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
+		supabaseClient: SupabaseClient;
+		simfileBucketUrl: string;
+		cloudflareWorkerUrl: string;
+		loadAssetFiles: (
+			simfileId: string
+		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;
 	}>();
 
 	// Ensure userFiles is always an array of File objects
@@ -65,25 +76,18 @@
 
 	$effect(() => {
 		if (simfileId) {
-			loadAssetFiles();
+			loadAssetFilesInternal();
 		}
 	});
 
-	async function loadAssetFiles() {
+	async function loadAssetFilesInternal() {
 		if (!simfileId) return;
 
 		isLoadingFiles = true;
 		fileLoadError = null;
 
 		try {
-			const response = await fetch(`/api/simFile/listFiles/${simfileId}`);
-
-			if (!response.ok) {
-				throw new Error(`Error fetching files: ${response.statusText}`);
-			}
-
-			const data = await response.json();
-			assetFiles = data.files;
+			assetFiles = await loadAssetFiles(simfileId);
 		} catch (err) {
 			console.error('Error loading asset files:', err);
 			fileLoadError = err instanceof Error ? err.message : 'Error loading files';
@@ -107,7 +111,7 @@
 	}
 
 	function getDownloadUrl(key: string): string {
-		return `${PUBLIC_SIMFILE_BUCKET_URL}/${key}`;
+		return `${simfileBucketUrl}/${key}`;
 	}
 
 	// Toggle selection of a file
@@ -166,10 +170,10 @@
 			formData.append('file', modifiedFile);
 			formData.append('simFileId', simfileId);
 
-			const jwt = (await supabase.auth.getSession())?.data.session?.access_token;
+			const jwt = (await supabaseClient.auth.getSession())?.data.session?.access_token;
 
 			// Send the request
-			const response = await fetch(`${PUBLIC_CLOUDFARE_WORKER_URL}/api/simFile/upload`, {
+			const response = await fetch(`${cloudflareWorkerUrl}/api/simFile/upload`, {
 				method: 'POST',
 				body: formData,
 				headers: {
@@ -213,7 +217,7 @@
 		await Promise.all(uploadPromises);
 
 		// Refresh the file list after uploads
-		await loadAssetFiles();
+		await loadAssetFilesInternal();
 
 		// Reset upload state
 		isUploading = false;
@@ -316,7 +320,7 @@
 						<p>{fileLoadError}</p>
 						<button
 							class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-							onclick={loadAssetFiles}
+							onclick={loadAssetFilesInternal}
 						>
 							Retry
 						</button>
@@ -330,19 +334,23 @@
 						<table class="w-full table-auto border-collapse">
 							<thead>
 								<tr class="border-b border-gray-300 bg-gray-50">
-									<th class="w-10 px-4 py-2 text-center">
-										<input
-											type="checkbox"
-											checked={allFilesSelected}
-											onchange={toggleSelectAll}
-											class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-											disabled={isUploading}
-										/>
-									</th>
+									{#if simfileId}
+										<th class="w-10 px-4 py-2 text-center">
+											<input
+												type="checkbox"
+												checked={allFilesSelected}
+												onchange={toggleSelectAll}
+												class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+												disabled={isUploading}
+											/>
+										</th>
+									{/if}
 									<th class="px-4 py-2 text-left">File Name</th>
 									<th class="px-4 py-2 text-left">Size</th>
 									<th class="px-4 py-2 text-left">Last Modified</th>
-									<th class="px-4 py-2 text-left">Status</th>
+									{#if simfileId}
+										<th class="px-4 py-2 text-left">Status</th>
+									{/if}
 									<th class="px-4 py-2 text-center">Actions</th>
 								</tr>
 							</thead>
@@ -350,58 +358,64 @@
 								{#each mergedFiles as file}
 									<tr
 										class="border-b border-gray-300 hover:bg-gray-50"
-										class:bg-green-50={file.status === 'new'}
-										class:bg-yellow-50={file.status === 'replacing'}
+										class:bg-green-50={simfileId && file.status === 'new'}
+										class:bg-yellow-50={simfileId &&
+											file.status === 'replacing'}
 									>
-										<td class="px-4 py-2 text-center">
-											{#if file.userFile}
-												<input
-													type="checkbox"
-													checked={selectedFiles.has(file.name)}
-													onclick={() => toggleFileSelection(file.name)}
-													class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-													disabled={isUploading}
-												/>
-											{/if}
-										</td>
+										{#if simfileId}
+											<td class="px-4 py-2 text-center">
+												{#if file.userFile}
+													<input
+														type="checkbox"
+														checked={selectedFiles.has(file.name)}
+														onclick={() =>
+															toggleFileSelection(file.name)}
+														class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														disabled={isUploading}
+													/>
+												{/if}
+											</td>
+										{/if}
 										<td class="px-4 py-2">{file.name}</td>
 										<td class="px-4 py-2">{formatFileSize(file.size)}</td>
 										<td class="px-4 py-2">{formatDate(file.lastModified)}</td>
-										<td class="px-4 py-2">
-											{#if uploadProgress[file.name] === 'pending'}
-												<span
-													class="rounded-sm bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800"
-													>Pending</span
-												>
-											{:else if uploadProgress[file.name] === 'uploading'}
-												<span
-													class="rounded-sm bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
-													>Uploading...</span
-												>
-											{:else if uploadProgress[file.name] === 'success'}
-												<span
-													class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
-													>Uploaded</span
-												>
-											{:else if uploadProgress[file.name] === 'error'}
-												<span
-													class="rounded-sm bg-red-100 px-2 py-1 text-xs font-medium text-red-800"
-													>Failed</span
-												>
-											{:else if file.status === 'new'}
-												<span
-													class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
-													>New</span
-												>
-											{:else if file.status === 'replacing'}
-												<span
-													class="rounded-sm bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
-													>Replacing</span
-												>
-											{:else}
-												<span class="text-gray-500">-</span>
-											{/if}
-										</td>
+										{#if simfileId}
+											<td class="px-4 py-2">
+												{#if uploadProgress[file.name] === 'pending'}
+													<span
+														class="rounded-sm bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800"
+														>Pending</span
+													>
+												{:else if uploadProgress[file.name] === 'uploading'}
+													<span
+														class="rounded-sm bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
+														>Uploading...</span
+													>
+												{:else if uploadProgress[file.name] === 'success'}
+													<span
+														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+														>Uploaded</span
+													>
+												{:else if uploadProgress[file.name] === 'error'}
+													<span
+														class="rounded-sm bg-red-100 px-2 py-1 text-xs font-medium text-red-800"
+														>Failed</span
+													>
+												{:else if file.status === 'new'}
+													<span
+														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+														>New</span
+													>
+												{:else if file.status === 'replacing'}
+													<span
+														class="rounded-sm bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
+														>Replacing</span
+													>
+												{:else}
+													<span class="text-gray-500">-</span>
+												{/if}
+											</td>
+										{/if}
 										<td class="px-4 py-2 text-center">
 											{#if file.source === 'cloud' && file.key}
 												<a
@@ -422,8 +436,8 @@
 							</tbody>
 						</table>
 
-						<!-- Bulk upload button -->
-						{#if selectedFiles.size > 0 && simfileId}
+						<!-- Bulk upload button - only show if simfileId exists -->
+						{#if simfileId && selectedFiles.size > 0}
 							<div class="absolute right-4 bottom-4">
 								<button
 									class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"

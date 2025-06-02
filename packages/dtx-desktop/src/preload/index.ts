@@ -19,13 +19,15 @@ const extendedElectronAPI = {
 				'list-directories',
 				'load-tree-structure',
 				'read-file',
+				'list-files',
 				'verify-magic-link',
 				'validate-session',
 				'get-current-session',
 				'logout-session',
 				'fetch-user-simfiles',
 				'get-preview-url',
-				'get-sound-preview-url'
+				'get-sound-preview-url',
+				'load-asset-files'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

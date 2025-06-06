@@ -4,7 +4,6 @@
 	import { onMount } from 'svelte';
 	import { Loader } from '@lucide/svelte';
 
-	let { data } = $props();
 	let redirectToDesktop = $state(false);
 	let isRedirecting = $state(false);
 	let redirectError = $state('');

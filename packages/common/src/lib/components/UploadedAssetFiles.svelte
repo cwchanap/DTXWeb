@@ -299,7 +299,7 @@
 		rounded="rounded-lg"
 		padding="p-0"
 		spaceY="space-y-0"
-		base="overflow-hidden border-2 border-gray-300"
+		base="overflow-hidden border-2 border-gray-300 dark:border-slate-600"
 		collapsible
 		onValueChange={(e) => (value = e.value)}
 	>
@@ -308,18 +308,20 @@
 				<i class="fa-solid fa-file-lines"></i>
 			{/snippet}
 			{#snippet control()}
-				<h3 class="my-4 text-lg font-semibold">Asset Files Section</h3>
+				<h3 class="my-4 text-lg font-semibold text-slate-800 dark:text-slate-200">
+					Asset Files Section
+				</h3>
 			{/snippet}
 			{#snippet panel()}
 				{#if isLoadingFiles && simfileId}
 					<div class="flex justify-center p-4">
-						<p>Loading files...</p>
+						<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
 					</div>
 				{:else if fileLoadError}
-					<div class="p-4 text-red-500">
+					<div class="p-4 text-red-500 dark:text-red-400">
 						<p>{fileLoadError}</p>
 						<button
-							class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+							class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
 							onclick={loadAssetFilesInternal}
 						>
 							Retry
@@ -327,40 +329,61 @@
 					</div>
 				{:else if mergedFiles.length === 0}
 					<div class="p-4">
-						<p>No asset files found for this simfile.</p>
+						<p class="text-slate-600 dark:text-slate-400">
+							No asset files found for this simfile.
+						</p>
 					</div>
 				{:else}
 					<div class="relative">
 						<table class="w-full table-auto border-collapse">
 							<thead>
-								<tr class="border-b border-gray-300 bg-gray-50">
+								<tr
+									class="border-b border-gray-300 bg-gray-50 dark:border-slate-600 dark:bg-slate-700"
+								>
 									{#if simfileId}
 										<th class="w-10 px-4 py-2 text-center">
 											<input
 												type="checkbox"
 												checked={allFilesSelected}
 												onchange={toggleSelectAll}
-												class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+												class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-500 dark:bg-slate-600"
 												disabled={isUploading}
 											/>
 										</th>
 									{/if}
-									<th class="px-4 py-2 text-left">File Name</th>
-									<th class="px-4 py-2 text-left">Size</th>
-									<th class="px-4 py-2 text-left">Last Modified</th>
+									<th
+										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
+										>File Name</th
+									>
+									<th
+										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
+										>Size</th
+									>
+									<th
+										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
+										>Last Modified</th
+									>
 									{#if simfileId}
-										<th class="px-4 py-2 text-left">Status</th>
+										<th
+											class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
+											>Status</th
+										>
 									{/if}
-									<th class="px-4 py-2 text-center">Actions</th>
+									<th
+										class="px-4 py-2 text-center text-slate-700 dark:text-slate-300"
+										>Actions</th
+									>
 								</tr>
 							</thead>
 							<tbody>
 								{#each mergedFiles as file}
 									<tr
-										class="border-b border-gray-300 hover:bg-gray-50"
-										class:bg-green-50={simfileId && file.status === 'new'}
-										class:bg-yellow-50={simfileId &&
-											file.status === 'replacing'}
+										class="border-b border-gray-300 hover:bg-gray-50 dark:border-slate-600 dark:hover:bg-slate-700 {simfileId &&
+										file.status === 'new'
+											? 'bg-green-50 dark:bg-green-900/20'
+											: ''} {simfileId && file.status === 'replacing'
+											? 'bg-yellow-50 dark:bg-yellow-900/20'
+											: ''}"
 									>
 										{#if simfileId}
 											<td class="px-4 py-2 text-center">
@@ -370,49 +393,57 @@
 														checked={selectedFiles.has(file.name)}
 														onclick={() =>
 															toggleFileSelection(file.name)}
-														class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-slate-500 dark:bg-slate-600"
 														disabled={isUploading}
 													/>
 												{/if}
 											</td>
 										{/if}
-										<td class="px-4 py-2">{file.name}</td>
-										<td class="px-4 py-2">{formatFileSize(file.size)}</td>
-										<td class="px-4 py-2">{formatDate(file.lastModified)}</td>
+										<td class="px-4 py-2 text-slate-800 dark:text-slate-200"
+											>{file.name}</td
+										>
+										<td class="px-4 py-2 text-slate-600 dark:text-slate-400"
+											>{formatFileSize(file.size)}</td
+										>
+										<td class="px-4 py-2 text-slate-600 dark:text-slate-400"
+											>{formatDate(file.lastModified)}</td
+										>
 										{#if simfileId}
 											<td class="px-4 py-2">
 												{#if uploadProgress[file.name] === 'pending'}
 													<span
-														class="rounded-sm bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800"
+														class="rounded-sm bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800 dark:bg-slate-600 dark:text-slate-200"
 														>Pending</span
 													>
 												{:else if uploadProgress[file.name] === 'uploading'}
 													<span
-														class="rounded-sm bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
+														class="rounded-sm bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
 														>Uploading...</span
 													>
 												{:else if uploadProgress[file.name] === 'success'}
 													<span
-														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300"
 														>Uploaded</span
 													>
 												{:else if uploadProgress[file.name] === 'error'}
 													<span
-														class="rounded-sm bg-red-100 px-2 py-1 text-xs font-medium text-red-800"
+														class="rounded-sm bg-red-100 px-2 py-1 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300"
 														>Failed</span
 													>
 												{:else if file.status === 'new'}
 													<span
-														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300"
 														>New</span
 													>
 												{:else if file.status === 'replacing'}
 													<span
-														class="rounded-sm bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
+														class="rounded-sm bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
 														>Replacing</span
 													>
 												{:else}
-													<span class="text-gray-500">-</span>
+													<span class="text-gray-500 dark:text-slate-400"
+														>-</span
+													>
 												{/if}
 											</td>
 										{/if}
@@ -422,13 +453,15 @@
 													href={getDownloadUrl(file.key)}
 													target="_blank"
 													download={file.name}
-													class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200"
+													class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-800/60"
 													title="Download file"
 												>
 													<DownloadCloud />
 												</a>
 											{:else}
-												<span class="text-gray-400">-</span>
+												<span class="text-gray-400 dark:text-slate-500"
+													>-</span
+												>
 											{/if}
 										</td>
 									</tr>
@@ -440,7 +473,7 @@
 						{#if simfileId && selectedFiles.size > 0}
 							<div class="absolute right-4 bottom-4">
 								<button
-									class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"
+									class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-800 dark:focus:ring-blue-400"
 									onclick={uploadSelectedFiles}
 									disabled={isUploading}
 								>

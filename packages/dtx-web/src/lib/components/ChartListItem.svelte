@@ -2,9 +2,10 @@
 	import { _ } from 'svelte-i18n';
 	import ImageAudio from './ImageAudio.svelte';
 	import type { Tables } from '@dtx/common';
-	import { Modal, Popover } from '@skeletonlabs/skeleton-svelte';
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
+	import Modal from './Modal.svelte';
 
 	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
 		$props<{
@@ -17,10 +18,15 @@
 		}>();
 
 	let popoverOpen = $state(false);
-	let openState = $state(false);
+	let modalOpen = $state(false);
 
-	function modalClose() {
-		openState = false;
+	function handleDeleteConfirm() {
+		onFileDelete(item.id, item.preview_url, item.sound_preview_url);
+	}
+
+	function openModal() {
+		modalOpen = true;
+		popoverOpen = false; // Close popover when modal opens
 	}
 </script>
 
@@ -55,44 +61,13 @@
 							{item.is_published ? 'Unpublish' : 'Publish'}
 						</button>
 
-						<Modal
-							open={openState}
-							onOpenChange={(e) => (openState = e.open)}
-							triggerBase="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
-							backdropClasses="backdrop-blur-sm"
+						<button
+							onclick={openModal}
+							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+							role="menuitem"
 						>
-							{#snippet trigger()}Delete{/snippet}
-							{#snippet content()}
-								<header class="flex justify-between">
-									<h4 class="h4">Delete Chart</h4>
-								</header>
-								<article>
-									<p class="opacity-60">
-										Are you sure you want to delete this chart?
-									</p>
-								</article>
-								<footer class="flex justify-end gap-4">
-									<button
-										type="button"
-										class="btn preset-tonal"
-										onclick={modalClose}>Cancel</button
-									>
-									<button
-										type="button"
-										class="btn preset-filled"
-										onclick={() => {
-											modalClose();
-											onFileDelete(
-												item.id,
-												item.preview_url,
-												item.sound_preview_url
-											);
-										}}>Confirm</button
-									>
-								</footer>
-							{/snippet}
-						</Modal>
+							Delete
+						</button>
 					</div>
 				{/snippet}
 			</Popover>
@@ -132,3 +107,16 @@
 		{/if}
 	{/if}
 </div>
+
+<!-- Delete Confirmation Modal -->
+<Modal
+	bind:open={modalOpen}
+	title="Delete Chart"
+	onConfirm={handleDeleteConfirm}
+	confirmText="Delete"
+	confirmVariant="danger"
+>
+	<p class="text-gray-600">
+		Are you sure you want to delete this chart? This action cannot be undone.
+	</p>
+</Modal>

@@ -17,11 +17,6 @@
 		}>();
 
 	let popoverOpen = $state(false);
-	let openState = $state(false);
-
-	function modalClose() {
-		openState = false;
-	}
 </script>
 
 <div class="relative flex min-h-[200px] flex-col justify-between rounded-lg border bg-white p-6">
@@ -56,11 +51,10 @@
 						</button>
 
 						<Modal
-							open={openState}
-							onOpenChange={(e) => (openState = e.open)}
 							triggerBase="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
 							contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
 							backdropClasses="backdrop-blur-sm"
+							zIndex="z-[9999]"
 						>
 							{#snippet trigger()}Delete{/snippet}
 							{#snippet content()}
@@ -73,16 +67,11 @@
 									</p>
 								</article>
 								<footer class="flex justify-end gap-4">
-									<button
-										type="button"
-										class="btn preset-tonal"
-										onclick={modalClose}>Cancel</button
-									>
+									<button type="button" class="btn preset-tonal">Cancel</button>
 									<button
 										type="button"
 										class="btn preset-filled"
 										onclick={() => {
-											modalClose();
 											onFileDelete(
 												item.id,
 												item.preview_url,

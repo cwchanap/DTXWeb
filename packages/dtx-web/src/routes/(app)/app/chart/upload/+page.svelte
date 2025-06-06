@@ -8,7 +8,6 @@
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import ChartDetail from '$lib/components/ChartDetail.svelte';
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
-	import { filterFiles } from '$lib/utils';
 	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
 	import { loadAssetFiles } from '$lib/services/assetFileService';
 

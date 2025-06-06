@@ -1,14 +1,8 @@
 /**
- * Standalone unit tests for ChartDetail.svelte component logic
+ * Unit tests for ChartDetail.svelte component logic
  *
  * This file tests the business logic of the ChartDetail component without
  * importing the actual component or any dependencies that might cause issues.
- *
- * NOTE: Due to issues with the @dtx/common package in the test environment,
- * these tests are also available in a standalone test runner at:
- * /workspace/DTXWeb/packages/dtx-web/simple-test-runner.js
- *
- * Run with: node simple-test-runner.js
  */
 
 import { describe, it, expect, vi } from 'vitest';

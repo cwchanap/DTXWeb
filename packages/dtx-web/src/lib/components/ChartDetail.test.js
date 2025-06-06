@@ -132,31 +132,6 @@ describe('ChartDetail Component Logic', () => {
 			videoPreviewUrl: 'https://example.com/video1'
 		});
 	});
-
-	// Test state changes
-	it('updates state correctly when values change', () => {
-		// Create variables to simulate component state
-		let displayId = 101;
-		let publishDate = '2023-01-01';
-		let isPublished = true;
-		let downloadUrl = 'https://example.com/download1';
-		let videoPreviewUrl = 'https://example.com/video1';
-
-		// Update the values
-		displayId = 102;
-		publishDate = '2023-02-01';
-		isPublished = false;
-		downloadUrl = 'https://example.com/download2';
-		videoPreviewUrl = 'https://example.com/video2';
-
-		// Verify the state was updated
-		expect(displayId).toBe(102);
-		expect(publishDate).toBe('2023-02-01');
-		expect(isPublished).toBe(false);
-		expect(downloadUrl).toBe('https://example.com/download2');
-		expect(videoPreviewUrl).toBe('https://example.com/video2');
-	});
-
 	// Test the Switch component behavior
 	it('handles Switch component checked state change', () => {
 		// Create variable for isPublished

@@ -14,6 +14,7 @@
 	let selectedTemplate = $state<Template | null>(null);
 	let showTemplateSelection = $state(false);
 	let templates = $state<Template[]>([]);
+	let folderExistsWarning = $state('');
 
 	// Subscribe to workspace store to get available folders
 	let workspaceState = $derived($workspaceStore);
@@ -21,6 +22,41 @@
 	// Subscribe to template store
 	const unsubscribeTemplate = templateStore.subscribe((state) => {
 		templates = state.templates;
+	});
+
+	// Check if folder already exists when user types
+	$effect(() => {
+		const checkFolderExists = async () => {
+			if (!selectedPath || (!songName.trim() && !folderName.trim())) {
+				folderExistsWarning = '';
+				return;
+			}
+
+			const rawFolderName = useSameNameForFolder ? songName.trim() : folderName.trim();
+			const sanitizedFolderName = sanitizeName(rawFolderName);
+
+			if (!sanitizedFolderName) {
+				folderExistsWarning = '';
+				return;
+			}
+
+			const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
+			try {
+				const folderExists = await window.electron.ipcRenderer.invoke(
+					'path-exists',
+					songFolderPath
+				);
+				if (folderExists) {
+					folderExistsWarning = `A folder named "${sanitizedFolderName}" already exists`;
+				} else {
+					folderExistsWarning = '';
+				}
+			} catch (err) {
+				folderExistsWarning = '';
+			}
+		};
+
+		checkFolderExists();
 	});
 
 	/**
@@ -145,12 +181,23 @@
 			});
 		}
 
+		// Create the song folder path using sanitized folder name
+		const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
+
+		// Check if folder already exists
+		const folderExists = await window.electron.ipcRenderer.invoke(
+			'path-exists',
+			songFolderPath
+		);
+		if (folderExists) {
+			error = `A folder named "${sanitizedFolderName}" already exists in the selected location`;
+			return;
+		}
+
 		isCreating = true;
 		error = '';
 
 		try {
-			// Create the song folder path using sanitized folder name
-			const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
 			console.log('Creating song folder at:', songFolderPath);
 			console.log('Selected template:', selectedTemplate);
 
@@ -282,6 +329,14 @@
 					class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"
 				>
 					{error}
+				</div>
+			{/if}
+
+			{#if folderExistsWarning}
+				<div
+					class="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+				>
+					⚠️ {folderExistsWarning}
 				</div>
 			{/if}
 
@@ -454,7 +509,10 @@
 					</button>
 					<button
 						type="submit"
-						disabled={isCreating || !songName.trim() || !selectedPath}
+						disabled={isCreating ||
+							!songName.trim() ||
+							!selectedPath ||
+							!!folderExistsWarning}
 						class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-800"
 					>
 						{#if isCreating}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Login from './components/Login.svelte';
 	import Workspace from './components/Workspace.svelte';
+	import NewSong from './components/NewSong.svelte';
 	import Navbar from './components/Navbar.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
@@ -101,7 +102,11 @@
 			</div>
 		{:else}
 			<div class="mb-10">
-				<Workspace />
+				{#if $workspaceStore.showNewSong}
+					<NewSong />
+				{:else}
+					<Workspace />
+				{/if}
 			</div>
 		{/if}
 

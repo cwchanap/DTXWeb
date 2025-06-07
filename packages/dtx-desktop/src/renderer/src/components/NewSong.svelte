@@ -3,6 +3,7 @@
 	import { templateStore, type Template } from '../stores/templateStore';
 	import { Folder, ArrowLeft, Music, FileText, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { SimFile } from '@dtx/common';
 
 	let songName = $state('');
 	let folderName = $state('');
@@ -228,9 +229,12 @@
 				console.log('No template selected, creating empty song folder');
 			}
 
-			// Create SET.def file content using sanitized song name
-			const setDefContent = `#TITLE: ${sanitizedSongName}`;
+			// Create SET.def file using SimFile's generateDefFileContent method
+			const simFile = new SimFile([]); // Empty files array for new SimFile
+			simFile.title = sanitizedSongName;
+
 			const setDefPath = joinPath(songFolderPath, 'SET.def');
+			const setDefContent = simFile.generateDefFileContent();
 
 			// Write the SET.def file (this will overwrite template's SET.def if it exists)
 			await window.electron.ipcRenderer.invoke('write-file', setDefPath, setDefContent);

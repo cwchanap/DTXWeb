@@ -2,7 +2,16 @@
 	import { onMount } from 'svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { Folder, FolderOpen, Loader, RefreshCw, X, HardDrive, Cloud } from '@lucide/svelte';
+	import {
+		Folder,
+		FolderOpen,
+		Loader,
+		RefreshCw,
+		X,
+		HardDrive,
+		Cloud,
+		Plus
+	} from '@lucide/svelte';
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import WorkspaceTree from './WorkspaceTree.svelte';
 	import SubWorkspaceItem from './SubWorkspaceItem.svelte';
@@ -47,6 +56,11 @@
 	// Handle clearing the workspace
 	const handleClearWorkspace = () => {
 		workspaceService.clearWorkspace();
+	};
+
+	// Handle creating a new song
+	const handleNewSong = () => {
+		workspaceStore.showNewSongForm();
 	};
 
 	// Load workspace data on mount if a path is already set
@@ -114,6 +128,15 @@
 				</div>
 				{#if workspacePath && activeTab === 'workspace'}
 					<div class="flex gap-2">
+						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-emerald-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleNewSong}
+							tabindex="0"
+							aria-label="Create new song"
+						>
+							<Plus size={16} />
+							New Song
+						</button>
 						<button
 							class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
 							onclick={handleRefreshWorkspace}

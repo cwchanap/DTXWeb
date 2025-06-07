@@ -6,7 +6,7 @@
 	"author": "example.com",
 	"homepage": "https://electron-vite.org",
 	"scripts": {
-		"typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+		"typecheck:node": "tsc --noEmit -p ./tsconfig.node.json --composite false",
 		"svelte-check": "svelte-check --tsconfig ./tsconfig.web.json",
 		"typecheck": "npm run typecheck:node && npm run svelte-check",
 		"start": "electron-vite preview",

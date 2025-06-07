@@ -7,7 +7,6 @@ node_modules
 !.env.example
 .temp
 
-CLAUDE.md
 sample/
 static/skin/
 

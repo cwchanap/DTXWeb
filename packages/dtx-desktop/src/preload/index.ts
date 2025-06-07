@@ -16,6 +16,11 @@ const extendedElectronAPI = {
 			// Whitelist channels that can be invoked
 			const validChannels = [
 				'select-directory',
+				'select-folder',
+				'get-subdirectories',
+				'create-directory',
+				'write-file',
+				'get-tree-structure',
 				'list-directories',
 				'load-tree-structure',
 				'read-file',

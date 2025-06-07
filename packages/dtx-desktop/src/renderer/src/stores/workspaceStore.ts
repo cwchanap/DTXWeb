@@ -22,6 +22,7 @@ interface WorkspaceState {
 	error: string | null;
 	selectedSong: TreeNode | null;
 	showSongDetails: boolean;
+	showNewSong: boolean;
 }
 
 const initialState: WorkspaceState = {
@@ -32,7 +33,8 @@ const initialState: WorkspaceState = {
 	isLoading: false,
 	error: null,
 	selectedSong: null,
-	showSongDetails: false
+	showSongDetails: false,
+	showNewSong: false
 };
 
 // Helper function to update tree nodes recursively
@@ -100,14 +102,16 @@ function createWorkspaceStore() {
 				treeStructure: [],
 				error: null,
 				selectedSong: null,
-				showSongDetails: false
+				showSongDetails: false,
+				showNewSong: false
 			}));
 		},
 		selectSong: (song: TreeNode) => {
 			update((state) => ({
 				...state,
 				selectedSong: song,
-				showSongDetails: true
+				showSongDetails: true,
+				showNewSong: false
 			}));
 		},
 		closeSongDetails: () => {
@@ -115,6 +119,20 @@ function createWorkspaceStore() {
 				...state,
 				selectedSong: null,
 				showSongDetails: false
+			}));
+		},
+		showNewSongForm: () => {
+			update((state) => ({
+				...state,
+				showNewSong: true,
+				selectedSong: null,
+				showSongDetails: false
+			}));
+		},
+		closeNewSongForm: () => {
+			update((state) => ({
+				...state,
+				showNewSong: false
 			}));
 		},
 		linkSimFileToFolder: (folderPath: string, simFile: any) => {

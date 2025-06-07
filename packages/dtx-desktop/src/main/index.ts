@@ -48,6 +48,62 @@ if (!gotTheLock) {
 			return result;
 		});
 
+		// Handle folder selection dialog (for new song creation)
+		ipcMain.handle('select-folder', async () => {
+			const result = await dialog.showOpenDialog({
+				properties: ['openDirectory']
+			});
+			return result;
+		});
+
+		// Handle getting subdirectories (for new song creation)
+		ipcMain.handle('get-subdirectories', async (_event, dirPath) => {
+			try {
+				console.log('Getting subdirectories in:', dirPath);
+				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+				// Filter only directories and return full paths
+				const directories = entries
+					.filter((entry) => entry.isDirectory())
+					.map((dir) => `${dirPath}/${dir.name}`);
+
+				console.log('Found subdirectories:', directories);
+				return directories;
+			} catch (error) {
+				console.error('Error getting subdirectories:', error);
+				return [];
+			}
+		});
+
+		// Handle creating directory
+		ipcMain.handle('create-directory', async (_event, dirPath) => {
+			try {
+				console.log('Creating directory:', dirPath);
+				await fs.promises.mkdir(dirPath, { recursive: true });
+				return { success: true };
+			} catch (error) {
+				console.error('Error creating directory:', error);
+				throw error;
+			}
+		});
+
+		// Handle writing file
+		ipcMain.handle('write-file', async (_event, filePath, content) => {
+			try {
+				console.log('Writing file:', filePath);
+				await fs.promises.writeFile(filePath, content, 'utf-8');
+				return { success: true };
+			} catch (error) {
+				console.error('Error writing file:', error);
+				throw error;
+			}
+		});
+
+		// Handle getting tree structure (alias for load-tree-structure)
+		ipcMain.handle('get-tree-structure', async (_event, dirPath) => {
+			return await loadTreeStructure(dirPath);
+		});
+
 		// Handle listing directories in a path
 		ipcMain.handle('list-directories', async (_event, dirPath) => {
 			try {

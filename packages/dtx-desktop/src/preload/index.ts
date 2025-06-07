@@ -22,6 +22,7 @@ const extendedElectronAPI = {
 				'get-subdirectories',
 				'create-directory',
 				'write-file',
+				'copy-directory-contents',
 				'list-directories',
 				'load-tree-structure',
 				'read-file',

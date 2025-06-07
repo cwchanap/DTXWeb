@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { workspaceStore } from '../stores/workspaceStore';
-	import { Folder, ArrowLeft, Music } from '@lucide/svelte';
+	import { templateStore, type Template } from '../stores/templateStore';
+	import { Folder, ArrowLeft, Music, FileText, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	let songName = $state('');
@@ -10,9 +11,17 @@
 	let isCreating = $state(false);
 	let error = $state('');
 	let availableFolders = $state<string[]>([]);
+	let selectedTemplate = $state<Template | null>(null);
+	let showTemplateSelection = $state(false);
+	let templates = $state<Template[]>([]);
 
 	// Subscribe to workspace store to get available folders
 	let workspaceState = $derived($workspaceStore);
+
+	// Subscribe to template store
+	const unsubscribeTemplate = templateStore.subscribe((state) => {
+		templates = state.templates;
+	});
 
 	/**
 	 * Simple path joining utility for cross-platform compatibility
@@ -71,6 +80,11 @@
 		if (workspaceState.path) {
 			loadAvailableFolders();
 		}
+
+		// Cleanup function for template store subscription
+		return () => {
+			unsubscribeTemplate();
+		};
 	});
 
 	async function loadAvailableFolders() {
@@ -137,15 +151,41 @@
 		try {
 			// Create the song folder path using sanitized folder name
 			const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
+			console.log('Creating song folder at:', songFolderPath);
+			console.log('Selected template:', selectedTemplate);
 
 			// Create the folder
 			await window.electron.ipcRenderer.invoke('create-directory', songFolderPath);
+
+			// If a template is selected, copy its contents to the new folder
+			if (selectedTemplate) {
+				console.log(
+					'Copying template files from:',
+					selectedTemplate.folderPath,
+					'to:',
+					songFolderPath
+				);
+				try {
+					await window.electron.ipcRenderer.invoke(
+						'copy-directory-contents',
+						selectedTemplate.folderPath,
+						songFolderPath
+					);
+					console.log('Template files copied successfully');
+				} catch (copyError) {
+					console.error('Failed to copy template files:', copyError);
+					error = `Failed to copy template files: ${copyError instanceof Error ? copyError.message : 'Unknown error'}`;
+					// Continue with creation even if template copy fails
+				}
+			} else {
+				console.log('No template selected, creating empty song folder');
+			}
 
 			// Create SET.def file content using sanitized song name
 			const setDefContent = `#TITLE: ${sanitizedSongName}`;
 			const setDefPath = joinPath(songFolderPath, 'SET.def');
 
-			// Write the SET.def file
+			// Write the SET.def file (this will overwrite template's SET.def if it exists)
 			await window.electron.ipcRenderer.invoke('write-file', setDefPath, setDefContent);
 
 			// Refresh workspace tree to show new folder
@@ -177,6 +217,30 @@
 			console.error('Failed to select folder:', err);
 			error = 'Failed to select folder';
 		}
+	}
+
+	function handleImportTemplate() {
+		showTemplateSelection = true;
+		error = '';
+	}
+
+	function handleSelectTemplate(template: Template) {
+		console.log('Template selected:', template);
+		selectedTemplate = template;
+		showTemplateSelection = false;
+
+		// Auto-populate song name from template folder name if not already filled
+		if (!songName.trim()) {
+			songName = template.name;
+		}
+	}
+
+	function handleClearTemplate() {
+		selectedTemplate = null;
+	}
+
+	function handleCancelTemplateSelection() {
+		showTemplateSelection = false;
 	}
 </script>
 
@@ -279,6 +343,59 @@
 					</div>
 				{/if}
 
+				<!-- Template Import Section -->
+				<div>
+					<label
+						for="template"
+						class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
+					>
+						Template (Optional)
+					</label>
+
+					{#if selectedTemplate}
+						<!-- Show selected template -->
+						<div
+							class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/30"
+						>
+							<div class="flex items-center justify-between">
+								<div class="flex items-center gap-2">
+									<FileText
+										size={16}
+										class="text-green-600 dark:text-green-400"
+									/>
+									<span
+										class="text-sm font-medium text-green-800 dark:text-green-200"
+									>
+										{selectedTemplate.name}
+									</span>
+								</div>
+								<button
+									type="button"
+									onclick={handleClearTemplate}
+									class="flex items-center gap-1 rounded-lg bg-red-500 px-2 py-1 text-xs font-medium text-white hover:bg-red-600"
+									title="Remove template"
+								>
+									<X size={12} />
+								</button>
+							</div>
+							<p class="mt-1 text-xs text-green-700 dark:text-green-300">
+								Template files will be copied to the new song folder
+							</p>
+						</div>
+					{:else}
+						<!-- Import template button -->
+						<button
+							id="template"
+							type="button"
+							onclick={handleImportTemplate}
+							class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+						>
+							<FileText size={16} />
+							Import Template
+						</button>
+					{/if}
+				</div>
+
 				<!-- Folder Path Selection -->
 				<div>
 					<label
@@ -351,3 +468,78 @@
 		</div>
 	</div>
 </div>
+
+<!-- Template Selection Modal -->
+{#if showTemplateSelection}
+	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+		<div
+			class="max-h-[80vh] w-full max-w-md overflow-hidden rounded-lg bg-white shadow-xl dark:bg-slate-800"
+		>
+			<!-- Modal Header -->
+			<div class="border-b border-slate-200 p-4 dark:border-slate-700">
+				<div class="flex items-center justify-between">
+					<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
+						Select Template
+					</h3>
+					<button
+						onclick={handleCancelTemplateSelection}
+						class="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+					>
+						<X size={20} />
+					</button>
+				</div>
+			</div>
+
+			<!-- Modal Content -->
+			<div class="max-h-[60vh] overflow-y-auto p-4">
+				{#if templates.length === 0}
+					<div class="flex flex-col items-center py-8 text-center">
+						<FileText size={48} class="mb-3 text-slate-400" />
+						<p class="text-slate-600 dark:text-slate-400">
+							No templates available. Create a template first in the Templates
+							section.
+						</p>
+					</div>
+				{:else}
+					<div class="space-y-3">
+						{#each templates as template (template.id)}
+							<button
+								onclick={() => handleSelectTemplate(template)}
+								class="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-600 dark:hover:bg-blue-900/30"
+							>
+								<div class="flex items-start justify-between">
+									<div class="flex-1">
+										<h4 class="font-medium text-slate-900 dark:text-slate-100">
+											{template.name}
+										</h4>
+										<p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+											Created: {new Date(
+												template.createdAt
+											).toLocaleDateString()}
+										</p>
+										<p
+											class="mt-1 font-mono text-xs text-slate-500 dark:text-slate-500"
+										>
+											{template.folderPath}
+										</p>
+									</div>
+									<FileText size={20} class="text-slate-400" />
+								</div>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Modal Footer -->
+			<div class="border-t border-slate-200 p-4 dark:border-slate-700">
+				<button
+					onclick={handleCancelTemplateSelection}
+					class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

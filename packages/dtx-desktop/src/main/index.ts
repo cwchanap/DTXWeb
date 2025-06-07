@@ -114,6 +114,38 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle copying directory contents (for template import)
+		ipcMain.handle('copy-directory-contents', async (_event, sourcePath, destinationPath) => {
+			try {
+				console.log('Copying directory contents from:', sourcePath, 'to:', destinationPath);
+
+				// Ensure destination directory exists
+				await fs.promises.mkdir(destinationPath, { recursive: true });
+
+				const copyRecursively = async (src: string, dest: string) => {
+					const entries = await fs.promises.readdir(src, { withFileTypes: true });
+
+					for (const entry of entries) {
+						const srcPath = path.join(src, entry.name);
+						const destPath = path.join(dest, entry.name);
+
+						if (entry.isDirectory()) {
+							await fs.promises.mkdir(destPath, { recursive: true });
+							await copyRecursively(srcPath, destPath);
+						} else if (entry.isFile()) {
+							await fs.promises.copyFile(srcPath, destPath);
+						}
+					}
+				};
+
+				await copyRecursively(sourcePath, destinationPath);
+				return { success: true };
+			} catch (error) {
+				console.error('Error copying directory contents:', error);
+				throw error;
+			}
+		});
+
 		// Handle listing directories in a path
 		ipcMain.handle('list-directories', async (_event, dirPath) => {
 			try {

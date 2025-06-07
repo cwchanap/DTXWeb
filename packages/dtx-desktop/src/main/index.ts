@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
+import path from 'path';
 import {
 	verifyMagicLink,
 	validateSession,
@@ -79,7 +80,7 @@ if (!gotTheLock) {
 				// Filter only directories and return full paths
 				const directories = entries
 					.filter((entry) => entry.isDirectory())
-					.map((dir) => `${dirPath}/${dir.name}`);
+					.map((dir) => path.join(dirPath, dir.name));
 
 				console.log('Found subdirectories:', directories);
 				return directories;
@@ -159,7 +160,7 @@ if (!gotTheLock) {
 					entries
 						.filter((entry) => entry.isFile())
 						.map(async (file) => {
-							const filePath = `${dirPath}/${file.name}`;
+							const filePath = path.join(dirPath, file.name);
 							const stats = await fs.promises.stat(filePath);
 							return {
 								fileName: file.name,

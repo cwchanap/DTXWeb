@@ -24,7 +24,7 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 
 		const treeNodes = await Promise.all(
 			allDirectories.map(async (dir) => {
-				const fullPath = `${dirPath}/${dir.name}`;
+				const fullPath = path.join(dirPath, dir.name);
 
 				// Check if directory has subdirectories
 				let hasChildren = false;
@@ -52,7 +52,7 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 
 						if (setDefFile) {
 							try {
-								const setDefPath = `${fullPath}/${setDefFile.name}`;
+								const setDefPath = path.join(fullPath, setDefFile.name);
 								// Read as buffer to preserve original encoding
 								const setDefBuffer = await fs.promises.readFile(setDefPath);
 

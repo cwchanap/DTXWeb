@@ -2,6 +2,13 @@ import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 import { simFileStore } from '../stores/simFileStore';
 import { linkingService } from './linkingService';
 
+/**
+ * Simple path joining utility for cross-platform compatibility
+ */
+function joinPath(...parts: string[]): string {
+	return parts.join('/');
+}
+
 export const workspaceService = {
 	/**
 	 * Opens a folder selection dialog and sets the selected path as the workspace
@@ -91,7 +98,7 @@ export const workspaceService = {
 
 			if (currentSubWorkspace) {
 				// If a sub-workspace is selected, show its contents
-				const subWorkspacePath = `${currentPath}/${currentSubWorkspace}`;
+				const subWorkspacePath = joinPath(currentPath, currentSubWorkspace);
 				const treeData = await window.electron.ipcRenderer.invoke(
 					'load-tree-structure',
 					subWorkspacePath

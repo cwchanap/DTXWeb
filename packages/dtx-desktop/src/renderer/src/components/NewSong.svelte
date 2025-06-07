@@ -15,6 +15,13 @@
 	let workspaceState = $derived($workspaceStore);
 
 	/**
+	 * Simple path joining utility for cross-platform compatibility
+	 */
+	function joinPath(...parts: string[]): string {
+		return parts.join('/');
+	}
+
+	/**
 	 * Sanitizes a file or folder name to prevent directory traversal attacks
 	 * and ensure valid directory names
 	 */
@@ -129,14 +136,14 @@
 
 		try {
 			// Create the song folder path using sanitized folder name
-			const songFolderPath = `${selectedPath}/${sanitizedFolderName}`;
+			const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
 
 			// Create the folder
 			await window.electron.ipcRenderer.invoke('create-directory', songFolderPath);
 
 			// Create SET.def file content using sanitized song name
 			const setDefContent = `#TITLE: ${sanitizedSongName}`;
-			const setDefPath = `${songFolderPath}/SET.def`;
+			const setDefPath = joinPath(songFolderPath, 'SET.def');
 
 			// Write the SET.def file
 			await window.electron.ipcRenderer.invoke('write-file', setDefPath, setDefContent);

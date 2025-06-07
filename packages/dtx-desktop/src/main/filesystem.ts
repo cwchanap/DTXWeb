@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import { dialog } from 'electron';
 import { SimFile } from '@dtx/common';
 
 export interface TreeNode {
@@ -92,4 +94,11 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 		console.error('Error loading tree structure:', error);
 		return [];
 	}
+}
+
+export async function selectDirectory() {
+	const result = await dialog.showOpenDialog({
+		properties: ['openDirectory']
+	});
+	return result;
 }

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
 import {
@@ -9,7 +9,7 @@ import {
 	handleProtocolUrl
 } from './auth';
 import { fetchUserSimFiles, getPreviewUrl, getSoundPreviewUrl } from './simfile-service';
-import { loadTreeStructure } from './filesystem';
+import { loadTreeStructure, selectDirectory } from './filesystem';
 import { createWindow } from './window';
 
 // Make sure we're the only instance of the app
@@ -40,19 +40,35 @@ if (!gotTheLock) {
 			shell.openExternal(url);
 		});
 
-		// Shared directory selection dialog logic
-		const selectDirectory = async () => {
-			const result = await dialog.showOpenDialog({
-				properties: ['openDirectory']
-			});
-			return result;
-		};
-
 		// Handle directory selection dialog (workspace selection)
 		ipcMain.handle('select-directory', selectDirectory);
 
 		// Handle folder selection dialog (new song creation)
 		ipcMain.handle('select-folder', selectDirectory);
+
+		// Handle path existence check
+		ipcMain.handle('path-exists', async (_event, path) => {
+			try {
+				await fs.promises.access(path);
+				return true;
+			} catch (error) {
+				return false;
+			}
+		});
+
+		// Handle opening folder in explorer/finder
+		ipcMain.handle('open-folder-in-explorer', async (_event, folderPath) => {
+			try {
+				await shell.openPath(folderPath);
+				return { success: true };
+			} catch (error) {
+				console.error('Error opening folder in explorer:', error);
+				return {
+					success: false,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
+		});
 
 		// Handle getting subdirectories (for new song creation)
 		ipcMain.handle('get-subdirectories', async (_event, dirPath) => {

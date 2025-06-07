@@ -10,13 +10,15 @@
 		X,
 		HardDrive,
 		Cloud,
-		Plus
+		Plus,
+		FileText
 	} from '@lucide/svelte';
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import WorkspaceTree from './WorkspaceTree.svelte';
 	import SubWorkspaceItem from './SubWorkspaceItem.svelte';
 	import SongDetails from './SongDetails.svelte';
 	import SimFileList from './SimFileList.svelte';
+	import Templates from './Templates.svelte';
 
 	let isLoading = $state(false);
 	let workspacePath = $state('');
@@ -26,9 +28,19 @@
 	let error = $state('');
 	let selectedSong = $state<TreeNode | null>(null);
 	let showSongDetails = $state(false);
+	let showTemplates = $state(false);
 
 	// Navigation state
 	let activeTab = $state('workspace');
+
+	// Handle navigation tab changes
+	$effect(() => {
+		if (activeTab === 'templates') {
+			workspaceStore.showTemplatesView();
+		} else {
+			workspaceStore.closeTemplatesView();
+		}
+	});
 
 	// Subscribe to the workspace store
 	const unsubscribe = workspaceStore.subscribe((state) => {
@@ -40,6 +52,7 @@
 		error = state.error || '';
 		selectedSong = state.selectedSong;
 		showSongDetails = state.showSongDetails;
+		showTemplates = state.showTemplates;
 	});
 
 	// Handle selecting a workspace
@@ -107,6 +120,15 @@
 			>
 				<Cloud size={32} />
 			</Navigation.Tile>
+			<Navigation.Tile
+				id="templates"
+				label="Templates"
+				labelExpanded="Song Templates"
+				padding="p-4"
+				gap="gap-3"
+			>
+				<FileText size={32} />
+			</Navigation.Tile>
 		{/snippet}
 	</Navigation.Rail>
 
@@ -115,6 +137,9 @@
 		{#if showSongDetails && selectedSong}
 			<!-- Song Details View -->
 			<SongDetails song={selectedSong} />
+		{:else if showTemplates}
+			<!-- Templates View -->
+			<Templates />
 		{:else}
 			<!-- Header -->
 			<div

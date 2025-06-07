@@ -40,21 +40,19 @@ if (!gotTheLock) {
 			shell.openExternal(url);
 		});
 
-		// Handle directory selection dialog
-		ipcMain.handle('select-directory', async () => {
+		// Shared directory selection dialog logic
+		const selectDirectory = async () => {
 			const result = await dialog.showOpenDialog({
 				properties: ['openDirectory']
 			});
 			return result;
-		});
+		};
 
-		// Handle folder selection dialog (for new song creation)
-		ipcMain.handle('select-folder', async () => {
-			const result = await dialog.showOpenDialog({
-				properties: ['openDirectory']
-			});
-			return result;
-		});
+		// Handle directory selection dialog (workspace selection)
+		ipcMain.handle('select-directory', selectDirectory);
+
+		// Handle folder selection dialog (new song creation)
+		ipcMain.handle('select-folder', selectDirectory);
 
 		// Handle getting subdirectories (for new song creation)
 		ipcMain.handle('get-subdirectories', async (_event, dirPath) => {
@@ -97,11 +95,6 @@ if (!gotTheLock) {
 				console.error('Error writing file:', error);
 				throw error;
 			}
-		});
-
-		// Handle getting tree structure (alias for load-tree-structure)
-		ipcMain.handle('get-tree-structure', async (_event, dirPath) => {
-			return await loadTreeStructure(dirPath);
 		});
 
 		// Handle listing directories in a path

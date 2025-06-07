@@ -2,4 +2,4 @@
 
 #### LLM instruction
 
-Please refer CLAUDE.md and files under .cursor/rules for project details, coding stying and practices
+Please refer to CLAUDE.md and files under .cursor/rules for project details, coding styling and practices

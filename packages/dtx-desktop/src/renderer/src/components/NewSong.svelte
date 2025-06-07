@@ -14,6 +14,51 @@
 	// Subscribe to workspace store to get available folders
 	let workspaceState = $derived($workspaceStore);
 
+	/**
+	 * Sanitizes a file or folder name to prevent directory traversal attacks
+	 * and ensure valid directory names
+	 */
+	function sanitizeName(name: string): string {
+		if (!name || typeof name !== 'string') {
+			return '';
+		}
+
+		// Remove leading/trailing whitespace
+		let sanitized = name.trim();
+
+		// Remove or replace dangerous path traversal sequences
+		sanitized = sanitized.replace(/\.\.+/g, ''); // Remove .. sequences
+		sanitized = sanitized.replace(/[\/\\]/g, ''); // Remove path separators
+
+		// Remove or replace invalid filename characters (Windows + Unix)
+		// Invalid characters: < > : " | ? * and control characters (0-31, 127)
+		sanitized = sanitized.replace(/[<>:"|?*\x00-\x1f\x7f]/g, '');
+
+		// Remove leading dots and spaces (Windows restriction)
+		sanitized = sanitized.replace(/^[.\s]+/, '');
+
+		// Remove trailing dots and spaces (Windows restriction)
+		sanitized = sanitized.replace(/[.\s]+$/, '');
+
+		// Handle reserved names on Windows
+		const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+		if (reservedNames.test(sanitized)) {
+			sanitized = sanitized + '_safe';
+		}
+
+		// Ensure the name is not empty after sanitization
+		if (!sanitized) {
+			sanitized = 'untitled';
+		}
+
+		// Limit length to prevent filesystem issues (255 is common limit)
+		if (sanitized.length > 200) {
+			sanitized = sanitized.substring(0, 200);
+		}
+
+		return sanitized;
+	}
+
 	onMount(() => {
 		// Get list of available folders from workspace state
 		if (workspaceState.path) {
@@ -54,26 +99,43 @@
 			return;
 		}
 
-		// Determine the actual folder name to use
-		const actualFolderName = useSameNameForFolder ? songName.trim() : folderName.trim();
-
-		if (!actualFolderName) {
-			error = 'Please enter a folder name';
+		// Sanitize the song name
+		const sanitizedSongName = sanitizeName(songName);
+		if (!sanitizedSongName) {
+			error = 'Song name contains only invalid characters';
 			return;
+		}
+
+		// Determine the actual folder name to use
+		const rawFolderName = useSameNameForFolder ? songName.trim() : folderName.trim();
+		const sanitizedFolderName = sanitizeName(rawFolderName);
+
+		if (!sanitizedFolderName) {
+			error = 'Folder name contains only invalid characters or is empty';
+			return;
+		}
+
+		// Check if sanitization changed the names significantly and warn user
+		const originalFolderName = useSameNameForFolder ? songName.trim() : folderName.trim();
+		if (sanitizedFolderName !== originalFolderName.trim()) {
+			console.warn('Folder name was sanitized for security:', {
+				original: originalFolderName,
+				sanitized: sanitizedFolderName
+			});
 		}
 
 		isCreating = true;
 		error = '';
 
 		try {
-			// Create the song folder path
-			const songFolderPath = `${selectedPath}/${actualFolderName}`;
+			// Create the song folder path using sanitized folder name
+			const songFolderPath = `${selectedPath}/${sanitizedFolderName}`;
 
 			// Create the folder
 			await window.electron.ipcRenderer.invoke('create-directory', songFolderPath);
 
-			// Create SET.def file content
-			const setDefContent = `#TITLE: ${songName.trim()}`;
+			// Create SET.def file content using sanitized song name
+			const setDefContent = `#TITLE: ${sanitizedSongName}`;
 			const setDefPath = `${songFolderPath}/SET.def`;
 
 			// Write the SET.def file
@@ -82,7 +144,7 @@
 			// Refresh workspace tree to show new folder
 			if (workspaceState.path) {
 				const updatedTree = await window.electron.ipcRenderer.invoke(
-					'get-tree-structure',
+					'load-tree-structure',
 					workspaceState.path
 				);
 				workspaceStore.setTreeStructure(updatedTree);

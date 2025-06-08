@@ -91,14 +91,10 @@ export const workspaceService = {
 
 			if (currentSubWorkspace) {
 				// If a sub-workspace is selected, show its contents
-				const subWorkspacePath = await window.electron.ipcRenderer.invoke(
-					'join-path',
-					currentPath,
-					currentSubWorkspace
-				);
 				const treeData = await window.electron.ipcRenderer.invoke(
 					'load-tree-structure',
-					subWorkspacePath
+					currentPath,
+					currentSubWorkspace
 				);
 				workspaceStore.setTreeStructure(treeData);
 

@@ -187,8 +187,16 @@ if (!gotTheLock) {
 		});
 
 		// Handle loading tree structure with lazy loading
-		ipcMain.handle('load-tree-structure', async (_event, dirPath) => {
-			return await loadTreeStructure(dirPath);
+		ipcMain.handle('load-tree-structure', async (_event, basePath, ...pathParts) => {
+			let fullPath;
+			if (pathParts.length === 0) {
+				// Single path argument (backward compatibility)
+				fullPath = basePath;
+			} else {
+				// Multiple path parts to join
+				fullPath = path.join(basePath, ...pathParts);
+			}
+			return await loadTreeStructure(fullPath);
 		});
 
 		// Handle listing files in a directory

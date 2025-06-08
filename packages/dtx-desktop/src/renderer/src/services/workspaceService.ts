@@ -11,8 +11,8 @@ export const workspaceService = {
 			workspaceStore.setLoading(true);
 
 			// Use Electron's ipcRenderer to open folder selection dialog
-			console.log('Invoking select-directory dialog');
-			const result = await window.electron.ipcRenderer.invoke('select-directory');
+			console.log('Invoking select-folder dialog');
+			const result = await window.electron.ipcRenderer.invoke('select-folder');
 			console.log('Dialog result:', result);
 
 			if (result.canceled) {
@@ -91,10 +91,10 @@ export const workspaceService = {
 
 			if (currentSubWorkspace) {
 				// If a sub-workspace is selected, show its contents
-				const subWorkspacePath = `${currentPath}/${currentSubWorkspace}`;
 				const treeData = await window.electron.ipcRenderer.invoke(
 					'load-tree-structure',
-					subWorkspacePath
+					currentPath,
+					currentSubWorkspace
 				);
 				workspaceStore.setTreeStructure(treeData);
 

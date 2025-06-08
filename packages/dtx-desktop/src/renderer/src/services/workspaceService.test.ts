@@ -118,7 +118,8 @@ describe('WorkspaceService', () => {
 			// Verify that the IPC call was made with the sub-workspace path
 			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
 				'load-tree-structure',
-				'/test/workspace/DTXFiles.TestSubWorkspace'
+				'/test/workspace',
+				'DTXFiles.TestSubWorkspace'
 			);
 		});
 

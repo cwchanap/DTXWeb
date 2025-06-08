@@ -173,4 +173,45 @@ export class SimFile {
 	public getSoundPreview() {
 		return URL.createObjectURL(this.getSoundPreviewFile());
 	}
+
+	/**
+	 * Generate def file content with current simFile data
+	 * @returns The def file content as a string
+	 */
+	public generateDefFileContent(): string {
+		const lines: string[] = [];
+
+		// Add title if it exists
+		if (this.title) {
+			lines.push(`#TITLE: ${this.title}`);
+		}
+
+		// Default level settings with default filenames
+		const defaultLevels = [
+			{ level: 1, defaultFile: 'bas.dtx' },
+			{ level: 2, defaultFile: 'adv.dtx' },
+			{ level: 3, defaultFile: 'ext.dtx' },
+			{ level: 4, defaultFile: 'mas.dtx' },
+			{ level: 5, defaultFile: 'real.dtx' }
+		];
+
+		// Add level information
+		for (const { level, defaultFile } of defaultLevels) {
+			const levelData = this.levels[level];
+			if (levelData) {
+				// Use existing level data
+				lines.push(`#L${level}LABEL ${levelData.label}`);
+				// Try to get filename from the DTXFile using the safe getFileName method
+				const fileName = levelData.file.getFileName() || defaultFile;
+				lines.push(`#L${level}FILE ${fileName}`);
+			} else {
+				// Use default values
+				const defaultLabels = ['BASIC', 'ADVANCED', 'EXTREME', 'MASTER', 'REAL'];
+				lines.push(`#L${level}LABEL ${defaultLabels[level - 1]}`);
+				lines.push(`#L${level}FILE ${defaultFile}`);
+			}
+		}
+
+		return lines.join('\n');
+	}
 }

@@ -24,9 +24,25 @@
 		templates = state.templates;
 	});
 
-	// Check if folder already exists when user types
+	// Check if folder already exists when user types (with debouncing and cancellation)
+	let debounceTimer: NodeJS.Timeout | null = null;
+	let currentCheckId = 0;
+
 	$effect(() => {
+		// Clear any existing timer
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+		}
+
+		// Increment check ID to invalidate any pending requests
+		const checkId = ++currentCheckId;
+
 		const checkFolderExists = async () => {
+			// Check if this request is still current
+			if (checkId !== currentCheckId) {
+				return; // Request has been superseded, ignore
+			}
+
 			if (!selectedPath || (!songName.trim() && !folderName.trim())) {
 				folderExistsWarning = '';
 				return;
@@ -46,17 +62,35 @@
 					selectedPath,
 					sanitizedFolderName
 				);
+
+				// Check again if this request is still current after the async call
+				if (checkId !== currentCheckId) {
+					return; // Request has been superseded, ignore result
+				}
+
 				if (folderExists) {
 					folderExistsWarning = `A folder named "${sanitizedFolderName}" already exists`;
 				} else {
 					folderExistsWarning = '';
 				}
 			} catch (err) {
-				folderExistsWarning = '';
+				// Only update warning if this request is still current
+				if (checkId === currentCheckId) {
+					folderExistsWarning = '';
+				}
 			}
 		};
 
-		checkFolderExists();
+		// Debounce the check by 300ms to avoid excessive API calls
+		debounceTimer = setTimeout(checkFolderExists, 300);
+
+		// Cleanup function to clear timer when effect is destroyed
+		return () => {
+			if (debounceTimer) {
+				clearTimeout(debounceTimer);
+				debounceTimer = null;
+			}
+		};
 	});
 
 	/**

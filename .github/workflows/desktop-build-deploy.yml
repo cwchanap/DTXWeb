@@ -128,7 +128,7 @@ jobs:
             
             echo "Uploading $filename with content-type: $content_type"
             wrangler r2 object put "${{ vars.R2_BUCKET }}/$filename" --file="$file" \
-              --content-type="$content_type"
+              --content-type="$content_type --remote"
           done
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

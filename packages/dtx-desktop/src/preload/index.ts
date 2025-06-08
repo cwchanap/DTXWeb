@@ -15,26 +15,20 @@ const extendedElectronAPI = {
 		invoke: (channel: string, ...args: any[]) => {
 			// Whitelist channels that can be invoked
 			const validChannels = [
-				'select-directory',
+				'select-folder',
 				'path-exists',
 				'open-folder-in-explorer',
-				'select-folder',
 				'get-subdirectories',
-				'create-directory',
-				'write-file',
-				'copy-directory-contents',
-				'list-directories',
 				'load-tree-structure',
-				'read-file',
 				'list-files',
-				'verify-magic-link',
 				'validate-session',
 				'get-current-session',
 				'logout-session',
 				'fetch-user-simfiles',
 				'get-preview-url',
 				'get-sound-preview-url',
-				'load-asset-files'
+				'load-asset-files',
+				'create-song'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

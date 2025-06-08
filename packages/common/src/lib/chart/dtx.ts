@@ -57,6 +57,17 @@ export class DTXFile {
 		public difficulty?: string
 	) {}
 
+	/**
+	 * Get the filename from the original file
+	 * @returns The filename if available, null otherwise
+	 */
+	public getFileName(): string | null {
+		if (this.file instanceof File) {
+			return this.file.name;
+		}
+		return null;
+	}
+
 	async parse(encoding?: string) {
 		if (typeof this.file === 'string') {
 			this.parseFromText(this.file);

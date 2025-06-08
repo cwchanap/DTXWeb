@@ -32,6 +32,11 @@
 			"svelte": "./dist/components.js",
 			"import": "./dist/components.js",
 			"default": "./dist/components.js"
+		},
+		"./server": {
+			"types": "./dist/server.d.ts",
+			"import": "./dist/server.js",
+			"default": "./dist/server.js"
 		}
 	},
 	"peerDependencies": {

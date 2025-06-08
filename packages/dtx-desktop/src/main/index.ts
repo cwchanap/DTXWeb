@@ -2,13 +2,8 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
 import path from 'path';
-import {
-	verifyMagicLink,
-	validateSession,
-	getCurrentSession,
-	logoutSession,
-	handleProtocolUrl
-} from './auth';
+import { SimFile } from '@dtx/common';
+import { validateSession, getCurrentSession, logoutSession, handleProtocolUrl } from './auth';
 import { fetchUserSimFiles, getPreviewUrl, getSoundPreviewUrl } from './simfile-service';
 import { loadTreeStructure, selectDirectory } from './filesystem';
 import { createWindow } from './window';
@@ -41,16 +36,21 @@ if (!gotTheLock) {
 			shell.openExternal(url);
 		});
 
-		// Handle directory selection dialog (workspace selection)
-		ipcMain.handle('select-directory', selectDirectory);
-
-		// Handle folder selection dialog (new song creation)
+		// Handle folder selection dialog (new song creation and templates)
 		ipcMain.handle('select-folder', selectDirectory);
 
 		// Handle path existence check
-		ipcMain.handle('path-exists', async (_event, path) => {
+		ipcMain.handle('path-exists', async (_event, basePath, ...pathParts) => {
 			try {
-				await fs.promises.access(path);
+				let fullPath;
+				if (pathParts.length === 0) {
+					// Single path argument (backward compatibility)
+					fullPath = basePath;
+				} else {
+					// Multiple path parts to join
+					fullPath = path.join(basePath, ...pathParts);
+				}
+				await fs.promises.access(fullPath);
 				return true;
 			} catch (error) {
 				return false;
@@ -59,14 +59,14 @@ if (!gotTheLock) {
 
 		// Handle opening folder in explorer/finder
 		ipcMain.handle('open-folder-in-explorer', async (_event, folderPath) => {
-			try {
-				await shell.openPath(folderPath);
+			const result = await shell.openPath(folderPath);
+			if (result === '') {
 				return { success: true };
-			} catch (error) {
-				console.error('Error opening folder in explorer:', error);
+			} else {
+				console.error('Error opening folder in explorer:', result);
 				return {
 					success: false,
-					error: error instanceof Error ? error.message : 'Unknown error'
+					error: result
 				};
 			}
 		});
@@ -90,95 +90,105 @@ if (!gotTheLock) {
 			}
 		});
 
-		// Handle creating directory
-		ipcMain.handle('create-directory', async (_event, dirPath) => {
+		// Handle consolidated song creation
+		ipcMain.handle('create-song', async (_event, options) => {
 			try {
-				console.log('Creating directory:', dirPath);
-				await fs.promises.mkdir(dirPath, { recursive: true });
-				return { success: true };
-			} catch (error) {
-				console.error('Error creating directory:', error);
-				throw error;
-			}
-		});
+				const { selectedPath, sanitizedFolderName, sanitizedSongName, templateFolderPath } =
+					options;
 
-		// Handle writing file
-		ipcMain.handle('write-file', async (_event, filePath, content) => {
-			try {
-				console.log('Writing file:', filePath);
-				await fs.promises.writeFile(filePath, content, 'utf-8');
-				return { success: true };
-			} catch (error) {
-				console.error('Error writing file:', error);
-				throw error;
-			}
-		});
+				console.log('Creating song:', {
+					selectedPath,
+					sanitizedFolderName,
+					sanitizedSongName,
+					templateFolderPath
+				});
 
-		// Handle copying directory contents (for template import)
-		ipcMain.handle('copy-directory-contents', async (_event, sourcePath, destinationPath) => {
-			try {
-				console.log('Copying directory contents from:', sourcePath, 'to:', destinationPath);
-
-				// Ensure destination directory exists
-				await fs.promises.mkdir(destinationPath, { recursive: true });
-
-				const copyRecursively = async (src: string, dest: string) => {
-					const entries = await fs.promises.readdir(src, { withFileTypes: true });
-
-					for (const entry of entries) {
-						const srcPath = path.join(src, entry.name);
-						const destPath = path.join(dest, entry.name);
-
-						if (entry.isDirectory()) {
-							await fs.promises.mkdir(destPath, { recursive: true });
-							await copyRecursively(srcPath, destPath);
-						} else if (entry.isFile()) {
-							await fs.promises.copyFile(srcPath, destPath);
-						}
+				// Check if folder already exists
+				const songFolderPath = path.join(selectedPath, sanitizedFolderName);
+				try {
+					await fs.promises.access(songFolderPath);
+					throw new Error(
+						`A folder named "${sanitizedFolderName}" already exists in the selected location`
+					);
+				} catch (accessError: any) {
+					// If the error is NOT ENOENT, it means something else went wrong
+					if (accessError.code !== 'ENOENT') {
+						throw accessError;
 					}
+					// ENOENT means the folder doesn't exist, which is what we want
+				}
+
+				// Create the song folder
+				console.log('Creating song folder at:', songFolderPath);
+				await fs.promises.mkdir(songFolderPath, { recursive: true });
+
+				// If a template is provided, copy its contents to the new folder
+				if (templateFolderPath) {
+					console.log(
+						'Copying template files from:',
+						templateFolderPath,
+						'to:',
+						songFolderPath
+					);
+
+					// Normalize paths to resolve any relative components and ensure consistent separators
+					const normalizedSource = path.resolve(templateFolderPath);
+					const normalizedDest = path.resolve(songFolderPath);
+
+					// Guard against copying into a descendant of the source directory
+					if (
+						normalizedDest.startsWith(normalizedSource + path.sep) ||
+						normalizedDest === normalizedSource
+					) {
+						throw new Error('Cannot copy directory into itself or its subdirectory.');
+					}
+
+					const copyRecursively = async (src: string, dest: string) => {
+						const entries = await fs.promises.readdir(src, { withFileTypes: true });
+
+						for (const entry of entries) {
+							const srcPath = path.join(src, entry.name);
+							const destPath = path.join(dest, entry.name);
+
+							if (entry.isDirectory()) {
+								await fs.promises.mkdir(destPath, { recursive: true });
+								await copyRecursively(srcPath, destPath);
+							} else if (entry.isFile()) {
+								await fs.promises.copyFile(srcPath, destPath);
+							}
+						}
+					};
+
+					await copyRecursively(templateFolderPath, songFolderPath);
+					console.log('Template files copied successfully');
+				} else {
+					console.log('No template provided, creating empty song folder');
+				}
+
+				// Create SET.def file using SimFile's generateDefFileContent method
+				const simFile = new SimFile([]); // Empty files array for new SimFile
+				simFile.title = sanitizedSongName;
+
+				const setDefPath = path.join(songFolderPath, 'SET.def');
+				const setDefContent = simFile.generateDefFileContent();
+
+				// Write the SET.def file (this will overwrite template's SET.def if it exists)
+				console.log('Writing SET.def file to:', setDefPath);
+				await fs.promises.writeFile(setDefPath, setDefContent, 'utf-8');
+
+				return {
+					success: true,
+					songFolderPath
 				};
-
-				await copyRecursively(sourcePath, destinationPath);
-				return { success: true };
 			} catch (error) {
-				console.error('Error copying directory contents:', error);
+				console.error('Error creating song:', error);
 				throw error;
-			}
-		});
-
-		// Handle listing directories in a path
-		ipcMain.handle('list-directories', async (_event, dirPath) => {
-			try {
-				console.log('Listing directories in:', dirPath);
-				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-
-				// Filter only directories
-				const directories = entries
-					.filter((entry) => entry.isDirectory())
-					.map((dir) => dir.name);
-
-				console.log('Found directories:', directories);
-				return directories;
-			} catch (error) {
-				console.error('Error listing directories:', error);
-				return [];
 			}
 		});
 
 		// Handle loading tree structure with lazy loading
 		ipcMain.handle('load-tree-structure', async (_event, dirPath) => {
 			return await loadTreeStructure(dirPath);
-		});
-
-		// Handle reading file contents
-		ipcMain.handle('read-file', async (_event, filePath) => {
-			try {
-				const content = await fs.promises.readFile(filePath, 'utf-8');
-				return content;
-			} catch (error) {
-				console.error('Error reading file:', error);
-				throw error;
-			}
 		});
 
 		// Handle listing files in a directory
@@ -211,11 +221,6 @@ if (!gotTheLock) {
 					error: error instanceof Error ? error.message : 'Unknown error'
 				};
 			}
-		});
-
-		// Handle magic link verification in main process
-		ipcMain.handle('verify-magic-link', async (_event, magicLinkUrl) => {
-			return await verifyMagicLink(magicLinkUrl);
 		});
 
 		// Handle session validation

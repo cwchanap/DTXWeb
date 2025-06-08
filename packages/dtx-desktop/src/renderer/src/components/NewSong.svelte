@@ -3,7 +3,6 @@
 	import { templateStore, type Template } from '../stores/templateStore';
 	import { Folder, ArrowLeft, Music, FileText, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
-	import { SimFile } from '@dtx/common';
 
 	let songName = $state('');
 	let folderName = $state('');
@@ -41,11 +40,11 @@
 				return;
 			}
 
-			const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
 			try {
 				const folderExists = await window.electron.ipcRenderer.invoke(
 					'path-exists',
-					songFolderPath
+					selectedPath,
+					sanitizedFolderName
 				);
 				if (folderExists) {
 					folderExistsWarning = `A folder named "${sanitizedFolderName}" already exists`;
@@ -59,13 +58,6 @@
 
 		checkFolderExists();
 	});
-
-	/**
-	 * Simple path joining utility for cross-platform compatibility
-	 */
-	function joinPath(...parts: string[]): string {
-		return parts.join('/');
-	}
 
 	/**
 	 * Sanitizes a file or folder name to prevent directory traversal attacks
@@ -182,13 +174,11 @@
 			});
 		}
 
-		// Create the song folder path using sanitized folder name
-		const songFolderPath = joinPath(selectedPath, sanitizedFolderName);
-
 		// Check if folder already exists
 		const folderExists = await window.electron.ipcRenderer.invoke(
 			'path-exists',
-			songFolderPath
+			selectedPath,
+			sanitizedFolderName
 		);
 		if (folderExists) {
 			error = `A folder named "${sanitizedFolderName}" already exists in the selected location`;
@@ -199,45 +189,15 @@
 		error = '';
 
 		try {
-			console.log('Creating song folder at:', songFolderPath);
-			console.log('Selected template:', selectedTemplate);
+			// Create the song using the consolidated IPC call
+			const result = await window.electron.ipcRenderer.invoke('create-song', {
+				selectedPath,
+				sanitizedFolderName,
+				sanitizedSongName,
+				templateFolderPath: selectedTemplate?.folderPath || null
+			});
 
-			// Create the folder
-			await window.electron.ipcRenderer.invoke('create-directory', songFolderPath);
-
-			// If a template is selected, copy its contents to the new folder
-			if (selectedTemplate) {
-				console.log(
-					'Copying template files from:',
-					selectedTemplate.folderPath,
-					'to:',
-					songFolderPath
-				);
-				try {
-					await window.electron.ipcRenderer.invoke(
-						'copy-directory-contents',
-						selectedTemplate.folderPath,
-						songFolderPath
-					);
-					console.log('Template files copied successfully');
-				} catch (copyError) {
-					console.error('Failed to copy template files:', copyError);
-					error = `Failed to copy template files: ${copyError instanceof Error ? copyError.message : 'Unknown error'}`;
-					// Continue with creation even if template copy fails
-				}
-			} else {
-				console.log('No template selected, creating empty song folder');
-			}
-
-			// Create SET.def file using SimFile's generateDefFileContent method
-			const simFile = new SimFile([]); // Empty files array for new SimFile
-			simFile.title = sanitizedSongName;
-
-			const setDefPath = joinPath(songFolderPath, 'SET.def');
-			const setDefContent = simFile.generateDefFileContent();
-
-			// Write the SET.def file (this will overwrite template's SET.def if it exists)
-			await window.electron.ipcRenderer.invoke('write-file', setDefPath, setDefContent);
+			console.log('Song created successfully:', result);
 
 			// Refresh workspace tree to show new folder
 			if (workspaceState.path) {
@@ -251,8 +211,8 @@
 			// Navigate back to workspace
 			workspaceStore.closeNewSongForm();
 		} catch (err) {
-			console.error('Failed to create song folder:', err);
-			error = err instanceof Error ? err.message : 'Failed to create song folder';
+			console.error('Failed to create song:', err);
+			error = err instanceof Error ? err.message : 'Failed to create song';
 		} finally {
 			isCreating = false;
 		}

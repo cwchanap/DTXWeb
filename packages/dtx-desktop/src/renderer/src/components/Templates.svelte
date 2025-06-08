@@ -32,7 +32,7 @@
 
 	const handleSelectTemplateFolder = async () => {
 		try {
-			const result = await window.electron.ipcRenderer.invoke('select-directory');
+			const result = await window.electron.ipcRenderer.invoke('select-folder');
 			if (!result.canceled && result.filePaths.length > 0) {
 				selectedTemplateFolder = result.filePaths[0];
 			}

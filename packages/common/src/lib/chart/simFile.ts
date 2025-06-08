@@ -183,7 +183,7 @@ export class SimFile {
 
 		// Add title if it exists
 		if (this.title) {
-			lines.push(`#TITLE ${this.title}`);
+			lines.push(`#TITLE: ${this.title}`);
 		}
 
 		// Default level settings with default filenames
@@ -201,9 +201,8 @@ export class SimFile {
 			if (levelData) {
 				// Use existing level data
 				lines.push(`#L${level}LABEL ${levelData.label}`);
-				// Try to get filename from the DTXFile's original file, otherwise use default
-				const dtxFile = levelData.file['file'];
-				const fileName = dtxFile instanceof File ? dtxFile.name : defaultFile;
+				// Try to get filename from the DTXFile using the safe getFileName method
+				const fileName = levelData.file.getFileName() || defaultFile;
 				lines.push(`#L${level}FILE ${fileName}`);
 			} else {
 				// Use default values

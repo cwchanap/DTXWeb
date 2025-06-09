@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { Tables } from '@dtx/common';
+	import type { Tables } from '../types/supabase.types';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';
@@ -40,8 +40,15 @@
 		Open in Editor
 	</a>
 	<h1 class="mb-4 text-2xl font-bold">{simfile?.title}</h1>
+
+	<!-- Preview Section - Outside of grid to avoid layout issues -->
+	{#if preview}
+		<div class="mb-4">
+			{@render preview()}
+		</div>
+	{/if}
+
 	<div class="mt-4 grid grid-cols-8 gap-4">
-		{@render preview?.()}
 		<div class="col-span-1 flex items-center">
 			<label for="bpm" class="mr-2 block">BPM:</label>
 		</div>

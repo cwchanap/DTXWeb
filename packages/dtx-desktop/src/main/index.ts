@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
 import path from 'path';
-import { SimFile, DTXFile } from '@dtx/common';
+import { SimFile, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common';
 import {
 	validateSession,
 	getCurrentSession,
@@ -280,40 +280,25 @@ if (!gotTheLock) {
 						const filePath = path.join(folderPath, fileName);
 						const fileBuffer = await fs.promises.readFile(filePath);
 
-						// Try different encodings to read the file content
-						let fileContent: string | undefined;
-						const encodings = ['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'];
+						// Create a temporary File object from the buffer for the utility function
+						const tempFile = new File([fileBuffer], fileName);
 
-						for (const encoding of encodings) {
-							try {
-								const decoder = new TextDecoder(encoding);
-								const content = decoder.decode(fileBuffer);
+						// DTX file validation callback
+						const validateDtxContent = (content: string): boolean => {
+							return (
+								content.includes('#TITLE:') ||
+								content.includes('#ARTIST:') ||
+								content.includes('#BPM:') ||
+								content.includes('#WAV')
+							);
+						};
 
-								// Check if the content looks valid (contains expected DTX header patterns)
-								if (
-									content.includes('#TITLE:') ||
-									content.includes('#ARTIST:') ||
-									content.includes('#BPM:') ||
-									content.includes('#WAV')
-								) {
-									// Additional check: ensure no excessive null bytes
-									const nullByteRatio =
-										(content.match(/\0/g) || []).length / content.length;
-									if (nullByteRatio < 0.1) {
-										fileContent = content;
-										break;
-									}
-								}
-							} catch (encodingError) {
-								continue;
-							}
-						}
-
-						// Fallback to shift-jis if nothing else worked
-						if (!fileContent) {
-							const decoder = new TextDecoder('shift-jis');
-							fileContent = decoder.decode(fileBuffer);
-						}
+						const fileContent = await decodeFileWithEncodingDetection(
+							tempFile,
+							validateDtxContent,
+							['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'],
+							'shift-jis'
+						);
 
 						const dtx = new DTXFile(fileContent);
 						await dtx.parse();

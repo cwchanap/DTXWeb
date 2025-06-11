@@ -1,4 +1,8 @@
 import { LaneMeasureNote } from './note.js';
+import {
+	decodeFileWithEncodingDetection,
+	decodeFileWithSpecificEncoding
+} from './encoding-utils.js';
 
 export class SoundChip {
 	label: string;
@@ -86,48 +90,30 @@ export class DTXFile {
 		if (!(this.file instanceof File)) {
 			throw new Error('File is not set');
 		}
-		const arrayBuffer = await this.file.arrayBuffer();
-		const decoder = new TextDecoder(encoding);
-		return decoder.decode(arrayBuffer);
+		return await decodeFileWithSpecificEncoding(this.file, encoding);
 	}
 
 	private async parseWithEncodingDetection(): Promise<string> {
 		if (!(this.file instanceof File)) {
 			throw new Error('File is not set');
 		}
-		const arrayBuffer = await this.file.arrayBuffer();
 
-		// List of encodings to try in order
-		const encodings = ['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'];
+		// DTX file validation callback
+		const validateDtxContent = (content: string): boolean => {
+			return (
+				content.includes('#TITLE:') ||
+				content.includes('#ARTIST:') ||
+				content.includes('#BPM:') ||
+				content.includes('#WAV')
+			);
+		};
 
-		for (const encoding of encodings) {
-			try {
-				const decoder = new TextDecoder(encoding);
-				const content = decoder.decode(arrayBuffer);
-
-				// Check if the content looks valid (contains expected DTX header patterns)
-				if (
-					content.includes('#TITLE:') ||
-					content.includes('#ARTIST:') ||
-					content.includes('#BPM:') ||
-					content.includes('#WAV')
-				) {
-					// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
-					const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
-					if (nullByteRatio < 0.1) {
-						// Less than 10% null bytes
-						return content;
-					}
-				}
-			} catch (error) {
-				// Continue to next encoding if this one fails
-				continue;
-			}
-		}
-
-		// Fallback to shift-jis (original default) if nothing else works
-		const decoder = new TextDecoder('shift-jis');
-		return decoder.decode(arrayBuffer);
+		return await decodeFileWithEncodingDetection(
+			this.file,
+			validateDtxContent,
+			['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'], // DTX files typically use shift-jis first
+			'shift-jis' // DTX fallback is shift-jis
+		);
 	}
 
 	async parseFromText(text: string) {

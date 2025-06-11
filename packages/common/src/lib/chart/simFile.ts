@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx.js';
+import { decodeFileWithEncodingDetection } from './encoding-utils.js';
 
 interface DtxLevel {
 	label: string;
@@ -64,38 +65,21 @@ export class SimFile {
 	}
 
 	private async readFileWithEncoding(file: File): Promise<string> {
-		const arrayBuffer = await file.arrayBuffer();
+		// SimFile (.def) validation callback
+		const validateSimFileContent = (content: string): boolean => {
+			return (
+				content.includes('#TITLE') ||
+				content.includes('#L1LABEL') ||
+				content.includes('#L1FILE')
+			);
+		};
 
-		// List of encodings to try in order
-		const encodings = ['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'];
-
-		for (const encoding of encodings) {
-			try {
-				const decoder = new TextDecoder(encoding);
-				const content = decoder.decode(arrayBuffer);
-
-				// Check if the content looks valid (contains expected DTX header patterns)
-				if (
-					content.includes('#TITLE') ||
-					content.includes('#L1LABEL') ||
-					content.includes('#L1FILE')
-				) {
-					// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
-					const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
-					if (nullByteRatio < 0.1) {
-						// Less than 10% null bytes
-						return content;
-					}
-				}
-			} catch (error) {
-				// Continue to next encoding if this one fails
-				continue;
-			}
-		}
-
-		// Fallback to UTF-8 if nothing else works
-		const decoder = new TextDecoder('utf-8');
-		return decoder.decode(arrayBuffer);
+		return await decodeFileWithEncodingDetection(
+			file,
+			validateSimFileContent,
+			['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'], // SimFile (.def) typically uses utf-8 first
+			'utf-8' // SimFile fallback is utf-8
+		);
 	}
 
 	public async parseHeader(file: File) {

@@ -40,6 +40,16 @@
 
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
 
+	// Derived values for display
+	let displayBpm = $derived(simfile?.bpm);
+	let displayArtist = $derived(simfile?.artist);
+	let displayLevels = $derived(() => {
+		if (dtxFiles.length > 0) {
+			return dtxFiles;
+		}
+		return [];
+	});
+
 	let displayId: number = $state(simfile?.display_id || 0);
 	let publishDate: string = $state(simfile?.publish_date || dayjs().format('YYYY-MM-DD'));
 	let isPublished: boolean = $state(simfile?.is_published || true);
@@ -90,7 +100,7 @@
 				<label for="bpm" class="mr-2 block text-slate-700 dark:text-slate-300">BPM:</label>
 			</div>
 			<div class="col-span-7">
-				<span class="text-slate-900 dark:text-slate-100">{simfile?.bpm}</span>
+				<span class="text-slate-900 dark:text-slate-100">{displayBpm || 'N/A'}</span>
 			</div>
 			<div class="col-span-1 flex items-center">
 				<label for="artist" class="mr-2 block text-slate-700 dark:text-slate-300"
@@ -98,7 +108,7 @@
 				>
 			</div>
 			<div class="col-span-7">
-				<span class="text-slate-900 dark:text-slate-100">{simfile?.artist || 'N/A'}</span>
+				<span class="text-slate-900 dark:text-slate-100">{displayArtist || 'N/A'}</span>
 			</div>
 			<div class="col-span-1 flex items-center">
 				<label for="level" class="mr-2 block text-slate-700 dark:text-slate-300"
@@ -106,13 +116,13 @@
 				>
 			</div>
 			<div class="col-span-7 flex">
-				{#each dtxFiles as dtx}
-					{#if dtx}
+				{#each displayLevels() as level}
+					{#if level}
 						<div class="card mr-2 rounded-lg bg-gray-100 p-2 dark:bg-slate-700">
 							<h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">
-								{dtx.label}
+								{level.label}
 							</h4>
-							<p class="text-xs text-slate-600 dark:text-slate-400">{dtx.level}</p>
+							<p class="text-xs text-slate-600 dark:text-slate-400">{level.level}</p>
 						</div>
 					{/if}
 				{/each}

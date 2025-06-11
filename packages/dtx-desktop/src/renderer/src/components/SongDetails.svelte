@@ -85,13 +85,81 @@
 		}
 	} as any;
 
+	// State for parsed local DTX data
+	let parsedLocalData = $state<{
+		bpm?: number;
+		artist?: string;
+		levels?: { label: string; level: number }[];
+	}>({});
+
+	// Effect to parse local DTX files when needed
+	$effect(() => {
+		console.log('SongDetails effect triggered:', {
+			songPath: song.path,
+			hasLinkedSimfile: !!song.linkedSimFile,
+			linkedSimfileBpm: song.linkedSimFile?.bpm,
+			linkedSimfileArtist: song.linkedSimFile?.artist
+		});
+
+		// Only parse local files if we have a folder path and linked simfile data is missing key information
+		const shouldParse =
+			song.path &&
+			(!song.linkedSimFile ||
+				song.linkedSimFile.bpm === undefined ||
+				song.linkedSimFile.bpm === null ||
+				song.linkedSimFile.artist === undefined ||
+				song.linkedSimFile.artist === null ||
+				song.linkedSimFile.artist === '');
+
+		console.log('Should parse local DTX files:', shouldParse);
+
+		if (shouldParse) {
+			console.log('Parsing local DTX files via IPC...');
+			// Use async function inside effect
+			(async () => {
+				try {
+					// Use IPC to parse DTX files in the main process
+					const result = await window.electron?.ipcRenderer?.invoke(
+						'parse-dtx-files',
+						song.path
+					);
+
+					if (result) {
+						parsedLocalData = {
+							bpm: result.bpm,
+							artist: result.artist,
+							levels: result.levels || []
+						};
+
+						console.log('Parsed local data via IPC:', parsedLocalData);
+					} else {
+						parsedLocalData = {};
+					}
+				} catch (error) {
+					console.warn('Failed to parse local DTX files via IPC:', error);
+					parsedLocalData = {};
+				}
+			})();
+		} else {
+			parsedLocalData = {};
+		}
+	});
+
 	// Convert song data to simfile format for ChartDetail component
+	// Use parsed local data as fallback when linked simfile data is missing
 	const simfileData = $derived({
 		title: song.songTitle || song.name,
-		artist: song.linkedSimFile?.artist,
-		bpm: song.linkedSimFile?.bpm,
+		artist: song.linkedSimFile?.artist || parsedLocalData.artist,
+		bpm: song.linkedSimFile?.bpm || parsedLocalData.bpm,
 		publish_date: song.linkedSimFile?.publish_date,
-		dtx_files: [],
+		dtx_files:
+			song.linkedSimFile?.dtx_files ||
+			(parsedLocalData.levels
+				? parsedLocalData.levels.map((l) => ({
+						label: l.label,
+						level: l.level
+					}))
+				: []),
 		...song.linkedSimFile
 	});
 </script>

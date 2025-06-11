@@ -133,15 +133,24 @@ export class DTXFile {
 	async parseFromText(text: string) {
 		const lines = text.split('\r\n');
 
-		const remove_prefix = (prefix: string) =>
-			lines.find((line) => line.startsWith(prefix))?.split(prefix)[1] || '';
+		const remove_prefix = (prefix: string) => {
+			// Look for the line that starts with the prefix (without colon)
+			const line = lines.find((line) => line.startsWith(prefix));
+			if (!line) return '';
 
-		this.title = remove_prefix('#TITLE: ');
-		this.artist = remove_prefix('#ARTIST: ');
-		this.level = parseInt(remove_prefix('#DLEVEL: '));
-		this.bpm = parseInt(remove_prefix('#BPM: '));
-		this.preview = remove_prefix('#PREIMAGE: ');
-		this.soundPreview = remove_prefix('#PREVIEW: ');
+			// Find the colon and extract everything after it, trimming whitespace
+			const colonIndex = line.indexOf(':');
+			if (colonIndex === -1) return '';
+
+			return line.substring(colonIndex + 1).trim();
+		};
+
+		this.title = remove_prefix('#TITLE');
+		this.artist = remove_prefix('#ARTIST');
+		this.level = parseInt(remove_prefix('#DLEVEL')) || 0;
+		this.bpm = parseInt(remove_prefix('#BPM')) || 0;
+		this.preview = remove_prefix('#PREIMAGE');
+		this.soundPreview = remove_prefix('#PREVIEW');
 
 		this.lines = lines;
 	}

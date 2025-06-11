@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { authService } from './authService';
 import { authStore } from '../stores/authStore';
+import {
+	storeSessionData,
+	getStoredSessionData,
+	clearStoredSessionData,
+	validateSession
+} from './supabaseService';
 
 // Mock the authStore
 vi.mock('../stores/authStore', () => ({
@@ -98,9 +104,6 @@ describe('AuthService', () => {
 		});
 
 		it('should process valid tokens and set user data', async () => {
-			// Import the mocked functions
-			const { storeSessionData } = await import('./supabaseService');
-
 			// Act
 			await authService.handleAuthCallback(mockTokens);
 
@@ -231,9 +234,6 @@ describe('AuthService', () => {
 		};
 
 		it('should restore session from valid stored tokens', async () => {
-			// Import the mocked functions
-			const { getStoredSessionData, validateSession } = await import('./supabaseService');
-
 			// Arrange
 			(getStoredSessionData as any).mockReturnValue({
 				accessToken: mockAccessToken,
@@ -257,9 +257,6 @@ describe('AuthService', () => {
 		});
 
 		it('should return false when no session data is stored', async () => {
-			// Import the mocked functions
-			const { getStoredSessionData } = await import('./supabaseService');
-
 			// Arrange
 			(getStoredSessionData as any).mockReturnValue(null);
 
@@ -273,11 +270,6 @@ describe('AuthService', () => {
 		});
 
 		it('should return false when session validation fails', async () => {
-			// Import the mocked functions
-			const { getStoredSessionData, validateSession, clearStoredSessionData } = await import(
-				'./supabaseService'
-			);
-
 			// Arrange
 			(getStoredSessionData as any).mockReturnValue({
 				accessToken: mockAccessToken,
@@ -298,9 +290,6 @@ describe('AuthService', () => {
 		});
 
 		it('should handle errors during session restoration', async () => {
-			// Import the mocked functions
-			const { getStoredSessionData } = await import('./supabaseService');
-
 			// Arrange
 			(getStoredSessionData as any).mockImplementation(() => {
 				throw new Error('Storage error');
@@ -321,9 +310,6 @@ describe('AuthService', () => {
 
 	describe('logout', () => {
 		it('should clear session and call store logout', async () => {
-			// Import the mocked functions
-			const { clearStoredSessionData } = await import('./supabaseService');
-
 			// Arrange
 			(window.electron.ipcRenderer.invoke as any).mockResolvedValue(true);
 

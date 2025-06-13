@@ -10,7 +10,6 @@
 	let useSameNameForFolder = $state(true);
 	let isCreating = $state(false);
 	let error = $state('');
-	let availableFolders = $state<string[]>([]);
 	let selectedTemplate = $state<Template | null>(null);
 	let showTemplateSelection = $state(false);
 	let templates = $state<Template[]>([]);
@@ -140,33 +139,14 @@
 
 	onMount(() => {
 		// Get list of available folders from workspace state
+		// The default selectedPath is set to the current workspace path.
 		if (workspaceState.path) {
-			loadAvailableFolders();
+			selectedPath = workspaceState.path;
 		}
-
-		// Cleanup function for template store subscription
 		return () => {
 			unsubscribeTemplate();
 		};
 	});
-
-	async function loadAvailableFolders() {
-		try {
-			const folders = await window.electron.ipcRenderer.invoke(
-				'get-subdirectories',
-				workspaceState.path
-			);
-			availableFolders = folders;
-
-			// Set default selection to first folder if available
-			if (folders.length > 0) {
-				selectedPath = folders[0];
-			}
-		} catch (err) {
-			console.error('Failed to load available folders:', err);
-			error = 'Failed to load available folders';
-		}
-	}
 
 	function goBack() {
 		workspaceStore.closeNewSongForm();
@@ -256,7 +236,8 @@
 		try {
 			const result = await window.electron.ipcRenderer.invoke('select-folder');
 			if (result && !result.canceled && result.filePaths.length > 0) {
-				selectedPath = result.filePaths[0];
+				const newPath = result.filePaths[0];
+				selectedPath = newPath;
 			}
 		} catch (err) {
 			console.error('Failed to select folder:', err);
@@ -451,34 +432,10 @@
 
 				<!-- Folder Path Selection -->
 				<div>
-					<label
-						for="folderPath"
-						class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
-					>
-						Destination Folder
-					</label>
-
-					{#if availableFolders.length > 0}
-						<select
-							id="folderPath"
-							bind:value={selectedPath}
-							required
-							class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-						>
-							{#each availableFolders as folder}
-								<option value={folder}>{folder.split('/').pop() || folder}</option>
-							{/each}
-						</select>
-					{:else}
-						<div class="text-sm text-slate-600 dark:text-slate-400">
-							No workspace folders available
-						</div>
-					{/if}
-
 					<button
 						type="button"
 						onclick={selectCustomPath}
-						class="mt-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+						class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
 					>
 						<Folder size={14} />
 						Choose different folder...
@@ -487,7 +444,7 @@
 
 				<!-- Selected Path Display -->
 				{#if selectedPath}
-					<div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+					<div class="mt-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
 						<p class="text-xs text-slate-600 dark:text-slate-400">Full path:</p>
 						<p class="font-mono text-sm text-slate-800 dark:text-slate-200">
 							{selectedPath}/{(useSameNameForFolder ? songName : folderName) ||

@@ -77,25 +77,6 @@ if (!gotTheLock) {
 			}
 		});
 
-		// Handle getting subdirectories (for new song creation)
-		ipcMain.handle('get-subdirectories', async (_event, dirPath) => {
-			try {
-				console.log('Getting subdirectories in:', dirPath);
-				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-
-				// Filter only directories and return full paths
-				const directories = entries
-					.filter((entry) => entry.isDirectory())
-					.map((dir) => path.join(dirPath, dir.name));
-
-				console.log('Found subdirectories:', directories);
-				return directories;
-			} catch (error) {
-				console.error('Error getting subdirectories:', error);
-				return [];
-			}
-		});
-
 		// Handle consolidated song creation
 		ipcMain.handle('create-song', async (_event, options) => {
 			try {

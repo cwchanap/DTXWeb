@@ -18,7 +18,6 @@ const extendedElectronAPI = {
 				'select-folder',
 				'path-exists',
 				'open-folder-in-explorer',
-				'get-subdirectories',
 				'load-tree-structure',
 				'list-files',
 				'read-file',

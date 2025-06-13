@@ -21,6 +21,8 @@ const extendedElectronAPI = {
 				'get-subdirectories',
 				'load-tree-structure',
 				'list-files',
+				'read-file',
+				'parse-dtx-files',
 				'validate-session',
 				'get-current-session',
 				'logout-session',

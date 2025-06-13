@@ -14,6 +14,10 @@ jobs:
       image: electronuserland/builder:wine
       options: --user 1001
     environment: Electron
+    env:
+      PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
+      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+      VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
 
     steps:
       - name: Checkout Repository

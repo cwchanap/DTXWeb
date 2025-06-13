@@ -2,8 +2,14 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
 import path from 'path';
-import { SimFile } from '@dtx/common';
-import { validateSession, getCurrentSession, logoutSession, handleProtocolUrl } from './auth';
+import { SimFile, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common';
+import {
+	validateSession,
+	getCurrentSession,
+	logoutSession,
+	handleProtocolUrl,
+	getSupabaseClient
+} from './auth';
 import { fetchUserSimFiles, getPreviewUrl, getSoundPreviewUrl } from './simfile-service';
 import { loadTreeStructure, selectDirectory } from './filesystem';
 import { createWindow } from './window';
@@ -231,6 +237,118 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle reading file contents
+		ipcMain.handle('read-file', async (_event, filePath) => {
+			try {
+				console.log('Reading file:', filePath);
+				const content = await fs.promises.readFile(filePath, 'utf-8');
+				return content;
+			} catch (error) {
+				console.error('Error reading file:', error);
+				throw error;
+			}
+		});
+
+		// Handle parsing DTX files to extract metadata
+		ipcMain.handle('parse-dtx-files', async (_event, folderPath: string) => {
+			try {
+				console.log('Parsing DTX files in folder:', folderPath);
+
+				// Get all DTX files in the folder
+				const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+				const dtxFiles = entries
+					.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.dtx'))
+					.map((entry) => entry.name);
+
+				console.log('Found DTX files:', dtxFiles);
+
+				if (dtxFiles.length === 0) {
+					return {
+						bpm: undefined,
+						artist: undefined,
+						levels: []
+					};
+				}
+
+				let parsedBpm: number | undefined;
+				let parsedArtist: string | undefined;
+				const parsedLevels: { label: string; level: number }[] = [];
+
+				// Parse each DTX file
+				for (const fileName of dtxFiles) {
+					try {
+						const filePath = path.join(folderPath, fileName);
+						const fileBuffer = await fs.promises.readFile(filePath);
+
+						// Create a temporary File object from the buffer for the utility function
+						const tempFile = new File([fileBuffer], fileName);
+
+						// DTX file validation callback
+						const validateDtxContent = (content: string): boolean => {
+							return (
+								content.includes('#TITLE:') ||
+								content.includes('#ARTIST:') ||
+								content.includes('#BPM:') ||
+								content.includes('#WAV')
+							);
+						};
+
+						const fileContent = await decodeFileWithEncodingDetection(
+							tempFile,
+							validateDtxContent,
+							['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'],
+							'shift-jis'
+						);
+
+						const dtx = new DTXFile(fileContent);
+						await dtx.parse();
+
+						console.log(`Parsed DTX file ${fileName}:`, {
+							title: dtx.title,
+							artist: dtx.artist,
+							level: dtx.level,
+							bpm: dtx.bpm
+						});
+
+						// Use the first valid parsed values
+						if (!parsedBpm && dtx.bpm) {
+							parsedBpm = dtx.bpm;
+						}
+						if (!parsedArtist && dtx.artist) {
+							parsedArtist = dtx.artist;
+						}
+
+						// Add level information
+						if (dtx.level) {
+							parsedLevels.push({
+								label: dtx.difficulty || fileName.replace('.dtx', ''),
+								level: dtx.level
+							});
+						}
+					} catch (error) {
+						console.warn(`Failed to parse DTX file ${fileName}:`, error);
+						continue;
+					}
+				}
+
+				const result = {
+					bpm: parsedBpm,
+					artist: parsedArtist,
+					levels: parsedLevels
+				};
+
+				console.log('Parsed DTX metadata:', result);
+				return result;
+			} catch (error) {
+				console.error('Error parsing DTX files:', error);
+				return {
+					bpm: undefined,
+					artist: undefined,
+					levels: []
+				};
+			}
+		});
+
 		// Handle session validation
 		ipcMain.handle('validate-session', async (_event, sessionData) => {
 			return await validateSession(sessionData);
@@ -271,7 +389,6 @@ if (!gotTheLock) {
 				}
 
 				// Get the current session to extract JWT token
-				const { getCurrentSession, getSupabaseClient } = await import('./auth');
 				const session = getCurrentSession();
 				const supabaseClient = getSupabaseClient();
 

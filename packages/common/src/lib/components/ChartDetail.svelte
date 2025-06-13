@@ -16,10 +16,39 @@
 		folder_upload?: import('svelte').Snippet;
 		asset_files?: import('svelte').Snippet;
 		save?: import('svelte').Snippet;
+		// Desktop-specific snippets
+		header?: import('svelte').Snippet;
+		desktop_info?: import('svelte').Snippet;
+		local_files?: import('svelte').Snippet;
+		// Configuration props
+		showEditor?: boolean;
+		showPublishingControls?: boolean;
 	}
 
-	let { simfile = null, preview, folder_upload, asset_files, save }: Props = $props();
+	let {
+		simfile = null,
+		preview,
+		folder_upload,
+		asset_files,
+		save,
+		header,
+		desktop_info,
+		local_files,
+		showEditor = true,
+		showPublishingControls = true
+	}: Props = $props();
+
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
+
+	// Derived values for display
+	let displayBpm = $derived(simfile?.bpm);
+	let displayArtist = $derived(simfile?.artist);
+	let displayLevels = $derived(() => {
+		if (dtxFiles.length > 0) {
+			return dtxFiles;
+		}
+		return [];
+	});
 
 	let displayId: number = $state(simfile?.display_id || 0);
 	let publishDate: string = $state(simfile?.publish_date || dayjs().format('YYYY-MM-DD'));
@@ -30,120 +59,174 @@
 	const onSave = createEventDispatcher();
 </script>
 
-<div class="relative grow rounded-lg bg-white p-6 shadow-md">
-	<a
-		href={`/editor/${simfile?.id}`}
-		target="_blank"
-		rel="noopener noreferrer"
-		class="absolute top-2 right-2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600"
-	>
-		Open in Editor
-	</a>
-	<h1 class="mb-4 text-2xl font-bold">{simfile?.title}</h1>
+<!-- Custom Header (for desktop back button, etc.) -->
+{#if header}
+	{@render header()}
+{/if}
 
-	<!-- Preview Section - Outside of grid to avoid layout issues -->
-	{#if preview}
-		<div class="mb-4">
-			{@render preview()}
-		</div>
-	{/if}
+<div
+	class="relative min-h-0 flex-1 overflow-y-auto rounded-lg bg-white shadow-md dark:bg-slate-800 dark:shadow-slate-700/50"
+>
+	<div class="p-6">
+		{#if showEditor}
+			<a
+				href={`/editor/${simfile?.id}`}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="absolute top-2 right-2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+			>
+				Open in Editor
+			</a>
+		{/if}
 
-	<div class="mt-4 grid grid-cols-8 gap-4">
-		<div class="col-span-1 flex items-center">
-			<label for="bpm" class="mr-2 block">BPM:</label>
+		<h1 class="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100">{simfile?.title}</h1>
+
+		<!-- Desktop-specific information (status section outside of grid) -->
+		{#if desktop_info}
+			<div class="mb-4">
+				{@render desktop_info()}
+			</div>
+		{/if}
+
+		<!-- Preview Section - Outside of grid to avoid layout issues -->
+		{#if preview}
+			<div class="mb-4">
+				{@render preview()}
+			</div>
+		{/if}
+
+		<div class="mt-4 grid grid-cols-8 gap-4">
+			<div class="col-span-1 flex items-center">
+				<label for="bpm" class="mr-2 block text-slate-700 dark:text-slate-300">BPM:</label>
+			</div>
+			<div class="col-span-7">
+				<span class="text-slate-900 dark:text-slate-100">{displayBpm || 'N/A'}</span>
+			</div>
+			<div class="col-span-1 flex items-center">
+				<label for="artist" class="mr-2 block text-slate-700 dark:text-slate-300"
+					>Artist:</label
+				>
+			</div>
+			<div class="col-span-7">
+				<span class="text-slate-900 dark:text-slate-100">{displayArtist || 'N/A'}</span>
+			</div>
+			<div class="col-span-1 flex items-center">
+				<label for="level" class="mr-2 block text-slate-700 dark:text-slate-300"
+					>Level:</label
+				>
+			</div>
+			<div class="col-span-7 flex">
+				{#each displayLevels() as level}
+					{#if level}
+						<div class="card mr-2 rounded-lg bg-gray-100 p-2 dark:bg-slate-700">
+							<h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">
+								{level.label}
+							</h4>
+							<p class="text-xs text-slate-600 dark:text-slate-400">{level.level}</p>
+						</div>
+					{/if}
+				{/each}
+			</div>
+			{#if showPublishingControls}
+				<div class="col-span-1 flex items-center">
+					<label for="display_id" class="mr-2 block text-slate-700 dark:text-slate-300"
+						>Display ID:</label
+					>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="display_id"
+						type="text"
+						bind:value={displayId}
+						class="mb-4 w-full rounded-sm border border-gray-300 p-2 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label
+						for="publish_date"
+						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
+						>Publish Date:</label
+					>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="publish_date"
+						type="date"
+						bind:value={publishDate}
+						class="mb-4 w-1/7 rounded-sm border border-gray-300 p-2 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label
+						for="is_published"
+						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300">Published:</label
+					>
+				</div>
+				<div class="col-span-7">
+					<Switch
+						checked={isPublished}
+						onCheckedChange={(e) => (isPublished = e.checked)}
+					>
+						{#snippet inactiveChild()}<IconX size="14" />{/snippet}
+						{#snippet activeChild()}<IconCheck size="14" />{/snippet}
+					</Switch>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label
+						for="download_link"
+						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
+						>Download Link:</label
+					>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="download_link"
+						type="text"
+						bind:value={downloadUrl}
+						class="mb-4 w-full rounded-sm border border-gray-300 p-2 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+					/>
+				</div>
+				<div class="col-span-1 flex items-center">
+					<label
+						for="video_preview_link"
+						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
+						>Video Preview Link:</label
+					>
+				</div>
+				<div class="col-span-7">
+					<input
+						id="video_preview_link"
+						type="text"
+						bind:value={videoPreviewUrl}
+						class="mb-4 w-full rounded-sm border border-gray-300 p-2 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+					/>
+				</div>
+			{/if}
+			{@render folder_upload?.()}
 		</div>
-		<div class="col-span-7">
-			{simfile?.bpm}
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="artist" class="mr-2 block">Artist:</label>
-		</div>
-		<div class="col-span-7">
-			{simfile?.artist || 'N/A'}
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="level" class="mr-2 block">Level:</label>
-		</div>
-		<div class="col-span-7 flex">
-			{#each dtxFiles as dtx}
-				{#if dtx}
-					<div class="card mr-2 rounded-lg bg-gray-100 p-2">
-						<h4 class="text-sm font-bold">{dtx.label}</h4>
-						<p class="text-xs">{dtx.level}</p>
-					</div>
-				{/if}
-			{/each}
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="display_id" class="mr-2 block">Display ID:</label>
-		</div>
-		<div class="col-span-7">
-			<input
-				id="display_id"
-				type="text"
-				bind:value={displayId}
-				class="mb-4 w-full rounded-sm border p-2"
-			/>
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="publish_date" class="mr-2 mb-2 block">Publish Date:</label>
-		</div>
-		<div class="col-span-7">
-			<input
-				id="publish_date"
-				type="date"
-				bind:value={publishDate}
-				class="mb-4 w-1/7 rounded-sm border p-2"
-			/>
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="is_published" class="mr-2 mb-2 block">Published:</label>
-		</div>
-		<div class="col-span-7">
-			<Switch checked={isPublished} onCheckedChange={(e) => (isPublished = e.checked)}>
-				{#snippet inactiveChild()}<IconX size="14" />{/snippet}
-				{#snippet activeChild()}<IconCheck size="14" />{/snippet}
-			</Switch>
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="download_link" class="mr-2 mb-2 block">Download Link:</label>
-		</div>
-		<div class="col-span-7">
-			<input
-				id="download_link"
-				type="text"
-				bind:value={downloadUrl}
-				class="mb-4 w-full rounded-sm border p-2"
-			/>
-		</div>
-		<div class="col-span-1 flex items-center">
-			<label for="video_preview_link" class="mr-2 mb-2 block">Video Preview Link:</label>
-		</div>
-		<div class="col-span-7">
-			<input
-				id="video_preview_link"
-				type="text"
-				bind:value={videoPreviewUrl}
-				class="mb-4 w-full rounded-sm border p-2"
-			/>
-		</div>
-		{@render folder_upload?.()}
+
+		<!-- Local Files Section (for desktop) -->
+		{#if local_files}
+			{@render local_files()}
+		{:else}
+			<!-- Asset Files Section (for web) -->
+			{@render asset_files?.()}
+		{/if}
+
+		{#if showPublishingControls}
+			<button
+				onclick={() =>
+					onSave('onSave', {
+						displayId,
+						publishDate,
+						isPublished,
+						downloadUrl,
+						videoPreviewUrl
+					})}
+				class="mt-4 rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
+			>
+				{#if save}{@render save()}{:else}Update{/if}
+			</button>
+		{/if}
 	</div>
-
-	<!-- Asset Files Section -->
-	{@render asset_files?.()}
-
-	<button
-		onclick={() =>
-			onSave('onSave', {
-				displayId,
-				publishDate,
-				isPublished,
-				downloadUrl,
-				videoPreviewUrl
-			})}
-		class="mt-4 rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700"
-	>
-		{#if save}{@render save()}{:else}Update{/if}
-	</button>
 </div>

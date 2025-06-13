@@ -308,7 +308,7 @@
 				<i class="fa-solid fa-file-lines"></i>
 			{/snippet}
 			{#snippet control()}
-				<h3 class="my-4 text-lg font-semibold text-slate-800 dark:text-slate-200">
+				<h3 class="my-2 text-lg font-semibold text-slate-800 dark:text-slate-200">
 					Asset Files Section
 				</h3>
 			{/snippet}

@@ -23,7 +23,6 @@
 		if (filteredFiles.length > 0) {
 			simfile = new SimFile(filteredFiles);
 			await simfile.parse();
-			simfile = simfile;
 			highestDtx = simfile.getHighestLevel();
 			onFileUpload(simfile, highestDtx);
 		}

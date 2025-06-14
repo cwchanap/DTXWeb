@@ -161,7 +161,7 @@ if (!gotTheLock) {
 
 				// Write the SET.def file (this will overwrite template's SET.def if it exists)
 				console.log('Writing SET.def file to:', setDefPath);
-				await fs.promises.writeFile(setDefPath, setDefContent, 'utf-8');
+				await fs.promises.writeFile(setDefPath, setDefContent, 'utf-16le');
 
 				return {
 					success: true,
@@ -222,11 +222,31 @@ if (!gotTheLock) {
 		ipcMain.handle('read-file', async (_event, filePath) => {
 			try {
 				console.log('Reading file:', filePath);
+
+				// Whitelist of allowed extensions
+				const allowedExtensions = ['.dtx', '.def'];
+				const ext = path.extname(filePath).toLowerCase();
+				if (!allowedExtensions.includes(ext)) {
+					console.warn('File extension not allowed:', ext);
+					return { error: 'File type not allowed', content: '' };
+				}
+
+				// File size limit (e.g., 1MB)
+				const MAX_SIZE = 1024 * 1024; // 1MB
+				const stats = await fs.promises.stat(filePath);
+				if (stats.size > MAX_SIZE) {
+					console.warn('File too large:', stats.size);
+					return { error: 'File too large', content: '' };
+				}
+
 				const content = await fs.promises.readFile(filePath, 'utf-8');
-				return content;
+				return { error: null, content };
 			} catch (error) {
 				console.error('Error reading file:', error);
-				throw error;
+				return {
+					error: error instanceof Error ? error.message : 'Unknown error',
+					content: ''
+				};
 			}
 		});
 

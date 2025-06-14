@@ -19,7 +19,7 @@
 		}
 	},
 	"vars": {
-		"CORS_ORIGIN": "https://hapadona.vercel.app",
+		"CORS_ORIGIN": "https://hapadona.vercel.app,https://dtx.hapadona.com,https://preview-dtx.hapadona.com",
 		"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co"
 	}
 }

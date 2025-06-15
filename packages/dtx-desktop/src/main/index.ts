@@ -219,17 +219,36 @@ if (!gotTheLock) {
 		});
 
 		// Handle reading file contents
-		ipcMain.handle('read-file', async (_event, filePath) => {
+		ipcMain.handle('read-file', async (_event, filePath, workspaceRoot = null) => {
 			try {
 				console.log('Reading file:', filePath);
 
 				// Resolve the file path to prevent path traversal attacks
 				const resolvedPath = path.resolve(filePath);
 
-				// Basic security check: ensure the resolved path is the same as the original
-				// This helps prevent attempts to traverse directories with ".." sequences
-				if (path.normalize(filePath) !== path.relative(process.cwd(), resolvedPath)) {
-					console.warn('Potential path traversal attempt:', filePath);
+				// Security check: ensure the resolved path is within the allowed directory
+				// If workspaceRoot is not provided, derive it from the file path (parent directory)
+				let allowedRoot: string;
+				if (workspaceRoot) {
+					allowedRoot = path.resolve(workspaceRoot);
+				} else {
+					// For backward compatibility, derive workspace root from file path
+					allowedRoot = path.dirname(resolvedPath);
+				}
+
+				// Ensure the resolved path starts with the allowed root directory
+				if (
+					!resolvedPath.startsWith(allowedRoot + path.sep) &&
+					resolvedPath !== allowedRoot
+				) {
+					console.warn(
+						'Path traversal attempt detected:',
+						filePath,
+						'resolved to:',
+						resolvedPath,
+						'not within:',
+						allowedRoot
+					);
 					return { error: 'Invalid file path', content: '' };
 				}
 

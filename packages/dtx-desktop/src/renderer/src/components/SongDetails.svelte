@@ -41,7 +41,8 @@
 						// Read file content as buffer
 						const content = await window.electron.ipcRenderer.invoke(
 							'read-file',
-							fileInfo.key
+							fileInfo.key,
+							song.path // Pass the song directory as workspace root
 						);
 						// Create File object
 						return new File([content], fileInfo.fileName, {

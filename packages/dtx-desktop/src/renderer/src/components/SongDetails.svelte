@@ -39,12 +39,25 @@
 				result.files.map(async (fileInfo: any) => {
 					try {
 						// Read file content as buffer
-						const content = await window.electron.ipcRenderer.invoke(
+						const response = await window.electron.ipcRenderer.invoke(
 							'read-file',
 							fileInfo.key,
 							song.path // Pass the song directory as workspace root
 						);
-						// Create File object
+
+						// Destructure the response to get error and content
+						const { error, content } = response;
+
+						// Check if there was an error reading the file
+						if (error) {
+							console.warn(`Could not read file ${fileInfo.fileName}:`, error);
+							// Create empty File object as fallback
+							return new File([''], fileInfo.fileName, {
+								lastModified: new Date(fileInfo.lastModified).getTime()
+							});
+						}
+
+						// Create File object using the content property
 						return new File([content], fileInfo.fileName, {
 							lastModified: new Date(fileInfo.lastModified).getTime()
 						});

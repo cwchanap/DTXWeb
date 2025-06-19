@@ -179,26 +179,6 @@
 		try {
 			const { displayId, publishDate, downloadUrl, videoPreviewUrl } = event.detail;
 
-			// Get preview files from local files
-			const previewImageFile = localFiles.find(
-				(f) =>
-					f.name.toLowerCase().endsWith('.jpg') ||
-					f.name.toLowerCase().endsWith('.jpeg') ||
-					f.name.toLowerCase().endsWith('.png')
-			);
-			const previewSoundFile = localFiles.find(
-				(f) =>
-					f.name.toLowerCase().endsWith('.mp3') || f.name.toLowerCase().endsWith('.wav')
-			);
-
-			// Prepare simfile data (completely serialize to avoid cloning issues with Svelte proxies)
-			const previewFileBuffer = previewImageFile
-				? await previewImageFile.arrayBuffer()
-				: undefined;
-			const soundPreviewFileBuffer = previewSoundFile
-				? await previewSoundFile.arrayBuffer()
-				: undefined;
-
 			// Create plain object without any Svelte reactivity
 			const simfileData = JSON.parse(
 				JSON.stringify({
@@ -219,17 +199,11 @@
 								label: String(l.label || ''),
 								level: Number(l.level || 0)
 							}))
-						: []
+						: [],
+					// Pass the song path so main process can find and read preview files
+					songPath: String(song.path || '')
 				})
 			);
-
-			// Add binary data separately to avoid JSON serialization issues
-			if (previewFileBuffer) {
-				simfileData.previewFile = Array.from(new Uint8Array(previewFileBuffer));
-			}
-			if (soundPreviewFileBuffer) {
-				simfileData.soundPreviewFile = Array.from(new Uint8Array(soundPreviewFileBuffer));
-			}
 
 			// Call IPC to create simfile record
 			const result = await window.electron.ipcRenderer.invoke(

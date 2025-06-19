@@ -524,8 +524,7 @@ if (!gotTheLock) {
 					downloadUrl: string;
 					videoPreviewUrl: string;
 					levels: { label: string; level: number }[];
-					previewFile?: ArrayBuffer | number[];
-					soundPreviewFile?: ArrayBuffer | number[];
+					songPath: string;
 				}
 			) => {
 				try {
@@ -546,16 +545,58 @@ if (!gotTheLock) {
 					const PREVIEW_BUCKET_NAME = 'simfile-previews';
 					const SOUND_PREVIEW_BUCKET_NAME = 'simfile-sound-previews';
 
+					// Find and read preview files from the song directory
+					let previewBuffer: Buffer | undefined;
+					let soundPreviewBuffer: Buffer | undefined;
+
+					if (simfileData.songPath) {
+						try {
+							// Read directory contents
+							const entries = await fs.promises.readdir(simfileData.songPath, {
+								withFileTypes: true
+							});
+							const files = entries
+								.filter((entry) => entry.isFile())
+								.map((entry) => entry.name);
+
+							// Find preview image file (jpg, jpeg, png)
+							const imageFile = files.find((file) => {
+								const ext = path.extname(file).toLowerCase();
+								return ext === '.jpg' || ext === '.jpeg' || ext === '.png';
+							});
+
+							// Find sound preview file (mp3, wav)
+							const soundFile = files.find((file) => {
+								const ext = path.extname(file).toLowerCase();
+								return ext === '.mp3' || ext === '.wav';
+							});
+
+							// Read image file if found
+							if (imageFile) {
+								const imagePath = path.join(simfileData.songPath, imageFile);
+								const imageBuffer = await fs.promises.readFile(imagePath);
+								previewBuffer = imageBuffer;
+								console.log(`Found and read preview image: ${imageFile}`);
+							}
+
+							// Read sound file if found
+							if (soundFile) {
+								const soundPath = path.join(simfileData.songPath, soundFile);
+								const soundBuffer = await fs.promises.readFile(soundPath);
+								soundPreviewBuffer = soundBuffer;
+								console.log(`Found and read sound preview: ${soundFile}`);
+							}
+						} catch (error) {
+							console.warn('Error reading preview files from directory:', error);
+							// Continue without preview files
+						}
+					}
+
 					// Upload preview image to Supabase storage
 					let previewUrl = '';
 					const previewHash = crypto.randomUUID();
-					if (simfileData.previewFile) {
+					if (previewBuffer) {
 						previewUrl = `${user.id}/${previewHash}.jpg`;
-
-						// Convert array to ArrayBuffer if needed
-						const previewBuffer = Array.isArray(simfileData.previewFile)
-							? new Uint8Array(simfileData.previewFile).buffer
-							: simfileData.previewFile;
 
 						const { error: uploadError } = await supabaseClient.storage
 							.from(PREVIEW_BUCKET_NAME)
@@ -573,17 +614,12 @@ if (!gotTheLock) {
 
 					// Upload sound preview file
 					let soundPreviewUrl = '';
-					if (simfileData.soundPreviewFile) {
+					if (soundPreviewBuffer) {
 						soundPreviewUrl = `${user.id}/${previewHash}.mp3`;
-
-						// Convert array to ArrayBuffer if needed
-						const soundBuffer = Array.isArray(simfileData.soundPreviewFile)
-							? new Uint8Array(simfileData.soundPreviewFile).buffer
-							: simfileData.soundPreviewFile;
 
 						const { error: uploadError } = await supabaseClient.storage
 							.from(SOUND_PREVIEW_BUCKET_NAME)
-							.upload(soundPreviewUrl, soundBuffer, {
+							.upload(soundPreviewUrl, soundPreviewBuffer, {
 								contentType: 'audio/mp3'
 							});
 

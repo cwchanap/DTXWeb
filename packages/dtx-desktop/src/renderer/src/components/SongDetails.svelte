@@ -111,14 +111,59 @@
 	let uploadError = $state<string | null>(null);
 	let uploadSuccess = $state(false);
 
-	// Handle upload for unlinked songs (as draft)
+	// Track which action is being performed
+	let currentUploadAction: 'draft' | 'publish' | null = $state(null);
+
+	// Handle upload for unlinked songs
 	const handleUploadSong = async (event: CustomEvent) => {
-		await uploadSong(event, false); // Upload as draft (is_published = false)
+		// Override isPublished based on the current action
+		if (currentUploadAction) {
+			event.detail.isPublished = currentUploadAction === 'publish';
+		}
+
+		const isPublished = event.detail.isPublished || false;
+		await uploadSong(event, isPublished);
+
+		// Reset action after upload
+		currentUploadAction = null;
 	};
 
-	// Handle upload and publish for unlinked songs
-	const handleUploadAndPublishSong = async (event: CustomEvent) => {
-		await uploadSong(event, true); // Upload and publish (is_published = true)
+	// Function to get current form values from the DOM
+	const getCurrentFormValues = () => {
+		// Query the form inputs directly from the DOM
+		const displayIdInput = document.getElementById('display_id') as HTMLInputElement;
+		const publishDateInput = document.getElementById('publish_date') as HTMLInputElement;
+		const downloadLinkInput = document.getElementById('download_link') as HTMLInputElement;
+		const videoPreviewLinkInput = document.getElementById(
+			'video_preview_link'
+		) as HTMLInputElement;
+
+		return {
+			displayId: displayIdInput ? parseInt(displayIdInput.value) || 0 : 0,
+			publishDate: publishDateInput
+				? publishDateInput.value
+				: new Date().toISOString().split('T')[0],
+			downloadUrl: downloadLinkInput ? downloadLinkInput.value : '',
+			videoPreviewUrl: videoPreviewLinkInput ? videoPreviewLinkInput.value : ''
+		};
+	};
+
+	// Function to trigger save with specific isPublished value
+	const triggerSave = (isPublished: boolean) => {
+		// Set the current action
+		currentUploadAction = isPublished ? 'publish' : 'draft';
+
+		// Get current form values from the DOM
+		const formValues = getCurrentFormValues();
+
+		// Create event with the current form values
+		const event = new CustomEvent('onSave', {
+			detail: {
+				...formValues,
+				isPublished: isPublished
+			}
+		});
+		handleUploadSong(event);
 	};
 
 	// Common upload function
@@ -146,22 +191,45 @@
 					f.name.toLowerCase().endsWith('.mp3') || f.name.toLowerCase().endsWith('.wav')
 			);
 
-			// Prepare simfile data
-			const simfileData = {
-				title: song.songTitle || song.name,
-				artist: parsedLocalData.artist || '',
-				bpm: parsedLocalData.bpm || 0,
-				displayId,
-				isPublished, // Use the parameter instead of getting from event.detail
-				publishDate,
-				downloadUrl,
-				videoPreviewUrl,
-				levels: parsedLocalData.levels || [],
-				previewFile: previewImageFile ? await previewImageFile.arrayBuffer() : undefined,
-				soundPreviewFile: previewSoundFile
-					? await previewSoundFile.arrayBuffer()
-					: undefined
-			};
+			// Prepare simfile data (completely serialize to avoid cloning issues with Svelte proxies)
+			const previewFileBuffer = previewImageFile
+				? await previewImageFile.arrayBuffer()
+				: undefined;
+			const soundPreviewFileBuffer = previewSoundFile
+				? await previewSoundFile.arrayBuffer()
+				: undefined;
+
+			// Create plain object without any Svelte reactivity
+			const simfileData = JSON.parse(
+				JSON.stringify({
+					title: String(song.songTitle || song.name || ''),
+					artist: String(parsedLocalData.artist || ''),
+					bpm: Number(parsedLocalData.bpm || 0),
+					displayId: Number(displayId || 0),
+					isPublished: Boolean(
+						event.detail.isPublished !== undefined
+							? event.detail.isPublished
+							: isPublished
+					),
+					publishDate: String(publishDate || ''),
+					downloadUrl: String(downloadUrl || ''),
+					videoPreviewUrl: String(videoPreviewUrl || ''),
+					levels: Array.isArray(parsedLocalData.levels)
+						? parsedLocalData.levels.map((l) => ({
+								label: String(l.label || ''),
+								level: Number(l.level || 0)
+							}))
+						: []
+				})
+			);
+
+			// Add binary data separately to avoid JSON serialization issues
+			if (previewFileBuffer) {
+				simfileData.previewFile = Array.from(new Uint8Array(previewFileBuffer));
+			}
+			if (soundPreviewFileBuffer) {
+				simfileData.soundPreviewFile = Array.from(new Uint8Array(soundPreviewFileBuffer));
+			}
 
 			// Call IPC to create simfile record
 			const result = await window.electron.ipcRenderer.invoke(
@@ -257,7 +325,11 @@
 		title: song.songTitle || song.name,
 		artist: song.linkedSimFile?.artist || parsedLocalData.artist,
 		bpm: song.linkedSimFile?.bpm || parsedLocalData.bpm,
-		publish_date: song.linkedSimFile?.publish_date,
+		publish_date: song.linkedSimFile?.publish_date || new Date().toISOString().split('T')[0],
+		display_id: song.linkedSimFile?.display_id || 0,
+		is_published: song.linkedSimFile?.is_published || false,
+		download_url: song.linkedSimFile?.download_url || '',
+		video_preview_url: song.linkedSimFile?.video_preview_url || '',
 		dtx_files:
 			song.linkedSimFile?.dtx_files ||
 			(parsedLocalData.levels
@@ -274,9 +346,9 @@
 	<ChartDetail
 		simfile={simfileData}
 		showEditor={false}
-		showPublishingControls={false}
+		showPublishingControls={true}
+		showPublishedToggle={false}
 		on:onSave={handleUploadSong}
-		on:onSaveAndPublish={handleUploadAndPublishSong}
 	>
 		{#snippet header()}
 			<!-- Header -->
@@ -426,33 +498,13 @@
 					{:else}
 						<button
 							class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-800"
-							onclick={() => {
-								const event = new CustomEvent('onSave', {
-									detail: {
-										displayId: song.songTitle || song.name,
-										publishDate: new Date().toISOString().split('T')[0],
-										downloadUrl: '',
-										videoPreviewUrl: ''
-									}
-								});
-								handleUploadSong(event);
-							}}
+							onclick={() => triggerSave(false)}
 						>
 							Upload as Draft
 						</button>
 						<button
 							class="rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
-							onclick={() => {
-								const event = new CustomEvent('onSaveAndPublish', {
-									detail: {
-										displayId: song.songTitle || song.name,
-										publishDate: new Date().toISOString().split('T')[0],
-										downloadUrl: '',
-										videoPreviewUrl: ''
-									}
-								});
-								handleUploadAndPublishSong(event);
-							}}
+							onclick={() => triggerSave(true)}
 						>
 							Upload and Publish
 						</button>

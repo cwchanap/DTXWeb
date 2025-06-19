@@ -524,8 +524,8 @@ if (!gotTheLock) {
 					downloadUrl: string;
 					videoPreviewUrl: string;
 					levels: { label: string; level: number }[];
-					previewFile?: ArrayBuffer;
-					soundPreviewFile?: ArrayBuffer;
+					previewFile?: ArrayBuffer | number[];
+					soundPreviewFile?: ArrayBuffer | number[];
 				}
 			) => {
 				try {
@@ -552,9 +552,14 @@ if (!gotTheLock) {
 					if (simfileData.previewFile) {
 						previewUrl = `${user.id}/${previewHash}.jpg`;
 
+						// Convert array to ArrayBuffer if needed
+						const previewBuffer = Array.isArray(simfileData.previewFile)
+							? new Uint8Array(simfileData.previewFile).buffer
+							: simfileData.previewFile;
+
 						const { error: uploadError } = await supabaseClient.storage
 							.from(PREVIEW_BUCKET_NAME)
-							.upload(previewUrl, simfileData.previewFile, {
+							.upload(previewUrl, previewBuffer, {
 								contentType: 'image/jpeg'
 							});
 
@@ -570,9 +575,15 @@ if (!gotTheLock) {
 					let soundPreviewUrl = '';
 					if (simfileData.soundPreviewFile) {
 						soundPreviewUrl = `${user.id}/${previewHash}.mp3`;
+
+						// Convert array to ArrayBuffer if needed
+						const soundBuffer = Array.isArray(simfileData.soundPreviewFile)
+							? new Uint8Array(simfileData.soundPreviewFile).buffer
+							: simfileData.soundPreviewFile;
+
 						const { error: uploadError } = await supabaseClient.storage
 							.from(SOUND_PREVIEW_BUCKET_NAME)
-							.upload(soundPreviewUrl, simfileData.soundPreviewFile, {
+							.upload(soundPreviewUrl, soundBuffer, {
 								contentType: 'audio/mp3'
 							});
 

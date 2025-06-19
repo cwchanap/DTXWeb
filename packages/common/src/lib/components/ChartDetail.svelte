@@ -23,6 +23,8 @@
 		// Configuration props
 		showEditor?: boolean;
 		showPublishingControls?: boolean;
+		showPublishedToggle?: boolean;
+		saveButtonText?: string;
 	}
 
 	let {
@@ -35,7 +37,9 @@
 		desktop_info,
 		local_files,
 		showEditor = true,
-		showPublishingControls = true
+		showPublishingControls = true,
+		showPublishedToggle = true,
+		saveButtonText = 'Update'
 	}: Props = $props();
 
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
@@ -154,23 +158,27 @@
 						type="date"
 						bind:value={publishDate}
 						class="mb-4 w-1/7 rounded-sm border border-gray-300 p-2 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+						style="min-width: 140px;"
 					/>
 				</div>
-				<div class="col-span-1 flex items-center">
-					<label
-						for="is_published"
-						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300">Published:</label
-					>
-				</div>
-				<div class="col-span-7">
-					<Switch
-						checked={isPublished}
-						onCheckedChange={(e) => (isPublished = e.checked)}
-					>
-						{#snippet inactiveChild()}<IconX size="14" />{/snippet}
-						{#snippet activeChild()}<IconCheck size="14" />{/snippet}
-					</Switch>
-				</div>
+				{#if showPublishedToggle}
+					<div class="col-span-1 flex items-center">
+						<label
+							for="is_published"
+							class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
+							>Published:</label
+						>
+					</div>
+					<div class="col-span-7">
+						<Switch
+							checked={isPublished}
+							onCheckedChange={(e) => (isPublished = e.checked)}
+						>
+							{#snippet inactiveChild()}<IconX size="14" />{/snippet}
+							{#snippet activeChild()}<IconCheck size="14" />{/snippet}
+						</Switch>
+					</div>
+				{/if}
 				<div class="col-span-1 flex items-center">
 					<label
 						for="download_link"
@@ -213,7 +221,7 @@
 			{@render asset_files?.()}
 		{/if}
 
-		{#if showPublishingControls}
+		{#if showPublishingControls && !save}
 			<button
 				onclick={() =>
 					onSave('onSave', {
@@ -225,10 +233,11 @@
 					})}
 				class="mt-4 rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
 			>
-				{#if save}{@render save()}{:else}Update{/if}
+				{saveButtonText}
 			</button>
-		{:else if save}
-			<!-- Show custom save snippet even when publishing controls are hidden -->
+		{/if}
+		{#if save}
+			<!-- Show custom save snippet -->
 			<div class="mt-4">
 				{@render save()}
 			</div>

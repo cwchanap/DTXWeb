@@ -227,6 +227,11 @@
 			>
 				{#if save}{@render save()}{:else}Update{/if}
 			</button>
+		{:else if save}
+			<!-- Show custom save snippet even when publishing controls are hidden -->
+			<div class="mt-4">
+				{@render save()}
+			</div>
 		{/if}
 	</div>
 </div>

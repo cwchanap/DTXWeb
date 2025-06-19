@@ -106,6 +106,98 @@
 		levels?: { label: string; level: number }[];
 	}>({});
 
+	// State for upload process
+	let isUploading = $state(false);
+	let uploadError = $state<string | null>(null);
+	let uploadSuccess = $state(false);
+
+	// Handle upload for unlinked songs (as draft)
+	const handleUploadSong = async (event: CustomEvent) => {
+		await uploadSong(event, false); // Upload as draft (is_published = false)
+	};
+
+	// Handle upload and publish for unlinked songs
+	const handleUploadAndPublishSong = async (event: CustomEvent) => {
+		await uploadSong(event, true); // Upload and publish (is_published = true)
+	};
+
+	// Common upload function
+	const uploadSong = async (event: CustomEvent, isPublished: boolean) => {
+		if (!song.containsDtxFiles || song.linkedSimFile) {
+			return;
+		}
+
+		isUploading = true;
+		uploadError = null;
+		uploadSuccess = false;
+
+		try {
+			const { displayId, publishDate, downloadUrl, videoPreviewUrl } = event.detail;
+
+			// Get preview files from local files
+			const previewImageFile = localFiles.find(
+				(f) =>
+					f.name.toLowerCase().endsWith('.jpg') ||
+					f.name.toLowerCase().endsWith('.jpeg') ||
+					f.name.toLowerCase().endsWith('.png')
+			);
+			const previewSoundFile = localFiles.find(
+				(f) =>
+					f.name.toLowerCase().endsWith('.mp3') || f.name.toLowerCase().endsWith('.wav')
+			);
+
+			// Prepare simfile data
+			const simfileData = {
+				title: song.songTitle || song.name,
+				artist: parsedLocalData.artist || '',
+				bpm: parsedLocalData.bpm || 0,
+				displayId,
+				isPublished, // Use the parameter instead of getting from event.detail
+				publishDate,
+				downloadUrl,
+				videoPreviewUrl,
+				levels: parsedLocalData.levels || [],
+				previewFile: previewImageFile ? await previewImageFile.arrayBuffer() : undefined,
+				soundPreviewFile: previewSoundFile
+					? await previewSoundFile.arrayBuffer()
+					: undefined
+			};
+
+			// Call IPC to create simfile record
+			const result = await window.electron.ipcRenderer.invoke(
+				'create-simfile-record',
+				simfileData
+			);
+
+			if (result.success) {
+				uploadSuccess = true;
+				// Update the song with the new linked data
+				song.linkedSimFileId = result.simfileId;
+				song.linkedSimFile = result.data;
+
+				// Update the workspace store
+				workspaceStore.linkSimFileToFolder(song.path, result.data);
+
+				// Hide success message after 3 seconds
+				setTimeout(() => {
+					uploadSuccess = false;
+				}, 3000);
+			} else {
+				throw new Error(result.error || 'Failed to create simfile record');
+			}
+		} catch (error) {
+			console.error('Error uploading song:', error);
+			uploadError = error instanceof Error ? error.message : 'Failed to upload song';
+
+			// Clear error message after 10 seconds
+			setTimeout(() => {
+				uploadError = null;
+			}, 10000);
+		} finally {
+			isUploading = false;
+		}
+	};
+
 	// Effect to parse local DTX files when needed
 	$effect(() => {
 		console.log('SongDetails effect triggered:', {
@@ -179,7 +271,13 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<ChartDetail simfile={simfileData} showEditor={false} showPublishingControls={false}>
+	<ChartDetail
+		simfile={simfileData}
+		showEditor={false}
+		showPublishingControls={false}
+		on:onSave={handleUploadSong}
+		on:onSaveAndPublish={handleUploadAndPublishSong}
+	>
 		{#snippet header()}
 			<!-- Header -->
 			<div
@@ -227,12 +325,46 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- Upload Status Messages -->
+			{#if isUploading}
+				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+					<div class="flex items-center gap-2">
+						<div
+							class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+						></div>
+						<span class="text-sm text-blue-800 dark:text-blue-200">
+							Uploading song to cloud...
+						</span>
+					</div>
+				</div>
+			{/if}
+
+			{#if uploadError}
+				<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="flex items-center gap-2">
+						<span class="text-sm text-red-800 dark:text-red-200">
+							Upload failed: {uploadError}
+						</span>
+					</div>
+				</div>
+			{/if}
+
+			{#if uploadSuccess}
+				<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="flex items-center gap-2">
+						<span class="text-sm text-green-800 dark:text-green-200">
+							Song uploaded successfully! It is now linked to the cloud.
+						</span>
+					</div>
+				</div>
+			{/if}
 		{/snippet}
 
 		{#snippet folder_upload()}
 			<!-- Folder Name -->
 			<div class="col-span-1 flex items-center">
-				<label class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</label>
+				<span class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</span>
 			</div>
 			<div class="col-span-7">
 				<span class="font-mono text-sm text-slate-900 dark:text-slate-100">{song.name}</span
@@ -241,7 +373,7 @@
 
 			<!-- Song Path -->
 			<div class="col-span-1 flex items-center">
-				<label class="mr-2 block text-slate-700 dark:text-slate-300">Path:</label>
+				<span class="mr-2 block text-slate-700 dark:text-slate-300">Path:</span>
 			</div>
 			<div class="col-span-7">
 				<span class="truncate font-mono text-sm text-slate-900 dark:text-slate-100"
@@ -279,6 +411,54 @@
 					/>
 				{/if}
 			</div>
+		{/snippet}
+
+		{#snippet save()}
+			{#if !song.linkedSimFile && song.containsDtxFiles}
+				<div class="flex gap-2">
+					{#if isUploading}
+						<div class="flex items-center gap-2">
+							<div
+								class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+							></div>
+							Uploading...
+						</div>
+					{:else}
+						<button
+							class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-800"
+							onclick={() => {
+								const event = new CustomEvent('onSave', {
+									detail: {
+										displayId: song.songTitle || song.name,
+										publishDate: new Date().toISOString().split('T')[0],
+										downloadUrl: '',
+										videoPreviewUrl: ''
+									}
+								});
+								handleUploadSong(event);
+							}}
+						>
+							Upload as Draft
+						</button>
+						<button
+							class="rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
+							onclick={() => {
+								const event = new CustomEvent('onSaveAndPublish', {
+									detail: {
+										displayId: song.songTitle || song.name,
+										publishDate: new Date().toISOString().split('T')[0],
+										downloadUrl: '',
+										videoPreviewUrl: ''
+									}
+								});
+								handleUploadAndPublishSong(event);
+							}}
+						>
+							Upload and Publish
+						</button>
+					{/if}
+				</div>
+			{/if}
 		{/snippet}
 	</ChartDetail>
 </div>

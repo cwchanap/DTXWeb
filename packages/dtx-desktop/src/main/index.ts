@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { SimFile, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common';
 import {
 	validateSession,
@@ -507,6 +508,139 @@ if (!gotTheLock) {
 				throw error;
 			}
 		});
+
+		// Handle creating simfile record in database
+		ipcMain.handle(
+			'create-simfile-record',
+			async (
+				_event,
+				simfileData: {
+					title: string;
+					artist: string;
+					bpm: number;
+					displayId: number;
+					isPublished: boolean;
+					publishDate: string;
+					downloadUrl: string;
+					videoPreviewUrl: string;
+					levels: { label: string; level: number }[];
+					previewFile?: ArrayBuffer;
+					soundPreviewFile?: ArrayBuffer;
+				}
+			) => {
+				try {
+					const supabaseClient = getSupabaseClient();
+					if (!supabaseClient) {
+						throw new Error('Supabase client not available');
+					}
+
+					const {
+						data: { user },
+						error: userError
+					} = await supabaseClient.auth.getUser();
+
+					if (userError || !user) {
+						throw new Error('User not authenticated');
+					}
+
+					const PREVIEW_BUCKET_NAME = 'simfile-previews';
+					const SOUND_PREVIEW_BUCKET_NAME = 'simfile-sound-previews';
+
+					// Upload preview image to Supabase storage
+					let previewUrl = '';
+					const previewHash = crypto.randomUUID();
+					if (simfileData.previewFile) {
+						previewUrl = `${user.id}/${previewHash}.jpg`;
+
+						const { error: uploadError } = await supabaseClient.storage
+							.from(PREVIEW_BUCKET_NAME)
+							.upload(previewUrl, simfileData.previewFile, {
+								contentType: 'image/jpeg'
+							});
+
+						if (uploadError) {
+							console.error('Error uploading preview image:', uploadError.message);
+							throw new Error(
+								`Error uploading preview image: ${uploadError.message}`
+							);
+						}
+					}
+
+					// Upload sound preview file
+					let soundPreviewUrl = '';
+					if (simfileData.soundPreviewFile) {
+						soundPreviewUrl = `${user.id}/${previewHash}.mp3`;
+						const { error: uploadError } = await supabaseClient.storage
+							.from(SOUND_PREVIEW_BUCKET_NAME)
+							.upload(soundPreviewUrl, simfileData.soundPreviewFile, {
+								contentType: 'audio/mp3'
+							});
+
+						if (uploadError) {
+							console.error(
+								'Error uploading sound preview file:',
+								uploadError.message
+							);
+							throw new Error(
+								`Error uploading sound preview file: ${uploadError.message}`
+							);
+						}
+					}
+
+					// Insert simfile data into the database
+					const { data: simFileData, error } = await supabaseClient
+						.from('simfiles')
+						.insert({
+							title: simfileData.title,
+							artist: simfileData.artist,
+							bpm: simfileData.bpm,
+							preview_url: previewUrl,
+							sound_preview_url: soundPreviewUrl,
+							user_id: user.id,
+							display_id: simfileData.displayId,
+							is_published: simfileData.isPublished,
+							publish_date: simfileData.publishDate,
+							download_url: simfileData.downloadUrl,
+							video_preview_url: simfileData.videoPreviewUrl
+						})
+						.select()
+						.single();
+
+					if (error) {
+						console.error('Error creating simfiles:', error.message);
+						throw new Error(`Error creating simfile: ${error.message}`);
+					}
+
+					// Insert dtx_files data into the database
+					if (simfileData.levels && simfileData.levels.length > 0) {
+						const { error: dtxError } = await supabaseClient.from('dtx_files').insert(
+							simfileData.levels.map((level) => ({
+								level: level.level,
+								simfile_id: simFileData.id,
+								label: level.label
+							}))
+						);
+
+						if (dtxError) {
+							console.error('Error creating dtx_files:', dtxError.message);
+							throw new Error(`Error creating dtx_files: ${dtxError.message}`);
+						}
+					}
+
+					return {
+						success: true,
+						simfileId: simFileData.id,
+						data: simFileData
+					};
+				} catch (error) {
+					console.error('Error creating simfile record:', error);
+					return {
+						success: false,
+						error: error instanceof Error ? error.message : 'Unknown error'
+					};
+				}
+			}
+		);
 
 		// Register custom protocol handler (dtx://)
 		const PROTOCOL = 'dtx';

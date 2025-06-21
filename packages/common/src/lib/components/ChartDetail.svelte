@@ -26,7 +26,7 @@
 		showPublishedToggle?: boolean;
 		saveButtonText?: string;
 		// Reactive form value bindings (for parent component access)
-		displayId?: number;
+		displayId?: string;
 		publishDate?: string;
 		isPublished?: boolean;
 		downloadUrl?: string;

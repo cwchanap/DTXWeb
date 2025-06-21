@@ -7,11 +7,14 @@
 	let {
 		simfileId = '',
 		userFiles = [],
-		supabaseClient,
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		supabaseClient: _supabaseClient,
 		simfileBucketUrl,
-		cloudflareWorkerUrl,
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		cloudflareWorkerUrl: _cloudflareWorkerUrl,
 		loadAssetFiles,
-		isDesktop = false
+		isDesktop = false,
+		songFolderPath = ''
 	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
@@ -22,6 +25,7 @@
 			simfileId: string
 		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;
 		isDesktop?: boolean;
+		songFolderPath?: string; // Song folder path for desktop uploads
 	}>();
 
 	// Ensure userFiles is always an array of File objects
@@ -159,37 +163,86 @@
 			// Update status to uploading
 			uploadProgress[fileName] = 'uploading';
 
-			// Use Electron IPC for desktop uploads
-			// In desktop mode, userFiles are File objects created from local files
-			// First try to get file path from the userFile itself (custom property)
-			const fileToUpload = mergedFiles.find((f) => f.name === fileName)?.userFile;
-			let filePath = '';
-
-			if (fileToUpload && (fileToUpload as any).filePath) {
-				// Use the custom filePath property we added in desktop mode
-				filePath = (fileToUpload as any).filePath;
-			} else {
-				// Fallback to mergedFiles key (for cloud files)
-				const fileInfo = mergedFiles.find((f) => f.name === fileName);
-				if (!fileInfo || !fileInfo.key) {
-					throw new Error(`Could not find file path for ${fileName}`);
-				}
-				filePath = fileInfo.key;
+			// Validate required parameters
+			if (!songFolderPath) {
+				throw new Error('Song folder path is required for desktop uploads');
+			}
+			if (!simfileId) {
+				throw new Error('Simfile ID is required for uploads');
 			}
 
-			// Use IPC to upload the file
-			const result = await (window as any).electron?.ipcRenderer?.invoke(
-				'upload-file',
-				fileName,
-				filePath,
-				simfileId
-			);
+			// Use IPC to upload the file - main process will construct full path
+			const result = await (
+				window as {
+					electron?: {
+						ipcRenderer?: {
+							invoke: (
+								channel: string,
+								...args: unknown[]
+							) => Promise<{ success: boolean; error?: string }>;
+						};
+					};
+				}
+			).electron?.ipcRenderer?.invoke('upload-file', fileName, songFolderPath, simfileId);
 
 			if (!result || !result.success) {
 				throw new Error(result?.error || 'Upload failed');
 			}
 
 			// Update status to success
+			uploadProgress[fileName] = 'success';
+
+			// Refresh asset files to show updated cloud status
+			if (simfileId) {
+				await loadAssetFilesInternal();
+			}
+
+			return true;
+		} catch (error) {
+			console.error(`Error uploading ${fileName}:`, error);
+			uploadProgress[fileName] = 'error';
+			return false;
+		}
+	}
+
+	// Upload a single file without refresh (for bulk operations)
+	async function uploadFileBulk(fileName: string): Promise<boolean> {
+		if (!isDesktop) {
+			console.error('Upload functionality is only available in desktop mode');
+			return false;
+		}
+
+		try {
+			// Update status to uploading
+			uploadProgress[fileName] = 'uploading';
+
+			// Validate required parameters
+			if (!songFolderPath) {
+				throw new Error('Song folder path is required for desktop uploads');
+			}
+			if (!simfileId) {
+				throw new Error('Simfile ID is required for uploads');
+			}
+
+			// Use IPC to upload the file - main process will construct full path
+			const result = await (
+				window as {
+					electron?: {
+						ipcRenderer?: {
+							invoke: (
+								channel: string,
+								...args: unknown[]
+							) => Promise<{ success: boolean; error?: string }>;
+						};
+					};
+				}
+			).electron?.ipcRenderer?.invoke('upload-file', fileName, songFolderPath, simfileId);
+
+			if (!result || !result.success) {
+				throw new Error(result?.error || 'Upload failed');
+			}
+
+			// Update status to success (no refresh in bulk mode)
 			uploadProgress[fileName] = 'success';
 			return true;
 		} catch (error) {
@@ -215,11 +268,12 @@
 			uploadProgress[fileName] = 'pending';
 		});
 
-		const uploadPromises = [...selectedFiles].map((fileName) => {
+		const uploadPromises = [...selectedFiles].map(async (fileName) => {
 			const fileToUpload = mergedFiles.find((f) => f.name === fileName)?.userFile;
 			if (!fileToUpload) return;
 
-			return uploadFile(fileName, fileToUpload);
+			// Upload without triggering individual refresh (bulk mode)
+			return await uploadFileBulk(fileName);
 		});
 
 		// Wait for all uploads to complete

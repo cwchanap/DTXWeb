@@ -30,7 +30,8 @@ const extendedElectronAPI = {
 				'get-sound-preview-url',
 				'load-asset-files',
 				'create-song',
-				'create-simfile-record'
+				'create-simfile-record',
+				'upload-file'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

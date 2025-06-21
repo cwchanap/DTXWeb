@@ -436,8 +436,11 @@ if (!gotTheLock) {
 		// Handle file upload from desktop to cloud
 		ipcMain.handle(
 			'upload-file',
-			async (_event, fileName: string, filePath: string, simfileId: string) => {
+			async (_event, fileName: string, songFolderPath: string, simfileId: string) => {
 				try {
+					// Construct the full file path
+					const filePath = path.join(songFolderPath, fileName);
+
 					console.log(
 						'Uploading file:',
 						fileName,
@@ -446,6 +449,13 @@ if (!gotTheLock) {
 						'to simfile:',
 						simfileId
 					);
+
+					// Check if file exists
+					try {
+						await fs.promises.access(filePath);
+					} catch (error) {
+						throw new Error(`File not found: ${filePath}`);
+					}
 
 					// Get the current session to extract JWT token
 					const session = getCurrentSession();
@@ -482,12 +492,15 @@ if (!gotTheLock) {
 					formData.append('file', blob, fileNameWithoutDir);
 					formData.append('simFileId', simfileId);
 
-					const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
-					if (!apiBaseUrl) {
-						throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
+					// Use Cloudflare Worker URL for uploads
+					const workerUrl = import.meta.env.PUBLIC_CLOUDFARE_WORKER_URL || '';
+					if (!workerUrl) {
+						throw new Error(
+							'PUBLIC_CLOUDFARE_WORKER_URL environment variable is not set'
+						);
 					}
 
-					const url = `${apiBaseUrl}/api/simFile/upload`;
+					const url = `${workerUrl}/api/simFile/upload`;
 					console.log('Uploading to:', url);
 
 					// Send the request

@@ -25,6 +25,12 @@
 		showPublishingControls?: boolean;
 		showPublishedToggle?: boolean;
 		saveButtonText?: string;
+		// Reactive form value bindings (for parent component access)
+		displayId?: number;
+		publishDate?: string;
+		isPublished?: boolean;
+		downloadUrl?: string;
+		videoPreviewUrl?: string;
 	}
 
 	let {
@@ -39,7 +45,12 @@
 		showEditor = true,
 		showPublishingControls = true,
 		showPublishedToggle = true,
-		saveButtonText = 'Update'
+		saveButtonText = 'Update',
+		displayId = $bindable(simfile?.display_id || 0),
+		publishDate = $bindable(simfile?.publish_date || dayjs().format('YYYY-MM-DD')),
+		isPublished = $bindable(simfile?.is_published || true),
+		downloadUrl = $bindable(simfile?.download_url || ''),
+		videoPreviewUrl = $bindable(simfile?.video_preview_url || '')
 	}: Props = $props();
 
 	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
@@ -53,12 +64,6 @@
 		}
 		return [];
 	});
-
-	let displayId: number = $state(simfile?.display_id || 0);
-	let publishDate: string = $state(simfile?.publish_date || dayjs().format('YYYY-MM-DD'));
-	let isPublished: boolean = $state(simfile?.is_published || true);
-	let downloadUrl: string = $state(simfile?.download_url || '');
-	let videoPreviewUrl: string = $state(simfile?.video_preview_url || '');
 
 	const onSave = createEventDispatcher();
 </script>

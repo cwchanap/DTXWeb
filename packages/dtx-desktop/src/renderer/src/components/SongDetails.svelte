@@ -49,7 +49,6 @@
 
 						// Check if there was an error reading the file
 						if (error) {
-							console.warn(`Could not read file ${fileInfo.fileName}:`, error);
 							// Create empty File object as fallback
 							const file = new File([''], fileInfo.fileName, {
 								lastModified: new Date(fileInfo.lastModified).getTime()
@@ -274,13 +273,6 @@
 
 	// Effect to parse local DTX files when needed
 	$effect(() => {
-		console.log('SongDetails effect triggered:', {
-			songPath: song.path,
-			hasLinkedSimfile: !!song.linkedSimFile,
-			linkedSimfileBpm: song.linkedSimFile?.bpm,
-			linkedSimfileArtist: song.linkedSimFile?.artist
-		});
-
 		// Only parse local files if we have a folder path and linked simfile data is missing key information
 		const shouldParse =
 			song.path &&
@@ -291,10 +283,7 @@
 				song.linkedSimFile.artist === null ||
 				song.linkedSimFile.artist === '');
 
-		console.log('Should parse local DTX files:', shouldParse);
-
 		if (shouldParse) {
-			console.log('Parsing local DTX files via IPC...');
 			// Use async function inside effect
 			(async () => {
 				try {
@@ -310,8 +299,6 @@
 							artist: result.artist,
 							levels: result.levels || []
 						};
-
-						console.log('Parsed local data via IPC:', parsedLocalData);
 					} else {
 						parsedLocalData = {};
 					}
@@ -327,41 +314,45 @@
 
 	// Convert song data to simfile format for ChartDetail component
 	// Use parsed local data as fallback when linked simfile data is missing
-	const simfileData = $derived({
-		title: song.songTitle || song.name,
-		artist: song.linkedSimFile?.artist || parsedLocalData.artist,
-		bpm: song.linkedSimFile?.bpm || parsedLocalData.bpm,
-		publish_date: song.linkedSimFile?.publish_date || publishDate,
-		display_id: song.linkedSimFile?.display_id || displayId,
-		is_published: song.linkedSimFile?.is_published || false,
-		download_url: song.linkedSimFile?.download_url || downloadUrl,
-		video_preview_url: song.linkedSimFile?.video_preview_url || videoPreviewUrl,
-		dtx_files:
-			song.linkedSimFile?.dtx_files ||
-			(parsedLocalData.levels
-				? parsedLocalData.levels.map((l) => ({
-						label: l.label,
-						level: l.level
-					}))
-				: []),
-		...song.linkedSimFile
+	const simfileData = $derived(() => {
+		return {
+			title: song.songTitle || song.name,
+			artist: song.linkedSimFile?.artist || parsedLocalData.artist,
+			bpm: song.linkedSimFile?.bpm || parsedLocalData.bpm,
+			publish_date: song.linkedSimFile?.publish_date || publishDate,
+			display_id: song.linkedSimFile?.display_id || displayId,
+			is_published: song.linkedSimFile?.is_published || false,
+			download_url: song.linkedSimFile?.download_url || downloadUrl,
+			video_preview_url: song.linkedSimFile?.video_preview_url || videoPreviewUrl,
+			dtx_files:
+				song.linkedSimFile?.dtx_files ||
+				(parsedLocalData.levels
+					? parsedLocalData.levels.map((l, index) => ({
+							id: index + 1,
+							label: l.label || 'Unknown',
+							level: l.level || 0,
+							simfile_id: 0
+						}))
+					: [])
+		};
 	});
 
 	// Initialize reactive form values from simfileData
 	$effect(() => {
 		// Only update if we don't have a linked simfile (initial setup)
 		if (!song.linkedSimFile) {
-			displayId = simfileData.display_id || 0;
-			publishDate = simfileData.publish_date || new Date().toISOString().split('T')[0];
-			downloadUrl = simfileData.download_url || '';
-			videoPreviewUrl = simfileData.video_preview_url || '';
+			const data = simfileData();
+			displayId = data.display_id || 0;
+			publishDate = data.publish_date || new Date().toISOString().split('T')[0];
+			downloadUrl = data.download_url || '';
+			videoPreviewUrl = data.video_preview_url || '';
 		}
 	});
 </script>
 
 <div class="flex h-full flex-col">
 	<ChartDetail
-		simfile={simfileData}
+		simfile={simfileData()}
 		showEditor={false}
 		showPublishingControls={true}
 		showPublishedToggle={false}

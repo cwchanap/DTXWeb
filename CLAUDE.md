@@ -18,14 +18,8 @@ Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monore
 Use `-w={package}` flag to run commands in specific packages:
 
 ```bash
-# Development
-npm run dev -w=dtx-web          # Start web dev server
-npm run dev -w=dtx-desktop      # Start Electron app
-
-# Building (build common first)
-npm run build -w=@dtx/common    # Build shared package first
-npm run build -w=dtx-web        # Build web app
-npm run build -w=dtx-desktop    # Build desktop app
+# Building (only build common if modified)
+npm run build -w=@dtx/common    # Build shared package ONLY if you modified it
 
 # Testing
 npm run test -w=dtx-web         # Run web app tests
@@ -71,7 +65,7 @@ The core of the application is DTX file parsing and gameplay:
 
 ### Package Dependencies
 
-**Build order matters**: Always build `@dtx/common` first as other packages depend on it.
+**Build order matters**: Only build `@dtx/common` if you made changes to it, as other packages depend on it.
 
 The common package exports:
 
@@ -85,6 +79,47 @@ The common package exports:
 - Shared types in `@dtx/common`
 - Game scenes in `src/lib/game/scenes/`
 - Components in `src/lib/components/`
+
+## Cache Management
+
+### Desktop Cache Clearing
+
+The desktop app has a "Clear Cache" button in the navigation bar (when authenticated) that clears:
+
+- SimFile cache (5-minute cached simfile data from Supabase)
+- Template cache (user-created song templates)
+
+**Important**: The cache clear button preserves:
+
+- Authentication session (user stays logged in)
+- Workspace path (current workspace directory)
+
+### When to Clear Cache
+
+Clear cache when:
+
+- Level labels are missing after database schema changes
+- Stale simfile data is displayed
+- Template changes aren't reflected
+- Data inconsistencies after main process updates
+
+### Manual Cache Clearing
+
+If needed, cache can be manually cleared via browser dev tools:
+
+```javascript
+// Clear simfile cache only
+simFileService.clearCache();
+
+// Or clear specific localStorage items
+localStorage.removeItem('simfiles_cache');
+localStorage.removeItem('simfiles_cache_timestamp');
+localStorage.removeItem('song_templates');
+
+// DO NOT clear these (breaks auth/workspace)
+// localStorage.removeItem('workspace_path');
+// localStorage.removeItem('auth_session');
+```
 
 ## Testing
 
@@ -144,3 +179,12 @@ import { Button } from '@dtx/common/components';
 - Node.js 22.x or later required
 - Uses husky + lint-staged for git hooks
 - Supabase CLI for type generation and local development
+
+## Important Instructions for Agents
+
+- Do what has been asked; nothing more, nothing less
+- NEVER create files unless they're absolutely necessary for achieving your goal
+- ALWAYS prefer editing an existing file to creating a new one
+- NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User
+- NEVER run development servers (`npm run dev`) or build commands (`npm run build`) unless the user explicitly instructs you to do so
+- ONLY build the shared package (`@dtx/common`) if you have made changes to files within that package

@@ -1,10 +1,38 @@
 <script lang="ts">
 	import { authStore } from '../stores/authStore';
 	import { authService } from '../services/authService';
-	import { Music, LogOut, User } from '@lucide/svelte';
+	import { simFileService } from '../services/simFileService';
+	import { workspaceStore } from '../stores/workspaceStore';
+	import { Music, LogOut, User, RefreshCw } from '@lucide/svelte';
+
+	let isClearing = $state(false);
 
 	const handleLogout = async () => {
 		await authService.logout();
+	};
+
+	const handleClearCache = async () => {
+		isClearing = true;
+		try {
+			// Clear simfile cache
+			simFileService.clearCache();
+
+			// Clear template cache
+			localStorage.removeItem('song_templates');
+
+			// Note: We intentionally don't clear workspace_path or auth session
+			// as those should persist across cache clears
+
+			console.log('Cache cleared successfully');
+
+			// Give visual feedback
+			setTimeout(() => {
+				isClearing = false;
+			}, 1000);
+		} catch (error) {
+			console.error('Error clearing cache:', error);
+			isClearing = false;
+		}
 	};
 </script>
 
@@ -39,6 +67,17 @@
 					>
 						<User size={16} class="text-blue-500 dark:text-blue-300" />
 					</div>
+					<button
+						class="flex items-center gap-1 rounded-lg bg-blue-100 px-2 py-1 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-200 disabled:opacity-50 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50"
+						onclick={handleClearCache}
+						disabled={isClearing}
+						tabindex="0"
+						aria-label="Clear cache"
+						title="Clear cached data (simfiles, templates)"
+					>
+						<RefreshCw size={14} class={isClearing ? 'animate-spin' : ''} />
+						<span>{isClearing ? 'Clearing...' : 'Clear Cache'}</span>
+					</button>
 					<button
 						class="flex items-center gap-1 rounded-lg bg-red-100 px-2 py-1 text-sm font-medium text-red-700 transition-colors hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50"
 						onclick={handleLogout}

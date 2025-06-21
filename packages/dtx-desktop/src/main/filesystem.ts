@@ -113,8 +113,6 @@ export async function readFile(
 	workspaceRoot: string | null = null
 ): Promise<ReadFileResult> {
 	try {
-		console.log('Reading file:', filePath);
-
 		// Resolve the file path to prevent path traversal attacks
 		const resolvedPath = path.resolve(filePath);
 
@@ -146,7 +144,6 @@ export async function readFile(
 		const allowedExtensions = ['.dtx', '.def'];
 		const ext = path.extname(resolvedPath).toLowerCase();
 		if (!allowedExtensions.includes(ext)) {
-			console.warn('File extension not allowed:', ext);
 			return { error: 'File type not allowed', content: '' };
 		}
 

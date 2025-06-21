@@ -11,7 +11,8 @@
 		HardDrive,
 		Cloud,
 		Plus,
-		FileText
+		FileText,
+		Search
 	} from '@lucide/svelte';
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import WorkspaceTree from './WorkspaceTree.svelte';
@@ -29,6 +30,7 @@
 	let selectedSong = $state<TreeNode | null>(null);
 	let showSongDetails = $state(false);
 	let showTemplates = $state(false);
+	let searchQuery = $state('');
 
 	// Navigation state
 	let activeTab = $state('workspace');
@@ -75,6 +77,42 @@
 	const handleNewSong = () => {
 		workspaceStore.showNewSongForm();
 	};
+
+	// Filter tree nodes based on search query
+	const filterTreeNodes = (nodes: TreeNode[], query: string): TreeNode[] => {
+		if (!query.trim()) return nodes;
+
+		const searchTerm = query.toLowerCase();
+
+		const filterNode = (node: TreeNode): TreeNode | null => {
+			// Check if node matches search criteria
+			const nameMatches = node.name.toLowerCase().includes(searchTerm);
+			const songTitleMatches = node.songTitle?.toLowerCase().includes(searchTerm) || false;
+			const matches = nameMatches || songTitleMatches;
+
+			// Filter children recursively
+			const filteredChildren = node.children
+				.map((child) => filterNode(child))
+				.filter((child) => child !== null);
+
+			// Include node if it matches or has matching children
+			if (matches || filteredChildren.length > 0) {
+				return {
+					...node,
+					children: filteredChildren,
+					// Auto-expand nodes that have matching children
+					isExpanded: filteredChildren.length > 0 || node.isExpanded
+				};
+			}
+
+			return null;
+		};
+
+		return nodes.map((node) => filterNode(node)).filter((node) => node !== null);
+	};
+
+	// Get filtered tree structure
+	const filteredTreeStructure = $derived(filterTreeNodes(treeStructure, searchQuery));
 
 	// Load workspace data on mount if a path is already set
 	onMount(() => {
@@ -253,6 +291,32 @@
 							</button>
 						</div>
 
+						<!-- Search Filter -->
+						<div class="mb-4">
+							<div class="relative">
+								<div
+									class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"
+								>
+									<Search size={16} class="text-slate-400" />
+								</div>
+								<input
+									type="text"
+									bind:value={searchQuery}
+									placeholder="Search songs and folders..."
+									class="w-full rounded-lg border border-slate-200 bg-white py-2 pr-4 pl-10 text-sm placeholder-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+								/>
+								{#if searchQuery}
+									<button
+										onclick={() => (searchQuery = '')}
+										class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+										aria-label="Clear search"
+									>
+										<X size={16} />
+									</button>
+								{/if}
+							</div>
+						</div>
+
 						<!-- Sub-workspaces Section -->
 						{#if subWorkspaces.length > 0}
 							<div class="mb-4">
@@ -279,11 +343,17 @@
 									? 'Showing contents of selected sub-workspace'
 									: 'Showing all folders in workspace'}
 							</div>
-							{#if treeStructure.length > 0}
+							{#if filteredTreeStructure.length > 0}
 								<div
 									class="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
 								>
-									<WorkspaceTree nodes={treeStructure} />
+									<WorkspaceTree nodes={filteredTreeStructure} />
+								</div>
+							{:else if searchQuery.trim()}
+								<div
+									class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
+								>
+									No results found for "{searchQuery}"
 								</div>
 							{:else}
 								<div

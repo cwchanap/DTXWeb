@@ -167,7 +167,13 @@ if (!gotTheLock) {
 
 				// Write the SET.def file (this will overwrite template's SET.def if it exists)
 				console.log('Writing SET.def file to:', setDefPath);
-				await fs.promises.writeFile(setDefPath, setDefContent, 'utf-16le');
+
+				// Add UTF-16 LE BOM (0xFF 0xFE) and encode content
+				const bom = Buffer.from([0xff, 0xfe]);
+				const contentBuffer = Buffer.from(setDefContent, 'utf16le');
+				const finalBuffer = Buffer.concat([bom, contentBuffer]);
+
+				await fs.promises.writeFile(setDefPath, finalBuffer);
 
 				return {
 					success: true,
@@ -181,7 +187,7 @@ if (!gotTheLock) {
 
 		// Handle loading tree structure with lazy loading
 		ipcMain.handle('load-tree-structure', async (_event, basePath, ...pathParts) => {
-			let fullPath;
+			let fullPath: string;
 			if (pathParts.length === 0) {
 				// Single path argument (backward compatibility)
 				fullPath = basePath;

@@ -478,8 +478,7 @@ if (!gotTheLock) {
 					// Read the file from local filesystem
 					const fileBuffer = await fs.promises.readFile(filePath);
 
-					// Create a blob from the buffer
-					const blob = new Blob([fileBuffer]);
+					// Create a File object from the buffer (Node.js compatible)
 
 					// Remove the first level directory name if present
 					let fileNameWithoutDir = fileName;
@@ -489,7 +488,7 @@ if (!gotTheLock) {
 
 					// Create form data for the API
 					const formData = new FormData();
-					formData.append('file', blob, fileNameWithoutDir);
+					formData.append('file', new File([fileBuffer], fileNameWithoutDir));
 					formData.append('simFileId', simfileId);
 
 					// Use Cloudflare Worker URL for uploads

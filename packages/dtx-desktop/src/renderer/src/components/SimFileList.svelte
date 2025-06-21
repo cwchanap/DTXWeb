@@ -2,7 +2,7 @@
 	import { simFileStore } from '../stores/simFileStore';
 	import { simFileService } from '../services/simFileService';
 	import { workspaceStore } from '../stores/workspaceStore';
-	import { RefreshCw, Music, Calendar, User, Link } from '@lucide/svelte';
+	import { RefreshCw, Music, Calendar, User, Link, Search, X } from '@lucide/svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 
 	// Subscribe to the simFile store
@@ -13,9 +13,24 @@
 	let currentPage = $state(1);
 	let pageSize = $state(10);
 
-	// Calculate paginated data
-	let paginatedSimFiles = $derived(sliceData(simFileState.userSimFiles, currentPage, pageSize));
-	let totalPages = $derived(Math.ceil(simFileState.userSimFiles.length / pageSize));
+	// Search state
+	let searchQuery = $state('');
+
+	// Filter simFiles based on search query
+	const filteredSimFiles = $derived.by(() => {
+		if (!searchQuery.trim()) return simFileState.userSimFiles;
+
+		const searchTerm = searchQuery.toLowerCase();
+		return simFileState.userSimFiles.filter(
+			(simFile) =>
+				simFile.title.toLowerCase().includes(searchTerm) ||
+				simFile.artist.toLowerCase().includes(searchTerm)
+		);
+	});
+
+	// Calculate paginated data using filtered results
+	let paginatedSimFiles = $derived(sliceData(filteredSimFiles, currentPage, pageSize));
+	let totalPages = $derived(Math.ceil(filteredSimFiles.length / pageSize));
 
 	// Function to slice data for current page
 	function sliceData(data: any[], page: number, size: number) {
@@ -34,6 +49,13 @@
 		pageSize = event.pageSize;
 		currentPage = 1; // Reset to first page when page size changes
 	}
+
+	// Reset to first page when search query changes
+	$effect(() => {
+		if (searchQuery) {
+			currentPage = 1;
+		}
+	});
 
 	// Function to refresh simFile data
 	async function refreshSimFiles() {
@@ -84,8 +106,14 @@
 <div class="simfile-list p-4">
 	<div class="mb-4 flex items-center justify-between">
 		<h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">
-			My SimFiles ({simFileState.userSimFiles.length} total, showing {paginatedSimFiles.length}
-			on page {currentPage} of {totalPages})
+			My SimFiles
+			{#if searchQuery.trim()}
+				({filteredSimFiles.length} of {simFileState.userSimFiles.length} found, showing {paginatedSimFiles.length}
+				on page {currentPage} of {totalPages})
+			{:else}
+				({simFileState.userSimFiles.length} total, showing {paginatedSimFiles.length} on page
+				{currentPage} of {totalPages})
+			{/if}
 		</h2>
 		<div class="flex items-center gap-2">
 			{#if simFileState.fromCache}
@@ -93,7 +121,7 @@
 			{/if}
 
 			<!-- Page Size Selector -->
-			{#if simFileState.userSimFiles.length > 5}
+			{#if filteredSimFiles.length > 5}
 				<select
 					bind:value={pageSize}
 					onchange={() => handlePageSizeChange({ pageSize })}
@@ -114,6 +142,30 @@
 				<RefreshCw size="14" class={simFileState.isLoading ? 'animate-spin' : ''} />
 				Refresh
 			</button>
+		</div>
+	</div>
+
+	<!-- Search Filter -->
+	<div class="mb-4">
+		<div class="relative">
+			<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+				<Search size={16} class="text-slate-400" />
+			</div>
+			<input
+				type="text"
+				bind:value={searchQuery}
+				placeholder="Search by song title or artist..."
+				class="w-full rounded-lg border border-slate-200 bg-white py-2 pr-4 pl-10 text-sm placeholder-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+			/>
+			{#if searchQuery}
+				<button
+					onclick={() => (searchQuery = '')}
+					class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+					aria-label="Clear search"
+				>
+					<X size={16} />
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -138,6 +190,12 @@
 			<Music size="48" class="mx-auto mb-2 opacity-50" />
 			<p>No simFiles found</p>
 			<p class="text-sm">Upload some simFiles to get started</p>
+		</div>
+	{:else if filteredSimFiles.length === 0 && searchQuery.trim()}
+		<div class="py-8 text-center text-slate-500 dark:text-slate-400">
+			<Search size="48" class="mx-auto mb-2 opacity-50" />
+			<p>No simFiles found for "{searchQuery}"</p>
+			<p class="text-sm">Try a different search term</p>
 		</div>
 	{:else}
 		<div class="grid gap-3">
@@ -205,10 +263,10 @@
 		</div>
 
 		<!-- Pagination Component -->
-		{#if simFileState.userSimFiles.length > pageSize}
+		{#if filteredSimFiles.length > pageSize}
 			<div class="mt-6 flex justify-center">
 				<Pagination
-					data={simFileState.userSimFiles}
+					data={filteredSimFiles}
 					page={currentPage}
 					{pageSize}
 					onPageChange={handlePageChange}

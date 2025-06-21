@@ -19,6 +19,16 @@
 		workspaceStore.closeSongDetails();
 	};
 
+	// Helper function to create File object with custom properties
+	const createFileObject = (content: any, fileInfo: any) => {
+		const file = new File([content], fileInfo.fileName, {
+			lastModified: new Date(fileInfo.lastModified).getTime()
+		});
+		// Add the file path as a custom property for desktop uploads
+		(file as any).filePath = fileInfo.key;
+		return file;
+	};
+
 	// Load local files from the song folder
 	const loadLocalFiles = async () => {
 		if (!song.path) return;
@@ -49,31 +59,17 @@
 
 						// Check if there was an error reading the file
 						if (error) {
+							console.warn(`Could not read file ${fileInfo.fileName}:`, error);
 							// Create empty File object as fallback
-							const file = new File([''], fileInfo.fileName, {
-								lastModified: new Date(fileInfo.lastModified).getTime()
-							});
-							// Add the file path as a custom property for desktop uploads
-							(file as any).filePath = fileInfo.key;
-							return file;
+							return createFileObject('', fileInfo);
 						}
 
 						// Create File object using the content property
-						const file = new File([content], fileInfo.fileName, {
-							lastModified: new Date(fileInfo.lastModified).getTime()
-						});
-						// Add the file path as a custom property for desktop uploads
-						(file as any).filePath = fileInfo.key;
-						return file;
+						return createFileObject(content, fileInfo);
 					} catch (error) {
 						console.warn(`Could not read file ${fileInfo.fileName}:`, error);
 						// Create empty File object as fallback
-						const file = new File([''], fileInfo.fileName, {
-							lastModified: new Date(fileInfo.lastModified).getTime()
-						});
-						// Add the file path as a custom property for desktop uploads
-						(file as any).filePath = fileInfo.key;
-						return file;
+						return createFileObject('', fileInfo);
 					}
 				})
 			);

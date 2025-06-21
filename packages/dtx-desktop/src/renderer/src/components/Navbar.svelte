@@ -2,7 +2,6 @@
 	import { authStore } from '../stores/authStore';
 	import { authService } from '../services/authService';
 	import { simFileService } from '../services/simFileService';
-	import { workspaceStore } from '../stores/workspaceStore';
 	import { Music, LogOut, User, RefreshCw } from '@lucide/svelte';
 
 	let isClearing = $state(false);

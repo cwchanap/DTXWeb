@@ -152,59 +152,6 @@
 		}
 	}
 
-	// Upload a single file (desktop only)
-	async function uploadFile(fileName: string): Promise<boolean> {
-		if (!isDesktop) {
-			console.error('Upload functionality is only available in desktop mode');
-			return false;
-		}
-
-		try {
-			// Update status to uploading
-			uploadProgress[fileName] = 'uploading';
-
-			// Validate required parameters
-			if (!songFolderPath) {
-				throw new Error('Song folder path is required for desktop uploads');
-			}
-			if (!simfileId) {
-				throw new Error('Simfile ID is required for uploads');
-			}
-
-			// Use IPC to upload the file - main process will construct full path
-			const result = await (
-				window as {
-					electron?: {
-						ipcRenderer?: {
-							invoke: (
-								channel: string,
-								...args: unknown[]
-							) => Promise<{ success: boolean; error?: string }>;
-						};
-					};
-				}
-			).electron?.ipcRenderer?.invoke('upload-file', fileName, songFolderPath, simfileId);
-
-			if (!result || !result.success) {
-				throw new Error(result?.error || 'Upload failed');
-			}
-
-			// Update status to success
-			uploadProgress[fileName] = 'success';
-
-			// Refresh asset files to show updated cloud status
-			if (simfileId) {
-				await loadAssetFilesInternal();
-			}
-
-			return true;
-		} catch (error) {
-			console.error(`Error uploading ${fileName}:`, error);
-			uploadProgress[fileName] = 'error';
-			return false;
-		}
-	}
-
 	// Upload a single file without refresh (for bulk operations)
 	async function uploadFileBulk(fileName: string): Promise<boolean> {
 		if (!isDesktop) {
@@ -225,18 +172,7 @@
 			}
 
 			// Use IPC to upload the file - main process will construct full path
-			const result = await (
-				window as {
-					electron?: {
-						ipcRenderer?: {
-							invoke: (
-								channel: string,
-								...args: unknown[]
-							) => Promise<{ success: boolean; error?: string }>;
-						};
-					};
-				}
-			).electron?.ipcRenderer?.invoke('upload-file', fileName, songFolderPath, simfileId);
+			const result = await invokeIpc('upload-file', fileName, songFolderPath, simfileId);
 
 			if (!result || !result.success) {
 				throw new Error(result?.error || 'Upload failed');
@@ -353,6 +289,20 @@
 		}
 
 		return merged;
+	}
+
+	// Helper function to safely invoke IPC channels
+	function invokeIpc(
+		channel: string,
+		...args: unknown[]
+	): Promise<{ success: boolean; error?: string }> {
+		const ipcRenderer = (
+			window as { electron?: { ipcRenderer?: { invoke: typeof invokeIpc } } }
+		).electron?.ipcRenderer;
+		if (!ipcRenderer) {
+			throw new Error('IPC Renderer is not available');
+		}
+		return ipcRenderer.invoke(channel, ...args);
 	}
 </script>
 

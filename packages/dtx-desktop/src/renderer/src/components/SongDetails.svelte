@@ -172,19 +172,12 @@
 		// Set the current action
 		currentUploadAction = isPublished ? 'publish' : 'draft';
 
-		// Get current form values from the DOM to ensure we have the latest user input
-		const displayIdInput = document.getElementById('display_id') as HTMLInputElement;
-		const publishDateInput = document.getElementById('publish_date') as HTMLInputElement;
-		const downloadUrlInput = document.getElementById('download_link') as HTMLInputElement;
-		const videoPreviewUrlInput = document.getElementById(
-			'video_preview_link'
-		) as HTMLInputElement;
-
+		// Use reactive variables directly (no DOM access needed)
 		const currentFormValues = {
-			displayId: displayIdInput ? parseInt(displayIdInput.value) || 0 : displayId,
-			publishDate: publishDateInput ? publishDateInput.value : publishDate,
-			downloadUrl: downloadUrlInput ? downloadUrlInput.value : downloadUrl,
-			videoPreviewUrl: videoPreviewUrlInput ? videoPreviewUrlInput.value : videoPreviewUrl,
+			displayId: displayId,
+			publishDate: publishDate,
+			downloadUrl: downloadUrl,
+			videoPreviewUrl: videoPreviewUrl,
 			isPublished: isPublished
 		};
 
@@ -352,6 +345,10 @@
 		showEditor={false}
 		showPublishingControls={true}
 		showPublishedToggle={false}
+		bind:displayId
+		bind:publishDate
+		bind:downloadUrl
+		bind:videoPreviewUrl
 		on:onSave={handleUploadSong}
 	>
 		{#snippet header()}

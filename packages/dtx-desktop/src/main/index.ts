@@ -427,6 +427,91 @@ if (!gotTheLock) {
 			return await createSimfileRecord(simfileData);
 		});
 
+		// Handle file upload from desktop to cloud
+		ipcMain.handle(
+			'upload-file',
+			async (_event, fileName: string, filePath: string, simfileId: string) => {
+				try {
+					console.log(
+						'Uploading file:',
+						fileName,
+						'from path:',
+						filePath,
+						'to simfile:',
+						simfileId
+					);
+
+					// Get the current session to extract JWT token
+					const session = getCurrentSession();
+					const supabaseClient = getSupabaseClient();
+
+					if (!session || !supabaseClient) {
+						throw new Error('User not authenticated');
+					}
+
+					// Get fresh session to ensure token is valid
+					const {
+						data: { session: currentSession },
+						error: sessionError
+					} = await supabaseClient.auth.getSession();
+
+					if (sessionError || !currentSession) {
+						throw new Error('Failed to get valid session');
+					}
+
+					// Read the file from local filesystem
+					const fileBuffer = await fs.promises.readFile(filePath);
+
+					// Create a blob from the buffer
+					const blob = new Blob([fileBuffer]);
+
+					// Remove the first level directory name if present
+					let fileNameWithoutDir = fileName;
+					if (fileName.includes('/')) {
+						fileNameWithoutDir = fileName.split('/').slice(1).join('/');
+					}
+
+					// Create form data for the API
+					const formData = new FormData();
+					formData.append('file', blob, fileNameWithoutDir);
+					formData.append('simFileId', simfileId);
+
+					const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
+					if (!apiBaseUrl) {
+						throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
+					}
+
+					const url = `${apiBaseUrl}/api/simFile/upload`;
+					console.log('Uploading to:', url);
+
+					// Send the request
+					const response = await fetch(url, {
+						method: 'POST',
+						body: formData,
+						headers: {
+							Authorization: `Bearer ${currentSession.access_token}`
+						}
+					});
+
+					if (!response.ok) {
+						const errorText = await response.text();
+						console.error('Upload Error Response:', errorText);
+						throw new Error(`Upload failed: ${response.statusText} - ${errorText}`);
+					}
+
+					const result = await response.json();
+					console.log('Upload successful:', result);
+					return { success: true, data: result };
+				} catch (error) {
+					console.error('Error uploading file:', error);
+					return {
+						success: false,
+						error: error instanceof Error ? error.message : 'Unknown error'
+					};
+				}
+			}
+		);
+
 		// Register custom protocol handler (dtx://)
 		const PROTOCOL = 'dtx';
 

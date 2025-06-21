@@ -3,7 +3,6 @@
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { onMount } from 'svelte';
-	import { loadAssetFiles } from '../services/assetFileService';
 
 	interface Props {
 		song: TreeNode;
@@ -13,6 +12,7 @@
 
 	// State for local files
 	let localFiles = $state<File[]>([]);
+	let filePathMap = $state<Map<string, string>>(new Map()); // Maps filename to full path
 	let isLoadingFiles = $state(false);
 	let fileLoadError = $state<string | null>(null);
 
@@ -35,8 +35,14 @@
 			}
 
 			// Convert file info to File objects for compatibility with UploadedAssetFiles
+			// Also build a map of filename to file path for upload functionality
+			const newFilePathMap = new Map<string, string>();
+
 			const files = await Promise.all(
 				result.files.map(async (fileInfo: any) => {
+					// Store the file path for later use in uploads
+					newFilePathMap.set(fileInfo.fileName, fileInfo.key);
+
 					try {
 						// Read file content as buffer
 						const response = await window.electron.ipcRenderer.invoke(
@@ -52,26 +58,36 @@
 						if (error) {
 							console.warn(`Could not read file ${fileInfo.fileName}:`, error);
 							// Create empty File object as fallback
-							return new File([''], fileInfo.fileName, {
+							const file = new File([''], fileInfo.fileName, {
 								lastModified: new Date(fileInfo.lastModified).getTime()
 							});
+							// Add the file path as a custom property for desktop uploads
+							(file as any).filePath = fileInfo.key;
+							return file;
 						}
 
 						// Create File object using the content property
-						return new File([content], fileInfo.fileName, {
+						const file = new File([content], fileInfo.fileName, {
 							lastModified: new Date(fileInfo.lastModified).getTime()
 						});
+						// Add the file path as a custom property for desktop uploads
+						(file as any).filePath = fileInfo.key;
+						return file;
 					} catch (error) {
 						console.warn(`Could not read file ${fileInfo.fileName}:`, error);
 						// Create empty File object as fallback
-						return new File([''], fileInfo.fileName, {
+						const file = new File([''], fileInfo.fileName, {
 							lastModified: new Date(fileInfo.lastModified).getTime()
 						});
+						// Add the file path as a custom property for desktop uploads
+						(file as any).filePath = fileInfo.key;
+						return file;
 					}
 				})
 			);
 
 			localFiles = files;
+			filePathMap = newFilePathMap;
 		} catch (error) {
 			console.error('Error loading local files:', error);
 			fileLoadError = error instanceof Error ? error.message : 'Failed to load files';
@@ -120,14 +136,34 @@
 	// Track which action is being performed
 	let currentUploadAction: 'draft' | 'publish' | null = $state(null);
 
+	// Custom asset file loader for desktop that includes file paths
+	const loadAssetFilesForDesktop = async () => {
+		// For desktop, we need to convert our local file info to the expected format
+		// and include the file paths in the key property
+		return localFiles.map((file) => {
+			const filePath = filePathMap.get(file.name) || '';
+			return {
+				fileName: file.name,
+				size: file.size,
+				lastModified: new Date(file.lastModified).toISOString(),
+				key: filePath // This is crucial - the file path for uploads
+			};
+		});
+	};
+
 	// Handle upload for unlinked songs
 	const handleUploadSong = async (event: CustomEvent) => {
 		// Update reactive variables with current form values from ChartDetail
 		if (event.detail) {
-			displayId = event.detail.displayId || displayId;
-			publishDate = event.detail.publishDate || publishDate;
-			downloadUrl = event.detail.downloadUrl || downloadUrl;
-			videoPreviewUrl = event.detail.videoPreviewUrl || videoPreviewUrl;
+			displayId = event.detail.displayId !== undefined ? event.detail.displayId : displayId;
+			publishDate =
+				event.detail.publishDate !== undefined ? event.detail.publishDate : publishDate;
+			downloadUrl =
+				event.detail.downloadUrl !== undefined ? event.detail.downloadUrl : downloadUrl;
+			videoPreviewUrl =
+				event.detail.videoPreviewUrl !== undefined
+					? event.detail.videoPreviewUrl
+					: videoPreviewUrl;
 		}
 
 		// Override isPublished based on the current action
@@ -142,30 +178,30 @@
 		currentUploadAction = null;
 	};
 
-	// Function to get current form values from reactive variables
-	const getCurrentFormValues = () => {
-		return {
-			displayId: displayId,
-			publishDate: publishDate,
-			downloadUrl: downloadUrl,
-			videoPreviewUrl: videoPreviewUrl
-		};
-	};
-
 	// Function to trigger save with specific isPublished value
 	const triggerSave = (isPublished: boolean) => {
 		// Set the current action
 		currentUploadAction = isPublished ? 'publish' : 'draft';
 
-		// Get current form values from reactive variables
-		const formValues = getCurrentFormValues();
+		// Get current form values from the DOM to ensure we have the latest user input
+		const displayIdInput = document.getElementById('display_id') as HTMLInputElement;
+		const publishDateInput = document.getElementById('publish_date') as HTMLInputElement;
+		const downloadUrlInput = document.getElementById('download_link') as HTMLInputElement;
+		const videoPreviewUrlInput = document.getElementById(
+			'video_preview_link'
+		) as HTMLInputElement;
+
+		const currentFormValues = {
+			displayId: displayIdInput ? parseInt(displayIdInput.value) || 0 : displayId,
+			publishDate: publishDateInput ? publishDateInput.value : publishDate,
+			downloadUrl: downloadUrlInput ? downloadUrlInput.value : downloadUrl,
+			videoPreviewUrl: videoPreviewUrlInput ? videoPreviewUrlInput.value : videoPreviewUrl,
+			isPublished: isPublished
+		};
 
 		// Create event with the current form values
 		const event = new CustomEvent('onSave', {
-			detail: {
-				...formValues,
-				isPublished: isPublished
-			}
+			detail: currentFormValues
 		});
 		handleUploadSong(event);
 	};
@@ -181,23 +217,21 @@
 		uploadSuccess = false;
 
 		try {
-			const { displayId, publishDate, downloadUrl, videoPreviewUrl } = event.detail;
-
 			// Create plain object without any Svelte reactivity
 			const simfileData = JSON.parse(
 				JSON.stringify({
 					title: String(song.songTitle || song.name || ''),
 					artist: String(parsedLocalData.artist || ''),
 					bpm: Number(parsedLocalData.bpm || 0),
-					displayId: Number(displayId || 0),
+					displayId: Number(displayId),
 					isPublished: Boolean(
 						event.detail.isPublished !== undefined
 							? event.detail.isPublished
 							: isPublished
 					),
-					publishDate: String(publishDate || ''),
-					downloadUrl: String(downloadUrl || ''),
-					videoPreviewUrl: String(videoPreviewUrl || ''),
+					publishDate: String(publishDate),
+					downloadUrl: String(downloadUrl),
+					videoPreviewUrl: String(videoPreviewUrl),
 					levels: Array.isArray(parsedLocalData.levels)
 						? parsedLocalData.levels.map((l) => ({
 								label: String(l.label || ''),
@@ -303,11 +337,11 @@
 		title: song.songTitle || song.name,
 		artist: song.linkedSimFile?.artist || parsedLocalData.artist,
 		bpm: song.linkedSimFile?.bpm || parsedLocalData.bpm,
-		publish_date: song.linkedSimFile?.publish_date || new Date().toISOString().split('T')[0],
-		display_id: song.linkedSimFile?.display_id || 0,
+		publish_date: song.linkedSimFile?.publish_date || publishDate,
+		display_id: song.linkedSimFile?.display_id || displayId,
 		is_published: song.linkedSimFile?.is_published || false,
-		download_url: song.linkedSimFile?.download_url || '',
-		video_preview_url: song.linkedSimFile?.video_preview_url || '',
+		download_url: song.linkedSimFile?.download_url || downloadUrl,
+		video_preview_url: song.linkedSimFile?.video_preview_url || videoPreviewUrl,
 		dtx_files:
 			song.linkedSimFile?.dtx_files ||
 			(parsedLocalData.levels
@@ -321,10 +355,13 @@
 
 	// Initialize reactive form values from simfileData
 	$effect(() => {
-		displayId = simfileData.display_id || 0;
-		publishDate = simfileData.publish_date || new Date().toISOString().split('T')[0];
-		downloadUrl = simfileData.download_url || '';
-		videoPreviewUrl = simfileData.video_preview_url || '';
+		// Only update if we don't have a linked simfile (initial setup)
+		if (!song.linkedSimFile) {
+			displayId = simfileData.display_id || 0;
+			publishDate = simfileData.publish_date || new Date().toISOString().split('T')[0];
+			downloadUrl = simfileData.download_url || '';
+			videoPreviewUrl = simfileData.video_preview_url || '';
+		}
 	});
 </script>
 
@@ -465,7 +502,8 @@
 						supabaseClient={mockSupabaseClient}
 						simfileBucketUrl=""
 						cloudflareWorkerUrl=""
-						{loadAssetFiles}
+						loadAssetFiles={loadAssetFilesForDesktop}
+						isDesktop={true}
 					/>
 				{/if}
 			</div>

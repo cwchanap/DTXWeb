@@ -142,16 +142,14 @@ export async function createSimfileRecord(
 				});
 				const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
 
-				// Find preview image file (jpg, jpeg, png)
+				// Find preview image file (always preview.jpg)
 				const imageFile = files.find((file) => {
-					const ext = path.extname(file).toLowerCase();
-					return ext === '.jpg' || ext === '.jpeg' || ext === '.png';
+					return file.toLowerCase() === 'preview.jpg';
 				});
 
-				// Find sound preview file (mp3, wav)
+				// Find sound preview file (always preview.mp3)
 				const soundFile = files.find((file) => {
-					const ext = path.extname(file).toLowerCase();
-					return ext === '.mp3' || ext === '.wav';
+					return file.toLowerCase() === 'preview.mp3';
 				});
 
 				// Read image file if found
@@ -159,7 +157,6 @@ export async function createSimfileRecord(
 					const imagePath = path.join(simfileData.songPath, imageFile);
 					const imageBuffer = await fs.promises.readFile(imagePath);
 					previewBuffer = imageBuffer;
-					console.log(`Found and read preview image: ${imageFile}`);
 				}
 
 				// Read sound file if found
@@ -167,7 +164,6 @@ export async function createSimfileRecord(
 					const soundPath = path.join(simfileData.songPath, soundFile);
 					const soundBuffer = await fs.promises.readFile(soundPath);
 					soundPreviewBuffer = soundBuffer;
-					console.log(`Found and read sound preview: ${soundFile}`);
 				}
 			} catch (error) {
 				console.warn('Error reading preview files from directory:', error);
@@ -184,7 +180,8 @@ export async function createSimfileRecord(
 			const { error: uploadError } = await supabaseClient.storage
 				.from(PREVIEW_BUCKET_NAME)
 				.upload(previewUrl, previewBuffer, {
-					contentType: 'image/jpeg'
+					contentType: 'image/jpeg',
+					upsert: true
 				});
 
 			if (uploadError) {
@@ -201,7 +198,8 @@ export async function createSimfileRecord(
 			const { error: uploadError } = await supabaseClient.storage
 				.from(SOUND_PREVIEW_BUCKET_NAME)
 				.upload(soundPreviewUrl, soundPreviewBuffer, {
-					contentType: 'audio/mp3'
+					contentType: 'audio/mpeg',
+					upsert: true
 				});
 
 			if (uploadError) {
@@ -211,21 +209,23 @@ export async function createSimfileRecord(
 		}
 
 		// Insert simfile data into the database
+		const insertData = {
+			title: simfileData.title,
+			artist: simfileData.artist,
+			bpm: simfileData.bpm,
+			preview_url: previewUrl,
+			sound_preview_url: soundPreviewUrl,
+			user_id: user.id,
+			display_id: simfileData.displayId,
+			is_published: simfileData.isPublished,
+			publish_date: simfileData.publishDate,
+			download_url: simfileData.downloadUrl,
+			video_preview_url: simfileData.videoPreviewUrl
+		};
+
 		const { data: simFileData, error } = await supabaseClient
 			.from('simfiles')
-			.insert({
-				title: simfileData.title,
-				artist: simfileData.artist,
-				bpm: simfileData.bpm,
-				preview_url: previewUrl,
-				sound_preview_url: soundPreviewUrl,
-				user_id: user.id,
-				display_id: simfileData.displayId,
-				is_published: simfileData.isPublished,
-				publish_date: simfileData.publishDate,
-				download_url: simfileData.downloadUrl,
-				video_preview_url: simfileData.videoPreviewUrl
-			})
+			.insert(insertData)
 			.select()
 			.single();
 

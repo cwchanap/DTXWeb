@@ -111,11 +111,25 @@
 	let uploadError = $state<string | null>(null);
 	let uploadSuccess = $state(false);
 
+	// Reactive form values that mirror the ChartDetail component's state
+	let displayId = $state(0);
+	let publishDate = $state('');
+	let downloadUrl = $state('');
+	let videoPreviewUrl = $state('');
+
 	// Track which action is being performed
 	let currentUploadAction: 'draft' | 'publish' | null = $state(null);
 
 	// Handle upload for unlinked songs
 	const handleUploadSong = async (event: CustomEvent) => {
+		// Update reactive variables with current form values from ChartDetail
+		if (event.detail) {
+			displayId = event.detail.displayId || displayId;
+			publishDate = event.detail.publishDate || publishDate;
+			downloadUrl = event.detail.downloadUrl || downloadUrl;
+			videoPreviewUrl = event.detail.videoPreviewUrl || videoPreviewUrl;
+		}
+
 		// Override isPublished based on the current action
 		if (currentUploadAction) {
 			event.detail.isPublished = currentUploadAction === 'publish';
@@ -128,23 +142,13 @@
 		currentUploadAction = null;
 	};
 
-	// Function to get current form values from the DOM
+	// Function to get current form values from reactive variables
 	const getCurrentFormValues = () => {
-		// Query the form inputs directly from the DOM
-		const displayIdInput = document.getElementById('display_id') as HTMLInputElement;
-		const publishDateInput = document.getElementById('publish_date') as HTMLInputElement;
-		const downloadLinkInput = document.getElementById('download_link') as HTMLInputElement;
-		const videoPreviewLinkInput = document.getElementById(
-			'video_preview_link'
-		) as HTMLInputElement;
-
 		return {
-			displayId: displayIdInput ? parseInt(displayIdInput.value) || 0 : 0,
-			publishDate: publishDateInput
-				? publishDateInput.value
-				: new Date().toISOString().split('T')[0],
-			downloadUrl: downloadLinkInput ? downloadLinkInput.value : '',
-			videoPreviewUrl: videoPreviewLinkInput ? videoPreviewLinkInput.value : ''
+			displayId: displayId,
+			publishDate: publishDate,
+			downloadUrl: downloadUrl,
+			videoPreviewUrl: videoPreviewUrl
 		};
 	};
 
@@ -153,7 +157,7 @@
 		// Set the current action
 		currentUploadAction = isPublished ? 'publish' : 'draft';
 
-		// Get current form values from the DOM
+		// Get current form values from reactive variables
 		const formValues = getCurrentFormValues();
 
 		// Create event with the current form values
@@ -313,6 +317,14 @@
 					}))
 				: []),
 		...song.linkedSimFile
+	});
+
+	// Initialize reactive form values from simfileData
+	$effect(() => {
+		displayId = simfileData.display_id || 0;
+		publishDate = simfileData.publish_date || new Date().toISOString().split('T')[0];
+		downloadUrl = simfileData.download_url || '';
+		videoPreviewUrl = simfileData.video_preview_url || '';
 	});
 </script>
 

@@ -128,8 +128,9 @@ export async function readFile(
 			allowedRoot = path.dirname(resolvedPath);
 		}
 
-		// Ensure the resolved path starts with the allowed root directory
-		if (!resolvedPath.startsWith(allowedRoot + path.sep) && resolvedPath !== allowedRoot) {
+		// Use path.relative to check if resolvedPath is within allowedRoot
+		const relativePath = path.relative(allowedRoot, resolvedPath);
+		if (relativePath.startsWith('..') || relativePath === '..') {
 			console.warn(
 				'Path traversal attempt detected:',
 				filePath,

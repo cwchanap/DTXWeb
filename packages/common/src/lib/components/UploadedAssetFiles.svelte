@@ -10,16 +10,18 @@
 		supabaseClient,
 		simfileBucketUrl,
 		cloudflareWorkerUrl,
-		loadAssetFiles
+		loadAssetFiles,
+		isDesktop = false
 	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
 		supabaseClient: SupabaseClient;
 		simfileBucketUrl: string;
-		cloudflareWorkerUrl: string;
+		cloudflareWorkerUrl: string; // Still needed for web mode to display files, even if not uploading
 		loadAssetFiles: (
 			simfileId: string
 		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;
+		isDesktop?: boolean;
 	}>();
 
 	// Ensure userFiles is always an array of File objects
@@ -146,43 +148,45 @@
 		}
 	}
 
-	// Upload a single file
-	async function uploadFile(fileName: string, fileToUpload: File): Promise<boolean> {
+	// Upload a single file (desktop only)
+	async function uploadFile(fileName: string): Promise<boolean> {
+		if (!isDesktop) {
+			console.error('Upload functionality is only available in desktop mode');
+			return false;
+		}
+
 		try {
 			// Update status to uploading
 			uploadProgress[fileName] = 'uploading';
 
-			// Create a new file without the first level directory name
-			let fileNameWithoutDir = fileName;
-			// Check if the file name has a directory structure
-			if (fileName.includes('/')) {
-				// Remove the first directory level
-				fileNameWithoutDir = fileName.split('/').slice(1).join('/');
+			// Use Electron IPC for desktop uploads
+			// In desktop mode, userFiles are File objects created from local files
+			// First try to get file path from the userFile itself (custom property)
+			const fileToUpload = mergedFiles.find((f) => f.name === fileName)?.userFile;
+			let filePath = '';
+
+			if (fileToUpload && (fileToUpload as any).filePath) {
+				// Use the custom filePath property we added in desktop mode
+				filePath = (fileToUpload as any).filePath;
+			} else {
+				// Fallback to mergedFiles key (for cloud files)
+				const fileInfo = mergedFiles.find((f) => f.name === fileName);
+				if (!fileInfo || !fileInfo.key) {
+					throw new Error(`Could not find file path for ${fileName}`);
+				}
+				filePath = fileInfo.key;
 			}
 
-			// Create a new File object with the modified name
-			const modifiedFile = new File([fileToUpload], fileNameWithoutDir, {
-				type: fileToUpload.type
-			});
+			// Use IPC to upload the file
+			const result = await (window as any).electron?.ipcRenderer?.invoke(
+				'upload-file',
+				fileName,
+				filePath,
+				simfileId
+			);
 
-			// Create form data for the API
-			const formData = new FormData();
-			formData.append('file', modifiedFile);
-			formData.append('simFileId', simfileId);
-
-			const jwt = (await supabaseClient.auth.getSession())?.data.session?.access_token;
-
-			// Send the request
-			const response = await fetch(`${cloudflareWorkerUrl}/api/simFile/upload`, {
-				method: 'POST',
-				body: formData,
-				headers: {
-					Authorization: `Bearer ${jwt}`
-				}
-			});
-
-			if (!response.ok) {
-				throw new Error(`Upload failed: ${response.statusText}`);
+			if (!result || !result.success) {
+				throw new Error(result?.error || 'Upload failed');
 			}
 
 			// Update status to success
@@ -195,8 +199,13 @@
 		}
 	}
 
-	// Upload selected files
+	// Upload selected files (desktop only)
 	export async function uploadSelectedFiles() {
+		if (!isDesktop) {
+			console.error('Bulk upload functionality is only available in desktop mode');
+			return;
+		}
+
 		if (selectedFiles.size === 0 || !simfileId) return;
 
 		isUploading = true;
@@ -340,7 +349,7 @@
 								<tr
 									class="border-b border-gray-300 bg-gray-50 dark:border-slate-600 dark:bg-slate-700"
 								>
-									{#if simfileId}
+									{#if simfileId && isDesktop}
 										<th class="w-10 px-4 py-2 text-center">
 											<input
 												type="checkbox"
@@ -363,7 +372,7 @@
 										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
 										>Last Modified</th
 									>
-									{#if simfileId}
+									{#if simfileId && isDesktop}
 										<th
 											class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
 											>Status</th
@@ -385,7 +394,7 @@
 											? 'bg-yellow-50 dark:bg-yellow-900/20'
 											: ''}"
 									>
-										{#if simfileId}
+										{#if simfileId && isDesktop}
 											<td class="px-4 py-2 text-center">
 												{#if file.userFile}
 													<input
@@ -408,7 +417,7 @@
 										<td class="px-4 py-2 text-slate-600 dark:text-slate-400"
 											>{formatDate(file.lastModified)}</td
 										>
-										{#if simfileId}
+										{#if simfileId && isDesktop}
 											<td class="px-4 py-2">
 												{#if uploadProgress[file.name] === 'pending'}
 													<span
@@ -469,8 +478,8 @@
 							</tbody>
 						</table>
 
-						<!-- Bulk upload button - only show if simfileId exists -->
-						{#if simfileId && selectedFiles.size > 0}
+						<!-- Bulk upload button - only show if simfileId exists and in desktop mode -->
+						{#if simfileId && isDesktop && selectedFiles.size > 0}
 							<div class="absolute right-4 bottom-4">
 								<button
 									class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-800 dark:focus:ring-blue-400"

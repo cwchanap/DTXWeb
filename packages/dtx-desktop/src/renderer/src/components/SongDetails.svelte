@@ -12,7 +12,6 @@
 
 	// State for local files
 	let localFiles = $state<File[]>([]);
-	let filePathMap = $state<Map<string, string>>(new Map()); // Maps filename to full path
 	let isLoadingFiles = $state(false);
 	let fileLoadError = $state<string | null>(null);
 
@@ -35,14 +34,8 @@
 			}
 
 			// Convert file info to File objects for compatibility with UploadedAssetFiles
-			// Also build a map of filename to file path for upload functionality
-			const newFilePathMap = new Map<string, string>();
-
 			const files = await Promise.all(
 				result.files.map(async (fileInfo: any) => {
-					// Store the file path for later use in uploads
-					newFilePathMap.set(fileInfo.fileName, fileInfo.key);
-
 					try {
 						// Read file content as buffer
 						const response = await window.electron.ipcRenderer.invoke(
@@ -87,7 +80,6 @@
 			);
 
 			localFiles = files;
-			filePathMap = newFilePathMap;
 		} catch (error) {
 			console.error('Error loading local files:', error);
 			fileLoadError = error instanceof Error ? error.message : 'Failed to load files';
@@ -136,19 +128,21 @@
 	// Track which action is being performed
 	let currentUploadAction: 'draft' | 'publish' | null = $state(null);
 
-	// Custom asset file loader for desktop that includes file paths
-	const loadAssetFilesForDesktop = async () => {
-		// For desktop, we need to convert our local file info to the expected format
-		// and include the file paths in the key property
-		return localFiles.map((file) => {
-			const filePath = filePathMap.get(file.name) || '';
-			return {
-				fileName: file.name,
-				size: file.size,
-				lastModified: new Date(file.lastModified).toISOString(),
-				key: filePath // This is crucial - the file path for uploads
-			};
-		});
+	// Custom asset file loader for desktop
+	const loadAssetFilesForDesktop = async (simfileId: string) => {
+		// For unlinked songs (no simfileId), return empty array - we only show local files
+		if (!simfileId || simfileId === '') {
+			return [];
+		}
+
+		// For linked songs, fetch actual cloud files via IPC
+		try {
+			const result = await window.electron.ipcRenderer.invoke('load-asset-files', simfileId);
+			return result || [];
+		} catch (error) {
+			console.error('Error loading cloud asset files:', error);
+			return [];
+		}
 	};
 
 	// Handle upload for unlinked songs
@@ -504,6 +498,7 @@
 						cloudflareWorkerUrl=""
 						loadAssetFiles={loadAssetFilesForDesktop}
 						isDesktop={true}
+						songFolderPath={song.path || ''}
 					/>
 				{/if}
 			</div>

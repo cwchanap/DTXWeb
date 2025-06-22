@@ -1,15 +1,12 @@
 <script lang="ts">
 	import '../app.css';
 	import { Toaster } from '@skeletonlabs/skeleton-svelte';
-	import { inject } from '@vercel/analytics';
 	import { invalidate } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import toastStore from '@/lib/toaster';
 
 	let { data, children } = $props();
 	let { session, supabase } = $derived(data);
-
-	inject();
 
 	onMount(() => {
 		const { data } = supabase.auth.onAuthStateChange((_, newSession) => {

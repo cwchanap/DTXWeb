@@ -5,7 +5,6 @@
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { v4 as uuidv4 } from 'uuid';
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
-	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { loadAssetFiles } from '$lib/services/assetFileService';
@@ -121,11 +120,6 @@
 		}
 	}
 
-	function onFileUpload(newSimfile: SimFile, newHighestDtx: DTXFile) {
-		simfile = newSimfile;
-		highestDtx = newHighestDtx;
-	}
-
 	// Use a regular effect to avoid infinite loops
 	$effect(() => {
 		// Only run this once when shouldUploadFiles becomes true
@@ -143,10 +137,7 @@
 </script>
 
 <div class="container mx-auto flex flex-col p-4" style="height: 90vh;">
-	{#if !simfile || !highestDtx}
-		<h1 class="mb-4 text-2xl font-bold">Upload Folders</h1>
-		<ChartFolderUpload large={true} {onFileUpload} />
-	{:else}
+	{#if simfile && highestDtx}
 		<h1 class="mb-4 text-2xl font-bold">Uploaded Folders</h1>
 		<ChartDetail
 			simfile={{

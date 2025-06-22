@@ -3,7 +3,10 @@
 	"main": ".svelte-kit/cloudflare/_worker.js",
 	"compatibility_date": "2025-01-01",
 	"compatibility_flags": ["nodejs_compat"],
-	"route": "dtx.hapadona.com/*",
+	"route": {
+		"pattern": "dtx.hapadona.com",
+		"custom_domain": true
+	},
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
@@ -18,7 +21,10 @@
 	"env": {
 		"preview": {
 			"name": "dtx-web-preview",
-			"route": "preview-dtx.hapadona.com/*",
+			"route": {
+				"pattern": "preview-dtx.hapadona.com",
+				"custom_domain": true
+			},
 			"main": ".svelte-kit/cloudflare/_worker.js",
 			"compatibility_date": "2025-01-01",
 			"compatibility_flags": ["nodejs_compat"],

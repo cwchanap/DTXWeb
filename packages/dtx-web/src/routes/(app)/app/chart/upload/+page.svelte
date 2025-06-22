@@ -7,7 +7,7 @@
 	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import ImageAudio from '$lib/components/ImageAudio.svelte';
-	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_CLOUDFARE_WORKER_URL } from '$env/static/public';
+	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { loadAssetFiles } from '$lib/services/assetFileService';
 
 	let { data } = $props();
@@ -216,7 +216,6 @@
 						userFiles={simfile.files}
 						supabaseClient={supabase}
 						simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
-						cloudflareWorkerUrl={PUBLIC_CLOUDFARE_WORKER_URL}
 						{loadAssetFiles}
 					/>
 				{/if}

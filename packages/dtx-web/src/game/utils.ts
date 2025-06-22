@@ -1,4 +1,3 @@
-import { PUBLIC_SKIN_BUCKET_URL } from '$env/static/public';
 import { AssetName } from './interface';
 
 /**
@@ -12,10 +11,5 @@ export function getAssetPath(assetName: AssetName): string {
 		[AssetName.DRUM_CHIPS]: `default/Graphics/7_chips_drums.png`
 	};
 
-	// Check if we're in production environment
-	const isProd = import.meta.env.PROD;
-
-	const baseUrl = isProd ? PUBLIC_SKIN_BUCKET_URL : '/skin';
-
-	return `${baseUrl}/${assetsMap[assetName]}`;
+	return `skin/${assetsMap[assetName]}`;
 }

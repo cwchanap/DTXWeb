@@ -10,7 +10,9 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .temp
 .vercel
+.wrangler
 
 CLAUDE.md
 sample/
 static/skin/
+worker-configuration.d.ts

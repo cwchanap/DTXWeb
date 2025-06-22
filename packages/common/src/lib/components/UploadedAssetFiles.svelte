@@ -10,8 +10,6 @@
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		supabaseClient: _supabaseClient,
 		simfileBucketUrl,
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		cloudflareWorkerUrl: _cloudflareWorkerUrl,
 		loadAssetFiles,
 		isDesktop = false,
 		songFolderPath = ''
@@ -20,7 +18,6 @@
 		userFiles?: Array<File>;
 		supabaseClient: SupabaseClient;
 		simfileBucketUrl: string;
-		cloudflareWorkerUrl: string; // Still needed for web mode to display files, even if not uploading
 		loadAssetFiles: (
 			simfileId: string
 		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;

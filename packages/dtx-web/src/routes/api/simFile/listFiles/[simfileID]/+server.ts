@@ -1,10 +1,13 @@
-import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { json } from '@sveltejs/kit';
-import { DTXFILE_BUCKET_NAME } from '@/constant';
-import s3 from '$lib/server/s3Client';
 import logger from '$lib/server/logger';
 
-export async function GET({ params }: { params: { simfileID: string } }) {
+export async function GET({
+	params,
+	platform
+}: {
+	params: { simfileID: string };
+	platform: App.Platform;
+}) {
 	const { simfileID } = params;
 
 	if (!simfileID) {
@@ -14,28 +17,28 @@ export async function GET({ params }: { params: { simfileID: string } }) {
 	try {
 		logger.info(`Listing files for simfile: ${simfileID}`);
 
-		// Create the command to list objects with the simfileID as prefix
-		const command = new ListObjectsV2Command({
-			Bucket: DTXFILE_BUCKET_NAME,
-			Prefix: simfileID + '/', // Add trailing slash to ensure we get only files in this directory
-			Delimiter: '/' // Use delimiter to get only direct children
-		});
+		// Access the R2 bucket binding directly (same as other APIs)
+		const bucket = platform?.env?.DTXFILE_BUCKET;
+		if (!bucket) {
+			logger.error('DTXFILE_BUCKET binding not available');
+			return json({ error: 'Bucket not available' }, { status: 500 });
+		}
 
-		// Execute the command
-		const response = await s3.send(command);
+		// List objects using R2 bucket binding with simfileID as prefix
+		const objects = await bucket.list({ prefix: simfileID + '/' });
 
-		// Extract file names from the response
-		const files = (response.Contents || [])
+		// Extract file names from the response (same logic as before)
+		const files = (objects.objects || [])
 			.map((file) => {
 				// Remove the prefix from the key to get just the filename
-				const key = file.Key || '';
+				const key = file.key || '';
 				const fileName = key.replace(`${simfileID}/`, '');
 
 				return {
 					fileName,
 					key,
-					size: file.Size,
-					lastModified: file.LastModified
+					size: file.size,
+					lastModified: file.uploaded
 				};
 			})
 			.filter((file) => file.fileName !== ''); // Filter out the directory itself if it appears

@@ -9,14 +9,19 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest --run",
-		"prepare": "ln -sf ../../.env .env"
+		"prepare": "ln -sf ../../.env .env",
+		"wrangler:dev": "wrangler dev",
+		"deploy:prod": "npm run build && wrangler deploy",
+		"deploy:preview": "npm run build && wrangler deploy --env preview",
+		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20250620.0",
 		"@iconify/svelte": "^4.2.0",
 		"@lucide/svelte": "^0.511.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
-		"@sveltejs/adapter-vercel": "^5.7.0",
+		"@sveltejs/adapter-cloudflare": "^7.0.4",
 		"@sveltejs/kit": "^2.20.7",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
 		"@tailwindcss/vite": "^4.1.4",
@@ -37,10 +42,10 @@
 	"type": "module",
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.787.0",
+		"@dtx/common": "*",
 		"@supabase/ssr": "^0.6.1",
 		"@supabase/supabase-js": "^2.49.4",
 		"@vercel/analytics": "^1.5.0",
-		"@dtx/common": "*",
 		"dayjs": "^1.11.13",
 		"jszip": "^3.10.1",
 		"phaser": "^3.88.2",
@@ -48,7 +53,7 @@
 		"uuid": "^11.1.0",
 		"winston": "^3.17.0",
 		"xa_decoder": "^0.1.2",
-		"zod": "^3.24.3"
+		"zod": "^3.25.67"
 	},
 	"optionalDependencies": {
 		"@rollup/rollup-linux-x64-gnu": "^4.41.0",

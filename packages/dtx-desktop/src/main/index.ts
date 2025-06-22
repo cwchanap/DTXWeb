@@ -491,15 +491,13 @@ if (!gotTheLock) {
 					formData.append('file', new File([fileBuffer], fileNameWithoutDir));
 					formData.append('simFileId', simfileId);
 
-					// Use Cloudflare Worker URL for uploads
-					const workerUrl = import.meta.env.PUBLIC_CLOUDFARE_WORKER_URL || '';
-					if (!workerUrl) {
-						throw new Error(
-							'PUBLIC_CLOUDFARE_WORKER_URL environment variable is not set'
-						);
+					// Use DTX Server URL for uploads (now that upload API is migrated to SvelteKit)
+					const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
+					if (!apiBaseUrl) {
+						throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
 					}
 
-					const url = `${workerUrl}/api/simFile/upload`;
+					const url = `${apiBaseUrl}/api/simFile/upload`;
 					console.log('Uploading to:', url);
 
 					// Send the request

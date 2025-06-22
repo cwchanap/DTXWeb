@@ -3,6 +3,7 @@
 
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 import type { Database } from '@dtx/common'; // import shared types
+import { R2Bucket } from '@cloudflare/workers-types';
 
 declare global {
 	namespace App {
@@ -17,7 +18,11 @@ declare global {
 			session: Session | null;
 		}
 		// interface PageState {}
-		// interface Platform {}
+		interface Platform {
+			env?: {
+				DTXFILE_BUCKET: R2Bucket;
+			};
+		}
 	}
 }
 declare namespace svelte.JSX {

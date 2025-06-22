@@ -15,7 +15,6 @@ This project is a monorepo project managed with npm workspace. It contains 4 pac
 - `common`: Svelte component library for common use accross workspace
 - `dtx-desktop`: Destkop application built with svelte and electron
 - `dtx-web`: Web application built with sveltekit
-- `worker`: Cloudfare worker built with hono and typescript
 
 We are using supabase for authetication.
 

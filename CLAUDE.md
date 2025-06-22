@@ -9,7 +9,6 @@ Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monore
 - `packages/common` - Shared Svelte component library and DTX file parsing
 - `packages/dtx-web` - SvelteKit web application (main app)
 - `packages/dtx-desktop` - Electron desktop application
-- `packages/worker` - Cloudflare Worker API services
 
 ## Development Commands
 

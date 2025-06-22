@@ -1,6 +1,6 @@
 {
 	"permissions": {
-		"allow": ["Bash(npm run:*)", "Bash(mkdir:*)"],
+		"allow": ["Bash(npm run:*)"],
 		"deny": []
 	}
 }

@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import type { Tables } from '@dtx/common';
 	import { goto } from '$app/navigation';
-	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import type { SimFile, DTXFile } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
@@ -86,21 +85,6 @@
 			});
 		}
 	}
-
-	function onFileUpload(newSimfile: SimFile, newHighestDtx: DTXFile) {
-		updatedSimfile = newSimfile;
-		updatedHighestDtx = newHighestDtx;
-		if (simfile) {
-			simfile.bpm = newHighestDtx.bpm;
-			simfile.artist = newHighestDtx.artist;
-			simfile.title = newSimfile.title;
-		}
-
-		// Update the user uploaded files
-		if (newSimfile && newSimfile.files) {
-			userUploadedFiles = newSimfile.files;
-		}
-	}
 </script>
 
 <div class="container mx-auto p-4">
@@ -123,21 +107,6 @@
 					e.detail.videoPreviewUrl
 				)}
 		>
-			{#snippet folder_upload()}
-				<div class="col-span-1 flex items-center">
-					<label for="folder_upload" class="mr-2 mb-2 block">Upload Folder:</label>
-				</div>
-				<div class="col-span-7">
-					<ChartFolderUpload {onFileUpload}>
-						{#snippet button()}
-							<button class="btn preset-filled">
-								<IconUpload class="size-4" />
-								<span>Select File</span>
-							</button>
-						{/snippet}
-					</ChartFolderUpload>
-				</div>
-			{/snippet}
 			{#snippet asset_files()}
 				<UploadedAssetFiles
 					simfileId={simfile?.id?.toString() || ''}

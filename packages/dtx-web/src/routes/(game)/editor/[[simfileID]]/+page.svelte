@@ -9,7 +9,6 @@
 	import { MainMenu } from '@/game/scenes/MainMenu';
 	import SoundTab from '$lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
-	import ChartFolderUpload from '$lib/components/ChartFolderUpload.svelte';
 	import EventType from '@/game/EventType';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import store from '$lib/store';
@@ -44,20 +43,6 @@
 
 	function newFile() {
 		store.currentDtxFile.set(new DTXFile());
-	}
-
-	async function onFileUpload(simfile: SimFile, highestDtx: DTXFile) {
-		await highestDtx.parse();
-		const notes = highestDtx.parseNotes();
-		const bpmNotes = highestDtx.parseBPMChanges();
-		const soundChips = highestDtx.parseSoundChips();
-		soundChips.forEach((soundChip) => {
-			soundChip.file = simfile.files.find((f) => f.name === soundChip.fileName);
-		});
-		store.currentDtxFile.set(highestDtx);
-		store.currentSimfile.set(simfile);
-		store.currentSoundChip.set(soundChips);
-		EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 	}
 
 	onMount(async () => {
@@ -117,11 +102,6 @@
 					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={newFile}
 						>New</button
 					>
-					<ChartFolderUpload {onFileUpload}>
-						{#snippet button()}
-							<button class="px-4 py-2 text-left hover:bg-gray-100">Import</button>
-						{/snippet}
-					</ChartFolderUpload>
 					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={exportFile}
 						>Export</button
 					>

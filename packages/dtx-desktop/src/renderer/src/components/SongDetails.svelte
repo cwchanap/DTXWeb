@@ -479,7 +479,6 @@
 						userFiles={localFiles}
 						supabaseClient={mockSupabaseClient}
 						simfileBucketUrl=""
-						cloudflareWorkerUrl=""
 						loadAssetFiles={loadAssetFilesForDesktop}
 						isDesktop={true}
 						songFolderPath={song.path || ''}

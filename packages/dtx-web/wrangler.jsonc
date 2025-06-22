@@ -18,6 +18,11 @@
 		}
 	],
 	"keep_vars": true,
+	"observability": {
+		"logs": {
+			"enabled": true
+		}
+	},
 	"env": {
 		"preview": {
 			"name": "dtx-web-preview",

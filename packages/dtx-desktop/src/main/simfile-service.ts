@@ -1,4 +1,4 @@
-import { type SimfileWithDtx } from '@dtx/common';
+import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common';
 import { ensureSupabaseAuth, getSupabaseClient } from './auth';
 import fs from 'fs';
 import path from 'path';
@@ -260,6 +260,191 @@ export async function createSimfileRecord(
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
+		};
+	}
+}
+
+// DTX parsing result interface
+export interface DtxParseResult {
+	bpm: number | undefined;
+	artist: string | undefined;
+	levels: { label: string; level: number }[];
+}
+
+// Parse DTX files to extract metadata
+export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult> {
+	try {
+		console.log('Parsing DTX files in folder:', folderPath);
+
+		// First, try to find and parse SET.def file for level labels
+		const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+		const setDefFile = entries.find(
+			(entry) => entry.isFile() && entry.name.toLowerCase() === 'set.def'
+		);
+
+		let levelLabelsFromSetDef: Map<string, string> = new Map(); // Map DTX filename to label
+
+		if (setDefFile) {
+			console.log('Found SET.def file, parsing level labels directly');
+			try {
+				const setDefPath = path.join(folderPath, setDefFile.name);
+				const setDefBuffer = await fs.promises.readFile(setDefPath);
+				const tempFile = new File([setDefBuffer], setDefFile.name);
+
+				// SET.def file validation callback
+				const validateSetDefContent = (content: string): boolean => {
+					return (
+						content.includes('#L') || // Level definitions
+						content.includes('.dtx')
+					);
+				};
+
+				const setDefContent = await decodeFileWithEncodingDetection(
+					tempFile,
+					validateSetDefContent,
+					['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'],
+					'utf-8'
+				);
+
+				// Parse SET.def content manually to extract filename-to-label mappings
+				const lines = setDefContent.split(/\r?\n/);
+
+				for (let level = 1; level <= 5; level++) {
+					const labelLine = lines.find((line: string) =>
+						line.startsWith(`#L${level}LABEL `)
+					);
+					const fileLine = lines.find((line: string) =>
+						line.startsWith(`#L${level}FILE `)
+					);
+
+					if (labelLine && fileLine) {
+						const label = labelLine.split(' ')[1];
+						const fileName = fileLine.split(' ')[1];
+
+						if (label && fileName) {
+							levelLabelsFromSetDef.set(fileName.toLowerCase(), label);
+						}
+					}
+				}
+
+				console.log(
+					'Level labels from SET.def:',
+					Object.fromEntries(levelLabelsFromSetDef)
+				);
+			} catch (error) {
+				console.warn(
+					'Failed to parse SET.def file for labels, will use DTX filenames:',
+					error
+				);
+			}
+		}
+
+		// Parse individual DTX files for metadata (BPM, artist, levels)
+		console.log('Parsing individual DTX files for metadata');
+		const dtxFiles = entries
+			.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.dtx'))
+			.map((entry) => entry.name);
+
+		console.log('Found DTX files:', dtxFiles);
+
+		if (dtxFiles.length === 0) {
+			return {
+				bpm: undefined,
+				artist: undefined,
+				levels: []
+			};
+		}
+
+		let parsedBpm: number | undefined;
+		let parsedArtist: string | undefined;
+		const parsedLevels: { label: string; level: number }[] = [];
+
+		// Parse each DTX file
+		for (const fileName of dtxFiles) {
+			try {
+				const filePath = path.join(folderPath, fileName);
+				const fileBuffer = await fs.promises.readFile(filePath);
+
+				// Create a temporary File object from the buffer for the utility function
+				const tempFile = new File([fileBuffer], fileName);
+
+				// DTX file validation callback
+				const validateDtxContent = (content: string): boolean => {
+					return (
+						content.includes('#TITLE:') ||
+						content.includes('#ARTIST:') ||
+						content.includes('#BPM:') ||
+						content.includes('#WAV')
+					);
+				};
+
+				const fileContent = await decodeFileWithEncodingDetection(
+					tempFile,
+					validateDtxContent,
+					['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'],
+					'shift-jis'
+				);
+
+				const dtx = new DTXFile(fileContent);
+				await dtx.parse();
+
+				console.log(`Parsed DTX file ${fileName}:`, {
+					title: dtx.title,
+					artist: dtx.artist,
+					level: dtx.level,
+					bpm: dtx.bpm
+				});
+
+				// Use the first valid parsed values for BPM and artist from DTXFile
+				if (!parsedBpm && dtx.bpm) {
+					parsedBpm = dtx.bpm;
+				}
+				if (!parsedArtist && dtx.artist) {
+					parsedArtist = dtx.artist;
+				}
+
+				// Add level information with proper label logic
+				if (dtx.level) {
+					// First try to get label from SET.def mapping
+					const labelFromSetDef = levelLabelsFromSetDef.get(fileName.toLowerCase());
+
+					let label: string;
+					if (labelFromSetDef) {
+						// Use the proper label from SET.def
+						label = labelFromSetDef;
+						console.log(`Using SET.def label for ${fileName}: ${label}`);
+					} else {
+						// Fallback to improved filename-based label
+						const baseFileName = fileName.replace('.dtx', '');
+						label = baseFileName.toUpperCase();
+						console.log(`Using filename-based label for ${fileName}: ${label}`);
+					}
+
+					parsedLevels.push({
+						label: label,
+						level: dtx.level
+					});
+				}
+			} catch (error) {
+				console.warn(`Failed to parse DTX file ${fileName}:`, error);
+				continue;
+			}
+		}
+
+		const result = {
+			bpm: parsedBpm,
+			artist: parsedArtist,
+			levels: parsedLevels
+		};
+
+		console.log('Parsed DTX metadata:', result);
+		return result;
+	} catch (error) {
+		console.error('Error parsing DTX files:', error);
+		return {
+			bpm: undefined,
+			artist: undefined,
+			levels: []
 		};
 	}
 }

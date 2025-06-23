@@ -6,7 +6,6 @@
 	import type { SimFile, DTXFile } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
-	import IconUpload from '@lucide/svelte/icons/upload';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { loadAssetFiles } from '$lib/services/assetFileService';
 

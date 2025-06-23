@@ -282,7 +282,7 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 			(entry) => entry.isFile() && entry.name.toLowerCase() === 'set.def'
 		);
 
-		let levelLabelsFromSetDef: Map<string, string> = new Map(); // Map DTX filename to label
+		const levelLabelsFromSetDef: Map<string, string> = new Map(); // Map DTX filename to label
 
 		if (setDefFile) {
 			console.log('Found SET.def file, parsing level labels directly');

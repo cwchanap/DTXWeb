@@ -262,30 +262,60 @@
 			{/each}
 		</div>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border">
-			<table class="w-full table-auto">
-				<thead class="bg-gray-50 text-xs text-gray-700 uppercase">
-					<tr>
-						<th class="px-4 py-3 text-center">ID</th>
-						<th class="px-4 py-3">Title</th>
-						<th class="px-4 py-3">Artist</th>
-						<th class="px-4 py-3 text-center">BPM</th>
-						<th class="px-4 py-3 text-center">Publish Date</th>
-						<th class="px-4 py-3 text-center">
-							Level
-							<div class="text-[10px] font-normal text-gray-500 normal-case">
-								bas/adv/ext/mas/other
+		<div class="grid gap-3">
+			{#each filteredItems as item (item.id)}
+				<div
+					class="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
+				>
+					<div class="flex items-start justify-between">
+						<div class="flex-1">
+							<h3 class="mb-1 font-semibold text-gray-800">
+								{item.display_id}. {item.title}
+							</h3>
+							<div class="flex items-center gap-4 text-sm text-gray-600">
+								<div class="flex items-center gap-1">
+									<span>Artist:</span>
+									{item.artist}
+								</div>
+								<div class="flex items-center gap-1">
+									<span>BPM:</span>
+									{item.bpm}
+								</div>
+								{#if item.publish_date}
+									<div class="flex items-center gap-1">
+										<span>Published:</span>
+										{new Date(item.publish_date).toLocaleDateString()}
+									</div>
+								{/if}
 							</div>
-						</th>
-						<th class="px-4 py-3 text-center">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each filteredItems as item (item.id)}
-						<ChartListTableItem {item} {isBlog} {togglePublishChart} {onFileDelete} />
-					{/each}
-				</tbody>
-			</table>
+							{#if item.dtx_files && item.dtx_files.length > 0}
+								<div class="mt-2">
+									<span class="text-xs text-gray-500">
+										Levels: {item.dtx_files
+											.slice()
+											.sort((a, b) => (a.level || 0) - (b.level || 0))
+											.map((file) =>
+												((file.level || 0) > 100
+													? (file.level || 0) / 100
+													: (file.level || 0) / 10
+												).toFixed(2)
+											)
+											.join(' / ')}
+									</span>
+								</div>
+							{/if}
+						</div>
+						<div class="flex items-center gap-2">
+							<ChartListTableItem
+								{item}
+								{isBlog}
+								{togglePublishChart}
+								{onFileDelete}
+							/>
+						</div>
+					</div>
+				</div>
+			{/each}
 		</div>
 	{/if}
 	<!-- Skeleton UI Pagination Component -->

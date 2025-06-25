@@ -427,7 +427,6 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 				}
 			} catch (error) {
 				console.warn(`Failed to parse DTX file ${fileName}:`, error);
-				continue;
 			}
 		}
 

@@ -60,7 +60,7 @@
 	let displayArtist = $derived(simfile?.artist);
 	let displayLevels = $derived(() => {
 		if (dtxFiles.length > 0) {
-			return dtxFiles.sort((a, b) => (a.level || 0) - (b.level || 0));
+			return dtxFiles.slice().sort((a, b) => (a.level || 0) - (b.level || 0));
 		}
 		return [];
 	});

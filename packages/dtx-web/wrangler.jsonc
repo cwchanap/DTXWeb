@@ -22,33 +22,5 @@
 		"logs": {
 			"enabled": true
 		}
-	},
-	"env": {
-		"preview": {
-			"name": "dtx-web-preview",
-			"route": {
-				"pattern": "preview-dtx.hapadona.com",
-				"custom_domain": true
-			},
-			"main": ".svelte-kit/cloudflare/_worker.js",
-			"compatibility_date": "2025-01-01",
-			"compatibility_flags": ["nodejs_compat"],
-			"assets": {
-				"binding": "ASSETS",
-				"directory": ".svelte-kit/cloudflare"
-			},
-			"keep_vars": true,
-			"observability": {
-				"logs": {
-					"enabled": true
-				}
-			},
-			"r2_buckets": [
-				{
-					"binding": "DTXFILE_BUCKET",
-					"bucket_name": "simfile-dtx"
-				}
-			]
-		}
 	}
 }

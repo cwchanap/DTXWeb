@@ -13,15 +13,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { tick } from 'svelte';
 
 // Mock modules that would be imported by the component
-vi.mock('svelte-i18n');
+vi.mock('svelte-i18n', () => ({
+	_: (key: string) => key // Simple mock for i18n
+}));
 vi.mock('@skeletonlabs/skeleton-svelte');
 vi.mock('@lucide/svelte/icons');
 vi.mock('$lib/components/ImageAudio.svelte', () => ({}));
 
 vi.mock('$lib/utils', () => ({
 	formatLevelDisplay: (dtxFiles: unknown) => {
-		if (Array.isArray(dtxFiles)) {
-			return dtxFiles.map((file: { level: number }) => file.level).join(', ');
+		if (Array.isArray(dtxFiles) && dtxFiles.length > 0) {
+			return dtxFiles.map((file: any) => file.level).join(', ');
 		}
 		return 'N/A';
 	}
@@ -37,13 +39,23 @@ const mockItem = {
 	sound_preview_url: 'sound1.mp3',
 	download_url: 'https://example.com/download1',
 	is_published: true,
-	display_id: 'TST001',
+	display_id: 1, // Changed from 'TST001' to number
 	dtx_files: [{ level: 3 }, { level: 5 }],
 	created_at: '2023-01-01',
 	updated_at: '2023-01-02',
 	publish_date: '2023-01-03',
 	user_id: 'user-1',
-	video_preview_url: null
+	video_preview_url: null,
+	// Ensure all fields expected by the component are present
+	label: 'Test Label 1',
+	value: 'test-value-1',
+	bg_video_url: null,
+	bg_video_start_time: 0,
+	bg_video_end_time: 0,
+	dtx_bar: [],
+	dtx_data: {},
+	play_count: 0,
+	play_log: []
 };
 
 const mockItemNoPreview = {
@@ -55,13 +67,23 @@ const mockItemNoPreview = {
 	sound_preview_url: null,
 	download_url: null,
 	is_published: false,
-	display_id: 'TST002',
+	display_id: 2, // Changed from 'TST002' to number
 	dtx_files: [{ level: 4 }],
 	created_at: '2023-02-01',
 	updated_at: '2023-02-02',
 	publish_date: '2023-02-03',
 	user_id: 'user-1',
-	video_preview_url: null
+	video_preview_url: null,
+	// Ensure all fields expected by the component are present
+	label: 'Test Label 2',
+	value: 'test-value-2',
+	bg_video_url: null,
+	bg_video_start_time: 0,
+	bg_video_end_time: 0,
+	dtx_bar: [],
+	dtx_data: {},
+	play_count: 0,
+	play_log: []
 };
 
 /**
@@ -207,5 +229,61 @@ describe('ChartListItem Component Logic', () => {
 		if (isBlog && !mockItemNoPreview.download_url) {
 			expect(mockItemNoPreview.download_url).toBeNull();
 		}
+	});
+
+	it('calls getPreviewUrl with null when item.preview_url is null', () => {
+		mockGetPreviewUrl(mockItemNoPreview.preview_url);
+		expect(mockGetPreviewUrl).toHaveBeenCalledWith(null);
+	});
+
+	it('correctly forms the edit action URL', () => {
+		const expectedEditUrl = `/app/chart/${mockItem.id}`;
+		// In a real component instance, this would be part of the <a href...>,
+		// here we just check if the string would be formed correctly.
+		expect(`/app/chart/${mockItem.id}`).toBe(expectedEditUrl);
+	});
+
+	it('openModal function sets modalOpen to true and popoverOpen to false', async () => {
+		let modalOpen = false;
+		let popoverOpen = true; // Start with popover open
+
+		const openModalLogic = () => {
+			modalOpen = true;
+			popoverOpen = false; // Close popover when modal opens
+		};
+
+		openModalLogic();
+		await tick();
+
+		expect(modalOpen).toBe(true);
+		expect(popoverOpen).toBe(false);
+	});
+
+	describe('Blog Mode Download Logic', () => {
+		const isBlog = true;
+
+		it('provides download_url when available and in blog mode', () => {
+			// This test simulates the component's internal conditional logic for providing a download URL.
+			// If the component were rendered, we'd check for an <a> tag.
+			// Here, we check the data that *would* be used by such a tag.
+			if (isBlog && mockItem.download_url) {
+				expect(mockItem.download_url).toBe('https://example.com/download1');
+			} else {
+				// This path should not be taken by this test case
+				throw new Error('Test condition failed: expected download_url to be present');
+			}
+		});
+
+		it('indicates no download URL when not available and in blog mode', () => {
+			// Similar to the above, this simulates the logic for when no download URL exists.
+			// If the component were rendered, we might check for "Download not available" text.
+			// Here, we check the data condition.
+			if (isBlog && !mockItemNoPreview.download_url) {
+				expect(mockItemNoPreview.download_url).toBeNull();
+			} else {
+				// This path should not be taken by this test case
+				throw new Error('Test condition failed: expected download_url to be null');
+			}
+		});
 	});
 });

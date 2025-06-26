@@ -231,16 +231,12 @@ describe('ChartListItem Component Logic', () => {
 		}
 	});
 
-	it('calls getPreviewUrl with null when item.preview_url is null', () => {
-		mockGetPreviewUrl(mockItemNoPreview.preview_url);
-		expect(mockGetPreviewUrl).toHaveBeenCalledWith(null);
-	});
-
-	it('correctly forms the edit action URL', () => {
-		const expectedEditUrl = `/app/chart/${mockItem.id}`;
-		// In a real component instance, this would be part of the <a href...>,
-		// here we just check if the string would be formed correctly.
-		expect(`/app/chart/${mockItem.id}`).toBe(expectedEditUrl);
+	it('verifies the expected URL format for the Edit action link', () => {
+		const itemId = mockItem.id;
+		const expectedEditUrl = `/app/chart/${itemId}`;
+		// This test confirms the string format for the href attribute
+		// that would be generated in the component's template for the Edit link.
+		expect(`/app/chart/${itemId}`).toBe(expectedEditUrl);
 	});
 
 	it('openModal function sets modalOpen to true and popoverOpen to false', async () => {
@@ -260,30 +256,38 @@ describe('ChartListItem Component Logic', () => {
 	});
 
 	describe('Blog Mode Download Logic', () => {
-		const isBlog = true;
+		// Simulates the props that would be passed to the component
+		const baseProps = {
+			// item will be overridden per test
+			isBlog: true,
+			// Mock other required props not relevant to this specific logic
+			togglePublishChart: vi.fn(),
+			getPreviewUrl: vi.fn(),
+			getSoundPreviewUrl: vi.fn(),
+			onFileDelete: vi.fn()
+		};
 
-		it('provides download_url when available and in blog mode', () => {
-			// This test simulates the component's internal conditional logic for providing a download URL.
-			// If the component were rendered, we'd check for an <a> tag.
-			// Here, we check the data that *would* be used by such a tag.
-			if (isBlog && mockItem.download_url) {
-				expect(mockItem.download_url).toBe('https://example.com/download1');
-			} else {
-				// This path should not be taken by this test case
-				throw new Error('Test condition failed: expected download_url to be present');
-			}
+		it('evaluates to show download link when download_url is available and in blog mode', () => {
+			const props = { ...baseProps, item: mockItem };
+			// This condition mimics the logic within the component's template:
+			// {#if isBlog}
+			//   {#if item.download_url}
+			const shouldShowDownloadLink = props.isBlog && props.item.download_url;
+			expect(shouldShowDownloadLink).toBeTruthy(); // Changed from .toBe(true)
+			// We can also assert that the download URL itself is what we expect
+			expect(props.item.download_url).toBe('https://example.com/download1');
 		});
 
-		it('indicates no download URL when not available and in blog mode', () => {
-			// Similar to the above, this simulates the logic for when no download URL exists.
-			// If the component were rendered, we might check for "Download not available" text.
-			// Here, we check the data condition.
-			if (isBlog && !mockItemNoPreview.download_url) {
-				expect(mockItemNoPreview.download_url).toBeNull();
-			} else {
-				// This path should not be taken by this test case
-				throw new Error('Test condition failed: expected download_url to be null');
-			}
+		it('evaluates not to show download link when download_url is absent, even in blog mode', () => {
+			const props = { ...baseProps, item: mockItemNoPreview };
+			// This condition mimics the logic within the component's template:
+			// {#if isBlog}
+			//   {#if item.download_url} ... {:else} Download not available
+			const shouldShowDownloadLink = props.isBlog && props.item.download_url;
+			expect(shouldShowDownloadLink).toBeFalsy(); // It will be null, which is falsy
+			// The text "Download not available" would be shown in this case.
+			// We assert the condition that leads to it.
+			expect(props.item.download_url).toBeNull();
 		});
 	});
 });

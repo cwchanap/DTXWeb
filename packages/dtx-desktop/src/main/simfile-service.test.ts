@@ -34,31 +34,56 @@ vi.mock('./auth', () => ({
 // Use the global Supabase mock
 vi.mock('@supabase/supabase-js');
 
+// Define a type for the mocked DTXFile to ensure type safety
+type MockDTXFile = {
+	title: string;
+	artist: string;
+	bpm: number;
+	level: number;
+	parse: Mock;
+	preview: string;
+	soundPreview: string;
+	comment: string;
+	soundChips: unknown[];
+	bpmChanges: unknown[];
+	stopSequences: unknown[];
+	chipCounts: Record<string, number>;
+	totalNotes: number;
+	duration: number;
+	measures: unknown[];
+	lanes: Record<string, unknown>;
+	notes: unknown[];
+	content: string;
+};
+
 vi.mock('@dtx/common', async (importOriginal) => {
-	const actual = (await importOriginal()) as any;
+	const actual = (await importOriginal()) as object;
+
+	// Create a typed mock object
+	const mockDtxFile: MockDTXFile = {
+		title: 'Test Title',
+		artist: 'Test Artist',
+		bpm: 120,
+		level: 5.5,
+		parse: vi.fn().mockResolvedValue(undefined),
+		preview: '',
+		soundPreview: '',
+		comment: '',
+		soundChips: [],
+		bpmChanges: [],
+		stopSequences: [],
+		chipCounts: {},
+		totalNotes: 0,
+		duration: 0,
+		measures: [],
+		lanes: {},
+		notes: [],
+		content: ''
+	};
+
 	return {
 		...actual,
-		DTXFile: vi.fn().mockImplementation(() => ({
-			title: 'Test Title',
-			artist: 'Test Artist',
-			bpm: 120,
-			level: 5.5,
-			parse: vi.fn().mockResolvedValue(undefined),
-			// Add other properties to satisfy the type, even if unused in tests
-			preview: '',
-			soundPreview: '',
-			comment: '',
-			soundChips: [],
-			bpmChanges: [],
-			stopSequences: [],
-			chipCounts: {},
-			totalNotes: 0,
-			duration: 0,
-			measures: [],
-			lanes: {},
-			notes: [],
-			content: ''
-		})),
+		DTXFile: vi.fn().mockImplementation(() => mockDtxFile),
 		decodeFileWithEncodingDetection: vi.fn().mockResolvedValue('')
 	};
 });
@@ -101,10 +126,6 @@ describe('SimFile Service', () => {
 
 		(getSupabaseClient as Mock).mockReturnValue(mockSupabaseClient);
 		(ensureSupabaseAuth as Mock).mockResolvedValue(true);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
 	});
 
 	describe('fetchUserSimFiles', () => {

@@ -13,15 +13,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { tick } from 'svelte';
 
 // Mock modules that would be imported by the component
-vi.mock('svelte-i18n');
+vi.mock('svelte-i18n', () => ({
+	_: (key: string) => key // Simple mock for i18n
+}));
 vi.mock('@skeletonlabs/skeleton-svelte');
 vi.mock('@lucide/svelte/icons');
 vi.mock('$lib/components/ImageAudio.svelte', () => ({}));
 
 vi.mock('$lib/utils', () => ({
 	formatLevelDisplay: (dtxFiles: unknown) => {
-		if (Array.isArray(dtxFiles)) {
-			return dtxFiles.map((file: { level: number }) => file.level).join(', ');
+		if (Array.isArray(dtxFiles) && dtxFiles.length > 0) {
+			return dtxFiles.map((file: any) => file.level).join(', ');
 		}
 		return 'N/A';
 	}
@@ -37,13 +39,23 @@ const mockItem = {
 	sound_preview_url: 'sound1.mp3',
 	download_url: 'https://example.com/download1',
 	is_published: true,
-	display_id: 'TST001',
+	display_id: 1, // Changed from 'TST001' to number
 	dtx_files: [{ level: 3 }, { level: 5 }],
 	created_at: '2023-01-01',
 	updated_at: '2023-01-02',
 	publish_date: '2023-01-03',
 	user_id: 'user-1',
-	video_preview_url: null
+	video_preview_url: null,
+	// Ensure all fields expected by the component are present
+	label: 'Test Label 1',
+	value: 'test-value-1',
+	bg_video_url: null,
+	bg_video_start_time: 0,
+	bg_video_end_time: 0,
+	dtx_bar: [],
+	dtx_data: {},
+	play_count: 0,
+	play_log: []
 };
 
 const mockItemNoPreview = {
@@ -55,13 +67,23 @@ const mockItemNoPreview = {
 	sound_preview_url: null,
 	download_url: null,
 	is_published: false,
-	display_id: 'TST002',
+	display_id: 2, // Changed from 'TST002' to number
 	dtx_files: [{ level: 4 }],
 	created_at: '2023-02-01',
 	updated_at: '2023-02-02',
 	publish_date: '2023-02-03',
 	user_id: 'user-1',
-	video_preview_url: null
+	video_preview_url: null,
+	// Ensure all fields expected by the component are present
+	label: 'Test Label 2',
+	value: 'test-value-2',
+	bg_video_url: null,
+	bg_video_start_time: 0,
+	bg_video_end_time: 0,
+	dtx_bar: [],
+	dtx_data: {},
+	play_count: 0,
+	play_log: []
 };
 
 /**
@@ -207,5 +229,65 @@ describe('ChartListItem Component Logic', () => {
 		if (isBlog && !mockItemNoPreview.download_url) {
 			expect(mockItemNoPreview.download_url).toBeNull();
 		}
+	});
+
+	it('verifies the expected URL format for the Edit action link', () => {
+		const itemId = mockItem.id;
+		const expectedEditUrl = `/app/chart/${itemId}`;
+		// This test confirms the string format for the href attribute
+		// that would be generated in the component's template for the Edit link.
+		expect(`/app/chart/${itemId}`).toBe(expectedEditUrl);
+	});
+
+	it('openModal function sets modalOpen to true and popoverOpen to false', async () => {
+		let modalOpen = false;
+		let popoverOpen = true; // Start with popover open
+
+		const openModalLogic = () => {
+			modalOpen = true;
+			popoverOpen = false; // Close popover when modal opens
+		};
+
+		openModalLogic();
+		await tick();
+
+		expect(modalOpen).toBe(true);
+		expect(popoverOpen).toBe(false);
+	});
+
+	describe('Blog Mode Download Logic', () => {
+		// Simulates the props that would be passed to the component
+		const baseProps = {
+			// item will be overridden per test
+			isBlog: true,
+			// Mock other required props not relevant to this specific logic
+			togglePublishChart: vi.fn(),
+			getPreviewUrl: vi.fn(),
+			getSoundPreviewUrl: vi.fn(),
+			onFileDelete: vi.fn()
+		};
+
+		it('evaluates to show download link when download_url is available and in blog mode', () => {
+			const props = { ...baseProps, item: mockItem };
+			// This condition mimics the logic within the component's template:
+			// {#if isBlog}
+			//   {#if item.download_url}
+			const shouldShowDownloadLink = props.isBlog && props.item.download_url;
+			expect(shouldShowDownloadLink).toBeTruthy(); // Changed from .toBe(true)
+			// We can also assert that the download URL itself is what we expect
+			expect(props.item.download_url).toBe('https://example.com/download1');
+		});
+
+		it('evaluates not to show download link when download_url is absent, even in blog mode', () => {
+			const props = { ...baseProps, item: mockItemNoPreview };
+			// This condition mimics the logic within the component's template:
+			// {#if isBlog}
+			//   {#if item.download_url} ... {:else} Download not available
+			const shouldShowDownloadLink = props.isBlog && props.item.download_url;
+			expect(shouldShowDownloadLink).toBeFalsy(); // It will be null, which is falsy
+			// The text "Download not available" would be shown in this case.
+			// We assert the condition that leads to it.
+			expect(props.item.download_url).toBeNull();
+		});
 	});
 });

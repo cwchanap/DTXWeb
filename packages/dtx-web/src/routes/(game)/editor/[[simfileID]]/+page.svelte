@@ -19,6 +19,7 @@
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
 	let isPreviewing = $state(false);
+	let isTabsCollapsed = $state(false);
 	let simfileID: string;
 
 	// Event emitted from the PhaserGame component
@@ -116,36 +117,69 @@
 		<!-- Left tab panel - full width on small screens, 25% on large screens -->
 		<div class="w-full pt-4 2xl:w-[25%]">
 			<div class="tab-container">
-				<!-- Tab controls -->
-				<div class="tab-list flex">
+				<!-- Collapsible header -->
+				<div class="border-b border-gray-200 bg-gray-50">
 					<button
-						class="w-[15%] px-4 py-2 hover:bg-gray-100 2xl:w-1/4 {currentTab === 0
-							? 'bg-primary-500 text-white'
-							: 'bg-gray-100'}"
-						onclick={() => (currentTab = 0)}
+						class="focus:ring-primary-500 flex w-full items-center justify-between px-4 py-3 text-left font-medium text-gray-700 hover:bg-gray-100 focus:ring-2 focus:outline-none"
+						onclick={() => (isTabsCollapsed = !isTabsCollapsed)}
+						aria-expanded={!isTabsCollapsed}
 					>
-						Main
-					</button>
-					{#if !isPreviewing}
-						<button
-							class="w-[15%] px-4 py-2 hover:bg-gray-100 2xl:w-1/4 {currentTab === 1
-								? 'bg-primary-500 text-white'
-								: 'bg-gray-100'}"
-							onclick={() => (currentTab = 1)}
+						<span>Editor Tabs</span>
+						<svg
+							class="h-5 w-5 transform transition-transform duration-200 {isTabsCollapsed
+								? 'rotate-0'
+								: 'rotate-180'}"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
 						>
-							Sound
-						</button>
-					{/if}
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M19 9l-7 7-7-7"
+							/>
+						</svg>
+					</button>
 				</div>
 
-				<!-- Tab panels -->
-				<div class="tab-content mt-4">
-					{#if currentTab === 0}
-						<MainTab />
-					{:else if currentTab === 1}
-						<SoundTab />
-					{/if}
-				</div>
+				<!-- Collapsible content -->
+				{#if !isTabsCollapsed}
+					<div class="h-[600px] overflow-y-auto border border-gray-200 bg-white">
+						<!-- Tab controls -->
+						<div class="tab-list flex border-b border-gray-200">
+							<button
+								class="w-[15%] px-4 py-2 hover:bg-gray-100 hover:text-gray-800 2xl:w-1/4 {currentTab ===
+								0
+									? 'bg-primary-500 text-white'
+									: 'bg-gray-100 text-gray-700'}"
+								onclick={() => (currentTab = 0)}
+							>
+								Main
+							</button>
+							{#if !isPreviewing}
+								<button
+									class="w-[15%] px-4 py-2 hover:bg-gray-100 hover:text-gray-800 2xl:w-1/4 {currentTab ===
+									1
+										? 'bg-primary-500 text-white'
+										: 'bg-gray-100 text-gray-700'}"
+									onclick={() => (currentTab = 1)}
+								>
+									Sound
+								</button>
+							{/if}
+						</div>
+
+						<!-- Tab panels -->
+						<div class="tab-content p-4">
+							{#if currentTab === 0}
+								<MainTab />
+							{:else if currentTab === 1}
+								<SoundTab />
+							{/if}
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 

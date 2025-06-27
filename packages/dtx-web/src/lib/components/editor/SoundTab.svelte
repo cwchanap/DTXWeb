@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
 	import store from '$lib/store';
 	import { SoundChip, type SimFile } from '@dtx/common';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
@@ -11,8 +10,15 @@
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
 	store.currentSimfile.subscribe((value) => (simfile = value));
 
-	async function playAudio(file: string) {
-		const soundFile = simfile?.files.find((f) => f.name.toLowerCase() === file.toLowerCase());
+	async function playAudio(file: string | File) {
+		let soundFile: File | undefined;
+
+		if (typeof file === 'string') {
+			soundFile = simfile?.files.find((f) => f.name.toLowerCase() === file.toLowerCase());
+		} else {
+			soundFile = file;
+		}
+
 		if (soundFile) {
 			if (soundFile.name.toLowerCase().endsWith('.xa')) {
 				const source = XAaudioContext.createBufferSource();
@@ -41,11 +47,13 @@
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
 			<thead class="bg-white">
-				<tr><td class="w-[15%] border border-gray-300 text-center">Label</td></tr>
-				<tr><td class="w-[10%] border border-gray-300 text-center">ID</td></tr>
-				<tr><td class="w-[15%] border border-gray-300 text-center">Volume</td></tr>
-				<tr><td class="w-[15%] border border-gray-300 text-center">Position</td></tr>
-				<tr><td class="w-[45%] border border-gray-300 text-center">File</td></tr>
+				<tr>
+					<td class="w-[15%] border border-gray-300 text-center">Label</td>
+					<td class="w-[10%] border border-gray-300 text-center">ID</td>
+					<td class="w-[15%] border border-gray-300 text-center">Volume</td>
+					<td class="w-[15%] border border-gray-300 text-center">Position</td>
+					<td class="w-[45%] border border-gray-300 text-center">File</td>
+				</tr>
 			</thead>
 			<tbody>
 				{#each soundChips as chip}
@@ -81,18 +89,21 @@
 											playAudio(chip.file);
 										}
 									}}
+									class="text-blue-600 underline hover:text-blue-800"
 								>
-									{chip.file}
+									{typeof chip.file === 'string' ? chip.file : chip.file.name}
 								</button>
 							{:else}
-								<FileUpload
-									on:change={(e) => {
-										chip.file = e.target.files?.[0];
-									}}
-									name="file"
-									button="btn-sm preset-tonal-primary"
+								<input
+									type="file"
 									accept="audio/*"
-									style="display: none;"
+									onchange={(e) => {
+										const target = e.target as HTMLInputElement;
+										if (target.files?.[0]) {
+											chip.file = target.files[0];
+										}
+									}}
+									class="w-full text-sm"
 								/>
 							{/if}</td
 						>

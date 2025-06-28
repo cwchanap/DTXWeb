@@ -33,7 +33,8 @@ const extendedElectronAPI = {
 				'create-simfile-record',
 				'upload-file',
 				'search-cloud-songs',
-				'link-song-to-cloud'
+				'link-song-to-cloud',
+				'update-simfile-record'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

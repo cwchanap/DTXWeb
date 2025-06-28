@@ -120,6 +120,7 @@
 	let publishDate = $state('');
 	let downloadUrl = $state('');
 	let videoPreviewUrl = $state('');
+	let isPublished = $state(false);
 
 	// Track which action is being performed
 	let currentUploadAction: 'draft' | 'publish' | null = $state(null);
@@ -132,6 +133,11 @@
 	let isLinking = $state(false);
 	let linkingError = $state<string | null>(null);
 	let linkingSuccess = $state(false);
+
+	// Update state
+	let isUpdating = $state(false);
+	let updateError = $state<string | null>(null);
+	let updateSuccess = $state(false);
 
 	// Get all linked song IDs from workspace to exclude from search
 	const getLinkedSongIds = $derived(() => {
@@ -351,6 +357,72 @@
 		}
 	};
 
+	// Handle updating linked simfile
+	const handleUpdateSimfile = async (event: CustomEvent) => {
+		if (!song.linkedSimFile || !song.linkedSimFileId) {
+			console.error('No linked simfile to update');
+			return;
+		}
+
+		isUpdating = true;
+		updateError = null;
+		updateSuccess = false;
+
+		try {
+			// Build update data object
+			const updateData: any = {
+				display_id: Number(event.detail.displayId),
+				publish_date: String(event.detail.publishDate),
+				is_published: Boolean(event.detail.isPublished),
+				download_url: String(event.detail.downloadUrl),
+				video_preview_url: String(event.detail.videoPreviewUrl)
+			};
+
+			// Add parsed local data if available (BPM, artist, title)
+			if (parsedLocalData.bpm) {
+				updateData.bpm = parsedLocalData.bpm;
+			}
+			if (parsedLocalData.artist) {
+				updateData.artist = parsedLocalData.artist;
+			}
+			if (song.songTitle || song.name) {
+				updateData.title = song.songTitle || song.name;
+			}
+
+			// Call IPC to update simfile record
+			const result = await window.electron.ipcRenderer.invoke('update-simfile-record', {
+				simfileId: song.linkedSimFileId,
+				updateData
+			});
+
+			if (result.success) {
+				updateSuccess = true;
+				// Update the local song data with the new information
+				song.linkedSimFile = { ...song.linkedSimFile, ...result.data };
+
+				// Update the workspace store
+				workspaceStore.linkSimFileToFolder(song.path, song.linkedSimFile);
+
+				// Hide success message after 3 seconds
+				setTimeout(() => {
+					updateSuccess = false;
+				}, 3000);
+			} else {
+				throw new Error(result.error || 'Failed to update simfile');
+			}
+		} catch (error) {
+			console.error('Error updating simfile:', error);
+			updateError = error instanceof Error ? error.message : 'Failed to update simfile';
+
+			// Clear error message after 10 seconds
+			setTimeout(() => {
+				updateError = null;
+			}, 10000);
+		} finally {
+			isUpdating = false;
+		}
+	};
+
 	// Effect to parse local DTX files when needed
 	$effect(() => {
 		// Only parse local files if we have a folder path and linked simfile data is missing key information
@@ -419,53 +491,55 @@
 
 	// Initialize reactive form values from simfileData
 	$effect(() => {
-		// Only update if we don't have a linked simfile (initial setup)
-		if (!song.linkedSimFile) {
-			const data = simfileData();
-			displayId = data.display_id || 0;
-			publishDate = data.publish_date || new Date().toISOString().split('T')[0];
-			downloadUrl = data.download_url || '';
-			videoPreviewUrl = data.video_preview_url || '';
-		}
+		const data = simfileData();
+		// Always update form values to reflect current data
+		displayId = data.display_id || 0;
+		publishDate = data.publish_date || new Date().toISOString().split('T')[0];
+		downloadUrl = data.download_url || '';
+		videoPreviewUrl = data.video_preview_url || '';
+		isPublished = data.is_published || false;
 	});
 </script>
 
-<div class="flex h-full flex-col">
-	<ChartDetail
-		simfile={simfileData()}
-		showEditor={false}
-		showPublishingControls={true}
-		showPublishedToggle={false}
-		bind:displayId
-		bind:publishDate
-		bind:downloadUrl
-		bind:videoPreviewUrl
-		on:onSave={handleUploadSong}
-	>
-		{#snippet header()}
-			<!-- Header -->
-			<div
-				class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
-			>
-				<div class="flex items-center gap-2">
-					<Music size={20} class="text-purple-500 dark:text-purple-400" />
-					<h2 class="text-xl font-semibold">Song Details</h2>
-				</div>
-				<button
-					class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-					onclick={handleClose}
-					tabindex="0"
-					aria-label="Back to workspace"
+{#if song.linkedSimFile}
+	<!-- For linked songs, use the built-in Update button -->
+	<div class="flex h-full flex-col">
+		<ChartDetail
+			simfile={simfileData()}
+			showEditor={false}
+			showPublishingControls={true}
+			showPublishedToggle={true}
+			saveButtonText="Update"
+			bind:displayId
+			bind:publishDate
+			bind:downloadUrl
+			bind:videoPreviewUrl
+			bind:isPublished
+			on:onSave={handleUpdateSimfile}
+		>
+			{#snippet header()}
+				<!-- Header -->
+				<div
+					class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
 				>
-					<ArrowLeft size={16} />
-					Back to Workspace
-				</button>
-			</div>
-		{/snippet}
+					<div class="flex items-center gap-2">
+						<Music size={20} class="text-purple-500 dark:text-purple-400" />
+						<h2 class="text-xl font-semibold">Song Details</h2>
+					</div>
+					<button
+						class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+						onclick={handleClose}
+						tabindex="0"
+						aria-label="Back to workspace"
+					>
+						<ArrowLeft size={16} />
+						Back to Workspace
+					</button>
+				</div>
+			{/snippet}
 
-		{#snippet desktop_info()}
-			<!-- Status Section - This will be rendered outside the grid -->
-			{#if song.linkedSimFile}
+			{#snippet desktop_info()}
+				<!-- Status Section - This will be rendered outside the grid -->
 				<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
 					<div class="flex items-center gap-2">
 						<Link size={16} class="text-green-500 dark:text-green-400" />
@@ -479,185 +553,316 @@
 						</span>
 					</div>
 				</div>
-			{:else if song.containsDtxFiles}
-				<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
-					<div class="flex items-center justify-between gap-2">
-						<div class="flex items-center gap-2">
-							<Music size={16} class="text-yellow-600 dark:text-yellow-400" />
-							<span class="text-sm text-yellow-800 dark:text-yellow-200">
-								Not linked - Local song not yet uploaded to cloud
-							</span>
-						</div>
-						<button
-							class="flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none dark:bg-purple-600 dark:hover:bg-purple-700"
-							onclick={handleShowAutocomplete}
-							disabled={isLinking}
-						>
-							{#if isLinking}
-								<div
-									class="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent"
-								></div>
-								Linking...
-							{:else}
-								<Search size={14} />
-								Link to Cloud
-							{/if}
-						</button>
-					</div>
-				</div>
-			{/if}
 
-			<!-- Linking Status Messages -->
-			{#if isLinking}
-				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-					<div class="flex items-center gap-2">
-						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
-						></div>
-						<span class="text-sm text-blue-800 dark:text-blue-200">
-							Linking song to cloud...
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			{#if linkingError}
-				<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-					<div class="flex items-center gap-2">
-						<span class="text-sm text-red-800 dark:text-red-200">
-							Linking failed: {linkingError}
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			{#if linkingSuccess}
-				<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
-					<div class="flex items-center gap-2">
-						<span class="text-sm text-green-800 dark:text-green-200">
-							Song linked successfully! It is now linked to the cloud.
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			<!-- Upload Status Messages -->
-			{#if isUploading}
-				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-					<div class="flex items-center gap-2">
-						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
-						></div>
-						<span class="text-sm text-blue-800 dark:text-blue-200">
-							Uploading song to cloud...
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			{#if uploadError}
-				<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-					<div class="flex items-center gap-2">
-						<span class="text-sm text-red-800 dark:text-red-200">
-							Upload failed: {uploadError}
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			{#if uploadSuccess}
-				<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
-					<div class="flex items-center gap-2">
-						<span class="text-sm text-green-800 dark:text-green-200">
-							Song uploaded successfully! It is now linked to the cloud.
-						</span>
-					</div>
-				</div>
-			{/if}
-		{/snippet}
-
-		{#snippet folder_upload()}
-			<!-- Folder Name -->
-			<div class="col-span-1 flex items-center">
-				<span class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</span>
-			</div>
-			<div class="col-span-7">
-				<span class="font-mono text-sm text-slate-900 dark:text-slate-100">{song.name}</span
-				>
-			</div>
-
-			<!-- Song Path -->
-			<div class="col-span-1 flex items-center">
-				<span class="mr-2 block text-slate-700 dark:text-slate-300">Path:</span>
-			</div>
-			<div class="col-span-7">
-				<span class="truncate font-mono text-sm text-slate-900 dark:text-slate-100"
-					>{song.path}</span
-				>
-			</div>
-		{/snippet}
-
-		{#snippet local_files()}
-			<!-- Local Asset Files Section -->
-			<div class="rounded-lg bg-slate-50 dark:bg-slate-800/50">
-				{#if isLoadingFiles}
-					<div class="flex justify-center p-4">
-						<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
-					</div>
-				{:else if fileLoadError}
-					<div class="p-4 text-red-500">
-						<p>{fileLoadError}</p>
-						<button
-							class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
-							onclick={loadLocalFiles}
-						>
-							Retry
-						</button>
-					</div>
-				{:else}
-					<!-- Use UploadedAssetFiles component for local files display -->
-					<UploadedAssetFiles
-						simfileId={song.linkedSimFileId?.toString() || ''}
-						userFiles={localFiles}
-						supabaseClient={mockSupabaseClient}
-						simfileBucketUrl=""
-						loadAssetFiles={loadAssetFilesForDesktop}
-						isDesktop={true}
-						songFolderPath={song.path || ''}
-					/>
-				{/if}
-			</div>
-		{/snippet}
-
-		{#snippet save()}
-			{#if !song.linkedSimFile && song.containsDtxFiles}
-				<div class="flex gap-2">
-					{#if isUploading}
+				<!-- Update Status Messages -->
+				{#if isUpdating}
+					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
 						<div class="flex items-center gap-2">
 							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
 							></div>
-							Uploading...
+							<span class="text-sm text-blue-800 dark:text-blue-200">
+								Updating cloud song...
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if updateError}
+					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-red-800 dark:text-red-200">
+								Update failed: {updateError}
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if updateSuccess}
+					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-green-800 dark:text-green-200">
+								Cloud song updated successfully!
+							</span>
+						</div>
+					</div>
+				{/if}
+			{/snippet}
+
+			{#snippet folder_upload()}
+				<!-- Folder Name -->
+				<div class="col-span-1 flex items-center">
+					<span class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</span>
+				</div>
+				<div class="col-span-7">
+					<span class="font-mono text-sm text-slate-900 dark:text-slate-100"
+						>{song.name}</span
+					>
+				</div>
+
+				<!-- Song Path -->
+				<div class="col-span-1 flex items-center">
+					<span class="mr-2 block text-slate-700 dark:text-slate-300">Path:</span>
+				</div>
+				<div class="col-span-7">
+					<span class="truncate font-mono text-sm text-slate-900 dark:text-slate-100"
+						>{song.path}</span
+					>
+				</div>
+			{/snippet}
+
+			{#snippet local_files()}
+				<!-- Local Asset Files Section -->
+				<div class="rounded-lg bg-slate-50 dark:bg-slate-800/50">
+					{#if isLoadingFiles}
+						<div class="flex justify-center p-4">
+							<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
+						</div>
+					{:else if fileLoadError}
+						<div class="p-4 text-red-500">
+							<p>{fileLoadError}</p>
+							<button
+								class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+								onclick={loadLocalFiles}
+							>
+								Retry
+							</button>
 						</div>
 					{:else}
-						<button
-							class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-800"
-							onclick={() => triggerSave(false)}
-						>
-							Upload as Draft
-						</button>
-						<button
-							class="rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
-							onclick={() => triggerSave(true)}
-						>
-							Upload and Publish
-						</button>
+						<!-- Use UploadedAssetFiles component for local files display -->
+						<UploadedAssetFiles
+							simfileId={song.linkedSimFileId?.toString() || ''}
+							userFiles={localFiles}
+							supabaseClient={mockSupabaseClient}
+							simfileBucketUrl=""
+							loadAssetFiles={loadAssetFilesForDesktop}
+							isDesktop={true}
+							songFolderPath={song.path || ''}
+						/>
 					{/if}
 				</div>
-			{/if}
-		{/snippet}
-	</ChartDetail>
-</div>
+			{/snippet}
+		</ChartDetail>
+	</div>
+{:else}
+	<!-- For unlinked songs, use custom upload buttons -->
+	<div class="flex h-full flex-col">
+		<ChartDetail
+			simfile={simfileData()}
+			showEditor={false}
+			showPublishingControls={true}
+			showPublishedToggle={false}
+			bind:displayId
+			bind:publishDate
+			bind:downloadUrl
+			bind:videoPreviewUrl
+			bind:isPublished
+			on:onSave={handleUploadSong}
+		>
+			{#snippet header()}
+				<!-- Header -->
+				<div
+					class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
+				>
+					<div class="flex items-center gap-2">
+						<Music size={20} class="text-purple-500 dark:text-purple-400" />
+						<h2 class="text-xl font-semibold">Song Details</h2>
+					</div>
+					<button
+						class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+						onclick={handleClose}
+						tabindex="0"
+						aria-label="Back to workspace"
+					>
+						<ArrowLeft size={16} />
+						Back to Workspace
+					</button>
+				</div>
+			{/snippet}
+
+			{#snippet desktop_info()}
+				<!-- Status Section - This will be rendered outside the grid -->
+				{#if song.containsDtxFiles}
+					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-2">
+								<Music size={16} class="text-yellow-600 dark:text-yellow-400" />
+								<span class="text-sm text-yellow-800 dark:text-yellow-200">
+									Not linked - Local song not yet uploaded to cloud
+								</span>
+							</div>
+							<button
+								class="flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none dark:bg-purple-600 dark:hover:bg-purple-700"
+								onclick={handleShowAutocomplete}
+								disabled={isLinking}
+							>
+								{#if isLinking}
+									<div
+										class="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent"
+									></div>
+									Linking...
+								{:else}
+									<Search size={14} />
+									Link to Cloud
+								{/if}
+							</button>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Linking Status Messages -->
+				{#if isLinking}
+					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+						<div class="flex items-center gap-2">
+							<div
+								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+							></div>
+							<span class="text-sm text-blue-800 dark:text-blue-200">
+								Linking song to cloud...
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if linkingError}
+					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-red-800 dark:text-red-200">
+								Linking failed: {linkingError}
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if linkingSuccess}
+					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-green-800 dark:text-green-200">
+								Song linked successfully! It is now linked to the cloud.
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Upload Status Messages -->
+				{#if isUploading}
+					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+						<div class="flex items-center gap-2">
+							<div
+								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+							></div>
+							<span class="text-sm text-blue-800 dark:text-blue-200">
+								Uploading song to cloud...
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if uploadError}
+					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-red-800 dark:text-red-200">
+								Upload failed: {uploadError}
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if uploadSuccess}
+					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-green-800 dark:text-green-200">
+								Song uploaded successfully! It is now linked to the cloud.
+							</span>
+						</div>
+					</div>
+				{/if}
+			{/snippet}
+
+			{#snippet folder_upload()}
+				<!-- Folder Name -->
+				<div class="col-span-1 flex items-center">
+					<span class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</span>
+				</div>
+				<div class="col-span-7">
+					<span class="font-mono text-sm text-slate-900 dark:text-slate-100"
+						>{song.name}</span
+					>
+				</div>
+
+				<!-- Song Path -->
+				<div class="col-span-1 flex items-center">
+					<span class="mr-2 block text-slate-700 dark:text-slate-300">Path:</span>
+				</div>
+				<div class="col-span-7">
+					<span class="truncate font-mono text-sm text-slate-900 dark:text-slate-100"
+						>{song.path}</span
+					>
+				</div>
+			{/snippet}
+
+			{#snippet local_files()}
+				<!-- Local Asset Files Section -->
+				<div class="rounded-lg bg-slate-50 dark:bg-slate-800/50">
+					{#if isLoadingFiles}
+						<div class="flex justify-center p-4">
+							<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
+						</div>
+					{:else if fileLoadError}
+						<div class="p-4 text-red-500">
+							<p>{fileLoadError}</p>
+							<button
+								class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+								onclick={loadLocalFiles}
+							>
+								Retry
+							</button>
+						</div>
+					{:else}
+						<!-- Use UploadedAssetFiles component for local files display -->
+						<UploadedAssetFiles
+							simfileId={song.linkedSimFileId?.toString() || ''}
+							userFiles={localFiles}
+							supabaseClient={mockSupabaseClient}
+							simfileBucketUrl=""
+							loadAssetFiles={loadAssetFilesForDesktop}
+							isDesktop={true}
+							songFolderPath={song.path || ''}
+						/>
+					{/if}
+				</div>
+			{/snippet}
+
+			{#snippet save()}
+				{#if song.containsDtxFiles}
+					<div class="flex gap-2">
+						{#if isUploading}
+							<div class="flex items-center gap-2">
+								<div
+									class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+								></div>
+								Uploading...
+							</div>
+						{:else}
+							<button
+								class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-800"
+								onclick={() => triggerSave(false)}
+							>
+								Upload as Draft
+							</button>
+							<button
+								class="rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
+								onclick={() => triggerSave(true)}
+							>
+								Upload and Publish
+							</button>
+						{/if}
+					</div>
+				{/if}
+			{/snippet}
+		</ChartDetail>
+	</div>
+{/if}
 
 <!-- Autocomplete Popup -->
 <CloudSongAutocomplete

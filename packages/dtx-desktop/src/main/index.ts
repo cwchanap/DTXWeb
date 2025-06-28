@@ -439,6 +439,36 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle updating simfile record in database
+		ipcMain.handle('update-simfile-record', async (_event, { simfileId, updateData }) => {
+			try {
+				const supabaseClient = getSupabaseClient();
+				if (!supabaseClient) {
+					return { success: false, error: 'User not authenticated' };
+				}
+
+				const { data, error } = await supabaseClient
+					.from('simfiles')
+					.update(updateData)
+					.eq('id', simfileId)
+					.select()
+					.single();
+
+				if (error) {
+					console.error('Error updating simfile:', error);
+					return { success: false, error: error.message };
+				}
+
+				return { success: true, data };
+			} catch (error) {
+				console.error('Error updating simfile:', error);
+				return {
+					success: false,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
+		});
+
 		// Handle file upload from desktop to cloud
 		ipcMain.handle(
 			'upload-file',

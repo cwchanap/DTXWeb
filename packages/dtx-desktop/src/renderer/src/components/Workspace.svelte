@@ -12,7 +12,8 @@
 		Cloud,
 		Plus,
 		FileText,
-		Search
+		Search,
+		Settings as SettingsIcon
 	} from '@lucide/svelte';
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import WorkspaceTree from './WorkspaceTree.svelte';
@@ -20,6 +21,7 @@
 	import SongDetails from './SongDetails.svelte';
 	import SimFileList from './SimFileList.svelte';
 	import Templates from './Templates.svelte';
+	import Settings from './Settings.svelte';
 
 	let isLoading = $state(false);
 	let workspacePath = $state('');
@@ -167,6 +169,15 @@
 			>
 				<FileText size={32} />
 			</Navigation.Tile>
+			<Navigation.Tile
+				id="settings"
+				label="Settings"
+				labelExpanded="Application Settings"
+				padding="p-4"
+				gap="gap-3"
+			>
+				<SettingsIcon size={32} />
+			</Navigation.Tile>
 		{/snippet}
 	</Navigation.Rail>
 
@@ -178,6 +189,9 @@
 		{:else if showTemplates}
 			<!-- Templates View -->
 			<Templates />
+		{:else if activeTab === 'settings'}
+			<!-- Settings View -->
+			<Settings />
 		{:else}
 			<!-- Header -->
 			<div
@@ -186,7 +200,13 @@
 				<div class="flex items-center gap-2">
 					<Folder size={20} class="text-slate-500" />
 					<h2 class="text-xl font-semibold">
-						{activeTab === 'workspace' ? 'Local Workspace' : 'Online SimFiles'}
+						{activeTab === 'workspace'
+							? 'Local Workspace'
+							: activeTab === 'online'
+								? 'Online SimFiles'
+								: activeTab === 'settings'
+									? 'Settings'
+									: 'Templates'}
 					</h2>
 				</div>
 				{#if workspacePath && activeTab === 'workspace'}

@@ -469,6 +469,106 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle exporting song folder to zip
+		ipcMain.handle(
+			'export-song-to-zip',
+			async (_event, { songPath, songTitle, exportDirectory }) => {
+				try {
+					// Use provided export directory or default to Downloads
+					let targetDirectory = exportDirectory;
+					if (!targetDirectory || targetDirectory === '~/Downloads') {
+						// Resolve the actual Downloads directory
+						const os = await import('os');
+						targetDirectory = path.join(os.homedir(), 'Downloads');
+					} else if (targetDirectory.startsWith('~/')) {
+						// Expand tilde to home directory
+						const os = await import('os');
+						targetDirectory = path.join(os.homedir(), targetDirectory.slice(2));
+					}
+
+					// Ensure the target directory exists
+					try {
+						await fs.promises.access(targetDirectory);
+					} catch (error) {
+						// Directory doesn't exist, try to create it
+						try {
+							await fs.promises.mkdir(targetDirectory, { recursive: true });
+						} catch (mkdirError) {
+							return {
+								success: false,
+								error: `Cannot access or create export directory: ${targetDirectory}`
+							};
+						}
+					}
+
+					const zipFileName = `${songTitle || 'song'}.zip`;
+					const zipFilePath = path.join(targetDirectory, zipFileName);
+
+					// Read all files in the song directory
+					const entries = await fs.promises.readdir(songPath, { withFileTypes: true });
+
+					// Filter for valid DTX-related file types
+					const validExtensions = [
+						'.dtx',
+						'.def',
+						'.wav',
+						'.mp3',
+						'.ogg',
+						'.flac',
+						'.m4a',
+						'.aac',
+						'.png',
+						'.jpg',
+						'.jpeg',
+						'.gif',
+						'.bmp',
+						'.tiff',
+						'.tga'
+					];
+					const validFiles = entries
+						.filter((entry) => entry.isFile())
+						.map((entry) => entry.name)
+						.filter((fileName) => {
+							const ext = path.extname(fileName).toLowerCase();
+							return validExtensions.includes(ext);
+						});
+
+					if (validFiles.length === 0) {
+						return { success: false, error: 'No valid files found to export' };
+					}
+
+					// Create zip using JSZip
+					const JSZip = (await import('jszip')).default;
+					const zip = new JSZip();
+
+					// Add files to zip
+					for (const fileName of validFiles) {
+						const filePath = path.join(songPath, fileName);
+						const fileBuffer = await fs.promises.readFile(filePath);
+						zip.file(fileName, fileBuffer);
+					}
+
+					// Generate zip buffer
+					const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+					// Write zip file to selected location
+					await fs.promises.writeFile(zipFilePath, zipBuffer);
+
+					return {
+						success: true,
+						zipPath: zipFilePath,
+						filesCount: validFiles.length
+					};
+				} catch (error) {
+					console.error('Error exporting song to zip:', error);
+					return {
+						success: false,
+						error: error instanceof Error ? error.message : 'Unknown error'
+					};
+				}
+			}
+		);
+
 		// Handle file upload from desktop to cloud
 		ipcMain.handle(
 			'upload-file',

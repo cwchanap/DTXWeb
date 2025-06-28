@@ -1,6 +1,7 @@
 import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 import { simFileStore } from '../stores/simFileStore';
 import { linkingService } from './linkingService';
+import { linkageCacheService } from './linkageCacheService';
 
 export const workspaceService = {
 	/**
@@ -213,16 +214,29 @@ export const workspaceService = {
 				nodePath
 			);
 
-			// Update the node with children and expanded state
+			// Apply cached linkage to newly loaded children
+			const enrichedChildren = children.map((child: TreeNode) => {
+				const cachedLinkage = linkageCacheService.getLinkage(child.path);
+				if (cachedLinkage) {
+					return {
+						...child,
+						linkedSimFileId: String(cachedLinkage.linkedSimFileId),
+						linkedSimFile: cachedLinkage.cloudSongData
+					};
+				}
+				return child;
+			});
+
+			// Update the node with enriched children and expanded state
 			workspaceStore.updateTreeNode(nodePath, {
 				isExpanded: true,
 				isLoading: false,
-				children: children,
-				hasChildren: children.length > 0
+				children: enrichedChildren,
+				hasChildren: enrichedChildren.length > 0
 			});
 
 			// Trigger auto-linking for newly loaded children (more efficient than full tree scan)
-			workspaceService.triggerAutoLinkingForNewNodes(children);
+			workspaceService.triggerAutoLinkingForNewNodes(enrichedChildren);
 		} catch (error) {
 			console.error('Failed to expand tree node:', error);
 			workspaceStore.updateTreeNode(nodePath, { isLoading: false });

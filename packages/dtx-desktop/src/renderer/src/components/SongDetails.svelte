@@ -340,9 +340,8 @@
 		linkingSuccess = false;
 
 		try {
-			// Call IPC to link the local song to the cloud song
-			const result = await window.electron.ipcRenderer.invoke('link-song-to-cloud', {
-				songPath: song.path,
+			// Call IPC to get the cloud song data (no file caching in main process)
+			const result = await window.electron.ipcRenderer.invoke('fetch-cloud-song', {
 				cloudSongId: selectedSong.id
 			});
 
@@ -350,9 +349,9 @@
 				linkingSuccess = true;
 				// Update the song with the linked data
 				song.linkedSimFileId = selectedSong.id;
-				song.linkedSimFile = result.linkedSimFile || selectedSong;
+				song.linkedSimFile = result.cloudSongData || selectedSong;
 
-				// Update the workspace store
+				// Update the workspace store (this will automatically cache to localStorage)
 				workspaceStore.linkSimFileToFolder(song.path, song.linkedSimFile);
 
 				// Hide success message after 3 seconds

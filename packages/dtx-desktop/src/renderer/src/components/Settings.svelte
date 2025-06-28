@@ -3,11 +3,11 @@
 	import { settingsStore, type Settings } from '../stores/settingsStore';
 	import { onMount } from 'svelte';
 
-	let settings = $state<Settings>({ exportDirectory: '~/Downloads' });
+	let settings = $state<Settings>();
 	let isSelectingDirectory = $state(false);
 	let saveSuccess = $state(false);
 
-	// Subscribe to settings store
+	// Subscribe to settings store and initialize with current store value
 	const unsubscribe = settingsStore.subscribe((value) => {
 		settings = { ...value };
 	});
@@ -20,8 +20,9 @@
 		try {
 			const result = await window.electron.ipcRenderer.invoke('select-folder');
 			if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
-				settings.exportDirectory = result.filePaths[0];
-				settingsStore.updateExportDirectory(settings.exportDirectory);
+				const newDirectory = result.filePaths[0];
+				settings = { ...settings, exportDirectory: newDirectory };
+				settingsStore.updateExportDirectory(newDirectory);
 				showSaveSuccess();
 			}
 		} catch (error) {
@@ -92,7 +93,7 @@
 								<span
 									class="flex-1 truncate font-mono text-sm text-slate-700 dark:text-slate-300"
 								>
-									{settings.exportDirectory}
+									{settings?.exportDirectory || '~/Downloads'}
 								</span>
 							</div>
 						</div>

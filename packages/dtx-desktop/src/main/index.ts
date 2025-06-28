@@ -382,8 +382,8 @@ if (!gotTheLock) {
 			}
 		);
 
-		// Handle linking local song to cloud song
-		ipcMain.handle('link-song-to-cloud', async (_event, { songPath, cloudSongId }) => {
+		// Handle fetching cloud song data without file caching
+		ipcMain.handle('fetch-cloud-song', async (_event, { cloudSongId }) => {
 			try {
 				const supabaseClient = getSupabaseClient();
 				if (!supabaseClient) {
@@ -416,22 +416,12 @@ if (!gotTheLock) {
 					return { success: false, error: 'Cloud song not found' };
 				}
 
-				// Store the linkage in a cache file in the song directory
-				const linkageCachePath = path.join(songPath, '.dtx_linkage_cache.json');
-				const linkageData = {
-					linkedSimFileId: cloudSongId,
-					linkedAt: new Date().toISOString(),
-					cloudSongData: simfileData
-				};
-
-				await fs.promises.writeFile(linkageCachePath, JSON.stringify(linkageData, null, 2));
-
 				return {
 					success: true,
-					linkedSimFile: simfileData
+					cloudSongData: simfileData
 				};
 			} catch (error) {
-				console.error('Error linking song to cloud:', error);
+				console.error('Error fetching cloud song data:', error);
 				return {
 					success: false,
 					error: error instanceof Error ? error.message : 'Unknown error'

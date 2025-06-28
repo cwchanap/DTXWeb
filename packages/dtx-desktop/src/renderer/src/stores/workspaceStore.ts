@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { linkageCacheService } from '../services/linkageCacheService';
 
 export interface TreeNode {
 	name: string;
@@ -84,8 +85,38 @@ function createWorkspaceStore() {
 		},
 		setSubWorkspaces: (subWorkspaces: string[]) =>
 			update((state) => ({ ...state, subWorkspaces, error: null })),
-		setTreeStructure: (treeStructure: TreeNode[]) =>
-			update((state) => ({ ...state, treeStructure, error: null })),
+		setTreeStructure: (treeStructure: TreeNode[]) => {
+			// Recursive function to apply cached linkage to all nodes
+			const applyCachedLinkageRecursive = (nodes: TreeNode[]): TreeNode[] => {
+				return nodes.map((node) => {
+					const cachedLinkage = linkageCacheService.getLinkage(node.path);
+
+					let enrichedNode = { ...node };
+
+					if (cachedLinkage) {
+						enrichedNode = {
+							...enrichedNode,
+							linkedSimFileId: String(cachedLinkage.linkedSimFileId), // Ensure it's a string
+							linkedSimFile: cachedLinkage.cloudSongData
+						};
+					}
+
+					// Recursively apply to children
+					if (node.children.length > 0) {
+						enrichedNode.children = applyCachedLinkageRecursive(node.children);
+					}
+
+					return enrichedNode;
+				});
+			};
+
+			// Load cached linkage data and apply to tree nodes recursively
+			const enrichedTreeStructure = applyCachedLinkageRecursive(treeStructure);
+
+			update((state) => {
+				return { ...state, treeStructure: enrichedTreeStructure, error: null };
+			});
+		},
 		updateTreeNode: (nodePath: string, updates: Partial<TreeNode>) => {
 			update((state) => ({
 				...state,
@@ -96,6 +127,8 @@ function createWorkspaceStore() {
 		setError: (error: string) => update((state) => ({ ...state, error })),
 		clearWorkspace: () => {
 			localStorage.removeItem('workspace_path');
+			// Also clear linkage cache when workspace is cleared
+			linkageCacheService.clearCache();
 			update((state) => ({
 				...state,
 				path: null,
@@ -154,15 +187,21 @@ function createWorkspaceStore() {
 			}));
 		},
 		linkSimFileToFolder: (folderPath: string, simFile: any) => {
+			// Save to localStorage cache
+			linkageCacheService.saveLinkage(folderPath, simFile.id, simFile);
+
 			update((state) => ({
 				...state,
 				treeStructure: updateTreeNodeRecursive(state.treeStructure, folderPath, {
-					linkedSimFileId: simFile.id,
+					linkedSimFileId: String(simFile.id), // Ensure it's a string
 					linkedSimFile: simFile
 				})
 			}));
 		},
 		unlinkSimFileFromFolder: (folderPath: string) => {
+			// Remove from localStorage cache
+			linkageCacheService.removeLinkage(folderPath);
+
 			update((state) => ({
 				...state,
 				treeStructure: updateTreeNodeRecursive(state.treeStructure, folderPath, {

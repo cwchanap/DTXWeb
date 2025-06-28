@@ -33,7 +33,7 @@ const extendedElectronAPI = {
 				'create-simfile-record',
 				'upload-file',
 				'search-cloud-songs',
-				'link-song-to-cloud',
+				'fetch-cloud-song',
 				'update-simfile-record',
 				'export-song-to-zip'
 			];

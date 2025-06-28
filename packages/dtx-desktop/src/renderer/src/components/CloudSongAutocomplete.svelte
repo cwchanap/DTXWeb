@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { Search, X, Music, User, Link } from '@lucide/svelte';
-	import { createEventDispatcher } from 'svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
 		isOpen: boolean;
 		position?: { top: number; left: number; width: number };
+		excludeLinkedSongIds?: string[];
+		onclose?: () => void;
+		onselect?: (song: CloudSong) => void;
 	}
 
 	interface CloudSong {
@@ -16,12 +18,13 @@
 		is_published: boolean;
 	}
 
-	let { isOpen = false, position }: Props = $props();
-
-	const dispatch = createEventDispatcher<{
-		close: void;
-		select: CloudSong;
-	}>();
+	let {
+		isOpen = false,
+		position,
+		excludeLinkedSongIds = [],
+		onclose,
+		onselect
+	}: Props = $props();
 
 	let searchQuery = $state('');
 	let suggestions = $state<CloudSong[]>([]);
@@ -31,7 +34,7 @@
 	let searchInputRef = $state<HTMLInputElement>();
 
 	const handleClose = () => {
-		dispatch('close');
+		onclose?.();
 		searchQuery = '';
 		suggestions = [];
 		selectedIndex = -1;
@@ -52,20 +55,21 @@
 	const searchCloudSongs = async () => {
 		if (!searchQuery.trim()) return;
 
-		console.log('Searching for:', searchQuery.trim());
 		isLoading = true;
 		try {
 			const result = await window.electron.ipcRenderer.invoke('search-cloud-songs', {
 				query: searchQuery.trim(),
-				limit: 8
+				limit: 20, // Increase limit to account for filtering
+				excludeLinkedSongIds
 			});
 
-			console.log('Search result:', result);
-
 			if (result.success) {
-				suggestions = result.data || [];
+				// Filter out already linked songs on the client side as well (double protection)
+				const filteredSuggestions = (result.data || []).filter(
+					(song: CloudSong) => !excludeLinkedSongIds.includes(song.id)
+				);
+				suggestions = filteredSuggestions.slice(0, 8); // Limit to 8 results after filtering
 				selectedIndex = -1;
-				console.log('Found', suggestions.length, 'suggestions:', suggestions);
 			} else {
 				console.error('Search failed:', result.error);
 				suggestions = [];
@@ -102,7 +106,7 @@
 	};
 
 	const selectSong = (song: CloudSong) => {
-		dispatch('select', song);
+		onselect?.(song);
 		handleClose();
 	};
 

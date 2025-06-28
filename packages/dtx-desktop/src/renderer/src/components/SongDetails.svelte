@@ -127,12 +127,31 @@
 	// Autocomplete popup state
 	let showAutocomplete = $state(false);
 	let autocompletePosition = $state({ top: 0, left: 0, width: 0 });
-	let linkButtonRef = $state<HTMLButtonElement>();
 
 	// Linking state
 	let isLinking = $state(false);
 	let linkingError = $state<string | null>(null);
 	let linkingSuccess = $state(false);
+
+	// Get all linked song IDs from workspace to exclude from search
+	const getLinkedSongIds = $derived(() => {
+		const workspaceState = $workspaceStore;
+		const linkedIds: string[] = [];
+
+		const collectLinkedIds = (nodes: typeof workspaceState.treeStructure) => {
+			for (const node of nodes) {
+				if (node.linkedSimFileId) {
+					linkedIds.push(node.linkedSimFileId);
+				}
+				if (node.children.length > 0) {
+					collectLinkedIds(node.children);
+				}
+			}
+		};
+
+		collectLinkedIds(workspaceState.treeStructure);
+		return linkedIds;
+	});
 
 	// Custom asset file loader for desktop
 	const loadAssetFilesForDesktop = async (simfileId: string) => {
@@ -287,8 +306,7 @@
 	};
 
 	// Handle cloud song selection from autocomplete
-	const handleCloudSongSelect = async (event: CustomEvent) => {
-		const selectedSong = event.detail;
+	const handleCloudSongSelect = async (selectedSong: any) => {
 		showAutocomplete = false;
 
 		if (!selectedSong || !song.path) return;
@@ -471,7 +489,6 @@
 							</span>
 						</div>
 						<button
-							bind:this={linkButtonRef}
 							class="flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none dark:bg-purple-600 dark:hover:bg-purple-700"
 							onclick={handleShowAutocomplete}
 							disabled={isLinking}
@@ -646,6 +663,7 @@
 <CloudSongAutocomplete
 	isOpen={showAutocomplete}
 	position={autocompletePosition}
-	on:close={() => (showAutocomplete = false)}
-	on:select={handleCloudSongSelect}
+	excludeLinkedSongIds={getLinkedSongIds()}
+	onclose={() => (showAutocomplete = false)}
+	onselect={handleCloudSongSelect}
 />

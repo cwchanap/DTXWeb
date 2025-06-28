@@ -4,34 +4,28 @@ interface Settings {
 	exportDirectory: string;
 }
 
-const DEFAULT_SETTINGS: Settings = {
-	exportDirectory: '~/Downloads'
-};
-
 // Get OS-specific default Downloads directory
 const getDefaultDownloadsPath = (): string => {
-	if (typeof window !== 'undefined' && window.electron) {
-		// Try to get the actual Downloads path from the OS
-		// For now, use a reasonable default
-		const os = navigator.platform.toLowerCase();
-		if (os.includes('win')) {
-			return 'C:\\Users\\%USERNAME%\\Downloads';
-		} else if (os.includes('mac')) {
-			return '~/Downloads';
-		} else {
-			return '~/Downloads';
-		}
+	// Get the actual Downloads path from the OS
+	const os = navigator.platform.toLowerCase();
+	const userHome =
+		window.electron.process?.env?.HOME || window.electron.process?.env?.USERPROFILE;
+
+	if (os.includes('win')) {
+		// Windows: C:\Users\[username]\Downloads
+		const username = window.electron.process?.env?.USERNAME || 'User';
+		return `C:\\Users\\${username}\\Downloads`;
+	} else if (os.includes('mac')) {
+		// macOS: /Users/[username]/Downloads
+		return userHome ? `${userHome}/Downloads` : '/Users/Downloads';
+	} else {
+		// Linux/Unix: /home/[username]/Downloads
+		return userHome ? `${userHome}/Downloads` : '/home/Downloads';
 	}
-	return '~/Downloads';
 };
 
 // Load settings from localStorage
 const loadSettings = (): Settings => {
-	// Check if we're in a browser environment
-	if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-		return { ...DEFAULT_SETTINGS, exportDirectory: getDefaultDownloadsPath() };
-	}
-
 	try {
 		const stored = localStorage.getItem('app_settings');
 		if (stored) {
@@ -44,14 +38,11 @@ const loadSettings = (): Settings => {
 		console.warn('Failed to load settings from localStorage:', error);
 	}
 
-	return { ...DEFAULT_SETTINGS, exportDirectory: getDefaultDownloadsPath() };
+	return { exportDirectory: getDefaultDownloadsPath() };
 };
 
 // Save settings to localStorage
 const saveSettings = (settings: Settings): void => {
-	// Check if we're in a browser environment
-	if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-
 	try {
 		localStorage.setItem('app_settings', JSON.stringify(settings));
 	} catch (error) {
@@ -85,7 +76,6 @@ const createSettingsStore = () => {
 		},
 		reset: () => {
 			const defaultSettings = {
-				...DEFAULT_SETTINGS,
 				exportDirectory: getDefaultDownloadsPath()
 			};
 			set(defaultSettings);

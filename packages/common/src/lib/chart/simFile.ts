@@ -167,7 +167,7 @@ export class SimFile {
 
 		// Add title if it exists
 		if (this.title) {
-			lines.push(`#TITLE: ${this.title}`);
+			lines.push(`#TITLE ${this.title}`);
 		}
 
 		// Default level settings with default filenames

@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Music, ArrowLeft, Link, Search } from '@lucide/svelte';
+	import { Music, ArrowLeft, Link, Search, Download } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
+	import { settingsStore } from '../stores/settingsStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
@@ -87,6 +88,11 @@
 	// Load files when component mounts or song changes
 	onMount(() => {
 		loadLocalFiles();
+
+		// Return cleanup function
+		return () => {
+			unsubscribeSettings();
+		};
 	});
 
 	// Reload files when song changes
@@ -138,6 +144,18 @@
 	let isUpdating = $state(false);
 	let updateError = $state<string | null>(null);
 	let updateSuccess = $state(false);
+
+	// Export state
+	let isExporting = $state(false);
+	let exportError = $state<string | null>(null);
+	let exportSuccess = $state(false);
+	let exportedFilePath = $state<string | null>(null);
+
+	// Settings store subscription for export directory
+	let currentSettings = $state({ exportDirectory: '~/Downloads' });
+	const unsubscribeSettings = settingsStore.subscribe((settings) => {
+		currentSettings = settings;
+	});
 
 	// Get all linked song IDs from workspace to exclude from search
 	const getLinkedSongIds = $derived(() => {
@@ -423,6 +441,54 @@
 		}
 	};
 
+	// Handle exporting song to zip
+	const handleExportToZip = async () => {
+		if (!song.path) {
+			console.error('No song path available for export');
+			return;
+		}
+
+		isExporting = true;
+		exportError = null;
+		exportSuccess = false;
+		exportedFilePath = null;
+
+		try {
+			const songTitle = song.songTitle || song.name || 'song';
+			const result = await window.electron.ipcRenderer.invoke('export-song-to-zip', {
+				songPath: song.path,
+				songTitle: songTitle,
+				exportDirectory: currentSettings.exportDirectory
+			});
+
+			if (result.success) {
+				exportSuccess = true;
+				exportedFilePath = result.zipPath;
+				console.log(
+					`Export successful: ${result.filesCount} files exported to ${result.zipPath}`
+				);
+
+				// Hide success message after 8 seconds
+				setTimeout(() => {
+					exportSuccess = false;
+					exportedFilePath = null;
+				}, 8000);
+			} else {
+				throw new Error(result.error || 'Failed to export song');
+			}
+		} catch (error) {
+			console.error('Error exporting song:', error);
+			exportError = error instanceof Error ? error.message : 'Failed to export song';
+
+			// Clear error message after 10 seconds
+			setTimeout(() => {
+				exportError = null;
+			}, 10000);
+		} finally {
+			isExporting = false;
+		}
+	};
+
 	// Effect to parse local DTX files when needed
 	$effect(() => {
 		// Only parse local files if we have a folder path and linked simfile data is missing key information
@@ -526,15 +592,34 @@
 						<Music size={20} class="text-purple-500 dark:text-purple-400" />
 						<h2 class="text-xl font-semibold">Song Details</h2>
 					</div>
-					<button
-						class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-						onclick={handleClose}
-						tabindex="0"
-						aria-label="Back to workspace"
-					>
-						<ArrowLeft size={16} />
-						Back to Workspace
-					</button>
+					<div class="flex items-center gap-2">
+						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-green-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleExportToZip}
+							disabled={isExporting}
+							tabindex="0"
+							aria-label="Export to ZIP"
+						>
+							{#if isExporting}
+								<div
+									class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+								></div>
+								Exporting...
+							{:else}
+								<Download size={16} />
+								Export to ZIP
+							{/if}
+						</button>
+						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleClose}
+							tabindex="0"
+							aria-label="Back to workspace"
+						>
+							<ArrowLeft size={16} />
+							Back to Workspace
+						</button>
+					</div>
 				</div>
 			{/snippet}
 
@@ -584,6 +669,47 @@
 							<span class="text-sm text-green-800 dark:text-green-200">
 								Cloud song updated successfully!
 							</span>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Export Status Messages -->
+				{#if isExporting}
+					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+						<div class="flex items-center gap-2">
+							<div
+								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+							></div>
+							<span class="text-sm text-blue-800 dark:text-blue-200">
+								Exporting song to ZIP...
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if exportError}
+					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-red-800 dark:text-red-200">
+								Export failed: {exportError}
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if exportSuccess}
+					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+						<div class="flex flex-col gap-1">
+							<span class="text-sm font-medium text-green-800 dark:text-green-200">
+								Song exported to ZIP successfully!
+							</span>
+							{#if exportedFilePath}
+								<span
+									class="font-mono text-xs break-all text-green-700 dark:text-green-300"
+								>
+									Saved to: {exportedFilePath}
+								</span>
+							{/if}
 						</div>
 					</div>
 				{/if}
@@ -668,15 +794,34 @@
 						<Music size={20} class="text-purple-500 dark:text-purple-400" />
 						<h2 class="text-xl font-semibold">Song Details</h2>
 					</div>
-					<button
-						class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-						onclick={handleClose}
-						tabindex="0"
-						aria-label="Back to workspace"
-					>
-						<ArrowLeft size={16} />
-						Back to Workspace
-					</button>
+					<div class="flex items-center gap-2">
+						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-green-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleExportToZip}
+							disabled={isExporting}
+							tabindex="0"
+							aria-label="Export to ZIP"
+						>
+							{#if isExporting}
+								<div
+									class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+								></div>
+								Exporting...
+							{:else}
+								<Download size={16} />
+								Export to ZIP
+							{/if}
+						</button>
+						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleClose}
+							tabindex="0"
+							aria-label="Back to workspace"
+						>
+							<ArrowLeft size={16} />
+							Back to Workspace
+						</button>
+					</div>
 				</div>
 			{/snippet}
 
@@ -774,6 +919,47 @@
 							<span class="text-sm text-green-800 dark:text-green-200">
 								Song uploaded successfully! It is now linked to the cloud.
 							</span>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Export Status Messages -->
+				{#if isExporting}
+					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+						<div class="flex items-center gap-2">
+							<div
+								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+							></div>
+							<span class="text-sm text-blue-800 dark:text-blue-200">
+								Exporting song to ZIP...
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if exportError}
+					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-red-800 dark:text-red-200">
+								Export failed: {exportError}
+							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if exportSuccess}
+					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+						<div class="flex flex-col gap-1">
+							<span class="text-sm font-medium text-green-800 dark:text-green-200">
+								Song exported to ZIP successfully!
+							</span>
+							{#if exportedFilePath}
+								<span
+									class="font-mono text-xs break-all text-green-700 dark:text-green-300"
+								>
+									Saved to: {exportedFilePath}
+								</span>
+							{/if}
 						</div>
 					</div>
 				{/if}

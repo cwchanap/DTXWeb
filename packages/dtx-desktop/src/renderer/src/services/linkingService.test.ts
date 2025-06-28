@@ -373,7 +373,7 @@ describe('LinkingService', () => {
 					hasChildren: false,
 					containsDtxFiles: true,
 					songTitle: 'Test Song',
-					linkedSimFileId: 2 // Already linked to another simFile
+					linkedSimFileId: '2' // Already linked to another simFile
 				}
 			];
 

@@ -31,7 +31,9 @@ const extendedElectronAPI = {
 				'load-asset-files',
 				'create-song',
 				'create-simfile-record',
-				'upload-file'
+				'upload-file',
+				'search-cloud-songs',
+				'link-song-to-cloud'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

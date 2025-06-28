@@ -340,41 +340,47 @@ if (!gotTheLock) {
 		});
 
 		// Handle searching cloud songs for autocomplete
-		ipcMain.handle('search-cloud-songs', async (_event, { query, limit = 8 }) => {
-			console.log('search-cloud-songs IPC called with query:', query, 'limit:', limit);
-			try {
-				const supabaseClient = getSupabaseClient();
-				if (!supabaseClient) {
-					console.error('No Supabase client available');
-					return { success: false, error: 'User not authenticated' };
-				}
+		ipcMain.handle(
+			'search-cloud-songs',
+			async (_event, { query, limit = 8, excludeLinkedSongIds = [] }) => {
+				try {
+					const supabaseClient = getSupabaseClient();
+					if (!supabaseClient) {
+						return { success: false, error: 'User not authenticated' };
+					}
 
-				console.log('Supabase client available, executing query...');
+					// Build the query
+					let queryBuilder = supabaseClient
+						.from('simfiles')
+						.select('id, title, artist, bpm, is_published')
+						.or(`title.ilike.%${query}%, artist.ilike.%${query}%`);
 
-				// Search both title and artist fields
-				const { data, error } = await supabaseClient
-					.from('simfiles')
-					.select('id, title, artist, bpm, is_published')
-					.or(`title.ilike.%${query}%, artist.ilike.%${query}%`)
-					.limit(limit);
+					// Exclude already linked song IDs if provided
+					if (excludeLinkedSongIds.length > 0) {
+						queryBuilder = queryBuilder.not(
+							'id',
+							'in',
+							`(${excludeLinkedSongIds.join(',')})`
+						);
+					}
 
-				console.log('Query executed. Error:', error, 'Data count:', data?.length);
+					const { data, error } = await queryBuilder.limit(limit);
 
-				if (error) {
+					if (error) {
+						console.error('Error searching cloud songs:', error);
+						return { success: false, error: error.message };
+					}
+
+					return { success: true, data: data || [] };
+				} catch (error) {
 					console.error('Error searching cloud songs:', error);
-					return { success: false, error: error.message };
+					return {
+						success: false,
+						error: error instanceof Error ? error.message : 'Unknown error'
+					};
 				}
-
-				console.log('Returning', data?.length || 0, 'results');
-				return { success: true, data: data || [] };
-			} catch (error) {
-				console.error('Error searching cloud songs:', error);
-				return {
-					success: false,
-					error: error instanceof Error ? error.message : 'Unknown error'
-				};
 			}
-		});
+		);
 
 		// Handle linking local song to cloud song
 		ipcMain.handle('link-song-to-cloud', async (_event, { songPath, cloudSongId }) => {

@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Music, ArrowLeft, Link } from '@lucide/svelte';
+	import { Music, ArrowLeft, Link, Search } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { onMount } from 'svelte';
+	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 
 	interface Props {
 		song: TreeNode;
@@ -122,6 +123,16 @@
 
 	// Track which action is being performed
 	let currentUploadAction: 'draft' | 'publish' | null = $state(null);
+
+	// Autocomplete popup state
+	let showAutocomplete = $state(false);
+	let autocompletePosition = $state({ top: 0, left: 0, width: 0 });
+	let linkButtonRef = $state<HTMLButtonElement>();
+
+	// Linking state
+	let isLinking = $state(false);
+	let linkingError = $state<string | null>(null);
+	let linkingSuccess = $state(false);
 
 	// Custom asset file loader for desktop
 	const loadAssetFilesForDesktop = async (simfileId: string) => {
@@ -260,6 +271,68 @@
 		}
 	};
 
+	// Handle showing autocomplete popup
+	const handleShowAutocomplete = (event: MouseEvent) => {
+		event.preventDefault();
+		event.stopPropagation();
+
+		// Center the popup on screen
+		autocompletePosition = {
+			top: window.innerHeight / 2 - 200, // Subtract half of estimated popup height
+			left: window.innerWidth / 2 - 200, // Subtract half of popup width (400px)
+			width: 400
+		};
+
+		showAutocomplete = true;
+	};
+
+	// Handle cloud song selection from autocomplete
+	const handleCloudSongSelect = async (event: CustomEvent) => {
+		const selectedSong = event.detail;
+		showAutocomplete = false;
+
+		if (!selectedSong || !song.path) return;
+
+		isLinking = true;
+		linkingError = null;
+		linkingSuccess = false;
+
+		try {
+			// Call IPC to link the local song to the cloud song
+			const result = await window.electron.ipcRenderer.invoke('link-song-to-cloud', {
+				songPath: song.path,
+				cloudSongId: selectedSong.id
+			});
+
+			if (result.success) {
+				linkingSuccess = true;
+				// Update the song with the linked data
+				song.linkedSimFileId = selectedSong.id;
+				song.linkedSimFile = result.linkedSimFile || selectedSong;
+
+				// Update the workspace store
+				workspaceStore.linkSimFileToFolder(song.path, song.linkedSimFile);
+
+				// Hide success message after 3 seconds
+				setTimeout(() => {
+					linkingSuccess = false;
+				}, 3000);
+			} else {
+				throw new Error(result.error || 'Failed to link song to cloud');
+			}
+		} catch (error) {
+			console.error('Error linking song to cloud:', error);
+			linkingError = error instanceof Error ? error.message : 'Failed to link song to cloud';
+
+			// Clear error message after 10 seconds
+			setTimeout(() => {
+				linkingError = null;
+			}, 10000);
+		} finally {
+			isLinking = false;
+		}
+	};
+
 	// Effect to parse local DTX files when needed
 	$effect(() => {
 		// Only parse local files if we have a folder path and linked simfile data is missing key information
@@ -390,10 +463,62 @@
 				</div>
 			{:else if song.containsDtxFiles}
 				<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+					<div class="flex items-center justify-between gap-2">
+						<div class="flex items-center gap-2">
+							<Music size={16} class="text-yellow-600 dark:text-yellow-400" />
+							<span class="text-sm text-yellow-800 dark:text-yellow-200">
+								Not linked - Local song not yet uploaded to cloud
+							</span>
+						</div>
+						<button
+							bind:this={linkButtonRef}
+							class="flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none dark:bg-purple-600 dark:hover:bg-purple-700"
+							onclick={handleShowAutocomplete}
+							disabled={isLinking}
+						>
+							{#if isLinking}
+								<div
+									class="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent"
+								></div>
+								Linking...
+							{:else}
+								<Search size={14} />
+								Link to Cloud
+							{/if}
+						</button>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Linking Status Messages -->
+			{#if isLinking}
+				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
 					<div class="flex items-center gap-2">
-						<Music size={16} class="text-yellow-600 dark:text-yellow-400" />
-						<span class="text-sm text-yellow-800 dark:text-yellow-200">
-							Not linked - Local song not yet uploaded to cloud
+						<div
+							class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+						></div>
+						<span class="text-sm text-blue-800 dark:text-blue-200">
+							Linking song to cloud...
+						</span>
+					</div>
+				</div>
+			{/if}
+
+			{#if linkingError}
+				<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="flex items-center gap-2">
+						<span class="text-sm text-red-800 dark:text-red-200">
+							Linking failed: {linkingError}
+						</span>
+					</div>
+				</div>
+			{/if}
+
+			{#if linkingSuccess}
+				<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="flex items-center gap-2">
+						<span class="text-sm text-green-800 dark:text-green-200">
+							Song linked successfully! It is now linked to the cloud.
 						</span>
 					</div>
 				</div>
@@ -516,3 +641,11 @@
 		{/snippet}
 	</ChartDetail>
 </div>
+
+<!-- Autocomplete Popup -->
+<CloudSongAutocomplete
+	isOpen={showAutocomplete}
+	position={autocompletePosition}
+	on:close={() => (showAutocomplete = false)}
+	on:select={handleCloudSongSelect}
+/>

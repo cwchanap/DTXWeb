@@ -12,6 +12,8 @@ export interface TreeNode {
 	hasChildren: boolean;
 	containsDtxFiles: boolean;
 	songTitle: string | null;
+	linkedSimFileId?: string;
+	linkedSimFile?: any;
 }
 
 export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
@@ -30,6 +32,8 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 				let hasChildren = false;
 				let containsDtxFiles = false;
 				let songTitle: string | null = null;
+				let linkedSimFileId: string | undefined;
+				let linkedSimFile: any = undefined;
 
 				try {
 					const subEntries = await fs.promises.readdir(fullPath, {
@@ -66,6 +70,31 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 								console.warn('Could not read SET.def file:', error);
 							}
 						}
+
+						// Check for cached linkage data
+						const linkageCacheFile = subEntries.find(
+							(entry) => entry.isFile() && entry.name === '.dtx_linkage_cache.json'
+						);
+
+						if (linkageCacheFile) {
+							try {
+								const linkageCachePath = path.join(fullPath, linkageCacheFile.name);
+								const linkageDataBuffer =
+									await fs.promises.readFile(linkageCachePath);
+								const linkageData = JSON.parse(linkageDataBuffer.toString());
+
+								linkedSimFileId = linkageData.linkedSimFileId;
+								linkedSimFile = linkageData.cloudSongData;
+								console.log(
+									'Found cached linkage for:',
+									songTitle,
+									'linked to:',
+									linkedSimFileId
+								);
+							} catch (error) {
+								console.warn('Could not read linkage cache file:', error);
+							}
+						}
 					}
 				} catch (error) {
 					console.warn('Could not check subdirectories for:', fullPath);
@@ -79,7 +108,9 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 					children: [],
 					hasChildren: containsDtxFiles ? false : hasChildren, // Don't show children for folders with .dtx files
 					containsDtxFiles,
-					songTitle
+					songTitle,
+					linkedSimFileId,
+					linkedSimFile
 				};
 			})
 		);

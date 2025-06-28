@@ -339,6 +339,100 @@ if (!gotTheLock) {
 			return await createSimfileRecord(simfileData);
 		});
 
+		// Handle searching cloud songs for autocomplete
+		ipcMain.handle('search-cloud-songs', async (_event, { query, limit = 8 }) => {
+			console.log('search-cloud-songs IPC called with query:', query, 'limit:', limit);
+			try {
+				const supabaseClient = getSupabaseClient();
+				if (!supabaseClient) {
+					console.error('No Supabase client available');
+					return { success: false, error: 'User not authenticated' };
+				}
+
+				console.log('Supabase client available, executing query...');
+
+				// Search both title and artist fields
+				const { data, error } = await supabaseClient
+					.from('simfiles')
+					.select('id, title, artist, bpm, is_published')
+					.or(`title.ilike.%${query}%, artist.ilike.%${query}%`)
+					.limit(limit);
+
+				console.log('Query executed. Error:', error, 'Data count:', data?.length);
+
+				if (error) {
+					console.error('Error searching cloud songs:', error);
+					return { success: false, error: error.message };
+				}
+
+				console.log('Returning', data?.length || 0, 'results');
+				return { success: true, data: data || [] };
+			} catch (error) {
+				console.error('Error searching cloud songs:', error);
+				return {
+					success: false,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
+		});
+
+		// Handle linking local song to cloud song
+		ipcMain.handle('link-song-to-cloud', async (_event, { songPath, cloudSongId }) => {
+			try {
+				const supabaseClient = getSupabaseClient();
+				if (!supabaseClient) {
+					throw new Error('User not authenticated');
+				}
+
+				// Fetch full simfile data including dtx_files
+				const { data: simfileData, error } = await supabaseClient
+					.from('simfiles')
+					.select(
+						`
+						*,
+						dtx_files (
+							id,
+							label,
+							level,
+							simfile_id
+						)
+					`
+					)
+					.eq('id', cloudSongId)
+					.single();
+
+				if (error) {
+					console.error('Error fetching cloud song data:', error);
+					return { success: false, error: error.message };
+				}
+
+				if (!simfileData) {
+					return { success: false, error: 'Cloud song not found' };
+				}
+
+				// Store the linkage in a cache file in the song directory
+				const linkageCachePath = path.join(songPath, '.dtx_linkage_cache.json');
+				const linkageData = {
+					linkedSimFileId: cloudSongId,
+					linkedAt: new Date().toISOString(),
+					cloudSongData: simfileData
+				};
+
+				await fs.promises.writeFile(linkageCachePath, JSON.stringify(linkageData, null, 2));
+
+				return {
+					success: true,
+					linkedSimFile: simfileData
+				};
+			} catch (error) {
+				console.error('Error linking song to cloud:', error);
+				return {
+					success: false,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
+		});
+
 		// Handle file upload from desktop to cloud
 		ipcMain.handle(
 			'upload-file',

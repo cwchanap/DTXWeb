@@ -9,7 +9,7 @@ export interface TreeNode {
 	hasChildren: boolean;
 	containsDtxFiles?: boolean; // New property to identify folders with .dtx files
 	songTitle?: string | null; // Song title from SET.def file
-	linkedSimFileId?: number | null; // ID of linked remote simFile
+	linkedSimFileId?: string | null; // ID of linked remote simFile
 	linkedSimFile?: any | null; // Full linked remote simFile data
 }
 

@@ -17,6 +17,12 @@ export class Editor extends BaseGame {
 
 	private isEditing = false;
 	private isSelecting = false;
+	private isDragging = false;
+	private dragStartX = 0;
+	private dragStartY = 0;
+	private draggedNotes: Set<string> = new Set();
+	private dragOriginNote: string = ''; // The note that user clicked to start dragging
+	private dragPreviewGraphics: Phaser.GameObjects.Graphics | null = null;
 	private selectionStartX = 0;
 	private selectionStartY = 0;
 	private selectionRectangle!: Phaser.GameObjects.Rectangle;
@@ -65,11 +71,18 @@ export class Editor extends BaseGame {
 				const clickedNote = this.getClickedNote(pointer);
 
 				if (clickedNote) {
-					// Single note selection
-					this.clearSelection();
-					this.selectedNotes.add(clickedNote.name);
-					this.highlightSelectedNote(clickedNote);
-					return;
+					// Check if the clicked note is already selected
+					if (this.selectedNotes.has(clickedNote.name)) {
+						// Start drag operation if clicking on selected note
+						this.startDrag(pointer, clickedNote.name);
+						return;
+					} else {
+						// Single note selection
+						this.clearSelection();
+						this.selectedNotes.add(clickedNote.name);
+						this.highlightSelectedNote(clickedNote);
+						return;
+					}
 				}
 
 				// Start drag selection if no note was clicked
@@ -144,8 +157,21 @@ export class Editor extends BaseGame {
 						if (!(measure in this.notes)) {
 							this.notes[measure] = [];
 						}
+
+						// Create a pattern that represents a single note at the position
+						const patternLength = this.cellsPerMeasure;
+						const notePosition = Math.round(cellOffset * patternLength);
+						let pattern = '00'.repeat(patternLength);
+
+						// Place a note ('01' instead of '00') at the correct position
+						const startIndex = notePosition * 2;
+						pattern =
+							pattern.substring(0, startIndex) +
+							'01' +
+							pattern.substring(startIndex + 2);
+
 						this.notes[measure].push(
-							new LaneMeasureNote(measure, this.laneConfigs[laneIndex].id, '00')
+							new LaneMeasureNote(measure, this.laneConfigs[laneIndex].id, pattern)
 						);
 					}
 				}
@@ -153,7 +179,10 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-			if (this.isSelecting && !this.isEditing) {
+			if (this.isDragging && !this.isEditing) {
+				// Update drag position and preview
+				this.updateDrag();
+			} else if (this.isSelecting && !this.isEditing) {
 				// Update selection rectangle size and position
 				this.updateSelectionRectangle(pointer);
 				// Find and highlight selected notes
@@ -175,7 +204,10 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointerup', () => {
-			if (this.isSelecting) {
+			if (this.isDragging) {
+				// Complete drag operation
+				this.completeDrag();
+			} else if (this.isSelecting) {
 				// Finalize selection
 				this.isSelecting = false;
 				this.selectionRectangle.setVisible(false);
@@ -304,6 +336,10 @@ export class Editor extends BaseGame {
 		this.input.keyboard?.off('keydown-Q');
 		this.input.keyboard?.off('keydown-BACKSPACE');
 		this.input.keyboard?.off('keydown-DELETE');
+
+		// Clean up drag state
+		this.cleanupDrag();
+
 		// Reset cursor to default when restarting
 		this.input.setDefaultCursor('default');
 		// Re-enable browser context menu when restarting
@@ -610,5 +646,332 @@ export class Editor extends BaseGame {
 
 		// Clear the selection after deletion
 		this.selectedNotes.clear();
+	}
+
+	private startDrag(pointer: Phaser.Input.Pointer, originNoteKey: string) {
+		this.isDragging = true;
+		this.dragStartX = pointer.x;
+		this.dragStartY = pointer.y;
+		this.dragOriginNote = originNoteKey;
+
+		// Copy selected notes to dragged notes
+		this.draggedNotes = new Set(this.selectedNotes);
+
+		// Create drag preview graphics
+		this.createDragPreview();
+	}
+
+	private updateDrag() {
+		if (!this.isDragging || !this.dragPreviewGraphics) return;
+
+		// Update the drag preview to show all notes moving together
+		this.updateDragPreview();
+	}
+
+	private completeDrag() {
+		if (!this.isDragging) return;
+
+		// Get current mouse position
+		const pointer = this.input.activePointer;
+		const x = pointer.x - this.offsetX;
+		const absoluteY = pointer.y - this.offsetY - this.panelContainer.y;
+
+		const targetLaneIndex = Math.floor(x / this.cellWidth);
+		const targetCellIndex = Math.floor(-absoluteY / this.cellHeight);
+
+		// Validate target position
+		if (
+			targetLaneIndex >= 0 &&
+			targetLaneIndex < this.laneConfigs.length &&
+			targetCellIndex >= 0 &&
+			targetCellIndex < this.measureCount * this.cellsPerMeasure
+		) {
+			const targetMeasure = Math.floor(targetCellIndex / this.cellsPerMeasure);
+			const targetCellOffset =
+				(targetCellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
+
+			// Move each dragged note
+			this.moveNotesToPosition(targetLaneIndex, targetMeasure, targetCellOffset);
+		}
+
+		// Clean up drag state
+		this.cleanupDrag();
+	}
+
+	private moveNotesToPosition(
+		targetLaneIndex: number,
+		targetMeasure: number,
+		targetCellOffset: number
+	) {
+		// Parse the origin note (the one user clicked to drag)
+		const originParts = this.dragOriginNote.split('-');
+		if (originParts.length !== 4) return;
+
+		const originLaneIndex = parseInt(originParts[1]);
+		const originMeasure = parseInt(originParts[2]);
+		const originCellOffset = parseFloat(originParts[3]);
+
+		// Calculate the movement delta from origin note to target position
+		const laneOffsetDelta = targetLaneIndex - originLaneIndex;
+		const measureOffsetDelta = targetMeasure - originMeasure;
+		const cellOffsetDelta = targetCellOffset - originCellOffset;
+
+		const notesToMove: Array<{
+			oldKey: string;
+			newKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+		}> = [];
+
+		// Calculate new positions for all selected notes based on the delta
+		this.draggedNotes.forEach((noteKey) => {
+			const parts = noteKey.split('-');
+			if (parts.length === 4) {
+				const currentLaneIndex = parseInt(parts[1]);
+				const currentMeasure = parseInt(parts[2]);
+				const currentCellOffset = parseFloat(parts[3]);
+
+				// Apply the same delta to each note to maintain relative positions
+				const newLaneIndex = currentLaneIndex + laneOffsetDelta;
+				const newMeasure = currentMeasure + measureOffsetDelta;
+				const newCellOffset = currentCellOffset + cellOffsetDelta;
+
+				// Validate new position
+				if (
+					newLaneIndex >= 0 &&
+					newLaneIndex < this.laneConfigs.length &&
+					newMeasure >= 0 &&
+					newMeasure < this.measureCount &&
+					newCellOffset >= 0 &&
+					newCellOffset < 1
+				) {
+					const newKey = `note-${newLaneIndex}-${newMeasure}-${newCellOffset}`;
+					const existingNote = this.panelContainer.getByName(newKey);
+
+					// Only move if target position is empty or we're moving to same position
+					// Also check if the existing note is one of the notes we're moving (to allow swapping within selection)
+					if (
+						!existingNote ||
+						newKey === noteKey ||
+						this.draggedNotes.has(existingNote.name)
+					) {
+						notesToMove.push({
+							oldKey: noteKey,
+							newKey,
+							laneIndex: newLaneIndex,
+							measure: newMeasure,
+							cellOffset: newCellOffset,
+							laneId: this.laneConfigs[newLaneIndex].id
+						});
+					}
+				}
+			}
+		});
+
+		// Allow partial movement - move notes that can be moved, leave others in place
+		if (notesToMove.length > 0) {
+			// Keep track of notes that were successfully moved for selection update
+			const movedNotes: string[] = [];
+			const unmovableNotes: string[] = [];
+
+			// Collect notes that cannot be moved
+			this.draggedNotes.forEach((noteKey) => {
+				const canMove = notesToMove.some(({ oldKey }) => oldKey === noteKey);
+				if (!canMove) {
+					unmovableNotes.push(noteKey);
+				}
+			});
+
+			// First, remove old notes that are moving
+			notesToMove.forEach(({ oldKey }) => {
+				// Remove from display
+				this.panelContainer.getAll('name', oldKey).forEach((note) => {
+					note.destroy();
+				});
+
+				// Parse old key to get position info
+				const parts = oldKey.split('-');
+				const oldLaneIndex = parseInt(parts[1]);
+				const oldMeasure = parseInt(parts[2]);
+				const oldCellOffset = parseFloat(parts[3]);
+				const oldLaneId = this.laneConfigs[oldLaneIndex].id;
+
+				// Remove from data structure
+				if (oldMeasure in this.notes) {
+					this.notes[oldMeasure] = this.notes[oldMeasure].filter(
+						(note) =>
+							!(
+								note.laneID === oldLaneId &&
+								note.notes.some((n) => Math.abs(n.position - oldCellOffset) < 0.001)
+							)
+					);
+
+					if (this.notes[oldMeasure].length === 0) {
+						delete this.notes[oldMeasure];
+					}
+				}
+			});
+
+			// Then, add new notes
+			notesToMove.forEach(({ newKey, laneIndex, measure, cellOffset, laneId }) => {
+				// Add to display
+				const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '00');
+				if (noteAdded) {
+					// Add to data - use the same pattern as original note creation
+					if (!(measure in this.notes)) {
+						this.notes[measure] = [];
+					}
+
+					// Create a pattern that represents a single note at the position
+					const patternLength = this.cellsPerMeasure;
+					const notePosition = Math.round(cellOffset * patternLength);
+					let pattern = '00'.repeat(patternLength);
+
+					// Place a note ('01' instead of '00') at the correct position
+					const startIndex = notePosition * 2;
+					pattern =
+						pattern.substring(0, startIndex) + '01' + pattern.substring(startIndex + 2);
+
+					this.notes[measure].push(new LaneMeasureNote(measure, laneId, pattern));
+					movedNotes.push(newKey);
+				}
+			});
+
+			// Update selection to include both moved and unmoved notes
+			this.clearSelection();
+
+			// Add moved notes to selection
+			movedNotes.forEach((newKey) => {
+				this.selectedNotes.add(newKey);
+				const noteGraphics = this.panelContainer.getByName(newKey);
+				if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
+					this.highlightSelectedNote(noteGraphics);
+				}
+			});
+
+			// Keep unmovable notes in selection at their original positions
+			unmovableNotes.forEach((noteKey) => {
+				this.selectedNotes.add(noteKey);
+				const noteGraphics = this.panelContainer.getByName(noteKey);
+				if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
+					this.highlightSelectedNote(noteGraphics);
+				}
+			});
+		}
+	}
+
+	private createDragPreview() {
+		// Create preview graphics showing where notes will be moved
+		this.dragPreviewGraphics = this.add.graphics();
+		this.dragPreviewGraphics.setAlpha(0.5);
+
+		// We'll update the preview positions in updateDrag based on cursor movement
+		// For now, just initialize it with the current positions
+		this.updateDragPreview();
+	}
+
+	private updateDragPreview() {
+		if (!this.dragPreviewGraphics) return;
+
+		// Clear previous preview
+		this.dragPreviewGraphics.clear();
+		this.dragPreviewGraphics.setAlpha(0.5);
+
+		// Get current mouse position
+		const pointer = this.input.activePointer;
+		const x = pointer.x - this.offsetX;
+		const absoluteY = pointer.y - this.offsetY - this.panelContainer.y;
+
+		const targetLaneIndex = Math.floor(x / this.cellWidth);
+		const targetCellIndex = Math.floor(-absoluteY / this.cellHeight);
+
+		// Validate target position
+		if (
+			targetLaneIndex >= 0 &&
+			targetLaneIndex < this.laneConfigs.length &&
+			targetCellIndex >= 0 &&
+			targetCellIndex < this.measureCount * this.cellsPerMeasure
+		) {
+			const targetMeasure = Math.floor(targetCellIndex / this.cellsPerMeasure);
+			const targetCellOffset =
+				(targetCellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
+
+			// Calculate movement delta from origin note
+			const originParts = this.dragOriginNote.split('-');
+			if (originParts.length === 4) {
+				const originLaneIndex = parseInt(originParts[1]);
+				const originMeasure = parseInt(originParts[2]);
+				const originCellOffset = parseFloat(originParts[3]);
+
+				const laneOffsetDelta = targetLaneIndex - originLaneIndex;
+				const measureOffsetDelta = targetMeasure - originMeasure;
+				const cellOffsetDelta = targetCellOffset - originCellOffset;
+
+				// Draw preview for each selected note at their new relative positions
+				this.selectedNotes.forEach((noteKey) => {
+					const parts = noteKey.split('-');
+					if (parts.length === 4) {
+						const currentLaneIndex = parseInt(parts[1]);
+						const currentMeasure = parseInt(parts[2]);
+						const currentCellOffset = parseFloat(parts[3]);
+
+						// Calculate new position for this note
+						const newLaneIndex = currentLaneIndex + laneOffsetDelta;
+						const newMeasure = currentMeasure + measureOffsetDelta;
+						const newCellOffset = currentCellOffset + cellOffsetDelta;
+
+						// Only draw preview if the new position is valid
+						if (
+							newLaneIndex >= 0 &&
+							newLaneIndex < this.laneConfigs.length &&
+							newMeasure >= 0 &&
+							newMeasure < this.measureCount &&
+							newCellOffset >= 0 &&
+							newCellOffset < 1 &&
+							this.dragPreviewGraphics
+						) {
+							const x =
+								this.offsetX + this.cellWidth * newLaneIndex + this.cellMargin;
+							const yOffset = this.getTotalMesaureOffest(newMeasure);
+							const cellPosition = Math.floor(newCellOffset * this.cellsPerMeasure);
+
+							let cellsYOffset = 0;
+							for (let i = 0; i < cellPosition; i++) {
+								cellsYOffset += this.getCellHeight(
+									newMeasure,
+									i % this.cellsPerMeasure
+								);
+							}
+
+							const y =
+								this.offsetY -
+								(yOffset + cellsYOffset) +
+								this.cellMargin -
+								this.noteSize;
+							const width = this.cellWidth - this.cellMargin * 2;
+							const height = this.noteSize - this.cellMargin * 2;
+
+							// Draw preview note with different color
+							this.dragPreviewGraphics.fillStyle(0xffff00, 0.7); // Yellow with transparency
+							this.dragPreviewGraphics.fillRect(x, y, width, height);
+							this.dragPreviewGraphics.strokeRect(x, y, width, height);
+						}
+					}
+				});
+			}
+		}
+	}
+
+	private cleanupDrag() {
+		this.isDragging = false;
+		this.draggedNotes.clear();
+		this.dragOriginNote = '';
+
+		if (this.dragPreviewGraphics) {
+			this.dragPreviewGraphics.destroy();
+			this.dragPreviewGraphics = null;
+		}
 	}
 }

@@ -135,17 +135,22 @@ export class Editor extends BaseGame {
 						});
 						// Remove the note from this.notes
 						const laneId = this.laneConfigs[laneIndex].id;
-						if (measure in this.notes) {
-							// Find and remove the note with matching measure, laneID, and position
-							this.notes[measure] = this.notes[measure].filter(
+						if (laneId in this.notes) {
+							// Find and remove the note with matching measure and position
+							this.notes[laneId] = this.notes[laneId].filter(
 								(note) =>
 									!(
-										note.laneID === laneId &&
+										note.measure === measure &&
 										note.notes.some(
 											(n) => Math.abs(n.position - cellOffset) < 0.001
 										)
 									)
 							);
+
+							// Clean up empty lane entries
+							if (this.notes[laneId].length === 0) {
+								delete this.notes[laneId];
+							}
 						}
 					}
 				} else {
@@ -154,8 +159,9 @@ export class Editor extends BaseGame {
 					// The drawNote method expects (measure, laneIndex, cellOffset, noteId)
 					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '00');
 					if (noteAdded) {
-						if (!(measure in this.notes)) {
-							this.notes[measure] = [];
+						const laneId = this.laneConfigs[laneIndex].id;
+						if (!(laneId in this.notes)) {
+							this.notes[laneId] = [];
 						}
 
 						// Create a pattern that represents a single note at the position
@@ -170,9 +176,7 @@ export class Editor extends BaseGame {
 							'01' +
 							pattern.substring(startIndex + 2);
 
-						this.notes[measure].push(
-							new LaneMeasureNote(measure, this.laneConfigs[laneIndex].id, pattern)
-						);
+						this.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
 					}
 				}
 			}
@@ -627,18 +631,18 @@ export class Editor extends BaseGame {
 				const laneId = this.laneConfigs[laneIndex].id;
 
 				// Remove the note from this.notes
-				if (measure in this.notes) {
-					this.notes[measure] = this.notes[measure].filter(
+				if (laneId in this.notes) {
+					this.notes[laneId] = this.notes[laneId].filter(
 						(note) =>
 							!(
-								note.laneID === laneId &&
+								note.measure === measure &&
 								note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
 							)
 					);
 
-					// Clean up empty measure entries
-					if (this.notes[measure].length === 0) {
-						delete this.notes[measure];
+					// Clean up empty lane entries
+					if (this.notes[laneId].length === 0) {
+						delete this.notes[laneId];
 					}
 				}
 			}
@@ -723,7 +727,37 @@ export class Editor extends BaseGame {
 			measure: number;
 			cellOffset: number;
 			laneId: string;
+			originalNoteId: string;
 		}> = [];
+
+		// First, collect original noteIDs for all notes that will be moved
+		const originalNoteIds = new Map<string, string>();
+		this.draggedNotes.forEach((noteKey) => {
+			const parts = noteKey.split('-');
+			if (parts.length === 4) {
+				const oldLaneIndex = parseInt(parts[1]);
+				const oldMeasure = parseInt(parts[2]);
+				const oldCellOffset = parseFloat(parts[3]);
+				const oldLaneId = this.laneConfigs[oldLaneIndex].id;
+
+				// Find the original noteID from the data structure
+				if (oldLaneId in this.notes) {
+					const existingNote = this.notes[oldLaneId].find(
+						(note) =>
+							note.measure === oldMeasure &&
+							note.notes.some((n) => Math.abs(n.position - oldCellOffset) < 0.001)
+					);
+					if (existingNote) {
+						const noteChip = existingNote.notes.find(
+							(n) => Math.abs(n.position - oldCellOffset) < 0.001
+						);
+						if (noteChip) {
+							originalNoteIds.set(noteKey, noteChip.noteID);
+						}
+					}
+				}
+			}
+		});
 
 		// Calculate new positions for all selected notes based on the delta
 		this.draggedNotes.forEach((noteKey) => {
@@ -735,8 +769,20 @@ export class Editor extends BaseGame {
 
 				// Apply the same delta to each note to maintain relative positions
 				const newLaneIndex = currentLaneIndex + laneOffsetDelta;
-				const newMeasure = currentMeasure + measureOffsetDelta;
-				const newCellOffset = currentCellOffset + cellOffsetDelta;
+				let newMeasure = currentMeasure + measureOffsetDelta;
+				let newCellOffset = currentCellOffset + cellOffsetDelta;
+
+				// Handle measure boundary crossing for cellOffset
+				// If cellOffset >= 1.0, move to next measure(s)
+				// If cellOffset < 0.0, move to previous measure(s)
+				while (newCellOffset >= 1.0) {
+					newCellOffset -= 1.0;
+					newMeasure += 1;
+				}
+				while (newCellOffset < 0.0) {
+					newCellOffset += 1.0;
+					newMeasure -= 1;
+				}
 
 				// Validate new position
 				if (
@@ -763,7 +809,8 @@ export class Editor extends BaseGame {
 							laneIndex: newLaneIndex,
 							measure: newMeasure,
 							cellOffset: newCellOffset,
-							laneId: this.laneConfigs[newLaneIndex].id
+							laneId: this.laneConfigs[newLaneIndex].id,
+							originalNoteId: originalNoteIds.get(noteKey) || '01'
 						});
 					}
 				}
@@ -799,45 +846,50 @@ export class Editor extends BaseGame {
 				const oldLaneId = this.laneConfigs[oldLaneIndex].id;
 
 				// Remove from data structure
-				if (oldMeasure in this.notes) {
-					this.notes[oldMeasure] = this.notes[oldMeasure].filter(
+				if (oldLaneId in this.notes) {
+					this.notes[oldLaneId] = this.notes[oldLaneId].filter(
 						(note) =>
 							!(
-								note.laneID === oldLaneId &&
+								note.measure === oldMeasure &&
 								note.notes.some((n) => Math.abs(n.position - oldCellOffset) < 0.001)
 							)
 					);
 
-					if (this.notes[oldMeasure].length === 0) {
-						delete this.notes[oldMeasure];
+					if (this.notes[oldLaneId].length === 0) {
+						delete this.notes[oldLaneId];
 					}
 				}
 			});
 
 			// Then, add new notes
-			notesToMove.forEach(({ newKey, laneIndex, measure, cellOffset, laneId }) => {
-				// Add to display
-				const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '00');
-				if (noteAdded) {
-					// Add to data - use the same pattern as original note creation
-					if (!(measure in this.notes)) {
-						this.notes[measure] = [];
+			notesToMove.forEach(
+				({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
+					// Add to display
+					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, originalNoteId);
+
+					if (noteAdded) {
+						// Add to data - use the correct lane-based data structure
+						if (!(laneId in this.notes)) {
+							this.notes[laneId] = [];
+						}
+
+						// Create a pattern that represents a single note at the position
+						const patternLength = this.cellsPerMeasure;
+						const notePosition = Math.round(cellOffset * patternLength);
+						let pattern = '00'.repeat(patternLength);
+
+						// Place the original noteId at the correct position
+						const startIndex = notePosition * 2;
+						pattern =
+							pattern.substring(0, startIndex) +
+							originalNoteId +
+							pattern.substring(startIndex + 2);
+
+						this.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+						movedNotes.push(newKey);
 					}
-
-					// Create a pattern that represents a single note at the position
-					const patternLength = this.cellsPerMeasure;
-					const notePosition = Math.round(cellOffset * patternLength);
-					let pattern = '00'.repeat(patternLength);
-
-					// Place a note ('01' instead of '00') at the correct position
-					const startIndex = notePosition * 2;
-					pattern =
-						pattern.substring(0, startIndex) + '01' + pattern.substring(startIndex + 2);
-
-					this.notes[measure].push(new LaneMeasureNote(measure, laneId, pattern));
-					movedNotes.push(newKey);
 				}
-			});
+			);
 
 			// Update selection to include both moved and unmoved notes
 			this.clearSelection();

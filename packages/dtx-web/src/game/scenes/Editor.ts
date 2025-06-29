@@ -203,6 +203,19 @@ export class Editor extends BaseGame {
 			this.updateCursorForEditingMode();
 		});
 
+		// Handle delete key for Mac (Backspace) and PC (Delete)
+		this.input.keyboard?.on('keydown-BACKSPACE', () => {
+			if (!this.isEditing) {
+				this.deleteSelectedNotes();
+			}
+		});
+
+		this.input.keyboard?.on('keydown-DELETE', () => {
+			if (!this.isEditing) {
+				this.deleteSelectedNotes();
+			}
+		});
+
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.MEASURE_UPDATE, (measureCount: number) => {
 			this.measureCount = get(store.measureCount);
@@ -289,6 +302,8 @@ export class Editor extends BaseGame {
 		this.input.off('pointerup');
 		this.input.off('wheel');
 		this.input.keyboard?.off('keydown-Q');
+		this.input.keyboard?.off('keydown-BACKSPACE');
+		this.input.keyboard?.off('keydown-DELETE');
 		// Reset cursor to default when restarting
 		this.input.setDefaultCursor('default');
 		// Re-enable browser context menu when restarting
@@ -555,5 +570,45 @@ export class Editor extends BaseGame {
 				);
 			}
 		}
+	}
+
+	private deleteSelectedNotes() {
+		if (this.selectedNotes.size === 0) return;
+
+		// Delete each selected note
+		this.selectedNotes.forEach((noteKey) => {
+			// Remove the note from the display
+			this.panelContainer.getAll('name', noteKey).forEach((note) => {
+				note.destroy();
+			});
+
+			// Parse the note key to get the position info: "note-{laneIndex}-{measure}-{cellOffset}"
+			const parts = noteKey.split('-');
+			if (parts.length === 4) {
+				const laneIndex = parseInt(parts[1]);
+				const measure = parseInt(parts[2]);
+				const cellOffset = parseFloat(parts[3]);
+				const laneId = this.laneConfigs[laneIndex].id;
+
+				// Remove the note from this.notes
+				if (measure in this.notes) {
+					this.notes[measure] = this.notes[measure].filter(
+						(note) =>
+							!(
+								note.laneID === laneId &&
+								note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
+							)
+					);
+
+					// Clean up empty measure entries
+					if (this.notes[measure].length === 0) {
+						delete this.notes[measure];
+					}
+				}
+			}
+		});
+
+		// Clear the selection after deletion
+		this.selectedNotes.clear();
 	}
 }

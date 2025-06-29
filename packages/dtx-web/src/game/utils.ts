@@ -11,5 +11,5 @@ export function getAssetPath(assetName: AssetName): string {
 		[AssetName.DRUM_CHIPS]: `default/Graphics/7_chips_drums.png`
 	};
 
-	return `skin/${assetsMap[assetName]}`;
+	return `/skin/${assetsMap[assetName]}`;
 }

@@ -1,6 +1,7 @@
 import { LaneMeasureNote } from '@dtx/common';
 import type { Editor } from '../Editor';
 import { NoteBuffer, type DeletedNoteData } from './NoteBuffer';
+import Phaser from 'phaser';
 
 /**
  * Manages all note-related operations in the DTX editor including:

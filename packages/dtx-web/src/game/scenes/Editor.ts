@@ -7,6 +7,7 @@ import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
 import { LaneMeasureNote } from '@dtx/common';
+import { NoteBuffer, type DeletedNoteData } from './editor/NoteBuffer';
 
 interface Data {
 	measureCount?: number;
@@ -26,10 +27,11 @@ export class Editor extends BaseGame {
 	private selectionStartX = 0;
 	private selectionStartY = 0;
 	private selectionRectangle!: Phaser.GameObjects.Rectangle;
-	private selectedNotes: Set<string> = new Set();
+	public selectedNotes: Set<string> = new Set();
 	private contextMenuHandler: ((e: Event) => void) | null = null;
 	private currentLaneIndex = -1;
-	protected notes: Record<string, LaneMeasureNote[]> = {};
+	private noteBuffer = new NoteBuffer();
+	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
 
@@ -129,23 +131,81 @@ export class Editor extends BaseGame {
 					const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
 					const existingNote = this.panelContainer.getByName(noteKey);
 					if (existingNote) {
+						const laneId = this.laneConfigs[laneIndex].id;
+
+						// Find the note data before deleting it for undo functionality
+						let deletedNoteData: DeletedNoteData | null = null;
+						if (laneId in this.notes) {
+							const existingLaneMeasureNote = this.notes[laneId].find(
+								(note) =>
+									note.measure === measure &&
+									note.notes.some(
+										(n) => Math.abs(n.position - cellOffset) < 0.001
+									)
+							);
+
+							if (existingLaneMeasureNote) {
+								const noteChip = existingLaneMeasureNote.notes.find(
+									(n) => Math.abs(n.position - cellOffset) < 0.001
+								);
+
+								if (noteChip) {
+									deletedNoteData = {
+										noteKey,
+										laneIndex,
+										measure,
+										cellOffset,
+										laneId,
+										noteId: noteChip.noteID,
+										laneMeasureNote: existingLaneMeasureNote
+									};
+								}
+							}
+						}
+
+						// Record undo action before deleting
+						if (deletedNoteData) {
+							this.noteBuffer.recordAction('delete', [deletedNoteData]);
+						}
+
 						// Remove the note from the display
 						this.panelContainer.getAll('name', noteKey).forEach((note) => {
 							note.destroy();
 						});
+
 						// Remove the note from this.notes
-						const laneId = this.laneConfigs[laneIndex].id;
 						if (laneId in this.notes) {
-							// Find and remove the note with matching measure and position
-							this.notes[laneId] = this.notes[laneId].filter(
+							// Find the LaneMeasureNote that contains this note
+							const measureNote = this.notes[laneId].find(
 								(note) =>
-									!(
-										note.measure === measure &&
-										note.notes.some(
-											(n) => Math.abs(n.position - cellOffset) < 0.001
-										)
+									note.measure === measure &&
+									note.notes.some(
+										(n) => Math.abs(n.position - cellOffset) < 0.001
 									)
 							);
+
+							if (measureNote) {
+								// Remove the specific note from the pattern
+								const patternLength = this.cellsPerMeasure;
+								const notePosition = Math.round(cellOffset * patternLength);
+								const startIndex = notePosition * 2;
+
+								// Replace the note with '00'
+								let pattern = measureNote.pattern;
+								pattern =
+									pattern.substring(0, startIndex) +
+									'00' +
+									pattern.substring(startIndex + 2);
+								measureNote.pattern = pattern;
+								measureNote.parseNote(); // Reparse to update notes array
+
+								// If the measure is now empty, remove the entire LaneMeasureNote
+								if (measureNote.notes.length === 0) {
+									this.notes[laneId] = this.notes[laneId].filter(
+										(note) => note !== measureNote
+									);
+								}
+							}
 
 							// Clean up empty lane entries
 							if (this.notes[laneId].length === 0) {
@@ -252,6 +312,13 @@ export class Editor extends BaseGame {
 			}
 		});
 
+		// Handle Ctrl+Z for undo (works on both Mac and PC)
+		this.input.keyboard?.on('keydown-Z', (event: KeyboardEvent) => {
+			if ((event.ctrlKey || event.metaKey) && !this.isEditing) {
+				this.noteBuffer.undoLastAction(this);
+			}
+		});
+
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.MEASURE_UPDATE, (measureCount: number) => {
 			this.measureCount = get(store.measureCount);
@@ -340,9 +407,13 @@ export class Editor extends BaseGame {
 		this.input.keyboard?.off('keydown-Q');
 		this.input.keyboard?.off('keydown-BACKSPACE');
 		this.input.keyboard?.off('keydown-DELETE');
+		this.input.keyboard?.off('keydown-Z');
 
 		// Clean up drag state
 		this.cleanupDrag();
+
+		// Clear undo history when restarting
+		this.noteBuffer.clearHistory();
 
 		// Reset cursor to default when restarting
 		this.input.setDefaultCursor('default');
@@ -448,7 +519,7 @@ export class Editor extends BaseGame {
 		}
 	}
 
-	private clearSelection() {
+	public clearSelection() {
 		// Clear visual highlighting of previously selected notes
 		this.selectedNotes.forEach((noteKey) => {
 			const noteGraphics = this.panelContainer.getByName(noteKey);
@@ -483,6 +554,37 @@ export class Editor extends BaseGame {
 			}
 		});
 		this.selectedNotes.clear();
+	}
+
+	public highlightSelectedNote(noteGraphics: { name: string }) {
+		if (noteGraphics instanceof Phaser.GameObjects.Graphics) {
+			// Calculate the note bounds to draw the highlight border
+			const bounds = this.calculateNoteBounds(noteGraphics.name);
+			if (bounds) {
+				// Draw a yellow border around the note
+				noteGraphics.lineStyle(3, 0xffff00, 1);
+				// Use the original note position (without panelContainer adjustment for drawing)
+				const originalBounds = this.calculateNoteBounds(noteGraphics.name);
+				if (originalBounds) {
+					const adjustedY = originalBounds.y - this.panelContainer.y;
+					noteGraphics.strokeRect(
+						originalBounds.x,
+						adjustedY,
+						originalBounds.width,
+						originalBounds.height
+					);
+				}
+			}
+		}
+	}
+
+	public getByName(name: string): { name: string } | null {
+		return this.panelContainer.getByName(name);
+	}
+
+	// Public getter for cellsPerMeasure to allow NoteBuffer to access it
+	get getCellsPerMeasure(): number {
+		return this.cellsPerMeasure;
 	}
 
 	private updateSelectionRectangle(pointer: Phaser.Input.Pointer) {
@@ -592,36 +694,13 @@ export class Editor extends BaseGame {
 		return clickedNote;
 	}
 
-	private highlightSelectedNote(noteGraphics: Phaser.GameObjects.Graphics) {
-		// Calculate the note bounds to draw the highlight border
-		const bounds = this.calculateNoteBounds(noteGraphics.name);
-		if (bounds) {
-			// Draw a yellow border around the note
-			noteGraphics.lineStyle(3, 0xffff00, 1);
-			// Use the original note position (without panelContainer adjustment for drawing)
-			const originalBounds = this.calculateNoteBounds(noteGraphics.name);
-			if (originalBounds) {
-				const adjustedY = originalBounds.y - this.panelContainer.y;
-				noteGraphics.strokeRect(
-					originalBounds.x,
-					adjustedY,
-					originalBounds.width,
-					originalBounds.height
-				);
-			}
-		}
-	}
-
 	private deleteSelectedNotes() {
 		if (this.selectedNotes.size === 0) return;
 
-		// Delete each selected note
-		this.selectedNotes.forEach((noteKey) => {
-			// Remove the note from the display
-			this.panelContainer.getAll('name', noteKey).forEach((note) => {
-				note.destroy();
-			});
+		// Collect all notes that will be deleted for undo functionality
+		const deletedNotes: DeletedNoteData[] = [];
 
+		this.selectedNotes.forEach((noteKey) => {
 			// Parse the note key to get the position info: "note-{laneIndex}-{measure}-{cellOffset}"
 			const parts = noteKey.split('-');
 			if (parts.length === 4) {
@@ -630,15 +709,88 @@ export class Editor extends BaseGame {
 				const cellOffset = parseFloat(parts[3]);
 				const laneId = this.laneConfigs[laneIndex].id;
 
-				// Remove the note from this.notes
+				// Find the note data before deleting it
 				if (laneId in this.notes) {
-					this.notes[laneId] = this.notes[laneId].filter(
+					const existingNote = this.notes[laneId].find(
 						(note) =>
-							!(
-								note.measure === measure &&
-								note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
-							)
+							note.measure === measure &&
+							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
 					);
+
+					if (existingNote) {
+						// Find the specific note chip
+						const noteChip = existingNote.notes.find(
+							(n) => Math.abs(n.position - cellOffset) < 0.001
+						);
+
+						if (noteChip) {
+							// Store the note data for undo
+							deletedNotes.push({
+								noteKey,
+								laneIndex,
+								measure,
+								cellOffset,
+								laneId,
+								noteId: noteChip.noteID,
+								laneMeasureNote: existingNote
+							});
+						}
+					}
+				}
+			}
+		});
+
+		// Record undo action before deleting
+		if (deletedNotes.length > 0) {
+			this.noteBuffer.recordAction('delete', deletedNotes);
+		}
+
+		// Delete each selected note
+		this.selectedNotes.forEach((noteKey) => {
+			// Remove the note from the display
+			this.panelContainer.getAll('name', noteKey).forEach((note) => {
+				note.destroy();
+			});
+
+			// Parse the note key to get the position info
+			const parts = noteKey.split('-');
+			if (parts.length === 4) {
+				const laneIndex = parseInt(parts[1]);
+				const measure = parseInt(parts[2]);
+				const cellOffset = parseFloat(parts[3]);
+				const laneId = this.laneConfigs[laneIndex].id;
+
+				// Remove the specific note from this.notes
+				if (laneId in this.notes) {
+					// Find the LaneMeasureNote that contains this note
+					const measureNote = this.notes[laneId].find(
+						(note) =>
+							note.measure === measure &&
+							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
+					);
+
+					if (measureNote) {
+						// Remove the specific note from the pattern
+						const patternLength = this.cellsPerMeasure;
+						const notePosition = Math.round(cellOffset * patternLength);
+						const startIndex = notePosition * 2;
+
+						// Replace the note with '00'
+						let pattern = measureNote.pattern;
+						pattern =
+							pattern.substring(0, startIndex) +
+							'00' +
+							pattern.substring(startIndex + 2);
+						measureNote.pattern = pattern;
+						measureNote.parseNote(); // Reparse to update notes array
+
+						// If the measure is now empty, remove the entire LaneMeasureNote
+						if (measureNote.notes.length === 0) {
+							this.notes[laneId] = this.notes[laneId].filter(
+								(note) => note !== measureNote
+							);
+						}
+					}
 
 					// Clean up empty lane entries
 					if (this.notes[laneId].length === 0) {

@@ -473,8 +473,18 @@ export class Editor extends BaseGame {
 		}
 	}
 
-	public getByName(name: string): { name: string } | null {
-		return this.panelContainer.getByName(name);
+	/**
+	 * Clear selection - delegate to NoteManager
+	 */
+	clearSelection(): void {
+		this.noteManager.clearSelection();
+	}
+
+	/**
+	 * Get selected notes - delegate to NoteManager
+	 */
+	get selectedNotes(): Set<string> {
+		return this.noteManager.selectedNotes;
 	}
 
 	// Getter methods for NoteManager access
@@ -567,12 +577,7 @@ export class Editor extends BaseGame {
 		return this.noteManager?.selectionRectangle;
 	}
 
-	get selectedNotes(): Set<string> {
-		return this.noteManager?.selectedNotes ?? new Set();
-	}
-
-	// Compatibility method for tests - delegate to NoteManager
-	calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
-		return this.noteManager?.calculateNoteBounds(noteKey) ?? null;
+	public getByName(name: string): { name: string } | null {
+		return this.panelContainer.getByName(name);
 	}
 }

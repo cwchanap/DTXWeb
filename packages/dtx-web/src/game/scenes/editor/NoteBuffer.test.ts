@@ -230,7 +230,7 @@ describe('NoteBuffer', () => {
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 			expect(mockEditor.selectedNotes.has('test-note-1')).toBe(true);
 			expect(mockEditor.selectedNotes.has('test-note-2')).toBe(true);
-			expect(mockEditor.highlightSelectedNote).toHaveBeenCalledTimes(2);
+			// Note: Highlighting is now handled internally by NoteManager, no explicit highlighting call needed
 		});
 	});
 
@@ -271,7 +271,7 @@ describe('NoteBuffer', () => {
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
 			expect(noteBuffer.canUndo()).toBe(true);
 
-			noteBuffer.undoLastAction(mockEditor as any);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 			expect(noteBuffer.canUndo()).toBe(false);
 		});
 	});

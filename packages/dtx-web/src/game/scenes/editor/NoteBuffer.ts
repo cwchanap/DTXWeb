@@ -250,7 +250,8 @@ export class NoteBuffer {
 			editor.selectedNotes.add(deletedNote.noteKey);
 			const noteGraphics = editor.getByName(deletedNote.noteKey);
 			if (noteGraphics) {
-				editor.highlightSelectedNote(noteGraphics);
+				// Note highlighting will be handled by selection mechanism
+				editor.selectedNotes.add(deletedNote.noteKey);
 			}
 		});
 	}

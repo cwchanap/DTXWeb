@@ -7,7 +7,8 @@ import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
 import { LaneMeasureNote } from '@dtx/common';
-import { NoteBuffer, type DeletedNoteData } from './editor/NoteBuffer';
+import type { DeletedNoteData } from './editor/NoteBuffer';
+import { NoteManager } from './editor/NoteManager';
 
 interface Data {
 	measureCount?: number;
@@ -17,26 +18,16 @@ export class Editor extends BaseGame {
 	public static key = 'Editor';
 
 	private isEditing = false;
-	private isSelecting = false;
-	private isDragging = false;
-	private dragStartX = 0;
-	private dragStartY = 0;
-	private draggedNotes: Set<string> = new Set();
-	private dragOriginNote: string = ''; // The note that user clicked to start dragging
-	private dragPreviewGraphics: Phaser.GameObjects.Graphics | null = null;
-	private selectionStartX = 0;
-	private selectionStartY = 0;
-	private selectionRectangle!: Phaser.GameObjects.Rectangle;
-	public selectedNotes: Set<string> = new Set();
+	private noteManager: NoteManager;
 	private contextMenuHandler: ((e: Event) => void) | null = null;
 	private currentLaneIndex = -1;
-	private noteBuffer = new NoteBuffer();
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
 
 	constructor(protected measureCount: number = 10) {
 		super({ key: Editor.key });
+		this.noteManager = new NoteManager(this);
 	}
 
 	init(data: Data) {
@@ -49,13 +40,11 @@ export class Editor extends BaseGame {
 		// Disable browser context menu on the game canvas
 		this.disableBrowserContextMenu();
 
+		// Initialize NoteManager after scene is created
+		this.noteManager.initialize();
+
 		this.drawPanel();
 		this.drawNotes();
-
-		// Initialize selection rectangle (initially hidden)
-		this.selectionRectangle = this.add.rectangle(0, 0, 0, 0, 0x1d7196, 0.3);
-		this.selectionRectangle.setStrokeStyle(2, 0x1d7196, 1);
-		this.selectionRectangle.setVisible(false);
 
 		// Helper function for clamping Y position (still needed for wheel scrolling)
 		const clampY = (newY: number) => {
@@ -68,37 +57,14 @@ export class Editor extends BaseGame {
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Input.Pointer) => {
+			// Try to handle with NoteManager first (for selection/drag operations)
+			const handled = this.noteManager.handlePointerDown(pointer);
+			if (handled) {
+				return;
+			}
+
+			// Handle note creation/deletion in editing mode
 			if (!this.isEditing) {
-				// Check if user clicked on an existing note for single selection
-				const clickedNote = this.getClickedNote(pointer);
-
-				if (clickedNote) {
-					// Check if the clicked note is already selected
-					if (this.selectedNotes.has(clickedNote.name)) {
-						// Start drag operation if clicking on selected note
-						this.startDrag(pointer, clickedNote.name);
-						return;
-					} else {
-						// Single note selection
-						this.clearSelection();
-						this.selectedNotes.add(clickedNote.name);
-						this.highlightSelectedNote(clickedNote);
-						return;
-					}
-				}
-
-				// Start drag selection if no note was clicked
-				this.isSelecting = true;
-				this.selectionStartX = pointer.x;
-				this.selectionStartY = pointer.y;
-
-				// Clear previous selection
-				this.clearSelection();
-
-				// Position and show selection rectangle
-				this.selectionRectangle.setPosition(pointer.x, pointer.y);
-				this.selectionRectangle.setSize(0, 0);
-				this.selectionRectangle.setVisible(true);
 				return;
 			}
 
@@ -165,7 +131,7 @@ export class Editor extends BaseGame {
 
 						// Record undo action before deleting
 						if (deletedNoteData) {
-							this.noteBuffer.recordAction('delete', [deletedNoteData]);
+							this.noteManager.recordDeleteAction([deletedNoteData]);
 						}
 
 						// Remove the note from the display
@@ -243,15 +209,11 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-			if (this.isDragging && !this.isEditing) {
-				// Update drag position and preview
-				this.updateDrag();
-			} else if (this.isSelecting && !this.isEditing) {
-				// Update selection rectangle size and position
-				this.updateSelectionRectangle(pointer);
-				// Find and highlight selected notes
-				this.updateSelectedNotes();
-			} else if (this.isEditing) {
+			// Handle note operations (drag/selection) first
+			this.noteManager.handlePointerMove(pointer);
+
+			// Handle cursor updates in editing mode
+			if (this.isEditing) {
 				// Update cursor color based on hovered lane
 				const x = pointer.x - this.offsetX;
 				const laneIndex = Math.floor(x / this.cellWidth);
@@ -268,15 +230,7 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointerup', () => {
-			if (this.isDragging) {
-				// Complete drag operation
-				this.completeDrag();
-			} else if (this.isSelecting) {
-				// Finalize selection
-				this.isSelecting = false;
-				this.selectionRectangle.setVisible(false);
-				// Keep selected notes highlighted for future actions
-			}
+			this.noteManager.handlePointerUp();
 		});
 
 		this.input.on(
@@ -302,20 +256,20 @@ export class Editor extends BaseGame {
 		// Handle delete key for Mac (Backspace) and PC (Delete)
 		this.input.keyboard?.on('keydown-BACKSPACE', () => {
 			if (!this.isEditing) {
-				this.deleteSelectedNotes();
+				this.noteManager.deleteSelectedNotes();
 			}
 		});
 
 		this.input.keyboard?.on('keydown-DELETE', () => {
 			if (!this.isEditing) {
-				this.deleteSelectedNotes();
+				this.noteManager.deleteSelectedNotes();
 			}
 		});
 
 		// Handle Ctrl+Z for undo (works on both Mac and PC)
 		this.input.keyboard?.on('keydown-Z', (event: KeyboardEvent) => {
 			if ((event.ctrlKey || event.metaKey) && !this.isEditing) {
-				this.noteBuffer.undoLastAction(this);
+				this.noteManager.undoLastAction();
 			}
 		});
 
@@ -410,10 +364,10 @@ export class Editor extends BaseGame {
 		this.input.keyboard?.off('keydown-Z');
 
 		// Clean up drag state
-		this.cleanupDrag();
+		this.noteManager.destroy();
 
 		// Clear undo history when restarting
-		this.noteBuffer.clearHistory();
+		this.noteManager.clearUndoHistory();
 
 		// Reset cursor to default when restarting
 		this.input.setDefaultCursor('default');
@@ -519,67 +473,58 @@ export class Editor extends BaseGame {
 		}
 	}
 
-	public clearSelection() {
-		// Clear visual highlighting of previously selected notes
-		this.selectedNotes.forEach((noteKey) => {
-			const noteGraphics = this.panelContainer.getByName(noteKey);
-			if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
-				// Reset to original color by redrawing the note
-				const parts = noteKey.split('-');
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-
-				if (laneIndex >= 0 && laneIndex < this.laneConfigs.length) {
-					// Calculate original note position
-					const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
-					const yOffset = this.getTotalMesaureOffest(measure);
-					const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
-
-					let cellsYOffset = 0;
-					for (let i = 0; i < cellPosition; i++) {
-						cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
-					}
-
-					const y =
-						this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
-					const width = this.cellWidth - this.cellMargin * 2;
-					const height = this.noteSize - this.cellMargin * 2;
-
-					// Clear and redraw the note
-					noteGraphics.clear();
-					noteGraphics.fillStyle(this.laneConfigs[laneIndex].noteColor, 1);
-					noteGraphics.fillRect(x, y, width, height);
-				}
-			}
-		});
-		this.selectedNotes.clear();
-	}
-
-	public highlightSelectedNote(noteGraphics: { name: string }) {
-		if (noteGraphics instanceof Phaser.GameObjects.Graphics) {
-			// Calculate the note bounds to draw the highlight border
-			const bounds = this.calculateNoteBounds(noteGraphics.name);
-			if (bounds) {
-				// Draw a yellow border around the note
-				noteGraphics.lineStyle(3, 0xffff00, 1);
-				// Use the original note position (without panelContainer adjustment for drawing)
-				const originalBounds = this.calculateNoteBounds(noteGraphics.name);
-				if (originalBounds) {
-					const adjustedY = originalBounds.y - this.panelContainer.y;
-					noteGraphics.strokeRect(
-						originalBounds.x,
-						adjustedY,
-						originalBounds.width,
-						originalBounds.height
-					);
-				}
-			}
-		}
-	}
-
 	public getByName(name: string): { name: string } | null {
 		return this.panelContainer.getByName(name);
+	}
+
+	// Getter methods for NoteManager access
+	getIsEditing(): boolean {
+		return this.isEditing;
+	}
+
+	getLaneConfigs(): LaneConfig[] {
+		return this.laneConfigs;
+	}
+
+	getNotes(): Record<string, LaneMeasureNote[]> {
+		return this.notes;
+	}
+
+	getPanelContainer(): Phaser.GameObjects.Container {
+		return this.panelContainer;
+	}
+
+	getOffsetX(): number {
+		return this.offsetX;
+	}
+
+	getOffsetY(): number {
+		return this.offsetY;
+	}
+
+	getCellWidth(): number {
+		return this.cellWidth;
+	}
+
+	getCellHeightValue(): number {
+		return this.cellHeight;
+	}
+
+	// Wrapper method to access the inherited getCellHeight with parameters
+	getCellHeightAt(measure: number, cell: number): number {
+		return this.getCellHeight(measure, cell);
+	}
+
+	getCellMargin(): number {
+		return this.cellMargin;
+	}
+
+	getNoteSize(): number {
+		return this.noteSize;
+	}
+
+	getMeasureCount(): number {
+		return this.measureCount;
 	}
 
 	// Public getter for cellsPerMeasure to allow NoteBuffer to access it
@@ -587,595 +532,47 @@ export class Editor extends BaseGame {
 		return this.cellsPerMeasure;
 	}
 
-	private updateSelectionRectangle(pointer: Phaser.Input.Pointer) {
-		// Calculate the width and height from start position to current position
-		const width = pointer.x - this.selectionStartX;
-		const height = pointer.y - this.selectionStartY;
-
-		// Update the rectangle size
-		this.selectionRectangle.setSize(Math.abs(width), Math.abs(height));
-
-		// Update position to handle reverse dragging
-		const x = width < 0 ? pointer.x : this.selectionStartX;
-		const y = height < 0 ? pointer.y : this.selectionStartY;
-		this.selectionRectangle.setPosition(x + Math.abs(width) / 2, y + Math.abs(height) / 2);
+	// Compatibility getters for tests - delegate to NoteManager
+	get isSelecting(): boolean {
+		return this.noteManager?.isSelecting ?? false;
 	}
 
-	private updateSelectedNotes() {
-		// Clear previous selection highlighting
-		this.clearSelection();
-
-		// Create a rectangle for overlap detection
-		const width = Math.abs(this.selectionRectangle.width);
-		const height = Math.abs(this.selectionRectangle.height);
-		const x = this.selectionRectangle.x - width / 2;
-		const y = this.selectionRectangle.y - height / 2;
-
-		const selectionRect = new Phaser.Geom.Rectangle(x, y, width, height);
-
-		// Find all notes that overlap with the selection rectangle
-		this.panelContainer.list.forEach((child) => {
-			if (
-				child.name &&
-				child.name.startsWith('note-') &&
-				child instanceof Phaser.GameObjects.Graphics
-			) {
-				// Calculate note bounds manually based on how notes are drawn
-				const noteBounds = this.calculateNoteBounds(child.name);
-
-				// Check if the note overlaps with the selection rectangle
-				if (noteBounds && Phaser.Geom.Rectangle.Overlaps(selectionRect, noteBounds)) {
-					// Add to selection
-					this.selectedNotes.add(child.name);
-
-					// Highlight the selected note
-					this.highlightSelectedNote(child);
-				}
-			}
-		});
-	}
-
-	private calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
-		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
-		const parts = noteKey.split('-');
-		if (parts.length !== 4) return null;
-
-		const laneIndex = parseInt(parts[1]);
-		const measure = parseInt(parts[2]);
-		const cellOffset = parseFloat(parts[3]);
-
-		// Calculate note position using the same logic as drawNote
-		const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
-		const yOffset = this.getTotalMesaureOffest(measure);
-		const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
-
-		let cellsYOffset = 0;
-		for (let i = 0; i < cellPosition; i++) {
-			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
-		}
-
-		const y = this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
-		const width = this.cellWidth - this.cellMargin * 2;
-		const height = this.noteSize - this.cellMargin * 2;
-
-		// Account for panelContainer position (scrolling)
-		const adjustedY = y + this.panelContainer.y;
-
-		return new Phaser.Geom.Rectangle(x, adjustedY, width, height);
-	}
-
-	private getClickedNote(pointer: Phaser.Input.Pointer): Phaser.GameObjects.Graphics | null {
-		// Check all notes to see if the pointer clicked on one
-		let clickedNote: Phaser.GameObjects.Graphics | null = null;
-
-		this.panelContainer.list.forEach((child) => {
-			if (
-				child.name &&
-				child.name.startsWith('note-') &&
-				child instanceof Phaser.GameObjects.Graphics
-			) {
-				// Calculate note bounds
-				const noteBounds = this.calculateNoteBounds(child.name);
-
-				if (noteBounds) {
-					// Check if the pointer is within the note bounds
-					if (
-						pointer.x >= noteBounds.x &&
-						pointer.x <= noteBounds.x + noteBounds.width &&
-						pointer.y >= noteBounds.y &&
-						pointer.y <= noteBounds.y + noteBounds.height
-					) {
-						clickedNote = child;
-					}
-				}
-			}
-		});
-
-		return clickedNote;
-	}
-
-	private deleteSelectedNotes() {
-		if (this.selectedNotes.size === 0) return;
-
-		// Collect all notes that will be deleted for undo functionality
-		const deletedNotes: DeletedNoteData[] = [];
-
-		this.selectedNotes.forEach((noteKey) => {
-			// Parse the note key to get the position info: "note-{laneIndex}-{measure}-{cellOffset}"
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-				const laneId = this.laneConfigs[laneIndex].id;
-
-				// Find the note data before deleting it
-				if (laneId in this.notes) {
-					const existingNote = this.notes[laneId].find(
-						(note) =>
-							note.measure === measure &&
-							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
-					);
-
-					if (existingNote) {
-						// Find the specific note chip
-						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - cellOffset) < 0.001
-						);
-
-						if (noteChip) {
-							// Store the note data for undo
-							deletedNotes.push({
-								noteKey,
-								laneIndex,
-								measure,
-								cellOffset,
-								laneId,
-								noteId: noteChip.noteID,
-								laneMeasureNote: existingNote
-							});
-						}
-					}
-				}
-			}
-		});
-
-		// Record undo action before deleting
-		if (deletedNotes.length > 0) {
-			this.noteBuffer.recordAction('delete', deletedNotes);
-		}
-
-		// Delete each selected note
-		this.selectedNotes.forEach((noteKey) => {
-			// Remove the note from the display
-			this.panelContainer.getAll('name', noteKey).forEach((note) => {
-				note.destroy();
-			});
-
-			// Parse the note key to get the position info
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-				const laneId = this.laneConfigs[laneIndex].id;
-
-				// Remove the specific note from this.notes
-				if (laneId in this.notes) {
-					// Find the LaneMeasureNote that contains this note
-					const measureNote = this.notes[laneId].find(
-						(note) =>
-							note.measure === measure &&
-							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
-					);
-
-					if (measureNote) {
-						// Remove the specific note from the pattern
-						const patternLength = this.cellsPerMeasure;
-						const notePosition = Math.round(cellOffset * patternLength);
-						const startIndex = notePosition * 2;
-
-						// Replace the note with '00'
-						let pattern = measureNote.pattern;
-						pattern =
-							pattern.substring(0, startIndex) +
-							'00' +
-							pattern.substring(startIndex + 2);
-						measureNote.pattern = pattern;
-						measureNote.parseNote(); // Reparse to update notes array
-
-						// If the measure is now empty, remove the entire LaneMeasureNote
-						if (measureNote.notes.length === 0) {
-							this.notes[laneId] = this.notes[laneId].filter(
-								(note) => note !== measureNote
-							);
-						}
-					}
-
-					// Clean up empty lane entries
-					if (this.notes[laneId].length === 0) {
-						delete this.notes[laneId];
-					}
-				}
-			}
-		});
-
-		// Clear the selection after deletion
-		this.selectedNotes.clear();
-	}
-
-	private startDrag(pointer: Phaser.Input.Pointer, originNoteKey: string) {
-		this.isDragging = true;
-		this.dragStartX = pointer.x;
-		this.dragStartY = pointer.y;
-		this.dragOriginNote = originNoteKey;
-
-		// Copy selected notes to dragged notes
-		this.draggedNotes = new Set(this.selectedNotes);
-
-		// Create drag preview graphics
-		this.createDragPreview();
-	}
-
-	private updateDrag() {
-		if (!this.isDragging || !this.dragPreviewGraphics) return;
-
-		// Update the drag preview to show all notes moving together
-		this.updateDragPreview();
-	}
-
-	private completeDrag() {
-		if (!this.isDragging) return;
-
-		// Get current mouse position
-		const pointer = this.input.activePointer;
-		const x = pointer.x - this.offsetX;
-		const absoluteY = pointer.y - this.offsetY - this.panelContainer.y;
-
-		const targetLaneIndex = Math.floor(x / this.cellWidth);
-		const targetCellIndex = Math.floor(-absoluteY / this.cellHeight);
-
-		// Validate target position
-		if (
-			targetLaneIndex >= 0 &&
-			targetLaneIndex < this.laneConfigs.length &&
-			targetCellIndex >= 0 &&
-			targetCellIndex < this.measureCount * this.cellsPerMeasure
-		) {
-			const targetMeasure = Math.floor(targetCellIndex / this.cellsPerMeasure);
-			const targetCellOffset =
-				(targetCellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
-
-			// Move each dragged note
-			this.moveNotesToPosition(targetLaneIndex, targetMeasure, targetCellOffset);
-		}
-
-		// Clean up drag state
-		this.cleanupDrag();
-	}
-
-	private moveNotesToPosition(
-		targetLaneIndex: number,
-		targetMeasure: number,
-		targetCellOffset: number
-	) {
-		// Parse the origin note (the one user clicked to drag)
-		const originParts = this.dragOriginNote.split('-');
-		if (originParts.length !== 4) return;
-
-		const originLaneIndex = parseInt(originParts[1]);
-		const originMeasure = parseInt(originParts[2]);
-		const originCellOffset = parseFloat(originParts[3]);
-
-		// Calculate the movement delta from origin note to target position
-		const laneOffsetDelta = targetLaneIndex - originLaneIndex;
-		const measureOffsetDelta = targetMeasure - originMeasure;
-		const cellOffsetDelta = targetCellOffset - originCellOffset;
-
-		const notesToMove: Array<{
-			oldKey: string;
-			newKey: string;
-			laneIndex: number;
-			measure: number;
-			cellOffset: number;
-			laneId: string;
-			originalNoteId: string;
-		}> = [];
-
-		// First, collect original noteIDs for all notes that will be moved
-		const originalNoteIds = new Map<string, string>();
-		this.draggedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const oldLaneIndex = parseInt(parts[1]);
-				const oldMeasure = parseInt(parts[2]);
-				const oldCellOffset = parseFloat(parts[3]);
-				const oldLaneId = this.laneConfigs[oldLaneIndex].id;
-
-				// Find the original noteID from the data structure
-				if (oldLaneId in this.notes) {
-					const existingNote = this.notes[oldLaneId].find(
-						(note) =>
-							note.measure === oldMeasure &&
-							note.notes.some((n) => Math.abs(n.position - oldCellOffset) < 0.001)
-					);
-					if (existingNote) {
-						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - oldCellOffset) < 0.001
-						);
-						if (noteChip) {
-							originalNoteIds.set(noteKey, noteChip.noteID);
-						}
-					}
-				}
-			}
-		});
-
-		// Calculate new positions for all selected notes based on the delta
-		this.draggedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const currentLaneIndex = parseInt(parts[1]);
-				const currentMeasure = parseInt(parts[2]);
-				const currentCellOffset = parseFloat(parts[3]);
-
-				// Apply the same delta to each note to maintain relative positions
-				const newLaneIndex = currentLaneIndex + laneOffsetDelta;
-				let newMeasure = currentMeasure + measureOffsetDelta;
-				let newCellOffset = currentCellOffset + cellOffsetDelta;
-
-				// Handle measure boundary crossing for cellOffset
-				// If cellOffset >= 1.0, move to next measure(s)
-				// If cellOffset < 0.0, move to previous measure(s)
-				while (newCellOffset >= 1.0) {
-					newCellOffset -= 1.0;
-					newMeasure += 1;
-				}
-				while (newCellOffset < 0.0) {
-					newCellOffset += 1.0;
-					newMeasure -= 1;
-				}
-
-				// Validate new position
-				if (
-					newLaneIndex >= 0 &&
-					newLaneIndex < this.laneConfigs.length &&
-					newMeasure >= 0 &&
-					newMeasure < this.measureCount &&
-					newCellOffset >= 0 &&
-					newCellOffset < 1
-				) {
-					const newKey = `note-${newLaneIndex}-${newMeasure}-${newCellOffset}`;
-					const existingNote = this.panelContainer.getByName(newKey);
-
-					// Only move if target position is empty or we're moving to same position
-					// Also check if the existing note is one of the notes we're moving (to allow swapping within selection)
-					if (
-						!existingNote ||
-						newKey === noteKey ||
-						this.draggedNotes.has(existingNote.name)
-					) {
-						notesToMove.push({
-							oldKey: noteKey,
-							newKey,
-							laneIndex: newLaneIndex,
-							measure: newMeasure,
-							cellOffset: newCellOffset,
-							laneId: this.laneConfigs[newLaneIndex].id,
-							originalNoteId: originalNoteIds.get(noteKey) || '01'
-						});
-					}
-				}
-			}
-		});
-
-		// Allow partial movement - move notes that can be moved, leave others in place
-		if (notesToMove.length > 0) {
-			// Keep track of notes that were successfully moved for selection update
-			const movedNotes: string[] = [];
-			const unmovableNotes: string[] = [];
-
-			// Collect notes that cannot be moved
-			this.draggedNotes.forEach((noteKey) => {
-				const canMove = notesToMove.some(({ oldKey }) => oldKey === noteKey);
-				if (!canMove) {
-					unmovableNotes.push(noteKey);
-				}
-			});
-
-			// First, remove old notes that are moving
-			notesToMove.forEach(({ oldKey }) => {
-				// Remove from display
-				this.panelContainer.getAll('name', oldKey).forEach((note) => {
-					note.destroy();
-				});
-
-				// Parse old key to get position info
-				const parts = oldKey.split('-');
-				const oldLaneIndex = parseInt(parts[1]);
-				const oldMeasure = parseInt(parts[2]);
-				const oldCellOffset = parseFloat(parts[3]);
-				const oldLaneId = this.laneConfigs[oldLaneIndex].id;
-
-				// Remove from data structure
-				if (oldLaneId in this.notes) {
-					this.notes[oldLaneId] = this.notes[oldLaneId].filter(
-						(note) =>
-							!(
-								note.measure === oldMeasure &&
-								note.notes.some((n) => Math.abs(n.position - oldCellOffset) < 0.001)
-							)
-					);
-
-					if (this.notes[oldLaneId].length === 0) {
-						delete this.notes[oldLaneId];
-					}
-				}
-			});
-
-			// Then, add new notes
-			notesToMove.forEach(
-				({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
-					// Add to display
-					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, originalNoteId);
-
-					if (noteAdded) {
-						// Add to data - use the correct lane-based data structure
-						if (!(laneId in this.notes)) {
-							this.notes[laneId] = [];
-						}
-
-						// Create a pattern that represents a single note at the position
-						const patternLength = this.cellsPerMeasure;
-						const notePosition = Math.round(cellOffset * patternLength);
-						let pattern = '00'.repeat(patternLength);
-
-						// Place the original noteId at the correct position
-						const startIndex = notePosition * 2;
-						pattern =
-							pattern.substring(0, startIndex) +
-							originalNoteId +
-							pattern.substring(startIndex + 2);
-
-						this.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
-						movedNotes.push(newKey);
-					}
-				}
-			);
-
-			// Update selection to include both moved and unmoved notes
-			this.clearSelection();
-
-			// Add moved notes to selection
-			movedNotes.forEach((newKey) => {
-				this.selectedNotes.add(newKey);
-				const noteGraphics = this.panelContainer.getByName(newKey);
-				if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
-					this.highlightSelectedNote(noteGraphics);
-				}
-			});
-
-			// Keep unmovable notes in selection at their original positions
-			unmovableNotes.forEach((noteKey) => {
-				this.selectedNotes.add(noteKey);
-				const noteGraphics = this.panelContainer.getByName(noteKey);
-				if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
-					this.highlightSelectedNote(noteGraphics);
-				}
-			});
+	set isSelecting(value: boolean) {
+		if (this.noteManager) {
+			this.noteManager.isSelecting = value;
 		}
 	}
 
-	private createDragPreview() {
-		// Create preview graphics showing where notes will be moved
-		this.dragPreviewGraphics = this.add.graphics();
-		this.dragPreviewGraphics.setAlpha(0.5);
-
-		// We'll update the preview positions in updateDrag based on cursor movement
-		// For now, just initialize it with the current positions
-		this.updateDragPreview();
+	get selectionStartX(): number {
+		return this.noteManager?.selectionStartX ?? 0;
 	}
 
-	private updateDragPreview() {
-		if (!this.dragPreviewGraphics) return;
-
-		// Clear previous preview
-		this.dragPreviewGraphics.clear();
-		this.dragPreviewGraphics.setAlpha(0.5);
-
-		// Get current mouse position
-		const pointer = this.input.activePointer;
-		const x = pointer.x - this.offsetX;
-		const absoluteY = pointer.y - this.offsetY - this.panelContainer.y;
-
-		const targetLaneIndex = Math.floor(x / this.cellWidth);
-		const targetCellIndex = Math.floor(-absoluteY / this.cellHeight);
-
-		// Validate target position
-		if (
-			targetLaneIndex >= 0 &&
-			targetLaneIndex < this.laneConfigs.length &&
-			targetCellIndex >= 0 &&
-			targetCellIndex < this.measureCount * this.cellsPerMeasure
-		) {
-			const targetMeasure = Math.floor(targetCellIndex / this.cellsPerMeasure);
-			const targetCellOffset =
-				(targetCellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
-
-			// Calculate movement delta from origin note
-			const originParts = this.dragOriginNote.split('-');
-			if (originParts.length === 4) {
-				const originLaneIndex = parseInt(originParts[1]);
-				const originMeasure = parseInt(originParts[2]);
-				const originCellOffset = parseFloat(originParts[3]);
-
-				const laneOffsetDelta = targetLaneIndex - originLaneIndex;
-				const measureOffsetDelta = targetMeasure - originMeasure;
-				const cellOffsetDelta = targetCellOffset - originCellOffset;
-
-				// Draw preview for each selected note at their new relative positions
-				this.selectedNotes.forEach((noteKey) => {
-					const parts = noteKey.split('-');
-					if (parts.length === 4) {
-						const currentLaneIndex = parseInt(parts[1]);
-						const currentMeasure = parseInt(parts[2]);
-						const currentCellOffset = parseFloat(parts[3]);
-
-						// Calculate new position for this note
-						const newLaneIndex = currentLaneIndex + laneOffsetDelta;
-						const newMeasure = currentMeasure + measureOffsetDelta;
-						const newCellOffset = currentCellOffset + cellOffsetDelta;
-
-						// Only draw preview if the new position is valid
-						if (
-							newLaneIndex >= 0 &&
-							newLaneIndex < this.laneConfigs.length &&
-							newMeasure >= 0 &&
-							newMeasure < this.measureCount &&
-							newCellOffset >= 0 &&
-							newCellOffset < 1 &&
-							this.dragPreviewGraphics
-						) {
-							const x =
-								this.offsetX + this.cellWidth * newLaneIndex + this.cellMargin;
-							const yOffset = this.getTotalMesaureOffest(newMeasure);
-							const cellPosition = Math.floor(newCellOffset * this.cellsPerMeasure);
-
-							let cellsYOffset = 0;
-							for (let i = 0; i < cellPosition; i++) {
-								cellsYOffset += this.getCellHeight(
-									newMeasure,
-									i % this.cellsPerMeasure
-								);
-							}
-
-							const y =
-								this.offsetY -
-								(yOffset + cellsYOffset) +
-								this.cellMargin -
-								this.noteSize;
-							const width = this.cellWidth - this.cellMargin * 2;
-							const height = this.noteSize - this.cellMargin * 2;
-
-							// Draw preview note with different color
-							this.dragPreviewGraphics.fillStyle(0xffff00, 0.7); // Yellow with transparency
-							this.dragPreviewGraphics.fillRect(x, y, width, height);
-							this.dragPreviewGraphics.strokeRect(x, y, width, height);
-						}
-					}
-				});
-			}
+	set selectionStartX(value: number) {
+		if (this.noteManager) {
+			this.noteManager.selectionStartX = value;
 		}
 	}
 
-	private cleanupDrag() {
-		this.isDragging = false;
-		this.draggedNotes.clear();
-		this.dragOriginNote = '';
+	get selectionStartY(): number {
+		return this.noteManager?.selectionStartY ?? 0;
+	}
 
-		if (this.dragPreviewGraphics) {
-			this.dragPreviewGraphics.destroy();
-			this.dragPreviewGraphics = null;
+	set selectionStartY(value: number) {
+		if (this.noteManager) {
+			this.noteManager.selectionStartY = value;
 		}
+	}
+
+	get selectionRectangle(): Phaser.GameObjects.Rectangle | undefined {
+		return this.noteManager?.selectionRectangle;
+	}
+
+	get selectedNotes(): Set<string> {
+		return this.noteManager?.selectedNotes ?? new Set();
+	}
+
+	// Compatibility method for tests - delegate to NoteManager
+	calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
+		return this.noteManager?.calculateNoteBounds(noteKey) ?? null;
 	}
 }

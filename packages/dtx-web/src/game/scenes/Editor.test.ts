@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Editor } from './Editor';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
-import { GameObjects } from 'phaser';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 

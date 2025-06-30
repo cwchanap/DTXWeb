@@ -35,10 +35,26 @@ export class LaneMeasureNote {
 	) {
 		this.measureLength = 1;
 		this.notes = [];
+		this.parseNote(); // Call parseNote on construction like the real class
 	}
 	measureLength = 1;
 	notes: Array<{ noteID: string; position: number }> = [];
-	parseNote = vi.fn();
+
+	parseNote() {
+		// Implement real parsing logic for tests
+		this.notes = [];
+		const patternLength = this.pattern.length / 2; // Each note is 2 characters
+
+		for (let i = 0; i < patternLength; i++) {
+			const noteIndex = i * 2;
+			const noteID = this.pattern.substring(noteIndex, noteIndex + 2);
+
+			if (noteID !== '00') {
+				const position = i / 48; // Convert index to fractional position
+				this.notes.push({ noteID, position });
+			}
+		}
+	}
 }
 
 // UploadedAssetFiles component is now exported from @dtx/common/components

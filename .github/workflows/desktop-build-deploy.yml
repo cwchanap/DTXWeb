@@ -1,6 +1,8 @@
 name: Desktop App Cross-Platform Build and Deploy
 
 on:
+  pull_request:
+    branches: [main, master]
   push:
     tags:
       - 'v*'
@@ -56,6 +58,7 @@ jobs:
     name: Deploy to Cloudflare R2
     needs: build
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout Repository

@@ -2,13 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NoteManager } from './NoteManager';
 import type { Editor } from '../Editor';
 import { LaneMeasureNote } from '@dtx/common';
-
-// Mock global Phaser
-global.Phaser = {
-	Geom: {
-		Rectangle: vi.fn().mockImplementation((x, y, width, height) => ({ x, y, width, height }))
-	}
-} as unknown as typeof Phaser;
+import Phaser from 'phaser'; // Import to ensure global mock is available
 
 // Mock Editor with all necessary methods
 const createMockEditor = () => ({

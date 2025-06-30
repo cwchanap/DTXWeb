@@ -5,36 +5,79 @@ import { LaneMeasureNote } from '@dtx/common';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 
 // Mock Editor with all necessary methods
-const createMockEditor = () => ({
-	add: {
-		rectangle: vi.fn().mockReturnValue({
-			setStrokeStyle: vi.fn(),
-			setVisible: vi.fn(),
-			setPosition: vi.fn(),
-			setSize: vi.fn()
-		})
-	},
-	getIsEditing: vi.fn().mockReturnValue(false),
-	getPanelContainer: vi.fn().mockReturnValue({
-		getByName: vi.fn(),
-		getAll: vi.fn().mockReturnValue([]),
-		list: [],
-		y: 0
-	}),
-	getLaneConfigs: vi.fn().mockReturnValue([
-		{ id: 'lane1', noteColor: 0xff0000 },
-		{ id: 'lane2', noteColor: 0x00ff00 }
-	]),
-	getNotes: vi.fn().mockReturnValue({}),
-	getCellsPerMeasure: 48,
-	getOffsetX: vi.fn().mockReturnValue(100),
-	getOffsetY: vi.fn().mockReturnValue(200),
-	getCellWidth: vi.fn().mockReturnValue(50),
-	getCellMargin: vi.fn().mockReturnValue(2),
-	getTotalMesaureOffest: vi.fn().mockReturnValue(0),
-	getCellHeightAt: vi.fn().mockReturnValue(20),
-	getNoteSize: vi.fn().mockReturnValue(18)
-});
+const createMockEditor = () => {
+	const mockNotes: Record<string, LaneMeasureNote[]> = {};
+	const mockGameObjects: Array<{ destroy: ReturnType<typeof vi.fn>; name: string }> = [];
+
+	return {
+		add: {
+			rectangle: vi.fn().mockReturnValue({
+				setStrokeStyle: vi.fn(),
+				setVisible: vi.fn(),
+				setPosition: vi.fn(),
+				setSize: vi.fn()
+			})
+		},
+		getIsEditing: vi.fn().mockReturnValue(false),
+		getPanelContainer: vi.fn().mockReturnValue({
+			getByName: vi.fn((name: string) => {
+				return mockGameObjects.find((obj) => obj.name === name);
+			}),
+			getAll: vi.fn((property: string, value: string) => {
+				if (property === 'name') {
+					return mockGameObjects.filter((obj) => obj.name === value);
+				}
+				return [];
+			}),
+			list: [],
+			y: 0
+		}),
+		getLaneConfigs: vi.fn().mockReturnValue([
+			{ id: 'lane1', noteColor: 0xff0000 },
+			{ id: 'lane2', noteColor: 0x00ff00 }
+		]),
+		getNotes: vi.fn().mockReturnValue(mockNotes),
+		getCellsPerMeasure: 48,
+		getOffsetX: vi.fn().mockReturnValue(100),
+		getOffsetY: vi.fn().mockReturnValue(200),
+		getCellWidth: vi.fn().mockReturnValue(50),
+		getCellMargin: vi.fn().mockReturnValue(2),
+		getTotalMesaureOffest: vi.fn().mockReturnValue(0),
+		getCellHeightAt: vi.fn().mockReturnValue(20),
+		getNoteSize: vi.fn().mockReturnValue(18),
+		// Helper methods for testing
+		_addMockGameObject: (name: string) => {
+			const mockGameObject = { destroy: vi.fn(), name };
+			mockGameObjects.push(mockGameObject);
+			return mockGameObject;
+		},
+		_addMockNote: (
+			laneId: string,
+			measure: number,
+			cellOffset: number,
+			noteId: string = '01'
+		) => {
+			if (!mockNotes[laneId]) {
+				mockNotes[laneId] = [];
+			}
+
+			// Create a pattern with the note at the correct position
+			const patternLength = 48;
+			const notePosition = Math.round(cellOffset * patternLength);
+			let pattern = '00'.repeat(patternLength);
+			const startIndex = notePosition * 2;
+			pattern = pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
+
+			// Use the real LaneMeasureNote class to ensure accurate behavior
+			const laneMeasureNote = new LaneMeasureNote(measure, laneId, pattern);
+			// The constructor already calls parseNote, so our note should be properly created
+			mockNotes[laneId].push(laneMeasureNote);
+			return laneMeasureNote;
+		},
+		_getMockGameObjects: () => mockGameObjects,
+		_getMockNotes: () => mockNotes
+	};
+};
 
 describe('NoteManager', () => {
 	let noteManager: NoteManager;
@@ -102,6 +145,171 @@ describe('NoteManager', () => {
 			noteManager.deleteSelectedNotes();
 
 			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should remove note from visual game objects and destroy them', () => {
+			const noteKey = 'note-0-1-0.5';
+
+			// Add a mock game object
+			const mockGameObject = mockEditor._addMockGameObject(noteKey);
+			noteManager.selectedNotes.add(noteKey);
+
+			// Add corresponding note data
+			mockEditor._addMockNote('lane1', 1, 0.5);
+
+			noteManager.deleteSelectedNotes();
+
+			// Verify the game object's destroy method was called
+			expect(mockGameObject.destroy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should create note correctly for testing', () => {
+			const noteKey = 'note-0-1-0.5';
+			const laneId = 'lane1';
+			const measure = 1;
+			const cellOffset = 0.5;
+
+			// Add note to mock data structure
+			const laneMeasureNote = mockEditor._addMockNote(laneId, measure, cellOffset);
+
+			// Verify note was added correctly
+			expect(mockEditor._getMockNotes()[laneId]).toHaveLength(1);
+			expect(laneMeasureNote.notes).toHaveLength(1);
+			expect(laneMeasureNote.notes[0].position).toBe(cellOffset);
+		});
+
+		it('should remove note from data structure when deleting a single note', () => {
+			const noteKey = 'note-0-1-0.5';
+			const laneId = 'lane1';
+			const measure = 1;
+			const cellOffset = 0.5;
+
+			// Add note to mock data structure
+			const laneMeasureNote = mockEditor._addMockNote(laneId, measure, cellOffset);
+
+			// Verify note was added
+			expect(mockEditor._getMockNotes()[laneId]).toHaveLength(1);
+			expect(laneMeasureNote.notes).toHaveLength(1);
+			expect(laneMeasureNote.notes[0].position).toBe(cellOffset);
+
+			// Select and delete the note
+			noteManager.selectedNotes.add(noteKey);
+			noteManager.deleteSelectedNotes();
+
+			// Verify the note was removed from the pattern
+			expect(laneMeasureNote.pattern.includes('01')).toBe(false);
+			expect(laneMeasureNote.notes).toHaveLength(0);
+		});
+
+		it('should remove entire LaneMeasureNote when last note in measure is deleted', () => {
+			const noteKey = 'note-0-1-0.5';
+			const laneId = 'lane1';
+			const measure = 1;
+			const cellOffset = 0.5;
+
+			// Add note to mock data structure
+			mockEditor._addMockNote(laneId, measure, cellOffset);
+
+			// Verify note was added
+			expect(mockEditor._getMockNotes()[laneId]).toHaveLength(1);
+
+			// Select and delete the note
+			noteManager.selectedNotes.add(noteKey);
+			noteManager.deleteSelectedNotes();
+
+			// Verify the entire lane was cleaned up since it's now empty
+			expect(mockEditor._getMockNotes()[laneId]).toBeUndefined();
+		});
+
+		it('should clean up empty lane entries after deletion', () => {
+			const noteKey = 'note-0-1-0.5';
+			const laneId = 'lane1';
+			const measure = 1;
+			const cellOffset = 0.5;
+
+			// Add note to mock data structure
+			mockEditor._addMockNote(laneId, measure, cellOffset);
+
+			// Verify lane exists
+			expect(mockEditor._getMockNotes()[laneId]).toBeDefined();
+
+			// Select and delete the note
+			noteManager.selectedNotes.add(noteKey);
+			noteManager.deleteSelectedNotes();
+
+			// Verify the entire lane entry was removed since it's now empty
+			expect(mockEditor._getMockNotes()[laneId]).toBeUndefined();
+		});
+
+		it('should handle multiple note deletions correctly', () => {
+			const noteKey1 = 'note-0-1-0.5';
+			const noteKey2 = 'note-1-2-0.25';
+
+			// Add multiple mock game objects
+			const mockGameObject1 = mockEditor._addMockGameObject(noteKey1);
+			const mockGameObject2 = mockEditor._addMockGameObject(noteKey2);
+
+			// Add corresponding note data
+			const laneMeasureNote1 = mockEditor._addMockNote('lane1', 1, 0.5);
+			const laneMeasureNote2 = mockEditor._addMockNote('lane2', 2, 0.25);
+
+			// Select both notes
+			noteManager.selectedNotes.add(noteKey1);
+			noteManager.selectedNotes.add(noteKey2);
+
+			noteManager.deleteSelectedNotes();
+
+			// Verify both game objects were destroyed
+			expect(mockGameObject1.destroy).toHaveBeenCalledTimes(1);
+			expect(mockGameObject2.destroy).toHaveBeenCalledTimes(1);
+
+			// Verify both notes were removed from data
+			expect(laneMeasureNote1.notes).toHaveLength(0);
+			expect(laneMeasureNote2.notes).toHaveLength(0);
+
+			// Verify selection was cleared
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should record delete actions for undo functionality', () => {
+			const noteKey = 'note-0-1-0.5';
+			const laneId = 'lane1';
+			const measure = 1;
+			const cellOffset = 0.5;
+
+			// Spy on the noteBuffer.recordAction method
+			const noteBufferSpy = vi.spyOn(
+				(
+					noteManager as unknown as {
+						noteBuffer: { recordAction: (type: string, data: unknown[]) => void };
+					}
+				).noteBuffer,
+				'recordAction'
+			);
+
+			// Add note to mock data structure
+			mockEditor._addMockNote(laneId, measure, cellOffset);
+
+			// Select and delete the note
+			noteManager.selectedNotes.add(noteKey);
+			noteManager.deleteSelectedNotes();
+
+			// Verify noteBuffer.recordAction was called with correct data
+			expect(noteBufferSpy).toHaveBeenCalledTimes(1);
+			expect(noteBufferSpy).toHaveBeenCalledWith(
+				'delete',
+				expect.arrayContaining([
+					expect.objectContaining({
+						noteKey,
+						laneIndex: 0,
+						measure,
+						cellOffset,
+						laneId
+					})
+				])
+			);
+
+			noteBufferSpy.mockRestore();
 		});
 	});
 

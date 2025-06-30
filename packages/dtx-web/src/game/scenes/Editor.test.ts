@@ -192,6 +192,9 @@ describe('Editor Scene', () => {
 		const editorScene = new Editor();
 		editorScene.create();
 
+		// Spy on the noteManager.handlePointerDown method
+		const handlePointerDownSpy = vi.spyOn(editorScene['noteManager'], 'handlePointerDown');
+
 		// Get the pointerdown handler
 		const inputOnMock = editorScene.input.on as MockedFn;
 		const pointerdownHandler = inputOnMock.mock.calls.find(
@@ -207,16 +210,26 @@ describe('Editor Scene', () => {
 			rightButtonDown: vi.fn().mockReturnValue(false)
 		};
 
+		// Mock handlePointerDown to return true (handled)
+		handlePointerDownSpy.mockReturnValue(true);
+
 		// Simulate pointer down in non-editing mode (isEditing = false)
 		pointerdownHandler?.(mockPointer);
 
-		// Should have delegated to NoteManager
-		expect(true).toBe(true); // Basic test that it doesn't crash
+		// Verify that handlePointerDown was called with the correct pointer
+		expect(handlePointerDownSpy).toHaveBeenCalledWith(mockPointer);
+		expect(handlePointerDownSpy).toHaveBeenCalledTimes(1);
+
+		// Clean up spy
+		handlePointerDownSpy.mockRestore();
 	});
 
 	it('should handle pointer move events by delegating to NoteManager', () => {
 		const editorScene = new Editor();
 		editorScene.create();
+
+		// Spy on the noteManager.handlePointerMove method
+		const handlePointerMoveSpy = vi.spyOn(editorScene['noteManager'], 'handlePointerMove');
 
 		// Get the pointermove handler
 		const inputOnMock = editorScene.input.on as MockedFn;
@@ -235,13 +248,20 @@ describe('Editor Scene', () => {
 		// Simulate pointer move
 		pointermoveHandler?.(mockPointer);
 
-		// Should handle move events without crashing
-		expect(true).toBe(true);
+		// Verify that handlePointerMove was called with the correct pointer
+		expect(handlePointerMoveSpy).toHaveBeenCalledWith(mockPointer);
+		expect(handlePointerMoveSpy).toHaveBeenCalledTimes(1);
+
+		// Clean up spy
+		handlePointerMoveSpy.mockRestore();
 	});
 
 	it('should handle pointer up events by delegating to NoteManager', () => {
 		const editorScene = new Editor();
 		editorScene.create();
+
+		// Spy on the noteManager.handlePointerUp method
+		const handlePointerUpSpy = vi.spyOn(editorScene['noteManager'], 'handlePointerUp');
 
 		// Get the pointerup handler
 		const inputOnMock = editorScene.input.on as MockedFn;
@@ -254,7 +274,10 @@ describe('Editor Scene', () => {
 		// Simulate pointer up
 		pointerupHandler?.();
 
-		// Should handle events without crashing
-		expect(true).toBe(true);
+		// Verify that handlePointerUp was called
+		expect(handlePointerUpSpy).toHaveBeenCalledTimes(1);
+
+		// Clean up spy
+		handlePointerUpSpy.mockRestore();
 	});
 });

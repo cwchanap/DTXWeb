@@ -247,7 +247,6 @@ export class NoteBuffer {
 		// Clear current selection and select all restored notes
 		editor.clearSelection();
 		deletedNotes.forEach((deletedNote) => {
-			editor.selectedNotes.add(deletedNote.noteKey);
 			const noteGraphics = editor.getByName(deletedNote.noteKey);
 			if (noteGraphics) {
 				// Note highlighting will be handled by selection mechanism

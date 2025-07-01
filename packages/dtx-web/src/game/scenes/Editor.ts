@@ -134,10 +134,18 @@ export class Editor extends BaseGame {
 							this.noteManager.recordDeleteAction([deletedNoteData]);
 						}
 
-						// Remove the note from the display
-						this.panelContainer.getAll('name', noteKey).forEach((note) => {
-							note.destroy();
-						});
+						// Remove the note graphics from the display
+						const noteGraphics = this.panelContainer.getByName(noteKey);
+						if (noteGraphics) {
+							noteGraphics.destroy();
+						}
+
+						// Remove the note text from the display
+						const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
+						const noteText = this.panelContainer.getByName(textKey);
+						if (noteText) {
+							noteText.destroy();
+						}
 
 						// Remove the note from this.notes
 						if (laneId in this.notes) {
@@ -529,17 +537,16 @@ export class Editor extends BaseGame {
 		return this.cellMargin;
 	}
 
+	getCellsPerMeasure(): number {
+		return 16; // this.cellsPerMeasure from BaseGame
+	}
+
 	getNoteSize(): number {
 		return this.noteSize;
 	}
 
 	getMeasureCount(): number {
 		return this.measureCount;
-	}
-
-	// Public getter for cellsPerMeasure to allow NoteBuffer to access it
-	get getCellsPerMeasure(): number {
-		return this.cellsPerMeasure;
 	}
 
 	// Compatibility getters for tests - delegate to NoteManager

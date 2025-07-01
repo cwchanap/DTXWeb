@@ -37,7 +37,7 @@ const createMockEditor = () => {
 			{ id: 'lane2', noteColor: 0x00ff00 }
 		]),
 		getNotes: vi.fn().mockReturnValue(mockNotes),
-		getCellsPerMeasure: 48,
+		getCellsPerMeasure: vi.fn().mockReturnValue(16),
 		getOffsetX: vi.fn().mockReturnValue(100),
 		getOffsetY: vi.fn().mockReturnValue(200),
 		getCellWidth: vi.fn().mockReturnValue(50),
@@ -62,7 +62,7 @@ const createMockEditor = () => {
 			}
 
 			// Create a pattern with the note at the correct position
-			const patternLength = 48;
+			const patternLength = 16;
 			const notePosition = Math.round(cellOffset * patternLength);
 			let pattern = '00'.repeat(patternLength);
 			const startIndex = notePosition * 2;
@@ -167,7 +167,7 @@ describe('NoteManager', () => {
 			const noteKey = 'note-0-1-0.5';
 			const laneId = 'lane1';
 			const measure = 1;
-			const cellOffset = 0.5;
+			const cellOffset = 0.25;
 
 			// Add note to mock data structure
 			const laneMeasureNote = mockEditor._addMockNote(laneId, measure, cellOffset);
@@ -182,7 +182,7 @@ describe('NoteManager', () => {
 			const noteKey = 'note-0-1-0.5';
 			const laneId = 'lane1';
 			const measure = 1;
-			const cellOffset = 0.5;
+			const cellOffset = 0.25;
 
 			// Add note to mock data structure
 			const laneMeasureNote = mockEditor._addMockNote(laneId, measure, cellOffset);
@@ -205,7 +205,7 @@ describe('NoteManager', () => {
 			const noteKey = 'note-0-1-0.5';
 			const laneId = 'lane1';
 			const measure = 1;
-			const cellOffset = 0.5;
+			const cellOffset = 0.25;
 
 			// Add note to mock data structure
 			mockEditor._addMockNote(laneId, measure, cellOffset);
@@ -225,7 +225,7 @@ describe('NoteManager', () => {
 			const noteKey = 'note-0-1-0.5';
 			const laneId = 'lane1';
 			const measure = 1;
-			const cellOffset = 0.5;
+			const cellOffset = 0.25;
 
 			// Add note to mock data structure
 			mockEditor._addMockNote(laneId, measure, cellOffset);
@@ -275,7 +275,7 @@ describe('NoteManager', () => {
 			const noteKey = 'note-0-1-0.5';
 			const laneId = 'lane1';
 			const measure = 1;
-			const cellOffset = 0.5;
+			const cellOffset = 0.25;
 
 			// Spy on the noteBuffer.recordAction method
 			const noteBufferSpy = vi.spyOn(
@@ -387,10 +387,10 @@ describe('NoteManager', () => {
 		it('should record delete actions', () => {
 			const deletedNotes = [
 				{
-					noteKey: 'note-0-1-0.5',
+					noteKey: 'note-0-1-0.25',
 					laneIndex: 0,
 					measure: 1,
-					cellOffset: 0.5,
+					cellOffset: 0.25,
 					laneId: 'lane1',
 					noteId: 'test',
 					laneMeasureNote: new LaneMeasureNote(1, 'test', '00')

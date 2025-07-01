@@ -263,6 +263,7 @@ export abstract class BaseGame extends Scene {
 		const height = this.noteSize - this.cellMargin * 2;
 
 		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
+		const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
 		const existingNote = this.panelContainer.getByName(noteKey);
 
 		if (!existingNote) {
@@ -280,7 +281,7 @@ export abstract class BaseGame extends Scene {
 				align: 'center'
 			});
 			text.setOrigin(0.5, 0.5);
-			text.setName(noteKey);
+			text.setName(textKey);
 			this.panelContainer.add(text);
 			return true;
 		} else {

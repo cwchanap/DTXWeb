@@ -3,6 +3,7 @@
 	import dayjs from 'dayjs';
 	import { DownloadCloud } from '@lucide/svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
+	import { isValidDtxFile } from '../index.js';
 
 	let {
 		simfileId = '',
@@ -25,10 +26,12 @@
 		songFolderPath?: string; // Song folder path for desktop uploads
 	}>();
 
-	// Ensure userFiles is always an array of File objects
+	// Ensure userFiles is always an array of File objects with valid extensions
 	const safeUserFiles = $derived<File[]>(
 		Array.isArray(userFiles)
-			? userFiles.map((f: File) => new File([f], f.name.toLowerCase(), f))
+			? userFiles
+					.filter((f: File) => isValidDtxFile(f.name))
+					.map((f: File) => new File([f], f.name.toLowerCase(), f))
 			: []
 	);
 
@@ -233,11 +236,13 @@
 			userFile?: File;
 		};
 
-		// Create a map of cloud files by filename
+		// Create a map of cloud files by filename (filter by valid extensions)
 		const cloudFileMap = new Map<string, (typeof assetFiles)[0]>();
-		assetFiles.forEach((file) => {
-			cloudFileMap.set(file.fileName, file);
-		});
+		assetFiles
+			.filter((file) => isValidDtxFile(file.fileName))
+			.forEach((file) => {
+				cloudFileMap.set(file.fileName, file);
+			});
 
 		// Create a map to track which user files we've already processed
 		// This prevents duplicates when the same folder is uploaded multiple times
@@ -251,24 +256,26 @@
 		// Create merged file objects
 		const merged: MergedFile[] = [];
 
-		// Add all cloud files first
-		assetFiles.forEach((cloudFile) => {
-			const userFile = processedUserFiles.get(cloudFile.fileName);
-			merged.push({
-				name: cloudFile.fileName,
-				size: cloudFile.size,
-				lastModified: cloudFile.lastModified,
-				key: cloudFile.key,
-				source: 'cloud',
-				status: userFile ? 'replacing' : 'existing',
-				userFile
-			});
+		// Add all valid cloud files first
+		assetFiles
+			.filter((cloudFile) => isValidDtxFile(cloudFile.fileName))
+			.forEach((cloudFile) => {
+				const userFile = processedUserFiles.get(cloudFile.fileName);
+				merged.push({
+					name: cloudFile.fileName,
+					size: cloudFile.size,
+					lastModified: cloudFile.lastModified,
+					key: cloudFile.key,
+					source: 'cloud',
+					status: userFile ? 'replacing' : 'existing',
+					userFile
+				});
 
-			// Remove from the map so we don't process it again
-			if (userFile) {
-				processedUserFiles.delete(cloudFile.fileName);
-			}
-		});
+				// Remove from the map so we don't process it again
+				if (userFile) {
+					processedUserFiles.delete(cloudFile.fileName);
+				}
+			});
 
 		// Add remaining user files that don't exist in the cloud
 		if (processedUserFiles.size > 0) {

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import fs from 'fs';
 import path from 'path';
-import { SimFile } from '@dtx/common';
+import { SimFile, VALID_DTX_FILE_EXTENSIONS } from '@dtx/common';
 import {
 	validateSession,
 	getCurrentSession,
@@ -497,30 +497,15 @@ if (!gotTheLock) {
 					// Read all files in the song directory
 					const entries = await fs.promises.readdir(songPath, { withFileTypes: true });
 
-					// Filter for valid DTX-related file types
-					const validExtensions = [
-						'.dtx',
-						'.def',
-						'.wav',
-						'.mp3',
-						'.ogg',
-						'.flac',
-						'.m4a',
-						'.aac',
-						'.png',
-						'.jpg',
-						'.jpeg',
-						'.gif',
-						'.bmp',
-						'.tiff',
-						'.tga'
-					];
+					// Filter for valid DTX-related file types (imported from common package)
 					const validFiles = entries
 						.filter((entry) => entry.isFile())
 						.map((entry) => entry.name)
 						.filter((fileName) => {
 							const ext = path.extname(fileName).toLowerCase();
-							return validExtensions.includes(ext);
+							return VALID_DTX_FILE_EXTENSIONS.includes(
+								ext as (typeof VALID_DTX_FILE_EXTENSIONS)[number]
+							);
 						});
 
 					if (validFiles.length === 0) {

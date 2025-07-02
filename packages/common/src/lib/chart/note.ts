@@ -1,3 +1,5 @@
+import { normalizePosition } from '../utils/position';
+
 export class LaneMeasureNote {
 	public measure: number;
 	public laneID: string;
@@ -16,6 +18,13 @@ export class LaneMeasureNote {
 		this.parseNote();
 	}
 
+	/**
+	 * Normalize a position to prevent floating point precision issues
+	 */
+	private normalizePosition(position: number): number {
+		return normalizePosition(position, 16);
+	}
+
 	parseNote() {
 		const patterns = this.pattern.match(/.{1,2}/g);
 		if (!patterns) return;
@@ -26,7 +35,7 @@ export class LaneMeasureNote {
 				const position = (index * this.measureLength) / patternCount;
 				return {
 					noteID: pattern,
-					position: position
+					position: this.normalizePosition(position)
 				};
 			})
 			.filter((note) => note.noteID !== '00');

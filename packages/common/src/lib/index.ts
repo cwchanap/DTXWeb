@@ -11,6 +11,9 @@ export {
 // Export utilities
 export { normalizePosition } from './utils/position.js';
 
+// Export constants
+export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants.js';
+
 // Export Supabase types
 export type {
 	Database,

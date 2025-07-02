@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import { Scene, GameObjects } from 'phaser';
 import { type LaneConfig } from '../interface';
 
@@ -242,14 +242,24 @@ export abstract class BaseGame extends Scene {
 		}
 	}
 
+	/**
+	 * Normalize a cell offset to prevent floating point precision issues
+	 */
+	protected normalizePosition(cellOffset: number): number {
+		return normalizePosition(cellOffset, this.cellsPerMeasure);
+	}
+
 	drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string) {
+		// Normalize the position to prevent floating point precision issues
+		const normalizedCellOffset = this.normalizePosition(cellOffset);
+
 		const x = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
 
 		// Calculate Y position based on measure offset and cell position
 		const yOffset = this.getTotalMesaureOffest(measure);
 
 		// Calculate the position within the measure
-		const cellPosition = Math.floor(cellOffset * this.cellsPerMeasure);
+		const cellPosition = Math.floor(normalizedCellOffset * this.cellsPerMeasure);
 
 		// Add offsets for each cell up to the note position
 		let cellsYOffset = 0;
@@ -262,8 +272,8 @@ export abstract class BaseGame extends Scene {
 		const width = this.cellWidth - this.cellMargin * 2;
 		const height = this.noteSize - this.cellMargin * 2;
 
-		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
-		const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
+		const noteKey = `note-${laneIndex}-${measure}-${normalizedCellOffset}`;
+		const textKey = `text-${laneIndex}-${measure}-${normalizedCellOffset}`;
 		const existingNote = this.panelContainer.getByName(noteKey);
 
 		if (!existingNote) {

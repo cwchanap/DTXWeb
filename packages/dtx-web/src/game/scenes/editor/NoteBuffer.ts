@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 
 /**
@@ -19,7 +19,9 @@ export interface DeletedNoteData {
 	cellOffset: number;
 	laneId: string;
 	noteId: string;
-	laneMeasureNote: LaneMeasureNote;
+	// Store pattern data instead of object reference to avoid stale references
+	originalPattern?: string;
+	measureLength?: number;
 }
 
 /**
@@ -147,13 +149,19 @@ export class NoteBuffer {
 		notesByLaneAndMeasure: Map<string, Map<number, DeletedNoteData[]>>,
 		editor: Editor
 	): void {
+		// CRITICAL: First restore the data structure, then redraw visuals from the restored data
+		// This prevents conflicts between visual and data restoration
 		notesByLaneAndMeasure.forEach((measureMap, laneId) => {
 			measureMap.forEach((notesInMeasure, measure) => {
-				// First, redraw all visual notes
-				this.redrawVisualNotes(notesInMeasure, editor);
-
-				// Then, update the data structure
+				// First, update the data structure
 				this.updateNoteDataStructure(laneId, measure, notesInMeasure, editor);
+			});
+		});
+
+		// Then, redraw all visual notes from the restored data structure
+		notesByLaneAndMeasure.forEach((measureMap, laneId) => {
+			measureMap.forEach((notesInMeasure, measure) => {
+				this.redrawVisualNotes(notesInMeasure, editor);
 			});
 		});
 	}
@@ -163,8 +171,15 @@ export class NoteBuffer {
 	 */
 	private redrawVisualNotes(notesInMeasure: DeletedNoteData[], editor: Editor): void {
 		notesInMeasure.forEach((deletedNote) => {
-			const { laneIndex, cellOffset, noteId, measure } = deletedNote;
-			editor.drawNote(measure, laneIndex, cellOffset, noteId);
+			const { laneIndex, noteId, measure } = deletedNote;
+			// Use normalized cellOffset for consistency
+			const normalizedCellOffset = normalizePosition(
+				deletedNote.cellOffset,
+				editor.getCellsPerMeasure()
+			);
+			editor.drawNote(measure, laneIndex, normalizedCellOffset, noteId);
+			// Update the deletedNote for consistency with other operations
+			deletedNote.cellOffset = normalizedCellOffset;
 		});
 	}
 
@@ -190,30 +205,74 @@ export class NoteBuffer {
 		if (existingMeasureNote) {
 			this.updateExistingMeasureNote(existingMeasureNote, notesInMeasure, editor);
 		} else {
+			// IMPORTANT: The measure note may have been deleted during the deletion process if it became empty
+			// Always create a new measure note for undo operations to ensure data consistency
 			this.createNewMeasureNote(laneId, measure, notesInMeasure, editor);
 		}
 	}
 
 	/**
-	 * Updates an existing measure note with restored notes
+	 * Updates an existing measure note with restored notes by reconstructing the pattern from original data
 	 */
 	private updateExistingMeasureNote(
 		existingMeasureNote: LaneMeasureNote,
 		notesInMeasure: DeletedNoteData[],
 		editor: Editor
 	): void {
-		const patternLength = editor.getCellsPerMeasure;
-		let pattern = existingMeasureNote.pattern;
+		const patternLength = editor.getCellsPerMeasure();
+		const expectedPatternStringLength = patternLength * 2; // Each position takes 2 characters
 
-		// Add each note to the pattern
+		// Strategy: Reconstruct the pattern by merging the current pattern with the original patterns
+		// This ensures we don't lose any existing notes while properly restoring deleted ones
+
+		let reconstructedPattern = existingMeasureNote.pattern;
+
+		// Ensure the pattern is the correct length
+		if (reconstructedPattern.length < expectedPatternStringLength) {
+			reconstructedPattern = reconstructedPattern.padEnd(expectedPatternStringLength, '0');
+		}
+
+		// For each note to restore, check if we have original pattern data
 		notesInMeasure.forEach((deletedNote) => {
-			const { cellOffset, noteId } = deletedNote;
-			const notePosition = Math.round(cellOffset * patternLength);
+			const { cellOffset, noteId, originalPattern } = deletedNote;
+			const normalizedCellOffset = normalizePosition(cellOffset, patternLength);
+			const notePosition = Math.round(normalizedCellOffset * patternLength);
 			const startIndex = notePosition * 2;
-			pattern = pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
+
+			if (startIndex >= 0 && startIndex < reconstructedPattern.length - 1) {
+				const currentNoteAtPosition = reconstructedPattern.substring(
+					startIndex,
+					startIndex + 2
+				);
+
+				// If position is empty or we're restoring the exact same note, restore it
+				if (currentNoteAtPosition === '00' || currentNoteAtPosition === noteId) {
+					reconstructedPattern =
+						reconstructedPattern.substring(0, startIndex) +
+						noteId +
+						reconstructedPattern.substring(startIndex + 2);
+				} else {
+					// There's a different note at this position
+					// If we have original pattern data, use it to make a decision
+					if (originalPattern && originalPattern.length >= startIndex + 2) {
+						const originalNoteAtPosition = originalPattern.substring(
+							startIndex,
+							startIndex + 2
+						);
+
+						// If the original pattern had our note at this position, restore it
+						if (originalNoteAtPosition === noteId) {
+							reconstructedPattern =
+								reconstructedPattern.substring(0, startIndex) +
+								noteId +
+								reconstructedPattern.substring(startIndex + 2);
+						}
+					}
+				}
+			}
 		});
 
-		existingMeasureNote.pattern = pattern;
+		existingMeasureNote.pattern = reconstructedPattern;
 		existingMeasureNote.parseNote(); // Reparse to update notes array
 	}
 
@@ -226,18 +285,24 @@ export class NoteBuffer {
 		notesInMeasure: DeletedNoteData[],
 		editor: Editor
 	): void {
-		const patternLength = editor.getCellsPerMeasure;
+		const patternLength = editor.getCellsPerMeasure();
 		let pattern = '00'.repeat(patternLength);
 
 		// Add each note to the pattern
 		notesInMeasure.forEach((deletedNote) => {
 			const { cellOffset, noteId } = deletedNote;
-			const notePosition = Math.round(cellOffset * patternLength);
+			// Normalize the position to prevent precision issues
+			const normalizedCellOffset = normalizePosition(cellOffset, patternLength);
+			const notePosition = Math.round(normalizedCellOffset * patternLength);
 			const startIndex = notePosition * 2;
 			pattern = pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
+
+			// Update the deletedNote's cellOffset to the normalized value for consistency
+			deletedNote.cellOffset = normalizedCellOffset;
 		});
 
-		editor.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+		const newMeasureNote = new LaneMeasureNote(measure, laneId, pattern);
+		editor.notes[laneId].push(newMeasureNote);
 	}
 
 	/**

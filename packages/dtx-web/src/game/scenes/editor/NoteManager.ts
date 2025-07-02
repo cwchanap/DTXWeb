@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 import { NoteBuffer, type DeletedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';
@@ -120,6 +120,19 @@ export class NoteManager {
 
 		// Collect all notes that will be deleted for undo functionality
 		const deletedNotes: DeletedNoteData[] = [];
+		const notesToDelete: { noteKey: string; deletedNoteData: DeletedNoteData | null }[] = [];
+
+		// Create a snapshot of all LaneMeasureNote patterns before any modifications
+		// This ensures we have clean original data for undo operations
+		const notes = this.editor.getNotes();
+		const patternSnapshots = new Map<string, Map<number, string>>();
+		Object.entries(notes).forEach(([laneId, laneMeasureNotes]) => {
+			const measureMap = new Map<number, string>();
+			laneMeasureNotes.forEach((note) => {
+				measureMap.set(note.measure, note.pattern);
+			});
+			patternSnapshots.set(laneId, measureMap);
+		});
 
 		this.selectedNotes.forEach((noteKey) => {
 			// Parse the note key to get the position info: "note-{laneIndex}-{measure}-{cellOffset}"
@@ -127,37 +140,60 @@ export class NoteManager {
 			if (parts.length === 4) {
 				const laneIndex = parseInt(parts[1]);
 				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
+				const rawCellOffset = parseFloat(parts[3]);
+				const cellOffset = rawCellOffset;
 				const laneId = this.editor.getLaneConfigs()[laneIndex].id;
 
 				// Find the note data before deleting it
-				const notes = this.editor.getNotes();
 				if (laneId in notes) {
+					// Normalize the cellOffset to match how positions are stored in the data structure
+					const normalizedCellOffset = normalizePosition(
+						cellOffset,
+						this.editor.getCellsPerMeasure()
+					);
+
 					const existingNote = notes[laneId].find(
 						(note) =>
 							note.measure === measure &&
-							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
+							note.notes.some(
+								(n) => Math.abs(n.position - normalizedCellOffset) < 0.001
+							)
 					);
 
 					if (existingNote) {
-						// Find the specific note chip
+						// Find the specific note chip using normalized position
 						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - cellOffset) < 0.001
+							(n) => Math.abs(n.position - normalizedCellOffset) < 0.001
 						);
 
 						if (noteChip) {
-							// Store the note data for undo
-							deletedNotes.push({
+							// Get the original pattern from our clean snapshot
+							const originalPattern =
+								patternSnapshots.get(laneId)?.get(measure) || existingNote.pattern;
+
+							// Store the note data for undo (without object references to avoid stale data)
+							const deletedNoteData = {
 								noteKey,
 								laneIndex,
 								measure,
-								cellOffset,
+								cellOffset: normalizedCellOffset, // Use normalized position for consistency
 								laneId,
 								noteId: noteChip.noteID,
-								laneMeasureNote: existingNote
-							});
+								originalPattern: originalPattern, // Use clean snapshot
+								measureLength: existingNote.measureLength
+							};
+							deletedNotes.push(deletedNoteData);
+							notesToDelete.push({ noteKey, deletedNoteData });
+						} else {
+							notesToDelete.push({ noteKey, deletedNoteData: null });
 						}
+					} else {
+						// This is an orphaned visual note - it exists in the UI but not in the data structure
+						// We should still delete it visually, but we can't restore it during undo
+						notesToDelete.push({ noteKey, deletedNoteData: null });
 					}
+				} else {
+					notesToDelete.push({ noteKey, deletedNoteData: null });
 				}
 			}
 		});
@@ -167,13 +203,147 @@ export class NoteManager {
 			this.noteBuffer.recordAction('delete', deletedNotes);
 		}
 
-		// Delete each selected note
-		this.selectedNotes.forEach((noteKey) => {
-			this.deleteNoteByKey(noteKey);
+		// Delete each note using the captured data to avoid race conditions
+		notesToDelete.forEach(({ noteKey, deletedNoteData }) => {
+			if (deletedNoteData) {
+				// Use the captured data to delete the note directly
+				this.deleteNoteByKeyWithData(noteKey, deletedNoteData);
+			} else {
+				// If no data was captured, only delete visually
+				this.deleteNoteVisually(noteKey);
+			}
 		});
 
 		// Clear the selection after deletion
 		this.selectedNotes.clear();
+	}
+
+	/**
+	 * Delete a note using captured data to avoid race conditions
+	 */
+	private deleteNoteByKeyWithData(noteKey: string, deletedNoteData: DeletedNoteData): void {
+		// Remove the note graphics from the display
+		const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
+		if (noteGraphics) {
+			noteGraphics.destroy();
+		}
+
+		// Remove the note text from the display
+		const keyParts = noteKey.split('-');
+		if (keyParts.length === 4) {
+			const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
+			const noteText = this.editor.getPanelContainer().getByName(textKey);
+			if (noteText) {
+				noteText.destroy();
+			}
+		}
+
+		// Remove selection overlay if it exists
+		const overlayKey = `selection-overlay-${noteKey}`;
+		const overlay = this.editor.getPanelContainer().getByName(overlayKey);
+		if (overlay) {
+			overlay.destroy();
+		}
+
+		// Find and update the LaneMeasureNote in the current data structure
+		const notes = this.editor.getNotes();
+		if (deletedNoteData.laneId in notes) {
+			const measureNote = notes[deletedNoteData.laneId].find(
+				(note) => note.measure === deletedNoteData.measure
+			);
+
+			if (measureNote) {
+				// Remove the specific note from the pattern
+				const patternLength = this.editor.getCellsPerMeasure();
+				const expectedNotePosition = Math.round(deletedNoteData.cellOffset * patternLength);
+				const expectedStartIndex = expectedNotePosition * 2;
+				const expectedPatternStringLength = patternLength * 2; // Each position takes 2 characters
+
+				// Ensure we have a full-length pattern to work with
+				let pattern = measureNote.pattern;
+				if (pattern.length < expectedPatternStringLength) {
+					pattern = pattern.padEnd(expectedPatternStringLength, '0');
+				}
+
+				// Search for the note to delete
+				let actualStartIndex = -1;
+
+				// First, try the expected position
+				if (expectedStartIndex >= 0 && expectedStartIndex < pattern.length - 1) {
+					const noteAtExpectedPosition = pattern.substring(
+						expectedStartIndex,
+						expectedStartIndex + 2
+					);
+
+					if (noteAtExpectedPosition === deletedNoteData.noteId) {
+						// Note found at expected position, use it
+						actualStartIndex = expectedStartIndex;
+					}
+				}
+
+				// If not found at expected position, search for it in the pattern
+				if (actualStartIndex === -1) {
+					const searchIndex = pattern.indexOf(deletedNoteData.noteId);
+					if (searchIndex >= 0 && searchIndex % 2 === 0) {
+						actualStartIndex = searchIndex;
+					}
+				}
+
+				// If we found the note, delete it
+				if (actualStartIndex >= 0) {
+					// Replace the note with '00'
+					pattern =
+						pattern.substring(0, actualStartIndex) +
+						'00' +
+						pattern.substring(actualStartIndex + 2);
+
+					measureNote.pattern = pattern;
+					measureNote.parseNote(); // Reparse to update notes array
+				} else {
+					return; // Note already deleted or not found
+				}
+
+				// If the measure is now empty, remove the entire LaneMeasureNote
+				if (measureNote.notes.length === 0) {
+					notes[deletedNoteData.laneId] = notes[deletedNoteData.laneId].filter(
+						(note) => note !== measureNote
+					);
+
+					// Clean up empty lane entries
+					if (notes[deletedNoteData.laneId].length === 0) {
+						delete notes[deletedNoteData.laneId];
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Delete a note visually only (when data capture failed or note is orphaned)
+	 */
+	private deleteNoteVisually(noteKey: string): void {
+		// Remove the note graphics from the display
+		const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
+		if (noteGraphics) {
+			noteGraphics.destroy();
+		}
+
+		// Remove the note text from the display
+		const keyParts = noteKey.split('-');
+		if (keyParts.length === 4) {
+			const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
+			const noteText = this.editor.getPanelContainer().getByName(textKey);
+			if (noteText) {
+				noteText.destroy();
+			}
+		}
+
+		// Remove selection overlay if it exists
+		const overlayKey = `selection-overlay-${noteKey}`;
+		const overlay = this.editor.getPanelContainer().getByName(overlayKey);
+		if (overlay) {
+			overlay.destroy();
+		}
 	}
 
 	/**
@@ -208,7 +378,9 @@ export class NoteManager {
 		if (parts.length === 4) {
 			const laneIndex = parseInt(parts[1]);
 			const measure = parseInt(parts[2]);
-			const cellOffset = parseFloat(parts[3]);
+			const rawCellOffset = parseFloat(parts[3]);
+			// Use the raw position for now to debug
+			const cellOffset = rawCellOffset;
 			const laneId = this.editor.getLaneConfigs()[laneIndex].id;
 
 			// Remove the specific note from this.notes
@@ -409,7 +581,9 @@ export class NoteManager {
 
 		const laneIndex = parseInt(parts[1]);
 		const measure = parseInt(parts[2]);
-		const cellOffset = parseFloat(parts[3]);
+		const rawCellOffset = parseFloat(parts[3]);
+		// Use the raw position for now to debug
+		const cellOffset = rawCellOffset;
 
 		// Use the exact same logic as BaseGame.drawNote method
 		const x =
@@ -696,19 +870,41 @@ export class NoteManager {
 							notes[laneId] = [];
 						}
 
-						// Create a pattern that represents a single note at the position
-						const patternLength = this.editor.getCellsPerMeasure();
-						const notePosition = Math.round(cellOffset * patternLength);
-						let pattern = '00'.repeat(patternLength);
+						// Check if a LaneMeasureNote already exists for this measure/lane
+						const existingMeasureNote = notes[laneId].find(
+							(note) => note.measure === measure
+						);
 
-						// Place the original noteId at the correct position
-						const startIndex = notePosition * 2;
-						pattern =
-							pattern.substring(0, startIndex) +
-							originalNoteId +
-							pattern.substring(startIndex + 2);
+						if (existingMeasureNote) {
+							// Add note to existing measure
+							const patternLength = this.editor.getCellsPerMeasure();
+							const notePosition = Math.round(cellOffset * patternLength);
+							const startIndex = notePosition * 2;
+							let pattern = existingMeasureNote.pattern;
 
-						notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+							// Place the note in the existing pattern
+							pattern =
+								pattern.substring(0, startIndex) +
+								originalNoteId +
+								pattern.substring(startIndex + 2);
+
+							existingMeasureNote.pattern = pattern;
+							existingMeasureNote.parseNote(); // Reparse to update notes array
+						} else {
+							// Create a new LaneMeasureNote for this measure
+							const patternLength = this.editor.getCellsPerMeasure();
+							const notePosition = Math.round(cellOffset * patternLength);
+							let pattern = '00'.repeat(patternLength);
+
+							// Place the original noteId at the correct position
+							const startIndex = notePosition * 2;
+							pattern =
+								pattern.substring(0, startIndex) +
+								originalNoteId +
+								pattern.substring(startIndex + 2);
+
+							notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+						}
 						movedNotes.push(newKey);
 					}
 				}

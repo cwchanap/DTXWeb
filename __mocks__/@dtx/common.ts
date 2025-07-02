@@ -57,5 +57,8 @@ export class LaneMeasureNote {
 	}
 }
 
+// Mock the normalizePosition utility function
+export const normalizePosition = vi.fn();
+
 // UploadedAssetFiles component is now exported from @dtx/common/components
 // This mock is no longer needed here since the component is in a separate export

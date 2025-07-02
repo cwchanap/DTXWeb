@@ -8,6 +8,9 @@ export {
 	type ContentValidationCallback
 } from './chart/encoding-utils.js';
 
+// Export utilities
+export { normalizePosition } from './utils/position.js';
+
 // Export Supabase types
 export type {
 	Database,

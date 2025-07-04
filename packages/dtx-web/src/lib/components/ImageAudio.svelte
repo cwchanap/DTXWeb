@@ -27,13 +27,6 @@
 
 		return unsubscribe;
 	});
-
-	// Compute button icon separately to avoid nested conditionals
-	let ButtonIcon = $derived(() => {
-		if (isPlaying) return CirclePause;
-		if (isLoading) return Ellipsis;
-		return Play;
-	});
 </script>
 
 <div class="relative">
@@ -76,7 +69,13 @@
 			}}
 			disabled={isLoading}
 		>
-			<ButtonIcon />
+			{#if isPlaying}
+				<CirclePause />
+			{:else if isLoading}
+				<Ellipsis />
+			{:else}
+				<Play />
+			{/if}
 		</button>
 	{/if}
 </div>

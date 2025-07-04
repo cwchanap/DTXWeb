@@ -222,28 +222,7 @@ export class NoteManager {
 	 * Delete a note using captured data to avoid race conditions
 	 */
 	private deleteNoteByKeyWithData(noteKey: string, deletedNoteData: DeletedNoteData): void {
-		// Remove the note graphics from the display
-		const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
-		if (noteGraphics) {
-			noteGraphics.destroy();
-		}
-
-		// Remove the note text from the display
-		const keyParts = noteKey.split('-');
-		if (keyParts.length === 4) {
-			const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
-			const noteText = this.editor.getPanelContainer().getByName(textKey);
-			if (noteText) {
-				noteText.destroy();
-			}
-		}
-
-		// Remove selection overlay if it exists
-		const overlayKey = `selection-overlay-${noteKey}`;
-		const overlay = this.editor.getPanelContainer().getByName(overlayKey);
-		if (overlay) {
-			overlay.destroy();
-		}
+		this.cleanupNoteVisuals(noteKey);
 
 		// Find and update the LaneMeasureNote in the current data structure
 		const notes = this.editor.getNotes();
@@ -319,9 +298,9 @@ export class NoteManager {
 	}
 
 	/**
-	 * Delete a note visually only (when data capture failed or note is orphaned)
+	 * Helper method to clean up visual elements for a note
 	 */
-	private deleteNoteVisually(noteKey: string): void {
+	private cleanupNoteVisuals(noteKey: string): void {
 		// Remove the note graphics from the display
 		const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
 		if (noteGraphics) {
@@ -347,31 +326,17 @@ export class NoteManager {
 	}
 
 	/**
+	 * Delete a note visually only (when data capture failed or note is orphaned)
+	 */
+	private deleteNoteVisually(noteKey: string): void {
+		this.cleanupNoteVisuals(noteKey);
+	}
+
+	/**
 	 * Delete a single note by its key
 	 */
 	private deleteNoteByKey(noteKey: string): void {
-		// Remove the note graphics from the display
-		const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
-		if (noteGraphics) {
-			noteGraphics.destroy();
-		}
-
-		// Remove the note text from the display
-		const keyParts = noteKey.split('-');
-		if (keyParts.length === 4) {
-			const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
-			const noteText = this.editor.getPanelContainer().getByName(textKey);
-			if (noteText) {
-				noteText.destroy();
-			}
-		}
-
-		// Remove selection overlay if it exists
-		const overlayKey = `selection-overlay-${noteKey}`;
-		const overlay = this.editor.getPanelContainer().getByName(overlayKey);
-		if (overlay) {
-			overlay.destroy();
-		}
+		this.cleanupNoteVisuals(noteKey);
 
 		// Parse the note key to get the position info
 		const parts = noteKey.split('-');

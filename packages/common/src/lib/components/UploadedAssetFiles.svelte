@@ -236,13 +236,14 @@
 			userFile?: File;
 		};
 
-		// Create a map of cloud files by filename (filter by valid extensions)
+		// Filter valid cloud files once and reuse
+		const validCloudFiles = assetFiles.filter((file) => isValidDtxFile(file.fileName));
+
+		// Create a map of cloud files by filename
 		const cloudFileMap = new Map<string, (typeof assetFiles)[0]>();
-		assetFiles
-			.filter((file) => isValidDtxFile(file.fileName))
-			.forEach((file) => {
-				cloudFileMap.set(file.fileName, file);
-			});
+		validCloudFiles.forEach((file) => {
+			cloudFileMap.set(file.fileName, file);
+		});
 
 		// Create a map to track which user files we've already processed
 		// This prevents duplicates when the same folder is uploaded multiple times
@@ -256,26 +257,24 @@
 		// Create merged file objects
 		const merged: MergedFile[] = [];
 
-		// Add all valid cloud files first
-		assetFiles
-			.filter((cloudFile) => isValidDtxFile(cloudFile.fileName))
-			.forEach((cloudFile) => {
-				const userFile = processedUserFiles.get(cloudFile.fileName);
-				merged.push({
-					name: cloudFile.fileName,
-					size: cloudFile.size,
-					lastModified: cloudFile.lastModified,
-					key: cloudFile.key,
-					source: 'cloud',
-					status: userFile ? 'replacing' : 'existing',
-					userFile
-				});
-
-				// Remove from the map so we don't process it again
-				if (userFile) {
-					processedUserFiles.delete(cloudFile.fileName);
-				}
+		// Add all valid cloud files first (using the already filtered array)
+		validCloudFiles.forEach((cloudFile) => {
+			const userFile = processedUserFiles.get(cloudFile.fileName);
+			merged.push({
+				name: cloudFile.fileName,
+				size: cloudFile.size,
+				lastModified: cloudFile.lastModified,
+				key: cloudFile.key,
+				source: 'cloud',
+				status: userFile ? 'replacing' : 'existing',
+				userFile
 			});
+
+			// Remove from the map so we don't process it again
+			if (userFile) {
+				processedUserFiles.delete(cloudFile.fileName);
+			}
+		});
 
 		// Add remaining user files that don't exist in the cloud
 		if (processedUserFiles.size > 0) {

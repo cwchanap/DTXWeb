@@ -568,7 +568,7 @@ export class Editor extends BaseGame {
 	}
 
 	getCellsPerMeasure(): number {
-		return 16; // this.cellsPerMeasure from BaseGame
+		return this.cellsPerMeasure;
 	}
 
 	getNoteSize(): number {

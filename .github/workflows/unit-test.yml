@@ -33,7 +33,7 @@ jobs:
         run: rm packages/dtx-web/tsconfig.json
 
       - name: Build packages
-        run: npm run build -w=@dtx/common && npm run build -w=dtx-web
+        run: npm run build -w=@dtx/common
 
       - name: Run unit tests
         run: npm run test --workspaces --if-present

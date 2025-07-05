@@ -1,7 +1,17 @@
 import { defineConfig } from 'vitest/config';
-import path from 'path';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export default defineConfig({
+	plugins: [svelte({ 
+		compilerOptions: {
+			dev: true
+		}
+	})],
 	test: {
 		environment: 'jsdom',
 		globals: true,
@@ -33,7 +43,10 @@ export default defineConfig({
 		},
 		deps: {
 			// Tell Vitest to look for modules in the root directory as well
-			moduleDirectories: ['node_modules', path.resolve(__dirname, '../..')]
+			moduleDirectories: ['node_modules', resolve(__dirname, '../..')]
+		},
+		alias: {
+			'svelte': 'svelte/src/runtime'
 		},
 		env: {
 			// Set test environment variables
@@ -45,7 +58,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'@': path.resolve(__dirname, './src/renderer/src')
+			'@': resolve(__dirname, './src/renderer/src')
 		}
 	}
 });

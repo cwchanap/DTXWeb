@@ -16,5 +16,8 @@ static/skin/
 /blob-report/
 /playwright/.cache/
 
+# Coverage reports
+coverage/
+**/coverage/
 
 /skin

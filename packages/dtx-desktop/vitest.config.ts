@@ -8,6 +8,29 @@ export default defineConfig({
 		setupFiles: ['./src/tests/setup.ts'],
 		// Exclude playwright tests and build outputs
 		exclude: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/e2e/**'],
+		coverage: {
+			provider: 'v8',
+			reporter: ['text', 'json', 'html', 'lcov'],
+			exclude: [
+				'**/node_modules/**',
+				'**/dist/**',
+				'**/out/**',
+				'**/build/**',
+				'**/tests/**',
+				'**/test/**',
+				'**/*.test.ts',
+				'**/*.spec.ts',
+				'**/vite.config.ts',
+				'**/vitest.config.ts',
+				'**/electron.vite.config.ts',
+				'**/electron-builder.yml',
+				'**/dev-app-update.yml',
+				'**/e2e/**',
+				'**/preload/**'
+			],
+			include: ['src/**/*.{js,ts,svelte}'],
+			all: true
+		},
 		deps: {
 			// Tell Vitest to look for modules in the root directory as well
 			moduleDirectories: ['node_modules', path.resolve(__dirname, '../..')]

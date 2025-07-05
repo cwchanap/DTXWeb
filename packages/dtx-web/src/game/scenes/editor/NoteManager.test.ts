@@ -38,13 +38,22 @@ const createMockEditor = () => {
 		]),
 		getNotes: vi.fn(() => mockNotes),
 		getCellsPerMeasure: vi.fn().mockReturnValue(16),
+		getMeasureCount: vi.fn().mockReturnValue(100),
 		getOffsetX: vi.fn().mockReturnValue(100),
 		getOffsetY: vi.fn().mockReturnValue(200),
 		getCellWidth: vi.fn().mockReturnValue(50),
+		getCellHeightValue: vi.fn().mockReturnValue(25),
 		getCellMargin: vi.fn().mockReturnValue(2),
 		getTotalMesaureOffest: vi.fn().mockReturnValue(0),
 		getCellHeightAt: vi.fn().mockReturnValue(20),
 		getNoteSize: vi.fn().mockReturnValue(18),
+		drawNote: vi.fn().mockReturnValue(true),
+		input: {
+			activePointer: {
+				x: 150,
+				y: 50
+			}
+		},
 		// Helper methods for testing
 		_addMockGameObject: (name: string) => {
 			const mockGameObject = { destroy: vi.fn(), name };
@@ -75,7 +84,11 @@ const createMockEditor = () => {
 			return laneMeasureNote;
 		},
 		_getMockGameObjects: () => mockGameObjects,
-		_getMockNotes: () => mockNotes
+		_getMockNotes: () => mockNotes,
+		_setMockNotes: (notes: Record<string, LaneMeasureNote[]>) => {
+			Object.keys(mockNotes).forEach((key) => delete mockNotes[key]);
+			Object.assign(mockNotes, notes);
+		}
 	};
 };
 
@@ -170,7 +183,6 @@ describe('NoteManager', () => {
 			const laneId = 'lane1';
 			const measure = 1;
 			const cellOffset = 0.0625; // 1/16 = position 1
-			const noteKey = `note-0-${measure}-${cellOffset}`;
 
 			// Add note to mock data structure
 			const laneMeasureNote = mockEditor._addMockNote(laneId, measure, cellOffset);
@@ -323,7 +335,6 @@ describe('NoteManager', () => {
 
 			// Use the actual parsed position for the noteKey
 			const actualPosition = laneMeasureNote.notes[0].position;
-			const noteKey = `note-0-${measure}-${actualPosition}`;
 
 			// Make sure the mock editor returns the updated notes
 			mockEditor.getNotes.mockReturnValue(mockEditor._getMockNotes());
@@ -437,6 +448,84 @@ describe('NoteManager', () => {
 
 			// Should not throw
 			expect(() => noteManager.recordDeleteAction(deletedNotes)).not.toThrow();
+		});
+	});
+
+	describe('copy and paste functionality', () => {
+		beforeEach(() => {
+			// Set up some notes for copying
+			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
+			lane1Note.parseNote();
+			lane2Note.parseNote();
+
+			mockEditor._setMockNotes({
+				lane1: [lane1Note],
+				lane2: [lane2Note]
+			});
+
+			// Add some selected notes
+			noteManager.selectedNotes.add('note-0-1-0');
+			noteManager.selectedNotes.add('note-1-1-0');
+		});
+
+		it('should copy selected notes', () => {
+			const result = noteManager.copySelectedNotes();
+			expect(result).toBe(true);
+			expect(noteManager.hasClipboard()).toBe(true);
+		});
+
+		it('should return false when copying with no selection', () => {
+			noteManager.selectedNotes.clear();
+			const result = noteManager.copySelectedNotes();
+			expect(result).toBe(false);
+		});
+
+		it('should paste notes at position of lowest selected note', () => {
+			// First copy some notes
+			noteManager.copySelectedNotes();
+
+			// Clear selection and add a different note as paste target
+			noteManager.selectedNotes.clear();
+			noteManager.selectedNotes.add('note-0-2-0'); // This will be the paste position
+
+			const result = noteManager.pasteNotes();
+			expect(result).toBe(true);
+		});
+
+		it('should paste notes at default position when no selection', () => {
+			// First copy some notes
+			noteManager.copySelectedNotes();
+
+			// Clear selection
+			noteManager.selectedNotes.clear();
+
+			const result = noteManager.pasteNotes();
+			expect(result).toBe(true);
+		});
+
+		it('should clear selection after pasting', () => {
+			// First copy some notes
+			noteManager.copySelectedNotes();
+
+			// Clear selection but add a paste target
+			noteManager.selectedNotes.clear();
+			noteManager.selectedNotes.add('note-0-2-0');
+
+			noteManager.pasteNotes();
+
+			// Selection should be cleared after paste
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should check clipboard status', () => {
+			expect(noteManager.hasClipboard()).toBe(false);
+
+			noteManager.copySelectedNotes();
+			expect(noteManager.hasClipboard()).toBe(true);
+
+			noteManager.clearClipboard();
+			expect(noteManager.hasClipboard()).toBe(false);
 		});
 	});
 });

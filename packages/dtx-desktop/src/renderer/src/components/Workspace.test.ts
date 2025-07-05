@@ -40,35 +40,33 @@ describe('Workspace Component Logic', () => {
 		workspaceStore.showNewSongForm();
 	};
 
-	const filterTreeNodes = (nodes: TreeNode[], query: string): TreeNode[] => {
-		if (!query.trim()) return nodes;
+        const filterTreeNodes = (nodes: TreeNode[], query: string): TreeNode[] => {
+                if (!query.trim()) return nodes;
 
-		const searchTerm = query.toLowerCase();
+                const term = query.toLowerCase();
 
-		const filterNode = (node: TreeNode): TreeNode | null => {
-			const nameMatches = node.name.toLowerCase().includes(searchTerm);
-			const songTitleMatches = node.songTitle?.toLowerCase().includes(searchTerm) || false;
-			const matches = nameMatches || songTitleMatches;
+                const walk = (node: TreeNode): TreeNode | null => {
+                        const matches =
+                                node.name.toLowerCase().includes(term) ||
+                                node.songTitle?.toLowerCase().includes(term);
 
-			const filteredChildren = node.children
-				.map((child) => filterNode(child))
-				.filter((child): child is TreeNode => child !== null);
+                        const children = node.children
+                                .map((child) => walk(child))
+                                .filter((c): c is TreeNode => c !== null);
 
-			if (matches || filteredChildren.length > 0) {
-				return {
-					...node,
-					children: filteredChildren,
-					isExpanded: filteredChildren.length > 0 || node.isExpanded
-				};
-			}
+                        if (matches || children.length) {
+                                return {
+                                        ...node,
+                                        children,
+                                        isExpanded: children.length > 0 || node.isExpanded
+                                };
+                        }
 
-			return null;
-		};
+                        return null;
+                };
 
-		return nodes
-			.map((node) => filterNode(node))
-			.filter((node): node is TreeNode => node !== null);
-	};
+                return nodes.map((n) => walk(n)).filter((n): n is TreeNode => n !== null);
+        };
 
 	it('selects workspace through service', async () => {
 		await handleSelectWorkspace();
@@ -91,8 +89,9 @@ describe('Workspace Component Logic', () => {
 		expect(workspaceStore.showNewSongForm).toHaveBeenCalled();
 	});
 
-	it('filters tree nodes by query', () => {
-		const tree: TreeNode[] = [
+        it('filters tree nodes by query', () => {
+                // Arrange
+                const tree: TreeNode[] = [
 			{
 				name: 'Folder',
 				path: '/folder',
@@ -122,15 +121,19 @@ describe('Workspace Component Logic', () => {
 			}
 		];
 
-		const result = filterTreeNodes(tree, 'awesome');
-		expect(result.length).toBe(1);
-		expect(result[0].name).toBe('Folder');
-		expect(result[0].isExpanded).toBe(true);
-		expect(result[0].children[0].name).toBe('Song1');
-	});
+                // Act
+                const result = filterTreeNodes(tree, 'awesome');
 
-	it('returns original tree when query empty', () => {
-		const tree: TreeNode[] = [
+                // Assert
+                expect(result.length).toBe(1);
+                expect(result[0].name).toBe('Folder');
+                expect(result[0].isExpanded).toBe(true);
+                expect(result[0].children[0].name).toBe('Song1');
+        });
+
+        it('returns original tree when query empty', () => {
+                // Arrange
+                const tree: TreeNode[] = [
 			{
 				name: 'Folder',
 				path: '/folder',
@@ -141,11 +144,16 @@ describe('Workspace Component Logic', () => {
 			}
 		];
 
-		expect(filterTreeNodes(tree, '')).toEqual(tree);
-	});
+                // Act
+                const result = filterTreeNodes(tree, '');
 
-	it('returns empty array when no nodes match', () => {
-		const tree: TreeNode[] = [
+                // Assert
+                expect(result).toEqual(tree);
+        });
+
+        it('returns empty array when no nodes match', () => {
+                // Arrange
+                const tree: TreeNode[] = [
 			{
 				name: 'Folder',
 				path: '/folder',
@@ -156,6 +164,10 @@ describe('Workspace Component Logic', () => {
 			}
 		];
 
-		expect(filterTreeNodes(tree, 'unknown')).toEqual([]);
-	});
+                // Act
+                const result = filterTreeNodes(tree, 'unknown');
+
+                // Assert
+                expect(result).toEqual([]);
+        });
 });

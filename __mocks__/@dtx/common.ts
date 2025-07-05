@@ -58,7 +58,10 @@ export class LaneMeasureNote {
 }
 
 // Mock the normalizePosition utility function
-export const normalizePosition = vi.fn();
+export const normalizePosition = vi.fn((cellOffset: number, cellsPerMeasure: number = 16) => {
+	const rounded = Math.round(cellOffset * cellsPerMeasure);
+	return rounded / cellsPerMeasure;
+});
 
 // UploadedAssetFiles component is now exported from @dtx/common/components
 // This mock is no longer needed here since the component is in a separate export

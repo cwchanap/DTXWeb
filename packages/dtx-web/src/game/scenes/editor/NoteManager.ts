@@ -1,6 +1,7 @@
 import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 import { NoteBuffer, type DeletedNoteData, type MovedNoteData } from './NoteBuffer';
+import { NoteCopy } from './NoteCopy';
 import Phaser from 'phaser';
 
 /**
@@ -13,9 +14,18 @@ import Phaser from 'phaser';
 export class NoteManager {
 	private editor: Editor;
 	private noteBuffer = new NoteBuffer();
+	private noteCopy = new NoteCopy();
 
 	// Selection state
 	public selectedNotes: Set<string> = new Set();
+
+	// Debounce for keyboard shortcuts
+	private lastKeyboardAction = 0;
+	private KEYBOARD_DEBOUNCE_MS = 200;
+
+	// Track current mouse position for cursor-based pasting
+	private lastMouseX = 0;
+	private lastMouseY = 0;
 	public isSelecting = false;
 	public selectionStartX = 0;
 	public selectionStartY = 0;
@@ -38,6 +48,8 @@ export class NoteManager {
 	 */
 	public initialize() {
 		this.initializeSelectionRectangle();
+		this.initializeKeyboardEvents();
+		this.initializeMouseTracking();
 	}
 
 	/**
@@ -47,6 +59,137 @@ export class NoteManager {
 		this.selectionRectangle = this.editor.add.rectangle(0, 0, 0, 0, 0x1d7196, 0.3);
 		this.selectionRectangle.setStrokeStyle(2, 0x1d7196, 1);
 		this.selectionRectangle.setVisible(false);
+	}
+
+	/**
+	 * Initialize keyboard event handlers for copy/paste operations
+	 */
+	private initializeKeyboardEvents() {
+		// Only set up keyboard events in non-test environments
+		if (typeof window === 'undefined' || typeof document === 'undefined') {
+			return;
+		}
+
+		// Always use global keyboard events for system-level shortcuts
+		// This is more reliable for Ctrl/Cmd combinations
+		const handleKeyDown = (event: KeyboardEvent) => {
+			// Only handle shortcuts if the game canvas or editor is focused
+			const target = event.target as HTMLElement;
+			const isGameCanvas = target?.tagName === 'CANVAS' || target?.closest('canvas');
+			const isEditorFocused =
+				document.activeElement?.tagName === 'CANVAS' ||
+				document.activeElement === document.body;
+
+			if (isGameCanvas || isEditorFocused) {
+				// Debounce keyboard shortcuts to prevent key repeat issues
+				const now = Date.now();
+				if (now - this.lastKeyboardAction < this.KEYBOARD_DEBOUNCE_MS) {
+					return;
+				}
+
+				// Check for Ctrl+C or Cmd+C (copy)
+				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+					event.preventDefault();
+					event.stopPropagation();
+					this.lastKeyboardAction = now;
+					this.copySelectedNotes();
+					return false;
+				}
+
+				// Check for Ctrl+V or Cmd+V (paste)
+				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+					event.preventDefault();
+					event.stopPropagation();
+					this.lastKeyboardAction = now;
+					this.pasteNotes();
+					return false;
+				}
+			}
+		};
+
+		// Add global event listener
+		document.addEventListener('keydown', handleKeyDown, true); // Use capture phase
+
+		// Also try Phaser keyboard as fallback
+		if (this.editor.input?.keyboard) {
+			this.editor.input.keyboard.on('keydown', (event: KeyboardEvent) => {
+				handleKeyDown(event);
+			});
+		}
+	}
+
+	/**
+	 * Initialize mouse position tracking for cursor-based pasting
+	 */
+	private initializeMouseTracking() {
+		// Only set up mouse tracking in non-test environments
+		if (typeof window === 'undefined' || typeof document === 'undefined') {
+			return;
+		}
+
+		// Track mouse movement globally to maintain cursor position
+		const handleMouseMove = (event: MouseEvent) => {
+			// Try multiple ways to get the canvas element
+			let canvas = this.editor.canvas;
+			if (!canvas) {
+				// Fallback: try to find canvas in the DOM
+				canvas = document.querySelector('canvas');
+			}
+			if (!canvas) {
+				// Another fallback: try game.canvas
+				canvas = this.editor.game?.canvas;
+			}
+
+			if (canvas) {
+				const rect = canvas.getBoundingClientRect();
+				// Convert screen coordinates to canvas-relative coordinates
+				this.lastMouseX = event.clientX - rect.left;
+				this.lastMouseY = event.clientY - rect.top;
+			}
+		};
+
+		document.addEventListener('mousemove', handleMouseMove);
+	}
+
+	/**
+	 * Get current cursor position in game coordinates
+	 */
+	private getCurrentCursorPosition() {
+		// Try to get current pointer position from Phaser input system first
+		let mouseX = this.lastMouseX;
+		let mouseY = this.lastMouseY;
+
+		// Fallback to Phaser's active pointer if available
+		if (this.editor.input?.activePointer) {
+			mouseX = this.editor.input.activePointer.x || mouseX;
+			mouseY = this.editor.input.activePointer.y || mouseY;
+		}
+
+		// Use the EXACT same calculation as Editor's pointerdown handler
+		const offsetX = this.editor.getOffsetX();
+		const offsetY = this.editor.getOffsetY();
+		const panelContainer = this.editor.getPanelContainer();
+
+		// Calculate positions using the same logic as Editor click detection
+		const x = mouseX - offsetX;
+		const absoluteY = mouseY - offsetY - panelContainer.y;
+
+		// Calculate lane index and cell index (note: Y is negated)
+		const cellWidth = this.editor.getCellWidth();
+		const cellHeight = this.editor.getCellHeightValue();
+		const cellsPerMeasure = this.editor.getCellsPerMeasure();
+
+		const laneIndex = Math.floor(x / cellWidth);
+		const cellIndex = Math.floor(-absoluteY / cellHeight);
+		const measure = Math.floor(cellIndex / cellsPerMeasure);
+		const rawCellOffset = (cellIndex % cellsPerMeasure) / cellsPerMeasure;
+		const cellOffset = normalizePosition(rawCellOffset, cellsPerMeasure);
+
+		return {
+			laneIndex: Math.max(0, laneIndex),
+			measure: Math.max(0, measure),
+			cellOffset: Math.max(0, Math.min(1, cellOffset))
+		};
 	}
 
 	/**
@@ -1086,6 +1229,95 @@ export class NoteManager {
 	 */
 	undoLastAction(): void {
 		this.noteBuffer.undoLastAction(this.editor);
+	}
+
+	/**
+	 * Copy currently selected notes to clipboard
+	 */
+	copySelectedNotes(): boolean {
+		const result = this.noteCopy.copyNotes(this.selectedNotes, this.editor);
+		if (result) {
+			// Clear selection after successful copy to avoid paste conflicts
+			this.clearSelection();
+		}
+		return result;
+	}
+
+	/**
+	 * Paste copied notes at the current cursor position or at the lowest selected note position
+	 */
+	pasteNotes(): boolean {
+		// Determine paste position
+		let pasteLaneIndex = 0;
+		let pasteMeasure = 0;
+		let pasteCellOffset = 0;
+
+		if (this.selectedNotes.size > 0) {
+			// Use the position of the lowest selected note as reference
+			let referenceLaneIndex = Number.MAX_SAFE_INTEGER;
+			let referenceMeasure = Number.MAX_SAFE_INTEGER;
+			let referenceCellOffset = Number.MAX_SAFE_INTEGER;
+
+			this.selectedNotes.forEach((noteKey) => {
+				const parts = noteKey.split('-');
+				if (parts.length === 4) {
+					const laneIndex = parseInt(parts[1]);
+					const measure = parseInt(parts[2]);
+					const cellOffset = parseFloat(parts[3]);
+
+					if (
+						laneIndex < referenceLaneIndex ||
+						(laneIndex === referenceLaneIndex && measure < referenceMeasure) ||
+						(laneIndex === referenceLaneIndex &&
+							measure === referenceMeasure &&
+							cellOffset < referenceCellOffset)
+					) {
+						referenceLaneIndex = laneIndex;
+						referenceMeasure = measure;
+						referenceCellOffset = cellOffset;
+					}
+				}
+			});
+
+			pasteLaneIndex = referenceLaneIndex;
+			pasteMeasure = referenceMeasure;
+			pasteCellOffset = referenceCellOffset;
+		} else {
+			// Default paste position - use actual cursor position
+			const cursorPosition = this.getCurrentCursorPosition();
+
+			pasteLaneIndex = cursorPosition.laneIndex;
+			pasteMeasure = cursorPosition.measure;
+			pasteCellOffset = cursorPosition.cellOffset;
+		}
+		const result = this.noteCopy.pasteNotes(
+			pasteLaneIndex,
+			pasteMeasure,
+			pasteCellOffset,
+			this.editor
+		);
+
+		if (result) {
+			// Clear current selection and potentially select pasted notes
+			// For now, just clear selection to avoid complexity
+			this.clearSelection();
+		}
+
+		return result;
+	}
+
+	/**
+	 * Check if there are notes in the clipboard
+	 */
+	hasClipboard(): boolean {
+		return this.noteCopy.hasClipboard();
+	}
+
+	/**
+	 * Clear the note clipboard
+	 */
+	clearClipboard(): void {
+		this.noteCopy.clearClipboard();
 	}
 
 	/**

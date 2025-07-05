@@ -5,7 +5,10 @@
 			"Bash(grep:*)",
 			"Bash(npm test:*)",
 			"Bash(find:*)",
-			"WebFetch(domain:github.com)"
+			"WebFetch(domain:github.com)",
+			"Bash(npm run test:*)",
+			"Bash(npm run lint)",
+			"Bash(npm run build:*)"
 		],
 		"deny": []
 	}

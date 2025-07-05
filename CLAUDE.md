@@ -167,7 +167,7 @@ import { Button } from '@dtx/common/components';
 
 ## Deployment & Infrastructure
 
-- **Web App**: Deployed to Vercel via @sveltejs/adapter-vercel
+- **Web App**: Deployed to Cloudflare Workers via @sveltejs/adapter-cloudflare
 - **Desktop**: Built with electron-builder, distributed via GitHub releases
 - **Worker**: Deployed to Cloudflare Workers
 - **Database**: Supabase PostgreSQL with real-time subscriptions

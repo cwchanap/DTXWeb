@@ -3,6 +3,7 @@
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { settingsStore } from '../stores/settingsStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
+	import { isValidDtxFile } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 
@@ -46,34 +47,37 @@
 			}
 
 			// Convert file info to File objects for compatibility with UploadedAssetFiles
+			// Only include files with valid DTX-related extensions
 			const files = await Promise.all(
-				result.files.map(async (fileInfo: any) => {
-					try {
-						// Read file content as buffer
-						const response = await window.electron.ipcRenderer.invoke(
-							'read-file',
-							fileInfo.key,
-							song.path // Pass the song directory as workspace root
-						);
+				result.files
+					.filter((fileInfo: any) => isValidDtxFile(fileInfo.fileName))
+					.map(async (fileInfo: any) => {
+						try {
+							// Read file content as buffer
+							const response = await window.electron.ipcRenderer.invoke(
+								'read-file',
+								fileInfo.key,
+								song.path // Pass the song directory as workspace root
+							);
 
-						// Destructure the response to get error and content
-						const { error, content } = response;
+							// Destructure the response to get error and content
+							const { error, content } = response;
 
-						// Check if there was an error reading the file
-						if (error) {
+							// Check if there was an error reading the file
+							if (error) {
+								console.warn(`Could not read file ${fileInfo.fileName}:`, error);
+								// Create empty File object as fallback
+								return createFileObject('', fileInfo);
+							}
+
+							// Create File object using the content property
+							return createFileObject(content, fileInfo);
+						} catch (error) {
 							console.warn(`Could not read file ${fileInfo.fileName}:`, error);
 							// Create empty File object as fallback
 							return createFileObject('', fileInfo);
 						}
-
-						// Create File object using the content property
-						return createFileObject(content, fileInfo);
-					} catch (error) {
-						console.warn(`Could not read file ${fileInfo.fileName}:`, error);
-						// Create empty File object as fallback
-						return createFileObject('', fileInfo);
-					}
-				})
+					})
 			);
 
 			localFiles = files;
@@ -453,10 +457,10 @@
 		exportedFilePath = null;
 
 		try {
-			const songTitle = song.songTitle || song.name || 'song';
+			const zipFileName = song.name || 'song';
 			const result = await window.electron.ipcRenderer.invoke('export-song-to-zip', {
 				songPath: song.path,
-				songTitle: songTitle,
+				songTitle: zipFileName,
 				exportDirectory: currentSettings.exportDirectory
 			});
 

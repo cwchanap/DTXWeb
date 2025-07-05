@@ -88,8 +88,9 @@ export class Editor extends BaseGame {
 			) {
 				// Calculate the measure from the cell index
 				const measure = Math.floor(cellIndex / this.cellsPerMeasure);
-				// Calculate the position within the measure
-				const cellOffset = (cellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
+				// Calculate the position within the measure and normalize it
+				const rawCellOffset = (cellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
+				const cellOffset = this.normalizePosition(rawCellOffset);
 
 				// Check if it's a right-click (pointer.rightButtonDown())
 				if (pointer.rightButtonDown()) {
@@ -123,7 +124,8 @@ export class Editor extends BaseGame {
 										cellOffset,
 										laneId,
 										noteId: noteChip.noteID,
-										laneMeasureNote: existingLaneMeasureNote
+										originalPattern: existingLaneMeasureNote.pattern,
+										measureLength: existingLaneMeasureNote.measureLength
 									};
 								}
 							}
@@ -134,10 +136,18 @@ export class Editor extends BaseGame {
 							this.noteManager.recordDeleteAction([deletedNoteData]);
 						}
 
-						// Remove the note from the display
-						this.panelContainer.getAll('name', noteKey).forEach((note) => {
-							note.destroy();
-						});
+						// Remove the note graphics from the display
+						const noteGraphics = this.panelContainer.getByName(noteKey);
+						if (noteGraphics) {
+							noteGraphics.destroy();
+						}
+
+						// Remove the note text from the display
+						const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
+						const noteText = this.panelContainer.getByName(textKey);
+						if (noteText) {
+							noteText.destroy();
+						}
 
 						// Remove the note from this.notes
 						if (laneId in this.notes) {
@@ -183,26 +193,54 @@ export class Editor extends BaseGame {
 					// Left-click: Add a note (existing behavior)
 					// Draw the note in the clicked cell with correct parameters
 					// The drawNote method expects (measure, laneIndex, cellOffset, noteId)
-					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '00');
+					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '01');
 					if (noteAdded) {
 						const laneId = this.laneConfigs[laneIndex].id;
 						if (!(laneId in this.notes)) {
 							this.notes[laneId] = [];
 						}
 
-						// Create a pattern that represents a single note at the position
-						const patternLength = this.cellsPerMeasure;
-						const notePosition = Math.round(cellOffset * patternLength);
-						let pattern = '00'.repeat(patternLength);
+						// Check if a LaneMeasureNote already exists for this measure/lane
+						const existingMeasureNote = this.notes[laneId].find(
+							(note) => note.measure === measure
+						);
 
-						// Place a note ('01' instead of '00') at the correct position
-						const startIndex = notePosition * 2;
-						pattern =
-							pattern.substring(0, startIndex) +
-							'01' +
-							pattern.substring(startIndex + 2);
+						if (existingMeasureNote) {
+							// Add note to existing measure
+							console.log(
+								`[Editor] Adding note to existing measure: lane=${laneId}, measure=${measure}, pattern before: ${existingMeasureNote.pattern}`
+							);
+							const patternLength = this.cellsPerMeasure;
+							const notePosition = Math.round(cellOffset * patternLength);
+							const startIndex = notePosition * 2;
+							let pattern = existingMeasureNote.pattern;
 
-						this.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+							// Place the note in the existing pattern
+							pattern =
+								pattern.substring(0, startIndex) +
+								'01' +
+								pattern.substring(startIndex + 2);
+
+							existingMeasureNote.pattern = pattern;
+							existingMeasureNote.parseNote(); // Reparse to update notes array
+							console.log(
+								`[Editor] Pattern after: ${existingMeasureNote.pattern}, notes count: ${existingMeasureNote.notes.length}`
+							);
+						} else {
+							// Create a new LaneMeasureNote for this measure
+							const patternLength = this.cellsPerMeasure;
+							const notePosition = Math.round(cellOffset * patternLength);
+							let pattern = '00'.repeat(patternLength);
+
+							// Place a note ('01' instead of '00') at the correct position
+							const startIndex = notePosition * 2;
+							pattern =
+								pattern.substring(0, startIndex) +
+								'01' +
+								pattern.substring(startIndex + 2);
+
+							this.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+						}
 					}
 				}
 			}
@@ -529,17 +567,16 @@ export class Editor extends BaseGame {
 		return this.cellMargin;
 	}
 
+	getCellsPerMeasure(): number {
+		return this.cellsPerMeasure;
+	}
+
 	getNoteSize(): number {
 		return this.noteSize;
 	}
 
 	getMeasureCount(): number {
 		return this.measureCount;
-	}
-
-	// Public getter for cellsPerMeasure to allow NoteBuffer to access it
-	get getCellsPerMeasure(): number {
-		return this.cellsPerMeasure;
 	}
 
 	// Compatibility getters for tests - delegate to NoteManager

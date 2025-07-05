@@ -6,8 +6,16 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"prepare": "husky || true",
-		"clean": "rm -rf ./node_modules && rm -rf ./packages/**/node_modules",
-		"gen-types": "npx supabase gen types --lang=typescript --project-id 'hdnwvpusmxrfrfjayogr' --schema public > packages/common/src/lib/types/supabase.types.ts"
+		"clean": "rm -rf ./node_modules && rm -rf ./packages/**/node_modules && rm -rf ./packages/**/dist && rm -rf ./packages/**/.svelte-kit && rm -rf ./packages/**/build && rm -rf ./packages/**/.wrangler",
+		"gen-types": "npx supabase gen types --lang=typescript --project-id 'hdnwvpusmxrfrfjayogr' --schema public > packages/common/src/lib/types/supabase.types.ts",
+		"test": "npm run test --workspaces --if-present",
+		"test:coverage": "npm run test:coverage --workspaces --if-present",
+		"test:web": "npm run test -w=dtx-web",
+		"test:desktop": "npm run test -w=dtx-desktop",
+		"test:common": "npm run test -w=@dtx/common",
+		"test:coverage:web": "npm run test:coverage -w=dtx-web",
+		"test:coverage:desktop": "npm run test:coverage -w=dtx-desktop",
+		"test:coverage:common": "npm run test:coverage -w=@dtx/common"
 	},
 	"lint-staged": {
 		"*": "npm run format"

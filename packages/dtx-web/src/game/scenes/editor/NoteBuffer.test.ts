@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NoteBuffer, type UndoAction, type DeletedNoteData } from './NoteBuffer';
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 
 // Mock note graphics interface
@@ -12,7 +12,7 @@ interface MockNoteGraphics {
 interface MockEditor {
 	notes: Record<string, LaneMeasureNote[]>;
 	selectedNotes: Set<string>;
-	getCellsPerMeasure: number;
+	getCellsPerMeasure: () => number;
 	drawNote: (measure: number, laneIndex: number, cellOffset: number, noteId: string) => boolean;
 	clearSelection: () => void;
 	getByName: (name: string) => MockNoteGraphics | null;
@@ -27,11 +27,14 @@ describe('NoteBuffer', () => {
 	beforeEach(() => {
 		noteBuffer = new NoteBuffer();
 
+		// Set up normalizePosition mock to return the input value (identity function for tests)
+		vi.mocked(normalizePosition).mockImplementation((cellOffset: number) => cellOffset);
+
 		// Create mock editor
 		mockEditor = {
 			notes: {},
 			selectedNotes: new Set<string>(),
-			getCellsPerMeasure: 16,
+			getCellsPerMeasure: vi.fn().mockReturnValue(16),
 			drawNote: vi.fn().mockReturnValue(true),
 			clearSelection: vi.fn(),
 			getByName: vi.fn().mockReturnValue({ name: 'mockNote' }),
@@ -46,7 +49,8 @@ describe('NoteBuffer', () => {
 			cellOffset: 0.5,
 			laneId: 'lane1',
 			noteId: '11',
-			laneMeasureNote: new LaneMeasureNote(1, 'lane1', '1100000000000000000000000000000000')
+			originalPattern: '1100000000000000000000000000000000',
+			measureLength: 1
 		};
 	});
 
@@ -134,7 +138,7 @@ describe('NoteBuffer', () => {
 
 	describe('undoLastAction', () => {
 		it('should return false when no actions to undo', () => {
-			const result = noteBuffer.undoLastAction(mockEditor as Editor);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 			expect(result).toBe(false);
 		});
 
@@ -143,7 +147,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes['lane1'] = [];
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
 
-			const result = noteBuffer.undoLastAction(mockEditor as Editor);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(true);
 			expect(noteBuffer.getHistoryLength()).toBe(0);
@@ -160,7 +164,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes['lane1'] = [];
 			noteBuffer.recordAction('delete', data);
 
-			const result = noteBuffer.undoLastAction(mockEditor as Editor);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(true);
 			expect(mockEditor.drawNote).toHaveBeenCalledTimes(2);
@@ -171,7 +175,7 @@ describe('NoteBuffer', () => {
 		it('should handle add/move actions (not implemented)', () => {
 			noteBuffer.recordAction('add', [mockDeletedNoteData]);
 
-			const result = noteBuffer.undoLastAction(mockEditor as Editor);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(false);
 			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is still removed
@@ -185,7 +189,9 @@ describe('NoteBuffer', () => {
 
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
 
-			expect(() => noteBuffer.undoLastAction(mockEditor as Editor)).toThrow('Draw failed');
+			expect(() => noteBuffer.undoLastAction(mockEditor as unknown as Editor)).toThrow(
+				'Draw failed'
+			);
 			expect(noteBuffer.getHistoryLength()).toBe(1); // Action restored to history
 		});
 	});
@@ -195,7 +201,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes = {}; // Empty notes
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
 
-			noteBuffer.undoLastAction(mockEditor as Editor);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(mockEditor.notes['lane1']).toBeDefined();
 			expect(mockEditor.notes['lane1']).toHaveLength(1);
@@ -212,7 +218,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes['lane1'] = [existingNote];
 
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
-			noteBuffer.undoLastAction(mockEditor as Editor);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			// Should update existing note, not create new one
 			expect(mockEditor.notes['lane1']).toHaveLength(1);
@@ -225,7 +231,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes['lane1'] = [];
 			noteBuffer.recordAction('delete', data);
 
-			noteBuffer.undoLastAction(mockEditor as Editor);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 			expect(mockEditor.selectedNotes.has('test-note-1')).toBe(true);
@@ -282,7 +288,7 @@ describe('NoteBuffer', () => {
 			const emptyAction: UndoAction = { type: 'delete', data: [] };
 			noteBuffer['undoHistory'] = [emptyAction]; // Direct manipulation for edge case test
 
-			const result = noteBuffer.undoLastAction(mockEditor as Editor);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(true); // Method completes successfully
 			expect(mockEditor.drawNote).not.toHaveBeenCalled();
@@ -297,7 +303,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes['lane1'] = [];
 			noteBuffer.recordAction('delete', data);
 
-			noteBuffer.undoLastAction(mockEditor as Editor);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(mockEditor.notes['lane1']).toHaveLength(2); // Two LaneMeasureNotes created
 		});
@@ -311,7 +317,7 @@ describe('NoteBuffer', () => {
 			mockEditor.notes = {};
 			noteBuffer.recordAction('delete', data);
 
-			noteBuffer.undoLastAction(mockEditor as Editor);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(mockEditor.notes['lane1']).toBeDefined();
 			expect(mockEditor.notes['lane2']).toBeDefined();

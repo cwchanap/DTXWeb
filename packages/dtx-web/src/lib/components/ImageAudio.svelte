@@ -1,6 +1,7 @@
 <script lang="ts">
 	import store from '../store';
 	import { get } from 'svelte/store';
+	import { onMount } from 'svelte';
 
 	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
 
@@ -11,20 +12,28 @@
 	}
 
 	let { previewUrl, soundPreviewUrl, preview }: Props = $props();
+
 	let isPlaying = $state(false);
 	let isLoading = $state(false);
-
 	let audio: HTMLAudioElement | null = $state(null);
 
-	store.playingAudio.subscribe((audio) => {
-		if (audio === null) {
-			isPlaying = false;
-		}
+	// Use onMount to properly handle store subscription
+	onMount(() => {
+		const unsubscribe = store.playingAudio.subscribe((playingAudio) => {
+			if (playingAudio === null) {
+				isPlaying = false;
+			}
+		});
+
+		return unsubscribe;
 	});
 </script>
 
 <div class="relative">
-	{#if preview}{@render preview()}{:else}
+	<!-- Add a comment or space to prevent empty text expression -->
+	{#if preview}
+		{@render preview()}
+	{:else}
 		<img src={previewUrl} alt="Preview" class="mb-4 h-60 w-full rounded-lg object-cover" />
 	{/if}
 	{#if soundPreviewUrl}

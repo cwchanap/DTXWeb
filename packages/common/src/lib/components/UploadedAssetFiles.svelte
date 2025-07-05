@@ -3,6 +3,7 @@
 	import dayjs from 'dayjs';
 	import { DownloadCloud } from '@lucide/svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
+	import { isValidDtxFile } from '../index.js';
 
 	let {
 		simfileId = '',
@@ -25,10 +26,12 @@
 		songFolderPath?: string; // Song folder path for desktop uploads
 	}>();
 
-	// Ensure userFiles is always an array of File objects
+	// Ensure userFiles is always an array of File objects with valid extensions
 	const safeUserFiles = $derived<File[]>(
 		Array.isArray(userFiles)
-			? userFiles.map((f: File) => new File([f], f.name.toLowerCase(), f))
+			? userFiles
+					.filter((f: File) => isValidDtxFile(f.name))
+					.map((f: File) => new File([f], f.name.toLowerCase(), f))
 			: []
 	);
 
@@ -233,9 +236,12 @@
 			userFile?: File;
 		};
 
+		// Filter valid cloud files once and reuse
+		const validCloudFiles = assetFiles.filter((file) => isValidDtxFile(file.fileName));
+
 		// Create a map of cloud files by filename
 		const cloudFileMap = new Map<string, (typeof assetFiles)[0]>();
-		assetFiles.forEach((file) => {
+		validCloudFiles.forEach((file) => {
 			cloudFileMap.set(file.fileName, file);
 		});
 
@@ -251,8 +257,8 @@
 		// Create merged file objects
 		const merged: MergedFile[] = [];
 
-		// Add all cloud files first
-		assetFiles.forEach((cloudFile) => {
+		// Add all valid cloud files first (using the already filtered array)
+		validCloudFiles.forEach((cloudFile) => {
 			const userFile = processedUserFiles.get(cloudFile.fileName);
 			merged.push({
 				name: cloudFile.fileName,

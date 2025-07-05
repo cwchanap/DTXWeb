@@ -81,7 +81,7 @@
 		<div class="relative">
 			<ImageAudio
 				previewUrl={getPreviewUrl(item.preview_url)}
-				soundPreviewUrl={getSoundPreviewUrl(item.sound_preview_url) ?? undefined}
+				soundPreviewUrl={getSoundPreviewUrl(item.sound_preview_url)}
 			/>
 		</div>
 	{:else}

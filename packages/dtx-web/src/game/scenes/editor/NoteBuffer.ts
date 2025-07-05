@@ -5,9 +5,16 @@ import type { Editor } from '../Editor';
  * Interface for tracking undo actions
  */
 export interface UndoAction {
-	type: 'delete' | 'add' | 'move';
+	type: 'delete';
 	data: DeletedNoteData[];
 }
+
+export interface MoveUndoAction {
+	type: 'move';
+	data: MovedNoteData[];
+}
+
+export type AnyUndoAction = UndoAction | MoveUndoAction;
 
 /**
  * Interface for storing deleted note data for restoration
@@ -25,11 +32,33 @@ export interface DeletedNoteData {
 }
 
 /**
+ * Interface for storing moved note data for restoration
+ */
+export interface MovedNoteData {
+	// Original position
+	originalNoteKey: string;
+	originalLaneIndex: number;
+	originalMeasure: number;
+	originalCellOffset: number;
+	originalLaneId: string;
+	noteId: string;
+	// New position
+	newNoteKey: string;
+	newLaneIndex: number;
+	newMeasure: number;
+	newCellOffset: number;
+	newLaneId: string;
+	// Pattern data for restoration
+	originalPattern?: string;
+	newPattern?: string;
+}
+
+/**
  * Manages undo/redo functionality for note operations in the DTX editor.
  * Provides a buffer system for tracking and reversing note operations.
  */
 export class NoteBuffer {
-	private undoHistory: UndoAction[] = [];
+	private undoHistory: AnyUndoAction[] = [];
 	private readonly maxUndoSteps: number;
 
 	/**
@@ -48,13 +77,19 @@ export class NoteBuffer {
 	 * @param type The type of action being recorded
 	 * @param data Array of note data for the action
 	 */
-	recordAction(type: UndoAction['type'], data: DeletedNoteData[]): void {
+	recordAction(type: 'delete', data: DeletedNoteData[]): void;
+	recordAction(type: 'move', data: MovedNoteData[]): void;
+	recordAction(type: 'delete' | 'move', data: DeletedNoteData[] | MovedNoteData[]): void {
 		if (!data || data.length === 0) {
 			return; // Don't record empty actions
 		}
 
 		// Add new action to undo history
-		this.undoHistory.push({ type, data: [...data] }); // Create a copy of the data
+		if (type === 'delete') {
+			this.undoHistory.push({ type, data: [...(data as DeletedNoteData[])] });
+		} else if (type === 'move') {
+			this.undoHistory.push({ type, data: [...(data as MovedNoteData[])] });
+		}
 
 		// Limit undo history to prevent memory issues
 		if (this.undoHistory.length > this.maxUndoSteps) {
@@ -82,10 +117,9 @@ export class NoteBuffer {
 				case 'delete':
 					this.undoDelete(lastAction.data, editor);
 					return true;
-				case 'add':
 				case 'move':
-					// TODO: Implement undo for add and move operations if needed
-					return false;
+					this.undoMove(lastAction.data, editor);
+					return true;
 				default:
 					return false;
 			}
@@ -151,16 +185,21 @@ export class NoteBuffer {
 	): void {
 		// CRITICAL: First restore the data structure, then redraw visuals from the restored data
 		// This prevents conflicts between visual and data restoration
-		notesByLaneAndMeasure.forEach((measureMap, laneId) => {
+		notesByLaneAndMeasure.forEach((measureMap) => {
 			measureMap.forEach((notesInMeasure, measure) => {
 				// First, update the data structure
-				this.updateNoteDataStructure(laneId, measure, notesInMeasure, editor);
+				this.updateNoteDataStructure(
+					notesInMeasure[0].laneId,
+					measure,
+					notesInMeasure,
+					editor
+				);
 			});
 		});
 
 		// Then, redraw all visual notes from the restored data structure
-		notesByLaneAndMeasure.forEach((measureMap, laneId) => {
-			measureMap.forEach((notesInMeasure, measure) => {
+		notesByLaneAndMeasure.forEach((measureMap) => {
+			measureMap.forEach((notesInMeasure) => {
 				this.redrawVisualNotes(notesInMeasure, editor);
 			});
 		});
@@ -321,6 +360,281 @@ export class NoteBuffer {
 	}
 
 	/**
+	 * Undoes a move operation by moving notes back to their original positions
+	 * @param movedNotes Array of moved note data to restore to original positions
+	 * @param editor The editor instance to restore notes to
+	 */
+	private undoMove(movedNotes: MovedNoteData[], editor: Editor): void {
+		if (!movedNotes || movedNotes.length === 0) {
+			return;
+		}
+
+		// Group moved notes by their new positions for efficient processing
+		const notesByNewPosition = new Map<string, MovedNoteData[]>();
+		movedNotes.forEach((movedNote) => {
+			const newKey = `${movedNote.newLaneId}-${movedNote.newMeasure}`;
+			if (!notesByNewPosition.has(newKey)) {
+				notesByNewPosition.set(newKey, []);
+			}
+			notesByNewPosition.get(newKey)!.push(movedNote);
+		});
+
+		// First, remove notes from their current (new) positions
+		movedNotes.forEach((movedNote) => {
+			// Remove visual note
+			const noteGraphics = editor.getPanelContainer().getByName(movedNote.newNoteKey);
+			if (noteGraphics) {
+				noteGraphics.destroy();
+			}
+
+			// Remove text
+			const keyParts = movedNote.newNoteKey.split('-');
+			if (keyParts.length === 4) {
+				const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
+				const noteText = editor.getPanelContainer().getByName(textKey);
+				if (noteText) {
+					noteText.destroy();
+				}
+			}
+
+			// Remove from data structure
+			this.removeNoteFromDataStructure(
+				movedNote.newLaneId,
+				movedNote.newMeasure,
+				movedNote.newCellOffset,
+				movedNote.noteId,
+				editor
+			);
+		});
+
+		// Then, restore notes to their original positions
+		this.restoreNotesToOriginalPositions(movedNotes, editor);
+
+		// Select all restored notes at their original positions
+		this.selectRestoredMovedNotes(movedNotes, editor);
+	}
+
+	/**
+	 * Removes a note from the editor's data structure
+	 */
+	private removeNoteFromDataStructure(
+		laneId: string,
+		measure: number,
+		cellOffset: number,
+		noteId: string,
+		editor: Editor
+	): void {
+		const notes = editor.notes;
+		if (!(laneId in notes)) {
+			return;
+		}
+
+		const measureNote = notes[laneId].find((note) => note.measure === measure);
+		if (!measureNote) {
+			return;
+		}
+
+		// Remove the note from the pattern
+		const patternLength = editor.getCellsPerMeasure();
+		const notePosition = Math.round(cellOffset * patternLength);
+		const startIndex = notePosition * 2;
+
+		if (startIndex >= 0 && startIndex < measureNote.pattern.length - 1) {
+			const currentNote = measureNote.pattern.substring(startIndex, startIndex + 2);
+			if (currentNote === noteId) {
+				// Replace the note with '00'
+				measureNote.pattern =
+					measureNote.pattern.substring(0, startIndex) +
+					'00' +
+					measureNote.pattern.substring(startIndex + 2);
+				measureNote.parseNote(); // Reparse to update notes array
+
+				// If the measure is now empty, remove the entire LaneMeasureNote
+				if (measureNote.notes.length === 0) {
+					notes[laneId] = notes[laneId].filter((note) => note !== measureNote);
+
+					// Clean up empty lane entries
+					if (notes[laneId].length === 0) {
+						delete notes[laneId];
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Restores notes to their original positions
+	 */
+	private restoreNotesToOriginalPositions(movedNotes: MovedNoteData[], editor: Editor): void {
+		// Group notes by original lane and measure for efficient restoration
+		const notesByOriginalPosition = new Map<string, Map<number, MovedNoteData[]>>();
+
+		movedNotes.forEach((movedNote) => {
+			const { originalLaneId, originalMeasure } = movedNote;
+
+			if (!notesByOriginalPosition.has(originalLaneId)) {
+				notesByOriginalPosition.set(originalLaneId, new Map());
+			}
+
+			const laneMap = notesByOriginalPosition.get(originalLaneId)!;
+			if (!laneMap.has(originalMeasure)) {
+				laneMap.set(originalMeasure, []);
+			}
+
+			laneMap.get(originalMeasure)!.push(movedNote);
+		});
+
+		// Restore to data structure first
+		notesByOriginalPosition.forEach((measureMap, laneId) => {
+			measureMap.forEach((notesInMeasure, measure) => {
+				this.updateNoteDataStructureForMove(laneId, measure, notesInMeasure, editor);
+			});
+		});
+
+		// Then redraw visual notes
+		movedNotes.forEach((movedNote) => {
+			const { originalLaneIndex, originalMeasure, originalCellOffset, noteId } = movedNote;
+
+			// Use normalized cellOffset for consistency
+			const normalizedCellOffset = normalizePosition(
+				originalCellOffset,
+				editor.getCellsPerMeasure()
+			);
+
+			editor.drawNote(originalMeasure, originalLaneIndex, normalizedCellOffset, noteId);
+		});
+	}
+
+	/**
+	 * Updates the editor's note data structure with restored notes at original positions
+	 */
+	private updateNoteDataStructureForMove(
+		laneId: string,
+		measure: number,
+		notesInMeasure: MovedNoteData[],
+		editor: Editor
+	): void {
+		// Ensure lane exists in notes structure
+		if (!(laneId in editor.notes)) {
+			editor.notes[laneId] = [];
+		}
+
+		// Check if there's already a LaneMeasureNote for this measure
+		const existingMeasureNote = editor.notes[laneId].find(
+			(note: LaneMeasureNote) => note.measure === measure
+		);
+
+		if (existingMeasureNote) {
+			this.updateExistingMeasureNoteForMove(existingMeasureNote, notesInMeasure, editor);
+		} else {
+			this.createNewMeasureNoteForMove(laneId, measure, notesInMeasure, editor);
+		}
+	}
+
+	/**
+	 * Updates an existing measure note with restored notes from move undo
+	 */
+	private updateExistingMeasureNoteForMove(
+		existingMeasureNote: LaneMeasureNote,
+		notesInMeasure: MovedNoteData[],
+		editor: Editor
+	): void {
+		const patternLength = editor.getCellsPerMeasure();
+		const expectedPatternStringLength = patternLength * 2;
+
+		let reconstructedPattern = existingMeasureNote.pattern;
+
+		// Ensure the pattern is the correct length
+		if (reconstructedPattern.length < expectedPatternStringLength) {
+			reconstructedPattern = reconstructedPattern.padEnd(expectedPatternStringLength, '0');
+		}
+
+		// Restore each note to its original position
+		notesInMeasure.forEach((movedNote) => {
+			const { originalCellOffset, noteId, originalPattern } = movedNote;
+			const normalizedCellOffset = normalizePosition(originalCellOffset, patternLength);
+			const notePosition = Math.round(normalizedCellOffset * patternLength);
+			const startIndex = notePosition * 2;
+
+			if (startIndex >= 0 && startIndex < reconstructedPattern.length - 1) {
+				const currentNoteAtPosition = reconstructedPattern.substring(
+					startIndex,
+					startIndex + 2
+				);
+
+				// If position is empty or we're restoring the exact same note, restore it
+				if (currentNoteAtPosition === '00' || currentNoteAtPosition === noteId) {
+					reconstructedPattern =
+						reconstructedPattern.substring(0, startIndex) +
+						noteId +
+						reconstructedPattern.substring(startIndex + 2);
+				} else {
+					// There's a different note at this position
+					// If we have original pattern data, use it to make a decision
+					if (originalPattern && originalPattern.length >= startIndex + 2) {
+						const originalNoteAtPosition = originalPattern.substring(
+							startIndex,
+							startIndex + 2
+						);
+
+						// If the original pattern had our note at this position, restore it
+						if (originalNoteAtPosition === noteId) {
+							reconstructedPattern =
+								reconstructedPattern.substring(0, startIndex) +
+								noteId +
+								reconstructedPattern.substring(startIndex + 2);
+						}
+					}
+				}
+			}
+		});
+
+		existingMeasureNote.pattern = reconstructedPattern;
+		existingMeasureNote.parseNote(); // Reparse to update notes array
+	}
+
+	/**
+	 * Creates a new measure note with restored notes from move undo
+	 */
+	private createNewMeasureNoteForMove(
+		laneId: string,
+		measure: number,
+		notesInMeasure: MovedNoteData[],
+		editor: Editor
+	): void {
+		const patternLength = editor.getCellsPerMeasure();
+		let pattern = '00'.repeat(patternLength);
+
+		// Add each note to the pattern at its original position
+		notesInMeasure.forEach((movedNote) => {
+			const { originalCellOffset, noteId } = movedNote;
+			// Normalize the position to prevent precision issues
+			const normalizedCellOffset = normalizePosition(originalCellOffset, patternLength);
+			const notePosition = Math.round(normalizedCellOffset * patternLength);
+			const startIndex = notePosition * 2;
+			pattern = pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
+		});
+
+		const newMeasureNote = new LaneMeasureNote(measure, laneId, pattern);
+		editor.notes[laneId].push(newMeasureNote);
+	}
+
+	/**
+	 * Selects all restored notes at their original positions
+	 */
+	private selectRestoredMovedNotes(movedNotes: MovedNoteData[], editor: Editor): void {
+		// Clear current selection and select all restored notes at original positions
+		editor.clearSelection();
+		movedNotes.forEach((movedNote) => {
+			const noteGraphics = editor.getPanelContainer().getByName(movedNote.originalNoteKey);
+			if (noteGraphics) {
+				// Note highlighting will be handled by selection mechanism
+				editor.selectedNotes.add(movedNote.originalNoteKey);
+			}
+		});
+	}
+
+	/**
 	 * Clears all undo history
 	 */
 	clearHistory(): void {
@@ -337,7 +651,7 @@ export class NoteBuffer {
 	/**
 	 * Gets a copy of the undo history for testing purposes
 	 */
-	getHistory(): UndoAction[] {
+	getHistory(): AnyUndoAction[] {
 		return [...this.undoHistory];
 	}
 

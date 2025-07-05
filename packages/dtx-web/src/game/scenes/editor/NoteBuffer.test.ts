@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { NoteBuffer, type UndoAction, type DeletedNoteData } from './NoteBuffer';
+import {
+	NoteBuffer,
+	type UndoAction,
+	type DeletedNoteData,
+	type MovedNoteData
+} from './NoteBuffer';
 import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 
@@ -17,6 +22,9 @@ interface MockEditor {
 	clearSelection: () => void;
 	getByName: (name: string) => MockNoteGraphics | null;
 	highlightSelectedNote: (noteGraphics: MockNoteGraphics) => void;
+	getPanelContainer: () => {
+		getByName: (name: string) => { destroy: () => void } | null;
+	};
 }
 
 describe('NoteBuffer', () => {
@@ -38,7 +46,10 @@ describe('NoteBuffer', () => {
 			drawNote: vi.fn().mockReturnValue(true),
 			clearSelection: vi.fn(),
 			getByName: vi.fn().mockReturnValue({ name: 'mockNote' }),
-			highlightSelectedNote: vi.fn()
+			highlightSelectedNote: vi.fn(),
+			getPanelContainer: vi.fn().mockReturnValue({
+				getByName: vi.fn().mockReturnValue({ destroy: vi.fn() })
+			})
 		};
 
 		// Create mock deleted note data
@@ -323,6 +334,152 @@ describe('NoteBuffer', () => {
 			expect(mockEditor.notes['lane2']).toBeDefined();
 			expect(mockEditor.notes['lane1']).toHaveLength(1);
 			expect(mockEditor.notes['lane2']).toHaveLength(1);
+		});
+	});
+
+	describe('undoMove', () => {
+		let mockMovedNoteData: MovedNoteData;
+
+		beforeEach(() => {
+			// Create mock moved note data
+			mockMovedNoteData = {
+				originalNoteKey: 'note-0-1-0.5',
+				originalLaneIndex: 0,
+				originalMeasure: 1,
+				originalCellOffset: 0.5,
+				originalLaneId: 'lane1',
+				noteId: '11',
+				newNoteKey: 'note-1-2-0.25',
+				newLaneIndex: 1,
+				newMeasure: 2,
+				newCellOffset: 0.25,
+				newLaneId: 'lane2',
+				originalPattern: '00110000000000000000000000000000'
+			};
+		});
+
+		it('should successfully undo a move action', () => {
+			// Set up editor state - note is currently at new position
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('move', [mockMovedNoteData]);
+			expect(noteBuffer.getHistoryLength()).toBe(1);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should remove from new position and restore to original position
+			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.5, '11');
+			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is consumed
+		});
+
+		it('should handle multiple moved notes in one action', () => {
+			const mockMovedNoteData2: MovedNoteData = {
+				originalNoteKey: 'note-0-1-0.75',
+				originalLaneIndex: 0,
+				originalMeasure: 1,
+				originalCellOffset: 0.75,
+				originalLaneId: 'lane1',
+				noteId: '12',
+				newNoteKey: 'note-1-2-0.50',
+				newLaneIndex: 1,
+				newMeasure: 2,
+				newCellOffset: 0.5,
+				newLaneId: 'lane2'
+			};
+
+			// Set up editor state - notes are currently at new positions
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11120000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('move', [mockMovedNoteData, mockMovedNoteData2]);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should restore both notes to original positions
+			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.5, '11');
+			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.75, '12');
+			expect(mockEditor.drawNote).toHaveBeenCalledTimes(2);
+		});
+
+		it('should restore notes to data structure correctly', () => {
+			// Set up editor state - note is at new position
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('move', [mockMovedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			// Should have restored to original lane
+			expect(mockEditor.notes['lane1']).toBeDefined();
+			expect(mockEditor.notes['lane1']).toHaveLength(1);
+			expect(mockEditor.notes['lane1'][0].measure).toBe(1);
+			expect(mockEditor.notes['lane1'][0].pattern).toContain('11');
+		});
+
+		it('should handle empty moved notes array', () => {
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+			expect(result).toBe(false);
+		});
+
+		it('should properly clean up visual elements', () => {
+			// Set up mock panel container with destroy method
+			const mockDestroy = vi.fn();
+			mockEditor.getPanelContainer = vi.fn().mockReturnValue({
+				getByName: vi.fn().mockReturnValue({ destroy: mockDestroy })
+			});
+
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('move', [mockMovedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			// Should have called destroy on visual elements
+			expect(mockDestroy).toHaveBeenCalled();
+		});
+
+		it('should select restored notes', () => {
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('move', [mockMovedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			// Should clear selection and add restored note
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+			expect(mockEditor.selectedNotes.has(mockMovedNoteData.originalNoteKey)).toBe(true);
+		});
+
+		it('should restore notes with original pattern when available', () => {
+			// Set up a scenario where original pattern data is used
+			const dataWithOriginalPattern = {
+				...mockMovedNoteData,
+				originalPattern: '00110000000000000000000000000000'
+			};
+
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+
+			// Mock an existing measure note in the original lane with some content
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', '00120000000000000000000000000000') // Has different note
+			];
+
+			noteBuffer.recordAction('move', [dataWithOriginalPattern]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			// Should have used original pattern data for restoration
+			expect(mockEditor.notes['lane1']).toBeDefined();
+			expect(mockEditor.notes['lane1'][0].pattern).toContain('11'); // Original note restored
 		});
 	});
 });

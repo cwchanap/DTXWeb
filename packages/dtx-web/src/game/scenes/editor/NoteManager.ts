@@ -1,6 +1,6 @@
 import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
-import { NoteBuffer, type DeletedNoteData } from './NoteBuffer';
+import { NoteBuffer, type DeletedNoteData, type MovedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';
 
 /**
@@ -54,6 +54,13 @@ export class NoteManager {
 	 */
 	recordDeleteAction(deletedNotes: DeletedNoteData[]): void {
 		this.noteBuffer.recordAction('delete', deletedNotes);
+	}
+
+	/**
+	 * Record a move action for undo functionality
+	 */
+	recordMoveAction(movedNotes: MovedNoteData[]): void {
+		this.noteBuffer.recordAction('move', movedNotes);
 	}
 
 	/**
@@ -800,6 +807,53 @@ export class NoteManager {
 
 		// Allow partial movement - move notes that can be moved, leave others in place
 		if (notesToMove.length > 0) {
+			// Prepare move data for undo functionality before making any changes
+			const moveData: MovedNoteData[] = [];
+			notesToMove.forEach(
+				({ oldKey, newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
+					// Parse original position from old key
+					const oldParts = oldKey.split('-');
+					if (oldParts.length === 4) {
+						const originalLaneIndex = parseInt(oldParts[1]);
+						const originalMeasure = parseInt(oldParts[2]);
+						const originalCellOffset = parseFloat(oldParts[3]);
+						const originalLaneId = this.editor.getLaneConfigs()[originalLaneIndex].id;
+
+						// Capture original pattern data for undo
+						const notes = this.editor.getNotes();
+						let originalPattern: string | undefined;
+						if (originalLaneId in notes) {
+							const originalMeasureNote = notes[originalLaneId].find(
+								(note) => note.measure === originalMeasure
+							);
+							if (originalMeasureNote) {
+								originalPattern = originalMeasureNote.pattern;
+							}
+						}
+
+						moveData.push({
+							originalNoteKey: oldKey,
+							originalLaneIndex,
+							originalMeasure,
+							originalCellOffset,
+							originalLaneId,
+							noteId: originalNoteId,
+							newNoteKey: newKey,
+							newLaneIndex: laneIndex,
+							newMeasure: measure,
+							newCellOffset: cellOffset,
+							newLaneId: laneId,
+							originalPattern
+						});
+					}
+				}
+			);
+
+			// Record the move action for undo functionality
+			if (moveData.length > 0) {
+				this.recordMoveAction(moveData);
+			}
+
 			// Keep track of notes that were successfully moved for selection update
 			const movedNotes: string[] = [];
 			const unmovableNotes: string[] = [];

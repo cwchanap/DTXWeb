@@ -50,8 +50,8 @@ export class NoteCopy {
 		const notesToCopy: CopiedNoteData[] = [];
 		const notes = editor.getNotes();
 
-		// Find the reference note (smallest measure first, then smallest cellOffset, then smallest lane index)
-		let referenceLaneIndex = Number.MAX_SAFE_INTEGER;
+		// Find the reference note (smallest measure first, then smallest cellOffset, then rightmost lane)
+		let referenceLaneIndex = Number.MIN_SAFE_INTEGER;
 		let referenceMeasure = Number.MAX_SAFE_INTEGER;
 		let referenceCellOffset = Number.MAX_SAFE_INTEGER;
 
@@ -63,13 +63,13 @@ export class NoteCopy {
 				const measure = parseInt(parts[2]);
 				const cellOffset = parseFloat(parts[3]);
 
-				// Priority: 1) smallest measure, 2) smallest cellOffset, 3) smallest lane index
+				// Priority: 1) smallest measure, 2) smallest cellOffset, 3) rightmost lane (highest lane index)
 				if (
 					measure < referenceMeasure ||
 					(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
 					(measure === referenceMeasure &&
 						cellOffset === referenceCellOffset &&
-						laneIndex < referenceLaneIndex)
+						laneIndex > referenceLaneIndex)
 				) {
 					referenceLaneIndex = laneIndex;
 					referenceMeasure = measure;

@@ -824,8 +824,8 @@ export class NoteManager {
 		let pasteCellOffset = 0;
 
 		if (this.selectedNotes.size > 0) {
-			// Use the position of the note with smallest measure value, then smallest cellOffset as reference
-			let referenceLaneIndex = Number.MAX_SAFE_INTEGER;
+			// Use the position of the note with smallest measure value, then smallest cellOffset, then rightmost lane as reference
+			let referenceLaneIndex = Number.MIN_SAFE_INTEGER;
 			let referenceMeasure = Number.MAX_SAFE_INTEGER;
 			let referenceCellOffset = Number.MAX_SAFE_INTEGER;
 
@@ -841,7 +841,7 @@ export class NoteManager {
 						(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
 						(measure === referenceMeasure &&
 							cellOffset === referenceCellOffset &&
-							laneIndex < referenceLaneIndex)
+							laneIndex > referenceLaneIndex)
 					) {
 						referenceLaneIndex = laneIndex;
 						referenceMeasure = measure;

@@ -23,6 +23,7 @@ interface MockEditor {
 	clearSelection: () => void;
 	getByName: (name: string) => MockNoteGraphics | null;
 	highlightSelectedNote: (noteGraphics: MockNoteGraphics) => void;
+	deleteNoteByKey: (noteKey: string) => void;
 	getPanelContainer: () => {
 		getByName: (name: string) => { destroy: () => void } | null;
 	};
@@ -71,6 +72,7 @@ describe('NoteBuffer', () => {
 			clearSelection: vi.fn(),
 			getByName: vi.fn().mockReturnValue({ name: 'mockNote' }),
 			highlightSelectedNote: vi.fn(),
+			deleteNoteByKey: vi.fn(),
 			getPanelContainer: vi.fn().mockReturnValue({
 				getByName: vi.fn().mockReturnValue({ destroy: vi.fn() })
 			})
@@ -526,12 +528,6 @@ describe('NoteBuffer', () => {
 		});
 
 		it('should properly clean up visual elements', () => {
-			// Set up mock panel container with destroy method
-			const mockDestroy = vi.fn();
-			mockEditor.getPanelContainer = vi.fn().mockReturnValue({
-				getByName: vi.fn().mockReturnValue({ destroy: mockDestroy })
-			});
-
 			mockEditor.notes['lane2'] = [
 				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
 			];
@@ -539,8 +535,8 @@ describe('NoteBuffer', () => {
 			noteBuffer.recordAction('move', [mockMovedNoteData]);
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			// Should have called destroy on visual elements
-			expect(mockDestroy).toHaveBeenCalled();
+			// Should have called deleteNoteByKey to remove notes from new positions
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('note-1-2-0.25');
 		});
 
 		it('should select restored notes', () => {

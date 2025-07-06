@@ -207,32 +207,9 @@ export class NoteBuffer {
 			);
 		}
 
-		// First, remove notes from their current (new) positions
+		// First, remove notes from their current (new) positions using NoteManager's deleteNoteByKey
 		movedNotes.forEach((movedNote) => {
-			// Remove visual note
-			const noteGraphics = editor.getPanelContainer().getByName(movedNote.newNoteKey);
-			if (noteGraphics) {
-				noteGraphics.destroy();
-			}
-
-			// Remove text
-			const keyParts = movedNote.newNoteKey.split('-');
-			if (keyParts.length === 4) {
-				const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
-				const noteText = editor.getPanelContainer().getByName(textKey);
-				if (noteText) {
-					noteText.destroy();
-				}
-			}
-
-			// Remove from data structure
-			this.removeNoteFromDataStructure(
-				movedNote.newLaneId,
-				movedNote.newMeasure,
-				movedNote.newCellOffset,
-				movedNote.noteId,
-				editor
-			);
+			editor.deleteNoteByKey(movedNote.newNoteKey);
 		});
 
 		// Then, restore notes to their original positions using shared logic
@@ -263,54 +240,6 @@ export class NoteBuffer {
 
 		// Select all restored notes at their original positions
 		this.selectRestoredMovedNotes(movedNotes, editor);
-	}
-
-	/**
-	 * Removes a note from the editor's data structure
-	 */
-	private removeNoteFromDataStructure(
-		laneId: string,
-		measure: number,
-		cellOffset: number,
-		noteId: string,
-		editor: Editor
-	): void {
-		const notes = editor.notes;
-		if (!(laneId in notes)) {
-			return;
-		}
-
-		const measureNote = notes[laneId].find((note) => note.measure === measure);
-		if (!measureNote) {
-			return;
-		}
-
-		// Remove the note from the pattern
-		const patternLength = editor.getCellsPerMeasure();
-		const notePosition = Math.round(cellOffset * patternLength);
-		const startIndex = notePosition * 2;
-
-		if (startIndex >= 0 && startIndex < measureNote.pattern.length - 1) {
-			const currentNote = measureNote.pattern.substring(startIndex, startIndex + 2);
-			if (currentNote === noteId) {
-				// Replace the note with '00'
-				measureNote.pattern =
-					measureNote.pattern.substring(0, startIndex) +
-					'00' +
-					measureNote.pattern.substring(startIndex + 2);
-				measureNote.parseNote(); // Reparse to update notes array
-
-				// If the measure is now empty, remove the entire LaneMeasureNote
-				if (measureNote.notes.length === 0) {
-					notes[laneId] = notes[laneId].filter((note) => note !== measureNote);
-
-					// Clean up empty lane entries
-					if (notes[laneId].length === 0) {
-						delete notes[laneId];
-					}
-				}
-			}
-		}
 	}
 
 	/**

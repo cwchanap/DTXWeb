@@ -34,9 +34,18 @@ export class NoteCopy {
 	private hasClipboardData = false;
 	private isCutOperation = false; // Track if clipboard contains cut (vs copied) notes
 	private noteMove: NoteMove;
+	private findReferenceNote: (
+		noteKeys: Set<string>
+	) => { laneIndex: number; measure: number; cellOffset: number } | null;
 
-	constructor(noteMove: NoteMove) {
+	constructor(
+		noteMove: NoteMove,
+		findReferenceNote: (
+			noteKeys: Set<string>
+		) => { laneIndex: number; measure: number; cellOffset: number } | null
+	) {
 		this.noteMove = noteMove;
+		this.findReferenceNote = findReferenceNote;
 	}
 
 	/**
@@ -50,33 +59,17 @@ export class NoteCopy {
 		const notesToCopy: CopiedNoteData[] = [];
 		const notes = editor.getNotes();
 
-		// Find the reference note (smallest measure first, then smallest cellOffset, then rightmost lane)
-		let referenceLaneIndex = Number.MIN_SAFE_INTEGER;
-		let referenceMeasure = Number.MAX_SAFE_INTEGER;
-		let referenceCellOffset = Number.MAX_SAFE_INTEGER;
+		// Find the reference note using the shared logic
+		const referenceNote = this.findReferenceNote(selectedNotes);
+		if (!referenceNote) {
+			return false;
+		}
 
-		// First pass: find the reference position
-		selectedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-
-				// Priority: 1) smallest measure, 2) smallest cellOffset, 3) rightmost lane (highest lane index)
-				if (
-					measure < referenceMeasure ||
-					(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
-					(measure === referenceMeasure &&
-						cellOffset === referenceCellOffset &&
-						laneIndex > referenceLaneIndex)
-				) {
-					referenceLaneIndex = laneIndex;
-					referenceMeasure = measure;
-					referenceCellOffset = cellOffset;
-				}
-			}
-		});
+		const {
+			laneIndex: referenceLaneIndex,
+			measure: referenceMeasure,
+			cellOffset: referenceCellOffset
+		} = referenceNote;
 
 		// Second pass: collect note data with relative positions
 		selectedNotes.forEach((noteKey) => {

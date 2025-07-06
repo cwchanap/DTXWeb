@@ -33,10 +33,14 @@ export class NoteManager {
 	public selectionStartY = 0;
 	public selectionRectangle!: Phaser.GameObjects.Rectangle;
 
+	// Event listener references for cleanup
+	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
+	private mousemoveHandler: ((event: MouseEvent) => void) | null = null;
+
 	constructor(editor: Editor) {
 		this.editor = editor;
 		this.noteMove = new NoteMove(editor, (movedNotes) => this.recordMoveAction(movedNotes));
-		this.noteCopy = new NoteCopy(this.noteMove);
+		this.noteCopy = new NoteCopy(this.noteMove, (noteKeys) => this.findReferenceNote(noteKeys));
 		this.noteBuffer.setNoteMove(this.noteMove);
 	}
 
@@ -69,7 +73,7 @@ export class NoteManager {
 
 		// Always use global keyboard events for system-level shortcuts
 		// This is more reliable for Ctrl/Cmd combinations
-		const handleKeyDown = (event: KeyboardEvent) => {
+		this.keydownHandler = (event: KeyboardEvent) => {
 			// Only handle shortcuts if the game canvas or editor is focused
 			const target = event.target as HTMLElement;
 			const isGameCanvas = target?.tagName === 'CANVAS' || target?.closest('canvas');
@@ -114,13 +118,11 @@ export class NoteManager {
 		};
 
 		// Add global event listener
-		document.addEventListener('keydown', handleKeyDown, true); // Use capture phase
+		document.addEventListener('keydown', this.keydownHandler, true); // Use capture phase
 
 		// Also try Phaser keyboard as fallback
 		if (this.editor.input?.keyboard) {
-			this.editor.input.keyboard.on('keydown', (event: KeyboardEvent) => {
-				handleKeyDown(event);
-			});
+			this.editor.input.keyboard.on('keydown', this.keydownHandler);
 		}
 	}
 
@@ -134,7 +136,7 @@ export class NoteManager {
 		}
 
 		// Track mouse movement globally to maintain cursor position
-		const handleMouseMove = (event: MouseEvent) => {
+		this.mousemoveHandler = (event: MouseEvent) => {
 			// Try multiple ways to get the canvas element
 			let canvas: HTMLCanvasElement | null = this.editor.game?.canvas || null;
 			if (!canvas) {
@@ -150,7 +152,7 @@ export class NoteManager {
 			}
 		};
 
-		document.addEventListener('mousemove', handleMouseMove);
+		document.addEventListener('mousemove', this.mousemoveHandler);
 	}
 
 	/**
@@ -163,8 +165,14 @@ export class NoteManager {
 
 		// Fallback to Phaser's active pointer if available
 		if (this.editor.input?.activePointer) {
-			mouseX = this.editor.input.activePointer.x || mouseX;
-			mouseY = this.editor.input.activePointer.y || mouseY;
+			mouseX =
+				this.editor.input.activePointer.x !== undefined
+					? this.editor.input.activePointer.x
+					: mouseX;
+			mouseY =
+				this.editor.input.activePointer.y !== undefined
+					? this.editor.input.activePointer.y
+					: mouseY;
 		}
 
 		// Use the EXACT same calculation as Editor's pointerdown handler
@@ -784,6 +792,55 @@ export class NoteManager {
 	}
 
 	/**
+	 * Find the reference note from a set of note keys using priority:
+	 * 1) smallest measure, 2) smallest cellOffset, 3) rightmost lane (highest lane index)
+	 */
+	public findReferenceNote(
+		noteKeys: Set<string>
+	): { laneIndex: number; measure: number; cellOffset: number } | null {
+		if (noteKeys.size === 0) {
+			return null;
+		}
+
+		let referenceLaneIndex = Number.MIN_SAFE_INTEGER;
+		let referenceMeasure = Number.MAX_SAFE_INTEGER;
+		let referenceCellOffset = Number.MAX_SAFE_INTEGER;
+
+		noteKeys.forEach((noteKey) => {
+			const parts = noteKey.split('-');
+			if (parts.length === 4) {
+				const laneIndex = parseInt(parts[1]);
+				const measure = parseInt(parts[2]);
+				const cellOffset = parseFloat(parts[3]);
+
+				// Priority: 1) smallest measure, 2) smallest cellOffset, 3) rightmost lane (highest lane index)
+				if (
+					measure < referenceMeasure ||
+					(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
+					(measure === referenceMeasure &&
+						cellOffset === referenceCellOffset &&
+						laneIndex > referenceLaneIndex)
+				) {
+					referenceLaneIndex = laneIndex;
+					referenceMeasure = measure;
+					referenceCellOffset = cellOffset;
+				}
+			}
+		});
+
+		// Return null if no valid reference was found
+		if (referenceMeasure === Number.MAX_SAFE_INTEGER) {
+			return null;
+		}
+
+		return {
+			laneIndex: referenceLaneIndex,
+			measure: referenceMeasure,
+			cellOffset: referenceCellOffset
+		};
+	}
+
+	/**
 	 * Copy currently selected notes to clipboard
 	 */
 	copySelectedNotes(): boolean {
@@ -824,35 +881,13 @@ export class NoteManager {
 		let pasteCellOffset = 0;
 
 		if (this.selectedNotes.size > 0) {
-			// Use the position of the note with smallest measure value, then smallest cellOffset, then rightmost lane as reference
-			let referenceLaneIndex = Number.MIN_SAFE_INTEGER;
-			let referenceMeasure = Number.MAX_SAFE_INTEGER;
-			let referenceCellOffset = Number.MAX_SAFE_INTEGER;
-
-			this.selectedNotes.forEach((noteKey) => {
-				const parts = noteKey.split('-');
-				if (parts.length === 4) {
-					const laneIndex = parseInt(parts[1]);
-					const measure = parseInt(parts[2]);
-					const cellOffset = parseFloat(parts[3]);
-
-					if (
-						measure < referenceMeasure ||
-						(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
-						(measure === referenceMeasure &&
-							cellOffset === referenceCellOffset &&
-							laneIndex > referenceLaneIndex)
-					) {
-						referenceLaneIndex = laneIndex;
-						referenceMeasure = measure;
-						referenceCellOffset = cellOffset;
-					}
-				}
-			});
-
-			pasteLaneIndex = referenceLaneIndex;
-			pasteMeasure = referenceMeasure;
-			pasteCellOffset = referenceCellOffset;
+			// Use the shared reference note finding logic
+			const referenceNote = this.findReferenceNote(this.selectedNotes);
+			if (referenceNote) {
+				pasteLaneIndex = referenceNote.laneIndex;
+				pasteMeasure = referenceNote.measure;
+				pasteCellOffset = referenceNote.cellOffset;
+			}
 		} else {
 			// Default paste position - use actual cursor position
 			const cursorPosition = this.getCurrentCursorPosition();
@@ -902,6 +937,18 @@ export class NoteManager {
 	 * Clean up resources when the editor is destroyed
 	 */
 	destroy(): void {
+		// Clean up event listeners
+		if (this.keydownHandler && typeof document !== 'undefined') {
+			document.removeEventListener('keydown', this.keydownHandler, true);
+			this.keydownHandler = null;
+		}
+
+		if (this.mousemoveHandler && typeof document !== 'undefined') {
+			document.removeEventListener('mousemove', this.mousemoveHandler);
+			this.mousemoveHandler = null;
+		}
+
+		// Clean up other resources
 		this.noteMove.destroy();
 		if (this.selectionRectangle && typeof this.selectionRectangle.destroy === 'function') {
 			this.selectionRectangle.destroy();

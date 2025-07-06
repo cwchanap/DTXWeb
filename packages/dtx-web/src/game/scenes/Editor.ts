@@ -519,6 +519,13 @@ export class Editor extends BaseGame {
 	}
 
 	/**
+	 * Delete note by key - delegate to NoteManager
+	 */
+	deleteNoteByKey(noteKey: string): void {
+		this.noteManager.deleteNoteByKey(noteKey);
+	}
+
+	/**
 	 * Get selected notes - delegate to NoteManager
 	 */
 	get selectedNotes(): Set<string> {

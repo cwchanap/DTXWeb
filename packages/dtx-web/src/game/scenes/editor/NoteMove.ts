@@ -158,7 +158,46 @@ export class NoteMove {
 			originalNoteId: string;
 		}> = [];
 
-		// First, collect original noteIDs for all notes that will be moved
+		// Collect original note IDs for all notes that will be moved
+		const originalNoteIds = this.collectOriginalNoteIds();
+
+		// Calculate new positions for all selected notes based on the delta
+		this.calculateNewPositions(
+			laneOffsetDelta,
+			measureOffsetDelta,
+			cellOffsetDelta,
+			originalNoteIds,
+			notesToMove
+		);
+
+		// Allow partial movement - move notes that can be moved, leave others in place
+		if (notesToMove.length > 0) {
+			// Prepare move data for undo functionality before making any changes
+			const moveData = this.prepareMoveData(notesToMove);
+
+			// Record the move action for undo functionality
+			if (moveData.length > 0) {
+				this.recordMoveAction(moveData);
+			}
+
+			// Execute the note moving operations
+			const { movedNotes, unmovableNotes } = this.performMove(notesToMove, deleteNoteByKey);
+
+			// Update selection to include both moved and unmoved notes
+			this.updateSelectionAfterMove(
+				movedNotes,
+				unmovableNotes,
+				clearSelection,
+				selectedNotes,
+				highlightSelectedNote
+			);
+		}
+	}
+
+	/**
+	 * Collect original note IDs for all notes that will be moved
+	 */
+	private collectOriginalNoteIds(): Map<string, string> {
 		const originalNoteIds = new Map<string, string>();
 		this.draggedNotes.forEach((noteKey) => {
 			const parts = noteKey.split('-');
@@ -187,8 +226,27 @@ export class NoteMove {
 				}
 			}
 		});
+		return originalNoteIds;
+	}
 
-		// Calculate new positions for all selected notes based on the delta
+	/**
+	 * Calculate and validate new note positions based on movement deltas
+	 */
+	private calculateNewPositions(
+		laneOffsetDelta: number,
+		measureOffsetDelta: number,
+		cellOffsetDelta: number,
+		originalNoteIds: Map<string, string>,
+		notesToMove: Array<{
+			oldKey: string;
+			newKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			originalNoteId: string;
+		}>
+	): void {
 		this.draggedNotes.forEach((noteKey) => {
 			const parts = noteKey.split('-');
 			if (parts.length === 4) {
@@ -245,111 +303,147 @@ export class NoteMove {
 				}
 			}
 		});
+	}
 
-		// Allow partial movement - move notes that can be moved, leave others in place
-		if (notesToMove.length > 0) {
-			// Prepare move data for undo functionality before making any changes
-			const moveData: MovedNoteData[] = [];
-			notesToMove.forEach(
-				({ oldKey, newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
-					// Parse original position from old key
-					const oldParts = oldKey.split('-');
-					if (oldParts.length === 4) {
-						const originalLaneIndex = parseInt(oldParts[1]);
-						const originalMeasure = parseInt(oldParts[2]);
-						const originalCellOffset = parseFloat(oldParts[3]);
-						const originalLaneId = this.editor.getLaneConfigs()[originalLaneIndex].id;
+	/**
+	 * Prepare undo data for the move operation
+	 */
+	private prepareMoveData(
+		notesToMove: Array<{
+			oldKey: string;
+			newKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			originalNoteId: string;
+		}>
+	): MovedNoteData[] {
+		const moveData: MovedNoteData[] = [];
+		notesToMove.forEach(
+			({ oldKey, newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
+				// Parse original position from old key
+				const oldParts = oldKey.split('-');
+				if (oldParts.length === 4) {
+					const originalLaneIndex = parseInt(oldParts[1]);
+					const originalMeasure = parseInt(oldParts[2]);
+					const originalCellOffset = parseFloat(oldParts[3]);
+					const originalLaneId = this.editor.getLaneConfigs()[originalLaneIndex].id;
 
-						// Capture original pattern data for undo
-						const notes = this.editor.getNotes();
-						let originalPattern: string | undefined;
-						if (originalLaneId in notes) {
-							const originalMeasureNote = notes[originalLaneId].find(
-								(note) => note.measure === originalMeasure
-							);
-							if (originalMeasureNote) {
-								originalPattern = originalMeasureNote.pattern;
-							}
+					// Capture original pattern data for undo
+					const notes = this.editor.getNotes();
+					let originalPattern: string | undefined;
+					if (originalLaneId in notes) {
+						const originalMeasureNote = notes[originalLaneId].find(
+							(note) => note.measure === originalMeasure
+						);
+						if (originalMeasureNote) {
+							originalPattern = originalMeasureNote.pattern;
 						}
-
-						moveData.push({
-							originalNoteKey: oldKey,
-							originalLaneIndex,
-							originalMeasure,
-							originalCellOffset,
-							originalLaneId,
-							noteId: originalNoteId,
-							newNoteKey: newKey,
-							newLaneIndex: laneIndex,
-							newMeasure: measure,
-							newCellOffset: cellOffset,
-							newLaneId: laneId,
-							originalPattern
-						});
 					}
-				}
-			);
 
-			// Record the move action for undo functionality
-			if (moveData.length > 0) {
-				this.recordMoveAction(moveData);
+					moveData.push({
+						originalNoteKey: oldKey,
+						originalLaneIndex,
+						originalMeasure,
+						originalCellOffset,
+						originalLaneId,
+						noteId: originalNoteId,
+						newNoteKey: newKey,
+						newLaneIndex: laneIndex,
+						newMeasure: measure,
+						newCellOffset: cellOffset,
+						newLaneId: laneId,
+						originalPattern
+					});
+				}
 			}
+		);
+		return moveData;
+	}
 
-			// Keep track of notes that were successfully moved for selection update
-			const movedNotes: string[] = [];
-			const unmovableNotes: string[] = [];
+	/**
+	 * Execute the note moving operations
+	 */
+	private performMove(
+		notesToMove: Array<{
+			oldKey: string;
+			newKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			originalNoteId: string;
+		}>,
+		deleteNoteByKey: (noteKey: string) => void
+	): { movedNotes: string[]; unmovableNotes: string[] } {
+		// Keep track of notes that were successfully moved for selection update
+		const movedNotes: string[] = [];
+		const unmovableNotes: string[] = [];
 
-			// Collect notes that cannot be moved
-			this.draggedNotes.forEach((noteKey) => {
-				const canMove = notesToMove.some(({ oldKey }) => oldKey === noteKey);
-				if (!canMove) {
-					unmovableNotes.push(noteKey);
+		// Collect notes that cannot be moved
+		this.draggedNotes.forEach((noteKey) => {
+			const canMove = notesToMove.some(({ oldKey }) => oldKey === noteKey);
+			if (!canMove) {
+				unmovableNotes.push(noteKey);
+			}
+		});
+
+		// First, remove old notes that are moving
+		notesToMove.forEach(({ oldKey }) => {
+			deleteNoteByKey(oldKey);
+		});
+
+		// Then, add new notes
+		notesToMove.forEach(
+			({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
+				const noteAdded = this.addNoteToEditor(
+					measure,
+					laneIndex,
+					cellOffset,
+					laneId,
+					originalNoteId
+				);
+
+				if (noteAdded) {
+					movedNotes.push(newKey);
 				}
-			});
+			}
+		);
 
-			// First, remove old notes that are moving
-			notesToMove.forEach(({ oldKey }) => {
-				deleteNoteByKey(oldKey);
-			});
+		return { movedNotes, unmovableNotes };
+	}
 
-			// Then, add new notes
-			notesToMove.forEach(
-				({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
-					const noteAdded = this.addNoteToEditor(
-						measure,
-						laneIndex,
-						cellOffset,
-						laneId,
-						originalNoteId
-					);
+	/**
+	 * Update the selection state after moving notes
+	 */
+	private updateSelectionAfterMove(
+		movedNotes: string[],
+		unmovableNotes: string[],
+		clearSelection: () => void,
+		selectedNotes: Set<string>,
+		highlightSelectedNote: (noteGraphics: { name: string }) => void
+	): void {
+		// Update selection to include both moved and unmoved notes
+		clearSelection();
 
-					if (noteAdded) {
-						movedNotes.push(newKey);
-					}
-				}
-			);
+		// Add moved notes to selection
+		movedNotes.forEach((newKey) => {
+			selectedNotes.add(newKey);
+			const noteGraphics = this.editor.getPanelContainer().getByName(newKey);
+			if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
+				highlightSelectedNote(noteGraphics);
+			}
+		});
 
-			// Update selection to include both moved and unmoved notes
-			clearSelection();
-
-			// Add moved notes to selection
-			movedNotes.forEach((newKey) => {
-				selectedNotes.add(newKey);
-				const noteGraphics = this.editor.getPanelContainer().getByName(newKey);
-				if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
-					highlightSelectedNote(noteGraphics);
-				}
-			});
-
-			// Keep unmovable notes in selection at their original positions
-			unmovableNotes.forEach((noteKey) => {
-				selectedNotes.add(noteKey);
-				const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
-				if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
-					highlightSelectedNote(noteGraphics);
-				}
-			});
-		}
+		// Keep unmovable notes in selection at their original positions
+		unmovableNotes.forEach((noteKey) => {
+			selectedNotes.add(noteKey);
+			const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
+			if (noteGraphics && noteGraphics instanceof Phaser.GameObjects.Graphics) {
+				highlightSelectedNote(noteGraphics);
+			}
+		});
 	}
 
 	/**

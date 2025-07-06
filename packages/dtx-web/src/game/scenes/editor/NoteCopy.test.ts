@@ -32,7 +32,52 @@ describe('NoteCopy', () => {
 
 	beforeEach(() => {
 		mockNoteMove = createMockNoteMove();
-		noteCopy = new NoteCopy(mockNoteMove);
+
+		// Create a mock findReferenceNote function that implements the same logic
+		const mockFindReferenceNote = (noteKeys: Set<string>) => {
+			if (noteKeys.size === 0) {
+				return null;
+			}
+
+			let referenceLaneIndex = Number.MIN_SAFE_INTEGER;
+			let referenceMeasure = Number.MAX_SAFE_INTEGER;
+			let referenceCellOffset = Number.MAX_SAFE_INTEGER;
+
+			noteKeys.forEach((noteKey) => {
+				const parts = noteKey.split('-');
+				if (parts.length === 4) {
+					const laneIndex = parseInt(parts[1]);
+					const measure = parseInt(parts[2]);
+					const cellOffset = parseFloat(parts[3]);
+
+					// Priority: 1) smallest measure, 2) smallest cellOffset, 3) rightmost lane (highest lane index)
+					if (
+						measure < referenceMeasure ||
+						(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
+						(measure === referenceMeasure &&
+							cellOffset === referenceCellOffset &&
+							laneIndex > referenceLaneIndex)
+					) {
+						referenceLaneIndex = laneIndex;
+						referenceMeasure = measure;
+						referenceCellOffset = cellOffset;
+					}
+				}
+			});
+
+			// Return null if no valid reference was found
+			if (referenceMeasure === Number.MAX_SAFE_INTEGER) {
+				return null;
+			}
+
+			return {
+				laneIndex: referenceLaneIndex,
+				measure: referenceMeasure,
+				cellOffset: referenceCellOffset
+			};
+		};
+
+		noteCopy = new NoteCopy(mockNoteMove, mockFindReferenceNote);
 		mockEditor = createMockEditor();
 
 		// Set up default lane configs

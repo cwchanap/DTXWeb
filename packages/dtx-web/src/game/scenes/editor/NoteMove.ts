@@ -315,56 +315,15 @@ export class NoteMove {
 			// Then, add new notes
 			notesToMove.forEach(
 				({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
-					// Add to display
-					const noteAdded = this.editor.drawNote(
+					const noteAdded = this.addNoteToEditor(
 						measure,
 						laneIndex,
 						cellOffset,
+						laneId,
 						originalNoteId
 					);
 
 					if (noteAdded) {
-						// Add to data - use the correct lane-based data structure
-						const notes = this.editor.getNotes();
-						if (!(laneId in notes)) {
-							notes[laneId] = [];
-						}
-
-						// Check if a LaneMeasureNote already exists for this measure/lane
-						const existingMeasureNote = notes[laneId].find(
-							(note) => note.measure === measure
-						);
-
-						if (existingMeasureNote) {
-							// Add note to existing measure
-							const patternLength = this.editor.getCellsPerMeasure();
-							const notePosition = Math.round(cellOffset * patternLength);
-							const startIndex = notePosition * 2;
-							let pattern = existingMeasureNote.pattern;
-
-							// Place the note in the existing pattern
-							pattern =
-								pattern.substring(0, startIndex) +
-								originalNoteId +
-								pattern.substring(startIndex + 2);
-
-							existingMeasureNote.pattern = pattern;
-							existingMeasureNote.parseNote(); // Reparse to update notes array
-						} else {
-							// Create a new LaneMeasureNote for this measure
-							const patternLength = this.editor.getCellsPerMeasure();
-							const notePosition = Math.round(cellOffset * patternLength);
-							let pattern = '00'.repeat(patternLength);
-
-							// Place the original noteId at the correct position
-							const startIndex = notePosition * 2;
-							pattern =
-								pattern.substring(0, startIndex) +
-								originalNoteId +
-								pattern.substring(startIndex + 2);
-
-							notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
-						}
 						movedNotes.push(newKey);
 					}
 				}
@@ -404,6 +363,67 @@ export class NoteMove {
 		// We'll update the preview positions in updateDrag based on cursor movement
 		// For now, just initialize it with the current positions
 		this.updateDragPreview();
+	}
+
+	/**
+	 * Add a note to both the display and data structure
+	 * This is the shared logic used by both copy and move operations
+	 */
+	public addNoteToEditor(
+		measure: number,
+		laneIndex: number,
+		cellOffset: number,
+		laneId: string,
+		noteId: string
+	): boolean {
+		// Add to display
+		const noteAdded = this.editor.drawNote(measure, laneIndex, cellOffset, noteId);
+
+		if (noteAdded) {
+			// Add to data structure
+			const notes = this.editor.getNotes();
+			if (!(laneId in notes)) {
+				notes[laneId] = [];
+			}
+
+			// Check if a LaneMeasureNote already exists for this measure/lane
+			const existingMeasureNote = notes[laneId].find((note) => note.measure === measure);
+
+			if (existingMeasureNote) {
+				// Add note to existing measure
+				const patternLength = this.editor.getCellsPerMeasure();
+				const notePosition = Math.round(cellOffset * patternLength);
+				const startIndex = notePosition * 2;
+				let pattern = existingMeasureNote.pattern;
+
+				// Ensure pattern is long enough
+				const expectedLength = patternLength * 2;
+				if (pattern.length < expectedLength) {
+					pattern = pattern.padEnd(expectedLength, '0');
+				}
+
+				// Place the note in the existing pattern
+				pattern =
+					pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
+
+				existingMeasureNote.pattern = pattern;
+				existingMeasureNote.parseNote(); // Reparse to update notes array
+			} else {
+				// Create a new LaneMeasureNote for this measure
+				const patternLength = this.editor.getCellsPerMeasure();
+				const notePosition = Math.round(cellOffset * patternLength);
+				let pattern = '00'.repeat(patternLength);
+
+				// Place the note at the correct position
+				const startIndex = notePosition * 2;
+				pattern =
+					pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
+
+				notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+			}
+		}
+
+		return noteAdded;
 	}
 
 	/**

@@ -1,5 +1,6 @@
-import { LaneMeasureNote, normalizePosition } from '@dtx/common';
+import { normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
+import type { NoteMove } from './NoteMove';
 
 /**
  * Represents a copied note with its position and properties
@@ -31,6 +32,11 @@ export interface CopiedNoteData {
 export class NoteCopy {
 	private copiedNotes: CopiedNoteData[] = [];
 	private hasClipboardData = false;
+	private noteMove: NoteMove;
+
+	constructor(noteMove: NoteMove) {
+		this.noteMove = noteMove;
+	}
 
 	/**
 	 * Copy the selected notes to the clipboard
@@ -189,61 +195,20 @@ export class NoteCopy {
 			return false;
 		}
 
-		// Add each note to both display and data structure
+		// Add each note using the shared logic from NoteMove
 		const addedNotes: string[] = [];
 		notesToPaste.forEach(({ laneIndex, measure, cellOffset, laneId, noteId }) => {
-			// Add to display
-			const noteAdded = editor.drawNote(measure, laneIndex, cellOffset, noteId);
+			const noteAdded = this.noteMove.addNoteToEditor(
+				measure,
+				laneIndex,
+				cellOffset,
+				laneId,
+				noteId
+			);
 
 			if (noteAdded) {
 				const newKey = `note-${laneIndex}-${measure}-${cellOffset}`;
 				addedNotes.push(newKey);
-
-				// Add to data structure
-				const notes = editor.getNotes();
-				if (!(laneId in notes)) {
-					notes[laneId] = [];
-				}
-
-				// Check if a LaneMeasureNote already exists for this measure/lane
-				const existingMeasureNote = notes[laneId].find((note) => note.measure === measure);
-
-				if (existingMeasureNote) {
-					// Add note to existing measure
-					const patternLength = editor.getCellsPerMeasure();
-					const notePosition = Math.round(cellOffset * patternLength);
-					const startIndex = notePosition * 2;
-					let pattern = existingMeasureNote.pattern;
-
-					// Ensure pattern is long enough
-					const expectedLength = patternLength * 2;
-					if (pattern.length < expectedLength) {
-						pattern = pattern.padEnd(expectedLength, '0');
-					}
-
-					// Place the note in the pattern
-					pattern =
-						pattern.substring(0, startIndex) +
-						noteId +
-						pattern.substring(startIndex + 2);
-
-					existingMeasureNote.pattern = pattern;
-					existingMeasureNote.parseNote(); // Reparse to update notes array
-				} else {
-					// Create a new LaneMeasureNote for this measure
-					const patternLength = editor.getCellsPerMeasure();
-					const notePosition = Math.round(cellOffset * patternLength);
-					let pattern = '00'.repeat(patternLength);
-
-					// Place the note at the correct position
-					const startIndex = notePosition * 2;
-					pattern =
-						pattern.substring(0, startIndex) +
-						noteId +
-						pattern.substring(startIndex + 2);
-
-					notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
-				}
 			}
 		});
 

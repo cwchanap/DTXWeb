@@ -15,8 +15,8 @@ import Phaser from 'phaser';
 export class NoteManager {
 	private editor: Editor;
 	private noteBuffer = new NoteBuffer();
-	private noteCopy = new NoteCopy();
 	private noteMove: NoteMove;
+	private noteCopy: NoteCopy;
 
 	// Selection state
 	public selectedNotes: Set<string> = new Set();
@@ -36,6 +36,7 @@ export class NoteManager {
 	constructor(editor: Editor) {
 		this.editor = editor;
 		this.noteMove = new NoteMove(editor, (movedNotes) => this.recordMoveAction(movedNotes));
+		this.noteCopy = new NoteCopy(this.noteMove);
 	}
 
 	/**

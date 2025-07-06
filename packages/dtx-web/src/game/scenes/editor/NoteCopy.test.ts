@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NoteCopy } from './NoteCopy';
 import { LaneMeasureNote } from '@dtx/common';
 import type { Editor } from '../Editor';
+import type { NoteMove } from './NoteMove';
 
 // Mock Editor type
 const createMockEditor = () => {
@@ -17,12 +18,21 @@ const createMockEditor = () => {
 	} as unknown as Editor;
 };
 
+// Create mock NoteMove
+const createMockNoteMove = () => {
+	return {
+		addNoteToEditor: vi.fn().mockReturnValue(true)
+	} as unknown as NoteMove;
+};
+
 describe('NoteCopy', () => {
 	let noteCopy: NoteCopy;
 	let mockEditor: Editor;
+	let mockNoteMove: NoteMove;
 
 	beforeEach(() => {
-		noteCopy = new NoteCopy();
+		mockNoteMove = createMockNoteMove();
+		noteCopy = new NoteCopy(mockNoteMove);
 		mockEditor = createMockEditor();
 
 		// Set up default lane configs
@@ -134,11 +144,23 @@ describe('NoteCopy', () => {
 			const result = noteCopy.pasteNotes(0, 2, 0, mockEditor);
 
 			expect(result).toBe(true);
-			expect(mockEditor.drawNote).toHaveBeenCalledTimes(2);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
 			// First note should be pasted at the target position
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(2, 0, 0, '11');
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0,
+				'lane1',
+				'11'
+			);
 			// Second note should maintain relative position (1 lane over)
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(2, 1, 0, '12');
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				1,
+				0,
+				'lane2',
+				'12'
+			);
 		});
 
 		it('should return false when no notes are in clipboard', () => {
@@ -159,8 +181,20 @@ describe('NoteCopy', () => {
 
 			expect(result).toBe(true);
 			// Both notes should be within bounds
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.875, '11');
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 1, 0.875, '12');
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.875,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				1,
+				0.875,
+				'lane2',
+				'12'
+			);
 		});
 
 		it('should validate target positions and skip invalid ones', () => {
@@ -192,9 +226,22 @@ describe('NoteCopy', () => {
 
 			noteCopy.pasteNotes(0, 2, 0, mockEditor);
 
-			// Should have created new LaneMeasureNote entries
-			expect(mockNotes['lane1']).toHaveLength(1);
-			expect(mockNotes['lane2']).toHaveLength(1);
+			// Should have called addNoteToEditor for both notes
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				1,
+				0,
+				'lane2',
+				'12'
+			);
 		});
 
 		it('should add to existing measure when one already exists', () => {
@@ -206,9 +253,21 @@ describe('NoteCopy', () => {
 
 			noteCopy.pasteNotes(0, 2, 0, mockEditor);
 
-			// Should have updated existing measure instead of creating new one
-			expect(mockNotes['lane1']).toHaveLength(1);
-			expect(mockNotes['lane1'][0].pattern).toContain('11'); // Note was added
+			// Should have called addNoteToEditor which handles existing measures
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				1,
+				0,
+				'lane2',
+				'12'
+			);
 		});
 	});
 

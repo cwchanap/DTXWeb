@@ -204,25 +204,25 @@ describe('NoteCopy', () => {
 		});
 
 		it('should paste notes successfully at target position', () => {
-			const result = noteCopy.pasteNotes(0, 2, 0, mockEditor);
+			const result = noteCopy.pasteNotes(1, 2, 0, mockEditor); // Paste at lane 1 instead of 0
 
 			expect(result).toBe(true);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
-			// First note should be pasted at the target position
-			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
-				2,
-				0,
-				0,
-				'lane1',
-				'11'
-			);
-			// Second note should maintain relative position (1 lane over)
+			// Reference note (rightmost: lane 1, noteId '12') should be pasted at the target position
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				2,
 				1,
 				0,
 				'lane2',
 				'12'
+			);
+			// Other note should maintain relative position (-1 lane offset)
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0,
+				'lane1',
+				'11'
 			);
 		});
 
@@ -237,26 +237,26 @@ describe('NoteCopy', () => {
 
 		it('should handle measure boundary crossing', () => {
 			// Test pasting near the end of a measure - paste at position 0.9
-			// First note will be at (0, 1, 0.9), second note at (1, 1, 0.9)
-			// Since our copied notes are at relative positions (0,0,0) and (1,0,0)
+			// Reference note (lane 1, noteId '12') at target position
+			// Other note (lane 0, noteId '11') at relative position (-1 lane offset)
 			// Note: 0.9 gets normalized to 0.875 (14/16)
-			const result = noteCopy.pasteNotes(0, 1, 0.9, mockEditor);
+			const result = noteCopy.pasteNotes(1, 1, 0.9, mockEditor);
 
 			expect(result).toBe(true);
 			// Both notes should be within bounds
-			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
-				1,
-				0,
-				0.875,
-				'lane1',
-				'11'
-			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				1,
 				0.875,
 				'lane2',
 				'12'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.875,
+				'lane1',
+				'11'
 			);
 		});
 
@@ -287,23 +287,23 @@ describe('NoteCopy', () => {
 			};
 			vi.mocked(mockEditor.getNotes).mockReturnValue(mockNotes);
 
-			noteCopy.pasteNotes(0, 2, 0, mockEditor);
+			noteCopy.pasteNotes(1, 2, 0, mockEditor);
 
 			// Should have called addNoteToEditor for both notes
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
-			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
-				2,
-				0,
-				0,
-				'lane1',
-				'11'
-			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				2,
 				1,
 				0,
 				'lane2',
 				'12'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0,
+				'lane1',
+				'11'
 			);
 		});
 
@@ -314,22 +314,22 @@ describe('NoteCopy', () => {
 			};
 			vi.mocked(mockEditor.getNotes).mockReturnValue(mockNotes);
 
-			noteCopy.pasteNotes(0, 2, 0, mockEditor);
+			noteCopy.pasteNotes(1, 2, 0, mockEditor);
 
 			// Should have called addNoteToEditor which handles existing measures
-			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
-				2,
-				0,
-				0,
-				'lane1',
-				'11'
-			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				2,
 				1,
 				0,
 				'lane2',
 				'12'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0,
+				'lane1',
+				'11'
 			);
 		});
 	});

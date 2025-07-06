@@ -7,6 +7,7 @@ import {
 } from './NoteBuffer';
 import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
+import type { NoteMove } from './NoteMove';
 
 // Mock note graphics interface
 interface MockNoteGraphics {
@@ -27,13 +28,36 @@ interface MockEditor {
 	};
 }
 
+// Create mock NoteMove
+const createMockNoteMove = () => {
+	return {
+		addNoteToEditor: vi
+			.fn()
+			.mockImplementation(
+				(
+					measure: number,
+					laneIndex: number,
+					cellOffset: number,
+					laneId: string,
+					noteId: string
+				) => {
+					// Simulate the data structure update for testing
+					return true;
+				}
+			)
+	} as unknown as NoteMove;
+};
+
 describe('NoteBuffer', () => {
 	let noteBuffer: NoteBuffer;
 	let mockEditor: MockEditor;
 	let mockDeletedNoteData: DeletedNoteData;
+	let mockNoteMove: NoteMove;
 
 	beforeEach(() => {
 		noteBuffer = new NoteBuffer();
+		mockNoteMove = createMockNoteMove();
+		noteBuffer.setNoteMove(mockNoteMove);
 
 		// Set up normalizePosition mock to return the input value (identity function for tests)
 		vi.mocked(normalizePosition).mockImplementation((cellOffset: number) => cellOffset);
@@ -162,7 +186,13 @@ describe('NoteBuffer', () => {
 
 			expect(result).toBe(true);
 			expect(noteBuffer.getHistoryLength()).toBe(0);
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.5, '11');
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 		});
 
@@ -178,9 +208,21 @@ describe('NoteBuffer', () => {
 			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(true);
-			expect(mockEditor.drawNote).toHaveBeenCalledTimes(2);
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.5, '11');
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.75, '12');
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.75,
+				'lane1',
+				'12'
+			);
 		});
 
 		it('should handle add/move actions (not implemented)', () => {
@@ -194,8 +236,8 @@ describe('NoteBuffer', () => {
 		});
 
 		it('should restore action to history if undo fails', () => {
-			// Mock drawNote to throw an error
-			mockEditor.drawNote = vi.fn().mockImplementation(() => {
+			// Mock addNoteToEditor to throw an error
+			vi.mocked(mockNoteMove.addNoteToEditor).mockImplementation(() => {
 				throw new Error('Draw failed');
 			});
 
@@ -209,18 +251,22 @@ describe('NoteBuffer', () => {
 	});
 
 	describe('note restoration logic', () => {
-		it('should create new LaneMeasureNote when lane does not exist', () => {
+		it('should use shared addNoteToEditor logic for restoration', () => {
 			mockEditor.notes = {}; // Empty notes
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
 
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			expect(mockEditor.notes['lane1']).toBeDefined();
-			expect(mockEditor.notes['lane1']).toHaveLength(1);
-			expect(mockEditor.notes['lane1'][0].measure).toBe(1);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 		});
 
-		it('should update existing LaneMeasureNote when measure exists', () => {
+		it('should delegate to addNoteToEditor regardless of existing data structure', () => {
 			// Setup existing measure note
 			const existingNote = new LaneMeasureNote(
 				1,
@@ -232,9 +278,14 @@ describe('NoteBuffer', () => {
 			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			// Should update existing note, not create new one
-			expect(mockEditor.notes['lane1']).toHaveLength(1);
-			expect(mockEditor.notes['lane1'][0]).toBe(existingNote);
+			// Should delegate to shared logic which handles data structure updates
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 		});
 
 		it('should select restored notes', () => {
@@ -303,7 +354,7 @@ describe('NoteBuffer', () => {
 			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(true); // Method completes successfully
-			expect(mockEditor.drawNote).not.toHaveBeenCalled();
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).not.toHaveBeenCalled();
 		});
 
 		it('should handle notes with different measures in same lane', () => {
@@ -317,7 +368,21 @@ describe('NoteBuffer', () => {
 
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			expect(mockEditor.notes['lane1']).toHaveLength(2); // Two LaneMeasureNotes created
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 		});
 
 		it('should handle notes from different lanes', () => {
@@ -331,10 +396,21 @@ describe('NoteBuffer', () => {
 
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			expect(mockEditor.notes['lane1']).toBeDefined();
-			expect(mockEditor.notes['lane2']).toBeDefined();
-			expect(mockEditor.notes['lane1']).toHaveLength(1);
-			expect(mockEditor.notes['lane2']).toHaveLength(1);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane2',
+				'11'
+			);
 		});
 	});
 
@@ -372,7 +448,13 @@ describe('NoteBuffer', () => {
 
 			expect(result).toBe(true);
 			// Should remove from new position and restore to original position
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.5, '11');
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is consumed
 		});
 
@@ -402,9 +484,21 @@ describe('NoteBuffer', () => {
 
 			expect(result).toBe(true);
 			// Should restore both notes to original positions
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.5, '11');
-			expect(mockEditor.drawNote).toHaveBeenCalledWith(1, 0, 0.75, '12');
-			expect(mockEditor.drawNote).toHaveBeenCalledTimes(2);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.75,
+				'lane1',
+				'12'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
 		});
 
 		it('should restore notes to data structure correctly', () => {
@@ -416,11 +510,14 @@ describe('NoteBuffer', () => {
 			noteBuffer.recordAction('move', [mockMovedNoteData]);
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			// Should have restored to original lane
-			expect(mockEditor.notes['lane1']).toBeDefined();
-			expect(mockEditor.notes['lane1']).toHaveLength(1);
-			expect(mockEditor.notes['lane1'][0].measure).toBe(1);
-			expect(mockEditor.notes['lane1'][0].pattern).toContain('11');
+			// Should delegate to shared logic for restoration
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 		});
 
 		it('should handle empty moved notes array', () => {
@@ -478,9 +575,14 @@ describe('NoteBuffer', () => {
 			noteBuffer.recordAction('move', [dataWithOriginalPattern]);
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			// Should have used original pattern data for restoration
-			expect(mockEditor.notes['lane1']).toBeDefined();
-			expect(mockEditor.notes['lane1'][0].pattern).toContain('11'); // Original note restored
+			// Should delegate to shared logic regardless of original pattern complexity
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0.5,
+				'lane1',
+				'11'
+			);
 		});
 	});
 });

@@ -37,6 +37,7 @@ export class NoteManager {
 		this.editor = editor;
 		this.noteMove = new NoteMove(editor, (movedNotes) => this.recordMoveAction(movedNotes));
 		this.noteCopy = new NoteCopy(this.noteMove);
+		this.noteBuffer.setNoteMove(this.noteMove);
 	}
 
 	/**

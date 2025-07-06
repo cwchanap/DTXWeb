@@ -528,4 +528,60 @@ describe('NoteManager', () => {
 			expect(noteManager.hasClipboard()).toBe(false);
 		});
 	});
+
+	describe('cut operations', () => {
+		beforeEach(() => {
+			// Set up note data in the editor (same as copy tests)
+			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
+			lane1Note.parseNote();
+			lane2Note.parseNote();
+
+			mockEditor._setMockNotes({
+				lane1: [lane1Note],
+				lane2: [lane2Note]
+			});
+
+			// Set up notes for cutting
+			noteManager.selectedNotes.add('note-0-1-0');
+			noteManager.selectedNotes.add('note-1-1-0');
+		});
+
+		it('should cut selected notes to clipboard', () => {
+			const result = noteManager.cutSelectedNotes();
+
+			expect(result).toBe(true);
+			expect(noteManager.hasClipboard()).toBe(true);
+			// Notes should be deleted (selection cleared)
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should return false when no notes are selected for cutting', () => {
+			noteManager.selectedNotes.clear();
+
+			const result = noteManager.cutSelectedNotes();
+
+			expect(result).toBe(false);
+			expect(noteManager.hasClipboard()).toBe(false);
+		});
+
+		it('should clear selection after successful cut', () => {
+			expect(noteManager.selectedNotes.size).toBe(2);
+
+			noteManager.cutSelectedNotes();
+
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should delete notes when cutting', () => {
+			const deleteNoteSpy = vi.spyOn(noteManager, 'deleteNoteByKey');
+
+			noteManager.cutSelectedNotes();
+
+			// Should have called deleteNoteByKey for each selected note
+			expect(deleteNoteSpy).toHaveBeenCalledWith('note-0-1-0');
+			expect(deleteNoteSpy).toHaveBeenCalledWith('note-1-1-0');
+			expect(deleteNoteSpy).toHaveBeenCalledTimes(2);
+		});
+	});
 });

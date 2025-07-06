@@ -934,6 +934,20 @@ export class NoteManager {
 	}
 
 	/**
+	 * Add a note to both the display and data structure
+	 * Delegates to the shared logic in NoteMove
+	 */
+	addNoteToEditor(
+		measure: number,
+		laneIndex: number,
+		cellOffset: number,
+		laneId: string,
+		noteId: string
+	): boolean {
+		return this.noteMove.addNoteToEditor(measure, laneIndex, cellOffset, laneId, noteId);
+	}
+
+	/**
 	 * Clean up resources when the editor is destroyed
 	 */
 	destroy(): void {

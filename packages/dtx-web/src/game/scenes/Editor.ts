@@ -190,58 +190,9 @@ export class Editor extends BaseGame {
 						}
 					}
 				} else {
-					// Left-click: Add a note (existing behavior)
-					// Draw the note in the clicked cell with correct parameters
-					// The drawNote method expects (measure, laneIndex, cellOffset, noteId)
-					const noteAdded = this.drawNote(measure, laneIndex, cellOffset, '01');
-					if (noteAdded) {
-						const laneId = this.laneConfigs[laneIndex].id;
-						if (!(laneId in this.notes)) {
-							this.notes[laneId] = [];
-						}
-
-						// Check if a LaneMeasureNote already exists for this measure/lane
-						const existingMeasureNote = this.notes[laneId].find(
-							(note) => note.measure === measure
-						);
-
-						if (existingMeasureNote) {
-							// Add note to existing measure
-							console.log(
-								`[Editor] Adding note to existing measure: lane=${laneId}, measure=${measure}, pattern before: ${existingMeasureNote.pattern}`
-							);
-							const patternLength = this.cellsPerMeasure;
-							const notePosition = Math.round(cellOffset * patternLength);
-							const startIndex = notePosition * 2;
-							let pattern = existingMeasureNote.pattern;
-
-							// Place the note in the existing pattern
-							pattern =
-								pattern.substring(0, startIndex) +
-								'01' +
-								pattern.substring(startIndex + 2);
-
-							existingMeasureNote.pattern = pattern;
-							existingMeasureNote.parseNote(); // Reparse to update notes array
-							console.log(
-								`[Editor] Pattern after: ${existingMeasureNote.pattern}, notes count: ${existingMeasureNote.notes.length}`
-							);
-						} else {
-							// Create a new LaneMeasureNote for this measure
-							const patternLength = this.cellsPerMeasure;
-							const notePosition = Math.round(cellOffset * patternLength);
-							let pattern = '00'.repeat(patternLength);
-
-							// Place a note ('01' instead of '00') at the correct position
-							const startIndex = notePosition * 2;
-							pattern =
-								pattern.substring(0, startIndex) +
-								'01' +
-								pattern.substring(startIndex + 2);
-
-							this.notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
-						}
-					}
+					// Left-click: Add a note using the shared addNoteToEditor method
+					const laneId = this.laneConfigs[laneIndex].id;
+					this.noteManager.addNoteToEditor(measure, laneIndex, cellOffset, laneId, '01');
 				}
 			}
 		});

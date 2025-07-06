@@ -1,4 +1,4 @@
-import { LaneMeasureNote, normalizePosition } from '@dtx/common';
+import { normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 

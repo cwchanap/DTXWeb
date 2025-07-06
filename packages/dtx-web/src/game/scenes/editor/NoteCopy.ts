@@ -32,6 +32,7 @@ export interface CopiedNoteData {
 export class NoteCopy {
 	private copiedNotes: CopiedNoteData[] = [];
 	private hasClipboardData = false;
+	private isCutOperation = false; // Track if clipboard contains cut (vs copied) notes
 	private noteMove: NoteMove;
 
 	constructor(noteMove: NoteMove) {
@@ -41,7 +42,7 @@ export class NoteCopy {
 	/**
 	 * Copy the selected notes to the clipboard
 	 */
-	copyNotes(selectedNotes: Set<string>, editor: Editor): boolean {
+	copyNotes(selectedNotes: Set<string>, editor: Editor, isCut: boolean = false): boolean {
 		if (selectedNotes.size === 0) {
 			return false;
 		}
@@ -49,7 +50,7 @@ export class NoteCopy {
 		const notesToCopy: CopiedNoteData[] = [];
 		const notes = editor.getNotes();
 
-		// Find the reference note (lowest lane index, then lowest measure, then lowest cell offset)
+		// Find the reference note (smallest measure first, then smallest cellOffset, then smallest lane index)
 		let referenceLaneIndex = Number.MAX_SAFE_INTEGER;
 		let referenceMeasure = Number.MAX_SAFE_INTEGER;
 		let referenceCellOffset = Number.MAX_SAFE_INTEGER;
@@ -62,12 +63,13 @@ export class NoteCopy {
 				const measure = parseInt(parts[2]);
 				const cellOffset = parseFloat(parts[3]);
 
+				// Priority: 1) smallest measure, 2) smallest cellOffset, 3) smallest lane index
 				if (
-					laneIndex < referenceLaneIndex ||
-					(laneIndex === referenceLaneIndex && measure < referenceMeasure) ||
-					(laneIndex === referenceLaneIndex &&
-						measure === referenceMeasure &&
-						cellOffset < referenceCellOffset)
+					measure < referenceMeasure ||
+					(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
+					(measure === referenceMeasure &&
+						cellOffset === referenceCellOffset &&
+						laneIndex < referenceLaneIndex)
 				) {
 					referenceLaneIndex = laneIndex;
 					referenceMeasure = measure;
@@ -119,6 +121,29 @@ export class NoteCopy {
 		if (notesToCopy.length > 0) {
 			this.copiedNotes = notesToCopy;
 			this.hasClipboardData = true;
+			this.isCutOperation = isCut;
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Cut the selected notes to the clipboard (copy + delete originals)
+	 */
+	cutNotes(
+		selectedNotes: Set<string>,
+		editor: Editor,
+		deleteNoteByKey: (noteKey: string) => void
+	): boolean {
+		// First copy the notes with cut flag
+		const copySuccess = this.copyNotes(selectedNotes, editor, true);
+
+		if (copySuccess) {
+			// Then delete the original notes
+			selectedNotes.forEach((noteKey) => {
+				deleteNoteByKey(noteKey);
+			});
 			return true;
 		}
 
@@ -212,6 +237,11 @@ export class NoteCopy {
 			}
 		});
 
+		// If this was a cut operation, clear the clipboard after successful paste
+		if (addedNotes.length > 0 && this.isCutOperation) {
+			this.clearClipboard();
+		}
+
 		return addedNotes.length > 0;
 	}
 
@@ -228,6 +258,7 @@ export class NoteCopy {
 	clearClipboard(): void {
 		this.copiedNotes = [];
 		this.hasClipboardData = false;
+		this.isCutOperation = false;
 	}
 
 	/**
@@ -235,5 +266,12 @@ export class NoteCopy {
 	 */
 	getClipboardSize(): number {
 		return this.copiedNotes.length;
+	}
+
+	/**
+	 * Check if the clipboard contains cut (vs copied) notes
+	 */
+	isCutClipboard(): boolean {
+		return this.isCutOperation;
 	}
 }

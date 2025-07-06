@@ -93,6 +93,15 @@ export class NoteManager {
 					return false;
 				}
 
+				// Check for Ctrl+X or Cmd+X (cut)
+				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'x') {
+					event.preventDefault();
+					event.stopPropagation();
+					this.lastKeyboardAction = now;
+					this.cutSelectedNotes();
+					return false;
+				}
+
 				// Check for Ctrl+V or Cmd+V (paste)
 				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
 					event.preventDefault();
@@ -787,6 +796,25 @@ export class NoteManager {
 	}
 
 	/**
+	 * Cut currently selected notes to clipboard (copy + delete originals)
+	 */
+	cutSelectedNotes(): boolean {
+		if (this.selectedNotes.size === 0) {
+			return false;
+		}
+
+		const result = this.noteCopy.cutNotes(this.selectedNotes, this.editor, (noteKey) =>
+			this.deleteNoteByKey(noteKey)
+		);
+
+		if (result) {
+			// Clear selection after successful cut (notes are already deleted)
+			this.clearSelection();
+		}
+		return result;
+	}
+
+	/**
 	 * Paste copied notes at the current cursor position or at the lowest selected note position
 	 */
 	pasteNotes(): boolean {
@@ -796,7 +824,7 @@ export class NoteManager {
 		let pasteCellOffset = 0;
 
 		if (this.selectedNotes.size > 0) {
-			// Use the position of the lowest selected note as reference
+			// Use the position of the note with smallest measure value, then smallest cellOffset as reference
 			let referenceLaneIndex = Number.MAX_SAFE_INTEGER;
 			let referenceMeasure = Number.MAX_SAFE_INTEGER;
 			let referenceCellOffset = Number.MAX_SAFE_INTEGER;
@@ -809,11 +837,11 @@ export class NoteManager {
 					const cellOffset = parseFloat(parts[3]);
 
 					if (
-						laneIndex < referenceLaneIndex ||
-						(laneIndex === referenceLaneIndex && measure < referenceMeasure) ||
-						(laneIndex === referenceLaneIndex &&
-							measure === referenceMeasure &&
-							cellOffset < referenceCellOffset)
+						measure < referenceMeasure ||
+						(measure === referenceMeasure && cellOffset < referenceCellOffset) ||
+						(measure === referenceMeasure &&
+							cellOffset === referenceCellOffset &&
+							laneIndex < referenceLaneIndex)
 					) {
 						referenceLaneIndex = laneIndex;
 						referenceMeasure = measure;

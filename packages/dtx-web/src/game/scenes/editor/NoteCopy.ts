@@ -77,7 +77,7 @@ export class NoteCopy {
 			if (parts.length === 4) {
 				const laneIndex = parseInt(parts[1]);
 				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
+				const cellOffset = parseFloat(parts[3]); // This is already normalized from note key
 				const laneId = editor.getLaneConfigs()[laneIndex].id;
 
 				// Find the note data in the editor's data structure
@@ -85,20 +85,18 @@ export class NoteCopy {
 					const existingNote = notes[laneId].find(
 						(note) =>
 							note.measure === measure &&
-							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
+							note.notes.some((n) => n.position === cellOffset)
 					);
 
 					if (existingNote) {
-						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - cellOffset) < 0.001
-						);
+						const noteChip = existingNote.notes.find((n) => n.position === cellOffset);
 
 						if (noteChip) {
 							notesToCopy.push({
 								noteKey,
 								laneIndex,
 								measure,
-								cellOffset,
+								cellOffset, // Keep the normalized position from note key
 								laneId,
 								noteId: noteChip.noteID,
 								relativeLaneIndex: laneIndex - referenceLaneIndex,
@@ -127,12 +125,82 @@ export class NoteCopy {
 	cutNotes(
 		selectedNotes: Set<string>,
 		editor: Editor,
-		deleteNoteByKey: (noteKey: string) => void
+		deleteNoteByKey: (noteKey: string) => void,
+		recordCutAction?: (
+			cutNotes: Array<{
+				noteKey: string;
+				laneIndex: number;
+				measure: number;
+				cellOffset: number;
+				laneId: string;
+				noteId: string;
+				originalPattern?: string;
+				measureLength?: number;
+			}>
+		) => void
 	): boolean {
 		// First copy the notes with cut flag
 		const copySuccess = this.copyNotes(selectedNotes, editor, true);
 
 		if (copySuccess) {
+			// Collect cut note data before deletion for undo functionality
+			const cutNotesData: Array<{
+				noteKey: string;
+				laneIndex: number;
+				measure: number;
+				cellOffset: number;
+				laneId: string;
+				noteId: string;
+				originalPattern?: string;
+				measureLength?: number;
+			}> = [];
+
+			const notes = editor.getNotes();
+
+			// Gather note data before deletion
+			selectedNotes.forEach((noteKey) => {
+				const parts = noteKey.split('-');
+				if (parts.length === 4) {
+					const laneIndex = parseInt(parts[1]);
+					const measure = parseInt(parts[2]);
+					const cellOffset = parseFloat(parts[3]); // This is already normalized from note key
+					const laneId = editor.getLaneConfigs()[laneIndex].id;
+
+					// Find the note data in the editor's data structure
+					if (laneId in notes) {
+						const existingNote = notes[laneId].find(
+							(note) =>
+								note.measure === measure &&
+								note.notes.some((n) => n.position === cellOffset)
+						);
+
+						if (existingNote) {
+							const noteChip = existingNote.notes.find(
+								(n) => n.position === cellOffset
+							);
+
+							if (noteChip) {
+								cutNotesData.push({
+									noteKey,
+									laneIndex,
+									measure,
+									cellOffset, // Use the normalized position from note key (same as noteChip.position)
+									laneId,
+									noteId: noteChip.noteID,
+									originalPattern: existingNote.pattern,
+									measureLength: existingNote.measureLength
+								});
+							}
+						}
+					}
+				}
+			});
+
+			// Record cut action for undo functionality if callback provided
+			if (cutNotesData.length > 0 && recordCutAction) {
+				recordCutAction(cutNotesData);
+			}
+
 			// Then delete the original notes
 			selectedNotes.forEach((noteKey) => {
 				deleteNoteByKey(noteKey);
@@ -150,7 +218,17 @@ export class NoteCopy {
 		targetLaneIndex: number,
 		targetMeasure: number,
 		targetCellOffset: number,
-		editor: Editor
+		editor: Editor,
+		recordPasteAction?: (
+			pastedNotes: Array<{
+				noteKey: string;
+				laneIndex: number;
+				measure: number;
+				cellOffset: number;
+				laneId: string;
+				noteId: string;
+			}>
+		) => void
 	): boolean {
 		if (!this.hasClipboardData || this.copiedNotes.length === 0) {
 			return false;
@@ -214,7 +292,15 @@ export class NoteCopy {
 		}
 
 		// Add each note using the shared logic from NoteMove
-		const addedNotes: string[] = [];
+		const addedNotes: Array<{
+			noteKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			noteId: string;
+		}> = [];
+
 		notesToPaste.forEach(({ laneIndex, measure, cellOffset, laneId, noteId }) => {
 			const noteAdded = this.noteMove.addNoteToEditor(
 				measure,
@@ -226,9 +312,21 @@ export class NoteCopy {
 
 			if (noteAdded) {
 				const newKey = `note-${laneIndex}-${measure}-${cellOffset}`;
-				addedNotes.push(newKey);
+				addedNotes.push({
+					noteKey: newKey,
+					laneIndex,
+					measure,
+					cellOffset,
+					laneId,
+					noteId
+				});
 			}
 		});
+
+		// Record paste action for undo functionality if callback provided
+		if (addedNotes.length > 0 && recordPasteAction) {
+			recordPasteAction(addedNotes);
+		}
 
 		// If this was a cut operation, clear the clipboard after successful paste
 		if (addedNotes.length > 0 && this.isCutOperation) {

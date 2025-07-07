@@ -515,4 +515,204 @@ describe('NoteCopy', () => {
 			expect(noteCopy.isCutClipboard()).toBe(false);
 		});
 	});
+
+	describe('paste undo functionality', () => {
+		beforeEach(() => {
+			// Set up some copied notes for testing
+			const selectedNotes = new Set(['note-0-1-0', 'note-1-1-0']);
+			noteCopy.copyNotes(selectedNotes, mockEditor);
+		});
+
+		it('should call recordPasteAction callback when pasting notes', () => {
+			const mockRecordPasteAction = vi.fn();
+
+			const result = noteCopy.pasteNotes(1, 2, 0, mockEditor, mockRecordPasteAction);
+
+			expect(result).toBe(true);
+			expect(mockRecordPasteAction).toHaveBeenCalledWith([
+				{
+					noteKey: 'note-0-2-0',
+					laneIndex: 0,
+					measure: 2,
+					cellOffset: 0,
+					laneId: 'lane1',
+					noteId: '11'
+				},
+				{
+					noteKey: 'note-1-2-0',
+					laneIndex: 1,
+					measure: 2,
+					cellOffset: 0,
+					laneId: 'lane2',
+					noteId: '12'
+				}
+			]);
+		});
+
+		it('should not call recordPasteAction when no notes are pasted', () => {
+			const mockRecordPasteAction = vi.fn();
+			// Clear clipboard to ensure no notes are pasted
+			noteCopy.clearClipboard();
+
+			const result = noteCopy.pasteNotes(1, 2, 0, mockEditor, mockRecordPasteAction);
+
+			expect(result).toBe(false);
+			expect(mockRecordPasteAction).not.toHaveBeenCalled();
+		});
+
+		it('should work without recordPasteAction callback', () => {
+			// Should not throw when callback is not provided
+			const result = noteCopy.pasteNotes(1, 2, 0, mockEditor);
+
+			expect(result).toBe(true);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
+		});
+
+		it('should record partial paste when some notes cannot be placed', () => {
+			const mockRecordPasteAction = vi.fn();
+			// Mock one position as occupied
+			const mockGetByName = vi
+				.fn()
+				.mockReturnValueOnce({ name: 'existing-note' }) // First position occupied
+				.mockReturnValueOnce(null); // Second position free
+			vi.mocked(mockEditor.getPanelContainer).mockReturnValue({
+				getByName: mockGetByName
+			} as never);
+
+			const result = noteCopy.pasteNotes(1, 2, 0, mockEditor, mockRecordPasteAction);
+
+			expect(result).toBe(true);
+			// Should only record the note that was actually pasted
+			expect(mockRecordPasteAction).toHaveBeenCalledWith([
+				{
+					noteKey: 'note-1-2-0',
+					laneIndex: 1,
+					measure: 2,
+					cellOffset: 0,
+					laneId: 'lane2',
+					noteId: '12'
+				}
+			]);
+		});
+	});
+
+	describe('cut undo functionality', () => {
+		beforeEach(() => {
+			// Set up some notes for cutting
+			const selectedNotes = new Set(['note-0-1-0', 'note-1-1-0']);
+			noteCopy.copyNotes(selectedNotes, mockEditor);
+		});
+
+		it('should call recordCutAction callback when cutting notes', () => {
+			const mockRecordCutAction = vi.fn();
+			const selectedNotes = new Set(['note-0-1-0', 'note-1-1-0']);
+			const mockDeleteNoteByKey = vi.fn();
+
+			const result = noteCopy.cutNotes(
+				selectedNotes,
+				mockEditor,
+				mockDeleteNoteByKey,
+				mockRecordCutAction
+			);
+
+			expect(result).toBe(true);
+			expect(mockRecordCutAction).toHaveBeenCalledWith([
+				{
+					noteKey: 'note-0-1-0',
+					laneIndex: 0,
+					measure: 1,
+					cellOffset: 0, // This will be the normalized position from the data structure
+					laneId: 'lane1',
+					noteId: '11',
+					originalPattern: '11000000000000000000000000000000',
+					measureLength: 1
+				},
+				{
+					noteKey: 'note-1-1-0',
+					laneIndex: 1,
+					measure: 1,
+					cellOffset: 0, // This will be the normalized position from the data structure
+					laneId: 'lane2',
+					noteId: '12',
+					originalPattern: '12000000000000000000000000000000',
+					measureLength: 1
+				}
+			]);
+		});
+
+		it('should not call recordCutAction when no notes are cut', () => {
+			const mockRecordCutAction = vi.fn();
+			const selectedNotes = new Set<string>();
+			const mockDeleteNoteByKey = vi.fn();
+
+			const result = noteCopy.cutNotes(
+				selectedNotes,
+				mockEditor,
+				mockDeleteNoteByKey,
+				mockRecordCutAction
+			);
+
+			expect(result).toBe(false);
+			expect(mockRecordCutAction).not.toHaveBeenCalled();
+		});
+
+		it('should work without recordCutAction callback', () => {
+			const selectedNotes = new Set(['note-0-1-0']);
+			const mockDeleteNoteByKey = vi.fn();
+
+			// Should not throw when callback is not provided
+			const result = noteCopy.cutNotes(selectedNotes, mockEditor, mockDeleteNoteByKey);
+
+			expect(result).toBe(true);
+			expect(mockDeleteNoteByKey).toHaveBeenCalledWith('note-0-1-0');
+		});
+
+		it('should record partial cut when some notes cannot be found', () => {
+			const mockRecordCutAction = vi.fn();
+			// Include one note that exists and one that doesn't exist in the notes data
+			const selectedNotes = new Set(['note-0-1-0', 'note-2-3-0.5']); // note-2-3-0.5 doesn't exist in notes data
+			const mockDeleteNoteByKey = vi.fn();
+
+			const result = noteCopy.cutNotes(
+				selectedNotes,
+				mockEditor,
+				mockDeleteNoteByKey,
+				mockRecordCutAction
+			);
+
+			expect(result).toBe(true);
+			// Should only record the note that was actually found
+			expect(mockRecordCutAction).toHaveBeenCalledWith([
+				{
+					noteKey: 'note-0-1-0',
+					laneIndex: 0,
+					measure: 1,
+					cellOffset: 0, // This will be the normalized position from the data structure
+					laneId: 'lane1',
+					noteId: '11',
+					originalPattern: '11000000000000000000000000000000',
+					measureLength: 1
+				}
+			]);
+		});
+
+		it('should not call recordCutAction when copy fails', () => {
+			const mockRecordCutAction = vi.fn();
+			// Mock empty notes structure to make copy fail
+			vi.mocked(mockEditor.getNotes).mockReturnValue({});
+			const selectedNotes = new Set(['note-0-1-0']);
+			const mockDeleteNoteByKey = vi.fn();
+
+			const result = noteCopy.cutNotes(
+				selectedNotes,
+				mockEditor,
+				mockDeleteNoteByKey,
+				mockRecordCutAction
+			);
+
+			expect(result).toBe(false);
+			expect(mockRecordCutAction).not.toHaveBeenCalled();
+			expect(mockDeleteNoteByKey).not.toHaveBeenCalled();
+		});
+	});
 });

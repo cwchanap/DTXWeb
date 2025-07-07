@@ -15,7 +15,17 @@ export interface MoveUndoAction {
 	data: MovedNoteData[];
 }
 
-export type AnyUndoAction = UndoAction | MoveUndoAction;
+export interface PasteUndoAction {
+	type: 'paste';
+	data: PastedNoteData[];
+}
+
+export interface CutUndoAction {
+	type: 'cut';
+	data: CutNoteData[];
+}
+
+export type AnyUndoAction = UndoAction | MoveUndoAction | PasteUndoAction | CutUndoAction;
 
 /**
  * Interface for storing deleted note data for restoration
@@ -55,6 +65,33 @@ export interface MovedNoteData {
 }
 
 /**
+ * Interface for storing pasted note data for undo (deletion)
+ */
+export interface PastedNoteData {
+	noteKey: string;
+	laneIndex: number;
+	measure: number;
+	cellOffset: number;
+	laneId: string;
+	noteId: string;
+}
+
+/**
+ * Interface for storing cut note data for undo (restoration)
+ */
+export interface CutNoteData {
+	noteKey: string;
+	laneIndex: number;
+	measure: number;
+	cellOffset: number;
+	laneId: string;
+	noteId: string;
+	// Store pattern data for restoration context
+	originalPattern?: string;
+	measureLength?: number;
+}
+
+/**
  * Manages undo/redo functionality for note operations in the DTX editor.
  * Provides a buffer system for tracking and reversing note operations.
  */
@@ -88,7 +125,12 @@ export class NoteBuffer {
 	 */
 	recordAction(type: 'delete', data: DeletedNoteData[]): void;
 	recordAction(type: 'move', data: MovedNoteData[]): void;
-	recordAction(type: 'delete' | 'move', data: DeletedNoteData[] | MovedNoteData[]): void {
+	recordAction(type: 'paste', data: PastedNoteData[]): void;
+	recordAction(type: 'cut', data: CutNoteData[]): void;
+	recordAction(
+		type: 'delete' | 'move' | 'paste' | 'cut',
+		data: DeletedNoteData[] | MovedNoteData[] | PastedNoteData[] | CutNoteData[]
+	): void {
 		if (!data || data.length === 0) {
 			return; // Don't record empty actions
 		}
@@ -98,6 +140,10 @@ export class NoteBuffer {
 			this.undoHistory.push({ type, data: [...(data as DeletedNoteData[])] });
 		} else if (type === 'move') {
 			this.undoHistory.push({ type, data: [...(data as MovedNoteData[])] });
+		} else if (type === 'paste') {
+			this.undoHistory.push({ type, data: [...(data as PastedNoteData[])] });
+		} else if (type === 'cut') {
+			this.undoHistory.push({ type, data: [...(data as CutNoteData[])] });
 		}
 
 		// Limit undo history to prevent memory issues
@@ -128,6 +174,12 @@ export class NoteBuffer {
 					return true;
 				case 'move':
 					this.undoMove(lastAction.data, editor);
+					return true;
+				case 'paste':
+					this.undoPaste(lastAction.data, editor);
+					return true;
+				case 'cut':
+					this.undoCut(lastAction.data, editor);
 					return true;
 				default:
 					return false;
@@ -253,6 +305,69 @@ export class NoteBuffer {
 			if (noteGraphics) {
 				// Note highlighting will be handled by selection mechanism
 				editor.selectedNotes.add(movedNote.originalNoteKey);
+			}
+		});
+	}
+
+	/**
+	 * Undoes a paste operation by deleting the pasted notes
+	 * @param pastedNotes Array of pasted note data to delete
+	 * @param editor The editor instance to delete notes from
+	 */
+	private undoPaste(pastedNotes: PastedNoteData[], editor: Editor): void {
+		if (!pastedNotes || pastedNotes.length === 0) {
+			return;
+		}
+
+		// Delete each pasted note using the existing deletion logic from NoteManager
+		pastedNotes.forEach((pastedNote) => {
+			editor.deleteNoteByKey(pastedNote.noteKey);
+		});
+
+		// Clear selection after undoing paste
+		editor.clearSelection();
+	}
+
+	/**
+	 * Undoes a cut operation by restoring the cut notes to their original positions
+	 * @param cutNotes Array of cut note data to restore
+	 * @param editor The editor instance to restore notes to
+	 */
+	private undoCut(cutNotes: CutNoteData[], editor: Editor): void {
+		if (!cutNotes || cutNotes.length === 0) {
+			return;
+		}
+
+		if (!this.noteMove) {
+			throw new Error(
+				'NoteMove instance not set. Call setNoteMove() before using undo functionality.'
+			);
+		}
+
+		// Restore each cut note using the shared note addition logic
+		cutNotes.forEach((cutNote) => {
+			const { measure, laneIndex, cellOffset, laneId, noteId } = cutNote;
+
+			// Use the stored normalized position (no need to normalize again)
+			// since we already stored the actual position from the data structure
+			this.noteMove!.addNoteToEditor(measure, laneIndex, cellOffset, laneId, noteId);
+		});
+
+		// Select all restored notes
+		this.selectRestoredCutNotes(cutNotes, editor);
+	}
+
+	/**
+	 * Selects all restored cut notes in the editor
+	 */
+	private selectRestoredCutNotes(cutNotes: CutNoteData[], editor: Editor): void {
+		// Clear current selection and select all restored notes
+		editor.clearSelection();
+		cutNotes.forEach((cutNote) => {
+			const noteGraphics = editor.getByName(cutNote.noteKey);
+			if (noteGraphics) {
+				// Note highlighting will be handled by selection mechanism
+				editor.selectedNotes.add(cutNote.noteKey);
 			}
 		});
 	}

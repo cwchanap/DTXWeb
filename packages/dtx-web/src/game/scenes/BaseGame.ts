@@ -135,32 +135,49 @@ export abstract class BaseGame extends Scene {
 		this.parseMesaureLength();
 		// Constants for grid dimensions
 
-		const graphics = this.add.graphics();
-		graphics.lineStyle(1, 0x888888, 1); // Light grey for cells
-		graphics.lineStyle(2, 0xffffff, 1); // White for measure lines
+		// Create separate graphics objects for different line thicknesses
+		const verticalLines = this.add.graphics();
+		const cellLines = this.add.graphics(); // thickness 2
+		const beatLines = this.add.graphics(); // thickness 4
+		const measureLines = this.add.graphics(); // thickness 6
+
+		// Set line styles for each graphics object
+		verticalLines.lineStyle(1, 0x888888, 1); // Light grey for vertical lanes
+		cellLines.lineStyle(2, 0x888888, 0.5); // Light grey for cells
+		beatLines.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
+		measureLines.lineStyle(6, 0xffffff, 0.5); // White for measure lines
 
 		// Draw vertical lanes
 		let currentX = this.offsetX;
 		this.laneConfigs.forEach(() => {
-			graphics.moveTo(currentX, this.offsetY);
-			graphics.lineTo(currentX, this.offsetY - this.laneHeight);
+			verticalLines.moveTo(currentX, this.offsetY);
+			verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
 			currentX += this.cellWidth;
 		});
 
 		// Draw the last vertical line
-		graphics.moveTo(currentX, this.offsetY);
-		graphics.lineTo(currentX, this.offsetY - this.laneHeight);
+		verticalLines.moveTo(currentX, this.offsetY);
+		verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
 
 		// Draw horizontal lines for cells and measures
 		let y = this.offsetY;
 		for (let j = 0; j < this.measureCount; j++) {
-			const measureHeight = this.drawMeasure(j, y, graphics);
+			const measureHeight = this.drawMeasure(j, y, cellLines, beatLines, measureLines);
 			y -= measureHeight;
 		}
 
-		graphics.strokePath();
+		// Stroke all graphics objects
+		verticalLines.strokePath();
+		cellLines.strokePath();
+		beatLines.strokePath();
+		measureLines.strokePath();
 
-		this.panelContainer.add(graphics);
+		// Add all graphics to the panel container
+		this.panelContainer.add(verticalLines);
+		this.panelContainer.add(cellLines);
+		this.panelContainer.add(beatLines);
+		this.panelContainer.add(measureLines);
+
 		this.setCameraBounds();
 
 		const mask = this.make.graphics();
@@ -184,7 +201,13 @@ export abstract class BaseGame extends Scene {
 		graphics.lineTo(this.offsetX + this.totalWidth, yStart);
 	}
 
-	drawMeasure(measure: number, yStart: number, graphics: Phaser.GameObjects.Graphics) {
+	drawMeasure(
+		measure: number,
+		yStart: number,
+		cellLines: Phaser.GameObjects.Graphics,
+		beatLines: Phaser.GameObjects.Graphics,
+		measureLines: Phaser.GameObjects.Graphics
+	) {
 		const measureLength = this.measureLength[measure] || 1;
 		const cellsPerMeasure = this.cellsPerMeasure * measureLength;
 
@@ -195,17 +218,18 @@ export abstract class BaseGame extends Scene {
 		for (let i = 0; i < cellsPerMeasure; i++) {
 			const cellHeight = this.getCellHeight(measure, i % this.cellsPerMeasure);
 
-			// Use thicker lines for beat divisions and measure boundaries
-			graphics.lineStyle(i % 4 == 0 ? 4 : 2, 0x888888, 0.5);
-			graphics.moveTo(this.offsetX, y);
-			graphics.lineTo(this.offsetX + this.totalWidth, y);
+			// Use appropriate graphics object based on beat division
+			const targetGraphics = i % 4 == 0 ? beatLines : cellLines;
+			targetGraphics.moveTo(this.offsetX, y);
+			targetGraphics.lineTo(this.offsetX + this.totalWidth, y);
 
 			y -= cellHeight;
 			currentMeasureHeight += cellHeight;
 		}
 
-		// Draw the measure boundary line
-		this.drawMesaureLine(graphics, yStart);
+		// Draw the measure boundary line using the measure lines graphics
+		measureLines.moveTo(this.offsetX, yStart);
+		measureLines.lineTo(this.offsetX + this.totalWidth, yStart);
 
 		// Calculate the middle of the measure for placing the measure number text
 		const measureMiddleY = yStart - currentMeasureHeight / 2;

@@ -3,7 +3,9 @@ import {
 	NoteBuffer,
 	type UndoAction,
 	type DeletedNoteData,
-	type MovedNoteData
+	type MovedNoteData,
+	type PastedNoteData,
+	type CutNoteData
 } from './NoteBuffer';
 import { LaneMeasureNote, normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
@@ -578,6 +580,227 @@ describe('NoteBuffer', () => {
 				0.5,
 				'lane1',
 				'11'
+			);
+		});
+	});
+
+	describe('undoPaste', () => {
+		const mockPastedNoteData: PastedNoteData = {
+			noteKey: 'note-1-2-0.5',
+			laneIndex: 1,
+			measure: 2,
+			cellOffset: 0.5,
+			laneId: 'lane2',
+			noteId: '11'
+		};
+
+		beforeEach(() => {
+			vi.clearAllMocks();
+			noteBuffer.setNoteMove(mockNoteMove);
+		});
+
+		it('should successfully undo a paste action by deleting pasted notes', () => {
+			// Set up editor state - pasted note exists
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('paste', [mockPastedNoteData]);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should delete the pasted note
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('note-1-2-0.5');
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is consumed
+		});
+
+		it('should handle multiple pasted notes in one action', () => {
+			const mockPastedNoteData2: PastedNoteData = {
+				noteKey: 'note-2-2-0.75',
+				laneIndex: 2,
+				measure: 2,
+				cellOffset: 0.75,
+				laneId: 'lane3',
+				noteId: '12'
+			};
+
+			// Set up editor state - multiple pasted notes exist
+			mockEditor.notes['lane2'] = [
+				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+			];
+			mockEditor.notes['lane3'] = [
+				new LaneMeasureNote(2, 'lane3', '12000000000000000000000000000000')
+			];
+
+			noteBuffer.recordAction('paste', [mockPastedNoteData, mockPastedNoteData2]);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should delete both pasted notes
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('note-1-2-0.5');
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('note-2-2-0.75');
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+		});
+
+		it('should handle empty pasted notes array', () => {
+			noteBuffer.recordAction('paste', []);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(false); // Empty action shouldn't be recorded
+			expect(mockEditor.deleteNoteByKey).not.toHaveBeenCalled();
+		});
+
+		it('should handle paste undo when notes are already deleted', () => {
+			// Record a paste action
+			noteBuffer.recordAction('paste', [mockPastedNoteData]);
+
+			// Undo should still work even if note is already deleted
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should try to delete the note (NoteManager will handle if it doesn't exist)
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('note-1-2-0.5');
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+		});
+	});
+
+	describe('undoCut', () => {
+		const mockCutNoteData: CutNoteData = {
+			noteKey: 'note-1-2-0.5',
+			laneIndex: 1,
+			measure: 2,
+			cellOffset: 0.5,
+			laneId: 'lane2',
+			noteId: '11',
+			originalPattern: '00110000000000000000000000000000',
+			measureLength: 1
+		};
+
+		beforeEach(() => {
+			vi.clearAllMocks();
+			noteBuffer.setNoteMove(mockNoteMove);
+		});
+
+		it('should successfully undo a cut action by restoring cut notes', () => {
+			// Set up editor state - cut notes no longer exist
+			mockEditor.notes['lane2'] = [];
+
+			noteBuffer.recordAction('cut', [mockCutNoteData]);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should restore the cut note
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				1,
+				0.5,
+				'lane2',
+				'11'
+			);
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is consumed
+		});
+
+		it('should handle multiple cut notes in one action', () => {
+			const mockCutNoteData2: CutNoteData = {
+				noteKey: 'note-2-2-0.75',
+				laneIndex: 2,
+				measure: 2,
+				cellOffset: 0.75,
+				laneId: 'lane3',
+				noteId: '12',
+				originalPattern: '00120000000000000000000000000000',
+				measureLength: 1
+			};
+
+			// Set up editor state - cut notes no longer exist
+			mockEditor.notes['lane2'] = [];
+			mockEditor.notes['lane3'] = [];
+
+			noteBuffer.recordAction('cut', [mockCutNoteData, mockCutNoteData2]);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should restore both cut notes
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				1,
+				0.5,
+				'lane2',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				2,
+				0.75,
+				'lane3',
+				'12'
+			);
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+		});
+
+		it('should handle empty cut notes array', () => {
+			noteBuffer.recordAction('cut', []);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(false); // Empty action shouldn't be recorded
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).not.toHaveBeenCalled();
+		});
+
+		it('should select restored cut notes', () => {
+			// Record a cut action
+			noteBuffer.recordAction('cut', [mockCutNoteData]);
+
+			// Undo the cut
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should clear selection and add restored note
+			expect(mockEditor.clearSelection).toHaveBeenCalled();
+			expect(mockEditor.selectedNotes.has('note-1-2-0.5')).toBe(true);
+		});
+
+		it('should restore cut notes with exact stored positions', () => {
+			// Test that we use the exact position stored in cut data (already normalized)
+			const cutDataWithExactPosition: CutNoteData = {
+				noteKey: 'note-1-2-0.4375',
+				laneIndex: 1,
+				measure: 2,
+				cellOffset: 0.4375, // Already normalized position from data structure
+				laneId: 'lane2',
+				noteId: '11'
+			};
+
+			noteBuffer.recordAction('cut', [cutDataWithExactPosition]);
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			// Should use exact stored position without further normalization
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				2,
+				1,
+				0.4375, // Exact stored value
+				'lane2',
+				'11'
+			);
+		});
+
+		it('should handle cut undo when NoteMove is not set', () => {
+			const bufferWithoutNoteMove = new NoteBuffer();
+			bufferWithoutNoteMove.recordAction('cut', [mockCutNoteData]);
+
+			expect(() =>
+				bufferWithoutNoteMove.undoLastAction(mockEditor as unknown as Editor)
+			).toThrow(
+				'NoteMove instance not set. Call setNoteMove() before using undo functionality.'
 			);
 		});
 	});

@@ -217,6 +217,40 @@ export class NoteManager {
 	}
 
 	/**
+	 * Record a paste action for undo functionality
+	 */
+	recordPasteAction(
+		pastedNotes: Array<{
+			noteKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			noteId: string;
+		}>
+	): void {
+		this.noteBuffer.recordAction('paste', pastedNotes);
+	}
+
+	/**
+	 * Record a cut action for undo functionality
+	 */
+	recordCutAction(
+		cutNotes: Array<{
+			noteKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			noteId: string;
+			originalPattern?: string;
+			measureLength?: number;
+		}>
+	): void {
+		this.noteBuffer.recordAction('cut', cutNotes);
+	}
+
+	/**
 	 * Handle pointer down events for note operations
 	 */
 	handlePointerDown(pointer: Phaser.Input.Pointer): boolean {
@@ -311,25 +345,16 @@ export class NoteManager {
 
 				// Find the note data before deleting it
 				if (laneId in notes) {
-					// Normalize the cellOffset to match how positions are stored in the data structure
-					const normalizedCellOffset = normalizePosition(
-						cellOffset,
-						this.editor.getCellsPerMeasure()
-					);
-
+					// The cellOffset from note key should already be normalized
 					const existingNote = notes[laneId].find(
 						(note) =>
 							note.measure === measure &&
-							note.notes.some(
-								(n) => Math.abs(n.position - normalizedCellOffset) < 0.001
-							)
+							note.notes.some((n) => n.position === cellOffset)
 					);
 
 					if (existingNote) {
-						// Find the specific note chip using normalized position
-						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - normalizedCellOffset) < 0.001
-						);
+						// Find the specific note chip using exact position match
+						const noteChip = existingNote.notes.find((n) => n.position === cellOffset);
 
 						if (noteChip) {
 							// Get the original pattern from our clean snapshot
@@ -341,7 +366,7 @@ export class NoteManager {
 								noteKey,
 								laneIndex,
 								measure,
-								cellOffset: normalizedCellOffset, // Use normalized position for consistency
+								cellOffset, // Use exact position from note key
 								laneId,
 								noteId: noteChip.noteID,
 								originalPattern: originalPattern, // Use clean snapshot
@@ -520,13 +545,17 @@ export class NoteManager {
 				const measureNote = notes[laneId].find(
 					(note) =>
 						note.measure === measure &&
-						note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.001)
+						note.notes.some((n) => n.position === cellOffset)
 				);
 
 				if (measureNote) {
+					// Find the actual note chip to get its exact position in the pattern
+					const noteChip = measureNote.notes.find((n) => n.position === cellOffset);
+					if (!noteChip) return; // Note not found
+
 					// Remove the specific note from the pattern
 					const patternLength = this.editor.getCellsPerMeasure();
-					const notePosition = Math.round(cellOffset * patternLength);
+					const notePosition = Math.round(noteChip.position * patternLength);
 					const startIndex = notePosition * 2;
 
 					// Replace the note with '00'
@@ -860,8 +889,14 @@ export class NoteManager {
 			return false;
 		}
 
-		const result = this.noteCopy.cutNotes(this.selectedNotes, this.editor, (noteKey) =>
-			this.deleteNoteByKey(noteKey)
+		// Clean up selection to only include notes that exist in both visual and data structure
+		this.cleanupOrphanedSelection();
+
+		const result = this.noteCopy.cutNotes(
+			this.selectedNotes,
+			this.editor,
+			(noteKey) => this.deleteNoteByKey(noteKey),
+			(cutNotes) => this.recordCutAction(cutNotes)
 		);
 
 		if (result) {
@@ -900,7 +935,8 @@ export class NoteManager {
 			pasteLaneIndex,
 			pasteMeasure,
 			pasteCellOffset,
-			this.editor
+			this.editor,
+			(pastedNotes) => this.recordPasteAction(pastedNotes)
 		);
 
 		if (result) {
@@ -945,6 +981,55 @@ export class NoteManager {
 		noteId: string
 	): boolean {
 		return this.noteMove.addNoteToEditor(measure, laneIndex, cellOffset, laneId, noteId);
+	}
+
+	/**
+	 * Remove orphaned visual notes from selection that don't exist in the data structure
+	 * This prevents cut operations from missing notes during undo recording
+	 */
+	private cleanupOrphanedSelection(): void {
+		const orphanedNotes = new Set<string>();
+		const notes = this.editor.getNotes();
+
+		// Check each selected note to see if it exists in the data structure
+		this.selectedNotes.forEach((noteKey) => {
+			const parts = noteKey.split('-');
+			if (parts.length === 4) {
+				const laneIndex = parseInt(parts[1]);
+				const measure = parseInt(parts[2]);
+				const cellOffset = parseFloat(parts[3]);
+				const laneId = this.editor.getLaneConfigs()[laneIndex].id;
+
+				// Check if note exists in data structure
+				if (laneId in notes) {
+					const existingNote = notes[laneId].find(
+						(note) =>
+							note.measure === measure &&
+							note.notes.some((n) => n.position === cellOffset)
+					);
+
+					if (!existingNote) {
+						// This note exists visually but not in data structure - it's orphaned
+						orphanedNotes.add(noteKey);
+					}
+				} else {
+					// Lane doesn't exist in data structure - note is orphaned
+					orphanedNotes.add(noteKey);
+				}
+			}
+		});
+
+		// Remove orphaned notes from selection and clean up their visuals
+		orphanedNotes.forEach((noteKey) => {
+			this.selectedNotes.delete(noteKey);
+			this.cleanupNoteVisuals(noteKey);
+		});
+
+		if (orphanedNotes.size > 0) {
+			console.log(
+				`[CLEANUP-DEBUG] Removed ${orphanedNotes.size} orphaned notes from selection`
+			);
+		}
 	}
 
 	/**

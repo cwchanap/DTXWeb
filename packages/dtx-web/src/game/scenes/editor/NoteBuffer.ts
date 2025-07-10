@@ -231,8 +231,9 @@ export class NoteBuffer {
 		deletedNotes.forEach((deletedNote) => {
 			const noteGraphics = editor.getByName(deletedNote.noteKey);
 			if (noteGraphics) {
-				// Note highlighting will be handled by selection mechanism
+				// Add to selection set and create visual highlight overlay
 				editor.selectedNotes.add(deletedNote.noteKey);
+				editor.highlightSelectedNote(noteGraphics);
 			}
 		});
 	}
@@ -298,8 +299,9 @@ export class NoteBuffer {
 		movedNotes.forEach((movedNote) => {
 			const noteGraphics = editor.getPanelContainer().getByName(movedNote.originalNoteKey);
 			if (noteGraphics) {
-				// Note highlighting will be handled by selection mechanism
+				// Add to selection set and create visual highlight overlay
 				editor.selectedNotes.add(movedNote.originalNoteKey);
+				editor.highlightSelectedNote(noteGraphics);
 			}
 		});
 	}
@@ -368,8 +370,9 @@ export class NoteBuffer {
 		cutNotes.forEach((cutNote) => {
 			const noteGraphics = editor.getByName(cutNote.noteKey);
 			if (noteGraphics) {
-				// Note highlighting will be handled by selection mechanism
+				// Add to selection set and create visual highlight overlay
 				editor.selectedNotes.add(cutNote.noteKey);
+				editor.highlightSelectedNote(noteGraphics);
 			}
 		});
 	}

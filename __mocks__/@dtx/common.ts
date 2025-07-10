@@ -31,29 +31,45 @@ export class LaneMeasureNote {
 	constructor(
 		public measure: number,
 		public laneID: string,
-		public pattern: string
+		public notes: { noteID: string; position: number }[],
+		public measureLength: number = 1
 	) {
-		this.measureLength = 1;
-		this.notes = [];
-		this.parseNote(); // Call parseNote on construction like the real class
+		this.measure = measure;
+		this.laneID = laneID;
+		this.notes = notes;
+		this.measureLength = measureLength;
 	}
-	measureLength = 1;
-	notes: Array<{ noteID: string; position: number }> = [];
 
-	parseNote() {
-		// Implement real parsing logic for tests
-		this.notes = [];
-		const patternLength = this.pattern.length / 2; // Each note is 2 characters
+	static parseFromPattern(
+		pattern: string,
+		measureLength: number = 1
+	): { noteID: string; position: number }[] {
+		const notes: { noteID: string; position: number }[] = [];
+		const patternLength = pattern.length / 2; // Each note is 2 characters
 
 		for (let i = 0; i < patternLength; i++) {
 			const noteIndex = i * 2;
-			const noteID = this.pattern.substring(noteIndex, noteIndex + 2);
+			const noteID = pattern.substring(noteIndex, noteIndex + 2);
 
 			if (noteID !== '00') {
-				const position = i / 48; // Convert index to fractional position
-				this.notes.push({ noteID, position });
+				const position = (i * measureLength) / patternLength;
+				notes.push({ noteID, position });
 			}
 		}
+		return notes;
+	}
+
+	addNote(noteID: string, position: number): void {
+		// Remove any existing note at this position
+		this.notes = this.notes.filter((note) => note.position !== position);
+		// Add the new note
+		this.notes.push({ noteID, position });
+		// Sort by position
+		this.notes.sort((a, b) => a.position - b.position);
+	}
+
+	removeNote(position: number): void {
+		this.notes = this.notes.filter((note) => note.position !== position);
 	}
 }
 

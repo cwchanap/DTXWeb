@@ -4,6 +4,7 @@ import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import { Preview } from './Preview';
+import { LaneMeasureNote } from '@dtx/common';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 
@@ -138,26 +139,8 @@ describe('Preview Scene', () => {
 		previewScene['startMeasure'] = 0;
 		previewScene['bpm'] = 120;
 		previewScene['notes'] = {
-			'01': [
-				{
-					measure: 0,
-					pattern: '0102',
-					laneID: '01',
-					measureLength: 1,
-					notes: [],
-					parseNote: vi.fn()
-				}
-			],
-			'11': [
-				{
-					measure: 1,
-					pattern: '0102',
-					laneID: '11',
-					measureLength: 1,
-					notes: [],
-					parseNote: vi.fn()
-				}
-			]
+			'01': [new LaneMeasureNote(0, '01', LaneMeasureNote.parseFromPattern('0102'), 1)],
+			'11': [new LaneMeasureNote(1, '11', LaneMeasureNote.parseFromPattern('0102'), 1)]
 		};
 		previewScene['panelContainer'] = previewScene.add.container(0, 0);
 
@@ -270,17 +253,15 @@ describe('Preview Scene', () => {
 		previewScene['measureLength'] = [1, 1, 1];
 
 		// Create proper LaneMeasureNote instances with parsed notes
-		const bpmNote = {
-			measure: 1,
-			pattern: '0102',
-			laneID: '08',
-			measureLength: 1,
-			notes: [
+		const bpmNote = new LaneMeasureNote(
+			1,
+			'08',
+			[
 				{ noteID: '01', position: 0 },
 				{ noteID: '02', position: 0.5 }
 			],
-			parseNote: vi.fn()
-		};
+			1
+		);
 
 		previewScene['notes'] = {
 			'08': [bpmNote]

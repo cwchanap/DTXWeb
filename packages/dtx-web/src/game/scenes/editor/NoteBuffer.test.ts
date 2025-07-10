@@ -42,7 +42,8 @@ const createMockNoteMove = () => {
 					laneIndex: number,
 					cellOffset: number,
 					laneId: string,
-					noteId: string
+					noteId: string,
+					measureLength: number
 				) => {
 					// Simulate the data structure update for testing
 					return true;
@@ -88,7 +89,6 @@ describe('NoteBuffer', () => {
 			cellOffset: 0.5,
 			laneId: 'lane1',
 			noteId: '11',
-			originalPattern: '1100000000000000000000000000000000',
 			measureLength: 1
 		};
 	});
@@ -195,7 +195,8 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 		});
@@ -218,14 +219,16 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				0,
 				0.75,
 				'lane1',
-				'12'
+				'12',
+				1
 			);
 		});
 
@@ -266,7 +269,8 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 		});
 
@@ -275,7 +279,7 @@ describe('NoteBuffer', () => {
 			const existingNote = new LaneMeasureNote(
 				1,
 				'lane1',
-				'0000000000000000000000000000000000'
+				LaneMeasureNote.parseFromPattern('0000000000000000000000000000000000')
 			);
 			mockEditor.notes['lane1'] = [existingNote];
 
@@ -288,7 +292,8 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 		});
 
@@ -378,14 +383,16 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				2,
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 		});
 
@@ -406,14 +413,16 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				0,
 				0.5,
 				'lane2',
-				'11'
+				'11',
+				1
 			);
 		});
 	});
@@ -434,15 +443,18 @@ describe('NoteBuffer', () => {
 				newLaneIndex: 1,
 				newMeasure: 2,
 				newCellOffset: 0.25,
-				newLaneId: 'lane2',
-				originalPattern: '00110000000000000000000000000000'
+				newLaneId: 'lane2'
 			};
 		});
 
 		it('should successfully undo a move action', () => {
 			// Set up editor state - note is currently at new position
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('move', [mockMovedNoteData]);
@@ -457,7 +469,8 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is consumed
 		});
@@ -479,7 +492,11 @@ describe('NoteBuffer', () => {
 
 			// Set up editor state - notes are currently at new positions
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11120000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11120000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('move', [mockMovedNoteData, mockMovedNoteData2]);
@@ -493,14 +510,16 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				0,
 				0.75,
 				'lane1',
-				'12'
+				'12',
+				1
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(2);
 		});
@@ -508,7 +527,11 @@ describe('NoteBuffer', () => {
 		it('should restore notes to data structure correctly', () => {
 			// Set up editor state - note is at new position
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('move', [mockMovedNoteData]);
@@ -520,7 +543,8 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 		});
 
@@ -531,7 +555,11 @@ describe('NoteBuffer', () => {
 
 		it('should properly clean up visual elements', () => {
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('move', [mockMovedNoteData]);
@@ -543,7 +571,11 @@ describe('NoteBuffer', () => {
 
 		it('should select restored notes', () => {
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('move', [mockMovedNoteData]);
@@ -557,17 +589,24 @@ describe('NoteBuffer', () => {
 		it('should restore notes with original pattern when available', () => {
 			// Set up a scenario where original pattern data is used
 			const dataWithOriginalPattern = {
-				...mockMovedNoteData,
-				originalPattern: '00110000000000000000000000000000'
+				...mockMovedNoteData
 			};
 
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 
 			// Mock an existing measure note in the original lane with some content
 			mockEditor.notes['lane1'] = [
-				new LaneMeasureNote(1, 'lane1', '00120000000000000000000000000000') // Has different note
+				new LaneMeasureNote(
+					1,
+					'lane1',
+					LaneMeasureNote.parseFromPattern('00120000000000000000000000000000')
+				) // Has different note
 			];
 
 			noteBuffer.recordAction('move', [dataWithOriginalPattern]);
@@ -579,7 +618,8 @@ describe('NoteBuffer', () => {
 				0,
 				0.5,
 				'lane1',
-				'11'
+				'11',
+				1
 			);
 		});
 	});
@@ -602,7 +642,11 @@ describe('NoteBuffer', () => {
 		it('should successfully undo a paste action by deleting pasted notes', () => {
 			// Set up editor state - pasted note exists
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('paste', [mockPastedNoteData]);
@@ -628,10 +672,18 @@ describe('NoteBuffer', () => {
 
 			// Set up editor state - multiple pasted notes exist
 			mockEditor.notes['lane2'] = [
-				new LaneMeasureNote(2, 'lane2', '11000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane2',
+					LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+				)
 			];
 			mockEditor.notes['lane3'] = [
-				new LaneMeasureNote(2, 'lane3', '12000000000000000000000000000000')
+				new LaneMeasureNote(
+					2,
+					'lane3',
+					LaneMeasureNote.parseFromPattern('12000000000000000000000000000000')
+				)
 			];
 
 			noteBuffer.recordAction('paste', [mockPastedNoteData, mockPastedNoteData2]);
@@ -676,7 +728,6 @@ describe('NoteBuffer', () => {
 			cellOffset: 0.5,
 			laneId: 'lane2',
 			noteId: '11',
-			originalPattern: '00110000000000000000000000000000',
 			measureLength: 1
 		};
 
@@ -700,7 +751,8 @@ describe('NoteBuffer', () => {
 				1,
 				0.5,
 				'lane2',
-				'11'
+				'11',
+				1
 			);
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is consumed
@@ -714,7 +766,6 @@ describe('NoteBuffer', () => {
 				cellOffset: 0.75,
 				laneId: 'lane3',
 				noteId: '12',
-				originalPattern: '00120000000000000000000000000000',
 				measureLength: 1
 			};
 
@@ -733,14 +784,16 @@ describe('NoteBuffer', () => {
 				1,
 				0.5,
 				'lane2',
-				'11'
+				'11',
+				1
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				2,
 				2,
 				0.75,
 				'lane3',
-				'12'
+				'12',
+				1
 			);
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 		});
@@ -775,7 +828,8 @@ describe('NoteBuffer', () => {
 				measure: 2,
 				cellOffset: 0.4375, // Already normalized position from data structure
 				laneId: 'lane2',
-				noteId: '11'
+				noteId: '11',
+				measureLength: 1
 			};
 
 			noteBuffer.recordAction('cut', [cutDataWithExactPosition]);
@@ -789,7 +843,8 @@ describe('NoteBuffer', () => {
 				1,
 				0.4375, // Exact stored value
 				'lane2',
-				'11'
+				'11',
+				1
 			);
 		});
 

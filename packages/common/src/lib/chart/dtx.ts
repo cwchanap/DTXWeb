@@ -173,7 +173,8 @@ export class DTXFile {
 				const [header, pattern] = line.split(': ', 2);
 				const measure = parseInt(header.slice(1, 4));
 				const laneID = header.slice(4, 6);
-				return new LaneMeasureNote(measure, laneID, pattern);
+				const parsedNotes = LaneMeasureNote.parseFromPattern(pattern);
+				return new LaneMeasureNote(measure, laneID, parsedNotes);
 			});
 			return notes;
 		} else {

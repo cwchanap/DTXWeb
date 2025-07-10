@@ -88,10 +88,10 @@ describe('NoteCopy', () => {
 		]);
 
 		// Set up default notes structure with properly parsed notes
-		const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-		const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
-		lane1Note.parseNote();
-		lane2Note.parseNote();
+		const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+		const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+		const lane2Notes = LaneMeasureNote.parseFromPattern('12000000000000000000000000000000');
+		const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
 
 		vi.mocked(mockEditor.getNotes).mockReturnValue({
 			lane1: [lane1Note],
@@ -109,10 +109,10 @@ describe('NoteCopy', () => {
 	describe('copyNotes', () => {
 		it('should copy selected notes successfully', () => {
 			// Make sure the notes are properly parsed
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
-			lane1Note.parseNote();
-			lane2Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+			const lane2Notes = LaneMeasureNote.parseFromPattern('12000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
 
 			vi.mocked(mockEditor.getNotes).mockReturnValue({
 				lane1: [lane1Note],
@@ -164,10 +164,18 @@ describe('NoteCopy', () => {
 			// Should choose note-2-1-0 as reference because measure 1 < measure 2
 			vi.mocked(mockEditor.getNotes).mockReturnValue({
 				lane1: [
-					new LaneMeasureNote(2, 'lane1', '11000000000000000000000000000000') // measure 2
+					new LaneMeasureNote(
+						2,
+						'lane1',
+						LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+					) // measure 2
 				],
 				lane3: [
-					new LaneMeasureNote(1, 'lane3', '12000000000000000000000000000000') // measure 1
+					new LaneMeasureNote(
+						1,
+						'lane3',
+						LaneMeasureNote.parseFromPattern('12000000000000000000000000000000')
+					) // measure 1
 				]
 			});
 
@@ -309,7 +317,13 @@ describe('NoteCopy', () => {
 
 		it('should add to existing measure when one already exists', () => {
 			const mockNotes = {
-				lane1: [new LaneMeasureNote(2, 'lane1', '00000000000000000000000000000000')],
+				lane1: [
+					new LaneMeasureNote(
+						2,
+						'lane1',
+						LaneMeasureNote.parseFromPattern('00000000000000000000000000000000')
+					)
+				],
 				lane2: []
 			};
 			vi.mocked(mockEditor.getNotes).mockReturnValue(mockNotes);
@@ -351,8 +365,8 @@ describe('NoteCopy', () => {
 			expect(noteCopy.getClipboardSize()).toBe(0);
 
 			// Add a third lane note for this test
-			const lane3Note = new LaneMeasureNote(2, 'lane3', '13000000000000000000000000000000');
-			lane3Note.parseNote();
+			const lane3Notes = LaneMeasureNote.parseFromPattern('13000000000000000000000000000000');
+			const lane3Note = new LaneMeasureNote(2, 'lane3', lane3Notes);
 
 			const notesWithThird = {
 				...vi.mocked(mockEditor.getNotes).getMockImplementation()?.(),
@@ -371,8 +385,20 @@ describe('NoteCopy', () => {
 		it('should handle negative relative positions correctly', () => {
 			// Set up notes where the reference is not the first in order
 			vi.mocked(mockEditor.getNotes).mockReturnValue({
-				lane1: [new LaneMeasureNote(2, 'lane1', '11000000000000000000000000000000')],
-				lane2: [new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000')]
+				lane1: [
+					new LaneMeasureNote(
+						2,
+						'lane1',
+						LaneMeasureNote.parseFromPattern('11000000000000000000000000000000')
+					)
+				],
+				lane2: [
+					new LaneMeasureNote(
+						1,
+						'lane2',
+						LaneMeasureNote.parseFromPattern('12000000000000000000000000000000')
+					)
+				]
 			});
 
 			const selectedNotes = new Set(['note-0-2-0', 'note-1-1-0']); // Second note is reference
@@ -624,7 +650,6 @@ describe('NoteCopy', () => {
 					cellOffset: 0, // This will be the normalized position from the data structure
 					laneId: 'lane1',
 					noteId: '11',
-					originalPattern: '11000000000000000000000000000000',
 					measureLength: 1
 				},
 				{
@@ -634,7 +659,6 @@ describe('NoteCopy', () => {
 					cellOffset: 0, // This will be the normalized position from the data structure
 					laneId: 'lane2',
 					noteId: '12',
-					originalPattern: '12000000000000000000000000000000',
 					measureLength: 1
 				}
 			]);
@@ -690,7 +714,6 @@ describe('NoteCopy', () => {
 					cellOffset: 0, // This will be the normalized position from the data structure
 					laneId: 'lane1',
 					noteId: '11',
-					originalPattern: '11000000000000000000000000000000',
 					measureLength: 1
 				}
 			]);

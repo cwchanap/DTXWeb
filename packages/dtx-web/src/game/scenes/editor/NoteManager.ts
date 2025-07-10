@@ -322,16 +322,8 @@ export class NoteManager {
 		const notesToDelete: { noteKey: string; deletedNoteData: DeletedNoteData | null }[] = [];
 
 		// Create a snapshot of all LaneMeasureNote patterns before any modifications
-		// This ensures we have clean original data for undo operations
+		// We work with notes arrays directly, no need for pattern snapshots
 		const notes = this.editor.getNotes();
-		const patternSnapshots = new Map<string, Map<number, string>>();
-		Object.entries(notes).forEach(([laneId, laneMeasureNotes]) => {
-			const measureMap = new Map<number, string>();
-			laneMeasureNotes.forEach((note) => {
-				measureMap.set(note.measure, note.pattern);
-			});
-			patternSnapshots.set(laneId, measureMap);
-		});
 
 		this.selectedNotes.forEach((noteKey) => {
 			// Parse the note key to get the position info: "note-{laneIndex}-{measure}-{cellOffset}"
@@ -357,10 +349,6 @@ export class NoteManager {
 						const noteChip = existingNote.notes.find((n) => n.position === cellOffset);
 
 						if (noteChip) {
-							// Get the original pattern from our clean snapshot
-							const originalPattern =
-								patternSnapshots.get(laneId)?.get(measure) || existingNote.pattern;
-
 							// Store the note data for undo (without object references to avoid stale data)
 							const deletedNoteData = {
 								noteKey,
@@ -369,7 +357,6 @@ export class NoteManager {
 								cellOffset, // Use exact position from note key
 								laneId,
 								noteId: noteChip.noteID,
-								originalPattern: originalPattern, // Use clean snapshot
 								measureLength: existingNote.measureLength
 							};
 							deletedNotes.push(deletedNoteData);
@@ -422,54 +409,15 @@ export class NoteManager {
 			);
 
 			if (measureNote) {
-				// Remove the specific note from the pattern
-				const patternLength = this.editor.getCellsPerMeasure();
-				const expectedNotePosition = Math.round(deletedNoteData.cellOffset * patternLength);
-				const expectedStartIndex = expectedNotePosition * 2;
-				const expectedPatternStringLength = patternLength * 2; // Each position takes 2 characters
-
-				// Ensure we have a full-length pattern to work with
-				let pattern = measureNote.pattern;
-				if (pattern.length < expectedPatternStringLength) {
-					pattern = pattern.padEnd(expectedPatternStringLength, '0');
-				}
-
-				// Search for the note to delete
-				let actualStartIndex = -1;
-
-				// First, try the expected position
-				if (expectedStartIndex >= 0 && expectedStartIndex < pattern.length - 1) {
-					const noteAtExpectedPosition = pattern.substring(
-						expectedStartIndex,
-						expectedStartIndex + 2
-					);
-
-					if (noteAtExpectedPosition === deletedNoteData.noteId) {
-						// Note found at expected position, use it
-						actualStartIndex = expectedStartIndex;
-					}
-				}
-
-				// If not found at expected position, search for it in the pattern
-				if (actualStartIndex === -1) {
-					const searchIndex = pattern.indexOf(deletedNoteData.noteId);
-					if (searchIndex >= 0 && searchIndex % 2 === 0) {
-						actualStartIndex = searchIndex;
-					}
-				}
-
-				// If we found the note, delete it
-				if (actualStartIndex >= 0) {
-					// Replace the note with '00'
-					pattern =
-						pattern.substring(0, actualStartIndex) +
-						'00' +
-						pattern.substring(actualStartIndex + 2);
-
-					measureNote.pattern = pattern;
-					measureNote.parseNote(); // Reparse to update notes array
+				// Remove the specific note from the notes array
+				// Check if the instance has the new method (backward compatibility)
+				if (typeof measureNote.removeNote === 'function') {
+					measureNote.removeNote(deletedNoteData.cellOffset);
 				} else {
-					return; // Note already deleted or not found
+					// Fallback: manually remove from notes array for old instances
+					measureNote.notes = measureNote.notes.filter(
+						(note) => note.position !== deletedNoteData.cellOffset
+					);
 				}
 
 				// If the measure is now empty, remove the entire LaneMeasureNote
@@ -549,21 +497,16 @@ export class NoteManager {
 				);
 
 				if (measureNote) {
-					// Find the actual note chip to get its exact position in the pattern
-					const noteChip = measureNote.notes.find((n) => n.position === cellOffset);
-					if (!noteChip) return; // Note not found
-
-					// Remove the specific note from the pattern
-					const patternLength = this.editor.getCellsPerMeasure();
-					const notePosition = Math.round(noteChip.position * patternLength);
-					const startIndex = notePosition * 2;
-
-					// Replace the note with '00'
-					let pattern = measureNote.pattern;
-					pattern =
-						pattern.substring(0, startIndex) + '00' + pattern.substring(startIndex + 2);
-					measureNote.pattern = pattern;
-					measureNote.parseNote(); // Reparse to update notes array
+					// Remove the specific note from the notes array
+					// Check if the instance has the new method (backward compatibility)
+					if (typeof measureNote.removeNote === 'function') {
+						measureNote.removeNote(cellOffset);
+					} else {
+						// Fallback: manually remove from notes array for old instances
+						measureNote.notes = measureNote.notes.filter(
+							(note) => note.position !== cellOffset
+						);
+					}
 
 					// If the measure is now empty, remove the entire LaneMeasureNote
 					if (measureNote.notes.length === 0) {

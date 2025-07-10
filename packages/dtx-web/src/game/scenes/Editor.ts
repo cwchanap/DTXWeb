@@ -124,7 +124,6 @@ export class Editor extends BaseGame {
 										cellOffset,
 										laneId,
 										noteId: noteChip.noteID,
-										originalPattern: existingLaneMeasureNote.pattern,
 										measureLength: existingLaneMeasureNote.measureLength
 									};
 								}
@@ -161,19 +160,16 @@ export class Editor extends BaseGame {
 							);
 
 							if (measureNote) {
-								// Remove the specific note from the pattern
-								const patternLength = this.cellsPerMeasure;
-								const notePosition = Math.round(cellOffset * patternLength);
-								const startIndex = notePosition * 2;
-
-								// Replace the note with '00'
-								let pattern = measureNote.pattern;
-								pattern =
-									pattern.substring(0, startIndex) +
-									'00' +
-									pattern.substring(startIndex + 2);
-								measureNote.pattern = pattern;
-								measureNote.parseNote(); // Reparse to update notes array
+								// Remove the specific note from the notes array
+								// Check if the instance has the new method (backward compatibility)
+								if (typeof measureNote.removeNote === 'function') {
+									measureNote.removeNote(cellOffset);
+								} else {
+									// Fallback: manually remove from notes array for old instances
+									measureNote.notes = measureNote.notes.filter(
+										(note) => note.position !== cellOffset
+									);
+								}
 
 								// If the measure is now empty, remove the entire LaneMeasureNote
 								if (measureNote.notes.length === 0) {

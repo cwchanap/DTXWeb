@@ -586,9 +586,9 @@ describe('NoteBuffer', () => {
 			expect(mockEditor.selectedNotes.has(mockMovedNoteData.originalNoteKey)).toBe(true);
 		});
 
-		it('should restore notes with original pattern when available', () => {
-			// Set up a scenario where original pattern data is used
-			const dataWithOriginalPattern = {
+		it('should restore notes with existing notes in original lane', () => {
+			// Set up a scenario where the original lane already has other notes
+			const dataWithExistingNotes = {
 				...mockMovedNoteData
 			};
 
@@ -609,10 +609,10 @@ describe('NoteBuffer', () => {
 				) // Has different note
 			];
 
-			noteBuffer.recordAction('move', [dataWithOriginalPattern]);
+			noteBuffer.recordAction('move', [dataWithExistingNotes]);
 			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			// Should delegate to shared logic regardless of original pattern complexity
+			// Should delegate to shared logic regardless of existing notes complexity
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				0,

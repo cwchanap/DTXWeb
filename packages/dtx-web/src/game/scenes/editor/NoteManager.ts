@@ -243,7 +243,6 @@ export class NoteManager {
 			cellOffset: number;
 			laneId: string;
 			noteId: string;
-			originalPattern?: string;
 			measureLength?: number;
 		}>
 	): void {
@@ -321,8 +320,7 @@ export class NoteManager {
 		const deletedNotes: DeletedNoteData[] = [];
 		const notesToDelete: { noteKey: string; deletedNoteData: DeletedNoteData | null }[] = [];
 
-		// Create a snapshot of all LaneMeasureNote patterns before any modifications
-		// We work with notes arrays directly, no need for pattern snapshots
+		// Get the notes data structure for direct manipulation
 		const notes = this.editor.getNotes();
 
 		this.selectedNotes.forEach((noteKey) => {
@@ -361,16 +359,8 @@ export class NoteManager {
 							};
 							deletedNotes.push(deletedNoteData);
 							notesToDelete.push({ noteKey, deletedNoteData });
-						} else {
-							notesToDelete.push({ noteKey, deletedNoteData: null });
 						}
-					} else {
-						// This is an orphaned visual note - it exists in the UI but not in the data structure
-						// We should still delete it visually, but we can't restore it during undo
-						notesToDelete.push({ noteKey, deletedNoteData: null });
 					}
-				} else {
-					notesToDelete.push({ noteKey, deletedNoteData: null });
 				}
 			}
 		});
@@ -385,9 +375,6 @@ export class NoteManager {
 			if (deletedNoteData) {
 				// Use the captured data to delete the note directly
 				this.deleteNoteByKeyWithData(noteKey, deletedNoteData);
-			} else {
-				// If no data was captured, only delete visually
-				this.deleteNoteVisually(noteKey);
 			}
 		});
 
@@ -464,13 +451,6 @@ export class NoteManager {
 	}
 
 	/**
-	 * Delete a note visually only (when data capture failed or note is orphaned)
-	 */
-	private deleteNoteVisually(noteKey: string): void {
-		this.cleanupNoteVisuals(noteKey);
-	}
-
-	/**
 	 * Delete a single note by its key
 	 */
 	public deleteNoteByKey(noteKey: string): void {
@@ -511,12 +491,12 @@ export class NoteManager {
 					// If the measure is now empty, remove the entire LaneMeasureNote
 					if (measureNote.notes.length === 0) {
 						notes[laneId] = notes[laneId].filter((note) => note !== measureNote);
-					}
-				}
 
-				// Clean up empty lane entries
-				if (notes[laneId].length === 0) {
-					delete notes[laneId];
+						// Clean up empty lane entries
+						if (notes[laneId].length === 0) {
+							delete notes[laneId];
+						}
+					}
 				}
 			}
 		}
@@ -832,9 +812,6 @@ export class NoteManager {
 			return false;
 		}
 
-		// Clean up selection to only include notes that exist in both visual and data structure
-		this.cleanupOrphanedSelection();
-
 		const result = this.noteCopy.cutNotes(
 			this.selectedNotes,
 			this.editor,
@@ -924,55 +901,6 @@ export class NoteManager {
 		noteId: string
 	): boolean {
 		return this.noteMove.addNoteToEditor(measure, laneIndex, cellOffset, laneId, noteId);
-	}
-
-	/**
-	 * Remove orphaned visual notes from selection that don't exist in the data structure
-	 * This prevents cut operations from missing notes during undo recording
-	 */
-	private cleanupOrphanedSelection(): void {
-		const orphanedNotes = new Set<string>();
-		const notes = this.editor.getNotes();
-
-		// Check each selected note to see if it exists in the data structure
-		this.selectedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-				const laneId = this.editor.getLaneConfigs()[laneIndex].id;
-
-				// Check if note exists in data structure
-				if (laneId in notes) {
-					const existingNote = notes[laneId].find(
-						(note) =>
-							note.measure === measure &&
-							note.notes.some((n) => n.position === cellOffset)
-					);
-
-					if (!existingNote) {
-						// This note exists visually but not in data structure - it's orphaned
-						orphanedNotes.add(noteKey);
-					}
-				} else {
-					// Lane doesn't exist in data structure - note is orphaned
-					orphanedNotes.add(noteKey);
-				}
-			}
-		});
-
-		// Remove orphaned notes from selection and clean up their visuals
-		orphanedNotes.forEach((noteKey) => {
-			this.selectedNotes.delete(noteKey);
-			this.cleanupNoteVisuals(noteKey);
-		});
-
-		if (orphanedNotes.size > 0) {
-			console.log(
-				`[CLEANUP-DEBUG] Removed ${orphanedNotes.size} orphaned notes from selection`
-			);
-		}
 	}
 
 	/**

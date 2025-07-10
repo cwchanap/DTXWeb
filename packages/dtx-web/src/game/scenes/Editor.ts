@@ -473,6 +473,13 @@ export class Editor extends BaseGame {
 	}
 
 	/**
+	 * Highlight selected note - delegate to NoteManager
+	 */
+	highlightSelectedNote(noteGraphics: { name: string }): void {
+		this.noteManager.highlightSelectedNote(noteGraphics);
+	}
+
+	/**
 	 * Get selected notes - delegate to NoteManager
 	 */
 	get selectedNotes(): Set<string> {

@@ -73,7 +73,8 @@ const createMockEditor = () => {
 			pattern = pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
 
 			// Use the real LaneMeasureNote class to ensure accurate behavior
-			const laneMeasureNote = new LaneMeasureNote(measure, laneId, pattern);
+			const parsedNotes = LaneMeasureNote.parseFromPattern(pattern);
+			const laneMeasureNote = new LaneMeasureNote(measure, laneId, parsedNotes);
 			mockNotes[laneId].push(laneMeasureNote);
 			return laneMeasureNote;
 		},
@@ -145,8 +146,8 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up some notes for moving
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			lane1Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note]
 			});
@@ -190,8 +191,8 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up some notes for moving
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			lane1Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note]
 			});
@@ -218,10 +219,10 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up some notes for moving
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
-			lane1Note.parseNote();
-			lane2Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+			const lane2Notes = LaneMeasureNote.parseFromPattern('12000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note],
 				lane2: [lane2Note]
@@ -247,8 +248,8 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up some notes for moving
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			lane1Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note]
 			});
@@ -273,8 +274,8 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up notes
-			const lane1Note = new LaneMeasureNote(15, 'lane1', '00000000000000000000000000000011');
-			lane1Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('00000000000000000000000000000011');
+			const lane1Note = new LaneMeasureNote(15, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note]
 			});
@@ -299,8 +300,8 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up notes
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			lane1Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note]
 			});
@@ -326,8 +327,8 @@ describe('NoteMove', () => {
 			const deleteNoteByKey = vi.fn();
 
 			// Set up notes and add an existing note at target position
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			lane1Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({
 				lane1: [lane1Note]
 			});

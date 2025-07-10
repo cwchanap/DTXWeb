@@ -99,7 +99,8 @@ export abstract class BaseGame extends Scene {
 				(note) => note.measure === i
 			);
 			if (note) {
-				currentMeasureLength = parseFloat(note.pattern);
+				// For measure length notes, use the measureLength property directly
+				currentMeasureLength = note.measureLength;
 			}
 			this.measureLength[i] = currentMeasureLength;
 		}
@@ -255,8 +256,6 @@ export abstract class BaseGame extends Scene {
 				// Set the measureLength for the note if it's not already set
 				if (note.measureLength === 1) {
 					note.measureLength = this.measureLength[note.measure] || 1;
-					// Make sure notes are parsed with the correct measureLength
-					note.parseNote();
 				}
 
 				note.notes.forEach((noteChip: { noteID: string; position: number }) => {

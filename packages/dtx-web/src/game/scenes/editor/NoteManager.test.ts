@@ -78,8 +78,8 @@ const createMockEditor = () => {
 			pattern = pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
 
 			// Use the real LaneMeasureNote class to ensure accurate behavior
-			const laneMeasureNote = new LaneMeasureNote(measure, laneId, pattern);
-			// The constructor already calls parseNote, so our note should be properly created
+			const parsedNotes = LaneMeasureNote.parseFromPattern(pattern);
+			const laneMeasureNote = new LaneMeasureNote(measure, laneId, parsedNotes);
 			mockNotes[laneId].push(laneMeasureNote);
 			return laneMeasureNote;
 		},
@@ -441,7 +441,6 @@ describe('NoteManager', () => {
 					cellOffset: cellOffset,
 					laneId: 'lane1',
 					noteId: 'test',
-					originalPattern: '00',
 					measureLength: 1
 				}
 			];
@@ -454,10 +453,10 @@ describe('NoteManager', () => {
 	describe('copy and paste functionality', () => {
 		beforeEach(() => {
 			// Set up some notes for copying
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
-			lane1Note.parseNote();
-			lane2Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+			const lane2Notes = LaneMeasureNote.parseFromPattern('12000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
 
 			mockEditor._setMockNotes({
 				lane1: [lane1Note],
@@ -532,10 +531,10 @@ describe('NoteManager', () => {
 	describe('cut operations', () => {
 		beforeEach(() => {
 			// Set up note data in the editor (same as copy tests)
-			const lane1Note = new LaneMeasureNote(1, 'lane1', '11000000000000000000000000000000');
-			const lane2Note = new LaneMeasureNote(1, 'lane2', '12000000000000000000000000000000');
-			lane1Note.parseNote();
-			lane2Note.parseNote();
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+			const lane2Notes = LaneMeasureNote.parseFromPattern('12000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
 
 			mockEditor._setMockNotes({
 				lane1: [lane1Note],

@@ -330,17 +330,7 @@ export class NoteMove {
 					const originalCellOffset = parseFloat(oldParts[3]);
 					const originalLaneId = this.editor.getLaneConfigs()[originalLaneIndex].id;
 
-					// Capture original pattern data for undo
-					const notes = this.editor.getNotes();
-					let originalPattern: string | undefined;
-					if (originalLaneId in notes) {
-						const originalMeasureNote = notes[originalLaneId].find(
-							(note) => note.measure === originalMeasure
-						);
-						if (originalMeasureNote) {
-							originalPattern = originalMeasureNote.pattern;
-						}
-					}
+					// No need to capture original pattern data since we work with notes arrays directly
 
 					moveData.push({
 						originalNoteKey: oldKey,
@@ -353,8 +343,7 @@ export class NoteMove {
 						newLaneIndex: laneIndex,
 						newMeasure: measure,
 						newCellOffset: cellOffset,
-						newLaneId: laneId,
-						originalPattern
+						newLaneId: laneId
 					});
 				}
 			}
@@ -468,11 +457,11 @@ export class NoteMove {
 		laneIndex: number,
 		cellOffset: number,
 		laneId: string,
-		noteId: string
+		noteId: string,
+		forceMeasureLength?: number
 	): boolean {
 		// Add to display
 		const noteAdded = this.editor.drawNote(measure, laneIndex, cellOffset, noteId);
-
 		if (noteAdded) {
 			// Add to data structure
 			const notes = this.editor.getNotes();
@@ -484,36 +473,28 @@ export class NoteMove {
 			const existingMeasureNote = notes[laneId].find((note) => note.measure === measure);
 
 			if (existingMeasureNote) {
-				// Add note to existing measure
-				const patternLength = this.editor.getCellsPerMeasure();
-				const notePosition = Math.round(cellOffset * patternLength);
-				const startIndex = notePosition * 2;
-				let pattern = existingMeasureNote.pattern;
-
-				// Ensure pattern is long enough
-				const expectedLength = patternLength * 2;
-				if (pattern.length < expectedLength) {
-					pattern = pattern.padEnd(expectedLength, '0');
+				// Add note to existing measure using the notes array
+				// Check if the instance has the new method (backward compatibility)
+				if (typeof existingMeasureNote.addNote === 'function') {
+					existingMeasureNote.addNote(noteId, cellOffset);
+				} else {
+					// Fallback: manually add to notes array for old instances
+					existingMeasureNote.notes = existingMeasureNote.notes.filter(
+						(note) => note.position !== cellOffset
+					);
+					existingMeasureNote.notes.push({ noteID: noteId, position: cellOffset });
+					existingMeasureNote.notes.sort((a, b) => a.position - b.position);
 				}
-
-				// Place the note in the existing pattern
-				pattern =
-					pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
-
-				existingMeasureNote.pattern = pattern;
-				existingMeasureNote.parseNote(); // Reparse to update notes array
 			} else {
 				// Create a new LaneMeasureNote for this measure
-				const patternLength = this.editor.getCellsPerMeasure();
-				const notePosition = Math.round(cellOffset * patternLength);
-				let pattern = '00'.repeat(patternLength);
-
-				// Place the note at the correct position
-				const startIndex = notePosition * 2;
-				pattern =
-					pattern.substring(0, startIndex) + noteId + pattern.substring(startIndex + 2);
-
-				notes[laneId].push(new LaneMeasureNote(measure, laneId, pattern));
+				// Use forced measureLength if provided, otherwise use same as other measures in lane
+				const measureLength =
+					forceMeasureLength ||
+					(notes[laneId].length > 0 ? notes[laneId][0].measureLength : 1);
+				// Create with empty notes array and add the note
+				const newMeasureNote = new LaneMeasureNote(measure, laneId, [], measureLength);
+				newMeasureNote.addNote(noteId, cellOffset);
+				notes[laneId].push(newMeasureNote);
 			}
 		}
 

@@ -134,7 +134,6 @@ export class NoteCopy {
 				cellOffset: number;
 				laneId: string;
 				noteId: string;
-				originalPattern?: string;
 				measureLength?: number;
 			}>
 		) => void
@@ -151,7 +150,6 @@ export class NoteCopy {
 				cellOffset: number;
 				laneId: string;
 				noteId: string;
-				originalPattern?: string;
 				measureLength?: number;
 			}> = [];
 
@@ -187,7 +185,6 @@ export class NoteCopy {
 									cellOffset, // Use the normalized position from note key (same as noteChip.position)
 									laneId,
 									noteId: noteChip.noteID,
-									originalPattern: existingNote.pattern,
 									measureLength: existingNote.measureLength
 								});
 							}

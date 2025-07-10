@@ -271,7 +271,6 @@ export class Preview extends BaseGame {
 					// Set the measureLength for the note
 					if (bpmNote.measureLength === 1) {
 						bpmNote.measureLength = measureLength;
-						bpmNote.parseNote();
 					}
 					bpmNote.notes.forEach((note: { noteID: string; position: number }) => {
 						const position = note.position;
@@ -302,7 +301,6 @@ export class Preview extends BaseGame {
 					// Set the measureLength for the note
 					if (bpmNote.measureLength === 1) {
 						bpmNote.measureLength = measureLength;
-						bpmNote.parseNote();
 					}
 					bpmNote.notes.forEach((note: { noteID: string; position: number }) => {
 						const position = note.position;
@@ -349,7 +347,6 @@ export class Preview extends BaseGame {
 		// Set the measureLength for the note if it's not already set
 		if (note.measureLength === 1) {
 			note.measureLength = this.measureLength[note.measure] || 1;
-			note.parseNote();
 		}
 
 		note.notes.forEach((noteChip: { noteID: string; position: number }) => {
@@ -426,7 +423,6 @@ export class Preview extends BaseGame {
 		// Set the measureLength for the note if it's not already set
 		if (note.measureLength === 1) {
 			note.measureLength = this.measureLength[note.measure] || 1;
-			note.parseNote();
 		}
 
 		note.notes.forEach((noteChip: { noteID: string; position: number }) => {
@@ -480,30 +476,27 @@ export class Preview extends BaseGame {
 
 		if (lastBpmNote.measure < measure) {
 			// BPM change in a previous measure, need to find the last BPM in that measure
-			const pattern = lastBpmNote.pattern;
-			const segmentCount = pattern.length / 2;
+			const bpmNotes = lastBpmNote.notes;
 
-			for (let j = 0; j < segmentCount; j++) {
-				const noteId = pattern.substring(j * 2, j * 2 + 2);
-				if (noteId !== '00') {
-					currentBPM = this.bpmNotes[noteId];
+			// Find the last BPM change in the notes array
+			for (const note of bpmNotes) {
+				if (note.noteID !== '00') {
+					currentBPM = this.bpmNotes[note.noteID];
 				}
 			}
 		} else if (lastBpmNote.measure === measure) {
 			// BPM change in the current measure
-			const pattern = lastBpmNote.pattern;
-			const segmentCount = pattern.length / 2;
+			const bpmNotes = lastBpmNote.notes;
 
 			// Find the last BPM change before or at our cell position
-			for (let j = 0; j < segmentCount; j++) {
-				const cellPosition = Math.floor((j * this.cellsPerMeasure) / segmentCount);
+			for (const note of bpmNotes) {
+				const cellPosition = Math.floor(note.position * this.cellsPerMeasure);
 				if (cellPosition > cell) {
 					break; // This BPM change is after our current cell
 				}
 
-				const noteId = pattern.substring(j * 2, j * 2 + 2);
-				if (noteId !== '00') {
-					currentBPM = this.bpmNotes[noteId];
+				if (note.noteID !== '00') {
+					currentBPM = this.bpmNotes[note.noteID];
 				}
 			}
 		}

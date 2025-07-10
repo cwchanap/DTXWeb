@@ -37,8 +37,6 @@ export interface DeletedNoteData {
 	cellOffset: number;
 	laneId: string;
 	noteId: string;
-	// Store pattern data instead of object reference to avoid stale references
-	originalPattern?: string;
 	measureLength?: number;
 }
 
@@ -59,9 +57,6 @@ export interface MovedNoteData {
 	newMeasure: number;
 	newCellOffset: number;
 	newLaneId: string;
-	// Pattern data for restoration
-	originalPattern?: string;
-	newPattern?: string;
 }
 
 /**
@@ -86,8 +81,6 @@ export interface CutNoteData {
 	cellOffset: number;
 	laneId: string;
 	noteId: string;
-	// Store pattern data for restoration context
-	originalPattern?: string;
 	measureLength?: number;
 }
 
@@ -209,7 +202,7 @@ export class NoteBuffer {
 
 		// Use the shared note placement logic to restore each note
 		deletedNotes.forEach((deletedNote) => {
-			const { measure, laneIndex, cellOffset, laneId, noteId } = deletedNote;
+			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = deletedNote;
 
 			// Normalize the position to ensure consistency
 			const normalizedCellOffset = normalizePosition(cellOffset, editor.getCellsPerMeasure());
@@ -220,7 +213,8 @@ export class NoteBuffer {
 				laneIndex,
 				normalizedCellOffset,
 				laneId,
-				noteId
+				noteId,
+				measureLength
 			);
 		});
 
@@ -286,7 +280,8 @@ export class NoteBuffer {
 				originalLaneIndex,
 				normalizedCellOffset,
 				originalLaneId,
-				noteId
+				noteId,
+				1
 			);
 		});
 
@@ -346,11 +341,18 @@ export class NoteBuffer {
 
 		// Restore each cut note using the shared note addition logic
 		cutNotes.forEach((cutNote) => {
-			const { measure, laneIndex, cellOffset, laneId, noteId } = cutNote;
+			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = cutNote;
 
 			// Use the stored normalized position (no need to normalize again)
 			// since we already stored the actual position from the data structure
-			this.noteMove!.addNoteToEditor(measure, laneIndex, cellOffset, laneId, noteId);
+			this.noteMove!.addNoteToEditor(
+				measure,
+				laneIndex,
+				cellOffset,
+				laneId,
+				noteId,
+				measureLength
+			);
 		});
 
 		// Select all restored notes

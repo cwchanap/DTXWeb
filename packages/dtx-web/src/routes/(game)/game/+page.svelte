@@ -4,7 +4,6 @@
 	import { goto } from '$app/navigation';
 	import store from '$lib/store';
 	import { Editor } from '@/game/scenes/Editor';
-	import { onDestroy } from 'svelte';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 
@@ -12,16 +11,6 @@
 	const currentActiveScene = (scene: Scene) => {
 		return scene;
 	};
-
-	let currentScene: string | null;
-
-	const unsubscribe = store.activeScene.subscribe((value) => {
-		currentScene = value;
-	});
-
-	onDestroy(() => {
-		unsubscribe();
-	});
 </script>
 
 <div class="flex flex-row">

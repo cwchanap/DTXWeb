@@ -16,6 +16,11 @@ const createMockEditor = () => {
 				setVisible: vi.fn(),
 				setPosition: vi.fn(),
 				setSize: vi.fn()
+			}),
+			graphics: vi.fn().mockReturnValue({
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
 			})
 		},
 		getIsEditing: vi.fn().mockReturnValue(false),
@@ -29,6 +34,7 @@ const createMockEditor = () => {
 				}
 				return [];
 			}),
+			add: vi.fn(),
 			list: [],
 			y: 0
 		}),
@@ -88,7 +94,11 @@ const createMockEditor = () => {
 		_setMockNotes: (notes: Record<string, LaneMeasureNote[]>) => {
 			Object.keys(mockNotes).forEach((key) => delete mockNotes[key]);
 			Object.assign(mockNotes, notes);
-		}
+		},
+		getByName: vi.fn((name: string) => {
+			return mockGameObjects.find((obj) => obj.name === name) || null;
+		}),
+		highlightSelectedNote: vi.fn()
 	};
 };
 
@@ -472,6 +482,10 @@ describe('NoteManager', () => {
 			const result = noteManager.copySelectedNotes();
 			expect(result).toBe(true);
 			expect(noteManager.hasClipboard()).toBe(true);
+			// Selection should be preserved after copy
+			expect(noteManager.selectedNotes.size).toBe(2);
+			expect(noteManager.selectedNotes.has('note-0-1-0')).toBe(true);
+			expect(noteManager.selectedNotes.has('note-1-1-0')).toBe(true);
 		});
 
 		it('should return false when copying with no selection', () => {
@@ -480,13 +494,18 @@ describe('NoteManager', () => {
 			expect(result).toBe(false);
 		});
 
-		it('should paste notes at position of lowest selected note', () => {
+		it('should paste notes successfully', () => {
 			// First copy some notes
-			noteManager.copySelectedNotes();
+			const copyResult = noteManager.copySelectedNotes();
+			expect(copyResult).toBe(true);
+			expect(noteManager.hasClipboard()).toBe(true);
 
-			// Clear selection and add a different note as paste target
+			// Clear selection for default paste behavior
 			noteManager.selectedNotes.clear();
-			noteManager.selectedNotes.add('note-0-2-0'); // This will be the paste position
+
+			// Mock game objects for pasted notes (they would be created during paste)
+			mockEditor._addMockGameObject('note-0-0-0');
+			mockEditor._addMockGameObject('note-1-0-0');
 
 			const result = noteManager.pasteNotes();
 			expect(result).toBe(true);
@@ -499,22 +518,69 @@ describe('NoteManager', () => {
 			// Clear selection
 			noteManager.selectedNotes.clear();
 
+			// Mock game objects for pasted notes (they would be created during paste)
+			mockEditor._addMockGameObject('note-0-0-0');
+			mockEditor._addMockGameObject('note-1-0-0');
+
 			const result = noteManager.pasteNotes();
 			expect(result).toBe(true);
 		});
 
-		it('should clear selection after pasting', () => {
-			// First copy some notes
+		it('should select pasted notes after pasting', () => {
+			// Create mock game objects that represent pasted notes
+			const pastedNote1 = mockEditor._addMockGameObject('note-0-0-0');
+			const pastedNote2 = mockEditor._addMockGameObject('note-1-0-0');
+
+			// Spy on highlightSelectedNote to verify it's called for pasted notes
+			const highlightSpy = vi.spyOn(noteManager, 'highlightSelectedNote');
+
+			// Simulate the paste callback with mock pasted notes data
+			const mockPastedNotes = [
+				{
+					noteKey: 'note-0-0-0',
+					laneIndex: 0,
+					measure: 0,
+					cellOffset: 0,
+					laneId: 'lane1',
+					noteId: '01'
+				},
+				{
+					noteKey: 'note-1-0-0',
+					laneIndex: 1,
+					measure: 0,
+					cellOffset: 0,
+					laneId: 'lane2',
+					noteId: '01'
+				}
+			];
+
+			// Test the selectPastedNotes method directly by accessing it via the callback
+			// Simulate the paste operation by calling the internal selection method
+			(noteManager as any).selectPastedNotes(mockPastedNotes);
+
+			// Pasted notes should be selected after paste
+			expect(noteManager.selectedNotes.size).toBe(2);
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
+			expect(noteManager.selectedNotes.has('note-1-0-0')).toBe(true);
+			// highlightSelectedNote should be called for each pasted note
+			expect(highlightSpy).toHaveBeenCalledTimes(2);
+			expect(highlightSpy).toHaveBeenCalledWith(pastedNote1);
+			expect(highlightSpy).toHaveBeenCalledWith(pastedNote2);
+		});
+
+		it('should preserve selection after copy operation', () => {
+			// Verify initial selection
+			expect(noteManager.selectedNotes.size).toBe(2);
+
+			// Spy on clearSelection to verify it's NOT called after copy
+			const clearSpy = vi.spyOn(noteManager, 'clearSelection');
+
 			noteManager.copySelectedNotes();
 
-			// Clear selection but add a paste target
-			noteManager.selectedNotes.clear();
-			noteManager.selectedNotes.add('note-0-2-0');
-
-			noteManager.pasteNotes();
-
-			// Selection should be cleared after paste
-			expect(noteManager.selectedNotes.size).toBe(0);
+			// Selection should be preserved (clearSelection not called during copy)
+			expect(noteManager.selectedNotes.size).toBe(2);
+			expect(noteManager.selectedNotes.has('note-0-1-0')).toBe(true);
+			expect(noteManager.selectedNotes.has('note-1-1-0')).toBe(true);
 		});
 
 		it('should check clipboard status', () => {

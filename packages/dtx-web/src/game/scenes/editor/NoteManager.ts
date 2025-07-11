@@ -797,10 +797,8 @@ export class NoteManager {
 	 */
 	copySelectedNotes(): boolean {
 		const result = this.noteCopy.copyNotes(this.selectedNotes, this.editor);
-		if (result) {
-			// Clear selection after successful copy to avoid paste conflicts
-			this.clearSelection();
-		}
+		// Keep notes selected after copy so user can see what was copied
+		// Note: This means paste will use current selection as paste position
 		return result;
 	}
 
@@ -856,16 +854,30 @@ export class NoteManager {
 			pasteMeasure,
 			pasteCellOffset,
 			this.editor,
-			(pastedNotes) => this.recordPasteAction(pastedNotes)
+			(pastedNotes) => {
+				this.recordPasteAction(pastedNotes);
+				// Auto-select pasted notes so user can see what was pasted
+				this.selectPastedNotes(pastedNotes);
+			}
 		);
 
-		if (result) {
-			// Clear current selection and potentially select pasted notes
-			// For now, just clear selection to avoid complexity
-			this.clearSelection();
-		}
-
 		return result;
+	}
+
+	/**
+	 * Selects pasted notes to show user what was pasted
+	 */
+	private selectPastedNotes(pastedNotes: Array<{ noteKey: string }>): void {
+		// Clear current selection and select all pasted notes
+		this.clearSelection();
+		pastedNotes.forEach((pastedNote) => {
+			const noteGraphics = this.editor.getByName(pastedNote.noteKey);
+			if (noteGraphics) {
+				// Add to selection set and create visual highlight overlay
+				this.selectedNotes.add(pastedNote.noteKey);
+				this.highlightSelectedNote(noteGraphics);
+			}
+		});
 	}
 
 	/**

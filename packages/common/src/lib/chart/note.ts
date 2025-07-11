@@ -69,4 +69,38 @@ export class LaneMeasureNote {
 	removeNote(position: number): void {
 		this.notes = this.notes.filter((note) => note.position !== position);
 	}
+
+	/**
+	 * Convert notes back to DTX pattern string (reverse of parseFromPattern)
+	 */
+	toPattern(): string {
+		if (this.notes.length === 0) return '';
+
+		// Determine the pattern resolution based on the most precise position
+		let resolution = 4; // Default to 4 subdivisions per measure
+		for (const note of this.notes) {
+			const pos = note.position / this.measureLength;
+			// Find the smallest power of 2 that can represent this position precisely
+			for (let res = 4; res <= 192; res *= 2) {
+				if (Math.abs(pos * res - Math.round(pos * res)) < 0.001) {
+					resolution = Math.max(resolution, res);
+					break;
+				}
+			}
+		}
+
+		// Create pattern array filled with '00'
+		const pattern = new Array(resolution).fill('00');
+
+		// Place notes in the pattern
+		for (const note of this.notes) {
+			const pos = note.position / this.measureLength;
+			const index = Math.round(pos * resolution);
+			if (index >= 0 && index < resolution) {
+				pattern[index] = note.noteID;
+			}
+		}
+
+		return pattern.join('');
+	}
 }

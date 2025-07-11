@@ -183,12 +183,14 @@ export class Editor extends BaseGame {
 							if (this.notes[laneId].length === 0) {
 								delete this.notes[laneId];
 							}
+							this.syncNotesToStore();
 						}
 					}
 				} else {
 					// Left-click: Add a note using the shared addNoteToEditor method
 					const laneId = this.laneConfigs[laneIndex].id;
 					this.noteManager.addNoteToEditor(measure, laneIndex, cellOffset, laneId, '01');
+					this.syncNotesToStore();
 				}
 			}
 		});
@@ -281,6 +283,7 @@ export class Editor extends BaseGame {
 				}
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;
+				this.syncNotesToStore();
 				this.restart({ measureCount: this.measureCount });
 			}
 		);
@@ -577,5 +580,12 @@ export class Editor extends BaseGame {
 
 	public getByName(name: string): { name: string } | null {
 		return this.panelContainer.getByName(name);
+	}
+
+	/**
+	 * Sync current notes to the Svelte store for export
+	 */
+	private syncNotesToStore(): void {
+		store.editorNotes.set(this.notes);
 	}
 }

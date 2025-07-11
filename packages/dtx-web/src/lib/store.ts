@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { DTXFile, SoundChip, SimFile } from '@dtx/common';
+import type { DTXFile, SoundChip, SimFile, LaneMeasureNote } from '@dtx/common';
 
 const activeScene = writable<string | null>(null);
 const currentDtxFile = writable<DTXFile | null>(null);
@@ -9,6 +9,7 @@ const playingAudio = writable<HTMLAudioElement | null>(null);
 const isPreviewing = writable<boolean>(false);
 const playSpeed = writable<number>(1);
 const measureCount = writable<number>(10);
+const editorNotes = writable<Record<string, LaneMeasureNote[]>>({});
 
 export default {
 	activeScene,
@@ -18,5 +19,6 @@ export default {
 	playingAudio,
 	isPreviewing,
 	playSpeed,
-	measureCount
+	measureCount,
+	editorNotes
 };

@@ -33,12 +33,7 @@ export class LaneMeasureNote {
 		public laneID: string,
 		public notes: { noteID: string; position: number }[],
 		public measureLength: number = 1
-	) {
-		this.measure = measure;
-		this.laneID = laneID;
-		this.notes = notes;
-		this.measureLength = measureLength;
-	}
+	) {}
 
 	static parseFromPattern(
 		pattern: string,

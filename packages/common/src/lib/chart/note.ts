@@ -39,18 +39,16 @@ export class LaneMeasureNote {
 		if (!patterns) return [];
 		const patternCount = patterns.length;
 
-		return (
-			patterns
-				?.map((pattern, index) => {
-					const position = (index * measureLength) / patternCount;
-					const normalizedPosition = LaneMeasureNote.normalizePosition(position);
-					return {
-						noteID: pattern,
-						position: normalizedPosition
-					};
-				})
-				.filter((note) => note.noteID !== '00') || []
-		);
+		return patterns
+			.map((pattern, index) => {
+				const position = (index * measureLength) / patternCount;
+				const normalizedPosition = LaneMeasureNote.normalizePosition(position);
+				return {
+					noteID: pattern,
+					position: normalizedPosition
+				};
+			})
+			.filter((note) => note.noteID !== '00');
 	}
 
 	/**

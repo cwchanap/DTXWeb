@@ -3,7 +3,7 @@
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
 	import { goto } from '$app/navigation';
 	import { Editor } from '@/game/scenes/Editor';
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
 	import { DTXFile, SimFile } from '@dtx/common';
 	import { MainMenu } from '@/game/scenes/MainMenu';
@@ -26,16 +26,6 @@
 	const currentActiveScene = (scene: Scene) => {
 		return scene;
 	};
-
-	let currentScene: string | null;
-
-	const unsubscribe = store.activeScene.subscribe((value) => {
-		currentScene = value;
-	});
-
-	onDestroy(() => {
-		unsubscribe();
-	});
 
 	function exportFile() {
 		const dtxFile = get(store.currentDtxFile);

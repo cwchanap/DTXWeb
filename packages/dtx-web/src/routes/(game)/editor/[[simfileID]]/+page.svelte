@@ -39,7 +39,8 @@
 
 	function exportFile() {
 		const dtxFile = get(store.currentDtxFile);
-		dtxFile?.export();
+		const notes = get(store.editorNotes);
+		dtxFile?.export(notes);
 	}
 
 	function newFile() {

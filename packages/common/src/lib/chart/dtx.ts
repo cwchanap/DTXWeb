@@ -183,20 +183,69 @@ export class DTXFile {
 		}
 	}
 
-	async export(): Promise<void> {
-		const content = [
-			`#TITLE: ${this.title}`,
-			`#ARTIST: ${this.artist}`,
-			`#DLEVEL: ${this.level}`,
-			`#BPM: ${this.bpm}`,
-			`#PREIMAGE: ${this.preview}`
-		].join('\r\n');
+	async export(notes?: Record<string, LaneMeasureNote[]>): Promise<void> {
+		const content: string[] = [];
 
-		const blob = new Blob([content], { type: 'text/plain' });
+		// Add header information
+		content.push(`#TITLE: ${this.title || ''}`);
+		content.push(`#ARTIST: ${this.artist || ''}`);
+		content.push(`#DLEVEL: ${this.level || 0}`);
+		content.push(`#BPM: ${this.bpm || 120}`);
+		if (this.preview) content.push(`#PREIMAGE: ${this.preview}`);
+		if (this.soundPreview) content.push(`#PREVIEW: ${this.soundPreview}`);
+		if (this.comment) content.push(`#COMMENT: ${this.comment}`);
+
+		// Add sound chips
+		if (this.soundChips && this.soundChips.length > 0) {
+			this.soundChips.forEach((chip) => {
+				const id = chip.id.toString(36).toUpperCase().padStart(2, '0');
+				content.push(`#WAV${id}: ${chip.fileName}`);
+				if (chip.volume !== 100) {
+					content.push(`#VOLUME${id}: ${chip.volume}`);
+				}
+				if (chip.position !== 0) {
+					content.push(`#POSITION${id}: ${chip.position}`);
+				}
+			});
+		}
+
+		// Add notes if provided
+		if (notes) {
+			const allMeasureNotes: { measure: number; laneID: string; pattern: string }[] = [];
+
+			// Collect all notes and convert to patterns
+			for (const [laneID, laneMeasureNotes] of Object.entries(notes)) {
+				laneMeasureNotes.forEach((laneMeasureNote) => {
+					const pattern = laneMeasureNote.toPattern();
+					if (pattern) {
+						allMeasureNotes.push({
+							measure: laneMeasureNote.measure,
+							laneID: laneID,
+							pattern: pattern
+						});
+					}
+				});
+			}
+
+			// Sort by measure then by lane ID for consistent output
+			allMeasureNotes.sort((a, b) => {
+				if (a.measure !== b.measure) return a.measure - b.measure;
+				return a.laneID.localeCompare(b.laneID);
+			});
+
+			// Add note lines
+			allMeasureNotes.forEach(({ measure, laneID, pattern }) => {
+				const measureStr = measure.toString().padStart(3, '0');
+				content.push(`#${measureStr}${laneID}: ${pattern}`);
+			});
+		}
+
+		const fileContent = content.join('\r\n');
+		const blob = new Blob([fileContent], { type: 'text/plain' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = 'exported.dtx';
+		a.download = `${this.title || 'exported'}.dtx`;
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);

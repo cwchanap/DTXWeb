@@ -6,9 +6,11 @@
 
 	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;
+	let activeNote: string = $state('01');
 
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
 	store.currentSimfile.subscribe((value) => (simfile = value));
+	store.activeNote.subscribe((value) => (activeNote = value));
 
 	async function playAudio(file: string | File) {
 		let soundFile: File | undefined;
@@ -31,11 +33,15 @@
 			}
 		}
 	}
+
+	function selectActiveNote(noteId: string) {
+		store.activeNote.set(noteId);
+	}
 </script>
 
 <div class="flex flex-col space-y-2">
 	<button
-		class="w-1/2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+		class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 		onclick={() => {
 			store.currentSoundChip.set([
 				...soundChips,
@@ -48,21 +54,36 @@
 		<table class="w-full border-collapse">
 			<thead class="bg-white">
 				<tr>
-					<td class="w-[15%] border border-gray-300 text-center">Label</td>
-					<td class="w-[10%] border border-gray-300 text-center">ID</td>
-					<td class="w-[15%] border border-gray-300 text-center">Volume</td>
-					<td class="w-[15%] border border-gray-300 text-center">Position</td>
-					<td class="w-[45%] border border-gray-300 text-center">File</td>
+					<td class="w-[10%] border border-gray-300 text-center">Active</td>
+					<td class="w-[12%] border border-gray-300 text-center">Label</td>
+					<td class="w-[8%] border border-gray-300 text-center">ID</td>
+					<td class="w-[12%] border border-gray-300 text-center">Volume</td>
+					<td class="w-[12%] border border-gray-300 text-center">Position</td>
+					<td class="w-[46%] border border-gray-300 text-center">File</td>
 				</tr>
 			</thead>
 			<tbody>
 				{#each soundChips as chip}
-					<tr class="bg-white">
+					{@const chipId = chip.id.toString(36).toUpperCase().padStart(2, '0')}
+					<tr class="bg-white {activeNote === chipId ? 'ring-2 ring-blue-500' : ''}">
+						<td class="border border-gray-300 px-2 py-1 text-center">
+							<button
+								onclick={() => selectActiveNote(chipId)}
+								class="rounded-full border-2 {activeNote === chipId
+									? 'border-blue-500 bg-blue-500'
+									: 'border-gray-300'} h-5 w-5 hover:border-blue-400"
+								title="Set as active note"
+							>
+								{#if activeNote === chipId}
+									<span class="block h-3 w-3 rounded-full bg-white"></span>
+								{/if}
+							</button>
+						</td>
 						<td class="border border-gray-300 px-2 py-1">
 							<input type="text" bind:value={chip.label} class="w-full text-center" />
 						</td>
 						<td class="border border-gray-300 px-2 py-1 text-center">
-							<span>{chip.id.toString(36).toUpperCase().padStart(2, '0')}</span>
+							<span class="font-mono text-sm">{chipId}</span>
 						</td>
 						<td class="border border-gray-300 px-2 py-1">
 							<input

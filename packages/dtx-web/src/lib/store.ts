@@ -10,6 +10,7 @@ const isPreviewing = writable<boolean>(false);
 const playSpeed = writable<number>(1);
 const measureCount = writable<number>(10);
 const editorNotes = writable<Record<string, LaneMeasureNote[]>>({});
+const activeNote = writable<string>('01');
 
 export default {
 	activeScene,
@@ -20,5 +21,6 @@ export default {
 	isPreviewing,
 	playSpeed,
 	measureCount,
-	editorNotes
+	editorNotes,
+	activeNote
 };

@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { type Scene } from 'phaser';
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
-	import { goto } from '$app/navigation';
 	import { Editor } from '@/game/scenes/Editor';
 	import { onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
 	import { DTXFile, SimFile } from '@dtx/common';
-	import { MainMenu } from '@/game/scenes/MainMenu';
 	import SoundTab from '$lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
 	import EventType from '@/game/EventType';
@@ -38,7 +36,7 @@
 		store.currentDtxFile.set(new DTXFile());
 	}
 
-	function switchToLevel(level: number) {
+	async function switchToLevel(level: number) {
 		const simfile = get(store.currentSimfile);
 		if (!simfile || !simfile.levels[level]) {
 			console.error(`Level ${level} not found in simfile`);
@@ -57,9 +55,11 @@
 		store.currentSoundChip.set(soundChips);
 
 		// Fetch sound files
-		soundChips.forEach(async (soundChip) => {
-			await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
-		});
+		await Promise.all(
+			soundChips.map(async (soundChip) => {
+				await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+			})
+		);
 
 		// Emit note import event to update the editor
 		EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
@@ -109,9 +109,11 @@
 			store.currentSimfile.set(simfile);
 			store.currentSoundChip.set(soundChips);
 
-			soundChips.forEach(async (soundChip) => {
-				await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
-			});
+			await Promise.all(
+				soundChips.map(async (soundChip) => {
+					await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+				})
+			);
 
 			// Emit note import event
 			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);

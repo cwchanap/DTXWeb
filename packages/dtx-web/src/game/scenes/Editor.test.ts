@@ -11,6 +11,17 @@ vi.mock('$lib/store', () => ({
 	default: {
 		measureCount: {
 			set: vi.fn()
+		},
+		activeNote: {
+			subscribe: vi.fn((callback) => {
+				// Call the callback with a mock value
+				callback('01');
+				// Return an unsubscribe function
+				return vi.fn();
+			})
+		},
+		editorNotes: {
+			set: vi.fn()
 		}
 	}
 }));
@@ -21,6 +32,9 @@ vi.mock('./Preview', () => ({
 	Preview: {
 		key: 'Preview'
 	}
+}));
+vi.mock('svelte/store', () => ({
+	get: vi.fn(() => '01') // Mock the get function to return a default active note
 }));
 
 describe('Editor Scene', () => {

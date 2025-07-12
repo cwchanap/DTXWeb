@@ -25,7 +25,7 @@ export class LaneMeasureNote {
 	 * Normalize a position to prevent floating point precision issues
 	 */
 	private static normalizePosition(position: number): number {
-		return normalizePosition(position, 16);
+		return normalizePosition(position, 192); // Use high precision for subdivisions
 	}
 
 	/**
@@ -49,6 +49,28 @@ export class LaneMeasureNote {
 				};
 			})
 			.filter((note) => note.noteID !== '00');
+	}
+
+	/**
+	 * Determine the subdivision level based on pattern length
+	 */
+	static getSubdivisionLevel(patternLength: number): number {
+		// DTX patterns can have various lengths representing different subdivisions
+		// 16 = 16th notes, 24 = 24th notes, 32 = 32nd notes, 48 = 48th notes, 64 = 64th notes
+		if (patternLength <= 16) return 16;
+		if (patternLength <= 24) return 24;
+		if (patternLength <= 32) return 32;
+		if (patternLength <= 48) return 48;
+		if (patternLength <= 64) return 64;
+		return Math.min(patternLength, 192); // Cap at 192 for extreme cases
+	}
+
+	/**
+	 * Calculate the measure length multiplier based on subdivision level
+	 */
+	static getMeasureLengthMultiplier(subdivisionLevel: number): number {
+		// Base subdivision is 16th notes
+		return subdivisionLevel / 16;
 	}
 
 	/**

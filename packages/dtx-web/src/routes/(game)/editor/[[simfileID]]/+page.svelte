@@ -20,7 +20,8 @@
 	let currentTab: number = $state(0);
 	let isPreviewing = $state(false);
 	let isTabsCollapsed = $state(false);
-	let simfileID: string;
+	let simfileID = $state('');
+	let showDifficultyModal = $state(false);
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -35,6 +36,49 @@
 
 	function newFile() {
 		store.currentDtxFile.set(new DTXFile());
+	}
+
+	function switchToLevel(level: number) {
+		const simfile = get(store.currentSimfile);
+		if (!simfile || !simfile.levels[level]) {
+			console.error(`Level ${level} not found in simfile`);
+			return;
+		}
+
+		const dtxFile = simfile.levels[level].file;
+
+		// Parse notes and BPM changes for the selected difficulty
+		const notes = dtxFile.parseNotes();
+		const bpmNotes = dtxFile.parseBPMChanges();
+		const soundChips = dtxFile.parseSoundChips();
+
+		// Update stores
+		store.currentDtxFile.set(dtxFile);
+		store.currentSoundChip.set(soundChips);
+
+		// Fetch sound files
+		soundChips.forEach(async (soundChip) => {
+			await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+		});
+
+		// Emit note import event to update the editor
+		EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+
+		// Close modal
+		showDifficultyModal = false;
+	}
+
+	function getAvailableLevels() {
+		const simfile = get(store.currentSimfile);
+		if (!simfile) return [];
+
+		return Object.entries(simfile.levels)
+			.filter(([_, level]) => level !== undefined)
+			.map(([levelNum, level]) => ({
+				level: parseInt(levelNum),
+				label: level!.label,
+				isActive: get(store.currentDtxFile) === level!.file
+			}));
 	}
 
 	onMount(async () => {
@@ -94,6 +138,12 @@
 					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={newFile}
 						>New</button
 					>
+					{#if simfileID}
+						<button
+							class="px-4 py-2 text-left hover:bg-gray-100"
+							onclick={() => (showDifficultyModal = true)}>Switch file</button
+						>
+					{/if}
 					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={exportFile}
 						>Export</button
 					>
@@ -174,29 +224,49 @@
 			</div>
 		</div>
 
-		<!-- Center game component - full width on small screens, 55% on large screens -->
-		<div class="flex w-full justify-center p-5 2xl:w-[55%]">
+		<!-- Center game component - expanded to fill remaining space -->
+		<div class="flex w-full justify-center p-5 2xl:w-[75%]">
 			<Main {phaserRef} {currentActiveScene} />
-		</div>
-
-		<!-- Right button panel - full width on small screens, 20% on large screens -->
-		<div
-			class="flex w-full flex-col items-center justify-center p-4 2xl:w-[20%] 2xl:items-end 2xl:justify-end 2xl:p-16"
-		>
-			<button
-				class="mt-5 w-full max-w-xs rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-hidden"
-				onclick={() => {
-					goto('/game');
-					store.activeScene.set(MainMenu.key);
-				}}>Game</button
-			>
-			<button
-				class="mt-5 w-full max-w-xs rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-hidden"
-				onclick={() => {
-					goto('/');
-					store.activeScene.set(null);
-				}}>Main</button
-			>
 		</div>
 	</div>
 </div>
+
+<!-- Difficulty Selection Modal -->
+{#if showDifficultyModal}
+	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+		<div class="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+			<h2 class="mb-4 text-xl font-bold text-gray-800">Switch Difficulty</h2>
+
+			<div class="space-y-2">
+				{#each getAvailableLevels() as { level, label, isActive }}
+					<button
+						class="w-full rounded-md border px-4 py-3 text-left transition-colors {isActive
+							? 'border-blue-500 bg-blue-50 text-blue-700'
+							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
+						onclick={() => switchToLevel(level)}
+						disabled={isActive}
+					>
+						<div class="flex items-center justify-between">
+							<div>
+								<div class="font-medium">{label}</div>
+								<div class="text-sm text-gray-500">Level {level}</div>
+							</div>
+							{#if isActive}
+								<span class="text-sm font-medium text-blue-600">Current</span>
+							{/if}
+						</div>
+					</button>
+				{/each}
+			</div>
+
+			<div class="mt-6 flex justify-end space-x-3">
+				<button
+					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+					onclick={() => (showDifficultyModal = false)}
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

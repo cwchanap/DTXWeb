@@ -21,6 +21,7 @@ export class Editor extends BaseGame {
 	private noteManager: NoteManager;
 	private contextMenuHandler: ((e: Event) => void) | null = null;
 	private currentLaneIndex = -1;
+	private activeNoteSubscription: (() => void) | null = null;
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -189,7 +190,14 @@ export class Editor extends BaseGame {
 				} else {
 					// Left-click: Add a note using the shared addNoteToEditor method
 					const laneId = this.laneConfigs[laneIndex].id;
-					this.noteManager.addNoteToEditor(measure, laneIndex, cellOffset, laneId, '01');
+					const activeNote = get(store.activeNote);
+					this.noteManager.addNoteToEditor(
+						measure,
+						laneIndex,
+						cellOffset,
+						laneId,
+						activeNote
+					);
 					this.syncNotesToStore();
 				}
 			}
@@ -322,6 +330,13 @@ export class Editor extends BaseGame {
 			this.scene.resume();
 			this.scene.setVisible(true);
 		});
+
+		// Listen for active note changes to update cursor
+		this.activeNoteSubscription = store.activeNote.subscribe(() => {
+			if (this.isEditing) {
+				this.updateCursorForEditingMode();
+			}
+		});
 	}
 
 	update() {
@@ -350,6 +365,12 @@ export class Editor extends BaseGame {
 		this.input.keyboard?.off('keydown-BACKSPACE');
 		this.input.keyboard?.off('keydown-DELETE');
 		this.input.keyboard?.off('keydown-Z');
+
+		// Clean up active note subscription
+		if (this.activeNoteSubscription) {
+			this.activeNoteSubscription();
+			this.activeNoteSubscription = null;
+		}
 
 		// Clean up drag state
 		this.noteManager.destroy();
@@ -429,6 +450,25 @@ export class Editor extends BaseGame {
 			ctx.strokeStyle = 'white';
 			ctx.lineWidth = 1;
 			ctx.strokeRect(0, 0, noteWidth, noteHeight);
+
+			// Get the active note ID and draw it on the cursor
+			const activeNote = get(store.activeNote);
+			if (activeNote) {
+				// Set up text styling to match the actual note text in editor (16px, centered)
+				ctx.fillStyle = 'white';
+				ctx.font = '16px sans-serif';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+
+				// Add text shadow for better visibility
+				ctx.strokeStyle = 'black';
+				ctx.lineWidth = 1;
+				ctx.strokeText(activeNote, noteWidth / 2, noteHeight / 2);
+
+				// Draw the text
+				ctx.fillStyle = 'white';
+				ctx.fillText(activeNote, noteWidth / 2, noteHeight / 2);
+			}
 
 			// Convert canvas to data URL
 			const dataUrl = canvas.toDataURL();

@@ -63,7 +63,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each soundChips as chip}
+				{#each soundChips as chip (chip.id)}
 					{@const chipId = chip.id.toString(36).toUpperCase().padStart(2, '0')}
 					<tr class="bg-white {activeNote === chipId ? 'ring-2 ring-blue-500' : ''}">
 						<td class="border border-gray-300 px-2 py-1 text-center">

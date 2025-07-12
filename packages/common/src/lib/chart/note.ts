@@ -103,14 +103,20 @@ export class LaneMeasureNote {
 		const commonResolutions = [4, 8, 12, 16, 24, 32, 48, 64, 96, 192];
 		let resolution = 4; // Default to 4 subdivisions per measure
 
-		for (const note of this.notes) {
-			const pos = note.position / this.measureLength;
-			// Find the smallest resolution that can represent this position precisely
-			for (const res of commonResolutions) {
-				if (Math.abs(pos * res - Math.round(pos * res)) < 0.001) {
-					resolution = Math.max(resolution, res);
+		// Find the smallest resolution that can accommodate all note positions
+		for (const res of commonResolutions) {
+			let canAccommodateAll = true;
+			for (const note of this.notes) {
+				const pos = note.position / this.measureLength;
+				// Check if this resolution can represent this position precisely
+				if (Math.abs(pos * res - Math.round(pos * res)) >= 0.001) {
+					canAccommodateAll = false;
 					break;
 				}
+			}
+			if (canAccommodateAll) {
+				resolution = res;
+				break; // Use the first (smallest) resolution that works for all notes
 			}
 		}
 

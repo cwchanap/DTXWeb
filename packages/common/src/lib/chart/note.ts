@@ -99,11 +99,14 @@ export class LaneMeasureNote {
 		if (this.notes.length === 0) return '';
 
 		// Determine the pattern resolution based on the most precise position
+		// Include common subdivision levels: 4, 8, 12, 16, 24, 32, 48, 64, 96, 192
+		const commonResolutions = [4, 8, 12, 16, 24, 32, 48, 64, 96, 192];
 		let resolution = 4; // Default to 4 subdivisions per measure
+
 		for (const note of this.notes) {
 			const pos = note.position / this.measureLength;
-			// Find the smallest power of 2 that can represent this position precisely
-			for (let res = 4; res <= 192; res *= 2) {
+			// Find the smallest resolution that can represent this position precisely
+			for (const res of commonResolutions) {
 				if (Math.abs(pos * res - Math.round(pos * res)) < 0.001) {
 					resolution = Math.max(resolution, res);
 					break;

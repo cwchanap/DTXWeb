@@ -296,6 +296,171 @@ describe('DTXFile', () => {
 			expect(consoleSpy).toHaveBeenCalledWith('No note line found.');
 			consoleSpy.mockRestore();
 		});
+
+		describe('higher subdivision parsing', () => {
+			it('should parse 24th note patterns correctly', () => {
+				// Create a 24-note pattern (48 characters)
+				const patternParts = new Array(24).fill('00');
+				patternParts[0] = '01'; // First 24th note
+				patternParts[1] = '02'; // Second 24th note
+				patternParts[8] = '03'; // Ninth 24th note (8/24 = 1/3)
+				const pattern = patternParts.join('');
+
+				dtxFile.lines = [`#00011: ${pattern}`];
+
+				const notes = dtxFile.parseNotes();
+
+				expect(notes).toHaveLength(1);
+				expect(notes[0].measure).toBe(0);
+				expect(notes[0].laneID).toBe('11');
+				expect(notes[0].notes).toHaveLength(3);
+
+				// Check positions are correct fractions of 24
+				expect(notes[0].notes[0].position).toBe(0);
+				expect(notes[0].notes[1].position).toBeCloseTo(1 / 24, 10);
+				expect(notes[0].notes[2].position).toBeCloseTo(8 / 24, 10);
+			});
+
+			it('should parse 32nd note patterns correctly', () => {
+				// Create a 32-note pattern (64 characters)
+				const patternParts = new Array(32).fill('00');
+				patternParts[0] = '01'; // First 32nd note
+				patternParts[2] = '02'; // Third 32nd note
+				patternParts[16] = '03'; // Seventeenth 32nd note (16/32 = 1/2)
+				const pattern = patternParts.join('');
+
+				dtxFile.lines = [`#00012: ${pattern}`];
+
+				const notes = dtxFile.parseNotes();
+
+				expect(notes).toHaveLength(1);
+				expect(notes[0].measure).toBe(0);
+				expect(notes[0].laneID).toBe('12');
+				expect(notes[0].notes).toHaveLength(3);
+
+				// Check positions are correct fractions of 32
+				expect(notes[0].notes[0].position).toBe(0);
+				expect(notes[0].notes[1].position).toBeCloseTo(2 / 32, 10);
+				expect(notes[0].notes[2].position).toBeCloseTo(16 / 32, 10);
+			});
+
+			it('should parse 48th note patterns correctly', () => {
+				// Create a 48-note pattern (96 characters)
+				const patternParts = new Array(48).fill('00');
+				patternParts[0] = '01'; // First 48th note
+				patternParts[5] = '02'; // Sixth 48th note
+				patternParts[23] = '03'; // Twenty-fourth 48th note
+				const pattern = patternParts.join('');
+
+				dtxFile.lines = [`#00013: ${pattern}`];
+
+				const notes = dtxFile.parseNotes();
+
+				expect(notes).toHaveLength(1);
+				expect(notes[0].measure).toBe(0);
+				expect(notes[0].laneID).toBe('13');
+				expect(notes[0].notes).toHaveLength(3);
+
+				// Check positions are correct fractions of 48
+				expect(notes[0].notes[0].position).toBe(0);
+				expect(notes[0].notes[1].position).toBeCloseTo(5 / 48, 10);
+				expect(notes[0].notes[2].position).toBeCloseTo(23 / 48, 10);
+			});
+
+			it('should parse 64th note patterns correctly', () => {
+				// Create a 64-note pattern (128 characters)
+				const patternParts = new Array(64).fill('00');
+				patternParts[0] = '01'; // First 64th note
+				patternParts[7] = '02'; // Eighth 64th note
+				patternParts[31] = '03'; // Thirty-second 64th note (31/64)
+				const pattern = patternParts.join('');
+
+				dtxFile.lines = [`#00014: ${pattern}`];
+
+				const notes = dtxFile.parseNotes();
+
+				expect(notes).toHaveLength(1);
+				expect(notes[0].measure).toBe(0);
+				expect(notes[0].laneID).toBe('14');
+				expect(notes[0].notes).toHaveLength(3);
+
+				// Check positions are correct fractions of 64
+				expect(notes[0].notes[0].position).toBe(0);
+				expect(notes[0].notes[1].position).toBeCloseTo(7 / 64, 10);
+				expect(notes[0].notes[2].position).toBeCloseTo(31 / 64, 10);
+			});
+
+			it('should handle mixed subdivision patterns in different measures', () => {
+				// Mix 16th, 24th, and 32nd note patterns
+				const pattern16 = '01020304'; // 4 16th notes
+				const pattern24 = new Array(24)
+					.fill('00')
+					.join('')
+					.replace(/^../, '05')
+					.replace(/(.{22})../, '$106'); // 2 24th notes
+				const pattern32 = new Array(32)
+					.fill('00')
+					.join('')
+					.replace(/^../, '07')
+					.replace(/(.{30})../, '$108'); // 2 32nd notes
+
+				dtxFile.lines = [
+					`#00011: ${pattern16}`, // Measure 0, 16th notes
+					`#00111: ${pattern24}`, // Measure 1, 24th notes
+					`#00211: ${pattern32}` // Measure 2, 32nd notes
+				];
+
+				const notes = dtxFile.parseNotes();
+
+				expect(notes).toHaveLength(3);
+
+				// Verify 16th note measure
+				expect(notes[0].measure).toBe(0);
+				expect(notes[0].notes).toHaveLength(4);
+
+				// Verify 24th note measure
+				expect(notes[1].measure).toBe(1);
+				expect(notes[1].notes).toHaveLength(2);
+				expect(notes[1].notes[0].position).toBe(0);
+				expect(notes[1].notes[1].position).toBeCloseTo(11 / 24, 10);
+
+				// Verify 32nd note measure
+				expect(notes[2].measure).toBe(2);
+				expect(notes[2].notes).toHaveLength(2);
+				expect(notes[2].notes[0].position).toBe(0);
+				expect(notes[2].notes[1].position).toBeCloseTo(15 / 32, 10);
+			});
+
+			it('should maintain precision for complex subdivision patterns', () => {
+				// Test pattern with notes at precise fractional positions
+				const patternParts = new Array(48).fill('00');
+				patternParts[0] = '01'; // 0/48
+				patternParts[1] = '02'; // 1/48
+				patternParts[2] = '03'; // 2/48 = 1/24
+				patternParts[3] = '04'; // 3/48 = 1/16
+				patternParts[6] = '05'; // 6/48 = 1/8
+				patternParts[12] = '06'; // 12/48 = 1/4
+				patternParts[24] = '07'; // 24/48 = 1/2
+				const pattern = patternParts.join('');
+
+				dtxFile.lines = [`#00011: ${pattern}`];
+
+				const notes = dtxFile.parseNotes();
+
+				expect(notes).toHaveLength(1);
+				expect(notes[0].notes).toHaveLength(7);
+
+				// Verify each position is precise
+				const positions = notes[0].notes.map((n) => n.position);
+				expect(positions[0]).toBe(0); // 0/48
+				expect(positions[1]).toBeCloseTo(1 / 48, 10); // 1/48
+				expect(positions[2]).toBeCloseTo(2 / 48, 10); // 2/48 = 1/24
+				expect(positions[3]).toBeCloseTo(3 / 48, 10); // 3/48 = 1/16
+				expect(positions[4]).toBeCloseTo(6 / 48, 10); // 6/48 = 1/8
+				expect(positions[5]).toBeCloseTo(12 / 48, 10); // 12/48 = 1/4
+				expect(positions[6]).toBeCloseTo(24 / 48, 10); // 24/48 = 1/2
+			});
+		});
 	});
 
 	describe('export', () => {

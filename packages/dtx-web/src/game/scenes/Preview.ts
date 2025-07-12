@@ -8,6 +8,7 @@ import type { LaneMeasureNote, SoundChip } from '@dtx/common';
 import { BaseGame } from './BaseGame';
 import { AssetName, type LaneConfig } from '../interface';
 import { getAssetPath } from '../utils';
+import { calculateHighResolutionPosition } from '../utils/notePositioning.js';
 
 interface Data {
 	measureCount: number;
@@ -654,18 +655,15 @@ export class Preview extends BaseGame {
 		// Calculate Y position based on measure offset and cell position
 		const yOffset = this.getTotalMesaureOffest(measure);
 
-		// Calculate the position within the measure based on a higher resolution grid
+		// Calculate the position within the measure using high-resolution grid
 		// This allows for proper positioning of 24th, 32nd, 48th, and 64th notes
-		const highResolutionCells = 192; // LCM of 16, 24, 32, 48, 64
-		const cellPosition = Math.floor(cellOffset * highResolutionCells);
-
-		// Convert high-resolution position to actual visual position
-		const visualCellPosition = (cellPosition / highResolutionCells) * this.cellsPerMeasure;
+		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
+			cellOffset,
+			this.cellsPerMeasure
+		);
 
 		// Add offsets for each cell up to the note position
 		let cellsYOffset = 0;
-		const wholeCells = Math.floor(visualCellPosition);
-		const fractionalCell = visualCellPosition - wholeCells;
 
 		for (let i = 0; i < wholeCells; i++) {
 			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);

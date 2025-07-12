@@ -18,7 +18,15 @@ export const HIGH_RESOLUTION_CELLS = 192;
  * @param cellsPerMeasure - Number of visual cells per measure (typically 16)
  * @returns Object containing cell position calculations
  */
-export function calculateHighResolutionPosition(cellOffset: number, cellsPerMeasure: number) {
+export function calculateHighResolutionPosition(
+	cellOffset: number,
+	cellsPerMeasure: number
+): {
+	cellPosition: number;
+	visualCellPosition: number;
+	wholeCells: number;
+	fractionalCell: number;
+} {
 	// Calculate the position within the measure based on a higher resolution grid
 	const cellPosition = Math.floor(cellOffset * HIGH_RESOLUTION_CELLS);
 

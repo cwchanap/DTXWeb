@@ -8,7 +8,9 @@ export default defineConfig({
 	plugins: [wasm(), tailwindcss(), sveltekit()],
 	resolve: {
 		alias: {
-			'@': path.resolve(__dirname, 'src')
+			'@': path.resolve(__dirname, 'src'),
+			'@dtx/common/components': path.resolve(__dirname, '../common/src/lib/components.ts'),
+			'@dtx/common': path.resolve(__dirname, '../common/src/lib')
 		}
 	},
 	optimizeDeps: {

@@ -15,7 +15,9 @@ const config = {
 			fallback: 'plaintext'
 		}),
 		alias: {
-			'@': './src'
+			'@': './src',
+			'@dtx/common/components': '../common/src/lib/components.ts',
+			'@dtx/common': '../common/src/lib'
 		}
 	}
 };

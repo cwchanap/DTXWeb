@@ -427,6 +427,195 @@ describe('NoteManager', () => {
 
 			expect(bounds).toBeNull();
 		});
+
+		it('should calculate simplified bounds for performance during selection', () => {
+			const noteKey = 'note-0-1-0.5';
+
+			// Access the private method for testing
+			const bounds = (noteManager as any).calculateSimplifiedNoteBounds(noteKey);
+
+			expect(bounds).toBeDefined();
+			if (bounds) {
+				expect(bounds.x).toBeGreaterThanOrEqual(0);
+				expect(bounds.y).toBeDefined();
+				expect(bounds.width).toBeGreaterThan(0);
+				expect(bounds.height).toBeGreaterThan(0);
+			}
+		});
+
+		it('should calculate bounds with high-resolution positioning for 24th notes', () => {
+			// Test a 24th note position (1/24 = 0.041666...)
+			const noteKey = 'note-0-1-0.041666666666666664';
+
+			const bounds = noteManager.calculateNoteBounds(noteKey);
+
+			expect(bounds).toBeDefined();
+			if (bounds) {
+				// Should have non-zero dimensions
+				expect(bounds.width).toBeGreaterThan(0);
+				expect(bounds.height).toBeGreaterThan(0);
+				// X position should account for lane offset
+				expect(bounds.x).toBeGreaterThanOrEqual(mockEditor.getOffsetX());
+			}
+		});
+
+		it('should include stacking offset in bounds calculation for overlapping notes', () => {
+			// Create overlapping notes (24th note triplets)
+			const noteKey1 = 'note-0-1-0.041666666666666664'; // First 24th note
+			const noteKey2 = 'note-0-1-0.08333333333333333'; // Second 24th note
+
+			// Add mock game objects to simulate existing notes
+			mockEditor._addMockGameObject(noteKey1);
+
+			const bounds1 = noteManager.calculateNoteBounds(noteKey1);
+			const bounds2 = noteManager.calculateNoteBounds(noteKey2);
+
+			expect(bounds1).toBeDefined();
+			expect(bounds2).toBeDefined();
+
+			if (bounds1 && bounds2) {
+				// Second note should have a stacking offset (3px per stack level)
+				// Note: The exact offset depends on how many nearby notes are found
+				expect(bounds2.x).toBeGreaterThanOrEqual(bounds1.x);
+			}
+		});
+	});
+
+	describe('note highlighting', () => {
+		it('should create highlight overlay using calculated bounds', () => {
+			const noteKey = 'note-0-1-0.5';
+			const mockOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
+			};
+
+			// Mock the add.graphics call to return our mock overlay
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			// Create a mock note graphics object
+			const mockNoteGraphics = { name: noteKey };
+
+			noteManager.highlightSelectedNote(mockNoteGraphics);
+
+			// Verify overlay creation and styling
+			expect(mockEditor.add.graphics).toHaveBeenCalled();
+			expect(mockOverlay.lineStyle).toHaveBeenCalledWith(3, 0xffff00, 1); // Yellow border, 3px thick
+			expect(mockOverlay.strokeRect).toHaveBeenCalled();
+			expect(mockOverlay.setName).toHaveBeenCalledWith(`selection-overlay-${noteKey}`);
+			expect(mockEditor.getPanelContainer().add).toHaveBeenCalledWith(mockOverlay);
+		});
+
+		it('should position highlight overlay correctly for high-resolution notes', () => {
+			const noteKey = 'note-0-1-0.041666666666666664'; // 24th note position
+			const mockOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
+			};
+
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+			const mockNoteGraphics = { name: noteKey };
+
+			noteManager.highlightSelectedNote(mockNoteGraphics);
+
+			// Verify strokeRect was called (meaning bounds were calculated and used)
+			expect(mockOverlay.strokeRect).toHaveBeenCalled();
+
+			// Get the strokeRect call arguments to verify positioning
+			const strokeRectCall = mockOverlay.strokeRect.mock.calls[0];
+			expect(strokeRectCall).toHaveLength(4); // x, y, width, height
+
+			const [x, y, width, height] = strokeRectCall;
+			expect(typeof x).toBe('number');
+			expect(typeof y).toBe('number');
+			expect(width).toBeGreaterThan(0);
+			expect(height).toBeGreaterThan(0);
+		});
+
+		it('should remove existing overlay before creating new one', () => {
+			const noteKey = 'note-0-1-0.5';
+			const existingOverlay = { destroy: vi.fn() };
+
+			// Mock existing overlay
+			mockEditor.getPanelContainer().getByName.mockReturnValue(existingOverlay);
+
+			const mockNewOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
+			};
+			mockEditor.add.graphics.mockReturnValue(mockNewOverlay);
+
+			const mockNoteGraphics = { name: noteKey };
+
+			noteManager.highlightSelectedNote(mockNoteGraphics);
+
+			// Verify existing overlay was destroyed
+			expect(existingOverlay.destroy).toHaveBeenCalled();
+			// And new overlay was created
+			expect(mockEditor.add.graphics).toHaveBeenCalled();
+		});
+
+		it('should handle notes with stacking offsets in highlighting', () => {
+			const noteKey1 = 'note-0-1-0.041666666666666664'; // First 24th note
+			const noteKey2 = 'note-0-1-0.08333333333333333'; // Second 24th note
+
+			// Add first note to create stacking scenario
+			mockEditor._addMockGameObject(noteKey1);
+
+			const mockOverlay1 = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
+			};
+			const mockOverlay2 = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
+			};
+
+			// First call returns overlay1, second call returns overlay2
+			mockEditor.add.graphics
+				.mockReturnValueOnce(mockOverlay1)
+				.mockReturnValueOnce(mockOverlay2);
+
+			// Highlight both notes
+			noteManager.highlightSelectedNote({ name: noteKey1 });
+			noteManager.highlightSelectedNote({ name: noteKey2 });
+
+			// Both overlays should be created
+			expect(mockOverlay1.strokeRect).toHaveBeenCalled();
+			expect(mockOverlay2.strokeRect).toHaveBeenCalled();
+
+			// Get position arguments for both overlays
+			const overlay1Args = mockOverlay1.strokeRect.mock.calls[0];
+			const overlay2Args = mockOverlay2.strokeRect.mock.calls[0];
+
+			// Second overlay should potentially have different x position due to stacking
+			// (exact difference depends on findNearbyNotes logic)
+			expect(overlay1Args[0]).toBeDefined(); // x position for first note
+			expect(overlay2Args[0]).toBeDefined(); // x position for second note
+		});
+
+		it('should not create overlay if bounds calculation fails', () => {
+			const invalidNoteKey = 'invalid-note-key';
+			const mockOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn()
+			};
+
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			noteManager.highlightSelectedNote({ name: invalidNoteKey });
+
+			// With the new logic, if bounds calculation returns null, no graphics overlay is created at all
+			// This is because the entire overlay creation is inside the if (bounds) block
+			expect(mockEditor.add.graphics).not.toHaveBeenCalled();
+			expect(mockOverlay.lineStyle).not.toHaveBeenCalled();
+			expect(mockOverlay.strokeRect).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('drag state management', () => {

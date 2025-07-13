@@ -194,12 +194,28 @@ export class NoteManager {
 
 		const laneIndex = Math.floor(x / cellWidth);
 
-		// Use high-resolution positioning calculation to match Editor's click detection logic
-		const highResCellIndex = Math.floor(
-			((-absoluteY / cellHeight) * HIGH_RESOLUTION_CELLS) / cellsPerMeasure
-		);
-		const measure = Math.floor(highResCellIndex / HIGH_RESOLUTION_CELLS);
-		const cellOffset = (highResCellIndex % HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
+		// Use the same grid-snapping logic as Editor note creation and NoteMove.completeDrag
+		// Find the measure and position within measure using same calculation as Editor
+		const clickY = -absoluteY;
+		let currentY = 0;
+		let measure = -1;
+		let positionInMeasure = 0;
+
+		// Iterate through measures to find which one contains the cursor (same as Editor logic)
+		for (let m = 0; m < this.editor.getMeasureCount(); m++) {
+			const measureHeight = this.editor.getMeasureHeight(m);
+			if (clickY >= currentY && clickY < currentY + measureHeight) {
+				measure = m;
+				positionInMeasure = (clickY - currentY) / measureHeight;
+				break;
+			}
+			currentY += measureHeight;
+		}
+
+		// Snap reference position to 16th note grid (not high-resolution grid)
+		// This ensures the reference note is placed at the nearest 16th note grid cell
+		const gridPosition = Math.round(positionInMeasure * cellsPerMeasure);
+		const cellOffset = gridPosition / cellsPerMeasure;
 
 		return {
 			laneIndex: Math.max(0, laneIndex),

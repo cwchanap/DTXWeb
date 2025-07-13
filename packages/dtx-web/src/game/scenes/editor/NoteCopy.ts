@@ -1,4 +1,3 @@
-import { normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -255,8 +254,8 @@ export class NoteCopy {
 				newMeasure -= 1;
 			}
 
-			// Normalize the position to match what drawNote does
-			newCellOffset = normalizePosition(newCellOffset, editor.getCellsPerMeasure());
+			// Keep the exact calculated position to preserve high-resolution positioning
+			// No normalization needed as the relative offsets preserve the original precision
 
 			// Validate target position
 			if (

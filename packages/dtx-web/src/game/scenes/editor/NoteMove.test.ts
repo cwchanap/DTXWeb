@@ -34,6 +34,7 @@ const createMockEditor = () => {
 		getNotes: vi.fn(() => mockNotes),
 		getCellsPerMeasure: vi.fn().mockReturnValue(16),
 		getMeasureCount: vi.fn().mockReturnValue(100),
+		getMeasureHeight: vi.fn().mockReturnValue(400), // Mock measure height
 		getOffsetX: vi.fn().mockReturnValue(100),
 		getOffsetY: vi.fn().mockReturnValue(200),
 		getCellWidth: vi.fn().mockReturnValue(50),

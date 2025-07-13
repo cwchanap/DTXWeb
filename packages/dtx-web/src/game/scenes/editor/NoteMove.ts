@@ -2,10 +2,7 @@ import { LaneMeasureNote } from '@dtx/common';
 import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';
-import {
-	calculateHighResolutionPosition,
-	HIGH_RESOLUTION_CELLS
-} from '../../utils/notePositioning.js';
+import { HIGH_RESOLUTION_CELLS } from '../../utils/notePositioning';
 
 /**
  * Manages note drag and move operations in the DTX editor
@@ -84,24 +81,36 @@ export class NoteMove {
 
 		const targetLaneIndex = Math.floor(x / this.editor.getCellWidth());
 
-		// Use high-resolution positioning calculation
-		// Calculate position using high-resolution cells instead of 16-cell grid
-		const highResCellIndex = Math.floor(
-			((-absoluteY / this.editor.getCellHeightValue()) * HIGH_RESOLUTION_CELLS) /
-				this.editor.getCellsPerMeasure()
-		);
+		// Calculate target position using same logic as Editor note creation
+		// Find the measure and position within measure using same calculation as Editor
+		const clickY = -absoluteY;
+		let currentY = 0;
+		let targetMeasure = -1;
+		let positionInMeasure = 0;
+
+		// Iterate through measures to find which one contains the cursor (same as Editor logic)
+		for (let m = 0; m < this.editor.getMeasureCount(); m++) {
+			const measureHeight = this.editor.getMeasureHeight(m);
+			if (clickY >= currentY && clickY < currentY + measureHeight) {
+				targetMeasure = m;
+				positionInMeasure = (clickY - currentY) / measureHeight;
+				break;
+			}
+			currentY += measureHeight;
+		}
 
 		// Validate target position
 		if (
 			targetLaneIndex >= 0 &&
 			targetLaneIndex < this.editor.getLaneConfigs().length &&
-			highResCellIndex >= 0 &&
-			highResCellIndex < this.editor.getMeasureCount() * HIGH_RESOLUTION_CELLS
+			targetMeasure >= 0 &&
+			targetMeasure < this.editor.getMeasureCount()
 		) {
-			const targetMeasure = Math.floor(highResCellIndex / HIGH_RESOLUTION_CELLS);
-			// Calculate precise position within the measure using high-resolution grid
-			const targetCellOffset =
-				(highResCellIndex % HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
+			// Snap reference position to 16th note grid (not high-resolution grid)
+			// This ensures the reference note is placed at the nearest 16th note grid cell
+			const cellsPerMeasure = this.editor.getCellsPerMeasure(); // This is 16 for 16th note grid
+			const gridPosition = Math.round(positionInMeasure * cellsPerMeasure);
+			const targetCellOffset = gridPosition / cellsPerMeasure;
 
 			// Move each dragged note
 			this.moveNotesToPosition(

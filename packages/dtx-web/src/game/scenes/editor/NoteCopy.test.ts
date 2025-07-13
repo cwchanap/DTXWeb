@@ -247,22 +247,22 @@ describe('NoteCopy', () => {
 			// Test pasting near the end of a measure - paste at position 0.9
 			// Reference note (lane 1, noteId '12') at target position
 			// Other note (lane 0, noteId '11') at relative position (-1 lane offset)
-			// Note: 0.9 gets normalized to 0.875 (14/16)
+			// With high-resolution positioning, 0.9 stays as 0.9 (no normalization to 16th grid)
 			const result = noteCopy.pasteNotes(1, 1, 0.9, mockEditor);
 
 			expect(result).toBe(true);
-			// Both notes should be within bounds
+			// Both notes should be within bounds and preserve exact positioning
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				1,
-				0.875,
+				0.9,
 				'lane2',
 				'12'
 			);
 			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
 				1,
 				0,
-				0.875,
+				0.9,
 				'lane1',
 				'11'
 			);

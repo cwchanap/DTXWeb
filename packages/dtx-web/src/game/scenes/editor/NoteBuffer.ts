@@ -1,4 +1,3 @@
-import { normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -204,14 +203,12 @@ export class NoteBuffer {
 		deletedNotes.forEach((deletedNote) => {
 			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = deletedNote;
 
-			// Normalize the position to ensure consistency
-			const normalizedCellOffset = normalizePosition(cellOffset, editor.getCellsPerMeasure());
-
-			// Use the shared logic to add the note back to both display and data structure
+			// Use the exact stored position without normalization to preserve high-resolution positioning
+			// The cellOffset was already properly positioned when the note was originally created
 			this.noteMove!.addNoteToEditor(
 				measure,
 				laneIndex,
-				normalizedCellOffset,
+				cellOffset,
 				laneId,
 				noteId,
 				measureLength
@@ -269,17 +266,12 @@ export class NoteBuffer {
 				noteId
 			} = movedNote;
 
-			// Normalize the position to ensure consistency
-			const normalizedCellOffset = normalizePosition(
-				originalCellOffset,
-				editor.getCellsPerMeasure()
-			);
-
-			// Use the shared logic to add the note back to both display and data structure
+			// Use the exact original position without normalization to preserve high-resolution positioning
+			// The originalCellOffset was already properly positioned when the note was originally created
 			this.noteMove!.addNoteToEditor(
 				originalMeasure,
 				originalLaneIndex,
-				normalizedCellOffset,
+				originalCellOffset,
 				originalLaneId,
 				noteId,
 				1

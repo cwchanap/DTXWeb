@@ -9,6 +9,10 @@ import type { LaneConfig } from '../interface';
 import { LaneMeasureNote } from '@dtx/common';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
+import {
+	calculateHighResolutionPosition,
+	HIGH_RESOLUTION_CELLS
+} from '../utils/notePositioning.js';
 
 interface Data {
 	measureCount?: number;
@@ -75,130 +79,144 @@ export class Editor extends BaseGame {
 			// The panelContainer.y is positive when scrolled up, so we need to minus it to get the absolute position
 			const absoluteY = pointer.y - this.offsetY - this.panelContainer.y;
 
-			// Calculate the clicked cell
+			// Calculate the clicked lane
 			const laneIndex = Math.floor(x / this.cellWidth);
-			// We need to negate absoluteY because the grid is drawn from bottom to top
-			const cellIndex = Math.floor(-absoluteY / this.cellHeight);
 
-			// Validate the click is within the grid bounds
-			if (
-				laneIndex >= 0 &&
-				laneIndex < this.laneConfigs.length &&
-				cellIndex >= 0 &&
-				cellIndex < this.measureCount * this.cellsPerMeasure
-			) {
-				// Calculate the measure from the cell index
-				const measure = Math.floor(cellIndex / this.cellsPerMeasure);
-				// Calculate the position within the measure and normalize it
-				const rawCellOffset = (cellIndex % this.cellsPerMeasure) / this.cellsPerMeasure;
-				const cellOffset = this.normalizePosition(rawCellOffset);
+			// Validate the click is within the lane bounds
+			if (laneIndex >= 0 && laneIndex < this.laneConfigs.length) {
+				// Calculate which measure was clicked using high-resolution positioning
+				// We need to negate absoluteY because the grid is drawn from bottom to top
+				const clickY = -absoluteY;
 
-				// Check if it's a right-click (pointer.rightButtonDown())
-				if (pointer.rightButtonDown()) {
-					// Check if there's a note at this position
-					const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
-					const existingNote = this.panelContainer.getByName(noteKey);
-					if (existingNote) {
-						const laneId = this.laneConfigs[laneIndex].id;
+				// Find the measure and position within measure
+				let currentY = 0;
+				let measure = -1;
+				let positionInMeasure = 0;
 
-						// Find the note data before deleting it for undo functionality
-						let deletedNoteData: DeletedNoteData | null = null;
-						if (laneId in this.notes) {
-							const existingLaneMeasureNote = this.notes[laneId].find(
-								(note) =>
-									note.measure === measure &&
-									note.notes.some(
-										(n) => Math.abs(n.position - cellOffset) < 0.001
-									)
-							);
+				// Iterate through measures to find which one contains the click
+				for (let m = 0; m < this.measureCount; m++) {
+					const measureHeight = this.getMeasureHeight(m);
+					if (clickY >= currentY && clickY < currentY + measureHeight) {
+						measure = m;
+						positionInMeasure = (clickY - currentY) / measureHeight;
+						break;
+					}
+					currentY += measureHeight;
+				}
 
-							if (existingLaneMeasureNote) {
-								const noteChip = existingLaneMeasureNote.notes.find(
-									(n) => Math.abs(n.position - cellOffset) < 0.001
+				// Validate the click is within a valid measure
+				if (measure >= 0 && measure < this.measureCount) {
+					// Use high-resolution grid to calculate precise position
+					const highResPosition = Math.floor(positionInMeasure * HIGH_RESOLUTION_CELLS);
+					const cellOffset = highResPosition / HIGH_RESOLUTION_CELLS;
+
+					// Check if it's a right-click (pointer.rightButtonDown())
+					if (pointer.rightButtonDown()) {
+						// Check if there's a note at this position
+						const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
+						const existingNote = this.panelContainer.getByName(noteKey);
+						if (existingNote) {
+							const laneId = this.laneConfigs[laneIndex].id;
+
+							// Find the note data before deleting it for undo functionality
+							let deletedNoteData: DeletedNoteData | null = null;
+							if (laneId in this.notes) {
+								const existingLaneMeasureNote = this.notes[laneId].find(
+									(note) =>
+										note.measure === measure &&
+										note.notes.some(
+											(n) => Math.abs(n.position - cellOffset) < 0.001
+										)
 								);
 
-								if (noteChip) {
-									deletedNoteData = {
-										noteKey,
-										laneIndex,
-										measure,
-										cellOffset,
-										laneId,
-										noteId: noteChip.noteID,
-										measureLength: existingLaneMeasureNote.measureLength
-									};
-								}
-							}
-						}
-
-						// Record undo action before deleting
-						if (deletedNoteData) {
-							this.noteManager.recordDeleteAction([deletedNoteData]);
-						}
-
-						// Remove the note graphics from the display
-						const noteGraphics = this.panelContainer.getByName(noteKey);
-						if (noteGraphics) {
-							noteGraphics.destroy();
-						}
-
-						// Remove the note text from the display
-						const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
-						const noteText = this.panelContainer.getByName(textKey);
-						if (noteText) {
-							noteText.destroy();
-						}
-
-						// Remove the note from this.notes
-						if (laneId in this.notes) {
-							// Find the LaneMeasureNote that contains this note
-							const measureNote = this.notes[laneId].find(
-								(note) =>
-									note.measure === measure &&
-									note.notes.some(
+								if (existingLaneMeasureNote) {
+									const noteChip = existingLaneMeasureNote.notes.find(
 										(n) => Math.abs(n.position - cellOffset) < 0.001
-									)
-							);
-
-							if (measureNote) {
-								// Remove the specific note from the notes array
-								// Check if the instance has the new method (backward compatibility)
-								if (typeof measureNote.removeNote === 'function') {
-									measureNote.removeNote(cellOffset);
-								} else {
-									// Fallback: manually remove from notes array for old instances
-									measureNote.notes = measureNote.notes.filter(
-										(note) => note.position !== cellOffset
 									);
-								}
 
-								// If the measure is now empty, remove the entire LaneMeasureNote
-								if (measureNote.notes.length === 0) {
-									this.notes[laneId] = this.notes[laneId].filter(
-										(note) => note !== measureNote
-									);
+									if (noteChip) {
+										deletedNoteData = {
+											noteKey,
+											laneIndex,
+											measure,
+											cellOffset,
+											laneId,
+											noteId: noteChip.noteID,
+											measureLength: existingLaneMeasureNote.measureLength
+										};
+									}
 								}
 							}
 
-							// Clean up empty lane entries
-							if (this.notes[laneId].length === 0) {
-								delete this.notes[laneId];
+							// Record undo action before deleting
+							if (deletedNoteData) {
+								this.noteManager.recordDeleteAction([deletedNoteData]);
 							}
-							this.syncNotesToStore();
+
+							// Remove the note graphics from the display
+							const noteGraphics = this.panelContainer.getByName(noteKey);
+							if (noteGraphics) {
+								noteGraphics.destroy();
+							}
+
+							// Remove the note text from the display
+							const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
+							const noteText = this.panelContainer.getByName(textKey);
+							if (noteText) {
+								noteText.destroy();
+							}
+
+							// Remove the note from this.notes
+							if (laneId in this.notes) {
+								// Find the LaneMeasureNote that contains this note
+								const measureNote = this.notes[laneId].find(
+									(note) =>
+										note.measure === measure &&
+										note.notes.some(
+											(n) => Math.abs(n.position - cellOffset) < 0.001
+										)
+								);
+
+								if (measureNote) {
+									// Remove the specific note from the notes array
+									// Check if the instance has the new method (backward compatibility)
+									if (typeof measureNote.removeNote === 'function') {
+										measureNote.removeNote(cellOffset);
+									} else {
+										// Fallback: manually remove from notes array for old instances
+										measureNote.notes = measureNote.notes.filter(
+											(note) => note.position !== cellOffset
+										);
+									}
+
+									// If the measure is now empty, remove the entire LaneMeasureNote
+									if (measureNote.notes.length === 0) {
+										this.notes[laneId] = this.notes[laneId].filter(
+											(note) => note !== measureNote
+										);
+									}
+								}
+
+								// Clean up empty lane entries
+								if (this.notes[laneId].length === 0) {
+									delete this.notes[laneId];
+								}
+								this.syncNotesToStore();
+							}
 						}
+					} else {
+						// Left-click: Add a note using the shared addNoteToEditor method
+						const laneId = this.laneConfigs[laneIndex].id;
+						const activeNote = get(store.activeNote);
+						this.noteManager.addNoteToEditor(
+							measure,
+							laneIndex,
+							cellOffset,
+							laneId,
+							activeNote
+						);
+						this.syncNotesToStore();
 					}
-				} else {
-					// Left-click: Add a note using the shared addNoteToEditor method
-					const laneId = this.laneConfigs[laneIndex].id;
-					const activeNote = get(store.activeNote);
-					this.noteManager.addNoteToEditor(
-						measure,
-						laneIndex,
-						cellOffset,
-						laneId,
-						activeNote
-					);
-					this.syncNotesToStore();
 				}
 			}
 		});
@@ -341,6 +359,144 @@ export class Editor extends BaseGame {
 
 	update() {
 		// Update logic if needed
+	}
+
+	/**
+	 * Override normalizePosition to use high-resolution grid for Editor
+	 * This prevents 24th, 32nd, 48th, and 64th notes from being rounded to 16th note positions
+	 */
+	protected normalizePosition(cellOffset: number): number {
+		// Use high-resolution grid (192 cells) instead of the standard 16-cell grid
+		// This preserves the exact positioning of higher interval notes
+		const highResPosition = Math.round(cellOffset * HIGH_RESOLUTION_CELLS);
+		return highResPosition / HIGH_RESOLUTION_CELLS;
+	}
+
+	/**
+	 * Override drawNote to provide visual stacking for overlapping notes
+	 * This makes it obvious when multiple notes are positioned close together
+	 */
+	drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string): boolean {
+		// Normalize the position to prevent floating point precision issues
+		const normalizedCellOffset = this.normalizePosition(cellOffset);
+
+		const laneConfig = this.laneConfigs[laneIndex];
+		if (!laneConfig) return false;
+
+		// Find nearby notes in the same lane and measure to determine stacking
+		const nearbyNotes = this.findNearbyNotes(measure, laneIndex, normalizedCellOffset);
+		const stackIndex = nearbyNotes.length; // Current note's position in the stack
+
+		// Calculate base position
+		const baseX = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
+
+		// Calculate Y position using high-resolution positioning (same as BaseGame)
+		const yOffset = this.getTotalMesaureOffest(measure);
+		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
+			normalizedCellOffset,
+			this.cellsPerMeasure
+		);
+
+		let cellsYOffset = 0;
+		for (let i = 0; i < wholeCells; i++) {
+			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
+		}
+
+		if (fractionalCell > 0) {
+			cellsYOffset +=
+				fractionalCell * this.getCellHeight(measure, wholeCells % this.cellsPerMeasure);
+		}
+
+		const baseY = this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
+
+		// Apply visual stacking
+		const stackOffset = stackIndex * 3; // 3px horizontal offset per stacked note
+		const x = baseX + stackOffset;
+		const y = baseY;
+
+		// Note dimensions
+		const noteWidth = this.cellWidth - this.cellMargin * 2;
+		const noteHeight = this.noteSize - this.cellMargin * 2;
+
+		const noteKey = `note-${laneIndex}-${measure}-${normalizedCellOffset}`;
+		const existingNote = this.panelContainer.getByName(noteKey);
+
+		if (existingNote) {
+			// If note already exists, don't create duplicate
+			return false;
+		}
+
+		// Create visual note with enhanced styling for overlapped notes
+		const graphics = this.add.graphics();
+
+		// Add 2px border to all notes for better definition
+		graphics.lineStyle(2, 0xffffff, stackIndex > 0 ? 0.9 : 0.7); // Brighter border for stacked notes
+
+		// Set fill color with enhanced visual indicators for stacked notes
+		if (stackIndex > 0) {
+			graphics.fillStyle(laneConfig.noteColor, 0.9); // Slightly transparent for stacked notes
+		} else {
+			graphics.fillStyle(laneConfig.noteColor, 1.0); // Full opacity for single notes
+		}
+
+		graphics.fillRect(x, y, noteWidth, noteHeight);
+		graphics.strokeRect(x, y, noteWidth, noteHeight); // Apply border to all notes
+
+		graphics.setName(noteKey);
+		this.panelContainer.add(graphics);
+
+		// Add text label
+		const text = this.add
+			.text(x + noteWidth / 2, y + noteHeight / 2, noteId, {
+				fontSize: stackIndex > 0 ? '14px' : '16px', // Smaller font for stacked notes
+				color: '#ffffff',
+				stroke: '#000000',
+				strokeThickness: 1
+			})
+			.setOrigin(0.5);
+
+		const textKey = `text-${laneIndex}-${measure}-${normalizedCellOffset}`;
+		text.setName(textKey);
+		this.panelContainer.add(text);
+
+		return true;
+	}
+
+	/**
+	 * Find notes that are positioned close to the given position in the same lane and measure
+	 * Used for visual stacking of overlapping notes
+	 */
+	private findNearbyNotes(measure: number, laneIndex: number, cellOffset: number): string[] {
+		const nearbyNotes: string[] = [];
+		const threshold = (1 / HIGH_RESOLUTION_CELLS) * 2; // Within 2 high-res cells
+
+		// Look for existing note graphics in the panel container
+		const allNotes = this.panelContainer.getAll();
+
+		for (const noteObj of allNotes) {
+			const noteName = (noteObj as any).name;
+			if (!noteName || !noteName.startsWith('note-')) continue;
+
+			// Parse note key: note-laneIndex-measure-cellOffset
+			const parts = noteName.split('-');
+			if (parts.length !== 4) continue;
+
+			const noteLaneIndex = parseInt(parts[1]);
+			const noteMeasure = parseInt(parts[2]);
+			const noteCellOffset = parseFloat(parts[3]);
+
+			// Check if it's in the same lane and measure, and within threshold
+			if (
+				noteLaneIndex === laneIndex &&
+				noteMeasure === measure &&
+				Math.abs(noteCellOffset - cellOffset) <= threshold &&
+				noteCellOffset !== cellOffset
+			) {
+				nearbyNotes.push(noteName);
+			}
+		}
+
+		return nearbyNotes.sort(); // Sort for consistent stacking order
 	}
 
 	shutdown() {

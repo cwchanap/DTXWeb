@@ -107,7 +107,8 @@ export class Editor extends BaseGame {
 				// Validate the click is within a valid measure
 				if (measure >= 0 && measure < this.measureCount) {
 					// Use high-resolution grid to calculate precise position
-					const highResPosition = Math.floor(positionInMeasure * HIGH_RESOLUTION_CELLS);
+					// Use Math.round instead of Math.floor to match the selection logic
+					const highResPosition = Math.round(positionInMeasure * HIGH_RESOLUTION_CELLS);
 					const cellOffset = highResPosition / HIGH_RESOLUTION_CELLS;
 
 					// Check if it's a right-click (pointer.rightButtonDown())

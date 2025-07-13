@@ -1,9 +1,12 @@
-import { normalizePosition } from '@dtx/common';
 import type { Editor } from '../Editor';
 import { NoteBuffer, type DeletedNoteData, type MovedNoteData } from './NoteBuffer';
 import { NoteCopy } from './NoteCopy';
 import { NoteMove } from './NoteMove';
 import Phaser from 'phaser';
+import {
+	calculateHighResolutionPosition,
+	HIGH_RESOLUTION_CELLS
+} from '../../utils/notePositioning.js';
 
 /**
  * Manages all note-related operations in the DTX editor including:
@@ -190,10 +193,13 @@ export class NoteManager {
 		const cellsPerMeasure = this.editor.getCellsPerMeasure();
 
 		const laneIndex = Math.floor(x / cellWidth);
-		const cellIndex = Math.floor(-absoluteY / cellHeight);
-		const measure = Math.floor(cellIndex / cellsPerMeasure);
-		const rawCellOffset = (cellIndex % cellsPerMeasure) / cellsPerMeasure;
-		const cellOffset = normalizePosition(rawCellOffset, cellsPerMeasure);
+
+		// Use high-resolution positioning calculation to match Editor's click detection logic
+		const highResCellIndex = Math.floor(
+			((-absoluteY / cellHeight) * HIGH_RESOLUTION_CELLS) / cellsPerMeasure
+		);
+		const measure = Math.floor(highResCellIndex / HIGH_RESOLUTION_CELLS);
+		const cellOffset = (highResCellIndex % HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
 
 		return {
 			laneIndex: Math.max(0, laneIndex),
@@ -538,38 +544,16 @@ export class NoteManager {
 			const overlay = this.editor.add.graphics();
 			overlay.lineStyle(3, 0xffff00, 1);
 
-			// Calculate the note position in container space (same as how notes are drawn)
-			const parts = noteGraphics.name.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-
-				// Use the same positioning logic as BaseGame.drawNote
-				const x =
-					this.editor.getOffsetX() +
-					this.editor.getCellWidth() * laneIndex +
-					this.editor.getCellMargin();
-				const yOffset = this.editor.getTotalMesaureOffest(measure);
-				const cellPosition = Math.floor(cellOffset * this.editor.getCellsPerMeasure());
-
-				let cellsYOffset = 0;
-				for (let i = 0; i < cellPosition; i++) {
-					cellsYOffset += this.editor.getCellHeightAt(
-						measure,
-						i % this.editor.getCellsPerMeasure()
-					);
-				}
-
-				const y =
-					this.editor.getOffsetY() -
-					(yOffset + cellsYOffset) +
-					this.editor.getCellMargin() -
-					this.editor.getNoteSize();
-				const width = this.editor.getCellWidth() - this.editor.getCellMargin() * 2;
-				const height = this.editor.getNoteSize() - this.editor.getCellMargin() * 2;
-
-				overlay.strokeRect(x, y, width, height);
+			// Use the exact same positioning logic as the actual note drawing
+			// This ensures the highlight matches the note position exactly
+			if (bounds) {
+				// Simply use the bounds we already calculated with correct high-resolution positioning
+				overlay.strokeRect(
+					bounds.x,
+					bounds.y - this.editor.getPanelContainer().y,
+					bounds.width,
+					bounds.height
+				);
 				overlay.setName(overlayKey);
 				this.editor.getPanelContainer().add(overlay);
 			}
@@ -625,21 +609,28 @@ export class NoteManager {
 
 		const selectionRect = new Phaser.Geom.Rectangle(x, y, width, height);
 
-		// Find all note graphics that overlap with the selection rectangle
-		const selectedNoteKeys = new Set<string>();
+		// Pre-calculate all note bounds in one pass to avoid O(n²) complexity
+		const noteInfos: Array<{ name: string; bounds: Phaser.Geom.Rectangle }> = [];
+
 		this.editor.getPanelContainer().list.forEach((child) => {
 			if (
 				child.name &&
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Calculate note bounds manually based on how notes are drawn
-				const noteBounds = this.calculateNoteBounds(child.name);
-
-				// Check if the note overlaps with the selection rectangle
-				if (noteBounds && Phaser.Geom.Rectangle.Overlaps(selectionRect, noteBounds)) {
-					selectedNoteKeys.add(child.name);
+				// Use simplified bounds calculation for selection performance
+				const bounds = this.calculateSimplifiedNoteBounds(child.name);
+				if (bounds) {
+					noteInfos.push({ name: child.name, bounds });
 				}
+			}
+		});
+
+		// Find all note graphics that overlap with the selection rectangle
+		const selectedNoteKeys = new Set<string>();
+		noteInfos.forEach(({ name, bounds }) => {
+			if (Phaser.Geom.Rectangle.Overlaps(selectionRect, bounds)) {
+				selectedNoteKeys.add(name);
 			}
 		});
 
@@ -654,38 +645,44 @@ export class NoteManager {
 	}
 
 	/**
-	 * Calculate the bounds of a note based on its key
+	 * Calculate simplified note bounds for performance during selection (without stacking)
 	 */
-	public calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
+	private calculateSimplifiedNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
 		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
 		const parts = noteKey.split('-');
 		if (parts.length !== 4) return null;
 
 		const laneIndex = parseInt(parts[1]);
 		const measure = parseInt(parts[2]);
-		const rawCellOffset = parseFloat(parts[3]);
-		// Use the raw position for now to debug
-		const cellOffset = rawCellOffset;
+		const cellOffset = parseFloat(parts[3]);
 
-		// Use the exact same logic as BaseGame.drawNote method
+		// Calculate base X position (no stacking offset for performance)
 		const x =
 			this.editor.getOffsetX() +
 			this.editor.getCellWidth() * laneIndex +
 			this.editor.getCellMargin();
 
-		// Calculate Y position based on measure offset and cell position
+		// Calculate Y position using high-resolution positioning
 		const yOffset = this.editor.getTotalMesaureOffest(measure);
-
-		// Calculate the position within the measure
-		const cellPosition = Math.floor(cellOffset * this.editor.getCellsPerMeasure());
+		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
+			cellOffset,
+			this.editor.getCellsPerMeasure()
+		);
 
 		// Add offsets for each cell up to the note position
 		let cellsYOffset = 0;
-		for (let i = 0; i < cellPosition; i++) {
+		for (let i = 0; i < wholeCells; i++) {
 			cellsYOffset += this.editor.getCellHeightAt(
 				measure,
 				i % this.editor.getCellsPerMeasure()
 			);
+		}
+
+		// Add fractional cell offset
+		if (fractionalCell > 0) {
+			cellsYOffset +=
+				fractionalCell *
+				this.editor.getCellHeightAt(measure, wholeCells % this.editor.getCellsPerMeasure());
 		}
 
 		const y =
@@ -704,11 +701,113 @@ export class NoteManager {
 	}
 
 	/**
+	 * Calculate the bounds of a note based on its key, including visual stacking offset
+	 */
+	public calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
+		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
+		const parts = noteKey.split('-');
+		if (parts.length !== 4) return null;
+
+		const laneIndex = parseInt(parts[1]);
+		const measure = parseInt(parts[2]);
+		const rawCellOffset = parseFloat(parts[3]);
+		const cellOffset = rawCellOffset;
+
+		// Find nearby notes to determine stacking position (same logic as Editor.drawNote)
+		const nearbyNotes = this.findNearbyNotes(measure, laneIndex, cellOffset);
+		const stackIndex = nearbyNotes.length;
+
+		// Calculate base X position
+		const baseX =
+			this.editor.getOffsetX() +
+			this.editor.getCellWidth() * laneIndex +
+			this.editor.getCellMargin();
+
+		// Apply visual stacking offset
+		const stackOffset = stackIndex * 3; // 3px horizontal offset per stacked note
+		const x = baseX + stackOffset;
+
+		// Calculate Y position using high-resolution positioning (same as Editor.drawNote)
+		const yOffset = this.editor.getTotalMesaureOffest(measure);
+		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
+			cellOffset,
+			this.editor.getCellsPerMeasure()
+		);
+
+		// Add offsets for each cell up to the note position
+		let cellsYOffset = 0;
+		for (let i = 0; i < wholeCells; i++) {
+			cellsYOffset += this.editor.getCellHeightAt(
+				measure,
+				i % this.editor.getCellsPerMeasure()
+			);
+		}
+
+		// Add fractional cell offset
+		if (fractionalCell > 0) {
+			cellsYOffset +=
+				fractionalCell *
+				this.editor.getCellHeightAt(measure, wholeCells % this.editor.getCellsPerMeasure());
+		}
+
+		const y =
+			this.editor.getOffsetY() -
+			(yOffset + cellsYOffset) +
+			this.editor.getCellMargin() -
+			this.editor.getNoteSize();
+
+		const width = this.editor.getCellWidth() - this.editor.getCellMargin() * 2;
+		const height = this.editor.getNoteSize() - this.editor.getCellMargin() * 2;
+
+		// Account for panelContainer position (scrolling)
+		const adjustedY = y + this.editor.getPanelContainer().y;
+
+		return new Phaser.Geom.Rectangle(x, adjustedY, width, height);
+	}
+
+	/**
+	 * Find notes that are positioned close to the given position in the same lane and measure
+	 * Used for determining visual stacking position in bounds calculation
+	 */
+	private findNearbyNotes(measure: number, laneIndex: number, cellOffset: number): string[] {
+		const nearbyNotes: string[] = [];
+		const threshold = (1 / HIGH_RESOLUTION_CELLS) * 2; // Within 2 high-res cells
+
+		// Look for existing note graphics in the panel container
+		const allNotes = this.editor.getPanelContainer().getAll();
+
+		for (const noteObj of allNotes) {
+			const noteName = (noteObj as any).name;
+			if (!noteName || !noteName.startsWith('note-')) continue;
+
+			// Parse note key: note-laneIndex-measure-cellOffset
+			const parts = noteName.split('-');
+			if (parts.length !== 4) continue;
+
+			const noteLaneIndex = parseInt(parts[1]);
+			const noteMeasure = parseInt(parts[2]);
+			const noteCellOffset = parseFloat(parts[3]);
+
+			// Check if it's in the same lane and measure, and within threshold
+			if (
+				noteLaneIndex === laneIndex &&
+				noteMeasure === measure &&
+				Math.abs(noteCellOffset - cellOffset) <= threshold &&
+				noteCellOffset !== cellOffset
+			) {
+				nearbyNotes.push(noteName);
+			}
+		}
+
+		return nearbyNotes.sort(); // Sort for consistent stacking order
+	}
+
+	/**
 	 * Get the note that was clicked by the pointer
+	 * When multiple notes overlap, returns the topmost (most recently stacked) note
 	 */
 	private getClickedNote(pointer: Phaser.Input.Pointer): Phaser.GameObjects.Graphics | null {
-		// Check all notes to see if the pointer clicked on one
-		let clickedNote: Phaser.GameObjects.Graphics | null = null;
+		const clickedNotes: Array<{ note: Phaser.GameObjects.Graphics; stackIndex: number }> = [];
 
 		this.editor.getPanelContainer().list.forEach((child) => {
 			if (
@@ -716,7 +815,7 @@ export class NoteManager {
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Calculate note bounds
+				// Calculate note bounds with stacking
 				const noteBounds = this.calculateNoteBounds(child.name);
 
 				if (noteBounds) {
@@ -727,13 +826,35 @@ export class NoteManager {
 						pointer.y >= noteBounds.y &&
 						pointer.y <= noteBounds.y + noteBounds.height
 					) {
-						clickedNote = child;
+						// Parse note key to get position info for stack calculation
+						const parts = child.name.split('-');
+						if (parts.length === 4) {
+							const laneIndex = parseInt(parts[1]);
+							const measure = parseInt(parts[2]);
+							const cellOffset = parseFloat(parts[3]);
+
+							// Calculate stack index for this note
+							const nearbyNotes = this.findNearbyNotes(
+								measure,
+								laneIndex,
+								cellOffset
+							);
+							const stackIndex = nearbyNotes.length;
+
+							clickedNotes.push({ note: child, stackIndex });
+						}
 					}
 				}
 			}
 		});
 
-		return clickedNote;
+		// If multiple notes were clicked, return the one with the highest stack index (topmost)
+		if (clickedNotes.length > 0) {
+			clickedNotes.sort((a, b) => b.stackIndex - a.stackIndex); // Sort by stack index descending
+			return clickedNotes[0].note;
+		}
+
+		return null;
 	}
 
 	/**

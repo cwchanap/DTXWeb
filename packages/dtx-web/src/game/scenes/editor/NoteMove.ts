@@ -2,6 +2,10 @@ import { LaneMeasureNote } from '@dtx/common';
 import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';
+import {
+	calculateHighResolutionPosition,
+	HIGH_RESOLUTION_CELLS
+} from '../../utils/notePositioning.js';
 
 /**
  * Manages note drag and move operations in the DTX editor
@@ -79,19 +83,25 @@ export class NoteMove {
 		const absoluteY = pointer.y - this.editor.getOffsetY() - this.editor.getPanelContainer().y;
 
 		const targetLaneIndex = Math.floor(x / this.editor.getCellWidth());
-		const targetCellIndex = Math.floor(-absoluteY / this.editor.getCellHeightValue());
+
+		// Use high-resolution positioning calculation
+		// Calculate position using high-resolution cells instead of 16-cell grid
+		const highResCellIndex = Math.floor(
+			((-absoluteY / this.editor.getCellHeightValue()) * HIGH_RESOLUTION_CELLS) /
+				this.editor.getCellsPerMeasure()
+		);
 
 		// Validate target position
 		if (
 			targetLaneIndex >= 0 &&
 			targetLaneIndex < this.editor.getLaneConfigs().length &&
-			targetCellIndex >= 0 &&
-			targetCellIndex < this.editor.getMeasureCount() * this.editor.getCellsPerMeasure()
+			highResCellIndex >= 0 &&
+			highResCellIndex < this.editor.getMeasureCount() * HIGH_RESOLUTION_CELLS
 		) {
-			const targetMeasure = Math.floor(targetCellIndex / this.editor.getCellsPerMeasure());
+			const targetMeasure = Math.floor(highResCellIndex / HIGH_RESOLUTION_CELLS);
+			// Calculate precise position within the measure using high-resolution grid
 			const targetCellOffset =
-				(targetCellIndex % this.editor.getCellsPerMeasure()) /
-				this.editor.getCellsPerMeasure();
+				(highResCellIndex % HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
 
 			// Move each dragged note
 			this.moveNotesToPosition(

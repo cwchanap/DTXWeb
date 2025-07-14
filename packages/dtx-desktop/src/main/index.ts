@@ -603,12 +603,26 @@ if (!gotTheLock) {
 					const url = `${apiBaseUrl}/api/simFile/upload`;
 					console.log('Uploading to:', url);
 
+					// Create session cookies that SvelteKit expects (same as load-asset-files)
+					const sessionCookies = [
+						`sb-hdnwvpusmxrfrfjayogr-auth-token=${JSON.stringify({
+							access_token: currentSession.access_token,
+							refresh_token: currentSession.refresh_token,
+							expires_at: currentSession.expires_at,
+							expires_in: currentSession.expires_in,
+							token_type: currentSession.token_type,
+							user: currentSession.user
+						})}; Path=/; HttpOnly; SameSite=Lax`
+					];
+
 					// Send the request
 					const response = await fetch(url, {
 						method: 'POST',
 						body: formData,
 						headers: {
-							Authorization: `Bearer ${currentSession.access_token}`
+							Cookie: sessionCookies.join('; '),
+							'User-Agent': 'DTXDesktopApp/1.0',
+							'X-Requested-With': 'DTXDesktopApp'
 						}
 					});
 

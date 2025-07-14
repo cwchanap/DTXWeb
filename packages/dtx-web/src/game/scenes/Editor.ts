@@ -385,7 +385,11 @@ export class Editor extends BaseGame {
 		if (!laneConfig) return false;
 
 		// Find nearby notes in the same lane and measure to determine stacking
-		const nearbyNotes = this.findNearbyNotes(measure, laneIndex, normalizedCellOffset);
+		const nearbyNotes = this.noteManager.findNearbyNotes(
+			measure,
+			laneIndex,
+			normalizedCellOffset
+		);
 		const stackIndex = nearbyNotes.length; // Current note's position in the stack
 
 		// Calculate base position
@@ -461,43 +465,6 @@ export class Editor extends BaseGame {
 		this.panelContainer.add(text);
 
 		return true;
-	}
-
-	/**
-	 * Find notes that are positioned close to the given position in the same lane and measure
-	 * Used for visual stacking of overlapping notes
-	 */
-	private findNearbyNotes(measure: number, laneIndex: number, cellOffset: number): string[] {
-		const nearbyNotes: string[] = [];
-		const threshold = (1 / HIGH_RESOLUTION_CELLS) * 2; // Within 2 high-res cells
-
-		// Look for existing note graphics in the panel container
-		const allNotes = this.panelContainer.getAll();
-
-		for (const noteObj of allNotes) {
-			const noteName = (noteObj as any).name;
-			if (!noteName || !noteName.startsWith('note-')) continue;
-
-			// Parse note key: note-laneIndex-measure-cellOffset
-			const parts = noteName.split('-');
-			if (parts.length !== 4) continue;
-
-			const noteLaneIndex = parseInt(parts[1]);
-			const noteMeasure = parseInt(parts[2]);
-			const noteCellOffset = parseFloat(parts[3]);
-
-			// Check if it's in the same lane and measure, and within threshold
-			if (
-				noteLaneIndex === laneIndex &&
-				noteMeasure === measure &&
-				Math.abs(noteCellOffset - cellOffset) <= threshold &&
-				noteCellOffset !== cellOffset
-			) {
-				nearbyNotes.push(noteName);
-			}
-		}
-
-		return nearbyNotes.sort(); // Sort for consistent stacking order
 	}
 
 	shutdown() {

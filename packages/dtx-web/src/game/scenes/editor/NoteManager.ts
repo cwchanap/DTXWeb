@@ -203,7 +203,6 @@ export class NoteManager {
 
 		// Calculate lane index and cell index (note: Y is negated)
 		const cellWidth = this.editor.getCellWidth();
-		const cellHeight = this.editor.getCellHeightValue();
 		const cellsPerMeasure = this.editor.getCellsPerMeasure();
 
 		const laneIndex = Math.floor(x / cellWidth);
@@ -799,15 +798,16 @@ export class NoteManager {
 	 * Find notes that are positioned close to the given position in the same lane and measure
 	 * Used for determining visual stacking position in bounds calculation
 	 */
-	private findNearbyNotes(measure: number, laneIndex: number, cellOffset: number): string[] {
+	public findNearbyNotes(measure: number, laneIndex: number, cellOffset: number): string[] {
 		const nearbyNotes: string[] = [];
 		const threshold = (1 / HIGH_RESOLUTION_CELLS) * 2; // Within 2 high-res cells
 
+		// TODO: Revise if this O(n²) approach causing any performance issues
 		// Look for existing note graphics in the panel container
 		const allNotes = this.editor.getPanelContainer().getAll();
 
 		for (const noteObj of allNotes) {
-			const noteName = (noteObj as any).name;
+			const noteName = noteObj.name;
 			if (!noteName || !noteName.startsWith('note-')) continue;
 
 			// Parse note key: note-laneIndex-measure-cellOffset
@@ -936,12 +936,11 @@ export class NoteManager {
 			return null;
 		}
 
-		const referenceNote = {
+		return {
 			laneIndex: referenceLaneIndex,
 			measure: referenceMeasure,
 			cellOffset: referenceCellOffset
 		};
-		return referenceNote;
 	}
 
 	/**

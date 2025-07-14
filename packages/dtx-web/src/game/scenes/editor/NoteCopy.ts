@@ -60,6 +60,7 @@ export class NoteCopy {
 
 		// Find the reference note using the shared logic
 		const referenceNote = this.findReferenceNote(selectedNotes);
+
 		if (!referenceNote) {
 			return false;
 		}
@@ -84,11 +85,13 @@ export class NoteCopy {
 					const existingNote = notes[laneId].find(
 						(note) =>
 							note.measure === measure &&
-							note.notes.some((n) => n.position === cellOffset)
+							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.0001)
 					);
 
 					if (existingNote) {
-						const noteChip = existingNote.notes.find((n) => n.position === cellOffset);
+						const noteChip = existingNote.notes.find(
+							(n) => Math.abs(n.position - cellOffset) < 0.0001
+						);
 
 						if (noteChip) {
 							notesToCopy.push({
@@ -168,12 +171,12 @@ export class NoteCopy {
 						const existingNote = notes[laneId].find(
 							(note) =>
 								note.measure === measure &&
-								note.notes.some((n) => n.position === cellOffset)
+								note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.0001)
 						);
 
 						if (existingNote) {
 							const noteChip = existingNote.notes.find(
-								(n) => n.position === cellOffset
+								(n) => Math.abs(n.position - cellOffset) < 0.0001
 							);
 
 							if (noteChip) {

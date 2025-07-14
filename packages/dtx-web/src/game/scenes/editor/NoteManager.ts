@@ -77,14 +77,28 @@ export class NoteManager {
 		// Always use global keyboard events for system-level shortcuts
 		// This is more reliable for Ctrl/Cmd combinations
 		this.keydownHandler = (event: KeyboardEvent) => {
-			// Only handle shortcuts if the game canvas or editor is focused
+			// Allow keyboard shortcuts to work unless we're in a text input that should handle them
+			// (like textareas where Ctrl+C should copy text, not notes)
 			const target = event.target as HTMLElement;
-			const isGameCanvas = target?.tagName === 'CANVAS' || target?.closest('canvas');
-			const isEditorFocused =
-				document.activeElement?.tagName === 'CANVAS' ||
-				document.activeElement === document.body;
+			const isTextInput =
+				target?.tagName === 'TEXTAREA' ||
+				(target?.tagName === 'INPUT' && target.getAttribute('type') === 'text');
 
-			if (isGameCanvas || isEditorFocused) {
+			// Skip our shortcuts if user is typing in a text field where copy/paste should work normally
+			if (isTextInput) {
+				const inputElement = target as HTMLInputElement | HTMLTextAreaElement;
+				if (inputElement.selectionStart !== inputElement.selectionEnd) {
+					return; // User has text selected, let browser handle copy/paste
+				}
+			}
+
+			// For all other cases (canvas, number inputs, body, etc.), handle our shortcuts
+			if (
+				!isTextInput ||
+				(isTextInput &&
+					(target as HTMLInputElement | HTMLTextAreaElement).selectionStart ===
+						(target as HTMLInputElement | HTMLTextAreaElement).selectionEnd)
+			) {
 				// Debounce keyboard shortcuts to prevent key repeat issues
 				const now = Date.now();
 				if (now - this.lastKeyboardAction < this.KEYBOARD_DEBOUNCE_MS) {
@@ -922,11 +936,12 @@ export class NoteManager {
 			return null;
 		}
 
-		return {
+		const referenceNote = {
 			laneIndex: referenceLaneIndex,
 			measure: referenceMeasure,
 			cellOffset: referenceCellOffset
 		};
+		return referenceNote;
 	}
 
 	/**

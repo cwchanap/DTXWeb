@@ -40,6 +40,9 @@ export class NoteManager {
 	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
 	private mousemoveHandler: ((event: MouseEvent) => void) | null = null;
 
+	// Callback for when notes are modified
+	private onNotesModified: (() => void) | null = null;
+
 	constructor(editor: Editor) {
 		this.editor = editor;
 		this.noteMove = new NoteMove(editor, (movedNotes) => this.recordMoveAction(movedNotes));
@@ -54,6 +57,22 @@ export class NoteManager {
 		this.initializeSelectionRectangle();
 		this.initializeKeyboardEvents();
 		this.initializeMouseTracking();
+	}
+
+	/**
+	 * Set callback to be called when notes are modified
+	 */
+	public setOnNotesModified(callback: () => void): void {
+		this.onNotesModified = callback;
+	}
+
+	/**
+	 * Notify that notes have been modified
+	 */
+	private notifyNotesModified(): void {
+		if (this.onNotesModified) {
+			this.onNotesModified();
+		}
 	}
 
 	/**
@@ -415,6 +434,9 @@ export class NoteManager {
 
 		// Clear the selection after deletion
 		this.selectedNotes.clear();
+
+		// Notify that notes have been modified
+		this.notifyNotesModified();
 	}
 
 	/**
@@ -892,6 +914,8 @@ export class NoteManager {
 	 */
 	undoLastAction(): void {
 		this.noteBuffer.undoLastAction(this.editor);
+		// Notify that notes have been modified
+		this.notifyNotesModified();
 	}
 
 	/**
@@ -971,6 +995,8 @@ export class NoteManager {
 		if (result) {
 			// Clear selection after successful cut (notes are already deleted)
 			this.clearSelection();
+			// Notify that notes have been modified
+			this.notifyNotesModified();
 		}
 		return result;
 	}
@@ -1011,6 +1037,11 @@ export class NoteManager {
 				this.selectPastedNotes(pastedNotes);
 			}
 		);
+
+		if (result) {
+			// Notify that notes have been modified
+			this.notifyNotesModified();
+		}
 
 		return result;
 	}
@@ -1063,7 +1094,18 @@ export class NoteManager {
 		laneId: string,
 		noteId: string
 	): boolean {
-		return this.noteMove.addNoteToEditor(measure, laneIndex, cellOffset, laneId, noteId);
+		const result = this.noteMove.addNoteToEditor(
+			measure,
+			laneIndex,
+			cellOffset,
+			laneId,
+			noteId
+		);
+		if (result) {
+			// Notify that notes have been modified
+			this.notifyNotesModified();
+		}
+		return result;
 	}
 
 	/**

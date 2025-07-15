@@ -13,6 +13,7 @@
 	import { EventBus } from '@/game/EventBus';
 	import { page } from '$app/state';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
+	import { TempChartStorage } from '$lib/services/tempChartStorage';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -34,6 +35,22 @@
 
 	function newFile() {
 		store.currentDtxFile.set(new DTXFile());
+	}
+
+	function discardLocalChanges() {
+		const currentSimfileID = get(store.currentSimfileID);
+
+		// Remove the temporary data for current simfile
+		TempChartStorage.remove(currentSimfileID);
+
+		// Get the editor scene and clear its dirty state
+		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
+			const editorScene = phaserRef.scene as Editor;
+			editorScene.setDirty(false);
+		}
+
+		// Reload the page to restore the original state
+		window.location.reload();
 	}
 
 	async function switchToLevel(level: number) {
@@ -153,6 +170,29 @@
 				</div>
 			{/snippet}
 		</Popover>
+
+		<Popover
+			positioning={{ placement: 'bottom-start' }}
+			contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
+			classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+			triggerClasses="w-full"
+		>
+			{#snippet trigger()}
+				<span>Edit</span>
+			{/snippet}
+			{#snippet content()}
+				<div class="flex flex-col">
+					<button
+						class="px-4 py-2 text-left hover:bg-gray-100"
+						onclick={discardLocalChanges}
+						title="Discard all local changes and reload from server"
+					>
+						Discard current Local changes
+					</button>
+				</div>
+			{/snippet}
+		</Popover>
+
 		<div class="h-8 border-l border-gray-300"></div>
 	</div>
 

@@ -4,7 +4,47 @@ import { sequence } from '@sveltejs/kit/hooks';
 import type { Database } from '@dtx/common';
 
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
-import { json } from '@sveltejs/kit';
+import { json, text } from '@sveltejs/kit';
+
+const isFormContentType = (request: Request): boolean => {
+	const contentType = request.headers.get('content-type');
+	return (
+		(contentType?.includes('application/x-www-form-urlencoded') ||
+			contentType?.includes('multipart/form-data')) ??
+		false
+	);
+};
+
+const csrf: Handle = async ({ event, resolve }) => {
+	const { request, url } = event;
+	const requestOrigin = request.headers.get('origin');
+	const isSameOrigin = requestOrigin === url.origin;
+
+	// Check if request is from desktop app
+	const userAgent = request.headers.get('user-agent');
+	const requestedWith = request.headers.get('x-requested-with');
+	const isDesktopApp = userAgent?.includes('DTXDesktopApp') && requestedWith === 'DTXDesktopApp';
+
+	// Allow production origin
+	const isAllowedOrigin = requestOrigin === 'https://dtx.hapadona.com';
+
+	const forbidden =
+		isFormContentType(request) &&
+		['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) &&
+		!isSameOrigin &&
+		!isDesktopApp &&
+		!isAllowedOrigin;
+
+	if (forbidden) {
+		const message = `Cross-site ${request.method} form submissions are forbidden`;
+		if (request.headers.get('accept') === 'application/json') {
+			return json({ message }, { status: 403 });
+		}
+		return text(message, { status: 403 });
+	}
+
+	return resolve(event);
+};
 
 const supabase: Handle = async ({ event, resolve }) => {
 	/**
@@ -99,4 +139,4 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle: Handle = sequence(supabase, authGuard);
+export const handle: Handle = sequence(csrf, supabase, authGuard);

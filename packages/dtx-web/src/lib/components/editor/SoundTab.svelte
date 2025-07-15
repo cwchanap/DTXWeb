@@ -12,7 +12,7 @@
 	store.currentSimfile.subscribe((value) => (simfile = value));
 	store.activeNote.subscribe((value) => (activeNote = value));
 
-	async function playAudio(file: string | File) {
+	async function playAudio(file: string | File, volume: number = 100) {
 		let soundFile: File | undefined;
 
 		if (typeof file === 'string') {
@@ -22,13 +22,21 @@
 		}
 
 		if (soundFile) {
+			const volumeLevel = volume / 100;
+
 			if (soundFile.name.toLowerCase().endsWith('.xa')) {
 				const source = XAaudioContext.createBufferSource();
+				const gainNode = XAaudioContext.createGain();
+
 				source.buffer = await XAaudioContext.decodeAudioData(await soundFile.arrayBuffer());
-				source.connect(XAaudioContext.destination);
+				gainNode.gain.value = volumeLevel;
+
+				source.connect(gainNode);
+				gainNode.connect(XAaudioContext.destination);
 				source.start();
 			} else {
 				const audio = new Audio(URL.createObjectURL(soundFile));
+				audio.volume = volumeLevel;
 				audio.play();
 			}
 		}
@@ -107,7 +115,7 @@
 								<button
 									onclick={() => {
 										if (chip.file) {
-											playAudio(chip.file);
+											playAudio(chip.file, chip.volume);
 										}
 									}}
 									class="text-blue-600 underline hover:text-blue-800"

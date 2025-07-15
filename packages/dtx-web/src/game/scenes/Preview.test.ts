@@ -277,6 +277,136 @@ describe('Preview Scene', () => {
 		expect(timeWithPosition).toBeGreaterThan(timeForMeasure0);
 	});
 
+	it('should schedule BGM playback with volume', () => {
+		// Setup
+		const mockSoundChip = {
+			id: 1,
+			volume: 75,
+			fileName: 'bgm.wav',
+			file: new File([], 'bgm.wav')
+		};
+		(get as MockedFn).mockReturnValue([mockSoundChip]);
+
+		const mockAudio = { play: vi.fn() };
+		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
+		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
+		previewScene.getTimeElapsed = vi.fn().mockReturnValue(2);
+
+		const note = new LaneMeasureNote(0, '01', [{ noteID: '01', position: 0 }], 1);
+		note.measureLength = 1;
+
+		previewScene.scheduleBGMPlayback(note, 2, 0);
+
+		// Trigger the delayed call immediately
+		const delayedCall = previewScene.time.delayedCall as MockedFn;
+		expect(delayedCall).toHaveBeenCalledWith(2000, expect.any(Function));
+
+		// Execute the callback
+		const callback = delayedCall.mock.calls[0][1];
+		callback();
+
+		// Verify volume is applied correctly (75/100 = 0.75)
+		expect(mockAudio.play).toHaveBeenCalledWith({
+			seek: 0,
+			volume: 0.75
+		});
+	});
+
+	it('should schedule note playback with volume', () => {
+		// Setup
+		const mockSoundChip = {
+			id: 17,
+			volume: 60,
+			fileName: 'hihat.wav',
+			file: new File([], 'hihat.wav')
+		};
+		(get as MockedFn).mockReturnValue([mockSoundChip]);
+
+		const mockAudio = { play: vi.fn() };
+		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
+		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
+		previewScene.getTimeElapsed = vi.fn().mockReturnValue(1);
+
+		const note = new LaneMeasureNote(1, '11', [{ noteID: '11', position: 0.5 }], 1);
+		note.measureLength = 1;
+
+		previewScene.scheduleNotePlayback(note, 2, 0);
+
+		// Trigger the delayed call immediately
+		const delayedCall = previewScene.time.delayedCall as MockedFn;
+		expect(delayedCall).toHaveBeenCalledWith(1000, expect.any(Function));
+
+		// Execute the callback
+		const callback = delayedCall.mock.calls[0][1];
+		callback();
+
+		// Verify volume is applied correctly (60/100 = 0.6)
+		expect(mockAudio.play).toHaveBeenCalledWith({
+			volume: 0.6
+		});
+	});
+
+	it('should handle zero volume correctly', () => {
+		// Setup
+		const mockSoundChip = {
+			id: 1,
+			volume: 0,
+			fileName: 'silent.wav',
+			file: new File([], 'silent.wav')
+		};
+		(get as MockedFn).mockReturnValue([mockSoundChip]);
+
+		const mockAudio = { play: vi.fn() };
+		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
+		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
+		previewScene.getTimeElapsed = vi.fn().mockReturnValue(0);
+
+		const note = new LaneMeasureNote(0, '01', [{ noteID: '01', position: 0 }], 1);
+		note.measureLength = 1;
+
+		previewScene.scheduleBGMPlayback(note, 2, 0);
+
+		// Execute the callback
+		const callback = (previewScene.time.delayedCall as MockedFn).mock.calls[0][1];
+		callback();
+
+		// Verify zero volume is applied correctly (0/100 = 0)
+		expect(mockAudio.play).toHaveBeenCalledWith({
+			seek: 0,
+			volume: 0
+		});
+	});
+
+	it('should handle maximum volume correctly', () => {
+		// Setup
+		const mockSoundChip = {
+			id: 1,
+			volume: 100,
+			fileName: 'loud.wav',
+			file: new File([], 'loud.wav')
+		};
+		(get as MockedFn).mockReturnValue([mockSoundChip]);
+
+		const mockAudio = { play: vi.fn() };
+		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
+		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
+		previewScene.getTimeElapsed = vi.fn().mockReturnValue(0);
+
+		const note = new LaneMeasureNote(1, '11', [{ noteID: '11', position: 0 }], 1);
+		note.measureLength = 1;
+
+		previewScene.scheduleNotePlayback(note, 2, 0);
+
+		// Execute the callback
+		const callback = (previewScene.time.delayedCall as MockedFn).mock.calls[0][1];
+		callback();
+
+		// Verify maximum volume is applied correctly (100/100 = 1)
+		expect(mockAudio.play).toHaveBeenCalledWith({
+			volume: 1
+		});
+	});
+
 	it('should draw notes correctly', () => {
 		// Setup
 		previewScene['laneConfigs'] = [

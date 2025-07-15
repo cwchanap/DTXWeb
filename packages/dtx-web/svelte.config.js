@@ -20,18 +20,7 @@ const config = {
 			'@dtx/common': '../common/src/lib'
 		},
 		csrf: {
-			checkOrigin: (origin, { request }) => {
-				// Allow requests from desktop app
-				const userAgent = request.headers.get('user-agent');
-				const requestedWith = request.headers.get('x-requested-with');
-
-				if (userAgent?.includes('DTXDesktopApp') && requestedWith === 'DTXDesktopApp') {
-					return true;
-				}
-
-				// For all other requests, check origin normally
-				return origin === 'https://dtx.hapadona.com';
-			}
+			checkOrigin: false
 		}
 	}
 };

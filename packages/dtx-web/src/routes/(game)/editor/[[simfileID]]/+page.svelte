@@ -87,6 +87,7 @@
 			isPreviewing = value;
 		});
 		simfileID = page.params.simfileID;
+		store.currentSimfileID.set(simfileID || null);
 		if (!simfileID) {
 			newFile();
 			return;

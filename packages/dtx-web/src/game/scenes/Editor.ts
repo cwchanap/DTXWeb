@@ -13,6 +13,7 @@ import {
 	calculateHighResolutionPosition,
 	HIGH_RESOLUTION_CELLS
 } from '../utils/notePositioning.js';
+import { TempChartStorage } from '$lib/services/tempChartStorage';
 
 interface Data {
 	measureCount?: number;
@@ -28,6 +29,8 @@ export class Editor extends BaseGame {
 	private activeNoteSubscription: (() => void) | null = null;
 	private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
 	private isDirty = false;
+	private autoSaveTimeout: number | null = null;
+	private readonly AUTO_SAVE_DELAY_MS = 2000; // Debounce auto-save by 2 seconds
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -36,7 +39,10 @@ export class Editor extends BaseGame {
 		super({ key: Editor.key });
 		this.noteManager = new NoteManager(this);
 		// Set up callback for NoteManager to notify when notes are modified
-		this.noteManager.setOnNotesModified(() => this.setDirty(true));
+		this.noteManager.setOnNotesModified(() => {
+			this.setDirty(true);
+			this.debouncedAutoSave();
+		});
 	}
 
 	init(data: Data) {
@@ -51,6 +57,9 @@ export class Editor extends BaseGame {
 
 		// Initialize NoteManager after scene is created
 		this.noteManager.initialize();
+
+		// Try to auto-load temporary data before drawing
+		this.autoLoadChart();
 
 		this.drawPanel();
 		this.drawNotes();
@@ -207,7 +216,7 @@ export class Editor extends BaseGame {
 									delete this.notes[laneId];
 								}
 								this.syncNotesToStore();
-								this.setDirty(true); // Mark as dirty after deleting note
+								// Note: dirty state and auto-save handled by NoteManager callback
 							}
 						}
 					} else {
@@ -317,6 +326,7 @@ export class Editor extends BaseGame {
 				this.bpmNotes = bpmNotes;
 				this.syncNotesToStore();
 				this.setDirty(false); // Clear dirty state after importing notes
+				// this.debouncedAutoSave(); // Save the imported state
 				this.restart({ measureCount: this.measureCount });
 			}
 		);
@@ -493,6 +503,11 @@ export class Editor extends BaseGame {
 		this.enableBrowserContextMenu();
 		// Clean up beforeunload warning
 		this.removeBeforeUnloadWarning();
+		// Clean up auto-save timeout
+		if (this.autoSaveTimeout !== null) {
+			clearTimeout(this.autoSaveTimeout);
+			this.autoSaveTimeout = null;
+		}
 	}
 
 	restart(data: Data = {}) {
@@ -529,6 +544,11 @@ export class Editor extends BaseGame {
 		this.enableBrowserContextMenu();
 		// Clean up beforeunload warning (will be re-setup in create)
 		this.removeBeforeUnloadWarning();
+		// Clean up auto-save timeout
+		if (this.autoSaveTimeout !== null) {
+			clearTimeout(this.autoSaveTimeout);
+			this.autoSaveTimeout = null;
+		}
 		this.scene.restart(data);
 	}
 
@@ -686,6 +706,78 @@ export class Editor extends BaseGame {
 	 */
 	public getDirty(): boolean {
 		return this.isDirty;
+	}
+
+	/**
+	 * Debounced auto-save to avoid performance issues during rapid editing
+	 */
+	private debouncedAutoSave(): void {
+		// Clear existing timeout
+		if (this.autoSaveTimeout !== null) {
+			clearTimeout(this.autoSaveTimeout);
+		}
+
+		// Set new timeout
+		this.autoSaveTimeout = window.setTimeout(() => {
+			this.autoSaveChart();
+			this.autoSaveTimeout = null;
+		}, this.AUTO_SAVE_DELAY_MS);
+	}
+
+	/**
+	 * Auto-save current chart data to localStorage
+	 */
+	private autoSaveChart(): void {
+		try {
+			const simfileID = get(store.currentSimfileID);
+			TempChartStorage.save(simfileID, this.notes, this.bpmNotes, this.measureCount);
+		} catch (error) {
+			console.warn('Failed to auto-save chart:', error);
+		}
+	}
+
+	/**
+	 * Auto-load chart data from localStorage if available
+	 */
+	private autoLoadChart(): boolean {
+		try {
+			const simfileID = get(store.currentSimfileID);
+			const tempData = TempChartStorage.load(simfileID);
+
+			if (tempData) {
+				console.log('Loading temporary chart data for', simfileID || 'temp');
+				this.notes = tempData.notes;
+				this.bpmNotes = tempData.bpmNotes;
+				this.measureCount = tempData.measureCount;
+
+				// Update store values
+				store.measureCount.set(this.measureCount);
+				this.syncNotesToStore();
+
+				// Don't mark as dirty on load - only when user makes actual changes
+				// The dirty state will be set when they start editing
+
+				return true;
+			}
+		} catch (error) {
+			console.warn('Failed to auto-load chart:', error);
+		}
+
+		return false;
+	}
+
+	/**
+	 * Clear temporary storage (call this after successful save/export)
+	 */
+	public clearTempStorage(): void {
+		try {
+			const simfileID = get(store.currentSimfileID);
+			TempChartStorage.remove(simfileID);
+			this.setDirty(false);
+			console.log('Cleared temporary chart data for', simfileID || 'temp');
+		} catch (error) {
+			console.warn('Failed to clear temporary storage:', error);
+		}
 	}
 
 	/**

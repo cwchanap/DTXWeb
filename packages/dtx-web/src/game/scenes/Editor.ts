@@ -730,7 +730,14 @@ export class Editor extends BaseGame {
 	private autoSaveChart(): void {
 		try {
 			const simfileID = get(store.currentSimfileID);
-			TempChartStorage.save(simfileID, this.notes, this.bpmNotes, this.measureCount);
+			const difficulty = get(store.currentDifficulty);
+			TempChartStorage.save(
+				simfileID,
+				difficulty,
+				this.notes,
+				this.bpmNotes,
+				this.measureCount
+			);
 		} catch (error) {
 			console.warn('Failed to auto-save chart:', error);
 		}
@@ -742,10 +749,14 @@ export class Editor extends BaseGame {
 	private autoLoadChart(): boolean {
 		try {
 			const simfileID = get(store.currentSimfileID);
-			const tempData = TempChartStorage.load(simfileID);
+			const difficulty = get(store.currentDifficulty);
+			const tempData = TempChartStorage.load(simfileID, difficulty);
 
 			if (tempData) {
-				console.log('Loading temporary chart data for', simfileID || 'temp');
+				console.log(
+					'Loading temporary chart data for',
+					`${simfileID || 'temp'}${difficulty ? `_${difficulty}` : ''}`
+				);
 				this.notes = tempData.notes;
 				this.bpmNotes = tempData.bpmNotes;
 				this.measureCount = tempData.measureCount;
@@ -772,9 +783,13 @@ export class Editor extends BaseGame {
 	public clearTempStorage(): void {
 		try {
 			const simfileID = get(store.currentSimfileID);
-			TempChartStorage.remove(simfileID);
+			const difficulty = get(store.currentDifficulty);
+			TempChartStorage.remove(simfileID, difficulty);
 			this.setDirty(false);
-			console.log('Cleared temporary chart data for', simfileID || 'temp');
+			console.log(
+				'Cleared temporary chart data for',
+				`${simfileID || 'temp'}${difficulty ? `_${difficulty}` : ''}`
+			);
 		} catch (error) {
 			console.warn('Failed to clear temporary storage:', error);
 		}

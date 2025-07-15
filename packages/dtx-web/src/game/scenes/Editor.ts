@@ -26,6 +26,8 @@ export class Editor extends BaseGame {
 	private contextMenuHandler: ((e: Event) => void) | null = null;
 	private currentLaneIndex = -1;
 	private activeNoteSubscription: (() => void) | null = null;
+	private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
+	private isDirty = false;
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -33,6 +35,8 @@ export class Editor extends BaseGame {
 	constructor(protected measureCount: number = 10) {
 		super({ key: Editor.key });
 		this.noteManager = new NoteManager(this);
+		// Set up callback for NoteManager to notify when notes are modified
+		this.noteManager.setOnNotesModified(() => this.setDirty(true));
 	}
 
 	init(data: Data) {
@@ -203,6 +207,7 @@ export class Editor extends BaseGame {
 									delete this.notes[laneId];
 								}
 								this.syncNotesToStore();
+								this.setDirty(true); // Mark as dirty after deleting note
 							}
 						}
 					} else {
@@ -311,6 +316,7 @@ export class Editor extends BaseGame {
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;
 				this.syncNotesToStore();
+				this.setDirty(false); // Clear dirty state after importing notes
 				this.restart({ measureCount: this.measureCount });
 			}
 		);
@@ -326,18 +332,28 @@ export class Editor extends BaseGame {
 			this.scene.pause();
 			this.scene.setVisible(false);
 
-			if (this.scene.isPaused(Preview.key)) {
-				this.scene.setVisible(true, Preview.key);
-				this.scene.resume(Preview.key);
-				EventBus.emit(EventType.RESUME_PREVIEW, {
-					startMeasure: currentMeasure
-				});
-			} else {
+			// If editor is dirty or preview scene doesn't exist, rebuild it
+			if (this.isDirty || !this.scene.isPaused(Preview.key)) {
+				// Stop existing preview if it exists
+				if (this.scene.isPaused(Preview.key)) {
+					this.scene.stop(Preview.key);
+				}
+
+				// Launch new preview with updated notes
 				this.scene.launch(Preview.key, {
 					bpm: bpm,
 					bpmNotes: this.bpmNotes,
 					notes: this.notes,
 					measureCount: this.measureCount,
+					startMeasure: currentMeasure
+				});
+
+				// Note: Keep dirty state - preview doesn't save the changes
+			} else {
+				// Resume existing preview if no changes
+				this.scene.setVisible(true, Preview.key);
+				this.scene.resume(Preview.key);
+				EventBus.emit(EventType.RESUME_PREVIEW, {
 					startMeasure: currentMeasure
 				});
 			}
@@ -356,6 +372,9 @@ export class Editor extends BaseGame {
 				this.updateCursorForEditingMode();
 			}
 		});
+
+		// Set up beforeunload warning for unsaved changes
+		this.setupBeforeUnloadWarning();
 	}
 
 	update() {
@@ -472,6 +491,8 @@ export class Editor extends BaseGame {
 		this.input.setDefaultCursor('default');
 		// Clean up context menu event listener when scene shuts down
 		this.enableBrowserContextMenu();
+		// Clean up beforeunload warning
+		this.removeBeforeUnloadWarning();
 	}
 
 	restart(data: Data = {}) {
@@ -506,6 +527,8 @@ export class Editor extends BaseGame {
 		this.input.setDefaultCursor('default');
 		// Re-enable browser context menu when restarting
 		this.enableBrowserContextMenu();
+		// Clean up beforeunload warning (will be re-setup in create)
+		this.removeBeforeUnloadWarning();
 		this.scene.restart(data);
 	}
 
@@ -623,6 +646,46 @@ export class Editor extends BaseGame {
 			const noteCursor = this.createNoteCursor(laneIndex);
 			this.input.setDefaultCursor(noteCursor);
 		}
+	}
+
+	/**
+	 * Set up beforeunload warning to alert users about unsaved changes
+	 */
+	private setupBeforeUnloadWarning(): void {
+		this.beforeUnloadHandler = (e: BeforeUnloadEvent) => {
+			if (this.isDirty) {
+				e.preventDefault();
+				// Standard message for most browsers
+				const message = 'You have unsaved changes. Are you sure you want to leave?';
+				e.returnValue = message;
+				return message;
+			}
+		};
+		window.addEventListener('beforeunload', this.beforeUnloadHandler);
+	}
+
+	/**
+	 * Remove beforeunload warning
+	 */
+	private removeBeforeUnloadWarning(): void {
+		if (this.beforeUnloadHandler) {
+			window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+			this.beforeUnloadHandler = null;
+		}
+	}
+
+	/**
+	 * Mark the editor as dirty (has unsaved changes)
+	 */
+	public setDirty(dirty: boolean = true): void {
+		this.isDirty = dirty;
+	}
+
+	/**
+	 * Check if the editor has unsaved changes
+	 */
+	public getDirty(): boolean {
+		return this.isDirty;
 	}
 
 	/**

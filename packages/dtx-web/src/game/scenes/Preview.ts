@@ -372,7 +372,8 @@ export class Preview extends BaseGame {
 					const audio = this.sound.get(this.getCacheKey(soundChip));
 					this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 					audio.play({
-						seek: seek
+						seek: seek,
+						volume: soundChip.volume / 100
 					});
 				}
 			});
@@ -445,7 +446,9 @@ export class Preview extends BaseGame {
 					if (soundChip && soundChip.file) {
 						const audio = this.sound.get(this.getCacheKey(soundChip));
 						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
-						audio.play();
+						audio.play({
+							volume: soundChip.volume / 100
+						});
 					}
 				});
 			}

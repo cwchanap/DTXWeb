@@ -39,9 +39,19 @@
 
 	function discardLocalChanges() {
 		const currentSimfileID = get(store.currentSimfileID);
+		const currentDifficulty = get(store.currentDifficulty);
 
-		// Remove the temporary data for current simfile
-		TempChartStorage.remove(currentSimfileID);
+		// Show confirmation dialog
+		const chartName = currentSimfileID || 'current chart';
+		const difficultyText = currentDifficulty ? ` (${currentDifficulty})` : '';
+		const message = `Are you sure you want to discard all local changes for ${chartName}${difficultyText}?\n\nThis action cannot be undone. All unsaved edits will be permanently lost.`;
+
+		if (!confirm(message)) {
+			return; // User cancelled
+		}
+
+		// Remove the temporary data for current simfile and difficulty
+		TempChartStorage.remove(currentSimfileID, currentDifficulty);
 
 		// Get the editor scene and clear its dirty state
 		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
@@ -70,6 +80,12 @@
 		// Update stores
 		store.currentDtxFile.set(dtxFile);
 		store.currentSoundChip.set(soundChips);
+
+		// Set the current difficulty
+		const levelData = simfile.levels[level];
+		if (levelData) {
+			store.currentDifficulty.set(levelData.label);
+		}
 
 		// Fetch sound files
 		await Promise.all(
@@ -126,6 +142,14 @@
 			store.currentDtxFile.set(highestDtx);
 			store.currentSimfile.set(simfile);
 			store.currentSoundChip.set(soundChips);
+
+			// Find and set the current difficulty
+			const currentLevel = Object.entries(simfile.levels).find(
+				([_, level]) => level?.file === highestDtx
+			);
+			if (currentLevel && currentLevel[1]) {
+				store.currentDifficulty.set(currentLevel[1].label);
+			}
 
 			await Promise.all(
 				soundChips.map(async (soundChip) => {

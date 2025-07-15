@@ -12,6 +12,7 @@ const measureCount = writable<number>(10);
 const editorNotes = writable<Record<string, LaneMeasureNote[]>>({});
 const activeNote = writable<string>('01');
 const currentSimfileID = writable<string | null>(null);
+const currentDifficulty = writable<string | null>(null);
 
 export default {
 	activeScene,
@@ -24,5 +25,6 @@ export default {
 	measureCount,
 	editorNotes,
 	activeNote,
-	currentSimfileID
+	currentSimfileID,
+	currentDifficulty
 };

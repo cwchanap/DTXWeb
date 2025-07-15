@@ -21,12 +21,13 @@ export class TempChartStorage {
 	 */
 	static save(
 		simFileID: string | null,
+		difficulty: string | null,
 		notes: Record<string, LaneMeasureNote[]>,
 		bpmNotes: Record<string, number>,
 		measureCount: number
 	): void {
 		try {
-			const key = simFileID || this.DEFAULT_KEY;
+			const key = this.buildStorageKey(simFileID, difficulty);
 			const storageKey = this.STORAGE_KEY_PREFIX + key;
 
 			const data: TempChartData = {
@@ -45,9 +46,9 @@ export class TempChartStorage {
 	/**
 	 * Load chart data from localStorage
 	 */
-	static load(simFileID: string | null): TempChartData | null {
+	static load(simFileID: string | null, difficulty: string | null): TempChartData | null {
 		try {
-			const key = simFileID || this.DEFAULT_KEY;
+			const key = this.buildStorageKey(simFileID, difficulty);
 			const storageKey = this.STORAGE_KEY_PREFIX + key;
 
 			const stored = localStorage.getItem(storageKey);
@@ -73,9 +74,9 @@ export class TempChartStorage {
 	/**
 	 * Remove chart data from localStorage
 	 */
-	static remove(simFileID: string | null): void {
+	static remove(simFileID: string | null, difficulty: string | null): void {
 		try {
-			const key = simFileID || this.DEFAULT_KEY;
+			const key = this.buildStorageKey(simFileID, difficulty);
 			const storageKey = this.STORAGE_KEY_PREFIX + key;
 			localStorage.removeItem(storageKey);
 		} catch (error) {
@@ -84,10 +85,10 @@ export class TempChartStorage {
 	}
 
 	/**
-	 * Check if temporary data exists for the given simFileID
+	 * Check if temporary data exists for the given simFileID and difficulty
 	 */
-	static exists(simFileID: string | null): boolean {
-		const data = this.load(simFileID);
+	static exists(simFileID: string | null, difficulty: string | null): boolean {
+		const data = this.load(simFileID, difficulty);
 		return data !== null;
 	}
 
@@ -112,10 +113,26 @@ export class TempChartStorage {
 	}
 
 	/**
-	 * Get the storage key for a given simFileID (for debugging)
+	 * Get the storage key for a given simFileID and difficulty (for debugging)
 	 */
-	static getStorageKey(simFileID: string | null): string {
-		const key = simFileID || this.DEFAULT_KEY;
+	static getStorageKey(simFileID: string | null, difficulty: string | null): string {
+		const key = this.buildStorageKey(simFileID, difficulty);
 		return this.STORAGE_KEY_PREFIX + key;
+	}
+
+	/**
+	 * Build storage key combining simFileID and difficulty
+	 */
+	private static buildStorageKey(simFileID: string | null, difficulty: string | null): string {
+		if (!simFileID) {
+			return this.DEFAULT_KEY;
+		}
+
+		if (!difficulty) {
+			return simFileID;
+		}
+
+		// Format: "simFileID_difficulty" (e.g., "mysong_mas" or "mysong_ext")
+		return `${simFileID}_${difficulty}`;
 	}
 }

@@ -6,14 +6,18 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote, SoundChip } from '@dtx/common';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import {
 	calculateHighResolutionPosition,
 	HIGH_RESOLUTION_CELLS
 } from '../utils/notePositioning.js';
-import { TempChartStorage } from '$lib/services/tempChartStorage';
+import {
+	TempChartStorage,
+	type ChartMetadata,
+	type SoundChipData
+} from '$lib/services/tempChartStorage';
 
 interface Data {
 	measureCount?: number;
@@ -28,11 +32,13 @@ export class Editor extends BaseGame {
 	private currentLaneIndex = -1;
 	private activeNoteSubscription: (() => void) | null = null;
 	private keyBindingsSubscription: (() => void) | null = null;
-	private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
-	private isDirty = false;
+	private dtxFileSubscription: (() => void) | null = null;
+	private soundChipSubscription: (() => void) | null = null;
+	private isDirty = false; // Track if editor has changes for preview rebuilding
 	private autoSaveTimeout: number | null = null;
 	private readonly AUTO_SAVE_DELAY_MS = 2000; // Debounce auto-save by 2 seconds
 	private keyBindings: Record<string, string> = {}; // key -> noteId mapping
+	private isInitializing = false; // Flag to prevent auto-save during initialization
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -53,6 +59,9 @@ export class Editor extends BaseGame {
 
 	create() {
 		console.log('Create Editor Scene');
+
+		// Set initialization flag to prevent auto-save during setup
+		this.isInitializing = true;
 
 		// Disable browser context menu on the game canvas
 		this.disableBrowserContextMenu();
@@ -397,8 +406,28 @@ export class Editor extends BaseGame {
 			});
 		});
 
-		// Set up beforeunload warning for unsaved changes
-		this.setupBeforeUnloadWarning();
+		// Listen for DTX file metadata changes (MainTab changes)
+		this.dtxFileSubscription = store.currentDtxFile.subscribe((dtxFile) => {
+			if (dtxFile && !this.isInitializing) {
+				// Set dirty and trigger auto-save when metadata changes
+				// Only after initialization to avoid marking as dirty during load
+				this.setDirty(true);
+				this.debouncedAutoSave();
+			}
+		});
+
+		// Listen for sound chip changes (SoundTab changes)
+		this.soundChipSubscription = store.currentSoundChip.subscribe((soundChips) => {
+			if (soundChips && !this.isInitializing) {
+				// Set dirty and trigger auto-save when sound chips change
+				// Only after initialization to avoid marking as dirty during load
+				this.setDirty(true);
+				this.debouncedAutoSave();
+			}
+		});
+
+		// Initialization complete - enable auto-save for future changes
+		this.isInitializing = false;
 	}
 
 	update() {
@@ -515,8 +544,6 @@ export class Editor extends BaseGame {
 		this.input.setDefaultCursor('default');
 		// Clean up context menu event listener when scene shuts down
 		this.enableBrowserContextMenu();
-		// Clean up beforeunload warning
-		this.removeBeforeUnloadWarning();
 		// Clean up auto-save timeout
 		if (this.autoSaveTimeout !== null) {
 			clearTimeout(this.autoSaveTimeout);
@@ -552,6 +579,18 @@ export class Editor extends BaseGame {
 			this.keyBindingsSubscription = null;
 		}
 
+		// Clean up DTX file subscription
+		if (this.dtxFileSubscription) {
+			this.dtxFileSubscription();
+			this.dtxFileSubscription = null;
+		}
+
+		// Clean up sound chip subscription
+		if (this.soundChipSubscription) {
+			this.soundChipSubscription();
+			this.soundChipSubscription = null;
+		}
+
 		// Clean up drag state
 		this.noteManager.destroy();
 
@@ -562,8 +601,6 @@ export class Editor extends BaseGame {
 		this.input.setDefaultCursor('default');
 		// Re-enable browser context menu when restarting
 		this.enableBrowserContextMenu();
-		// Clean up beforeunload warning (will be re-setup in create)
-		this.removeBeforeUnloadWarning();
 		// Clean up auto-save timeout
 		if (this.autoSaveTimeout !== null) {
 			clearTimeout(this.autoSaveTimeout);
@@ -724,40 +761,14 @@ export class Editor extends BaseGame {
 	}
 
 	/**
-	 * Set up beforeunload warning to alert users about unsaved changes
-	 */
-	private setupBeforeUnloadWarning(): void {
-		this.beforeUnloadHandler = (e: BeforeUnloadEvent) => {
-			if (this.isDirty) {
-				e.preventDefault();
-				// Standard message for most browsers
-				const message = 'You have unsaved changes. Are you sure you want to leave?';
-				e.returnValue = message;
-				return message;
-			}
-		};
-		window.addEventListener('beforeunload', this.beforeUnloadHandler);
-	}
-
-	/**
-	 * Remove beforeunload warning
-	 */
-	private removeBeforeUnloadWarning(): void {
-		if (this.beforeUnloadHandler) {
-			window.removeEventListener('beforeunload', this.beforeUnloadHandler);
-			this.beforeUnloadHandler = null;
-		}
-	}
-
-	/**
-	 * Mark the editor as dirty (has unsaved changes)
+	 * Mark the editor as dirty (has changes that require preview rebuild)
 	 */
 	public setDirty(dirty: boolean = true): void {
 		this.isDirty = dirty;
 	}
 
 	/**
-	 * Check if the editor has unsaved changes
+	 * Check if the editor has changes that require preview rebuild
 	 */
 	public getDirty(): boolean {
 		return this.isDirty;
@@ -786,12 +797,36 @@ export class Editor extends BaseGame {
 		try {
 			const simfileID = get(store.currentSimfileID);
 			const difficulty = get(store.currentDifficulty);
+			const dtxFile = get(store.currentDtxFile);
+			const soundChips = get(store.currentSoundChip);
+
+			// Convert SoundChips to SoundChipData (with file paths instead of File objects)
+			const soundChipData: SoundChipData[] = soundChips.map((chip) => ({
+				label: chip.label,
+				id: chip.id,
+				volume: chip.volume,
+				position: chip.position,
+				fileName: chip.fileName,
+				filePath: chip.file instanceof File ? chip.file.name : undefined
+			}));
+
+			// Create metadata from current DTX file or use defaults
+			const metadata: ChartMetadata = {
+				title: dtxFile?.title || '',
+				artist: dtxFile?.artist || '',
+				comment: dtxFile?.comment || '',
+				bpm: dtxFile?.bpm || 120,
+				level: dtxFile?.level || 0,
+				soundChips: soundChipData
+			};
+
 			TempChartStorage.save(
 				simfileID,
 				difficulty,
 				this.notes,
 				this.bpmNotes,
-				this.measureCount
+				this.measureCount,
+				metadata
 			);
 		} catch (error) {
 			console.warn('Failed to auto-save chart:', error);
@@ -819,6 +854,36 @@ export class Editor extends BaseGame {
 				// Update store values
 				store.measureCount.set(this.measureCount);
 				this.syncNotesToStore();
+
+				// Update DTX file metadata if available
+				if (tempData.metadata) {
+					const currentDtxFile = get(store.currentDtxFile);
+					if (currentDtxFile) {
+						currentDtxFile.title = tempData.metadata.title;
+						currentDtxFile.artist = tempData.metadata.artist;
+						currentDtxFile.comment = tempData.metadata.comment;
+						currentDtxFile.bpm = tempData.metadata.bpm;
+						currentDtxFile.level = tempData.metadata.level;
+						store.currentDtxFile.set(currentDtxFile);
+					}
+
+					// Restore sound chips data
+					if (tempData.metadata.soundChips && tempData.metadata.soundChips.length > 0) {
+						const restoredSoundChips = tempData.metadata.soundChips.map((chipData) => {
+							const soundChip = new SoundChip(
+								chipData.label,
+								chipData.id,
+								chipData.volume,
+								chipData.position,
+								chipData.fileName
+							);
+							// Note: File object is not restored, only metadata
+							// Files would need to be re-selected or fetched from remote
+							return soundChip;
+						});
+						store.currentSoundChip.set(restoredSoundChips);
+					}
+				}
 
 				// Don't mark as dirty on load - only when user makes actual changes
 				// The dirty state will be set when they start editing

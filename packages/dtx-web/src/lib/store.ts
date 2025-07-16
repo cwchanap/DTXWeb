@@ -13,6 +13,7 @@ const editorNotes = writable<Record<string, LaneMeasureNote[]>>({});
 const activeNote = writable<string>('01');
 const currentSimfileID = writable<string | null>(null);
 const currentDifficulty = writable<string | null>(null);
+const keyBindings = writable<Record<string, string>>({});
 
 export default {
 	activeScene,
@@ -26,5 +27,6 @@ export default {
 	editorNotes,
 	activeNote,
 	currentSimfileID,
-	currentDifficulty
+	currentDifficulty,
+	keyBindings
 };

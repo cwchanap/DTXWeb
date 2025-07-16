@@ -7,6 +7,7 @@
 	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;
 	let activeNote: string = $state('01');
+	let keyBindings: Record<string, string> = $state({}); // noteId -> key mapping
 
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
 	store.currentSimfile.subscribe((value) => (simfile = value));
@@ -45,6 +46,48 @@
 	function selectActiveNote(noteId: string) {
 		store.activeNote.set(noteId);
 	}
+
+	function setKeyBinding(noteId: string, key: string) {
+		if (key) {
+			keyBindings[noteId] = key.toLowerCase();
+		} else {
+			delete keyBindings[noteId];
+		}
+		// Update the store with key bindings
+		store.keyBindings?.set(keyBindings);
+	}
+
+	function handleKeyInput(event: KeyboardEvent, noteId: string) {
+		event.preventDefault();
+		const key = event.key.toLowerCase();
+
+		// Ignore modifier keys and special keys
+		if (key.length > 1 && !['space', 'enter', 'backspace', 'delete'].includes(key)) {
+			return;
+		}
+
+		// Clear binding if backspace or delete
+		if (key === 'backspace' || key === 'delete') {
+			setKeyBinding(noteId, '');
+			return;
+		}
+
+		// Exclude reserved keys used by the editor
+		const reservedKeys = ['q']; // Q is used for toggling editing mode
+		if (reservedKeys.includes(key)) {
+			alert(`Key "${key}" is reserved for editor controls and cannot be bound`);
+			return;
+		}
+
+		// Check if key is already bound to another note
+		const existingNoteId = Object.keys(keyBindings).find((id) => keyBindings[id] === key);
+		if (existingNoteId && existingNoteId !== noteId) {
+			alert(`Key "${key}" is already bound to note ${existingNoteId}`);
+			return;
+		}
+
+		setKeyBinding(noteId, key);
+	}
 </script>
 
 <div class="flex flex-col space-y-2">
@@ -67,7 +110,8 @@
 					<td class="w-[8%] border border-gray-300 text-center">ID</td>
 					<td class="w-[12%] border border-gray-300 text-center">Volume</td>
 					<td class="w-[12%] border border-gray-300 text-center">Position</td>
-					<td class="w-[46%] border border-gray-300 text-center">File</td>
+					<td class="w-[12%] border border-gray-300 text-center">Key Binding</td>
+					<td class="w-[34%] border border-gray-300 text-center">File</td>
 				</tr>
 			</thead>
 			<tbody>
@@ -107,6 +151,16 @@
 								type="number"
 								bind:value={chip.position}
 								class="w-full text-center"
+							/>
+						</td>
+						<td class="border border-gray-300 px-2 py-1">
+							<input
+								type="text"
+								value={keyBindings[chipId] || ''}
+								onkeydown={(e) => handleKeyInput(e, chipId)}
+								placeholder="Press key"
+								class="w-full text-center text-sm"
+								readonly
 							/>
 						</td>
 

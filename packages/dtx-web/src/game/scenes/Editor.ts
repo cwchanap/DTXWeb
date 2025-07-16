@@ -27,10 +27,12 @@ export class Editor extends BaseGame {
 	private contextMenuHandler: ((e: Event) => void) | null = null;
 	private currentLaneIndex = -1;
 	private activeNoteSubscription: (() => void) | null = null;
+	private keyBindingsSubscription: (() => void) | null = null;
 	private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
 	private isDirty = false;
 	private autoSaveTimeout: number | null = null;
 	private readonly AUTO_SAVE_DELAY_MS = 2000; // Debounce auto-save by 2 seconds
+	private keyBindings: Record<string, string> = {}; // key -> noteId mapping
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -301,6 +303,9 @@ export class Editor extends BaseGame {
 			}
 		});
 
+		// Set up global key binding listener
+		this.setupKeyBindingListener();
+
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.MEASURE_UPDATE, (measureCount: number) => {
 			this.measureCount = get(store.measureCount);
@@ -381,6 +386,15 @@ export class Editor extends BaseGame {
 			if (this.isEditing) {
 				this.updateCursorForEditingMode();
 			}
+		});
+
+		// Listen for key bindings changes
+		this.keyBindingsSubscription = store.keyBindings.subscribe((bindings) => {
+			// Create reverse mapping: key -> noteId
+			this.keyBindings = {};
+			Object.entries(bindings).forEach(([noteId, key]) => {
+				this.keyBindings[key] = noteId;
+			});
 		});
 
 		// Set up beforeunload warning for unsaved changes
@@ -532,6 +546,12 @@ export class Editor extends BaseGame {
 			this.activeNoteSubscription = null;
 		}
 
+		// Clean up key bindings subscription
+		if (this.keyBindingsSubscription) {
+			this.keyBindingsSubscription();
+			this.keyBindingsSubscription = null;
+		}
+
 		// Clean up drag state
 		this.noteManager.destroy();
 
@@ -666,6 +686,41 @@ export class Editor extends BaseGame {
 			const noteCursor = this.createNoteCursor(laneIndex);
 			this.input.setDefaultCursor(noteCursor);
 		}
+	}
+
+	/**
+	 * Set up global key binding listener for triggering active note changes
+	 */
+	private setupKeyBindingListener(): void {
+		// Use document-level keydown listener to catch key presses
+		document.addEventListener('keydown', (event: KeyboardEvent) => {
+			// Only handle when editing mode is on and no modifier keys are pressed
+			if (!this.isEditing || event.ctrlKey || event.metaKey || event.altKey) {
+				return;
+			}
+
+			// Ignore if typing in input fields
+			const target = event.target as HTMLElement;
+			if (
+				target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.isContentEditable
+			) {
+				return;
+			}
+
+			const key = event.key.toLowerCase();
+			const noteId = this.keyBindings[key];
+
+			if (noteId) {
+				event.preventDefault();
+				// Set the active note to the bound note
+				store.activeNote.set(noteId);
+
+				// Update cursor to reflect new active note
+				this.updateCursorForEditingMode();
+			}
+		});
 	}
 
 	/**

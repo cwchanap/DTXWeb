@@ -81,7 +81,7 @@ export class TempChartStorage {
 
 			// Check if data is too old
 			if (Date.now() - data.timestamp > this.MAX_AGE_MS) {
-				this.remove(simFileID);
+				this.remove(simFileID, difficulty);
 				return null;
 			}
 

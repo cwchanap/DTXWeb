@@ -22,6 +22,36 @@ vi.mock('$lib/store', () => ({
 		},
 		editorNotes: {
 			set: vi.fn()
+		},
+		keyBindings: {
+			subscribe: vi.fn((callback) => {
+				callback({});
+				return vi.fn();
+			})
+		},
+		currentDtxFile: {
+			subscribe: vi.fn((callback) => {
+				callback(null);
+				return vi.fn();
+			})
+		},
+		currentSoundChip: {
+			subscribe: vi.fn((callback) => {
+				callback([]);
+				return vi.fn();
+			})
+		},
+		currentSimfileID: {
+			subscribe: vi.fn((callback) => {
+				callback(null);
+				return vi.fn();
+			})
+		},
+		currentDifficulty: {
+			subscribe: vi.fn((callback) => {
+				callback(null);
+				return vi.fn();
+			})
 		}
 	}
 }));
@@ -34,7 +64,25 @@ vi.mock('./Preview', () => ({
 	}
 }));
 vi.mock('svelte/store', () => ({
-	get: vi.fn(() => '01') // Mock the get function to return a default active note
+	get: vi.fn((store) => {
+		// Return appropriate mock values based on which store is being accessed
+		if (store?.toString?.().includes('activeNote')) return '01';
+		if (store?.toString?.().includes('currentSimfileID')) return null;
+		if (store?.toString?.().includes('currentDifficulty')) return null;
+		if (store?.toString?.().includes('currentDtxFile')) return null;
+		if (store?.toString?.().includes('currentSoundChip')) return [];
+		return null; // Default fallback
+	})
+}));
+vi.mock('$lib/services/tempChartStorage', () => ({
+	TempChartStorage: {
+		save: vi.fn(),
+		load: vi.fn(() => null),
+		remove: vi.fn(),
+		exists: vi.fn(() => false),
+		clearAll: vi.fn(),
+		getStorageKey: vi.fn()
+	}
 }));
 
 describe('Editor Scene', () => {

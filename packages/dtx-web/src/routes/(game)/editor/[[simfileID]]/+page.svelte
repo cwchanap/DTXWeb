@@ -379,6 +379,12 @@
 					>
 					<span>Add note (in edit mode)</span>
 				</div>
+				<div class="flex items-center space-x-2">
+					<span class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
+						>Key Bindings</span
+					>
+					<span>Press bound keys to switch active note</span>
+				</div>
 			</div>
 		</div>
 	</div>

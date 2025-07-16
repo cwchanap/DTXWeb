@@ -290,7 +290,10 @@ describe('Preview Scene', () => {
 		const mockAudio = { play: vi.fn() };
 		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
 		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
-		previewScene.getTimeElapsed = vi.fn().mockReturnValue(2);
+		previewScene.getTimeElapsed = vi
+			.fn()
+			.mockReturnValueOnce(2) // getTimeElapsed(0, 0) - note time
+			.mockReturnValueOnce(0); // getTimeElapsed(0) - start time
 
 		const note = new LaneMeasureNote(0, '01', [{ noteID: '01', position: 0 }], 1);
 		note.measureLength = 1;
@@ -313,9 +316,9 @@ describe('Preview Scene', () => {
 	});
 
 	it('should schedule note playback with volume', () => {
-		// Setup
+		// Setup - noteID '11' corresponds to chip id 17 (parseInt('11', 36) = 37, but let's use '01' for id 1)
 		const mockSoundChip = {
-			id: 17,
+			id: 1,
 			volume: 60,
 			fileName: 'hihat.wav',
 			file: new File([], 'hihat.wav')
@@ -325,9 +328,12 @@ describe('Preview Scene', () => {
 		const mockAudio = { play: vi.fn() };
 		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
 		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
-		previewScene.getTimeElapsed = vi.fn().mockReturnValue(1);
+		previewScene.getTimeElapsed = vi
+			.fn()
+			.mockReturnValueOnce(1) // getTimeElapsed(1, 0.5) - note time
+			.mockReturnValueOnce(0); // getTimeElapsed(0) - start time
 
-		const note = new LaneMeasureNote(1, '11', [{ noteID: '11', position: 0.5 }], 1);
+		const note = new LaneMeasureNote(1, '11', [{ noteID: '01', position: 0.5 }], 1);
 		note.measureLength = 1;
 
 		previewScene.scheduleNotePlayback(note, 2, 0);
@@ -390,15 +396,22 @@ describe('Preview Scene', () => {
 		const mockAudio = { play: vi.fn() };
 		previewScene.sound.get = vi.fn().mockReturnValue(mockAudio);
 		previewScene.getCacheKey = vi.fn().mockReturnValue('test-cache-key');
-		previewScene.getTimeElapsed = vi.fn().mockReturnValue(0);
+		previewScene.getTimeElapsed = vi
+			.fn()
+			.mockReturnValueOnce(1) // getTimeElapsed(1, 0) - note time
+			.mockReturnValueOnce(0); // getTimeElapsed(0) - start time
 
-		const note = new LaneMeasureNote(1, '11', [{ noteID: '11', position: 0 }], 1);
+		const note = new LaneMeasureNote(1, '11', [{ noteID: '01', position: 0 }], 1);
 		note.measureLength = 1;
 
 		previewScene.scheduleNotePlayback(note, 2, 0);
 
+		// Trigger the delayed call immediately
+		const delayedCall = previewScene.time.delayedCall as MockedFn;
+		expect(delayedCall).toHaveBeenCalledWith(1000, expect.any(Function));
+
 		// Execute the callback
-		const callback = (previewScene.time.delayedCall as MockedFn).mock.calls[0][1];
+		const callback = delayedCall.mock.calls[0][1];
 		callback();
 
 		// Verify maximum volume is applied correctly (100/100 = 1)

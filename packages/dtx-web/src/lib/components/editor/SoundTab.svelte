@@ -182,7 +182,15 @@
 										onclick={() => {
 											// Create a new array with updated chip (file removed)
 											const updatedChips = soundChips.map((c) =>
-												c.id === chip.id ? { ...c, file: undefined } : c
+												c.id === chip.id
+													? new SoundChip(
+															c.label,
+															c.id,
+															c.volume,
+															c.position,
+															c.fileName
+														)
+													: c
 											);
 											store.currentSoundChip.set(updatedChips);
 										}}
@@ -202,7 +210,14 @@
 											// Create a new array with updated chip
 											const updatedChips = soundChips.map((c) =>
 												c.id === chip.id
-													? { ...c, file: target.files![0] }
+													? new SoundChip(
+															c.label,
+															c.id,
+															c.volume,
+															c.position,
+															c.fileName,
+															target.files![0]
+														)
 													: c
 											);
 											store.currentSoundChip.set(updatedChips);

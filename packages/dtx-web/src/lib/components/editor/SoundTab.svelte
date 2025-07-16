@@ -94,10 +94,11 @@
 	<button
 		class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
 		onclick={() => {
-			store.currentSoundChip.set([
-				...soundChips,
-				new SoundChip('', SoundChip.length, 100, 0, file.name)
-			]);
+			// Generate next available ID (find the highest ID and add 1)
+			const nextId =
+				soundChips.length > 0 ? Math.max(...soundChips.map((chip) => chip.id)) + 1 : 1;
+
+			store.currentSoundChip.set([...soundChips, new SoundChip('', nextId, 100, 0, '')]);
 		}}>New Sound</button
 	>
 
@@ -164,18 +165,33 @@
 							/>
 						</td>
 
-						<td class="border border-gray-300 px-2 py-1"
-							>{#if chip.file}
-								<button
-									onclick={() => {
-										if (chip.file) {
-											playAudio(chip.file, chip.volume);
-										}
-									}}
-									class="text-blue-600 underline hover:text-blue-800"
-								>
-									{typeof chip.file === 'string' ? chip.file : chip.file.name}
-								</button>
+						<td class="border border-gray-300 px-2 py-1">
+							{#if chip.file}
+								<div class="flex items-center space-x-2">
+									<button
+										onclick={() => {
+											if (chip.file) {
+												playAudio(chip.file, chip.volume);
+											}
+										}}
+										class="flex-1 text-left text-blue-600 underline hover:text-blue-800"
+									>
+										{typeof chip.file === 'string' ? chip.file : chip.file.name}
+									</button>
+									<button
+										onclick={() => {
+											// Create a new array with updated chip (file removed)
+											const updatedChips = soundChips.map((c) =>
+												c.id === chip.id ? { ...c, file: undefined } : c
+											);
+											store.currentSoundChip.set(updatedChips);
+										}}
+										class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-800"
+										title="Remove file"
+									>
+										✕
+									</button>
+								</div>
 							{:else}
 								<input
 									type="file"
@@ -183,13 +199,19 @@
 									onchange={(e) => {
 										const target = e.target as HTMLInputElement;
 										if (target.files?.[0]) {
-											chip.file = target.files[0];
+											// Create a new array with updated chip
+											const updatedChips = soundChips.map((c) =>
+												c.id === chip.id
+													? { ...c, file: target.files![0] }
+													: c
+											);
+											store.currentSoundChip.set(updatedChips);
 										}
 									}}
-									class="w-full text-sm"
+									class="w-full text-sm file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600"
 								/>
-							{/if}</td
-						>
+							{/if}
+						</td>
 					</tr>
 				{/each}
 			</tbody>

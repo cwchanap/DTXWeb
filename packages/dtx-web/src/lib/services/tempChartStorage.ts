@@ -1,9 +1,28 @@
 import type { LaneMeasureNote } from '@dtx/common';
 
+export interface SoundChipData {
+	label: string;
+	id: number;
+	volume: number;
+	position: number;
+	fileName: string;
+	filePath?: string; // Store file path instead of File object
+}
+
+export interface ChartMetadata {
+	title: string;
+	artist: string;
+	comment: string;
+	bpm: number;
+	level: number;
+	soundChips: SoundChipData[];
+}
+
 interface TempChartData {
 	notes: Record<string, LaneMeasureNote[]>;
 	bpmNotes: Record<string, number>;
 	measureCount: number;
+	metadata: ChartMetadata;
 	timestamp: number;
 }
 
@@ -24,7 +43,8 @@ export class TempChartStorage {
 		difficulty: string | null,
 		notes: Record<string, LaneMeasureNote[]>,
 		bpmNotes: Record<string, number>,
-		measureCount: number
+		measureCount: number,
+		metadata: ChartMetadata
 	): void {
 		try {
 			const key = this.buildStorageKey(simFileID, difficulty);
@@ -34,6 +54,7 @@ export class TempChartStorage {
 				notes,
 				bpmNotes,
 				measureCount,
+				metadata,
 				timestamp: Date.now()
 			};
 

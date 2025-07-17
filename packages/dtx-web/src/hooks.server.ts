@@ -25,15 +25,11 @@ const csrf: Handle = async ({ event, resolve }) => {
 	const requestedWith = request.headers.get('x-requested-with');
 	const isDesktopApp = userAgent?.includes('DTXDesktopApp') && requestedWith === 'DTXDesktopApp';
 
-	// Allow production origin
-	const isAllowedOrigin = requestOrigin === 'https://dtx.hapadona.com';
-
 	const forbidden =
 		isFormContentType(request) &&
 		['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) &&
 		!isSameOrigin &&
-		!isDesktopApp &&
-		!isAllowedOrigin;
+		!isDesktopApp;
 
 	if (forbidden) {
 		const message = `Cross-site ${request.method} form submissions are forbidden`;

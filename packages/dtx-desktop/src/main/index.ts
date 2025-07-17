@@ -295,7 +295,7 @@ if (!gotTheLock) {
 
 				// Create session cookies that SvelteKit expects
 				const sessionCookies = [
-					`sb-hdnwvpusmxrfrfjayogr-auth-token=${JSON.stringify({
+					`sb-${import.meta.env.VITE_SUPABASE_PROJECT_ID}-auth-token=${JSON.stringify({
 						access_token: currentSession.access_token,
 						refresh_token: currentSession.refresh_token,
 						expires_at: currentSession.expires_at,
@@ -605,14 +605,16 @@ if (!gotTheLock) {
 
 					// Create session cookies that SvelteKit expects (same as load-asset-files)
 					const sessionCookies = [
-						`sb-hdnwvpusmxrfrfjayogr-auth-token=${JSON.stringify({
-							access_token: currentSession.access_token,
-							refresh_token: currentSession.refresh_token,
-							expires_at: currentSession.expires_at,
-							expires_in: currentSession.expires_in,
-							token_type: currentSession.token_type,
-							user: currentSession.user
-						})}; Path=/; HttpOnly; SameSite=Lax`
+						`sb-${import.meta.env.VITE_SUPABASE_PROJECT_ID}-auth-token=${JSON.stringify(
+							{
+								access_token: currentSession.access_token,
+								refresh_token: currentSession.refresh_token,
+								expires_at: currentSession.expires_at,
+								expires_in: currentSession.expires_in,
+								token_type: currentSession.token_type,
+								user: currentSession.user
+							}
+						)}; Path=/; HttpOnly; SameSite=Lax`
 					];
 
 					// Send the request

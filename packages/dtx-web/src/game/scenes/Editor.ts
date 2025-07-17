@@ -29,13 +29,14 @@ export class Editor extends BaseGame {
 	private isEditing = false;
 	private noteManager: NoteManager;
 	private contextMenuHandler: ((e: Event) => void) | null = null;
+	private keyBindingHandler: ((e: KeyboardEvent) => void) | null = null;
 	private currentLaneIndex = -1;
 	private activeNoteSubscription: (() => void) | null = null;
 	private keyBindingsSubscription: (() => void) | null = null;
 	private dtxFileSubscription: (() => void) | null = null;
 	private soundChipSubscription: (() => void) | null = null;
 	private isDirty = false; // Track if editor has changes for preview rebuilding
-	private autoSaveTimeout: number | null = null;
+	private autoSaveTimeout: Phaser.Time.TimerEvent | null = null;
 	private readonly AUTO_SAVE_DELAY_MS = 2000; // Debounce auto-save by 2 seconds
 	private keyBindings: Record<string, string> = {}; // key -> noteId mapping
 	private isInitializing = false; // Flag to prevent auto-save during initialization
@@ -544,9 +545,11 @@ export class Editor extends BaseGame {
 		this.input.setDefaultCursor('default');
 		// Clean up context menu event listener when scene shuts down
 		this.enableBrowserContextMenu();
+		// Clean up key binding listener to prevent memory leaks
+		this.removeKeyBindingListener();
 		// Clean up auto-save timeout
 		if (this.autoSaveTimeout !== null) {
-			clearTimeout(this.autoSaveTimeout);
+			this.autoSaveTimeout.destroy();
 			this.autoSaveTimeout = null;
 		}
 	}
@@ -601,9 +604,11 @@ export class Editor extends BaseGame {
 		this.input.setDefaultCursor('default');
 		// Re-enable browser context menu when restarting
 		this.enableBrowserContextMenu();
+		// Clean up key binding listener to prevent memory leaks
+		this.removeKeyBindingListener();
 		// Clean up auto-save timeout
 		if (this.autoSaveTimeout !== null) {
-			clearTimeout(this.autoSaveTimeout);
+			this.autoSaveTimeout.destroy();
 			this.autoSaveTimeout = null;
 		}
 		this.scene.restart(data);
@@ -729,8 +734,8 @@ export class Editor extends BaseGame {
 	 * Set up global key binding listener for triggering active note changes
 	 */
 	private setupKeyBindingListener(): void {
-		// Use document-level keydown listener to catch key presses
-		document.addEventListener('keydown', (event: KeyboardEvent) => {
+		// Store the handler function so it can be removed later
+		this.keyBindingHandler = (event: KeyboardEvent) => {
 			// Only handle when editing mode is on and no modifier keys are pressed
 			if (!this.isEditing || event.ctrlKey || event.metaKey || event.altKey) {
 				return;
@@ -757,7 +762,20 @@ export class Editor extends BaseGame {
 				// Update cursor to reflect new active note
 				this.updateCursorForEditingMode();
 			}
-		});
+		};
+
+		// Use document-level keydown listener to catch key presses
+		document.addEventListener('keydown', this.keyBindingHandler);
+	}
+
+	/**
+	 * Remove the global key binding listener to prevent memory leaks
+	 */
+	private removeKeyBindingListener(): void {
+		if (this.keyBindingHandler) {
+			document.removeEventListener('keydown', this.keyBindingHandler);
+			this.keyBindingHandler = null;
+		}
 	}
 
 	/**
@@ -780,14 +798,14 @@ export class Editor extends BaseGame {
 	private debouncedAutoSave(): void {
 		// Clear existing timeout
 		if (this.autoSaveTimeout !== null) {
-			clearTimeout(this.autoSaveTimeout);
+			this.autoSaveTimeout.destroy();
 		}
 
-		// Set new timeout
-		this.autoSaveTimeout = window.setTimeout(() => {
+		// Set new timeout using Phaser's time management
+		this.autoSaveTimeout = this.time.delayedCall(this.AUTO_SAVE_DELAY_MS, () => {
 			this.autoSaveChart();
 			this.autoSaveTimeout = null;
-		}, this.AUTO_SAVE_DELAY_MS);
+		});
 	}
 
 	/**

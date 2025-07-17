@@ -8,10 +8,23 @@
 	let simfile: SimFile | null = null;
 	let activeNote: string = $state('01');
 	let keyBindings: Record<string, string> = $state({}); // noteId -> key mapping
+	let showToast = $state(false);
+	let toastMessage = $state('');
+	let toastType: 'warning' | 'error' = $state('warning');
 
 	store.currentSoundChip.subscribe((value) => (soundChips = value));
 	store.currentSimfile.subscribe((value) => (simfile = value));
 	store.activeNote.subscribe((value) => (activeNote = value));
+
+	function showToastMessage(message: string, type: 'warning' | 'error' = 'warning') {
+		toastMessage = message;
+		toastType = type;
+		showToast = true;
+		// Auto-hide toast after 4 seconds
+		setTimeout(() => {
+			showToast = false;
+		}, 4000);
+	}
 
 	async function playAudio(file: string | File, volume: number = 100) {
 		let soundFile: File | undefined;
@@ -75,14 +88,17 @@
 		// Exclude reserved keys used by the editor
 		const reservedKeys = ['q']; // Q is used for toggling editing mode
 		if (reservedKeys.includes(key)) {
-			alert(`Key "${key}" is reserved for editor controls and cannot be bound`);
+			showToastMessage(
+				`Key "${key}" is reserved for editor controls and cannot be bound`,
+				'error'
+			);
 			return;
 		}
 
 		// Check if key is already bound to another note
 		const existingNoteId = Object.keys(keyBindings).find((id) => keyBindings[id] === key);
 		if (existingNoteId && existingNoteId !== noteId) {
-			alert(`Key "${key}" is already bound to note ${existingNoteId}`);
+			showToastMessage(`Key "${key}" is already bound to note ${existingNoteId}`, 'warning');
 			return;
 		}
 
@@ -233,3 +249,75 @@
 		</table>
 	</div>
 </div>
+
+<!-- Toast notifications -->
+{#if showToast}
+	<div
+		class="fixed top-4 right-4 z-50 w-full max-w-sm"
+		role="alert"
+		aria-live="polite"
+		aria-atomic="true"
+	>
+		<div
+			class="flex items-center rounded-lg p-4 shadow-lg {toastType === 'error'
+				? 'border-red-200 bg-red-50 text-red-800'
+				: 'border-yellow-200 bg-yellow-50 text-yellow-800'} border"
+		>
+			<div class="flex-shrink-0">
+				{#if toastType === 'error'}
+					<svg
+						class="h-5 w-5 text-red-400"
+						fill="currentColor"
+						viewBox="0 0 20 20"
+						aria-hidden="true"
+					>
+						<path
+							fill-rule="evenodd"
+							d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+							clip-rule="evenodd"
+						/>
+					</svg>
+				{:else}
+					<svg
+						class="h-5 w-5 text-yellow-400"
+						fill="currentColor"
+						viewBox="0 0 20 20"
+						aria-hidden="true"
+					>
+						<path
+							fill-rule="evenodd"
+							d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+							clip-rule="evenodd"
+						/>
+					</svg>
+				{/if}
+			</div>
+			<div class="ml-3 flex-1">
+				<p class="text-sm font-medium">{toastMessage}</p>
+			</div>
+			<button
+				type="button"
+				class="-mx-1.5 -my-1.5 ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg p-1.5 {toastType ===
+				'error'
+					? 'text-red-500 hover:bg-red-100'
+					: 'text-yellow-500 hover:bg-yellow-100'} focus:ring-2 focus:ring-offset-2 {toastType ===
+				'error'
+					? 'focus:ring-red-500'
+					: 'focus:ring-yellow-500'}"
+				onclick={() => (showToast = false)}
+				aria-label="Close"
+			>
+				<span class="sr-only">Close</span>
+				<svg class="h-3 w-3" aria-hidden="true" fill="none" viewBox="0 0 14 14">
+					<path
+						stroke="currentColor"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+					/>
+				</svg>
+			</button>
+		</div>
+	</div>
+{/if}

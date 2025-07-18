@@ -20,6 +20,7 @@ jobs:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
+      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
 
     steps:
       - name: Checkout Repository

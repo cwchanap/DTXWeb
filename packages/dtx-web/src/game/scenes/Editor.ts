@@ -6,7 +6,7 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote, SoundChip } from '@dtx/common';
+import { LaneMeasureNote, SoundChip, DTXFile } from '@dtx/common';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import {
@@ -18,6 +18,7 @@ import {
 	type ChartMetadata,
 	type SoundChipData
 } from '$lib/services/tempChartStorage';
+import { SoundLibrary } from '$lib/services/soundLibrary';
 
 interface Data {
 	measureCount?: number;
@@ -323,7 +324,7 @@ export class Editor extends BaseGame {
 		});
 		EventBus.on(
 			EventType.NOTE_IMPORT,
-			(notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
+			async (notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
 				this.notes = {};
 				this.sound.removeAll();
 				notes.forEach((note) => {
@@ -340,8 +341,8 @@ export class Editor extends BaseGame {
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;
 				this.syncNotesToStore();
+				await this.autoSaveChart(); // Save immediately instead of debounced
 				this.setDirty(false); // Clear dirty state after importing notes
-				// this.debouncedAutoSave(); // Save the imported state
 				this.restart({ measureCount: this.measureCount });
 			}
 		);
@@ -802,8 +803,8 @@ export class Editor extends BaseGame {
 		}
 
 		// Set new timeout using Phaser's time management
-		this.autoSaveTimeout = this.time.delayedCall(this.AUTO_SAVE_DELAY_MS, () => {
-			this.autoSaveChart();
+		this.autoSaveTimeout = this.time.delayedCall(this.AUTO_SAVE_DELAY_MS, async () => {
+			await this.autoSaveChart();
 			this.autoSaveTimeout = null;
 		});
 	}
@@ -811,22 +812,49 @@ export class Editor extends BaseGame {
 	/**
 	 * Auto-save current chart data to localStorage
 	 */
-	private autoSaveChart(): void {
+	public async autoSaveChart(): Promise<void> {
 		try {
 			const simfileID = get(store.currentSimfileID);
 			const difficulty = get(store.currentDifficulty);
 			const dtxFile = get(store.currentDtxFile);
 			const soundChips = get(store.currentSoundChip);
 
-			// Convert SoundChips to SoundChipData (with file paths instead of File objects)
-			const soundChipData: SoundChipData[] = soundChips.map((chip) => ({
-				label: chip.label,
-				id: chip.id,
-				volume: chip.volume,
-				position: chip.position,
-				fileName: chip.fileName,
-				filePath: chip.file instanceof File ? chip.file.name : undefined
-			}));
+			// Convert SoundChips to SoundChipData (with references to sound library)
+			const soundChipData: SoundChipData[] = await Promise.all(
+				soundChips.map(async (chip) => {
+					const chipData: SoundChipData = {
+						label: chip.label,
+						id: chip.id,
+						volume: chip.volume,
+						position: chip.position,
+						fileName: chip.fileName,
+						filePath: chip.file instanceof File ? chip.file.name : undefined
+					};
+
+					// For imported charts, try to find matching file in sound library
+					if (!simfileID && chip.file instanceof File) {
+						try {
+							// Generate hash of the current file
+							const arrayBuffer = await chip.file.arrayBuffer();
+							const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+							const hashArray = Array.from(new Uint8Array(hashBuffer));
+							const fileHash = hashArray
+								.map((b) => b.toString(16).padStart(2, '0'))
+								.join('');
+
+							// Check if file exists in sound library
+							const libraryFile = SoundLibrary.getByHash(fileHash);
+							if (libraryFile) {
+								chipData.fileHash = fileHash;
+							}
+						} catch (error) {
+							console.warn(`Failed to process sound file ${chip.fileName}:`, error);
+						}
+					}
+
+					return chipData;
+				})
+			);
 
 			// Create metadata from current DTX file or use defaults
 			const metadata: ChartMetadata = {
@@ -861,10 +889,6 @@ export class Editor extends BaseGame {
 			const tempData = TempChartStorage.load(simfileID, difficulty);
 
 			if (tempData) {
-				console.log(
-					'Loading temporary chart data for',
-					`${simfileID || 'temp'}${difficulty ? `_${difficulty}` : ''}`
-				);
 				this.notes = tempData.notes;
 				this.bpmNotes = tempData.bpmNotes;
 				this.measureCount = tempData.measureCount;
@@ -875,15 +899,17 @@ export class Editor extends BaseGame {
 
 				// Update DTX file metadata if available
 				if (tempData.metadata) {
-					const currentDtxFile = get(store.currentDtxFile);
-					if (currentDtxFile) {
-						currentDtxFile.title = tempData.metadata.title;
-						currentDtxFile.artist = tempData.metadata.artist;
-						currentDtxFile.comment = tempData.metadata.comment;
-						currentDtxFile.bpm = tempData.metadata.bpm;
-						currentDtxFile.level = tempData.metadata.level;
-						store.currentDtxFile.set(currentDtxFile);
+					let currentDtxFile = get(store.currentDtxFile);
+					if (!currentDtxFile) {
+						// Create a new DTX file if none exists
+						currentDtxFile = new DTXFile();
 					}
+					currentDtxFile.title = tempData.metadata.title;
+					currentDtxFile.artist = tempData.metadata.artist;
+					currentDtxFile.comment = tempData.metadata.comment;
+					currentDtxFile.bpm = tempData.metadata.bpm;
+					currentDtxFile.level = tempData.metadata.level;
+					store.currentDtxFile.set(currentDtxFile);
 
 					// Restore sound chips data
 					if (tempData.metadata.soundChips && tempData.metadata.soundChips.length > 0) {
@@ -895,8 +921,39 @@ export class Editor extends BaseGame {
 								chipData.position,
 								chipData.fileName
 							);
-							// Note: File object is not restored, only metadata
-							// Files would need to be re-selected or fetched from remote
+
+							// First try to restore from hash reference
+							if (chipData.fileHash) {
+								try {
+									const libraryFile = SoundLibrary.getByHash(chipData.fileHash);
+									if (libraryFile) {
+										const file = SoundLibrary.toFile(libraryFile);
+										soundChip.file = file;
+										return soundChip;
+									}
+								} catch (error) {
+									console.warn(
+										`Failed to restore file from sound library by hash for ${chipData.fileName}:`,
+										error
+									);
+								}
+							}
+
+							// If no hash or hash lookup failed, try to find by filename
+							try {
+								const libraryFiles = SoundLibrary.findByFileName(chipData.fileName);
+								if (libraryFiles.length > 0) {
+									const libraryFile = libraryFiles[0]; // Use first match
+									const file = SoundLibrary.toFile(libraryFile);
+									soundChip.file = file;
+								}
+							} catch (error) {
+								console.warn(
+									`Failed to restore file from sound library by filename for ${chipData.fileName}:`,
+									error
+								);
+							}
+
 							return soundChip;
 						});
 						store.currentSoundChip.set(restoredSoundChips);

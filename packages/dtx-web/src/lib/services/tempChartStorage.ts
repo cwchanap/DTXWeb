@@ -6,7 +6,8 @@ export interface SoundChipData {
 	volume: number;
 	position: number;
 	fileName: string;
-	filePath?: string; // Store file path instead of File object
+	filePath?: string; // Store file path instead of File object (for remote files)
+	fileHash?: string; // Hash reference to sound library file (for imported files)
 }
 
 export interface ChartMetadata {

@@ -370,11 +370,13 @@ export class Preview extends BaseGame {
 				);
 				if (soundChip) {
 					const audio = this.sound.get(this.getCacheKey(soundChip));
-					this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
-					audio.play({
-						seek: seek,
-						volume: soundChip.volume / 100
-					});
+					if (audio) {
+						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
+						audio.play({
+							seek: seek,
+							volume: soundChip.volume / 100
+						});
+					}
 				}
 			});
 		});
@@ -445,10 +447,12 @@ export class Preview extends BaseGame {
 					);
 					if (soundChip && soundChip.file) {
 						const audio = this.sound.get(this.getCacheKey(soundChip));
-						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
-						audio.play({
-							volume: soundChip.volume / 100
-						});
+						if (audio) {
+							this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
+							audio.play({
+								volume: soundChip.volume / 100
+							});
+						}
 					}
 				});
 			}

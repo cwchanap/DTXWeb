@@ -13,6 +13,7 @@
 	import { EventBus } from '@/game/EventBus';
 	import { page } from '$app/state';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
 
@@ -25,6 +26,15 @@
 	let showDiscardModal = $state(false);
 	let showTips = $state(true);
 	let showSoundLibraryModal = $state(false);
+	let showImportResultModal = $state(false);
+	let showRefreshResultModal = $state(false);
+	let showImportErrorModal = $state(false);
+	let showRemoveConfirmModal = $state(false);
+	let showClearConfirmModal = $state(false);
+	let importResultMessage = $state('');
+	let refreshResultMessage = $state('');
+	let importErrorMessage = $state('');
+	let removeFileHash = $state('');
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -94,7 +104,8 @@
 			}, 100);
 		} catch (error) {
 			console.error('Error importing DTX file:', error);
-			alert('Failed to import DTX file. Please check the file format.');
+			importErrorMessage = 'Failed to import DTX file. Please check the file format.';
+			showImportErrorModal = true;
 		}
 	}
 
@@ -261,7 +272,7 @@
 	function addSoundFiles() {
 		const input = document.createElement('input');
 		input.type = 'file';
-		input.accept = 'audio/*';
+		input.accept = 'audio/*,.xa';
 		input.multiple = true;
 		input.onchange = handleSoundFilesImport;
 		input.click();
@@ -283,31 +294,35 @@
 			if (result.errors.length > 0) {
 				message += `\n\nErrors:\n${result.errors.join('\n')}`;
 			}
-			alert(message);
+			importResultMessage = message;
+			showImportResultModal = true;
 
 			refreshSoundLibrary();
 		} catch (error) {
 			console.error('Error importing sound files:', error);
-			alert('Failed to import sound files');
+			importResultMessage = 'Failed to import sound files';
+			showImportResultModal = true;
 		}
 	}
 
 	function removeSoundFile(hash: string) {
-		if (confirm('Are you sure you want to remove this sound file?')) {
-			SoundLibrary.removeFile(hash);
-			refreshSoundLibrary();
-		}
+		removeFileHash = hash;
+		showRemoveConfirmModal = true;
+	}
+
+	function confirmRemoveSoundFile() {
+		SoundLibrary.removeFile(removeFileHash);
+		refreshSoundLibrary();
+		removeFileHash = '';
 	}
 
 	function clearSoundLibrary() {
-		if (
-			confirm(
-				'Are you sure you want to clear the entire sound library? This cannot be undone.'
-			)
-		) {
-			SoundLibrary.clear();
-			refreshSoundLibrary();
-		}
+		showClearConfirmModal = true;
+	}
+
+	function confirmClearSoundLibrary() {
+		SoundLibrary.clear();
+		refreshSoundLibrary();
 	}
 
 	function formatDate(timestamp: number): string {
@@ -330,7 +345,8 @@
 	async function refreshSoundLibraryLinks() {
 		const soundChips = get(store.currentSoundChip);
 		if (!soundChips || soundChips.length === 0) {
-			alert('No sound chips in current chart to refresh');
+			refreshResultMessage = 'No sound chips in current chart to refresh';
+			showRefreshResultModal = true;
 			return;
 		}
 
@@ -370,7 +386,8 @@
 			if (notFound > 0) {
 				message += `\n${notFound} files not found in library`;
 			}
-			alert(message);
+			refreshResultMessage = message;
+			showRefreshResultModal = true;
 
 			// Trigger auto-save to persist the links
 			if (matched > 0) {
@@ -384,7 +401,8 @@
 			}
 		} catch (error) {
 			console.error('Error refreshing sound library links:', error);
-			alert('Failed to refresh sound library links');
+			refreshResultMessage = 'Failed to refresh sound library links';
+			showRefreshResultModal = true;
 		}
 	}
 </script>
@@ -890,3 +908,52 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Import Result Modal -->
+<Modal bind:open={showImportResultModal} title="Import Result">
+	{#snippet children()}
+		<p class="whitespace-pre-line text-gray-700">{importResultMessage}</p>
+	{/snippet}
+</Modal>
+
+<!-- Refresh Result Modal -->
+<Modal bind:open={showRefreshResultModal} title="Refresh Result">
+	{#snippet children()}
+		<p class="whitespace-pre-line text-gray-700">{refreshResultMessage}</p>
+	{/snippet}
+</Modal>
+
+<!-- Import Error Modal -->
+<Modal bind:open={showImportErrorModal} title="Import Error">
+	{#snippet children()}
+		<p class="text-gray-700">{importErrorMessage}</p>
+	{/snippet}
+</Modal>
+
+<!-- Remove File Confirmation Modal -->
+<Modal
+	bind:open={showRemoveConfirmModal}
+	title="Remove File"
+	onConfirm={confirmRemoveSoundFile}
+	confirmText="Remove"
+	confirmVariant="danger"
+>
+	{#snippet children()}
+		<p class="text-gray-700">Are you sure you want to remove this sound file?</p>
+	{/snippet}
+</Modal>
+
+<!-- Clear Library Confirmation Modal -->
+<Modal
+	bind:open={showClearConfirmModal}
+	title="Clear Library"
+	onConfirm={confirmClearSoundLibrary}
+	confirmText="Clear All"
+	confirmVariant="danger"
+>
+	{#snippet children()}
+		<p class="text-gray-700">
+			Are you sure you want to clear the entire sound library? This cannot be undone.
+		</p>
+	{/snippet}
+</Modal>

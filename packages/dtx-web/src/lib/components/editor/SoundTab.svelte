@@ -3,6 +3,13 @@
 	import { SoundChip, type SimFile } from '@dtx/common';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
 	import { file } from 'jszip';
+	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+
+	interface Props {
+		simfileID?: string;
+	}
+
+	let { simfileID }: Props = $props();
 
 	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;
@@ -12,7 +19,30 @@
 	let toastMessage = $state('');
 	let toastType: 'warning' | 'error' = $state('warning');
 
-	store.currentSoundChip.subscribe((value) => (soundChips = value));
+	store.currentSoundChip.subscribe(async (value) => {
+		// For remote charts, ensure files are fetched
+		if (simfileID && value.length > 0) {
+			const updatedChips = await Promise.all(
+				value.map(async (chip) => {
+					if (chip.fileName && !chip.file) {
+						try {
+							await chip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+						} catch (error) {
+							console.error('Failed to fetch remote file:', chip.fileName, error);
+						}
+					}
+					return chip;
+				})
+			);
+
+			// Update the store with the fetched files
+			if (updatedChips.some((chip) => chip.file)) {
+				store.currentSoundChip.set(updatedChips);
+			}
+		}
+
+		soundChips = value;
+	});
 	store.currentSimfile.subscribe((value) => (simfile = value));
 	store.activeNote.subscribe((value) => (activeNote = value));
 
@@ -26,32 +56,43 @@
 		}, 4000);
 	}
 
-	async function playAudio(file: string | File, volume: number = 100) {
+	async function playAudio(file: string | File, volume: number = 100, chip?: SoundChip) {
 		let soundFile: File | undefined;
+		const volumeLevel = volume / 100;
 
 		if (typeof file === 'string') {
-			soundFile = simfile?.files.find((f) => f.name.toLowerCase() === file.toLowerCase());
+			// For remote files, try to find the chip and use its fetched file
+			if (simfileID && chip?.file) {
+				soundFile = chip.file;
+			} else {
+				// For local files, search in simfile.files
+				soundFile = simfile?.files.find((f) => f.name.toLowerCase() === file.toLowerCase());
+			}
 		} else {
 			soundFile = file;
 		}
 
 		if (soundFile) {
-			const volumeLevel = volume / 100;
+			try {
+				if (soundFile.name.toLowerCase().endsWith('.xa')) {
+					const source = XAaudioContext.createBufferSource();
+					const gainNode = XAaudioContext.createGain();
 
-			if (soundFile.name.toLowerCase().endsWith('.xa')) {
-				const source = XAaudioContext.createBufferSource();
-				const gainNode = XAaudioContext.createGain();
+					source.buffer = await XAaudioContext.decodeAudioData(
+						await soundFile.arrayBuffer()
+					);
+					gainNode.gain.value = volumeLevel;
 
-				source.buffer = await XAaudioContext.decodeAudioData(await soundFile.arrayBuffer());
-				gainNode.gain.value = volumeLevel;
-
-				source.connect(gainNode);
-				gainNode.connect(XAaudioContext.destination);
-				source.start();
-			} else {
-				const audio = new Audio(URL.createObjectURL(soundFile));
-				audio.volume = volumeLevel;
-				audio.play();
+					source.connect(gainNode);
+					gainNode.connect(XAaudioContext.destination);
+					source.start();
+				} else {
+					const audio = new Audio(URL.createObjectURL(soundFile));
+					audio.volume = volumeLevel;
+					await audio.play();
+				}
+			} catch (error) {
+				console.error('Error playing audio:', error);
 			}
 		}
 	}
@@ -107,16 +148,24 @@
 </script>
 
 <div class="flex flex-col space-y-2">
-	<button
-		class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-		onclick={() => {
-			// Generate next available ID (find the highest ID and add 1)
-			const nextId =
-				soundChips.length > 0 ? Math.max(...soundChips.map((chip) => chip.id)) + 1 : 1;
+	{#if !simfileID}
+		<!-- Only show "New Sound" button for local charts -->
+		<button
+			class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+			onclick={() => {
+				// Generate next available ID (find the highest ID and add 1)
+				const nextId =
+					soundChips.length > 0 ? Math.max(...soundChips.map((chip) => chip.id)) + 1 : 1;
 
-			store.currentSoundChip.set([...soundChips, new SoundChip('', nextId, 100, 0, '')]);
-		}}>New Sound</button
-	>
+				store.currentSoundChip.set([...soundChips, new SoundChip('', nextId, 100, 0, '')]);
+			}}>New Sound</button
+		>
+	{:else}
+		<!-- Show info text for remote charts -->
+		<div class="w-full rounded-sm bg-gray-100 px-4 py-2 text-center text-sm text-gray-600">
+			Sound files are managed remotely for this chart
+		</div>
+	{/if}
 
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
@@ -149,7 +198,15 @@
 							</button>
 						</td>
 						<td class="border border-gray-300 px-2 py-1">
-							<input type="text" bind:value={chip.label} class="w-full text-center" />
+							<input
+								type="text"
+								value={chip.label}
+								onchange={(e) => {
+									const target = e.target as HTMLInputElement;
+									chip.label = target.value;
+								}}
+								class="w-full text-center"
+							/>
 						</td>
 						<td class="border border-gray-300 px-2 py-1 text-center">
 							<span class="font-mono text-sm">{chipId}</span>
@@ -157,7 +214,11 @@
 						<td class="border border-gray-300 px-2 py-1">
 							<input
 								type="number"
-								bind:value={chip.volume}
+								value={chip.volume}
+								onchange={(e) => {
+									const target = e.target as HTMLInputElement;
+									chip.volume = parseInt(target.value);
+								}}
 								min="0"
 								max="100"
 								class="w-full text-center"
@@ -166,7 +227,11 @@
 						<td class="border border-gray-300 px-2 py-1">
 							<input
 								type="number"
-								bind:value={chip.position}
+								value={chip.position}
+								onchange={(e) => {
+									const target = e.target as HTMLInputElement;
+									chip.position = parseInt(target.value);
+								}}
 								class="w-full text-center"
 							/>
 						</td>
@@ -182,7 +247,24 @@
 						</td>
 
 						<td class="border border-gray-300 px-2 py-1">
-							{#if chip.file}
+							{#if simfileID}
+								<!-- For remote charts, show files based on fileName -->
+								{#if chip.fileName}
+									<button
+										onclick={() => {
+											playAudio(chip.fileName, chip.volume, chip);
+										}}
+										class="flex-1 text-left text-blue-600 underline hover:text-blue-800"
+									>
+										{chip.fileName}
+									</button>
+								{:else}
+									<span class="text-sm text-gray-500 italic"
+										>No file assigned</span
+									>
+								{/if}
+							{:else if chip.file}
+								<!-- For local charts with files -->
 								<div class="flex items-center space-x-2">
 									<button
 										onclick={() => {
@@ -217,6 +299,7 @@
 									</button>
 								</div>
 							{:else}
+								<!-- For local charts without files, allow file upload -->
 								<input
 									type="file"
 									accept="audio/*"

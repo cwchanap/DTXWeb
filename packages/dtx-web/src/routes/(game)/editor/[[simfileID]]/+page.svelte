@@ -14,6 +14,7 @@
 	import { page } from '$app/state';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
 
@@ -31,6 +32,7 @@
 	let showImportErrorModal = $state(false);
 	let showRemoveConfirmModal = $state(false);
 	let showClearConfirmModal = $state(false);
+	let showNewFileModal = $state(false);
 	let importResultMessage = $state('');
 	let refreshResultMessage = $state('');
 	let importErrorMessage = $state('');
@@ -110,7 +112,48 @@
 	}
 
 	function newFile() {
-		store.currentDtxFile.set(new DTXFile());
+		// Check if there's temp data that would be lost
+		const currentSimfileID = get(store.currentSimfileID);
+		const currentDifficulty = get(store.currentDifficulty);
+		const hasUnsavedChanges = TempChartStorage.exists(currentSimfileID, currentDifficulty);
+
+		if (hasUnsavedChanges) {
+			// Show confirmation modal
+			showNewFileModal = true;
+		} else {
+			// No unsaved changes, proceed directly
+			createNewFile();
+		}
+	}
+
+	function createNewFile() {
+		const currentSimfileID = get(store.currentSimfileID);
+		const currentDifficulty = get(store.currentDifficulty);
+
+		// Clear temp data for current chart
+		TempChartStorage.remove(currentSimfileID, currentDifficulty);
+
+		// Create new DTX file
+		const newDtxFile = new DTXFile();
+
+		// Create properly structured empty data
+		const emptyNotes: any[] = []; // Empty array, not object
+		const emptyBpmNotes: Record<string, number> = {};
+
+		// Clear stores and set new DTX file
+		store.currentDtxFile.set(newDtxFile);
+		store.currentSimfile.set(null);
+		store.currentSimfileID.set(null);
+		store.currentDifficulty.set('New Chart');
+		store.currentSoundChip.set([]);
+
+		// Get the editor scene and clear its state
+		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
+			const editorScene = phaserRef.scene as Editor;
+			editorScene.setDirty(false);
+			// Clear the editor notes and reset the scene with proper empty data
+			EventBus.emit(EventType.NOTE_IMPORT, emptyNotes, emptyBpmNotes);
+		}
 	}
 
 	function discardLocalChanges() {
@@ -489,21 +532,11 @@
 						aria-expanded={!isTabsCollapsed}
 					>
 						<span>Editor Tabs</span>
-						<svg
+						<ChevronDown
 							class="h-5 w-5 transform transition-transform duration-200 {isTabsCollapsed
 								? 'rotate-0'
 								: 'rotate-180'}"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M19 9l-7 7-7-7"
-							/>
-						</svg>
+						/>
 					</button>
 				</div>
 
@@ -566,14 +599,7 @@
 				title="Hide tips"
 			>
 				<span>Hide</span>
-				<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M19 9l-7 7-7-7"
-					/>
-				</svg>
+				<ChevronDown class="h-3 w-3" />
 			</button>
 		</div>
 
@@ -779,14 +805,7 @@
 					class="rounded-md text-gray-400 hover:text-gray-600"
 					onclick={() => (showSoundLibraryModal = false)}
 				>
-					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
+					<X class="h-6 w-6" />
 				</button>
 			</div>
 
@@ -821,19 +840,7 @@
 			<div class="flex-1 overflow-y-auto">
 				{#if soundLibraryFiles.length === 0}
 					<div class="py-8 text-center text-gray-500">
-						<svg
-							class="mx-auto mb-4 h-12 w-12 text-gray-400"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-							/>
-						</svg>
+						<Music class="mx-auto mb-4 h-12 w-12 text-gray-400" />
 						<p class="text-lg font-medium">No sound files in library</p>
 						<p class="text-sm">Click "Add Files" to import audio files</p>
 					</div>
@@ -845,19 +852,7 @@
 							>
 								<div class="min-w-0 flex-1">
 									<div class="flex items-center space-x-3">
-										<svg
-											class="h-5 w-5 flex-shrink-0 text-blue-500"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-											/>
-										</svg>
+										<Music class="h-5 w-5 flex-shrink-0 text-blue-500" />
 										<div class="min-w-0 flex-1">
 											<p class="truncate text-sm font-medium text-gray-900">
 												{file.fileName}
@@ -873,20 +868,9 @@
 									class="ml-3 rounded-md text-red-600 hover:text-red-800"
 									onclick={() => removeSoundFile(file.hash)}
 									title="Remove file"
+									aria-label="Remove file"
 								>
-									<svg
-										class="h-4 w-4"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-										/>
-									</svg>
+									<Trash2 class="h-4 w-4" />
 								</button>
 							</div>
 						{/each}
@@ -955,5 +939,25 @@
 		<p class="text-gray-700">
 			Are you sure you want to clear the entire sound library? This cannot be undone.
 		</p>
+	{/snippet}
+</Modal>
+
+<!-- New File Confirmation Modal -->
+<Modal
+	bind:open={showNewFileModal}
+	title="Create New File"
+	onConfirm={createNewFile}
+	confirmText="Create New"
+	confirmVariant="danger"
+>
+	{#snippet children()}
+		<div class="space-y-3">
+			<p class="text-gray-700">
+				Creating a new file will clear all unsaved changes to the current chart.
+			</p>
+			<p class="text-sm font-medium text-red-600">
+				⚠️ This action cannot be undone. All temporary edits will be permanently lost.
+			</p>
+		</div>
 	{/snippet}
 </Modal>

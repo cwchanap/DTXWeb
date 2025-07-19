@@ -41,6 +41,7 @@ export class Editor extends BaseGame {
 	private readonly AUTO_SAVE_DELAY_MS = 2000; // Debounce auto-save by 2 seconds
 	private keyBindings: Record<string, string> = {}; // key -> noteId mapping
 	private isInitializing = false; // Flag to prevent auto-save during initialization
+	private soundFileHashCache: Map<File, string> = new Map(); // Cache file hashes to avoid recomputing
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -557,6 +558,8 @@ export class Editor extends BaseGame {
 
 	restart(data: Data = {}) {
 		console.log('Restart Scene, data', data);
+		// Clear hash cache to avoid stale File references
+		this.soundFileHashCache.clear();
 		EventBus.off(EventType.MEASURE_UPDATE);
 		EventBus.off(EventType.NOTE_IMPORT);
 		EventBus.off(EventType.MEASURE_GOTO);
@@ -834,13 +837,24 @@ export class Editor extends BaseGame {
 					// For imported charts, try to find matching file in sound library
 					if (!simfileID && chip.file instanceof File) {
 						try {
-							// Generate hash of the current file
-							const arrayBuffer = await chip.file.arrayBuffer();
-							const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-							const hashArray = Array.from(new Uint8Array(hashBuffer));
-							const fileHash = hashArray
-								.map((b) => b.toString(16).padStart(2, '0'))
-								.join('');
+							// Check cache first to avoid expensive hash computation
+							let fileHash = this.soundFileHashCache.get(chip.file);
+
+							if (!fileHash) {
+								// Generate hash only if not cached
+								const arrayBuffer = await chip.file.arrayBuffer();
+								const hashBuffer = await crypto.subtle.digest(
+									'SHA-256',
+									arrayBuffer
+								);
+								const hashArray = Array.from(new Uint8Array(hashBuffer));
+								fileHash = hashArray
+									.map((b) => b.toString(16).padStart(2, '0'))
+									.join('');
+
+								// Cache the result for future auto-saves
+								this.soundFileHashCache.set(chip.file, fileHash);
+							}
 
 							// Check if file exists in sound library
 							const libraryFile = SoundLibrary.getByHash(fileHash);

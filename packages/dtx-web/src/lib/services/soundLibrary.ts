@@ -42,8 +42,10 @@ export class SoundLibrary {
 
 		for (const file of files) {
 			try {
-				// Check if file is audio
-				if (!file.type.startsWith('audio/')) {
+				// Check if file is audio or .xa file
+				const isAudioFile =
+					file.type.startsWith('audio/') || file.name.toLowerCase().endsWith('.xa');
+				if (!isAudioFile) {
 					errors.push(`${file.name}: Not an audio file`);
 					continue;
 				}

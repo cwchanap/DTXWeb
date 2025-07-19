@@ -482,39 +482,58 @@
 			{/snippet}
 		</Popover>
 
-		<Popover
-			positioning={{ placement: 'bottom-start' }}
-			contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-			classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
-			triggerClasses="w-full"
-		>
-			{#snippet trigger()}
-				<span>Edit</span>
-			{/snippet}
-			{#snippet content()}
-				<div class="flex flex-col">
-					<button
-						class="px-4 py-2 text-left hover:bg-gray-100"
-						onclick={() => (showSoundLibraryModal = true)}
-					>
-						Manage Sound files library
-					</button>
-					<button
-						class="px-4 py-2 text-left hover:bg-gray-100"
-						onclick={refreshSoundLibraryLinks}
-					>
-						Refresh Sound Library Links
-					</button>
-					<button
-						class="px-4 py-2 text-left hover:bg-gray-100"
-						onclick={discardLocalChanges}
-						title="Discard all local changes and reload from server"
-					>
-						Discard current Local changes
-					</button>
-				</div>
-			{/snippet}
-		</Popover>
+		{#if !simfileID}
+			<!-- Only show Edit menu for local files (no simfileID) -->
+			<Popover
+				positioning={{ placement: 'bottom-start' }}
+				contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
+				classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+				triggerClasses="w-full"
+			>
+				{#snippet trigger()}
+					<span>Edit</span>
+				{/snippet}
+				{#snippet content()}
+					<div class="flex flex-col">
+						<button
+							class="px-4 py-2 text-left hover:bg-gray-100"
+							onclick={() => (showSoundLibraryModal = true)}
+						>
+							Manage Sound files library
+						</button>
+						<button
+							class="px-4 py-2 text-left hover:bg-gray-100"
+							onclick={refreshSoundLibraryLinks}
+						>
+							Refresh Sound Library Links
+						</button>
+					</div>
+				{/snippet}
+			</Popover>
+		{:else}
+			<!-- Show Edit menu with only discard changes for remote files -->
+			<Popover
+				positioning={{ placement: 'bottom-start' }}
+				contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
+				classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+				triggerClasses="w-full"
+			>
+				{#snippet trigger()}
+					<span>Edit</span>
+				{/snippet}
+				{#snippet content()}
+					<div class="flex flex-col">
+						<button
+							class="px-4 py-2 text-left hover:bg-gray-100"
+							onclick={discardLocalChanges}
+							title="Discard all local changes and reload from server"
+						>
+							Discard current Local changes
+						</button>
+					</div>
+				{/snippet}
+			</Popover>
+		{/if}
 
 		<div class="h-8 border-l border-gray-300"></div>
 	</div>
@@ -572,7 +591,7 @@
 							{#if currentTab === 0}
 								<MainTab />
 							{:else if currentTab === 1}
-								<SoundTab />
+								<SoundTab {simfileID} />
 							{/if}
 						</div>
 					</div>

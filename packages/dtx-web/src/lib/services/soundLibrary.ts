@@ -15,17 +15,22 @@ export interface SoundLibraryFile {
 export class SoundLibrary {
 	private static readonly STORAGE_KEY = 'dtx_sound_library';
 	private static readonly MAX_STORAGE_SIZE = 50 * 1024 * 1024; // 50MB limit
+	private static readonly LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2MB threshold for large files
+	private static memoryFiles: Map<string, SoundLibraryFile> = new Map(); // In-memory storage for large files
 
 	/**
-	 * Get all files in the sound library
+	 * Get all files in the sound library (both localStorage and memory)
 	 */
 	static getAll(): SoundLibraryFile[] {
 		try {
 			const data = localStorage.getItem(this.STORAGE_KEY);
-			return data ? JSON.parse(data) : [];
+			const storedFiles: SoundLibraryFile[] = data ? JSON.parse(data) : [];
+			const memoryFiles = Array.from(this.memoryFiles.values());
+			const allFiles = [...storedFiles, ...memoryFiles];
+			return allFiles;
 		} catch (error) {
 			console.error('Failed to load sound library:', error);
-			return [];
+			return Array.from(this.memoryFiles.values()); // Return at least memory files if localStorage fails
 		}
 	}
 
@@ -35,16 +40,21 @@ export class SoundLibrary {
 	static async addFiles(
 		files: File[]
 	): Promise<{ added: number; skipped: number; errors: string[] }> {
-		const library = this.getAll();
+		// Get existing localStorage files only (not memory files) for quota calculation
+		const storedData = localStorage.getItem(this.STORAGE_KEY);
+		const library: SoundLibraryFile[] = storedData ? JSON.parse(storedData) : [];
 		const errors: string[] = [];
 		let added = 0;
 		let skipped = 0;
 
 		for (const file of files) {
 			try {
-				// Check if file is audio or .xa file
+				// Check if file is audio file by MIME type or extension
+				const audioExtensions = ['.wav', '.mp3', '.ogg', '.m4a', '.xa'];
+				const fileName = file.name.toLowerCase();
 				const isAudioFile =
-					file.type.startsWith('audio/') || file.name.toLowerCase().endsWith('.xa');
+					file.type.startsWith('audio/') ||
+					audioExtensions.some((ext) => fileName.endsWith(ext));
 				if (!isAudioFile) {
 					errors.push(`${file.name}: Not an audio file`);
 					continue;
@@ -53,36 +63,56 @@ export class SoundLibrary {
 				// Generate hash
 				const hash = await this.generateFileHash(file);
 
-				// Check if file already exists
-				if (library.find((f) => f.hash === hash)) {
+				// Check if file already exists (in both localStorage and memory)
+				const existingFile =
+					library.find((f) => f.hash === hash) || this.memoryFiles.get(hash);
+				if (existingFile) {
 					skipped++;
 					continue;
 				}
 
-				// Check storage limit
-				const totalSize = library.reduce((sum, f) => sum + f.size, 0) + file.size;
-				if (totalSize > this.MAX_STORAGE_SIZE) {
-					errors.push(
-						`${file.name}: Would exceed storage limit (${Math.round(this.MAX_STORAGE_SIZE / 1024 / 1024)}MB)`
-					);
-					continue;
+				// Determine if file is large and should be stored in memory
+				const isLargeFile = file.size > this.LARGE_FILE_THRESHOLD;
+
+				if (isLargeFile) {
+					// Store large files only in memory (no base64 conversion needed for memory storage)
+					const libraryFile: SoundLibraryFile = {
+						hash,
+						fileName: file.name,
+						fileType: file.type,
+						fileData: '', // Empty for large files - we'll store the File object directly in workspace
+						size: file.size,
+						dateAdded: Date.now()
+					};
+
+					this.memoryFiles.set(hash, libraryFile);
+					added++;
+				} else {
+					// Check localStorage storage limit for normal files
+					const totalSize = library.reduce((sum, f) => sum + f.size, 0) + file.size;
+					if (totalSize > this.MAX_STORAGE_SIZE) {
+						errors.push(
+							`${file.name}: Would exceed storage limit (${Math.round(this.MAX_STORAGE_SIZE / 1024 / 1024)}MB)`
+						);
+						continue;
+					}
+
+					// Convert to base64 for localStorage
+					const fileData = await this.fileToBase64(file);
+
+					// Add to library array for localStorage
+					const libraryFile: SoundLibraryFile = {
+						hash,
+						fileName: file.name,
+						fileType: file.type,
+						fileData,
+						size: file.size,
+						dateAdded: Date.now()
+					};
+
+					library.push(libraryFile);
+					added++;
 				}
-
-				// Convert to base64
-				const fileData = await this.fileToBase64(file);
-
-				// Add to library
-				const libraryFile: SoundLibraryFile = {
-					hash,
-					fileName: file.name,
-					fileType: file.type,
-					fileData,
-					size: file.size,
-					dateAdded: Date.now()
-				};
-
-				library.push(libraryFile);
-				added++;
 			} catch (error) {
 				errors.push(
 					`${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -90,11 +120,39 @@ export class SoundLibrary {
 			}
 		}
 
-		// Save updated library
-		try {
-			localStorage.setItem(this.STORAGE_KEY, JSON.stringify(library));
-		} catch (error) {
-			errors.push('Failed to save to localStorage');
+		// Save updated library to localStorage (only normal-sized files)
+		if (library.length > 0) {
+			try {
+				localStorage.setItem(this.STORAGE_KEY, JSON.stringify(library));
+			} catch (error) {
+				if (error instanceof Error && error.name === 'QuotaExceededError') {
+					// Try to free up space by removing oldest files
+					const success = this.freeUpStorageSpace(library);
+					if (success) {
+						try {
+							localStorage.setItem(this.STORAGE_KEY, JSON.stringify(library));
+						} catch (retryError) {
+							// Try more aggressive cleanup - remove 50% of remaining files
+							const moreAggressiveSuccess = this.freeUpStorageSpace(library, 0.5);
+							if (moreAggressiveSuccess) {
+								try {
+									localStorage.setItem(this.STORAGE_KEY, JSON.stringify(library));
+								} catch (finalError) {
+									errors.push(
+										'Storage quota exceeded - unable to store remaining files'
+									);
+								}
+							} else {
+								errors.push('Storage quota exceeded - could not free enough space');
+							}
+						}
+					} else {
+						errors.push('Storage quota exceeded - unable to free space');
+					}
+				} else {
+					errors.push('Failed to save to localStorage');
+				}
+			}
 		}
 
 		return { added, skipped, errors };
@@ -116,18 +174,25 @@ export class SoundLibrary {
 	}
 
 	/**
-	 * Get a file by hash
+	 * Get a file by hash (check both localStorage and memory)
 	 */
 	static getByHash(hash: string): SoundLibraryFile | null {
+		// First check memory files
+		const memoryFile = this.memoryFiles.get(hash);
+		if (memoryFile) {
+			return memoryFile;
+		}
+
+		// Then check localStorage files
 		const library = this.getAll();
 		return library.find((f) => f.hash === hash) || null;
 	}
 
 	/**
-	 * Find files by filename (case-insensitive)
+	 * Find files by filename (case-insensitive, check both localStorage and memory)
 	 */
 	static findByFileName(fileName: string): SoundLibraryFile[] {
-		const library = this.getAll();
+		const library = this.getAll(); // This already includes both localStorage and memory files
 		const normalizedName = fileName.toLowerCase();
 		return library.filter((f) => f.fileName.toLowerCase() === normalizedName);
 	}
@@ -159,10 +224,18 @@ export class SoundLibrary {
 	}
 
 	/**
-	 * Clear entire library
+	 * Clear entire library (both localStorage and memory)
 	 */
 	static clear(): void {
 		localStorage.removeItem(this.STORAGE_KEY);
+		this.memoryFiles.clear();
+	}
+
+	/**
+	 * Clear only memory files (for session cleanup)
+	 */
+	static clearMemoryFiles(): void {
+		this.memoryFiles.clear();
 	}
 
 	/**
@@ -176,12 +249,45 @@ export class SoundLibrary {
 	}
 
 	/**
+	 * Free up storage space by removing oldest files
+	 */
+	private static freeUpStorageSpace(
+		library: SoundLibraryFile[],
+		removalPercentage = 0.25
+	): boolean {
+		// Sort by dateAdded (oldest first)
+		const sortedFiles = [...library].sort((a, b) => a.dateAdded - b.dateAdded);
+
+		// Remove oldest files until we free up the specified percentage
+		const targetRemoval = Math.ceil(library.length * removalPercentage);
+		const filesToRemove = sortedFiles.slice(0, Math.max(1, targetRemoval));
+
+		// Remove the files from the library array
+		filesToRemove.forEach((fileToRemove) => {
+			const index = library.findIndex((f) => f.hash === fileToRemove.hash);
+			if (index >= 0) {
+				library.splice(index, 1);
+			}
+		});
+
+		return filesToRemove.length > 0;
+	}
+
+	/**
 	 * Convert file to base64
 	 */
 	private static async fileToBase64(file: File): Promise<string> {
-		const arrayBuffer = await file.arrayBuffer();
-		const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-		return base64;
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const result = reader.result as string;
+				// Remove the data URL prefix (data:type;base64,)
+				const base64 = result.split(',')[1];
+				resolve(base64);
+			};
+			reader.onerror = reject;
+			reader.readAsDataURL(file);
+		});
 	}
 
 	/**

@@ -17,6 +17,8 @@
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
+	import { workspaceService, type Workspace } from '$lib/services/workspaceService';
+	import { FileManager } from '$lib/services/fileManager';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -33,10 +35,13 @@
 	let showRemoveConfirmModal = $state(false);
 	let showClearConfirmModal = $state(false);
 	let showNewFileModal = $state(false);
+	let showWorkspaceSwitchModal = $state(false);
 	let importResultMessage = $state('');
 	let refreshResultMessage = $state('');
 	let importErrorMessage = $state('');
 	let removeFileHash = $state('');
+	let currentWorkspace = $state<Workspace | null>(null);
+	let availableWorkspaces = $state<Workspace[]>([]);
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -55,6 +60,117 @@
 		input.accept = '.dtx';
 		input.onchange = handleFileImport;
 		input.click();
+	}
+
+	function importFolder() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.webkitdirectory = true;
+		input.multiple = true;
+		input.onchange = handleFolderImport;
+		input.click();
+	}
+
+	async function handleFolderImport(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const files = target.files;
+		if (!files || files.length === 0) return;
+
+		try {
+			const workspace = await workspaceService.importFolder(files);
+			currentWorkspace = workspace;
+
+			// Switch to the first DTX file in the workspace
+			if (workspace.dtxFiles.length > 0) {
+				const firstDTX = workspace.dtxFiles[0].name;
+				await switchWorkspaceDTX(firstDTX);
+			}
+
+			// Set current workspace
+			workspaceService.setCurrentWorkspace(workspace);
+
+			importResultMessage = `Imported workspace "${workspace.name}"\n- ${workspace.dtxFiles.length} DTX files\n- ${workspace.audioFiles.length} audio files added to sound library`;
+			showImportResultModal = true;
+		} catch (error) {
+			console.error('Error importing folder:', error);
+			importErrorMessage = 'Failed to import folder. Please check the folder contents.';
+			showImportErrorModal = true;
+		}
+	}
+
+	async function switchWorkspaceDTX(dtxFileName: string) {
+		if (!currentWorkspace) return;
+
+		try {
+			const result = await workspaceService.parseDTXFile(currentWorkspace, dtxFileName);
+			if (!result) {
+				console.error('Failed to parse DTX file:', dtxFileName);
+				return;
+			}
+
+			const { dtxFile, simFile } = result;
+
+			// Parse notes and BPM changes
+			const notes = dtxFile.parseNotes();
+			const bpmNotes = dtxFile.parseBPMChanges();
+			const soundChips = dtxFile.parseSoundChips();
+
+			// Map sound chips to files from the SimFile
+			const mappedSoundChips = soundChips.map((chip) => {
+				if (chip.fileName) {
+					const matchingFile = simFile.files.find(
+						(f) => f.name.toLowerCase() === chip.fileName.toLowerCase()
+					);
+					if (matchingFile) {
+						// Store file only in FileManager to avoid store corruption
+						const currentSimfileID = get(store.currentSimfileID);
+						const fileKey = FileManager.generateKey(currentSimfileID, chip.fileName);
+						FileManager.setFile(fileKey, matchingFile);
+
+						// Don't store File object in chip to avoid store corruption
+						chip.file = undefined;
+					} else {
+						// Try exact match without case conversion
+						const exactMatch = simFile.files.find((f) => f.name === chip.fileName);
+						if (exactMatch) {
+							const currentSimfileID = get(store.currentSimfileID);
+							const fileKey = FileManager.generateKey(
+								currentSimfileID,
+								chip.fileName
+							);
+							FileManager.setFile(fileKey, exactMatch);
+							chip.file = undefined;
+						}
+					}
+				}
+				return chip;
+			});
+
+			// Update stores
+			store.currentDtxFile.set(dtxFile);
+			store.currentSoundChip.set(mappedSoundChips);
+			store.currentSimfile.set(simFile);
+			store.currentSimfileID.set(null); // Local workspace
+			store.currentDifficulty.set(dtxFileName.replace('.dtx', ''));
+
+			// Switch workspace current DTX
+			workspaceService.switchDTXFile(currentWorkspace, dtxFileName);
+
+			// Clear any existing temp data
+			TempChartStorage.remove(null, get(store.currentDifficulty));
+
+			// Emit note import event
+			setTimeout(() => {
+				EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+			}, 100);
+		} catch (error) {
+			console.error('Error switching DTX file:', error);
+		}
+	}
+
+	function showWorkspaceSwitcher() {
+		availableWorkspaces = workspaceService.getWorkspaces();
+		showWorkspaceSwitchModal = true;
 	}
 
 	async function handleFileImport(event: Event) {
@@ -252,6 +368,15 @@
 		simfileID = page.params.simfileID;
 		store.currentSimfileID.set(simfileID || null);
 		if (!simfileID) {
+			// Try to restore workspace from localStorage or URL
+			currentWorkspace = workspaceService.getCurrentWorkspace();
+
+			if (currentWorkspace && currentWorkspace.currentDTX) {
+				// Restore workspace state
+				await switchWorkspaceDTX(currentWorkspace.currentDTX);
+				return;
+			}
+
 			// Check if there's imported chart data available
 			const importedData = TempChartStorage.load(null, 'Imported');
 			if (importedData) {
@@ -467,12 +592,20 @@
 						>New</button
 					>
 					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={importFile}
-						>Import</button
+						>Import File</button
+					>
+					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={importFolder}
+						>Import Folder</button
 					>
 					{#if simfileID}
 						<button
 							class="px-4 py-2 text-left hover:bg-gray-100"
 							onclick={() => (showDifficultyModal = true)}>Switch file</button
+						>
+					{:else if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
+						<button
+							class="px-4 py-2 text-left hover:bg-gray-100"
+							onclick={showWorkspaceSwitcher}>Switch DTX</button
 						>
 					{/if}
 					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={exportFile}
@@ -958,6 +1091,39 @@
 		<p class="text-gray-700">
 			Are you sure you want to clear the entire sound library? This cannot be undone.
 		</p>
+	{/snippet}
+</Modal>
+
+<!-- Workspace DTX Switcher Modal -->
+<Modal bind:open={showWorkspaceSwitchModal} title="Switch DTX File">
+	{#snippet children()}
+		{#if currentWorkspace}
+			<div class="space-y-4">
+				<p class="text-gray-700">Select a DTX file from the current workspace:</p>
+				<div class="max-h-64 space-y-2 overflow-y-auto">
+					{#each currentWorkspace.dtxFiles as dtxFile}
+						<button
+							class="w-full rounded-lg border p-3 text-left transition-colors {currentWorkspace.currentDTX ===
+							dtxFile.name
+								? 'border-blue-500 bg-blue-50'
+								: 'border-gray-200 hover:bg-gray-50'}"
+							onclick={() => {
+								switchWorkspaceDTX(dtxFile.name);
+								showWorkspaceSwitchModal = false;
+							}}
+						>
+							<div class="font-medium text-gray-900">{dtxFile.name}</div>
+							<div class="text-sm text-gray-500">{dtxFile.path}</div>
+							{#if currentWorkspace.currentDTX === dtxFile.name}
+								<div class="mt-1 text-xs font-medium text-blue-600">
+									Currently active
+								</div>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	{/snippet}
 </Modal>
 

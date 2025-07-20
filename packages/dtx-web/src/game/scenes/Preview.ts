@@ -3,6 +3,7 @@ import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '$lib/store';
+import { FileManager } from '$lib/services/fileManager';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
 import type { LaneMeasureNote, SoundChip } from '@dtx/common';
 import { BaseGame } from './BaseGame';
@@ -79,23 +80,39 @@ export class Preview extends BaseGame {
 		if (soundChips) {
 			const addedKey = new Set();
 			soundChips.forEach((soundChip) => {
-				if (!soundChip.fileName || !soundChip.file) return;
+				// Get file from FileManager for local files, or use chip.file for remote files
+				let actualFile = soundChip.file;
+				const currentSimfileID = get(store.currentSimfileID);
+
+				if (!currentSimfileID) {
+					// Local file - get from FileManager
+					const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
+					actualFile = FileManager.getFile(fileKey);
+				} else {
+					// Remote file - use the file from chip
+				}
+
+				if (!soundChip.fileName || !actualFile) {
+					return;
+				}
 
 				const cacheKey = this.getCacheKey(soundChip);
 				this.cache.audio.remove(cacheKey);
 
 				if (addedKey.has(cacheKey)) return;
 				addedKey.add(cacheKey);
+
 				if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
 					// For XA files, we'll load them with custom audio context
 					this.load.audio({
 						key: cacheKey,
-						url: [URL.createObjectURL(soundChip.file)],
+						url: [URL.createObjectURL(actualFile)],
 						context: XAaudioContext
 					});
 				} else {
 					// For other formats, load as usual
-					this.load.audio(cacheKey, URL.createObjectURL(soundChip.file));
+					const objectUrl = URL.createObjectURL(actualFile);
+					this.load.audio(cacheKey, objectUrl);
 				}
 			});
 		}

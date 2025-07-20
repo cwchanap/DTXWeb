@@ -555,6 +555,22 @@ export class Preview extends BaseGame {
 	}
 
 	createNoteAnimations() {
+		// Clear any existing animations to prevent "key already exists" warnings
+		this.laneConfigs.forEach((laneConfig) => {
+			if (!laneConfig.playable) return;
+			const laneId = laneConfig.id;
+			const baseKey = `note-${laneId}-base`;
+			const overlayKey = `note-${laneId}-overlay`;
+
+			// Remove existing animations if they exist
+			if (this.anims.exists(baseKey)) {
+				this.anims.remove(baseKey);
+			}
+			if (this.anims.exists(overlayKey)) {
+				this.anims.remove(overlayKey);
+			}
+		});
+
 		// Create custom frames for the spritesheet since each note has different width
 		const texture = this.textures.get(AssetName.DRUM_CHIPS);
 		const frameHeight = 64; // Height of each note graphic

@@ -2,6 +2,7 @@
 	import { type Scene } from 'phaser';
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
 	import { Editor } from '@/game/scenes/Editor';
+	import { Preview } from '@/game/scenes/Preview';
 	import { onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
 	import { DTXFile, SimFile, decodeFileWithEncodingDetection } from '@dtx/common';
@@ -102,6 +103,9 @@
 		if (!currentWorkspace) return;
 
 		try {
+			// Stop any existing preview to ensure clean re-draw when switching DTX files
+			EventBus.emit(EventType.STOP_PREVIEW);
+
 			const result = await workspaceService.parseDTXFile(currentWorkspace, dtxFileName);
 			if (!result) {
 				console.error('Failed to parse DTX file:', dtxFileName);
@@ -162,6 +166,23 @@
 			// Emit note import event
 			setTimeout(() => {
 				EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+
+				// After notes are imported and Editor scene is ready, clean up Preview scene
+				setTimeout(() => {
+					if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
+						const editorScene = phaserRef.scene as Editor;
+
+						if (
+							editorScene.scene.isActive(Preview.key) ||
+							editorScene.scene.isPaused(Preview.key)
+						) {
+							editorScene.scene.stop(Preview.key);
+						}
+
+						// Force editor to be dirty so Preview rebuilds completely
+						editorScene.setDirty(true);
+					}
+				}, 200);
 			}, 100);
 		} catch (error) {
 			console.error('Error switching DTX file:', error);
@@ -588,28 +609,50 @@
 			{/snippet}
 			{#snippet content()}
 				<div class="flex flex-col">
-					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={newFile}
-						>New</button
+					<button
+						class="px-4 py-2 text-left {isPreviewing
+							? 'cursor-not-allowed text-gray-400'
+							: 'hover:bg-gray-100'}"
+						onclick={newFile}
+						disabled={isPreviewing}>New</button
 					>
-					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={importFile}
-						>Import File</button
+					<button
+						class="px-4 py-2 text-left {isPreviewing
+							? 'cursor-not-allowed text-gray-400'
+							: 'hover:bg-gray-100'}"
+						onclick={importFile}
+						disabled={isPreviewing}>Import File</button
 					>
-					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={importFolder}
-						>Import Folder</button
+					<button
+						class="px-4 py-2 text-left {isPreviewing
+							? 'cursor-not-allowed text-gray-400'
+							: 'hover:bg-gray-100'}"
+						onclick={importFolder}
+						disabled={isPreviewing}>Import Folder</button
 					>
 					{#if simfileID}
 						<button
-							class="px-4 py-2 text-left hover:bg-gray-100"
-							onclick={() => (showDifficultyModal = true)}>Switch file</button
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
+							onclick={() => (showDifficultyModal = true)}
+							disabled={isPreviewing}>Switch file</button
 						>
 					{:else if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
 						<button
-							class="px-4 py-2 text-left hover:bg-gray-100"
-							onclick={showWorkspaceSwitcher}>Switch DTX</button
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
+							onclick={showWorkspaceSwitcher}
+							disabled={isPreviewing}>Switch DTX</button
 						>
 					{/if}
-					<button class="px-4 py-2 text-left hover:bg-gray-100" onclick={exportFile}
-						>Export</button
+					<button
+						class="px-4 py-2 text-left {isPreviewing
+							? 'cursor-not-allowed text-gray-400'
+							: 'hover:bg-gray-100'}"
+						onclick={exportFile}
+						disabled={isPreviewing}>Export</button
 					>
 				</div>
 			{/snippet}
@@ -629,14 +672,20 @@
 				{#snippet content()}
 					<div class="flex flex-col">
 						<button
-							class="px-4 py-2 text-left hover:bg-gray-100"
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
 							onclick={() => (showSoundLibraryModal = true)}
+							disabled={isPreviewing}
 						>
 							Manage Sound files library
 						</button>
 						<button
-							class="px-4 py-2 text-left hover:bg-gray-100"
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
 							onclick={refreshSoundLibraryLinks}
+							disabled={isPreviewing}
 						>
 							Refresh Sound Library Links
 						</button>
@@ -657,9 +706,12 @@
 				{#snippet content()}
 					<div class="flex flex-col">
 						<button
-							class="px-4 py-2 text-left hover:bg-gray-100"
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
 							onclick={discardLocalChanges}
 							title="Discard all local changes and reload from server"
+							disabled={isPreviewing}
 						>
 							Discard current Local changes
 						</button>

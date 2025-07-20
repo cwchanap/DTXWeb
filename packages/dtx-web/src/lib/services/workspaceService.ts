@@ -93,12 +93,46 @@ class WorkspaceService {
 			}
 		}
 
+		// Sort DTX files by name to prioritize higher difficulties (following SET.def L1-L5 system)
+		const sortedDtxFiles = dtxFiles.sort((a, b) => {
+			// Extract difficulty indicators from filename based on SET.def L1-L5 levels
+			const getDifficultyOrder = (name: string): number => {
+				const lowerName = name.toLowerCase();
+				// Level 5 (highest): REAL
+				if (lowerName.includes('real')) return 5;
+				// Level 4: MASTER
+				if (lowerName.includes('master') || lowerName.includes('mas')) return 4;
+				// Level 3: EXTREME
+				if (lowerName.includes('extreme') || lowerName.includes('ext')) return 3;
+				// Level 2: ADVANCED
+				if (lowerName.includes('advanced') || lowerName.includes('adv')) return 2;
+				// Level 1 (lowest): BASIC
+				if (lowerName.includes('basic') || lowerName.includes('bas')) return 1;
+				return 0; // Unknown difficulty - sort alphabetically
+			};
+
+			const diffA = getDifficultyOrder(a.name);
+			const diffB = getDifficultyOrder(b.name);
+
+			// If both have difficulty indicators, sort by difficulty (highest first)
+			if (diffA > 0 && diffB > 0) {
+				return diffB - diffA;
+			}
+
+			// If only one has difficulty indicator, prioritize it
+			if (diffA > 0) return -1;
+			if (diffB > 0) return 1;
+
+			// Both unknown - sort alphabetically
+			return a.name.localeCompare(b.name);
+		});
+
 		const workspace: Workspace = {
 			name: folderName,
 			path: folderName,
-			dtxFiles,
+			dtxFiles: sortedDtxFiles,
 			audioFiles,
-			currentDTX: dtxFiles.length > 0 ? dtxFiles[0].name : null,
+			currentDTX: sortedDtxFiles.length > 0 ? sortedDtxFiles[0].name : null,
 			lastModified: Date.now()
 		};
 

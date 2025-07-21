@@ -25,7 +25,7 @@ export interface Workspace {
 	lastModified: number;
 }
 
-class WorkspaceService {
+export class WorkspaceService {
 	private static readonly STORAGE_KEY = 'dtx_workspaces';
 	private static readonly LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2MB threshold
 	private static sessionLargeFiles: Map<string, File> = new Map(); // Store large files in memory
@@ -40,7 +40,10 @@ class WorkspaceService {
 		// Get folder name from first file's path
 		const firstFile = files[0];
 		const pathParts = firstFile.webkitRelativePath?.split('/') || [firstFile.name];
-		const folderName = pathParts.length > 1 ? pathParts[0] : 'Imported Folder';
+		const baseFolderName = pathParts.length > 1 ? pathParts[0] : 'Imported Folder';
+
+		// Generate unique workspace name if there's a conflict
+		const folderName = this.generateUniqueWorkspaceName(baseFolderName);
 
 		for (const file of Array.from(files)) {
 			const fileName = file.name.toLowerCase();
@@ -344,6 +347,29 @@ class WorkspaceService {
 	}
 
 	/**
+	 * Generate a unique workspace name to avoid conflicts
+	 */
+	private generateUniqueWorkspaceName(baseName: string): string {
+		const existingWorkspaces = this.getWorkspaces();
+		const existingNames = new Set(existingWorkspaces.map((w) => w.name));
+
+		if (!existingNames.has(baseName)) {
+			return baseName;
+		}
+
+		// Find a unique name by appending a number
+		let counter = 1;
+		let uniqueName = `${baseName} (${counter})`;
+
+		while (existingNames.has(uniqueName)) {
+			counter++;
+			uniqueName = `${baseName} (${counter})`;
+		}
+
+		return uniqueName;
+	}
+
+	/**
 	 * Get a large file from session memory
 	 */
 	static getLargeFile(workspaceName: string, fileName: string): File | undefined {
@@ -352,10 +378,23 @@ class WorkspaceService {
 	}
 
 	/**
-	 * Clear session large files (call when switching workspaces)
+	 * Clear session large files for a specific workspace or all if no workspace specified
 	 */
-	static clearSessionFiles(): void {
-		this.sessionLargeFiles.clear();
+	static clearSessionFiles(workspaceName?: string): void {
+		if (!workspaceName) {
+			this.sessionLargeFiles.clear();
+			return;
+		}
+
+		// Clear only files for the specified workspace
+		const keysToDelete: string[] = [];
+		for (const [key] of this.sessionLargeFiles) {
+			if (key.startsWith(`${workspaceName}/`)) {
+				keysToDelete.push(key);
+			}
+		}
+
+		keysToDelete.forEach((key) => this.sessionLargeFiles.delete(key));
 	}
 }
 

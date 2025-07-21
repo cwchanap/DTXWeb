@@ -21,11 +21,6 @@
 	let toastType: 'warning' | 'error' = $state('warning');
 
 	store.currentSoundChip.subscribe(async (value) => {
-		console.log(
-			'Debug - SoundTab received sound chips:',
-			value.map((c) => ({ id: c.id, fileName: c.fileName, hasFile: !!c.file }))
-		);
-
 		// For remote charts, ensure files are fetched
 		if (simfileID && value.length > 0) {
 			const updatedChips = await Promise.all(
@@ -48,10 +43,6 @@
 		}
 
 		soundChips = value;
-		console.log(
-			'Debug - SoundTab final soundChips:',
-			soundChips.map((c) => ({ id: c.id, fileName: c.fileName, hasFile: !!c.file }))
-		);
 	});
 	store.currentSimfile.subscribe((value) => (simfile = value));
 	store.activeNote.subscribe((value) => (activeNote = value));

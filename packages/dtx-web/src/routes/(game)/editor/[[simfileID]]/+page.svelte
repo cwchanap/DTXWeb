@@ -18,7 +18,11 @@
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
-	import { workspaceService, type Workspace } from '$lib/services/workspaceService';
+	import {
+		workspaceService,
+		WorkspaceService,
+		type Workspace
+	} from '$lib/services/workspaceService';
 	import { FileManager } from '$lib/services/fileManager';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
@@ -37,10 +41,13 @@
 	let showClearConfirmModal = $state(false);
 	let showNewFileModal = $state(false);
 	let showWorkspaceSwitchModal = $state(false);
+	let showDTXSwitchModal = $state(false);
+	let showDeleteWorkspaceModal = $state(false);
 	let importResultMessage = $state('');
 	let refreshResultMessage = $state('');
 	let importErrorMessage = $state('');
 	let removeFileHash = $state('');
+	let workspaceToDelete = $state<Workspace | null>(null);
 	let currentWorkspace = $state<Workspace | null>(null);
 	let availableWorkspaces = $state<Workspace[]>([]);
 
@@ -80,6 +87,9 @@
 		try {
 			const workspace = await workspaceService.importFolder(files);
 			currentWorkspace = workspace;
+
+			// Refresh available workspaces list
+			availableWorkspaces = workspaceService.getWorkspaces();
 
 			// Switch to the first DTX file in the workspace
 			if (workspace.dtxFiles.length > 0) {
@@ -189,9 +199,82 @@
 		}
 	}
 
-	function showWorkspaceSwitcher() {
+	function showWorkspaceManager() {
 		availableWorkspaces = workspaceService.getWorkspaces();
 		showWorkspaceSwitchModal = true;
+	}
+
+	function showDTXSwitcher() {
+		showDTXSwitchModal = true;
+	}
+
+	async function switchToWorkspace(workspace: Workspace) {
+		try {
+			// Stop any existing preview
+			EventBus.emit(EventType.STOP_PREVIEW);
+
+			// Set the workspace as current
+			currentWorkspace = workspace;
+			workspaceService.setCurrentWorkspace(workspace);
+
+			// Switch to the first or current DTX file in the workspace
+			const targetDTX = workspace.currentDTX || workspace.dtxFiles[0]?.name;
+			if (targetDTX) {
+				await switchWorkspaceDTX(targetDTX);
+			}
+
+			showWorkspaceSwitchModal = false;
+		} catch (error) {
+			console.error('Error switching workspace:', error);
+		}
+	}
+
+	function showDeleteWorkspaceConfirm(workspace: Workspace, event: Event) {
+		event.stopPropagation(); // Prevent workspace switch
+		workspaceToDelete = workspace;
+		showDeleteWorkspaceModal = true;
+	}
+
+	async function confirmDeleteWorkspace() {
+		if (!workspaceToDelete) return;
+
+		try {
+			const isCurrentWorkspace = currentWorkspace?.name === workspaceToDelete.name;
+
+			// Delete the workspace
+			workspaceService.deleteWorkspace(workspaceToDelete.name);
+
+			// Clear large files from session storage for this workspace only
+			WorkspaceService.clearSessionFiles(workspaceToDelete.name);
+
+			// Refresh available workspaces
+			availableWorkspaces = workspaceService.getWorkspaces();
+
+			// If we deleted the current workspace, handle cleanup
+			if (isCurrentWorkspace) {
+				currentWorkspace = null;
+
+				// Try to switch to another workspace if available
+				if (availableWorkspaces.length > 0) {
+					await switchToWorkspace(availableWorkspaces[0]);
+				} else {
+					// No workspaces left, create a new file
+					newFile();
+				}
+			}
+
+			// Close modals
+			showDeleteWorkspaceModal = false;
+			showWorkspaceSwitchModal = false;
+			workspaceToDelete = null;
+		} catch (error) {
+			console.error('Error deleting workspace:', error);
+		}
+	}
+
+	function cancelDeleteWorkspace() {
+		showDeleteWorkspaceModal = false;
+		workspaceToDelete = null;
 	}
 
 	async function handleFileImport(event: Event) {
@@ -388,6 +471,10 @@
 		});
 		simfileID = page.params.simfileID;
 		store.currentSimfileID.set(simfileID || null);
+
+		// Load available workspaces for the workspace switcher
+		availableWorkspaces = workspaceService.getWorkspaces();
+
 		if (!simfileID) {
 			// Try to restore workspace from localStorage or URL
 			currentWorkspace = workspaceService.getCurrentWorkspace();
@@ -643,7 +730,7 @@
 							class="px-4 py-2 text-left {isPreviewing
 								? 'cursor-not-allowed text-gray-400'
 								: 'hover:bg-gray-100'}"
-							onclick={showWorkspaceSwitcher}
+							onclick={showDTXSwitcher}
 							disabled={isPreviewing}>Switch DTX</button
 						>
 					{/if}
@@ -659,7 +746,7 @@
 		</Popover>
 
 		{#if !simfileID}
-			<!-- Only show Edit menu for local files (no simfileID) -->
+			<!-- Only show Workspace menu for local files (no simfileID) -->
 			<Popover
 				positioning={{ placement: 'bottom-start' }}
 				contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
@@ -667,10 +754,21 @@
 				triggerClasses="w-full"
 			>
 				{#snippet trigger()}
-					<span>Edit</span>
+					<span>Workspace</span>
 				{/snippet}
 				{#snippet content()}
 					<div class="flex flex-col">
+						{#if availableWorkspaces.length > 0}
+							<button
+								class="px-4 py-2 text-left {isPreviewing
+									? 'cursor-not-allowed text-gray-400'
+									: 'hover:bg-gray-100'}"
+								onclick={showWorkspaceManager}
+								disabled={isPreviewing}
+							>
+								Manage Workspace
+							</button>
+						{/if}
 						<button
 							class="px-4 py-2 text-left {isPreviewing
 								? 'cursor-not-allowed text-gray-400'
@@ -1147,7 +1245,7 @@
 </Modal>
 
 <!-- Workspace DTX Switcher Modal -->
-<Modal bind:open={showWorkspaceSwitchModal} title="Switch DTX File">
+<Modal bind:open={showDTXSwitchModal} title="Switch DTX File">
 	{#snippet children()}
 		{#if currentWorkspace}
 			<div class="space-y-4">
@@ -1161,7 +1259,7 @@
 								: 'border-gray-200 hover:bg-gray-50'}"
 							onclick={() => {
 								switchWorkspaceDTX(dtxFile.name);
-								showWorkspaceSwitchModal = false;
+								showDTXSwitchModal = false;
 							}}
 						>
 							<div class="font-medium text-gray-900">{dtxFile.name}</div>
@@ -1198,3 +1296,152 @@
 		</div>
 	{/snippet}
 </Modal>
+
+<!-- Workspace Manager Modal -->
+{#if showWorkspaceSwitchModal}
+	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+		<div class="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+			<h2 class="mb-4 text-xl font-bold text-gray-800">Manage Workspace</h2>
+
+			{#if availableWorkspaces.length === 1}
+				<p class="mb-4 text-sm text-gray-600">
+					Click on a workspace to switch to it, or use the delete button to remove it.
+				</p>
+			{:else if availableWorkspaces.length > 1}
+				<p class="mb-4 text-sm text-gray-600">
+					Click on a workspace to switch to it, or use the delete button to remove
+					workspaces you no longer need.
+				</p>
+			{/if}
+
+			<div class="space-y-2">
+				{#each availableWorkspaces as workspace}
+					<div
+						class="flex items-center rounded-md border transition-colors {currentWorkspace?.name ===
+						workspace.name
+							? 'border-blue-500 bg-blue-50'
+							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
+					>
+						<button
+							class="flex-1 px-4 py-3 text-left"
+							onclick={() => switchToWorkspace(workspace)}
+							disabled={currentWorkspace?.name === workspace.name}
+						>
+							<div class="flex items-center justify-between">
+								<div>
+									<div
+										class="font-medium {currentWorkspace?.name ===
+										workspace.name
+											? 'text-blue-700'
+											: 'text-gray-900'}"
+									>
+										{workspace.name}
+									</div>
+									<div class="text-sm text-gray-500">
+										{workspace.dtxFiles.length} DTX files, {workspace.audioFiles
+											.length} audio files
+									</div>
+									<div class="text-xs text-gray-400">
+										Last modified: {new Date(
+											workspace.lastModified
+										).toLocaleDateString()}
+									</div>
+								</div>
+								{#if currentWorkspace?.name === workspace.name}
+									<span class="text-sm font-medium text-blue-600">Current</span>
+								{/if}
+							</div>
+						</button>
+						<button
+							class="mr-3 rounded-md p-2 text-red-600 hover:bg-red-50 hover:text-red-800"
+							onclick={(event) => showDeleteWorkspaceConfirm(workspace, event)}
+							title="Delete workspace"
+							aria-label="Delete workspace"
+						>
+							<Trash2 class="h-4 w-4" />
+						</button>
+					</div>
+				{/each}
+			</div>
+
+			<div class="mt-6 flex justify-end space-x-3">
+				<button
+					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+					onclick={() => (showWorkspaceSwitchModal = false)}
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Delete Workspace Confirmation Modal -->
+{#if showDeleteWorkspaceModal && workspaceToDelete}
+	<div class="bg-opacity-50 fixed inset-0 z-60 flex items-center justify-center bg-black">
+		<div class="mx-4 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+			<div class="mb-4 flex items-center space-x-3">
+				<div class="flex-shrink-0">
+					<svg
+						class="h-6 w-6 text-red-600"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.866-.833-2.636 0L3.178 16.5c-.77.833.192 2.5 1.732 2.5z"
+						/>
+					</svg>
+				</div>
+				<h2 class="text-xl font-bold text-gray-900">Delete Workspace?</h2>
+			</div>
+
+			<div class="mb-6">
+				<p class="mb-3 text-gray-700">
+					Are you sure you want to delete the workspace <strong
+						>"{workspaceToDelete.name}"</strong
+					>?
+				</p>
+				<div class="mb-3 rounded-lg bg-gray-50 p-3">
+					<div class="text-sm text-gray-600">
+						<div>• {workspaceToDelete.dtxFiles.length} DTX files</div>
+						<div>• {workspaceToDelete.audioFiles.length} audio files</div>
+						<div>
+							• Last modified: {new Date(
+								workspaceToDelete.lastModified
+							).toLocaleDateString()}
+						</div>
+					</div>
+				</div>
+				<p class="text-sm font-medium text-red-600">
+					⚠️ This action cannot be undone. All workspace data will be permanently lost.
+				</p>
+				{#if currentWorkspace?.name === workspaceToDelete.name}
+					<p class="mt-2 text-sm font-medium text-orange-600">
+						🔄 This is your current workspace. You will be switched to another workspace
+						or a new file.
+					</p>
+				{/if}
+			</div>
+
+			<div class="flex justify-end space-x-3">
+				<button
+					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+					onclick={cancelDeleteWorkspace}
+				>
+					Cancel
+				</button>
+				<button
+					class="rounded-md bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+					onclick={confirmDeleteWorkspace}
+				>
+					Delete Workspace
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

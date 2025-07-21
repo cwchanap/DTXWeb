@@ -23,6 +23,7 @@ export class NoteManager {
 
 	// Selection state
 	public selectedNotes: Set<string> = new Set();
+	private selectionOverlays: Map<string, Phaser.GameObjects.Graphics> = new Map();
 
 	// Debounce for keyboard shortcuts
 	private lastKeyboardAction = 0;
@@ -499,11 +500,11 @@ export class NoteManager {
 			}
 		}
 
-		// Remove selection overlay if it exists
-		const overlayKey = `selection-overlay-${noteKey}`;
-		const overlay = this.editor.getPanelContainer().getByName(overlayKey);
-		if (overlay) {
+		// Remove selection overlay using stored reference
+		const overlay = this.selectionOverlays.get(noteKey);
+		if (overlay && typeof overlay.destroy === 'function') {
 			overlay.destroy();
+			this.selectionOverlays.delete(noteKey);
 		}
 	}
 
@@ -563,14 +564,13 @@ export class NoteManager {
 	 * Clear current selection and remove visual highlighting
 	 */
 	clearSelection(): void {
-		// Remove selection overlays for previously selected notes
-		this.selectedNotes.forEach((noteKey) => {
-			const overlayKey = `selection-overlay-${noteKey}`;
-			const overlay = this.editor.getPanelContainer().getByName(overlayKey);
-			if (overlay) {
+		// Remove selection overlays using stored references instead of searching by name
+		this.selectionOverlays.forEach((overlay, noteKey) => {
+			if (overlay && typeof overlay.destroy === 'function') {
 				overlay.destroy();
 			}
 		});
+		this.selectionOverlays.clear();
 		this.selectedNotes.clear();
 	}
 
@@ -582,12 +582,9 @@ export class NoteManager {
 		const bounds = this.calculateNoteBounds(noteGraphics.name);
 
 		if (bounds) {
-			// Create a separate graphics object for the selection overlay
-			const overlayKey = `selection-overlay-${noteGraphics.name}`;
-			const existingOverlay = this.editor.getPanelContainer().getByName(overlayKey);
-
 			// Remove existing overlay if it exists
-			if (existingOverlay) {
+			const existingOverlay = this.selectionOverlays.get(noteGraphics.name);
+			if (existingOverlay && typeof existingOverlay.destroy === 'function') {
 				existingOverlay.destroy();
 			}
 
@@ -605,8 +602,12 @@ export class NoteManager {
 					bounds.width,
 					bounds.height
 				);
+				const overlayKey = `selection-overlay-${noteGraphics.name}`;
 				overlay.setName(overlayKey);
 				this.editor.getPanelContainer().add(overlay);
+
+				// Store the overlay reference for fast cleanup
+				this.selectionOverlays.set(noteGraphics.name, overlay);
 			}
 		}
 	}
@@ -649,9 +650,6 @@ export class NoteManager {
 	 * Update which notes are selected based on selection rectangle
 	 */
 	private updateSelectedNotes(): void {
-		// Clear previous selection highlighting
-		this.clearSelection();
-
 		// Create a rectangle for overlap detection
 		const width = Math.abs(this.selectionRectangle.width);
 		const height = Math.abs(this.selectionRectangle.height);
@@ -660,39 +658,68 @@ export class NoteManager {
 
 		const selectionRect = new Phaser.Geom.Rectangle(x, y, width, height);
 
-		// Pre-calculate all note bounds in one pass to avoid O(n²) complexity
-		const noteInfos: Array<{ name: string; bounds: Phaser.Geom.Rectangle }> = [];
+		// Use fast bounds checking without detailed calculations during selection
+		const selectedNoteKeys = new Set<string>();
 
-		this.editor.getPanelContainer().list.forEach((child) => {
+		// Fast early exit: if selection rectangle is too small, skip expensive calculations
+		if (width < 5 && height < 5) {
+			// Clear selection and exit early for tiny rectangles
+			this.clearSelection();
+			return;
+		}
+
+		const containerList = this.editor.getPanelContainer().list;
+
+		// Optimize: Use fast forEach instead of complex bounds calculations
+		for (const child of containerList) {
 			if (
 				child.name &&
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Use simplified bounds calculation for selection performance
-				const bounds = this.calculateSimplifiedNoteBounds(child.name);
-				if (bounds) {
-					noteInfos.push({ name: child.name, bounds });
+				// Fast bounds check using Phaser's built-in bounds if available
+				if (typeof child.getBounds === 'function') {
+					const bounds = child.getBounds();
+					// Quick intersection test without creating Rectangle objects
+					if (
+						bounds.x < selectionRect.right &&
+						bounds.right > selectionRect.x &&
+						bounds.y < selectionRect.bottom &&
+						bounds.bottom > selectionRect.y
+					) {
+						selectedNoteKeys.add(child.name);
+					}
+				} else {
+					// Fallback to manual bounds calculation only if needed
+					const simplifiedBounds = this.calculateSimplifiedNoteBounds(child.name);
+					if (
+						simplifiedBounds &&
+						Phaser.Geom.Rectangle.Overlaps(selectionRect, simplifiedBounds)
+					) {
+						selectedNoteKeys.add(child.name);
+					}
 				}
 			}
-		});
+		}
 
-		// Find all note graphics that overlap with the selection rectangle
-		const selectedNoteKeys = new Set<string>();
-		noteInfos.forEach(({ name, bounds }) => {
-			if (Phaser.Geom.Rectangle.Overlaps(selectionRect, bounds)) {
-				selectedNoteKeys.add(name);
-			}
-		});
+		// Only update selection if it actually changed
+		const hasChanges =
+			selectedNoteKeys.size !== this.selectedNotes.size ||
+			[...selectedNoteKeys].some((key) => !this.selectedNotes.has(key));
 
-		// Add all selected notes and highlight them
-		selectedNoteKeys.forEach((noteKey) => {
-			this.selectedNotes.add(noteKey);
-			const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
-			if (noteGraphics) {
-				this.highlightSelectedNote(noteGraphics);
-			}
-		});
+		if (hasChanges) {
+			// Clear previous selection highlighting
+			this.clearSelection();
+
+			// Add all selected notes and highlight them
+			selectedNoteKeys.forEach((noteKey) => {
+				this.selectedNotes.add(noteKey);
+				const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
+				if (noteGraphics) {
+					this.highlightSelectedNote(noteGraphics);
+				}
+			});
+		}
 	}
 
 	/**
@@ -757,7 +784,9 @@ export class NoteManager {
 	public calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
 		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
 		const parts = noteKey.split('-');
-		if (parts.length !== 4) return null;
+		if (parts.length !== 4) {
+			return null;
+		}
 
 		const laneIndex = parseInt(parts[1]);
 		const measure = parseInt(parts[2]);
@@ -861,44 +890,60 @@ export class NoteManager {
 	private getClickedNote(pointer: Phaser.Input.Pointer): Phaser.GameObjects.Graphics | null {
 		const clickedNotes: Array<{ note: Phaser.GameObjects.Graphics; stackIndex: number }> = [];
 
-		this.editor.getPanelContainer().list.forEach((child) => {
+		const containerList = this.editor.getPanelContainer().list;
+
+		// First pass: Fast hit detection using simplified bounds (no stacking calculation)
+		const potentialNotes: Phaser.GameObjects.Graphics[] = [];
+
+		for (const child of containerList) {
 			if (
 				child.name &&
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Calculate note bounds with stacking
-				const noteBounds = this.calculateNoteBounds(child.name);
+				// Use simplified bounds calculation (no stacking) for initial hit detection
+				const simplifiedBounds = this.calculateSimplifiedNoteBounds(child.name);
 
-				if (noteBounds) {
-					// Check if the pointer is within the note bounds
+				if (simplifiedBounds) {
+					// Check if the pointer is within the simplified note bounds
 					if (
-						pointer.x >= noteBounds.x &&
-						pointer.x <= noteBounds.x + noteBounds.width &&
-						pointer.y >= noteBounds.y &&
-						pointer.y <= noteBounds.y + noteBounds.height
+						pointer.x >= simplifiedBounds.x &&
+						pointer.x <= simplifiedBounds.x + simplifiedBounds.width &&
+						pointer.y >= simplifiedBounds.y &&
+						pointer.y <= simplifiedBounds.y + simplifiedBounds.height
 					) {
-						// Parse note key to get position info for stack calculation
-						const parts = child.name.split('-');
-						if (parts.length === 4) {
-							const laneIndex = parseInt(parts[1]);
-							const measure = parseInt(parts[2]);
-							const cellOffset = parseFloat(parts[3]);
-
-							// Calculate stack index for this note
-							const nearbyNotes = this.findNearbyNotes(
-								measure,
-								laneIndex,
-								cellOffset
-							);
-							const stackIndex = nearbyNotes.length;
-
-							clickedNotes.push({ note: child, stackIndex });
-						}
+						potentialNotes.push(child);
 					}
 				}
 			}
-		});
+		}
+
+		// Second pass: Only calculate precise stacking for notes that were actually hit
+		for (const note of potentialNotes) {
+			const parts = note.name.split('-');
+			if (parts.length === 4) {
+				const laneIndex = parseInt(parts[1]);
+				const measure = parseInt(parts[2]);
+				const cellOffset = parseFloat(parts[3]);
+
+				// Now calculate precise bounds with stacking for hit notes only
+				const preciseBounds = this.calculateNoteBounds(note.name);
+				if (preciseBounds) {
+					// Double-check with precise bounds
+					if (
+						pointer.x >= preciseBounds.x &&
+						pointer.x <= preciseBounds.x + preciseBounds.width &&
+						pointer.y >= preciseBounds.y &&
+						pointer.y <= preciseBounds.y + preciseBounds.height
+					) {
+						// Calculate stack index for this note
+						const nearbyNotes = this.findNearbyNotes(measure, laneIndex, cellOffset);
+						const stackIndex = nearbyNotes.length;
+						clickedNotes.push({ note, stackIndex });
+					}
+				}
+			}
+		}
 
 		// If multiple notes were clicked, return the one with the highest stack index (topmost)
 		if (clickedNotes.length > 0) {
@@ -1122,6 +1167,9 @@ export class NoteManager {
 			document.removeEventListener('mousemove', this.mousemoveHandler);
 			this.mousemoveHandler = null;
 		}
+
+		// Clean up selection overlays
+		this.clearSelection();
 
 		// Clean up other resources
 		this.noteMove.destroy();

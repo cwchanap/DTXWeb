@@ -5,7 +5,12 @@
 	import { Preview } from '@/game/scenes/Preview';
 	import { onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
-	import { DTXFile, SimFile, decodeFileWithEncodingDetection } from '@dtx/common';
+	import {
+		DTXFile,
+		SimFile,
+		decodeFileWithEncodingDetection,
+		type LaneMeasureNote
+	} from '@dtx/common';
 	import SoundTab from '$lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
 	import EventType from '@/game/EventType';
@@ -23,7 +28,7 @@
 		WorkspaceService,
 		type Workspace
 	} from '$lib/services/workspaceService';
-	import { FileManager } from '$lib/services/fileManager';
+	import * as FileManager from '$lib/services/fileManager';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -357,7 +362,7 @@
 		const newDtxFile = new DTXFile();
 
 		// Create properly structured empty data
-		const emptyNotes: any[] = []; // Empty array, not object
+		const emptyNotes: LaneMeasureNote[] = []; // Empty array, not object
 		const emptyBpmNotes: Record<string, number> = {};
 
 		// Clear stores and set new DTX file

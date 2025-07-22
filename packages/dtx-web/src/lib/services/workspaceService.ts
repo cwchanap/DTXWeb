@@ -198,7 +198,7 @@ export class WorkspaceService {
 					const file = WorkspaceService.sessionLargeFiles.get(fileKey);
 					return file;
 				})
-				.filter((file) => file !== undefined) as File[];
+				.filter((file): file is File => file !== undefined);
 			allFiles.push(...largeFiles);
 
 			simFile.files = allFiles;
@@ -374,7 +374,7 @@ export class WorkspaceService {
 	 */
 	static getLargeFile(workspaceName: string, fileName: string): File | undefined {
 		const fileKey = `${workspaceName}/${fileName}`;
-		return this.sessionLargeFiles.get(fileKey);
+		return WorkspaceService.sessionLargeFiles.get(fileKey);
 	}
 
 	/**
@@ -382,19 +382,19 @@ export class WorkspaceService {
 	 */
 	static clearSessionFiles(workspaceName?: string): void {
 		if (!workspaceName) {
-			this.sessionLargeFiles.clear();
+			WorkspaceService.sessionLargeFiles.clear();
 			return;
 		}
 
 		// Clear only files for the specified workspace
 		const keysToDelete: string[] = [];
-		for (const [key] of this.sessionLargeFiles) {
+		for (const [key] of WorkspaceService.sessionLargeFiles) {
 			if (key.startsWith(`${workspaceName}/`)) {
 				keysToDelete.push(key);
 			}
 		}
 
-		keysToDelete.forEach((key) => this.sessionLargeFiles.delete(key));
+		keysToDelete.forEach((key) => WorkspaceService.sessionLargeFiles.delete(key));
 	}
 }
 

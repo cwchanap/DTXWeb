@@ -68,14 +68,11 @@ global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
 import store from '$lib/store';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
 
-// REASON FOR SKIPPING: Svelte 5 compatibility issue with @testing-library/svelte and $env/static/public import issue
-// These tests fail with both:
-// 1. "lifecycle_function_unavailable: mount(...) is not available on the server" (Svelte 5 SSR issue)
-// 2. "Failed to resolve import '$env/static/public'" (SvelteKit environment variable import issue in test environment)
-// This is a known issue with Svelte 5 SSR and @testing-library/svelte integration
-// The SoundTab component itself works correctly in the browser, these are test environment issues
-// TODO: Update tests to work with Svelte 5 when @testing-library/svelte releases compatibility updates
-// Alternative: Convert to unit tests that test individual functions rather than full component rendering
+// REASON FOR SKIPPING: Svelte 5 compatibility issue with @testing-library/svelte
+// These tests fail with "lifecycle_function_unavailable: mount(...) is not available on the server"
+// This is a known issue where @testing-library/svelte doesn't yet support Svelte 5's SSR environment
+// The SoundTab component itself works correctly in the browser
+// TODO: Either wait for @testing-library/svelte to support Svelte 5, or refactor to unit test functions
 describe.skip('SoundTab Component', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();

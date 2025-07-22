@@ -457,12 +457,23 @@ describe('Preview Scene Event Handlers', () => {
 		vi.clearAllMocks();
 		previewScene = new Preview();
 
+		// Mock anims property to prevent errors
+		previewScene.anims = {
+			exists: vi.fn().mockReturnValue(false),
+			remove: vi.fn(),
+			create: vi.fn()
+		} as any;
+
 		// Mock methods
 		previewScene.cleanUp = vi.fn();
 		previewScene.startPreview = vi.fn();
 	});
 
 	it('should handle STOP_PREVIEW event', () => {
+		// Mock the anims methods first
+		const mockCleanUp = vi.fn();
+		previewScene.cleanUp = mockCleanUp;
+
 		// Get the callback function for STOP_PREVIEW
 		previewScene.create();
 		const stopPreviewCallback = ((EventBus.on as MockedFn)?.mock.calls.find(
@@ -473,10 +484,14 @@ describe('Preview Scene Event Handlers', () => {
 		stopPreviewCallback();
 
 		// Verify cleanUp was called
-		expect(previewScene.cleanUp).toHaveBeenCalled();
+		expect(mockCleanUp).toHaveBeenCalled();
 	});
 
 	it('should handle RESUME_PREVIEW event', () => {
+		// Mock the anims methods first
+		const mockStartPreview = vi.fn();
+		previewScene.startPreview = mockStartPreview;
+
 		// Get the callback function for RESUME_PREVIEW
 		previewScene.create();
 		const resumePreviewCallback = ((EventBus.on as MockedFn).mock.calls.find(
@@ -489,6 +504,6 @@ describe('Preview Scene Event Handlers', () => {
 
 		// Verify startMeasure was updated and startPreview was called
 		expect(previewScene['startMeasure']).toBe(5);
-		expect(previewScene.startPreview).toHaveBeenCalled();
+		expect(mockStartPreview).toHaveBeenCalled();
 	});
 });

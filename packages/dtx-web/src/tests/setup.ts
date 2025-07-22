@@ -25,5 +25,10 @@ vi.mock('svelte/store');
 
 vi.mock('@dtx/common');
 
+// Mock SvelteKit environment variables
+vi.mock('$env/static/public', () => ({
+	PUBLIC_SIMFILE_BUCKET_URL: 'https://mock-bucket-url.com'
+}));
+
 // Global mocks are now handled by the __mocks__ folder
 // - @dtx/common is mocked in __mocks__/@dtx/common.ts

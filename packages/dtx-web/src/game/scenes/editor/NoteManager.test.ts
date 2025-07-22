@@ -536,26 +536,37 @@ describe('NoteManager', () => {
 
 		it('should remove existing overlay before creating new one', () => {
 			const noteKey = 'note-0-1-0.5';
-			const existingOverlay = { destroy: vi.fn() };
 
-			// Mock existing overlay
-			mockEditor.getPanelContainer().getByName.mockReturnValue(existingOverlay);
+			// First, highlight the note to create an overlay
+			const initialOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn(),
+				destroy: vi.fn()
+			};
+			mockEditor.add.graphics.mockReturnValueOnce(initialOverlay);
 
+			const mockNoteGraphics = { name: noteKey };
+			noteManager.highlightSelectedNote(mockNoteGraphics);
+
+			// Now mock the second overlay creation
 			const mockNewOverlay = {
 				lineStyle: vi.fn(),
 				strokeRect: vi.fn(),
 				setName: vi.fn()
 			};
-			mockEditor.add.graphics.mockReturnValue(mockNewOverlay);
+			mockEditor.add.graphics.mockReturnValueOnce(mockNewOverlay);
 
-			const mockNoteGraphics = { name: noteKey };
+			// Spy on the first overlay's destroy method
+			const destroySpy = vi.spyOn(initialOverlay, 'destroy' as any);
 
+			// Highlight the same note again - this should destroy existing overlay
 			noteManager.highlightSelectedNote(mockNoteGraphics);
 
 			// Verify existing overlay was destroyed
-			expect(existingOverlay.destroy).toHaveBeenCalled();
+			expect(destroySpy).toHaveBeenCalled();
 			// And new overlay was created
-			expect(mockEditor.add.graphics).toHaveBeenCalled();
+			expect(mockEditor.add.graphics).toHaveBeenCalledTimes(2);
 		});
 
 		it('should handle notes with stacking offsets in highlighting', () => {

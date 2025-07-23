@@ -4,7 +4,7 @@
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
 	import { file } from 'jszip';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import { FileManager } from '$lib/services/fileManager';
+	import * as FileManager from '$lib/services/fileManager';
 
 	interface Props {
 		simfileID?: string;
@@ -62,11 +62,21 @@
 		const volumeLevel = volume / 100;
 
 		if (typeof file === 'string') {
-			// For remote files, try to find the chip and use its fetched file
-			if (simfileID && chip?.file) {
-				soundFile = chip.file;
+			if (simfileID) {
+				// Remote chart case
+				if (chip?.file) {
+					soundFile = chip.file;
+				} else {
+					// Remote file not yet fetched - cannot play audio
+					console.warn('Remote file not yet fetched:', file);
+					showToastMessage(
+						`Sound file "${file}" is not yet loaded from remote`,
+						'warning'
+					);
+					return;
+				}
 			} else {
-				// For local files, get from FileManager
+				// Local chart case
 				const fileKey = FileManager.generateKey(null, file);
 				soundFile = FileManager.getFile(fileKey);
 				if (!soundFile) {

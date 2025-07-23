@@ -3,49 +3,47 @@
  * Manages File objects outside of Svelte stores to avoid serialization issues
  */
 
-export class FileManager {
-	private static files: Map<string, File> = new Map();
+// Module-level Map to store files
+const files: Map<string, File> = new Map();
 
-	/**
-	 * Store a file with a unique key
-	 */
-	static setFile(key: string, file: File): void {
-		this.files.set(key, file);
-	}
+/**
+ * Store a file with a unique key
+ */
+export function setFile(key: string, file: File): void {
+	files.set(key, file);
+}
 
-	/**
-	 * Get a file by key
-	 */
-	static getFile(key: string): File | undefined {
-		const file = this.files.get(key);
-		return file;
-	}
+/**
+ * Get a file by key
+ */
+export function getFile(key: string): File | undefined {
+	return files.get(key);
+}
 
-	/**
-	 * Remove a file by key
-	 */
-	static removeFile(key: string): boolean {
-		return this.files.delete(key);
-	}
+/**
+ * Remove a file by key
+ */
+export function removeFile(key: string): boolean {
+	return files.delete(key);
+}
 
-	/**
-	 * Clear all files
-	 */
-	static clear(): void {
-		this.files.clear();
-	}
+/**
+ * Clear all files
+ */
+export function clear(): void {
+	files.clear();
+}
 
-	/**
-	 * Generate a unique key for a sound chip file
-	 */
-	static generateKey(simfileId: string | null, fileName: string): string {
-		return `${simfileId || 'local'}:${fileName}`;
-	}
+/**
+ * Generate a unique key for a sound chip file
+ */
+export function generateKey(simfileId: string | null, fileName: string): string {
+	return `${simfileId || 'local'}:${fileName}`;
+}
 
-	/**
-	 * Get all stored file keys
-	 */
-	static getKeys(): string[] {
-		return Array.from(this.files.keys());
-	}
+/**
+ * Get all stored file keys
+ */
+export function getKeys(): string[] {
+	return Array.from(files.keys());
 }

@@ -3,7 +3,7 @@ import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '$lib/store';
-import { FileManager } from '$lib/services/fileManager';
+import * as FileManager from '$lib/services/fileManager';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
 import type { LaneMeasureNote, SoundChip } from '@dtx/common';
 import { BaseGame } from './BaseGame';
@@ -88,9 +88,8 @@ export class Preview extends BaseGame {
 					// Local file - get from FileManager
 					const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
 					actualFile = FileManager.getFile(fileKey);
-				} else {
-					// Remote file - use the file from chip
 				}
+				// Remote file - actualFile already set to soundChip.file
 
 				if (!soundChip.fileName || !actualFile) {
 					return;

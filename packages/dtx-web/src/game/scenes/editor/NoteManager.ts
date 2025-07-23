@@ -680,13 +680,8 @@ export class NoteManager {
 				// Fast bounds check using Phaser's built-in bounds if available
 				if (typeof child.getBounds === 'function') {
 					const bounds = child.getBounds();
-					// Quick intersection test without creating Rectangle objects
-					if (
-						bounds.x < selectionRect.right &&
-						bounds.right > selectionRect.x &&
-						bounds.y < selectionRect.bottom &&
-						bounds.bottom > selectionRect.y
-					) {
+					// Use Phaser's built-in overlap detection for cleaner, more maintainable code
+					if (Phaser.Geom.Rectangle.Overlaps(selectionRect, bounds)) {
 						selectedNoteKeys.add(child.name);
 					}
 				} else {

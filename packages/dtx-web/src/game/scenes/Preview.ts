@@ -86,7 +86,7 @@ export class Preview extends BaseGame {
 
 				if (!currentSimfileID) {
 					// Local file - get from FileManager
-					const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
+					const fileKey = FileManager.generateKey(null, soundChip.fileName);
 					actualFile = FileManager.getFile(fileKey);
 				}
 				// Remote file - actualFile already set to soundChip.file

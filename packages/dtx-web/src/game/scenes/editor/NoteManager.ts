@@ -670,7 +670,7 @@ export class NoteManager {
 
 		const containerList = this.editor.getPanelContainer().list;
 
-		// Optimize: Use fast forEach instead of complex bounds calculations
+		// Optimize: Use fast iteration instead of complex bounds calculations
 		for (const child of containerList) {
 			if (
 				child.name &&

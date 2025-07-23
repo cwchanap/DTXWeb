@@ -158,13 +158,32 @@ describe('WorkspaceService', () => {
 
 	describe('parseDTXFile', () => {
 		it('should parse DTX file successfully', async () => {
+			// Import mocked modules to access them
+			const { DTXFile, SimFile } = await import('@dtx/common');
+
+			// Create mock instances with proper methods
+			const mockDTXFile = {
+				parseFromText: vi.fn().mockResolvedValue(undefined),
+				parseSoundChips: vi.fn().mockReturnValue([]),
+				meta: { title: 'Test Song', artist: 'Test Artist' }
+			};
+
+			const mockSimFile = {
+				files: [],
+				meta: {}
+			};
+
+			// Mock the constructors to return our mock instances
+			vi.mocked(DTXFile).mockImplementation(() => mockDTXFile as any);
+			vi.mocked(SimFile).mockImplementation(() => mockSimFile as any);
+
 			const workspace: Workspace = {
 				name: 'Test Workspace',
 				path: 'test-path',
 				dtxFiles: [
 					{
 						name: 'test.dtx',
-						content: 'dtx content',
+						content: '#TITLE: Test Song\n#ARTIST: Test Artist\n#WAV01: kick.wav',
 						path: 'test.dtx'
 					}
 				],
@@ -176,10 +195,23 @@ describe('WorkspaceService', () => {
 			// Mock localStorage for saveWorkspace call
 			mockLocalStorage.getItem.mockReturnValue('[]');
 
+			// Mock SoundLibrary to return consistent results
+			vi.mocked(SoundLibrary.getAll).mockReturnValue([]);
+
 			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
 
-			// The test may return null due to mocking complexity, but we verify it doesn't crash
-			expect(result === null || (result?.dtxFile && result?.simFile)).toBe(true);
+			// Assert the method returns the expected structure
+			expect(result).not.toBeNull();
+			expect(result!.dtxFile).toBeDefined();
+			expect(result!.simFile).toBeDefined();
+			expect(result!.dtxFile.meta.title).toBe('Test Song');
+			expect(result!.dtxFile.meta.artist).toBe('Test Artist');
+
+			// Verify the mock methods were called
+			expect(mockDTXFile.parseFromText).toHaveBeenCalledWith(
+				'#TITLE: Test Song\n#ARTIST: Test Artist\n#WAV01: kick.wav'
+			);
+			expect(mockDTXFile.parseSoundChips).toHaveBeenCalled();
 		});
 
 		it('should return null for non-existent DTX file', async () => {

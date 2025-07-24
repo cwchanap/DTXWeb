@@ -4,20 +4,20 @@
 	import { Editor } from '@/game/scenes/Editor';
 	import { Preview } from '@/game/scenes/Preview';
 	import { onMount } from 'svelte';
-	import MainTab from '$lib/components/editor/MainTab.svelte';
 	import {
 		DTXFile,
 		SimFile,
 		decodeFileWithEncodingDetection,
 		type LaneMeasureNote
 	} from '@dtx/common';
-	import SoundTab from '$lib/components/editor/SoundTab.svelte';
+	import { MainTab, SoundTab } from '@dtx/common/components';
 	import { get } from 'svelte/store';
 	import EventType from '@/game/EventType';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import store from '$lib/store';
 	import { EventBus } from '@/game/EventBus';
 	import { page } from '$app/state';
+	import { XAaudioContext } from '$lib/browser/audioDecoder';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
@@ -55,6 +55,17 @@
 	let workspaceToDelete = $state<Workspace | null>(null);
 	let currentWorkspace = $state<Workspace | null>(null);
 	let availableWorkspaces = $state<Workspace[]>([]);
+
+	// State for tab components
+	let dtxFile = $state<DTXFile | null>(null);
+	let measureCount = $state(10);
+	let playSpeed = $state(1);
+	let soundChips = $state<import('@dtx/common').SoundChip[]>([]);
+	let activeNote = $state('01');
+	let keyBindings = $state<Record<string, string>>({});
+	let showToast = $state(false);
+	let toastMessage = $state('');
+	let toastType: 'warning' | 'error' = $state('warning');
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
@@ -469,6 +480,118 @@
 			}));
 	}
 
+	// Callback functions for tab components
+	function handleDtxFileChange(file: DTXFile) {
+		store.currentDtxFile.set(file);
+	}
+
+	function handleMeasureChange(count: number) {
+		store.measureCount.set(count);
+		EventBus.emit(EventType.MEASURE_UPDATE, count);
+	}
+
+	function handlePlaySpeedChange(speed: number) {
+		store.playSpeed.set(speed);
+	}
+
+	function handleGotoMeasure(measure: number) {
+		EventBus.emit(EventType.MEASURE_GOTO, measure);
+	}
+
+	function handlePreviewToggle(isPlaying: boolean, bpm: number) {
+		if (isPlaying) {
+			EventBus.emit(EventType.START_PREVIEW, bpm);
+		} else {
+			EventBus.emit(EventType.STOP_PREVIEW);
+		}
+		store.isPreviewing.set(isPlaying);
+	}
+
+	function handleSoundChipsChange(chips: import('@dtx/common').SoundChip[]) {
+		store.currentSoundChip.set(chips);
+	}
+
+	function handleActiveNoteChange(noteId: string) {
+		store.activeNote.set(noteId);
+	}
+
+	function handleKeyBindingsChange(bindings: Record<string, string>) {
+		store.keyBindings?.set(bindings);
+	}
+
+	async function handlePlayAudio(
+		file: string | File,
+		volume: number,
+		chip?: import('@dtx/common').SoundChip
+	) {
+		let soundFile: File | undefined;
+		const volumeLevel = volume / 100;
+
+		if (typeof file === 'string') {
+			if (simfileID) {
+				// Remote chart case
+				if (chip?.file) {
+					soundFile = chip.file;
+				} else {
+					// Remote file not yet fetched - cannot play audio
+					console.warn('Remote file not yet fetched:', file);
+					showToastMessage(
+						`Sound file "${file}" is not yet loaded from remote`,
+						'warning'
+					);
+					return;
+				}
+			} else {
+				// Local chart case
+				const fileKey = FileManager.generateKey(null, file);
+				soundFile = FileManager.getFile(fileKey);
+				if (!soundFile) {
+					// Fallback: search in simfile.files (for backwards compatibility)
+					const simfile = get(store.currentSimfile);
+					soundFile = simfile?.files.find(
+						(f) => f.name.toLowerCase() === file.toLowerCase()
+					);
+				}
+			}
+		} else {
+			soundFile = file;
+		}
+
+		if (soundFile) {
+			try {
+				if (soundFile.name.toLowerCase().endsWith('.xa')) {
+					const source = XAaudioContext.createBufferSource();
+					const gainNode = XAaudioContext.createGain();
+
+					source.buffer = await XAaudioContext.decodeAudioData(
+						await soundFile.arrayBuffer()
+					);
+					gainNode.gain.value = volumeLevel;
+
+					source.connect(gainNode);
+					gainNode.connect(XAaudioContext.destination);
+					source.start();
+				} else {
+					const audio = new Audio(URL.createObjectURL(soundFile));
+					audio.volume = volumeLevel;
+					await audio.play();
+				}
+			} catch (error) {
+				console.error('Error playing audio:', error);
+			}
+		}
+	}
+
+	function showToastMessage(message: string, type: 'warning' | 'error' = 'warning') {
+		toastMessage = message;
+		toastType = type;
+		showToast = true;
+		// Auto-hide toast after 4 seconds
+		setTimeout(() => {
+			showToast = false;
+		}, 4000);
+	}
+
 	onMount(async () => {
 		store.activeScene.set(Editor.key);
 		store.isPreviewing.subscribe((value) => {
@@ -539,6 +662,47 @@
 			console.error('Error loading simfile:', error);
 			newFile(); // Fallback to new file if loading fails
 		}
+
+		// Subscribe to stores to sync component state
+		store.currentDtxFile.subscribe((value) => {
+			dtxFile = value;
+		});
+		store.measureCount.subscribe((value) => {
+			measureCount = value;
+		});
+		store.playSpeed.subscribe((value) => {
+			playSpeed = value;
+		});
+		store.currentSoundChip.subscribe(async (value) => {
+			// For remote charts, ensure files are fetched
+			if (simfileID && value.length > 0) {
+				const updatedChips = await Promise.all(
+					value.map(async (chip) => {
+						if (chip.fileName && !chip.file) {
+							try {
+								await chip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+							} catch (error) {
+								console.error('Failed to fetch remote file:', chip.fileName, error);
+							}
+						}
+						return chip;
+					})
+				);
+
+				// Update the store with the fetched files
+				if (updatedChips.some((chip) => chip.file)) {
+					store.currentSoundChip.set(updatedChips);
+				}
+			}
+
+			soundChips = value;
+		});
+		store.activeNote.subscribe((value) => {
+			activeNote = value;
+		});
+		store.keyBindings?.subscribe((value) => {
+			keyBindings = value || {};
+		});
 	});
 
 	// Sound Library Management
@@ -877,9 +1041,30 @@
 						<!-- Tab panels -->
 						<div class="tab-content p-4">
 							{#if currentTab === 0}
-								<MainTab />
+								<MainTab
+									bind:dtxFile
+									bind:measureCount
+									bind:isPreviewing
+									bind:playSpeed
+									onDtxFileChange={handleDtxFileChange}
+									onMeasureChange={handleMeasureChange}
+									onPlaySpeedChange={handlePlaySpeedChange}
+									onGotoMeasure={handleGotoMeasure}
+									onPreviewToggle={handlePreviewToggle}
+								/>
 							{:else if currentTab === 1}
-								<SoundTab {simfileID} />
+								<SoundTab
+									bind:soundChips
+									bind:activeNote
+									bind:keyBindings
+									isRemoteChart={!!simfileID}
+									{simfileID}
+									onSoundChipsChange={handleSoundChipsChange}
+									onActiveNoteChange={handleActiveNoteChange}
+									onKeyBindingsChange={handleKeyBindingsChange}
+									onPlayAudio={handlePlayAudio}
+									onShowToast={showToastMessage}
+								/>
 							{/if}
 						</div>
 					</div>
@@ -1447,6 +1632,78 @@
 					Delete Workspace
 				</button>
 			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Toast notifications -->
+{#if showToast}
+	<div
+		class="fixed top-4 right-4 z-50 w-full max-w-sm"
+		role="alert"
+		aria-live="polite"
+		aria-atomic="true"
+	>
+		<div
+			class="flex items-center rounded-lg p-4 shadow-lg {toastType === 'error'
+				? 'border-red-200 bg-red-50 text-red-800'
+				: 'border-yellow-200 bg-yellow-50 text-yellow-800'} border"
+		>
+			<div class="flex-shrink-0">
+				{#if toastType === 'error'}
+					<svg
+						class="h-5 w-5 text-red-400"
+						fill="currentColor"
+						viewBox="0 0 20 20"
+						aria-hidden="true"
+					>
+						<path
+							fill-rule="evenodd"
+							d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+							clip-rule="evenodd"
+						/>
+					</svg>
+				{:else}
+					<svg
+						class="h-5 w-5 text-yellow-400"
+						fill="currentColor"
+						viewBox="0 0 20 20"
+						aria-hidden="true"
+					>
+						<path
+							fill-rule="evenodd"
+							d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+							clip-rule="evenodd"
+						/>
+					</svg>
+				{/if}
+			</div>
+			<div class="ml-3 flex-1">
+				<p class="text-sm font-medium">{toastMessage}</p>
+			</div>
+			<button
+				type="button"
+				class="-mx-1.5 -my-1.5 ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg p-1.5 {toastType ===
+				'error'
+					? 'text-red-500 hover:bg-red-100'
+					: 'text-yellow-500 hover:bg-yellow-100'} focus:ring-2 focus:ring-offset-2 {toastType ===
+				'error'
+					? 'focus:ring-red-500'
+					: 'focus:ring-yellow-500'}"
+				onclick={() => (showToast = false)}
+				aria-label="Close"
+			>
+				<span class="sr-only">Close</span>
+				<svg class="h-3 w-3" aria-hidden="true" fill="none" viewBox="0 0 14 14">
+					<path
+						stroke="currentColor"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+					/>
+				</svg>
+			</button>
 		</div>
 	</div>
 {/if}

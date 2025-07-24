@@ -25,6 +25,7 @@
 		showPublishingControls?: boolean;
 		showPublishedToggle?: boolean;
 		saveButtonText?: string;
+		onOpenEditor?: () => void;
 		// Reactive form value bindings (for parent component access)
 		displayId?: number | string;
 		publishDate?: string;
@@ -46,6 +47,7 @@
 		showPublishingControls = true,
 		showPublishedToggle = true,
 		saveButtonText = 'Update',
+		onOpenEditor,
 		displayId = $bindable(simfile?.display_id || 0),
 		publishDate = $bindable(simfile?.publish_date || dayjs().format('YYYY-MM-DD')),
 		isPublished = $bindable(simfile?.is_published || true),
@@ -78,14 +80,23 @@
 >
 	<div class="p-6">
 		{#if showEditor}
-			<a
-				href={`/editor/${simfile?.id}`}
-				target="_blank"
-				rel="noopener noreferrer"
-				class="absolute top-2 right-2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
-			>
-				Open in Editor
-			</a>
+			{#if onOpenEditor}
+				<button
+					onclick={onOpenEditor}
+					class="absolute top-2 right-2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+				>
+					Open in Editor
+				</button>
+			{:else}
+				<a
+					href={`/editor/${simfile?.id}`}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="absolute top-2 right-2 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+				>
+					Open in Editor
+				</a>
+			{/if}
 		{/if}
 
 		<h1 class="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100">{simfile?.title}</h1>

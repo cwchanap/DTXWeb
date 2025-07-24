@@ -1,23 +1,39 @@
 <script lang="ts">
 	import { run } from 'svelte/legacy';
-
-	import { EventBus } from '@/game/EventBus';
-	import EventType from '@/game/EventType';
 	import { onMount } from 'svelte';
-	import store from '$lib/store';
-	import { DTXFile } from '@dtx/common';
+	import { DTXFile } from '../../chart/dtx';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
 
-	let dtxFile: DTXFile | null = $state(null);
-	let measureCount = $state(10);
+	interface Props {
+		dtxFile?: DTXFile | null;
+		measureCount?: number;
+		isPreviewing?: boolean;
+		playSpeed?: number;
+		onDtxFileChange?: (dtxFile: DTXFile) => void;
+		onMeasureChange?: (count: number) => void;
+		onPlaySpeedChange?: (speed: number) => void;
+		onGotoMeasure?: (measure: number) => void;
+		onPreviewToggle?: (isPlaying: boolean, bpm: number) => void;
+	}
+
+	let {
+		dtxFile = $bindable(),
+		measureCount = $bindable(10),
+		isPreviewing = $bindable(false),
+		playSpeed = $bindable(1),
+		onDtxFileChange,
+		onMeasureChange,
+		onPlaySpeedChange,
+		onGotoMeasure,
+		onPreviewToggle
+	}: Props = $props();
+
 	let title = $state('');
 	let artist = $state('');
 	let comment = $state('');
 	let bpm = $state(120);
 	let level = $state(0);
 	let gotoMeasure = $state(0);
-	let isPreviewing = $state(false);
-	let playSpeed = $state(1);
 
 	run(() => {
 		if (dtxFile) {
@@ -26,51 +42,36 @@
 			dtxFile.comment = comment;
 			dtxFile.bpm = bpm;
 			dtxFile.level = level;
-			store.currentDtxFile.set(dtxFile);
+			onDtxFileChange?.(dtxFile);
 		}
 	});
 
 	function handleMeasureChange() {
-		store.measureCount.set(measureCount);
-		EventBus.emit(EventType.MEASURE_UPDATE, measureCount);
+		onMeasureChange?.(measureCount);
 	}
 
 	function handleGotoMeasure() {
-		EventBus.emit(EventType.MEASURE_GOTO, gotoMeasure);
+		onGotoMeasure?.(gotoMeasure);
 	}
 
 	function handlePlaySpeedChange() {
-		store.playSpeed.set(playSpeed);
+		onPlaySpeedChange?.(playSpeed);
 	}
 
 	function handlePlay() {
-		isPreviewing = !isPreviewing;
-		if (isPreviewing) {
-			EventBus.emit(EventType.START_PREVIEW, bpm);
-		} else {
-			EventBus.emit(EventType.STOP_PREVIEW);
-		}
-		store.isPreviewing.set(isPreviewing);
+		const newPreviewState = !isPreviewing;
+		isPreviewing = newPreviewState;
+		onPreviewToggle?.(newPreviewState, bpm);
 	}
 
-	onMount(() => {
-		store.isPreviewing.subscribe((value) => {
-			isPreviewing = value;
-		});
-		store.playSpeed.subscribe((value) => {
-			playSpeed = value;
-		});
-		store.measureCount.subscribe((value) => {
-			measureCount = value;
-		});
-		return store.currentDtxFile.subscribe((value) => {
-			dtxFile = value;
-			title = dtxFile?.title ?? '';
-			artist = dtxFile?.artist ?? '';
-			comment = dtxFile?.comment ?? '';
-			bpm = dtxFile?.bpm ?? 0;
-			level = dtxFile?.level ?? 0;
-		});
+	$effect(() => {
+		if (dtxFile) {
+			title = dtxFile.title ?? '';
+			artist = dtxFile.artist ?? '';
+			comment = dtxFile.comment ?? '';
+			bpm = dtxFile.bpm ?? 120;
+			level = dtxFile.level ?? 0;
+		}
 	});
 </script>
 

@@ -22,6 +22,46 @@
 		workspaceStore.closeSongDetails();
 	};
 
+	// Handle opening the editor with a DTX file
+	const handleOpenEditor = async () => {
+		try {
+			// Find the first DTX file in the song folder
+			const result = await window.electron.ipcRenderer.invoke('list-files', song.path);
+
+			if (result.error) {
+				throw new Error(result.error);
+			}
+
+			// Find DTX files
+			const dtxFiles = result.data.filter((file: any) =>
+				file.fileName.toLowerCase().endsWith('.dtx')
+			);
+
+			if (dtxFiles.length === 0) {
+				console.warn('No DTX files found in the selected folder');
+				return;
+			}
+
+			// Read the first DTX file
+			const dtxFile = dtxFiles[0];
+			const fileContent = await window.electron.ipcRenderer.invoke('read-file', dtxFile.key);
+
+			if (fileContent.error) {
+				throw new Error(fileContent.error);
+			}
+
+			// Parse the DTX file using the common library
+			const { DTXFile } = await import('@dtx/common');
+			const parsedDtx = new DTXFile();
+			await parsedDtx.parseFromText(fileContent.data);
+
+			// Open the editor
+			workspaceStore.showEditor(parsedDtx);
+		} catch (error) {
+			console.error('Failed to open editor:', error);
+		}
+	};
+
 	// Helper function to create File object with custom properties
 	const createFileObject = (content: any, fileInfo: any) => {
 		const file = new File([content], fileInfo.fileName, {
@@ -575,10 +615,11 @@
 	<div class="flex h-full flex-col">
 		<ChartDetail
 			simfile={simfileData()}
-			showEditor={false}
+			showEditor={true}
 			showPublishingControls={true}
 			showPublishedToggle={true}
 			saveButtonText="Update"
+			onOpenEditor={handleOpenEditor}
 			bind:displayId
 			bind:publishDate
 			bind:downloadUrl
@@ -778,9 +819,10 @@
 	<div class="flex h-full flex-col">
 		<ChartDetail
 			simfile={simfileData()}
-			showEditor={false}
+			showEditor={true}
 			showPublishingControls={true}
 			showPublishedToggle={false}
+			onOpenEditor={handleOpenEditor}
 			bind:displayId
 			bind:publishDate
 			bind:downloadUrl

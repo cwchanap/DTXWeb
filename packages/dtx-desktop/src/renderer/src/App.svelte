@@ -2,6 +2,7 @@
 	import Login from './components/Login.svelte';
 	import Workspace from './components/Workspace.svelte';
 	import NewSong from './components/NewSong.svelte';
+	import Editor from './components/Editor.svelte';
 	import Navbar from './components/Navbar.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
@@ -102,7 +103,12 @@
 			</div>
 		{:else}
 			<div class="mb-10">
-				{#if $workspaceStore.showNewSong}
+				{#if $workspaceStore.showEditor && $workspaceStore.editingFile}
+					<Editor
+						dtxFile={$workspaceStore.editingFile}
+						onBack={() => workspaceStore.closeEditor()}
+					/>
+				{:else if $workspaceStore.showNewSong}
 					<NewSong />
 				{:else}
 					<Workspace />

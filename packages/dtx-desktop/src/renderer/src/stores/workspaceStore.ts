@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { linkageCacheService } from '../services/linkageCacheService';
+import type { DTXFile } from '@dtx/common';
 
 export interface TreeNode {
 	name: string;
@@ -25,6 +26,8 @@ interface WorkspaceState {
 	showSongDetails: boolean;
 	showNewSong: boolean;
 	showTemplates: boolean;
+	showEditor: boolean;
+	editingFile: DTXFile | null;
 }
 
 const initialState: WorkspaceState = {
@@ -37,7 +40,9 @@ const initialState: WorkspaceState = {
 	selectedSong: null,
 	showSongDetails: false,
 	showNewSong: false,
-	showTemplates: false
+	showTemplates: false,
+	showEditor: false,
+	editingFile: null
 };
 
 // Helper function to update tree nodes recursively
@@ -139,7 +144,9 @@ function createWorkspaceStore() {
 				selectedSong: null,
 				showSongDetails: false,
 				showNewSong: false,
-				showTemplates: false
+				showTemplates: false,
+				showEditor: false,
+				editingFile: null
 			}));
 		},
 		selectSong: (song: TreeNode) => {
@@ -208,6 +215,23 @@ function createWorkspaceStore() {
 					linkedSimFileId: null,
 					linkedSimFile: null
 				})
+			}));
+		},
+		showEditor: (dtxFile: DTXFile) => {
+			update((state) => ({
+				...state,
+				showEditor: true,
+				editingFile: dtxFile,
+				showSongDetails: false,
+				showNewSong: false,
+				showTemplates: false
+			}));
+		},
+		closeEditor: () => {
+			update((state) => ({
+				...state,
+				showEditor: false,
+				editingFile: null
 			}));
 		},
 		reset: () => set(initialState)

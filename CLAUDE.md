@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monorepo with 4 packages:
+Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monorepo with 3 packages:
 
 - `packages/common` - Shared Svelte component library and DTX file parsing
 - `packages/dtx-web` - SvelteKit web application (main app)
@@ -124,15 +124,33 @@ localStorage.removeItem('song_templates');
 
 ### Global Mocks
 
-Check `__mocks__/` folder before creating new mocks:
+**ALWAYS check `__mocks__/` folder first** before creating new mocks:
 
 - `__mocks__/phaser.ts` - Complete Phaser.js mock
 - `__mocks__/@dtx/common.ts` - Common package mock
 - `__mocks__/svelte/store.ts` - Svelte store mocks
 
+### Mock Strategy
+
+- Prefer mocking dependencies over installing additional test packages
+- Enhance existing global mocks rather than creating local ones
+- Use global mocks for external libraries and common dependencies
+- Use local mocks only for project-specific modules
+
 ### Testing Commands
 
-- Use workspace-specific: `npm test -w=dtx-web -- TestFile.test.ts`
+```bash
+# Root-level test shortcuts
+npm run test:web              # Run web app tests
+npm run test:desktop          # Run desktop app tests
+npm run test:common           # Run common package tests
+npm run test:coverage:web     # Run web tests with coverage
+
+# Workspace-specific (more flexible)
+npm run test -w=dtx-web -- TestFile.test.ts  # Run specific test
+npm run test:watch -w=dtx-web                # Watch mode
+```
+
 - Vitest with jsdom environment
 - Global mocks auto-loaded
 
@@ -141,10 +159,13 @@ Check `__mocks__/` folder before creating new mocks:
 ### Svelte/TypeScript
 
 - Use early returns for readability
-- Prefer `const` over `function`
+- Prefer `const` over `function` declarations
 - Event handlers prefixed with "handle" (e.g., `handleClick`)
 - Use `class:` directive over ternary operators in classes
-- TypeScript types for all functions/components
+- Define TypeScript types for all functions/components
+- Follow DRY principles and write bug-free, fully functional code
+- Prioritize readable code over performance optimizations
+- Implement proper accessibility (tabindex, aria-label, keyboard events)
 
 ### Styling
 

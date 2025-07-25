@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { run } from 'svelte/legacy';
-	import { onMount } from 'svelte';
 	import { DTXFile } from '../../chart/dtx';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
 
@@ -35,8 +34,12 @@
 	let level = $state(0);
 	let gotoMeasure = $state(0);
 
+	// Track if form fields have been initialized from DTX file to avoid overwriting
+	let formFieldsInitialized = $state(false);
+
 	run(() => {
-		if (dtxFile) {
+		// Only update DTX file if form fields have been initialized (not in default state)
+		if (dtxFile && formFieldsInitialized) {
 			dtxFile.title = title;
 			dtxFile.artist = artist;
 			dtxFile.comment = comment;
@@ -66,11 +69,15 @@
 
 	$effect(() => {
 		if (dtxFile) {
+			// Update form fields from DTX file
 			title = dtxFile.title ?? '';
 			artist = dtxFile.artist ?? '';
 			comment = dtxFile.comment ?? '';
 			bpm = dtxFile.bpm ?? 120;
 			level = dtxFile.level ?? 0;
+
+			// Mark form fields as initialized so run() can start updating DTX file
+			formFieldsInitialized = true;
 		}
 	});
 </script>

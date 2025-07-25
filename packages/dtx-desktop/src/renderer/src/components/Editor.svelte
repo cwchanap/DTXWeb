@@ -25,8 +25,11 @@
 	// Initialize from DTX file
 	onMount(() => {
 		if (dtxFile) {
-			measureCount = 10; // Default measure count
+			// Parse and initialize all DTX data
 			soundChips = dtxFile.parseSoundChips() || [];
+
+			// Initialize measure count from DTX file or use default
+			measureCount = 10; // Default measure count
 		}
 	});
 
@@ -34,50 +37,82 @@
 	function handleDtxFileChange(file: DTXFile) {
 		dtxFile = file;
 		// In desktop app, we could save to file system here
-		console.log('DTX file changed:', file);
 	}
 
 	function handleMeasureChange(count: number) {
 		measureCount = count;
-		console.log('Measure count changed:', count);
 	}
 
 	function handlePlaySpeedChange(speed: number) {
 		playSpeed = speed;
-		console.log('Play speed changed:', speed);
 	}
 
-	function handleGotoMeasure(measure: number) {
-		console.log('Go to measure:', measure);
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	function handleGotoMeasure(_measure: number) {
 		// In desktop app, this could scroll to the specific measure
 	}
 
-	function handlePreviewToggle(isPlaying: boolean, bpm: number) {
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	function handlePreviewToggle(isPlaying: boolean, _bpm: number) {
 		isPreviewing = isPlaying;
-		console.log('Preview toggle:', isPlaying, 'BPM:', bpm);
 		// In desktop app, this could start/stop audio playback
 	}
 
 	function handleSoundChipsChange(chips: SoundChip[]) {
 		soundChips = chips;
-		console.log('Sound chips changed:', chips);
 	}
 
 	function handleActiveNoteChange(noteId: string) {
 		activeNote = noteId;
-		console.log('Active note changed:', noteId);
 	}
 
 	function handleKeyBindingsChange(bindings: Record<string, string>) {
 		keyBindings = bindings;
-		console.log('Key bindings changed:', bindings);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async function handlePlayAudio(file: string | File, volume: number, _chip?: SoundChip) {
-		console.log('Play audio:', file, 'Volume:', volume);
-		// In desktop app, we could use Electron's audio capabilities
-		// or implement direct file system audio playing
-		showToastMessage('Audio playback not yet implemented in desktop app', 'warning');
+		try {
+			if (typeof file === 'string') {
+				// For local files, we need to resolve the path relative to the DTX file location
+				// Get the workspace path to find the song directory
+				let currentWorkspaceState: any = null;
+				const { workspaceStore } = await import('../stores/workspaceStore');
+				const unsubscribe = workspaceStore.subscribe((state) => {
+					currentWorkspaceState = state;
+				});
+				unsubscribe();
+
+				if (currentWorkspaceState?.selectedSong?.path) {
+					// Construct the full path to the audio file
+					const audioFilePath = `${currentWorkspaceState.selectedSong.path}/${file}`;
+
+					// Use HTML5 Audio API to play the file
+					const audio = new Audio(`file://${audioFilePath}`);
+					audio.volume = volume / 100; // Convert percentage to decimal
+					await audio.play();
+				} else {
+					showToastMessage('Cannot determine song directory for audio playback', 'error');
+				}
+			} else if (file instanceof File) {
+				// For File objects, create a blob URL and play
+				const audioUrl = URL.createObjectURL(file);
+				const audio = new Audio(audioUrl);
+				audio.volume = volume / 100;
+
+				// Clean up the blob URL after playback
+				audio.onended = () => URL.revokeObjectURL(audioUrl);
+				audio.onerror = () => URL.revokeObjectURL(audioUrl);
+
+				await audio.play();
+			}
+		} catch (error) {
+			console.error('Audio playback failed:', error);
+			showToastMessage(
+				`Audio playback failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				'error'
+			);
+		}
 	}
 
 	function showToastMessage(message: string, type: 'warning' | 'error' = 'warning') {
@@ -93,7 +128,6 @@
 	function handleExport() {
 		if (dtxFile) {
 			// In desktop app, we can save directly to file system
-			console.log('Exporting DTX file...');
 			showToastMessage('Export functionality to be implemented', 'warning');
 		}
 	}
@@ -101,7 +135,6 @@
 	function handleSave() {
 		if (dtxFile) {
 			// In desktop app, we can save directly to file system
-			console.log('Saving DTX file...');
 			showToastMessage('Save functionality to be implemented', 'warning');
 		}
 	}

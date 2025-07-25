@@ -171,24 +171,34 @@ export async function readFile(
 					content.includes('#ARTIST:') ||
 					content.includes('#BPM:') ||
 					content.includes('[') ||
-					content.length > 0
+					(content.length > 0 && !content.includes('\uFFFD')) // Not empty and no replacement chars
 				);
 			}
 			// For .dtx files, check for DTX-specific content
+			// Be more lenient - if it doesn't contain replacement characters and has some length, accept it
 			return (
 				content.includes('#TITLE:') ||
 				content.includes('#ARTIST:') ||
 				content.includes('#BPM:') ||
 				content.includes('#WAV') ||
-				content.length > 0
+				content.includes('#DLEVEL:') ||
+				content.includes('※') || // Japanese DTX files often start with this character
+				(content.length > 10 && !content.includes('\uFFFD')) // Not empty and no replacement chars
 			);
 		};
 
-		// Use encoding detection to handle UTF-16LE .def files and other encodings
+		// Use encoding detection to handle different file encodings
+		// For DTX files, prioritize Shift-JIS since many are created in Japan
+		// For DEF files, prioritize UTF-16LE as they're often saved with BOM
+		const encodingOrder =
+			ext === '.dtx'
+				? ['shift-jis', 'utf-8', 'utf-16le', 'utf-16be']
+				: ['utf-16le', 'utf-16be', 'utf-8', 'shift-jis'];
+
 		const content = await decodeFileWithEncodingDetection(
 			tempFile,
 			validateFileContent,
-			['utf-16le', 'utf-16be', 'utf-8', 'shift-jis'], // Try UTF-16LE first for .def files
+			encodingOrder,
 			'utf-8' // Fallback to UTF-8
 		);
 

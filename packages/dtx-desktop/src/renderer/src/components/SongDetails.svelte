@@ -17,6 +17,7 @@
 	let localFiles = $state<File[]>([]);
 	let isLoadingFiles = $state(false);
 	let fileLoadError = $state<string | null>(null);
+	let hasLocalDtxFiles = $state(false);
 
 	const handleClose = () => {
 		workspaceStore.closeSongDetails();
@@ -33,7 +34,7 @@
 			}
 
 			// Find DTX files
-			const dtxFiles = result.data.filter((file: any) =>
+			const dtxFiles = result.files.filter((file: any) =>
 				file.fileName.toLowerCase().endsWith('.dtx')
 			);
 
@@ -53,7 +54,7 @@
 			// Parse the DTX file using the common library
 			const { DTXFile } = await import('@dtx/common');
 			const parsedDtx = new DTXFile();
-			await parsedDtx.parseFromText(fileContent.data);
+			await parsedDtx.parseFromText(fileContent.content);
 
 			// Open the editor
 			workspaceStore.showEditor(parsedDtx);
@@ -121,9 +122,13 @@
 			);
 
 			localFiles = files;
+
+			// Check if there are any DTX files in the local files
+			hasLocalDtxFiles = files.some((file) => file.name.toLowerCase().endsWith('.dtx'));
 		} catch (error) {
 			console.error('Error loading local files:', error);
 			fileLoadError = error instanceof Error ? error.message : 'Failed to load files';
+			hasLocalDtxFiles = false;
 		} finally {
 			isLoadingFiles = false;
 		}
@@ -615,7 +620,7 @@
 	<div class="flex h-full flex-col">
 		<ChartDetail
 			simfile={simfileData()}
-			showEditor={true}
+			showEditor={hasLocalDtxFiles}
 			showPublishingControls={true}
 			showPublishedToggle={true}
 			saveButtonText="Update"
@@ -819,7 +824,7 @@
 	<div class="flex h-full flex-col">
 		<ChartDetail
 			simfile={simfileData()}
-			showEditor={true}
+			showEditor={hasLocalDtxFiles}
 			showPublishingControls={true}
 			showPublishedToggle={false}
 			onOpenEditor={handleOpenEditor}

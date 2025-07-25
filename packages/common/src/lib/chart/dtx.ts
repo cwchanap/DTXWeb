@@ -117,7 +117,8 @@ export class DTXFile {
 	}
 
 	async parseFromText(text: string) {
-		const lines = text.split('\r\n');
+		// Handle different line ending types: \r\n (Windows), \n (Unix), \r (old Mac)
+		const lines = text.split(/\r\n|\n|\r/);
 
 		const remove_prefix = (prefix: string) => {
 			// Look for the line that starts with the prefix (without colon)
@@ -137,6 +138,7 @@ export class DTXFile {
 		this.bpm = parseInt(remove_prefix('#BPM')) || 0;
 		this.preview = remove_prefix('#PREIMAGE');
 		this.soundPreview = remove_prefix('#PREVIEW');
+		this.comment = remove_prefix('#COMMENT');
 
 		this.lines = lines;
 	}

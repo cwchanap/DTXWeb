@@ -106,7 +106,10 @@
 				{#if $workspaceStore.showEditor && $workspaceStore.editingFile}
 					<Editor
 						dtxFile={$workspaceStore.editingFile}
+						availableCharts={$workspaceStore.availableCharts}
+						currentChartIndex={$workspaceStore.currentChartIndex}
 						onBack={() => workspaceStore.closeEditor()}
+						onSwitchChart={(index) => workspaceStore.switchChart(index)}
 					/>
 				{:else if $workspaceStore.showNewSong}
 					<NewSong />

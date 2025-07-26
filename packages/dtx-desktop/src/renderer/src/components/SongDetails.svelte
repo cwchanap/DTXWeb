@@ -23,10 +23,10 @@
 		workspaceStore.closeSongDetails();
 	};
 
-	// Handle opening the editor with a DTX file
+	// Handle opening the editor with DTX files
 	const handleOpenEditor = async () => {
 		try {
-			// Find the first DTX file in the song folder
+			// Find all DTX files in the song folder
 			const result = await window.electron.ipcRenderer.invoke('list-files', song.path);
 
 			if (result.error) {
@@ -43,21 +43,47 @@
 				return;
 			}
 
-			// Read the first DTX file
-			const dtxFile = dtxFiles[0];
-			const fileContent = await window.electron.ipcRenderer.invoke('read-file', dtxFile.key);
+			// Parse all DTX files and create chart objects
+			const { DTXFile } = await import('@dtx/common');
+			const charts = [];
 
-			if (fileContent.error) {
-				throw new Error(fileContent.error);
+			for (const dtxFile of dtxFiles) {
+				try {
+					const fileContent = await window.electron.ipcRenderer.invoke(
+						'read-file',
+						dtxFile.key
+					);
+
+					if (fileContent.error) {
+						console.warn(`Failed to read ${dtxFile.fileName}:`, fileContent.error);
+						continue;
+					}
+
+					const parsedDtx = new DTXFile();
+					await parsedDtx.parseFromText(fileContent.content);
+
+					charts.push({
+						file: parsedDtx,
+						fileName: dtxFile.fileName,
+						level: parsedDtx.level || 0,
+						title: parsedDtx.title || dtxFile.fileName.replace('.dtx', '')
+					});
+				} catch (error) {
+					console.warn(`Failed to parse ${dtxFile.fileName}:`, error);
+				}
 			}
 
-			// Parse the DTX file using the common library
-			const { DTXFile } = await import('@dtx/common');
-			const parsedDtx = new DTXFile();
-			await parsedDtx.parseFromText(fileContent.content);
+			if (charts.length === 0) {
+				console.warn('No valid DTX files could be parsed');
+				return;
+			}
 
-			// Open the editor
-			workspaceStore.showEditor(parsedDtx);
+			// Sort charts by level (highest first) and find the index of the highest level
+			charts.sort((a, b) => b.level - a.level);
+			const highestLevelIndex = 0; // After sorting, highest level is first
+
+			// Open the editor with all charts, defaulting to the highest level
+			workspaceStore.showEditor(charts, highestLevelIndex);
 		} catch (error) {
 			console.error('Failed to open editor:', error);
 		}

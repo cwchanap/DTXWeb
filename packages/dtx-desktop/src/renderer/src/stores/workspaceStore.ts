@@ -2,6 +2,13 @@ import { writable } from 'svelte/store';
 import { linkageCacheService } from '../services/linkageCacheService';
 import type { DTXFile } from '@dtx/common';
 
+export interface DTXChart {
+	file: DTXFile;
+	fileName: string;
+	level: number;
+	title: string;
+}
+
 export interface TreeNode {
 	name: string;
 	path: string;
@@ -28,6 +35,8 @@ interface WorkspaceState {
 	showTemplates: boolean;
 	showEditor: boolean;
 	editingFile: DTXFile | null;
+	availableCharts: DTXChart[];
+	currentChartIndex: number;
 }
 
 const initialState: WorkspaceState = {
@@ -42,7 +51,9 @@ const initialState: WorkspaceState = {
 	showNewSong: false,
 	showTemplates: false,
 	showEditor: false,
-	editingFile: null
+	editingFile: null,
+	availableCharts: [],
+	currentChartIndex: 0
 };
 
 // Helper function to update tree nodes recursively
@@ -146,7 +157,9 @@ function createWorkspaceStore() {
 				showNewSong: false,
 				showTemplates: false,
 				showEditor: false,
-				editingFile: null
+				editingFile: null,
+				availableCharts: [],
+				currentChartIndex: 0
 			}));
 		},
 		selectSong: (song: TreeNode) => {
@@ -217,21 +230,32 @@ function createWorkspaceStore() {
 				})
 			}));
 		},
-		showEditor: (dtxFile: DTXFile) => {
+		showEditor: (charts: DTXChart[], initialChartIndex: number = 0) => {
 			update((state) => ({
 				...state,
 				showEditor: true,
-				editingFile: dtxFile,
+				availableCharts: charts,
+				currentChartIndex: initialChartIndex,
+				editingFile: charts[initialChartIndex]?.file || null,
 				showSongDetails: false,
 				showNewSong: false,
 				showTemplates: false
+			}));
+		},
+		switchChart: (chartIndex: number) => {
+			update((state) => ({
+				...state,
+				currentChartIndex: chartIndex,
+				editingFile: state.availableCharts[chartIndex]?.file || null
 			}));
 		},
 		closeEditor: () => {
 			update((state) => ({
 				...state,
 				showEditor: false,
-				editingFile: null
+				editingFile: null,
+				availableCharts: [],
+				currentChartIndex: 0
 			}));
 		},
 		reset: () => set(initialState)

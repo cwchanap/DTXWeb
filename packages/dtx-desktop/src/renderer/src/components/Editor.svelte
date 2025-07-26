@@ -5,10 +5,13 @@
 
 	interface Props {
 		dtxFile: DTXFile;
+		availableCharts: any[];
+		currentChartIndex: number;
 		onBack?: () => void;
+		onSwitchChart?: (index: number) => void;
 	}
 
-	let { dtxFile, onBack }: Props = $props();
+	let { dtxFile, availableCharts, currentChartIndex, onBack, onSwitchChart }: Props = $props();
 
 	// State for tab components
 	let currentTab = $state(0);
@@ -22,14 +25,32 @@
 	let toastMessage = $state('');
 	let toastType: 'warning' | 'error' = $state('warning');
 
-	// Initialize from DTX file
-	onMount(() => {
+	// Function to initialize/reinitialize from DTX file
+	function initializeFromDtxFile() {
 		if (dtxFile) {
 			// Parse and initialize all DTX data
 			soundChips = dtxFile.parseSoundChips() || [];
 
 			// Initialize measure count from DTX file or use default
 			measureCount = 10; // Default measure count
+
+			// Reset other states for clean chart switching
+			activeNote = '01';
+			keyBindings = {};
+			isPreviewing = false;
+			playSpeed = 1;
+		}
+	}
+
+	// Initialize from DTX file on mount
+	onMount(() => {
+		initializeFromDtxFile();
+	});
+
+	// Reinitialize when DTX file changes (chart switch)
+	$effect(() => {
+		if (dtxFile) {
+			initializeFromDtxFile();
 		}
 	});
 
@@ -125,13 +146,6 @@
 		}, 4000);
 	}
 
-	function handleExport() {
-		if (dtxFile) {
-			// In desktop app, we can save directly to file system
-			showToastMessage('Export functionality to be implemented', 'warning');
-		}
-	}
-
 	function handleSave() {
 		if (dtxFile) {
 			// In desktop app, we can save directly to file system
@@ -153,23 +167,33 @@
 				← Back to Workspace
 			</button>
 			<h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
-				Editor - {dtxFile?.title || 'Untitled'}
+				{dtxFile?.title || 'Untitled'} - Level {dtxFile?.level || 0}
 			</h1>
 		</div>
 		<div class="flex items-center space-x-2">
+			<!-- Chart Switcher -->
+			{#if availableCharts.length > 1}
+				<div class="relative">
+					<select
+						class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-slate-700"
+						value={currentChartIndex}
+						onchange={(e) => onSwitchChart?.(parseInt(e.target.value))}
+						disabled={isPreviewing}
+					>
+						{#each availableCharts as chart, index}
+							<option value={index}>
+								{chart.title} (Lv.{chart.level})
+							</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<button
 				onclick={handleSave}
 				class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
 				disabled={isPreviewing}
 			>
 				Save
-			</button>
-			<button
-				onclick={handleExport}
-				class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-700"
-				disabled={isPreviewing}
-			>
-				Export
 			</button>
 		</div>
 	</div>
@@ -203,29 +227,33 @@
 			<!-- Tab content -->
 			<div class="h-full overflow-auto p-4">
 				{#if currentTab === 0}
-					<MainTab
-						bind:dtxFile
-						bind:measureCount
-						bind:isPreviewing
-						bind:playSpeed
-						onDtxFileChange={handleDtxFileChange}
-						onMeasureChange={handleMeasureChange}
-						onPlaySpeedChange={handlePlaySpeedChange}
-						onGotoMeasure={handleGotoMeasure}
-						onPreviewToggle={handlePreviewToggle}
-					/>
+					{#key currentChartIndex}
+						<MainTab
+							bind:dtxFile
+							bind:measureCount
+							bind:isPreviewing
+							bind:playSpeed
+							onDtxFileChange={handleDtxFileChange}
+							onMeasureChange={handleMeasureChange}
+							onPlaySpeedChange={handlePlaySpeedChange}
+							onGotoMeasure={handleGotoMeasure}
+							onPreviewToggle={handlePreviewToggle}
+						/>
+					{/key}
 				{:else if currentTab === 1}
-					<SoundTab
-						bind:soundChips
-						bind:activeNote
-						bind:keyBindings
-						isRemoteChart={false}
-						onSoundChipsChange={handleSoundChipsChange}
-						onActiveNoteChange={handleActiveNoteChange}
-						onKeyBindingsChange={handleKeyBindingsChange}
-						onPlayAudio={handlePlayAudio}
-						onShowToast={showToastMessage}
-					/>
+					{#key currentChartIndex}
+						<SoundTab
+							bind:soundChips
+							bind:activeNote
+							bind:keyBindings
+							isRemoteChart={false}
+							onSoundChipsChange={handleSoundChipsChange}
+							onActiveNoteChange={handleActiveNoteChange}
+							onKeyBindingsChange={handleKeyBindingsChange}
+							onPlayAudio={handlePlayAudio}
+							onShowToast={showToastMessage}
+						/>
+					{/key}
 				{/if}
 			</div>
 		</div>

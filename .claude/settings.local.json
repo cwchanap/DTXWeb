@@ -11,7 +11,10 @@
 			"Bash(npm run build:*)",
 			"Bash(npm run check:*)",
 			"Bash(npm run format:*)",
-			"Bash(npm run:*)"
+			"Bash(npm run:*)",
+			"mcp__sequential-thinking__sequentialthinking",
+			"mcp__Context7__resolve-library-id",
+			"mcp__Context7__get-library-docs"
 		],
 		"deny": []
 	}

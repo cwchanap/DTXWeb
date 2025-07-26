@@ -62,6 +62,40 @@
 					const parsedDtx = new DTXFile();
 					await parsedDtx.parseFromText(fileContent.content);
 
+					// Parse sound chips and populate with file references
+					const soundChips = parsedDtx.parseSoundChips();
+					console.log(`Parsed ${soundChips.length} sound chips for ${dtxFile.fileName}`);
+
+					let foundFiles = 0;
+					let missingFiles = 0;
+
+					// Check if sound files exist in the folder and populate chip.file
+					for (const chip of soundChips) {
+						if (chip.fileName) {
+							// Check if the sound file exists in the song folder (case-insensitive)
+							const soundFile = result.files.find(
+								(file: any) =>
+									file.fileName.toLowerCase() === chip.fileName.toLowerCase()
+							);
+
+							if (soundFile) {
+								// Use the actual file name as found in the directory
+								// This preserves the correct case and ensures the file exists
+								chip.file = soundFile.fileName;
+								foundFiles++;
+							} else {
+								missingFiles++;
+							}
+						}
+					}
+
+					console.log(
+						`Sound files: ${foundFiles} found, ${missingFiles} missing for ${dtxFile.fileName}`
+					);
+
+					// Store the populated sound chips back to the DTX file
+					parsedDtx.soundChips = soundChips;
+
 					charts.push({
 						file: parsedDtx,
 						fileName: dtxFile.fileName,

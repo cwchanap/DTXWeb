@@ -29,7 +29,9 @@
 		"@lucide/svelte": "^0.511.0",
 		"@supabase/supabase-js": "^2.49.8",
 		"dayjs": "^1.11.13",
-		"electron-updater": "^6.6.2"
+		"electron-updater": "^6.6.2",
+		"vite-plugin-wasm": "^3.5.0",
+		"xa_decoder": "^0.1.2"
 	},
 	"devDependencies": {
 		"@electron-toolkit/eslint-config-prettier": "^3.0.0",

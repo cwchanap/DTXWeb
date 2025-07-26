@@ -116,36 +116,65 @@
 	{#if !isRemoteChart}
 		<!-- Only show "New Sound" button for local charts -->
 		<button
-			class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+			class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
 			onclick={handleNewSound}
 		>
 			New Sound
 		</button>
 	{:else}
 		<!-- Show info text for remote charts -->
-		<div class="w-full rounded-sm bg-gray-100 px-4 py-2 text-center text-sm text-gray-600">
+		<div
+			class="w-full rounded-sm bg-gray-100 px-4 py-2 text-center text-sm text-gray-600 dark:bg-slate-700 dark:text-gray-300"
+		>
 			Sound files are managed remotely for this chart
 		</div>
 	{/if}
 
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
-			<thead class="bg-white">
+			<thead class="bg-white dark:bg-slate-800">
 				<tr>
-					<td class="w-[10%] border border-gray-300 text-center">Active</td>
-					<td class="w-[12%] border border-gray-300 text-center">Label</td>
-					<td class="w-[8%] border border-gray-300 text-center">ID</td>
-					<td class="w-[12%] border border-gray-300 text-center">Volume</td>
-					<td class="w-[12%] border border-gray-300 text-center">Position</td>
-					<td class="w-[12%] border border-gray-300 text-center">Key Binding</td>
-					<td class="w-[34%] border border-gray-300 text-center">File</td>
+					<td
+						class="w-[10%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>Active</td
+					>
+					<td
+						class="w-[12%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>Label</td
+					>
+					<td
+						class="w-[8%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>ID</td
+					>
+					<td
+						class="w-[12%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>Volume</td
+					>
+					<td
+						class="w-[12%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>Position</td
+					>
+					<td
+						class="w-[12%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>Key Binding</td
+					>
+					<td
+						class="w-[34%] border border-gray-300 text-center dark:border-slate-600 dark:text-gray-100"
+						>File</td
+					>
 				</tr>
 			</thead>
 			<tbody>
 				{#each soundChips as chip (chip.id)}
 					{@const chipId = chip.id.toString(36).toUpperCase().padStart(2, '0')}
-					<tr class="bg-white {activeNote === chipId ? 'ring-2 ring-blue-500' : ''}">
-						<td class="border border-gray-300 px-2 py-1 text-center">
+					<tr
+						class="bg-white dark:bg-slate-800 {activeNote === chipId
+							? 'ring-2 ring-blue-500 dark:ring-blue-400'
+							: ''}"
+					>
+						<td
+							class="border border-gray-300 px-2 py-1 text-center dark:border-slate-600"
+						>
 							<button
 								onclick={() => selectActiveNote(chipId)}
 								class="rounded-full border-2 {activeNote === chipId
@@ -158,7 +187,7 @@
 								{/if}
 							</button>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-300 px-2 py-1 dark:border-slate-600">
 							<input
 								type="text"
 								value={chip.label}
@@ -166,13 +195,15 @@
 									const target = e.target as HTMLInputElement;
 									updateSoundChip(chip.id, { label: target.value });
 								}}
-								class="w-full text-center"
+								class="w-full text-center dark:border-slate-600 dark:bg-slate-700 dark:text-gray-100"
 							/>
 						</td>
-						<td class="border border-gray-300 px-2 py-1 text-center">
-							<span class="font-mono text-sm">{chipId}</span>
+						<td
+							class="border border-gray-300 px-2 py-1 text-center dark:border-slate-600"
+						>
+							<span class="font-mono text-sm dark:text-gray-100">{chipId}</span>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-300 px-2 py-1 dark:border-slate-600">
 							<input
 								type="number"
 								value={chip.volume}
@@ -182,10 +213,10 @@
 								}}
 								min="0"
 								max="100"
-								class="w-full text-center"
+								class="w-full text-center dark:border-slate-600 dark:bg-slate-700 dark:text-gray-100"
 							/>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-300 px-2 py-1 dark:border-slate-600">
 							<input
 								type="number"
 								value={chip.position}
@@ -193,21 +224,21 @@
 									const target = e.target as HTMLInputElement;
 									updateSoundChip(chip.id, { position: parseInt(target.value) });
 								}}
-								class="w-full text-center"
+								class="w-full text-center dark:border-slate-600 dark:bg-slate-700 dark:text-gray-100"
 							/>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-300 px-2 py-1 dark:border-slate-600">
 							<input
 								type="text"
 								value={keyBindings[chipId] || ''}
 								onkeydown={(e) => handleKeyInput(e, chipId)}
 								placeholder="Press key"
-								class="w-full text-center text-sm"
+								class="w-full text-center text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-gray-100"
 								readonly
 							/>
 						</td>
 
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-300 px-2 py-1 dark:border-slate-600">
 							{#if isRemoteChart}
 								<!-- For remote charts, show files based on fileName -->
 								{#if chip.fileName}
@@ -220,7 +251,7 @@
 										{chip.fileName}
 									</button>
 								{:else}
-									<span class="text-sm text-gray-500 italic"
+									<span class="text-sm text-gray-500 italic dark:text-gray-400"
 										>No file assigned</span
 									>
 								{/if}
@@ -239,7 +270,7 @@
 									</button>
 									<button
 										onclick={() => removeSoundChipFile(chip.id)}
-										class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-800"
+										class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-800 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900 dark:hover:text-red-300"
 										title="Remove file"
 									>
 										✕
@@ -256,7 +287,7 @@
 											assignFileToChip(chip.id, target.files[0]);
 										}
 									}}
-									class="w-full text-sm file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600"
+									class="w-full text-sm file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600 dark:bg-slate-700 dark:text-gray-100 dark:file:bg-blue-600 dark:hover:file:bg-blue-700"
 								/>
 							{/if}
 						</td>

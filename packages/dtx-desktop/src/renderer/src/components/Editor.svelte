@@ -24,12 +24,19 @@
 	let showToast = $state(false);
 	let toastMessage = $state('');
 	let toastType: 'warning' | 'error' = $state('warning');
+	let isLeftPanelCollapsed = $state(false);
+	let leftPanelWidth = $state(33); // percentage width
+	let isResizing = $state(false);
 
 	// Function to initialize/reinitialize from DTX file
 	function initializeFromDtxFile() {
 		if (dtxFile) {
-			// Parse and initialize all DTX data
-			soundChips = dtxFile.parseSoundChips() || [];
+			// Use existing sound chips if available, otherwise parse new ones
+			soundChips = dtxFile.soundChips || dtxFile.parseSoundChips() || [];
+			const filesWithAudio = soundChips.filter((chip) => chip.file).length;
+			console.log(
+				`Editor initialized with ${soundChips.length} sound chips (${filesWithAudio} with audio files)`
+			);
 
 			// Initialize measure count from DTX file or use default
 			measureCount = 10; // Default measure count
@@ -47,10 +54,15 @@
 		initializeFromDtxFile();
 	});
 
-	// Reinitialize when DTX file changes (chart switch)
+	// Track the current chart index to detect chart switches
+	let previousChartIndex = $state(currentChartIndex);
+
+	// Reinitialize when chart index changes (chart switch)
 	$effect(() => {
-		if (dtxFile) {
+		if (currentChartIndex !== previousChartIndex) {
+			console.log(`Chart switched from ${previousChartIndex} to ${currentChartIndex}`);
 			initializeFromDtxFile();
+			previousChartIndex = currentChartIndex;
 		}
 	});
 
@@ -95,7 +107,7 @@
 	async function handlePlayAudio(file: string | File, volume: number, _chip?: SoundChip) {
 		try {
 			if (typeof file === 'string') {
-				// For local files, we need to resolve the path relative to the DTX file location
+				// For local files, we need to get the audio data via IPC
 				// Get the workspace path to find the song directory
 				let currentWorkspaceState: any = null;
 				const { workspaceStore } = await import('../stores/workspaceStore');
@@ -108,10 +120,77 @@
 					// Construct the full path to the audio file
 					const audioFilePath = `${currentWorkspaceState.selectedSong.path}/${file}`;
 
-					// Use HTML5 Audio API to play the file
-					const audio = new Audio(`file://${audioFilePath}`);
-					audio.volume = volume / 100; // Convert percentage to decimal
-					await audio.play();
+					// Use IPC to read the audio file buffer
+					const result = await window.electron.ipcRenderer.invoke(
+						'read-audio-file',
+						audioFilePath,
+						currentWorkspaceState.selectedSong.path
+					);
+
+					if (result.error) {
+						throw new Error(result.error);
+					}
+
+					// Check if it's an XA file and decode if necessary
+					const isXAFile = file.toLowerCase().endsWith('.xa');
+					let audioBuffer: Uint8Array;
+					let mimeType: string;
+
+					if (isXAFile) {
+						// Import XA decoder (WASM already initialized globally)
+						const { WasmXADecoder } = await import('xa_decoder');
+						const decoder = new WasmXADecoder();
+
+						// Decode XA data to PCM using Web Audio API (like dtx-web)
+						const rawBuffer = new Uint8Array(result.buffer);
+						const decodedData = decoder.decode(rawBuffer);
+						const format = decoder.get_format();
+
+						// Create AudioContext and AudioBuffer (like dtx-web)
+						const audioContext = new AudioContext();
+						const audioBuffer = audioContext.createBuffer(
+							format.channels,
+							decodedData.length,
+							format.samples_rate
+						);
+
+						// Copy PCM data to AudioBuffer channels
+						for (let i = 0; i < format.channels; i++) {
+							const channelData = audioBuffer.getChannelData(i);
+							for (let j = 0; j < decodedData.length; j++) {
+								channelData[j] = decodedData[j] / 32768; // Same normalization as web
+							}
+						}
+
+						// Play via Web Audio API (like dtx-web)
+						const source = audioContext.createBufferSource();
+						const gainNode = audioContext.createGain();
+
+						source.buffer = audioBuffer;
+						gainNode.gain.value = volume / 100;
+
+						source.connect(gainNode);
+						gainNode.connect(audioContext.destination);
+						source.start();
+					} else {
+						// For non-XA files, use the existing blob URL approach
+						audioBuffer = new Uint8Array(result.buffer);
+						mimeType = result.mimeType;
+
+						// Create blob from buffer and generate blob URL
+						const blob = new Blob([audioBuffer], { type: mimeType });
+						const audioUrl = URL.createObjectURL(blob);
+
+						// Use HTML5 Audio API to play the blob URL
+						const audio = new Audio(audioUrl);
+						audio.volume = volume / 100; // Convert percentage to decimal
+
+						// Clean up the blob URL after playback
+						audio.onended = () => URL.revokeObjectURL(audioUrl);
+						audio.onerror = () => URL.revokeObjectURL(audioUrl);
+
+						await audio.play();
+					}
 				} else {
 					showToastMessage('Cannot determine song directory for audio playback', 'error');
 				}
@@ -152,9 +231,47 @@
 			showToastMessage('Save functionality to be implemented', 'warning');
 		}
 	}
+
+	function toggleLeftPanel() {
+		isLeftPanelCollapsed = !isLeftPanelCollapsed;
+	}
+
+	function handleResizeStart(event: MouseEvent) {
+		if (isLeftPanelCollapsed) return;
+
+		isResizing = true;
+		event.preventDefault();
+
+		const startX = event.clientX;
+		const startWidth = leftPanelWidth;
+		const containerWidth = window.innerWidth;
+
+		function handleMouseMove(e: MouseEvent) {
+			if (!isResizing) return;
+
+			const deltaX = e.clientX - startX;
+			const deltaPercent = (deltaX / containerWidth) * 100;
+			const newWidth = Math.max(15, Math.min(60, startWidth + deltaPercent)); // Min 15%, Max 60%
+
+			leftPanelWidth = newWidth;
+		}
+
+		function handleMouseUp() {
+			isResizing = false;
+			document.removeEventListener('mousemove', handleMouseMove);
+			document.removeEventListener('mouseup', handleMouseUp);
+		}
+
+		document.addEventListener('mousemove', handleMouseMove);
+		document.addEventListener('mouseup', handleMouseUp);
+	}
 </script>
 
-<div class="flex h-screen flex-col bg-white dark:bg-slate-800">
+<div
+	class="flex h-screen flex-col bg-white dark:bg-slate-800 {isResizing
+		? 'cursor-col-resize select-none'
+		: ''}"
+>
 	<!-- Header -->
 	<div
 		class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-slate-600"
@@ -201,61 +318,100 @@
 	<!-- Main content -->
 	<div class="flex flex-1 overflow-hidden">
 		<!-- Left panel with tabs -->
-		<div class="w-1/3 border-r border-gray-200 dark:border-slate-600">
+		<div
+			class="relative flex flex-col border-r border-gray-200 dark:border-slate-600 {isResizing
+				? ''
+				: 'transition-all duration-300'}"
+			style="width: {isLeftPanelCollapsed ? '3rem' : `${leftPanelWidth}%`}"
+		>
 			<!-- Tab headers -->
-			<div class="border-b border-gray-200 dark:border-slate-600">
-				<nav class="flex">
-					<button
-						class="px-6 py-3 text-sm font-medium {currentTab === 0
-							? 'border-b-2 border-blue-500 text-blue-600'
-							: 'text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100'}"
-						onclick={() => (currentTab = 0)}
-					>
-						Main
-					</button>
-					<button
-						class="px-6 py-3 text-sm font-medium {currentTab === 1
-							? 'border-b-2 border-blue-500 text-blue-600'
-							: 'text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100'}"
-						onclick={() => (currentTab = 1)}
-					>
-						Sound
-					</button>
-				</nav>
+			<div class="flex border-b border-gray-200 dark:border-slate-600">
+				{#if !isLeftPanelCollapsed}
+					<nav class="flex flex-1">
+						<button
+							class="px-6 py-3 text-sm font-medium {currentTab === 0
+								? 'border-b-2 border-blue-500 text-blue-600'
+								: 'text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100'}"
+							onclick={() => (currentTab = 0)}
+						>
+							Main
+						</button>
+						<button
+							class="px-6 py-3 text-sm font-medium {currentTab === 1
+								? 'border-b-2 border-blue-500 text-blue-600'
+								: 'text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100'}"
+							onclick={() => (currentTab = 1)}
+						>
+							Sound
+						</button>
+					</nav>
+				{/if}
+				<!-- Collapse/Expand button -->
+				<button
+					onclick={toggleLeftPanel}
+					class="px-3 py-3 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-slate-700 dark:hover:text-gray-100"
+					title={isLeftPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
+				>
+					{#if isLeftPanelCollapsed}
+						→
+					{:else}
+						←
+					{/if}
+				</button>
 			</div>
 
 			<!-- Tab content -->
-			<div class="h-full overflow-auto p-4">
-				{#if currentTab === 0}
-					{#key currentChartIndex}
-						<MainTab
-							bind:dtxFile
-							bind:measureCount
-							bind:isPreviewing
-							bind:playSpeed
-							onDtxFileChange={handleDtxFileChange}
-							onMeasureChange={handleMeasureChange}
-							onPlaySpeedChange={handlePlaySpeedChange}
-							onGotoMeasure={handleGotoMeasure}
-							onPreviewToggle={handlePreviewToggle}
-						/>
-					{/key}
-				{:else if currentTab === 1}
-					{#key currentChartIndex}
-						<SoundTab
-							bind:soundChips
-							bind:activeNote
-							bind:keyBindings
-							isRemoteChart={false}
-							onSoundChipsChange={handleSoundChipsChange}
-							onActiveNoteChange={handleActiveNoteChange}
-							onKeyBindingsChange={handleKeyBindingsChange}
-							onPlayAudio={handlePlayAudio}
-							onShowToast={showToastMessage}
-						/>
-					{/key}
-				{/if}
-			</div>
+			{#if !isLeftPanelCollapsed}
+				<div class="h-full overflow-auto p-4">
+					{#if currentTab === 0}
+						{#key currentChartIndex}
+							<MainTab
+								bind:dtxFile
+								bind:measureCount
+								bind:isPreviewing
+								bind:playSpeed
+								onDtxFileChange={handleDtxFileChange}
+								onMeasureChange={handleMeasureChange}
+								onPlaySpeedChange={handlePlaySpeedChange}
+								onGotoMeasure={handleGotoMeasure}
+								onPreviewToggle={handlePreviewToggle}
+							/>
+						{/key}
+					{:else if currentTab === 1}
+						{#key currentChartIndex}
+							<SoundTab
+								bind:soundChips
+								bind:activeNote
+								bind:keyBindings
+								isRemoteChart={false}
+								onSoundChipsChange={handleSoundChipsChange}
+								onActiveNoteChange={handleActiveNoteChange}
+								onKeyBindingsChange={handleKeyBindingsChange}
+								onPlayAudio={handlePlayAudio}
+								onShowToast={showToastMessage}
+							/>
+						{/key}
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Resize handle -->
+			{#if !isLeftPanelCollapsed}
+				<div
+					class="hover:bg-opacity-30 group absolute top-0 right-0 z-10 h-full w-2 cursor-col-resize bg-transparent transition-colors duration-200 hover:bg-blue-500"
+					onmousedown={handleResizeStart}
+					title="Drag to resize"
+				>
+					<!-- Visual indicator dots -->
+					<div
+						class="absolute inset-y-0 right-0 w-1 bg-gray-300 opacity-0 transition-opacity duration-200 group-hover:opacity-100 dark:bg-slate-500"
+					>
+						<div
+							class="absolute top-1/2 left-0 h-8 w-1 -translate-y-1/2 transform rounded-full bg-gray-400 dark:bg-slate-400"
+						></div>
+					</div>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Right panel - Editor area placeholder -->

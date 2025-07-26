@@ -228,6 +228,78 @@ if (!gotTheLock) {
 			return await readFile(filePath, workspaceRoot);
 		});
 
+		// Handle reading audio files for playback
+		ipcMain.handle('read-audio-file', async (_event, filePath, workspaceRoot = null) => {
+			try {
+				// Resolve the file path to prevent path traversal attacks
+				const resolvedPath = path.resolve(filePath);
+
+				// Security check: ensure the resolved path is within the allowed directory
+				let allowedRoot: string;
+				if (workspaceRoot) {
+					allowedRoot = path.resolve(workspaceRoot);
+				} else {
+					// For backward compatibility, derive workspace root from file path
+					allowedRoot = path.dirname(resolvedPath);
+				}
+
+				// Use path.relative to check if resolvedPath is within allowedRoot
+				const relativePath = path.relative(allowedRoot, resolvedPath);
+				if (relativePath.startsWith('..') || relativePath === '..') {
+					console.warn('Path traversal attempt detected:', filePath);
+					return { error: 'Invalid file path', dataUrl: null };
+				}
+
+				// Whitelist of allowed audio extensions
+				const allowedAudioExtensions = [
+					'.wav',
+					'.mp3',
+					'.ogg',
+					'.flac',
+					'.m4a',
+					'.aac',
+					'.xa'
+				];
+				const ext = path.extname(resolvedPath).toLowerCase();
+				if (!allowedAudioExtensions.includes(ext)) {
+					return { error: 'Audio file type not allowed', dataUrl: null };
+				}
+
+				// File size limit (e.g., 50MB for audio files)
+				const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+				const stats = await fs.promises.stat(resolvedPath);
+				if (stats.size > MAX_SIZE) {
+					console.warn('Audio file too large:', stats.size);
+					return { error: 'Audio file too large', dataUrl: null };
+				}
+
+				// Read file as buffer
+				const fileBuffer = await fs.promises.readFile(resolvedPath);
+
+				// Get MIME type based on extension
+				const mimeTypes: Record<string, string> = {
+					'.wav': 'audio/wav',
+					'.mp3': 'audio/mpeg',
+					'.ogg': 'audio/ogg',
+					'.flac': 'audio/flac',
+					'.m4a': 'audio/mp4',
+					'.aac': 'audio/aac',
+					'.xa': 'audio/wav' // Treat .xa as wav for browser compatibility
+				};
+				const mimeType = mimeTypes[ext] || 'audio/wav';
+
+				// Return the buffer directly so renderer can create blob URL
+				return { error: null, buffer: Array.from(fileBuffer), mimeType };
+			} catch (error) {
+				console.error('Error reading audio file:', error);
+				return {
+					error: error instanceof Error ? error.message : 'Unknown error',
+					buffer: null,
+					mimeType: null
+				};
+			}
+		});
+
 		// Handle parsing DTX files to extract metadata
 		ipcMain.handle('parse-dtx-files', async (_event, folderPath: string) => {
 			return await parseDtxFiles(folderPath);

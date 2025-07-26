@@ -21,6 +21,7 @@ const extendedElectronAPI = {
 				'load-tree-structure',
 				'list-files',
 				'read-file',
+				'read-audio-file',
 				'parse-dtx-files',
 				'validate-session',
 				'get-current-session',

@@ -12,6 +12,11 @@ export default defineConfig({
 		setupFiles: ['./src/tests/setup.ts'],
 		// Exclude build outputs and test files from coverage
 		exclude: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.svelte-kit/**'],
+		server: {
+			deps: {
+				inline: ['phaser']
+			}
+		},
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'html', 'lcov'],

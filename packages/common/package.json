@@ -36,6 +36,11 @@
 			"import": "./dist/components.js",
 			"default": "./dist/components.js"
 		},
+		"./game-client": {
+			"types": "./dist/game-client.d.ts",
+			"import": "./dist/game-client.js",
+			"default": "./dist/game-client.js"
+		},
 		"./server": {
 			"types": "./dist/server.d.ts",
 			"import": "./dist/server.js",
@@ -47,6 +52,7 @@
 		"@skeletonlabs/skeleton-svelte": "^1.0.0",
 		"@supabase/supabase-js": "^2.0.0",
 		"dayjs": "^1.11.0",
+		"phaser": "^3.88.0",
 		"svelte": "^5.0.0"
 	},
 	"devDependencies": {

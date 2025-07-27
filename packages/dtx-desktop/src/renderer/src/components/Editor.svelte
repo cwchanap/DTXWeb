@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { MainTab, SoundTab } from '@dtx/common/components';
-	import { DTXFile, SoundChip } from '@dtx/common';
+	import { MainTab, SoundTab, PhaserEditor } from '@dtx/common/components';
+	import { DTXFile, SoundChip, type LaneMeasureNote } from '@dtx/common';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -27,6 +27,8 @@
 	let isLeftPanelCollapsed = $state(false);
 	let leftPanelWidth = $state(33); // percentage width
 	let isResizing = $state(false);
+	let editorNotes = $state<Record<string, LaneMeasureNote[]>>({});
+	let editorBpmNotes = $state<Record<string, number>>({});
 
 	// Function to initialize/reinitialize from DTX file
 	function initializeFromDtxFile() {
@@ -38,8 +40,30 @@
 				`Editor initialized with ${soundChips.length} sound chips (${filesWithAudio} with audio files)`
 			);
 
-			// Initialize measure count from DTX file or use default
-			measureCount = 10; // Default measure count
+			// Parse notes and BPM changes for the editor first
+			const notes = dtxFile.parseNotes();
+			const bpmNotes = dtxFile.parseBPMChanges();
+
+			// Calculate measure count from actual notes data
+			let maxMeasure = 0;
+			notes.forEach((note) => {
+				if (note.measure > maxMeasure) {
+					maxMeasure = note.measure;
+				}
+			});
+
+			// Set measure count to include all measures with notes + a buffer
+			measureCount = Math.max(10, maxMeasure + 5);
+
+			// Convert notes array to the format expected by the editor
+			editorNotes = {};
+			notes.forEach((note) => {
+				if (!(note.laneID in editorNotes)) {
+					editorNotes[note.laneID] = [];
+				}
+				editorNotes[note.laneID].push(note);
+			});
+			editorBpmNotes = bpmNotes;
 
 			// Reset other states for clean chart switching
 			activeNote = '01';
@@ -101,6 +125,10 @@
 
 	function handleKeyBindingsChange(bindings: Record<string, string>) {
 		keyBindings = bindings;
+	}
+
+	function handleNotesUpdate(notes: Record<string, LaneMeasureNote[]>) {
+		editorNotes = notes;
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -294,7 +322,8 @@
 					<select
 						class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-slate-700"
 						value={currentChartIndex}
-						onchange={(e) => onSwitchChart?.(parseInt(e.target.value))}
+						onchange={(e) =>
+							onSwitchChart?.(parseInt((e.target as HTMLSelectElement).value))}
 						disabled={isPreviewing}
 					>
 						{#each availableCharts as chart, index}
@@ -401,6 +430,11 @@
 					class="hover:bg-opacity-30 group absolute top-0 right-0 z-10 h-full w-2 cursor-col-resize bg-transparent transition-colors duration-200 hover:bg-blue-500"
 					onmousedown={handleResizeStart}
 					title="Drag to resize"
+					role="slider"
+					tabindex="0"
+					aria-valuenow={leftPanelWidth}
+					aria-valuemin="15"
+					aria-valuemax="60"
 				>
 					<!-- Visual indicator dots -->
 					<div
@@ -414,19 +448,23 @@
 			{/if}
 		</div>
 
-		<!-- Right panel - Editor area placeholder -->
-		<div class="flex flex-1 items-center justify-center bg-gray-50 dark:bg-slate-900">
-			<div class="text-center">
-				<div class="mb-4 text-6xl text-gray-300 dark:text-slate-600">🎵</div>
-				<h2 class="mb-2 text-xl font-medium text-gray-600 dark:text-gray-300">
-					Visual Editor Coming Soon
-				</h2>
-				<p class="text-gray-500 dark:text-gray-400">
-					The Phaser-based visual editor will be integrated here.
-					<br />
-					For now, use the Main and Sound tabs to edit DTX metadata and sounds.
-				</p>
-			</div>
+		<!-- Right panel - Phaser Editor -->
+		<div class="flex flex-1 bg-gray-900">
+			{#if Object.keys(editorNotes).length > 0}
+				<PhaserEditor
+					{measureCount}
+					notes={editorNotes}
+					bpmNotes={editorBpmNotes}
+					onNotesUpdate={handleNotesUpdate}
+				/>
+			{:else}
+				<div class="flex h-full w-full items-center justify-center text-white">
+					<div class="text-center">
+						<div class="mb-2 text-lg">Loading DTX chart...</div>
+						<div class="text-sm text-gray-400">Parsing notes and preparing editor</div>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>

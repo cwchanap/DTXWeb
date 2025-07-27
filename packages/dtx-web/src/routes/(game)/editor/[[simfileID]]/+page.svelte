@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { type Scene } from 'phaser';
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
-	import { Editor } from '@/game/scenes/Editor';
-	import { Preview } from '@/game/scenes/Preview';
+	import { Editor, Preview } from '@dtx/common/game-client';
 	import { onMount } from 'svelte';
 	import {
 		DTXFile,
@@ -673,28 +672,9 @@
 		store.playSpeed.subscribe((value) => {
 			playSpeed = value;
 		});
-		store.currentSoundChip.subscribe(async (value) => {
-			// For remote charts, ensure files are fetched
-			if (simfileID && value.length > 0) {
-				const updatedChips = await Promise.all(
-					value.map(async (chip) => {
-						if (chip.fileName && !chip.file) {
-							try {
-								await chip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
-							} catch (error) {
-								console.error('Failed to fetch remote file:', chip.fileName, error);
-							}
-						}
-						return chip;
-					})
-				);
-
-				// Update the store with the fetched files
-				if (updatedChips.some((chip) => chip.file)) {
-					store.currentSoundChip.set(updatedChips);
-				}
-			}
-
+		store.currentSoundChip.subscribe((value) => {
+			// Just update the local state, no fetching needed here
+			// Fetching is already handled in onMount and other specific places
 			soundChips = value;
 		});
 		store.activeNote.subscribe((value) => {

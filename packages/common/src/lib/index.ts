@@ -11,6 +11,14 @@ export {
 // Export utilities
 export { normalizePosition } from './utils/position.js';
 
+// Export game types and utilities (non-Phaser dependent)
+export type { LaneConfig } from './game/interface.js';
+export { AssetName } from './game/interface.js';
+export {
+	calculateHighResolutionPosition,
+	HIGH_RESOLUTION_CELLS
+} from './game/utils/notePositioning.js';
+
 // Export constants
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants.js';
 

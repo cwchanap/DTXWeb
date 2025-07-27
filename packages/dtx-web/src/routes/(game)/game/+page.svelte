@@ -3,7 +3,7 @@
 	import Main, { type TPhaserRef } from '@/game/main.svelte';
 	import { goto } from '$app/navigation';
 	import store from '$lib/store';
-	import { Editor } from '@/game/scenes/Editor';
+	import { Editor } from '@dtx/common/game-client';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 

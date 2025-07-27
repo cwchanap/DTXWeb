@@ -26,7 +26,7 @@ export class Editor extends BaseGame {
 	private noteManager: NoteManager;
 	public selectedNotes: Set<string> = new Set();
 
-	constructor(protected measureCount: number = 10) {
+	constructor(public measureCount: number = 10) {
 		super({ key: Editor.key });
 		this.noteManager = new NoteManager(this);
 	}
@@ -128,7 +128,7 @@ export class Editor extends BaseGame {
 
 		this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
 			// Handle note management (end selection, end drag, etc.)
-			this.noteManager.handlePointerUp(pointer);
+			this.noteManager.handlePointerUp();
 		});
 
 		this.input.on(

@@ -1,7 +1,6 @@
 import { Preloader } from './Preload';
 import { MainMenu } from './scenes/MainMenu';
-import { Editor } from './scenes/Editor';
-import { Preview } from './scenes/Preview';
+import { Editor, Preview } from '@dtx/common/game-client';
 
 //  Find out more information about the Game Config at:
 //  https://newdocs.phaser.io/docs/3.70.0/Phaser.Types.Core.GameConfig

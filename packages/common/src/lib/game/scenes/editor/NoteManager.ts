@@ -156,6 +156,26 @@ export class NoteManager {
 					this.pasteNotes();
 					return false;
 				}
+
+				// Check for Ctrl+Z or Cmd+Z (undo)
+				if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+					event.preventDefault();
+					event.stopPropagation();
+					this.lastKeyboardAction = now;
+					this.undoLastAction();
+					return false;
+				}
+
+				// Check for Delete key (delete selected notes)
+				if (event.key === 'Delete' || event.key === 'Backspace') {
+					if (this.selectedNotes.size > 0) {
+						event.preventDefault();
+						event.stopPropagation();
+						this.lastKeyboardAction = now;
+						this.deleteSelectedNotes();
+						return false;
+					}
+				}
 			}
 		};
 
@@ -691,22 +711,13 @@ export class NoteManager {
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Fast bounds check using Phaser's built-in bounds if available
-				if (typeof child.getBounds === 'function') {
-					const bounds = child.getBounds();
-					// Use Phaser's built-in overlap detection for cleaner, more maintainable code
-					if (Phaser.Geom.Rectangle.Overlaps(this.selectionRect, bounds)) {
-						selectedNoteKeys.add(child.name);
-					}
-				} else {
-					// Fallback to manual bounds calculation only if needed
-					const simplifiedBounds = this.calculateSimplifiedNoteBounds(child.name);
-					if (
-						simplifiedBounds &&
-						Phaser.Geom.Rectangle.Overlaps(this.selectionRect, simplifiedBounds)
-					) {
-						selectedNoteKeys.add(child.name);
-					}
+				// Use manual bounds calculation for Graphics objects
+				const simplifiedBounds = this.calculateSimplifiedNoteBounds(child.name);
+				if (
+					simplifiedBounds &&
+					Phaser.Geom.Rectangle.Overlaps(this.selectionRect, simplifiedBounds)
+				) {
+					selectedNoteKeys.add(child.name);
 				}
 			}
 		}

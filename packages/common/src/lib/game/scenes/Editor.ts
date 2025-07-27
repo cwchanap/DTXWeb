@@ -6,6 +6,7 @@ import {
 	calculateHighResolutionPosition,
 	HIGH_RESOLUTION_CELLS
 } from '../utils/notePositioning.js';
+import { NoteManager } from './editor/NoteManager.js';
 
 interface Data {
 	measureCount?: number;
@@ -21,8 +22,13 @@ export class Editor extends BaseGame {
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
 
+	// Note management system
+	private noteManager: NoteManager;
+	public selectedNotes: Set<string> = new Set();
+
 	constructor(protected measureCount: number = 10) {
 		super({ key: Editor.key });
+		this.noteManager = new NoteManager(this);
 	}
 
 	init(data: Data) {
@@ -33,6 +39,9 @@ export class Editor extends BaseGame {
 		this.drawPanel();
 		this.drawNotes();
 
+		// Initialize note manager after scene is created
+		this.noteManager.initialize();
+
 		// Helper function for clamping Y position (still needed for wheel scrolling)
 		const clampY = (newY: number) => {
 			return Phaser.Math.Clamp(
@@ -42,34 +51,28 @@ export class Editor extends BaseGame {
 			);
 		};
 
-		// Enable input events
+		// Enable input events - delegate to NoteManager for selection and advanced features
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+			// Handle note management (selection, drag, etc.)
+			this.noteManager.handlePointerDown(pointer);
+
 			// Handle note creation/deletion in editing mode
 			if (!this.isEditing) {
 				return;
 			}
 
 			const x = pointer.x - this.offsetX;
-
-			// Calculate the absolute Y position by accounting for the container's position (scrolling)
-			// The panelContainer.y is positive when scrolled up, so we need to minus it to get the absolute position
 			const absoluteY = pointer.y - this.offsetY - this.panelContainer.y;
-
-			// Calculate the clicked lane
 			const laneIndex = Math.floor(x / this.cellWidth);
 
 			// Validate the click is within the lane bounds
 			if (laneIndex >= 0 && laneIndex < this.laneConfigs.length) {
-				// Calculate which measure was clicked using high-resolution positioning
-				// We need to negate absoluteY because the grid is drawn from bottom to top
 				const clickY = -absoluteY;
-
-				// Find the measure and position within measure
 				let currentY = 0;
 				let measure = -1;
 				let positionInMeasure = 0;
 
-				// Iterate through measures to find which one contains the click
+				// Find which measure was clicked
 				for (let m = 0; m < this.measureCount; m++) {
 					const measureHeight = this.getMeasureHeight(m);
 					if (clickY >= currentY && clickY < currentY + measureHeight) {
@@ -82,63 +85,15 @@ export class Editor extends BaseGame {
 
 				// Validate the click is within a valid measure
 				if (measure >= 0 && measure < this.measureCount) {
-					// Use high-resolution grid to calculate precise position
-					// Use Math.round instead of Math.floor to match the selection logic
 					const highResPosition = Math.round(positionInMeasure * HIGH_RESOLUTION_CELLS);
 					const cellOffset = highResPosition / HIGH_RESOLUTION_CELLS;
 
-					// Check if it's a right-click (pointer.rightButtonDown())
 					if (pointer.rightButtonDown()) {
-						// Check if there's a note at this position
+						// Right-click: Delete note (delegate to noteManager)
 						const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
 						const existingNote = this.panelContainer.getByName(noteKey);
 						if (existingNote) {
-							const laneId = this.laneConfigs[laneIndex].id;
-
-							// Remove the note graphics from the display
-							const noteGraphics = this.panelContainer.getByName(noteKey);
-							if (noteGraphics) {
-								noteGraphics.destroy();
-							}
-
-							// Remove the note text from the display
-							const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
-							const noteText = this.panelContainer.getByName(textKey);
-							if (noteText) {
-								noteText.destroy();
-							}
-
-							// Remove the note from this.notes
-							if (laneId in this.notes) {
-								// Find the LaneMeasureNote that contains this note
-								const measureNote = this.notes[laneId].find(
-									(note) =>
-										note.measure === measure &&
-										note.notes.some(
-											(n) => Math.abs(n.position - cellOffset) < 0.001
-										)
-								);
-
-								if (measureNote) {
-									// Remove the specific note from the notes array
-									measureNote.notes = measureNote.notes.filter(
-										(note) => note.position !== cellOffset
-									);
-
-									// If the measure is now empty, remove the entire LaneMeasureNote
-									if (measureNote.notes.length === 0) {
-										this.notes[laneId] = this.notes[laneId].filter(
-											(note) => note !== measureNote
-										);
-									}
-								}
-
-								// Clean up empty lane entries
-								if (this.notes[laneId].length === 0) {
-									delete this.notes[laneId];
-								}
-								this.setDirty(true);
-							}
+							this.noteManager.deleteNoteByKey(noteKey);
 						}
 					} else {
 						// Left-click: Add a note
@@ -151,6 +106,9 @@ export class Editor extends BaseGame {
 		});
 
 		this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+			// Handle note management (selection dragging, etc.)
+			this.noteManager.handlePointerMove(pointer);
+
 			// Handle cursor updates in editing mode
 			if (this.isEditing) {
 				// Update cursor color based on hovered lane
@@ -166,6 +124,11 @@ export class Editor extends BaseGame {
 					this.updateCursorForLane(laneIndex);
 				}
 			}
+		});
+
+		this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+			// Handle note management (end selection, end drag, etc.)
+			this.noteManager.handlePointerUp(pointer);
 		});
 
 		this.input.on(
@@ -198,86 +161,6 @@ export class Editor extends BaseGame {
 		// This preserves the exact positioning of higher interval notes
 		const highResPosition = Math.round(cellOffset * HIGH_RESOLUTION_CELLS);
 		return highResPosition / HIGH_RESOLUTION_CELLS;
-	}
-
-	/**
-	 * Override drawNote to provide visual stacking for overlapping notes
-	 * This makes it obvious when multiple notes are positioned close together
-	 */
-	drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string): boolean {
-		// Normalize the position to prevent floating point precision issues
-		const normalizedCellOffset = this.normalizePosition(cellOffset);
-
-		const laneConfig = this.laneConfigs[laneIndex];
-		if (!laneConfig) return false;
-
-		// Calculate base position
-		const baseX = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
-
-		// Calculate Y position using high-resolution positioning (same as BaseGame)
-		const yOffset = this.getTotalMesaureOffest(measure);
-		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
-			normalizedCellOffset,
-			this.cellsPerMeasure
-		);
-
-		let cellsYOffset = 0;
-		for (let i = 0; i < wholeCells; i++) {
-			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
-		}
-
-		if (fractionalCell > 0) {
-			cellsYOffset +=
-				fractionalCell * this.getCellHeight(measure, wholeCells % this.cellsPerMeasure);
-		}
-
-		const baseY = this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
-
-		const x = baseX;
-		const y = baseY;
-
-		// Note dimensions
-		const noteWidth = this.cellWidth - this.cellMargin * 2;
-		const noteHeight = this.noteSize - this.cellMargin * 2;
-
-		const noteKey = `note-${laneIndex}-${measure}-${normalizedCellOffset}`;
-		const existingNote = this.panelContainer.getByName(noteKey);
-
-		if (existingNote) {
-			// If note already exists, don't create duplicate
-			return false;
-		}
-
-		// Create visual note
-		const graphics = this.add.graphics();
-
-		// Add 2px border to all notes for better definition
-		graphics.lineStyle(2, 0xffffff, 0.7);
-
-		// Set fill color
-		graphics.fillStyle(laneConfig.noteColor, 1.0);
-
-		graphics.fillRect(x, y, noteWidth, noteHeight);
-		graphics.strokeRect(x, y, noteWidth, noteHeight);
-
-		graphics.setName(noteKey);
-		this.panelContainer.add(graphics);
-
-		// Add text label
-		const text = this.add
-			.text(x + noteWidth / 2, y + noteHeight / 2, noteId, {
-				fontSize: '16px',
-				color: '#ffffff',
-				stroke: '#000000',
-				strokeThickness: 1
-			})
-			.setOrigin(0.5);
-
-		const textKey = `text-${laneIndex}-${measure}-${normalizedCellOffset}`;
-		text.setName(textKey);
-		this.panelContainer.add(text);
-
-		return true;
 	}
 
 	shutdown() {
@@ -479,5 +362,113 @@ export class Editor extends BaseGame {
 
 	public getByName(name: string): { name: string } | null {
 		return this.panelContainer.getByName(name);
+	}
+
+	// Additional methods required by NoteManager
+	public clearSelection(): void {
+		this.selectedNotes.clear();
+		// Note: Don't call noteManager.selectedNotes.clear() to avoid circular reference
+		// The NoteManager will manage its own selectedNotes set
+	}
+
+	public highlightSelectedNote(noteGraphics: { name: string }): void {
+		this.noteManager.highlightSelectedNote(noteGraphics);
+	}
+
+	public deleteNoteByKey(noteKey: string): void {
+		this.noteManager.deleteNoteByKey(noteKey);
+	}
+
+	/**
+	 * Override drawNote to provide visual stacking for overlapping notes
+	 * This makes it obvious when multiple notes are positioned close together
+	 */
+	drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string): boolean {
+		// Normalize the position to prevent floating point precision issues
+		const normalizedCellOffset = this.normalizePosition(cellOffset);
+
+		const laneConfig = this.laneConfigs[laneIndex];
+		if (!laneConfig) return false;
+
+		// Find nearby notes in the same lane and measure to determine stacking
+		const nearbyNotes = this.noteManager.findNearbyNotes(
+			measure,
+			laneIndex,
+			normalizedCellOffset
+		);
+		const stackIndex = nearbyNotes.length; // Current note's position in the stack
+
+		// Calculate base position
+		const baseX = this.offsetX + this.cellWidth * laneIndex + this.cellMargin;
+
+		// Calculate Y position using high-resolution positioning (same as BaseGame)
+		const yOffset = this.getTotalMesaureOffest(measure);
+		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
+			normalizedCellOffset,
+			this.cellsPerMeasure
+		);
+
+		let cellsYOffset = 0;
+		for (let i = 0; i < wholeCells; i++) {
+			cellsYOffset += this.getCellHeight(measure, i % this.cellsPerMeasure);
+		}
+
+		if (fractionalCell > 0) {
+			cellsYOffset +=
+				fractionalCell * this.getCellHeight(measure, wholeCells % this.cellsPerMeasure);
+		}
+
+		const baseY = this.offsetY - (yOffset + cellsYOffset) + this.cellMargin - this.noteSize;
+
+		// Apply visual stacking
+		const stackOffset = stackIndex * 3; // 3px horizontal offset per stacked note
+		const x = baseX + stackOffset;
+		const y = baseY;
+
+		// Note dimensions
+		const noteWidth = this.cellWidth - this.cellMargin * 2;
+		const noteHeight = this.noteSize - this.cellMargin * 2;
+
+		const noteKey = `note-${laneIndex}-${measure}-${normalizedCellOffset}`;
+
+		// Check if note already exists
+		const existingNote = this.panelContainer.getByName(noteKey);
+		if (existingNote) {
+			return false; // Note already exists
+		}
+
+		// Create note graphics
+		const graphics = this.add.graphics();
+
+		// Add 2px border to all notes for better definition
+		graphics.lineStyle(2, 0xffffff, stackIndex > 0 ? 0.9 : 0.7); // Brighter border for stacked notes
+
+		// Set fill color with enhanced visual indicators for stacked notes
+		if (stackIndex > 0) {
+			graphics.fillStyle(laneConfig.noteColor, 0.9); // Slightly transparent for stacked notes
+		} else {
+			graphics.fillStyle(laneConfig.noteColor, 1.0); // Full opacity for single notes
+		}
+
+		graphics.fillRect(x, y, noteWidth, noteHeight);
+		graphics.strokeRect(x, y, noteWidth, noteHeight); // Apply border to all notes
+
+		graphics.setName(noteKey);
+		this.panelContainer.add(graphics);
+
+		// Add text label
+		const textKey = `text-${laneIndex}-${measure}-${normalizedCellOffset}`;
+		const text = this.add
+			.text(x + noteWidth / 2, y + noteHeight / 2, noteId, {
+				fontSize: stackIndex > 0 ? '14px' : '16px', // Smaller font for stacked notes
+				color: '#ffffff',
+				stroke: '#000000',
+				strokeThickness: 1
+			})
+			.setOrigin(0.5);
+		text.setName(textKey);
+		this.panelContainer.add(text);
+
+		return true;
 	}
 }

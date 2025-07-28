@@ -1,4 +1,5 @@
-import { LaneMeasureNote, normalizePosition } from '@dtx/common';
+import { LaneMeasureNote } from '../../chart/note.js';
+import { normalizePosition } from '../../utils/position.js';
 import { Scene, GameObjects } from 'phaser';
 import { type LaneConfig } from '../interface';
 import { calculateHighResolutionPosition } from '../utils/notePositioning.js';

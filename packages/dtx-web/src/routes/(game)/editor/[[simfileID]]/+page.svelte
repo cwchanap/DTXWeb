@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { type Scene } from 'phaser';
-	import Main, { type TPhaserRef } from '@/game/main.svelte';
-	import { Editor } from '@/game/scenes/Editor';
-	import { Preview } from '@/game/scenes/Preview';
+	import Main, { type TPhaserRef } from '@dtx/common/game';
+	import { Editor } from '@dtx/common/game';
+	import { Preview } from '@dtx/common/game';
 	import { onMount } from 'svelte';
 	import MainTab from '$lib/components/editor/MainTab.svelte';
 	import {
@@ -13,10 +13,10 @@
 	} from '@dtx/common';
 	import SoundTab from '$lib/components/editor/SoundTab.svelte';
 	import { get } from 'svelte/store';
-	import EventType from '@/game/EventType';
+	import { EventType } from '@dtx/common/game';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import store from '$lib/store';
-	import { EventBus } from '@/game/EventBus';
+	import { EventBus } from '@dtx/common/game';
 	import { page } from '$app/state';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -442,12 +442,29 @@
 			store.currentDifficulty.set(levelData.label);
 		}
 
-		// Fetch sound files
+		// Fetch remote files for sound chips
 		await Promise.all(
 			soundChips.map(async (soundChip) => {
-				await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+				if (soundChip.fileName) {
+					try {
+						await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+
+						// Store file in FileManager to avoid Svelte store serialization issues
+						if (soundChip.file) {
+							const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);
+							FileManager.setFile(fileKey, soundChip.file);
+							// Clear file from chip to avoid store issues
+							soundChip.file = undefined;
+						}
+					} catch (error) {
+						console.error('Failed to fetch remote file:', soundChip.fileName, error);
+					}
+				}
 			})
 		);
+
+		// Update store with fetched sound chips
+		store.currentSoundChip.set(soundChips);
 
 		// Emit note import event to update the editor
 		EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
@@ -527,11 +544,36 @@
 				store.currentDifficulty.set(currentLevel[1].label);
 			}
 
+			// Fetch remote files for sound chips
 			await Promise.all(
 				soundChips.map(async (soundChip) => {
-					await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+					if (soundChip.fileName) {
+						try {
+							await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+
+							// Store file in FileManager to avoid Svelte store serialization issues
+							if (soundChip.file) {
+								const fileKey = FileManager.generateKey(
+									simfileID,
+									soundChip.fileName
+								);
+								FileManager.setFile(fileKey, soundChip.file);
+								// Clear file from chip to avoid store issues
+								soundChip.file = undefined;
+							}
+						} catch (error) {
+							console.error(
+								'Failed to fetch remote file:',
+								soundChip.fileName,
+								error
+							);
+						}
+					}
 				})
 			);
+
+			// Update store with fetched sound chips
+			store.currentSoundChip.set(soundChips);
 
 			// Emit note import event
 			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);

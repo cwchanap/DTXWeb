@@ -20,9 +20,12 @@
 	let toastMessage = $state('');
 	let toastType: 'warning' | 'error' = $state('warning');
 
+	let isInitialFetch = true;
+
 	store.currentSoundChip.subscribe(async (value) => {
-		// For remote charts, ensure files are fetched
-		if (simfileID && value.length > 0) {
+		// For remote charts, ensure files are fetched only once
+		if (simfileID && value.length > 0 && isInitialFetch) {
+			isInitialFetch = false;
 			const updatedChips = await Promise.all(
 				value.map(async (chip) => {
 					if (chip.fileName && !chip.file) {
@@ -36,8 +39,9 @@
 				})
 			);
 
-			// Update the store with the fetched files
-			if (updatedChips.some((chip) => chip.file)) {
+			// Update the store with the fetched files only if we actually fetched new files
+			const hasNewFiles = updatedChips.some((chip, index) => chip.file && !value[index].file);
+			if (hasNewFiles) {
 				store.currentSoundChip.set(updatedChips);
 			}
 		}

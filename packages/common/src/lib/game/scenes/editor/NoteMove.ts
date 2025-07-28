@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote } from '../../../chart/note.js';
 import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';

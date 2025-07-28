@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { run } from 'svelte/legacy';
 
-	import { EventBus } from '@/game/EventBus';
-	import EventType from '@/game/EventType';
+	import { EventBus } from '@dtx/common/game';
+	import { EventType } from '@dtx/common/game';
 	import { onMount } from 'svelte';
 	import store from '$lib/store';
 	import { DTXFile } from '@dtx/common';

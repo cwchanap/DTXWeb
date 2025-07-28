@@ -4,7 +4,7 @@ import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import { Preview } from './Preview';
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote } from '../../chart/note.js';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 

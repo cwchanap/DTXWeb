@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NoteMove } from './NoteMove';
 import type { Editor } from '../Editor';
 // import type { MovedNoteData } from './NoteBuffer';
-import { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote } from '../../../chart/note.js';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 
 // Mock Editor with all necessary methods

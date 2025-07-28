@@ -6,7 +6,8 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote, SoundChip, DTXFile } from '@dtx/common';
+import { LaneMeasureNote } from '../../chart/note.js';
+import { SoundChip, DTXFile } from '../../chart/dtx.js';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import {

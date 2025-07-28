@@ -25,3 +25,12 @@ export type {
 	DtxFile,
 	SimfileWithDtx
 } from './types/supabase.types.js';
+
+// Export game classes
+export { EventBus } from './game/EventBus.js';
+export { default as EventType } from './game/EventType.js';
+export { Editor } from './game/scenes/Editor.js';
+export { Preview } from './game/scenes/Preview.js';
+export { MainMenu } from './game/scenes/MainMenu.js';
+export { Preloader } from './game/Preload.js';
+export type { LaneConfig } from './game/interface.js';

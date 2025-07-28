@@ -5,7 +5,8 @@ import { get } from 'svelte/store';
 import store from '$lib/store';
 import * as FileManager from '$lib/services/fileManager';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
-import type { LaneMeasureNote, SoundChip } from '@dtx/common';
+import type { LaneMeasureNote } from '../../chart/note.js';
+import type { SoundChip } from '../../chart/dtx.js';
 import { BaseGame } from './BaseGame';
 import { AssetName, type LaneConfig } from '../interface';
 import { getAssetPath } from '../utils';
@@ -38,6 +39,7 @@ export class Preview extends BaseGame {
 	// Additional containers for separating elements with different scaling
 	protected gridContainer!: Phaser.GameObjects.Container; // For grid lines that will scale
 	protected notesContainer!: Phaser.GameObjects.Container; // For notes that won't scale
+	private storeUnsubscribe: (() => void) | null = null;
 
 	constructor() {
 		super({ key: Preview.key });
@@ -72,24 +74,17 @@ export class Preview extends BaseGame {
 	}
 
 	preload() {
-		// Preload assets if any
-		console.log('Preload sound');
 		// Load sound chip samples
 		const soundChips = get(store.currentSoundChip);
 
 		if (soundChips) {
 			const addedKey = new Set();
-			soundChips.forEach((soundChip) => {
-				// Get file from FileManager for local files, or use chip.file for remote files
-				let actualFile = soundChip.file;
-				const currentSimfileID = get(store.currentSimfileID);
+			const currentSimfileID = get(store.currentSimfileID);
 
-				if (!currentSimfileID) {
-					// Local file - get from FileManager
-					const fileKey = FileManager.generateKey(null, soundChip.fileName);
-					actualFile = FileManager.getFile(fileKey);
-				}
-				// Remote file - actualFile already set to soundChip.file
+			soundChips.forEach((soundChip) => {
+				// Get file from FileManager for both local and remote files
+				const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
+				const actualFile = FileManager.getFile(fileKey);
 
 				if (!soundChip.fileName || !actualFile) {
 					return;
@@ -126,8 +121,6 @@ export class Preview extends BaseGame {
 	}
 
 	create() {
-		console.log('Create Preview Scene');
-
 		// Create animations for each note type
 		this.createNoteAnimations();
 
@@ -138,17 +131,18 @@ export class Preview extends BaseGame {
 		this.drawPanel();
 		this.drawNotes();
 
-		const soundChips = get(store.currentSoundChip);
+		// Initial sound setup
+		this.setupSounds();
 
-		if (soundChips) {
-			soundChips.forEach((soundChip) => {
-				if (!soundChip.fileName || !soundChip.file) return;
-				const cacheKey = this.getCacheKey(soundChip);
-				this.sound.add(cacheKey) as Sound.WebAudioSound;
-			});
-		}
+		// Subscribe to store changes to reload sounds when files are updated
+		this.storeUnsubscribe = store.currentSoundChip.subscribe((soundChips) => {
+			this.setupSounds();
+		});
 
-		this.startPreview();
+		// Add a small delay to ensure all audio is loaded
+		this.time.delayedCall(100, () => {
+			this.startPreview();
+		});
 
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
@@ -156,6 +150,58 @@ export class Preview extends BaseGame {
 			this.startMeasure = data.startMeasure;
 			this.startPreview();
 		});
+	}
+
+	private setupSounds() {
+		const soundChips = get(store.currentSoundChip);
+		const currentSimfileID = get(store.currentSimfileID);
+
+		if (soundChips) {
+			soundChips.forEach((soundChip) => {
+				// Get file from FileManager for both local and remote files
+				let actualFile: File | undefined;
+				const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
+				actualFile = FileManager.getFile(fileKey);
+
+				if (!soundChip.fileName || !actualFile) {
+					return;
+				}
+
+				const cacheKey = this.getCacheKey(soundChip);
+
+				// Check if the audio is already in cache and sound manager
+				if (this.cache.audio.exists(cacheKey) && this.sound.get(cacheKey)) {
+					return; // Already loaded and added
+				}
+
+				// Remove existing cache entry if it exists
+				this.cache.audio.remove(cacheKey);
+				// Load the audio file into cache
+				if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
+					// For XA files, we'll load them with custom audio context
+					this.load.audio({
+						key: cacheKey,
+						url: [URL.createObjectURL(actualFile)],
+						context: XAaudioContext
+					});
+				} else {
+					// For other formats, load as usual
+					const objectUrl = URL.createObjectURL(actualFile);
+					this.load.audio(cacheKey, objectUrl);
+				}
+
+				// Start the loader to immediately load this audio
+				this.load.start();
+
+				// Add a completion listener for this specific audio
+				this.load.once(`filecomplete-audio-${cacheKey}`, () => {
+					// Add to sound manager once loaded
+					if (!this.sound.get(cacheKey)) {
+						this.sound.add(cacheKey) as Sound.WebAudioSound;
+					}
+				});
+			});
+		}
 	}
 
 	override drawPanel() {
@@ -252,9 +298,9 @@ export class Preview extends BaseGame {
 
 		const secondsPerMeasure = (60 * 4) / this.bpm;
 
-		this.notes[Preview.bgmNoteID].forEach((note) =>
-			this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure)
-		);
+		this.notes[Preview.bgmNoteID]?.forEach((note) => {
+			this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure);
+		});
 
 		this.laneConfigs
 			.filter((lane) => lane.playable)
@@ -385,7 +431,8 @@ export class Preview extends BaseGame {
 					(chip) => chip.id === parseInt(noteChip.noteID, 36)
 				);
 				if (soundChip) {
-					const audio = this.sound.get(this.getCacheKey(soundChip));
+					const cacheKey = this.getCacheKey(soundChip);
+					const audio = this.sound.get(cacheKey);
 					if (audio) {
 						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 						audio.play({
@@ -764,6 +811,12 @@ export class Preview extends BaseGame {
 			audio.stop();
 		});
 		this.playingAudio = [];
+
+		// Clean up store subscription
+		if (this.storeUnsubscribe) {
+			this.storeUnsubscribe();
+			this.storeUnsubscribe = null;
+		}
 
 		// Reset all container scales
 		if (this.gridContainer) this.gridContainer.setScale(1);

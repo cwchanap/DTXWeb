@@ -61,6 +61,21 @@
 		return scene;
 	};
 
+	function getBGMChipIds(): Set<number> {
+		const bgmChipIds = new Set<number>();
+		const notes = get(store.editorNotes);
+		const bgmNotes = notes['01'] || []; // BGM lane is '01'
+
+		bgmNotes.forEach((note) => {
+			note.notes.forEach((noteChip) => {
+				const chipId = parseInt(noteChip.noteID, 36);
+				bgmChipIds.add(chipId);
+			});
+		});
+
+		return bgmChipIds;
+	}
+
 	function exportFile() {
 		const dtxFile = get(store.currentDtxFile);
 		const notes = get(store.editorNotes);
@@ -442,6 +457,9 @@
 			store.currentDifficulty.set(levelData.label);
 		}
 
+		// Get BGM chip IDs before fetching
+		const bgmChipIds = getBGMChipIds();
+
 		// Fetch remote files for sound chips
 		await Promise.all(
 			soundChips.map(async (soundChip) => {
@@ -453,11 +471,16 @@
 						if (soundChip.file) {
 							const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);
 							FileManager.setFile(fileKey, soundChip.file);
+
 							// Clear file from chip to avoid store issues
 							soundChip.file = undefined;
 						}
 					} catch (error) {
-						console.error('Failed to fetch remote file:', soundChip.fileName, error);
+						console.error(
+							'Failed to fetch remote file (switchToLevel):',
+							soundChip.fileName,
+							error
+						);
 					}
 				}
 			})
@@ -544,6 +567,9 @@
 				store.currentDifficulty.set(currentLevel[1].label);
 			}
 
+			// Get BGM chip IDs before fetching
+			const bgmChipIds = getBGMChipIds();
+
 			// Fetch remote files for sound chips
 			await Promise.all(
 				soundChips.map(async (soundChip) => {
@@ -558,6 +584,7 @@
 									soundChip.fileName
 								);
 								FileManager.setFile(fileKey, soundChip.file);
+
 								// Clear file from chip to avoid store issues
 								soundChip.file = undefined;
 							}

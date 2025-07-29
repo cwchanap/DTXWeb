@@ -20,32 +20,7 @@
 	let toastMessage = $state('');
 	let toastType: 'warning' | 'error' = $state('warning');
 
-	let isInitialFetch = true;
-
-	store.currentSoundChip.subscribe(async (value) => {
-		// For remote charts, ensure files are fetched only once
-		if (simfileID && value.length > 0 && isInitialFetch) {
-			isInitialFetch = false;
-			const updatedChips = await Promise.all(
-				value.map(async (chip) => {
-					if (chip.fileName && !chip.file) {
-						try {
-							await chip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
-						} catch (error) {
-							console.error('Failed to fetch remote file:', chip.fileName, error);
-						}
-					}
-					return chip;
-				})
-			);
-
-			// Update the store with the fetched files only if we actually fetched new files
-			const hasNewFiles = updatedChips.some((chip, index) => chip.file && !value[index].file);
-			if (hasNewFiles) {
-				store.currentSoundChip.set(updatedChips);
-			}
-		}
-
+	store.currentSoundChip.subscribe((value) => {
 		soundChips = value;
 	});
 	store.currentSimfile.subscribe((value) => (simfile = value));

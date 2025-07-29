@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import SoundTab from './SoundTab.svelte';
+import { SoundTab } from '@dtx/common/components';
 import { SoundChip } from '@dtx/common';
 
 vi.mock('$lib/store', () => ({

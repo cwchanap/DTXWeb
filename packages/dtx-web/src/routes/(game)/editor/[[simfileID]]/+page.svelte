@@ -4,14 +4,14 @@
 	import { Editor } from '@dtx/common/game';
 	import { Preview } from '@dtx/common/game';
 	import { onMount } from 'svelte';
-	import MainTab from '$lib/components/editor/MainTab.svelte';
+	import { MainTab } from '@dtx/common/components';
 	import {
 		DTXFile,
 		SimFile,
 		decodeFileWithEncodingDetection,
 		type LaneMeasureNote
 	} from '@dtx/common';
-	import SoundTab from '$lib/components/editor/SoundTab.svelte';
+	import { SoundTab } from '@dtx/common/components';
 	import { get } from 'svelte/store';
 	import { EventType } from '@dtx/common/game';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';

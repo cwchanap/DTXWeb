@@ -80,6 +80,7 @@ export class Preview extends BaseGame {
 		if (soundChips) {
 			const addedKey = new Set();
 			const currentSimfileID = get(store.currentSimfileID);
+			const bgmChipIds = this.getBGMChipIds();
 
 			soundChips.forEach((soundChip) => {
 				// Get file from FileManager for both local and remote files
@@ -152,9 +153,24 @@ export class Preview extends BaseGame {
 		});
 	}
 
+	private getBGMChipIds(): Set<number> {
+		const bgmChipIds = new Set<number>();
+		const bgmNotes = this.notes[Preview.bgmNoteID] || [];
+
+		bgmNotes.forEach((note) => {
+			note.notes.forEach((noteChip) => {
+				const chipId = parseInt(noteChip.noteID, 36);
+				bgmChipIds.add(chipId);
+			});
+		});
+
+		return bgmChipIds;
+	}
+
 	private setupSounds() {
 		const soundChips = get(store.currentSoundChip);
 		const currentSimfileID = get(store.currentSimfileID);
+		const bgmChipIds = this.getBGMChipIds();
 
 		if (soundChips) {
 			soundChips.forEach((soundChip) => {
@@ -176,6 +192,7 @@ export class Preview extends BaseGame {
 
 				// Remove existing cache entry if it exists
 				this.cache.audio.remove(cacheKey);
+
 				// Load the audio file into cache
 				if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
 					// For XA files, we'll load them with custom audio context
@@ -430,9 +447,11 @@ export class Preview extends BaseGame {
 				const soundChip = get(store.currentSoundChip).find(
 					(chip) => chip.id === parseInt(noteChip.noteID, 36)
 				);
+
 				if (soundChip) {
 					const cacheKey = this.getCacheKey(soundChip);
 					const audio = this.sound.get(cacheKey);
+
 					if (audio) {
 						this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 						audio.play({

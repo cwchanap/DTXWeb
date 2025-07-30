@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DTXFile, SoundChip } from './dtx.js';
-import { LaneMeasureNote } from './note.js';
+import { DTXFile, SoundChip } from './dtx';
+import { LaneMeasureNote } from './note';
 
 // Mock encoding utilities
-vi.mock('./encoding-utils.js', () => ({
+vi.mock('./encoding-utils', () => ({
 	decodeFileWithEncodingDetection: vi.fn(),
 	decodeFileWithSpecificEncoding: vi.fn()
 }));

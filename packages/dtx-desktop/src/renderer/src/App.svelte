@@ -2,6 +2,7 @@
 	import Login from './components/Login.svelte';
 	import Workspace from './components/Workspace.svelte';
 	import NewSong from './components/NewSong.svelte';
+	import Editor from './components/Editor.svelte';
 	import Navbar from './components/Navbar.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
@@ -12,8 +13,36 @@
 	import { linkingService } from './services/linkingService';
 	import { onMount, onDestroy } from 'svelte';
 
+	// Routing state
+	let currentRoute = $state('workspace');
+	let routeParams = $state<{ simfileID?: string }>({});
+
+	// Function to handle route changes
+	function handleRouteChange() {
+		const hash = window.location.hash.slice(1); // Remove the # character
+		if (!hash) {
+			currentRoute = 'workspace';
+			routeParams = {};
+			return;
+		}
+
+		const [route, ...params] = hash.split('/');
+
+		if (route === 'editor') {
+			currentRoute = 'editor';
+			routeParams = { simfileID: params[0] || undefined };
+		} else {
+			currentRoute = 'workspace';
+			routeParams = {};
+		}
+	}
+
 	// Try to restore the session on app start
 	onMount(async () => {
+		// Set up routing
+		handleRouteChange();
+		window.addEventListener('hashchange', handleRouteChange);
+
 		// Set up the magic link result handler (new approach)
 		window.electron.ipcRenderer.on('magic-link-result', async (_event, result) => {
 			await authService.handleMagicLinkResult(result);
@@ -82,9 +111,10 @@
 		}
 	}
 
-	// Clean up listener when component is destroyed
+	// Clean up listeners when component is destroyed
 	onDestroy(() => {
 		window.electron.ipcRenderer.removeAllListeners('auth-callback');
+		window.removeEventListener('hashchange', handleRouteChange);
 	});
 </script>
 
@@ -102,7 +132,9 @@
 			</div>
 		{:else}
 			<div class="mb-10">
-				{#if $workspaceStore.showNewSong}
+				{#if currentRoute === 'editor'}
+					<Editor simfileID={routeParams.simfileID} />
+				{:else if $workspaceStore.showNewSong}
 					<NewSong />
 				{:else}
 					<Workspace />

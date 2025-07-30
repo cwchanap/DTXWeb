@@ -1,18 +1,18 @@
 // Reexport your entry components here
-export { SimFile } from './chart/simFile.js';
-export { DTXFile, SoundChip } from './chart/dtx.js';
-export { LaneMeasureNote } from './chart/note.js';
+export { SimFile } from './chart/simFile';
+export { DTXFile, SoundChip } from './chart/dtx';
+export { LaneMeasureNote } from './chart/note';
 export {
 	decodeFileWithEncodingDetection,
 	decodeFileWithSpecificEncoding,
 	type ContentValidationCallback
-} from './chart/encoding-utils.js';
+} from './chart/encoding-utils';
 
 // Export utilities
-export { normalizePosition } from './utils/position.js';
+export { normalizePosition } from './utils/position';
 
 // Export constants
-export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants.js';
+export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
 // Export Supabase types
 export type {
@@ -24,13 +24,13 @@ export type {
 	CompositeTypes,
 	DtxFile,
 	SimfileWithDtx
-} from './types/supabase.types.js';
+} from './types/supabase.types';
 
 // Export game classes
-export { EventBus } from './game/EventBus.js';
-export { default as EventType } from './game/EventType.js';
-export { Editor } from './game/scenes/Editor.js';
-export { Preview } from './game/scenes/Preview.js';
-export { MainMenu } from './game/scenes/MainMenu.js';
-export { Preloader } from './game/Preload.js';
-export type { LaneConfig } from './game/interface.js';
+export { EventBus } from './game/EventBus';
+export { default as EventType } from './game/EventType';
+export { Editor } from './game/scenes/Editor';
+export { Preview } from './game/scenes/Preview';
+export { MainMenu } from './game/scenes/MainMenu';
+export { Preloader } from './game/Preload';
+export type { LaneConfig } from './game/interface';

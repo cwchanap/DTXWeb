@@ -7,8 +7,8 @@ import {
 	type PastedNoteData,
 	type CutNoteData
 } from './NoteBuffer';
-import { LaneMeasureNote } from '../../../chart/note.js';
-import { normalizePosition } from '../../../utils/position.js';
+import { LaneMeasureNote } from '../../../chart/note';
+import { normalizePosition } from '../../../utils/position';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 

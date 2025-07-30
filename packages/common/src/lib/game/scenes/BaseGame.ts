@@ -1,8 +1,8 @@
-import { LaneMeasureNote } from '../../chart/note.js';
-import { normalizePosition } from '../../utils/position.js';
+import { LaneMeasureNote } from '../../chart/note';
+import { normalizePosition } from '../../utils/position';
 import { Scene, GameObjects } from 'phaser';
 import { type LaneConfig } from '../interface';
-import { calculateHighResolutionPosition } from '../utils/notePositioning.js';
+import { calculateHighResolutionPosition } from '../utils/notePositioning';
 
 export abstract class BaseGame extends Scene {
 	static measureLengthNoteID = '02';

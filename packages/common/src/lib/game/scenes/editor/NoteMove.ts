@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '../../../chart/note.js';
+import { LaneMeasureNote } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';

@@ -22,6 +22,16 @@
 		workspaceStore.closeSongDetails();
 	};
 
+	const handleOpenEditor = () => {
+		// Navigate to editor page for this song
+		// If the song has a linkedSimFileId, use it as the simfileID parameter
+		// Otherwise, create a local editor session
+		const editorPath = song.linkedSimFileId ? `/editor/${song.linkedSimFileId}` : '/editor';
+
+		// Use the router to navigate to the editor
+		window.location.hash = editorPath;
+	};
+
 	// Helper function to create File object with custom properties
 	const createFileObject = (content: any, fileInfo: any) => {
 		const file = new File([content], fileInfo.fileName, {
@@ -597,6 +607,15 @@
 					</div>
 					<div class="flex items-center gap-2">
 						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-blue-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleOpenEditor}
+							tabindex="0"
+							aria-label="Open Editor"
+						>
+							<Music size={16} />
+							Open Editor
+						</button>
+						<button
 							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-green-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
 							onclick={handleExportToZip}
 							disabled={isExporting}
@@ -798,6 +817,15 @@
 						<h2 class="text-xl font-semibold">Song Details</h2>
 					</div>
 					<div class="flex items-center gap-2">
+						<button
+							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-blue-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							onclick={handleOpenEditor}
+							tabindex="0"
+							aria-label="Open Editor"
+						>
+							<Music size={16} />
+							Open Editor
+						</button>
 						<button
 							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-green-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
 							onclick={handleExportToZip}

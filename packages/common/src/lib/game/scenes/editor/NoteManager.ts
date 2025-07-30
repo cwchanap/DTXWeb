@@ -6,7 +6,7 @@ import Phaser from 'phaser';
 import {
 	calculateHighResolutionPosition,
 	HIGH_RESOLUTION_CELLS
-} from '../../utils/notePositioning.js';
+} from '../../utils/notePositioning';
 
 /**
  * Manages all note-related operations in the DTX editor including:

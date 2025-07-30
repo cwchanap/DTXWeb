@@ -1,4 +1,4 @@
-import { normalizePosition } from '../utils/position.js';
+import { normalizePosition } from '../utils/position';
 
 export class LaneMeasureNote {
 	public measure: number;

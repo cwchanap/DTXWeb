@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NoteCopy } from './NoteCopy';
-import { LaneMeasureNote } from '../../../chart/note.js';
+import { LaneMeasureNote } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 

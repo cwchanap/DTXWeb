@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { LaneMeasureNote } from './note.js';
+import { LaneMeasureNote } from './note';
 
 // Mock the position utility since it's an external dependency
-vi.mock('../utils/position.js', () => ({
+vi.mock('../utils/position', () => ({
 	normalizePosition: vi.fn(
 		(pos: number, subdivision: number = 192) => Math.round(pos * subdivision) / subdivision
 	)

@@ -6,14 +6,11 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '$lib/store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote } from '../../chart/note.js';
-import { SoundChip, DTXFile } from '../../chart/dtx.js';
+import { LaneMeasureNote } from '../../chart/note';
+import { SoundChip, DTXFile } from '../../chart/dtx';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
-import {
-	calculateHighResolutionPosition,
-	HIGH_RESOLUTION_CELLS
-} from '../utils/notePositioning.js';
+import { calculateHighResolutionPosition, HIGH_RESOLUTION_CELLS } from '../utils/notePositioning';
 import {
 	TempChartStorage,
 	type ChartMetadata,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePosition } from './position.js';
+import { normalizePosition } from './position';
 
 describe('normalizePosition', () => {
 	describe('basic functionality', () => {

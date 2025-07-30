@@ -1,8 +1,5 @@
-import { LaneMeasureNote } from './note.js';
-import {
-	decodeFileWithEncodingDetection,
-	decodeFileWithSpecificEncoding
-} from './encoding-utils.js';
+import { LaneMeasureNote } from './note';
+import { decodeFileWithEncodingDetection, decodeFileWithSpecificEncoding } from './encoding-utils';
 
 export class SoundChip {
 	label: string;

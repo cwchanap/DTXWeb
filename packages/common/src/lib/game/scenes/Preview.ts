@@ -5,12 +5,12 @@ import { get } from 'svelte/store';
 import store from '$lib/store';
 import * as FileManager from '$lib/services/fileManager';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
-import type { LaneMeasureNote } from '../../chart/note.js';
-import type { SoundChip } from '../../chart/dtx.js';
+import type { LaneMeasureNote } from '../../chart/note';
+import type { SoundChip } from '../../chart/dtx';
 import { BaseGame } from './BaseGame';
 import { AssetName, type LaneConfig } from '../interface';
 import { getAssetPath } from '../utils';
-import { calculateHighResolutionPosition } from '../utils/notePositioning.js';
+import { calculateHighResolutionPosition } from '../utils/notePositioning';
 
 interface Data {
 	measureCount: number;

@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
-import { DTXFile } from './dtx.js';
-import { decodeFileWithEncodingDetection } from './encoding-utils.js';
+import { DTXFile } from './dtx';
+import { decodeFileWithEncodingDetection } from './encoding-utils';
 
 interface DtxLevel {
 	label: string;

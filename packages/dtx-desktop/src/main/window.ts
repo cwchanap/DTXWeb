@@ -9,7 +9,7 @@ export function createWindow(): void {
 		show: false,
 		autoHideMenuBar: true,
 		webPreferences: {
-			preload: join(__dirname, '../preload/index.js'),
+			preload: join(__dirname, '../preload/index'),
 			sandbox: false,
 			// Enable dev tools in production builds
 			devTools: true

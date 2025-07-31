@@ -8,7 +8,7 @@ import {
 	parseDtxFiles
 } from './simfile-service';
 import { getSupabaseClient, ensureSupabaseAuth } from './auth';
-import { DTXFile, decodeFileWithEncodingDetection } from '@dtx/common';
+import { DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 
 // Mock dependencies
 vi.mock('fs', () => ({
@@ -56,7 +56,7 @@ type MockDTXFile = {
 	content: string;
 };
 
-vi.mock('@dtx/common', async (importOriginal) => {
+vi.mock('@dtx/common/server', async (importOriginal) => {
 	const actual = (await importOriginal()) as object;
 
 	// Create a typed mock object

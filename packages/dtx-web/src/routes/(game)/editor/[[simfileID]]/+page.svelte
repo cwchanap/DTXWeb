@@ -28,7 +28,7 @@
 		WorkspaceService,
 		type Workspace
 	} from '$lib/services/workspaceService';
-	import * as FileManager from '$lib/services/fileManager';
+	import * as FileManager from '@dtx/common/services/fileManager';
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);

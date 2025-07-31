@@ -34,3 +34,10 @@ export { Preview } from './game/scenes/Preview';
 export { MainMenu } from './game/scenes/MainMenu';
 export { Preloader } from './game/Preload';
 export type { LaneConfig } from './game/interface';
+
+// Export store
+export { default as store } from './store';
+
+// Export file provider interface (implementations stay in respective packages)
+export type { IFileProvider } from './services/fileProvider';
+export { setFileProvider, getFileProvider } from './services/fileProvider';

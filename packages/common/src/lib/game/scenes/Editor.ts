@@ -11,12 +11,8 @@ import { SoundChip, DTXFile } from '../../chart/dtx';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import { calculateHighResolutionPosition, HIGH_RESOLUTION_CELLS } from '../utils/notePositioning';
-import {
-	TempChartStorage,
-	type ChartMetadata,
-	type SoundChipData
-} from '$lib/services/tempChartStorage';
-import { SoundLibrary } from '$lib/services/soundLibrary';
+// Note: TempChartStorage and SoundLibrary services are implemented
+// differently in dtx-web and dtx-desktop, so they're not imported here
 
 interface Data {
 	measureCount?: number;
@@ -812,194 +808,37 @@ export class Editor extends BaseGame {
 
 	/**
 	 * Auto-save current chart data to localStorage
+	 * NOTE: This method requires TempChartStorage and SoundLibrary services
+	 * that are implemented differently in dtx-web and dtx-desktop.
+	 * Override this method in your specific implementation.
 	 */
 	public async autoSaveChart(): Promise<void> {
-		try {
-			const simfileID = get(store.currentSimfileID);
-			const difficulty = get(store.currentDifficulty);
-			const dtxFile = get(store.currentDtxFile);
-			const soundChips = get(store.currentSoundChip);
-
-			// Convert SoundChips to SoundChipData (with references to sound library)
-			const soundChipData: SoundChipData[] = await Promise.all(
-				soundChips.map(async (chip) => {
-					const chipData: SoundChipData = {
-						label: chip.label,
-						id: chip.id,
-						volume: chip.volume,
-						position: chip.position,
-						fileName: chip.fileName,
-						filePath: chip.file instanceof File ? chip.file.name : undefined
-					};
-
-					// For imported charts, try to find matching file in sound library
-					if (!simfileID && chip.file instanceof File) {
-						try {
-							// Check cache first to avoid expensive hash computation
-							let fileHash = this.soundFileHashCache.get(chip.file);
-
-							if (!fileHash) {
-								// Generate hash only if not cached
-								const arrayBuffer = await chip.file.arrayBuffer();
-								const hashBuffer = await crypto.subtle.digest(
-									'SHA-256',
-									arrayBuffer
-								);
-								const hashArray = Array.from(new Uint8Array(hashBuffer));
-								fileHash = hashArray
-									.map((b) => b.toString(16).padStart(2, '0'))
-									.join('');
-
-								// Cache the result for future auto-saves
-								this.soundFileHashCache.set(chip.file, fileHash);
-							}
-
-							// Check if file exists in sound library
-							const libraryFile = SoundLibrary.getByHash(fileHash);
-							if (libraryFile) {
-								chipData.fileHash = fileHash;
-							}
-						} catch (error) {
-							console.warn(`Failed to process sound file ${chip.fileName}:`, error);
-						}
-					}
-
-					return chipData;
-				})
-			);
-
-			// Create metadata from current DTX file or use defaults
-			const metadata: ChartMetadata = {
-				title: dtxFile?.title || '',
-				artist: dtxFile?.artist || '',
-				comment: dtxFile?.comment || '',
-				bpm: dtxFile?.bpm || 120,
-				level: dtxFile?.level || 0,
-				soundChips: soundChipData
-			};
-
-			TempChartStorage.save(
-				simfileID,
-				difficulty,
-				this.notes,
-				this.bpmNotes,
-				this.measureCount,
-				metadata
-			);
-		} catch (error) {
-			console.warn('Failed to auto-save chart:', error);
-		}
+		// Default implementation does nothing
+		// Override in dtx-web and dtx-desktop implementations
+		console.warn('autoSaveChart() not implemented in base Editor class');
 	}
 
 	/**
 	 * Auto-load chart data from localStorage if available
+	 * NOTE: This method requires TempChartStorage and SoundLibrary services.
+	 * Override this method in your specific implementation.
 	 */
 	private autoLoadChart(): boolean {
-		try {
-			const simfileID = get(store.currentSimfileID);
-			const difficulty = get(store.currentDifficulty);
-			const tempData = TempChartStorage.load(simfileID, difficulty);
-
-			if (tempData) {
-				this.notes = tempData.notes;
-				this.bpmNotes = tempData.bpmNotes;
-				this.measureCount = tempData.measureCount;
-
-				// Update store values
-				store.measureCount.set(this.measureCount);
-				this.syncNotesToStore();
-
-				// Update DTX file metadata if available
-				if (tempData.metadata) {
-					let currentDtxFile = get(store.currentDtxFile);
-					if (!currentDtxFile) {
-						// Create a new DTX file if none exists
-						currentDtxFile = new DTXFile();
-					}
-					currentDtxFile.title = tempData.metadata.title;
-					currentDtxFile.artist = tempData.metadata.artist;
-					currentDtxFile.comment = tempData.metadata.comment;
-					currentDtxFile.bpm = tempData.metadata.bpm;
-					currentDtxFile.level = tempData.metadata.level;
-					store.currentDtxFile.set(currentDtxFile);
-
-					// Restore sound chips data
-					if (tempData.metadata.soundChips && tempData.metadata.soundChips.length > 0) {
-						const restoredSoundChips = tempData.metadata.soundChips.map((chipData) => {
-							const soundChip = new SoundChip(
-								chipData.label,
-								chipData.id,
-								chipData.volume,
-								chipData.position,
-								chipData.fileName
-							);
-
-							// First try to restore from hash reference
-							if (chipData.fileHash) {
-								try {
-									const libraryFile = SoundLibrary.getByHash(chipData.fileHash);
-									if (libraryFile) {
-										const file = SoundLibrary.toFile(libraryFile);
-										soundChip.file = file;
-										return soundChip;
-									}
-								} catch (error) {
-									console.warn(
-										`Failed to restore file from sound library by hash for ${chipData.fileName}:`,
-										error
-									);
-								}
-							}
-
-							// If no hash or hash lookup failed, try to find by filename
-							try {
-								const libraryFiles = SoundLibrary.findByFileName(chipData.fileName);
-								if (libraryFiles.length > 0) {
-									const libraryFile = libraryFiles[0]; // Use first match
-									const file = SoundLibrary.toFile(libraryFile);
-									soundChip.file = file;
-								}
-							} catch (error) {
-								console.warn(
-									`Failed to restore file from sound library by filename for ${chipData.fileName}:`,
-									error
-								);
-							}
-
-							return soundChip;
-						});
-						store.currentSoundChip.set(restoredSoundChips);
-					}
-				}
-
-				// Don't mark as dirty on load - only when user makes actual changes
-				// The dirty state will be set when they start editing
-
-				return true;
-			}
-		} catch (error) {
-			console.warn('Failed to auto-load chart:', error);
-		}
-
+		// Default implementation does nothing
+		// Override in dtx-web and dtx-desktop implementations
+		console.warn('autoLoadChart() not implemented in base Editor class');
 		return false;
 	}
 
 	/**
 	 * Clear temporary storage (call this after successful save/export)
+	 * NOTE: This method requires TempChartStorage service.
+	 * Override this method in your specific implementation.
 	 */
 	public clearTempStorage(): void {
-		try {
-			const simfileID = get(store.currentSimfileID);
-			const difficulty = get(store.currentDifficulty);
-			TempChartStorage.remove(simfileID, difficulty);
-			this.setDirty(false);
-			console.log(
-				'Cleared temporary chart data for',
-				`${simfileID || 'temp'}${difficulty ? `_${difficulty}` : ''}`
-			);
-		} catch (error) {
-			console.warn('Failed to clear temporary storage:', error);
-		}
+		// Default implementation just clears dirty state
+		this.setDirty(false);
+		console.warn('clearTempStorage() not implemented in base Editor class');
 	}
 
 	/**

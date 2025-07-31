@@ -7,7 +7,7 @@
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import { loadAssetFiles } from '$lib/services/assetFileService';
+	import { loadAssetFiles } from '@dtx/common/services/assetFileService';
 
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);

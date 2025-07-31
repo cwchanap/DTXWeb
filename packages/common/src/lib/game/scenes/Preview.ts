@@ -2,9 +2,9 @@ import { Sound } from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
-import store from '$lib/store';
-import * as FileManager from '$lib/services/fileManager';
-import { XAaudioContext } from '$lib/browser/audioDecoder';
+import store from '../../store';
+import { getFileProvider } from '../../services/fileProvider';
+import { XAaudioContext } from '../../browser/audioDecoder';
 import type { LaneMeasureNote } from '../../chart/note';
 import type { SoundChip } from '../../chart/dtx';
 import { BaseGame } from './BaseGame';
@@ -74,44 +74,6 @@ export class Preview extends BaseGame {
 	}
 
 	preload() {
-		// Load sound chip samples
-		const soundChips = get(store.currentSoundChip);
-
-		if (soundChips) {
-			const addedKey = new Set();
-			const currentSimfileID = get(store.currentSimfileID);
-			const bgmChipIds = this.getBGMChipIds();
-
-			soundChips.forEach((soundChip) => {
-				// Get file from FileManager for both local and remote files
-				const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
-				const actualFile = FileManager.getFile(fileKey);
-
-				if (!soundChip.fileName || !actualFile) {
-					return;
-				}
-
-				const cacheKey = this.getCacheKey(soundChip);
-				this.cache.audio.remove(cacheKey);
-
-				if (addedKey.has(cacheKey)) return;
-				addedKey.add(cacheKey);
-
-				if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
-					// For XA files, we'll load them with custom audio context
-					this.load.audio({
-						key: cacheKey,
-						url: [URL.createObjectURL(actualFile)],
-						context: XAaudioContext
-					});
-				} else {
-					// For other formats, load as usual
-					const objectUrl = URL.createObjectURL(actualFile);
-					this.load.audio(cacheKey, objectUrl);
-				}
-			});
-		}
-
 		this.load.spritesheet(AssetName.LANE_ICONS, getAssetPath(AssetName.LANE_ICONS), {
 			frameWidth: 96,
 			frameHeight: 96
@@ -121,7 +83,7 @@ export class Preview extends BaseGame {
 		this.load.image(AssetName.DRUM_CHIPS, getAssetPath(AssetName.DRUM_CHIPS));
 	}
 
-	create() {
+	async create() {
 		// Create animations for each note type
 		this.createNoteAnimations();
 
@@ -132,18 +94,16 @@ export class Preview extends BaseGame {
 		this.drawPanel();
 		this.drawNotes();
 
-		// Initial sound setup
-		this.setupSounds();
+		// Initial sound setup - wait for completion
+		await this.setupSoundsAsync();
 
 		// Subscribe to store changes to reload sounds when files are updated
 		this.storeUnsubscribe = store.currentSoundChip.subscribe((soundChips) => {
-			this.setupSounds();
+			this.setupSoundsAsync();
 		});
 
-		// Add a small delay to ensure all audio is loaded
-		this.time.delayedCall(100, () => {
-			this.startPreview();
-		});
+		// Start preview after sounds are loaded
+		this.startPreview();
 
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
@@ -167,58 +127,71 @@ export class Preview extends BaseGame {
 		return bgmChipIds;
 	}
 
-	private setupSounds() {
+	private async setupSoundsAsync(): Promise<void> {
 		const soundChips = get(store.currentSoundChip);
 		const currentSimfileID = get(store.currentSimfileID);
-		const bgmChipIds = this.getBGMChipIds();
+		const fileProvider = getFileProvider();
 
-		if (soundChips) {
-			soundChips.forEach((soundChip) => {
-				// Get file from FileManager for both local and remote files
-				let actualFile: File | undefined;
-				const fileKey = FileManager.generateKey(currentSimfileID, soundChip.fileName);
-				actualFile = FileManager.getFile(fileKey);
+		if (!soundChips) return;
+
+		const loadPromises: Promise<void>[] = [];
+
+		for (const soundChip of soundChips) {
+			try {
+				// Get file from FileProvider for both local and remote files
+				const actualFile = await fileProvider.getFile(currentSimfileID, soundChip.fileName);
 
 				if (!soundChip.fileName || !actualFile) {
-					return;
+					continue;
 				}
 
 				const cacheKey = this.getCacheKey(soundChip);
 
 				// Check if the audio is already in cache and sound manager
 				if (this.cache.audio.exists(cacheKey) && this.sound.get(cacheKey)) {
-					return; // Already loaded and added
+					continue; // Already loaded and added
 				}
 
 				// Remove existing cache entry if it exists
 				this.cache.audio.remove(cacheKey);
 
-				// Load the audio file into cache
-				if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
-					// For XA files, we'll load them with custom audio context
-					this.load.audio({
-						key: cacheKey,
-						url: [URL.createObjectURL(actualFile)],
-						context: XAaudioContext
+				// Create a promise that resolves when this audio is loaded
+				const loadPromise = new Promise<void>((resolve) => {
+					// Add a completion listener for this specific audio
+					this.load.once(`filecomplete-audio-${cacheKey}`, () => {
+						// Add to sound manager once loaded
+						if (!this.sound.get(cacheKey)) {
+							this.sound.add(cacheKey);
+						}
+						resolve();
 					});
-				} else {
-					// For other formats, load as usual
-					const objectUrl = URL.createObjectURL(actualFile);
-					this.load.audio(cacheKey, objectUrl);
-				}
 
-				// Start the loader to immediately load this audio
-				this.load.start();
-
-				// Add a completion listener for this specific audio
-				this.load.once(`filecomplete-audio-${cacheKey}`, () => {
-					// Add to sound manager once loaded
-					if (!this.sound.get(cacheKey)) {
-						this.sound.add(cacheKey) as Sound.WebAudioSound;
+					// Load the audio file into cache
+					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
+						// For XA files, we'll load them with custom audio context
+						this.load.audio({
+							key: cacheKey,
+							url: [URL.createObjectURL(actualFile)],
+							context: XAaudioContext
+						});
+					} else {
+						// For other formats, load as usual
+						const objectUrl = URL.createObjectURL(actualFile);
+						this.load.audio(cacheKey, objectUrl);
 					}
+
+					// Start the loader to immediately load this audio
+					this.load.start();
 				});
-			});
+
+				loadPromises.push(loadPromise);
+			} catch (error) {
+				console.warn(`Failed to setup sound chip ${soundChip.fileName}:`, error);
+			}
 		}
+
+		// Wait for all audio files to be loaded
+		await Promise.all(loadPromises);
 	}
 
 	override drawPanel() {
@@ -527,7 +500,7 @@ export class Preview extends BaseGame {
 					const soundChip = get(store.currentSoundChip).find(
 						(chip) => chip.id === parseInt(noteChip.noteID, 36)
 					);
-					if (soundChip && soundChip.file) {
+					if (soundChip) {
 						const audio = this.sound.get(this.getCacheKey(soundChip));
 						if (audio) {
 							this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);

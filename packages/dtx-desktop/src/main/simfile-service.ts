@@ -1,4 +1,4 @@
-import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common';
+import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 import { ensureSupabaseAuth, getSupabaseClient } from './auth';
 import fs from 'fs';
 import path from 'path';

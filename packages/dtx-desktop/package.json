@@ -31,6 +31,7 @@
 		"dayjs": "^1.11.13",
 		"electron-updater": "^6.6.2"
 	},
+	"type": "module",
 	"devDependencies": {
 		"@electron-toolkit/eslint-config-prettier": "^3.0.0",
 		"@electron-toolkit/eslint-config-ts": "^3.1.0",

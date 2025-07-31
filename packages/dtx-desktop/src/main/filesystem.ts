@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { dialog } from 'electron';
-import { SimFile, decodeFileWithEncodingDetection } from '@dtx/common';
+import { SimFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 
 export interface TreeNode {
 	name: string;

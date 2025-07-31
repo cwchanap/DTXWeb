@@ -3,8 +3,8 @@
 	import { SoundChip, type SimFile } from '@dtx/common';
 	import { XAaudioContext } from '$lib/browser/audioDecoder';
 	import { file } from 'jszip';
-	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import * as FileManager from '$lib/services/fileManager';
+	// Note: PUBLIC_SIMFILE_BUCKET_URL is platform-specific - dtx-web and dtx-desktop will handle this differently
+	import * as FileManager from '../../services/fileManager';
 
 	interface Props {
 		simfileID?: string;

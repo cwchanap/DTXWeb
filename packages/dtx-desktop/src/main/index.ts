@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import { SimFile, VALID_DTX_FILE_EXTENSIONS } from '@dtx/common';
+import { SimFile, VALID_DTX_FILE_EXTENSIONS } from '@dtx/common/server';
 import {
 	validateSession,
 	getCurrentSession,

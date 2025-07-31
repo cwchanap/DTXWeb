@@ -19,6 +19,13 @@ export default defineConfig({
 	},
 	preload: {
 		plugins: [externalizeDepsPlugin()],
+		build: {
+			rollupOptions: {
+				output: {
+					entryFileNames: '[name].js'
+				}
+			}
+		},
 		resolve: {
 			alias: {
 				'@dtx/common/components': path.resolve(

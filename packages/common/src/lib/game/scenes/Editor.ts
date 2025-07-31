@@ -4,7 +4,7 @@ import EventType from '../EventType';
 import { BaseGame } from './BaseGame';
 import { Preview } from './Preview';
 import { get } from 'svelte/store';
-import store from '$lib/store';
+import { store } from '@dtx/common';
 import type { LaneConfig } from '../interface';
 import { LaneMeasureNote } from '../../chart/note';
 import { SoundChip, DTXFile } from '../../chart/dtx';

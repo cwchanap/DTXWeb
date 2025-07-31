@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { MainMenu } from './scenes/MainMenu';
-import store from '$lib/store';
+import { store } from '@dtx/common';
 import { get } from 'svelte/store';
 
 export class Preloader extends Scene {

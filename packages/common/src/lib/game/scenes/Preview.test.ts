@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
-import store from '$lib/store';
+import { store } from '@dtx/common';
 import { Preview } from './Preview';
 import { LaneMeasureNote } from '../../chart/note';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 
-vi.mock('$lib/store', () => ({
-	default: {
+vi.mock('@dtx/common', () => ({
+	store: {
 		playSpeed: {
 			subscribe: vi.fn((callback) => {
 				callback(1);

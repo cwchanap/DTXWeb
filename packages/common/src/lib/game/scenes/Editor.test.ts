@@ -7,8 +7,8 @@ type MockedFn = ReturnType<typeof vi.fn>;
 
 // Mock the dependencies
 vi.mock('../EventBus');
-vi.mock('$lib/store', () => ({
-	default: {
+vi.mock('@dtx/common', () => ({
+	store: {
 		measureCount: {
 			set: vi.fn()
 		},

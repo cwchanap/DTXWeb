@@ -57,10 +57,12 @@
 		await authService.restoreSession();
 	});
 
-	// Reactive statement to fetch simFile data when user becomes authenticated
-	$: if ($authStore.isAuthenticated && $authStore.user) {
-		fetchSimFileData();
-	}
+	// Effect to fetch simFile data when user becomes authenticated
+	$effect(() => {
+		if ($authStore.isAuthenticated && $authStore.user) {
+			fetchSimFileData();
+		}
+	});
 
 	// Function to fetch simFile data
 	async function fetchSimFileData() {

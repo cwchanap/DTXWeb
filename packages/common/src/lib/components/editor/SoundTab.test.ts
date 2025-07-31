@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import { SoundTab } from '@dtx/common/components';
-import { SoundChip } from '@dtx/common';
+import SoundTab from './SoundTab.svelte';
+import { SoundChip } from '../../chart/dtx';
 
-vi.mock('$lib/store', () => ({
-	default: {
+// Mock the store - now using @dtx/common since we're in the common package
+vi.mock('@dtx/common', () => ({
+	store: {
 		currentSoundChip: {
 			subscribe: vi.fn((callback) => {
 				callback([]);
@@ -32,10 +33,19 @@ vi.mock('$lib/store', () => ({
 			}),
 			set: vi.fn()
 		}
-	}
+	},
+	SoundChip: vi.fn().mockImplementation((label, id, volume, position, fileName, file) => ({
+		label,
+		id,
+		volume,
+		position,
+		fileName,
+		file
+	}))
 }));
 
-vi.mock('$lib/browser/audioDecoder', () => ({
+// Mock the audio decoder - now using relative path since we're in common
+vi.mock('../../browser/audioDecoder', () => ({
 	XAaudioContext: {
 		createBufferSource: vi.fn(() => ({
 			buffer: null,
@@ -51,22 +61,23 @@ vi.mock('$lib/browser/audioDecoder', () => ({
 	}
 }));
 
-// Mock file import
-vi.mock('jszip', () => ({
-	file: { name: 'test.zip' }
+// Mock file manager services
+vi.mock('../../services/fileManager', () => ({
+	loadAssetFiles: vi.fn().mockResolvedValue([]),
+	getAllFiles: vi.fn().mockReturnValue([])
 }));
 
-// Mock $env/static/public
-vi.mock('$env/static/public', () => ({
-	PUBLIC_SIMFILE_BUCKET_URL: 'https://mock-bucket-url.com'
+// Mock jszip
+vi.mock('jszip', () => ({
+	file: { name: 'test.zip' }
 }));
 
 // Mock URL.createObjectURL
 global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
 
-// Import the mocked store
-import store from '$lib/store';
-import { XAaudioContext } from '$lib/browser/audioDecoder';
+// Import the mocked dependencies
+import { store } from '@dtx/common';
+import { XAaudioContext } from '../../browser/audioDecoder';
 
 // REASON FOR SKIPPING: Svelte 5 compatibility issue with @testing-library/svelte
 // These tests fail with "lifecycle_function_unavailable: mount(...) is not available on the server"
@@ -99,7 +110,7 @@ describe.skip('SoundTab Component', () => {
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { getByDisplayValue } = render(SoundTab);
+		const { getByDisplayValue } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Check that volume inputs are rendered with correct values
 		expect(getByDisplayValue('75')).toBeInTheDocument();
@@ -122,7 +133,7 @@ describe.skip('SoundTab Component', () => {
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { getByText } = render(SoundTab);
+		const { getByText } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Find and click the file button to play audio
 		const playButton = getByText('test.wav');
@@ -157,7 +168,7 @@ describe.skip('SoundTab Component', () => {
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { getByText } = render(SoundTab);
+		const { getByText } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Find and click the file button to play audio
 		const playButton = getByText('test.xa');
@@ -183,12 +194,12 @@ describe.skip('SoundTab Component', () => {
 		global.Audio = vi.fn(() => mockAudio) as any;
 
 		// Mock the store
-		vi.mocked(store).currentSoundChip.subscribe.mockImplementation((callback) => {
+		vi.mocked(store.currentSoundChip.subscribe).mockImplementation((callback) => {
 			callback([mockSoundChip]);
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { getByText } = render(SoundTab);
+		const { getByText } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Find and click the file button to play audio
 		const playButton = getByText('silent.wav');
@@ -210,12 +221,12 @@ describe.skip('SoundTab Component', () => {
 		global.Audio = vi.fn(() => mockAudio) as any;
 
 		// Mock the store
-		vi.mocked(store).currentSoundChip.subscribe.mockImplementation((callback) => {
+		vi.mocked(store.currentSoundChip.subscribe).mockImplementation((callback) => {
 			callback([mockSoundChip]);
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { getByText } = render(SoundTab);
+		const { getByText } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Find and click the file button to play audio
 		const playButton = getByText('loud.wav');
@@ -236,18 +247,18 @@ describe.skip('SoundTab Component', () => {
 		global.Audio = vi.fn(() => mockAudio) as any;
 
 		// Mock the store with no sound chips (should use default volume)
-		vi.mocked(store).currentSoundChip.subscribe.mockImplementation((callback) => {
+		vi.mocked(store.currentSoundChip.subscribe).mockImplementation((callback) => {
 			callback([]);
 			return { unsubscribe: vi.fn() };
 		});
-		vi.mocked(store).currentSimfile.subscribe.mockImplementation((callback) => {
+		vi.mocked(store.currentSimfile.subscribe).mockImplementation((callback) => {
 			callback({
 				files: [mockFile]
 			});
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { container } = render(SoundTab);
+		const { container } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Manually trigger playAudio with default volume (should be 100)
 		const component = container.querySelector('div');
@@ -262,12 +273,12 @@ describe.skip('SoundTab Component', () => {
 		const mockSoundChip = new SoundChip('test.wav', 1, 75, 0, 'test.wav');
 
 		// Mock the store
-		vi.mocked(store).currentSoundChip.subscribe.mockImplementation((callback) => {
+		vi.mocked(store.currentSoundChip.subscribe).mockImplementation((callback) => {
 			callback([mockSoundChip]);
 			return { unsubscribe: vi.fn() };
 		});
 
-		const { getByDisplayValue } = render(SoundTab);
+		const { getByDisplayValue } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Find the volume input
 		const volumeInput = getByDisplayValue('75') as HTMLInputElement;
@@ -282,14 +293,14 @@ describe.skip('SoundTab Component', () => {
 	});
 
 	it('should create new sound chip with default volume', async () => {
-		const { getByText } = render(SoundTab);
+		const { getByText } = render(SoundTab, { props: { simfileID: 'test-id' } });
 
 		// Find and click the "New Sound" button
 		const newSoundButton = getByText('New Sound');
 		await fireEvent.click(newSoundButton);
 
 		// Verify that currentSoundChip.set was called with a new sound chip that has volume 100
-		expect(vi.mocked(store).currentSoundChip.set).toHaveBeenCalledWith(
+		expect(vi.mocked(store.currentSoundChip.set)).toHaveBeenCalledWith(
 			expect.arrayContaining([
 				expect.objectContaining({
 					volume: 100

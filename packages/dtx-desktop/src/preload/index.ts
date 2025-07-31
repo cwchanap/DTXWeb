@@ -9,6 +9,10 @@ const api = {
 // Extend the electronAPI with our custom IPC handlers
 const extendedElectronAPI = {
 	...electronAPI,
+	process: {
+		env: process.env,
+		platform: process.platform
+	},
 	ipcRenderer: {
 		...electronAPI.ipcRenderer,
 		// Add our custom IPC handlers

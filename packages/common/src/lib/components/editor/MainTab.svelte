@@ -4,7 +4,7 @@
 	import { EventBus } from '@dtx/common/game';
 	import { EventType } from '@dtx/common/game';
 	import { onMount } from 'svelte';
-	import store from '$lib/store';
+	import { store } from '@dtx/common';
 	import { DTXFile } from '@dtx/common';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
 

@@ -267,6 +267,12 @@ if (!gotTheLock) {
 		// Handle loading asset files from API
 		ipcMain.handle('load-asset-files', async (_event, simfileId: string) => {
 			try {
+				// Return empty array for empty or invalid simfileId
+				if (!simfileId || simfileId === '' || simfileId === '0') {
+					console.log('No valid simfileId provided, returning empty array');
+					return [];
+				}
+
 				const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
 				if (!apiBaseUrl) {
 					throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
@@ -315,14 +321,22 @@ if (!gotTheLock) {
 				if (!response.ok) {
 					const errorText = await response.text();
 					console.error('API Error Response:', errorText);
+
+					// For specific API errors, return empty array instead of throwing
+					if (response.status === 404 || errorText.includes('Failed to list files')) {
+						console.log('API returned file listing error, returning empty array');
+						return [];
+					}
+
 					throw new Error(`Error fetching files: ${response.statusText} - ${errorText}`);
 				}
 
 				const data = await response.json();
-				return data.files;
+				return data.files || [];
 			} catch (error) {
 				console.error('Error loading asset files:', error);
-				throw error;
+				// Return empty array instead of throwing to prevent UI crashes
+				return [];
 			}
 		});
 

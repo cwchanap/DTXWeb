@@ -2,7 +2,7 @@
 	import Login from './components/Login.svelte';
 	import Workspace from './components/Workspace.svelte';
 	import NewSong from './components/NewSong.svelte';
-	import Editor from './components/Editor.svelte';
+	import DesktopEditor from './components/DesktopEditor.svelte';
 	import Navbar from './components/Navbar.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
@@ -116,6 +116,7 @@
 	// Clean up listeners when component is destroyed
 	onDestroy(() => {
 		window.electron.ipcRenderer.removeAllListeners('auth-callback');
+		window.electron.ipcRenderer.removeAllListeners('magic-link-result');
 		window.removeEventListener('hashchange', handleRouteChange);
 	});
 </script>
@@ -135,7 +136,7 @@
 		{:else}
 			<div class="mb-10">
 				{#if currentRoute === 'editor'}
-					<Editor simfileID={routeParams.simfileID} />
+					<DesktopEditor simfileID={routeParams.simfileID} />
 				{:else if $workspaceStore.showNewSong}
 					<NewSong />
 				{:else}

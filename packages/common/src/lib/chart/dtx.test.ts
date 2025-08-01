@@ -73,29 +73,26 @@ describe('SoundChip', () => {
 	});
 
 	describe('fetchRemote', () => {
-		it('should return early if fileName is empty', async () => {
+		it('should throw error if fileName is empty', async () => {
 			const soundChip = new SoundChip('kick', 1, 100, 0, '');
-			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-			await soundChip.fetchRemote('simfile123', 'https://bucket.com');
-
-			expect(consoleSpy).toHaveBeenCalledWith('Sound chip file name is not set');
-			consoleSpy.mockRestore();
+			await expect(soundChip.fetchRemote('simfile123', 'https://bucket.com')).rejects.toThrow(
+				'Sound chip file name is not set'
+			);
 		});
 
-		it('should handle fetch errors gracefully', async () => {
+		it('should throw error when fetch fails', async () => {
 			global.fetch = vi.fn().mockResolvedValue({
 				ok: false,
-				status: 404
+				status: 404,
+				statusText: 'Not Found'
 			});
 
 			const soundChip = new SoundChip('kick', 1, 100, 0, 'kick.wav');
-			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-			await soundChip.fetchRemote('simfile123', 'https://bucket.com');
-
-			expect(consoleSpy).toHaveBeenCalledWith('Failed to fetch sound chip: kick.wav');
-			consoleSpy.mockRestore();
+			await expect(soundChip.fetchRemote('simfile123', 'https://bucket.com')).rejects.toThrow(
+				'Failed to fetch sound chip: kick.wav (404: Not Found)'
+			);
 		});
 
 		it('should create file from successful fetch', async () => {

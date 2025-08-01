@@ -12,6 +12,11 @@ import { normalizePosition } from '../../../utils/position';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
+// Mock the normalizePosition utility
+vi.mock('../../../utils/position', () => ({
+	normalizePosition: vi.fn((cellOffset: number) => cellOffset)
+}));
+
 // Mock note graphics interface
 interface MockNoteGraphics {
 	name: string;

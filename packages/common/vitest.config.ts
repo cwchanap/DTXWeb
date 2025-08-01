@@ -40,12 +40,18 @@ export default defineConfig({
 				}
 			},
 			moduleDirectories: ['node_modules', path.resolve(__dirname, '../..')]
+		},
+		server: {
+			deps: {
+				external: ['phaser3spectorjs']
+			}
 		}
 	},
 	resolve: {
 		alias: {
 			'@': path.resolve(__dirname, './src'),
-			$lib: path.resolve(__dirname, './src/lib')
+			$lib: path.resolve(__dirname, './src/lib'),
+			phaser: path.resolve(__dirname, '../../__mocks__/phaser.ts')
 		}
 	}
 });

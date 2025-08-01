@@ -26,10 +26,16 @@
 		// Navigate to editor page for this song
 		// If the song has a linkedSimFileId, use it as the simfileID parameter
 		// Otherwise, create a local editor session
-		const editorPath = song.linkedSimFileId ? `/editor/${song.linkedSimFileId}` : '/editor';
+		const editorPath = song.linkedSimFileId ? `editor/${song.linkedSimFileId}` : 'editor';
+
+		// Close the song details first
+		workspaceStore.closeSongDetails();
 
 		// Use the router to navigate to the editor
-		window.location.hash = editorPath;
+		window.location.hash = `#${editorPath}`;
+
+		// Manually trigger hashchange event to ensure route handler picks it up
+		window.dispatchEvent(new HashChangeEvent('hashchange'));
 	};
 
 	// Helper function to create File object with custom properties
@@ -194,16 +200,18 @@
 	// Custom asset file loader for desktop
 	const loadAssetFilesForDesktop = async (simfileId: string) => {
 		// For unlinked songs (no simfileId), return empty array - we only show local files
-		if (!simfileId || simfileId === '') {
+		if (!simfileId || simfileId === '' || simfileId === '0') {
 			return [];
 		}
 
 		// For linked songs, fetch actual cloud files via IPC
 		try {
 			const result = await window.electron.ipcRenderer.invoke('load-asset-files', simfileId);
-			return result || [];
+			// Always return an array, even if result is null/undefined
+			return Array.isArray(result) ? result : [];
 		} catch (error) {
 			console.error('Error loading cloud asset files:', error);
+			// Return empty array to allow UI to function normally
 			return [];
 		}
 	};

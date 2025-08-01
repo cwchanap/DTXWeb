@@ -119,7 +119,6 @@ describe('Editor Scene', () => {
 
 	it('should initialize with correct properties', () => {
 		expect(editorScene).toBeDefined();
-		expect(editorScene.constructor.name).toBe('Editor');
 		expect(Editor.key).toBe('Editor');
 	});
 

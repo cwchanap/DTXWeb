@@ -2,7 +2,6 @@
 	import { store } from '@dtx/common';
 	import { SoundChip, type SimFile } from '@dtx/common';
 	import { XAaudioContext } from '../../browser/audioDecoder';
-	import { file } from 'jszip';
 	// Note: PUBLIC_SIMFILE_BUCKET_URL is platform-specific - dtx-web and dtx-desktop will handle this differently
 	import * as FileManager from '../../services/fileManager';
 

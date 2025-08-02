@@ -136,6 +136,11 @@ Check `__mocks__/` folder before creating new mocks:
 - Vitest with jsdom environment
 - Global mocks auto-loaded
 
+### Unit Testing Approach
+
+- For unit test, only write unit test involving code logic
+- Never write trivial test (like testing variable assignment, simple math)
+
 ## Code Conventions
 
 ### Svelte/TypeScript
@@ -165,6 +170,13 @@ import { DTXFile } from '@dtx/common';
 import { Button } from '@dtx/common/components';
 ```
 
+### Import Recommendations
+
+- Always using top level imports whenever possible
+- Avoid relative paths for cross-package imports
+- For internal components, use `$lib/` alias instead of relative paths
+- For external libraries, use absolute import paths
+
 ## Deployment & Infrastructure
 
 - **Web App**: Deployed to Cloudflare Workers via @sveltejs/adapter-cloudflare
@@ -178,6 +190,10 @@ import { Button } from '@dtx/common/components';
 - Node.js 22.x or later required
 - Uses husky + lint-staged for git hooks
 - Supabase CLI for type generation and local development
+
+## Code Maintenance
+
+- Remove and clean up unused files and code for refactoring work. Never mark them deprecated.
 
 ## Important Instructions for Agents
 

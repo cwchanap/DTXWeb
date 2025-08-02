@@ -184,12 +184,25 @@ export async function readFile(
 			);
 		};
 
-		// Use encoding detection to handle UTF-16LE .def files and other encodings
+		// Use encoding detection with different priorities based on file type
+		let encodings: string[];
+		let fallback: string;
+
+		if (ext === '.dtx') {
+			// DTX files typically use shift-jis first (same as DTXFile class)
+			encodings = ['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'];
+			fallback = 'shift-jis';
+		} else {
+			// .def files and others use UTF-16LE first
+			encodings = ['utf-16le', 'utf-16be', 'utf-8', 'shift-jis'];
+			fallback = 'utf-8';
+		}
+
 		const content = await decodeFileWithEncodingDetection(
 			tempFile,
 			validateFileContent,
-			['utf-16le', 'utf-16be', 'utf-8', 'shift-jis'], // Try UTF-16LE first for .def files
-			'utf-8' // Fallback to UTF-8
+			encodings,
+			fallback
 		);
 
 		return { error: null, content };

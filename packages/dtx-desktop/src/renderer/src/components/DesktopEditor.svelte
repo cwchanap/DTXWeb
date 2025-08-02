@@ -6,7 +6,7 @@
 	import Phaser from 'phaser';
 	import { Editor } from '@dtx/common/game';
 	import { store } from '@dtx/common';
-	import { DTXFile, SimFile, setFileProvider } from '@dtx/common';
+	import { DTXFile, SimFile, setFileProvider, EventBus, EventType } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
 	import type { ChartMetadata } from '@dtx/common/services/tempChartStorage';
 	import { editorMappingStore } from '../stores/editorMappingStore';
@@ -79,6 +79,11 @@
 
 				// Desktop app is always local editing
 				isLocalEditingMode = true;
+
+				// Emit empty notes for new chart
+				setTimeout(() => {
+					EventBus.emit(EventType.NOTE_IMPORT, [], {});
+				}, 100);
 			}
 
 			// Initialize the Phaser game for the editor
@@ -169,6 +174,11 @@
 
 			// Desktop app is always local editing
 			isLocalEditingMode = true;
+
+			// Emit empty notes for error case
+			setTimeout(() => {
+				EventBus.emit(EventType.NOTE_IMPORT, [], {});
+			}, 100);
 		}
 	};
 
@@ -213,9 +223,11 @@
 			await localSimFile.parseHeader(setDefFile);
 		}
 
-		// Try to load DTX files for sound chips
+		// Try to load DTX files for sound chips and notes
 		let soundChips: any[] = [];
 		let dtxFile: DTXFile | null = null;
+		let notes: any[] = [];
+		let bpmNotes: Record<string, number> = {};
 
 		try {
 			const dtxFiles = ['ext.dtx', 'mas.dtx', 'bas.dtx', 'adv.dtx', 'nov.dtx'];
@@ -232,6 +244,8 @@
 					dtxFile = new DTXFile(dtxFileContent);
 					await dtxFile.parse();
 					soundChips = dtxFile.parseSoundChips();
+					notes = dtxFile.parseNotes();
+					bpmNotes = dtxFile.parseBPMChanges();
 					break;
 				}
 			}
@@ -274,6 +288,11 @@
 
 		// Desktop app is always local editing
 		isLocalEditingMode = true;
+
+		// Wait a bit to ensure the Phaser scene is ready, then emit note import event
+		setTimeout(() => {
+			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+		}, 100);
 	};
 </script>
 

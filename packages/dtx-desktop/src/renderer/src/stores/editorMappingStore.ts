@@ -5,9 +5,31 @@ interface EditorMappingState {
 	simFileIdToFolderPath: Record<string, string>;
 }
 
-const initialState: EditorMappingState = {
-	simFileIdToFolderPath: {}
-};
+const STORAGE_KEY = 'editor_mapping_cache';
+
+// Load initial state from localStorage
+function loadInitialState(): EditorMappingState {
+	try {
+		const stored = localStorage.getItem(STORAGE_KEY);
+		if (stored) {
+			return JSON.parse(stored);
+		}
+	} catch (error) {
+		console.warn('Failed to load editor mapping from localStorage:', error);
+	}
+	return { simFileIdToFolderPath: {} };
+}
+
+// Save state to localStorage
+function saveState(state: EditorMappingState): void {
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+	} catch (error) {
+		console.warn('Failed to save editor mapping to localStorage:', error);
+	}
+}
+
+const initialState = loadInitialState();
 
 function createEditorMappingStore() {
 	const { subscribe, set, update } = writable<EditorMappingState>(initialState);
@@ -17,13 +39,17 @@ function createEditorMappingStore() {
 
 		// Add or update a mapping
 		setMapping: (simFileId: string, folderPath: string) => {
-			update((state) => ({
-				...state,
-				simFileIdToFolderPath: {
-					...state.simFileIdToFolderPath,
-					[simFileId]: folderPath
-				}
-			}));
+			update((state) => {
+				const newState = {
+					...state,
+					simFileIdToFolderPath: {
+						...state.simFileIdToFolderPath,
+						[simFileId]: folderPath
+					}
+				};
+				saveState(newState);
+				return newState;
+			});
 		},
 
 		// Get folder path for a simFileId
@@ -41,16 +67,20 @@ function createEditorMappingStore() {
 			update((state) => {
 				const newMappings = { ...state.simFileIdToFolderPath };
 				delete newMappings[simFileId];
-				return {
+				const newState = {
 					...state,
 					simFileIdToFolderPath: newMappings
 				};
+				saveState(newState);
+				return newState;
 			});
 		},
 
 		// Clear all mappings
 		clearMappings: () => {
-			set(initialState);
+			const clearedState = { simFileIdToFolderPath: {} };
+			set(clearedState);
+			saveState(clearedState);
 		}
 	};
 }

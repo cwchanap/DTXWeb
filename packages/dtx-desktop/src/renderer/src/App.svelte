@@ -15,7 +15,7 @@
 
 	// Routing state
 	let currentRoute = $state('workspace');
-	let routeParams = $state<{ simfileID?: string }>({});
+	let routeParams = $state<{ simFileId?: string }>({});
 
 	// Function to handle route changes
 	function handleRouteChange() {
@@ -30,7 +30,7 @@
 
 		if (route === 'editor') {
 			currentRoute = 'editor';
-			routeParams = { simfileID: params[0] || undefined };
+			routeParams = { simFileId: params[0] || undefined };
 		} else {
 			currentRoute = 'workspace';
 			routeParams = {};
@@ -136,7 +136,7 @@
 		{:else}
 			<div class="mb-10">
 				{#if currentRoute === 'editor'}
-					<DesktopEditor simfileID={routeParams.simfileID} />
+					<DesktopEditor simFileId={routeParams.simFileId} />
 				{:else if $workspaceStore.showNewSong}
 					<NewSong />
 				{:else}

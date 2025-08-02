@@ -9,12 +9,13 @@
 	import { DTXFile, SimFile, setFileProvider } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
 	import type { ChartMetadata } from '@dtx/common/services/tempChartStorage';
+	import { editorMappingStore } from '../stores/editorMappingStore';
 
 	interface Props {
-		simfileID?: string;
+		simFileId?: string;
 	}
 
-	let { simfileID }: Props = $props();
+	let { simFileId }: Props = $props();
 
 	// Editor state
 	let currentTab = $state('main');
@@ -46,9 +47,9 @@
 			fileProvider = new DesktopFileProvider(workspacePath);
 			setFileProvider(fileProvider);
 
-			// Load simfile data if we have a simfileID
-			if (simfileID) {
-				await loadSimfileData(simfileID);
+			// Load simfile data if we have a simFileId
+			if (simFileId) {
+				await loadFromSimFileId(simFileId);
 			} else {
 				// Initialize with default metadata for new chart
 				chartMetadata = {
@@ -120,28 +121,31 @@
 		}
 	});
 
-	const loadSimfileData = async (simfileId: string) => {
+	const loadFromSimFileId = async (simFileIdParam: string) => {
 		try {
-			console.log('Loading simfile for editing:', simfileId);
+			console.log('Loading from simFileId:', simFileIdParam);
 
-			// Check if this is a numeric ID (likely linked to remote simfile)
-			const isNumericId = /^\d+$/.test(simfileId);
-			console.log('Is numeric ID:', isNumericId);
+			// Get the folder path from the mapping store
+			let folderPath: string | undefined;
+			editorMappingStore.subscribe((state) => {
+				folderPath = state.simFileIdToFolderPath[simFileIdParam];
+			})();
 
-			if (isNumericId) {
-				// For numeric IDs, we need to find the actual local folder that's linked to this simfile
-				console.log('Looking for local folder linked to simfile ID:', simfileId);
-				await loadLinkedSimfileData(simfileId);
-			} else {
-				// For string names, load purely local
-				console.log('Loading purely local for folder:', simfileId);
-				await loadLocalSimfileData(simfileId);
+			if (!folderPath) {
+				throw new Error(`No folder path found for simFileId: ${simFileIdParam}`);
 			}
+
+			console.log('Resolved folder path:', folderPath);
+
+			// Get folder name for display
+			const folderName = folderPath.split('/').pop() || 'Unknown';
+
+			await loadLocalFilesFromPath(folderPath, folderName);
 		} catch (error) {
-			console.error('Failed to load simfile data:', error);
+			console.error('Failed to load from simFileId:', error);
 			// Set default metadata on error
 			chartMetadata = {
-				title: simfileId || 'New Song',
+				title: simFileIdParam || 'New Song',
 				artist: 'Unknown Artist',
 				comment: '',
 				bpm: 120,
@@ -157,7 +161,7 @@
 			dtxFile.bpm = chartMetadata.bpm;
 			dtxFile.level = chartMetadata.level;
 
-			store.currentSimfileID.set(simfileId);
+			store.currentSimfileID.set(simFileIdParam);
 			store.currentDtxFile.set(dtxFile);
 			store.currentSoundChip.set([]);
 			store.editorNotes.set({});
@@ -165,123 +169,6 @@
 
 			// Desktop app is always local editing
 			isLocalEditingMode = true;
-		}
-	};
-
-	const loadLinkedSimfileData = async (simfileId: string) => {
-		console.log('Loading data for simfile ID:', simfileId);
-
-		// For the editor, we don't need cloud metadata - load from local directory directly
-		// First, find a local folder that matches this song (by title or linked ID)
-		const workspacePath = localStorage.getItem('workspace_path')?.replace(/^"|"$/g, '') || '';
-		console.log('Searching workspace for song folder:', workspacePath);
-
-		let songFolderPath: string | null = null;
-		let folderName: string | null = null;
-
-		try {
-			// Load the tree structure to find the song folder
-			const treeStructure = await window.electron.ipcRenderer.invoke(
-				'load-tree-structure',
-				workspacePath
-			);
-
-			// First, try to find a folder with matching linkedSimFileId
-			const findByLinkedId = (nodes: any[]): any => {
-				for (const node of nodes) {
-					if (node.linkedSimFileId === simfileId) {
-						return node;
-					}
-					if (node.children && node.children.length > 0) {
-						const found = findByLinkedId(node.children);
-						if (found) return found;
-					}
-				}
-				return null;
-			};
-
-			let songFolder = findByLinkedId(treeStructure);
-
-			// If no linked folder found, try to find by matching song title
-			if (!songFolder) {
-				// Get remote metadata to find the song title
-				let remoteTitle: string | null = null;
-				try {
-					const currentSession =
-						await window.electron.ipcRenderer.invoke('get-current-session');
-					if (currentSession) {
-						const userSimfiles =
-							await window.electron.ipcRenderer.invoke('fetch-user-simfiles');
-						const remoteMetadata = userSimfiles.data?.find(
-							(sf: any) => sf.id.toString() === simfileId
-						);
-						remoteTitle = remoteMetadata?.title;
-					}
-				} catch (error) {
-					console.warn('Failed to fetch remote metadata:', error);
-				}
-
-				// Try to find folder by title match (case-insensitive, partial match)
-				const findByTitle = (nodes: any[]): any => {
-					for (const node of nodes) {
-						if (remoteTitle) {
-							// Try exact match first
-							if (node.name.toLowerCase() === remoteTitle.toLowerCase()) {
-								return node;
-							}
-							// Try partial match (folder name contains song title or vice versa)
-							if (
-								node.name.toLowerCase().includes(remoteTitle.toLowerCase()) ||
-								remoteTitle.toLowerCase().includes(node.name.toLowerCase())
-							) {
-								return node;
-							}
-						}
-						if (node.children && node.children.length > 0) {
-							const found = findByTitle(node.children);
-							if (found) return found;
-						}
-					}
-					return null;
-				};
-
-				songFolder = findByTitle(treeStructure);
-			}
-
-			// If still no folder found, just pick the first folder with DTX files
-			if (!songFolder) {
-				const findWithDtxFiles = (nodes: any[]): any => {
-					for (const node of nodes) {
-						if (node.containsDtxFiles) {
-							return node;
-						}
-						if (node.children && node.children.length > 0) {
-							const found = findWithDtxFiles(node.children);
-							if (found) return found;
-						}
-					}
-					return null;
-				};
-
-				songFolder = findWithDtxFiles(treeStructure);
-			}
-
-			if (songFolder) {
-				songFolderPath = songFolder.path;
-				folderName = songFolder.name;
-			} else {
-				throw new Error(
-					`No suitable folder found in workspace for simfile ID ${simfileId}. Please ensure there's a folder with DTX files in the workspace.`
-				);
-			}
-		} catch (error) {
-			console.error('Error finding song folder:', error);
-			throw error;
-		}
-
-		// Load the files from the found folder
-		if (songFolderPath && folderName) {
-			await loadLocalFilesFromPath(songFolderPath, folderName);
 		}
 	};
 
@@ -388,14 +275,6 @@
 		// Desktop app is always local editing
 		isLocalEditingMode = true;
 	};
-
-	const loadLocalSimfileData = async (simfileId: string) => {
-		// For pure local loading, construct the path from workspace + simfileId
-		const workspacePath = localStorage.getItem('workspace_path')?.replace(/^"|"$/g, '') || '';
-		const folderPath = `${workspacePath}/${simfileId}`;
-
-		await loadLocalFilesFromPath(folderPath, simfileId);
-	};
 </script>
 
 <div class="h-screen w-full bg-slate-900 text-white">
@@ -414,7 +293,7 @@
 			</button>
 
 			<h1 class="text-xl font-semibold">
-				DTX Editor {simfileID ? `- Song ID: ${simfileID}` : '- New Chart'}
+				DTX Editor {simFileId ? `- ${simFileId}` : '- New Chart'}
 			</h1>
 		</div>
 
@@ -460,12 +339,12 @@
 				{console.log(
 					'SoundTab render - isLocalEditingMode:',
 					isLocalEditingMode,
-					'simfileID:',
-					simfileID,
+					'simFileId:',
+					simFileId,
 					'will pass:',
-					isLocalEditingMode ? null : simfileID
+					isLocalEditingMode ? null : simFileId
 				)}
-				<SoundTab simfileID={isLocalEditingMode ? null : simfileID} />
+				<SoundTab simfileID={isLocalEditingMode ? null : simFileId} />
 			{/if}
 		</div>
 

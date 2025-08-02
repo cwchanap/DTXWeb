@@ -2,6 +2,7 @@
 	import { Music, ArrowLeft, Link, Search, Download } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { settingsStore } from '../stores/settingsStore';
+	import { editorMappingStore } from '../stores/editorMappingStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
 	import { onMount } from 'svelte';
@@ -24,9 +25,22 @@
 
 	const handleOpenEditor = () => {
 		// Navigate to editor page for this song
-		// If the song has a linkedSimFileId, use it as the simfileID parameter
-		// Otherwise, create a local editor session
-		const editorPath = song.linkedSimFileId ? `editor/${song.linkedSimFileId}` : 'editor';
+		let simFileId: string;
+
+		if (song.linkedSimFileId) {
+			// Use the linked simFileId if available
+			simFileId = song.linkedSimFileId;
+		} else {
+			// For unlinked songs, use the folder name as simFileId
+			simFileId = song.name || 'new-song';
+		}
+
+		// Store the mapping of simFileId to song folder path
+		if (song.path) {
+			editorMappingStore.setMapping(simFileId, song.path);
+		}
+
+		const editorPath = `editor/${simFileId}`;
 
 		// Close the song details first
 		workspaceStore.closeSongDetails();

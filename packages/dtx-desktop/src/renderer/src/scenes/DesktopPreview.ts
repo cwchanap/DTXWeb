@@ -1,11 +1,10 @@
-import { Preview } from '@dtx/common/game';
-import { AssetName } from '@dtx/common/game/interface';
+import { Preview, AssetName } from '@dtx/common/game';
 
 export class DesktopPreview extends Preview {
 	static key = 'DesktopPreview';
 
 	constructor() {
-		super({ key: DesktopPreview.key });
+		super();
 	}
 
 	preload() {

@@ -5,7 +5,7 @@
  * This implementation loads files via the main process
  */
 
-import type { IFileProvider } from '@dtx/common/services/fileProvider';
+import type { IFileProvider } from '@dtx/common';
 
 export class DesktopFileProvider implements IFileProvider {
 	private fileCache = new Map<string, File>();

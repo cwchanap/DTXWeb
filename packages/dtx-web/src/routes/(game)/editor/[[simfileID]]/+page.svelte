@@ -61,21 +61,6 @@
 		return scene;
 	};
 
-	function getBGMChipIds(): Set<number> {
-		const bgmChipIds = new Set<number>();
-		const notes = get(store.editorNotes);
-		const bgmNotes = notes['01'] || []; // BGM lane is '01'
-
-		bgmNotes.forEach((note) => {
-			note.notes.forEach((noteChip) => {
-				const chipId = parseInt(noteChip.noteID, 36);
-				bgmChipIds.add(chipId);
-			});
-		});
-
-		return bgmChipIds;
-	}
-
 	function exportFile() {
 		const dtxFile = get(store.currentDtxFile);
 		const notes = get(store.editorNotes);
@@ -457,9 +442,6 @@
 			store.currentDifficulty.set(levelData.label);
 		}
 
-		// Get BGM chip IDs before fetching
-		const bgmChipIds = getBGMChipIds();
-
 		// Fetch remote files for sound chips
 		await Promise.all(
 			soundChips.map(async (soundChip) => {
@@ -566,9 +548,6 @@
 			if (currentLevel && currentLevel[1]) {
 				store.currentDifficulty.set(currentLevel[1].label);
 			}
-
-			// Get BGM chip IDs before fetching
-			const bgmChipIds = getBGMChipIds();
 
 			// Fetch remote files for sound chips
 			await Promise.all(

@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 // Store for mapping simFileId to songFolderPath
 interface EditorMappingState {
@@ -32,7 +32,8 @@ function saveState(state: EditorMappingState): void {
 const initialState = loadInitialState();
 
 function createEditorMappingStore() {
-	const { subscribe, set, update } = writable<EditorMappingState>(initialState);
+	const store = writable<EditorMappingState>(initialState);
+	const { subscribe, set, update } = store;
 
 	return {
 		subscribe,
@@ -54,12 +55,8 @@ function createEditorMappingStore() {
 
 		// Get folder path for a simFileId
 		getFolderPath: (simFileId: string): string | undefined => {
-			let folderPath: string | undefined;
-			update((state) => {
-				folderPath = state.simFileIdToFolderPath[simFileId];
-				return state;
-			});
-			return folderPath;
+			const state = get(store);
+			return state.simFileIdToFolderPath[simFileId];
 		},
 
 		// Remove a mapping

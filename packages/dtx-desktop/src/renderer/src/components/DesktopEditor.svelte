@@ -9,8 +9,27 @@
 	import { store } from '@dtx/common';
 	import { DTXFile, SimFile, setFileProvider, EventBus, EventType } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
-	import type { ChartMetadata } from '@dtx/common/services/tempChartStorage';
 	import { editorMappingStore } from '../stores/editorMappingStore';
+
+	// Local type definitions
+	interface SoundChipData {
+		label: string;
+		id: number;
+		volume: number;
+		position: number;
+		fileName: string;
+		filePath?: string;
+		fileHash?: string;
+	}
+
+	interface ChartMetadata {
+		title: string;
+		artist: string;
+		comment: string;
+		bpm: number;
+		level: number;
+		soundChips: SoundChipData[];
+	}
 
 	interface Props {
 		simFileId?: string;
@@ -27,6 +46,17 @@
 	let fileProvider: DesktopFileProvider | null = null;
 	let isLocalEditingMode = $state(false); // Track if we should treat this as local editing
 
+	// Helper function to create DTXFile from ChartMetadata
+	const createDTXFileFromMetadata = (metadata: ChartMetadata): DTXFile => {
+		const dtxFile = new DTXFile();
+		dtxFile.title = metadata.title;
+		dtxFile.artist = metadata.artist;
+		dtxFile.comment = metadata.comment;
+		dtxFile.bpm = metadata.bpm;
+		dtxFile.level = metadata.level;
+		return dtxFile;
+	};
+
 	const handleBackToWorkspace = () => {
 		// Navigate back to workspace
 		window.location.hash = '';
@@ -36,98 +66,102 @@
 		currentTab = tab;
 	};
 
-	onMount(async () => {
-		try {
-			// Initialize file provider
-			let workspacePath = localStorage.getItem('workspace_path') || '';
-			// Remove extra quotes if present
-			if (workspacePath.startsWith('"') && workspacePath.endsWith('"')) {
-				workspacePath = workspacePath.slice(1, -1);
-			}
-			console.log('Cleaned workspace path:', workspacePath);
-			fileProvider = new DesktopFileProvider(workspacePath);
-			setFileProvider(fileProvider);
+	onMount(() => {
+		let game: Phaser.Game | null = null;
 
-			// Load simfile data if we have a simFileId
-			if (simFileId) {
-				await loadFromSimFileId(simFileId);
-			} else {
-				// Initialize with default metadata for new chart
-				chartMetadata = {
-					title: 'New Song',
-					artist: 'Unknown Artist',
-					comment: '',
-					bpm: 120,
-					level: 1,
-					soundChips: []
-				};
+		const initializeEditor = async () => {
+			try {
+				// Initialize file provider
+				let workspacePath = localStorage.getItem('workspace_path') || '';
+				// Remove extra quotes if present
+				if (workspacePath.startsWith('"') && workspacePath.endsWith('"')) {
+					workspacePath = workspacePath.slice(1, -1);
+				}
+				console.log('Cleaned workspace path:', workspacePath);
+				fileProvider = new DesktopFileProvider(workspacePath);
+				setFileProvider(fileProvider);
 
-				// Create default DTXFile
-				const dtxFile = new DTXFile();
-				dtxFile.title = chartMetadata.title;
-				dtxFile.artist = chartMetadata.artist;
-				dtxFile.comment = chartMetadata.comment;
-				dtxFile.bpm = chartMetadata.bpm;
-				dtxFile.level = chartMetadata.level;
+				// Load simfile data if we have a simFileId
+				if (simFileId) {
+					await loadFromSimFileId(simFileId);
+				} else {
+					// Initialize with default metadata for new chart
+					chartMetadata = {
+						title: 'New Song',
+						artist: 'Unknown Artist',
+						comment: '',
+						bpm: 120,
+						level: 1,
+						soundChips: []
+					};
 
-				// Initialize store with default values
-				store.currentSimfileID.set(null);
-				store.currentDifficulty.set(null);
-				store.currentDtxFile.set(dtxFile);
-				store.editorNotes.set({});
-				store.currentSoundChip.set([]);
-				store.measureCount.set(10);
+					// Create default DTXFile
+					const dtxFile = createDTXFileFromMetadata(chartMetadata);
 
-				// Desktop app is always local editing
-				isLocalEditingMode = true;
+					// Initialize store with default values
+					store.currentSimfileID.set(null);
+					store.currentDifficulty.set(null);
+					store.currentDtxFile.set(dtxFile);
+					store.editorNotes.set({});
+					store.currentSoundChip.set([]);
+					store.measureCount.set(10);
 
-				// Emit empty notes for new chart
-				setTimeout(() => {
-					EventBus.emit(EventType.NOTE_IMPORT, [], {});
-				}, 100);
-			}
+					// Desktop app is always local editing
+					isLocalEditingMode = true;
 
-			// Initialize the Phaser game for the editor
-			if (gameContainer) {
-				// Set the active scene to Editor for desktop
-				store.activeScene.set(Editor.key);
+					// NOTE_IMPORT will be emitted after Phaser game is ready
+				}
 
-				// Set up the game configuration for desktop
-				const gameConfig = {
-					type: Phaser.AUTO,
-					width: gameContainer.clientWidth,
-					height: gameContainer.clientHeight,
-					parent: gameContainer,
-					scene: [Preloader, MainMenu, Editor, DesktopPreview],
-					backgroundColor: '#1e293b',
-					physics: {
-						default: 'arcade',
-						arcade: {
-							gravity: { y: 0, x: 0 },
-							debug: false
+				// Initialize the Phaser game for the editor
+				if (gameContainer) {
+					// Set the active scene to Editor for desktop
+					store.activeScene.set(Editor.key);
+
+					// Set up the game configuration for desktop
+					const gameConfig = {
+						type: Phaser.AUTO,
+						width: gameContainer.clientWidth,
+						height: gameContainer.clientHeight,
+						parent: gameContainer,
+						scene: [Preloader, MainMenu, Editor, DesktopPreview],
+						backgroundColor: '#1e293b',
+						physics: {
+							default: 'arcade',
+							arcade: {
+								gravity: { y: 0, x: 0 },
+								debug: false
+							}
 						}
-					}
-				};
+					};
 
-				// Initialize Phaser game
-				const game = new Phaser.Game(gameConfig);
+					// Initialize Phaser game
+					game = new Phaser.Game(gameConfig);
 
+					// Wait for the game to be ready before emitting NOTE_IMPORT
+					game.events.once('ready', () => {
+						EventBus.emit(EventType.NOTE_IMPORT, [], {});
+					});
+
+					isGameInitialized = true;
+				}
+			} catch (error) {
+				console.error('Failed to initialize desktop editor:', error);
+				// Set initialized to true even on error so we don't show loading forever
 				isGameInitialized = true;
-
-				// Cleanup function
-				return () => {
-					if (game) {
-						game.destroy(true);
-					}
-				};
+			} finally {
+				isLoading = false;
 			}
-		} catch (error) {
-			console.error('Failed to initialize desktop editor:', error);
-			// Set initialized to true even on error so we don't show loading forever
-			isGameInitialized = true;
-		} finally {
-			isLoading = false;
-		}
+		};
+
+		// Start initialization
+		initializeEditor();
+
+		// Return cleanup function
+		return () => {
+			if (game) {
+				game.destroy(true);
+			}
+		};
 	});
 
 	const loadFromSimFileId = async (simFileIdParam: string) => {
@@ -135,10 +169,7 @@
 			console.log('Loading from simFileId:', simFileIdParam);
 
 			// Get the folder path from the mapping store
-			let folderPath: string | undefined;
-			editorMappingStore.subscribe((state) => {
-				folderPath = state.simFileIdToFolderPath[simFileIdParam];
-			})();
+			const folderPath = editorMappingStore.getFolderPath(simFileIdParam);
 
 			if (!folderPath) {
 				throw new Error(`No folder path found for simFileId: ${simFileIdParam}`);
@@ -163,12 +194,7 @@
 			};
 
 			// Create default DTXFile
-			const dtxFile = new DTXFile();
-			dtxFile.title = chartMetadata.title;
-			dtxFile.artist = chartMetadata.artist;
-			dtxFile.comment = chartMetadata.comment;
-			dtxFile.bpm = chartMetadata.bpm;
-			dtxFile.level = chartMetadata.level;
+			const dtxFile = createDTXFileFromMetadata(chartMetadata);
 
 			store.currentSimfileID.set(simFileIdParam);
 			store.currentDtxFile.set(dtxFile);
@@ -275,12 +301,7 @@
 		};
 
 		// Create DTXFile for MainTab
-		const mainTabDtxFile = dtxFile || new DTXFile();
-		mainTabDtxFile.title = chartMetadata.title;
-		mainTabDtxFile.artist = chartMetadata.artist;
-		mainTabDtxFile.comment = chartMetadata.comment;
-		mainTabDtxFile.bpm = chartMetadata.bpm;
-		mainTabDtxFile.level = chartMetadata.level;
+		const mainTabDtxFile = dtxFile || createDTXFileFromMetadata(chartMetadata);
 
 		// Update store
 		store.currentSimfileID.set(folderName); // Use folder name instead of remote ID
@@ -308,7 +329,7 @@
 		<div class="flex items-center gap-4">
 			<button
 				class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-				onclick={handleBackToWorkspace}
+				on:click={handleBackToWorkspace}
 				title="Back to Workspace"
 			>
 				<ArrowLeft size={16} />
@@ -327,7 +348,7 @@
 				'main'
 					? 'bg-slate-600 text-white'
 					: 'text-slate-300 hover:text-white'}"
-				onclick={() => switchTab('main')}
+				on:click={() => switchTab('main')}
 			>
 				Main
 			</button>
@@ -336,7 +357,7 @@
 				'sound'
 					? 'bg-slate-600 text-white'
 					: 'text-slate-300 hover:text-white'}"
-				onclick={() => switchTab('sound')}
+				on:click={() => switchTab('sound')}
 			>
 				Sound
 			</button>

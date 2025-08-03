@@ -18,7 +18,9 @@
 			"mcp__playwright__browser_navigate",
 			"mcp__playwright__browser_console_messages",
 			"Bash(npm run dev:*)",
-			"Bash(ls:*)"
+			"Bash(ls:*)",
+			"Bash(gh pr:*)",
+			"Bash(sed:*)"
 		],
 		"deny": []
 	}

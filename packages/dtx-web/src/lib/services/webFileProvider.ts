@@ -9,7 +9,7 @@ import type { IFileProvider } from '@dtx/common/services/fileProvider';
 import * as FileManager from '@dtx/common/services/fileManager';
 
 export class WebFileProvider implements IFileProvider {
-	async getFile(simfileId: string | null, fileName: string): Promise<File | undefined> {
+	getFile(simfileId: string | null, fileName: string): File | undefined {
 		const key = FileManager.generateKey(simfileId, fileName);
 		return FileManager.getFile(key);
 	}

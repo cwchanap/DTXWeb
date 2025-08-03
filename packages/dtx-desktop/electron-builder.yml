@@ -13,6 +13,7 @@ files:
   - '!__mocks__'
 asarUnpack:
   - resources/**
+  - static/**
 win:
   executableName: dtx-desktop
 nsis:

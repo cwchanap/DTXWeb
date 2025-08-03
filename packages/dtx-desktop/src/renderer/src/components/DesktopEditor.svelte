@@ -4,7 +4,8 @@
 	import { ArrowLeft } from '@lucide/svelte';
 	import { MainTab, SoundTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
-	import { Editor } from '@dtx/common/game';
+	import { Editor, Preloader, MainMenu } from '@dtx/common/game';
+	import { DesktopPreview } from '../scenes/DesktopPreview';
 	import { store } from '@dtx/common';
 	import { DTXFile, SimFile, setFileProvider, EventBus, EventType } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
@@ -88,13 +89,16 @@
 
 			// Initialize the Phaser game for the editor
 			if (gameContainer) {
+				// Set the active scene to Editor for desktop
+				store.activeScene.set(Editor.key);
+
 				// Set up the game configuration for desktop
 				const gameConfig = {
 					type: Phaser.AUTO,
 					width: gameContainer.clientWidth,
 					height: gameContainer.clientHeight,
 					parent: gameContainer,
-					scene: [Editor],
+					scene: [Preloader, MainMenu, Editor, DesktopPreview],
 					backgroundColor: '#1e293b',
 					physics: {
 						default: 'arcade',

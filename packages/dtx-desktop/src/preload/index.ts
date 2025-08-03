@@ -25,6 +25,7 @@ const extendedElectronAPI = {
 				'load-tree-structure',
 				'list-files',
 				'read-file',
+				'get-skin-asset',
 				'parse-dtx-files',
 				'validate-session',
 				'get-current-session',

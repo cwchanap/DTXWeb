@@ -1,10 +1,10 @@
 import { LaneMeasureNote } from '../../chart/note';
 import { normalizePosition } from '../../utils/position';
-import { Scene, GameObjects } from 'phaser';
+import Phaser from 'phaser';
 import { type LaneConfig } from '../interface';
 import { calculateHighResolutionPosition } from '../utils/notePositioning';
 
-export abstract class BaseGame extends Scene {
+export abstract class BaseGame extends Phaser.Scene {
 	static measureLengthNoteID = '02';
 	protected cellsPerMeasure = 16;
 	protected cellWidth = 50;
@@ -13,8 +13,8 @@ export abstract class BaseGame extends Scene {
 	protected cellMargin = 2;
 	protected noteSize = 25;
 
-	protected panelContainer!: GameObjects.Container;
-	protected footerContainer!: GameObjects.Container;
+	protected panelContainer!: Phaser.GameObjects.Container;
+	protected footerContainer!: Phaser.GameObjects.Container;
 	protected abstract measureLength: number[];
 	protected abstract measureCount: number;
 	protected abstract notes: Record<string, LaneMeasureNote[]>;

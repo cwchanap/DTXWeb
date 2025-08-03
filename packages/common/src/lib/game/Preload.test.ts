@@ -1,24 +1,17 @@
+// Mock svelte/store with controllable get function
+vi.mock('svelte/store', () => ({
+	get: vi.fn(),
+	writable: vi.fn(() => ({
+		subscribe: vi.fn(),
+		set: vi.fn(),
+		update: vi.fn()
+	}))
+}));
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Preloader } from './Preload';
 import { MainMenu } from './scenes/MainMenu';
 import { get } from 'svelte/store';
-import { store } from '@dtx/common';
-
-// Mock Svelte store
-vi.mock('svelte/store', () => ({
-	get: vi.fn()
-}));
-
-// Mock @dtx/common store
-vi.mock('@dtx/common', () => ({
-	store: {
-		activeScene: {
-			subscribe: vi.fn(),
-			set: vi.fn(),
-			update: vi.fn()
-		}
-	}
-}));
 
 describe('Preloader', () => {
 	let preloader: Preloader;

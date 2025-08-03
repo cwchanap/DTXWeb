@@ -1,4 +1,4 @@
-import { Sound } from 'phaser';
+import Phaser from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { get } from 'svelte/store';
@@ -111,20 +111,6 @@ export class Preview extends BaseGame {
 			this.startMeasure = data.startMeasure;
 			this.startPreview();
 		});
-	}
-
-	private getBGMChipIds(): Set<number> {
-		const bgmChipIds = new Set<number>();
-		const bgmNotes = this.notes[Preview.bgmNoteID] || [];
-
-		bgmNotes.forEach((note) => {
-			note.notes.forEach((noteChip) => {
-				const chipId = parseInt(noteChip.noteID, 36);
-				bgmChipIds.add(chipId);
-			});
-		});
-
-		return bgmChipIds;
 	}
 
 	private async setupSoundsAsync(): Promise<void> {

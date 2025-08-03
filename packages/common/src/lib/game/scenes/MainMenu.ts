@@ -1,14 +1,13 @@
-import { GameObjects, Scene } from 'phaser';
+import Phaser from 'phaser';
 
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
-
-export class MainMenu extends Scene {
-	background!: GameObjects.Image;
-	logo!: GameObjects.Image;
-	title!: GameObjects.Text;
+export class MainMenu extends Phaser.Scene {
+	background!: Phaser.GameObjects.Image;
+	logo!: Phaser.GameObjects.Image;
+	title!: Phaser.GameObjects.Text;
 	logoTween!: Phaser.Tweens.Tween | null;
-	toEditor!: GameObjects.Text;
+	toEditor!: Phaser.GameObjects.Text;
 
 	public static key = 'MainMenu';
 

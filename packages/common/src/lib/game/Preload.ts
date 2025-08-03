@@ -1,9 +1,9 @@
-import { Scene } from 'phaser';
+import Phaser from 'phaser';
 import { MainMenu } from './scenes/MainMenu';
-import { store } from '@dtx/common';
+import store from '../store';
 import { get } from 'svelte/store';
 
-export class Preloader extends Scene {
+export class Preloader extends Phaser.Scene {
 	constructor() {
 		super('Preloader');
 	}

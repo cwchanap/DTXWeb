@@ -1,6 +1,8 @@
 import { afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 
+// svelte/store mock is handled automatically from __mocks__/svelte/store.ts
+
 // Mock phaser3spectorjs dependency that causes issues in tests
 vi.mock('phaser3spectorjs', () => ({}));
 
@@ -15,21 +17,6 @@ vi.mock('@testing-library/svelte', () => ({
 		click: vi.fn(),
 		input: vi.fn()
 	}
-}));
-
-// Mock svelte/store
-vi.mock('svelte/store', () => ({
-	writable: vi.fn(() => ({
-		subscribe: vi.fn((callback) => {
-			callback(null);
-			return { unsubscribe: vi.fn() };
-		}),
-		set: vi.fn(),
-		update: vi.fn()
-	})),
-	get: vi.fn(),
-	derived: vi.fn(),
-	readable: vi.fn()
 }));
 
 // Mock HTMLCanvasElement for Phaser tests
@@ -156,6 +143,43 @@ global.Audio = vi.fn().mockImplementation(() => ({
 	paused: true,
 	ended: false,
 	readyState: 4
+}));
+
+// Mock AudioContext for audio processing
+global.AudioContext = vi.fn().mockImplementation(() => ({
+	createBuffer: vi.fn(),
+	createBufferSource: vi.fn(() => ({
+		buffer: null,
+		connect: vi.fn(),
+		start: vi.fn(),
+		stop: vi.fn()
+	})),
+	createGain: vi.fn(() => ({
+		gain: { value: 1 },
+		connect: vi.fn()
+	})),
+	createAnalyser: vi.fn(() => ({
+		connect: vi.fn(),
+		fftSize: 2048,
+		frequencyBinCount: 1024,
+		getByteFrequencyData: vi.fn(),
+		getByteTimeDomainData: vi.fn()
+	})),
+	createOscillator: vi.fn(() => ({
+		frequency: { value: 440 },
+		type: 'sine',
+		connect: vi.fn(),
+		start: vi.fn(),
+		stop: vi.fn()
+	})),
+	destination: {},
+	sampleRate: 44100,
+	currentTime: 0,
+	state: 'running',
+	suspend: vi.fn(),
+	resume: vi.fn(),
+	close: vi.fn(),
+	decodeAudioData: vi.fn(() => Promise.resolve({}))
 }));
 
 // Setup for tests

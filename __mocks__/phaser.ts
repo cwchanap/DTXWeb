@@ -289,14 +289,44 @@ const Geom = {
 	}
 };
 
+// Mock Phaser.Input
+const Input = {
+	Pointer: class MockPointer {
+		x: number;
+		y: number;
+		leftButtonDown: ReturnType<typeof vi.fn>;
+		rightButtonDown: ReturnType<typeof vi.fn>;
+
+		constructor() {
+			this.x = 0;
+			this.y = 0;
+			this.leftButtonDown = vi.fn().mockReturnValue(false);
+			this.rightButtonDown = vi.fn().mockReturnValue(false);
+		}
+	}
+};
+
 // Mock global Phaser object
 const Phaser = {
 	GameObjects,
-	Geom
+	Geom,
+	Input,
+	Sound,
+	Tweens,
+	Events,
+	Scene,
+	AUTO: 0,
+	CANVAS: 1,
+	WEBGL: 2,
+	Types: {
+		Core: {
+			GameConfig: {}
+		}
+	}
 };
 
 // Make Phaser available globally for tests
 globalThis.Phaser = Phaser;
 
-export { Scene, GameObjects, Sound, Tweens, Events, Geom };
-export default { Scene, GameObjects, Sound, Tweens, Events, Geom };
+export { Scene, GameObjects, Sound, Tweens, Events, Geom, Input };
+export default Phaser;

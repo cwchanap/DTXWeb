@@ -1,13 +1,12 @@
-import { Input } from 'phaser';
+import Phaser from 'phaser';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
 import { BaseGame } from './BaseGame';
 import { Preview } from './Preview';
 import { get } from 'svelte/store';
-import { store } from '@dtx/common';
+import store from '../../store';
 import type { LaneConfig } from '../interface';
 import { LaneMeasureNote } from '../../chart/note';
-import { SoundChip, DTXFile } from '../../chart/dtx';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import { calculateHighResolutionPosition, HIGH_RESOLUTION_CELLS } from '../utils/notePositioning';
@@ -82,7 +81,7 @@ export class Editor extends BaseGame {
 		};
 
 		// Enable input events
-		this.input.on('pointerdown', (pointer: Input.Pointer) => {
+		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
 			// Try to handle with NoteManager first (for selection/drag operations)
 			const handled = this.noteManager.handlePointerDown(pointer);
 			if (handled) {

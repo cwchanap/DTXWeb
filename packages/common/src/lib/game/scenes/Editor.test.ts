@@ -1,28 +1,24 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Editor } from './Editor';
-import { EventBus } from '../EventBus';
-import EventType from '../EventType';
+// Mock svelte/store for Editor test
+vi.mock('svelte/store', () => ({
+	get: vi.fn(),
+	writable: vi.fn(() => ({
+		subscribe: vi.fn(),
+		set: vi.fn(),
+		update: vi.fn()
+	}))
+}));
 
-type MockedFn = ReturnType<typeof vi.fn>;
-
-// Mock the dependencies
-vi.mock('../EventBus');
-vi.mock('@dtx/common', () => ({
-	store: {
-		measureCount: {
-			set: vi.fn()
-		},
+// Mock the relative store import that Editor.ts uses
+vi.mock('../../store', () => ({
+	default: {
+		measureCount: { set: vi.fn() },
 		activeNote: {
 			subscribe: vi.fn((callback) => {
-				// Call the callback with a mock value
 				callback('01');
-				// Return an unsubscribe function
 				return vi.fn();
 			})
 		},
-		editorNotes: {
-			set: vi.fn()
-		},
+		editorNotes: { set: vi.fn() },
 		keyBindings: {
 			subscribe: vi.fn((callback) => {
 				callback({});
@@ -40,21 +36,19 @@ vi.mock('@dtx/common', () => ({
 				callback([]);
 				return vi.fn();
 			})
-		},
-		currentSimfileID: {
-			subscribe: vi.fn((callback) => {
-				callback(null);
-				return vi.fn();
-			})
-		},
-		currentDifficulty: {
-			subscribe: vi.fn((callback) => {
-				callback(null);
-				return vi.fn();
-			})
 		}
 	}
 }));
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Editor } from './Editor';
+import { EventBus } from '../EventBus';
+import EventType from '../EventType';
+
+type MockedFn = ReturnType<typeof vi.fn>;
+
+// Mock the dependencies
+vi.mock('../EventBus');
 vi.mock('$lib/browser/audioDecoder', () => ({
 	XAaudioContext: vi.fn()
 }));

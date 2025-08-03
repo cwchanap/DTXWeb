@@ -134,29 +134,28 @@ export class Preview extends BaseGame {
 
 		if (!soundChips) return;
 
-		const loadPromises: Promise<void>[] = [];
-
-		for (const soundChip of soundChips) {
+		// Create promises for all sound chips concurrently
+		const loadPromises = soundChips.map(async (soundChip) => {
 			try {
 				// Get file from FileProvider for both local and remote files
 				const actualFile = await fileProvider.getFile(currentSimfileID, soundChip.fileName);
 
 				if (!soundChip.fileName || !actualFile) {
-					continue;
+					return;
 				}
 
 				const cacheKey = this.getCacheKey(soundChip);
 
 				// Check if the audio is already in cache and sound manager
 				if (this.cache.audio.exists(cacheKey) && this.sound.get(cacheKey)) {
-					continue; // Already loaded and added
+					return; // Already loaded and added
 				}
 
 				// Remove existing cache entry if it exists
 				this.cache.audio.remove(cacheKey);
 
 				// Create a promise that resolves when this audio is loaded
-				const loadPromise = new Promise<void>((resolve) => {
+				return new Promise<void>((resolve) => {
 					// Add a completion listener for this specific audio
 					this.load.once(`filecomplete-audio-${cacheKey}`, () => {
 						// Add to sound manager once loaded
@@ -183,15 +182,13 @@ export class Preview extends BaseGame {
 					// Start the loader to immediately load this audio
 					this.load.start();
 				});
-
-				loadPromises.push(loadPromise);
 			} catch (error) {
 				console.warn(`Failed to setup sound chip ${soundChip.fileName}:`, error);
 			}
-		}
+		});
 
-		// Wait for all audio files to be loaded
-		await Promise.all(loadPromises);
+		// Wait for all audio files to be loaded, filtering out undefined values
+		await Promise.all(loadPromises.filter(Boolean));
 	}
 
 	override drawPanel() {

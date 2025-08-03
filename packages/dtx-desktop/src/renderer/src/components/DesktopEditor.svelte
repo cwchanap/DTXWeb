@@ -380,14 +380,6 @@
 			{:else if currentTab === 'main'}
 				<MainTab />
 			{:else if currentTab === 'sound'}
-				{console.log(
-					'SoundTab render - isLocalEditingMode:',
-					isLocalEditingMode,
-					'simFileId:',
-					simFileId,
-					'will pass:',
-					isLocalEditingMode ? null : simFileId
-				)}
 				<SoundTab simfileID={isLocalEditingMode ? null : simFileId} />
 			{/if}
 		</div>

@@ -228,6 +228,34 @@ if (!gotTheLock) {
 			return await readFile(filePath, workspaceRoot);
 		});
 
+		// Handle serving skin assets
+		ipcMain.handle('get-skin-asset', async (_event, assetPath: string) => {
+			try {
+				// assetPath is something like "default/Graphics/7_chips.png"
+				// __dirname in development points to src/main, in production to out/main
+				// We want to get to packages/dtx-desktop/static/skin
+				const fullPath = path.join(__dirname, '..', '..', 'static', 'skin', assetPath);
+				console.log('Loading skin asset from:', fullPath);
+
+				// Check if file exists
+				await fs.promises.access(fullPath);
+
+				// Read the file and convert to base64 data URL
+				const fileBuffer = await fs.promises.readFile(fullPath);
+				const mimeType = assetPath.endsWith('.png') ? 'image/png' : 'image/jpeg';
+				const base64Data = fileBuffer.toString('base64');
+				const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+				return { success: true, dataUrl };
+			} catch (error) {
+				console.error('Error loading skin asset:', error);
+				return {
+					success: false,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
+		});
+
 		// Handle parsing DTX files to extract metadata
 		ipcMain.handle('parse-dtx-files', async (_event, folderPath: string) => {
 			return await parseDtxFiles(folderPath);

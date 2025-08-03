@@ -41,6 +41,7 @@ export default defineConfig({
 		plugins: [tailwindcss(), svelte()],
 		envDir: '../../',
 		envPrefix: ['VITE_', 'PUBLIC_'],
+		publicDir: 'static',
 		resolve: {
 			alias: {
 				'@dtx/common/components': path.resolve(

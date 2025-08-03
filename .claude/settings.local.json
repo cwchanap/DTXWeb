@@ -17,7 +17,8 @@
 			"mcp__Context7__get-library-docs",
 			"mcp__playwright__browser_navigate",
 			"mcp__playwright__browser_console_messages",
-			"Bash(npm run dev:*)"
+			"Bash(npm run dev:*)",
+			"Bash(ls:*)"
 		],
 		"deny": []
 	}

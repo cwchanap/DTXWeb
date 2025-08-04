@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
 	import { onMount } from 'svelte';
-	import { ArrowLeft } from '@lucide/svelte';
+	import { ArrowLeft, ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { MainTab, SoundTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
 	import { Editor, Preloader, MainMenu } from '@dtx/common/game';
@@ -45,6 +45,12 @@
 	let chartMetadata = $state<ChartMetadata | null>(null);
 	let fileProvider: DesktopFileProvider | null = null;
 	let isLocalEditingMode = $state(false); // Track if we should treat this as local editing
+	let isSidebarCollapsed = $state(false); // Track sidebar collapse state
+	let sidebarWidth = $state(320); // Sidebar width in pixels (default 80 * 0.25rem = 320px)
+	let isDragging = $state(false);
+	let minSidebarWidth = 200;
+	let maxSidebarWidth = 600;
+	let collapseThreshold = 50; // Width below which sidebar collapses
 
 	// Helper function to create DTXFile from ChartMetadata
 	const createDTXFileFromMetadata = (metadata: ChartMetadata): DTXFile => {
@@ -64,6 +70,52 @@
 
 	const switchTab = (tab: string) => {
 		currentTab = tab;
+	};
+
+	const handleMouseDown = (e: MouseEvent) => {
+		e.preventDefault();
+		isDragging = true;
+		document.addEventListener('mousemove', handleMouseMove);
+		document.addEventListener('mouseup', handleMouseUp);
+		document.body.style.cursor = 'col-resize';
+		document.body.style.userSelect = 'none';
+	};
+
+	const handleMouseMove = (e: MouseEvent) => {
+		if (!isDragging) return;
+
+		const newWidth = e.clientX;
+
+		// Only collapse/expand, don't resize when collapsed
+		if (isSidebarCollapsed) {
+			if (newWidth > collapseThreshold) {
+				isSidebarCollapsed = false;
+				sidebarWidth = Math.min(Math.max(newWidth, minSidebarWidth), maxSidebarWidth);
+			}
+		} else {
+			if (newWidth < collapseThreshold) {
+				isSidebarCollapsed = true;
+			} else {
+				sidebarWidth = Math.min(newWidth, maxSidebarWidth);
+			}
+		}
+	};
+
+	const handleMouseUp = () => {
+		isDragging = false;
+		document.removeEventListener('mousemove', handleMouseMove);
+		document.removeEventListener('mouseup', handleMouseUp);
+		document.body.style.cursor = '';
+		document.body.style.userSelect = '';
+
+		// Ensure minimum width when drag ends (but don't collapse)
+		if (!isSidebarCollapsed && sidebarWidth < minSidebarWidth) {
+			sidebarWidth = minSidebarWidth;
+		}
+	};
+
+	const expandSidebar = () => {
+		isSidebarCollapsed = false;
 	};
 
 	onMount(() => {
@@ -327,7 +379,7 @@
 		<div class="flex items-center gap-4">
 			<button
 				class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-				on:click={handleBackToWorkspace}
+				onclick={handleBackToWorkspace}
 				title="Back to Workspace"
 			>
 				<ArrowLeft size={16} />
@@ -340,47 +392,76 @@
 		</div>
 
 		<!-- Tab Navigation -->
-		<div class="flex rounded-lg bg-slate-700 p-1">
-			<button
-				class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-				'main'
-					? 'bg-slate-600 text-white'
-					: 'text-slate-300 hover:text-white'}"
-				on:click={() => switchTab('main')}
-			>
-				Main
-			</button>
-			<button
-				class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-				'sound'
-					? 'bg-slate-600 text-white'
-					: 'text-slate-300 hover:text-white'}"
-				on:click={() => switchTab('sound')}
-			>
-				Sound
-			</button>
-		</div>
+		{#if !isSidebarCollapsed}
+			<div class="flex rounded-lg bg-slate-700 p-1">
+				<button
+					class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
+					'main'
+						? 'bg-slate-600 text-white'
+						: 'text-slate-300 hover:text-white'}"
+					onclick={() => switchTab('main')}
+				>
+					Main
+				</button>
+				<button
+					class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
+					'sound'
+						? 'bg-slate-600 text-white'
+						: 'text-slate-300 hover:text-white'}"
+					onclick={() => switchTab('sound')}
+				>
+					Sound
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Editor Content -->
 	<div class="flex h-full">
 		<!-- Sidebar for tabs -->
-		<div class="w-80 border-r border-slate-700 bg-slate-800 p-4">
-			{#if isLoading}
-				<div class="flex h-full items-center justify-center">
-					<div class="text-center">
-						<div
-							class="mx-auto mb-4 h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
-						></div>
-						<p class="text-sm text-slate-400">Loading chart data...</p>
+		{#if !isSidebarCollapsed}
+			<div
+				class="relative border-r border-slate-700 bg-slate-800 p-4"
+				style="width: {sidebarWidth}px; max-width: {maxSidebarWidth}px;"
+			>
+				{#if isLoading}
+					<div class="flex h-full items-center justify-center">
+						<div class="text-center">
+							<div
+								class="mx-auto mb-4 h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+							></div>
+							<p class="text-sm text-slate-400">Loading chart data...</p>
+						</div>
 					</div>
+				{:else if currentTab === 'main'}
+					<MainTab />
+				{:else if currentTab === 'sound'}
+					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} />
+				{/if}
+
+				<!-- Drag handle -->
+				<div
+					class="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-500/50 {isDragging
+						? 'bg-blue-500'
+						: ''}"
+					onmousedown={handleMouseDown}
+					role="separator"
+					aria-label="Resize sidebar"
+				></div>
+			</div>
+		{:else}
+			<!-- Collapsed sidebar - expand area -->
+			<div
+				class="relative cursor-col-resize border-r border-slate-700 bg-slate-800 transition-colors hover:bg-slate-700"
+				onclick={expandSidebar}
+				onmousedown={handleMouseDown}
+				title="Drag to expand sidebar"
+			>
+				<div class="flex h-full w-2 items-center justify-center">
+					<div class="h-8 w-0.5 rounded bg-slate-600"></div>
 				</div>
-			{:else if currentTab === 'main'}
-				<MainTab />
-			{:else if currentTab === 'sound'}
-				<SoundTab simfileID={isLocalEditingMode ? null : simFileId} />
-			{/if}
-		</div>
+			</div>
+		{/if}
 
 		<!-- Game Canvas Area -->
 		<div class="flex-1 bg-slate-900">

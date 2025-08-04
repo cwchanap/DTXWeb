@@ -26,14 +26,8 @@ export type {
 	SimfileWithDtx
 } from './types/supabase.types';
 
-// Export game classes
-export { EventBus } from './game/EventBus';
-export { default as EventType } from './game/EventType';
-export { Editor } from './game/scenes/Editor';
-export { Preview } from './game/scenes/Preview';
-export { MainMenu } from './game/scenes/MainMenu';
-export { Preloader } from './game/Preload';
-export type { LaneConfig } from './game/interface';
+// Game classes are exported in './game' to avoid SSR issues with Phaser
+// Import from '@dtx/common/game' instead of '@dtx/common' for game classes
 
 // Export store
 export { default as store } from './store';

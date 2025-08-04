@@ -4,10 +4,10 @@
 	import { ArrowLeft, ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { MainTab, SoundTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
-	import { Editor, Preloader, MainMenu } from '@dtx/common/game';
+	import { Editor, Preloader, MainMenu, EventBus, EventType } from '@dtx/common/game';
 	import { DesktopPreview } from '../scenes/DesktopPreview';
 	import { store } from '@dtx/common';
-	import { DTXFile, SimFile, setFileProvider, EventBus, EventType } from '@dtx/common';
+	import { DTXFile, SimFile, setFileProvider } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
 	import { editorMappingStore } from '../stores/editorMappingStore';
 

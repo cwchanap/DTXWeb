@@ -105,7 +105,7 @@ export async function selectDirectory() {
 
 export interface ReadFileResult {
 	error: string | null;
-	content: string;
+	content: string | Buffer;
 }
 
 export async function readFile(
@@ -141,14 +141,18 @@ export async function readFile(
 		}
 
 		// Whitelist of allowed extensions
-		const allowedExtensions = ['.dtx', '.def'];
+		const allowedExtensions = ['.dtx', '.def', '.xa', '.ogg', '.wav', '.mp3'];
 		const ext = path.extname(resolvedPath).toLowerCase();
 		if (!allowedExtensions.includes(ext)) {
 			return { error: 'File type not allowed', content: '' };
 		}
 
-		// File size limit (e.g., 1MB)
-		const MAX_SIZE = 1024 * 1024; // 1MB
+		// Define audio file extensions
+		const audioExtensions = ['.xa', '.ogg', '.wav', '.mp3'];
+		const isAudioFile = audioExtensions.includes(ext);
+
+		// File size limit - larger for audio files
+		const MAX_SIZE = isAudioFile ? 10 * 1024 * 1024 : 1024 * 1024; // 10MB for audio, 1MB for text
 		const stats = await fs.promises.stat(resolvedPath);
 		if (stats.size > MAX_SIZE) {
 			console.warn('File too large:', stats.size);
@@ -158,7 +162,13 @@ export async function readFile(
 		// Read file as buffer first
 		const fileBuffer = await fs.promises.readFile(resolvedPath);
 
-		// Create a File object for encoding detection
+		// For audio files, return the binary data directly
+		if (isAudioFile) {
+			// For binary audio files, return the buffer directly
+			return { error: null, content: fileBuffer };
+		}
+
+		// Create a File object for encoding detection (text files only)
 		const fileName = path.basename(resolvedPath);
 		const tempFile = new File([fileBuffer], fileName);
 

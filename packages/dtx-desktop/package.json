@@ -30,7 +30,8 @@
 		"@supabase/supabase-js": "^2.49.8",
 		"dayjs": "^1.11.13",
 		"electron-updater": "^6.6.2",
-		"phaser": "^3.88.0"
+		"phaser": "^3.88.0",
+		"xa_decoder": "^0.1.2"
 	},
 	"type": "module",
 	"devDependencies": {
@@ -52,6 +53,7 @@
 		"tailwindcss": "^4.1.4",
 		"typescript": "^5.8.3",
 		"vite": "^6.3.2",
+		"vite-plugin-wasm": "^3.5.0",
 		"vitest": "^3.1.4"
 	}
 }

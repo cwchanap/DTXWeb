@@ -141,7 +141,7 @@ export class Preview extends BaseGame {
 				this.cache.audio.remove(cacheKey);
 
 				// Create a promise that resolves when this audio is loaded
-				return new Promise<void>((resolve) => {
+				return new Promise<void>(async (resolve) => {
 					// Add a completion listener for this specific audio
 					this.load.once(`filecomplete-audio-${cacheKey}`, () => {
 						// Add to sound manager once loaded
@@ -153,12 +153,19 @@ export class Preview extends BaseGame {
 
 					// Load the audio file into cache
 					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
-						// For XA files, we'll load them with custom audio context
-						this.load.audio({
-							key: cacheKey,
-							url: [URL.createObjectURL(actualFile)],
-							context: XAaudioContext
-						});
+						// Use XA decoder for .xa files
+						try {
+							const arrayBuffer = await actualFile.arrayBuffer();
+							const audioBuffer = await XAaudioContext.decodeAudioData(arrayBuffer);
+							// Create a blob URL from the decoded audio buffer
+							const wavBlob = this.audioBufferToWavBlob(audioBuffer);
+							const objectUrl = URL.createObjectURL(wavBlob);
+							this.load.audio(cacheKey, objectUrl);
+						} catch (error) {
+							console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
+							resolve();
+							return;
+						}
 					} else {
 						// For other formats, load as usual
 						const objectUrl = URL.createObjectURL(actualFile);
@@ -371,6 +378,64 @@ export class Preview extends BaseGame {
 		return `soundchip_${soundChip.fileName.toLowerCase()}`;
 	}
 
+	private audioBufferToWavBlob(audioBuffer: AudioBuffer): Blob {
+		const numberOfChannels = audioBuffer.numberOfChannels;
+		const length = audioBuffer.length * numberOfChannels * 2 + 44;
+		const arrayBuffer = new ArrayBuffer(length);
+		const view = new DataView(arrayBuffer);
+		const channels = [];
+		let offset = 0;
+		let pos = 0;
+
+		// Collect audio data from all channels
+		for (let i = 0; i < numberOfChannels; i++) {
+			channels.push(audioBuffer.getChannelData(i));
+		}
+
+		// Write WAV header
+		const writeString = (str: string) => {
+			for (let i = 0; i < str.length; i++) {
+				view.setUint8(pos + i, str.charCodeAt(i));
+			}
+			pos += str.length;
+		};
+
+		const writeUint32 = (data: number) => {
+			view.setUint32(pos, data, true);
+			pos += 4;
+		};
+
+		const writeUint16 = (data: number) => {
+			view.setUint16(pos, data, true);
+			pos += 2;
+		};
+
+		writeString('RIFF');
+		writeUint32(length - 8);
+		writeString('WAVE');
+		writeString('fmt ');
+		writeUint32(16);
+		writeUint16(1);
+		writeUint16(numberOfChannels);
+		writeUint32(audioBuffer.sampleRate);
+		writeUint32(audioBuffer.sampleRate * 2 * numberOfChannels);
+		writeUint16(numberOfChannels * 2);
+		writeUint16(16);
+		writeString('data');
+		writeUint32(length - pos - 4);
+
+		// Write interleaved audio data
+		for (let i = 0; i < audioBuffer.length; i++) {
+			for (let channel = 0; channel < numberOfChannels; channel++) {
+				const sample = Math.max(-1, Math.min(1, channels[channel][i]));
+				view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+				pos += 2;
+			}
+		}
+
+		return new Blob([arrayBuffer], { type: 'audio/wav' });
+	}
+
 	override setCameraBounds() {
 		this.cameras.main.setBounds(
 			0,
@@ -488,7 +553,8 @@ export class Preview extends BaseGame {
 						(chip) => chip.id === parseInt(noteChip.noteID, 36)
 					);
 					if (soundChip) {
-						const audio = this.sound.get(this.getCacheKey(soundChip));
+						const cacheKey = this.getCacheKey(soundChip);
+						const audio = this.sound.get(cacheKey);
 						if (audio) {
 							this.playingAudio.push(audio as Phaser.Sound.WebAudioSound);
 							audio.play({

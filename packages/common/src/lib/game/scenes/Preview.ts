@@ -271,9 +271,13 @@ export class Preview extends BaseGame {
 
 		const secondsPerMeasure = (60 * 4) / this.bpm;
 
-		this.notes[Preview.bgmNoteID]?.forEach((note) => {
-			this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure);
-		});
+		// Only schedule BGM playback if not disabled
+		const disableBgmPreview = get(store.disableBgmPreview);
+		if (!disableBgmPreview) {
+			this.notes[Preview.bgmNoteID]?.forEach((note) => {
+				this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure);
+			});
+		}
 
 		this.laneConfigs
 			.filter((lane) => lane.playable)

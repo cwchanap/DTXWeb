@@ -14,6 +14,7 @@ const activeNote = writable<string>('01');
 const currentSimfileID = writable<string | null>(null);
 const currentDifficulty = writable<string | null>(null);
 const keyBindings = writable<Record<string, string>>({});
+const disableBgmPreview = writable<boolean>(false);
 
 export default {
 	activeScene,
@@ -28,5 +29,6 @@ export default {
 	activeNote,
 	currentSimfileID,
 	currentDifficulty,
-	keyBindings
+	keyBindings,
+	disableBgmPreview
 };

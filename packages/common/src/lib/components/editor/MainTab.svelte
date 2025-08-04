@@ -18,6 +18,7 @@
 	let gotoMeasure = $state(0);
 	let isPreviewing = $state(false);
 	let playSpeed = $state(1);
+	let disableBgmPreview = $state(false);
 
 	run(() => {
 		if (dtxFile) {
@@ -43,6 +44,10 @@
 		store.playSpeed.set(playSpeed);
 	}
 
+	$effect(() => {
+		store.disableBgmPreview.set(disableBgmPreview);
+	});
+
 	function handlePlay() {
 		isPreviewing = !isPreviewing;
 		if (isPreviewing) {
@@ -62,6 +67,9 @@
 		});
 		store.measureCount.subscribe((value) => {
 			measureCount = value;
+		});
+		store.disableBgmPreview.subscribe((value) => {
+			disableBgmPreview = value;
 		});
 		return store.currentDtxFile.subscribe((value) => {
 			dtxFile = value;
@@ -173,6 +181,15 @@
 		</div>
 	</div>
 	<div class="flex items-center space-x-2">
+		<label class="w-[15%] text-gray-700 2xl:w-1/3">Disable BGM in Preview:</label>
+		<label class="relative inline-flex cursor-pointer items-center py-1">
+			<input type="checkbox" class="sr-only" bind:checked={disableBgmPreview} />
+			<div class="toggle-switch {disableBgmPreview ? 'toggle-on' : 'toggle-off'}">
+				<div class="toggle-thumb"></div>
+			</div>
+		</label>
+	</div>
+	<div class="flex items-center space-x-2">
 		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="preview-button">Preview: </label>
 		<button
 			id="preview-button"
@@ -182,3 +199,46 @@
 		>
 	</div>
 </div>
+
+<style>
+	.toggle-switch {
+		width: 44px;
+		height: 24px;
+		background-color: #d1d5db;
+		border-radius: 12px;
+		position: relative;
+		transition: background-color 0.2s ease;
+	}
+
+	.toggle-switch.toggle-on {
+		background-color: #ef4444;
+	}
+
+	.toggle-thumb {
+		width: 20px;
+		height: 20px;
+		background-color: white;
+		border-radius: 50%;
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		transition: transform 0.2s ease;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+	}
+
+	.toggle-on .toggle-thumb {
+		transform: translateX(20px);
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+</style>

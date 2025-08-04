@@ -268,10 +268,8 @@
 					folderPath
 				);
 				if (!dtxResult.error) {
-					const blob = new Blob([dtxResult.content], { type: 'text/plain' });
-					const dtxFileContent = new File([blob], dtxFileName);
-
-					dtxFile = new DTXFile(dtxFileContent);
+					// Use the pre-decoded content directly since main process already handled encoding
+					dtxFile = new DTXFile(dtxResult.content as string);
 					await dtxFile.parse();
 					soundChips = dtxFile.parseSoundChips();
 					notes = dtxFile.parseNotes();

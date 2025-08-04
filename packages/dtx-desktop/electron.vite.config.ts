@@ -1,6 +1,7 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
+import wasm from 'vite-plugin-wasm';
 import path from 'path';
 
 export default defineConfig({
@@ -38,10 +39,13 @@ export default defineConfig({
 	},
 	renderer: {
 		// @ts-ignore
-		plugins: [tailwindcss(), svelte()],
+		plugins: [wasm(), tailwindcss(), svelte()],
 		envDir: '../../',
 		envPrefix: ['VITE_', 'PUBLIC_'],
 		publicDir: 'static',
+		optimizeDeps: {
+			exclude: ['xa_decoder']
+		},
 		resolve: {
 			alias: {
 				'@dtx/common/components': path.resolve(

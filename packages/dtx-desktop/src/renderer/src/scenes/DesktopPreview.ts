@@ -1,7 +1,7 @@
 import { Preview, AssetName } from '@dtx/common/game';
 
 export class DesktopPreview extends Preview {
-	static key = 'DesktopPreview';
+	static key = 'Preview'; // Use same key as parent to match Editor expectations
 
 	constructor() {
 		super();
@@ -17,7 +17,7 @@ export class DesktopPreview extends Preview {
 		await this.loadDesktopAssets();
 
 		// Call parent create method
-		super.create();
+		await super.create();
 	}
 
 	private async loadDesktopAssets() {

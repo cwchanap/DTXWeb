@@ -144,6 +144,8 @@ export class DesktopFileProvider implements IFileProvider {
 				return 'audio/mpeg';
 			case 'ogg':
 				return 'audio/ogg';
+			case 'xa':
+				return 'audio/xa';
 			case 'dtx':
 				return 'text/plain';
 			case 'def':

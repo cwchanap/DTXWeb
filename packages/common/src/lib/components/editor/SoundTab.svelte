@@ -158,34 +158,38 @@
 		>
 	{:else}
 		<!-- Show info text for remote charts -->
-		<div class="w-full rounded-sm bg-gray-100 px-4 py-2 text-center text-sm text-gray-600">
+		<div class="w-full rounded-sm bg-gray-800 px-4 py-2 text-center text-sm text-gray-300">
 			Sound files are managed remotely for this chart
 		</div>
 	{/if}
 
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
-			<thead class="bg-white">
+			<thead class="bg-gray-800">
 				<tr>
-					<td class="w-[10%] border border-gray-300 text-center">Active</td>
-					<td class="w-[12%] border border-gray-300 text-center">Label</td>
-					<td class="w-[8%] border border-gray-300 text-center">ID</td>
-					<td class="w-[12%] border border-gray-300 text-center">Volume</td>
-					<td class="w-[12%] border border-gray-300 text-center">Position</td>
-					<td class="w-[12%] border border-gray-300 text-center">Key Binding</td>
-					<td class="w-[34%] border border-gray-300 text-center">File</td>
+					<td class="w-[10%] border border-gray-600 text-center text-gray-200">Active</td>
+					<td class="w-[12%] border border-gray-600 text-center text-gray-200">Label</td>
+					<td class="w-[8%] border border-gray-600 text-center text-gray-200">ID</td>
+					<td class="w-[12%] border border-gray-600 text-center text-gray-200">Volume</td>
+					<td class="w-[12%] border border-gray-600 text-center text-gray-200"
+						>Position</td
+					>
+					<td class="w-[12%] border border-gray-600 text-center text-gray-200"
+						>Key Binding</td
+					>
+					<td class="w-[34%] border border-gray-600 text-center text-gray-200">File</td>
 				</tr>
 			</thead>
 			<tbody>
 				{#each soundChips as chip (chip.id)}
 					{@const chipId = chip.id.toString(36).toUpperCase().padStart(2, '0')}
-					<tr class="bg-white {activeNote === chipId ? 'ring-2 ring-blue-500' : ''}">
-						<td class="border border-gray-300 px-2 py-1 text-center">
+					<tr class="bg-gray-900 {activeNote === chipId ? 'ring-2 ring-blue-500' : ''}">
+						<td class="border border-gray-600 px-2 py-1 text-center">
 							<button
 								onclick={() => selectActiveNote(chipId)}
 								class="rounded-full border-2 {activeNote === chipId
 									? 'border-blue-500 bg-blue-500'
-									: 'border-gray-300'} h-5 w-5 hover:border-blue-400"
+									: 'border-gray-500'} h-5 w-5 hover:border-blue-400"
 								title="Set as active note"
 							>
 								{#if activeNote === chipId}
@@ -193,7 +197,7 @@
 								{/if}
 							</button>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-600 px-2 py-1">
 							<input
 								type="text"
 								value={chip.label}
@@ -201,13 +205,13 @@
 									const target = e.target as HTMLInputElement;
 									chip.label = target.value;
 								}}
-								class="w-full text-center"
+								class="w-full border-gray-600 bg-gray-800 text-center text-gray-200"
 							/>
 						</td>
-						<td class="border border-gray-300 px-2 py-1 text-center">
-							<span class="font-mono text-sm">{chipId}</span>
+						<td class="border border-gray-600 px-2 py-1 text-center">
+							<span class="font-mono text-sm text-gray-200">{chipId}</span>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-600 px-2 py-1">
 							<input
 								type="number"
 								value={chip.volume}
@@ -217,10 +221,10 @@
 								}}
 								min="0"
 								max="100"
-								class="w-full text-center"
+								class="w-full border-gray-600 bg-gray-800 text-center text-gray-200"
 							/>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-600 px-2 py-1">
 							<input
 								type="number"
 								value={chip.position}
@@ -228,21 +232,21 @@
 									const target = e.target as HTMLInputElement;
 									chip.position = parseInt(target.value);
 								}}
-								class="w-full text-center"
+								class="w-full border-gray-600 bg-gray-800 text-center text-gray-200"
 							/>
 						</td>
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-600 px-2 py-1">
 							<input
 								type="text"
 								value={keyBindings[chipId] || ''}
 								onkeydown={(e) => handleKeyInput(e, chipId)}
 								placeholder="Press key"
-								class="w-full text-center text-sm"
+								class="w-full border-gray-600 bg-gray-800 text-center text-sm text-gray-200"
 								readonly
 							/>
 						</td>
 
-						<td class="border border-gray-300 px-2 py-1">
+						<td class="border border-gray-600 px-2 py-1">
 							{#if simfileID}
 								<!-- For remote charts, show files based on fileName -->
 								{#if chip.fileName}
@@ -255,7 +259,7 @@
 										{chip.fileName}
 									</button>
 								{:else}
-									<span class="text-sm text-gray-500 italic"
+									<span class="text-sm text-gray-400 italic"
 										>No file assigned</span
 									>
 								{/if}
@@ -318,7 +322,7 @@
 											store.currentSoundChip.set(updatedChips);
 										}
 									}}
-									class="w-full text-sm file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600"
+									class="w-full border-gray-600 bg-gray-800 text-sm text-gray-200 file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600"
 								/>
 							{/if}
 						</td>

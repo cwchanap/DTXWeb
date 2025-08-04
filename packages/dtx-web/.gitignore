@@ -11,6 +11,7 @@ vite.config.ts.timestamp-*
 .temp
 .vercel
 .wrangler
+.cloudflare
 
 CLAUDE.md
 sample/

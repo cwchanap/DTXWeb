@@ -9,7 +9,7 @@
 	},
 	"assets": {
 		"binding": "ASSETS",
-		"directory": ".cloudflare/public"
+		"directory": ".svelte-kit/cloudflare"
 	},
 	"r2_buckets": [
 		{

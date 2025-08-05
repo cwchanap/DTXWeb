@@ -7,6 +7,9 @@ import App from './App.svelte';
 
 // Initialize XA decoder WASM module
 async function initializeApp() {
+	// Ensure dark mode is enabled for TailwindCSS
+	document.documentElement.classList.add('dark');
+
 	try {
 		console.log('[App] Starting XA decoder initialization...');
 		await init({});

@@ -436,7 +436,7 @@
 				{:else if currentTab === 'main'}
 					<MainTab />
 				{:else if currentTab === 'sound'}
-					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} />
+					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} theme="dark" />
 				{/if}
 
 				<!-- Drag handle -->

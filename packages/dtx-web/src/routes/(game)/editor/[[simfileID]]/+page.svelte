@@ -961,7 +961,7 @@
 							{#if currentTab === 0}
 								<MainTab />
 							{:else if currentTab === 1}
-								<SoundTab {simfileID} />
+								<SoundTab {simfileID} theme="light" />
 							{/if}
 						</div>
 					</div>

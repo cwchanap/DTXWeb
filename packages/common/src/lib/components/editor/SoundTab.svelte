@@ -7,9 +7,38 @@
 
 	interface Props {
 		simfileID?: string;
+		theme?: 'light' | 'dark';
 	}
 
-	let { simfileID }: Props = $props();
+	let { simfileID, theme = 'dark' }: Props = $props();
+
+	// Theme-based classes
+	const themeClasses = {
+		light: {
+			infoBox: 'bg-gray-100 text-gray-700',
+			tableHead: 'bg-gray-100',
+			tableRow: 'bg-white',
+			border: 'border-gray-300',
+			text: 'text-gray-700',
+			textMuted: 'text-gray-500',
+			input: 'bg-white text-gray-700 border-gray-300',
+			link: 'text-blue-600 hover:text-blue-800',
+			removeButton: 'border-red-300 text-red-600 hover:bg-red-50 hover:text-red-800'
+		},
+		dark: {
+			infoBox: 'bg-gray-800 text-gray-300',
+			tableHead: 'bg-gray-800',
+			tableRow: 'bg-gray-900',
+			border: 'border-gray-600',
+			text: 'text-gray-200',
+			textMuted: 'text-gray-400',
+			input: 'bg-gray-800 text-gray-200 border-gray-600',
+			link: 'text-blue-600 hover:text-blue-800',
+			removeButton: 'border-red-300 text-red-600 hover:bg-red-50 hover:text-red-800'
+		}
+	};
+
+	const classes = themeClasses[theme];
 
 	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;
@@ -156,35 +185,39 @@
 				store.currentSoundChip.set([...soundChips, new SoundChip('', nextId, 100, 0, '')]);
 			}}>New Sound</button
 		>
-	{:else}
-		<!-- Show info text for remote charts -->
-		<div class="w-full rounded-sm bg-gray-800 px-4 py-2 text-center text-sm text-gray-300">
-			Sound files are managed remotely for this chart
-		</div>
 	{/if}
 
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
-			<thead class="bg-gray-800">
+			<thead class={classes.tableHead}>
 				<tr>
-					<td class="w-[10%] border border-gray-600 text-center text-gray-200">Active</td>
-					<td class="w-[12%] border border-gray-600 text-center text-gray-200">Label</td>
-					<td class="w-[8%] border border-gray-600 text-center text-gray-200">ID</td>
-					<td class="w-[12%] border border-gray-600 text-center text-gray-200">Volume</td>
-					<td class="w-[12%] border border-gray-600 text-center text-gray-200"
+					<td class="w-[10%] border text-center {classes.border} {classes.text}"
+						>Active</td
+					>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}">Label</td
+					>
+					<td class="w-[8%] border text-center {classes.border} {classes.text}">ID</td>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}"
+						>Volume</td
+					>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}"
 						>Position</td
 					>
-					<td class="w-[12%] border border-gray-600 text-center text-gray-200"
+					<td class="w-[12%] border text-center {classes.border} {classes.text}"
 						>Key Binding</td
 					>
-					<td class="w-[34%] border border-gray-600 text-center text-gray-200">File</td>
+					<td class="w-[34%] border text-center {classes.border} {classes.text}">File</td>
 				</tr>
 			</thead>
 			<tbody>
 				{#each soundChips as chip (chip.id)}
 					{@const chipId = chip.id.toString(36).toUpperCase().padStart(2, '0')}
-					<tr class="bg-gray-900 {activeNote === chipId ? 'ring-2 ring-blue-500' : ''}">
-						<td class="border border-gray-600 px-2 py-1 text-center">
+					<tr
+						class="{classes.tableRow} {activeNote === chipId
+							? 'ring-2 ring-blue-500'
+							: ''}"
+					>
+						<td class="border px-2 py-1 text-center {classes.border}">
 							<button
 								onclick={() => selectActiveNote(chipId)}
 								class="rounded-full border-2 {activeNote === chipId
@@ -197,7 +230,7 @@
 								{/if}
 							</button>
 						</td>
-						<td class="border border-gray-600 px-2 py-1">
+						<td class="border px-2 py-1 {classes.border}">
 							<input
 								type="text"
 								value={chip.label}
@@ -205,13 +238,13 @@
 									const target = e.target as HTMLInputElement;
 									chip.label = target.value;
 								}}
-								class="w-full border-gray-600 bg-gray-800 text-center text-gray-200"
+								class="w-full text-center {classes.input}"
 							/>
 						</td>
-						<td class="border border-gray-600 px-2 py-1 text-center">
-							<span class="font-mono text-sm text-gray-200">{chipId}</span>
+						<td class="border px-2 py-1 text-center {classes.border}">
+							<span class="font-mono text-sm {classes.text}">{chipId}</span>
 						</td>
-						<td class="border border-gray-600 px-2 py-1">
+						<td class="border px-2 py-1 {classes.border}">
 							<input
 								type="number"
 								value={chip.volume}
@@ -221,10 +254,10 @@
 								}}
 								min="0"
 								max="100"
-								class="w-full border-gray-600 bg-gray-800 text-center text-gray-200"
+								class="w-full text-center {classes.input}"
 							/>
 						</td>
-						<td class="border border-gray-600 px-2 py-1">
+						<td class="border px-2 py-1 {classes.border}">
 							<input
 								type="number"
 								value={chip.position}
@@ -232,21 +265,21 @@
 									const target = e.target as HTMLInputElement;
 									chip.position = parseInt(target.value);
 								}}
-								class="w-full border-gray-600 bg-gray-800 text-center text-gray-200"
+								class="w-full text-center {classes.input}"
 							/>
 						</td>
-						<td class="border border-gray-600 px-2 py-1">
+						<td class="border px-2 py-1 {classes.border}">
 							<input
 								type="text"
 								value={keyBindings[chipId] || ''}
 								onkeydown={(e) => handleKeyInput(e, chipId)}
 								placeholder="Press key"
-								class="w-full border-gray-600 bg-gray-800 text-center text-sm text-gray-200"
+								class="w-full text-center text-sm {classes.input}"
 								readonly
 							/>
 						</td>
 
-						<td class="border border-gray-600 px-2 py-1">
+						<td class="border px-2 py-1 {classes.border}">
 							{#if simfileID}
 								<!-- For remote charts, show files based on fileName -->
 								{#if chip.fileName}
@@ -254,12 +287,12 @@
 										onclick={() => {
 											playAudio(chip.fileName, chip.volume, chip);
 										}}
-										class="flex-1 text-left text-blue-600 underline hover:text-blue-800"
+										class="flex-1 text-left {classes.link} underline"
 									>
 										{chip.fileName}
 									</button>
 								{:else}
-									<span class="text-sm text-gray-400 italic"
+									<span class="text-sm italic {classes.textMuted}"
 										>No file assigned</span
 									>
 								{/if}
@@ -272,7 +305,7 @@
 												playAudio(chip.file, chip.volume);
 											}
 										}}
-										class="flex-1 text-left text-blue-600 underline hover:text-blue-800"
+										class="flex-1 text-left {classes.link} underline"
 									>
 										{typeof chip.file === 'string' ? chip.file : chip.file.name}
 									</button>
@@ -292,7 +325,7 @@
 											);
 											store.currentSoundChip.set(updatedChips);
 										}}
-										class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-800"
+										class="rounded border px-2 py-1 text-xs {classes.removeButton}"
 										title="Remove file"
 									>
 										✕
@@ -322,7 +355,7 @@
 											store.currentSoundChip.set(updatedChips);
 										}
 									}}
-									class="w-full border-gray-600 bg-gray-800 text-sm text-gray-200 file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600"
+									class="w-full text-sm {classes.input} file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-blue-500 file:px-3 file:py-1 file:text-sm file:text-white hover:file:bg-blue-600"
 								/>
 							{/if}
 						</td>

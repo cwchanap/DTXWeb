@@ -29,6 +29,27 @@
 		type Workspace
 	} from '$lib/services/workspaceService';
 	import * as FileManager from '@dtx/common/services/fileManager';
+	// Use the data prop directly since SvelteKit handles the typing
+	interface SimFileMetadata {
+		title: string;
+		levels: {
+			[key: number]:
+				| {
+						label: string;
+						fileName: string;
+				  }
+				| undefined;
+		};
+	}
+
+	interface Props {
+		data: {
+			simfileID: string | null;
+			metadata: SimFileMetadata | null; // null only for local files (no simfileID)
+		};
+	}
+
+	let { data }: Props = $props();
 
 	let phaserRef: TPhaserRef = { game: null, scene: null };
 	let currentTab: number = $state(0);
@@ -496,7 +517,7 @@
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		simfileID = page.params.simfileID;
+		simfileID = data.simfileID || '';
 		store.currentSimfileID.set(simfileID || null);
 
 		// Load available workspaces for the workspace switcher
@@ -525,8 +546,21 @@
 		}
 
 		try {
-			// Load simfile from remote URL
-			const simfile = await SimFile.parseFromRemoteURL(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+			// In production, we should always have server-side metadata
+			// In development, fall back to client-side fetching if needed
+			const simfile = data.metadata
+				? await SimFile.parseFromRemoteURLWithMetadata(
+						simfileID,
+						PUBLIC_SIMFILE_BUCKET_URL,
+						data.metadata
+					)
+				: await SimFile.parseFromRemoteURL(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+
+			if (!data.metadata) {
+				console.warn(
+					'Using client-side SET.def fetching in development - this should not happen in production'
+				);
+			}
 
 			// Get the highest level DTX file from the simfile
 			const highestDtx = simfile.getHighestLevel();

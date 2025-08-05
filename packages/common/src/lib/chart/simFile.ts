@@ -46,6 +46,11 @@ export class SimFile {
 		return new SimFile(extracted, bucketUrl);
 	}
 
+	/**
+	 * Parse SimFile from remote URL by fetching SET.def client-side
+	 * Used for dtx-desktop and dtx-web development (when R2 bucket is not available)
+	 * In production dtx-web, prefer parseFromRemoteURLWithMetadata() with server-side metadata
+	 */
 	public static async parseFromRemoteURL(simfileID: string, bucketUrl: string) {
 		const response = await fetch(`${bucketUrl}/${simfileID}/set.def`);
 		const file = new File([await response.blob()], 'set.def');
@@ -53,6 +58,47 @@ export class SimFile {
 		simFile.isParseFromRemoteURL = true;
 		simFile.simFileID = simfileID;
 		await simFile.parse();
+		return simFile;
+	}
+
+	/**
+	 * Parse SimFile from remote URL using server-provided metadata
+	 * This method avoids client-side SET.def fetching and is the preferred method for dtx-web
+	 */
+	public static async parseFromRemoteURLWithMetadata(
+		simfileID: string,
+		bucketUrl: string,
+		metadata: {
+			title: string;
+			levels: { [key: number]: { label: string; fileName: string } | undefined };
+		}
+	) {
+		const simFile = new SimFile([], bucketUrl);
+		simFile.isParseFromRemoteURL = true;
+		simFile.simFileID = simfileID;
+		simFile.title = metadata.title;
+
+		// Parse levels using provided metadata instead of fetching set.def
+		const promises = [1, 2, 3, 4, 5].map(async (level) => {
+			const levelData = metadata.levels[level];
+			if (levelData) {
+				const { label, fileName } = levelData;
+				try {
+					const response = await fetch(`${bucketUrl}/${simfileID}/${fileName}`);
+					if (!response.ok) {
+						return;
+					}
+					const file = new File([await response.blob()], fileName);
+					const dtx = new DTXFile(file, label);
+					await dtx.parse();
+					simFile.levels[level] = { label, file: dtx };
+				} catch (error) {
+					console.error(`Failed to load DTX file ${fileName}:`, error);
+				}
+			}
+		});
+
+		await Promise.all(promises);
 		return simFile;
 	}
 

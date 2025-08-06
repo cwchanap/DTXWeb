@@ -5,11 +5,45 @@ import {
 	clearStoredSessionData,
 	validateSession
 } from './supabaseService';
+import { simFileService } from './simFileService';
+import { simFileStore } from '../stores/simFileStore';
+import { workspaceStore } from '../stores/workspaceStore';
+import { linkageCacheService } from './linkageCacheService';
 
 // Get server URL from environment variable or fallback to default
 const DEFAULT_SERVER_URL = 'http://localhost:5173';
 const SERVER_URL = import.meta.env.VITE_DTX_SERVER_URL || DEFAULT_SERVER_URL;
 const WEB_APP_LOGIN_URL = `${SERVER_URL}/login?redirect=desktop`;
+
+/**
+ * Clears local-cloud file linkages while preserving workspace structure
+ */
+const clearCloudLinkages = (): void => {
+	// Clear linkage cache from localStorage
+	linkageCacheService.clearCache();
+
+	// Get current workspace state to clear linkages from tree structure
+	let currentState: any = null;
+	const unsubscribe = workspaceStore.subscribe((state) => {
+		currentState = state;
+	});
+	unsubscribe();
+
+	if (currentState?.treeStructure?.length > 0) {
+		// Recursively remove linkage information from all tree nodes
+		const clearLinkagesFromNodes = (nodes: any[]): any[] => {
+			return nodes.map((node) => ({
+				...node,
+				linkedSimFileId: null,
+				linkedSimFile: null,
+				children: node.children ? clearLinkagesFromNodes(node.children) : []
+			}));
+		};
+
+		const clearedTreeStructure = clearLinkagesFromNodes(currentState.treeStructure);
+		workspaceStore.setTreeStructure(clearedTreeStructure);
+	}
+};
 
 export const authService = {
 	/**
@@ -137,12 +171,27 @@ export const authService = {
 			// Clear local session data
 			clearStoredSessionData();
 
+			// Clear cloud file cache data
+			simFileService.clearCache();
+			simFileStore.reset();
+
+			// Clear local-cloud file linkages
+			clearCloudLinkages();
+
 			// Update auth store
 			authStore.logout();
 		} catch (error) {
 			console.error('Failed to logout:', error);
 			// Still clear local state even if main process logout fails
 			clearStoredSessionData();
+
+			// Clear cloud file cache data even if logout fails
+			simFileService.clearCache();
+			simFileStore.reset();
+
+			// Clear local-cloud file linkages even if logout fails
+			clearCloudLinkages();
+
 			authStore.logout();
 		}
 	}

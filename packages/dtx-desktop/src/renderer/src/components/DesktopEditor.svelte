@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
 	import { onMount } from 'svelte';
-	import { ArrowLeft, ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { ArrowLeft } from '@lucide/svelte';
 	import { MainTab, SoundTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
 	import { Editor, Preloader, MainMenu, EventBus, EventType } from '@dtx/common/game';
@@ -436,7 +436,7 @@
 				{:else if currentTab === 'main'}
 					<MainTab />
 				{:else if currentTab === 'sound'}
-					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} theme="dark" />
+					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} />
 				{/if}
 
 				<!-- Drag handle -->

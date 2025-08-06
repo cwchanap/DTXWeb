@@ -3,6 +3,7 @@
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { settingsStore } from '../stores/settingsStore';
 	import { editorMappingStore } from '../stores/editorMappingStore';
+	import { authStore } from '../stores/authStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
 	import { onMount } from 'svelte';
@@ -608,15 +609,15 @@
 		<ChartDetail
 			simfile={simfileData()}
 			showEditor={false}
-			showPublishingControls={true}
-			showPublishedToggle={true}
-			saveButtonText="Update"
+			showPublishingControls={$authStore.isAuthenticated}
+			showPublishedToggle={$authStore.isAuthenticated}
+			saveButtonText={$authStore.isAuthenticated ? 'Update' : ''}
 			bind:displayId
 			bind:publishDate
 			bind:downloadUrl
 			bind:videoPreviewUrl
 			bind:isPublished
-			on:onSave={handleUpdateSimfile}
+			on:onSave={$authStore.isAuthenticated ? handleUpdateSimfile : () => {}}
 		>
 			{#snippet header()}
 				<!-- Header -->
@@ -684,7 +685,7 @@
 				</div>
 
 				<!-- Update Status Messages -->
-				{#if isUpdating}
+				{#if isUpdating && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
 						<div class="flex items-center gap-2">
 							<div
@@ -697,7 +698,7 @@
 					</div>
 				{/if}
 
-				{#if updateError}
+				{#if updateError && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-red-800 dark:text-red-200">
@@ -707,7 +708,7 @@
 					</div>
 				{/if}
 
-				{#if updateSuccess}
+				{#if updateSuccess && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-green-800 dark:text-green-200">
@@ -808,6 +809,7 @@
 							loadAssetFiles={loadAssetFilesForDesktop}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
+							disableUploads={!$authStore.isAuthenticated}
 						/>
 					{/if}
 				</div>
@@ -880,7 +882,7 @@
 
 			{#snippet desktop_info()}
 				<!-- Status Section - This will be rendered outside the grid -->
-				{#if song.containsDtxFiles}
+				{#if song.containsDtxFiles && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
 						<div class="flex items-center justify-between gap-2">
 							<div class="flex items-center gap-2">
@@ -909,7 +911,7 @@
 				{/if}
 
 				<!-- Linking Status Messages -->
-				{#if isLinking}
+				{#if isLinking && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
 						<div class="flex items-center gap-2">
 							<div
@@ -922,7 +924,7 @@
 					</div>
 				{/if}
 
-				{#if linkingError}
+				{#if linkingError && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-red-800 dark:text-red-200">
@@ -932,7 +934,7 @@
 					</div>
 				{/if}
 
-				{#if linkingSuccess}
+				{#if linkingSuccess && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-green-800 dark:text-green-200">
@@ -943,7 +945,7 @@
 				{/if}
 
 				<!-- Upload Status Messages -->
-				{#if isUploading}
+				{#if isUploading && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
 						<div class="flex items-center gap-2">
 							<div
@@ -956,7 +958,7 @@
 					</div>
 				{/if}
 
-				{#if uploadError}
+				{#if uploadError && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-red-800 dark:text-red-200">
@@ -966,7 +968,7 @@
 					</div>
 				{/if}
 
-				{#if uploadSuccess}
+				{#if uploadSuccess && $authStore.isAuthenticated}
 					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-green-800 dark:text-green-200">
@@ -1067,13 +1069,14 @@
 							loadAssetFiles={loadAssetFilesForDesktop}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
+							disableUploads={!$authStore.isAuthenticated}
 						/>
 					{/if}
 				</div>
 			{/snippet}
 
 			{#snippet save()}
-				{#if song.containsDtxFiles}
+				{#if song.containsDtxFiles && $authStore.isAuthenticated}
 					<div class="flex gap-2">
 						{#if isUploading}
 							<div class="flex items-center gap-2">
@@ -1104,10 +1107,12 @@
 {/if}
 
 <!-- Autocomplete Popup -->
-<CloudSongAutocomplete
-	isOpen={showAutocomplete}
-	position={autocompletePosition}
-	excludeLinkedSongIds={getLinkedSongIds()}
-	onclose={() => (showAutocomplete = false)}
-	onselect={handleCloudSongSelect}
-/>
+{#if $authStore.isAuthenticated}
+	<CloudSongAutocomplete
+		isOpen={showAutocomplete}
+		position={autocompletePosition}
+		excludeLinkedSongIds={getLinkedSongIds()}
+		onclose={() => (showAutocomplete = false)}
+		onselect={handleCloudSongSelect}
+	/>
+{/if}

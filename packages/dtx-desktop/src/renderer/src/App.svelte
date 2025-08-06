@@ -31,6 +31,9 @@
 		if (route === 'editor') {
 			currentRoute = 'editor';
 			routeParams = { simFileId: params[0] || undefined };
+		} else if (route === 'login') {
+			currentRoute = 'login';
+			routeParams = {};
 		} else {
 			currentRoute = 'workspace';
 			routeParams = {};
@@ -61,6 +64,10 @@
 	$effect(() => {
 		if ($authStore.isAuthenticated && $authStore.user) {
 			fetchSimFileData();
+			// If user was on login page, redirect to workspace
+			if (currentRoute === 'login') {
+				window.location.hash = '';
+			}
 		}
 	});
 
@@ -127,23 +134,21 @@
 	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 px-8 pt-16 pb-8 text-slate-800 dark:from-slate-900 dark:to-slate-800 dark:text-slate-100"
 >
 	<div class="mx-auto w-full">
-		{#if !$authStore.isAuthenticated}
-			<div
-				class="mx-auto mb-10 max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800"
-			>
-				<Login />
-			</div>
-		{:else}
-			<div class="mb-10">
-				{#if currentRoute === 'editor'}
-					<DesktopEditor simFileId={routeParams.simFileId} />
-				{:else if $workspaceStore.showNewSong}
-					<NewSong />
-				{:else}
-					<Workspace />
-				{/if}
-			</div>
-		{/if}
+		<div class="mb-10">
+			{#if currentRoute === 'login'}
+				<div
+					class="mx-auto mb-10 max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800"
+				>
+					<Login />
+				</div>
+			{:else if currentRoute === 'editor'}
+				<DesktopEditor simFileId={routeParams.simFileId} />
+			{:else if $workspaceStore.showNewSong}
+				<NewSong />
+			{:else}
+				<Workspace />
+			{/if}
+		</div>
 
 		<!-- Add the versions modal component -->
 		{#if $authStore.isAuthenticated}

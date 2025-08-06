@@ -13,7 +13,8 @@
 		simfileBucketUrl,
 		loadAssetFiles,
 		isDesktop = false,
-		songFolderPath = ''
+		songFolderPath = '',
+		disableUploads = false
 	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
@@ -24,6 +25,7 @@
 		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;
 		isDesktop?: boolean;
 		songFolderPath?: string; // Song folder path for desktop uploads
+		disableUploads?: boolean; // Disable upload functionality
 	}>();
 
 	// Ensure userFiles is always an array of File objects with valid extensions
@@ -356,7 +358,7 @@
 								<tr
 									class="border-b border-gray-300 bg-gray-50 dark:border-slate-600 dark:bg-slate-700"
 								>
-									{#if simfileId && isDesktop}
+									{#if simfileId && isDesktop && !disableUploads}
 										<th class="w-10 px-4 py-2 text-center">
 											<input
 												type="checkbox"
@@ -379,7 +381,7 @@
 										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
 										>Last Modified</th
 									>
-									{#if simfileId && isDesktop}
+									{#if simfileId && isDesktop && !disableUploads}
 										<th
 											class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
 											>Status</th
@@ -401,7 +403,7 @@
 											? 'bg-yellow-50 dark:bg-yellow-900/20'
 											: ''}"
 									>
-										{#if simfileId && isDesktop}
+										{#if simfileId && isDesktop && !disableUploads}
 											<td class="px-4 py-2 text-center">
 												{#if file.userFile}
 													<input
@@ -424,7 +426,7 @@
 										<td class="px-4 py-2 text-slate-600 dark:text-slate-400"
 											>{formatDate(file.lastModified)}</td
 										>
-										{#if simfileId && isDesktop}
+										{#if simfileId && isDesktop && !disableUploads}
 											<td class="px-4 py-2">
 												{#if uploadProgress[file.name] === 'pending'}
 													<span
@@ -486,7 +488,7 @@
 						</table>
 
 						<!-- Bulk upload button - only show if simfileId exists and in desktop mode -->
-						{#if simfileId && isDesktop && selectedFiles.size > 0}
+						{#if simfileId && isDesktop && selectedFiles.size > 0 && !disableUploads}
 							<div class="absolute right-4 bottom-4">
 								<button
 									class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-800 dark:focus:ring-blue-400"

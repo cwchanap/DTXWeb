@@ -34,7 +34,7 @@ if (!gotTheLock) {
 		app.setAppUserModelId('com.electron');
 
 		// IPC test
-		ipcMain.on('ping', () => console.log('pong'));
+		ipcMain.on('ping', () => {});
 
 		// Handle external URL opening request from renderer
 		ipcMain.on('open-external-url', (_event, url) => {
@@ -65,7 +65,6 @@ if (!gotTheLock) {
 		// Handle directory listing for chart switching
 		ipcMain.handle('list-directory', async (_event, dirPath) => {
 			try {
-				console.log('Listing directory contents in:', dirPath);
 				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
 				const files = entries
@@ -92,7 +91,7 @@ if (!gotTheLock) {
 				console.error('Error listing directory:', error);
 				return {
 					files: [],
-					error: error.message
+					error: error instanceof Error ? error.message : 'Unknown error'
 				};
 			}
 		});
@@ -117,13 +116,6 @@ if (!gotTheLock) {
 				const { selectedPath, sanitizedFolderName, sanitizedSongName, templateFolderPath } =
 					options;
 
-				console.log('Creating song:', {
-					selectedPath,
-					sanitizedFolderName,
-					sanitizedSongName,
-					templateFolderPath
-				});
-
 				// Check if folder already exists
 				const songFolderPath = path.join(selectedPath, sanitizedFolderName);
 				try {
@@ -140,18 +132,10 @@ if (!gotTheLock) {
 				}
 
 				// Create the song folder
-				console.log('Creating song folder at:', songFolderPath);
 				await fs.promises.mkdir(songFolderPath, { recursive: true });
 
 				// If a template is provided, copy its contents to the new folder
 				if (templateFolderPath) {
-					console.log(
-						'Copying template files from:',
-						templateFolderPath,
-						'to:',
-						songFolderPath
-					);
-
 					// Normalize paths to resolve any relative components and ensure consistent separators
 					const normalizedSource = path.resolve(templateFolderPath);
 					const normalizedDest = path.resolve(songFolderPath);
@@ -181,9 +165,6 @@ if (!gotTheLock) {
 					};
 
 					await copyRecursively(templateFolderPath, songFolderPath);
-					console.log('Template files copied successfully');
-				} else {
-					console.log('No template provided, creating empty song folder');
 				}
 
 				// Create SET.def file using SimFile's generateDefFileContent method
@@ -194,7 +175,6 @@ if (!gotTheLock) {
 				const setDefContent = simFile.generateDefFileContent();
 
 				// Write the SET.def file (this will overwrite template's SET.def if it exists)
-				console.log('Writing SET.def file to:', setDefPath);
 
 				// Add UTF-16 LE BOM (0xFF 0xFE) and encode content
 				const bom = Buffer.from([0xff, 0xfe]);
@@ -229,7 +209,6 @@ if (!gotTheLock) {
 		// Handle listing files in a directory
 		ipcMain.handle('list-files', async (_event, dirPath) => {
 			try {
-				console.log('Listing files in:', dirPath);
 				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
 				// Get all files with their stats
@@ -270,7 +249,6 @@ if (!gotTheLock) {
 				// __dirname in development points to src/main, in production to out/main
 				// We want to get to packages/dtx-desktop/static/skin
 				const fullPath = path.join(__dirname, '..', '..', 'static', 'skin', assetPath);
-				console.log('Loading skin asset from:', fullPath);
 
 				// Check if file exists
 				await fs.promises.access(fullPath);
@@ -332,7 +310,6 @@ if (!gotTheLock) {
 			try {
 				// Return empty array for empty or invalid simfileId
 				if (!simfileId || simfileId === '' || simfileId === '0') {
-					console.log('No valid simfileId provided, returning empty array');
 					return [];
 				}
 
@@ -360,7 +337,6 @@ if (!gotTheLock) {
 				}
 
 				const url = `${apiBaseUrl}/api/simFile/listFiles/${simfileId}`;
-				console.log('Fetching asset files from:', url);
 
 				// Create session cookies that SvelteKit expects
 				const sessionCookies = [
@@ -387,7 +363,6 @@ if (!gotTheLock) {
 
 					// For specific API errors, return empty array instead of throwing
 					if (response.status === 404 || errorText.includes('Failed to list files')) {
-						console.log('API returned file listing error, returning empty array');
 						return [];
 					}
 
@@ -621,15 +596,6 @@ if (!gotTheLock) {
 					// Construct the full file path
 					const filePath = path.join(songFolderPath, fileName);
 
-					console.log(
-						'Uploading file:',
-						fileName,
-						'from path:',
-						filePath,
-						'to simfile:',
-						simfileId
-					);
-
 					// Check if file exists
 					try {
 						await fs.promises.access(filePath);
@@ -678,7 +644,6 @@ if (!gotTheLock) {
 					}
 
 					const url = `${apiBaseUrl}/api/simFile/upload`;
-					console.log('Uploading to:', url);
 
 					// Create session cookies that SvelteKit expects (same as load-asset-files)
 					const sessionCookies = [
@@ -712,7 +677,6 @@ if (!gotTheLock) {
 					}
 
 					const result = await response.json();
-					console.log('Upload successful:', result);
 					return { success: true, data: result };
 				} catch (error) {
 					console.error('Error uploading file:', error);

@@ -274,8 +274,6 @@ export interface DtxParseResult {
 // Parse DTX files to extract metadata
 export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult> {
 	try {
-		console.log('Parsing DTX files in folder:', folderPath);
-
 		// First, try to find and parse SET.def file for level labels
 		const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
 		const setDefFile = entries.find(
@@ -285,7 +283,6 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 		const levelLabelsFromSetDef: Map<string, string> = new Map(); // Map DTX filename to label
 
 		if (setDefFile) {
-			console.log('Found SET.def file, parsing level labels directly');
 			try {
 				const setDefPath = path.join(folderPath, setDefFile.name);
 				const setDefBuffer = await fs.promises.readFile(setDefPath);
@@ -326,11 +323,6 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 						}
 					}
 				}
-
-				console.log(
-					'Level labels from SET.def:',
-					Object.fromEntries(levelLabelsFromSetDef)
-				);
 			} catch (error) {
 				console.warn(
 					'Failed to parse SET.def file for labels, will use DTX filenames:',
@@ -340,12 +332,9 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 		}
 
 		// Parse individual DTX files for metadata (BPM, artist, levels)
-		console.log('Parsing individual DTX files for metadata');
 		const dtxFiles = entries
 			.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.dtx'))
 			.map((entry) => entry.name);
-
-		console.log('Found DTX files:', dtxFiles);
 
 		if (dtxFiles.length === 0) {
 			return {
@@ -388,13 +377,6 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 				const dtx = new DTXFile(fileContent);
 				await dtx.parse();
 
-				console.log(`Parsed DTX file ${fileName}:`, {
-					title: dtx.title,
-					artist: dtx.artist,
-					level: dtx.level,
-					bpm: dtx.bpm
-				});
-
 				// Use the first valid parsed values for BPM and artist from DTXFile
 				if (!parsedBpm && dtx.bpm) {
 					parsedBpm = dtx.bpm;
@@ -412,12 +394,10 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 					if (labelFromSetDef) {
 						// Use the proper label from SET.def
 						label = labelFromSetDef;
-						console.log(`Using SET.def label for ${fileName}: ${label}`);
 					} else {
 						// Fallback to improved filename-based label
 						const baseFileName = fileName.replace('.dtx', '');
 						label = baseFileName.toUpperCase();
-						console.log(`Using filename-based label for ${fileName}: ${label}`);
 					}
 
 					parsedLevels.push({
@@ -436,7 +416,6 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 			levels: parsedLevels
 		};
 
-		console.log('Parsed DTX metadata:', result);
 		return result;
 	} catch (error) {
 		console.error('Error parsing DTX files:', error);

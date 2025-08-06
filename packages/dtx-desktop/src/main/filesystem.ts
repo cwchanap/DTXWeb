@@ -16,7 +16,6 @@ export interface TreeNode {
 
 export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 	try {
-		console.log('Loading tree structure for:', dirPath);
 		const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
 		// Filter only directories and create tree nodes
@@ -61,7 +60,6 @@ export async function loadTreeStructure(dirPath: string): Promise<TreeNode[]> {
 								const simFile = new SimFile([file]);
 								await simFile.parseHeader(file);
 								songTitle = simFile.title || null;
-								console.log('Song title:', songTitle);
 							} catch (error) {
 								console.warn('Could not read SET.def file:', error);
 							}

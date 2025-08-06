@@ -44,8 +44,6 @@ export async function verifyMagicLink(magicLinkUrl: string) {
 			throw new Error('Invalid token in magic link');
 		}
 
-		console.log('Verifying magic link token in main process...');
-
 		// Verify the OTP token with Supabase
 		const { data, error } = await supabaseClient.auth.verifyOtp({
 			token_hash: authToken,
@@ -60,8 +58,6 @@ export async function verifyMagicLink(magicLinkUrl: string) {
 		if (!data.session) {
 			throw new Error('No session created from magic link');
 		}
-
-		console.log('Magic link authentication successful in main process');
 
 		// Store session in main process
 		currentSession = data.session;
@@ -145,7 +141,6 @@ export async function logoutSession(): Promise<boolean> {
 			await supabaseClient.auth.signOut();
 		}
 		currentSession = null;
-		console.log('Session logged out in main process');
 		return true;
 	} catch (error) {
 		console.error('Failed to logout session in main process:', error);

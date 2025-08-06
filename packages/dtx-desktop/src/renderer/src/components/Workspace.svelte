@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { workspaceService } from '../services/workspaceService';
+	import { authStore } from '../stores/authStore';
 	import {
 		Folder,
 		FolderOpen,
@@ -36,6 +37,13 @@
 
 	// Navigation state
 	let activeTab = $state('workspace');
+
+	// Reset active tab if user is not authenticated and tries to access cloud features
+	$effect(() => {
+		if (!$authStore.isAuthenticated && activeTab === 'online') {
+			activeTab = 'workspace';
+		}
+	});
 
 	// Handle navigation tab changes
 	$effect(() => {
@@ -151,15 +159,17 @@
 			>
 				<HardDrive size={32} />
 			</Navigation.Tile>
-			<Navigation.Tile
-				id="online"
-				label="Cloud"
-				labelExpanded="Online SimFiles"
-				padding="p-4"
-				gap="gap-3"
-			>
-				<Cloud size={32} />
-			</Navigation.Tile>
+			{#if $authStore.isAuthenticated}
+				<Navigation.Tile
+					id="online"
+					label="Cloud"
+					labelExpanded="Online SimFiles"
+					padding="p-4"
+					gap="gap-3"
+				>
+					<Cloud size={32} />
+				</Navigation.Tile>
+			{/if}
 			<Navigation.Tile
 				id="templates"
 				label="Templates"

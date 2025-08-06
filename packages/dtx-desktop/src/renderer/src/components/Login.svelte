@@ -1,11 +1,6 @@
 <script lang="ts">
 	import { authStore } from '../stores/authStore';
-	import { authService } from '../services/authService';
-	import { Loader, LogIn, User, AlertCircle } from '@lucide/svelte';
-
-	const handleLogin = async () => {
-		await authService.login();
-	};
+	import { Loader, User, AlertCircle } from '@lucide/svelte';
 </script>
 
 <div class="flex flex-col items-center p-8">
@@ -48,18 +43,6 @@
 					You'll be redirected to the web login page
 				</p>
 			</div>
-
-			<button
-				class="flex h-12 w-64 items-center justify-center gap-2 rounded-lg
-				bg-gradient-to-r from-blue-500 to-indigo-600 font-medium text-white shadow-md transition
-				duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-				onclick={handleLogin}
-				tabindex="0"
-				aria-label="Login"
-			>
-				<LogIn size={20} />
-				Sign in with Web Account
-			</button>
 		</div>
 	{/if}
 </div>

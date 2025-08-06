@@ -53,8 +53,8 @@
 			</div>
 
 			<!-- User Info / Login Button -->
-			{#if $authStore.isAuthenticated}
-				<div class="flex items-center gap-3">
+			<div class="flex items-center gap-3">
+				{#if $authStore.isAuthenticated}
 					<div class="text-right">
 						<p class="text-sm font-medium">{$authStore.user?.name || 'User'}</p>
 						<p class="text-xs text-slate-500 dark:text-slate-400">
@@ -86,8 +86,20 @@
 						<LogOut size={14} />
 						<span>Logout</span>
 					</button>
-				</div>
-			{/if}
+				{:else}
+					<button
+						class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+						onclick={async () => {
+							await authService.login();
+						}}
+						tabindex="0"
+						aria-label="Login to access cloud features"
+					>
+						<User size={16} />
+						<span>Login</span>
+					</button>
+				{/if}
+			</div>
 		</div>
 	</div>
 </nav>

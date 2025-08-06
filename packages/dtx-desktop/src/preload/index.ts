@@ -24,6 +24,7 @@ const extendedElectronAPI = {
 				'open-folder-in-explorer',
 				'load-tree-structure',
 				'list-files',
+				'list-directory',
 				'read-file',
 				'get-skin-asset',
 				'parse-dtx-files',

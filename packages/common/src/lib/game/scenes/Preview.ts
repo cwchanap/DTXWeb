@@ -133,15 +133,31 @@ export class Preview extends BaseGame {
 				const cacheKey = this.getCacheKey(soundChip);
 
 				// Check if the audio is already in cache and sound manager
-				if (this.cache.audio.exists(cacheKey) && this.sound.get(cacheKey)) {
+				if (
+					this.cache &&
+					this.cache.audio &&
+					this.cache.audio.exists(cacheKey) &&
+					this.sound.get(cacheKey)
+				) {
 					return; // Already loaded and added
 				}
 
 				// Remove existing cache entry if it exists
-				this.cache.audio.remove(cacheKey);
+				if (this.cache && this.cache.audio) {
+					this.cache.audio.remove(cacheKey);
+				}
 
 				// Create a promise that resolves when this audio is loaded
 				return new Promise<void>(async (resolve) => {
+					// Check if scene is properly initialized
+					if (!this.load || !this.sound) {
+						console.warn(
+							`Scene not properly initialized for loading ${soundChip.fileName}`
+						);
+						resolve();
+						return;
+					}
+
 					// Add a completion listener for this specific audio
 					this.load.once(`filecomplete-audio-${cacheKey}`, () => {
 						// Add to sound manager once loaded

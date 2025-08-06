@@ -1,8 +1,14 @@
 import { writable, get } from 'svelte/store';
 
-// Store for mapping simFileId to songFolderPath
+// Store for mapping simFileId to song metadata
+interface SongMetadata {
+	folderPath: string;
+	songName: string;
+}
+
 interface EditorMappingState {
-	simFileIdToFolderPath: Record<string, string>;
+	simFileIdToFolderPath: Record<string, string>; // Keep for backward compatibility
+	simFileIdToMetadata: Record<string, SongMetadata>;
 }
 
 const STORAGE_KEY = 'editor_mapping_cache';
@@ -17,7 +23,7 @@ function loadInitialState(): EditorMappingState {
 	} catch (error) {
 		console.warn('Failed to load editor mapping from localStorage:', error);
 	}
-	return { simFileIdToFolderPath: {} };
+	return { simFileIdToFolderPath: {}, simFileIdToMetadata: {} };
 }
 
 // Save state to localStorage
@@ -38,7 +44,7 @@ function createEditorMappingStore() {
 	return {
 		subscribe,
 
-		// Add or update a mapping
+		// Add or update a mapping (backward compatibility)
 		setMapping: (simFileId: string, folderPath: string) => {
 			update((state) => {
 				const newState = {
@@ -53,20 +59,52 @@ function createEditorMappingStore() {
 			});
 		},
 
+		// Add or update a mapping with metadata
+		setMappingWithMetadata: (simFileId: string, folderPath: string, songName: string) => {
+			update((state) => {
+				const newState = {
+					...state,
+					simFileIdToFolderPath: {
+						...state.simFileIdToFolderPath,
+						[simFileId]: folderPath
+					},
+					simFileIdToMetadata: {
+						...state.simFileIdToMetadata,
+						[simFileId]: { folderPath, songName }
+					}
+				};
+				saveState(newState);
+				return newState;
+			});
+		},
+
 		// Get folder path for a simFileId
 		getFolderPath: (simFileId: string): string | undefined => {
 			const state = get(store);
-			return state.simFileIdToFolderPath[simFileId];
+			// Try new metadata store first, then fall back to old store
+			return (
+				state.simFileIdToMetadata[simFileId]?.folderPath ||
+				state.simFileIdToFolderPath[simFileId]
+			);
+		},
+
+		// Get song metadata for a simFileId
+		getSongMetadata: (simFileId: string): SongMetadata | undefined => {
+			const state = get(store);
+			return state.simFileIdToMetadata[simFileId];
 		},
 
 		// Remove a mapping
 		removeMapping: (simFileId: string) => {
 			update((state) => {
 				const newMappings = { ...state.simFileIdToFolderPath };
+				const newMetadata = { ...state.simFileIdToMetadata };
 				delete newMappings[simFileId];
+				delete newMetadata[simFileId];
 				const newState = {
 					...state,
-					simFileIdToFolderPath: newMappings
+					simFileIdToFolderPath: newMappings,
+					simFileIdToMetadata: newMetadata
 				};
 				saveState(newState);
 				return newState;
@@ -75,7 +113,7 @@ function createEditorMappingStore() {
 
 		// Clear all mappings
 		clearMappings: () => {
-			const clearedState = { simFileIdToFolderPath: {} };
+			const clearedState = { simFileIdToFolderPath: {}, simFileIdToMetadata: {} };
 			set(clearedState);
 			saveState(clearedState);
 		}

@@ -44,8 +44,11 @@
 	let isLoading = $state(true);
 	let chartMetadata = $state<ChartMetadata | null>(null);
 	let fileProvider: DesktopFileProvider | null = null;
+	let game: Phaser.Game | null = null;
 	let isLocalEditingMode = $state(false); // Track if we should treat this as local editing
 	let isSidebarCollapsed = $state(false); // Track sidebar collapse state
+	let currentSongName = $state<string | null>(null); // Track current song name
+	let currentChart = $state<any>(null); // Track current chart with DTX files
 	let sidebarWidth = $state(320); // Sidebar width in pixels (default 80 * 0.25rem = 320px)
 	let isDragging = $state(false);
 	let minSidebarWidth = 200;
@@ -119,8 +122,6 @@
 	};
 
 	onMount(() => {
-		let game: Phaser.Game | null = null;
-
 		const initializeEditor = async () => {
 			try {
 				// Initialize file provider
@@ -129,7 +130,6 @@
 				if (workspacePath.startsWith('"') && workspacePath.endsWith('"')) {
 					workspacePath = workspacePath.slice(1, -1);
 				}
-				console.log('Cleaned workspace path:', workspacePath);
 				fileProvider = new DesktopFileProvider(workspacePath);
 				setFileProvider(fileProvider);
 
@@ -160,6 +160,12 @@
 
 					// Desktop app is always local editing
 					isLocalEditingMode = true;
+
+					// Try to load chart from the workspace path if available
+					console.log('Desktop Editor: Workspace path:', workspacePath);
+					if (workspacePath && workspacePath !== '""' && workspacePath !== '') {
+						await loadChartFromPath(workspacePath, 'Current Workspace');
+					}
 
 					// NOTE_IMPORT will be emitted after Phaser game is ready
 				}
@@ -217,27 +223,41 @@
 	});
 
 	const loadFromSimFileId = async (simFileIdParam: string) => {
-		try {
-			console.log('Loading from simFileId:', simFileIdParam);
+		// Decode the simFileId in case it's URL-encoded
+		const decodedSimFileId = decodeURIComponent(simFileIdParam);
+		console.log('Desktop Editor: Loading from simFileId:', decodedSimFileId);
 
-			// Get the folder path from the mapping store
-			const folderPath = editorMappingStore.getFolderPath(simFileIdParam);
+		try {
+			// Get the song metadata from the mapping store
+			const songMetadata = editorMappingStore.getSongMetadata(decodedSimFileId);
+			const folderPath =
+				songMetadata?.folderPath || editorMappingStore.getFolderPath(decodedSimFileId);
+			console.log('Desktop Editor: Resolved folder path:', folderPath);
 
 			if (!folderPath) {
-				throw new Error(`No folder path found for simFileId: ${simFileIdParam}`);
+				throw new Error(
+					`No folder path found for simFileId: ${decodedSimFileId} (original: ${simFileIdParam})`
+				);
 			}
 
-			console.log('Resolved folder path:', folderPath);
+			// Update file provider to use the specific song folder as workspace root
+			if (fileProvider) {
+				fileProvider.setWorkspaceRoot(folderPath);
+			}
 
-			// Get folder name for display
-			const folderName = folderPath.split('/').pop() || 'Unknown';
+			// Get song name from metadata or fall back to folder name
+			const songName = songMetadata?.songName || folderPath.split('/').pop() || 'Unknown';
+			currentSongName = songName;
 
-			await loadLocalFilesFromPath(folderPath, folderName);
+			// Create chart structure for difficulty switching
+			await loadChartFromPath(folderPath, songName);
+
+			await loadLocalFilesFromPath(folderPath, songName);
 		} catch (error) {
 			console.error('Failed to load from simFileId:', error);
 			// Set default metadata on error
 			chartMetadata = {
-				title: simFileIdParam || 'New Song',
+				title: decodedSimFileId || 'New Song',
 				artist: 'Unknown Artist',
 				comment: '',
 				bpm: 120,
@@ -248,7 +268,7 @@
 			// Create default DTXFile
 			const dtxFile = createDTXFileFromMetadata(chartMetadata);
 
-			store.currentSimfileID.set(simFileIdParam);
+			store.currentSimfileID.set(null); // For local editing, simfileID should be null
 			store.currentDtxFile.set(dtxFile);
 			store.currentSoundChip.set([]);
 			store.editorNotes.set({});
@@ -266,7 +286,7 @@
 
 	const loadLocalFilesFromPath = async (
 		folderPath: string,
-		folderName: string,
+		songName: string,
 		remoteMetadata: any = null
 	) => {
 		// Try to load SET.def file first directly from the folder path
@@ -335,7 +355,7 @@
 
 		// Combine remote metadata with local file data
 		chartMetadata = {
-			title: remoteMetadata?.title || localSimFile?.title || folderName,
+			title: remoteMetadata?.title || localSimFile?.title || songName,
 			artist: remoteMetadata?.artist || dtxFile?.artist || 'Unknown Artist',
 			comment: dtxFile?.comment || '',
 			bpm: remoteMetadata?.bpm || dtxFile?.bpm || 120,
@@ -353,8 +373,8 @@
 		// Create DTXFile for MainTab
 		const mainTabDtxFile = dtxFile || createDTXFileFromMetadata(chartMetadata);
 
-		// Update store
-		store.currentSimfileID.set(folderName); // Use folder name instead of remote ID
+		// Update store - for local files, use null as simfileID since files are directly in workspace root
+		store.currentSimfileID.set(null); // Files are directly in the song folder (workspace root)
 		store.currentSimfile.set(localSimFile);
 		store.currentDtxFile.set(mainTabDtxFile);
 		store.currentSoundChip.set(soundChips);
@@ -368,6 +388,145 @@
 		setTimeout(() => {
 			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 		}, 100);
+	};
+
+	const loadChartFromPath = async (folderPath: string, songName: string) => {
+		try {
+			// List all DTX files in the folder using existing list-files IPC channel
+			const dtxExtensions = ['.dtx'];
+			const folderContents = await window.electron.ipcRenderer.invoke(
+				'list-files',
+				folderPath
+			);
+
+			if (folderContents.error) {
+				console.warn('Could not list directory contents:', folderContents.error);
+				return;
+			}
+
+			// Filter DTX files (list-files returns files with different structure)
+			const dtxFiles = folderContents.files
+				.filter((file: any) =>
+					dtxExtensions.some((ext) => file.fileName.toLowerCase().endsWith(ext))
+				)
+				.map((file: any) => ({
+					name: file.fileName,
+					path: `${folderPath}/${file.fileName}`
+				}));
+
+			if (dtxFiles.length > 0) {
+				// Create chart structure with difficulty files
+				// Priority order: hardest to easiest (following SimFile.getHighestLevel() logic)
+				const difficultyPriority = ['real.dtx', 'mas.dtx', 'ext.dtx', 'adv.dtx', 'bas.dtx'];
+				const defaultDTX =
+					difficultyPriority.find((difficulty) =>
+						dtxFiles.some((file: any) => file.name.toLowerCase() === difficulty)
+					) || dtxFiles[0].name;
+
+				currentChart = {
+					name: songName,
+					dtxFiles: dtxFiles,
+					currentDTX: defaultDTX,
+					folderPath: folderPath
+				};
+				console.log(
+					'Desktop Editor: Chart created with',
+					dtxFiles.length,
+					'DTX files:',
+					dtxFiles.map((f) => f.name)
+				);
+			} else {
+				console.log('Desktop Editor: No DTX files found in folder');
+			}
+		} catch (error) {
+			console.error('Error loading chart from path:', error);
+		}
+	};
+
+	const switchChartDifficulty = async (dtxFileName: string) => {
+		if (!currentChart || !fileProvider) return;
+
+		try {
+			// Stop any existing preview to ensure clean re-draw when switching DTX files
+			EventBus.emit(EventType.STOP_PREVIEW);
+
+			// Update current chart
+			currentChart.currentDTX = dtxFileName;
+
+			// Get the folder path from file provider
+			const folderPath = fileProvider.getWorkspaceRoot();
+
+			// Load the selected DTX file
+			let dtxFile: DTXFile | null = null;
+			let notes: any[] = [];
+			let bpmNotes: Record<string, number> = {};
+			let soundChips: any[] = [];
+
+			const dtxResult = await window.electron.ipcRenderer.invoke(
+				'read-file',
+				`${folderPath}/${dtxFileName}`,
+				folderPath
+			);
+
+			if (!dtxResult.error) {
+				dtxFile = new DTXFile(dtxResult.content as string);
+				await dtxFile.parse();
+				soundChips = dtxFile.parseSoundChips();
+				notes = dtxFile.parseNotes();
+				bpmNotes = dtxFile.parseBPMChanges();
+
+				// Update chart metadata with DTX file data
+				if (chartMetadata) {
+					chartMetadata.artist = dtxFile.artist || chartMetadata.artist;
+					chartMetadata.comment = dtxFile.comment || '';
+					chartMetadata.bpm = dtxFile.bpm || chartMetadata.bpm;
+					chartMetadata.level = dtxFile.level || 1;
+					chartMetadata.soundChips = soundChips.map((chip) => ({
+						label: chip.label,
+						id: chip.id,
+						volume: chip.volume,
+						position: chip.position,
+						fileName: chip.fileName,
+						filePath: chip.filePath
+					}));
+				}
+			} else {
+				console.error('Failed to load DTX file:', dtxFileName);
+				return;
+			}
+
+			// Update stores
+			store.currentDtxFile.set(dtxFile);
+			store.currentSoundChip.set(soundChips);
+			store.currentDifficulty.set(dtxFileName.replace('.dtx', ''));
+
+			// Emit note import event
+			setTimeout(() => {
+				EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+
+				// Clean up any preview scenes after switching
+				setTimeout(() => {
+					if (game?.scene) {
+						const editorScene = game.scene.getScene('Editor');
+						if (editorScene) {
+							const previewScene = game.scene.getScene('Preview');
+							if (
+								previewScene &&
+								(previewScene.scene.isActive() || previewScene.scene.isPaused())
+							) {
+								previewScene.scene.stop();
+							}
+							// Force editor to be dirty so Preview rebuilds completely
+							if (editorScene.setDirty) {
+								editorScene.setDirty(true);
+							}
+						}
+					}
+				}, 200);
+			}, 100);
+		} catch (error) {
+			console.error('Error switching DTX file:', error);
+		}
 	};
 </script>
 
@@ -387,33 +546,56 @@
 			</button>
 
 			<h1 class="text-xl font-semibold">
-				DTX Editor {simFileId ? `- ${simFileId}` : '- New Chart'}
+				DTX Editor {currentSongName
+					? `- ${currentSongName}`
+					: simFileId
+						? `- ${simFileId}`
+						: '- New Chart'}
 			</h1>
 		</div>
 
-		<!-- Tab Navigation -->
-		{#if !isSidebarCollapsed}
-			<div class="flex rounded-lg bg-slate-700 p-1">
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-					'main'
-						? 'bg-slate-600 text-white'
-						: 'text-slate-300 hover:text-white'}"
-					onclick={() => switchTab('main')}
-				>
-					Main
-				</button>
-				<button
-					class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-					'sound'
-						? 'bg-slate-600 text-white'
-						: 'text-slate-300 hover:text-white'}"
-					onclick={() => switchTab('sound')}
-				>
-					Sound
-				</button>
-			</div>
-		{/if}
+		<!-- Tab Navigation and Difficulty Switcher -->
+		<div class="flex items-center gap-4">
+			{#if currentChart && currentChart.dtxFiles.length > 1}
+				<!-- Difficulty/DTX File Selector -->
+				<div class="relative">
+					<select
+						class="rounded border border-slate-500 bg-slate-600 px-3 py-2 text-sm text-white hover:bg-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+						value={currentChart.currentDTX || ''}
+						onchange={(e) => switchChartDifficulty(e.target.value)}
+					>
+						{#each currentChart.dtxFiles as dtxFile}
+							<option value={dtxFile.name} class="bg-slate-700 text-white">
+								{dtxFile.name.replace('.dtx', '').toUpperCase()}
+							</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
+
+			{#if !isSidebarCollapsed}
+				<div class="flex rounded-lg bg-slate-700 p-1">
+					<button
+						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
+						'main'
+							? 'bg-slate-600 text-white'
+							: 'text-slate-300 hover:text-white'}"
+						onclick={() => switchTab('main')}
+					>
+						Main
+					</button>
+					<button
+						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
+						'sound'
+							? 'bg-slate-600 text-white'
+							: 'text-slate-300 hover:text-white'}"
+						onclick={() => switchTab('sound')}
+					>
+						Sound
+					</button>
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Editor Content -->

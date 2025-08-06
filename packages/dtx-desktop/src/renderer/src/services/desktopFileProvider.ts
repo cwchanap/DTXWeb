@@ -25,6 +25,10 @@ export class DesktopFileProvider implements IFileProvider {
 		this.fileCache.clear();
 	}
 
+	getWorkspaceRoot(): string {
+		return this._workspaceRoot || '';
+	}
+
 	async getFile(simfileId: string | null, fileName: string): Promise<File | undefined> {
 		try {
 			const key = this.generateKey(simfileId, fileName);

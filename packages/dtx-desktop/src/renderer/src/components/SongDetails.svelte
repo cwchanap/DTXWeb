@@ -36,9 +36,10 @@
 			simFileId = song.name || 'new-song';
 		}
 
-		// Store the mapping of simFileId to song folder path
+		// Store the mapping of simFileId to song folder path and song name
 		if (song.path) {
-			editorMappingStore.setMapping(simFileId, song.path);
+			const songName = song.songTitle || song.name || 'Unknown Song';
+			editorMappingStore.setMappingWithMetadata(simFileId, song.path, songName);
 		}
 
 		const editorPath = `editor/${simFileId}`;

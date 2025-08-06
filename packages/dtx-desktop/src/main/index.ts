@@ -62,6 +62,41 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Handle directory listing for chart switching
+		ipcMain.handle('list-directory', async (_event, dirPath) => {
+			try {
+				console.log('Listing directory contents in:', dirPath);
+				const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+
+				const files = entries
+					.filter((entry) => entry.isFile())
+					.map((file) => ({
+						name: file.name,
+						path: path.join(dirPath, file.name),
+						type: 'file'
+					}));
+
+				const directories = entries
+					.filter((entry) => entry.isDirectory())
+					.map((dir) => ({
+						name: dir.name,
+						path: path.join(dirPath, dir.name),
+						type: 'directory'
+					}));
+
+				return {
+					files: [...files, ...directories],
+					error: null
+				};
+			} catch (error) {
+				console.error('Error listing directory:', error);
+				return {
+					files: [],
+					error: error.message
+				};
+			}
+		});
+
 		// Handle opening folder in explorer/finder
 		ipcMain.handle('open-folder-in-explorer', async (_event, folderPath) => {
 			const result = await shell.openPath(folderPath);

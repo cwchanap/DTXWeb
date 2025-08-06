@@ -162,7 +162,6 @@
 					isLocalEditingMode = true;
 
 					// Try to load chart from the workspace path if available
-					console.log('Desktop Editor: Workspace path:', workspacePath);
 					if (workspacePath && workspacePath !== '""' && workspacePath !== '') {
 						await loadChartFromPath(workspacePath, 'Current Workspace');
 					}
@@ -225,14 +224,12 @@
 	const loadFromSimFileId = async (simFileIdParam: string) => {
 		// Decode the simFileId in case it's URL-encoded
 		const decodedSimFileId = decodeURIComponent(simFileIdParam);
-		console.log('Desktop Editor: Loading from simFileId:', decodedSimFileId);
 
 		try {
 			// Get the song metadata from the mapping store
 			const songMetadata = editorMappingStore.getSongMetadata(decodedSimFileId);
 			const folderPath =
 				songMetadata?.folderPath || editorMappingStore.getFolderPath(decodedSimFileId);
-			console.log('Desktop Editor: Resolved folder path:', folderPath);
 
 			if (!folderPath) {
 				throw new Error(
@@ -429,14 +426,6 @@
 					currentDTX: defaultDTX,
 					folderPath: folderPath
 				};
-				console.log(
-					'Desktop Editor: Chart created with',
-					dtxFiles.length,
-					'DTX files:',
-					dtxFiles.map((f) => f.name)
-				);
-			} else {
-				console.log('Desktop Editor: No DTX files found in folder');
 			}
 		} catch (error) {
 			console.error('Error loading chart from path:', error);
@@ -517,8 +506,11 @@
 								previewScene.scene.stop();
 							}
 							// Force editor to be dirty so Preview rebuilds completely
-							if (editorScene.setDirty) {
-								editorScene.setDirty(true);
+							if (
+								editorScene &&
+								typeof (editorScene as any).setDirty === 'function'
+							) {
+								(editorScene as any).setDirty(true);
 							}
 						}
 					}
@@ -562,7 +554,8 @@
 					<select
 						class="rounded border border-slate-500 bg-slate-600 px-3 py-2 text-sm text-white hover:bg-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
 						value={currentChart.currentDTX || ''}
-						onchange={(e) => switchChartDifficulty(e.target.value)}
+						onchange={(e) =>
+							switchChartDifficulty((e.target as HTMLSelectElement).value)}
 					>
 						{#each currentChart.dtxFiles as dtxFile}
 							<option value={dtxFile.name} class="bg-slate-700 text-white">
@@ -637,6 +630,9 @@
 				class="relative cursor-col-resize border-r border-slate-700 bg-slate-800 transition-colors hover:bg-slate-700"
 				onclick={expandSidebar}
 				onmousedown={handleMouseDown}
+				onkeydown={(e) => e.key === 'Enter' && expandSidebar()}
+				role="button"
+				tabindex="0"
 				title="Drag to expand sidebar"
 			>
 				<div class="flex h-full w-2 items-center justify-center">

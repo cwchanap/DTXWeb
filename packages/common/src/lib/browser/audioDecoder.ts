@@ -2,6 +2,7 @@ import init, { WasmXADecoder } from 'xa_decoder';
 
 export class XAAudioContext extends AudioContext {
 	private initialized = false;
+	private initializationPromise: Promise<void> | null = null;
 
 	constructor() {
 		super();
@@ -11,8 +12,20 @@ export class XAAudioContext extends AudioContext {
 		if (this.initialized) {
 			return;
 		}
+
+		// Prevent race conditions by reusing the same initialization promise
+		if (this.initializationPromise) {
+			return this.initializationPromise;
+		}
+
+		this.initializationPromise = this.performInitialization();
+		return this.initializationPromise;
+	}
+
+	private async performInitialization(): Promise<void> {
 		await init();
 		this.initialized = true;
+		this.initializationPromise = null; // Clear promise after completion
 	}
 
 	async decodeAudioData(

@@ -148,74 +148,7 @@ export class Preview extends BaseGame {
 				}
 
 				// Create a promise that resolves when this audio is loaded
-				return new Promise<void>(async (resolve) => {
-					// Check if scene is properly initialized
-					if (!this.load || !this.sound) {
-						console.warn(
-							`Scene not properly initialized for loading ${soundChip.fileName}`
-						);
-						resolve();
-						return;
-					}
-
-					// Load the audio file into cache
-					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
-						// Use XA decoder for .xa files
-						try {
-							const arrayBuffer = await actualFile.arrayBuffer();
-							const audioBuffer = await XAaudioContext.decodeAudioData(arrayBuffer);
-							// Create a blob URL from the decoded audio buffer
-							const wavBlob = this.audioBufferToWavBlob(audioBuffer);
-							const objectUrl = URL.createObjectURL(wavBlob);
-
-							// Add a completion listener for this specific audio BEFORE loading
-							this.load.once(`filecomplete-audio-${cacheKey}`, () => {
-								// Add to sound manager once loaded
-								if (!this.sound.get(cacheKey)) {
-									this.sound.add(cacheKey);
-								}
-								resolve();
-							});
-
-							// Add error listener in case loading fails
-							this.load.once(`loaderror-audio-${cacheKey}`, () => {
-								console.warn(
-									`Failed to load decoded XA file: ${soundChip.fileName}`
-								);
-								resolve();
-							});
-
-							this.load.audio(cacheKey, objectUrl);
-							// Start the loader to immediately load this audio
-							this.load.start();
-						} catch (error) {
-							console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
-							resolve();
-							return;
-						}
-					} else {
-						// For other formats, load as usual
-						// Add a completion listener for this specific audio BEFORE loading
-						this.load.once(`filecomplete-audio-${cacheKey}`, () => {
-							// Add to sound manager once loaded
-							if (!this.sound.get(cacheKey)) {
-								this.sound.add(cacheKey);
-							}
-							resolve();
-						});
-
-						// Add error listener in case loading fails
-						this.load.once(`loaderror-audio-${cacheKey}`, () => {
-							console.warn(`Failed to load audio file: ${soundChip.fileName}`);
-							resolve();
-						});
-
-						const objectUrl = URL.createObjectURL(actualFile);
-						this.load.audio(cacheKey, objectUrl);
-						// Start the loader to immediately load this audio
-						this.load.start();
-					}
-				});
+				return this.loadSoundChipAsync(actualFile, soundChip, cacheKey);
 			} catch (error) {
 				console.warn(`Failed to setup sound chip ${soundChip.fileName}:`, error);
 			}
@@ -223,6 +156,68 @@ export class Preview extends BaseGame {
 
 		// Wait for all audio files to be loaded, filtering out undefined values
 		await Promise.all(loadPromises.filter(Boolean));
+	}
+
+	private async loadSoundChipAsync(
+		actualFile: File,
+		soundChip: SoundChip,
+		cacheKey: string
+	): Promise<void> {
+		// Check if scene is properly initialized
+		if (!this.load || !this.sound) {
+			console.warn(`Scene not properly initialized for loading ${soundChip.fileName}`);
+			return;
+		}
+
+		// Create a Promise to handle the loading
+		return new Promise<void>((resolve) => {
+			const setupListenersAndLoad = async () => {
+				try {
+					// Load the audio file into cache
+					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
+						// Use XA decoder for .xa files
+						const arrayBuffer = await actualFile.arrayBuffer();
+						const audioBuffer = await XAaudioContext.decodeAudioData(arrayBuffer);
+						// Create a blob URL from the decoded audio buffer
+						const wavBlob = this.audioBufferToWavBlob(audioBuffer);
+						const objectUrl = URL.createObjectURL(wavBlob);
+
+						// Add listeners and load
+						this.setupAudioListeners(cacheKey, resolve);
+						this.load.audio(cacheKey, objectUrl);
+						this.load.start();
+					} else {
+						// For other formats, load as usual
+						this.setupAudioListeners(cacheKey, resolve);
+						const objectUrl = URL.createObjectURL(actualFile);
+						this.load.audio(cacheKey, objectUrl);
+						this.load.start();
+					}
+				} catch (error) {
+					console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
+					resolve();
+				}
+			};
+
+			setupListenersAndLoad();
+		});
+	}
+
+	private setupAudioListeners(cacheKey: string, resolve: () => void): void {
+		// Add a completion listener for this specific audio BEFORE loading
+		this.load.once(`filecomplete-audio-${cacheKey}`, () => {
+			// Add to sound manager once loaded
+			if (!this.sound.get(cacheKey)) {
+				this.sound.add(cacheKey);
+			}
+			resolve();
+		});
+
+		// Add error listener in case loading fails
+		this.load.once(`loaderror-audio-${cacheKey}`, () => {
+			console.warn(`Failed to load audio file with cache key: ${cacheKey}`);
+			resolve();
+		});
 	}
 
 	override drawPanel() {

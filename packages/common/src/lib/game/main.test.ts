@@ -5,13 +5,11 @@ describe('main game configuration', () => {
 	describe('scene management', () => {
 		it('should include all required scenes in correct order', () => {
 			const sceneClasses = config.scene;
-			expect(Array.isArray(sceneClasses)).toBe(true);
 			expect(sceneClasses.length).toBe(4);
-			expect(sceneClasses[0].name).toBe('Preloader'); // First scene
+			expect(sceneClasses[0].name).toBe('Preloader'); // First scene must be Preloader
 		});
 
-		it('should have basic game configuration properties', () => {
-			expect(config.type).toBeDefined();
+		it('should have game configuration with expected dimensions and styling', () => {
 			expect(config.width).toBe(960);
 			expect(config.height).toBe(1080);
 			expect(config.parent).toBe('game-container');

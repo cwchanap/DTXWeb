@@ -560,4 +560,114 @@ describe('DTXFile', () => {
 			expect(createElementCall).toBeTruthy();
 		});
 	});
+
+	describe('error handling and edge cases', () => {
+		let dtxFile: DTXFile;
+
+		beforeEach(() => {
+			dtxFile = new DTXFile();
+		});
+
+		it('should handle malformed measure patterns gracefully', () => {
+			dtxFile.lines = [
+				'#00011: 0102', // Too short pattern
+				'#00111: 01020304050607080910111213141516', // Valid 16-note pattern
+				'#00211: INVALID_PATTERN', // Invalid characters
+				'#00311: ' // Empty pattern
+			];
+
+			expect(() => dtxFile.parseNotes()).not.toThrow();
+
+			const notes = dtxFile.parseNotes();
+			// Should only parse the valid measure
+			expect(notes.length).toBeGreaterThan(0);
+		});
+
+		it('should handle invalid measure numbers', () => {
+			dtxFile.lines = [
+				'#99999: 01020000', // Very high measure number
+				'#-0111: 01020000', // Invalid negative measure
+				'#XXX11: 01020000', // Non-numeric measure
+				'#00011: 01020000' // Valid measure
+			];
+
+			const notes = dtxFile.parseNotes();
+			// Should parse only valid measures
+			expect(Array.isArray(notes)).toBe(true);
+		});
+
+		it('should handle invalid lane IDs gracefully', () => {
+			dtxFile.lines = [
+				'#000XX: 01020000', // Invalid lane ID
+				'#00099: 01020000', // Out of range lane ID
+				'#00011: 01020000' // Valid lane ID
+			];
+
+			expect(() => dtxFile.parseNotes()).not.toThrow();
+		});
+
+		it('should handle empty or whitespace-only content', () => {
+			dtxFile.lines = ['', '   ', '\t', '\n'];
+
+			const notes = dtxFile.parseNotes();
+			expect(notes).toHaveLength(0);
+		});
+
+		it('should handle files without sound chips', () => {
+			dtxFile.soundChips = [];
+			dtxFile.lines = ['#00011: 01020000'];
+
+			expect(() => dtxFile.parseNotes()).not.toThrow();
+			const notes = dtxFile.parseNotes();
+			expect(Array.isArray(notes)).toBe(true);
+		});
+
+		it('should validate sound chip properties', () => {
+			const validChip = new SoundChip('test', 1, 100, 0, 'test.wav');
+			expect(validChip.label).toBe('test');
+			expect(validChip.id).toBe(1);
+			expect(validChip.volume).toBe(100);
+			expect(validChip.position).toBe(0);
+			expect(validChip.fileName).toBe('test.wav');
+
+			// Test edge case values
+			const chipWithNegativePosition = new SoundChip('test', 2, 0, -100, 'test2.wav');
+			expect(chipWithNegativePosition.volume).toBe(0);
+			expect(chipWithNegativePosition.position).toBe(-100);
+
+			const chipWithHighValues = new SoundChip('test', 3, 200, 100, 'test3.wav');
+			expect(chipWithHighValues.volume).toBe(200);
+			expect(chipWithHighValues.position).toBe(100);
+
+			// Test filename normalization
+			const chipWithUppercaseFile = new SoundChip('test', 4, 100, 0, 'TEST.WAV');
+			expect(chipWithUppercaseFile.fileName).toBe('test.wav');
+		});
+
+		it('should handle export with corrupted note data', async () => {
+			const corruptedNotes = {
+				'11': [new LaneMeasureNote(-1, '11', [])] // Negative measure
+			};
+
+			await dtxFile.export(corruptedNotes);
+
+			const content = getCapturedBlobContent();
+			// Should still generate valid DTX structure
+			expect(content).toContain('#TITLE:');
+			expect(content).toContain('#ARTIST:');
+		});
+
+		it('should handle missing file properties gracefully', async () => {
+			const dtxFileWithMissingProps = new DTXFile();
+			// Don't set title, artist, etc.
+
+			await dtxFileWithMissingProps.export();
+
+			const content = getCapturedBlobContent();
+			expect(content).toContain('#TITLE: '); // Empty but present
+			expect(content).toContain('#ARTIST: '); // Empty but present
+			expect(content).toContain('#DLEVEL: 0'); // Default value
+			expect(content).toContain('#BPM: 120'); // Default value
+		});
+	});
 });

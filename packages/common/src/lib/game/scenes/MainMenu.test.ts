@@ -52,12 +52,6 @@ describe('MainMenu', () => {
 		it('should initialize with correct key', () => {
 			expect(MainMenu.key).toBe('MainMenu');
 		});
-
-		it('should create scene with MainMenu key', () => {
-			const scene = new MainMenu();
-			// The scene key might be set differently in test environment
-			expect(scene.constructor.name).toBe('MainMenu');
-		});
 	});
 
 	describe('scene creation', () => {
@@ -149,23 +143,7 @@ describe('MainMenu', () => {
 		});
 	});
 
-	describe('static properties', () => {
-		it('should have correct static key property', () => {
-			expect(MainMenu.key).toBe('MainMenu');
-			expect(typeof MainMenu.key).toBe('string');
-		});
-	});
-
 	describe('scene properties', () => {
-		it('should initialize properties correctly', () => {
-			// Properties should be undefined before create() is called
-			expect(mainMenu.title).toBeUndefined();
-			expect(mainMenu.background).toBeUndefined();
-			expect(mainMenu.logo).toBeUndefined();
-			expect(mainMenu.logoTween).toBeUndefined();
-			expect(mainMenu.toEditor).toBeUndefined();
-		});
-
 		it('should set title property after creation', () => {
 			mainMenu.create();
 

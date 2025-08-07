@@ -71,7 +71,7 @@
 		target="_blank"
 		rel="noopener noreferrer"
 		class="inline-flex items-center justify-center rounded-full bg-blue-100 p-2 text-blue-600 hover:bg-blue-200"
-		title="Download Simfile"
+		title={$_('chart.download_simfile')}
 	>
 		<Tooltip
 			open={tooltipOpen}

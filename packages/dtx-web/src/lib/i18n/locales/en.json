@@ -17,5 +17,14 @@
 			"last": "Last",
 			"page": "Page {currentPage} of {totalPages}"
 		}
+	},
+	"chart": {
+		"edit": "Edit",
+		"publish": "Publish",
+		"unpublish": "Unpublish",
+		"delete": "Delete",
+		"delete_chart": "Delete Chart",
+		"delete_confirmation": "Are you sure you want to delete this chart? This action cannot be undone.",
+		"download_simfile": "Download Simfile"
 	}
 }

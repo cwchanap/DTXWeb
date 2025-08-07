@@ -17,5 +17,14 @@
 			"last": "最後",
 			"page": "ページ {currentPage} / {totalPages}"
 		}
+	},
+	"chart": {
+		"edit": "編集",
+		"publish": "公開",
+		"unpublish": "非公開",
+		"delete": "削除",
+		"delete_chart": "チャートを削除",
+		"delete_confirmation": "このチャートを削除してもよろしいですか？この操作は元に戻すことができません。",
+		"download_simfile": "シミュレーターファイルをダウンロード"
 	}
 }

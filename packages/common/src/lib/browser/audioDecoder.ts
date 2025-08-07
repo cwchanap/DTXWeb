@@ -24,22 +24,32 @@ export class XAAudioContext extends AudioContext {
 			await this.ensureInitialized();
 
 			const decoder = new WasmXADecoder();
-			const data = decoder.decode(new Uint8Array(audioData));
-			const format = decoder.get_format();
+			try {
+				const data = decoder.decode(new Uint8Array(audioData));
+				const format = decoder.get_format();
 
-			const audioBuffer = this.createBuffer(
-				format.channels,
-				data.length,
-				format.samples_rate
-			);
-			for (let i = 0; i < format.channels; i++) {
-				const channelData = audioBuffer.getChannelData(i);
-				for (let j = 0; j < data.length; j++) {
-					channelData[j] = data[j] / 32768;
+				const samplesPerChannel = data.length / format.channels;
+				const audioBuffer = this.createBuffer(
+					format.channels,
+					samplesPerChannel,
+					format.samples_rate
+				);
+
+				for (let i = 0; i < format.channels; i++) {
+					const channelData = audioBuffer.getChannelData(i);
+					for (let j = 0; j < samplesPerChannel; j++) {
+						// For interleaved audio data, extract samples for each channel
+						channelData[j] = data[j * format.channels + i] / 32768;
+					}
+				}
+				successCallback?.(audioBuffer);
+				return audioBuffer;
+			} finally {
+				// Ensure decoder is properly freed if it has a free/destroy method
+				if (typeof decoder.free === 'function') {
+					decoder.free();
 				}
 			}
-			successCallback?.(audioBuffer);
-			return Promise.resolve(audioBuffer);
 		} catch (e) {
 			console.warn(
 				`Failed to decode XA audio: ${e instanceof Error ? e.message : String(e)}`

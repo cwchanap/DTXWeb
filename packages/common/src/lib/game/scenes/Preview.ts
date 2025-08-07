@@ -158,15 +158,6 @@ export class Preview extends BaseGame {
 						return;
 					}
 
-					// Add a completion listener for this specific audio
-					this.load.once(`filecomplete-audio-${cacheKey}`, () => {
-						// Add to sound manager once loaded
-						if (!this.sound.get(cacheKey)) {
-							this.sound.add(cacheKey);
-						}
-						resolve();
-					});
-
 					// Load the audio file into cache
 					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
 						// Use XA decoder for .xa files
@@ -176,7 +167,27 @@ export class Preview extends BaseGame {
 							// Create a blob URL from the decoded audio buffer
 							const wavBlob = this.audioBufferToWavBlob(audioBuffer);
 							const objectUrl = URL.createObjectURL(wavBlob);
+
+							// Add a completion listener for this specific audio BEFORE loading
+							this.load.once(`filecomplete-audio-${cacheKey}`, () => {
+								// Add to sound manager once loaded
+								if (!this.sound.get(cacheKey)) {
+									this.sound.add(cacheKey);
+								}
+								resolve();
+							});
+
+							// Add error listener in case loading fails
+							this.load.once(`loaderror-audio-${cacheKey}`, () => {
+								console.warn(
+									`Failed to load decoded XA file: ${soundChip.fileName}`
+								);
+								resolve();
+							});
+
 							this.load.audio(cacheKey, objectUrl);
+							// Start the loader to immediately load this audio
+							this.load.start();
 						} catch (error) {
 							console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
 							resolve();
@@ -184,12 +195,26 @@ export class Preview extends BaseGame {
 						}
 					} else {
 						// For other formats, load as usual
+						// Add a completion listener for this specific audio BEFORE loading
+						this.load.once(`filecomplete-audio-${cacheKey}`, () => {
+							// Add to sound manager once loaded
+							if (!this.sound.get(cacheKey)) {
+								this.sound.add(cacheKey);
+							}
+							resolve();
+						});
+
+						// Add error listener in case loading fails
+						this.load.once(`loaderror-audio-${cacheKey}`, () => {
+							console.warn(`Failed to load audio file: ${soundChip.fileName}`);
+							resolve();
+						});
+
 						const objectUrl = URL.createObjectURL(actualFile);
 						this.load.audio(cacheKey, objectUrl);
+						// Start the loader to immediately load this audio
+						this.load.start();
 					}
-
-					// Start the loader to immediately load this audio
-					this.load.start();
 				});
 			} catch (error) {
 				console.warn(`Failed to setup sound chip ${soundChip.fileName}:`, error);
@@ -400,7 +425,6 @@ export class Preview extends BaseGame {
 		const arrayBuffer = new ArrayBuffer(length);
 		const view = new DataView(arrayBuffer);
 		const channels = [];
-		let offset = 0;
 		let pos = 0;
 
 		// Collect audio data from all channels

@@ -9,8 +9,8 @@ on:
   workflow_dispatch: # Allows manual triggering
 
 jobs:
-  build:
-    name: Cross-Platform Electron Build
+  build-windows:
+    name: Windows Electron Build
     runs-on: ubuntu-latest
     container:
       image: electronuserland/builder:wine
@@ -55,9 +55,53 @@ jobs:
           path: dist/artifacts/
           retention-days: 5
 
+  build-mac:
+    name: macOS Electron Build
+    runs-on: macos-latest
+    environment: Electron
+    env:
+      PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
+      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+      VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
+      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Electron App for macOS
+        run: |
+          npm run build -w=@dtx/common
+          npm run build:mac -w=dtx-desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p dist/artifacts
+          cp packages/dtx-desktop/dist/*.dmg dist/artifacts/ 2>/dev/null || true
+          cp packages/dtx-desktop/dist/*.zip dist/artifacts/ 2>/dev/null || true
+          cp packages/dtx-desktop/dist/latest-mac.yml dist/artifacts/latest-mac.yml 2>/dev/null || true
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-app-mac
+          path: dist/artifacts/
+          retention-days: 5
+
   deploy:
     name: Deploy to Cloudflare R2
-    needs: build
+    needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
 
@@ -65,11 +109,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Artifacts
+      - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
           name: electron-app-win
-          path: dist/artifacts
+          path: dist/artifacts/win
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-app-mac
+          path: dist/artifacts/mac
 
       - name: Set Release Version
         id: version
@@ -87,8 +137,13 @@ jobs:
         run: |
           TAG_VERSION=${{ env.VERSION }}
 
+          # Organize all artifacts into a single directory
+          mkdir -p dist/artifacts/all
+          cp dist/artifacts/win/* dist/artifacts/all/ 2>/dev/null || true
+          cp dist/artifacts/mac/* dist/artifacts/all/ 2>/dev/null || true
+
           # Create a latest.json file for auto-updates
-          cat > dist/artifacts/latest.json << EOF
+          cat > dist/artifacts/all/latest.json << EOF
           {
             "version": "$TAG_VERSION",
             "notes": "Release version $TAG_VERSION",
@@ -96,13 +151,17 @@ jobs:
               "win64": {
                 "file": "ddtx-desktop-1.0.0-setup.exe",
                 "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-win-${TAG_VERSION}.exe"
+              },
+              "darwin": {
+                "file": "ddtx-desktop-1.0.0.dmg",
+                "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-mac-${TAG_VERSION}.dmg"
               }
             }
           }
           EOF
 
           # List all deployment files
-          ls -la dist/artifacts/
+          ls -la dist/artifacts/all/
         shell: bash
 
       - name: Setup Node.js for Wrangler
@@ -125,12 +184,16 @@ jobs:
           EOF
 
           # Upload each file with appropriate content-type and cache-control
-          for file in dist/artifacts/*; do
+          for file in dist/artifacts/all/*; do
             filename=$(basename "$file")
             content_type="application/octet-stream"
             
             if [[ $filename == *.exe ]]; then
               content_type="application/vnd.microsoft.portable-executable"
+            elif [[ $filename == *.dmg ]]; then
+              content_type="application/x-apple-diskimage"
+            elif [[ $filename == *.zip ]]; then
+              content_type="application/zip"
             elif [[ $filename == *.yml ]] || [[ $filename == *.json ]]; then
               content_type="application/json"
             fi
@@ -152,6 +215,6 @@ jobs:
           prerelease: false
           name: Release ${{ env.VERSION }}
           files: |
-            dist/artifacts/*
+            dist/artifacts/all/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

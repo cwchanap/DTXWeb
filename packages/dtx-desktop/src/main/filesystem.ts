@@ -101,10 +101,10 @@ export async function selectDirectory() {
 	return result;
 }
 
-export interface ReadFileResult {
-	error: string | null;
-	content: string | Buffer;
-}
+export type ReadFileResult =
+	| { error: string; content: '' }
+	| { error: null; content: string; isText: true }
+	| { error: null; content: Buffer; isText: false };
 
 export async function readFile(
 	filePath: string,
@@ -163,7 +163,7 @@ export async function readFile(
 		// For audio files, return the binary data directly
 		if (isAudioFile) {
 			// For binary audio files, return the buffer directly
-			return { error: null, content: fileBuffer };
+			return { error: null, content: fileBuffer, isText: false };
 		}
 
 		// Create a File object for encoding detection (text files only)
@@ -213,7 +213,7 @@ export async function readFile(
 			fallback
 		);
 
-		return { error: null, content };
+		return { error: null, content, isText: true };
 	} catch (error) {
 		console.error('Error reading file:', error);
 		return {

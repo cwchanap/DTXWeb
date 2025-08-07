@@ -338,7 +338,12 @@
 				);
 				if (!dtxResult.error) {
 					// Use the pre-decoded content directly since main process already handled encoding
-					dtxFile = new DTXFile(dtxResult.content as string);
+					if (dtxResult.isText) {
+						dtxFile = new DTXFile(dtxResult.content);
+					} else {
+						// Convert Buffer to string for DTX files
+						dtxFile = new DTXFile(Buffer.from(dtxResult.content).toString('utf8'));
+					}
 					await dtxFile.parse();
 					soundChips = dtxFile.parseSoundChips();
 					notes = dtxFile.parseNotes();

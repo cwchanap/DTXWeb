@@ -1,30 +1,31 @@
 {
-	"permissions": {
-		"allow": [
-			"Bash(rg:*)",
-			"Bash(grep:*)",
-			"Bash(npm test:*)",
-			"Bash(find:*)",
-			"WebFetch(domain:github.com)",
-			"Bash(npm run test:*)",
-			"Bash(npm run lint)",
-			"Bash(npm run build:*)",
-			"Bash(npm run check:*)",
-			"Bash(npm run format:*)",
-			"Bash(mkdir:*)",
-			"mcp__sequential-thinking__sequentialthinking",
-			"mcp__Context7__resolve-library-id",
-			"mcp__Context7__get-library-docs",
-			"mcp__playwright__browser_navigate",
-			"mcp__playwright__browser_console_messages",
-			"Bash(npm run dev:*)",
-			"Bash(ls:*)",
-			"Bash(gh pr:*)",
-			"Bash(sed:*)",
-			"mcp__playwright__browser_take_screenshot",
-			"mcp__playwright__browser_wait_for",
-			"Bash(npm run typecheck:node:*)"
-		],
-		"deny": []
-	}
+  "permissions": {
+    "allow": [
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(npm test:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run build:*)",
+      "Bash(npm run check:*)",
+      "Bash(npm run format:*)",
+      "Bash(mkdir:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__Context7__resolve-library-id",
+      "mcp__Context7__get-library-docs",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_console_messages",
+      "Bash(npm run dev:*)",
+      "Bash(ls:*)",
+      "Bash(gh pr:*)",
+      "Bash(sed:*)",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_wait_for",
+      "Bash(npm run typecheck:node:*)",
+      "Bash(ln:*)"
+    ],
+    "deny": []
+  }
 }

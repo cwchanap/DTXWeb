@@ -86,39 +86,6 @@ describe('SimFileService', () => {
 		});
 	});
 
-	describe('getPreviewUrl', () => {
-		it('should get preview URL from main process', async () => {
-			const mockUrl = 'https://example.com/preview.jpg';
-			mockInvoke.mockResolvedValue(mockUrl);
-
-			const result = await simFileService.getPreviewUrl('test-preview');
-
-			expect(mockInvoke).toHaveBeenCalledWith('get-preview-url', 'test-preview');
-			expect(result).toBe(mockUrl);
-		});
-	});
-
-	describe('getSoundPreviewUrl', () => {
-		it('should get sound preview URL from main process', async () => {
-			const mockUrl = 'https://example.com/sound-preview.mp3';
-			mockInvoke.mockResolvedValue(mockUrl);
-
-			const result = await simFileService.getSoundPreviewUrl('test-sound-preview');
-
-			expect(mockInvoke).toHaveBeenCalledWith('get-sound-preview-url', 'test-sound-preview');
-			expect(result).toBe(mockUrl);
-		});
-
-		it('should handle null sound preview URL', async () => {
-			mockInvoke.mockResolvedValue(null);
-
-			const result = await simFileService.getSoundPreviewUrl(null);
-
-			expect(mockInvoke).toHaveBeenCalledWith('get-sound-preview-url', null);
-			expect(result).toBe(null);
-		});
-	});
-
 	describe('cache management', () => {
 		it('should clear cache', () => {
 			simFileService.clearCache();

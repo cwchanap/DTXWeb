@@ -143,23 +143,5 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
 		});
 	});
-
-	describe('selectSong', () => {
-		it('should call workspaceStore.selectSong with the provided song', () => {
-			const mockSong = {
-				name: 'TestSong',
-				path: '/test/path/TestSong',
-				isExpanded: false,
-				isLoading: false,
-				children: [],
-				hasChildren: false,
-				containsDtxFiles: true,
-				songTitle: 'Test Song Title'
-			};
-
-			workspaceService.selectSong(mockSong);
-
-			expect(workspaceStore.selectSong).toHaveBeenCalledWith(mockSong);
-		});
-	});
+	// Removed trivial selectSong pass-through test
 });

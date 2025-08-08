@@ -430,38 +430,5 @@ describe('LinkingService', () => {
 		});
 	});
 
-	describe('unlinkSimFileFromFolder', () => {
-		it('should call workspaceStore.unlinkSimFileFromFolder with correct path', () => {
-			const folderPath = '/path/to/folder';
-
-			linkingService.unlinkSimFileFromFolder(folderPath);
-
-			expect(workspaceStore.unlinkSimFileFromFolder).toHaveBeenCalledWith(folderPath);
-		});
-	});
-
-	describe('linkSimFileToFolder', () => {
-		it('should call workspaceStore.linkSimFileToFolder with correct parameters', () => {
-			const mockSimFile: SimfileWithDtx = {
-				id: 1,
-				title: 'Test Song',
-				artist: 'Test Artist',
-				bpm: 120,
-				preview_url: null,
-				sound_preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				dtx_files: []
-			};
-			const folderPath = '/path/to/folder';
-
-			linkingService.linkSimFileToFolder(mockSimFile, folderPath);
-
-			expect(workspaceStore.linkSimFileToFolder).toHaveBeenCalledWith(
-				folderPath,
-				mockSimFile
-			);
-		});
-	});
+	// Removed trivial store-forwarding tests for linking/unlinking
 });

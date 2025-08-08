@@ -26,11 +26,15 @@ const localStorageMock = {
 	key: vi.fn()
 };
 Object.defineProperty(window, 'localStorage', {
+	configurable: true,
+	writable: true,
 	value: localStorageMock
 });
 
 // Mock window.electron for Electron IPC
 Object.defineProperty(window, 'electron', {
+	configurable: true,
+	writable: true,
 	value: {
 		ipcRenderer: {
 			send: vi.fn(),

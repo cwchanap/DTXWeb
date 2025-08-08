@@ -371,4 +371,108 @@ describe('SoundLibrary', () => {
 			expect(mockLocalStorage.removeItem).not.toHaveBeenCalled();
 		});
 	});
+
+	describe('freeUpStorageSpace (private method)', () => {
+		const freeUpStorageSpace = (SoundLibrary as any).freeUpStorageSpace;
+
+		it('should remove oldest files by default percentage (25%)', () => {
+			const library = [
+				{ hash: 'hash1', dateAdded: 1000 },
+				{ hash: 'hash2', dateAdded: 2000 },
+				{ hash: 'hash3', dateAdded: 3000 },
+				{ hash: 'hash4', dateAdded: 4000 }
+			];
+
+			const result = freeUpStorageSpace(library);
+
+			expect(result).toBe(true);
+			expect(library).toHaveLength(3); // 1 file removed (25% of 4)
+			expect(library.find((f) => f.hash === 'hash1')).toBeUndefined(); // oldest removed
+		});
+
+		it('should remove specified percentage of files', () => {
+			const library = [
+				{ hash: 'hash1', dateAdded: 1000 },
+				{ hash: 'hash2', dateAdded: 2000 },
+				{ hash: 'hash3', dateAdded: 3000 },
+				{ hash: 'hash4', dateAdded: 4000 }
+			];
+
+			const result = freeUpStorageSpace(library, 0.5); // 50%
+
+			expect(result).toBe(true);
+			expect(library).toHaveLength(2); // 2 files removed (50% of 4)
+			expect(library.find((f) => f.hash === 'hash1')).toBeUndefined();
+			expect(library.find((f) => f.hash === 'hash2')).toBeUndefined();
+		});
+
+		it('should remove at least 1 file even with small percentage', () => {
+			const library = [
+				{ hash: 'hash1', dateAdded: 1000 },
+				{ hash: 'hash2', dateAdded: 2000 }
+			];
+
+			const result = freeUpStorageSpace(library, 0.01); // 1%
+
+			expect(result).toBe(true);
+			expect(library).toHaveLength(1); // At least 1 file removed
+		});
+
+		it('should return false for empty library', () => {
+			const library: any[] = [];
+
+			const result = freeUpStorageSpace(library);
+
+			expect(result).toBe(false);
+			expect(library).toHaveLength(0);
+		});
+	});
+
+	describe('fileToBase64 (private method)', () => {
+		const fileToBase64 = (SoundLibrary as any).fileToBase64;
+
+		it('should convert file to base64 string', async () => {
+			const mockFile = new File(['test content'], 'test.txt', { type: 'text/plain' });
+
+			// Mock FileReader
+			const mockFileReader = {
+				onload: null as any,
+				onerror: null as any,
+				result: 'data:text/plain;base64,dGVzdCBjb250ZW50',
+				readAsDataURL: vi.fn()
+			};
+
+			vi.spyOn(window, 'FileReader').mockImplementation(() => mockFileReader as any);
+
+			const promise = fileToBase64(mockFile);
+
+			// Simulate FileReader onload
+			mockFileReader.onload();
+
+			const result = await promise;
+
+			expect(result).toBe('dGVzdCBjb250ZW50'); // base64 without prefix
+			expect(mockFileReader.readAsDataURL).toHaveBeenCalledWith(mockFile);
+		});
+
+		it('should reject on FileReader error', async () => {
+			const mockFile = new File(['test content'], 'test.txt');
+			const mockError = new Error('FileReader error');
+
+			const mockFileReader = {
+				onload: null as any,
+				onerror: null as any,
+				readAsDataURL: vi.fn()
+			};
+
+			vi.spyOn(window, 'FileReader').mockImplementation(() => mockFileReader as any);
+
+			const promise = fileToBase64(mockFile);
+
+			// Simulate FileReader error
+			mockFileReader.onerror(mockError);
+
+			await expect(promise).rejects.toThrow('FileReader error');
+		});
+	});
 });

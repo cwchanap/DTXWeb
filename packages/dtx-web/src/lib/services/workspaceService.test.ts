@@ -554,5 +554,20 @@ describe('WorkspaceService', () => {
 
 			expect(result).toBe('Test (3)');
 		});
+
+		it('should format file sizes correctly', () => {
+			const workspaceService = new WorkspaceService();
+
+			// Access private method for testing
+			const formatFileSize = (workspaceService as any).formatFileSize.bind(workspaceService);
+
+			expect(formatFileSize(500)).toBe('500.0 B');
+			expect(formatFileSize(1024)).toBe('1.0 KB');
+			expect(formatFileSize(1536)).toBe('1.5 KB');
+			expect(formatFileSize(1048576)).toBe('1.0 MB');
+			expect(formatFileSize(2097152)).toBe('2.0 MB');
+			expect(formatFileSize(1073741824)).toBe('1.0 GB');
+			expect(formatFileSize(0)).toBe('0.0 B');
+		});
 	});
 });

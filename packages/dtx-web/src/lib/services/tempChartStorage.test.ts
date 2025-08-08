@@ -286,28 +286,6 @@ describe('TempChartStorage', () => {
 		});
 	});
 
-	describe('getStorageKey', () => {
-		it('should return correct storage key with simFileID and difficulty', () => {
-			const key = TempChartStorage.getStorageKey('test-simfile', 'master');
-			expect(key).toBe('dtx_temp_chart_test-simfile_master');
-		});
-
-		it('should return correct storage key with simFileID only', () => {
-			const key = TempChartStorage.getStorageKey('test-simfile', null);
-			expect(key).toBe('dtx_temp_chart_test-simfile');
-		});
-
-		it('should return default key when no simFileID', () => {
-			const key = TempChartStorage.getStorageKey(null, 'master');
-			expect(key).toBe('dtx_temp_chart_temp');
-		});
-
-		it('should return default key when both are null', () => {
-			const key = TempChartStorage.getStorageKey(null, null);
-			expect(key).toBe('dtx_temp_chart_temp');
-		});
-	});
-
 	describe('buildStorageKey (via public methods)', () => {
 		it('should handle various simFileID and difficulty combinations', () => {
 			// Test through save method to verify internal buildStorageKey logic

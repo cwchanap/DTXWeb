@@ -160,49 +160,6 @@ describe('ChartListItem Component Logic', () => {
 		expect(mockOnFileDelete).toHaveBeenCalledTimes(1);
 	});
 
-	// Test the modal close function
-	it('handles modal close correctly', async () => {
-		// Create a reactive variable for openState
-		let openState = true;
-
-		// Define the modalClose function
-		const modalClose = () => {
-			openState = false;
-		};
-
-		// Call the function
-		modalClose();
-		await tick();
-
-		// Verify the state was updated
-		expect(openState).toBe(false);
-	});
-
-	// Test the popover state
-	it('handles popover state correctly', async () => {
-		// Create a reactive variable for popoverOpen
-		let popoverOpen = false;
-
-		// Define the onOpenChange function
-		const onOpenChange = (details: { open: boolean }) => {
-			popoverOpen = details.open;
-		};
-
-		// Call the function with open=true
-		onOpenChange({ open: true });
-		await tick();
-
-		// Verify the state was updated
-		expect(popoverOpen).toBe(true);
-
-		// Call the function with open=false
-		onOpenChange({ open: false });
-		await tick();
-
-		// Verify the state was updated
-		expect(popoverOpen).toBe(false);
-	});
-
 	// Test blog mode vs normal mode differences
 	it('handles blog mode correctly', () => {
 		// In blog mode, the popover menu should not be shown
@@ -229,30 +186,6 @@ describe('ChartListItem Component Logic', () => {
 		if (isBlog && !mockItemNoPreview.download_url) {
 			expect(mockItemNoPreview.download_url).toBeNull();
 		}
-	});
-
-	it('verifies the expected URL format for the Edit action link', () => {
-		const itemId = mockItem.id;
-		const expectedEditUrl = `/app/chart/${itemId}`;
-		// This test confirms the string format for the href attribute
-		// that would be generated in the component's template for the Edit link.
-		expect(`/app/chart/${itemId}`).toBe(expectedEditUrl);
-	});
-
-	it('openModal function sets modalOpen to true and popoverOpen to false', async () => {
-		let modalOpen = false;
-		let popoverOpen = true; // Start with popover open
-
-		const openModalLogic = () => {
-			modalOpen = true;
-			popoverOpen = false; // Close popover when modal opens
-		};
-
-		openModalLogic();
-		await tick();
-
-		expect(modalOpen).toBe(true);
-		expect(popoverOpen).toBe(false);
 	});
 
 	describe('Blog Mode Download Logic', () => {

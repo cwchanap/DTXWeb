@@ -14,9 +14,9 @@
 - Install: `npm i` (Node `v22.14.0`, see `.nvmrc`).
 - Web dev: `npm run dev -w=dtx-web` → starts Vite on `:5173`.
 - Desktop dev: `npm run dev -w=dtx-desktop` → launches Electron.
-- Build packages: `npm run build -w=@dtx/common|dtx-web|dtx-desktop`.
-- Tests (unit): `npm run test -w=dtx-web|dtx-desktop|@dtx/common`.
-- Coverage: `npm run test:coverage -w=…`.
+- Build packages: `npm run build -w=<workspace>`, where `<workspace>` can be `@dtx/common`, `dtx-web`, or `dtx-desktop`.
+- Tests (unit): `npm run test -w=<workspace>`, where `<workspace>` can be `dtx-web`, `dtx-desktop`, or `@dtx/common`.
+- Coverage: `npm run test:coverage -w=<workspace>`.
 - E2E: `npx playwright test` (uses `e2e/`, spins up web via `npm run dev -w=dtx-web`).
 - Lint: `npm run lint` | Format: `npm run format`.
 - Generate Supabase types: `npm run gen-types`.

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { locale, locales } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
+	import toastStore from '$lib/toaster';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
@@ -24,7 +25,11 @@
 			uploadedFile = file;
 			isConverted = false;
 		} else if (file) {
-			alert('Please select a valid MIDI file (.mid or .midi)');
+			toastStore.error({
+				title: 'Invalid file type',
+				description: 'Please select a valid MIDI file (.mid or .midi)',
+				duration: 3000
+			});
 			target.value = '';
 		}
 	};

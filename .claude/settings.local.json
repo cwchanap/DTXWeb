@@ -25,7 +25,8 @@
 			"mcp__playwright__browser_wait_for",
 			"Bash(npm run typecheck:node:*)",
 			"Bash(ln:*)",
-			"Bash(gh api:*)"
+			"Bash(gh api:*)",
+			"mcp__github__get_pull_request_comments"
 		],
 		"deny": []
 	}

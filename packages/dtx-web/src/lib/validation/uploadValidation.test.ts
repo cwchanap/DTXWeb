@@ -56,16 +56,6 @@ describe('Upload Validation', () => {
 		}
 	});
 
-	it('should generate proper key path', () => {
-		const simFileId = 'test-sim-file-id';
-		const fileName = 'test.wav';
-
-		// Test key generation logic that would be used in the server
-		const key = `${simFileId}/${fileName}`;
-
-		expect(key).toBe('test-sim-file-id/test.wav');
-	});
-
 	it('should handle file with special characters in name', () => {
 		const file = new File(['test content'], 'test file (1).wav', { type: 'audio/wav' });
 		const simFileId = 'test-id';
@@ -76,5 +66,17 @@ describe('Upload Validation', () => {
 		if (result.success) {
 			expect(result.data.file.name).toBe('test file (1).wav');
 		}
+	});
+});
+
+describe('Key Path Generation', () => {
+	it('should generate proper key path', () => {
+		const simFileId = 'test-sim-file-id';
+		const fileName = 'test.wav';
+
+		// Test key generation logic that would be used in the server
+		const key = `${simFileId}/${fileName}`;
+
+		expect(key).toBe('test-sim-file-id/test.wav');
 	});
 });

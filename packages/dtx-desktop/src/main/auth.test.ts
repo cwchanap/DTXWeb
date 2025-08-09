@@ -23,7 +23,6 @@ vi.mock('@supabase/supabase-js', () => ({
 }));
 
 // Use stubEnv to provide Vite-style env vars
-import { vi } from 'vitest';
 
 describe('auth module', () => {
 	beforeEach(async () => {

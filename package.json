@@ -3,22 +3,29 @@
 	"version": "0.0.1",
 	"private": true,
 	"scripts": {
-		"lint": "prettier --check . && eslint .",
-		"format": "prettier --write .",
+		"build": "turbo run build",
+		"test": "turbo run test",
+		"test:coverage": "turbo run test:coverage",
+		"lint": "turbo run lint",
+		"format": "turbo run //#format:root",
+		"check": "turbo run check",
+		"dev": "turbo run dev",
+		"dev:web": "npm run dev -w=dtx-web",
+		"dev:desktop": "npm run dev -w=dtx-desktop",
+		"dev:all": "turbo run dtx-web#dev dtx-desktop#dev",
 		"prepare": "husky || true",
-		"clean": "rm -rf ./node_modules && rm -rf ./packages/**/node_modules && rm -rf ./packages/**/dist && rm -rf ./packages/**/.svelte-kit && rm -rf ./packages/**/build && rm -rf ./packages/**/.wrangler",
-		"gen-types": "npx supabase gen types --lang=typescript --project-id 'hdnwvpusmxrfrfjayogr' --schema public > packages/common/src/lib/types/supabase.types.ts",
-		"test": "npm run test --workspaces --if-present",
-		"test:coverage": "npm run test:coverage --workspaces --if-present",
+		"clean": "turbo run clean",
+		"gen-types": "turbo run gen-types",
 		"test:web": "npm run test -w=dtx-web",
 		"test:desktop": "npm run test -w=dtx-desktop",
 		"test:common": "npm run test -w=@dtx/common",
 		"test:coverage:web": "npm run test:coverage -w=dtx-web",
 		"test:coverage:desktop": "npm run test:coverage -w=dtx-desktop",
-		"test:coverage:common": "npm run test:coverage -w=@dtx/common"
+		"test:coverage:common": "npm run test:coverage -w=@dtx/common",
+		"format:root": "prettier --write ."
 	},
 	"lint-staged": {
-		"*": "npm run format"
+		"*.{js,ts,json,md,svelte,css,html}": "prettier --write"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.52.0",
@@ -35,9 +42,11 @@
 		"lint-staged": "^15.4.3",
 		"prettier": "^3.1.1",
 		"prettier-plugin-svelte": "^3.2.6",
-		"prettier-plugin-tailwindcss": "^0.6.11"
+		"prettier-plugin-tailwindcss": "^0.6.11",
+		"turbo": "^2.5.5"
 	},
 	"type": "module",
+	"packageManager": "npm@10.0.0",
 	"workspaces": [
 		"packages/dtx-web",
 		"packages/dtx-desktop",

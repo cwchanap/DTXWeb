@@ -2,7 +2,7 @@
 	"name": "@dtx/common",
 	"version": "0.0.1",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --port 5175",
 		"build": "vite build && npm run prepack && node scripts/fix-extensions.js",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

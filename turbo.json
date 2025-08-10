@@ -30,7 +30,8 @@
 			"persistent": true
 		},
 		"@dtx/common#dev": {
-			"cache": false
+			"cache": false,
+			"persistent": true
 		},
 		"gen-types": {
 			"outputs": ["packages/common/src/lib/types/supabase.types.ts"]

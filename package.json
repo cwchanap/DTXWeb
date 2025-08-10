@@ -51,6 +51,7 @@
 	"workspaces": [
 		"packages/dtx-web",
 		"packages/dtx-desktop",
-		"packages/common"
+		"packages/common",
+		"packages/ui-components"
 	]
 }

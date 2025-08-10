@@ -1,46 +1,45 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Structure & Modules
 
-- Monorepo using npm workspaces under `packages/`:
+- Monorepo with npm workspaces under `packages/`:
     - `packages/dtx-web`: SvelteKit web app (Vite).
     - `packages/dtx-desktop`: Electron app (electron-vite).
     - `packages/common`: Shared Svelte components, utilities, DTX parsing.
-- End-to-end tests: `e2e/` (Playwright). Reports in `playwright-report/`.
-- Misc: `scripts/` for tools, `.husky/` pre-commit, `.env.example` for config.
+    - `packages/ui-components`: Shadcn-Svelte UI library (export-only components).
+- E2E tests live in `e2e/` (Playwright). Reports: `playwright-report/`.
+- Utilities: `scripts/`, `.husky/` pre-commit, `.env.example` for config.
 
-## Build, Test, and Development Commands
+## Build, Test, and Dev
 
-- Install: `npm i` (Node `v22.14.0`, see `.nvmrc`).
-- Web dev: `npm run dev -w=dtx-web` → starts Vite on `:5173`.
-- Desktop dev: `npm run dev -w=dtx-desktop` → launches Electron.
-- Build packages: `npm run build -w=<workspace>`, where `<workspace>` can be `@dtx/common`, `dtx-web`, or `dtx-desktop`.
-- Tests (unit): `npm run test -w=<workspace>`, where `<workspace>` can be `dtx-web`, `dtx-desktop`, or `@dtx/common`.
-- Coverage: `npm run test:coverage -w=<workspace>`.
-- E2E: `npx playwright test` (uses `e2e/`, spins up web via `npm run dev -w=dtx-web`).
-- Lint: `npm run lint` | Format: `npm run format`.
-- Generate Supabase types: `npm run gen-types`.
+- Install deps: `npm i` (Node `v22.14.0`, see `.nvmrc`).
+- Web dev: `npm run dev -w=dtx-web` (Vite on `:5173`).
+- Desktop dev: `npm run dev -w=dtx-desktop` (Electron app).
+- Build any workspace: `npm run build -w=<workspace>` (e.g., `@dtx/common`, `@dtx/ui-components`).
+- Unit tests: `npm run test -w=<workspace>`; coverage: `npm run test:coverage -w=<workspace>`.
+- E2E: `npx playwright test` (spins up web via `dtx-web` dev).
+- Lint/Format: `npm run lint` / `npm run format`.
 
-## Coding Style & Naming Conventions
+## Style & Conventions
 
-- Languages: TypeScript, Svelte 5, TailwindCSS 4.
-- Formatting: Prettier is source of truth (tabs, single quotes, width 100). Run `npm run format`.
-- Linting: ESLint with TypeScript + Svelte rules; CI/dev use `npm run lint`.
-- Files: tests `*.test.ts` or `*.spec.ts`; components in `src/lib/components/`; game code in `src/lib/game/`.
+- Stack: TypeScript, Svelte 5, Tailwind CSS 4.
+- Formatting: Prettier (tabs, single quotes, width 100). Run `npm run format`.
+- Linting: ESLint (TS + Svelte). Run `npm run lint`.
+- Naming: tests `*.test.ts|*.spec.ts`; components under `src/lib/components/`.
 
-## Testing Guidelines
+## Testing
 
-- Framework: Vitest (+ Testing Library for Svelte). Keep tests near source or under `src/`.
-- Coverage: use `test:coverage` scripts; exclude compiled output (`dist/`).
-- E2E: Playwright specs in `e2e/*.spec.ts`. Ensure web dev server isn’t already bound to the port when running.
+- Unit: Vitest (+ Testing Library for Svelte). Keep tests near source or under `src/`.
+- Coverage: use `test:coverage`; exclude `dist/`.
+- E2E: Playwright specs in `e2e/*.spec.ts`. Ensure no dev server occupies required ports.
 
-## Commit & Pull Request Guidelines
+## Commits & PRs
 
-- Commits: follow Conventional Commits (`feat:`, `fix:`, `chore:`). Keep changes scoped and clear.
-- PRs: include description, linked issues, test plan, and screenshots/screencasts for UI changes.
-- Checks: ensure `lint`, `test`, and builds pass for all touched workspaces.
+- Commits: Conventional Commits (`feat:`, `fix:`, `chore:`). Scope changes clearly.
+- PRs: include description, linked issues, test plan, and UI screenshots/screencasts.
+- Checks: `lint`, `test`, and builds must pass for all touched workspaces.
 
-## Security & Configuration Tips
+## Security & Config
 
-- Do not commit secrets. Copy `.env.example` to `.env` in each workspace as needed (workspace `prepare` scripts symlink root `.env`).
-- Cloudflare Workers (web) and Supabase require valid environment variables before deploy.
+- Never commit secrets. Copy `.env.example` → `.env` where needed (workspaces symlink root `.env`).
+- Cloudflare Workers (web) and Supabase require valid env vars before deploy.

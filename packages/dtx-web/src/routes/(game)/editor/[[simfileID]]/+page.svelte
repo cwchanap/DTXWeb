@@ -19,7 +19,7 @@
 	import { EventBus } from '@dtx/common/game';
 	import { page } from '$app/state';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { Modal } from '@dtx/ui-components/components';
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';

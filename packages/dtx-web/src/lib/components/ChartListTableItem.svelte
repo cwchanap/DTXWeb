@@ -2,7 +2,7 @@
 	import type { Tables } from '@dtx/common';
 	import { Popover, Tooltip } from '@skeletonlabs/skeleton-svelte';
 	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
-	import Modal from './Modal.svelte';
+	import { Modal } from '@dtx/ui-components/components';
 
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
 		item: Partial<Tables<'simfiles'>>;

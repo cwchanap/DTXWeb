@@ -69,7 +69,6 @@
 		tabindex="-1"
 	>
 		<div class="relative mx-4 w-full rounded-lg bg-white p-6 shadow-xl {sizeClasses[size]}">
-			<!-- Header -->
 			<div class="mb-4 flex items-center justify-between">
 				<h3 id="modal-title" class="text-lg font-semibold text-gray-900">{title}</h3>
 				<button
@@ -87,12 +86,10 @@
 				</button>
 			</div>
 
-			<!-- Content -->
 			<div class="mb-6">
 				{@render children()}
 			</div>
 
-			<!-- Footer -->
 			{#if onConfirm}
 				<div class="flex justify-end gap-3">
 					<button

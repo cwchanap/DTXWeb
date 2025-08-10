@@ -5,7 +5,7 @@
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
-	import Modal from './Modal.svelte';
+	import { Modal } from '@dtx/ui-components/components';
 
 	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
 		$props<{

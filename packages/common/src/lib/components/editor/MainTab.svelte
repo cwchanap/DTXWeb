@@ -181,9 +181,16 @@
 		</div>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3">Disable BGM in Preview:</label>
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="disable-bgm-preview"
+			>Disable BGM in Preview:</label
+		>
 		<label class="relative inline-flex cursor-pointer items-center py-1">
-			<input type="checkbox" class="sr-only" bind:checked={disableBgmPreview} />
+			<input
+				id="disable-bgm-preview"
+				type="checkbox"
+				class="sr-only"
+				bind:checked={disableBgmPreview}
+			/>
 			<div class="toggle-switch {disableBgmPreview ? 'toggle-on' : 'toggle-off'}">
 				<div class="toggle-thumb"></div>
 			</div>

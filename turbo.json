@@ -1,0 +1,50 @@
+{
+	"$schema": "https://turborepo.com/schema.json",
+	"ui": "tui",
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build"],
+			"outputs": ["dist/**", ".svelte-kit/**", "build/**", "out/**"]
+		},
+		"test": {
+			"dependsOn": ["^build"],
+			"outputs": ["coverage/**"]
+		},
+		"test:coverage": {
+			"dependsOn": ["^build"],
+			"outputs": ["coverage/**"]
+		},
+		"lint": {},
+		"//#format:root": {},
+		"check": {},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"dtx-web#dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"dtx-desktop#dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"@dtx/common#dev": {
+			"cache": false
+		},
+		"gen-types": {
+			"outputs": ["packages/common/src/lib/types/supabase.types.ts"]
+		},
+		"clean": {
+			"cache": false
+		}
+	},
+	"globalDependencies": [
+		"package.json",
+		"turbo.json",
+		".env",
+		".env.local",
+		".env.production",
+		".env.development"
+	]
+}

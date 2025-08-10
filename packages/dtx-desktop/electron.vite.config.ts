@@ -43,6 +43,9 @@ export default defineConfig({
 		envDir: '../../',
 		envPrefix: ['VITE_', 'PUBLIC_'],
 		publicDir: 'static',
+		server: {
+			port: 5174
+		},
 		optimizeDeps: {
 			exclude: ['xa_decoder']
 		},

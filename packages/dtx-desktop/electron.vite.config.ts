@@ -10,6 +10,7 @@ export default defineConfig({
 		envPrefix: ['VITE_', 'PUBLIC_'],
 		resolve: {
 			alias: {
+				'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib'),
 				'@dtx/common/components': path.resolve(
 					__dirname,
 					'../common/src/lib/components.ts'
@@ -29,6 +30,7 @@ export default defineConfig({
 		},
 		resolve: {
 			alias: {
+				'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib'),
 				'@dtx/common/components': path.resolve(
 					__dirname,
 					'../common/src/lib/components.ts'
@@ -51,6 +53,7 @@ export default defineConfig({
 		},
 		resolve: {
 			alias: {
+				'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib'),
 				'@dtx/common/components': path.resolve(
 					__dirname,
 					'../common/src/lib/components.ts'

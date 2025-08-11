@@ -9,6 +9,7 @@ Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monore
 - `packages/common` - Shared Svelte component library and DTX file parsing
 - `packages/dtx-web` - SvelteKit web application (main app)
 - `packages/dtx-desktop` - Electron desktop application
+- `packages/ui-components` - Shadcn-Svelte UI component library (export-only components)
 
 ## Development Commands
 
@@ -23,17 +24,34 @@ npm run build -w=@dtx/common    # Build shared package ONLY if you modified it
 # Testing
 npm run test -w=dtx-web         # Run web app tests
 npm run test -w=dtx-web -- TestFile.test.ts  # Run specific test
+npm run test -w=dtx-desktop     # Run desktop app tests
+npm run test -w=@dtx/common     # Run common package tests
+npm run test -w=@dtx/ui-components  # Run UI components tests
 
 # Type checking
 npm run check -w=dtx-web        # TypeScript/Svelte check
+npm run check -w=dtx-desktop    # Desktop TypeScript check
+npm run typecheck:node -w=dtx-desktop  # Desktop Node.js type check
 ```
 
 ### Project-wide commands
 
 ```bash
+# Development servers
+npm run dev                     # Run both web and desktop dev servers
+npm run dev:web                 # Run web app only (port 5173)
+npm run dev:desktop             # Run desktop app only
+npm run dev:common              # Run common package dev server (port 5175)
+npm run dev:all                 # Run all dev servers
+
 # Linting & formatting
 npm run lint                    # Check formatting and lint
 npm run format                  # Auto-format code
+
+# Building and testing
+npm run build                   # Build all packages
+npm run test                    # Run tests for all packages
+npm run test:coverage           # Run tests with coverage
 
 # Supabase type generation
 npm run gen-types              # Generate TypeScript types from Supabase schema
@@ -70,7 +88,14 @@ The common package exports:
 
 - Svelte components via `./components` export
 - Types and utilities via main export
+- Game-related exports via `./game` export
+- Server utilities via `./server` export
 - DTX file parsing classes (`DTXFile`, `SimFile`, `LaneMeasureNote`, `SoundChip`)
+
+The ui-components package exports:
+
+- Shadcn-Svelte UI components via main export and `./components` export
+- Built with Tailwind CSS variants and utilities
 
 ### File Structure Patterns
 
@@ -187,8 +212,12 @@ import { Button } from '@dtx/common/components';
 
 ## Environment Setup
 
-- Node.js 22.x or later required
+- Node.js v22.14.0 (see `.nvmrc`)
+- Uses npm workspaces for monorepo management
+- Turborepo for build orchestration and caching
 - Uses husky + lint-staged for git hooks
+- Prettier for code formatting (tabs, single quotes, width 100)
+- ESLint for TypeScript and Svelte linting
 - Supabase CLI for type generation and local development
 
 ## Code Maintenance
@@ -203,3 +232,10 @@ import { Button } from '@dtx/common/components';
 - NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User
 - NEVER run development servers (`npm run dev`) or build commands (`npm run build`) unless the user explicitly instructs you to do so
 - ONLY build the shared package (`@dtx/common`) if you have made changes to files within that package
+
+# important-instruction-reminders
+
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User.

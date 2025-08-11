@@ -4,7 +4,9 @@
 		"src/renderer/src/env.d.ts",
 		"src/renderer/src/**/*",
 		"src/renderer/src/**/*.svelte",
-		"src/preload/*.d.ts"
+		"src/preload/*.d.ts",
+		"../ui-components/src/lib/**/*.svelte",
+		"../ui-components/src/lib/**/*.ts"
 	],
 	"compilerOptions": {
 		"verbatimModuleSyntax": true,
@@ -14,6 +16,10 @@
 		"checkJs": true,
 		"composite": true,
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
-		"moduleResolution": "bundler"
+		"moduleResolution": "bundler",
+		"baseUrl": ".",
+		"paths": {
+			"@dtx/ui-components/*": ["../ui-components/src/lib/*"]
+		}
 	}
 }

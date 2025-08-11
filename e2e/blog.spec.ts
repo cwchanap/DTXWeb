@@ -1,18 +1,52 @@
 import { test, expect } from '@playwright/test';
+import { PAGES } from './constants';
 
-test('has title', async ({ page }) => {
-	await page.goto('https://playwright.dev/');
+test.describe('Blog page', () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto(PAGES.BLOG);
+	});
 
-	// Expect a title "to contain" a substring.
-	await expect(page).toHaveTitle(/Playwright/);
-});
+	test('loads with expected header and title', async ({ page }) => {
+		await expect(page).toHaveTitle(/Blog/);
+		await expect(
+			page.getByRole('heading', { level: 1, name: "Welcome to Hapadona's DTX Blog" })
+		).toBeVisible();
+	});
 
-test('get started link', async ({ page }) => {
-	await page.goto('https://playwright.dev/');
+	test('shows Latest News section', async ({ page }) => {
+		await expect(page.getByRole('heading', { level: 2, name: 'Latest News' })).toBeVisible();
+		// Content may change as news gets added; at minimum the section renders.
+		await expect(page.getByText('No news yet.')).toBeVisible();
+	});
 
-	// Click the get started link.
-	await page.getByRole('link', { name: 'Get started' }).click();
+	test('shows Latest Simfiles with search and pagination controls', async ({ page }) => {
+		await expect(
+			page.getByRole('heading', { level: 2, name: 'Latest Simfiles' })
+		).toBeVisible();
 
-	// Expects page to have a heading with the name of Installation.
-	await expect(page.getByRole('heading', { name: 'Installation' })).toBeVisible();
+		// Search input by placeholder
+		await expect(page.getByPlaceholder('search by song name or artist')).toBeVisible();
+
+		// Items per page selector exists with expected options
+		const itemsPerPageLabel = page.getByText('Items per page:');
+		await expect(itemsPerPageLabel).toBeVisible();
+		const combo = page.getByRole('combobox');
+		await expect(combo).toBeVisible();
+		const options = combo.locator('option');
+		await expect(options).toHaveCount(4);
+		await expect(options.nth(0)).toHaveText('6');
+		await expect(options.nth(1)).toHaveText('12');
+		await expect(options.nth(2)).toHaveText('24');
+		await expect(options.nth(3)).toHaveText('48');
+	});
+
+	test('has view toggle and language controls', async ({ page }) => {
+		await expect(page.getByText('View:')).toBeVisible();
+		// Expect two toggle buttons (e.g., grid/list)
+		const viewButtons = page.getByRole('button').filter({ has: page.locator('img') });
+		await expect(viewButtons).toHaveCount(2);
+
+		// Language switcher button present
+		await expect(page.getByRole('button', { name: 'Language' })).toBeVisible();
+	});
 });

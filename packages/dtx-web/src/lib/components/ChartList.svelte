@@ -10,6 +10,7 @@
 	import IconCheck from '@lucide/svelte/icons/check';
 	import IconTable from '@lucide/svelte/icons/table';
 	import IconGrid from '@lucide/svelte/icons/grid';
+	import { Button } from '@dtx/ui-components/components';
 	import { supabase } from '../supabase';
 	import { formatLevelDisplay } from '../utils';
 
@@ -220,26 +221,28 @@
 			</select>
 		</div>
 
-		<!-- View Mode Selector -->
+		<!-- View Mode Selector using generic Button -->
 		<div class="flex items-center">
 			<span class="mr-2">View:</span>
 			<div class="flex rounded border">
-				<button
-					class="flex items-center justify-center p-2 {viewMode === 'card'
-						? 'bg-blue-100'
-						: 'hover:bg-gray-100'}"
-					onclick={() => (viewMode = 'card')}
+				<Button
+					variant={viewMode === 'card' ? 'primary' : 'ghost'}
+					size="icon"
+					on:click={() => (viewMode = 'card')}
+					aria-pressed={viewMode === 'card'}
+					ariaLabel="Card view"
 				>
-					<IconGrid size="18" />
-				</button>
-				<button
-					class="flex items-center justify-center p-2 {viewMode === 'table'
-						? 'bg-blue-100'
-						: 'hover:bg-gray-100'}"
-					onclick={() => (viewMode = 'table')}
+					{#snippet children()}<IconGrid size="18" />{/snippet}
+				</Button>
+				<Button
+					variant={viewMode === 'table' ? 'primary' : 'ghost'}
+					size="icon"
+					on:click={() => (viewMode = 'table')}
+					aria-pressed={viewMode === 'table'}
+					ariaLabel="Table view"
 				>
-					<IconTable size="18" />
-				</button>
+					{#snippet children()}<IconTable size="18" />{/snippet}
+				</Button>
 			</div>
 		</div>
 	</div>

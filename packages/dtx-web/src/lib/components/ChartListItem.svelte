@@ -5,7 +5,7 @@
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
-	import { Modal } from '@dtx/ui-components/components';
+	import { Modal, Button } from '@dtx/ui-components/components';
 
 	let { item, isBlog, togglePublishChart, getPreviewUrl, getSoundPreviewUrl, onFileDelete } =
 		$props<{
@@ -53,21 +53,20 @@
 							Edit
 						</a>
 
-						<button
-							onclick={() => togglePublishChart(item.id, item.is_published)}
-							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
+						<Button
+							on:click={() => togglePublishChart(item.id, item.is_published)}
+							variant="menuItem"
+							fullWidth
+							justify="start"
 						>
-							{item.is_published ? 'Unpublish' : 'Publish'}
-						</button>
+							{#snippet children()}{item.is_published
+									? 'Unpublish'
+									: 'Publish'}{/snippet}
+						</Button>
 
-						<button
-							onclick={openModal}
-							class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-							role="menuitem"
-						>
-							Delete
-						</button>
+						<Button on:click={openModal} variant="menuItem" fullWidth justify="start">
+							{#snippet children()}Delete{/snippet}
+						</Button>
 					</div>
 				{/snippet}
 			</Popover>

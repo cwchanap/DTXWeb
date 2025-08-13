@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 
 	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
+	import { Button } from '@dtx/ui-components/components';
 
 	interface Props {
 		previewUrl: string;
@@ -37,9 +38,12 @@
 		<img src={previewUrl} alt="Preview" class="mb-4 h-60 w-full rounded-lg object-cover" />
 	{/if}
 	{#if soundPreviewUrl}
-		<button
-			class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white p-2 shadow-lg"
-			onclick={async () => {
+		<Button
+			variant="floating"
+			position="absolute"
+			centered
+			padding="2"
+			on:click={async () => {
 				if (isPlaying) {
 					audio?.pause();
 					isPlaying = false;
@@ -69,13 +73,15 @@
 			}}
 			disabled={isLoading}
 		>
-			{#if isPlaying}
-				<CirclePause />
-			{:else if isLoading}
-				<Ellipsis />
-			{:else}
-				<Play />
-			{/if}
-		</button>
+			{#snippet children()}
+				{#if isPlaying}
+					<CirclePause />
+				{:else if isLoading}
+					<Ellipsis />
+				{:else}
+					<Play />
+				{/if}
+			{/snippet}
+		</Button>
 	{/if}
 </div>

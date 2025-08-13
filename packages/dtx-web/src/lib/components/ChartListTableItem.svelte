@@ -3,6 +3,7 @@
 	import { Popover, Tooltip } from '@skeletonlabs/skeleton-svelte';
 	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
 	import { Modal } from '@dtx/ui-components/components';
+	import { Button } from '@dtx/ui-components';
 
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
 		item: Partial<Tables<'simfiles'>>;
@@ -33,9 +34,9 @@
 		contentBase="w-48 p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
 	>
 		{#snippet trigger()}
-			<button class="rounded p-1 hover:bg-gray-100">
-				<EllipsisVertical />
-			</button>
+			<Button variant="ghost" size="icon" padding="1">
+				{#snippet children()}<EllipsisVertical />{/snippet}
+			</Button>
 		{/snippet}
 		{#snippet content()}
 			<div class="py-1">
@@ -47,21 +48,18 @@
 					Edit
 				</a>
 
-				<button
+				<Button
 					onclick={() => togglePublishChart(item.id, item.is_published)}
-					class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-					role="menuitem"
+					variant="menuItem"
+					fullWidth
+					justify="start"
 				>
-					{item.is_published ? 'Unpublish' : 'Publish'}
-				</button>
+					{#snippet children()}{item.is_published ? 'Unpublish' : 'Publish'}{/snippet}
+				</Button>
 
-				<button
-					onclick={openModal}
-					class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-					role="menuitem"
-				>
-					Delete
-				</button>
+				<Button onclick={openModal} variant="menuItem" fullWidth justify="start">
+					{#snippet children()}Delete{/snippet}
+				</Button>
 			</div>
 		{/snippet}
 	</Popover>

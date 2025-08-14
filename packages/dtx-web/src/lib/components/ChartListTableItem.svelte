@@ -4,6 +4,7 @@
 	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
+	import { _ } from 'svelte-i18n';
 
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
 		item: Partial<Tables<'simfiles'>>;
@@ -49,7 +50,7 @@
 				</a>
 
 				<Button
-					onclick={() => togglePublishChart(item.id, item.is_published)}
+					on:click={() => togglePublishChart(item.id, item.is_published)}
 					variant="menuItem"
 					fullWidth
 					justify="start"
@@ -57,7 +58,7 @@
 					{#snippet children()}{item.is_published ? 'Unpublish' : 'Publish'}{/snippet}
 				</Button>
 
-				<Button onclick={openModal} variant="menuItem" fullWidth justify="start">
+				<Button on:click={openModal} variant="menuItem" fullWidth justify="start">
 					{#snippet children()}Delete{/snippet}
 				</Button>
 			</div>

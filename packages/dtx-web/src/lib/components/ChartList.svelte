@@ -221,28 +221,32 @@
 			</select>
 		</div>
 
-		<!-- View Mode Selector using generic Button -->
+		<!-- View Mode Selector using regular buttons -->
 		<div class="flex items-center">
 			<span class="mr-2">View:</span>
 			<div class="flex rounded border">
-				<Button
-					variant={viewMode === 'card' ? 'primary' : 'ghost'}
-					size="icon"
-					on:click={() => (viewMode = 'card')}
+				<button
+					class="inline-flex h-9 w-9 items-center justify-center rounded transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none disabled:opacity-50 {viewMode ===
+					'card'
+						? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
+						: 'hover:bg-gray-100'}"
+					onclick={() => (viewMode = 'card')}
 					aria-pressed={viewMode === 'card'}
-					ariaLabel="Card view"
+					aria-label="Card view"
 				>
-					{#snippet children()}<IconGrid size="18" />{/snippet}
-				</Button>
-				<Button
-					variant={viewMode === 'table' ? 'primary' : 'ghost'}
-					size="icon"
-					on:click={() => (viewMode = 'table')}
+					<IconGrid size="18" />
+				</button>
+				<button
+					class="inline-flex h-9 w-9 items-center justify-center rounded transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none disabled:opacity-50 {viewMode ===
+					'table'
+						? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
+						: 'hover:bg-gray-100'}"
+					onclick={() => (viewMode = 'table')}
 					aria-pressed={viewMode === 'table'}
-					ariaLabel="Table view"
+					aria-label="Table view"
 				>
-					{#snippet children()}<IconTable size="18" />{/snippet}
-				</Button>
+					<IconTable size="18" />
+				</button>
 			</div>
 		</div>
 	</div>
@@ -251,98 +255,91 @@
 	<div class="mt-4 text-center">
 		<p>Loading more items...</p>
 	</div>
-{:else}
-	{#if viewMode === 'card'}
-		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-			{#each filteredItems as item (item.id)}
-				<ChartListItem
-					{item}
-					{isBlog}
-					{togglePublishChart}
-					{onFileDelete}
-					{getPreviewUrl}
-					{getSoundPreviewUrl}
-				/>
-			{/each}
-		</div>
-	{:else}
-		<div class="grid gap-3">
-			{#each filteredItems as item (item.id)}
-				<div
-					class="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
-				>
-					<div class="flex items-start justify-between">
-						<div class="flex-1">
-							<h3 class="mb-1 font-semibold text-gray-800">
-								{item.display_id}. {item.title}
-							</h3>
-							<div class="flex items-center gap-4 text-sm text-gray-600">
-								<div class="flex items-center gap-1">
-									<span>Artist:</span>
-									{item.artist}
-								</div>
-								<div class="flex items-center gap-1">
-									<span>BPM:</span>
-									{item.bpm}
-								</div>
-								{#if item.publish_date}
-									<div class="flex items-center gap-1">
-										<span>Published:</span>
-										{new Date(item.publish_date).toLocaleDateString()}
-									</div>
-								{/if}
+{:else if viewMode === 'table'}
+	<div class="grid gap-3">
+		{#each filteredItems as item (item.id)}
+			<div
+				class="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
+			>
+				<div class="flex items-start justify-between">
+					<div class="flex-1">
+						<h3 class="mb-1 font-semibold text-gray-800">
+							{item.display_id}. {item.title}
+						</h3>
+						<div class="flex items-center gap-4 text-sm text-gray-600">
+							<div class="flex items-center gap-1">
+								<span>Artist:</span>
+								{item.artist}
 							</div>
-							{#if item.dtx_files && item.dtx_files.length > 0}
-								<div class="mt-2">
-									<span class="text-xs text-gray-500">
-										Levels: {formatLevelDisplay(item.dtx_files)}
-									</span>
+							<div class="flex items-center gap-1">
+								<span>BPM:</span>
+								{item.bpm}
+							</div>
+							{#if item.publish_date}
+								<div class="flex items-center gap-1">
+									<span>Published:</span>
+									{new Date(item.publish_date).toLocaleDateString()}
 								</div>
 							{/if}
 						</div>
-						<div class="flex items-center gap-2">
-							<ChartListTableItem
-								{item}
-								{isBlog}
-								{togglePublishChart}
-								{onFileDelete}
-							/>
-						</div>
+						{#if item.dtx_files && item.dtx_files.length > 0}
+							<div class="mt-2">
+								<span class="text-xs text-gray-500">
+									Levels: {formatLevelDisplay(item.dtx_files)}
+								</span>
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-center gap-2">
+						<ChartListTableItem {item} {isBlog} {togglePublishChart} {onFileDelete} />
 					</div>
 				</div>
-			{/each}
-		</div>
-	{/if}
-	<!-- Skeleton UI Pagination Component -->
-	{#if totalPages > 1}
-		<div class="mt-6 flex justify-center">
-			<Pagination
-				data={items}
-				count={totalCount}
-				page={currentPage}
-				{pageSize}
-				onPageChange={handlePageChange}
-				onPageSizeChange={handlePageSizeChange}
-				siblingCount={2}
-				showFirstLastButtons={true}
-				classes="flex items-center gap-2"
-				buttonBase="btn btn-sm"
-				buttonActive="preset-filled-primary-500"
-				buttonInactive="preset-tonal-surface"
-			>
-				{#snippet labelFirst()}
-					{$_('blog.pagination.first')}
-				{/snippet}
-				{#snippet labelPrevious()}
-					{$_('blog.pagination.previous')}
-				{/snippet}
-				{#snippet labelNext()}
-					{$_('blog.pagination.next')}
-				{/snippet}
-				{#snippet labelLast()}
-					{$_('blog.pagination.last')}
-				{/snippet}
-			</Pagination>
-		</div>
-	{/if}
+			</div>
+		{/each}
+	</div>
+{:else}
+	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+		{#each filteredItems as item (item.id)}
+			<ChartListItem
+				{item}
+				{isBlog}
+				{togglePublishChart}
+				{onFileDelete}
+				{getPreviewUrl}
+				{getSoundPreviewUrl}
+			/>
+		{/each}
+	</div>
+{/if}
+<!-- Skeleton UI Pagination Component -->
+{#if totalPages > 1}
+	<div class="mt-6 flex justify-center">
+		<Pagination
+			data={items}
+			count={totalCount}
+			page={currentPage}
+			{pageSize}
+			onPageChange={handlePageChange}
+			onPageSizeChange={handlePageSizeChange}
+			siblingCount={2}
+			showFirstLastButtons={true}
+			classes="flex items-center gap-2"
+			buttonBase="btn btn-sm"
+			buttonActive="preset-filled-primary-500"
+			buttonInactive="preset-tonal-surface"
+		>
+			{#snippet labelFirst()}
+				{$_('blog.pagination.first')}
+			{/snippet}
+			{#snippet labelPrevious()}
+				{$_('blog.pagination.previous')}
+			{/snippet}
+			{#snippet labelNext()}
+				{$_('blog.pagination.next')}
+			{/snippet}
+			{#snippet labelLast()}
+				{$_('blog.pagination.last')}
+			{/snippet}
+		</Pagination>
+	</div>
 {/if}

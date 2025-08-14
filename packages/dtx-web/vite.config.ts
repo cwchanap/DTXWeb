@@ -10,7 +10,12 @@ export default defineConfig({
 		alias: {
 			'@': path.resolve(__dirname, 'src'),
 			'@dtx/common/components': path.resolve(__dirname, '../common/src/lib/components.ts'),
-			'@dtx/common': path.resolve(__dirname, '../common/src/lib')
+			'@dtx/common': path.resolve(__dirname, '../common/src/lib'),
+			'@dtx/ui-components/components': path.resolve(
+				__dirname,
+				'../ui-components/src/lib/components.ts'
+			),
+			'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib')
 		}
 	},
 	optimizeDeps: {

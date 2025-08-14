@@ -8,9 +8,10 @@
 	interface Props {
 		simfileID?: string;
 		theme?: 'light' | 'dark';
+		bucketUrl?: string;
 	}
 
-	let { simfileID, theme = 'dark' }: Props = $props();
+	let { simfileID, theme = 'dark', bucketUrl }: Props = $props();
 
 	// Theme-based classes
 	const themeClasses = {
@@ -70,17 +71,38 @@
 
 		if (typeof file === 'string') {
 			if (simfileID) {
-				// Remote chart case
-				if (chip?.file) {
+				// Remote chart case - check FileManager first, then chip.file as fallback
+				const fileKey = FileManager.generateKey(simfileID, file);
+				soundFile = FileManager.getFile(fileKey);
+
+				if (!soundFile && chip?.file) {
 					soundFile = chip.file;
-				} else {
-					// Remote file not yet fetched - cannot play audio
-					console.warn('Remote file not yet fetched:', file);
-					showToastMessage(
-						`Sound file "${file}" is not yet loaded from remote`,
-						'warning'
-					);
-					return;
+				}
+
+				if (!soundFile) {
+					// Try to fetch the remote file if not yet loaded
+					if (chip && bucketUrl) {
+						try {
+							await chip.fetchRemote(simfileID, bucketUrl);
+							if (chip.file) {
+								// Store in FileManager and clear from chip (following the pattern in editor page)
+								FileManager.setFile(fileKey, chip.file);
+								soundFile = chip.file;
+								chip.file = undefined;
+							}
+						} catch (error) {
+							console.error('Failed to fetch remote audio file:', file, error);
+							showToastMessage(`Failed to load remote audio file "${file}"`, 'error');
+							return;
+						}
+					} else {
+						console.warn('Remote file not yet fetched:', file);
+						showToastMessage(
+							`Sound file "${file}" is not yet loaded from remote`,
+							'warning'
+						);
+						return;
+					}
 				}
 			} else {
 				// Local chart case

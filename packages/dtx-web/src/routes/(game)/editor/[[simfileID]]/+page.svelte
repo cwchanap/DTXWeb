@@ -961,7 +961,11 @@
 							{#if currentTab === 0}
 								<MainTab />
 							{:else if currentTab === 1}
-								<SoundTab {simfileID} theme="light" />
+								<SoundTab
+									{simfileID}
+									theme="light"
+									bucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
+								/>
 							{/if}
 						</div>
 					</div>

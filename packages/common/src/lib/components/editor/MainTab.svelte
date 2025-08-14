@@ -184,12 +184,17 @@
 		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="disable-bgm-preview"
 			>Disable BGM in Preview:</label
 		>
-		<label class="relative inline-flex cursor-pointer items-center py-1">
+		<label
+			class="relative inline-flex items-center py-1 {isPreviewing
+				? 'cursor-not-allowed opacity-50'
+				: 'cursor-pointer'}"
+		>
 			<input
 				id="disable-bgm-preview"
 				type="checkbox"
 				class="sr-only"
 				bind:checked={disableBgmPreview}
+				disabled={isPreviewing}
 			/>
 			<div class="toggle-switch {disableBgmPreview ? 'toggle-on' : 'toggle-off'}">
 				<div class="toggle-thumb"></div>

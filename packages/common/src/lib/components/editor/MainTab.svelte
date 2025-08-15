@@ -7,6 +7,7 @@
 	import { store } from '@dtx/common';
 	import { DTXFile } from '@dtx/common';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
+	import { ToggleGroup } from '@dtx/ui-components';
 
 	let dtxFile: DTXFile | null = $state(null);
 	let measureCount = $state(10);
@@ -20,6 +21,16 @@
 	let playSpeed = $state(1);
 	let disableBgmPreview = $state(false);
 	let isEditorReady = $state(false);
+	let gridSpacing = $state(16);
+
+	const gridSpacingOptions = [
+		{ value: 8, label: '8th' },
+		{ value: 12, label: '12th' },
+		{ value: 16, label: '16th' },
+		{ value: 24, label: '24th' },
+		{ value: 48, label: '48th' },
+		{ value: 64, label: '64th' }
+	];
 
 	run(() => {
 		if (dtxFile) {
@@ -45,8 +56,16 @@
 		store.playSpeed.set(playSpeed);
 	}
 
+	function handleGridSpacingChange() {
+		EventBus.emit(EventType.GRID_SPACING_UPDATE, gridSpacing);
+	}
+
 	$effect(() => {
 		store.disableBgmPreview.set(disableBgmPreview);
+	});
+
+	$effect(() => {
+		handleGridSpacingChange();
 	});
 
 	function handlePlay() {
@@ -174,6 +193,17 @@
 			max="499"
 			bind:value={measureCount}
 			onchange={handleMeasureChange}
+			disabled={isPreviewing}
+		/>
+	</div>
+	<div class="flex items-center space-x-2">
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="grid-spacing">Grid Spacing:</label>
+		<ToggleGroup
+			options={gridSpacingOptions}
+			bind:value={gridSpacing}
+			size="sm"
+			variant="outline"
+			ariaLabel="Select grid spacing for note placement"
 			disabled={isPreviewing}
 		/>
 	</div>

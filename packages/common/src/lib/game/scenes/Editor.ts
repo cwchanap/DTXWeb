@@ -317,6 +317,9 @@ export class Editor extends BaseGame {
 			this.measureCount = get(store.measureCount);
 			this.restart({ measureCount });
 		});
+		EventBus.on(EventType.GRID_SPACING_UPDATE, (cellsPerMeasure: number) => {
+			this.updateGridSpacing(cellsPerMeasure);
+		});
 		EventBus.on(
 			EventType.NOTE_IMPORT,
 			async (notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
@@ -434,6 +437,185 @@ export class Editor extends BaseGame {
 
 	update() {
 		// Update logic if needed
+	}
+
+	/**
+	 * Update the grid spacing (cells per measure) for more precise note placement
+	 * @param cellsPerMeasure - Number of cells per measure (4=quarter notes, 8=eighth notes, 16=sixteenth notes, 32=thirty-second notes, etc.)
+	 */
+	public updateGridSpacing(cellsPerMeasure: number): void {
+		// Validate input
+		if (cellsPerMeasure <= 0 || !Number.isInteger(cellsPerMeasure)) {
+			console.warn('Invalid cellsPerMeasure value:', cellsPerMeasure);
+			return;
+		}
+
+		console.log(
+			`Updating grid spacing from ${this.cellsPerMeasure} to ${cellsPerMeasure} cells per measure`
+		);
+
+		this.cellsPerMeasure = cellsPerMeasure;
+
+		// Redraw only the grid lines to show new spacing density
+		this.redrawGridLines();
+	}
+
+	/**
+	 * Redraw only the horizontal grid lines with new spacing, preserving existing notes
+	 */
+	private redrawGridLines(): void {
+		// Find and remove existing horizontal grid line graphics from panelContainer
+		const childrenToRemove: Phaser.GameObjects.GameObject[] = [];
+
+		// Iterate through all children in the panel container
+		this.panelContainer.each((child: Phaser.GameObjects.GameObject) => {
+			if (child instanceof Phaser.GameObjects.Graphics) {
+				const name = (child as any).name;
+				// Remove only the horizontal grid line graphics, preserve vertical lines
+				if (name === 'cellLines' || name === 'beatLines' || name === 'measureLines') {
+					childrenToRemove.push(child);
+				}
+			}
+		});
+
+		// Remove the identified graphics objects and destroy them completely
+		childrenToRemove.forEach((child) => {
+			this.panelContainer.remove(child);
+			child.destroy();
+		});
+
+		console.log(`Removed ${childrenToRemove.length} old grid line graphics objects`);
+
+		// Recreate horizontal grid lines with new spacing
+		this.drawHorizontalGridLines();
+
+		// Mark as dirty since grid spacing affects gameplay
+		this.setDirty(true);
+		this.debouncedAutoSave();
+	}
+
+	/**
+	 * Draw horizontal grid lines (cell, beat, and measure lines) with current grid spacing
+	 */
+	private drawHorizontalGridLines(): void {
+		// Create graphics objects for different line thicknesses
+		const cellLines = this.add.graphics();
+		const beatLines = this.add.graphics();
+		const measureLines = this.add.graphics();
+
+		// Set names for easy identification during removal
+		(cellLines as any).name = 'cellLines';
+		(beatLines as any).name = 'beatLines';
+		(measureLines as any).name = 'measureLines';
+
+		// Set line styles for each graphics object
+		cellLines.lineStyle(2, 0x888888, 0.5); // Light grey for cells
+		beatLines.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
+		measureLines.lineStyle(6, 0xffffff, 0.5); // White for measure lines
+
+		// Draw horizontal lines for cells and measures
+		let y = this.offsetY;
+		for (let j = 0; j < this.measureCount; j++) {
+			const measureHeight = this.drawMeasure(j, y, cellLines, beatLines, measureLines);
+			y -= measureHeight;
+		}
+
+		// Stroke all graphics objects
+		cellLines.strokePath();
+		beatLines.strokePath();
+		measureLines.strokePath();
+
+		// Add to panel container at the beginning (behind notes and text)
+		// This ensures grid lines appear behind existing notes
+		this.panelContainer.addAt(cellLines, 0);
+		this.panelContainer.addAt(beatLines, 0);
+		this.panelContainer.addAt(measureLines, 0);
+
+		console.log(`Drew new grid lines with ${this.cellsPerMeasure} cells per measure`);
+	}
+
+	/**
+	 * Override drawPanel to add names to graphics objects for easier management
+	 */
+	drawPanel() {
+		this.drawFooter();
+		this.panelContainer = this.add.container(0, 0);
+		const scrollableHeight = this.laneHeight + this.bottomMargin;
+		this.panelContainer.setSize(this.scale.width, scrollableHeight);
+
+		this.parseMesaureLength();
+
+		// Create separate graphics objects for different line thicknesses
+		const verticalLines = this.add.graphics();
+		const cellLines = this.add.graphics();
+		const beatLines = this.add.graphics();
+		const measureLines = this.add.graphics();
+
+		// Set names for easy identification during removal
+		(verticalLines as any).name = 'verticalLines';
+		(cellLines as any).name = 'cellLines';
+		(beatLines as any).name = 'beatLines';
+		(measureLines as any).name = 'measureLines';
+
+		// Set line styles for each graphics object
+		verticalLines.lineStyle(1, 0x888888, 1); // Light grey for vertical lanes
+		cellLines.lineStyle(2, 0x888888, 0.5); // Light grey for cells
+		beatLines.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
+		measureLines.lineStyle(6, 0xffffff, 0.5); // White for measure lines
+
+		// Draw vertical lanes
+		let currentX = this.offsetX;
+		this.laneConfigs.forEach(() => {
+			verticalLines.moveTo(currentX, this.offsetY);
+			verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
+			currentX += this.cellWidth;
+		});
+
+		// Draw the last vertical line
+		verticalLines.moveTo(currentX, this.offsetY);
+		verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
+
+		// Draw horizontal lines for cells and measures
+		let y = this.offsetY;
+		for (let j = 0; j < this.measureCount; j++) {
+			const measureHeight = this.drawMeasure(j, y, cellLines, beatLines, measureLines);
+			y -= measureHeight;
+		}
+
+		// Stroke all graphics objects
+		verticalLines.strokePath();
+		cellLines.strokePath();
+		beatLines.strokePath();
+		measureLines.strokePath();
+
+		// Add all graphics to the panel container
+		this.panelContainer.add(verticalLines);
+		this.panelContainer.add(cellLines);
+		this.panelContainer.add(beatLines);
+		this.panelContainer.add(measureLines);
+
+		this.setCameraBounds();
+
+		const mask = this.make.graphics();
+		mask.fillStyle(0xffffff);
+		mask.fillRect(0, 0, this.scale.width, this.scale.height - this.bottomMargin);
+		this.panelContainer.setMask(mask.createGeometryMask());
+	}
+
+	/**
+	 * Override getCellHeight to maintain constant measure height regardless of grid spacing
+	 * This ensures that changing from 16th to 24th notes doesn't change the total measure size
+	 */
+	getCellHeight(measure: number, cell: number): number {
+		// Calculate base measure height using default 16 cells per measure
+		const baseCellsPerMeasure = 16;
+		const baseCellHeight = super.getCellHeight(measure, cell); // Gets this.cellHeight (25px)
+		const baseMeasureHeight = baseCellsPerMeasure * baseCellHeight; // 16 * 25 = 400px
+
+		// Adjust cell height to maintain constant measure height
+		// For 24 cells: 400/24 ≈ 16.67px per cell
+		// For 8 cells: 400/8 = 50px per cell
+		return baseMeasureHeight / this.cellsPerMeasure;
 	}
 
 	/**
@@ -562,6 +744,7 @@ export class Editor extends BaseGame {
 		// Clear hash cache to avoid stale File references
 		this.soundFileHashCache.clear();
 		EventBus.off(EventType.MEASURE_UPDATE);
+		EventBus.off(EventType.GRID_SPACING_UPDATE);
 		EventBus.off(EventType.NOTE_IMPORT);
 		EventBus.off(EventType.MEASURE_GOTO);
 		EventBus.off(EventType.START_PREVIEW);
@@ -936,6 +1119,13 @@ export class Editor extends BaseGame {
 	}
 
 	getCellsPerMeasure(): number {
+		return this.cellsPerMeasure;
+	}
+
+	/**
+	 * Get current grid spacing (cells per measure)
+	 */
+	getGridSpacing(): number {
 		return this.cellsPerMeasure;
 	}
 

@@ -18,6 +18,7 @@
 	import store from '$lib/store';
 	import { EventBus } from '@dtx/common/game';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
@@ -405,6 +406,11 @@
 			editorScene.setDirty(false);
 			// Clear the editor notes and reset the scene with proper empty data
 			EventBus.emit(EventType.NOTE_IMPORT, emptyNotes, emptyBpmNotes);
+		}
+
+		// If we're currently in a remote chart, redirect to local workspace after cleanup
+		if (simfileID) {
+			goto('/editor');
 		}
 	}
 
@@ -796,20 +802,22 @@
 						onclick={newFile}
 						disabled={isPreviewing}>New</button
 					>
-					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
-						onclick={importFile}
-						disabled={isPreviewing}>Import File</button
-					>
-					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
-						onclick={importFolder}
-						disabled={isPreviewing}>Import Folder</button
-					>
+					{#if !simfileID}
+						<button
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
+							onclick={importFile}
+							disabled={isPreviewing}>Import File</button
+						>
+						<button
+							class="px-4 py-2 text-left {isPreviewing
+								? 'cursor-not-allowed text-gray-400'
+								: 'hover:bg-gray-100'}"
+							onclick={importFolder}
+							disabled={isPreviewing}>Import Folder</button
+						>
+					{/if}
 					{#if simfileID}
 						<button
 							class="px-4 py-2 text-left {isPreviewing

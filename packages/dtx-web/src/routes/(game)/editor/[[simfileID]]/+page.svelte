@@ -55,6 +55,7 @@
 	let currentTab: number = $state(0);
 	let isPreviewing = $state(false);
 	let isTabsCollapsed = $state(false);
+	let isEditorLoaded = $state(false);
 	let simfileID = $state('');
 	let showDifficultyModal = $state(false);
 	let showDiscardModal = $state(false);
@@ -79,6 +80,11 @@
 
 	// Event emitted from the PhaserGame component
 	const currentActiveScene = (scene: Scene) => {
+		// Check if the Editor scene is loaded when it becomes active
+		if (scene.scene.key === Editor.key) {
+			const editorScene = scene as Editor;
+			isEditorLoaded = editorScene.getIsLoaded();
+		}
 		return scene;
 	};
 

@@ -19,6 +19,7 @@
 	let isPreviewing = $state(false);
 	let playSpeed = $state(1);
 	let disableBgmPreview = $state(false);
+	let isEditorReady = $state(false);
 
 	run(() => {
 		if (dtxFile) {
@@ -59,6 +60,25 @@
 	}
 
 	onMount(() => {
+		// Listen for editor ready state
+		const handleSceneReady = () => {
+			isEditorReady = true;
+		};
+
+		// Listen for editor loaded state (when it's finished drawing and loading)
+		const handleEditorLoaded = () => {
+			isEditorReady = true;
+		};
+
+		// Listen for note import which triggers scene restart - disable preview until loaded
+		const handleNoteImport = () => {
+			isEditorReady = false;
+		};
+
+		EventBus.on(EventType.SCENE_READY, handleSceneReady);
+		EventBus.on(EventType.EDITOR_LOADED, handleEditorLoaded);
+		EventBus.on(EventType.NOTE_IMPORT, handleNoteImport);
+
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
@@ -71,7 +91,7 @@
 		store.disableBgmPreview.subscribe((value) => {
 			disableBgmPreview = value;
 		});
-		return store.currentDtxFile.subscribe((value) => {
+		const dtxFileUnsubscribe = store.currentDtxFile.subscribe((value) => {
 			dtxFile = value;
 			title = dtxFile?.title ?? '';
 			artist = dtxFile?.artist ?? '';
@@ -79,6 +99,14 @@
 			bpm = dtxFile?.bpm ?? 0;
 			level = dtxFile?.level ?? 0;
 		});
+
+		// Cleanup function
+		return () => {
+			EventBus.off(EventType.SCENE_READY, handleSceneReady);
+			EventBus.off(EventType.EDITOR_LOADED, handleEditorLoaded);
+			EventBus.off(EventType.NOTE_IMPORT, handleNoteImport);
+			dtxFileUnsubscribe();
+		};
 	});
 </script>
 
@@ -205,8 +233,11 @@
 		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="preview-button">Preview: </label>
 		<button
 			id="preview-button"
-			class="rounded-md border border-gray-300 px-2 py-1"
+			class="rounded-md border border-gray-300 px-2 py-1 {!isEditorReady
+				? 'cursor-not-allowed opacity-50'
+				: ''}"
 			onclick={handlePlay}
+			disabled={!isEditorReady}
 			>{#if isPreviewing}<CirclePause />{:else}<Play />{/if}</button
 		>
 	</div>

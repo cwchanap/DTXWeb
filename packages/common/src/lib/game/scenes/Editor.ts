@@ -34,6 +34,7 @@ export class Editor extends BaseGame {
 	private readonly AUTO_SAVE_DELAY_MS = 2000; // Debounce auto-save by 2 seconds
 	private keyBindings: Record<string, string> = {}; // key -> noteId mapping
 	private isInitializing = false; // Flag to prevent auto-save during initialization
+	private isLoaded = false; // Flag to track if scene has finished loading and drawing
 	private soundFileHashCache: Map<File, string> = new Map(); // Cache file hashes to avoid recomputing
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
@@ -319,6 +320,8 @@ export class Editor extends BaseGame {
 		EventBus.on(
 			EventType.NOTE_IMPORT,
 			async (notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
+				// Mark as not loaded at the start of import process
+				this.isLoaded = false;
 				this.notes = {};
 				this.sound.removeAll();
 				notes.forEach((note) => {
@@ -424,6 +427,9 @@ export class Editor extends BaseGame {
 
 		// Initialization complete - enable auto-save for future changes
 		this.isInitializing = false;
+
+		// All drawing operations are synchronous, so scene is loaded when create() completes
+		this.markAsLoaded();
 	}
 
 	update() {
@@ -551,6 +557,8 @@ export class Editor extends BaseGame {
 
 	restart(data: Data = {}) {
 		console.log('Restart Scene, data', data);
+		// Reset loading state
+		this.isLoaded = false;
 		// Clear hash cache to avoid stale File references
 		this.soundFileHashCache.clear();
 		EventBus.off(EventType.MEASURE_UPDATE);
@@ -787,6 +795,23 @@ export class Editor extends BaseGame {
 	 */
 	public getDirty(): boolean {
 		return this.isDirty;
+	}
+
+	/**
+	 * Check if the editor has finished loading and drawing
+	 */
+	public getIsLoaded(): boolean {
+		return this.isLoaded;
+	}
+
+	/**
+	 * Mark the editor as fully loaded and emit the event
+	 */
+	private markAsLoaded(): void {
+		if (!this.isLoaded) {
+			this.isLoaded = true;
+			EventBus.emit(EventType.EDITOR_LOADED, this);
+		}
 	}
 
 	/**

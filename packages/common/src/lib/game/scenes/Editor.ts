@@ -127,10 +127,14 @@ export class Editor extends BaseGame {
 
 				// Validate the click is within a valid measure
 				if (measure >= 0 && measure < this.measureCount) {
-					// Use high-resolution grid to calculate precise position
-					// Use Math.round instead of Math.floor to match the selection logic
-					const highResPosition = Math.round(positionInMeasure * HIGH_RESOLUTION_CELLS);
-					const cellOffset = highResPosition / HIGH_RESOLUTION_CELLS;
+					// Snap to current grid spacing for note placement
+					// Use Math.floor to ensure clicks stay within the current grid cell
+					// This allows placement at 8th, 12th, 16th, 24th, 48th, or 64th note intervals
+					const gridPosition = Math.floor(positionInMeasure * this.cellsPerMeasure);
+					const rawCellOffset = gridPosition / this.cellsPerMeasure;
+
+					// Normalize the position for storage compatibility with high-resolution system
+					const cellOffset = this.normalizePosition(rawCellOffset);
 
 					// Check if it's a right-click (pointer.rightButtonDown())
 					if (pointer.rightButtonDown()) {

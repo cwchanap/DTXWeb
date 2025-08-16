@@ -22,6 +22,7 @@
 	let disableBgmPreview = $state(false);
 	let isEditorReady = $state(false);
 	let gridSpacing = $state(16);
+	let cellHeight = $state(25); // Default cell height in pixels
 
 	const gridSpacingOptions = [
 		{ value: 8, label: '8th' },
@@ -58,6 +59,15 @@
 
 	function handleGridSpacingChange() {
 		EventBus.emit(EventType.GRID_SPACING_UPDATE, gridSpacing);
+	}
+
+	function handleCellHeightApply() {
+		// Validate cell height range
+		if (cellHeight < 5 || cellHeight > 100) {
+			alert('Cell height must be between 5 and 100 pixels');
+			return;
+		}
+		EventBus.emit(EventType.CELL_HEIGHT_UPDATE, cellHeight);
 	}
 
 	$effect(() => {
@@ -206,6 +216,29 @@
 			ariaLabel="Select grid spacing for note placement"
 			disabled={isPreviewing}
 		/>
+	</div>
+	<div class="flex items-center space-x-2">
+		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="cell-height-input">Cell Height:</label>
+		<div class="flex items-center space-x-2">
+			<input
+				id="cell-height-input"
+				type="number"
+				class="w-16 rounded-md border border-gray-300 px-2 py-1"
+				min="5"
+				max="100"
+				bind:value={cellHeight}
+				onkeydown={(e) => e.key === 'Enter' && handleCellHeightApply()}
+				disabled={isPreviewing}
+			/>
+			<span class="text-xs text-gray-500">px</span>
+			<button
+				class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+				onclick={handleCellHeightApply}
+				disabled={isPreviewing}
+			>
+				Apply
+			</button>
+		</div>
 	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="speed-input">Play Speed:</label>

@@ -7,7 +7,8 @@ enum EventType {
 	START_PREVIEW = 'start-preview',
 	RESUME_PREVIEW = 'resume-preview',
 	STOP_PREVIEW = 'stop-preview',
-	GRID_SPACING_UPDATE = 'grid-spacing-update'
+	GRID_SPACING_UPDATE = 'grid-spacing-update',
+	CELL_HEIGHT_UPDATE = 'cell-height-update'
 }
 
 export default EventType;

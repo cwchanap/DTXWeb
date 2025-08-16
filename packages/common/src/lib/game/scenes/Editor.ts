@@ -324,6 +324,9 @@ export class Editor extends BaseGame {
 		EventBus.on(EventType.GRID_SPACING_UPDATE, (cellsPerMeasure: number) => {
 			this.updateGridSpacing(cellsPerMeasure);
 		});
+		EventBus.on(EventType.CELL_HEIGHT_UPDATE, (height: number) => {
+			this.updateCellHeight(height);
+		});
 		EventBus.on(
 			EventType.NOTE_IMPORT,
 			async (notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
@@ -462,6 +465,42 @@ export class Editor extends BaseGame {
 
 		// Redraw only the grid lines to show new spacing density
 		this.redrawGridLines();
+	}
+
+	/**
+	 * Update the base cell height (pixel size) for visual zoom
+	 * @param height - Height in pixels for each cell
+	 */
+	public updateCellHeight(height: number): void {
+		// Validate input
+		if (height <= 0 || height > 100) {
+			console.warn('Invalid cell height value:', height);
+			return;
+		}
+
+		console.log(`Updating cell height from ${this.cellHeight}px to ${height}px`);
+
+		this.cellHeight = height;
+
+		// Need to completely redraw the scene since cell height affects all measurements
+		this.redrawScene();
+	}
+
+	/**
+	 * Redraw the entire scene (used when cell height changes affect all measurements)
+	 */
+	private redrawScene(): void {
+		// Clear existing visual elements
+		this.panelContainer.removeAll(true);
+		this.footerContainer.removeAll(true);
+
+		// Redraw panel and notes with new settings
+		this.drawPanel();
+		this.drawNotes();
+
+		// Mark as dirty since visual changes affect gameplay
+		this.setDirty(true);
+		this.debouncedAutoSave();
 	}
 
 	/**
@@ -613,8 +652,8 @@ export class Editor extends BaseGame {
 	getCellHeight(measure: number, cell: number): number {
 		// Calculate base measure height using default 16 cells per measure
 		const baseCellsPerMeasure = 16;
-		const baseCellHeight = super.getCellHeight(measure, cell); // Gets this.cellHeight (25px)
-		const baseMeasureHeight = baseCellsPerMeasure * baseCellHeight; // 16 * 25 = 400px
+		const baseCellHeight = this.cellHeight; // Use current dynamic cell height
+		const baseMeasureHeight = baseCellsPerMeasure * baseCellHeight; // 16 * cellHeight
 
 		// Adjust cell height to maintain constant measure height
 		// For 24 cells: 400/24 ≈ 16.67px per cell
@@ -749,6 +788,7 @@ export class Editor extends BaseGame {
 		this.soundFileHashCache.clear();
 		EventBus.off(EventType.MEASURE_UPDATE);
 		EventBus.off(EventType.GRID_SPACING_UPDATE);
+		EventBus.off(EventType.CELL_HEIGHT_UPDATE);
 		EventBus.off(EventType.NOTE_IMPORT);
 		EventBus.off(EventType.MEASURE_GOTO);
 		EventBus.off(EventType.START_PREVIEW);

@@ -949,30 +949,27 @@
 						<!-- Tab controls -->
 						<div class="tab-list flex border-b border-gray-200">
 							<button
-								class="w-[15%] px-4 py-2 hover:bg-gray-100 hover:text-gray-800 2xl:w-1/4 {currentTab ===
-								0
+								class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 0
 									? 'bg-primary-500 text-white'
-									: 'bg-gray-100 text-gray-700'}"
+									: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
 								onclick={() => (currentTab = 0)}
 							>
 								Main
 							</button>
 							{#if !isPreviewing}
 								<button
-									class="w-[15%] px-4 py-2 hover:bg-gray-100 hover:text-gray-800 2xl:w-1/4 {currentTab ===
-									1
+									class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 1
 										? 'bg-primary-500 text-white'
-										: 'bg-gray-100 text-gray-700'}"
+										: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
 									onclick={() => (currentTab = 1)}
 								>
 									Sound
 								</button>
 							{/if}
 							<button
-								class="w-[15%] px-4 py-2 hover:bg-gray-100 hover:text-gray-800 2xl:w-1/4 {currentTab ===
-								2
+								class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 2
 									? 'bg-primary-500 text-white'
-									: 'bg-gray-100 text-gray-700'}"
+									: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
 								onclick={() => (currentTab = 2)}
 							>
 								Preview

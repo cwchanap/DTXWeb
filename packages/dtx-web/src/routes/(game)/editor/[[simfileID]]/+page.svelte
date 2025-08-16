@@ -4,7 +4,7 @@
 	import { Editor } from '@dtx/common/game';
 	import { Preview } from '@dtx/common/game';
 	import { onMount } from 'svelte';
-	import { MainTab } from '@dtx/common/components';
+	import { MainTab, PreviewTab } from '@dtx/common/components';
 	import {
 		DTXFile,
 		SimFile,
@@ -968,6 +968,15 @@
 									Sound
 								</button>
 							{/if}
+							<button
+								class="w-[15%] px-4 py-2 hover:bg-gray-100 hover:text-gray-800 2xl:w-1/4 {currentTab ===
+								2
+									? 'bg-primary-500 text-white'
+									: 'bg-gray-100 text-gray-700'}"
+								onclick={() => (currentTab = 2)}
+							>
+								Preview
+							</button>
 						</div>
 
 						<!-- Tab panels -->
@@ -980,6 +989,8 @@
 									theme="light"
 									bucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 								/>
+							{:else if currentTab === 2}
+								<PreviewTab />
 							{/if}
 						</div>
 					</div>

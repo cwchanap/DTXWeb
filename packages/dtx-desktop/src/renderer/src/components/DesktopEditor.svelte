@@ -2,7 +2,7 @@
 	// Desktop Editor component that uses common package components directly
 	import { onMount } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
-	import { MainTab, SoundTab } from '@dtx/common/components';
+	import { MainTab, SoundTab, PreviewTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
 	import { Editor, Preloader, MainMenu, EventBus, EventType } from '@dtx/common/game';
 	import { DesktopPreview } from '../scenes/DesktopPreview';
@@ -591,6 +591,15 @@
 					>
 						Sound
 					</button>
+					<button
+						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
+						'preview'
+							? 'bg-slate-600 text-white'
+							: 'text-slate-300 hover:text-white'}"
+						onclick={() => switchTab('preview')}
+					>
+						Preview
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -617,6 +626,8 @@
 					<MainTab />
 				{:else if currentTab === 'sound'}
 					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} bucketUrl="" />
+				{:else if currentTab === 'preview'}
+					<PreviewTab />
 				{/if}
 
 				<!-- Drag handle -->

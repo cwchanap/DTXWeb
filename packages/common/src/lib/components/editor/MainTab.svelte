@@ -6,7 +6,6 @@
 	import { onMount } from 'svelte';
 	import { store } from '@dtx/common';
 	import { DTXFile } from '@dtx/common';
-	import { Play, CirclePause } from '@lucide/svelte/icons';
 	import { ToggleGroup } from '@dtx/ui-components';
 
 	let dtxFile: DTXFile | null = $state(null);
@@ -18,8 +17,6 @@
 	let level = $state(0);
 	let gotoMeasure = $state(0);
 	let isPreviewing = $state(false);
-	let playSpeed = $state(1);
-	let disableBgmPreview = $state(false);
 	let isEditorReady = $state(false);
 	let gridSpacing = $state(16);
 	let cellHeight = $state(25); // Default cell height in pixels
@@ -53,10 +50,6 @@
 		EventBus.emit(EventType.MEASURE_GOTO, gotoMeasure);
 	}
 
-	function handlePlaySpeedChange() {
-		store.playSpeed.set(playSpeed);
-	}
-
 	function handleGridSpacingChange() {
 		EventBus.emit(EventType.GRID_SPACING_UPDATE, gridSpacing);
 	}
@@ -71,22 +64,8 @@
 	}
 
 	$effect(() => {
-		store.disableBgmPreview.set(disableBgmPreview);
-	});
-
-	$effect(() => {
 		handleGridSpacingChange();
 	});
-
-	function handlePlay() {
-		isPreviewing = !isPreviewing;
-		if (isPreviewing) {
-			EventBus.emit(EventType.START_PREVIEW, bpm);
-		} else {
-			EventBus.emit(EventType.STOP_PREVIEW);
-		}
-		store.isPreviewing.set(isPreviewing);
-	}
 
 	onMount(() => {
 		// Listen for editor ready state
@@ -111,14 +90,8 @@
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		store.playSpeed.subscribe((value) => {
-			playSpeed = value;
-		});
 		store.measureCount.subscribe((value) => {
 			measureCount = value;
-		});
-		store.disableBgmPreview.subscribe((value) => {
-			disableBgmPreview = value;
 		});
 		const dtxFileUnsubscribe = store.currentDtxFile.subscribe((value) => {
 			dtxFile = value;
@@ -241,18 +214,6 @@
 		</div>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="speed-input">Play Speed:</label>
-		<input
-			id="speed-input"
-			type="number"
-			class="w-24 rounded-md border border-gray-300 px-2 py-1"
-			min="1"
-			max="10"
-			bind:value={playSpeed}
-			onchange={handlePlaySpeedChange}
-		/>
-	</div>
-	<div class="flex items-center space-x-2">
 		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="goto-input">Go to Measure:</label>
 		<div class="flex items-center space-x-2">
 			<input
@@ -271,80 +232,4 @@
 			>
 		</div>
 	</div>
-	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="disable-bgm-preview"
-			>Disable BGM in Preview:</label
-		>
-		<label
-			class="relative inline-flex items-center py-1 {isPreviewing
-				? 'cursor-not-allowed opacity-50'
-				: 'cursor-pointer'}"
-		>
-			<input
-				id="disable-bgm-preview"
-				type="checkbox"
-				class="sr-only"
-				bind:checked={disableBgmPreview}
-				disabled={isPreviewing}
-			/>
-			<div class="toggle-switch {disableBgmPreview ? 'toggle-on' : 'toggle-off'}">
-				<div class="toggle-thumb"></div>
-			</div>
-		</label>
-	</div>
-	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="preview-button">Preview: </label>
-		<button
-			id="preview-button"
-			class="rounded-md border border-gray-300 px-2 py-1 {!isEditorReady
-				? 'cursor-not-allowed opacity-50'
-				: ''}"
-			onclick={handlePlay}
-			disabled={!isEditorReady}
-			>{#if isPreviewing}<CirclePause />{:else}<Play />{/if}</button
-		>
-	</div>
 </div>
-
-<style>
-	.toggle-switch {
-		width: 44px;
-		height: 24px;
-		background-color: #d1d5db;
-		border-radius: 12px;
-		position: relative;
-		transition: background-color 0.2s ease;
-	}
-
-	.toggle-switch.toggle-on {
-		background-color: #ef4444;
-	}
-
-	.toggle-thumb {
-		width: 20px;
-		height: 20px;
-		background-color: white;
-		border-radius: 50%;
-		position: absolute;
-		top: 2px;
-		left: 2px;
-		transition: transform 0.2s ease;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-	}
-
-	.toggle-on .toggle-thumb {
-		transform: translateX(20px);
-	}
-
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-</style>

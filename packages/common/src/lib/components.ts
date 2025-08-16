@@ -3,3 +3,4 @@ export { default as UploadedAssetFiles } from './components/UploadedAssetFiles.s
 export { default as ChartDetail } from './components/ChartDetail.svelte';
 export { default as MainTab } from './components/editor/MainTab.svelte';
 export { default as SoundTab } from './components/editor/SoundTab.svelte';
+export { default as PreviewTab } from './components/editor/PreviewTab.svelte';

@@ -22,13 +22,16 @@
 		type = 'button',
 		class: className = '',
 		ariaLabel,
+		ariaDescribedBy,
+		role = 'button',
 		fullWidth = false,
 		justify = 'center',
 		padding,
 		position,
 		centered = false,
 		children,
-		iconRight
+		iconRight,
+		onclick
 	} = $props<{
 		variant?: Variant;
 		size?: Size;
@@ -36,6 +39,8 @@
 		type?: 'button' | 'submit' | 'reset';
 		class?: string;
 		ariaLabel?: string;
+		ariaDescribedBy?: string;
+		role?: string;
 		fullWidth?: boolean;
 		justify?: Justify;
 		padding?: Padding;
@@ -43,6 +48,7 @@
 		centered?: boolean;
 		children?: import('svelte').Snippet;
 		iconRight?: import('svelte').Snippet;
+		onclick?: () => void;
 	}>();
 
 	const base =
@@ -144,7 +150,10 @@
 		className
 	)}
 	{disabled}
+	{role}
+	{onclick}
 	aria-label={ariaLabel}
+	aria-describedby={ariaDescribedBy}
 >
 	{@render children?.()}
 	{#if iconRight}

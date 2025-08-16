@@ -50,7 +50,7 @@
 				</a>
 
 				<Button
-					on:click={() => togglePublishChart(item.id, item.is_published)}
+					onclick={() => togglePublishChart(item.id, item.is_published)}
 					variant="menuItem"
 					fullWidth
 					justify="start"
@@ -58,7 +58,7 @@
 					{#snippet children()}{item.is_published ? 'Unpublish' : 'Publish'}{/snippet}
 				</Button>
 
-				<Button on:click={openModal} variant="menuItem" fullWidth justify="start">
+				<Button onclick={openModal} variant="menuItem" fullWidth justify="start">
 					{#snippet children()}Delete{/snippet}
 				</Button>
 			</div>

@@ -10,6 +10,16 @@
 		disabled?: boolean;
 	}
 
+	type Props<T> = {
+		options: ToggleOption<T>[];
+		value?: T;
+		size?: Size;
+		variant?: Variant;
+		disabled?: boolean;
+		class?: string;
+		ariaLabel?: string;
+	};
+
 	let {
 		options = [],
 		value = $bindable(),
@@ -18,15 +28,7 @@
 		disabled = false,
 		class: className = '',
 		ariaLabel
-	} = $props<{
-		options: ToggleOption<any>[];
-		value?: any;
-		size?: Size;
-		variant?: Variant;
-		disabled?: boolean;
-		class?: string;
-		ariaLabel?: string;
-	}>();
+	} = $props<Props<any>>();
 
 	const base =
 		'inline-flex items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
@@ -88,7 +90,7 @@
 		);
 	}
 
-	function handleSelect(optionValue: any) {
+	function handleSelect<T>(optionValue: T) {
 		if (!disabled) {
 			value = optionValue;
 		}

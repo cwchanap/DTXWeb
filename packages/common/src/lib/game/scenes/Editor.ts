@@ -781,7 +781,7 @@ export class Editor extends BaseGame {
 	}
 
 	restart(data: Data = {}) {
-		console.log('Restart Scene, data', data);
+		console.log('Restart Scene, data', JSON.stringify(data));
 		// Reset loading state
 		this.isLoaded = false;
 		// Clear hash cache to avoid stale File references

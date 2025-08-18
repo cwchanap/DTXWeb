@@ -57,6 +57,7 @@
 	let isPreviewing = $state(false);
 	let isTabsCollapsed = $state(false);
 	let isEditorLoaded = $state(false);
+	let isEditorReady = $state(false);
 	let simfileID = $state('');
 	let showDifficultyModal = $state(false);
 	let showDiscardModal = $state(false);
@@ -104,20 +105,28 @@
 	}
 
 	function importFolder() {
+		console.log('🔧 IMPORT DEBUG: importFolder called');
 		const input = document.createElement('input');
 		input.type = 'file';
 		input.webkitdirectory = true;
 		input.multiple = true;
 		input.onchange = handleFolderImport;
+		console.log('🔧 IMPORT DEBUG: About to trigger file dialog');
 		input.click();
 	}
 
 	async function handleFolderImport(event: Event) {
+		console.log('🔧 IMPORT DEBUG: handleFolderImport called', { event });
 		const target = event.target as HTMLInputElement;
 		const files = target.files;
-		if (!files || files.length === 0) return;
+		console.log('🔧 IMPORT DEBUG: Files selected', { fileCount: files?.length || 0 });
+		if (!files || files.length === 0) {
+			console.log('🔧 IMPORT DEBUG: No files selected, returning');
+			return;
+		}
 
 		try {
+			console.log('🔧 IMPORT DEBUG: Starting workspace import');
 			const workspace = await workspaceService.importFolder(files);
 			currentWorkspace = workspace;
 
@@ -531,6 +540,21 @@
 		});
 		simfileID = data.simfileID || '';
 		store.currentSimfileID.set(simfileID || null);
+
+		// Set up event listeners for editor readiness (for preview button state)
+		const handleSceneReady = () => {
+			isEditorReady = true;
+		};
+		const handleEditorLoaded = () => {
+			isEditorReady = true;
+		};
+		const handleNoteImport = () => {
+			isEditorReady = false;
+		};
+
+		EventBus.on(EventType.SCENE_READY, handleSceneReady);
+		EventBus.on(EventType.EDITOR_LOADED, handleEditorLoaded);
+		EventBus.on(EventType.NOTE_IMPORT, handleNoteImport);
 
 		// Load available workspaces for the workspace switcher
 		availableWorkspaces = workspaceService.getWorkspaces();
@@ -987,7 +1011,7 @@
 									bucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 								/>
 							{:else if currentTab === 2}
-								<PreviewTab />
+								<PreviewTab {isEditorReady} />
 							{/if}
 						</div>
 					</div>

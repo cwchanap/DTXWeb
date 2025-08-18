@@ -10,30 +10,30 @@
 		disabled?: boolean;
 	}
 
-	type Props<T> = {
-		options: ToggleOption<T>[];
-		value?: T;
+	interface Props {
+		options: ToggleOption<any>[];
+		value?: any;
 		size?: Size;
 		variant?: Variant;
 		disabled?: boolean;
 		class?: string;
 		ariaLabel?: string;
-	};
+	}
 
 	let {
 		options = [],
 		value = $bindable(),
-		size = 'md',
-		variant = 'default',
+		size = 'md' as Size,
+		variant = 'default' as Variant,
 		disabled = false,
 		class: className = '',
 		ariaLabel
-	} = $props<Props<any>>();
+	}: Props = $props();
 
 	const base =
 		'inline-flex items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
 
-	function getVariantClasses(isSelected: boolean, v: Variant) {
+	function getVariantClasses(isSelected: boolean, v: string) {
 		if (v === 'outline') {
 			return isSelected
 				? 'bg-blue-600 text-white border border-blue-600 hover:bg-blue-700'
@@ -45,7 +45,7 @@
 			: 'bg-gray-200 text-gray-700 hover:bg-gray-300';
 	}
 
-	function getSizeClasses(s: Size) {
+	function getSizeClasses(s: string) {
 		switch (s) {
 			case 'sm':
 				return 'px-2 py-1 text-xs';

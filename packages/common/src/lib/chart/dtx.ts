@@ -144,6 +144,7 @@ export class DTXFile {
 
 	parseSoundChips() {
 		const wavLines = this.lines.filter((line) => line.startsWith('#WAV'));
+
 		this.soundChips = wavLines.map((line) => {
 			const id = line.split('#WAV')[1].split(':')[0];
 			const volumeLine = this.lines.find((l) => l.startsWith(`#VOLUME${id}: `));
@@ -153,6 +154,7 @@ export class DTXFile {
 			const soundFile = line.split(`#WAV${id}: `)[1];
 			return new SoundChip('', parseInt(id, 36), volume, position, soundFile);
 		});
+
 		return this.soundChips;
 	}
 

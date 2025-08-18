@@ -204,6 +204,25 @@ export class WorkspaceService {
 			simFile.files = allFiles;
 			simFile.meta = dtxFile.meta;
 
+			// Match sound chips with their corresponding files
+			// This ensures soundChip.file is properly assigned for audio loading
+			for (const soundChip of soundChips) {
+				const matchingFile = allFiles.find(
+					(file) => file.name.toLowerCase() === soundChip.fileName.toLowerCase()
+				);
+				if (matchingFile) {
+					soundChip.file = matchingFile;
+				}
+			}
+
+			// Store all files in FileManager for the FileProvider
+			// Use null as simfileId for local workspace files
+			const { setFile: setFileInManager } = await import('@dtx/common/services/fileManager');
+			for (const file of allFiles) {
+				const key = `local:${file.name}`;
+				setFileInManager(key, file);
+			}
+
 			// Update the workspace entry
 			dtxEntry.parsed = dtxFile;
 			dtxEntry.simFile = simFile;

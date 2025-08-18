@@ -36,6 +36,15 @@ export class Editor extends BaseGame {
 	private isInitializing = false; // Flag to prevent auto-save during initialization
 	private isLoaded = false; // Flag to track if scene has finished loading and drawing
 	private soundFileHashCache: Map<File, string> = new Map(); // Cache file hashes to avoid recomputing
+	private onGridSpacingUpdate?: (cellsPerMeasure: number) => void;
+	private onCellHeightUpdate?: (height: number) => void;
+
+	// Store references to grid line graphics for direct access
+	private cellLinesGraphics: Phaser.GameObjects.Graphics | null = null;
+	private beatLinesGraphics: Phaser.GameObjects.Graphics | null = null;
+	private measureLinesGraphics: Phaser.GameObjects.Graphics | null = null;
+	private verticalLinesGraphics: Phaser.GameObjects.Graphics | null = null;
+
 	public notes: Record<string, LaneMeasureNote[]> = {};
 	protected bpmNotes: Record<string, number> = {};
 	protected measureLength: number[] = [];
@@ -55,8 +64,6 @@ export class Editor extends BaseGame {
 	}
 
 	create() {
-		console.log('Create Editor Scene');
-
 		// Set initialization flag to prevent auto-save during setup
 		this.isInitializing = true;
 
@@ -321,12 +328,14 @@ export class Editor extends BaseGame {
 			this.measureCount = get(store.measureCount);
 			this.restart({ measureCount });
 		});
-		EventBus.on(EventType.GRID_SPACING_UPDATE, (cellsPerMeasure: number) => {
+		this.onGridSpacingUpdate = (cellsPerMeasure: number) => {
 			this.updateGridSpacing(cellsPerMeasure);
-		});
-		EventBus.on(EventType.CELL_HEIGHT_UPDATE, (height: number) => {
+		};
+		this.onCellHeightUpdate = (height: number) => {
 			this.updateCellHeight(height);
-		});
+		};
+		EventBus.on(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
+		EventBus.on(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
 		EventBus.on(
 			EventType.NOTE_IMPORT,
 			async (notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
@@ -457,10 +466,6 @@ export class Editor extends BaseGame {
 			return;
 		}
 
-		console.log(
-			`Updating grid spacing from ${this.cellsPerMeasure} to ${cellsPerMeasure} cells per measure`
-		);
-
 		this.cellsPerMeasure = cellsPerMeasure;
 
 		// Redraw only the grid lines to show new spacing density
@@ -478,8 +483,6 @@ export class Editor extends BaseGame {
 			return;
 		}
 
-		console.log(`Updating cell height from ${this.cellHeight}px to ${height}px`);
-
 		this.cellHeight = height;
 
 		// Need to completely redraw the scene since cell height affects all measurements
@@ -494,6 +497,12 @@ export class Editor extends BaseGame {
 		this.panelContainer.removeAll(true);
 		this.footerContainer.removeAll(true);
 
+		// Reset graphics references since they're destroyed
+		this.cellLinesGraphics = null;
+		this.beatLinesGraphics = null;
+		this.measureLinesGraphics = null;
+		this.verticalLinesGraphics = null;
+
 		// Redraw panel and notes with new settings
 		this.drawPanel();
 		this.drawNotes();
@@ -507,27 +516,24 @@ export class Editor extends BaseGame {
 	 * Redraw only the horizontal grid lines with new spacing, preserving existing notes
 	 */
 	private redrawGridLines(): void {
-		// Find and remove existing horizontal grid line graphics from panelContainer
-		const childrenToRemove: Phaser.GameObjects.GameObject[] = [];
+		// Remove existing horizontal grid line graphics using stored references
+		if (this.cellLinesGraphics) {
+			this.panelContainer.remove(this.cellLinesGraphics);
+			this.cellLinesGraphics.destroy();
+			this.cellLinesGraphics = null;
+		}
 
-		// Iterate through all children in the panel container
-		this.panelContainer.each((child: Phaser.GameObjects.GameObject) => {
-			if (child instanceof Phaser.GameObjects.Graphics) {
-				const name = (child as any).name;
-				// Remove only the horizontal grid line graphics, preserve vertical lines
-				if (name === 'cellLines' || name === 'beatLines' || name === 'measureLines') {
-					childrenToRemove.push(child);
-				}
-			}
-		});
+		if (this.beatLinesGraphics) {
+			this.panelContainer.remove(this.beatLinesGraphics);
+			this.beatLinesGraphics.destroy();
+			this.beatLinesGraphics = null;
+		}
 
-		// Remove the identified graphics objects and destroy them completely
-		childrenToRemove.forEach((child) => {
-			this.panelContainer.remove(child);
-			child.destroy();
-		});
-
-		console.log(`Removed ${childrenToRemove.length} old grid line graphics objects`);
+		if (this.measureLinesGraphics) {
+			this.panelContainer.remove(this.measureLinesGraphics);
+			this.measureLinesGraphics.destroy();
+			this.measureLinesGraphics = null;
+		}
 
 		// Recreate horizontal grid lines with new spacing
 		this.drawHorizontalGridLines();
@@ -542,44 +548,40 @@ export class Editor extends BaseGame {
 	 */
 	private drawHorizontalGridLines(): void {
 		// Create graphics objects for different line thicknesses
-		const cellLines = this.add.graphics();
-		const beatLines = this.add.graphics();
-		const measureLines = this.add.graphics();
-
-		// Set names for easy identification during removal
-		(cellLines as any).name = 'cellLines';
-		(beatLines as any).name = 'beatLines';
-		(measureLines as any).name = 'measureLines';
+		this.cellLinesGraphics = this.add.graphics();
+		this.beatLinesGraphics = this.add.graphics();
+		this.measureLinesGraphics = this.add.graphics();
 
 		// Set line styles for each graphics object
-		cellLines.lineStyle(2, 0x888888, 0.5); // Light grey for cells
-		beatLines.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
-		measureLines.lineStyle(6, 0xffffff, 0.5); // White for measure lines
+		this.cellLinesGraphics.lineStyle(2, 0x888888, 0.5); // Light grey for cells
+		this.beatLinesGraphics.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
+		this.measureLinesGraphics.lineStyle(6, 0xffffff, 0.5); // White for measure lines
 
 		// Draw horizontal lines for cells and measures
 		let y = this.offsetY;
 		for (let j = 0; j < this.measureCount; j++) {
-			const measureHeight = this.drawMeasure(j, y, cellLines, beatLines, measureLines);
+			const measureHeight = this.drawMeasure(
+				j,
+				y,
+				this.cellLinesGraphics,
+				this.beatLinesGraphics,
+				this.measureLinesGraphics
+			);
 			y -= measureHeight;
 		}
 
 		// Stroke all graphics objects
-		cellLines.strokePath();
-		beatLines.strokePath();
-		measureLines.strokePath();
+		this.cellLinesGraphics.strokePath();
+		this.beatLinesGraphics.strokePath();
+		this.measureLinesGraphics.strokePath();
 
 		// Add to panel container at the beginning (behind notes and text)
 		// This ensures grid lines appear behind existing notes
-		this.panelContainer.addAt(cellLines, 0);
-		this.panelContainer.addAt(beatLines, 0);
-		this.panelContainer.addAt(measureLines, 0);
-
-		console.log(`Drew new grid lines with ${this.cellsPerMeasure} cells per measure`);
+		this.panelContainer.addAt(this.cellLinesGraphics, 0);
+		this.panelContainer.addAt(this.beatLinesGraphics, 0);
+		this.panelContainer.addAt(this.measureLinesGraphics, 0);
 	}
 
-	/**
-	 * Override drawPanel to add names to graphics objects for easier management
-	 */
 	drawPanel() {
 		this.drawFooter();
 		this.panelContainer = this.add.container(0, 0);
@@ -589,53 +591,53 @@ export class Editor extends BaseGame {
 		this.parseMesaureLength();
 
 		// Create separate graphics objects for different line thicknesses
-		const verticalLines = this.add.graphics();
-		const cellLines = this.add.graphics();
-		const beatLines = this.add.graphics();
-		const measureLines = this.add.graphics();
-
-		// Set names for easy identification during removal
-		(verticalLines as any).name = 'verticalLines';
-		(cellLines as any).name = 'cellLines';
-		(beatLines as any).name = 'beatLines';
-		(measureLines as any).name = 'measureLines';
+		this.verticalLinesGraphics = this.add.graphics();
+		this.cellLinesGraphics = this.add.graphics();
+		this.beatLinesGraphics = this.add.graphics();
+		this.measureLinesGraphics = this.add.graphics();
 
 		// Set line styles for each graphics object
-		verticalLines.lineStyle(1, 0x888888, 1); // Light grey for vertical lanes
-		cellLines.lineStyle(2, 0x888888, 0.5); // Light grey for cells
-		beatLines.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
-		measureLines.lineStyle(6, 0xffffff, 0.5); // White for measure lines
+		this.verticalLinesGraphics.lineStyle(1, 0x888888, 1); // Light grey for vertical lanes
+		this.cellLinesGraphics.lineStyle(2, 0x888888, 0.5); // Light grey for cells
+		this.beatLinesGraphics.lineStyle(4, 0x888888, 0.5); // Light grey for beat divisions
+		this.measureLinesGraphics.lineStyle(6, 0xffffff, 0.5); // White for measure lines
 
 		// Draw vertical lanes
 		let currentX = this.offsetX;
 		this.laneConfigs.forEach(() => {
-			verticalLines.moveTo(currentX, this.offsetY);
-			verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
+			this.verticalLinesGraphics!.moveTo(currentX, this.offsetY);
+			this.verticalLinesGraphics!.lineTo(currentX, this.offsetY - this.laneHeight);
 			currentX += this.cellWidth;
 		});
 
 		// Draw the last vertical line
-		verticalLines.moveTo(currentX, this.offsetY);
-		verticalLines.lineTo(currentX, this.offsetY - this.laneHeight);
+		this.verticalLinesGraphics.moveTo(currentX, this.offsetY);
+		this.verticalLinesGraphics.lineTo(currentX, this.offsetY - this.laneHeight);
 
 		// Draw horizontal lines for cells and measures
 		let y = this.offsetY;
 		for (let j = 0; j < this.measureCount; j++) {
-			const measureHeight = this.drawMeasure(j, y, cellLines, beatLines, measureLines);
+			const measureHeight = this.drawMeasure(
+				j,
+				y,
+				this.cellLinesGraphics,
+				this.beatLinesGraphics,
+				this.measureLinesGraphics
+			);
 			y -= measureHeight;
 		}
 
 		// Stroke all graphics objects
-		verticalLines.strokePath();
-		cellLines.strokePath();
-		beatLines.strokePath();
-		measureLines.strokePath();
+		this.verticalLinesGraphics.strokePath();
+		this.cellLinesGraphics.strokePath();
+		this.beatLinesGraphics.strokePath();
+		this.measureLinesGraphics.strokePath();
 
 		// Add all graphics to the panel container
-		this.panelContainer.add(verticalLines);
-		this.panelContainer.add(cellLines);
-		this.panelContainer.add(beatLines);
-		this.panelContainer.add(measureLines);
+		this.panelContainer.add(this.verticalLinesGraphics);
+		this.panelContainer.add(this.cellLinesGraphics);
+		this.panelContainer.add(this.beatLinesGraphics);
+		this.panelContainer.add(this.measureLinesGraphics);
 
 		this.setCameraBounds();
 
@@ -781,7 +783,6 @@ export class Editor extends BaseGame {
 	}
 
 	restart(data: Data = {}) {
-		console.log('Restart Scene, data', JSON.stringify(data));
 		// Reset loading state
 		this.isLoaded = false;
 		// Clear hash cache to avoid stale File references
@@ -806,6 +807,14 @@ export class Editor extends BaseGame {
 		if (this.activeNoteSubscription) {
 			this.activeNoteSubscription();
 			this.activeNoteSubscription = null;
+		}
+
+		// Clean up EventBus listeners
+		if (this.onGridSpacingUpdate) {
+			EventBus.off(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
+		}
+		if (this.onCellHeightUpdate) {
+			EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
 		}
 
 		// Clean up key bindings subscription
@@ -936,8 +945,6 @@ export class Editor extends BaseGame {
 			// Center the cursor hotspot
 			return `url(${dataUrl}) ${noteWidth / 2} ${noteHeight / 2}, auto`;
 		} catch (error) {
-			// Fallback for test environments or browsers without canvas support
-			console.warn('Canvas not supported, using default cursor');
 			return 'crosshair';
 		}
 	}
@@ -1066,7 +1073,6 @@ export class Editor extends BaseGame {
 	public async autoSaveChart(): Promise<void> {
 		// Default implementation does nothing
 		// Override in dtx-web and dtx-desktop implementations
-		console.warn('autoSaveChart() not implemented in base Editor class');
 	}
 
 	/**
@@ -1077,7 +1083,6 @@ export class Editor extends BaseGame {
 	private autoLoadChart(): boolean {
 		// Default implementation does nothing
 		// Override in dtx-web and dtx-desktop implementations
-		console.warn('autoLoadChart() not implemented in base Editor class');
 		return false;
 	}
 
@@ -1089,7 +1094,6 @@ export class Editor extends BaseGame {
 	public clearTempStorage(): void {
 		// Default implementation just clears dirty state
 		this.setDirty(false);
-		console.warn('clearTempStorage() not implemented in base Editor class');
 	}
 
 	/**

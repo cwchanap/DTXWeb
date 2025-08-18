@@ -3,7 +3,7 @@
 
 	import { EventBus } from '@dtx/common/game';
 	import { EventType } from '@dtx/common/game';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { store } from '@dtx/common';
 	import { DTXFile } from '@dtx/common';
 	import { ToggleGroup } from '@dtx/ui-components';
@@ -57,7 +57,10 @@
 	function handleCellHeightApply() {
 		// Validate cell height range
 		if (cellHeight < 5 || cellHeight > 100) {
-			alert('Cell height must be between 5 and 100 pixels');
+			EventBus.emit(
+				EventType.VALIDATION_ERROR,
+				'Cell height must be between 5 and 100 pixels'
+			);
 			return;
 		}
 		EventBus.emit(EventType.CELL_HEIGHT_UPDATE, cellHeight);
@@ -87,10 +90,10 @@
 		EventBus.on(EventType.EDITOR_LOADED, handleEditorLoaded);
 		EventBus.on(EventType.NOTE_IMPORT, handleNoteImport);
 
-		store.isPreviewing.subscribe((value) => {
+		const unsubPreview = store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		store.measureCount.subscribe((value) => {
+		const unsubMeasure = store.measureCount.subscribe((value) => {
 			measureCount = value;
 		});
 		const dtxFileUnsubscribe = store.currentDtxFile.subscribe((value) => {
@@ -107,6 +110,8 @@
 			EventBus.off(EventType.SCENE_READY, handleSceneReady);
 			EventBus.off(EventType.EDITOR_LOADED, handleEditorLoaded);
 			EventBus.off(EventType.NOTE_IMPORT, handleNoteImport);
+			unsubPreview();
+			unsubMeasure();
 			dtxFileUnsubscribe();
 		};
 	});

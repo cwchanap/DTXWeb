@@ -32,7 +32,9 @@
 			"mcp__playwright__browser_snapshot",
 			"mcp__playwright__browser_click",
 			"mcp__playwright__browser_press_key",
-			"mcp__playwright__browser_file_upload"
+			"mcp__playwright__browser_file_upload",
+			"Bash(wc:*)",
+			"Bash(npx svelte-check:*)"
 		],
 		"deny": []
 	}

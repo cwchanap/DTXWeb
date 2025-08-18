@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="T = string">
 	import { clsx } from 'clsx';
 
 	type Size = 'sm' | 'md' | 'lg';
@@ -10,9 +10,9 @@
 		disabled?: boolean;
 	}
 
-	interface Props {
-		options: ToggleOption<any>[];
-		value?: any;
+	interface Props<T> {
+		options: ToggleOption<T>[];
+		value?: T;
 		size?: Size;
 		variant?: Variant;
 		disabled?: boolean;
@@ -28,10 +28,10 @@
 		disabled = false,
 		class: className = '',
 		ariaLabel
-	}: Props = $props();
+	}: Props<T> = $props();
 
 	const base =
-		'inline-flex items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+		'inline-flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
 
 	function getVariantClasses(isSelected: boolean, v: string) {
 		if (v === 'outline') {
@@ -90,7 +90,7 @@
 		);
 	}
 
-	function handleSelect<T>(optionValue: T) {
+	function handleSelect(optionValue: T) {
 		if (!disabled) {
 			value = optionValue;
 		}

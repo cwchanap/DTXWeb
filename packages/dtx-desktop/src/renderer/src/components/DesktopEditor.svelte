@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
 	import { MainTab, SoundTab, PreviewTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
@@ -54,6 +54,7 @@
 	let minSidebarWidth = 200;
 	let maxSidebarWidth = 600;
 	let collapseThreshold = 50; // Width below which sidebar collapses
+	let validationError = $state<string | null>(null); // Track validation errors
 
 	// Helper function to create DTXFile from ChartMetadata
 	const createDTXFileFromMetadata = (metadata: ChartMetadata): DTXFile => {
@@ -121,7 +122,19 @@
 		isSidebarCollapsed = false;
 	};
 
+	// Validation error handler
+	const handleValidationError = (message: string) => {
+		validationError = message;
+		// Auto-hide error after 5 seconds
+		setTimeout(() => {
+			validationError = null;
+		}, 5000);
+	};
+
 	onMount(() => {
+		// Set up validation error event listener
+		EventBus.on(EventType.VALIDATION_ERROR, handleValidationError);
+
 		const initializeEditor = async () => {
 			try {
 				// Initialize file provider
@@ -215,6 +228,7 @@
 
 		// Return cleanup function
 		return () => {
+			EventBus.off(EventType.VALIDATION_ERROR, handleValidationError);
 			if (game) {
 				game.destroy(true);
 			}
@@ -623,6 +637,17 @@
 						</div>
 					</div>
 				{:else if currentTab === 'main'}
+					{#if validationError}
+						<div class="mb-3 rounded-md border border-red-300 bg-red-50 p-3">
+							<div class="flex items-start justify-between">
+								<p class="text-sm text-red-700">{validationError}</p>
+								<button
+									class="text-red-500 hover:text-red-700"
+									onclick={() => (validationError = null)}>×</button
+								>
+							</div>
+						</div>
+					{/if}
 					<MainTab />
 				{:else if currentTab === 'sound'}
 					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} bucketUrl="" />

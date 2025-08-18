@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { EventBus } from '@dtx/common/game';
 	import { EventType } from '@dtx/common/game';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { store } from '@dtx/common';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
 
@@ -34,25 +34,32 @@
 		store.isPreviewing.set(isPreviewing);
 	}
 
+	let unsubscribeFunctions: Array<() => void> = [];
+
 	onMount(() => {
-		store.isPreviewing.subscribe((value) => {
+		const isPreviewingUnsubscribe = store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
-		store.playSpeed.subscribe((value) => {
+		const playSpeedUnsubscribe = store.playSpeed.subscribe((value) => {
 			playSpeed = value;
 		});
-		store.disableBgmPreview.subscribe((value) => {
+		const disableBgmPreviewUnsubscribe = store.disableBgmPreview.subscribe((value) => {
 			disableBgmPreview = value;
 		});
-
 		const dtxFileUnsubscribe = store.currentDtxFile.subscribe((value) => {
 			bpm = value?.bpm ?? 120;
 		});
 
-		// Cleanup function
-		return () => {
-			dtxFileUnsubscribe();
-		};
+		unsubscribeFunctions = [
+			isPreviewingUnsubscribe,
+			playSpeedUnsubscribe,
+			disableBgmPreviewUnsubscribe,
+			dtxFileUnsubscribe
+		];
+	});
+
+	onDestroy(() => {
+		unsubscribeFunctions.forEach((unsubscribe) => unsubscribe());
 	});
 </script>
 

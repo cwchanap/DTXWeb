@@ -3,7 +3,7 @@
 	import Main, { type TPhaserRef } from '@dtx/common/game';
 	import { Editor } from '@dtx/common/game';
 	import { Preview } from '@dtx/common/game';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { MainTab, PreviewTab } from '@dtx/common/components';
 	import {
 		DTXFile,
@@ -24,6 +24,7 @@
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
+	import toastStore from '$lib/toaster';
 	import {
 		workspaceService,
 		WorkspaceService,
@@ -533,6 +534,20 @@
 			}));
 	}
 
+	// Set up event listeners for editor readiness (for preview button state)
+	const handleSceneReady = () => {
+		isEditorReady = true;
+	};
+	const handleEditorLoaded = () => {
+		isEditorReady = true;
+	};
+	const handleNoteImport = () => {
+		isEditorReady = false;
+	};
+	const handleValidationError = (message: string) => {
+		toastStore.error({ message, timeout: 5000 });
+	};
+
 	onMount(async () => {
 		store.activeScene.set(Editor.key);
 		store.isPreviewing.subscribe((value) => {
@@ -541,20 +556,10 @@
 		simfileID = data.simfileID || '';
 		store.currentSimfileID.set(simfileID || null);
 
-		// Set up event listeners for editor readiness (for preview button state)
-		const handleSceneReady = () => {
-			isEditorReady = true;
-		};
-		const handleEditorLoaded = () => {
-			isEditorReady = true;
-		};
-		const handleNoteImport = () => {
-			isEditorReady = false;
-		};
-
 		EventBus.on(EventType.SCENE_READY, handleSceneReady);
 		EventBus.on(EventType.EDITOR_LOADED, handleEditorLoaded);
 		EventBus.on(EventType.NOTE_IMPORT, handleNoteImport);
+		EventBus.on(EventType.VALIDATION_ERROR, handleValidationError);
 
 		// Load available workspaces for the workspace switcher
 		availableWorkspaces = workspaceService.getWorkspaces();
@@ -657,6 +662,13 @@
 			console.error('Error loading simfile:', error);
 			newFile(); // Fallback to new file if loading fails
 		}
+	});
+
+	onDestroy(() => {
+		EventBus.off(EventType.SCENE_READY, handleSceneReady);
+		EventBus.off(EventType.EDITOR_LOADED, handleEditorLoaded);
+		EventBus.off(EventType.NOTE_IMPORT, handleNoteImport);
+		EventBus.off(EventType.VALIDATION_ERROR, handleValidationError);
 	});
 
 	// Sound Library Management

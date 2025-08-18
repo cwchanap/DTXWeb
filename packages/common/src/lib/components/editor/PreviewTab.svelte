@@ -5,10 +5,15 @@
 	import { store } from '@dtx/common';
 	import { Play, CirclePause } from '@lucide/svelte/icons';
 
+	interface Props {
+		isEditorReady?: boolean;
+	}
+
+	let { isEditorReady = false }: Props = $props();
+
 	let isPreviewing = $state(false);
 	let playSpeed = $state(1);
 	let disableBgmPreview = $state(false);
-	let isEditorReady = $state(false);
 	let bpm = $state(120);
 
 	function handlePlaySpeedChange() {
@@ -30,25 +35,6 @@
 	}
 
 	onMount(() => {
-		// Listen for editor ready state
-		const handleSceneReady = () => {
-			isEditorReady = true;
-		};
-
-		// Listen for editor loaded state (when it's finished drawing and loading)
-		const handleEditorLoaded = () => {
-			isEditorReady = true;
-		};
-
-		// Listen for note import which triggers scene restart - disable preview until loaded
-		const handleNoteImport = () => {
-			isEditorReady = false;
-		};
-
-		EventBus.on(EventType.SCENE_READY, handleSceneReady);
-		EventBus.on(EventType.EDITOR_LOADED, handleEditorLoaded);
-		EventBus.on(EventType.NOTE_IMPORT, handleNoteImport);
-
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
@@ -65,9 +51,6 @@
 
 		// Cleanup function
 		return () => {
-			EventBus.off(EventType.SCENE_READY, handleSceneReady);
-			EventBus.off(EventType.EDITOR_LOADED, handleEditorLoaded);
-			EventBus.off(EventType.NOTE_IMPORT, handleNoteImport);
 			dtxFileUnsubscribe();
 		};
 	});

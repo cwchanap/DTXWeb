@@ -393,8 +393,8 @@ export class Editor extends BaseGame {
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
-			this.scene.pause(Preview.key);
-			this.scene.setVisible(false, Preview.key);
+			// Stop the preview scene completely instead of just pausing
+			this.scene.stop(Preview.key);
 			this.scene.resume();
 			this.scene.setVisible(true);
 		});

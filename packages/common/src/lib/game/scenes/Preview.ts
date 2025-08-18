@@ -94,16 +94,16 @@ export class Preview extends BaseGame {
 		this.drawPanel();
 		this.drawNotes();
 
-		// Initial sound setup - wait for completion
+		// Initial sound setup - wait for completion, then start preview
 		await this.setupSoundsAsync();
+		this.startPreview();
 
 		// Subscribe to store changes to reload sounds when files are updated
-		this.storeUnsubscribe = store.currentSoundChip.subscribe((soundChips) => {
-			this.setupSoundsAsync();
+		this.storeUnsubscribe = store.currentSoundChip.subscribe(async (soundChips) => {
+			await this.setupSoundsAsync();
+			// Start preview after sounds are loaded
+			this.startPreview();
 		});
-
-		// Start preview after sounds are loaded
-		this.startPreview();
 
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
@@ -148,9 +148,10 @@ export class Preview extends BaseGame {
 				}
 
 				// Create a promise that resolves when this audio is loaded
-				return this.loadSoundChipAsync(actualFile, soundChip, cacheKey);
+				const result = await this.loadSoundChipAsync(actualFile, soundChip, cacheKey);
+				return result;
 			} catch (error) {
-				console.warn(`Failed to setup sound chip ${soundChip.fileName}:`, error);
+				console.warn(`🔊 Failed to setup sound chip ${soundChip.fileName}:`, error);
 			}
 		});
 
@@ -213,10 +214,21 @@ export class Preview extends BaseGame {
 			resolve();
 		});
 
-		// Add error listener in case loading fails
-		this.load.once(`loaderror-audio-${cacheKey}`, () => {
-			console.warn(`Failed to load audio file with cache key: ${cacheKey}`);
+		// Add error listener to catch load failures
+		this.load.once(`loaderror-audio-${cacheKey}`, (file: any) => {
+			console.warn(`Failed to load audio file: ${cacheKey}`, file);
+			resolve(); // Still resolve to prevent hanging
+		});
+
+		// Add a timeout fallback in case neither event fires
+		const timeoutId = setTimeout(() => {
+			console.warn(`Timeout loading audio file: ${cacheKey}`);
 			resolve();
+		}, 10000); // 10 second timeout
+
+		// Clear timeout on successful load
+		this.load.once(`filecomplete-audio-${cacheKey}`, () => {
+			clearTimeout(timeoutId);
 		});
 	}
 
@@ -891,6 +903,9 @@ export class Preview extends BaseGame {
 			audio.stop();
 		});
 		this.playingAudio = [];
+
+		// Clear all delayed calls to prevent hanging
+		this.time.removeAllEvents();
 
 		// Clean up store subscription
 		if (this.storeUnsubscribe) {

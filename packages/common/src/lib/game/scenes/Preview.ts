@@ -147,10 +147,11 @@ export class Preview extends BaseGame {
 
 		// Stop all playing audio
 		this.playingAudio.forEach((audio) => {
-			audio.pause();
+			audio.stop();
 		});
+		this.playingAudio = [];
 
-		// Clear all scheduled audio events
+		// Clear all scheduled audio events since resume may be from different position
 		this.time.removeAllEvents();
 	}
 
@@ -158,19 +159,9 @@ export class Preview extends BaseGame {
 	 * Resume the preview from current position
 	 */
 	private resumePreview(): void {
-		// Resume existing tween if possible to avoid expensive restart
-		if (this.previewTween && this.previewTween.isPaused()) {
-			this.previewTween.resume();
-			// Resume any paused audio as well
-			this.playingAudio.forEach((audio) => {
-				if (audio.isPaused) {
-					audio.resume();
-				}
-			});
-		} else {
-			// Only restart if no valid tween exists - but skip sound loading if already done
-			this.startPreviewWithoutSoundReload();
-		}
+		// Always restart preview since startMeasure may have changed
+		// Skip sound loading if already done
+		this.startPreviewWithoutSoundReload();
 	}
 
 	/**
@@ -514,7 +505,7 @@ export class Preview extends BaseGame {
 		});
 		this.playingAudio = [];
 
-		// Clear any pending audio events
+		// Clear any pending audio events (this is OK here since we're restarting)
 		this.time.removeAllEvents();
 
 		// Update camera zoom based on current play speed

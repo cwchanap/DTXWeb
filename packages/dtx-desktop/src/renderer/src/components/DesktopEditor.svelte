@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
 	import { MainTab, SoundTab, PreviewTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
@@ -656,14 +656,14 @@
 				{/if}
 
 				<!-- Drag handle -->
-				<button
+				<div
 					class="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-500/50 {isDragging
 						? 'bg-blue-500'
 						: ''}"
 					onmousedown={handleMouseDown}
 					role="separator"
 					aria-label="Resize sidebar"
-				></button>
+				></div>
 			</div>
 		{:else}
 			<!-- Collapsed sidebar - expand area -->

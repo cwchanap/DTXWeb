@@ -374,14 +374,9 @@ export class Editor extends BaseGame {
 			this.scene.pause();
 			this.scene.setVisible(false);
 
-			// If editor is dirty or preview scene doesn't exist, rebuild it
-			if (this.isDirty || !this.scene.isPaused(Preview.key)) {
-				// Stop existing preview if it exists
-				if (this.scene.isPaused(Preview.key)) {
-					this.scene.stop(Preview.key);
-				}
-
-				// Launch new preview with updated notes
+			// If preview scene doesn't exist, create it
+			if (!this.scene.isActive(Preview.key) && !this.scene.isPaused(Preview.key)) {
+				// Launch new preview
 				this.scene.launch(Preview.key, {
 					bpm: bpm,
 					bpmNotes: this.bpmNotes,
@@ -390,7 +385,38 @@ export class Editor extends BaseGame {
 					startMeasure: currentMeasure
 				});
 
-				// Note: Keep dirty state - preview doesn't save the changes
+				// Clear dirty state after successful preview creation
+				this.setDirty(false);
+			} else if (this.isDirty) {
+				// Update existing scene data without recreating
+				const previewScene = this.scene.get(Preview.key) as Preview;
+				if (previewScene) {
+					// Update scene data
+					previewScene.updateData({
+						bpm: bpm,
+						bpmNotes: this.bpmNotes,
+						notes: this.notes,
+						measureCount: this.measureCount,
+						startMeasure: currentMeasure
+					});
+					this.scene.setVisible(true, Preview.key);
+					this.scene.resume(Preview.key);
+
+					// Clear dirty state after successful preview update
+					this.setDirty(false);
+				} else {
+					// Fallback to recreation if scene not found
+					this.scene.launch(Preview.key, {
+						bpm: bpm,
+						bpmNotes: this.bpmNotes,
+						notes: this.notes,
+						measureCount: this.measureCount,
+						startMeasure: currentMeasure
+					});
+
+					// Clear dirty state after successful preview creation
+					this.setDirty(false);
+				}
 			} else {
 				// Resume existing preview if no changes
 				this.scene.setVisible(true, Preview.key);
@@ -402,8 +428,11 @@ export class Editor extends BaseGame {
 		});
 
 		EventBus.on(EventType.STOP_PREVIEW, () => {
-			// Stop the preview scene completely instead of just pausing
-			this.scene.stop(Preview.key);
+			// Pause the preview scene to keep it alive for resume
+			if (this.scene.isActive(Preview.key)) {
+				this.scene.pause(Preview.key);
+				this.scene.setVisible(false, Preview.key);
+			}
 			this.scene.resume();
 			this.scene.setVisible(true);
 		});

@@ -41,6 +41,19 @@ export class Preview extends BaseGame {
 	protected notesContainer!: Phaser.GameObjects.Container; // For notes that won't scale
 	private storeUnsubscribe: (() => void) | null = null;
 
+	// Track if scene is fully initialized
+	private isInitialized = false;
+
+	// Global animation cache to avoid recreating animations every time
+	private static animationsCreated = false;
+	private static soundCacheMap = new Map<string, { blob: Blob; processed: boolean }>();
+
+	// Performance caches for expensive calculations
+	private timeElapsedCache = new Map<number, number>();
+	private measureOffsetCache = new Map<number, number>();
+	private lastDataHash: string = '';
+	private calculationsValid = false;
+
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
@@ -84,33 +97,160 @@ export class Preview extends BaseGame {
 	}
 
 	async create() {
-		// Create animations for each note type
-		this.createNoteAnimations();
+		// Create animations only once globally
+		if (!Preview.animationsCreated) {
+			this.createNoteAnimations();
+			Preview.animationsCreated = true;
+		}
 
 		// Initialize containers that will be used in drawPanel
 		this.gridContainer = this.add.container(0, 0);
 		this.notesContainer = this.add.container(0, 0);
 
+		// Draw panel and notes
 		this.drawPanel();
 		this.drawNotes();
 
-		// Initial sound setup - wait for completion, then start preview
-		await this.setupSoundsAsync();
+		// Load sounds in background, but don't restart preview multiple times
+		this.setupSoundsAsync();
+
+		// Start preview only once after everything is set up
 		this.startPreview();
 
-		// Subscribe to store changes to reload sounds when files are updated
-		this.storeUnsubscribe = store.currentSoundChip.subscribe(async (soundChips) => {
-			await this.setupSoundsAsync();
-			// Start preview after sounds are loaded
-			this.startPreview();
-		});
+		// Defer store subscription until after initial setup
+		setTimeout(() => {
+			if (this.scene.isActive()) {
+				this.storeUnsubscribe = store.currentSoundChip.subscribe(async (soundChips) => {
+					// Only reload sounds, don't restart preview
+					await this.setupSoundsAsync();
+				});
+			}
+		}, 100);
 
+		this.isInitialized = true;
 		EventBus.emit(EventType.SCENE_READY, this);
-		EventBus.on(EventType.STOP_PREVIEW, () => this.cleanUp());
+		EventBus.on(EventType.STOP_PREVIEW, () => this.pausePreview());
 		EventBus.on(EventType.RESUME_PREVIEW, (data: { startMeasure: number }) => {
 			this.startMeasure = data.startMeasure;
-			this.startPreview();
+			this.resumePreview();
 		});
+	}
+
+	/**
+	 * Pause the preview (stop audio and tweens but keep scene alive)
+	 */
+	private pausePreview(): void {
+		// Stop preview tween
+		if (this.previewTween) {
+			this.previewTween.pause();
+		}
+
+		// Stop all playing audio
+		this.playingAudio.forEach((audio) => {
+			audio.pause();
+		});
+
+		// Clear all scheduled audio events
+		this.time.removeAllEvents();
+	}
+
+	/**
+	 * Resume the preview from current position
+	 */
+	private resumePreview(): void {
+		// Resume existing tween if possible to avoid expensive restart
+		if (this.previewTween && this.previewTween.isPaused()) {
+			this.previewTween.resume();
+			// Resume any paused audio as well
+			this.playingAudio.forEach((audio) => {
+				if (audio.isPaused) {
+					audio.resume();
+				}
+			});
+		} else {
+			// Only restart if no valid tween exists - but skip sound loading if already done
+			this.startPreviewWithoutSoundReload();
+		}
+	}
+
+	/**
+	 * Update scene data without recreating the scene
+	 */
+	public updateData(data: {
+		bpm: number;
+		bpmNotes: Record<string, number>;
+		notes: Record<string, LaneMeasureNote[]>;
+		measureCount: number;
+		startMeasure: number;
+	}): void {
+		// Update internal data
+		this.bpm = data.bpm;
+		this.bpmNotes = data.bpmNotes;
+		this.notes = data.notes;
+		this.measureCount = data.measureCount;
+		this.startMeasure = data.startMeasure;
+
+		// Invalidate caches since data changed
+		this.invalidateCache();
+
+		// Parse measure lengths with new data
+		this.parseMesaureLength();
+
+		// Clear existing visual elements without destroying containers
+		this.gridContainer.removeAll(true);
+		this.notesContainer.removeAll(true);
+
+		// Clear panel container contents but don't destroy it
+		if (this.panelContainer) {
+			this.panelContainer.removeAll();
+		}
+
+		// Redraw with new data
+		this.drawGridLines();
+		this.drawNotes();
+
+		// Ensure containers are properly added back to panel
+		if (this.panelContainer) {
+			this.panelContainer.add(this.gridContainer);
+			this.panelContainer.add(this.notesContainer);
+		}
+
+		// Restart preview with new data
+		this.startPreview();
+	}
+
+	/**
+	 * Generate hash of current data for cache validation
+	 */
+	private generateDataHash(): string {
+		return JSON.stringify({
+			bpm: this.bpm,
+			measureCount: this.measureCount,
+			measureLength: this.measureLength,
+			bpmNotes: this.bpmNotes
+		});
+	}
+
+	/**
+	 * Invalidate performance caches when data changes
+	 */
+	private invalidateCache(): void {
+		this.timeElapsedCache.clear();
+		this.measureOffsetCache.clear();
+		this.calculationsValid = false;
+		this.lastDataHash = '';
+	}
+
+	/**
+	 * Validate cache and update if needed
+	 */
+	private validateCache(): void {
+		const currentHash = this.generateDataHash();
+		if (this.lastDataHash !== currentHash) {
+			this.invalidateCache();
+			this.lastDataHash = currentHash;
+		}
+		this.calculationsValid = true;
 	}
 
 	private async setupSoundsAsync(): Promise<void> {
@@ -120,8 +260,29 @@ export class Preview extends BaseGame {
 
 		if (!soundChips) return;
 
-		// Create promises for all sound chips concurrently
-		const loadPromises = soundChips.map(async (soundChip) => {
+		// Filter out sound chips that are already loaded to avoid redundant file operations
+		const unloadedSoundChips = soundChips.filter((soundChip) => {
+			if (!soundChip.fileName) return false;
+
+			const cacheKey = this.getCacheKey(soundChip);
+
+			// Check if already in Phaser cache and sound manager
+			const alreadyLoaded =
+				this.cache &&
+				this.cache.audio &&
+				this.cache.audio.exists(cacheKey) &&
+				this.sound.get(cacheKey);
+
+			return !alreadyLoaded;
+		});
+
+		// If no sounds need loading, return early
+		if (unloadedSoundChips.length === 0) {
+			return;
+		}
+
+		// Create promises for unloaded sound chips only
+		const loadPromises = unloadedSoundChips.map(async (soundChip) => {
 			try {
 				// Get file from FileProvider for both local and remote files
 				const actualFile = await fileProvider.getFile(currentSimfileID, soundChip.fileName);
@@ -132,14 +293,17 @@ export class Preview extends BaseGame {
 
 				const cacheKey = this.getCacheKey(soundChip);
 
-				// Check if the audio is already in cache and sound manager
-				if (
-					this.cache &&
-					this.cache.audio &&
-					this.cache.audio.exists(cacheKey) &&
-					this.sound.get(cacheKey)
-				) {
-					return; // Already loaded and added
+				// Check global sound cache for processed files
+				const globalCacheEntry = Preview.soundCacheMap.get(cacheKey);
+				if (globalCacheEntry && globalCacheEntry.processed) {
+					// Use cached processed audio
+					const result = await this.loadSoundChipAsync(
+						actualFile,
+						soundChip,
+						cacheKey,
+						globalCacheEntry.blob
+					);
+					return result;
 				}
 
 				// Remove existing cache entry if it exists
@@ -162,7 +326,8 @@ export class Preview extends BaseGame {
 	private async loadSoundChipAsync(
 		actualFile: File,
 		soundChip: SoundChip,
-		cacheKey: string
+		cacheKey: string,
+		cachedBlob?: Blob
 	): Promise<void> {
 		// Check if scene is properly initialized
 		if (!this.load || !this.sound) {
@@ -176,11 +341,18 @@ export class Preview extends BaseGame {
 				try {
 					// Load the audio file into cache
 					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
-						// Use XA decoder for .xa files
-						const arrayBuffer = await actualFile.arrayBuffer();
-						const audioBuffer = await XAaudioContext.decodeAudioData(arrayBuffer);
-						// Create a blob URL from the decoded audio buffer
-						const wavBlob = this.audioBufferToWavBlob(audioBuffer);
+						// Use cached blob if available, otherwise process XA file
+						let wavBlob: Blob;
+						if (cachedBlob) {
+							wavBlob = cachedBlob;
+						} else {
+							// Process XA file and cache result
+							const arrayBuffer = await actualFile.arrayBuffer();
+							const audioBuffer = await XAaudioContext.decodeAudioData(arrayBuffer);
+							wavBlob = this.audioBufferToWavBlob(audioBuffer);
+							// Cache the processed blob
+							Preview.soundCacheMap.set(cacheKey, { blob: wavBlob, processed: true });
+						}
 						const objectUrl = URL.createObjectURL(wavBlob);
 
 						// Add listeners and load
@@ -318,36 +490,76 @@ export class Preview extends BaseGame {
 	}
 
 	startPreview() {
+		// Load sounds first if needed
+		this.setupSoundsAsync().then(() => {
+			// Then start preview
+			this.startPreviewWithoutSoundReload();
+		});
+	}
+
+	/**
+	 * Start preview without reloading sounds (for resume operations)
+	 */
+	private startPreviewWithoutSoundReload() {
+		// Stop any existing preview to avoid double scheduling
+		if (this.previewTween) {
+			this.previewTween.stop();
+			this.previewTween.destroy();
+			this.previewTween = null;
+		}
+
+		// Stop any playing audio to avoid overlaps
+		this.playingAudio.forEach((audio) => {
+			audio.stop();
+		});
+		this.playingAudio = [];
+
+		// Clear any pending audio events
+		this.time.removeAllEvents();
+
 		// Update camera zoom based on current play speed
 		this.updateCameraZoom();
 
 		// Create a new preview tween starting from the beginning (0 progress)
 		this.createPreviewTween();
 
+		// Cache seconds per measure calculation
 		const secondsPerMeasure = (60 * 4) / this.bpm;
 
 		// Only schedule BGM playback if not disabled
 		const disableBgmPreview = get(store.disableBgmPreview);
-		if (!disableBgmPreview) {
-			this.notes[Preview.bgmNoteID]?.forEach((note) => {
+		if (!disableBgmPreview && this.notes[Preview.bgmNoteID]) {
+			this.notes[Preview.bgmNoteID].forEach((note) => {
 				this.scheduleBGMPlayback(note, secondsPerMeasure, this.startMeasure);
 			});
 		}
 
-		this.laneConfigs
-			.filter((lane) => lane.playable)
-			.forEach((lane) => {
-				if (this.notes[lane.id]) {
-					this.notes[lane.id]
-						.filter((note) => note.measure >= this.startMeasure)
-						.forEach((note) =>
-							this.scheduleNotePlayback(note, secondsPerMeasure, this.startMeasure)
-						);
-				}
-			});
+		// Pre-filter playable lanes and notes to reduce iterations
+		const playableLanes = this.laneConfigs.filter((lane) => lane.playable);
+		const relevantNotes = playableLanes
+			.map(
+				(lane) =>
+					this.notes[lane.id]?.filter((note) => note.measure >= this.startMeasure) || []
+			)
+			.flat();
+
+		// Schedule note playback for all relevant notes at once
+		relevantNotes.forEach((note) => {
+			this.scheduleNotePlayback(note, secondsPerMeasure, this.startMeasure);
+		});
 	}
 
 	getTimeElapsed(measure: number, noteChipPosition: number = 0) {
+		this.validateCache();
+
+		// Use cache for measure-level calculations (when noteChipPosition is 0)
+		if (noteChipPosition === 0) {
+			const cached = this.timeElapsedCache.get(measure);
+			if (cached !== undefined) {
+				return cached;
+			}
+		}
+
 		let elapsedTime = 0;
 		let currentBPM = this.bpm;
 
@@ -419,7 +631,27 @@ export class Preview extends BaseGame {
 			}
 		}
 
+		// Cache the result for measure-level calculations (when noteChipPosition is 0)
+		if (noteChipPosition === 0) {
+			this.timeElapsedCache.set(measure, elapsedTime);
+		}
+
 		return elapsedTime;
+	}
+
+	// Override getTotalMesaureOffest with caching for performance
+	override getTotalMesaureOffest(measure: number): number {
+		this.validateCache();
+
+		const cached = this.measureOffsetCache.get(measure);
+		if (cached !== undefined) {
+			return cached;
+		}
+
+		// Use parent implementation but cache the result
+		const result = super.getTotalMesaureOffest(measure);
+		this.measureOffsetCache.set(measure, result);
+		return result;
 	}
 
 	getCacheKey(soundChip: SoundChip) {
@@ -892,7 +1124,8 @@ export class Preview extends BaseGame {
 		}
 	}
 
-	cleanUp() {
+	shutdown() {
+		// This is called when the scene is actually stopped/destroyed
 		if (this.previewTween) {
 			this.previewTween.stop();
 			this.previewTween.destroy();
@@ -922,6 +1155,12 @@ export class Preview extends BaseGame {
 			this.cameras.main.setZoom(1);
 		}
 
-		this.time.removeAllEvents();
+		// Reset initialization state
+		this.isInitialized = false;
+	}
+
+	cleanUp() {
+		// This is called when preview is paused (soft stop)
+		this.pausePreview();
 	}
 }

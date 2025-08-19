@@ -44,6 +44,13 @@ export class Preview extends BaseGame {
 	// Track if scene is fully initialized
 	private isInitialized = false;
 
+	// Bound event handlers to prevent listener leaks
+	private boundStopPreview = () => this.pausePreview();
+	private boundResumePreview = (data: { startMeasure: number }) => {
+		this.startMeasure = data.startMeasure;
+		this.resumePreview();
+	};
+
 	// Global animation cache to avoid recreating animations every time
 	private static animationsCreated = false;
 	private static soundCacheMap = new Map<string, { blob: Blob; processed: boolean }>();
@@ -129,11 +136,8 @@ export class Preview extends BaseGame {
 
 		this.isInitialized = true;
 		EventBus.emit(EventType.SCENE_READY, this);
-		EventBus.on(EventType.STOP_PREVIEW, () => this.pausePreview());
-		EventBus.on(EventType.RESUME_PREVIEW, (data: { startMeasure: number }) => {
-			this.startMeasure = data.startMeasure;
-			this.resumePreview();
-		});
+		EventBus.on(EventType.STOP_PREVIEW, this.boundStopPreview);
+		EventBus.on(EventType.RESUME_PREVIEW, this.boundResumePreview);
 	}
 
 	/**
@@ -1136,6 +1140,10 @@ export class Preview extends BaseGame {
 			this.storeUnsubscribe();
 			this.storeUnsubscribe = null;
 		}
+
+		// Remove event listeners to prevent leaks
+		EventBus.off(EventType.STOP_PREVIEW, this.boundStopPreview);
+		EventBus.off(EventType.RESUME_PREVIEW, this.boundResumePreview);
 
 		// Reset all container scales
 		if (this.gridContainer) this.gridContainer.setScale(1);

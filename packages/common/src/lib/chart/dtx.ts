@@ -56,6 +56,7 @@ export class DTXFile {
 	comment!: string;
 	soundChips!: SoundChip[];
 	lines!: string[];
+	detectedEncoding?: string;
 
 	constructor(
 		private file?: File | string,
@@ -109,12 +110,16 @@ export class DTXFile {
 			);
 		};
 
-		return await decodeFileWithEncodingDetection(
+		const result = await decodeFileWithEncodingDetection(
 			this.file,
 			validateDtxContent,
 			['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'], // DTX files typically use shift-jis first
 			'shift-jis' // DTX fallback is shift-jis
 		);
+
+		// Store the detected encoding for later use in export
+		this.detectedEncoding = result.encoding;
+		return result.content;
 	}
 
 	async parseFromText(text: string) {
@@ -244,7 +249,10 @@ export class DTXFile {
 		}
 
 		const fileContent = content.join('\r\n');
-		const blob = new Blob([fileContent], { type: 'text/plain' });
+
+		// Always export as UTF-8 for consistency and compatibility
+		const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;

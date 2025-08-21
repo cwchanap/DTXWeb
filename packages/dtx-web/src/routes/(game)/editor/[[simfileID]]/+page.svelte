@@ -19,9 +19,19 @@
 	import { EventBus } from '@dtx/common/game';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
+	import EditorTips from '$lib/components/editor/EditorTips.svelte';
+	import EditorNavigation from '$lib/components/editor/EditorNavigation.svelte';
+	import EditorTabs from '$lib/components/editor/EditorTabs.svelte';
+	import DifficultyModal from '$lib/components/editor/modals/DifficultyModal.svelte';
+	import DiscardModal from '$lib/components/editor/modals/DiscardModal.svelte';
+	import SoundLibraryModal from '$lib/components/editor/modals/SoundLibraryModal.svelte';
+	import WorkspaceManagerModal from '$lib/components/editor/modals/WorkspaceManagerModal.svelte';
+	import DeleteWorkspaceModal from '$lib/components/editor/modals/DeleteWorkspaceModal.svelte';
+	import ExportWorkspaceModal from '$lib/components/editor/modals/ExportWorkspaceModal.svelte';
+	import DTXSwitcherModal from '$lib/components/editor/modals/DTXSwitcherModal.svelte';
+	import NewFileModal from '$lib/components/editor/modals/NewFileModal.svelte';
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
 	import toastStore from '$lib/toaster';
@@ -577,16 +587,6 @@
 		showDiscardModal = false;
 	}
 
-	function handleDiscardModalKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			cancelDiscardChanges();
-		}
-	}
-
-	function focusModal(element: HTMLElement) {
-		element.focus();
-	}
-
 	async function switchToLevel(level: number) {
 		const simfile = get(store.currentSimfile);
 		if (!simfile || !simfile.levels[level]) {
@@ -862,23 +862,6 @@
 		refreshSoundLibrary();
 	}
 
-	function formatDate(timestamp: number): string {
-		return new Date(timestamp).toLocaleDateString();
-	}
-
-	function formatFileSize(bytes: number): string {
-		const units = ['B', 'KB', 'MB', 'GB'];
-		let size = bytes;
-		let unitIndex = 0;
-
-		while (size >= 1024 && unitIndex < units.length - 1) {
-			size /= 1024;
-			unitIndex++;
-		}
-
-		return `${size.toFixed(1)} ${units[unitIndex]}`;
-	}
-
 	async function refreshSoundLibraryLinks() {
 		const soundChips = get(store.currentSoundChip);
 		if (!soundChips || soundChips.length === 0) {
@@ -945,226 +928,37 @@
 </script>
 
 <div class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]">
-	<div class="relative row-span-1 flex flex-row items-center border-b-2 border-gray-400">
-		<Popover
-			positioning={{ placement: 'bottom-start' }}
-			contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-			classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
-			triggerClasses="w-full"
-		>
-			{#snippet trigger()}
-				<span>File</span>
-			{/snippet}
-			{#snippet content()}
-				<div class="flex flex-col">
-					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
-						onclick={newFile}
-						disabled={isPreviewing}>New</button
-					>
-					{#if !simfileID}
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={importFile}
-							disabled={isPreviewing}>Import File</button
-						>
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={importFolder}
-							disabled={isPreviewing}>Import Folder</button
-						>
-					{/if}
-					{#if simfileID}
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={() => (showDifficultyModal = true)}
-							disabled={isPreviewing}>Switch file</button
-						>
-					{:else if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={showDTXSwitcher}
-							disabled={isPreviewing}>Switch DTX</button
-						>
-					{/if}
-					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
-						onclick={exportFile}
-						disabled={isPreviewing}>Export File</button
-					>
-					{#if !simfileID && availableWorkspaces.length > 0}
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={showWorkspaceExporter}
-							disabled={isPreviewing}>Export Workspace</button
-						>
-					{/if}
-				</div>
-			{/snippet}
-		</Popover>
-
-		{#if !simfileID}
-			<!-- Only show Workspace menu for local files (no simfileID) -->
-			<Popover
-				positioning={{ placement: 'bottom-start' }}
-				contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-				classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
-				triggerClasses="w-full"
-			>
-				{#snippet trigger()}
-					<span>Workspace</span>
-				{/snippet}
-				{#snippet content()}
-					<div class="flex flex-col">
-						{#if availableWorkspaces.length > 0}
-							<button
-								class="px-4 py-2 text-left {isPreviewing
-									? 'cursor-not-allowed text-gray-400'
-									: 'hover:bg-gray-100'}"
-								onclick={showWorkspaceManager}
-								disabled={isPreviewing}
-							>
-								Manage Workspace
-							</button>
-						{/if}
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={() => (showSoundLibraryModal = true)}
-							disabled={isPreviewing}
-						>
-							Manage Sound files library
-						</button>
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={refreshSoundLibraryLinks}
-							disabled={isPreviewing}
-						>
-							Refresh Sound Library Links
-						</button>
-					</div>
-				{/snippet}
-			</Popover>
-		{:else}
-			<!-- Show Edit menu with only discard changes for remote files -->
-			<Popover
-				positioning={{ placement: 'bottom-start' }}
-				contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-				classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
-				triggerClasses="w-full"
-			>
-				{#snippet trigger()}
-					<span>Edit</span>
-				{/snippet}
-				{#snippet content()}
-					<div class="flex flex-col">
-						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
-							onclick={discardLocalChanges}
-							title="Discard all local changes and reload from server"
-							disabled={isPreviewing}
-						>
-							Discard current Local changes
-						</button>
-					</div>
-				{/snippet}
-			</Popover>
-		{/if}
-
-		<div class="h-8 border-l border-gray-300"></div>
-	</div>
+	<EditorNavigation
+		{simfileID}
+		{isPreviewing}
+		{currentWorkspace}
+		{availableWorkspaces}
+		onNewFile={newFile}
+		onImportFile={importFile}
+		onImportFolder={importFolder}
+		onExportFile={exportFile}
+		onShowDifficultyModal={() => (showDifficultyModal = true)}
+		onShowDTXSwitcher={showDTXSwitcher}
+		onShowWorkspaceManager={showWorkspaceManager}
+		onShowSoundLibraryModal={() => (showSoundLibraryModal = true)}
+		onRefreshSoundLibraryLinks={refreshSoundLibraryLinks}
+		onShowWorkspaceExporter={showWorkspaceExporter}
+		onDiscardLocalChanges={discardLocalChanges}
+	/>
 
 	<!-- Main content area - change to flex column on small screens, row on larger screens -->
 	<div class="row-span-1 flex flex-col 2xl:flex-row">
-		<!-- Left tab panel - full width on small screens, 25% on large screens -->
-		<div class="w-full pt-4 2xl:w-[25%]">
-			<div class="tab-container">
-				<!-- Collapsible header -->
-				<div class="border-b border-gray-200 bg-gray-50">
-					<button
-						class="focus:ring-primary-500 flex w-full items-center justify-between px-4 py-3 text-left font-medium text-gray-700 hover:bg-gray-100 focus:ring-2 focus:outline-none"
-						onclick={() => (isTabsCollapsed = !isTabsCollapsed)}
-						aria-expanded={!isTabsCollapsed}
-					>
-						<span>Editor Tabs</span>
-						<ChevronDown
-							class="h-5 w-5 transform transition-transform duration-200 {isTabsCollapsed
-								? 'rotate-0'
-								: 'rotate-180'}"
-						/>
-					</button>
-				</div>
-
-				<!-- Collapsible content -->
-				{#if !isTabsCollapsed}
-					<div class="h-[600px] overflow-y-auto border border-gray-200 bg-white">
-						<!-- Tab controls -->
-						<div class="tab-list flex border-b border-gray-200">
-							<button
-								class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 0
-									? 'bg-primary-500 text-white'
-									: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
-								onclick={() => (currentTab = 0)}
-							>
-								Main
-							</button>
-							{#if !isPreviewing}
-								<button
-									class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 1
-										? 'bg-primary-500 text-white'
-										: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
-									onclick={() => (currentTab = 1)}
-								>
-									Sound
-								</button>
-							{/if}
-							<button
-								class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 2
-									? 'bg-primary-500 text-white'
-									: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
-								onclick={() => (currentTab = 2)}
-							>
-								Preview
-							</button>
-						</div>
-
-						<!-- Tab panels -->
-						<div class="tab-content p-4">
-							{#if currentTab === 0}
-								<MainTab />
-							{:else if currentTab === 1}
-								<SoundTab
-									{simfileID}
-									theme="light"
-									bucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
-								/>
-							{:else if currentTab === 2}
-								<PreviewTab {isEditorReady} />
-							{/if}
-						</div>
-					</div>
-				{/if}
-			</div>
-		</div>
+		<!-- Editor Tabs Component -->
+		<EditorTabs
+			bind:currentTab
+			bind:isTabsCollapsed
+			{isPreviewing}
+			{isEditorReady}
+			{simfileID}
+			bucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
+			onTabChange={() => {}}
+			onToggleCollapsed={() => (isTabsCollapsed = !isTabsCollapsed)}
+		/>
 
 		<!-- Center game component - expanded to fill remaining space -->
 		<div class="flex w-full justify-center p-5 2xl:w-[75%]">
@@ -1173,311 +967,36 @@
 	</div>
 </div>
 
-<!-- Fixed tips section at bottom of screen -->
-{#if showTips}
-	<div class="fixed right-0 bottom-0 left-0 z-10 border-t border-gray-200 bg-gray-50 shadow-lg">
-		<!-- Tips header with hide button -->
-		<div class="flex items-center justify-between border-b border-gray-200 p-4">
-			<h3 class="text-sm font-semibold text-gray-700">📝 Editor Tips</h3>
-			<button
-				class="flex items-center space-x-1 rounded bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300"
-				onclick={() => (showTips = false)}
-				title="Hide tips"
-			>
-				<span>Hide</span>
-				<ChevronDown class="h-3 w-3" />
-			</button>
-		</div>
-
-		<!-- Tips content -->
-		<div class="p-4">
-			<div class="grid grid-cols-1 gap-2 text-xs text-gray-600 md:grid-cols-2 lg:grid-cols-3">
-				<div class="flex items-center space-x-2">
-					<kbd class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Q</kbd
-					>
-					<span>Toggle editing mode</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<span class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Drag</span
-					>
-					<span>Select multiple notes</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<kbd class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Del</kbd
-					>
-					<span>Delete selected notes</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<kbd class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Ctrl+X</kbd
-					>
-					<span>Cut selected notes</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<kbd class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Ctrl+C</kbd
-					>
-					<span>Copy selected notes</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<kbd class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Ctrl+V</kbd
-					>
-					<span>Paste notes</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<kbd class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Ctrl+Z</kbd
-					>
-					<span>Undo last action</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<span class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Right-click</span
-					>
-					<span>Delete note</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<span class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Left-click</span
-					>
-					<span>Add note (in edit mode)</span>
-				</div>
-				<div class="flex items-center space-x-2">
-					<span class="rounded bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-800"
-						>Key Bindings</span
-					>
-					<span>Press bound keys to switch active note</span>
-				</div>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<!-- Floating "Show Tips" button when tips are hidden -->
-{#if !showTips}
-	<button
-		class="fixed right-4 bottom-4 z-10 flex items-center space-x-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white shadow-lg transition-colors hover:bg-blue-600"
-		onclick={() => (showTips = true)}
-		title="Show editor tips"
-	>
-		<span>📝</span>
-		<span>Show Tips</span>
-	</button>
-{/if}
+<!-- Editor Tips Component -->
+<EditorTips bind:showTips />
 
 <!-- Difficulty Selection Modal -->
-{#if showDifficultyModal}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div class="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-			<h2 class="mb-4 text-xl font-bold text-gray-800">Switch Difficulty</h2>
-
-			<div class="space-y-2">
-				{#each getAvailableLevels() as { level, label, isActive }}
-					<button
-						class="w-full rounded-md border px-4 py-3 text-left transition-colors {isActive
-							? 'border-blue-500 bg-blue-50 text-blue-700'
-							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
-						onclick={() => switchToLevel(level)}
-						disabled={isActive}
-					>
-						<div class="flex items-center justify-between">
-							<div>
-								<div class="font-medium">{label}</div>
-								<div class="text-sm text-gray-500">Level {level}</div>
-							</div>
-							{#if isActive}
-								<span class="text-sm font-medium text-blue-600">Current</span>
-							{/if}
-						</div>
-					</button>
-				{/each}
-			</div>
-
-			<div class="mt-6 flex justify-end space-x-3">
-				<button
-					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-					onclick={() => (showDifficultyModal = false)}
-				>
-					Cancel
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<DifficultyModal
+	show={showDifficultyModal}
+	availableLevels={getAvailableLevels()}
+	onSwitchLevel={switchToLevel}
+	onClose={() => (showDifficultyModal = false)}
+/>
 
 <!-- Discard Changes Confirmation Modal -->
-{#if showDiscardModal}
-	<div
-		class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black"
-		role="dialog"
-		aria-modal="true"
-		aria-labelledby="discard-modal-title"
-		aria-describedby="discard-modal-description"
-		onkeydown={handleDiscardModalKeydown}
-		tabindex="-1"
-		use:focusModal
-	>
-		<div class="mx-4 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-			<div class="mb-4 flex items-center space-x-3">
-				<div class="flex-shrink-0">
-					<svg
-						class="h-6 w-6 text-red-600"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.866-.833-2.636 0L3.178 16.5c-.77.833.192 2.5 1.732 2.5z"
-						/>
-					</svg>
-				</div>
-				<h2 id="discard-modal-title" class="text-xl font-bold text-gray-900">
-					Discard Local Changes?
-				</h2>
-			</div>
-
-			<div id="discard-modal-description" class="mb-6">
-				{#if true}
-					{@const currentSimfileID = get(store.currentSimfileID)}
-					{@const currentDifficulty = get(store.currentDifficulty)}
-					{@const chartName = currentSimfileID || 'current chart'}
-					{@const difficultyText = currentDifficulty ? ` (${currentDifficulty})` : ''}
-					<p class="mb-3 text-gray-700">
-						Are you sure you want to discard all local changes for <strong
-							>{chartName}{difficultyText}</strong
-						>?
-					</p>
-				{/if}
-				<p class="text-sm font-medium text-red-600">
-					⚠️ This action cannot be undone. All unsaved edits will be permanently lost.
-				</p>
-			</div>
-
-			<div class="flex justify-end space-x-3">
-				<button
-					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-					onclick={cancelDiscardChanges}
-				>
-					Cancel
-				</button>
-				<button
-					class="rounded-md bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-					onclick={confirmDiscardChanges}
-				>
-					Discard Changes
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<DiscardModal
+	show={showDiscardModal}
+	chartName={get(store.currentSimfileID) || 'current chart'}
+	difficultyText={get(store.currentDifficulty) ? ` (${get(store.currentDifficulty)})` : ''}
+	onConfirm={confirmDiscardChanges}
+	onCancel={cancelDiscardChanges}
+/>
 
 <!-- Sound Library Management Modal -->
-{#if showSoundLibraryModal}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div
-			class="mx-4 flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white p-6 shadow-xl"
-		>
-			<div class="mb-4 flex items-center justify-between border-b border-gray-200 pb-4">
-				<h2 class="text-xl font-bold text-gray-800">Sound Files Library</h2>
-				<button
-					class="rounded-md text-gray-400 hover:text-gray-600"
-					onclick={() => (showSoundLibraryModal = false)}
-				>
-					<X class="h-6 w-6" />
-				</button>
-			</div>
-
-			<!-- Library Stats -->
-			<div class="mb-4 rounded-lg bg-gray-50 p-4">
-				<div class="flex items-center justify-between">
-					<div>
-						<span class="text-sm text-gray-600">
-							{libraryStats.fileCount} files, {libraryStats.sizeFormatted} total
-						</span>
-					</div>
-					<div class="space-x-2">
-						<button
-							class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-							onclick={addSoundFiles}
-						>
-							Add Files
-						</button>
-						{#if libraryStats.fileCount > 0}
-							<button
-								class="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-								onclick={clearSoundLibrary}
-							>
-								Clear All
-							</button>
-						{/if}
-					</div>
-				</div>
-			</div>
-
-			<!-- File List -->
-			<div class="flex-1 overflow-y-auto">
-				{#if soundLibraryFiles.length === 0}
-					<div class="py-8 text-center text-gray-500">
-						<Music class="mx-auto mb-4 h-12 w-12 text-gray-400" />
-						<p class="text-lg font-medium">No sound files in library</p>
-						<p class="text-sm">Click "Add Files" to import audio files</p>
-					</div>
-				{:else}
-					<div class="space-y-2">
-						{#each soundLibraryFiles as file}
-							<div
-								class="flex items-center justify-between rounded-lg border border-gray-200 p-3 hover:bg-gray-50"
-							>
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center space-x-3">
-										<Music class="h-5 w-5 flex-shrink-0 text-blue-500" />
-										<div class="min-w-0 flex-1">
-											<p class="truncate text-sm font-medium text-gray-900">
-												{file.fileName}
-											</p>
-											<p class="text-xs text-gray-500">
-												{formatFileSize(file.size)} • {file.fileType} • Added
-												{formatDate(file.dateAdded)}
-											</p>
-										</div>
-									</div>
-								</div>
-								<button
-									class="ml-3 rounded-md text-red-600 hover:text-red-800"
-									onclick={() => removeSoundFile(file.hash)}
-									title="Remove file"
-									aria-label="Remove file"
-								>
-									<Trash2 class="h-4 w-4" />
-								</button>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
-
-			<!-- Footer -->
-			<div class="mt-4 border-t border-gray-200 pt-4">
-				<div class="flex justify-end">
-					<button
-						class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-						onclick={() => (showSoundLibraryModal = false)}
-					>
-						Close
-					</button>
-				</div>
-			</div>
-		</div>
-	</div>
-{/if}
+<SoundLibraryModal
+	show={showSoundLibraryModal}
+	{soundLibraryFiles}
+	{libraryStats}
+	onClose={() => (showSoundLibraryModal = false)}
+	onAddSoundFiles={addSoundFiles}
+	onRemoveSoundFile={removeSoundFile}
+	onClearSoundLibrary={clearSoundLibrary}
+/>
 
 <!-- Import Result Modal -->
 <Modal bind:open={showImportResultModal} title="Import Result">
@@ -1529,277 +1048,46 @@
 </Modal>
 
 <!-- Workspace DTX Switcher Modal -->
-<Modal bind:open={showDTXSwitchModal} title="Switch DTX File">
-	{#snippet children()}
-		{#if currentWorkspace}
-			<div class="space-y-4">
-				<p class="text-gray-700">Select a DTX file from the current workspace:</p>
-				<div class="max-h-64 space-y-2 overflow-y-auto">
-					{#each currentWorkspace.dtxFiles as dtxFile}
-						<button
-							class="w-full rounded-lg border p-3 text-left transition-colors {currentWorkspace.currentDTX ===
-							dtxFile.name
-								? 'border-blue-500 bg-blue-50'
-								: 'border-gray-200 hover:bg-gray-50'}"
-							onclick={() => {
-								switchWorkspaceDTX(dtxFile.name);
-								showDTXSwitchModal = false;
-							}}
-						>
-							<div class="font-medium text-gray-900">{dtxFile.name}</div>
-							<div class="text-sm text-gray-500">{dtxFile.path}</div>
-							{#if currentWorkspace.currentDTX === dtxFile.name}
-								<div class="mt-1 text-xs font-medium text-blue-600">
-									Currently active
-								</div>
-							{/if}
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/if}
-	{/snippet}
-</Modal>
+<DTXSwitcherModal
+	bind:show={showDTXSwitchModal}
+	{currentWorkspace}
+	onSwitchDTX={switchWorkspaceDTX}
+	onClose={() => (showDTXSwitchModal = false)}
+/>
 
 <!-- New File Confirmation Modal -->
-<Modal
-	bind:open={showNewFileModal}
-	title="Create New File"
+<NewFileModal
+	bind:show={showNewFileModal}
 	onConfirm={createNewFile}
-	confirmText="Create New"
-	confirmVariant="danger"
->
-	{#snippet children()}
-		<div class="space-y-3">
-			<p class="text-gray-700">
-				Creating a new file will clear all unsaved changes to the current chart.
-			</p>
-			<p class="text-sm font-medium text-red-600">
-				⚠️ This action cannot be undone. All temporary edits will be permanently lost.
-			</p>
-		</div>
-	{/snippet}
-</Modal>
+	onCancel={() => (showNewFileModal = false)}
+/>
 
 <!-- Workspace Manager Modal -->
-{#if showWorkspaceSwitchModal}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div class="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-			<h2 class="mb-4 text-xl font-bold text-gray-800">Manage Workspace</h2>
-
-			{#if availableWorkspaces.length === 1}
-				<p class="mb-4 text-sm text-gray-600">
-					Click on a workspace to switch to it, or use the delete button to remove it.
-				</p>
-			{:else if availableWorkspaces.length > 1}
-				<p class="mb-4 text-sm text-gray-600">
-					Click on a workspace to switch to it, or use the delete button to remove
-					workspaces you no longer need.
-				</p>
-			{/if}
-
-			<div class="space-y-2">
-				{#each availableWorkspaces as workspace}
-					<div
-						class="flex items-center rounded-md border transition-colors {currentWorkspace?.name ===
-						workspace.name
-							? 'border-blue-500 bg-blue-50'
-							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
-					>
-						<button
-							class="flex-1 px-4 py-3 text-left"
-							onclick={() => switchToWorkspace(workspace)}
-							disabled={currentWorkspace?.name === workspace.name}
-						>
-							<div class="flex items-center justify-between">
-								<div>
-									<div
-										class="font-medium {currentWorkspace?.name ===
-										workspace.name
-											? 'text-blue-700'
-											: 'text-gray-900'}"
-									>
-										{workspace.name}
-									</div>
-									<div class="text-sm text-gray-500">
-										{workspace.dtxFiles.length} DTX files, {workspace.audioFiles
-											.length} audio files
-									</div>
-									<div class="text-xs text-gray-400">
-										Last modified: {new Date(
-											workspace.lastModified
-										).toLocaleDateString()}
-									</div>
-								</div>
-								{#if currentWorkspace?.name === workspace.name}
-									<span class="text-sm font-medium text-blue-600">Current</span>
-								{/if}
-							</div>
-						</button>
-						<button
-							class="mr-3 rounded-md p-2 text-red-600 hover:bg-red-50 hover:text-red-800"
-							onclick={(event) => showDeleteWorkspaceConfirm(workspace, event)}
-							title="Delete workspace"
-							aria-label="Delete workspace"
-						>
-							<Trash2 class="h-4 w-4" />
-						</button>
-					</div>
-				{/each}
-			</div>
-
-			<div class="mt-6 flex justify-end space-x-3">
-				<button
-					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-					onclick={() => (showWorkspaceSwitchModal = false)}
-				>
-					Cancel
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<WorkspaceManagerModal
+	show={showWorkspaceSwitchModal}
+	{availableWorkspaces}
+	{currentWorkspace}
+	onSwitchToWorkspace={switchToWorkspace}
+	onShowDeleteWorkspaceConfirm={showDeleteWorkspaceConfirm}
+	onClose={() => (showWorkspaceSwitchModal = false)}
+/>
 
 <!-- Delete Workspace Confirmation Modal -->
-{#if showDeleteWorkspaceModal && workspaceToDelete}
-	<div class="bg-opacity-50 fixed inset-0 z-60 flex items-center justify-center bg-black">
-		<div class="mx-4 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-			<div class="mb-4 flex items-center space-x-3">
-				<div class="flex-shrink-0">
-					<svg
-						class="h-6 w-6 text-red-600"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.866-.833-2.636 0L3.178 16.5c-.77.833.192 2.5 1.732 2.5z"
-						/>
-					</svg>
-				</div>
-				<h2 class="text-xl font-bold text-gray-900">Delete Workspace?</h2>
-			</div>
-
-			<div class="mb-6">
-				<p class="mb-3 text-gray-700">
-					Are you sure you want to delete the workspace <strong
-						>"{workspaceToDelete.name}"</strong
-					>?
-				</p>
-				<div class="mb-3 rounded-lg bg-gray-50 p-3">
-					<div class="text-sm text-gray-600">
-						<div>• {workspaceToDelete.dtxFiles.length} DTX files</div>
-						<div>• {workspaceToDelete.audioFiles.length} audio files</div>
-						<div>
-							• Last modified: {new Date(
-								workspaceToDelete.lastModified
-							).toLocaleDateString()}
-						</div>
-					</div>
-				</div>
-				<p class="text-sm font-medium text-red-600">
-					⚠️ This action cannot be undone. All workspace data will be permanently lost.
-				</p>
-				{#if currentWorkspace?.name === workspaceToDelete.name}
-					<p class="mt-2 text-sm font-medium text-orange-600">
-						🔄 This is your current workspace. You will be switched to another workspace
-						or a new file.
-					</p>
-				{/if}
-			</div>
-
-			<div class="flex justify-end space-x-3">
-				<button
-					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-					onclick={cancelDeleteWorkspace}
-				>
-					Cancel
-				</button>
-				<button
-					class="rounded-md bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-					onclick={confirmDeleteWorkspace}
-				>
-					Delete Workspace
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<DeleteWorkspaceModal
+	show={showDeleteWorkspaceModal}
+	{workspaceToDelete}
+	{currentWorkspace}
+	onConfirm={confirmDeleteWorkspace}
+	onCancel={cancelDeleteWorkspace}
+/>
 
 <!-- Export Workspace Modal -->
-{#if showExportWorkspaceModal}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div class="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-			<h2 class="mb-4 text-xl font-bold text-gray-800">Export Workspace</h2>
-
-			<p class="mb-4 text-sm text-gray-600">Select a workspace to export as a ZIP file.</p>
-
-			<!-- Audio inclusion option -->
-			<div class="mb-4 rounded-lg border border-gray-200 p-3">
-				<label class="flex cursor-pointer items-center space-x-2">
-					<input
-						type="checkbox"
-						bind:checked={includeAudioInExport}
-						class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-						disabled={isExportingWorkspace}
-					/>
-					<span class="text-sm font-medium text-gray-700"> Include audio files </span>
-				</label>
-				<p class="mt-1 text-xs text-gray-500">
-					Uncheck to export only DTX files (smaller file size)
-				</p>
-			</div>
-
-			<div class="space-y-2">
-				{#each availableWorkspaces as workspace}
-					<button
-						class="w-full rounded-md border p-3 text-left transition-colors {isExportingWorkspace &&
-						workspaceToExport?.name === workspace.name
-							? 'cursor-not-allowed border-blue-500 bg-blue-50'
-							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
-						onclick={() => exportWorkspace(workspace)}
-						disabled={isExportingWorkspace}
-					>
-						<div class="flex items-center justify-between">
-							<div>
-								<div class="font-medium text-gray-900">{workspace.name}</div>
-								<div class="text-sm text-gray-500">
-									{workspace.dtxFiles.length} DTX files{includeAudioInExport
-										? `, ${workspace.audioFiles.length} audio files`
-										: ''}
-								</div>
-								<div class="text-xs text-gray-400">
-									Last modified: {new Date(
-										workspace.lastModified
-									).toLocaleDateString()}
-								</div>
-							</div>
-							{#if isExportingWorkspace && workspaceToExport?.name === workspace.name}
-								<div class="flex items-center gap-2">
-									<div
-										class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
-									></div>
-									<span class="text-sm text-blue-600">Exporting...</span>
-								</div>
-							{/if}
-						</div>
-					</button>
-				{/each}
-			</div>
-
-			<div class="mt-6 flex justify-end space-x-3">
-				<button
-					class="rounded-md border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-					onclick={() => (showExportWorkspaceModal = false)}
-					disabled={isExportingWorkspace}
-				>
-					Cancel
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<ExportWorkspaceModal
+	show={showExportWorkspaceModal}
+	{availableWorkspaces}
+	bind:includeAudioInExport
+	{isExportingWorkspace}
+	{workspaceToExport}
+	onExportWorkspace={exportWorkspace}
+	onClose={() => (showExportWorkspaceModal = false)}
+/>

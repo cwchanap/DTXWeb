@@ -61,7 +61,7 @@ export class WorkspaceService {
 					);
 				};
 
-				const content = await decodeFileWithEncodingDetection(
+				const result = await decodeFileWithEncodingDetection(
 					file,
 					validateDtxContent,
 					['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'], // DTX files typically use shift-jis first
@@ -70,7 +70,7 @@ export class WorkspaceService {
 
 				dtxFiles.push({
 					name: file.name,
-					content,
+					content: result.content,
 					path: relativePath
 				});
 			} else if (this.isAudioFile(file)) {

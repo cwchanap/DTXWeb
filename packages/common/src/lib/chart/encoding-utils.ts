@@ -10,14 +10,14 @@ export type ContentValidationCallback = (content: string) => boolean;
  * @param encodings - List of encodings to try in order (optional)
  * @param validateContent - Callback function to validate if content is valid for the file type
  * @param fallbackEncoding - Encoding to use as fallback if detection fails (default: 'utf-8')
- * @returns Decoded file content as string
+ * @returns Object with decoded content and detected encoding
  */
 export async function decodeFileWithEncodingDetection(
 	file: File,
 	validateContent: ContentValidationCallback,
 	encodings: string[] = ['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'],
 	fallbackEncoding: string = 'utf-8'
-): Promise<string> {
+): Promise<{ content: string; encoding: string }> {
 	const arrayBuffer = await file.arrayBuffer();
 
 	for (const encoding of encodings) {
@@ -30,8 +30,7 @@ export async function decodeFileWithEncodingDetection(
 				// Additional check: ensure no excessive null bytes (which would indicate wrong encoding)
 				const nullByteRatio = (content.match(/\0/g) || []).length / content.length;
 				if (nullByteRatio < 0.1) {
-					// Less than 10% null bytes
-					return content;
+					return { content, encoding };
 				}
 			}
 		} catch (error) {
@@ -42,7 +41,31 @@ export async function decodeFileWithEncodingDetection(
 
 	// Fallback to specified encoding if nothing else works
 	const decoder = new TextDecoder(fallbackEncoding);
-	return decoder.decode(arrayBuffer);
+	const content = decoder.decode(arrayBuffer);
+	return { content, encoding: fallbackEncoding };
+}
+
+/**
+ * Backward compatibility function that returns just the content string
+ * @param file - The file to decode
+ * @param validateContent - Callback function to validate if content is valid for the file type
+ * @param encodings - List of encodings to try in order (optional)
+ * @param fallbackEncoding - Encoding to use as fallback if detection fails (default: 'utf-8')
+ * @returns Decoded file content as string
+ */
+export async function decodeFileWithEncodingDetectionLegacy(
+	file: File,
+	validateContent: ContentValidationCallback,
+	encodings: string[] = ['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'],
+	fallbackEncoding: string = 'utf-8'
+): Promise<string> {
+	const result = await decodeFileWithEncodingDetection(
+		file,
+		validateContent,
+		encodings,
+		fallbackEncoding
+	);
+	return result.content;
 }
 
 /**

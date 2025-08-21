@@ -120,12 +120,13 @@ export class SimFile {
 			);
 		};
 
-		return await decodeFileWithEncodingDetection(
+		const result = await decodeFileWithEncodingDetection(
 			file,
 			validateSimFileContent,
 			['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'], // SimFile (.def) typically uses utf-8 first
 			'utf-8' // SimFile fallback is utf-8
 		);
+		return result.content;
 	}
 
 	public async parseHeader(file: File) {

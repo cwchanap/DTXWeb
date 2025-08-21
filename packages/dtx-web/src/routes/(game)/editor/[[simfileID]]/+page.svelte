@@ -338,14 +338,18 @@
 			};
 
 			// Use encoding detection to handle different DTX file encodings
-			const fileContent = await decodeFileWithEncodingDetection(
+			// Priority: UTF-8 (for exported files with BOM), then traditional encodings
+			const result = await decodeFileWithEncodingDetection(
 				file,
 				validateDtxContent,
-				['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'], // DTX files typically use shift-jis first
-				'shift-jis' // DTX fallback is shift-jis
+				['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'], // Try UTF-8 first for exported files
+				'utf-8' // UTF-8 fallback for safety
 			);
+			const fileContent = result.content;
 
 			const dtxFile = new DTXFile();
+			// Store the detected encoding for proper export
+			dtxFile.detectedEncoding = result.encoding;
 			await dtxFile.parseFromText(fileContent);
 
 			// Parse notes and BPM changes from the imported DTX file

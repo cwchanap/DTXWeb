@@ -18,7 +18,10 @@ vi.mock('@dtx/common', () => ({
 		files: [],
 		meta: {}
 	})),
-	decodeFileWithEncodingDetection: vi.fn().mockResolvedValue('mocked dtx content')
+	decodeFileWithEncodingDetection: vi.fn().mockResolvedValue({
+		content: 'mocked dtx content',
+		encoding: 'utf-8'
+	})
 }));
 
 vi.mock('./soundLibrary', () => ({
@@ -55,11 +58,17 @@ Object.defineProperty(window, 'location', {
 describe('WorkspaceService', () => {
 	let workspaceService: WorkspaceService;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		workspaceService = new WorkspaceService();
 		vi.clearAllMocks();
 		mockLocalStorage.getItem.mockReturnValue(null);
 		mockLocation.hash = '';
+		// Re-establish the decode mock after clearAllMocks
+		const { decodeFileWithEncodingDetection } = await vi.importMock('@dtx/common');
+		(decodeFileWithEncodingDetection as any).mockResolvedValue({
+			content: 'mocked dtx content',
+			encoding: 'utf-8'
+		});
 	});
 
 	afterEach(() => {

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { X, Music, Trash2 } from '@lucide/svelte/icons';
+	import { SoundLibrary } from '$lib/services/soundLibrary';
+	import { Modal } from '@dtx/ui-components/components';
 
 	interface LibraryFile {
 		hash: string;
@@ -16,23 +18,98 @@
 
 	interface Props {
 		show: boolean;
-		soundLibraryFiles: LibraryFile[];
-		libraryStats: LibraryStats;
 		onClose: () => void;
-		onAddSoundFiles: () => void;
-		onRemoveSoundFile: (hash: string) => void;
-		onClearSoundLibrary: () => void;
+		onImportResult?: (message: string) => void;
 	}
 
-	let {
-		show,
-		soundLibraryFiles,
-		libraryStats,
-		onClose,
-		onAddSoundFiles,
-		onRemoveSoundFile,
-		onClearSoundLibrary
-	}: Props = $props();
+	let { show, onClose, onImportResult }: Props = $props();
+
+	// Internal state management
+	let soundLibraryFiles = $state<LibraryFile[]>(SoundLibrary.getAll());
+	let libraryStats = $state<LibraryStats>(SoundLibrary.getStats());
+	let showRemoveConfirmModal = $state(false);
+	let showClearConfirmModal = $state(false);
+	let removeFileHash = $state('');
+
+	// Refresh library data
+	function refreshSoundLibrary() {
+		soundLibraryFiles = SoundLibrary.getAll();
+		libraryStats = SoundLibrary.getStats();
+	}
+
+	// Add sound files
+	function addSoundFiles() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = 'audio/*,.xa';
+		input.multiple = true;
+		input.onchange = handleSoundFilesImport;
+		input.click();
+	}
+
+	// Handle sound file import
+	async function handleSoundFilesImport(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const files = Array.from(target.files || []);
+		if (files.length === 0) return;
+
+		try {
+			const result = await SoundLibrary.addFiles(files);
+
+			// Show result message
+			let message = `Added ${result.added} files`;
+			if (result.skipped > 0) {
+				message += `, skipped ${result.skipped} duplicates`;
+			}
+			if (result.errors.length > 0) {
+				message += `\n\nErrors:\n${result.errors.join('\n')}`;
+			}
+
+			if (onImportResult) {
+				onImportResult(message);
+			}
+
+			refreshSoundLibrary();
+		} catch (error) {
+			console.error('Error importing sound files:', error);
+			if (onImportResult) {
+				onImportResult('Failed to import sound files');
+			}
+		}
+	}
+
+	// Remove sound file (with confirmation)
+	function removeSoundFile(hash: string) {
+		removeFileHash = hash;
+		showRemoveConfirmModal = true;
+	}
+
+	function confirmRemoveSoundFile() {
+		SoundLibrary.removeFile(removeFileHash);
+		refreshSoundLibrary();
+		removeFileHash = '';
+		showRemoveConfirmModal = false;
+	}
+
+	function cancelRemoveSoundFile() {
+		showRemoveConfirmModal = false;
+		removeFileHash = '';
+	}
+
+	// Clear sound library (with confirmation)
+	function clearSoundLibrary() {
+		showClearConfirmModal = true;
+	}
+
+	function confirmClearSoundLibrary() {
+		SoundLibrary.clear();
+		refreshSoundLibrary();
+		showClearConfirmModal = false;
+	}
+
+	function cancelClearSoundLibrary() {
+		showClearConfirmModal = false;
+	}
 
 	function formatDate(timestamp: number): string {
 		return new Date(timestamp).toLocaleDateString();
@@ -75,14 +152,14 @@
 					<div class="space-x-2">
 						<button
 							class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-							onclick={onAddSoundFiles}
+							onclick={addSoundFiles}
 						>
 							Add Files
 						</button>
 						{#if libraryStats.fileCount > 0}
 							<button
 								class="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-								onclick={onClearSoundLibrary}
+								onclick={clearSoundLibrary}
 							>
 								Clear All
 							</button>
@@ -121,7 +198,7 @@
 								</div>
 								<button
 									class="ml-3 rounded-md text-red-600 hover:text-red-800"
-									onclick={() => onRemoveSoundFile(file.hash)}
+									onclick={() => removeSoundFile(file.hash)}
 									title="Remove file"
 									aria-label="Remove file"
 								>
@@ -147,3 +224,31 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Remove File Confirmation Modal -->
+<Modal
+	bind:open={showRemoveConfirmModal}
+	title="Remove File"
+	onConfirm={confirmRemoveSoundFile}
+	confirmText="Remove"
+	confirmVariant="danger"
+>
+	{#snippet children()}
+		<p class="text-gray-700">Are you sure you want to remove this sound file?</p>
+	{/snippet}
+</Modal>
+
+<!-- Clear Library Confirmation Modal -->
+<Modal
+	bind:open={showClearConfirmModal}
+	title="Clear Library"
+	onConfirm={confirmClearSoundLibrary}
+	confirmText="Clear All"
+	confirmVariant="danger"
+>
+	{#snippet children()}
+		<p class="text-gray-700">
+			Are you sure you want to clear the entire sound library? This cannot be undone.
+		</p>
+	{/snippet}
+</Modal>

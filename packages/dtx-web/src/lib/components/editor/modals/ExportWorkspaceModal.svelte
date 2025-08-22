@@ -1,25 +1,148 @@
 <script lang="ts">
-	import type { Workspace } from '$lib/services/workspaceService';
+	import {
+		workspaceService,
+		type Workspace,
+		WorkspaceService
+	} from '$lib/services/workspaceService';
+	import { SoundLibrary } from '$lib/services/soundLibrary';
+	import toastStore from '$lib/toaster';
+	import JSZip from 'jszip';
 
 	interface Props {
 		show: boolean;
-		availableWorkspaces: Workspace[];
-		includeAudioInExport: boolean;
-		isExportingWorkspace: boolean;
-		workspaceToExport: Workspace | null;
-		onExportWorkspace: (workspace: Workspace) => void;
 		onClose: () => void;
 	}
 
-	let {
-		show,
-		availableWorkspaces,
-		includeAudioInExport = $bindable(),
-		isExportingWorkspace,
-		workspaceToExport,
-		onExportWorkspace,
-		onClose
-	}: Props = $props();
+	let { show, onClose }: Props = $props();
+
+	// Internal state management
+	let availableWorkspaces = $state<Workspace[]>(workspaceService.getWorkspaces());
+	let includeAudioInExport = $state(true);
+	let isExportingWorkspace = $state(false);
+	let workspaceToExport = $state<Workspace | null>(null);
+	let exportWorkspaceError = $state('');
+	let exportWorkspaceSuccess = $state(false);
+
+	// Refresh workspaces when modal opens
+	$effect(() => {
+		if (show) {
+			refreshWorkspaces();
+		}
+	});
+
+	function refreshWorkspaces() {
+		availableWorkspaces = workspaceService.getWorkspaces();
+	}
+
+	async function exportWorkspace(workspace: Workspace) {
+		isExportingWorkspace = true;
+		exportWorkspaceError = '';
+		exportWorkspaceSuccess = false;
+		workspaceToExport = workspace;
+
+		try {
+			const zip = new JSZip();
+			let fileCount = 0;
+
+			// Add DTX files to zip (from stored content)
+			for (const dtxFile of workspace.dtxFiles) {
+				try {
+					if (dtxFile.content) {
+						zip.file(dtxFile.name, dtxFile.content);
+						fileCount++;
+					}
+				} catch (error) {
+					console.warn(`Failed to add DTX file ${dtxFile.name}:`, error);
+				}
+			}
+
+			// Add audio files to zip (from sound library and session storage) if enabled
+			if (includeAudioInExport) {
+				for (const audioFile of workspace.audioFiles) {
+					try {
+						if (audioFile.isLarge) {
+							// Get large file from session storage
+							const file = WorkspaceService.getLargeFile(
+								workspace.name,
+								audioFile.name
+							);
+							if (file) {
+								zip.file(audioFile.name, file);
+								fileCount++;
+							}
+						} else {
+							// Get small file from sound library
+							const libraryFiles = SoundLibrary.findByFileName(audioFile.name);
+							if (libraryFiles.length > 0) {
+								const libraryFile = libraryFiles[0];
+								const file = SoundLibrary.toFile(libraryFile);
+								if (file) {
+									zip.file(audioFile.name, file);
+									fileCount++;
+								}
+							}
+						}
+					} catch (error) {
+						console.warn(`Failed to add audio file ${audioFile.name}:`, error);
+					}
+				}
+			}
+
+			if (fileCount === 0) {
+				throw new Error('No files found in workspace to export');
+			}
+
+			// Generate and download zip
+			const zipBlob = await zip.generateAsync({ type: 'blob' });
+			const zipFileName = `${workspace.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.zip`;
+
+			// Create download link
+			const downloadLink = document.createElement('a');
+			downloadLink.href = URL.createObjectURL(zipBlob);
+			downloadLink.download = zipFileName;
+			document.body.appendChild(downloadLink);
+			downloadLink.click();
+			document.body.removeChild(downloadLink);
+
+			// Clean up the object URL
+			URL.revokeObjectURL(downloadLink.href);
+
+			exportWorkspaceSuccess = true;
+			onClose();
+
+			// Show success message
+			const dtxCount = workspace.dtxFiles.length;
+			const audioCount = includeAudioInExport ? workspace.audioFiles.length : 0;
+			const message = includeAudioInExport
+				? `Workspace "${workspace.name}" exported successfully! (${dtxCount} DTX files, ${audioCount} audio files)`
+				: `Workspace "${workspace.name}" exported successfully! (${dtxCount} DTX files only)`;
+			toastStore.success({
+				title: message,
+				timeout: 5000
+			});
+
+			// Hide success message after 3 seconds
+			setTimeout(() => {
+				exportWorkspaceSuccess = false;
+			}, 3000);
+		} catch (error) {
+			console.error('Error exporting workspace:', error);
+			exportWorkspaceError =
+				error instanceof Error ? error.message : 'Failed to export workspace';
+			toastStore.error({
+				title: `Failed to export workspace: ${exportWorkspaceError}`,
+				timeout: 5000
+			});
+
+			// Clear error message after 10 seconds
+			setTimeout(() => {
+				exportWorkspaceError = '';
+			}, 10000);
+		} finally {
+			isExportingWorkspace = false;
+			workspaceToExport = null;
+		}
+	}
 </script>
 
 {#if show}
@@ -52,7 +175,7 @@
 						workspaceToExport?.name === workspace.name
 							? 'cursor-not-allowed border-blue-500 bg-blue-50'
 							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
-						onclick={() => onExportWorkspace(workspace)}
+						onclick={() => exportWorkspace(workspace)}
 						disabled={isExportingWorkspace}
 					>
 						<div class="flex items-center justify-between">

@@ -1,24 +1,90 @@
 <script lang="ts">
 	import { Trash2 } from '@lucide/svelte/icons';
-	import type { Workspace } from '$lib/services/workspaceService';
+	import { workspaceService, type Workspace } from '$lib/services/workspaceService';
+	import { Modal } from '@dtx/ui-components/components';
 
 	interface Props {
 		show: boolean;
-		availableWorkspaces: Workspace[];
-		currentWorkspace: Workspace | null;
-		onSwitchToWorkspace: (workspace: Workspace) => void;
-		onShowDeleteWorkspaceConfirm: (workspace: Workspace, event: Event) => void;
 		onClose: () => void;
+		onSwitchToWorkspace?: (workspace: Workspace) => void;
+		onShowDeleteWorkspaceConfirm?: (workspace: Workspace, event: Event) => void;
 	}
 
-	let {
-		show,
-		availableWorkspaces,
-		currentWorkspace,
-		onSwitchToWorkspace,
-		onShowDeleteWorkspaceConfirm,
-		onClose
-	}: Props = $props();
+	let { show, onClose, onSwitchToWorkspace, onShowDeleteWorkspaceConfirm }: Props = $props();
+
+	// Internal state management
+	let availableWorkspaces = $state<Workspace[]>(workspaceService.getWorkspaces());
+	let currentWorkspace = $state<Workspace | null>(workspaceService.getCurrentWorkspace());
+	let showDeleteConfirmModal = $state(false);
+	let workspaceToDelete = $state<Workspace | null>(null);
+
+	// Refresh workspaces when modal opens
+	$effect(() => {
+		if (show) {
+			refreshWorkspaces();
+		}
+	});
+
+	function refreshWorkspaces() {
+		availableWorkspaces = workspaceService.getWorkspaces();
+		currentWorkspace = workspaceService.getCurrentWorkspace();
+	}
+
+	async function switchToWorkspace(workspace: Workspace) {
+		if (onSwitchToWorkspace) {
+			await onSwitchToWorkspace(workspace);
+		}
+		currentWorkspace = workspace;
+		workspaceService.setCurrentWorkspace(workspace);
+		onClose();
+	}
+
+	function showDeleteWorkspaceConfirm(workspace: Workspace, event: Event) {
+		event.stopPropagation();
+		workspaceToDelete = workspace;
+		showDeleteConfirmModal = true;
+	}
+
+	function confirmDeleteWorkspace() {
+		if (!workspaceToDelete) return;
+
+		try {
+			const isCurrentWorkspace = currentWorkspace?.name === workspaceToDelete.name;
+
+			// Delete the workspace
+			workspaceService.deleteWorkspace(workspaceToDelete.name);
+
+			// Refresh workspaces list
+			refreshWorkspaces();
+
+			// If we deleted the current workspace, clear it
+			if (isCurrentWorkspace) {
+				currentWorkspace = null;
+				workspaceService.setCurrentWorkspace(null);
+
+				// If there are other workspaces, switch to the first one
+				if (availableWorkspaces.length > 0) {
+					switchToWorkspace(availableWorkspaces[0]);
+				}
+			}
+
+			// Close modals
+			showDeleteConfirmModal = false;
+			workspaceToDelete = null;
+
+			// If we deleted the last workspace, close the manager modal
+			if (availableWorkspaces.length === 0) {
+				onClose();
+			}
+		} catch (error) {
+			console.error('Error deleting workspace:', error);
+		}
+	}
+
+	function cancelDeleteWorkspace() {
+		showDeleteConfirmModal = false;
+		workspaceToDelete = null;
+	}
 </script>
 
 {#if show}
@@ -47,7 +113,7 @@
 					>
 						<button
 							class="flex-1 px-4 py-3 text-left"
-							onclick={() => onSwitchToWorkspace(workspace)}
+							onclick={() => switchToWorkspace(workspace)}
 							disabled={currentWorkspace?.name === workspace.name}
 						>
 							<div class="flex items-center justify-between">
@@ -77,7 +143,7 @@
 						</button>
 						<button
 							class="mr-3 rounded-md p-2 text-red-600 hover:bg-red-50 hover:text-red-800"
-							onclick={(event) => onShowDeleteWorkspaceConfirm(workspace, event)}
+							onclick={(event) => showDeleteWorkspaceConfirm(workspace, event)}
 							title="Delete workspace"
 							aria-label="Delete workspace"
 						>
@@ -98,3 +164,24 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Delete Workspace Confirmation Modal -->
+<Modal
+	bind:open={showDeleteConfirmModal}
+	title="Delete Workspace"
+	onConfirm={confirmDeleteWorkspace}
+	confirmText="Delete"
+	confirmVariant="danger"
+>
+	{#snippet children()}
+		{#if workspaceToDelete}
+			<p class="text-gray-700">
+				Are you sure you want to delete the workspace "{workspaceToDelete.name}"?
+			</p>
+			<p class="mt-2 text-sm text-gray-500">
+				This will permanently remove {workspaceToDelete.dtxFiles.length} DTX files and
+				{workspaceToDelete.audioFiles.length} audio files. This action cannot be undone.
+			</p>
+		{/if}
+	{/snippet}
+</Modal>

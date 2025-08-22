@@ -335,10 +335,15 @@ export class WorkspaceService {
 	/**
 	 * Set current workspace
 	 */
-	setCurrentWorkspace(workspace: Workspace): void {
+	setCurrentWorkspace(workspace: Workspace | null): void {
 		try {
-			localStorage.setItem('last_workspace', workspace.name);
-			window.location.hash = `workspace:${workspace.name}`;
+			if (workspace) {
+				localStorage.setItem('last_workspace', workspace.name);
+				window.location.hash = `workspace:${workspace.name}`;
+			} else {
+				localStorage.removeItem('last_workspace');
+				window.location.hash = '';
+			}
 		} catch (error) {
 			console.error('Failed to set current workspace:', error);
 		}

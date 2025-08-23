@@ -296,7 +296,7 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 					);
 				};
 
-				const setDefContent = await decodeFileWithEncodingDetection(
+				const setDefResult = await decodeFileWithEncodingDetection(
 					tempFile,
 					validateSetDefContent,
 					['utf-8', 'shift-jis', 'utf-16le', 'utf-16be'],
@@ -304,7 +304,7 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 				);
 
 				// Parse SET.def content manually to extract filename-to-label mappings
-				const lines = setDefContent.split(/\r?\n/);
+				const lines = setDefResult.content.split(/\r?\n/);
 
 				for (let level = 1; level <= 5; level++) {
 					const labelLine = lines.find((line: string) =>
@@ -367,14 +367,14 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 					);
 				};
 
-				const fileContent = await decodeFileWithEncodingDetection(
+				const fileResult = await decodeFileWithEncodingDetection(
 					tempFile,
 					validateDtxContent,
 					['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'],
 					'shift-jis'
 				);
 
-				const dtx = new DTXFile(fileContent);
+				const dtx = new DTXFile(fileResult.content);
 				await dtx.parse();
 
 				// Use the first valid parsed values for BPM and artist from DTXFile

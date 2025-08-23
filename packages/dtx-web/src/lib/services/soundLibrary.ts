@@ -143,7 +143,9 @@ export class SoundLibrary {
 						);
 					}
 				} else {
-					errors.push(`Failed to save to localStorage: ${error.message}`);
+					errors.push(
+						`Failed to save to localStorage: ${error instanceof Error ? error.message : String(error)}`
+					);
 				}
 			}
 		}

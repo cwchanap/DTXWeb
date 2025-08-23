@@ -2,7 +2,7 @@
  * Unit tests for EditorNavigation component
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Workspace } from '$lib/services/workspaceService';
 
 // Mock dependencies
@@ -25,8 +25,9 @@ describe('EditorNavigation Component Logic', () => {
 	beforeEach(() => {
 		mockWorkspace = {
 			name: 'Test Workspace',
+			path: '/workspace/test',
 			dtxFiles: [{ name: 'test.dtx', content: 'DTX content', path: '/test.dtx' }],
-			audioFiles: [{ name: 'test.wav', content: new ArrayBuffer(1024), path: '/test.wav' }],
+			audioFiles: [{ name: 'test.wav', path: '/test.wav' }],
 			currentDTX: 'test.dtx',
 			lastModified: Date.now()
 		};
@@ -35,6 +36,7 @@ describe('EditorNavigation Component Logic', () => {
 			mockWorkspace,
 			{
 				name: 'Another Workspace',
+				path: '/workspace/another',
 				dtxFiles: [{ name: 'another.dtx', content: 'Another DTX', path: '/another.dtx' }],
 				audioFiles: [],
 				currentDTX: 'another.dtx',
@@ -161,7 +163,7 @@ describe('EditorNavigation Component Logic', () => {
 
 	describe('Workspace Display Logic', () => {
 		it('should show current workspace name when available', () => {
-			const currentWorkspace = mockWorkspace;
+			const currentWorkspace: Workspace | null = mockWorkspace;
 
 			const getWorkspaceDisplayName = () => {
 				return currentWorkspace ? currentWorkspace.name : 'No Workspace';
@@ -171,10 +173,10 @@ describe('EditorNavigation Component Logic', () => {
 		});
 
 		it('should show fallback when no workspace is available', () => {
-			const currentWorkspace = null;
+			const currentWorkspace = null as Workspace | null;
 
-			const getWorkspaceDisplayName = () => {
-				return currentWorkspace ? currentWorkspace.name : 'No Workspace';
+			const getWorkspaceDisplayName = (): string => {
+				return (currentWorkspace as Workspace | null)?.name ?? 'No Workspace';
 			};
 
 			expect(getWorkspaceDisplayName()).toBe('No Workspace');

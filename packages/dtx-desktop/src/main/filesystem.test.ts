@@ -18,7 +18,9 @@ vi.mock('@dtx/common/server', async (importOriginal) => {
 	const actual = (await importOriginal()) as object;
 	return {
 		...actual,
-		decodeFileWithEncodingDetection: vi.fn().mockResolvedValue('#TITLE:Hello\n#ARTIST:World'),
+		decodeFileWithEncodingDetection: vi
+			.fn()
+			.mockResolvedValue({ content: '#TITLE:Hello\n#ARTIST:World', encoding: 'utf-8' }),
 		// Minimal SimFile mock for parseHeader(title)
 		SimFile: vi.fn().mockImplementation(() => ({
 			title: 'Mock Song',

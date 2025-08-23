@@ -165,7 +165,8 @@ export class WorkspaceService {
 			const soundChips = dtxFile.parseSoundChips();
 
 			// Create SimFile with audio files from both sound library and workspace
-			const simFile = new SimFile();
+			// Initialize with empty array, will be populated below
+			const simFile = new SimFile([]);
 
 			// Combine files from sound library (small files) and workspace (large files)
 			const allFiles: File[] = [];
@@ -202,7 +203,7 @@ export class WorkspaceService {
 			allFiles.push(...largeFiles);
 
 			simFile.files = allFiles;
-			simFile.meta = dtxFile.meta;
+			simFile.title = dtxFile.title;
 
 			// Match sound chips with their corresponding files
 			// This ensures soundChip.file is properly assigned for audio loading

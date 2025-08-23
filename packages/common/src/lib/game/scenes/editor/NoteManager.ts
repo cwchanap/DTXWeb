@@ -678,8 +678,8 @@ export class NoteManager {
 				child instanceof Phaser.GameObjects.Graphics
 			) {
 				// Fast bounds check using Phaser's built-in bounds if available
-				if (typeof child.getBounds === 'function') {
-					const bounds = child.getBounds();
+				if (typeof (child as any).getBounds === 'function') {
+					const bounds = (child as any).getBounds();
 					// Use Phaser's built-in overlap detection for cleaner, more maintainable code
 					if (Phaser.Geom.Rectangle.Overlaps(selectionRect, bounds)) {
 						selectedNoteKeys.add(child.name);

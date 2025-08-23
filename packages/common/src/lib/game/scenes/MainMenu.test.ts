@@ -115,7 +115,7 @@ describe('MainMenu', () => {
 
 			// Get the pointerdown callback function
 			const pointerdownCallback = mockText.on.mock.calls.find(
-				(call) => call[0] === 'pointerdown'
+				(call: any) => call[0] === 'pointerdown'
 			)?.[1];
 
 			expect(pointerdownCallback).toBeDefined();
@@ -130,7 +130,7 @@ describe('MainMenu', () => {
 			mainMenu.create();
 
 			const pointerdownCallback = mockText.on.mock.calls.find(
-				(call) => call[0] === 'pointerdown'
+				(call: any) => call[0] === 'pointerdown'
 			)?.[1];
 
 			// Click multiple times

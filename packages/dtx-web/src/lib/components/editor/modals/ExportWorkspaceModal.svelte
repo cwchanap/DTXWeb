@@ -117,8 +117,7 @@
 				? `Workspace "${workspace.name}" exported successfully! (${dtxCount} DTX files, ${audioCount} audio files)`
 				: `Workspace "${workspace.name}" exported successfully! (${dtxCount} DTX files only)`;
 			toastStore.success({
-				title: message,
-				timeout: 5000
+				title: message
 			});
 
 			// Hide success message after 3 seconds
@@ -130,8 +129,7 @@
 			exportWorkspaceError =
 				error instanceof Error ? error.message : 'Failed to export workspace';
 			toastStore.error({
-				title: `Failed to export workspace: ${exportWorkspaceError}`,
-				timeout: 5000
+				title: `Failed to export workspace: ${exportWorkspaceError}`
 			});
 
 			// Clear error message after 10 seconds

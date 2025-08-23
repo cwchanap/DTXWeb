@@ -13,18 +13,24 @@ describe('Store', () => {
 		const { default: store } = await import('./store');
 
 		expect(store).toBeDefined();
-		expect(typeof store.subscribe).toBe('function');
-		expect(typeof store.set).toBe('function');
-		expect(typeof store.update).toBe('function');
+		expect(store.activeScene).toBeDefined();
+		expect(typeof store.activeScene.subscribe).toBe('function');
+		expect(typeof store.activeScene.set).toBe('function');
+		expect(typeof store.activeScene.update).toBe('function');
 	});
 
 	it('should maintain store interface methods', async () => {
 		const { default: store } = await import('./store');
 
-		// Test that the store has the expected Svelte store interface
+		// Test that individual stores have the expected Svelte store interface
+		const storeKeys = ['activeScene', 'currentDtxFile', 'currentSimfile'];
 		const methods = ['subscribe', 'set', 'update'];
-		methods.forEach((method) => {
-			expect(store).toHaveProperty(method);
+
+		storeKeys.forEach((key) => {
+			expect(store).toHaveProperty(key);
+			methods.forEach((method) => {
+				expect(store[key as keyof typeof store]).toHaveProperty(method);
+			});
 		});
 	});
 });

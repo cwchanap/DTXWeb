@@ -84,7 +84,9 @@ vi.mock('@dtx/common/server', async (importOriginal) => {
 	return {
 		...actual,
 		DTXFile: vi.fn().mockImplementation(() => mockDtxFile),
-		decodeFileWithEncodingDetection: vi.fn().mockResolvedValue('')
+		decodeFileWithEncodingDetection: vi
+			.fn()
+			.mockResolvedValue({ content: '', encoding: 'utf-8' })
 	};
 });
 
@@ -259,13 +261,19 @@ describe('SimFile Service', () => {
 		beforeEach(() => {
 			(decodeFileWithEncodingDetection as Mock).mockImplementation(async (file: File) => {
 				if (file.name.toLowerCase() === 'set.def') {
-					return `#L1LABEL EXT
-#L1FILE song1.dtx`;
+					return {
+						content: `#L1LABEL EXT
+#L1FILE song1.dtx`,
+						encoding: 'utf-8'
+					};
 				}
-				return `#TITLE:Test Title
+				return {
+					content: `#TITLE:Test Title
 #ARTIST:Test Artist
 #BPM:120
-#DLEVEL:55`;
+#DLEVEL:55`,
+					encoding: 'utf-8'
+				};
 			});
 		});
 

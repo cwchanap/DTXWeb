@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TempChartStorage, type ChartMetadata, type SoundChipData } from './tempChartStorage';
-import type { LaneMeasureNote } from '@dtx/common';
+import { LaneMeasureNote } from '@dtx/common';
 
 // Mock localStorage
 const mockLocalStorage = {
@@ -19,13 +19,11 @@ Object.defineProperty(window, 'localStorage', {
 describe('TempChartStorage', () => {
 	const mockNotes: Record<string, LaneMeasureNote[]> = {
 		'0': [
-			{
-				lane: 'BD',
-				measure: 0,
-				position: 0,
-				id: '1',
-				soundChip: 'kick.wav'
-			}
+			new LaneMeasureNote(
+				0, // measure
+				'BD', // laneID
+				[{ noteID: '1', position: 0 }] // notes array
+			)
 		]
 	};
 

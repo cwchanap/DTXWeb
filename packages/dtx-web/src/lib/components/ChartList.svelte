@@ -19,7 +19,7 @@
 		isBlog?: boolean;
 	}
 
-	import type { SimfileWithDtx } from '@dtx/common';
+	import type { SimfileWithDtx, Tables } from '@dtx/common';
 
 	let { pageSize = 12, isBlog = false }: Props = $props();
 
@@ -285,7 +285,9 @@
 						{#if item.dtx_files && item.dtx_files.length > 0}
 							<div class="mt-2">
 								<span class="text-xs text-gray-500">
-									Levels: {formatLevelDisplay(item.dtx_files)}
+									Levels: {formatLevelDisplay(
+										item.dtx_files as Tables<'dtx_files'>[]
+									)}
 								</span>
 							</div>
 						{/if}

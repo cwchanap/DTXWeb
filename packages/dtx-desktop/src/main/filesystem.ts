@@ -206,14 +206,14 @@ export async function readFile(
 			fallback = 'utf-8';
 		}
 
-		const content = await decodeFileWithEncodingDetection(
+		const result = await decodeFileWithEncodingDetection(
 			tempFile,
 			validateFileContent,
 			encodings,
 			fallback
 		);
 
-		return { error: null, content, isText: true };
+		return { error: null, content: result.content, isText: true };
 	} catch (error) {
 		console.error('Error reading file:', error);
 		return {

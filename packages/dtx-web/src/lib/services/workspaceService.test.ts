@@ -174,12 +174,13 @@ describe('WorkspaceService', () => {
 			const mockDTXFile = {
 				parseFromText: vi.fn().mockResolvedValue(undefined),
 				parseSoundChips: vi.fn().mockReturnValue([]),
-				meta: { title: 'Test Song', artist: 'Test Artist' }
+				title: 'Test Song',
+				artist: 'Test Artist'
 			};
 
 			const mockSimFile = {
 				files: [],
-				meta: {}
+				title: ''
 			};
 
 			// Mock the constructors to return our mock instances
@@ -213,8 +214,8 @@ describe('WorkspaceService', () => {
 			expect(result).not.toBeNull();
 			expect(result!.dtxFile).toBeDefined();
 			expect(result!.simFile).toBeDefined();
-			expect(result!.dtxFile.meta.title).toBe('Test Song');
-			expect(result!.dtxFile.meta.artist).toBe('Test Artist');
+			expect(result!.dtxFile.title).toBe('Test Song');
+			expect(result!.dtxFile.artist).toBe('Test Artist');
 
 			// Verify the mock methods were called
 			expect(mockDTXFile.parseFromText).toHaveBeenCalledWith(

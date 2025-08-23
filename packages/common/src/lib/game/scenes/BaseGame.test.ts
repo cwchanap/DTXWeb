@@ -77,9 +77,9 @@ describe('BaseGame', () => {
 
 		baseGame = new TestableBaseGame();
 		baseGame.add = mockAdd;
-		baseGame.make = { graphics: vi.fn().mockReturnValue(mockMask) };
-		baseGame.cameras = { main: mockCamera };
-		baseGame.scale = { width: 960, height: 1080 };
+		baseGame.make = { graphics: vi.fn().mockReturnValue(mockMask) } as any;
+		baseGame.cameras = { main: mockCamera } as any;
+		baseGame.scale = { width: 960, height: 1080 } as any;
 	});
 
 	describe('static properties', () => {
@@ -352,12 +352,12 @@ describe('BaseGame', () => {
 		});
 
 		it('should normalize note position', () => {
-			vi.spyOn(baseGame, 'normalizePosition');
+			vi.spyOn(baseGame as any, 'normalizePosition');
 			vi.spyOn(baseGame, 'getCellHeight').mockReturnValue(25);
 
 			baseGame.drawNote(1, 0, 0.333333333, '11');
 
-			expect(baseGame.normalizePosition).toHaveBeenCalledWith(0.333333333);
+			expect((baseGame as any).normalizePosition).toHaveBeenCalledWith(0.333333333);
 		});
 
 		it('should draw notes from notes data structure', () => {
@@ -416,11 +416,11 @@ describe('BaseGame', () => {
 	describe('position normalization', () => {
 		it('should normalize positions correctly', () => {
 			// Test that normalizePosition is called with correct parameters
-			vi.spyOn(baseGame, 'normalizePosition').mockReturnValue(0.5);
+			vi.spyOn(baseGame as any, 'normalizePosition').mockReturnValue(0.5);
 
-			const result = baseGame['normalizePosition'](0.4999999);
+			const result = (baseGame as any)['normalizePosition'](0.4999999);
 
-			expect(baseGame.normalizePosition).toHaveBeenCalledWith(0.4999999);
+			expect((baseGame as any).normalizePosition).toHaveBeenCalledWith(0.4999999);
 		});
 	});
 

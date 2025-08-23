@@ -438,7 +438,7 @@
 		isEditorReady = false;
 	};
 	const handleValidationError = (message: string) => {
-		toastStore.error({ message, timeout: 5000 });
+		toastStore.error({ title: message });
 	};
 
 	onMount(async () => {

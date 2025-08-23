@@ -8,36 +8,21 @@ describe('utils', () => {
 			const dtxFiles: Tables<'dtx_files'>[] = [
 				{
 					level: 25,
-					id: '1',
-					title: 'Test 1',
-					artist: 'Artist 1',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 1,
+					label: 'Test 1',
+					simfile_id: 1
 				},
 				{
 					level: 15,
-					id: '2',
-					title: 'Test 2',
-					artist: 'Artist 2',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 2,
+					label: 'Test 2',
+					simfile_id: 1
 				},
 				{
 					level: 35,
-					id: '3',
-					title: 'Test 3',
-					artist: 'Artist 3',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 3,
+					label: 'Test 3',
+					simfile_id: 1
 				}
 			];
 
@@ -49,25 +34,15 @@ describe('utils', () => {
 			const dtxFiles: Tables<'dtx_files'>[] = [
 				{
 					level: 150,
-					id: '1',
-					title: 'Test 1',
-					artist: 'Artist 1',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 1,
+					label: 'Test 1',
+					simfile_id: 1
 				},
 				{
 					level: 250,
-					id: '2',
-					title: 'Test 2',
-					artist: 'Artist 2',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 2,
+					label: 'Test 2',
+					simfile_id: 1
 				}
 			];
 
@@ -79,25 +54,15 @@ describe('utils', () => {
 			const dtxFiles: Tables<'dtx_files'>[] = [
 				{
 					level: 25,
-					id: '1',
-					title: 'Test 1',
-					artist: 'Artist 1',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 1,
+					label: 'Test 1',
+					simfile_id: 1
 				},
 				{
 					level: 150,
-					id: '2',
-					title: 'Test 2',
-					artist: 'Artist 2',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 2,
+					label: 'Test 2',
+					simfile_id: 1
 				}
 			];
 
@@ -107,29 +72,19 @@ describe('utils', () => {
 			expect(result).toBe('2.50 / 1.50');
 		});
 
-		it('should handle null levels', () => {
+		it('should handle zero levels', () => {
 			const dtxFiles: Tables<'dtx_files'>[] = [
 				{
-					level: null,
-					id: '1',
-					title: 'Test 1',
-					artist: 'Artist 1',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					level: 0,
+					id: 1,
+					label: 'Test 1',
+					simfile_id: 1
 				},
 				{
 					level: 25,
-					id: '2',
-					title: 'Test 2',
-					artist: 'Artist 2',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 2,
+					label: 'Test 2',
+					simfile_id: 1
 				}
 			];
 
@@ -146,36 +101,21 @@ describe('utils', () => {
 			const dtxFiles: Tables<'dtx_files'>[] = [
 				{
 					level: 35,
-					id: '3',
-					title: 'Test 3',
-					artist: 'Artist 3',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 3,
+					label: 'Test 3',
+					simfile_id: 1
 				},
 				{
 					level: 15,
-					id: '1',
-					title: 'Test 1',
-					artist: 'Artist 1',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 1,
+					label: 'Test 1',
+					simfile_id: 1
 				},
 				{
 					level: 25,
-					id: '2',
-					title: 'Test 2',
-					artist: 'Artist 2',
-					simfile_id: 'sim1',
-					created_at: '',
-					updated_at: '',
-					preview_url: null,
-					dlevel: null
+					id: 2,
+					label: 'Test 2',
+					simfile_id: 1
 				}
 			];
 

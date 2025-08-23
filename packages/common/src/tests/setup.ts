@@ -123,7 +123,7 @@ global.Image = vi.fn().mockImplementation(() => {
 
 	// Trigger onload asynchronously
 	setTimeout(() => {
-		if (img.onload) img.onload({} as Event);
+		if (img.onload) (img.onload as any)({} as Event);
 	}, 0);
 
 	return img;

@@ -7,8 +7,7 @@ import {
 	setFile,
 	removeFile,
 	clearFiles,
-	getFileKeys,
-	generateKey
+	getFileKeys
 } from './fileProvider';
 
 describe('fileProvider', () => {
@@ -258,39 +257,6 @@ describe('fileProvider', () => {
 
 				expect(result).toEqual([]);
 			});
-		});
-	});
-
-	describe('generateKey', () => {
-		it('should generate key with simfileId', () => {
-			const key = generateKey('simfile-123', 'test.txt');
-			expect(key).toBe('simfile-123:test.txt');
-		});
-
-		it('should generate key with null simfileId', () => {
-			const key = generateKey(null, 'test.txt');
-			expect(key).toBe('local:test.txt');
-		});
-
-		it('should handle special characters in filename', () => {
-			const key = generateKey('simfile-123', 'file name with spaces.txt');
-			expect(key).toBe('simfile-123:file name with spaces.txt');
-		});
-
-		it('should handle special characters in simfileId', () => {
-			const key = generateKey('simfile-123-test_v2', 'test.txt');
-			expect(key).toBe('simfile-123-test_v2:test.txt');
-		});
-
-		it('should handle empty strings', () => {
-			const key = generateKey('', '');
-			expect(key).toBe('local:');
-		});
-
-		it('should be consistent for same inputs', () => {
-			const key1 = generateKey('simfile-123', 'test.txt');
-			const key2 = generateKey('simfile-123', 'test.txt');
-			expect(key1).toBe(key2);
 		});
 	});
 

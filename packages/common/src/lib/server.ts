@@ -1,5 +1,4 @@
 // Export server-only utilities that require Node.js environment
-export { joinPath } from './utils/path';
 
 // Export server-safe chart classes (no browser/game dependencies)
 export { DTXFile, SoundChip } from './chart/dtx';

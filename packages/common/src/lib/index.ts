@@ -4,8 +4,7 @@ export { DTXFile, SoundChip } from './chart/dtx';
 export { LaneMeasureNote } from './chart/note';
 export {
 	decodeFileWithEncodingDetection,
-	decodeFileWithSpecificEncoding,
-	type ContentValidationCallback
+	decodeFileWithSpecificEncoding
 } from './chart/encoding-utils';
 
 // Export utilities

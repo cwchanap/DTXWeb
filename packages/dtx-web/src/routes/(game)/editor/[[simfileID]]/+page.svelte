@@ -20,7 +20,6 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Modal } from '@dtx/ui-components/components';
-	import { Trash2, X, Music, ChevronDown } from '@lucide/svelte/icons';
 	import EditorTips from '$lib/components/editor/EditorTips.svelte';
 	import EditorNavigation from '$lib/components/editor/EditorNavigation.svelte';
 	import EditorTabs from '$lib/components/editor/EditorTabs.svelte';
@@ -34,12 +33,7 @@
 	import { TempChartStorage } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
 	import toastStore from '$lib/toaster';
-	import JSZip from 'jszip';
-	import {
-		workspaceService,
-		WorkspaceService,
-		type Workspace
-	} from '$lib/services/workspaceService';
+	import { workspaceService, type Workspace } from '$lib/services/workspaceService';
 	import * as FileManager from '@dtx/common/services/fileManager';
 	// Use the data prop directly since SvelteKit handles the typing
 	interface SimFileMetadata {
@@ -208,11 +202,6 @@
 		} catch (error) {
 			console.error('Error switching workspace:', error);
 		}
-	}
-
-	function showDeleteWorkspaceConfirm(workspace: Workspace, event: Event) {
-		// This function will be handled by the WorkspaceManagerModal component
-		console.log('Delete workspace request:', workspace.name);
 	}
 
 	function showWorkspaceExporter() {

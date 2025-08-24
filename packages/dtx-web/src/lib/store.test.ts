@@ -2,9 +2,76 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@dtx/common', () => ({
 	store: {
-		subscribe: vi.fn(),
-		set: vi.fn(),
-		update: vi.fn()
+		activeScene: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		currentDtxFile: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		currentSimfile: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		currentSoundChip: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		playingAudio: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		isPreviewing: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		playSpeed: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		measureCount: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		editorNotes: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		activeNote: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		currentSimfileID: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		currentDifficulty: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		keyBindings: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		},
+		disableBgmPreview: {
+			subscribe: vi.fn(),
+			set: vi.fn(),
+			update: vi.fn()
+		}
 	}
 }));
 

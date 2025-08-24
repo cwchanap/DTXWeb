@@ -103,11 +103,3 @@ export async function clearFiles(simfileId?: string | null): Promise<boolean> {
 export async function getFileKeys(simfileId?: string | null): Promise<string[]> {
 	return getFileProvider().getFileKeys(simfileId);
 }
-
-/**
- * Generate a unique key for a sound chip file (for backward compatibility)
- * @deprecated Use the provider methods directly instead
- */
-export function generateKey(simfileId: string | null, fileName: string): string {
-	return `${simfileId || 'local'}:${fileName}`;
-}

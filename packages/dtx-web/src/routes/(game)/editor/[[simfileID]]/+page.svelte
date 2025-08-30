@@ -155,21 +155,38 @@
 	}
 
 	// DTX switching is now handled by DTXSwitcherModal component
-	async function switchWorkspaceDTX(dtxFileName: string) {
+	async function switchWorkspaceDTX(dtxFileName: string): Promise<void> {
 		// This will be called by DTXSwitcherModal after successful switch
 		// We need to handle the phaser-specific cleanup here
 		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
-			setTimeout(() => {
+			return new Promise<void>((resolve) => {
 				const editorScene = phaserRef.scene as Editor;
-				if (
-					editorScene.scene.isActive(Preview.key) ||
-					editorScene.scene.isPaused(Preview.key)
-				) {
-					editorScene.scene.stop(Preview.key);
-				}
-				// Force editor to be dirty so Preview rebuilds completely
-				editorScene.setDirty(true);
-			}, 300);
+
+				// Set up a one-time listener for scene readiness
+				const handleSceneReadyForCleanup = () => {
+					if (
+						editorScene.scene.isActive(Preview.key) ||
+						editorScene.scene.isPaused(Preview.key)
+					) {
+						editorScene.scene.stop(Preview.key);
+					}
+					// Force editor to be dirty so Preview rebuilds completely
+					editorScene.setDirty(true);
+
+					// Clean up the listener
+					EventBus.off(EventType.SCENE_READY, handleSceneReadyForCleanup);
+					resolve();
+				};
+
+				// Listen for scene readiness
+				EventBus.once(EventType.SCENE_READY, handleSceneReadyForCleanup);
+
+				// Fallback timeout in case the event doesn't fire
+				setTimeout(() => {
+					EventBus.off(EventType.SCENE_READY, handleSceneReadyForCleanup);
+					resolve();
+				}, 1000);
+			});
 		}
 	}
 
@@ -255,10 +272,8 @@
 			// Clear any existing temp data for the imported chart
 			TempChartStorage.remove(null, 'Imported');
 
-			// Wait a bit to ensure the scene is ready, then emit note import event
-			setTimeout(() => {
-				EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
-			}, 100);
+			// Emit note import event directly - no need to wait
+			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 		} catch (error) {
 			console.error('Error importing DTX file:', error);
 			importErrorMessage = 'Failed to import DTX file. Please check the file format.';

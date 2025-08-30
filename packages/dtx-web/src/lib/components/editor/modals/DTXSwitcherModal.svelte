@@ -10,7 +10,7 @@
 
 	interface Props {
 		show: boolean;
-		onSwitchDTX?: (dtxFileName: string) => void;
+		onSwitchDTX?: (dtxFileName: string) => Promise<void>;
 		onClose: () => void;
 	}
 
@@ -91,19 +91,11 @@
 			TempChartStorage.remove(null, get(store.currentDifficulty));
 
 			// Emit note import event
-			setTimeout(() => {
-				EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
+			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 
-				// After notes are imported and Editor scene is ready, clean up Preview scene
-				setTimeout(() => {
-					// Force editor to be dirty so Preview rebuilds completely
-					// This will be handled by the parent component if needed
-				}, 200);
-			}, 100);
-
-			// Call parent callback if provided
+			// Call parent callback if provided and wait for completion
 			if (onSwitchDTX) {
-				onSwitchDTX(dtxFileName);
+				await onSwitchDTX(dtxFileName);
 			}
 
 			// Close modal

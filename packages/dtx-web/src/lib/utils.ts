@@ -1,6 +1,6 @@
 import type { Tables } from '@dtx/common';
 
-export function formatLevelDisplay(dtx_files: Tables<'dtx_files'>[]) {
+export function formatLevelDisplay(dtx_files: Pick<Tables<'dtx_files'>, 'level'>[]) {
 	return (
 		dtx_files
 			?.slice()

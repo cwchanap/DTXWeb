@@ -259,22 +259,24 @@ describe('SimFile Service', () => {
 
 	describe('parseDtxFiles', () => {
 		beforeEach(() => {
-			(decodeFileWithEncodingDetection as Mock).mockImplementation(async (file: File) => {
-				if (file.name.toLowerCase() === 'set.def') {
-					return {
-						content: `#L1LABEL EXT
+			(decodeFileWithEncodingDetection as Mock).mockImplementation(
+				async (file: { name: string }) => {
+					if (file.name.toLowerCase() === 'set.def') {
+						return {
+							content: `#L1LABEL EXT
 #L1FILE song1.dtx`,
-						encoding: 'utf-8'
-					};
-				}
-				return {
-					content: `#TITLE:Test Title
+							encoding: 'utf-8'
+						};
+					}
+					return {
+						content: `#TITLE:Test Title
 #ARTIST:Test Artist
 #BPM:120
 #DLEVEL:55`,
-					encoding: 'utf-8'
-				};
-			});
+						encoding: 'utf-8'
+					};
+				}
+			);
 		});
 
 		it('should parse DTX files and SET.def correctly', async () => {

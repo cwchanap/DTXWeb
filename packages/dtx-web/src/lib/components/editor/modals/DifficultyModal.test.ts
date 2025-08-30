@@ -3,136 +3,172 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/svelte';
+import DifficultyModal from './DifficultyModal.svelte';
 
-// Mock dependencies
-vi.mock('@dtx/ui-components/components', () => ({
-	Modal: vi.fn()
-}));
+describe('DifficultyModal Component', () => {
+	const mockAvailableLevels = [
+		{ level: 25, label: 'Basic', isActive: false },
+		{ level: 50, label: 'Advanced', isActive: true },
+		{ level: 75, label: 'Extreme', isActive: false }
+	];
 
-describe('DifficultyModal Component Logic', () => {
-	describe('Component Props and State', () => {
-		it('should handle show prop correctly', () => {
-			let show = false;
+	describe('Rendering', () => {
+		it('should render modal when show is true', () => {
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
 
-			// Simulate opening modal
-			show = true;
-			expect(show).toBe(true);
-
-			// Simulate closing modal
-			show = false;
-			expect(show).toBe(false);
+			expect(screen.getByText('Switch Difficulty')).toBeInTheDocument();
 		});
 
-		it('should handle levels prop correctly', () => {
-			const mockLevels = {
-				25: { label: 'Basic', fileName: 'basic.dtx' },
-				50: { label: 'Advanced', fileName: 'advanced.dtx' },
-				75: { label: 'Extreme', fileName: 'extreme.dtx' }
-			};
+		it('should not render modal when show is false', () => {
+			render(DifficultyModal, {
+				props: {
+					show: false,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
 
-			const levels = mockLevels;
-			expect(levels[25]).toEqual({ label: 'Basic', fileName: 'basic.dtx' });
-			expect(levels[50]).toEqual({ label: 'Advanced', fileName: 'advanced.dtx' });
-			expect(levels[75]).toEqual({ label: 'Extreme', fileName: 'extreme.dtx' });
+			expect(screen.queryByText('Switch Difficulty')).not.toBeInTheDocument();
 		});
 
-		it('should handle currentLevel prop correctly', () => {
-			let currentLevel = 25;
+		it('should render all available levels', () => {
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
 
-			// Simulate level change
-			currentLevel = 50;
-			expect(currentLevel).toBe(50);
+			expect(screen.getByText('Basic')).toBeInTheDocument();
+			expect(screen.getByText('Advanced')).toBeInTheDocument();
+			expect(screen.getByText('Extreme')).toBeInTheDocument();
+			expect(screen.getByText('Level 25')).toBeInTheDocument();
+			expect(screen.getByText('Level 50')).toBeInTheDocument();
+			expect(screen.getByText('Level 75')).toBeInTheDocument();
+		});
 
-			currentLevel = 75;
-			expect(currentLevel).toBe(75);
+		it('should show current level indicator', () => {
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
+
+			expect(screen.getByText('Current')).toBeInTheDocument();
+		});
+
+		it('should disable button for active level', () => {
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
+
+			const advancedButton = screen.getByRole('button', { name: /Advanced/ });
+			expect(advancedButton).toBeDisabled();
 		});
 	});
 
-	describe('Event Handlers', () => {
-		it('should call onSwitchLevel callback correctly', () => {
+	describe('Event Handling', () => {
+		it('should call onSwitchLevel when level button is clicked', async () => {
 			const mockOnSwitchLevel = vi.fn();
-			const targetLevel = 50;
 
-			const handleLevelSwitch = (level: number) => {
-				mockOnSwitchLevel(level);
-			};
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: mockOnSwitchLevel,
+					onClose: vi.fn()
+				}
+			});
 
-			handleLevelSwitch(targetLevel);
+			const basicButton = screen.getByRole('button', { name: /Basic/ });
+			await fireEvent.click(basicButton);
 
-			expect(mockOnSwitchLevel).toHaveBeenCalledWith(targetLevel);
+			expect(mockOnSwitchLevel).toHaveBeenCalledWith(25);
 		});
 
-		it('should call onClose callback correctly', () => {
+		it('should call onClose when Cancel button is clicked', async () => {
 			const mockOnClose = vi.fn();
-			let show = true;
 
-			const handleClose = () => {
-				show = false;
-				mockOnClose();
-			};
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: mockOnClose
+				}
+			});
 
-			handleClose();
+			const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+			await fireEvent.click(cancelButton);
 
-			expect(show).toBe(false);
 			expect(mockOnClose).toHaveBeenCalled();
 		});
-	});
 
-	describe('Level Switching Logic', () => {
-		it('should handle switching to different difficulty levels', () => {
-			const mockLevels = {
-				25: { label: 'Basic', fileName: 'basic.dtx' },
-				50: { label: 'Advanced', fileName: 'advanced.dtx' },
-				75: { label: 'Extreme', fileName: 'extreme.dtx' }
-			};
-			let currentLevel = 25;
-			let show = true;
+		it('should not call onSwitchLevel when disabled button is clicked', async () => {
+			const mockOnSwitchLevel = vi.fn();
 
-			const handleSwitchLevel = (level: number) => {
-				if (mockLevels[level as keyof typeof mockLevels]) {
-					currentLevel = level;
-					show = false;
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: mockOnSwitchLevel,
+					onClose: vi.fn()
 				}
-			};
+			});
 
-			// Switch to Advanced
-			handleSwitchLevel(50);
-			expect(currentLevel).toBe(50);
-			expect(show).toBe(false);
-		});
+			const advancedButton = screen.getByRole('button', { name: /Advanced/ });
+			await fireEvent.click(advancedButton);
 
-		it('should not switch to non-existent levels', () => {
-			const mockLevels = {
-				25: { label: 'Basic', fileName: 'basic.dtx' }
-			};
-			let currentLevel = 25;
-
-			const handleSwitchLevel = (level: number) => {
-				if (mockLevels[level as keyof typeof mockLevels]) {
-					currentLevel = level;
-				}
-			};
-
-			// Try to switch to non-existent level
-			handleSwitchLevel(100);
-			expect(currentLevel).toBe(25); // Should remain unchanged
+			expect(mockOnSwitchLevel).not.toHaveBeenCalled();
 		});
 	});
 
-	describe('Component State Management', () => {
-		it('should close modal after successful level switch', () => {
-			let show = true;
-			let currentLevel = 25;
+	describe('Styling', () => {
+		it('should apply active styles to current level', () => {
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
 
-			const handleSwitchAndClose = (level: number) => {
-				currentLevel = level;
-				show = false;
-			};
+			const advancedButton = screen.getByRole('button', { name: /Advanced/ });
+			expect(advancedButton).toHaveClass('border-blue-500', 'bg-blue-50', 'text-blue-700');
+		});
 
-			handleSwitchAndClose(50);
+		it('should apply default styles to inactive levels', () => {
+			render(DifficultyModal, {
+				props: {
+					show: true,
+					availableLevels: mockAvailableLevels,
+					onSwitchLevel: vi.fn(),
+					onClose: vi.fn()
+				}
+			});
 
-			expect(currentLevel).toBe(50);
-			expect(show).toBe(false);
+			const basicButton = screen.getByRole('button', { name: /Basic/ });
+			expect(basicButton).toHaveClass('border-gray-300');
 		});
 	});
 });

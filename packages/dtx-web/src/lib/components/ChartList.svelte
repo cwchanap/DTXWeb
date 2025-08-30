@@ -285,9 +285,7 @@
 						{#if item.dtx_files && item.dtx_files.length > 0}
 							<div class="mt-2">
 								<span class="text-xs text-gray-500">
-									Levels: {formatLevelDisplay(
-										item.dtx_files as Tables<'dtx_files'>[]
-									)}
+									Levels: {formatLevelDisplay(item.dtx_files)}
 								</span>
 							</div>
 						{/if}

@@ -30,7 +30,7 @@
 						class:border-gray-300={!isActive}
 						class:hover:border-gray-400={!isActive}
 						class:hover:bg-gray-50={!isActive}
-						onclick={() => onSwitchLevel(level)}
+						onclick={() => !isActive && onSwitchLevel(level)}
 						disabled={isActive}
 					>
 						<div class="flex items-center justify-between">

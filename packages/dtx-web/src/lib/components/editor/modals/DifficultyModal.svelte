@@ -23,9 +23,13 @@
 			<div class="space-y-2">
 				{#each availableLevels as { level, label, isActive }}
 					<button
-						class="w-full rounded-md border px-4 py-3 text-left transition-colors {isActive
-							? 'border-blue-500 bg-blue-50 text-blue-700'
-							: 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}"
+						class="w-full rounded-md border px-4 py-3 text-left transition-colors"
+						class:border-blue-500={isActive}
+						class:bg-blue-50={isActive}
+						class:text-blue-700={isActive}
+						class:border-gray-300={!isActive}
+						class:hover:border-gray-400={!isActive}
+						class:hover:bg-gray-50={!isActive}
 						onclick={() => onSwitchLevel(level)}
 						disabled={isActive}
 					>

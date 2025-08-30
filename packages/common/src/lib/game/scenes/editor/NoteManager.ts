@@ -677,9 +677,14 @@ export class NoteManager {
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
+				// Type guard to safely check for getBounds method
+				const hasGetBounds = (obj: any): obj is { getBounds(): Phaser.Geom.Rectangle } => {
+					return obj && typeof obj.getBounds === 'function';
+				};
+
 				// Fast bounds check using Phaser's built-in bounds if available
-				if (typeof (child as any).getBounds === 'function') {
-					const bounds = (child as any).getBounds();
+				if (hasGetBounds(child)) {
+					const bounds = child.getBounds();
 					// Use Phaser's built-in overlap detection for cleaner, more maintainable code
 					if (Phaser.Geom.Rectangle.Overlaps(selectionRect, bounds)) {
 						selectedNoteKeys.add(child.name);

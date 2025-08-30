@@ -4,6 +4,9 @@ import path from 'path';
 
 export default defineConfig({
 	plugins: [sveltekit()],
+	define: {
+		global: 'globalThis'
+	},
 	test: {
 		environment: 'jsdom',
 		globals: true,
@@ -11,7 +14,16 @@ export default defineConfig({
 		// Ensure we're using the client version of Svelte for testing
 		server: {
 			deps: {
-				inline: [/^svelte/, /@dtx\/common/]
+				inline: [/^svelte/, /@dtx\/common/],
+				external: ['svelte/server']
+			}
+		},
+		// Force browser conditions for Svelte 5
+		pool: 'forks',
+		// Add browser conditions to ensure client-side Svelte
+		environmentOptions: {
+			jsdom: {
+				resources: 'usable'
 			}
 		},
 		// Exclude playwright tests
@@ -58,6 +70,7 @@ export default defineConfig({
 		alias: {
 			'@': path.resolve(__dirname, './src'),
 			$lib: path.resolve(__dirname, './src/lib')
-		}
+		},
+		conditions: ['browser']
 	}
 });

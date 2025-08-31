@@ -1,6 +1,17 @@
 import { LaneMeasureNote } from './note';
 import { decodeFileWithEncodingDetection, decodeFileWithSpecificEncoding } from './encoding-utils';
 
+interface MidiEvent {
+	deltaTime: number;
+	type: 'meta' | 'channel';
+	subtype?: number;
+	data?: number[];
+	channel?: number;
+	command?: number;
+	note?: number;
+	velocity?: number;
+}
+
 export class SoundChip {
 	label: string;
 	id: number;
@@ -189,6 +200,221 @@ export class DTXFile {
 			console.log('No note line found.');
 			return [];
 		}
+	}
+
+	exportToMidi(
+		notes: Record<string, LaneMeasureNote[]>,
+		laneChannelMap: Record<string, number>
+	): Uint8Array {
+		// MIDI file structure constants
+		const HEADER_CHUNK_TYPE = 'MThd';
+		const TRACK_CHUNK_TYPE = 'MTrk';
+		const TICKS_PER_QUARTER = 480;
+
+		// Create MIDI header
+		const header = this.createMidiHeader(0, 1, TICKS_PER_QUARTER); // Format 0, 1 track
+
+		// Create track with notes
+		const track = this.createMidiTrack(notes, laneChannelMap, TICKS_PER_QUARTER);
+
+		// Combine header and track
+		const totalLength = header.length + track.length;
+		const midiData = new Uint8Array(totalLength);
+		midiData.set(header, 0);
+		midiData.set(track, header.length);
+
+		return midiData;
+	}
+
+	private createMidiHeader(format: number, tracks: number, ticksPerQuarter: number): Uint8Array {
+		const header = new Uint8Array(14);
+		const view = new DataView(header.buffer);
+
+		// Header chunk type "MThd"
+		header.set([0x4d, 0x54, 0x68, 0x64], 0);
+
+		// Header length (6 bytes)
+		view.setUint32(4, 6, false);
+
+		// Format type
+		view.setUint16(8, format, false);
+
+		// Number of tracks
+		view.setUint16(10, tracks, false);
+
+		// Ticks per quarter note
+		view.setUint16(12, ticksPerQuarter, false);
+
+		return header;
+	}
+
+	private createMidiTrack(
+		notes: Record<string, LaneMeasureNote[]>,
+		laneChannelMap: Record<string, number>,
+		ticksPerQuarter: number
+	): Uint8Array {
+		const events: MidiEvent[] = [];
+
+		// Add tempo event (120 BPM default)
+		const bpm = this.bpm || 120;
+		const microsecondsPerQuarter = Math.round(60000000 / bpm);
+		events.push({
+			deltaTime: 0,
+			type: 'meta',
+			subtype: 0x51, // Set Tempo
+			data: [
+				(microsecondsPerQuarter >> 16) & 0xff,
+				(microsecondsPerQuarter >> 8) & 0xff,
+				microsecondsPerQuarter & 0xff
+			]
+		});
+
+		// Convert DTX notes to MIDI events
+		const allNoteEvents: Array<{ time: number; lane: string; noteId: string }> = [];
+
+		for (const [laneId, laneMeasureNotes] of Object.entries(notes)) {
+			for (const measureNote of laneMeasureNotes) {
+				const measureStartTime = measureNote.measure * ticksPerQuarter * 4; // 4/4 time
+				const notesInMeasure = measureNote.notes.length;
+
+				measureNote.notes.forEach((note, index) => {
+					if (note.noteID !== '00') {
+						const noteTime = measureStartTime + note.position * ticksPerQuarter * 4;
+						allNoteEvents.push({
+							time: Math.round(noteTime),
+							lane: laneId,
+							noteId: note.noteID
+						});
+					}
+				});
+			}
+		}
+
+		// Sort by time
+		allNoteEvents.sort((a, b) => a.time - b.time);
+
+		// Convert to MIDI note events
+		let currentTime = 0;
+		for (const noteEvent of allNoteEvents) {
+			const channel = laneChannelMap[noteEvent.lane] || 9; // Default to drum channel (9)
+			const noteNumber = this.getMidiNoteNumber(noteEvent.lane);
+			const velocity = 100;
+			const duration = Math.round(ticksPerQuarter / 4); // 16th note duration
+
+			const deltaTime = noteEvent.time - currentTime;
+
+			// Note On event
+			events.push({
+				deltaTime,
+				type: 'channel',
+				channel,
+				command: 0x9, // Note On
+				note: noteNumber,
+				velocity
+			});
+
+			// Note Off event
+			events.push({
+				deltaTime: duration,
+				type: 'channel',
+				channel,
+				command: 0x8, // Note Off
+				note: noteNumber,
+				velocity: 0
+			});
+
+			currentTime = noteEvent.time + duration;
+		}
+
+		// End of track
+		events.push({
+			deltaTime: 0,
+			type: 'meta',
+			subtype: 0x2f, // End of Track
+			data: []
+		});
+
+		return this.serializeMidiTrack(events);
+	}
+
+	private getMidiNoteNumber(laneId: string): number {
+		// DTX lane to General MIDI drum mapping
+		const drumMap: Record<string, number> = {
+			'01': 36, // Bass Drum
+			'02': 38, // Snare
+			'03': 42, // Closed Hi-Hat
+			'04': 46, // Open Hi-Hat
+			'05': 49, // Crash Cymbal
+			'06': 51, // Ride Cymbal
+			'07': 45, // Low Tom
+			'08': 47, // Mid Tom
+			'09': 50, // High Tom
+			'0A': 44, // Pedal Hi-Hat
+			'0B': 57, // Crash 2
+			'0C': 59 // Ride 2
+			// Add more mappings as needed
+		};
+
+		return drumMap[laneId.toUpperCase()] || 60; // Default to middle C
+	}
+
+	private serializeMidiTrack(events: MidiEvent[]): Uint8Array {
+		const trackData: number[] = [];
+
+		for (const event of events) {
+			// Add variable-length delta time
+			trackData.push(...this.encodeVariableLength(event.deltaTime));
+
+			if (event.type === 'meta') {
+				trackData.push(0xff, event.subtype!, event.data!.length, ...event.data!);
+			} else if (event.type === 'channel') {
+				const status = (event.command! << 4) | event.channel!;
+				trackData.push(status);
+
+				if (event.command === 0x8 || event.command === 0x9) {
+					// Note events
+					trackData.push(event.note!, event.velocity!);
+				}
+			}
+		}
+
+		// Create track chunk
+		const trackLength = trackData.length;
+		const track = new Uint8Array(8 + trackLength);
+		const view = new DataView(track.buffer);
+
+		// Track chunk type "MTrk"
+		track.set([0x4d, 0x54, 0x72, 0x6b], 0);
+
+		// Track length
+		view.setUint32(4, trackLength, false);
+
+		// Track data
+		track.set(trackData, 8);
+
+		return track;
+	}
+
+	private encodeVariableLength(value: number): number[] {
+		const result: number[] = [];
+
+		if (value === 0) {
+			return [0];
+		}
+
+		const bytes: number[] = [];
+		while (value > 0) {
+			bytes.unshift(value & 0x7f);
+			value >>= 7;
+		}
+
+		for (let i = 0; i < bytes.length; i++) {
+			if (i < bytes.length - 1) {
+				bytes[i] |= 0x80;
+			}
+		}
+
+		return bytes;
 	}
 
 	async export(notes?: Record<string, LaneMeasureNote[]>): Promise<void> {

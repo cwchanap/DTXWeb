@@ -151,9 +151,13 @@ localStorage.removeItem('song_templates');
 
 Check `__mocks__/` folder before creating new mocks:
 
-- `__mocks__/phaser.ts` - Complete Phaser.js mock
+- `__mocks__/phaser.ts` - Complete Phaser.js mock with Scene, GameObjects, Sound, etc.
 - `__mocks__/@dtx/common.ts` - Common package mock
+- `__mocks__/@dtx/common/components.ts` - Common components mock
 - `__mocks__/svelte/store.ts` - Svelte store mocks
+- `__mocks__/@skeletonlabs/skeleton-svelte.ts` - Skeleton UI components mock
+- `__mocks__/@lucide/svelte/icons.ts` - Lucide icons mock
+- `__mocks__/svelte-i18n.ts` - Internationalization mock
 
 ### Testing Commands
 
@@ -163,8 +167,11 @@ Check `__mocks__/` folder before creating new mocks:
 
 ### Unit Testing Approach
 
-- For unit test, only write unit test involving code logic
-- Never write trivial test (like testing variable assignment, simple math)
+- For unit tests, only write tests involving code logic
+- Never write trivial tests (like testing variable assignment, simple math)
+- **ALWAYS check the `__mocks__` folder** before creating new mocks for external libraries
+- Enhance global mocks rather than creating local ones when possible
+- Use workspace-specific test commands for individual packages
 
 ## Code Conventions
 

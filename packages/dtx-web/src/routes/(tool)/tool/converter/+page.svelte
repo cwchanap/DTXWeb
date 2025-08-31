@@ -3,6 +3,7 @@
 	import { locale, locales } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import toastStore from '$lib/toaster';
+	import { DTXFile } from '@dtx/common';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
@@ -14,6 +15,23 @@
 	let isConverting = $state(false);
 	let isConverted = $state(false);
 	let convertedFileName = $state<string>('');
+	let dtxFile = $state<DTXFile | null>(null);
+
+	// Default lane to MIDI channel mapping
+	let laneChannelMap = $state<Record<string, number>>({
+		'01': 9, // Bass Drum -> Drum channel
+		'02': 9, // Snare -> Drum channel
+		'03': 9, // Closed Hi-Hat -> Drum channel
+		'04': 9, // Open Hi-Hat -> Drum channel
+		'05': 9, // Crash Cymbal -> Drum channel
+		'06': 9, // Ride Cymbal -> Drum channel
+		'07': 9, // Low Tom -> Drum channel
+		'08': 9, // Mid Tom -> Drum channel
+		'09': 9, // High Tom -> Drum channel
+		'0A': 9, // Pedal Hi-Hat -> Drum channel
+		'0B': 9, // Crash 2 -> Drum channel
+		'0C': 9 // Ride 2 -> Drum channel
+	});
 
 	let fileInput: HTMLInputElement;
 
@@ -21,13 +39,16 @@
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 
-		if (file && file.type === 'audio/midi') {
+		if (
+			file &&
+			(file.name.toLowerCase().endsWith('.dtx') || file.name.toLowerCase().endsWith('.txt'))
+		) {
 			uploadedFile = file;
 			isConverted = false;
 		} else if (file) {
 			toastStore.error({
 				title: 'Invalid file type',
-				description: 'Please select a valid MIDI file (.mid or .midi)',
+				description: 'Please select a valid DTX file (.dtx)',
 				duration: 3000
 			});
 			target.value = '';
@@ -43,37 +64,67 @@
 
 		isConverting = true;
 
-		// Simulate conversion process
-		await new Promise((resolve) => setTimeout(resolve, 2000));
+		try {
+			// Parse the DTX file
+			dtxFile = new DTXFile(uploadedFile);
+			await dtxFile.parse();
 
-		const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
-		convertedFileName = `${baseName}.dtx`;
-		isConverting = false;
-		isConverted = true;
+			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
+			convertedFileName = `${baseName}.mid`;
+			isConverting = false;
+			isConverted = true;
+		} catch (error) {
+			isConverting = false;
+			toastStore.error({
+				title: 'Conversion failed',
+				description: `Failed to parse DTX file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				duration: 5000
+			});
+		}
 	};
 
 	const handleDownload = () => {
-		// For now, create a placeholder DTX file
-		const dtxContent = `#TITLE:${convertedFileName.replace('.dtx', '')}
-#ARTIST:Unknown
-#BPM:120
-#WAV01:kick.wav
-#WAV02:snare.wav
+		if (!dtxFile || !isConverted) return;
 
-#PREVIEW:preview.wav
-#PREIMAGE:cover.jpg
+		try {
+			// Parse notes from DTX file and convert to MIDI
+			const notes = dtxFile.parseNotes();
+			const notesByLane: Record<string, any[]> = {};
 
-11: 01020000 01020000 01020000 01020000`;
+			// Group notes by lane
+			notes.forEach((note) => {
+				if (!notesByLane[note.laneID]) {
+					notesByLane[note.laneID] = [];
+				}
+				notesByLane[note.laneID].push(note);
+			});
 
-		const blob = new Blob([dtxContent], { type: 'text/plain' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = convertedFileName;
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
-		URL.revokeObjectURL(url);
+			// Export to MIDI using our custom converter
+			const midiData = dtxFile.exportToMidi(notesByLane, laneChannelMap);
+
+			// Create blob and download
+			const blob = new Blob([midiData], { type: 'audio/midi' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = convertedFileName;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+
+			toastStore.success({
+				title: 'Success',
+				description: 'MIDI file downloaded successfully!',
+				duration: 3000
+			});
+		} catch (error) {
+			toastStore.error({
+				title: 'Download failed',
+				description: `Failed to generate MIDI file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				duration: 5000
+			});
+		}
 	};
 
 	const handleReset = () => {
@@ -81,6 +132,7 @@
 		isConverted = false;
 		isConverting = false;
 		convertedFileName = '';
+		dtxFile = null;
 		if (fileInput) {
 			fileInput.value = '';
 		}
@@ -101,7 +153,7 @@
 				>
 					← Back to Tools
 				</button>
-				<h1 class="text-3xl font-bold text-white">MIDI to DTX Converter</h1>
+				<h1 class="text-3xl font-bold text-white">DTX to MIDI Converter</h1>
 			</div>
 			<Popover
 				open={languagePopoverOpen}
@@ -133,7 +185,7 @@
 
 	<main class="container mx-auto max-w-4xl px-4 py-8">
 		<div class="rounded-lg border border-gray-300 bg-white p-8 shadow-sm">
-			<h2 class="mb-6 text-2xl font-bold text-gray-900">Convert MIDI to DTX</h2>
+			<h2 class="mb-6 text-2xl font-bold text-gray-900">Convert DTX to MIDI</h2>
 
 			<div class="space-y-6">
 				<!-- Upload Section -->
@@ -158,8 +210,8 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">Upload MIDI File</h3>
-								<p class="text-gray-600">Select a .mid or .midi file to convert</p>
+								<h3 class="text-lg font-medium text-gray-900">Upload DTX File</h3>
+								<p class="text-gray-600">Select a .dtx file to convert</p>
 							</div>
 							<button
 								type="button"
@@ -217,11 +269,51 @@
 					<input
 						bind:this={fileInput}
 						type="file"
-						accept=".mid,.midi,audio/midi"
+						accept=".dtx,.txt"
 						onchange={handleFileUpload}
 						class="hidden"
 					/>
 				</div>
+
+				<!-- Lane Mapping Section -->
+				{#if uploadedFile}
+					<div class="rounded-lg border border-gray-300 bg-gray-50 p-6">
+						<h3 class="mb-4 text-lg font-semibold text-gray-900">
+							DTX Lane to MIDI Channel Mapping
+						</h3>
+						<p class="mb-4 text-sm text-gray-600">
+							Configure which MIDI channel each DTX lane should map to (0-15, with 9
+							being the standard drum channel):
+						</p>
+
+						<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+							{#each Object.entries(laneChannelMap) as [lane]}
+								<div class="flex items-center space-x-2">
+									<label
+										for="lane-{lane}"
+										class="min-w-[3rem] text-sm font-medium text-gray-700"
+										>{lane}:</label
+									>
+									<input
+										id="lane-{lane}"
+										type="number"
+										min="0"
+										max="15"
+										bind:value={laneChannelMap[lane]}
+										class="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
+									/>
+									<span class="text-xs text-gray-500">
+										{#if lane === '01'}Bass Drum{:else if lane === '02'}Snare{:else if lane === '03'}Closed
+											Hi-Hat{:else if lane === '04'}Open Hi-Hat{:else if lane === '05'}Crash{:else if lane === '06'}Ride{:else if lane === '07'}Low
+											Tom{:else if lane === '08'}Mid Tom{:else if lane === '09'}High
+											Tom{:else if lane === '0A'}Pedal Hi-Hat{:else if lane === '0B'}Crash
+											2{:else if lane === '0C'}Ride 2{:else}Unknown{/if}
+									</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 
 				<!-- Convert Section -->
 				{#if uploadedFile}
@@ -240,7 +332,7 @@
 							{:else if isConverted}
 								✓ Converted
 							{:else}
-								Convert to DTX
+								Convert to MIDI
 							{/if}
 						</button>
 					</div>
@@ -271,7 +363,7 @@
 								<h3 class="text-lg font-medium text-green-900">
 									Conversion Complete!
 								</h3>
-								<p class="text-green-700">Your DTX file is ready for download</p>
+								<p class="text-green-700">Your MIDI file is ready for download</p>
 								<p class="text-sm text-green-600">{convertedFileName}</p>
 							</div>
 							<div class="flex justify-center gap-3">
@@ -280,7 +372,7 @@
 									class="rounded-md bg-green-600 px-6 py-3 font-medium text-white transition-colors hover:bg-green-700"
 									onclick={handleDownload}
 								>
-									Download DTX File
+									Download MIDI File
 								</button>
 								<button
 									type="button"
@@ -298,14 +390,17 @@
 
 		<!-- Info Section -->
 		<div class="mt-8 rounded-lg border border-gray-300 bg-white p-6 shadow-sm">
-			<h3 class="mb-3 text-lg font-semibold text-gray-900">About MIDI to DTX Conversion</h3>
+			<h3 class="mb-3 text-lg font-semibold text-gray-900">About DTX to MIDI Conversion</h3>
 			<div class="space-y-2 text-gray-700">
-				<p>This tool converts MIDI files to DTX format for use in drum simulation games.</p>
-				<p><strong>Supported input:</strong> .mid, .midi files</p>
-				<p><strong>Output:</strong> .dtx files compatible with DTX rhythm games</p>
 				<p>
-					<strong>Note:</strong> Currently generates a basic DTX template. Full conversion
-					logic will be implemented in future updates.
+					This tool converts DTX drum chart files to MIDI format for use with digital
+					audio workstations and other music software.
+				</p>
+				<p><strong>Supported input:</strong> .dtx files</p>
+				<p><strong>Output:</strong> .mid files compatible with any MIDI-capable software</p>
+				<p>
+					<strong>Features:</strong> Configurable lane-to-channel mapping, proper timing conversion,
+					and General MIDI drum mapping.
 				</p>
 			</div>
 		</div>

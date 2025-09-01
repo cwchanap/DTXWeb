@@ -13,9 +13,15 @@
 
 	const tools = [
 		{
-			title: 'MIDI to DTX Converter',
-			description: 'Convert MIDI files to DTX format for use in the rhythm game',
+			title: 'DTX to MIDI Converter',
+			description:
+				'Convert DTX drum chart files to MIDI format for use with digital audio workstations',
 			href: '/tool/converter'
+		},
+		{
+			title: 'MIDI to DTX Converter',
+			description: 'Convert MIDI files to DTX drum chart format for rhythm game use',
+			href: '/tool/midi-to-dtx'
 		},
 		{
 			title: 'MIDI Preview',

@@ -23,7 +23,11 @@
 		"test:coverage:web": "npm run test:coverage -w=dtx-web",
 		"test:coverage:desktop": "npm run test:coverage -w=dtx-desktop",
 		"test:coverage:common": "npm run test:coverage -w=@dtx/common",
-		"format:root": "prettier --write ."
+		"format:root": "prettier --write .",
+		"fixtures:generate": "npx tsx e2e/fixtures/create-test-midi.ts",
+		"fixtures:verify": "npx tsx e2e/fixtures/verify-fixtures.ts",
+		"e2e": "npx playwright test",
+		"e2e:ui": "npx playwright test --ui"
 	},
 	"lint-staged": {
 		"*.{js,ts,json,md,svelte,css,html}": "prettier --write"

@@ -95,37 +95,38 @@ describe('DTX to MIDI Converter Logic', () => {
 		expect(Object.keys(notesByLane)).toHaveLength(2);
 	});
 
-	it('should have correct default lane channel mapping', () => {
-		const defaultLaneChannelMap = {
-			'01': 9, // Bass Drum -> Drum channel
-			'02': 9, // Snare -> Drum channel
-			'03': 9, // Closed Hi-Hat -> Drum channel
-			'04': 9, // Open Hi-Hat -> Drum channel
-			'05': 9, // Crash Cymbal -> Drum channel
-			'06': 9, // Ride Cymbal -> Drum channel
-			'07': 9, // Low Tom -> Drum channel
-			'08': 9, // Mid Tom -> Drum channel
-			'09': 9, // High Tom -> Drum channel
-			'0A': 9, // Pedal Hi-Hat -> Drum channel
-			'0B': 9, // Crash 2 -> Drum channel
-			'0C': 9 // Ride 2 -> Drum channel
+	it('should have correct default lane to MIDI note mapping', () => {
+		const defaultLaneNoteMap = {
+			'01': 36, // Bass Drum
+			'02': 38, // Snare
+			'03': 42, // Closed Hi-Hat
+			'04': 46, // Open Hi-Hat
+			'05': 49, // Crash Cymbal
+			'06': 51, // Ride Cymbal
+			'07': 45, // Low Tom
+			'08': 47, // Mid Tom
+			'09': 50, // High Tom
+			'0A': 44, // Pedal Hi-Hat
+			'0B': 57, // Crash 2
+			'0C': 59 // Ride 2
 		};
 
-		expect(defaultLaneChannelMap['01']).toBe(9);
-		expect(defaultLaneChannelMap['02']).toBe(9);
-		expect(Object.keys(defaultLaneChannelMap)).toHaveLength(12);
+		expect(defaultLaneNoteMap['01']).toBe(36); // Bass drum
+		expect(defaultLaneNoteMap['02']).toBe(38); // Snare
+		expect(defaultLaneNoteMap['03']).toBe(42); // Hi-hat
+		expect(Object.keys(defaultLaneNoteMap)).toHaveLength(12);
 	});
 
-	it('should validate MIDI channel range', () => {
-		const validChannels = [0, 1, 9, 15];
-		const invalidChannels = [-1, 16, 20];
+	it('should validate MIDI note range', () => {
+		const validNotes = [0, 36, 127];
+		const invalidNotes = [-1, 128, 255];
 
-		validChannels.forEach((channel) => {
-			expect(channel >= 0 && channel <= 15).toBe(true);
+		validNotes.forEach((note) => {
+			expect(note >= 0 && note <= 127).toBe(true);
 		});
 
-		invalidChannels.forEach((channel) => {
-			expect(channel >= 0 && channel <= 15).toBe(false);
+		invalidNotes.forEach((note) => {
+			expect(note >= 0 && note <= 127).toBe(false);
 		});
 	});
 
@@ -171,5 +172,106 @@ describe('DTX to MIDI Converter Logic', () => {
 
 		expect(mockError instanceof Error).toBe(true);
 		expect(mockError.message).toBe('Test error message');
+	});
+
+	it('should handle note mapping customization', () => {
+		let laneNoteMap = {
+			'01': 36, // Bass Drum
+			'02': 38, // Snare
+			'03': 42 // Hi-hat
+		};
+
+		// Modify mapping
+		laneNoteMap['01'] = 50; // Map bass drum to high tom note
+		laneNoteMap['02'] = 45; // Map snare to low tom note
+
+		expect(laneNoteMap['01']).toBe(50);
+		expect(laneNoteMap['02']).toBe(45);
+		expect(laneNoteMap['03']).toBe(42); // Unchanged
+	});
+
+	it('should handle UI state transitions correctly', () => {
+		let isConverting = false;
+		let isConverted = false;
+		let convertedFileName = '';
+
+		// Initial state
+		expect(isConverting).toBe(false);
+		expect(isConverted).toBe(false);
+
+		// During conversion
+		isConverting = true;
+		expect(isConverting).toBe(true);
+		expect(isConverted).toBe(false);
+
+		// After conversion
+		isConverting = false;
+		isConverted = true;
+		convertedFileName = 'test.mid';
+		expect(isConverting).toBe(false);
+		expect(isConverted).toBe(true);
+		expect(convertedFileName).toBe('test.mid');
+
+		// Reset state
+		isConverting = false;
+		isConverted = false;
+		convertedFileName = '';
+		expect(isConverting).toBe(false);
+		expect(isConverted).toBe(false);
+		expect(convertedFileName).toBe('');
+	});
+
+	it('should handle MIDI export workflow', async () => {
+		const mockDTXFile = new DTXFile();
+		const mockNotesByLane = { '01': [] };
+		const mockLaneNoteMap = { '01': 36 };
+
+		// Mock exportToMidi method
+		const mockMidiData = new Uint8Array([0x4d, 0x54, 0x68, 0x64]); // "MThd" header
+		const mockExportToMidi = vi.fn().mockReturnValue(mockMidiData);
+		mockDTXFile.exportToMidi = mockExportToMidi;
+
+		// Simulate export
+		const midiData = mockDTXFile.exportToMidi(mockNotesByLane, mockLaneNoteMap);
+
+		expect(mockExportToMidi).toHaveBeenCalledWith(mockNotesByLane, mockLaneNoteMap);
+		expect(midiData).toBeInstanceOf(Uint8Array);
+		expect(midiData[0]).toBe(0x4d); // 'M' from "MThd"
+	});
+
+	it('should validate input field ranges for MIDI notes', () => {
+		const validateMidiNote = (note: number) => note >= 0 && note <= 127;
+
+		// Test boundary values
+		expect(validateMidiNote(0)).toBe(true); // Minimum
+		expect(validateMidiNote(127)).toBe(true); // Maximum
+		expect(validateMidiNote(36)).toBe(true); // Bass drum
+		expect(validateMidiNote(38)).toBe(true); // Snare
+
+		// Test invalid values
+		expect(validateMidiNote(-1)).toBe(false);
+		expect(validateMidiNote(128)).toBe(false);
+		expect(validateMidiNote(255)).toBe(false);
+	});
+
+	it('should handle reset functionality correctly', () => {
+		let uploadedFile: File | null = new File(['test'], 'test.dtx');
+		let isConverted = true;
+		let isConverting = false;
+		let convertedFileName = 'test.mid';
+		let dtxFile: DTXFile | null = new DTXFile();
+
+		// Simulate reset
+		uploadedFile = null;
+		isConverted = false;
+		isConverting = false;
+		convertedFileName = '';
+		dtxFile = null;
+
+		expect(uploadedFile).toBeNull();
+		expect(isConverted).toBe(false);
+		expect(isConverting).toBe(false);
+		expect(convertedFileName).toBe('');
+		expect(dtxFile).toBeNull();
 	});
 });

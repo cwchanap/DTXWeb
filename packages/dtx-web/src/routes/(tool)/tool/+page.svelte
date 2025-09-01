@@ -16,6 +16,11 @@
 			title: 'MIDI to DTX Converter',
 			description: 'Convert MIDI files to DTX format for use in the rhythm game',
 			href: '/tool/converter'
+		},
+		{
+			title: 'MIDI Preview',
+			description: 'Preview and analyze MIDI files with track information and playback',
+			href: '/tool/midi-preview'
 		}
 	];
 

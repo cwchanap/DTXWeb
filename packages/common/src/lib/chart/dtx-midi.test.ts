@@ -311,28 +311,29 @@ describe('DTX MIDI Export', () => {
 			expect(midiData[0]).toBe(0x4d); // Still has valid header
 		});
 
-		it('should use correct MIDI channels from lane mapping', async () => {
+		it('should use correct MIDI note numbers from lane mapping', async () => {
 			await dtxFile.parse();
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
 				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])]
 			};
 
-			// Test different channel mapping
-			const laneChannelMap = { '01': 5 }; // Use channel 5 instead of 9
+			// Test different note mapping
+			const laneNoteMap = { '01': 50 }; // Use note 50 (High Tom) instead of 36 (Bass Drum)
 
-			const midiData = dtxFile.exportToMidi(testNotes, laneChannelMap);
+			const midiData = dtxFile.exportToMidi(testNotes, laneNoteMap);
 
-			// Should contain note events on channel 5 (0x95 for Note On)
-			let foundChannel5 = false;
-			for (let i = 0; i < midiData.length; i++) {
-				if (midiData[i] === 0x95) {
-					// Note On channel 5
-					foundChannel5 = true;
+			// Should always use channel 9 (drum channel) = 0x99 for Note On
+			// and contain note 50
+			let foundDrumChannelWithNote50 = false;
+			for (let i = 0; i < midiData.length - 1; i++) {
+				if (midiData[i] === 0x99 && midiData[i + 1] === 50) {
+					// Note On channel 9 with note 50
+					foundDrumChannelWithNote50 = true;
 					break;
 				}
 			}
-			expect(foundChannel5).toBe(true);
+			expect(foundDrumChannelWithNote50).toBe(true);
 		});
 
 		it('should convert multiple measures correctly', async () => {

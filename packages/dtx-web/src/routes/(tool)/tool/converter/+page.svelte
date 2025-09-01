@@ -17,20 +17,20 @@
 	let convertedFileName = $state<string>('');
 	let dtxFile = $state<DTXFile | null>(null);
 
-	// Default lane to MIDI channel mapping
-	let laneChannelMap = $state<Record<string, number>>({
-		'01': 9, // Bass Drum -> Drum channel
-		'02': 9, // Snare -> Drum channel
-		'03': 9, // Closed Hi-Hat -> Drum channel
-		'04': 9, // Open Hi-Hat -> Drum channel
-		'05': 9, // Crash Cymbal -> Drum channel
-		'06': 9, // Ride Cymbal -> Drum channel
-		'07': 9, // Low Tom -> Drum channel
-		'08': 9, // Mid Tom -> Drum channel
-		'09': 9, // High Tom -> Drum channel
-		'0A': 9, // Pedal Hi-Hat -> Drum channel
-		'0B': 9, // Crash 2 -> Drum channel
-		'0C': 9 // Ride 2 -> Drum channel
+	// Default lane to MIDI note mapping (General MIDI drum map)
+	let laneNoteMap = $state<Record<string, number>>({
+		'01': 36, // Bass Drum
+		'02': 38, // Snare
+		'03': 42, // Closed Hi-Hat
+		'04': 46, // Open Hi-Hat
+		'05': 49, // Crash Cymbal
+		'06': 51, // Ride Cymbal
+		'07': 45, // Low Tom
+		'08': 47, // Mid Tom
+		'09': 50, // High Tom
+		'0A': 44, // Pedal Hi-Hat
+		'0B': 57, // Crash 2
+		'0C': 59 // Ride 2
 	});
 
 	let fileInput: HTMLInputElement;
@@ -100,7 +100,7 @@
 			});
 
 			// Export to MIDI using our custom converter
-			const midiData = dtxFile.exportToMidi(notesByLane, laneChannelMap);
+			const midiData = dtxFile.exportToMidi(notesByLane, laneNoteMap);
 
 			// Create blob and download
 			const blob = new Blob([midiData], { type: 'audio/midi' });
@@ -279,15 +279,15 @@
 				{#if uploadedFile}
 					<div class="rounded-lg border border-gray-300 bg-gray-50 p-6">
 						<h3 class="mb-4 text-lg font-semibold text-gray-900">
-							DTX Lane to MIDI Channel Mapping
+							DTX Lane to MIDI Note Mapping
 						</h3>
 						<p class="mb-4 text-sm text-gray-600">
-							Configure which MIDI channel each DTX lane should map to (0-15, with 9
-							being the standard drum channel):
+							Configure which MIDI note number each DTX lane should map to (General
+							MIDI drum notes, 0-127):
 						</p>
 
 						<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-							{#each Object.entries(laneChannelMap) as [lane]}
+							{#each Object.entries(laneNoteMap) as [lane]}
 								<div class="flex items-center space-x-2">
 									<label
 										for="lane-{lane}"
@@ -298,8 +298,8 @@
 										id="lane-{lane}"
 										type="number"
 										min="0"
-										max="15"
-										bind:value={laneChannelMap[lane]}
+										max="127"
+										bind:value={laneNoteMap[lane]}
 										class="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
 									/>
 									<span class="text-xs text-gray-500">
@@ -399,8 +399,8 @@
 				<p><strong>Supported input:</strong> .dtx files</p>
 				<p><strong>Output:</strong> .mid files compatible with any MIDI-capable software</p>
 				<p>
-					<strong>Features:</strong> Configurable lane-to-channel mapping, proper timing conversion,
-					and General MIDI drum mapping.
+					<strong>Features:</strong> Configurable lane-to-note mapping, proper timing conversion,
+					and General MIDI drum channel output (Channel 9).
 				</p>
 			</div>
 		</div>

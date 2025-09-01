@@ -204,7 +204,7 @@ export class DTXFile {
 
 	exportToMidi(
 		notes: Record<string, LaneMeasureNote[]>,
-		laneChannelMap: Record<string, number>
+		laneNoteMap: Record<string, number>
 	): Uint8Array {
 		// MIDI file structure constants
 		const HEADER_CHUNK_TYPE = 'MThd';
@@ -215,7 +215,7 @@ export class DTXFile {
 		const header = this.createMidiHeader(0, 1, TICKS_PER_QUARTER); // Format 0, 1 track
 
 		// Create track with notes
-		const track = this.createMidiTrack(notes, laneChannelMap, TICKS_PER_QUARTER);
+		const track = this.createMidiTrack(notes, laneNoteMap, TICKS_PER_QUARTER);
 
 		// Combine header and track
 		const totalLength = header.length + track.length;
@@ -250,7 +250,7 @@ export class DTXFile {
 
 	private createMidiTrack(
 		notes: Record<string, LaneMeasureNote[]>,
-		laneChannelMap: Record<string, number>,
+		laneNoteMap: Record<string, number>,
 		ticksPerQuarter: number
 	): Uint8Array {
 		const events: MidiEvent[] = [];
@@ -296,8 +296,9 @@ export class DTXFile {
 		// Convert to MIDI note events
 		let currentTime = 0;
 		for (const noteEvent of allNoteEvents) {
-			const channel = laneChannelMap[noteEvent.lane] || 9; // Default to drum channel (9)
-			const noteNumber = this.getMidiNoteNumber(noteEvent.lane);
+			const channel = 9; // Always use drum channel (9)
+			const noteNumber =
+				laneNoteMap[noteEvent.lane] || this.getMidiNoteNumber(noteEvent.lane);
 			const velocity = 100;
 			const duration = Math.round(ticksPerQuarter / 4); // 16th note duration
 

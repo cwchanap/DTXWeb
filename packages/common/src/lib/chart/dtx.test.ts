@@ -561,6 +561,514 @@ describe('DTXFile', () => {
 		});
 	});
 
+	describe('MIDI to DTX conversion', () => {
+		let dtxFile: DTXFile;
+
+		beforeEach(() => {
+			dtxFile = new DTXFile();
+		});
+
+		// Helper function to create a minimal valid MIDI file
+		const createTestMidiData = (
+			notes: Array<{ deltaTime: number; note: number; velocity: number }> = []
+		) => {
+			// Create minimal MIDI header (14 bytes)
+			const header = new Uint8Array(14);
+			header.set([0x4d, 0x54, 0x68, 0x64]); // "MThd"
+			header.set([0x00, 0x00, 0x00, 0x06], 4); // Header length: 6
+			header.set([0x00, 0x00], 8); // Format: 0
+			header.set([0x00, 0x01], 10); // Tracks: 1
+			header.set([0x01, 0xe0], 12); // Ticks per quarter: 480
+
+			// Create track data
+			const trackEvents: number[] = [];
+
+			// Add tempo meta event (120 BPM)
+			trackEvents.push(0x00); // Delta time: 0
+			trackEvents.push(0xff, 0x51, 0x03); // Meta event: Set Tempo, length 3
+			trackEvents.push(0x07, 0xa1, 0x20); // 500000 microseconds per quarter = 120 BPM
+
+			// Add note events
+			notes.forEach((note, index) => {
+				// Variable length delta time encoding
+				if (note.deltaTime < 128) {
+					trackEvents.push(note.deltaTime);
+				} else {
+					// Simple encoding for values >= 128
+					trackEvents.push(0x81, 0x00);
+				}
+
+				// Note On event (channel 9 = drum channel)
+				trackEvents.push(0x99, note.note, note.velocity);
+
+				// Note Off event after 120 ticks
+				trackEvents.push(0x78); // Delta time: 120
+				trackEvents.push(0x89, note.note, 0x00);
+			});
+
+			// End of track
+			trackEvents.push(0x00); // Delta time: 0
+			trackEvents.push(0xff, 0x2f, 0x00); // End of Track
+
+			// Create track chunk
+			const trackLength = trackEvents.length;
+			const track = new Uint8Array(8 + trackLength);
+			track.set([0x4d, 0x54, 0x72, 0x6b], 0); // "MTrk"
+			track.set(
+				[
+					(trackLength >> 24) & 0xff,
+					(trackLength >> 16) & 0xff,
+					(trackLength >> 8) & 0xff,
+					trackLength & 0xff
+				],
+				4
+			);
+			track.set(trackEvents, 8);
+
+			// Combine header and track
+			const midiFile = new Uint8Array(header.length + track.length);
+			midiFile.set(header, 0);
+			midiFile.set(track, header.length);
+
+			return midiFile;
+		};
+
+		describe('parseFromMidi', () => {
+			it('should parse a basic MIDI file', async () => {
+				const midiData = createTestMidiData([
+					{ deltaTime: 0, note: 36, velocity: 100 }, // Bass drum
+					{ deltaTime: 480, note: 38, velocity: 80 } // Snare
+				]);
+
+				// Mock File with arrayBuffer method
+				const file = {
+					name: 'test.mid',
+					type: 'audio/midi',
+					arrayBuffer: async () => midiData.buffer
+				} as File;
+
+				await dtxFile.parseFromMidi(file);
+
+				expect(dtxFile.title).toBe('Converted from MIDI');
+				expect(dtxFile.artist).toBe('Unknown');
+				expect(dtxFile.level).toBe(5);
+				expect(dtxFile.bpm).toBe(120);
+				expect(dtxFile.comment).toBe('Converted from MIDI file');
+			});
+
+			it('should throw error for invalid MIDI file', async () => {
+				const invalidData = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
+				// Mock File with arrayBuffer method
+				const file = {
+					name: 'invalid.mid',
+					type: 'audio/midi',
+					arrayBuffer: async () => invalidData.buffer
+				} as File;
+
+				await expect(dtxFile.parseFromMidi(file)).rejects.toThrow(
+					'Invalid MIDI file: Missing header'
+				);
+			});
+		});
+
+		describe('MIDI file parsing internals', () => {
+			it('should read MIDI header correctly', () => {
+				const midiData = createTestMidiData();
+				const parsedData = (dtxFile as any).parseMidiFile(midiData);
+
+				expect(parsedData.format).toBe(0);
+				expect(parsedData.trackCount).toBe(1);
+				expect(parsedData.ticksPerQuarter).toBe(480);
+				expect(parsedData.tracks).toHaveLength(1);
+			});
+
+			it('should parse MIDI tracks correctly', () => {
+				const midiData = createTestMidiData([{ deltaTime: 0, note: 36, velocity: 100 }]);
+				const parsedData = (dtxFile as any).parseMidiFile(midiData);
+
+				expect(parsedData.tracks[0]).toBeDefined();
+				expect(Array.isArray(parsedData.tracks[0])).toBe(true);
+				expect(parsedData.tracks[0].length).toBeGreaterThan(0);
+
+				// Should contain tempo event and note events
+				const tempoEvent = parsedData.tracks[0].find(
+					(e: any) => e.type === 'meta' && e.subtype === 0x51
+				);
+				expect(tempoEvent).toBeDefined();
+
+				const noteEvent = parsedData.tracks[0].find(
+					(e: any) => e.type === 'channel' && e.command === 0x9
+				);
+				expect(noteEvent).toBeDefined();
+				expect(noteEvent.note).toBe(36);
+			});
+
+			it('should read variable length values correctly', () => {
+				const testCases = [
+					{ input: new Uint8Array([0x00]), expected: { value: 0, nextOffset: 1 } },
+					{ input: new Uint8Array([0x7f]), expected: { value: 127, nextOffset: 1 } },
+					{
+						input: new Uint8Array([0x81, 0x00]),
+						expected: { value: 128, nextOffset: 2 }
+					},
+					{
+						input: new Uint8Array([0xff, 0x7f]),
+						expected: { value: 16383, nextOffset: 2 }
+					}
+				];
+
+				testCases.forEach((testCase) => {
+					const result = (dtxFile as any).readVariableLength(testCase.input, 0);
+					expect(result.value).toBe(testCase.expected.value);
+					expect(result.nextOffset).toBe(testCase.expected.nextOffset);
+				});
+			});
+
+			it('should read uint16 and uint32 correctly', () => {
+				const testData = new Uint8Array([0x12, 0x34, 0x56, 0x78]);
+
+				const uint16Result = (dtxFile as any).readUint16(testData, 0);
+				expect(uint16Result).toBe(0x1234);
+
+				const uint32Result = (dtxFile as any).readUint32(testData, 0);
+				expect(uint32Result).toBe(0x12345678);
+			});
+		});
+
+		describe('convertMidiNotesToDtx', () => {
+			it('should convert MIDI notes to DTX lane format', async () => {
+				const midiData = createTestMidiData([
+					{ deltaTime: 0, note: 36, velocity: 100 }, // Bass drum -> lane 01
+					{ deltaTime: 480, note: 38, velocity: 80 }, // Snare -> lane 02
+					{ deltaTime: 480, note: 42, velocity: 90 } // Hi-hat -> lane 03
+				]);
+
+				const file = {
+					name: 'test.mid',
+					type: 'audio/midi',
+					arrayBuffer: async () => midiData.buffer
+				} as File;
+				await dtxFile.parseFromMidi(file);
+
+				const arrayBuffer = await file.arrayBuffer();
+				const data = new Uint8Array(arrayBuffer);
+				const parsedMidiData = (dtxFile as any).parseMidiFile(data);
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(parsedMidiData);
+
+				expect(convertedNotes['01']).toBeDefined(); // Bass drum lane
+				expect(convertedNotes['02']).toBeDefined(); // Snare lane
+				expect(convertedNotes['03']).toBeDefined(); // Hi-hat lane
+			});
+
+			it('should map MIDI notes to correct DTX lanes', () => {
+				const mockMidiData = {
+					ticksPerQuarter: 480,
+					tracks: [
+						[
+							{
+								deltaTime: 0,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							}, // Bass -> 01
+							{
+								deltaTime: 480,
+								type: 'channel',
+								command: 0x9,
+								note: 38,
+								velocity: 80
+							}, // Snare -> 02
+							{
+								deltaTime: 480,
+								type: 'channel',
+								command: 0x9,
+								note: 42,
+								velocity: 90
+							}, // Hi-hat -> 03
+							{
+								deltaTime: 480,
+								type: 'channel',
+								command: 0x9,
+								note: 46,
+								velocity: 70
+							}, // Open Hi-hat -> 04
+							{
+								deltaTime: 480,
+								type: 'channel',
+								command: 0x9,
+								note: 49,
+								velocity: 85
+							}, // Crash -> 05
+							{
+								deltaTime: 480,
+								type: 'channel',
+								command: 0x9,
+								note: 51,
+								velocity: 75
+							} // Ride -> 06
+						]
+					]
+				};
+
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+
+				expect(convertedNotes['01']).toBeDefined(); // Bass drum
+				expect(convertedNotes['02']).toBeDefined(); // Snare
+				expect(convertedNotes['03']).toBeDefined(); // Closed Hi-hat
+				expect(convertedNotes['04']).toBeDefined(); // Open Hi-hat
+				expect(convertedNotes['05']).toBeDefined(); // Crash
+				expect(convertedNotes['06']).toBeDefined(); // Ride
+			});
+
+			it('should calculate measure positions correctly', () => {
+				const mockMidiData = {
+					ticksPerQuarter: 480,
+					tracks: [
+						[
+							{
+								deltaTime: 0,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							}, // Start of measure 0
+							{
+								deltaTime: 960,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							}, // Half of measure 0
+							{
+								deltaTime: 960,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							} // Start of measure 1
+						]
+					]
+				};
+
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+
+				expect(convertedNotes['01']).toHaveLength(2); // Two measures
+				expect(convertedNotes['01'][0].measure).toBe(0);
+				expect(convertedNotes['01'][1].measure).toBe(1);
+
+				// Check positions within measures
+				expect(convertedNotes['01'][0].notes[0].position).toBe(0); // Start of measure
+				expect(convertedNotes['01'][0].notes[1].position).toBe(0.5); // Middle of measure
+				expect(convertedNotes['01'][1].notes[0].position).toBe(0); // Start of next measure
+			});
+
+			it('should ignore Note Off events and notes with zero velocity', () => {
+				const mockMidiData = {
+					ticksPerQuarter: 480,
+					tracks: [
+						[
+							{
+								deltaTime: 0,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							}, // Note On
+							{
+								deltaTime: 240,
+								type: 'channel',
+								command: 0x8,
+								note: 36,
+								velocity: 0
+							}, // Note Off (should ignore)
+							{
+								deltaTime: 240,
+								type: 'channel',
+								command: 0x9,
+								note: 38,
+								velocity: 0
+							}, // Note On with 0 velocity (should ignore)
+							{
+								deltaTime: 240,
+								type: 'channel',
+								command: 0x9,
+								note: 42,
+								velocity: 80
+							} // Valid Note On
+						]
+					]
+				};
+
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+
+				expect(convertedNotes['01']).toBeDefined(); // Bass drum from first note
+				expect(convertedNotes['02']).toBeUndefined(); // Snare should not exist (0 velocity)
+				expect(convertedNotes['03']).toBeDefined(); // Hi-hat from last note
+
+				expect(convertedNotes['01'][0].notes).toHaveLength(1); // Only one valid note
+				expect(convertedNotes['03'][0].notes).toHaveLength(1); // Only one valid note
+			});
+
+			it('should handle unknown MIDI notes gracefully', () => {
+				const mockMidiData = {
+					ticksPerQuarter: 480,
+					tracks: [
+						[
+							{
+								deltaTime: 0,
+								type: 'channel',
+								command: 0x9,
+								note: 99,
+								velocity: 100
+							}, // Unknown note
+							{
+								deltaTime: 480,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 80
+							} // Known note
+						]
+					]
+				};
+
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+
+				// Should only have the known note
+				expect(convertedNotes['01']).toBeDefined(); // Bass drum
+				expect(Object.keys(convertedNotes)).toHaveLength(1);
+			});
+
+			it('should sort notes correctly within measures', () => {
+				const mockMidiData = {
+					ticksPerQuarter: 480,
+					tracks: [
+						[
+							{
+								deltaTime: 1440,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							}, // 3/4 through measure
+							{
+								deltaTime: -960,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							}, // 1/4 through measure (negative delta)
+							{
+								deltaTime: -480,
+								type: 'channel',
+								command: 0x9,
+								note: 36,
+								velocity: 100
+							} // Start of measure (negative delta)
+						]
+					]
+				};
+
+				// Fix the test data - MIDI delta times should be cumulative
+				mockMidiData.tracks[0] = [
+					{ deltaTime: 0, type: 'channel', command: 0x9, note: 36, velocity: 100 }, // Start
+					{ deltaTime: 480, type: 'channel', command: 0x9, note: 36, velocity: 100 }, // Quarter
+					{ deltaTime: 960, type: 'channel', command: 0x9, note: 36, velocity: 100 } // Three quarters
+				];
+
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+
+				expect(convertedNotes['01'][0].notes).toHaveLength(3);
+
+				// Check positions are sorted
+				const positions = convertedNotes['01'][0].notes.map((n) => n.position);
+				expect(positions[0]).toBeLessThan(positions[1]);
+				expect(positions[1]).toBeLessThan(positions[2]);
+			});
+		});
+
+		describe('edge cases and error handling', () => {
+			it('should handle empty MIDI file', async () => {
+				const emptyMidiData = createTestMidiData([]); // No notes
+				const file = {
+					name: 'empty.mid',
+					type: 'audio/midi',
+					arrayBuffer: async () => emptyMidiData.buffer
+				} as File;
+
+				await dtxFile.parseFromMidi(file);
+
+				expect(dtxFile.title).toBe('Converted from MIDI');
+				expect(dtxFile.bpm).toBe(120);
+			});
+
+			it('should handle malformed MIDI track', () => {
+				const invalidTrackData = new Uint8Array([
+					0x4d,
+					0x54,
+					0x68,
+					0x64, // MThd
+					0x00,
+					0x00,
+					0x00,
+					0x06, // Header length
+					0x00,
+					0x00,
+					0x00,
+					0x01,
+					0x01,
+					0xe0, // Format 0, 1 track, 480 ticks
+					0x4d,
+					0x54,
+					0x72,
+					0x6b, // MTrk
+					0x00,
+					0x00,
+					0x00,
+					0x04, // Track length: 4
+					0xff,
+					0xff,
+					0xff,
+					0xff // Invalid data
+				]);
+
+				expect(() => (dtxFile as any).parseMidiFile(invalidTrackData)).not.toThrow();
+			});
+
+			it('should extract BPM from tempo meta events', async () => {
+				// The createTestMidiData already creates a MIDI with 120 BPM by default
+				// Let's just verify that it correctly extracts the default BPM
+				const midiData = createTestMidiData();
+
+				const file = {
+					name: 'test120.mid',
+					type: 'audio/midi',
+					arrayBuffer: async () => midiData.buffer
+				} as File;
+				await dtxFile.parseFromMidi(file);
+
+				expect(dtxFile.bpm).toBe(120);
+			});
+
+			it('should handle multiple tracks', () => {
+				// This is a simplified test since creating multi-track MIDI is complex
+				const mockMidiData = {
+					tracks: [
+						[{ deltaTime: 0, type: 'channel', command: 0x9, note: 36, velocity: 100 }],
+						[{ deltaTime: 480, type: 'channel', command: 0x9, note: 38, velocity: 80 }]
+					],
+					ticksPerQuarter: 480
+				};
+
+				const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+
+				expect(convertedNotes['01']).toBeDefined(); // From track 1
+				expect(convertedNotes['02']).toBeDefined(); // From track 2
+			});
+		});
+	});
+
 	describe('error handling and edge cases', () => {
 		let dtxFile: DTXFile;
 

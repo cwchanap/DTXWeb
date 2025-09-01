@@ -417,6 +417,261 @@ export class DTXFile {
 		return bytes;
 	}
 
+	async parseFromMidi(file: File): Promise<void> {
+		const arrayBuffer = await file.arrayBuffer();
+		const data = new Uint8Array(arrayBuffer);
+
+		// Parse MIDI file
+		const midiData = this.parseMidiFile(data);
+
+		// Convert MIDI data to DTX format
+		this.convertMidiToDtx(midiData);
+	}
+
+	private parseMidiFile(data: Uint8Array) {
+		let offset = 0;
+
+		// Read header chunk
+		const headerType = new TextDecoder().decode(data.slice(offset, offset + 4));
+		if (headerType !== 'MThd') {
+			throw new Error('Invalid MIDI file: Missing header');
+		}
+		offset += 4;
+
+		const headerLength = this.readUint32(data, offset);
+		offset += 4;
+
+		const format = this.readUint16(data, offset);
+		offset += 2;
+		const trackCount = this.readUint16(data, offset);
+		offset += 2;
+		const ticksPerQuarter = this.readUint16(data, offset);
+		offset += 2;
+
+		// Read tracks
+		const tracks: MidiEvent[][] = [];
+		for (let i = 0; i < trackCount; i++) {
+			const track = this.parseTrack(data, offset);
+			tracks.push(track.events);
+			offset = track.nextOffset;
+		}
+
+		return {
+			format,
+			trackCount,
+			ticksPerQuarter,
+			tracks
+		};
+	}
+
+	private parseTrack(data: Uint8Array, offset: number) {
+		const trackType = new TextDecoder().decode(data.slice(offset, offset + 4));
+		if (trackType !== 'MTrk') {
+			throw new Error('Invalid MIDI track');
+		}
+		offset += 4;
+
+		const trackLength = this.readUint32(data, offset);
+		offset += 4;
+		const trackEnd = offset + trackLength;
+
+		const events: MidiEvent[] = [];
+		let runningStatus = 0;
+
+		while (offset < trackEnd) {
+			// Read delta time
+			const deltaTimeResult = this.readVariableLength(data, offset);
+			const deltaTime = deltaTimeResult.value;
+			offset = deltaTimeResult.nextOffset;
+
+			// Read event
+			let status = data[offset];
+
+			// Handle running status
+			if (status < 0x80) {
+				status = runningStatus;
+			} else {
+				offset++;
+			}
+
+			if (status >= 0x80 && status <= 0xef) {
+				// Channel message
+				runningStatus = status;
+				const command = (status >> 4) & 0x0f;
+				const channel = status & 0x0f;
+
+				if (command === 0x8 || command === 0x9) {
+					// Note Off/On
+					const note = data[offset++];
+					const velocity = data[offset++];
+					events.push({
+						deltaTime,
+						type: 'channel',
+						command,
+						channel,
+						note,
+						velocity
+					});
+				} else {
+					// Skip other channel messages for now
+					offset += 2;
+				}
+			} else if (status === 0xff) {
+				// Meta event
+				const subtype = data[offset++];
+				const lengthResult = this.readVariableLength(data, offset);
+				const length = lengthResult.value;
+				offset = lengthResult.nextOffset;
+
+				const metaData = Array.from(data.slice(offset, offset + length));
+				offset += length;
+
+				events.push({
+					deltaTime,
+					type: 'meta',
+					subtype,
+					data: metaData
+				});
+			} else {
+				// Skip unknown events
+				offset++;
+			}
+		}
+
+		return {
+			events,
+			nextOffset: offset
+		};
+	}
+
+	private readUint32(data: Uint8Array, offset: number): number {
+		return (
+			(data[offset] << 24) |
+			(data[offset + 1] << 16) |
+			(data[offset + 2] << 8) |
+			data[offset + 3]
+		);
+	}
+
+	private readUint16(data: Uint8Array, offset: number): number {
+		return (data[offset] << 8) | data[offset + 1];
+	}
+
+	private readVariableLength(data: Uint8Array, offset: number) {
+		let value = 0;
+		let byte: number;
+
+		do {
+			byte = data[offset++];
+			value = (value << 7) | (byte & 0x7f);
+		} while (byte & 0x80);
+
+		return { value, nextOffset: offset };
+	}
+
+	private convertMidiToDtx(midiData: any): void {
+		// Set default values
+		this.title = 'Converted from MIDI';
+		this.artist = 'Unknown';
+		this.level = 5;
+		this.bpm = 120;
+		this.preview = '';
+		this.soundPreview = '';
+		this.comment = 'Converted from MIDI file';
+		this.soundChips = [];
+		this.lines = [];
+
+		// Extract tempo from meta events
+		for (const track of midiData.tracks) {
+			for (const event of track) {
+				if (event.type === 'meta' && event.subtype === 0x51 && event.data) {
+					// Set Tempo event
+					const microsecondsPerQuarter =
+						(event.data[0] << 16) | (event.data[1] << 8) | event.data[2];
+					this.bpm = Math.round(60000000 / microsecondsPerQuarter);
+					break;
+				}
+			}
+		}
+
+		// Generate basic header lines
+		this.lines = [
+			`#TITLE: ${this.title}`,
+			`#ARTIST: ${this.artist}`,
+			`#DLEVEL: ${this.level}`,
+			`#BPM: ${this.bpm}`,
+			`#COMMENT: ${this.comment}`
+		];
+	}
+
+	convertMidiNotesToDtx(midiData: any): Record<string, LaneMeasureNote[]> {
+		const notesByLane: Record<string, LaneMeasureNote[]> = {};
+		const ticksPerQuarter = midiData.ticksPerQuarter;
+		const ticksPerMeasure = ticksPerQuarter * 4; // Assuming 4/4 time
+
+		// MIDI note to DTX lane mapping (reverse of the export mapping)
+		const midiToDtxMap: Record<number, string> = {
+			36: '01', // Bass Drum
+			38: '02', // Snare
+			42: '03', // Closed Hi-Hat
+			46: '04', // Open Hi-Hat
+			49: '05', // Crash Cymbal
+			51: '06', // Ride Cymbal
+			45: '07', // Low Tom
+			47: '08', // Mid Tom
+			50: '09', // High Tom
+			44: '0A', // Pedal Hi-Hat
+			57: '0B', // Crash 2
+			59: '0C' // Ride 2
+		};
+
+		// Process each track
+		for (const track of midiData.tracks) {
+			let currentTime = 0;
+
+			for (const event of track) {
+				currentTime += event.deltaTime;
+
+				// Only process Note On events with velocity > 0
+				if (event.type === 'channel' && event.command === 0x9 && event.velocity > 0) {
+					const laneId = midiToDtxMap[event.note];
+					if (laneId) {
+						const measure = Math.floor(currentTime / ticksPerMeasure);
+						const positionInMeasure = (currentTime % ticksPerMeasure) / ticksPerMeasure;
+
+						// Initialize lane if not exists
+						if (!notesByLane[laneId]) {
+							notesByLane[laneId] = [];
+						}
+
+						// Find or create measure note for this lane
+						let measureNote = notesByLane[laneId].find((mn) => mn.measure === measure);
+						if (!measureNote) {
+							measureNote = new LaneMeasureNote(measure, laneId, []);
+							notesByLane[laneId].push(measureNote);
+						}
+
+						// Add note (using a simple note ID, could be enhanced)
+						measureNote.notes.push({
+							noteID: '01', // Default sound chip
+							position: positionInMeasure
+						});
+					}
+				}
+			}
+		}
+
+		// Sort notes within each measure
+		for (const laneNotes of Object.values(notesByLane)) {
+			laneNotes.forEach((measureNote) => {
+				measureNote.notes.sort((a, b) => a.position - b.position);
+			});
+			laneNotes.sort((a, b) => a.measure - b.measure);
+		}
+
+		return notesByLane;
+	}
+
 	async export(notes?: Record<string, LaneMeasureNote[]>): Promise<void> {
 		const content: string[] = [];
 

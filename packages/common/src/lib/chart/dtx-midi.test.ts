@@ -209,7 +209,14 @@ describe('DTX MIDI Export', () => {
 			await dtxFile.parse();
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
-				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])]
+				'01': [
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				]
 			};
 			const laneChannelMap = { '01': 9 };
 
@@ -244,7 +251,14 @@ describe('DTX MIDI Export', () => {
 			await dtxFile.parse();
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
-				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])]
+				'01': [
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				]
 			};
 			const laneChannelMap = { '01': 9 };
 
@@ -262,9 +276,30 @@ describe('DTX MIDI Export', () => {
 
 			// Test different lanes
 			const testNotes: Record<string, LaneMeasureNote[]> = {
-				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])], // Bass drum
-				'02': [new LaneMeasureNote(1, '02', ['02', '00', '00', '00'])], // Snare
-				'03': [new LaneMeasureNote(1, '03', ['03', '00', '00', '00'])] // Hi-hat
+				'01': [
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				], // Bass drum
+				'02': [
+					new LaneMeasureNote(1, '02', [
+						{ noteID: '02', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				], // Snare
+				'03': [
+					new LaneMeasureNote(1, '03', [
+						{ noteID: '03', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				] // Hi-hat
 			};
 			const laneChannelMap = { '01': 9, '02': 9, '03': 9 };
 
@@ -278,7 +313,14 @@ describe('DTX MIDI Export', () => {
 			await dtxFile.parse();
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
-				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])]
+				'01': [
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				]
 			};
 			const laneChannelMap = { '01': 9 };
 
@@ -315,7 +357,14 @@ describe('DTX MIDI Export', () => {
 			await dtxFile.parse();
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
-				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])]
+				'01': [
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				]
 			};
 
 			// Test different note mapping
@@ -341,9 +390,24 @@ describe('DTX MIDI Export', () => {
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
 				'01': [
-					new LaneMeasureNote(1, '01', ['01', '00', '00', '00']),
-					new LaneMeasureNote(2, '01', ['00', '01', '00', '00']),
-					new LaneMeasureNote(3, '01', ['00', '00', '01', '00'])
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					]),
+					new LaneMeasureNote(2, '01', [
+						{ noteID: '00', position: 0 },
+						{ noteID: '01', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					]),
+					new LaneMeasureNote(3, '01', [
+						{ noteID: '00', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '01', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
 				]
 			};
 			const laneChannelMap = { '01': 9 };
@@ -361,8 +425,18 @@ describe('DTX MIDI Export', () => {
 			const testNotes: Record<string, LaneMeasureNote[]> = {
 				'01': [
 					// Create notes with large timing gaps to test variable length encoding
-					new LaneMeasureNote(1, '01', ['01', '00', '00', '00']),
-					new LaneMeasureNote(10, '01', ['01', '00', '00', '00']) // Large gap
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					]),
+					new LaneMeasureNote(10, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					]) // Large gap
 				]
 			};
 			const laneChannelMap = { '01': 9 };
@@ -377,7 +451,14 @@ describe('DTX MIDI Export', () => {
 			await dtxFile.parse();
 
 			const testNotes: Record<string, LaneMeasureNote[]> = {
-				'01': [new LaneMeasureNote(1, '01', ['01', '00', '00', '00'])]
+				'01': [
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
+				]
 			};
 			const laneChannelMap = { '01': 9 };
 
@@ -399,16 +480,12 @@ describe('DTX MIDI Export', () => {
 
 			const testNotes = {
 				'01': [
-					{
-						measure: 1,
-						laneID: '01',
-						notes: [
-							{ noteID: '01', position: 0 },
-							{ noteID: '00', position: 0.25 },
-							{ noteID: '01', position: 0.5 },
-							{ noteID: '00', position: 0.75 }
-						]
-					}
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '01', position: 0.5 },
+						{ noteID: '00', position: 0.75 }
+					])
 				]
 			};
 			const laneChannelMap = { '01': 9 };
@@ -436,29 +513,21 @@ describe('DTX MIDI Export', () => {
 
 			const testNotes = {
 				'01': [
-					{
-						measure: 1,
-						laneID: '01',
-						notes: [
-							{ noteID: '01', position: 0 },
-							{ noteID: '00', position: 0.25 },
-							{ noteID: '00', position: 0.5 },
-							{ noteID: '00', position: 0.75 },
-							{ noteID: '01', position: 1 }
-						] // Two notes per measure
-					}
+					new LaneMeasureNote(1, '01', [
+						{ noteID: '01', position: 0 },
+						{ noteID: '00', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '00', position: 0.75 },
+						{ noteID: '01', position: 1 }
+					]) // Two notes per measure
 				],
 				'02': [
-					{
-						measure: 2,
-						laneID: '02',
-						notes: [
-							{ noteID: '00', position: 0 },
-							{ noteID: '02', position: 0.25 },
-							{ noteID: '00', position: 0.5 },
-							{ noteID: '02', position: 0.75 }
-						] // Different measure, different timing
-					}
+					new LaneMeasureNote(2, '02', [
+						{ noteID: '00', position: 0 },
+						{ noteID: '02', position: 0.25 },
+						{ noteID: '00', position: 0.5 },
+						{ noteID: '02', position: 0.75 }
+					]) // Different measure, different timing
 				]
 			};
 			const laneChannelMap = { '01': 9, '02': 9 };

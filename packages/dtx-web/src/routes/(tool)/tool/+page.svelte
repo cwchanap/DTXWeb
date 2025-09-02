@@ -16,7 +16,7 @@
 			title: 'DTX to MIDI Converter',
 			description:
 				'Convert DTX drum chart files to MIDI format for use with digital audio workstations',
-			href: '/tool/converter'
+			href: '/tool/dtx-to-midi'
 		},
 		{
 			title: 'MIDI to DTX Converter',

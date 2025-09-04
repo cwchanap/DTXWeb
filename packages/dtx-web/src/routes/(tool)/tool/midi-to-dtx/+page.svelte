@@ -200,6 +200,9 @@
 		};
 		return laneNames[laneId] || `Lane ${laneId}`;
 	};
+
+	// Available DTX lanes for mapping
+	const availableLanes = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '0A', '0B', '0C'];
 </script>
 
 <div class="min-h-screen bg-gray-100">
@@ -419,10 +422,15 @@
 										{getDrumName(Number(midiNote))} ({midiNote}):
 									</span>
 									<select
-										bind:value={midiToDtxMap[Number(midiNote)]}
+										value={midiToDtxMap[Number(midiNote)]}
+										onchange={(e) => {
+											midiToDtxMap[Number(midiNote)] = (
+												e.target as HTMLSelectElement
+											).value;
+										}}
 										class="rounded border border-gray-300 px-2 py-1 text-sm"
 									>
-										{#each Object.keys(midiToDtxMap).map((k) => midiToDtxMap[Number(k)]) as lane}
+										{#each availableLanes as lane}
 											<option value={lane}
 												>{lane} - {getLaneName(lane)}</option
 											>

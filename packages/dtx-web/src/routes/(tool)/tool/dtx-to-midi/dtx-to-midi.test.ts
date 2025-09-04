@@ -154,17 +154,25 @@ describe('DTX to MIDI Converter Logic', () => {
 	it('should handle blob creation for download', () => {
 		const midiData = new Uint8Array([0x4d, 0x54, 0x68, 0x64]); // "MThd"
 
-		// Mock Blob constructor
-		global.Blob = vi.fn().mockImplementation((data, options) => {
-			return {
-				data: data[0], // Access the buffer
-				type: options?.type
-			};
-		});
+		// Capture original Blob before mocking
+		const originalBlob = global.Blob;
 
-		const blob = new Blob([midiData.buffer], { type: 'audio/midi' });
+		try {
+			// Mock Blob constructor
+			global.Blob = vi.fn().mockImplementation((data, options) => {
+				return {
+					data: data[0], // Access the buffer
+					type: options?.type
+				};
+			});
 
-		expect(Blob).toHaveBeenCalledWith([midiData.buffer], { type: 'audio/midi' });
+			const blob = new Blob([midiData.buffer], { type: 'audio/midi' });
+
+			expect(Blob).toHaveBeenCalledWith([midiData.buffer], { type: 'audio/midi' });
+		} finally {
+			// Always restore original Blob
+			global.Blob = originalBlob;
+		}
 	});
 
 	it('should handle error states correctly', () => {

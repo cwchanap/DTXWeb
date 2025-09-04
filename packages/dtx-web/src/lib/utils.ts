@@ -1,11 +1,19 @@
 import type { Tables } from '@dtx/common';
 
-export function formatLevelDisplay(dtx_files: Pick<Tables<'dtx_files'>, 'level'>[]) {
+export function formatLevelDisplay(dtx_files: Array<{ level?: string | number }>) {
 	return (
 		dtx_files
 			?.slice()
-			.sort((a, b) => (a.level || 0) - (b.level || 0))
-			.map((file) => (file.level > 100 ? file.level / 100 : file.level / 10).toFixed(2))
+			.sort((a, b) => {
+				const levelA = typeof a.level === 'string' ? parseFloat(a.level) : a.level || 0;
+				const levelB = typeof b.level === 'string' ? parseFloat(b.level) : b.level || 0;
+				return levelA - levelB;
+			})
+			.map((file) => {
+				const level =
+					typeof file.level === 'string' ? parseFloat(file.level) : file.level || 0;
+				return (level > 100 ? level / 100 : level / 10).toFixed(2);
+			})
 			.join(' / ') || 'N/A'
 	);
 }

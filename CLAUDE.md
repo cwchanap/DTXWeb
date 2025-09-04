@@ -152,11 +152,8 @@ localStorage.removeItem('song_templates');
 Check `__mocks__/` folder before creating new mocks:
 
 - `__mocks__/phaser.ts` - Complete Phaser.js mock with Scene, GameObjects, Sound, etc.
-- `__mocks__/@dtx/common.ts` - Common package mock
-- `__mocks__/@dtx/common/components.ts` - Common components mock
-- `__mocks__/svelte/store.ts` - Svelte store mocks
-- `__mocks__/@skeletonlabs/skeleton-svelte.ts` - Skeleton UI components mock
-- `__mocks__/@lucide/svelte/icons.ts` - Lucide icons mock
+- `__mocks__/EventBus.ts` - Event bus system mock
+- `__mocks__/audioDecoder.ts` - Audio decoder functionality mock
 - `__mocks__/svelte-i18n.ts` - Internationalization mock
 
 ### Testing Commands

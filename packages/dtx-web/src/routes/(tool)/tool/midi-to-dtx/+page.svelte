@@ -494,8 +494,10 @@
 								<p class="text-sm text-green-600">{convertedFileName}</p>
 								{#if convertedNotes}
 									<p class="text-xs text-green-600">
-										Converted {Object.values(convertedNotes).flat().length} note
-										events
+										Converted {Object.values(convertedNotes).reduce(
+											(total, measure) => total + measure.length,
+											0
+										)} note events
 									</p>
 								{/if}
 							</div>

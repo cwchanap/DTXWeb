@@ -35,30 +35,30 @@ export class DTXFile {
 		this.bpm = 140; // Match the test expectation
 	}
 
-	convertMidiNotesToDtx(midiData: any): Record<string, any[]> {
+	convertMidiNotesToDtx(
+		midiData: any,
+		midiToDtxMap?: Record<number, string>
+	): Record<string, LaneMeasureNote[]> {
 		// Mock implementation that matches test expectations
-		const result: Record<string, any[]> = {};
+		const result: Record<string, LaneMeasureNote[]> = {};
+
+		// Default MIDI to DTX mapping
+		const defaultMapping = {
+			36: '01', // Bass drum
+			38: '02', // Snare
+			42: '03' // Hi-hat
+		};
+		const mapping = midiToDtxMap || defaultMapping;
 
 		// Process tracks and notes
 		if (midiData.tracks && midiData.tracks[0]) {
 			midiData.tracks[0].forEach((event: any) => {
 				if (event.type === 'channel' && event.command === 0x9 && event.note) {
-					// Map MIDI notes to DTX lanes
-					let lane = '01'; // Default
-					switch (event.note) {
-						case 36:
-							lane = '01';
-							break; // Bass drum
-						case 38:
-							lane = '02';
-							break; // Snare
-						case 42:
-							lane = '03';
-							break; // Hi-hat
-					}
+					const lane = mapping[event.note];
+					if (!lane) return; // Skip unmapped notes
 
 					if (!result[lane]) {
-						result[lane] = [[]]; // First measure
+						result[lane] = [];
 					}
 
 					// Calculate position based on deltaTime/ticks
@@ -71,7 +71,9 @@ export class DTXFile {
 					// Convert to position (480 ticks per quarter = 240 positions per quarter)
 					const position = (cumulativeTime * 240) / 480;
 
-					result[lane][0].push({ position });
+					// Create a LaneMeasureNote for this event
+					const note = new LaneMeasureNote(0, lane, [{ noteID: '01', position }]);
+					result[lane].push(note);
 				}
 			});
 		}

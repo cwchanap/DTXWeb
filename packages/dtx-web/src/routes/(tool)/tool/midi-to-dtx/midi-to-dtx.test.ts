@@ -93,13 +93,13 @@ describe('MIDI to DTX Converter Logic', () => {
 		expect(convertedNotes['03']).toBeDefined(); // Hi-hat -> lane 03
 
 		// Check that the correct notes were mapped
-		const bassDrumNotes = convertedNotes['01'][0] as unknown as any[]; // First measure notes
-		const snareNotes = convertedNotes['02'][0] as unknown as any[];
-		const hihatNotes = convertedNotes['03'][0] as unknown as any[];
+		const bassDrumNote = convertedNotes['01'][0]; // First LaneMeasureNote object
+		const snareNote = convertedNotes['02'][0];
+		const hihatNote = convertedNotes['03'][0];
 
-		expect(bassDrumNotes[0].position).toBe(0); // At beat 1
-		expect(snareNotes[0].position).toBe(120); // At beat 1.5 (240 ticks / 480 * 240)
-		expect(hihatNotes[0].position).toBe(240); // At beat 2 (480 ticks / 480 * 240)
+		expect(bassDrumNote.notes[0].position).toBe(0); // At beat 1
+		expect(snareNote.notes[0].position).toBe(120); // At beat 1.5 (240 ticks / 480 * 240)
+		expect(hihatNote.notes[0].position).toBe(240); // At beat 2 (480 ticks / 480 * 240)
 	});
 
 	it('should provide correct drum names for MIDI notes', () => {

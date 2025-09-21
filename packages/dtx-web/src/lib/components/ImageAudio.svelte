@@ -69,17 +69,25 @@
 
 {#snippet playButton()}
 	<button
-		class="absolute top-1/2 left-1/2 inline-flex h-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded rounded-full bg-white p-2 px-4 shadow-lg transition-colors hover:shadow-xl focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none disabled:opacity-50"
+		class="group absolute top-1/2 left-1/2 inline-flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 via-cyan-600 to-amber-600 p-3 shadow-xl backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:shadow-2xl hover:shadow-purple-500/25 focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900 focus:outline-none disabled:pointer-events-none disabled:opacity-50"
 		onclick={handlePlayPause}
 		disabled={isLoading}
 	>
-		{#if isPlaying}
-			<CirclePause />
-		{:else if isLoading}
-			<Ellipsis />
-		{:else}
-			<Play />
-		{/if}
+		<div
+			class="relative z-10 text-white drop-shadow-sm transition-transform duration-200 group-hover:scale-110"
+		>
+			{#if isPlaying}
+				<CirclePause size={20} />
+			{:else if isLoading}
+				<Ellipsis size={20} class="animate-pulse" />
+			{:else}
+				<Play size={20} />
+			{/if}
+		</div>
+		<!-- Animated background overlay -->
+		<div
+			class="absolute inset-0 rounded-full bg-gradient-to-br from-purple-400/30 to-cyan-400/30 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+		></div>
 	</button>
 {/snippet}
 

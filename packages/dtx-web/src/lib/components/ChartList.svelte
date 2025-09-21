@@ -183,114 +183,187 @@
 	});
 </script>
 
-<input
-	type="text"
-	placeholder={$_('blog.search_song_or_artist')}
-	bind:value={searchFilter}
-	class="mb-4 w-full rounded-sm border p-2"
-	oninput={handleSearchInput}
-/>
-<div class="mb-4 flex items-center justify-between">
-	<div class="flex items-center">
-		{#if !isBlog}
-			<div class="mr-6 flex items-center">
-				<label for="is_published" class="mr-2 mb-2 block">Hide unpublished:</label>
-				<Switch
-					checked={hideUnpublished}
-					onCheckedChange={(e) => (hideUnpublished = e.checked)}
-				>
-					{#snippet inactiveChild()}<IconX size="14" />{/snippet}
-					{#snippet activeChild()}<IconCheck size="14" />{/snippet}
-				</Switch>
+<div class="mb-8">
+	<div class="music-card p-6">
+		<div class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+			<div class="max-w-md flex-1">
+				<input
+					type="text"
+					placeholder={$_('blog.search_song_or_artist')}
+					bind:value={searchFilter}
+					class="music-input w-full"
+					oninput={handleSearchInput}
+				/>
 			</div>
-		{/if}
-	</div>
-	<div class="flex items-center gap-4">
-		<!-- Page Size Selector -->
-		<div class="flex items-center">
-			<span class="mr-2 text-sm">Items per page:</span>
-			<select
-				bind:value={pageSize}
-				onchange={() => handlePageSizeChange({ pageSize })}
-				class="rounded border border-gray-300 px-2 py-1 text-sm"
-			>
-				<option value={6}>6</option>
-				<option value={12}>12</option>
-				<option value={24}>24</option>
-				<option value={48}>48</option>
-			</select>
-		</div>
+			<div class="flex flex-wrap items-center gap-4">
+				{#if !isBlog}
+					<div class="flex items-center gap-3">
+						<label for="is_published" class="text-sm font-medium text-slate-300"
+							>Hide unpublished:</label
+						>
+						<Switch
+							checked={hideUnpublished}
+							onCheckedChange={(e) => (hideUnpublished = e.checked)}
+							class="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none data-[checked]:bg-purple-600"
+						>
+							{#snippet inactiveChild()}<IconX
+									size="14"
+									class="text-slate-400"
+								/>{/snippet}
+							{#snippet activeChild()}<IconCheck
+									size="14"
+									class="text-purple-200"
+								/>{/snippet}
+						</Switch>
+					</div>
+				{/if}
 
-		<!-- View Mode Selector using regular buttons -->
-		<div class="flex items-center">
-			<span class="mr-2">View:</span>
-			<div class="flex rounded border">
-				<button
-					class="inline-flex h-9 w-9 items-center justify-center rounded transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none disabled:opacity-50 {viewMode ===
-					'card'
-						? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
-						: 'hover:bg-gray-100'}"
-					onclick={() => (viewMode = 'card')}
-					aria-pressed={viewMode === 'card'}
-					aria-label="Card view"
-				>
-					<IconGrid size="18" />
-				</button>
-				<button
-					class="inline-flex h-9 w-9 items-center justify-center rounded transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none disabled:opacity-50 {viewMode ===
-					'table'
-						? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500'
-						: 'hover:bg-gray-100'}"
-					onclick={() => (viewMode = 'table')}
-					aria-pressed={viewMode === 'table'}
-					aria-label="Table view"
-				>
-					<IconTable size="18" />
-				</button>
+				<!-- Page Size Selector -->
+				<div class="flex items-center gap-2">
+					<span class="text-sm font-medium text-slate-300">Items:</span>
+					<select
+						bind:value={pageSize}
+						onchange={() => handlePageSizeChange({ pageSize })}
+						class="music-input min-w-0 px-3 py-2 text-sm"
+					>
+						<option value={6}>6</option>
+						<option value={12}>12</option>
+						<option value={24}>24</option>
+						<option value={48}>48</option>
+					</select>
+				</div>
+
+				<!-- View Mode Selector -->
+				<div class="flex items-center gap-2">
+					<span class="text-sm font-medium text-slate-300">View:</span>
+					<div class="flex overflow-hidden rounded-lg border border-purple-500/30">
+						<button
+							class="inline-flex h-9 w-9 items-center justify-center transition-all duration-200 {viewMode ===
+							'card'
+								? 'bg-purple-600 text-white shadow-lg'
+								: 'bg-slate-800/50 text-slate-400 hover:bg-purple-600/20 hover:text-purple-300'}"
+							onclick={() => (viewMode = 'card')}
+							aria-pressed={viewMode === 'card'}
+							aria-label="Card view"
+						>
+							<IconGrid size="18" />
+						</button>
+						<button
+							class="inline-flex h-9 w-9 items-center justify-center transition-all duration-200 {viewMode ===
+							'table'
+								? 'bg-purple-600 text-white shadow-lg'
+								: 'bg-slate-800/50 text-slate-400 hover:bg-purple-600/20 hover:text-purple-300'}"
+							onclick={() => (viewMode = 'table')}
+							aria-pressed={viewMode === 'table'}
+							aria-label="Table view"
+						>
+							<IconTable size="18" />
+						</button>
+					</div>
+				</div>
 			</div>
 		</div>
 	</div>
 </div>
 {#if loading}
-	<div class="mt-4 text-center">
-		<p>Loading more items...</p>
+	<div class="flex items-center justify-center py-12">
+		<div class="music-card p-8 text-center">
+			<div class="music-bars mx-auto mb-4 scale-150">
+				<div class="music-bar" style="height: 12px;"></div>
+				<div class="music-bar" style="height: 20px;"></div>
+				<div class="music-bar" style="height: 16px;"></div>
+				<div class="music-bar" style="height: 24px;"></div>
+				<div class="music-bar" style="height: 8px;"></div>
+			</div>
+			<p class="font-medium text-slate-300">Loading charts...</p>
+		</div>
 	</div>
 {:else if viewMode === 'table'}
-	<div class="grid gap-3">
+	<div class="space-y-4">
 		{#each filteredItems as item (item.id)}
-			<div
-				class="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
-			>
+			<div class="music-card group p-6 transition-all duration-300 hover:scale-[1.02]">
 				<div class="flex items-start justify-between">
 					<div class="flex-1">
-						<h3 class="mb-1 font-semibold text-gray-800">
-							{item.display_id}. {item.title}
-						</h3>
-						<div class="flex items-center gap-4 text-sm text-gray-600">
-							<div class="flex items-center gap-1">
-								<span>Artist:</span>
-								{item.artist}
+						<div class="mb-3 flex items-center gap-3">
+							<div
+								class="h-2 w-2 rounded-full bg-gradient-to-r from-purple-400 to-cyan-400"
+							></div>
+							<h3
+								class="text-lg font-semibold text-slate-100 transition-colors group-hover:text-purple-300"
+							>
+								{item.display_id}. {item.title}
+							</h3>
+						</div>
+						<div class="flex flex-wrap items-center gap-6 text-sm">
+							<div class="flex items-center gap-2 text-slate-300">
+								<svg
+									class="h-4 w-4 text-purple-400"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+									></path>
+								</svg>
+								<span class="font-medium text-purple-300">{item.artist}</span>
 							</div>
-							<div class="flex items-center gap-1">
-								<span>BPM:</span>
-								{item.bpm}
+							<div class="flex items-center gap-2 text-slate-300">
+								<svg
+									class="h-4 w-4 text-cyan-400"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+									></path>
+								</svg>
+								<span class="font-medium text-cyan-300">{item.bpm} BPM</span>
 							</div>
 							{#if item.publish_date}
-								<div class="flex items-center gap-1">
-									<span>Published:</span>
-									{new Date(item.publish_date).toLocaleDateString()}
+								<div class="flex items-center gap-2 text-slate-300">
+									<svg
+										class="h-4 w-4 text-amber-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+										></path>
+									</svg>
+									<span class="font-medium text-amber-300">
+										{new Date(item.publish_date).toLocaleDateString()}
+									</span>
 								</div>
 							{/if}
 						</div>
 						{#if item.dtx_files && item.dtx_files.length > 0}
-							<div class="mt-2">
-								<span class="text-xs text-gray-500">
-									Levels: {formatLevelDisplay(item.dtx_files)}
-								</span>
+							<div class="mt-3 flex items-center gap-2">
+								<span class="text-xs font-medium text-slate-400">Levels:</span>
+								<div class="flex flex-wrap gap-1">
+									{#each formatLevelDisplay(item.dtx_files).split(', ') as level}
+										<span
+											class="rounded-full border border-purple-500/30 bg-gradient-to-r from-purple-600/30 to-cyan-600/30 px-2 py-1 text-xs text-purple-200"
+										>
+											{level}
+										</span>
+									{/each}
+								</div>
 							</div>
 						{/if}
 					</div>
-					<div class="flex items-center gap-2">
+					<div class="ml-4 flex items-center gap-2">
 						<ChartListTableItem {item} {isBlog} {togglePublishChart} {onFileDelete} />
 					</div>
 				</div>
@@ -300,46 +373,82 @@
 {:else if viewMode === 'card'}
 	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 		{#each filteredItems as item (item.id)}
-			<ChartListItem
-				{item}
-				{isBlog}
-				{togglePublishChart}
-				{onFileDelete}
-				{getPreviewUrl}
-				{getSoundPreviewUrl}
-			/>
+			<div class="transform transition-all duration-300 hover:scale-105">
+				<ChartListItem
+					{item}
+					{isBlog}
+					{togglePublishChart}
+					{onFileDelete}
+					{getPreviewUrl}
+					{getSoundPreviewUrl}
+				/>
+			</div>
 		{/each}
 	</div>
 {/if}
-<!-- Skeleton UI Pagination Component -->
+<!-- Enhanced Pagination Component -->
 {#if totalPages > 1}
-	<div class="mt-6 flex justify-center">
-		<Pagination
-			data={items}
-			count={totalCount}
-			page={currentPage}
-			{pageSize}
-			onPageChange={handlePageChange}
-			onPageSizeChange={handlePageSizeChange}
-			siblingCount={2}
-			showFirstLastButtons={true}
-			classes="flex items-center gap-2"
-			buttonBase="btn btn-sm"
-			buttonActive="preset-filled-primary-500"
-			buttonInactive="preset-tonal-surface"
-		>
-			{#snippet labelFirst()}
-				{$_('blog.pagination.first')}
-			{/snippet}
-			{#snippet labelPrevious()}
-				{$_('blog.pagination.previous')}
-			{/snippet}
-			{#snippet labelNext()}
-				{$_('blog.pagination.next')}
-			{/snippet}
-			{#snippet labelLast()}
-				{$_('blog.pagination.last')}
-			{/snippet}
-		</Pagination>
+	<div class="mt-8 flex justify-center">
+		<div class="music-card p-4">
+			<Pagination
+				data={items}
+				count={totalCount}
+				page={currentPage}
+				{pageSize}
+				onPageChange={handlePageChange}
+				onPageSizeChange={handlePageSizeChange}
+				siblingCount={2}
+				showFirstLastButtons={true}
+				classes="flex items-center gap-2"
+				buttonBase="px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 border border-purple-500/30"
+				buttonActive="bg-gradient-to-r from-purple-600 to-cyan-600 text-white shadow-lg hover:shadow-xl"
+				buttonInactive="bg-slate-800/50 text-slate-300 hover:bg-purple-600/20 hover:text-purple-300 hover:border-purple-400/50"
+			>
+				{#snippet labelFirst()}
+					<svg class="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+						></path>
+					</svg>
+					{$_('blog.pagination.first')}
+				{/snippet}
+				{#snippet labelPrevious()}
+					<svg class="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M15 19l-7-7 7-7"
+						></path>
+					</svg>
+					{$_('blog.pagination.previous')}
+				{/snippet}
+				{#snippet labelNext()}
+					{$_('blog.pagination.next')}
+					<svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M9 5l7 7-7 7"
+						></path>
+					</svg>
+				{/snippet}
+				{#snippet labelLast()}
+					{$_('blog.pagination.last')}
+					<svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M13 5l7 7-7 7M5 5l7 7-7 7"
+						></path>
+					</svg>
+				{/snippet}
+			</Pagination>
+		</div>
 	</div>
 {/if}

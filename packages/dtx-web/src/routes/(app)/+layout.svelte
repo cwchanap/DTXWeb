@@ -27,7 +27,10 @@
 	});
 </script>
 
-<div class="relative flex min-h-screen overflow-hidden">
+<div
+	class="relative flex min-h-screen overflow-hidden"
+	style="background: var(--music-bg-primary);"
+>
 	<!-- Background gradient overlay -->
 	<div
 		class="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900"

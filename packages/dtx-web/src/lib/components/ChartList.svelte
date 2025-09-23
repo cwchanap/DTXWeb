@@ -268,12 +268,14 @@
 {#if loading}
 	<div class="flex items-center justify-center py-12">
 		<div class="music-card p-8 text-center">
-			<div class="music-bars mx-auto mb-4 scale-150">
-				<div class="music-bar" style="height: 12px;"></div>
-				<div class="music-bar" style="height: 20px;"></div>
-				<div class="music-bar" style="height: 16px;"></div>
-				<div class="music-bar" style="height: 24px;"></div>
-				<div class="music-bar" style="height: 8px;"></div>
+			<div class="mx-auto mb-4 flex scale-150 items-center justify-center">
+				<div class="music-bars">
+					<div class="music-bar" style="height: 12px;"></div>
+					<div class="music-bar" style="height: 20px;"></div>
+					<div class="music-bar" style="height: 16px;"></div>
+					<div class="music-bar" style="height: 24px;"></div>
+					<div class="music-bar" style="height: 8px;"></div>
+				</div>
 			</div>
 			<p class="font-medium text-slate-300">Loading charts...</p>
 		</div>
@@ -397,15 +399,15 @@
 				{pageSize}
 				onPageChange={handlePageChange}
 				onPageSizeChange={handlePageSizeChange}
-				siblingCount={2}
+				siblingCount={1}
 				showFirstLastButtons={true}
-				classes="flex items-center gap-2"
-				buttonBase="px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 border border-purple-500/30"
+				classes="flex items-center gap-1 flex-nowrap"
+				buttonBase="px-2 py-1 text-xs font-medium rounded-lg transition-all duration-200 border border-purple-500/30 whitespace-nowrap"
 				buttonActive="bg-gradient-to-r from-purple-600 to-cyan-600 text-white shadow-lg hover:shadow-xl"
 				buttonInactive="bg-slate-800/50 text-slate-300 hover:bg-purple-600/20 hover:text-purple-300 hover:border-purple-400/50"
 			>
 				{#snippet labelFirst()}
-					<svg class="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
@@ -413,10 +415,9 @@
 							d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
 						></path>
 					</svg>
-					{$_('blog.pagination.first')}
 				{/snippet}
 				{#snippet labelPrevious()}
-					<svg class="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
@@ -424,11 +425,9 @@
 							d="M15 19l-7-7 7-7"
 						></path>
 					</svg>
-					{$_('blog.pagination.previous')}
 				{/snippet}
 				{#snippet labelNext()}
-					{$_('blog.pagination.next')}
-					<svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
@@ -438,8 +437,7 @@
 					</svg>
 				{/snippet}
 				{#snippet labelLast()}
-					{$_('blog.pagination.last')}
-					<svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"

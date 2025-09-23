@@ -27,7 +27,7 @@
 	});
 </script>
 
-<div class="relative min-h-screen overflow-hidden">
+<div class="relative min-h-screen overflow-hidden" style="background: var(--music-bg-primary);">
 	<!-- Animated background elements -->
 	<div class="absolute inset-0 opacity-20">
 		<div

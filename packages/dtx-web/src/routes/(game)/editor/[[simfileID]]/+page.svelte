@@ -634,7 +634,25 @@
 	}
 </script>
 
-<div class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]">
+<div
+	class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]"
+	style="background: var(--music-bg-primary);"
+>
+	<!-- Animated background elements -->
+	<div class="pointer-events-none absolute inset-0 opacity-20">
+		<div
+			class="absolute top-20 left-10 h-32 w-32 animate-pulse rounded-full bg-gradient-to-br from-purple-500 to-pink-500 blur-xl"
+		></div>
+		<div
+			class="absolute top-40 right-20 h-24 w-24 animate-pulse rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 blur-lg"
+			style="animation-delay: 1s;"
+		></div>
+		<div
+			class="absolute bottom-20 left-1/3 h-40 w-40 animate-pulse rounded-full bg-gradient-to-br from-amber-500 to-orange-500 blur-2xl"
+			style="animation-delay: 2s;"
+		></div>
+	</div>
+
 	<EditorNavigation
 		{simfileID}
 		{isPreviewing}

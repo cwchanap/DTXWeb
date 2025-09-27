@@ -29,15 +29,15 @@
 <div class="w-full pt-4 2xl:w-[25%]">
 	<div class="tab-container">
 		<!-- Collapsible header -->
-		<div class="border-b border-gray-200 bg-gray-50">
+		<div class="border-b border-purple-500/30 bg-slate-800/80 backdrop-blur-sm">
 			<button
-				class="focus:ring-primary-500 flex w-full items-center justify-between px-4 py-3 text-left font-medium text-gray-700 hover:bg-gray-100 focus:ring-2 focus:outline-none"
+				class="flex w-full items-center justify-between px-4 py-3 text-left font-medium text-slate-200 transition-colors hover:bg-slate-700/50 focus:ring-2 focus:ring-purple-500/50 focus:outline-none"
 				onclick={onToggleCollapsed}
 				aria-expanded={!isTabsCollapsed}
 			>
 				<span>Editor Tabs</span>
 				<ChevronDown
-					class="h-5 w-5 transform transition-transform duration-200 {isTabsCollapsed
+					class="h-5 w-5 transform text-purple-300 transition-transform duration-200 {isTabsCollapsed
 						? 'rotate-0'
 						: 'rotate-180'}"
 				/>
@@ -46,13 +46,15 @@
 
 		<!-- Collapsible content -->
 		{#if !isTabsCollapsed}
-			<div class="h-[600px] overflow-y-auto border border-gray-200 bg-white">
+			<div
+				class="h-[600px] overflow-y-auto border border-purple-500/30 bg-slate-900/50 backdrop-blur-sm"
+			>
 				<!-- Tab controls -->
-				<div class="tab-list flex border-b border-gray-200">
+				<div class="tab-list flex border-b border-purple-500/30">
 					<button
-						class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 0
-							? 'bg-primary-500 text-white'
-							: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
+						class="w-[15%] px-4 py-2 transition-colors 2xl:w-1/4 {currentTab === 0
+							? 'border-b-2 border-cyan-400 bg-purple-600 text-white'
+							: 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-slate-200'}"
 						onclick={() => {
 							currentTab = 0;
 							onTabChange(0);
@@ -62,9 +64,9 @@
 					</button>
 					{#if !isPreviewing}
 						<button
-							class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 1
-								? 'bg-primary-500 text-white'
-								: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
+							class="w-[15%] px-4 py-2 transition-colors 2xl:w-1/4 {currentTab === 1
+								? 'border-b-2 border-cyan-400 bg-purple-600 text-white'
+								: 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-slate-200'}"
 							onclick={() => {
 								currentTab = 1;
 								onTabChange(1);
@@ -74,9 +76,9 @@
 						</button>
 					{/if}
 					<button
-						class="w-[15%] px-4 py-2 2xl:w-1/4 {currentTab === 2
-							? 'bg-primary-500 text-white'
-							: 'bg-gray-50 text-gray-700 hover:bg-gray-200 hover:text-gray-800'}"
+						class="w-[15%] px-4 py-2 transition-colors 2xl:w-1/4 {currentTab === 2
+							? 'border-b-2 border-cyan-400 bg-purple-600 text-white'
+							: 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-slate-200'}"
 						onclick={() => {
 							currentTab = 2;
 							onTabChange(2);
@@ -87,11 +89,11 @@
 				</div>
 
 				<!-- Tab panels -->
-				<div class="tab-content p-4">
+				<div class="tab-content bg-slate-900/30 p-4">
 					{#if currentTab === 0}
 						<MainTab />
 					{:else if currentTab === 1}
-						<SoundTab {simfileID} theme="light" {bucketUrl} />
+						<SoundTab {simfileID} theme="dark" {bucketUrl} />
 					{:else if currentTab === 2}
 						<PreviewTab {isEditorReady} />
 					{/if}

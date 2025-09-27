@@ -205,35 +205,53 @@
 	const availableLanes = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '0A', '0B', '0C'];
 </script>
 
-<div class="min-h-screen bg-gray-100">
-	<header class="bg-indigo-600">
+<div class="min-h-screen" style="background: var(--music-bg-primary);">
+	<!-- Animated Background Elements -->
+	<div class="music-bg-orbs">
+		<div class="music-orb-1"></div>
+		<div class="music-orb-2"></div>
+		<div class="music-orb-3"></div>
+	</div>
+	<header class="music-nav relative z-10">
 		<div class="container mx-auto flex items-center justify-between px-4 py-6">
 			<div class="flex items-center gap-4">
 				<button
-					class="text-white transition-colors hover:text-gray-200"
+					class="text-slate-200 transition-all duration-300 hover:scale-105 hover:text-purple-300"
 					onclick={handleBack}
 				>
 					← Back to Tools
 				</button>
-				<h1 class="text-3xl font-bold text-white">MIDI to DTX Converter</h1>
+				<div class="flex items-center gap-2">
+					<h1
+						class="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-3xl font-bold text-transparent"
+					>
+						MIDI to DTX Converter
+					</h1>
+					<div class="music-bars ml-2 flex items-end gap-1">
+						<div class="music-bar h-2 w-1 rounded-full bg-purple-400"></div>
+						<div class="music-bar h-3 w-1 rounded-full bg-purple-400"></div>
+						<div class="music-bar h-4 w-1 rounded-full bg-purple-400"></div>
+						<div class="music-bar h-2 w-1 rounded-full bg-purple-400"></div>
+					</div>
+				</div>
 			</div>
 			<Popover
 				open={languagePopoverOpen}
 				onOpenChange={(details) => (languagePopoverOpen = details.open)}
 				positioning={{ placement: 'top' }}
-				triggerBase="rounded-sm bg-indigo-500 px-4 py-2 text-white hover:bg-indigo-700"
-				contentBase="card bg-surface-200-800 space-y-4 max-w-[320px]"
+				triggerBase="music-dropdown-trigger px-4 py-2 text-slate-200 border border-purple-500/30 backdrop-blur-sm bg-purple-900/20 hover:bg-purple-800/30 transition-all duration-300"
+				contentBase="music-dropdown-content card space-y-4 max-w-[320px] border border-purple-500/30 backdrop-blur-lg bg-slate-900/95"
 				arrow
-				arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+				arrowBackground="!bg-slate-900"
 			>
 				{#snippet trigger()}
 					Change Language
 				{/snippet}
 				{#snippet content()}
-					<div class="mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
+					<div class="mt-1 rounded-sm border border-purple-500/30 bg-slate-900 shadow-lg">
 						{#each $locales as l}
 							<button
-								class="w-full p-2 text-left hover:bg-gray-100"
+								class="w-full p-2 text-left text-slate-300 transition-all duration-200 hover:bg-purple-800/30 hover:text-purple-300"
 								onclick={() => locale.set(l)}
 							>
 								{localeMap[l]}
@@ -245,20 +263,24 @@
 		</div>
 	</header>
 
-	<main class="container mx-auto max-w-4xl px-4 py-8">
-		<div class="rounded-lg border border-gray-300 bg-white p-8 shadow-sm">
-			<h2 class="mb-6 text-2xl font-bold text-gray-900">Convert MIDI to DTX</h2>
+	<main class="relative z-10 container mx-auto max-w-4xl px-4 py-8">
+		<div
+			class="music-card rounded-lg border border-purple-500/30 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-lg"
+		>
+			<h2 class="mb-6 text-2xl font-bold text-slate-200">Convert MIDI to DTX</h2>
 
 			<div class="space-y-6">
 				<!-- Upload Section -->
-				<div class="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
+				<div
+					class="rounded-lg border-2 border-dashed border-purple-500/40 bg-slate-800/50 p-8 text-center backdrop-blur-sm"
+				>
 					{#if !uploadedFile}
 						<div class="space-y-4">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/30 bg-purple-900/50"
 							>
 								<svg
-									class="h-6 w-6 text-indigo-600"
+									class="h-6 w-6 text-purple-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -272,12 +294,12 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">Upload MIDI File</h3>
-								<p class="text-gray-600">Select a .mid or .midi file to convert</p>
+								<h3 class="text-lg font-medium text-slate-200">Upload MIDI File</h3>
+								<p class="text-slate-400">Select a .mid or .midi file to convert</p>
 							</div>
 							<button
 								type="button"
-								class="rounded-md bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-700"
+								class="music-btn-primary px-6 py-3 font-medium transition-all duration-300"
 								onclick={handleUploadClick}
 							>
 								Choose File
@@ -286,10 +308,10 @@
 					{:else}
 						<div class="space-y-4">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-green-500/30 bg-green-900/50"
 							>
 								<svg
-									class="h-6 w-6 text-green-600"
+									class="h-6 w-6 text-green-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -303,23 +325,23 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">File Ready</h3>
-								<p class="text-gray-600">{uploadedFile.name}</p>
-								<p class="text-sm text-gray-500">
+								<h3 class="text-lg font-medium text-slate-200">File Ready</h3>
+								<p class="text-slate-300">{uploadedFile.name}</p>
+								<p class="text-sm text-slate-400">
 									{(uploadedFile.size / 1024).toFixed(1)} KB
 								</p>
 							</div>
 							<div class="flex justify-center gap-3">
 								<button
 									type="button"
-									class="rounded-md bg-red-600 px-4 py-2 font-medium text-white transition-colors hover:bg-red-700"
+									class="music-btn-secondary border-red-500/50 px-4 py-2 font-medium text-red-300 transition-all duration-300 hover:bg-red-900/30 hover:text-red-200"
 									onclick={handleReset}
 								>
 									Remove
 								</button>
 								<button
 									type="button"
-									class="rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700"
+									class="music-btn-secondary px-4 py-2 font-medium transition-all duration-300"
 									onclick={handleUploadClick}
 								>
 									Choose Different File
@@ -339,34 +361,36 @@
 
 				<!-- DTX Metadata Section -->
 				{#if uploadedFile}
-					<div class="rounded-lg border border-gray-300 bg-gray-50 p-6">
-						<h3 class="mb-4 text-lg font-semibold text-gray-900">DTX File Settings</h3>
+					<div
+						class="music-card rounded-lg border border-purple-500/30 bg-slate-800/50 p-6 backdrop-blur-sm"
+					>
+						<h3 class="mb-4 text-lg font-semibold text-slate-200">DTX File Settings</h3>
 
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div>
-								<label for="title" class="block text-sm font-medium text-gray-700"
+								<label for="title" class="block text-sm font-medium text-slate-300"
 									>Title</label
 								>
 								<input
 									id="title"
 									type="text"
 									bind:value={title}
-									class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
 							</div>
 							<div>
-								<label for="artist" class="block text-sm font-medium text-gray-700"
+								<label for="artist" class="block text-sm font-medium text-slate-300"
 									>Artist</label
 								>
 								<input
 									id="artist"
 									type="text"
 									bind:value={artist}
-									class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
 							</div>
 							<div>
-								<label for="level" class="block text-sm font-medium text-gray-700"
+								<label for="level" class="block text-sm font-medium text-slate-300"
 									>Difficulty Level</label
 								>
 								<input
@@ -375,11 +399,11 @@
 									min="1"
 									max="10"
 									bind:value={level}
-									class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
 							</div>
 							<div>
-								<label for="bpm" class="block text-sm font-medium text-gray-700"
+								<label for="bpm" class="block text-sm font-medium text-slate-300"
 									>BPM</label
 								>
 								<input
@@ -388,37 +412,39 @@
 									min="60"
 									max="300"
 									bind:value={bpm}
-									class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
 							</div>
 						</div>
 
 						<div class="mt-4">
-							<label for="comment" class="block text-sm font-medium text-gray-700"
+							<label for="comment" class="block text-sm font-medium text-slate-300"
 								>Comment</label
 							>
 							<input
 								id="comment"
 								type="text"
 								bind:value={comment}
-								class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+								class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 							/>
 						</div>
 					</div>
 
 					<!-- MIDI Note Mapping Section -->
-					<div class="rounded-lg border border-gray-300 bg-gray-50 p-6">
-						<h3 class="mb-4 text-lg font-semibold text-gray-900">
+					<div
+						class="music-card rounded-lg border border-purple-500/30 bg-slate-800/50 p-6 backdrop-blur-sm"
+					>
+						<h3 class="mb-4 text-lg font-semibold text-slate-200">
 							MIDI Note to DTX Lane Mapping
 						</h3>
-						<p class="mb-4 text-sm text-gray-600">
+						<p class="mb-4 text-sm text-slate-400">
 							Configure which DTX lane each MIDI drum note should map to:
 						</p>
 
 						<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 							{#each Object.entries(midiToDtxMap) as [midiNote, dtxLane]}
 								<div class="flex items-center space-x-3">
-									<span class="min-w-[120px] text-sm font-medium text-gray-700">
+									<span class="min-w-[120px] text-sm font-medium text-slate-300">
 										{getDrumName(Number(midiNote))} ({midiNote}):
 									</span>
 									<select
@@ -428,10 +454,10 @@
 												e.target as HTMLSelectElement
 											).value;
 										}}
-										class="rounded border border-gray-300 px-2 py-1 text-sm"
+										class="rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 									>
 										{#each availableLanes as lane}
-											<option value={lane}
+											<option value={lane} class="bg-slate-900 text-slate-200"
 												>{lane} - {getLaneName(lane)}</option
 											>
 										{/each}
@@ -447,7 +473,7 @@
 					<div class="flex justify-center">
 						<button
 							type="button"
-							class="flex items-center gap-2 rounded-md bg-indigo-600 px-8 py-3 font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+							class="music-btn-primary flex items-center gap-2 px-8 py-3 font-medium transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
 							onclick={handleConvert}
 							disabled={isConverting || isConverted}
 						>
@@ -467,13 +493,15 @@
 
 				<!-- Download Section -->
 				{#if isConverted}
-					<div class="rounded-lg border-2 border-green-300 bg-green-50 p-6">
+					<div
+						class="music-card rounded-lg border-2 border-green-500/50 bg-green-900/20 p-6 backdrop-blur-sm"
+					>
 						<div class="space-y-4 text-center">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-green-500/30 bg-green-900/50"
 							>
 								<svg
-									class="h-6 w-6 text-green-600"
+									class="h-6 w-6 text-green-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -487,13 +515,13 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-green-900">
+								<h3 class="text-lg font-medium text-green-300">
 									Conversion Complete!
 								</h3>
-								<p class="text-green-700">Your DTX file is ready for download</p>
-								<p class="text-sm text-green-600">{convertedFileName}</p>
+								<p class="text-green-200">Your DTX file is ready for download</p>
+								<p class="text-sm text-green-300">{convertedFileName}</p>
 								{#if convertedNotes}
-									<p class="text-xs text-green-600">
+									<p class="text-xs text-green-400">
 										Converted {Object.values(convertedNotes).reduce(
 											(total, measure) => total + measure.length,
 											0
@@ -504,14 +532,14 @@
 							<div class="flex justify-center gap-3">
 								<button
 									type="button"
-									class="rounded-md bg-green-600 px-6 py-3 font-medium text-white transition-colors hover:bg-green-700"
+									class="music-btn-primary border-green-500/50 bg-green-600 px-6 py-3 font-medium transition-all duration-300 hover:bg-green-500"
 									onclick={handleDownload}
 								>
 									Download DTX File
 								</button>
 								<button
 									type="button"
-									class="rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700"
+									class="music-btn-secondary px-4 py-2 font-medium transition-all duration-300"
 									onclick={handleReset}
 								>
 									Convert Another File
@@ -524,21 +552,28 @@
 		</div>
 
 		<!-- Info Section -->
-		<div class="mt-8 rounded-lg border border-gray-300 bg-white p-6 shadow-sm">
-			<h3 class="mb-3 text-lg font-semibold text-gray-900">About MIDI to DTX Conversion</h3>
-			<div class="space-y-2 text-gray-700">
+		<div
+			class="music-card mt-8 rounded-lg border border-purple-500/30 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-lg"
+		>
+			<h3 class="mb-3 text-lg font-semibold text-slate-200">About MIDI to DTX Conversion</h3>
+			<div class="space-y-2 text-slate-300">
 				<p>
 					This tool converts MIDI files to DTX drum chart format for use in rhythm games.
 				</p>
-				<p><strong>Supported input:</strong> .mid and .midi files</p>
-				<p><strong>Output:</strong> .dtx files compatible with DTX-based rhythm games</p>
 				<p>
-					<strong>Features:</strong> Customizable metadata, configurable MIDI note-to-lane
-					mapping, and proper timing conversion from MIDI ticks to DTX measures.
+					<strong class="text-purple-300">Supported input:</strong> .mid and .midi files
 				</p>
 				<p>
-					<strong>Note:</strong> Only drum channel MIDI notes (typically channel 9) are processed.
-					The converter focuses on standard General MIDI drum mappings.
+					<strong class="text-purple-300">Output:</strong> .dtx files compatible with DTX-based
+					rhythm games
+				</p>
+				<p>
+					<strong class="text-purple-300">Features:</strong> Customizable metadata, configurable
+					MIDI note-to-lane mapping, and proper timing conversion from MIDI ticks to DTX measures.
+				</p>
+				<p>
+					<strong class="text-purple-300">Note:</strong> Only drum channel MIDI notes (typically
+					channel 9) are processed. The converter focuses on standard General MIDI drum mappings.
 				</p>
 			</div>
 		</div>

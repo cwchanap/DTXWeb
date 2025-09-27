@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { locale, locales } from 'svelte-i18n';
-	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import toastStore from '$lib/toaster';
 
 	const localeMap: Record<string, string> = {
@@ -9,7 +8,14 @@
 		jp: '日本語'
 	};
 
-	let languagePopoverOpen = $state(false);
+	let languageDropdownOpen = $state(false);
+
+	function handleClickOutside(event: Event) {
+		const target = event.target as Element;
+		if (!target.closest('.language-dropdown')) {
+			languageDropdownOpen = false;
+		}
+	}
 	let uploadedFile = $state<File | null>(null);
 	let isLoading = $state(false);
 	let midiData = $state<MidiFileData | null>(null);
@@ -407,60 +413,95 @@
 	};
 </script>
 
-<div class="min-h-screen bg-gray-100">
-	<header class="bg-indigo-600">
-		<div class="container mx-auto flex items-center justify-between px-4 py-6">
-			<div class="flex items-center gap-4">
-				<button
-					class="text-white transition-colors hover:text-gray-200"
-					onclick={handleBack}
-				>
+<div
+	class="relative min-h-screen overflow-hidden"
+	onclick={handleClickOutside}
+	style="background: var(--music-bg-primary);"
+>
+	<!-- Animated background elements -->
+	<div class="absolute inset-0 opacity-20">
+		<div
+			class="absolute top-20 left-10 h-32 w-32 animate-pulse rounded-full bg-gradient-to-br from-purple-500 to-pink-500 blur-xl"
+		></div>
+		<div
+			class="absolute top-40 right-20 h-24 w-24 animate-pulse rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 blur-lg"
+			style="animation-delay: 1s;"
+		></div>
+		<div
+			class="absolute bottom-20 left-1/3 h-40 w-40 animate-pulse rounded-full bg-gradient-to-br from-amber-500 to-orange-500 blur-2xl"
+			style="animation-delay: 2s;"
+		></div>
+	</div>
+
+	<header class="music-nav pointer-events-none relative z-10">
+		<div
+			class="pointer-events-none container mx-auto flex items-center justify-between px-6 py-8"
+		>
+			<div class="pointer-events-auto relative z-0 flex items-center space-x-4">
+				<button class="music-btn-secondary mr-4 px-4 py-2 text-sm" onclick={handleBack}>
 					← Back to Tools
 				</button>
-				<h1 class="text-3xl font-bold text-white">MIDI Preview</h1>
+				<h1
+					class="bg-gradient-to-r from-purple-400 via-cyan-400 to-amber-400 bg-clip-text text-4xl font-bold text-transparent"
+				>
+					MIDI Preview
+				</h1>
+				<div class="music-bars">
+					<div class="music-bar" style="height: 8px;"></div>
+					<div class="music-bar" style="height: 16px;"></div>
+					<div class="music-bar" style="height: 12px;"></div>
+					<div class="music-bar" style="height: 20px;"></div>
+					<div class="music-bar" style="height: 6px;"></div>
+				</div>
 			</div>
-			<Popover
-				open={languagePopoverOpen}
-				onOpenChange={(details) => (languagePopoverOpen = details.open)}
-				positioning={{ placement: 'top' }}
-				triggerBase="rounded-sm bg-indigo-500 px-4 py-2 text-white hover:bg-indigo-700"
-				contentBase="card bg-surface-200-800 space-y-4 max-w-[320px]"
-				arrow
-				arrowBackground="!bg-surface-200 dark:!bg-surface-800"
-			>
-				{#snippet trigger()}
+			<div class="language-dropdown pointer-events-auto relative">
+				<button
+					class="music-btn-secondary px-4 py-2 text-sm"
+					onclick={() => (languageDropdownOpen = !languageDropdownOpen)}
+				>
 					Change Language
-				{/snippet}
-				{#snippet content()}
-					<div class="mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
+				</button>
+				{#if languageDropdownOpen}
+					<div
+						class="absolute top-full right-0 z-[999999] mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl"
+					>
 						{#each $locales as l}
 							<button
-								class="w-full p-2 text-left hover:bg-gray-100"
-								onclick={() => locale.set(l)}
+								class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
+								onclick={() => {
+									locale.set(l);
+									languageDropdownOpen = false;
+								}}
 							>
 								{localeMap[l]}
 							</button>
 						{/each}
 					</div>
-				{/snippet}
-			</Popover>
+				{/if}
+			</div>
 		</div>
 	</header>
 
-	<main class="container mx-auto max-w-6xl px-4 py-8">
+	<main class="relative z-0 container mx-auto max-w-6xl px-6 py-16">
 		<div class="space-y-8">
 			<!-- Upload Section -->
-			<div class="rounded-lg border border-gray-300 bg-white p-8 shadow-sm">
-				<h2 class="mb-6 text-2xl font-bold text-gray-900">Upload MIDI File</h2>
+			<div class="music-card p-8">
+				<h2
+					class="mb-6 bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-2xl font-bold text-transparent"
+				>
+					Upload MIDI File
+				</h2>
 
-				<div class="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
+				<div
+					class="rounded-lg border-2 border-dashed border-purple-500/30 bg-slate-800/50 p-8 text-center"
+				>
 					{#if !uploadedFile}
 						<div class="space-y-4">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/20"
 							>
 								<svg
-									class="h-6 w-6 text-indigo-600"
+									class="h-6 w-6 text-purple-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -474,12 +515,12 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">Upload MIDI File</h3>
-								<p class="text-gray-600">Select a .mid file to preview</p>
+								<h3 class="text-lg font-medium text-slate-200">Upload MIDI File</h3>
+								<p class="text-slate-400">Select a .mid file to preview</p>
 							</div>
 							<button
 								type="button"
-								class="rounded-md bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-700"
+								class="music-btn-primary px-6 py-3 font-medium"
 								onclick={handleUploadClick}
 							>
 								Choose File
@@ -488,10 +529,10 @@
 					{:else}
 						<div class="space-y-4">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20"
 							>
 								<svg
-									class="h-6 w-6 text-green-600"
+									class="h-6 w-6 text-green-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -505,9 +546,9 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">File Loaded</h3>
-								<p class="text-gray-600">{uploadedFile.name}</p>
-								<p class="text-sm text-gray-500">
+								<h3 class="text-lg font-medium text-slate-200">File Loaded</h3>
+								<p class="text-slate-300">{uploadedFile.name}</p>
+								<p class="text-sm text-slate-400">
 									{(uploadedFile.size / 1024).toFixed(1)} KB
 								</p>
 							</div>
@@ -521,7 +562,7 @@
 								</button>
 								<button
 									type="button"
-									class="rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700"
+									class="music-btn-secondary px-4 py-2 font-medium"
 									onclick={handleUploadClick}
 								>
 									Choose Different File
@@ -542,90 +583,108 @@
 				{#if isLoading}
 					<div class="mt-6 flex items-center justify-center">
 						<div
-							class="h-8 w-8 animate-spin rounded-full border-b-2 border-indigo-600"
+							class="h-8 w-8 animate-spin rounded-full border-b-2 border-purple-400"
 						></div>
-						<span class="ml-3 text-gray-600">Parsing MIDI file...</span>
+						<span class="ml-3 text-slate-300">Parsing MIDI file...</span>
 					</div>
 				{/if}
 			</div>
 
 			<!-- MIDI File Information -->
 			{#if midiData}
-				<div class="rounded-lg border border-gray-300 bg-white p-8 shadow-sm">
-					<h2 class="mb-6 text-2xl font-bold text-gray-900">File Information</h2>
+				<div class="music-card p-8">
+					<h2
+						class="mb-6 bg-gradient-to-r from-cyan-400 to-amber-400 bg-clip-text text-2xl font-bold text-transparent"
+					>
+						File Information
+					</h2>
 
 					<div class="grid grid-cols-2 gap-6 md:grid-cols-4">
 						<div class="text-center">
-							<div class="text-2xl font-bold text-indigo-600">{midiData.format}</div>
-							<div class="text-sm text-gray-600">Format</div>
+							<div
+								class="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-2xl font-bold text-transparent"
+							>
+								{midiData.format}
+							</div>
+							<div class="text-sm text-slate-400">Format</div>
 						</div>
 						<div class="text-center">
-							<div class="text-2xl font-bold text-indigo-600">
+							<div
+								class="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-2xl font-bold text-transparent"
+							>
 								{midiData.trackCount}
 							</div>
-							<div class="text-sm text-gray-600">Tracks</div>
+							<div class="text-sm text-slate-400">Tracks</div>
 						</div>
 						<div class="text-center">
-							<div class="text-2xl font-bold text-indigo-600">
+							<div
+								class="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-2xl font-bold text-transparent"
+							>
 								{midiData.totalNotes}
 							</div>
-							<div class="text-sm text-gray-600">Total Notes</div>
+							<div class="text-sm text-slate-400">Total Notes</div>
 						</div>
 						<div class="text-center">
-							<div class="text-2xl font-bold text-indigo-600">
+							<div
+								class="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-2xl font-bold text-transparent"
+							>
 								{formatTime(midiData.duration)}
 							</div>
-							<div class="text-sm text-gray-600">Duration</div>
+							<div class="text-sm text-slate-400">Duration</div>
 						</div>
 					</div>
 
 					<div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
 						<div>
-							<div class="text-sm font-medium text-gray-700">Tempo</div>
-							<div class="text-lg text-gray-900">{midiData.tempo} BPM</div>
+							<div class="text-sm font-medium text-slate-300">Tempo</div>
+							<div class="text-lg text-slate-200">{midiData.tempo} BPM</div>
 						</div>
 						<div>
-							<div class="text-sm font-medium text-gray-700">Ticks per Quarter</div>
-							<div class="text-lg text-gray-900">{midiData.ticksPerQuarter}</div>
+							<div class="text-sm font-medium text-slate-300">Ticks per Quarter</div>
+							<div class="text-lg text-slate-200">{midiData.ticksPerQuarter}</div>
 						</div>
 					</div>
 				</div>
 
 				<!-- Track Details -->
-				<div class="rounded-lg border border-gray-300 bg-white p-8 shadow-sm">
-					<h2 class="mb-6 text-2xl font-bold text-gray-900">Track Details</h2>
+				<div class="music-card p-8">
+					<h2
+						class="mb-6 bg-gradient-to-r from-amber-400 to-purple-400 bg-clip-text text-2xl font-bold text-transparent"
+					>
+						Track Details
+					</h2>
 
 					<div class="space-y-4">
 						{#each midiData.tracks as track, index}
-							<div class="rounded-lg border border-gray-200 p-4">
+							<div class="rounded-lg border border-purple-500/20 bg-slate-800/30 p-4">
 								<div class="mb-3 flex items-center justify-between">
-									<h3 class="text-lg font-semibold">
+									<h3 class="text-lg font-semibold text-slate-200">
 										Track {index + 1}
 										{#if track.name}
 											- {track.name}
 										{/if}
 									</h3>
-									<div class="text-sm text-gray-600">
+									<div class="text-sm text-slate-400">
 										{track.notes.length} notes
 									</div>
 								</div>
 
 								<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
 									<div>
-										<div class="text-sm font-medium text-gray-700">
+										<div class="text-sm font-medium text-slate-300">
 											Channels
 										</div>
-										<div class="text-sm text-gray-900">
+										<div class="text-sm text-slate-200">
 											{Array.from(track.channels)
 												.sort((a, b) => a - b)
 												.join(', ') || 'None'}
 										</div>
 									</div>
 									<div>
-										<div class="text-sm font-medium text-gray-700">
+										<div class="text-sm font-medium text-slate-300">
 											Instruments
 										</div>
-										<div class="text-sm text-gray-900">
+										<div class="text-sm text-slate-200">
 											{Array.from(track.instruments).length > 0
 												? Array.from(track.instruments)
 														.map((i) => getInstrumentName(i))
@@ -634,10 +693,10 @@
 										</div>
 									</div>
 									<div>
-										<div class="text-sm font-medium text-gray-700">
+										<div class="text-sm font-medium text-slate-300">
 											Note Range
 										</div>
-										<div class="text-sm text-gray-900">
+										<div class="text-sm text-slate-200">
 											{#if track.notes.length > 0}
 												{@const minNote = Math.min(
 													...track.notes.map((n) => n.note)
@@ -660,17 +719,24 @@
 		</div>
 
 		<!-- Info Section -->
-		<div class="mt-8 rounded-lg border border-gray-300 bg-white p-6 shadow-sm">
-			<h3 class="mb-3 text-lg font-semibold text-gray-900">About MIDI Preview</h3>
-			<div class="space-y-2 text-gray-700">
+		<div class="music-card mt-8 p-6">
+			<h3
+				class="mb-3 bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-lg font-semibold text-transparent"
+			>
+				About MIDI Preview
+			</h3>
+			<div class="space-y-2 text-slate-300">
 				<p>
 					This tool allows you to preview and analyze MIDI files, providing detailed
 					information about tracks, instruments, and note data.
 				</p>
-				<p><strong>Supported formats:</strong> Standard MIDI files (.mid, .midi)</p>
 				<p>
-					<strong>Features:</strong> Track analysis, instrument detection, note counting, and
-					timing information.
+					<strong class="text-slate-200">Supported formats:</strong> Standard MIDI files (.mid,
+					.midi)
+				</p>
+				<p>
+					<strong class="text-slate-200">Features:</strong> Track analysis, instrument detection,
+					note counting, and timing information.
 				</p>
 			</div>
 		</div>

@@ -143,23 +143,45 @@
 	};
 </script>
 
-<div class="min-h-screen bg-gray-100">
-	<header class="bg-indigo-600">
-		<div class="container mx-auto flex items-center justify-between px-4 py-6">
+<div class="relative min-h-screen overflow-hidden" style="background: var(--music-bg-primary);">
+	<!-- Animated background elements -->
+	<div class="absolute inset-0 opacity-20">
+		<div
+			class="absolute top-20 left-10 h-32 w-32 animate-pulse rounded-full bg-gradient-to-br from-purple-500 to-pink-500 blur-xl"
+		></div>
+		<div
+			class="absolute top-40 right-20 h-24 w-24 animate-pulse rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 blur-lg"
+			style="animation-delay: 1s;"
+		></div>
+		<div
+			class="absolute bottom-20 left-1/3 h-40 w-40 animate-pulse rounded-full bg-gradient-to-br from-amber-500 to-orange-500 blur-2xl"
+			style="animation-delay: 2s;"
+		></div>
+	</div>
+	<header class="music-nav relative z-10">
+		<div class="container mx-auto flex items-center justify-between px-6 py-8">
 			<div class="flex items-center gap-4">
-				<button
-					class="text-white transition-colors hover:text-gray-200"
-					onclick={handleBack}
-				>
+				<button class="music-btn-secondary px-3 py-2 text-sm" onclick={handleBack}>
 					← Back to Tools
 				</button>
-				<h1 class="text-3xl font-bold text-white">DTX to MIDI Converter</h1>
+				<h1
+					class="bg-gradient-to-r from-purple-400 via-cyan-400 to-amber-400 bg-clip-text text-4xl font-bold text-transparent"
+				>
+					DTX to MIDI Converter
+				</h1>
+				<div class="music-bars">
+					<div class="music-bar" style="height: 8px;"></div>
+					<div class="music-bar" style="height: 16px;"></div>
+					<div class="music-bar" style="height: 12px;"></div>
+					<div class="music-bar" style="height: 20px;"></div>
+					<div class="music-bar" style="height: 6px;"></div>
+				</div>
 			</div>
 			<Popover
 				open={languagePopoverOpen}
 				onOpenChange={(details) => (languagePopoverOpen = details.open)}
 				positioning={{ placement: 'top' }}
-				triggerBase="rounded-sm bg-indigo-500 px-4 py-2 text-white hover:bg-indigo-700"
+				triggerBase="music-btn-secondary px-4 py-2 text-sm"
 				contentBase="card bg-surface-200-800 space-y-4 max-w-[320px]"
 				arrow
 				arrowBackground="!bg-surface-200 dark:!bg-surface-800"
@@ -168,10 +190,10 @@
 					Change Language
 				{/snippet}
 				{#snippet content()}
-					<div class="mt-1 rounded-sm border border-gray-300 bg-white shadow-lg">
+					<div class="rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl">
 						{#each $locales as l}
 							<button
-								class="w-full p-2 text-left hover:bg-gray-100"
+								class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 								onclick={() => locale.set(l)}
 							>
 								{localeMap[l]}
@@ -183,20 +205,26 @@
 		</div>
 	</header>
 
-	<main class="container mx-auto max-w-4xl px-4 py-8">
-		<div class="rounded-lg border border-gray-300 bg-white p-8 shadow-sm">
-			<h2 class="mb-6 text-2xl font-bold text-gray-900">Convert DTX to MIDI</h2>
+	<main class="relative z-0 container mx-auto max-w-4xl px-6 py-16">
+		<div class="music-card p-8">
+			<h2
+				class="mb-6 bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-3xl font-bold text-transparent"
+			>
+				Convert DTX to MIDI
+			</h2>
 
 			<div class="space-y-6">
 				<!-- Upload Section -->
-				<div class="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
+				<div
+					class="rounded-lg border-2 border-dashed border-purple-500/30 bg-slate-800/50 p-8 text-center"
+				>
 					{#if !uploadedFile}
 						<div class="space-y-4">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/20"
 							>
 								<svg
-									class="h-6 w-6 text-indigo-600"
+									class="h-6 w-6 text-purple-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -210,12 +238,12 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">Upload DTX File</h3>
-								<p class="text-gray-600">Select a .dtx file to convert</p>
+								<h3 class="text-lg font-medium text-slate-200">Upload DTX File</h3>
+								<p class="text-slate-300">Select a .dtx file to convert</p>
 							</div>
 							<button
 								type="button"
-								class="rounded-md bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-700"
+								class="music-btn-primary"
 								onclick={handleUploadClick}
 							>
 								Choose File
@@ -224,10 +252,10 @@
 					{:else}
 						<div class="space-y-4">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/20"
 							>
 								<svg
-									class="h-6 w-6 text-green-600"
+									class="h-6 w-6 text-purple-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -241,23 +269,23 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-gray-900">File Ready</h3>
-								<p class="text-gray-600">{uploadedFile.name}</p>
-								<p class="text-sm text-gray-500">
+								<h3 class="text-lg font-medium text-slate-200">File Ready</h3>
+								<p class="text-slate-300">{uploadedFile.name}</p>
+								<p class="text-sm text-slate-400">
 									{(uploadedFile.size / 1024).toFixed(1)} KB
 								</p>
 							</div>
 							<div class="flex justify-center gap-3">
 								<button
 									type="button"
-									class="rounded-md bg-red-600 px-4 py-2 font-medium text-white transition-colors hover:bg-red-700"
+									class="music-btn-secondary"
 									onclick={handleReset}
 								>
 									Remove
 								</button>
 								<button
 									type="button"
-									class="rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700"
+									class="music-btn-secondary"
 									onclick={handleUploadClick}
 								>
 									Choose Different File
@@ -277,11 +305,11 @@
 
 				<!-- Lane Mapping Section -->
 				{#if uploadedFile}
-					<div class="rounded-lg border border-gray-300 bg-gray-50 p-6">
-						<h3 class="mb-4 text-lg font-semibold text-gray-900">
+					<div class="music-card p-6">
+						<h3 class="mb-4 text-lg font-semibold text-slate-200">
 							DTX Lane to MIDI Note Mapping
 						</h3>
-						<p class="mb-4 text-sm text-gray-600">
+						<p class="mb-4 text-sm text-slate-300">
 							Configure which MIDI note number each DTX lane should map to (General
 							MIDI drum notes, 0-127):
 						</p>
@@ -291,7 +319,7 @@
 								<div class="flex items-center space-x-2">
 									<label
 										for="lane-{lane}"
-										class="min-w-[3rem] text-sm font-medium text-gray-700"
+										class="min-w-[3rem] text-sm font-medium text-slate-300"
 										>{lane}:</label
 									>
 									<input
@@ -300,9 +328,9 @@
 										min="0"
 										max="127"
 										bind:value={laneNoteMap[lane]}
-										class="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
+										class="w-16 rounded border border-purple-500/30 bg-slate-800/50 px-2 py-1 text-sm text-slate-200 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 focus:outline-none"
 									/>
-									<span class="text-xs text-gray-500">
+									<span class="text-xs text-slate-400">
 										{#if lane === '01'}Bass Drum{:else if lane === '02'}Snare{:else if lane === '03'}Closed
 											Hi-Hat{:else if lane === '04'}Open Hi-Hat{:else if lane === '05'}Crash{:else if lane === '06'}Ride{:else if lane === '07'}Low
 											Tom{:else if lane === '08'}Mid Tom{:else if lane === '09'}High
@@ -320,7 +348,7 @@
 					<div class="flex justify-center">
 						<button
 							type="button"
-							class="flex items-center gap-2 rounded-md bg-indigo-600 px-8 py-3 font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+							class="music-btn-primary flex items-center gap-2 px-8 py-3 disabled:cursor-not-allowed disabled:opacity-50"
 							onclick={handleConvert}
 							disabled={isConverting || isConverted}
 						>
@@ -340,13 +368,13 @@
 
 				<!-- Download Section -->
 				{#if isConverted}
-					<div class="rounded-lg border-2 border-green-300 bg-green-50 p-6">
+					<div class="rounded-lg border-2 border-purple-500/30 bg-slate-800/50 p-6">
 						<div class="space-y-4 text-center">
 							<div
-								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100"
+								class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-purple-500/20 to-cyan-500/20"
 							>
 								<svg
-									class="h-6 w-6 text-green-600"
+									class="h-6 w-6 text-purple-400"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -360,23 +388,25 @@
 								</svg>
 							</div>
 							<div>
-								<h3 class="text-lg font-medium text-green-900">
+								<h3
+									class="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-lg font-medium text-transparent"
+								>
 									Conversion Complete!
 								</h3>
-								<p class="text-green-700">Your MIDI file is ready for download</p>
-								<p class="text-sm text-green-600">{convertedFileName}</p>
+								<p class="text-slate-200">Your MIDI file is ready for download</p>
+								<p class="text-sm text-slate-300">{convertedFileName}</p>
 							</div>
 							<div class="flex justify-center gap-3">
 								<button
 									type="button"
-									class="rounded-md bg-green-600 px-6 py-3 font-medium text-white transition-colors hover:bg-green-700"
+									class="music-btn-primary px-6 py-3"
 									onclick={handleDownload}
 								>
 									Download MIDI File
 								</button>
 								<button
 									type="button"
-									class="rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700"
+									class="music-btn-secondary px-4 py-2"
 									onclick={handleReset}
 								>
 									Convert Another File
@@ -389,18 +419,21 @@
 		</div>
 
 		<!-- Info Section -->
-		<div class="mt-8 rounded-lg border border-gray-300 bg-white p-6 shadow-sm">
-			<h3 class="mb-3 text-lg font-semibold text-gray-900">About DTX to MIDI Conversion</h3>
-			<div class="space-y-2 text-gray-700">
+		<div class="music-card mt-8 p-6">
+			<h3 class="mb-3 text-lg font-semibold text-slate-200">About DTX to MIDI Conversion</h3>
+			<div class="space-y-2 text-slate-300">
 				<p>
 					This tool converts DTX drum chart files to MIDI format for use with digital
 					audio workstations and other music software.
 				</p>
-				<p><strong>Supported input:</strong> .dtx files</p>
-				<p><strong>Output:</strong> .mid files compatible with any MIDI-capable software</p>
+				<p><strong class="text-purple-400">Supported input:</strong> .dtx files</p>
 				<p>
-					<strong>Features:</strong> Configurable lane-to-note mapping, proper timing conversion,
-					and General MIDI drum channel output (Channel 9).
+					<strong class="text-purple-400">Output:</strong> .mid files compatible with any MIDI-capable
+					software
+				</p>
+				<p>
+					<strong class="text-purple-400">Features:</strong> Configurable lane-to-note mapping,
+					proper timing conversion, and General MIDI drum channel output (Channel 9).
 				</p>
 			</div>
 		</div>

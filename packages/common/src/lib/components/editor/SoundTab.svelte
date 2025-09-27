@@ -27,15 +27,15 @@
 			removeButton: 'border-red-300 text-red-600 hover:bg-red-50 hover:text-red-800'
 		},
 		dark: {
-			infoBox: 'bg-gray-800 text-gray-300',
-			tableHead: 'bg-gray-800',
-			tableRow: 'bg-gray-900',
-			border: 'border-gray-600',
-			text: 'text-gray-200',
-			textMuted: 'text-gray-400',
-			input: 'bg-gray-800 text-gray-200 border-gray-600',
-			link: 'text-blue-600 hover:text-blue-800',
-			removeButton: 'border-red-300 text-red-600 hover:bg-red-50 hover:text-red-800'
+			infoBox: 'bg-slate-800/50 text-slate-200 backdrop-blur-sm border border-purple-500/20',
+			tableHead: 'bg-slate-800/80 backdrop-blur-sm',
+			tableRow: 'bg-slate-900/50 backdrop-blur-sm hover:bg-slate-800/50',
+			border: 'border-purple-500/30',
+			text: 'text-slate-200',
+			textMuted: 'text-slate-400',
+			input: 'music-input',
+			link: 'text-cyan-400 hover:text-cyan-300',
+			removeButton: 'border-red-400/50 text-red-400 hover:bg-red-500/20 hover:text-red-300'
 		}
 	};
 
@@ -198,7 +198,7 @@
 	{#if !simfileID}
 		<!-- Only show "New Sound" button for local charts -->
 		<button
-			class="w-1/5 rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+			class="music-btn-primary w-1/5"
 			onclick={() => {
 				// Generate next available ID (find the highest ID and add 1)
 				const nextId =

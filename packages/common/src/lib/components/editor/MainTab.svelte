@@ -120,28 +120,28 @@
 <div class="flex flex-col space-y-2">
 	<!-- Text input fields (full width) -->
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="title-input">Title:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="title-input">Title:</label>
 		<input
 			id="title-input"
-			class="w-[85%] rounded-md border border-gray-300 px-2 py-1 2xl:w-2/3"
+			class="music-input w-[85%] 2xl:w-2/3"
 			type="text"
 			bind:value={title}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="artist-input">Artist:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="artist-input">Artist:</label>
 		<input
 			id="artist-input"
-			class="w-[85%] rounded-md border border-gray-300 px-2 py-1 2xl:w-2/3"
+			class="music-input w-[85%] 2xl:w-2/3"
 			type="text"
 			bind:value={artist}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="comment-input">Comment:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="comment-input">Comment:</label>
 		<input
 			id="comment-input"
-			class="w-[85%] rounded-md border border-gray-300 px-2 py-1 2xl:w-2/3"
+			class="music-input w-[85%] 2xl:w-2/3"
 			type="text"
 			bind:value={comment}
 		/>
@@ -149,20 +149,20 @@
 
 	<!-- Numeric input fields (fixed width) -->
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="bpm-input">BPM:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="bpm-input">BPM:</label>
 		<input
 			id="bpm-input"
-			class="w-24 rounded-md border border-gray-300 px-2 py-1"
+			class="music-input w-24"
 			type="number"
 			bind:value={bpm}
 			disabled={isPreviewing}
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="level-input">Level:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="level-input">Level:</label>
 		<input
 			id="level-input"
-			class="w-24 rounded-md border border-gray-300 px-2 py-1"
+			class="music-input w-24"
 			type="number"
 			min="0"
 			max="999"
@@ -170,13 +170,13 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="measure-input"
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="measure-input"
 			>Number of Measures:</label
 		>
 		<input
 			id="measure-input"
 			type="number"
-			class="w-24 rounded-md border border-gray-300 px-2 py-1"
+			class="music-input w-24"
 			min="0"
 			max="499"
 			bind:value={measureCount}
@@ -185,7 +185,7 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="grid-spacing">Grid Spacing:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="grid-spacing">Grid Spacing:</label>
 		<ToggleGroup
 			options={gridSpacingOptions}
 			bind:value={gridSpacing}
@@ -196,21 +196,21 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="cell-height-input">Cell Height:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="cell-height-input">Cell Height:</label>
 		<div class="flex items-center space-x-2">
 			<input
 				id="cell-height-input"
 				type="number"
-				class="w-16 rounded-md border border-gray-300 px-2 py-1"
+				class="music-input w-16"
 				min="5"
 				max="100"
 				bind:value={cellHeight}
 				onkeydown={(e) => e.key === 'Enter' && handleCellHeightApply()}
 				disabled={isPreviewing}
 			/>
-			<span class="text-xs text-gray-500">px</span>
+			<span class="text-xs text-slate-400">px</span>
 			<button
-				class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+				class="music-btn-secondary px-2 py-1 text-sm"
 				onclick={handleCellHeightApply}
 				disabled={isPreviewing}
 			>
@@ -219,19 +219,19 @@
 		</div>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="goto-input">Go to Measure:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="goto-input">Go to Measure:</label>
 		<div class="flex items-center space-x-2">
 			<input
 				id="goto-input"
 				type="number"
-				class="w-24 rounded-md border border-gray-300 px-2 py-1"
+				class="music-input w-24"
 				min="0"
 				max="499"
 				bind:value={gotoMeasure}
 				disabled={isPreviewing}
 			/>
 			<button
-				class="rounded-md border border-gray-300 px-2 py-1"
+				class="music-btn-secondary px-2 py-1"
 				onclick={handleGotoMeasure}
 				disabled={isPreviewing}>Go</button
 			>

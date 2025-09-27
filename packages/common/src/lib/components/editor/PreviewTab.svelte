@@ -65,11 +65,11 @@
 
 <div class="flex flex-col space-y-4">
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="speed-input">Play Speed:</label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="speed-input">Play Speed:</label>
 		<input
 			id="speed-input"
 			type="number"
-			class="w-24 rounded-md border border-gray-300 px-2 py-1"
+			class="music-input w-24"
 			min="1"
 			max="10"
 			bind:value={playSpeed}
@@ -77,7 +77,7 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="disable-bgm-preview"
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="disable-bgm-preview"
 			>Disable BGM in Preview:</label
 		>
 		<label
@@ -98,15 +98,17 @@
 		</label>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-gray-700 2xl:w-1/3" for="preview-button">Preview: </label>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="preview-button">Preview: </label>
 		<button
 			id="preview-button"
-			class="rounded-md border border-gray-300 px-2 py-1 {!isEditorReady
+			class="music-btn-primary flex h-10 w-12 items-center justify-center {!isEditorReady
 				? 'cursor-not-allowed opacity-50'
 				: ''}"
 			onclick={handlePlay}
 			disabled={!isEditorReady}
-			>{#if isPreviewing}<CirclePause />{:else}<Play />{/if}</button
+			>{#if isPreviewing}<CirclePause class="h-5 w-5" />{:else}<Play
+					class="h-5 w-5"
+				/>{/if}</button
 		>
 	</div>
 </div>
@@ -115,26 +117,29 @@
 	.toggle-switch {
 		width: 44px;
 		height: 24px;
-		background-color: #d1d5db;
+		background-color: #475569;
+		border: 1px solid rgba(139, 92, 246, 0.3);
 		border-radius: 12px;
 		position: relative;
-		transition: background-color 0.2s ease;
+		transition: all 0.2s ease;
 	}
 
 	.toggle-switch.toggle-on {
 		background-color: #ef4444;
+		border-color: rgba(239, 68, 68, 0.5);
+		box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
 	}
 
 	.toggle-thumb {
 		width: 20px;
 		height: 20px;
-		background-color: white;
+		background-color: #f8fafc;
 		border-radius: 50%;
 		position: absolute;
 		top: 2px;
 		left: 2px;
 		transition: transform 0.2s ease;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 	}
 
 	.toggle-on .toggle-thumb {

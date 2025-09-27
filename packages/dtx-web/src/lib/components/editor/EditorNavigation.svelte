@@ -39,11 +39,13 @@
 	}: Props = $props();
 </script>
 
-<div class="relative row-span-1 flex flex-row items-center border-b-2 border-gray-400">
+<div
+	class="relative row-span-1 flex flex-row items-center border-b-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm"
+>
 	<Popover
 		positioning={{ placement: 'bottom-start' }}
-		contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-		classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+		contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
+		classes="w-1/12 rounded-sm bg-slate-700/50 py-2 hover:bg-slate-600/50 text-slate-200"
 		triggerClasses="w-full"
 	>
 		{#snippet trigger()}
@@ -52,57 +54,57 @@
 		{#snippet content()}
 			<div class="flex flex-col">
 				<button
-					class="px-4 py-2 text-left {isPreviewing
-						? 'cursor-not-allowed text-gray-400'
-						: 'hover:bg-gray-100'}"
+					class="px-4 py-2 text-left text-slate-200 {isPreviewing
+						? 'cursor-not-allowed text-slate-500'
+						: 'hover:bg-slate-700/50'}"
 					onclick={onNewFile}
 					disabled={isPreviewing}>New</button
 				>
 				{#if !simfileID}
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onImportFile}
 						disabled={isPreviewing}>Import File</button
 					>
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onImportFolder}
 						disabled={isPreviewing}>Import Folder</button
 					>
 				{/if}
 				{#if simfileID}
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onShowDifficultyModal}
 						disabled={isPreviewing}>Switch file</button
 					>
 				{:else if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onShowDTXSwitcher}
 						disabled={isPreviewing}>Switch DTX</button
 					>
 				{/if}
 				<button
-					class="px-4 py-2 text-left {isPreviewing
-						? 'cursor-not-allowed text-gray-400'
-						: 'hover:bg-gray-100'}"
+					class="px-4 py-2 text-left text-slate-200 {isPreviewing
+						? 'cursor-not-allowed text-slate-500'
+						: 'hover:bg-slate-700/50'}"
 					onclick={onExportFile}
 					disabled={isPreviewing}>Export File</button
 				>
 				{#if !simfileID && availableWorkspaces.length > 0}
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onShowWorkspaceExporter}
 						disabled={isPreviewing}>Export Workspace</button
 					>
@@ -115,8 +117,8 @@
 		<!-- Only show Workspace menu for local files (no simfileID) -->
 		<Popover
 			positioning={{ placement: 'bottom-start' }}
-			contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-			classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+			contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
+			classes="w-1/12 rounded-sm bg-slate-700/50 py-2 hover:bg-slate-600/50 text-slate-200"
 			triggerClasses="w-full"
 		>
 			{#snippet trigger()}
@@ -126,9 +128,9 @@
 				<div class="flex flex-col">
 					{#if availableWorkspaces.length > 0}
 						<button
-							class="px-4 py-2 text-left {isPreviewing
-								? 'cursor-not-allowed text-gray-400'
-								: 'hover:bg-gray-100'}"
+							class="px-4 py-2 text-left text-slate-200 {isPreviewing
+								? 'cursor-not-allowed text-slate-500'
+								: 'hover:bg-slate-700/50'}"
 							onclick={onShowWorkspaceManager}
 							disabled={isPreviewing}
 						>
@@ -136,18 +138,18 @@
 						</button>
 					{/if}
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onShowSoundLibraryModal}
 						disabled={isPreviewing}
 					>
 						Manage Sound files library
 					</button>
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onRefreshSoundLibraryLinks}
 						disabled={isPreviewing}
 					>
@@ -160,8 +162,8 @@
 		<!-- Show Edit menu with only discard changes for remote files -->
 		<Popover
 			positioning={{ placement: 'bottom-start' }}
-			contentBase="p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
-			classes="w-1/12 rounded-sm bg-gray-200 py-2 hover:bg-gray-300"
+			contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
+			classes="w-1/12 rounded-sm bg-slate-700/50 py-2 hover:bg-slate-600/50 text-slate-200"
 			triggerClasses="w-full"
 		>
 			{#snippet trigger()}
@@ -170,9 +172,9 @@
 			{#snippet content()}
 				<div class="flex flex-col">
 					<button
-						class="px-4 py-2 text-left {isPreviewing
-							? 'cursor-not-allowed text-gray-400'
-							: 'hover:bg-gray-100'}"
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
 						onclick={onDiscardLocalChanges}
 						title="Discard all local changes and reload from server"
 						disabled={isPreviewing}
@@ -184,5 +186,5 @@
 		</Popover>
 	{/if}
 
-	<div class="h-8 border-l border-gray-300"></div>
+	<div class="h-8 border-l border-purple-500/30"></div>
 </div>

@@ -182,6 +182,18 @@ global.AudioContext = vi.fn().mockImplementation(() => ({
 	decodeAudioData: vi.fn(() => Promise.resolve({}))
 }));
 
+// Mock File.prototype.arrayBuffer for encoding tests
+if (typeof File !== 'undefined' && !File.prototype.arrayBuffer) {
+	File.prototype.arrayBuffer = function (): Promise<ArrayBuffer> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as ArrayBuffer);
+			reader.onerror = () => reject(reader.error);
+			reader.readAsArrayBuffer(this);
+		});
+	};
+}
+
 // Setup for tests
 afterEach(() => {
 	// Cleanup after each test

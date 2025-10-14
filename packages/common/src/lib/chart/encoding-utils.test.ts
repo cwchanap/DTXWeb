@@ -188,14 +188,17 @@ describe('encoding-utils', () => {
 
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer('test'));
 
-			let isLastCall = false;
+			let callCount = 0;
 			mockTextDecoder.mockImplementation((encoding) => ({
 				decode: vi.fn().mockImplementation(() => {
-					if (encoding === 'shift-jis' && isLastCall) {
-						return fallbackContent;
+					callCount++;
+					// First call is utf-8 (in encodings array) - return invalid content
+					if (callCount === 1 && encoding === 'utf-8') {
+						return 'invalid content';
 					}
-					if (encoding === 'shift-jis') {
-						isLastCall = true;
+					// Second call is shift-jis (fallback) - return valid content
+					if (callCount === 2 && encoding === 'shift-jis') {
+						return fallbackContent;
 					}
 					return 'invalid content';
 				})

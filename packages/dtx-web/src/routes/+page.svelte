@@ -6,16 +6,16 @@
 		goto('/login');
 	};
 
-	const handleSecondButtonClick = () => {
-		goto('/game');
-	};
-
 	const navigateToBlog = () => {
 		goto('/blog');
 	};
 
 	const navigateToTools = () => {
 		goto('/tool');
+	};
+
+	const navigateToEditor = () => {
+		goto('/editor');
 	};
 
 	let heroAnimated = false;
@@ -65,11 +65,11 @@
 					<a href="/blog" class="text-slate-300 transition-colors hover:text-purple-400"
 						>Charts</a
 					>
+					<a href="/editor" class="text-slate-300 transition-colors hover:text-green-400"
+						>Editor</a
+					>
 					<a href="/tool" class="text-slate-300 transition-colors hover:text-cyan-400"
 						>Tools</a
-					>
-					<a href="/game" class="text-slate-300 transition-colors hover:text-amber-400"
-						>Play</a
 					>
 				</nav>
 			</div>
@@ -126,14 +126,14 @@
 					<button onclick={navigateToBlog} class="music-btn-primary px-8 py-4 text-lg">
 						🎵 Explore Charts
 					</button>
+					<button
+						onclick={navigateToEditor}
+						class="music-btn-secondary px-8 py-4 text-lg"
+					>
+						✏️ Chart Editor
+					</button>
 					<button onclick={navigateToTools} class="music-btn-secondary px-8 py-4 text-lg">
 						🛠️ DTX Tools
-					</button>
-					<button
-						onclick={handleSecondButtonClick}
-						class="music-btn-primary px-8 py-4 text-lg"
-					>
-						🎮 Start Playing
 					</button>
 				</div>
 			</div>

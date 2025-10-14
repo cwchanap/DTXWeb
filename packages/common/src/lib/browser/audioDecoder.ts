@@ -23,9 +23,15 @@ export class XAAudioContext extends AudioContext {
 	}
 
 	private async performInitialization(): Promise<void> {
-		await init();
-		this.initialized = true;
-		this.initializationPromise = null; // Clear promise after completion
+		try {
+			await init();
+			this.initialized = true;
+			this.initializationPromise = null; // Clear promise after completion
+		} catch (error) {
+			// Clear promise on failure to allow retries
+			this.initializationPromise = null;
+			throw error;
+		}
 	}
 
 	async decodeAudioData(

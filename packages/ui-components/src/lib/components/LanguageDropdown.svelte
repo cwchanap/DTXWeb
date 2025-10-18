@@ -29,10 +29,10 @@
 	}
 </script>
 
-<svelte:window onclick={handleClickOutside} />
+<svelte:window on:click={handleClickOutside} />
 
 <div class="language-dropdown relative">
-	<button class={buttonClass} onclick={handleToggle}>
+	<button class={buttonClass} on:click={handleToggle}>
 		{buttonText}
 	</button>
 	{#if isOpen}
@@ -42,7 +42,7 @@
 			{#each locales as locale}
 				<button
 					class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
-					onclick={() => handleLanguageSelect(locale)}
+					on:click={() => handleLanguageSelect(locale)}
 				>
 					{localeMap[locale] || locale}
 				</button>

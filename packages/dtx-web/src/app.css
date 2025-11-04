@@ -235,3 +235,95 @@ body {
 .music-bar:nth-child(5) {
 	animation-delay: 0.4s;
 }
+
+/* Respect user's motion preferences for accessibility */
+@media (prefers-reduced-motion: reduce) {
+	/* Disable all animations */
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+
+	/* Remove specific animations and transforms */
+	.music-btn-primary:hover,
+	.music-btn-secondary:hover,
+	.music-card:hover {
+		transform: none;
+	}
+
+	/* Keep only opacity transitions for critical feedback */
+	.music-btn-primary,
+	.music-btn-secondary,
+	.music-card,
+	.music-input {
+		transition: opacity 0.2s ease !important;
+	}
+
+	/* Disable visualizer animations */
+	.music-bar {
+		animation: none;
+	}
+
+	/* Disable blur animations */
+	.animate-pulse {
+		animation: none;
+	}
+
+	/* Disable backdrop blur for performance */
+	.backdrop-blur,
+	.backdrop-blur-sm,
+	.backdrop-blur-md,
+	.backdrop-blur-lg,
+	.backdrop-blur-xl {
+		backdrop-filter: none;
+	}
+
+	.music-nav,
+	.music-sidebar {
+		backdrop-filter: none;
+	}
+}
+
+/* Gradient text accessibility - Ensure readability with fallback colors */
+/* Primary gradient: purple-400 (#c084fc), cyan-400 (#22d3ee), amber-400 (#fbbf24) */
+/* Background: dark navy (#0f0f23) */
+/* Contrast ratios: All colors exceed WCAG AAA standards (>7:1) for large text */
+.bg-gradient-to-r.bg-clip-text.text-transparent {
+	/* Fallback for browsers that don't support background-clip: text */
+	color: rgb(192, 132, 252); /* purple-400 as fallback */
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+	.bg-gradient-to-r.bg-clip-text.text-transparent {
+		color: white !important;
+		background: none !important;
+		-webkit-text-fill-color: unset !important;
+	}
+}
+
+/* Performance optimization for animated blur backgrounds */
+.animate-pulse.blur-xl,
+.animate-pulse.blur-lg,
+.animate-pulse.blur-2xl {
+	/* GPU acceleration for better performance */
+	will-change: opacity, transform;
+	/* Use transform3d to force GPU rendering */
+	transform: translate3d(0, 0, 0);
+	/* Contain paint to optimize rendering */
+	contain: paint;
+}
+
+/* Reduce blur intensity for better performance on lower-end devices */
+@media (max-width: 768px) {
+	.blur-2xl {
+		filter: blur(24px); /* Reduced from default 40px */
+	}
+
+	.blur-xl {
+		filter: blur(16px); /* Reduced from default 24px */
+	}
+}

@@ -37,7 +37,7 @@
 	</button>
 	{#if isOpen}
 		<div
-			class="absolute top-full right-0 z-[999999] mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl {dropdownClass}"
+			class="absolute top-full right-0 z-50 mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl {dropdownClass}"
 		>
 			{#each locales as locale}
 				<button

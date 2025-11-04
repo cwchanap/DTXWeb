@@ -29,8 +29,9 @@ jobs:
           path: node_modules
           key: ${{ runner.os }}-node_modules-${{ hashFiles('package-lock.json') }}
 
-      - name: remove tsconfig
-        run: rm packages/dtx-web/tsconfig.json
+      - name: Generate SvelteKit types
+        run: npm run build -w=dtx-web -- --mode types-only || npx svelte-kit sync --config packages/dtx-web/svelte.config.js
+        working-directory: ${{ github.workspace }}
 
       - name: Build packages
         run: npm run build -w=@dtx/common

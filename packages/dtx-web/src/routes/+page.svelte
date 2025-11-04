@@ -123,16 +123,19 @@
 
 				<!-- Action buttons -->
 				<div class="flex flex-col items-center justify-center gap-6 sm:flex-row">
-					<button onclick={navigateToBlog} class="music-btn-primary px-8 py-4 text-lg">
+					<button on:click={navigateToBlog} class="music-btn-primary px-8 py-4 text-lg">
 						🎵 Explore Charts
 					</button>
 					<button
-						onclick={navigateToEditor}
+						on:click={navigateToEditor}
 						class="music-btn-secondary px-8 py-4 text-lg"
 					>
 						✏️ Chart Editor
 					</button>
-					<button onclick={navigateToTools} class="music-btn-secondary px-8 py-4 text-lg">
+					<button
+						on:click={navigateToTools}
+						class="music-btn-secondary px-8 py-4 text-lg"
+					>
 						🛠️ DTX Tools
 					</button>
 				</div>

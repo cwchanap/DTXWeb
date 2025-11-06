@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -11,10 +11,11 @@ let supabaseAdminCache: SupabaseClient | null = null;
 /**
  * Gets or creates the Supabase admin client with service role key.
  * The client is cached after first creation to avoid overhead on subsequent requests.
+ * Uses dynamic env to read secrets at runtime, not at build time.
  */
 const getSupabaseAdmin = (): SupabaseClient => {
 	if (!supabaseAdminCache) {
-		supabaseAdminCache = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+		supabaseAdminCache = createClient(PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
 			auth: {
 				autoRefreshToken: false,
 				persistSession: false

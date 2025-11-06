@@ -3,16 +3,31 @@ import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import type { RequestHandler } from './$types';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	try {
-		// Create admin client with service role key
-		const supabaseAdmin = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+// Cached admin client instance (lazy initialization)
+let supabaseAdminCache: SupabaseClient | null = null;
+
+/**
+ * Gets or creates the Supabase admin client with service role key.
+ * The client is cached after first creation to avoid overhead on subsequent requests.
+ */
+const getSupabaseAdmin = (): SupabaseClient => {
+	if (!supabaseAdminCache) {
+		supabaseAdminCache = createClient(PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 			auth: {
 				autoRefreshToken: false,
 				persistSession: false
 			}
 		});
+	}
+	return supabaseAdminCache;
+};
+
+export const POST: RequestHandler = async ({ request, locals }) => {
+	try {
+		// Get cached admin client
+		const supabaseAdmin = getSupabaseAdmin();
 
 		// Check if user is authenticated
 		const { session } = await locals.safeGetSession();

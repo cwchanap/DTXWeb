@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+
 	export let isOpen = false;
 	export let onToggle: ((open: boolean) => void) | undefined = undefined;
 	export let onLanguageSelect: ((locale: string) => void) | undefined = undefined;
@@ -8,6 +10,8 @@
 	export let buttonClass = 'music-btn-secondary px-4 py-2 text-sm';
 	export let dropdownClass = '';
 	export let buttonText = 'Change Language';
+
+	let dropdownElement: HTMLDivElement;
 
 	function handleToggle() {
 		isOpen = !isOpen;
@@ -20,18 +24,24 @@
 		onToggle?.(false);
 	}
 
-	function handleClickOutside(event: Event) {
-		const target = event.target as Element;
-		if (!target.closest('.language-dropdown')) {
+	function handleClickOutside(event: MouseEvent) {
+		const target = event.target as Node;
+		if (dropdownElement && !dropdownElement.contains(target)) {
 			isOpen = false;
 			onToggle?.(false);
 		}
 	}
+
+	onMount(() => {
+		document.addEventListener('click', handleClickOutside);
+	});
+
+	onDestroy(() => {
+		document.removeEventListener('click', handleClickOutside);
+	});
 </script>
 
-<svelte:window on:click={handleClickOutside} />
-
-<div class="language-dropdown relative">
+<div bind:this={dropdownElement} class="language-dropdown relative">
 	<button class={buttonClass} on:click={handleToggle}>
 		{buttonText}
 	</button>

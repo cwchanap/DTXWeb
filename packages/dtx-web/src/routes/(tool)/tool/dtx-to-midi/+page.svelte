@@ -426,7 +426,7 @@
 					This tool converts DTX drum chart files to MIDI format for use with digital
 					audio workstations and other music software.
 				</p>
-				<p><strong class="text-purple-400">Supported input:</strong> .dtx files</p>
+				<p><strong class="text-purple-400">Supported input:</strong> .dtx and .txt files</p>
 				<p>
 					<strong class="text-purple-400">Output:</strong> .mid files compatible with any MIDI-capable
 					software

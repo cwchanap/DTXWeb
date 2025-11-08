@@ -44,7 +44,7 @@ test.describe('ChartList E2E Tests', () => {
 		await page.waitForSelector('text=Song One');
 		await page.waitForSelector('text=Song Two');
 
-		const searchInput = page.locator('input[placeholder*="search"]');
+		const searchInput = page.getByPlaceholder(/search/i);
 		await searchInput.fill('Song One');
 
 		await expect(page.locator('text=Song One')).toBeVisible();

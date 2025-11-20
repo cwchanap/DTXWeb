@@ -91,11 +91,6 @@
 		showRemoveConfirmModal = false;
 	}
 
-	function cancelRemoveSoundFile() {
-		showRemoveConfirmModal = false;
-		removeFileHash = '';
-	}
-
 	// Clear sound library (with confirmation)
 	function clearSoundLibrary() {
 		showClearConfirmModal = true;
@@ -104,10 +99,6 @@
 	function confirmClearSoundLibrary() {
 		SoundLibrary.clear();
 		refreshSoundLibrary();
-		showClearConfirmModal = false;
-	}
-
-	function cancelClearSoundLibrary() {
 		showClearConfirmModal = false;
 	}
 

@@ -182,14 +182,14 @@ describe('EditorTabs Component Logic', () => {
 		});
 
 		it('should hide tab content when collapsed', () => {
-			let isTabsCollapsed = true;
+			const isTabsCollapsed = true;
 
 			const shouldShowTabContent = !isTabsCollapsed;
 			expect(shouldShowTabContent).toBe(false);
 		});
 
 		it('should show tab content when expanded', () => {
-			let isTabsCollapsed = false;
+			const isTabsCollapsed = false;
 
 			const shouldShowTabContent = !isTabsCollapsed;
 			expect(shouldShowTabContent).toBe(true);

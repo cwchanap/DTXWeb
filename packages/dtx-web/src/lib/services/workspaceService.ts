@@ -92,7 +92,7 @@ export class WorkspaceService {
 				audioFiles.push(workspaceFile);
 
 				// Auto-import audio files to sound library
-				const result = await SoundLibrary.addFiles([file]);
+				await SoundLibrary.addFiles([file]);
 			}
 		}
 

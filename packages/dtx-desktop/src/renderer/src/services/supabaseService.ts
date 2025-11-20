@@ -1,8 +1,14 @@
 // Session management service for renderer process
 // All Supabase operations are handled in the main process
 
+type StoredSession = {
+	access_token: string;
+	refresh_token: string;
+	user: unknown;
+};
+
 // Function to store session data locally
-export const storeSessionData = (session: any): void => {
+export const storeSessionData = (session: StoredSession): void => {
 	try {
 		// Store tokens in localStorage for session persistence
 		localStorage.setItem('auth_access_token', session.access_token);
@@ -20,7 +26,7 @@ export const storeSessionData = (session: any): void => {
 export const getStoredSessionData = (): {
 	accessToken: string;
 	refreshToken: string;
-	userData: any;
+	userData: unknown;
 } | null => {
 	try {
 		const accessToken = localStorage.getItem('auth_access_token');
@@ -69,7 +75,7 @@ export const validateSession = async (): Promise<boolean> => {
 };
 
 // Function to get current session from main process
-export const getCurrentSession = async (): Promise<any> => {
+export const getCurrentSession = async (): Promise<unknown> => {
 	try {
 		const session = await window.electron.ipcRenderer.invoke('get-current-session');
 		return session;

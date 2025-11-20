@@ -19,7 +19,6 @@
 	let uploadedFile = $state<File | null>(null);
 	let isLoading = $state(false);
 	let midiData = $state<MidiFileData | null>(null);
-	let isPlaying = $state(false);
 
 	interface MidiTrack {
 		name?: string;
@@ -288,7 +287,7 @@
 		}
 
 		// Handle any remaining active notes
-		activeNotes.forEach((activeNote, noteKey) => {
+		activeNotes.forEach((activeNote) => {
 			notes.push({
 				channel: activeNote.channel,
 				note: activeNote.note,
@@ -402,7 +401,6 @@
 	const handleReset = () => {
 		uploadedFile = null;
 		midiData = null;
-		isPlaying = false;
 		if (fileInput) {
 			fileInput.value = '';
 		}
@@ -413,11 +411,9 @@
 	};
 </script>
 
-<div
-	class="relative min-h-screen overflow-hidden"
-	onclick={handleClickOutside}
-	style="background: var(--music-bg-primary);"
->
+<svelte:window on:click={handleClickOutside} />
+
+<div class="relative min-h-screen overflow-hidden" style="background: var(--music-bg-primary);">
 	<!-- Animated background elements -->
 	<div class="absolute inset-0 opacity-20">
 		<div

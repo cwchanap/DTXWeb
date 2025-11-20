@@ -7,13 +7,25 @@ import {
 } from './supabaseService';
 import { simFileService } from './simFileService';
 import { simFileStore } from '../stores/simFileStore';
-import { workspaceStore } from '../stores/workspaceStore';
+import { workspaceStore, type WorkspaceState, type TreeNode } from '../stores/workspaceStore';
 import { linkageCacheService } from './linkageCacheService';
+import type { Session } from '@supabase/supabase-js';
 
 // Get server URL from environment variable or fallback to default
 const DEFAULT_SERVER_URL = 'http://localhost:5173';
 const SERVER_URL = import.meta.env.VITE_DTX_SERVER_URL || DEFAULT_SERVER_URL;
 const WEB_APP_LOGIN_URL = `${SERVER_URL}/login?redirect=desktop`;
+
+type MagicLinkResult = {
+	success: boolean;
+	error?: string;
+	session?: Session | null;
+	user: {
+		id: string;
+		email: string | null;
+		user_metadata?: { name?: string };
+	};
+};
 
 /**
  * Clears local-cloud file linkages while preserving workspace structure
@@ -23,7 +35,7 @@ const clearCloudLinkages = (): void => {
 	linkageCacheService.clearCache();
 
 	// Get current workspace state to clear linkages from tree structure
-	let currentState: any = null;
+	let currentState: WorkspaceState | null = null;
 	const unsubscribe = workspaceStore.subscribe((state) => {
 		currentState = state;
 	});
@@ -31,7 +43,7 @@ const clearCloudLinkages = (): void => {
 
 	if (currentState?.treeStructure?.length > 0) {
 		// Recursively remove linkage information from all tree nodes
-		const clearLinkagesFromNodes = (nodes: any[]): any[] => {
+		const clearLinkagesFromNodes = (nodes: TreeNode[]): TreeNode[] => {
 			return nodes.map((node) => ({
 				...node,
 				linkedSimFileId: null,
@@ -66,7 +78,7 @@ export const authService = {
 	/**
 	 * Processes magic link result from main process
 	 */
-	handleMagicLinkResult: async (result: any): Promise<void> => {
+	handleMagicLinkResult: async (result: MagicLinkResult): Promise<void> => {
 		try {
 			if (!result.success) {
 				throw new Error(result.error || 'Magic link verification failed');

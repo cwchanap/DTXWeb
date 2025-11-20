@@ -123,10 +123,11 @@ if (!gotTheLock) {
 					throw new Error(
 						`A folder named "${sanitizedFolderName}" already exists in the selected location`
 					);
-				} catch (accessError: any) {
+				} catch (accessError: unknown) {
+					const maybeErrno = accessError as NodeJS.ErrnoException;
 					// If the error is NOT ENOENT, it means something else went wrong
-					if (accessError.code !== 'ENOENT') {
-						throw accessError;
+					if (maybeErrno?.code !== 'ENOENT') {
+						throw accessError as Error;
 					}
 					// ENOENT means the folder doesn't exist, which is what we want
 				}

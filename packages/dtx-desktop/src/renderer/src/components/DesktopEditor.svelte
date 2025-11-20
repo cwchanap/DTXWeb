@@ -1,4 +1,5 @@
 <script lang="ts">
+	/* eslint-disable @typescript-eslint/no-explicit-any */
 	// Desktop Editor component that uses common package components directly
 	import { onMount } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
@@ -656,14 +657,18 @@
 				{/if}
 
 				<!-- Drag handle -->
-				<div
+				<button
+					type="button"
 					class="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-500/50 {isDragging
 						? 'bg-blue-500'
 						: ''}"
 					onmousedown={handleMouseDown}
-					role="separator"
+					onkeydown={(e) =>
+						(e.key === 'Enter' || e.key === ' ') &&
+						handleMouseDown(e as unknown as MouseEvent)}
+					tabindex="0"
 					aria-label="Resize sidebar"
-				></div>
+				></button>
 			</div>
 		{:else}
 			<!-- Collapsed sidebar - expand area -->

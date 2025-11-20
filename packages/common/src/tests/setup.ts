@@ -119,15 +119,18 @@ global.Image = vi.fn().mockImplementation(() => {
 		onerror: null,
 		complete: true,
 		crossOrigin: null
-	};
+	} as unknown as HTMLImageElement;
 
 	// Trigger onload asynchronously
 	setTimeout(() => {
-		if (img.onload) (img.onload as any)({} as Event);
+		const loadHandler = img.onload;
+		if (typeof loadHandler === 'function') {
+			loadHandler(new Event('load'));
+		}
 	}, 0);
 
 	return img;
-}) as any;
+}) as unknown as typeof Image;
 
 // Mock Audio for Phaser audio
 global.Audio = vi.fn().mockImplementation(() => ({

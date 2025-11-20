@@ -4,20 +4,17 @@
 	import { Editor } from '@dtx/common/game';
 	import { Preview } from '@dtx/common/game';
 	import { onMount, onDestroy } from 'svelte';
-	import { MainTab, PreviewTab } from '@dtx/common/components';
 	import {
 		DTXFile,
 		SimFile,
 		decodeFileWithEncodingDetection,
 		type LaneMeasureNote
 	} from '@dtx/common';
-	import { SoundTab } from '@dtx/common/components';
 	import { get } from 'svelte/store';
 	import { EventType } from '@dtx/common/game';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import store from '$lib/store';
 	import { EventBus } from '@dtx/common/game';
-	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Modal } from '@dtx/ui-components/components';
 	import EditorTips from '$lib/components/editor/EditorTips.svelte';
@@ -61,7 +58,6 @@
 	let currentTab: number = $state(0);
 	let isPreviewing = $state(false);
 	let isTabsCollapsed = $state(false);
-	let isEditorLoaded = $state(false);
 	let isEditorReady = $state(false);
 	let simfileID = $state('');
 	let showDifficultyModal = $state(false);
@@ -85,8 +81,7 @@
 	const currentActiveScene = (scene: Scene) => {
 		// Check if the Editor scene is loaded when it becomes active
 		if (scene.scene.key === Editor.key) {
-			const editorScene = scene as Editor;
-			isEditorLoaded = editorScene.getIsLoaded();
+			(scene as Editor).getIsLoaded();
 		}
 		return scene;
 	};
@@ -136,7 +131,6 @@
 
 			// Switch to the first DTX file in the workspace
 			if (workspace.dtxFiles.length > 0) {
-				const firstDTX = workspace.dtxFiles[0].name;
 				// Note: The actual DTX switching logic is now in DTXSwitcherModal
 				// This is a simplified version for folder import
 				currentWorkspace = workspace;
@@ -155,7 +149,7 @@
 	}
 
 	// DTX switching is now handled by DTXSwitcherModal component
-	async function switchWorkspaceDTX(dtxFileName: string): Promise<void> {
+	async function switchWorkspaceDTX(): Promise<void> {
 		// This will be called by DTXSwitcherModal after successful switch
 		// We need to handle the phaser-specific cleanup here
 		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
@@ -423,7 +417,7 @@
 		if (!simfile) return [];
 
 		return Object.entries(simfile.levels)
-			.filter(([_, level]) => level !== undefined)
+			.filter(([, level]) => level !== undefined)
 			.map(([levelNum, level]) => ({
 				level: parseInt(levelNum),
 				label: level!.label,
@@ -516,7 +510,7 @@
 
 			// Find and set the current difficulty
 			const currentLevel = Object.entries(simfile.levels).find(
-				([_, level]) => level?.file === highestDtx
+				([, level]) => level?.file === highestDtx
 			);
 			if (currentLevel && currentLevel[1]) {
 				store.currentDifficulty.set(currentLevel[1].label);
@@ -620,9 +614,14 @@
 			if (matched > 0) {
 				// Get the editor scene and trigger auto-save
 				if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
-					const editorScene = phaserRef.scene as any;
-					if (editorScene.autoSaveChart) {
-						await editorScene.autoSaveChart();
+					const editorScene = phaserRef.scene as Editor;
+					if (
+						typeof (editorScene as unknown as { autoSaveChart?: () => Promise<void> })
+							.autoSaveChart === 'function'
+					) {
+						await (
+							editorScene as unknown as { autoSaveChart: () => Promise<void> }
+						).autoSaveChart();
 					}
 				}
 			}

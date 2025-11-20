@@ -384,7 +384,7 @@ describe('MIDI to DTX Converter Logic', () => {
 
 	describe('MIDI note mapping configuration', () => {
 		it('should allow customization of note mappings', () => {
-			let midiToDtxMap = {
+			const midiToDtxMap = {
 				36: '01', // Bass Drum
 				38: '02', // Snare
 				42: '03' // Hi-hat

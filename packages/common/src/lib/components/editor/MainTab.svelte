@@ -3,7 +3,7 @@
 
 	import { EventBus } from '@dtx/common/game';
 	import { EventType } from '@dtx/common/game';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { store } from '@dtx/common';
 	import { DTXFile } from '@dtx/common';
 	import { ToggleGroup } from '@dtx/ui-components';
@@ -17,7 +17,6 @@
 	let level = $state(0);
 	let gotoMeasure = $state(0);
 	let isPreviewing = $state(false);
-	let isEditorReady = $state(false);
 	let gridSpacing = $state(16);
 	let cellHeight = $state(25); // Default cell height in pixels
 
@@ -71,25 +70,6 @@
 	});
 
 	onMount(() => {
-		// Listen for editor ready state
-		const handleSceneReady = () => {
-			isEditorReady = true;
-		};
-
-		// Listen for editor loaded state (when it's finished drawing and loading)
-		const handleEditorLoaded = () => {
-			isEditorReady = true;
-		};
-
-		// Listen for note import which triggers scene restart - disable preview until loaded
-		const handleNoteImport = () => {
-			isEditorReady = false;
-		};
-
-		EventBus.on(EventType.SCENE_READY, handleSceneReady);
-		EventBus.on(EventType.EDITOR_LOADED, handleEditorLoaded);
-		EventBus.on(EventType.NOTE_IMPORT, handleNoteImport);
-
 		const unsubPreview = store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
 		});
@@ -107,9 +87,6 @@
 
 		// Cleanup function
 		return () => {
-			EventBus.off(EventType.SCENE_READY, handleSceneReady);
-			EventBus.off(EventType.EDITOR_LOADED, handleEditorLoaded);
-			EventBus.off(EventType.NOTE_IMPORT, handleNoteImport);
 			unsubPreview();
 			unsubMeasure();
 			dtxFileUnsubscribe();

@@ -21,7 +21,6 @@
 	let isExportingWorkspace = $state(false);
 	let workspaceToExport = $state<Workspace | null>(null);
 	let exportWorkspaceError = $state('');
-	let exportWorkspaceSuccess = $state(false);
 
 	// Refresh workspaces when modal opens
 	$effect(() => {
@@ -37,7 +36,6 @@
 	async function exportWorkspace(workspace: Workspace) {
 		isExportingWorkspace = true;
 		exportWorkspaceError = '';
-		exportWorkspaceSuccess = false;
 		workspaceToExport = workspace;
 
 		try {
@@ -107,7 +105,6 @@
 			// Clean up the object URL
 			URL.revokeObjectURL(downloadLink.href);
 
-			exportWorkspaceSuccess = true;
 			onClose();
 
 			// Show success message
@@ -119,11 +116,6 @@
 			toastStore.success({
 				title: message
 			});
-
-			// Hide success message after 3 seconds
-			setTimeout(() => {
-				exportWorkspaceSuccess = false;
-			}, 3000);
 		} catch (error) {
 			console.error('Error exporting workspace:', error);
 			exportWorkspaceError =

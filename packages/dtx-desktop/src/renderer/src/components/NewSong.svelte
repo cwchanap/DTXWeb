@@ -24,7 +24,7 @@
 	});
 
 	// Check if folder already exists when user types (with debouncing and cancellation)
-	let debounceTimer: NodeJS.Timeout | null = null;
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let currentCheckId = 0;
 
 	$effect(() => {
@@ -106,11 +106,18 @@
 
 		// Remove or replace dangerous path traversal sequences
 		sanitized = sanitized.replace(/\.\.+/g, ''); // Remove .. sequences
-		sanitized = sanitized.replace(/[\/\\]/g, ''); // Remove path separators
+		sanitized = sanitized.replace(/[\\/]/g, ''); // Remove path separators
 
 		// Remove or replace invalid filename characters (Windows + Unix)
 		// Invalid characters: < > : " | ? * and control characters (0-31, 127)
-		sanitized = sanitized.replace(/[<>:"|?*\x00-\x1f\x7f]/g, '');
+		sanitized = sanitized.replace(/[<>:"|?*]/g, '');
+		sanitized = sanitized
+			.split('')
+			.filter((char) => {
+				const code = char.charCodeAt(0);
+				return code >= 32 && code !== 127;
+			})
+			.join('');
 
 		// Remove leading dots and spaces (Windows restriction)
 		sanitized = sanitized.replace(/^[.\s]+/, '');

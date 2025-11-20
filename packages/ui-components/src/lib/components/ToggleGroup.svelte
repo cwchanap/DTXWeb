@@ -1,8 +1,9 @@
-<script lang="ts" generics="T = string">
+<script lang="ts">
 	import { clsx } from 'clsx';
 
 	type Size = 'sm' | 'md' | 'lg';
 	type Variant = 'default' | 'outline';
+	type ToggleValue = string | number | boolean;
 
 	interface ToggleOption<T> {
 		value: T;
@@ -28,7 +29,7 @@
 		disabled = false,
 		class: className = '',
 		ariaLabel
-	}: Props<T> = $props();
+	}: Props<ToggleValue> = $props();
 
 	const base =
 		'inline-flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:pointer-events-none';
@@ -90,7 +91,7 @@
 		);
 	}
 
-	function handleSelect(optionValue: T) {
+	function handleSelect(optionValue: ToggleValue) {
 		if (!disabled) {
 			value = optionValue;
 		}

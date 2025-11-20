@@ -1,5 +1,3 @@
-import type { Tables } from '@dtx/common';
-
 export function formatLevelDisplay(dtx_files: Array<{ level?: string | number }>) {
 	return (
 		dtx_files

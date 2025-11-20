@@ -1,16 +1,30 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This Turbo-powered monorepo keeps deliverables in `packages/`. Use `packages/dtx-web` for the SvelteKit web client, `packages/dtx-desktop` for the Electron build, `packages/common` for shared logic, and `packages/ui-components` for reusable Svelte UI primitives. End-to-end scenarios and Playwright fixtures live under `e2e/`, while infrastructure scripts and automation helpers sit in `scripts/`. Shared configs (`tsconfig.base.json`, `.eslintrc.cjs`, `.prettierrc`) in the repo root cascade to every workspace.
 
-## Build, Test, and Development Commands
-Run `npm install` once, then use the workspace-aware scripts in `package.json`. `npm run dev` spins up both web and desktop targets; scope to one surface with `npm run dev:web` or `npm run dev:desktop`. Ship artifacts via `npm run build`, which triggers Turbo builds across every package. Execute unit suites with `npm test` (Vitest in each workspace) and collect coverage using `npm run test:coverage`. Front-to-back validation lives in `npm run e2e`; launch the Playwright inspector with `npm run e2e:ui`. Use `npm run lint`, `npm run format`, and `npm run check` before opening a pull request to catch typing, lint, and formatting regressions.
+The Turborepo contains four workspaces: `packages/dtx-web` (SvelteKit UI), `packages/dtx-desktop` (Electron shell), `packages/common` (shared TypeScript logic), and `packages/ui-components` (design system). Shared assets live in `skin/`/`sample/`. Tests sit beside code; e2e flows run from `e2e/`, migrations live in `supabase/`, and automation scripts reside in `scripts/`.
+
+## Build, Test & Development Commands
+
+- `npm run dev:web` / `npm run dev:desktop` – start the web or desktop hot reloader.
+- `npm run dev:all` – spin up both apps plus shared packages when working on cross-surface APIs.
+- `npm run build` – run every workspace build through Turbo (Vite, electron-vite, shared libs).
+- `npm run lint` / `npm run check` – enforce ESLint, svelte-check, and TS project references.
+- `npm run test` / `npm run test:coverage` – execute Vitest suites repository-wide with optional coverage.
+- `npm run e2e` – run Playwright specs in `e2e/`; refresh MIDI fixtures with `npm run fixtures:generate` when assets change.
 
 ## Coding Style & Naming Conventions
-TypeScript and Svelte files use tabs, 4-space EditorConfig fallback, and a 100-character width enforced by Prettier. Favor PascalCase for Svelte components, camelCase for functions and variables, and kebab-case for file names inside routes (for example, `src/routes/editor-session/+page.svelte`). ESLint combines `@typescript-eslint`, `svelte`, and `unused-imports` rules—avoid disabling them unless the violation is genuinely intentional. Tailwind utility order is auto-managed via `prettier-plugin-tailwindcss`; run the formatter on staged changes (`npx lint-staged`) to keep diffs minimal.
+
+TypeScript/Svelte files follow Prettier 3 defaults enforced via `npm run format:root` and `lint-staged`. ESLint (`@typescript-eslint`, `eslint-plugin-svelte`) must pass—avoid blanket disables. Components stay PascalCase, stores/services camelCase, tests mirror the subject (`Widget.test.ts`), and shared utilities should use named exports. Co-locate styling with components and hide platform differences inside adapters under `packages/common`.
 
 ## Testing Guidelines
-Author Vitest specs next to the code they cover (for example, `src/lib/foo.test.ts`). Use descriptive `describe` scopes that mirror feature names and prefer `it('renders playback controls')` style titles. Capture new behaviors with snapshot or DOM assertions via Testing Library. Maintain ≥80 % coverage in changed modules before merging. For e2e additions, drop scenarios under `e2e/tests/` and regenerate MIDI fixtures with `npm run fixtures:generate`; validate them via `npm run fixtures:verify`.
+
+Vitest plus Testing Library power unit/component suites; colocate specs and stick to the `*.test.ts` suffix for auto-discovery. Cover happy paths, edge inputs, and timezone math when working with `dayjs`. Run the package-specific coverage scripts before review and keep each workspace ≥80% line coverage. Use Playwright for workflow coverage (uploads, Supabase sync, Phaser playback) and tag long scenarios with `@slow` to skip via `npx playwright test --grep-invert @slow`.
 
 ## Commit & Pull Request Guidelines
-Follow the conventional commit style observed in history (`feat:`, `fix:`, `refactor:`). Keep messages scoped to a single concern and mention the package when helpful (`feat(web): add playlist toolbar)`). Pull requests should include: a concise summary, linked Jira/GitHub issue, test evidence (`npm test`, `npm run e2e` when relevant), and before/after screenshots for UI-facing changes. Mark breaking changes clearly and request reviews from the owning package team (web, desktop, or shared) before merging.
+
+Follow Conventional Commits (`type(scope): summary`), mirroring history such as `feat(web): update UI components and page layouts`. Keep commits focused and include required fixture or schema updates. PRs need a summary, linked issue, validation checklist (`npm run test:coverage`, `npm run e2e`), and screenshots for UI tweaks. Call out migrations or new env vars so reviewers can prepare environments.
+
+## Security & Configuration Tips
+
+Keep secrets in the root `.env`, which each workspace symlinks via its `prepare` script; never commit generated keys or Supabase service roles. Validate Cloudflare bindings or Supabase typings with `npm run gen-types` before deploying, and refresh `supabase/.env.example` whenever new configuration knobs are introduced.

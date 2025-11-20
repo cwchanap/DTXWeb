@@ -18,7 +18,9 @@
 	}
 </script>
 
-<div class="relative min-h-screen overflow-hidden" onclick={handleClickOutside}>
+<svelte:window on:click={handleClickOutside} />
+
+<div class="relative min-h-screen overflow-hidden">
 	<!-- Animated background elements -->
 	<div class="absolute inset-0 opacity-20">
 		<div
@@ -61,7 +63,7 @@
 				</button>
 				{#if languageDropdownOpen}
 					<div
-						class="absolute top-full right-0 z-50 mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl"
+						class="absolute top-full right-0 z-[100] mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl"
 					>
 						{#each $locales as l}
 							<button

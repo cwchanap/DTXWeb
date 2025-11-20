@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { locale, locales } from 'svelte-i18n';
-	import { _ } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 
 	const localeMap: Record<string, string> = {

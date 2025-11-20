@@ -10,7 +10,6 @@
 	import IconCheck from '@lucide/svelte/icons/check';
 	import IconTable from '@lucide/svelte/icons/table';
 	import IconGrid from '@lucide/svelte/icons/grid';
-	import { Button } from '@dtx/ui-components/components';
 	import { supabase } from '../supabase';
 	import { formatLevelDisplay } from '../utils';
 
@@ -19,7 +18,7 @@
 		isBlog?: boolean;
 	}
 
-	import type { SimfileWithDtx, Tables } from '@dtx/common';
+	import type { SimfileWithDtx } from '@dtx/common';
 
 	let { pageSize = 12, isBlog = false }: Props = $props();
 

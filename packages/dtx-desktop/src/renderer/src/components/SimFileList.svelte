@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { simFileStore } from '../stores/simFileStore';
 	import { simFileService } from '../services/simFileService';
-	import { workspaceStore } from '../stores/workspaceStore';
+	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { RefreshCw, Music, Calendar, User, Link, Search, X } from '@lucide/svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 
@@ -33,7 +33,7 @@
 	let totalPages = $derived(Math.ceil(filteredSimFiles.length / pageSize));
 
 	// Function to slice data for current page
-	function sliceData(data: any[], page: number, size: number) {
+	function sliceData<T>(data: T[], page: number, size: number): T[] {
 		const start = (page - 1) * size;
 		const end = start + size;
 		return data.slice(start, end);
@@ -85,7 +85,7 @@
 	function isSimFileLinked(simFileId: number): boolean {
 		if (!workspaceState.treeStructure) return false;
 
-		const checkNodes = (nodes: any[]): boolean => {
+		const checkNodes = (nodes: TreeNode[]): boolean => {
 			for (const node of nodes) {
 				if (node.linkedSimFileId === simFileId) {
 					return true;

@@ -206,7 +206,7 @@ describe('Editor Page Component Logic', () => {
 	describe('Tab Management', () => {
 		it('should handle tab switching correctly', async () => {
 			let currentTab = 0;
-			let isTabsCollapsed = false;
+			const isTabsCollapsed = false;
 
 			// Test tab switching
 			const handleTabChange = (tabIndex: number) => {
@@ -300,7 +300,7 @@ describe('Editor Page Component Logic', () => {
 
 	describe('DTX File Operations', () => {
 		it('should handle DTX file switching correctly', async () => {
-			let currentWorkspace: Workspace | null = mockWorkspace;
+			const currentWorkspace: Workspace | null = mockWorkspace;
 			let showDTXSwitchModal = false;
 
 			const handleSwitchDTX = (dtxFileName: string) => {

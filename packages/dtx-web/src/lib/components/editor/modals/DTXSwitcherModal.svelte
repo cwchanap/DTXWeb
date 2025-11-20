@@ -11,10 +11,9 @@
 	interface Props {
 		show: boolean;
 		onSwitchDTX?: (dtxFileName: string) => Promise<void>;
-		onClose: () => void;
 	}
 
-	let { show = $bindable(), onSwitchDTX, onClose }: Props = $props();
+	let { show = $bindable(), onSwitchDTX }: Props = $props();
 
 	// Internal state management
 	let currentWorkspace = $state<Workspace | null>(workspaceService.getCurrentWorkspace());

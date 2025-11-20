@@ -25,7 +25,7 @@ const getSupabaseAdmin = (): SupabaseClient => {
 	return supabaseAdminCache;
 };
 
-export const POST: RequestHandler = async ({ request, locals }) => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
 		// Get cached admin client
 		const supabaseAdmin = getSupabaseAdmin();

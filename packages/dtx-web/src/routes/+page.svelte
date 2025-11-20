@@ -2,10 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
-	const navigateToLogin = () => {
-		goto('/login');
-	};
-
 	const navigateToBlog = () => {
 		goto('/blog');
 	};

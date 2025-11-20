@@ -565,7 +565,7 @@ export class NoteManager {
 	 */
 	clearSelection(): void {
 		// Remove selection overlays using stored references instead of searching by name
-		this.selectionOverlays.forEach((overlay, noteKey) => {
+		this.selectionOverlays.forEach((overlay) => {
 			if (overlay && typeof overlay.destroy === 'function') {
 				overlay.destroy();
 			}
@@ -678,7 +678,9 @@ export class NoteManager {
 				child instanceof Phaser.GameObjects.Graphics
 			) {
 				// Type guard to safely check for getBounds method
-				const hasGetBounds = (obj: any): obj is { getBounds(): Phaser.Geom.Rectangle } => {
+				const hasGetBounds = (
+					obj: unknown
+				): obj is { getBounds(): Phaser.Geom.Rectangle } => {
 					return obj && typeof obj.getBounds === 'function';
 				};
 

@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 
 	let { data, children } = $props();
 	let { supabase } = $derived(data);
 
 	let isSidebarCollapsed = $state(false);
-	let sidebarAnimated = $state(false);
 
 	const toggleSidebar = () => {
 		isSidebarCollapsed = !isSidebarCollapsed;
@@ -21,10 +19,6 @@
 		console.log('Profile clicked');
 		// Navigate to profile page
 	};
-
-	onMount(() => {
-		sidebarAnimated = true;
-	});
 </script>
 
 <div
@@ -180,6 +174,7 @@
 						href="/app/chart"
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-purple-600/20 hover:text-purple-300"
 						title="My Charts"
+						aria-label="My Charts"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
@@ -194,6 +189,7 @@
 						href="/app/score"
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-cyan-600/20 hover:text-cyan-300"
 						title="Scores"
+						aria-label="Scores"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
@@ -208,6 +204,7 @@
 						href="/editor"
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-amber-600/20 hover:text-amber-300"
 						title="Editor"
+						aria-label="Editor"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
@@ -222,6 +219,7 @@
 						href="/game"
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-pink-600/20 hover:text-pink-300"
 						title="Play Game"
+						aria-label="Play Game"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path

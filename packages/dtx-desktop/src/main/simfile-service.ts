@@ -105,7 +105,7 @@ export interface CreateSimfileData {
 export interface CreateSimfileResult {
 	success: boolean;
 	simfileId?: string;
-	data?: any;
+	data?: unknown;
 	error?: string;
 }
 

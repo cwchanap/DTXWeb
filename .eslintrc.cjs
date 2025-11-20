@@ -21,6 +21,13 @@ module.exports = {
 	},
 	overrides: [
 		{
+			files: ['**/__mocks__/**', '**/*.test.*', '**/*.spec.*', 'e2e/**/*'],
+			rules: {
+				'@typescript-eslint/no-explicit-any': 'off',
+				'@typescript-eslint/no-unused-vars': 'off'
+			}
+		},
+		{
 			files: ['*.svelte'],
 			parser: 'svelte-eslint-parser',
 			parserOptions: {

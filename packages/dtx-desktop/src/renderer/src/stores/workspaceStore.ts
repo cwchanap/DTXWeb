@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import type { SimfileWithDtx } from '@dtx/common';
 import { linkageCacheService } from '../services/linkageCacheService';
 
 export interface TreeNode {
@@ -11,10 +12,10 @@ export interface TreeNode {
 	containsDtxFiles?: boolean; // New property to identify folders with .dtx files
 	songTitle?: string | null; // Song title from SET.def file
 	linkedSimFileId?: string | null; // ID of linked remote simFile
-	linkedSimFile?: any | null; // Full linked remote simFile data
+	linkedSimFile?: SimfileWithDtx | null; // Full linked remote simFile data
 }
 
-interface WorkspaceState {
+export interface WorkspaceState {
 	path: string | null;
 	currentSubWorkspace: string | null;
 	subWorkspaces: string[];
@@ -186,7 +187,7 @@ function createWorkspaceStore() {
 				showTemplates: false
 			}));
 		},
-		linkSimFileToFolder: (folderPath: string, simFile: any) => {
+		linkSimFileToFolder: (folderPath: string, simFile: SimfileWithDtx) => {
 			// Save to localStorage cache
 			linkageCacheService.saveLinkage(folderPath, simFile.id, simFile);
 

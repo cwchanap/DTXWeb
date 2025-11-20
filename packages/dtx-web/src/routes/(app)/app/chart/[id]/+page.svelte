@@ -33,8 +33,8 @@
 
 			if (fetchError) throw fetchError;
 			simfile = data;
-		} catch (e: any) {
-			error = e.message;
+		} catch (e: unknown) {
+			error = e instanceof Error ? e.message : 'Failed to load chart';
 		} finally {
 			loading = false;
 		}
@@ -52,7 +52,7 @@
 		videoPreviewUrl: string
 	) {
 		const { id } = $page.params;
-		let updateFields: any = {
+		let updateFields: Record<string, unknown> = {
 			download_url: downloadUrl,
 			video_preview_url: videoPreviewUrl,
 			publish_date: publishDate,

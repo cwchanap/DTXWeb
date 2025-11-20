@@ -16,7 +16,7 @@ const extendedElectronAPI = {
 	ipcRenderer: {
 		...electronAPI.ipcRenderer,
 		// Add our custom IPC handlers
-		invoke: (channel: string, ...args: any[]) => {
+		invoke: (channel: string, ...args: unknown[]) => {
 			// Whitelist channels that can be invoked
 			const validChannels = [
 				'select-folder',
@@ -63,8 +63,8 @@ if (process.contextIsolated) {
 		console.error(error);
 	}
 } else {
-	// @ts-ignore (define in dts)
+	// @ts-expect-error (define in dts)
 	window.electron = extendedElectronAPI;
-	// @ts-ignore (define in dts)
+	// @ts-expect-error (define in dts)
 	window.api = api;
 }

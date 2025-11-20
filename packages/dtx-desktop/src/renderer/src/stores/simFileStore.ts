@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
 import type { SimfileWithDtx } from '@dtx/common';
 
-interface SimFileState {
+export interface SimFileState {
 	userSimFiles: SimfileWithDtx[];
 	isLoading: boolean;
 	error: string | null;

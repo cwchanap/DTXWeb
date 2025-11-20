@@ -1,9 +1,9 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, type Session } from '@supabase/supabase-js';
 import { BrowserWindow } from 'electron';
 
 // Initialize Supabase client for main process
 let supabaseClient: SupabaseClient | null = null;
-let currentSession: any = null;
+let currentSession: Session | null = null;
 
 export function initializeSupabase() {
 	// Get environment variables from import.meta.env (main process)
@@ -91,7 +91,10 @@ export async function ensureSupabaseAuth(): Promise<boolean> {
 	return true;
 }
 
-export async function validateSession(sessionData: any): Promise<boolean> {
+export async function validateSession(sessionData: {
+	accessToken: string;
+	refreshToken: string;
+}): Promise<boolean> {
 	try {
 		if (!supabaseClient) {
 			supabaseClient = initializeSupabase();

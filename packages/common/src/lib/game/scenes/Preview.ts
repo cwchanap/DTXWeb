@@ -127,7 +127,7 @@ export class Preview extends BaseGame {
 		// Defer store subscription until after initial setup
 		setTimeout(() => {
 			if (this.scene.isActive()) {
-				this.storeUnsubscribe = store.currentSoundChip.subscribe(async (soundChips) => {
+				this.storeUnsubscribe = store.currentSoundChip.subscribe(async () => {
 					// Only reload sounds, don't restart preview
 					await this.setupSoundsAsync();
 				});
@@ -382,7 +382,7 @@ export class Preview extends BaseGame {
 		});
 
 		// Add error listener to catch load failures
-		this.load.once(`loaderror-audio-${cacheKey}`, (file: any) => {
+		this.load.once(`loaderror-audio-${cacheKey}`, (file: unknown) => {
 			console.warn(`Failed to load audio file: ${cacheKey}`, file);
 			resolve(); // Still resolve to prevent hanging
 		});

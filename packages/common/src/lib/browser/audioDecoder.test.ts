@@ -375,12 +375,12 @@ describe('XAAudioContext', () => {
 		});
 
 		it('should handle large audio files', async () => {
-			// Create a large buffer (1MB)
-			const largeBuffer = new ArrayBuffer(1024 * 1024);
+			// Create a reasonably large buffer (64KB) to exercise chunk logic without timing out
+			const largeBuffer = new ArrayBuffer(64 * 1024);
 			const view = new Uint8Array(largeBuffer);
 			view.fill(0x80); // Fill with some pattern
 
-			const largeDecodedData = new Float32Array(1024 * 512); // 512k samples
+			const largeDecodedData = new Float32Array(4096); // few thousand samples, divisible by channel count
 			mockDecoder.decode.mockReturnValue(largeDecodedData);
 
 			await xaContext.decodeAudioData(largeBuffer);

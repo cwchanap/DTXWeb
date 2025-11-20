@@ -88,7 +88,9 @@
 			// Parse MIDI file again to get the raw data for note conversion
 			const arrayBuffer = await uploadedFile.arrayBuffer();
 			const data = new Uint8Array(arrayBuffer);
-			const midiData = (dtxFile as any).parseMidiFile(data);
+			const midiData = (
+				dtxFile as unknown as { parseMidiFile: (data: Uint8Array) => unknown }
+			).parseMidiFile(data);
 
 			// Override BPM if detected from MIDI
 			if (dtxFile.bpm && dtxFile.bpm !== 120) {
@@ -442,7 +444,7 @@
 						</p>
 
 						<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-							{#each Object.entries(midiToDtxMap) as [midiNote, dtxLane]}
+							{#each Object.entries(midiToDtxMap) as [midiNote]}
 								<div class="flex items-center space-x-3">
 									<span class="min-w-[120px] text-sm font-medium text-slate-300">
 										{getDrumName(Number(midiNote))} ({midiNote}):

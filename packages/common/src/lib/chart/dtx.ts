@@ -12,6 +12,13 @@ interface MidiEvent {
 	velocity?: number;
 }
 
+interface ParsedMidi {
+	format: number;
+	trackCount: number;
+	ticksPerQuarter: number;
+	tracks: MidiEvent[][];
+}
+
 export class SoundChip {
 	label: string;
 	id: number;
@@ -206,9 +213,6 @@ export class DTXFile {
 		notes: Record<string, LaneMeasureNote[]>,
 		laneNoteMap: Record<string, number>
 	): Uint8Array {
-		// MIDI file structure constants
-		const HEADER_CHUNK_TYPE = 'MThd';
-		const TRACK_CHUNK_TYPE = 'MTrk';
 		const TICKS_PER_QUARTER = 480;
 
 		// Create MIDI header
@@ -275,9 +279,8 @@ export class DTXFile {
 		for (const [laneId, laneMeasureNotes] of Object.entries(notes)) {
 			for (const measureNote of laneMeasureNotes) {
 				const measureStartTime = measureNote.measure * ticksPerQuarter * 4; // 4/4 time
-				const notesInMeasure = measureNote.notes.length;
 
-				measureNote.notes.forEach((note, index) => {
+				measureNote.notes.forEach((note) => {
 					if (note.noteID !== '00') {
 						const noteTime = measureStartTime + note.position * ticksPerQuarter * 4;
 						allNoteEvents.push({
@@ -397,8 +400,6 @@ export class DTXFile {
 	}
 
 	private encodeVariableLength(value: number): number[] {
-		const result: number[] = [];
-
 		if (value === 0) {
 			return [0];
 		}
@@ -429,7 +430,7 @@ export class DTXFile {
 		this.convertMidiToDtx(midiData);
 	}
 
-	private parseMidiFile(data: Uint8Array) {
+	private parseMidiFile(data: Uint8Array): ParsedMidi {
 		let offset = 0;
 
 		// Read header chunk
@@ -439,7 +440,7 @@ export class DTXFile {
 		}
 		offset += 4;
 
-		const headerLength = this.readUint32(data, offset);
+		// Header length (unused, but advance the offset)
 		offset += 4;
 
 		const format = this.readUint16(data, offset);
@@ -570,7 +571,7 @@ export class DTXFile {
 		return { value, nextOffset: offset };
 	}
 
-	private convertMidiToDtx(midiData: any): void {
+	private convertMidiToDtx(midiData: ParsedMidi): void {
 		// Set default values
 		this.title = 'Converted from MIDI';
 		this.artist = 'Unknown';
@@ -605,7 +606,7 @@ export class DTXFile {
 		];
 	}
 
-	convertMidiNotesToDtx(midiData: any): Record<string, LaneMeasureNote[]> {
+	convertMidiNotesToDtx(midiData: ParsedMidi): Record<string, LaneMeasureNote[]> {
 		const notesByLane: Record<string, LaneMeasureNote[]> = {};
 		const ticksPerQuarter = midiData.ticksPerQuarter;
 		const ticksPerMeasure = ticksPerQuarter * 4; // Assuming 4/4 time

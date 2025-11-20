@@ -1,5 +1,5 @@
-import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
-import { simFileStore } from '../stores/simFileStore';
+import { workspaceStore, type TreeNode, type WorkspaceState } from '../stores/workspaceStore';
+import { simFileStore, type SimFileState } from '../stores/simFileStore';
 import { linkingService } from './linkingService';
 import { linkageCacheService } from './linkageCacheService';
 
@@ -123,14 +123,14 @@ export const workspaceService = {
 	 */
 	triggerAutoLinking: (): void => {
 		// Get current simFile state
-		let currentSimFileState: any = null;
+		let currentSimFileState: SimFileState | null = null;
 		const unsubscribeSimFile = simFileStore.subscribe((state) => {
 			currentSimFileState = state;
 		});
 		unsubscribeSimFile();
 
 		// Get current workspace state
-		let currentWorkspaceState: any = null;
+		let currentWorkspaceState: WorkspaceState | null = null;
 		const unsubscribeWorkspace = workspaceStore.subscribe((state) => {
 			currentWorkspaceState = state;
 		});
@@ -160,7 +160,7 @@ export const workspaceService = {
 	 */
 	triggerAutoLinkingForNewNodes: (newNodes: TreeNode[]): void => {
 		// Get current simFile state
-		let currentSimFileState: any = null;
+		let currentSimFileState: SimFileState | null = null;
 		const unsubscribeSimFile = simFileStore.subscribe((state) => {
 			currentSimFileState = state;
 		});

@@ -7,10 +7,9 @@
 		show: boolean;
 		onClose: () => void;
 		onSwitchToWorkspace?: (workspace: Workspace) => void;
-		onShowDeleteWorkspaceConfirm?: (workspace: Workspace, event: Event) => void;
 	}
 
-	let { show, onClose, onSwitchToWorkspace, onShowDeleteWorkspaceConfirm }: Props = $props();
+	let { show, onClose, onSwitchToWorkspace }: Props = $props();
 
 	// Internal state management
 	let availableWorkspaces = $state<Workspace[]>(workspaceService.getWorkspaces());
@@ -79,11 +78,6 @@
 		} catch (error) {
 			console.error('Error deleting workspace:', error);
 		}
-	}
-
-	function cancelDeleteWorkspace() {
-		showDeleteConfirmModal = false;
-		workspaceToDelete = null;
 	}
 </script>
 

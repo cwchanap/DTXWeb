@@ -89,7 +89,7 @@
 		try {
 			// Parse notes from DTX file and convert to MIDI
 			const notes = dtxFile.parseNotes();
-			const notesByLane: Record<string, any[]> = {};
+			const notesByLane: Record<string, import('@dtx/common').LaneMeasureNote[]> = {};
 
 			// Group notes by lane
 			notes.forEach((note) => {

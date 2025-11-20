@@ -40,7 +40,7 @@ export default defineConfig({
 		}
 	},
 	renderer: {
-		// @ts-ignore
+		// @ts-expect-error wasm plugin types are not available
 		plugins: [wasm(), tailwindcss(), svelte()],
 		envDir: '../../',
 		envPrefix: ['VITE_', 'PUBLIC_'],

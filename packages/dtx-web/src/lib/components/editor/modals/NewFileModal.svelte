@@ -4,10 +4,9 @@
 	interface Props {
 		show: boolean;
 		onConfirm: () => void;
-		onCancel: () => void;
 	}
 
-	let { show = $bindable(), onConfirm, onCancel }: Props = $props();
+	let { show = $bindable(), onConfirm }: Props = $props();
 </script>
 
 <Modal

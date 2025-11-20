@@ -8,10 +8,50 @@
 	import { isValidDtxFile } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
+	import type { SupabaseClient } from '@supabase/supabase-js';
 
 	interface Props {
 		song: TreeNode;
 	}
+
+	type ListedFile = {
+		fileName: string;
+		key: string;
+		lastModified: number;
+	};
+
+	type ListFilesResponse = {
+		files: ListedFile[];
+		error?: string;
+	};
+
+	type CloudSong = { id: string; [key: string]: unknown };
+
+	type FetchCloudSongResult = {
+		success: boolean;
+		cloudSongData?: unknown;
+		error?: string;
+	};
+
+	type CreateSimfileResult = {
+		success: boolean;
+		simfileId?: string;
+		data?: unknown;
+		error?: string;
+	};
+
+	type UpdateSimfileResult = {
+		success: boolean;
+		data?: Record<string, unknown>;
+		error?: string;
+	};
+
+	type ExportSongResult = {
+		success: boolean;
+		zipPath?: string;
+		filesCount?: number;
+		error?: string;
+	};
 
 	let { song }: Props = $props();
 
@@ -55,12 +95,14 @@
 	};
 
 	// Helper function to create File object with custom properties
-	const createFileObject = (content: any, fileInfo: any) => {
+	type FileContent = string | ArrayBuffer | Uint8Array;
+
+	const createFileObject = (content: FileContent, fileInfo: ListedFile) => {
 		const file = new File([content], fileInfo.fileName, {
 			lastModified: new Date(fileInfo.lastModified).getTime()
 		});
 		// Add the file path as a custom property for desktop uploads
-		(file as any).filePath = fileInfo.key;
+		(file as unknown as { filePath: string }).filePath = fileInfo.key;
 		return file;
 	};
 
@@ -72,7 +114,10 @@
 		fileLoadError = null;
 
 		try {
-			const result = await window.electron.ipcRenderer.invoke('list-files', song.path);
+			const result: ListFilesResponse = await window.electron.ipcRenderer.invoke(
+				'list-files',
+				song.path
+			);
 
 			if (result.error) {
 				throw new Error(result.error);
@@ -82,8 +127,8 @@
 			// Only include files with valid DTX-related extensions
 			const files = await Promise.all(
 				result.files
-					.filter((fileInfo: any) => isValidDtxFile(fileInfo.fileName))
-					.map(async (fileInfo: any) => {
+					.filter((fileInfo: ListedFile) => isValidDtxFile(fileInfo.fileName))
+					.map(async (fileInfo: ListedFile) => {
 						try {
 							// Read file content as buffer
 							const response = await window.electron.ipcRenderer.invoke(
@@ -139,11 +184,11 @@
 	});
 
 	// Mock Supabase client for local-only functionality
-	const mockSupabaseClient = {
+	const mockSupabaseClient: Pick<SupabaseClient, 'auth'> = {
 		auth: {
 			getSession: () => Promise.resolve({ data: { session: null }, error: null })
 		}
-	} as any;
+	};
 
 	// State for parsed local DTX data
 	let parsedLocalData = $state<{
@@ -318,7 +363,7 @@
 			);
 
 			// Call IPC to create simfile record
-			const result = await window.electron.ipcRenderer.invoke(
+			const result: CreateSimfileResult = await window.electron.ipcRenderer.invoke(
 				'create-simfile-record',
 				simfileData
 			);
@@ -368,7 +413,7 @@
 	};
 
 	// Handle cloud song selection from autocomplete
-	const handleCloudSongSelect = async (selectedSong: any) => {
+	const handleCloudSongSelect = async (selectedSong: CloudSong) => {
 		showAutocomplete = false;
 
 		if (!selectedSong || !song.path) return;
@@ -379,9 +424,12 @@
 
 		try {
 			// Call IPC to get the cloud song data (no file caching in main process)
-			const result = await window.electron.ipcRenderer.invoke('fetch-cloud-song', {
-				cloudSongId: selectedSong.id
-			});
+			const result: FetchCloudSongResult = await window.electron.ipcRenderer.invoke(
+				'fetch-cloud-song',
+				{
+					cloudSongId: selectedSong.id
+				}
+			);
 
 			if (result.success) {
 				linkingSuccess = true;
@@ -425,7 +473,7 @@
 
 		try {
 			// Build update data object
-			const updateData: any = {
+			const updateData: Record<string, unknown> = {
 				display_id: Number(event.detail.displayId),
 				publish_date: String(event.detail.publishDate),
 				is_published: Boolean(event.detail.isPublished),
@@ -445,10 +493,13 @@
 			}
 
 			// Call IPC to update simfile record
-			const result = await window.electron.ipcRenderer.invoke('update-simfile-record', {
-				simfileId: song.linkedSimFileId,
-				updateData
-			});
+			const result: UpdateSimfileResult = await window.electron.ipcRenderer.invoke(
+				'update-simfile-record',
+				{
+					simfileId: song.linkedSimFileId,
+					updateData
+				}
+			);
 
 			if (result.success) {
 				updateSuccess = true;
@@ -492,11 +543,14 @@
 
 		try {
 			const zipFileName = song.name || 'song';
-			const result = await window.electron.ipcRenderer.invoke('export-song-to-zip', {
-				songPath: song.path,
-				songTitle: zipFileName,
-				exportDirectory: currentSettings.exportDirectory
-			});
+			const result: ExportSongResult = await window.electron.ipcRenderer.invoke(
+				'export-song-to-zip',
+				{
+					songPath: song.path,
+					songTitle: zipFileName,
+					exportDirectory: currentSettings.exportDirectory
+				}
+			);
 
 			if (result.success) {
 				exportSuccess = true;

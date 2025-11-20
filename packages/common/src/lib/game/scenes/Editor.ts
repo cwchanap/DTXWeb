@@ -680,7 +680,10 @@ export class Editor extends BaseGame {
 	 * Override getCellHeight to maintain constant measure height regardless of grid spacing
 	 * This ensures that changing from 16th to 24th notes doesn't change the total measure size
 	 */
-	getCellHeight(measure: number, cell: number): number {
+	getCellHeight(_measure: number, _cell: number): number {
+		// mark parameters as intentionally unused while keeping signature compatible
+		void _measure;
+		void _cell;
 		// Calculate base measure height using default 16 cells per measure
 		const baseCellsPerMeasure = 16;
 		const baseCellHeight = this.cellHeight; // Use current dynamic cell height

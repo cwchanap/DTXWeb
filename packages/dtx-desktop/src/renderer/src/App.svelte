@@ -9,9 +9,10 @@
 	import { authService } from './services/authService';
 	import { simFileService } from './services/simFileService';
 	import { simFileStore } from './stores/simFileStore';
-	import { workspaceStore } from './stores/workspaceStore';
+	import { workspaceStore, type WorkspaceState } from './stores/workspaceStore';
 	import { linkingService } from './services/linkingService';
 	import { onMount, onDestroy } from 'svelte';
+	import type { SimfileWithDtx } from '@dtx/common';
 
 	// Routing state
 	let currentRoute = $state('workspace');
@@ -97,9 +98,9 @@
 	}
 
 	// Function to trigger automatic linking between remote simFiles and local folders
-	function triggerAutoLinking(remoteSimFiles: any[]) {
+	function triggerAutoLinking(remoteSimFiles: SimfileWithDtx[]) {
 		// Get current workspace state
-		let currentWorkspaceState: any = null;
+		let currentWorkspaceState: WorkspaceState | null = null;
 		const unsubscribe = workspaceStore.subscribe((state) => {
 			currentWorkspaceState = state;
 		});

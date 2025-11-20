@@ -1,7 +1,7 @@
 interface LinkageData {
 	linkedSimFileId: string;
 	linkedAt: string;
-	cloudSongData: any;
+	cloudSongData: Record<string, unknown>;
 }
 
 interface LinkageCache {
@@ -14,7 +14,11 @@ export const linkageCacheService = {
 	/**
 	 * Save linkage data for a song path to localStorage
 	 */
-	saveLinkage: (songPath: string, cloudSongId: string | number, cloudSongData: any): void => {
+	saveLinkage: (
+		songPath: string,
+		cloudSongId: string | number,
+		cloudSongData: Record<string, unknown>
+	): void => {
 		try {
 			const cache = linkageCacheService.getCache();
 

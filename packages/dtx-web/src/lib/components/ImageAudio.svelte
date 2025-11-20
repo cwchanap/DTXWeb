@@ -4,7 +4,6 @@
 	import { onMount } from 'svelte';
 
 	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
-	import { Button } from '@dtx/ui-components/components';
 
 	interface Props {
 		previewUrl: string;

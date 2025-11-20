@@ -2,7 +2,6 @@ import { LaneMeasureNote } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
 import Phaser from 'phaser';
-import { HIGH_RESOLUTION_CELLS } from '../../utils/notePositioning';
 
 /**
  * Manages note drag and move operations in the DTX editor

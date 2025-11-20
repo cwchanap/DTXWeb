@@ -183,7 +183,7 @@ describe('DTX to MIDI Converter Logic', () => {
 	});
 
 	it('should handle note mapping customization', () => {
-		let laneNoteMap = {
+		const laneNoteMap = {
 			'01': 36, // Bass Drum
 			'02': 38, // Snare
 			'03': 42 // Hi-hat

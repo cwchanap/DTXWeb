@@ -1,7 +1,9 @@
+import type { SimfileWithDtx } from '@dtx/common';
+
 interface LinkageData {
 	linkedSimFileId: string;
 	linkedAt: string;
-	cloudSongData: Record<string, unknown>;
+	cloudSongData: SimfileWithDtx;
 }
 
 interface LinkageCache {
@@ -17,7 +19,7 @@ export const linkageCacheService = {
 	saveLinkage: (
 		songPath: string,
 		cloudSongId: string | number,
-		cloudSongData: Record<string, unknown>
+		cloudSongData: SimfileWithDtx
 	): void => {
 		try {
 			const cache = linkageCacheService.getCache();

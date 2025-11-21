@@ -6,6 +6,7 @@
 	import { authStore } from '../stores/authStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
+	import type { SimfileWithDtx, Tables } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
@@ -25,24 +26,30 @@
 		error?: string;
 	};
 
-	type CloudSong = { id: string; [key: string]: unknown };
+	type CloudSong = {
+		id: string;
+		title: string;
+		artist: string;
+		bpm?: number;
+		is_published: boolean;
+	};
 
 	type FetchCloudSongResult = {
 		success: boolean;
-		cloudSongData?: unknown;
+		cloudSongData?: SimfileWithDtx;
 		error?: string;
 	};
 
 	type CreateSimfileResult = {
 		success: boolean;
 		simfileId?: string;
-		data?: unknown;
+		data?: SimfileWithDtx;
 		error?: string;
 	};
 
 	type UpdateSimfileResult = {
 		success: boolean;
-		data?: Record<string, unknown>;
+		data?: Partial<SimfileWithDtx>;
 		error?: string;
 	};
 
@@ -184,11 +191,11 @@
 	});
 
 	// Mock Supabase client for local-only functionality
-	const mockSupabaseClient: Pick<SupabaseClient, 'auth'> = {
+	const mockSupabaseClient = {
 		auth: {
 			getSession: () => Promise.resolve({ data: { session: null }, error: null })
 		}
-	};
+	} as unknown as SupabaseClient;
 
 	// State for parsed local DTX data
 	let parsedLocalData = $state<{
@@ -231,6 +238,27 @@
 	let exportError = $state<string | null>(null);
 	let exportSuccess = $state(false);
 	let exportedFilePath = $state<string | null>(null);
+
+	const isSimfileWithDtx = (data: unknown): data is SimfileWithDtx => {
+		if (!data || typeof data !== 'object') return false;
+		const candidate = data as Partial<SimfileWithDtx>;
+		return (
+			typeof candidate.id === 'number' &&
+			typeof candidate.title === 'string' &&
+			typeof candidate.artist === 'string' &&
+			typeof candidate.bpm === 'number'
+		);
+	};
+
+	const normalizeSimfile = (data: SimfileWithDtx): SimfileWithDtx => ({
+		...data,
+		dtx_files: data.dtx_files?.map((file, index) => ({
+			...file,
+			level: file?.level !== undefined ? Number(file.level) : undefined,
+			id: (file as { id?: number })?.id ?? index + 1,
+			simfile_id: (file as { simfile_id?: number })?.simfile_id
+		}))
+	});
 
 	// Settings store subscription for export directory
 	let currentSettings = $state({ exportDirectory: '~/Downloads' });
@@ -368,14 +396,15 @@
 				simfileData
 			);
 
-			if (result.success) {
+			if (result.success && result.data && isSimfileWithDtx(result.data)) {
 				uploadSuccess = true;
+				const linkedSimfile = normalizeSimfile(result.data);
 				// Update the song with the new linked data
-				song.linkedSimFileId = result.simfileId;
-				song.linkedSimFile = result.data;
+				song.linkedSimFileId = result.simfileId || String(result.data.id);
+				song.linkedSimFile = linkedSimfile;
 
 				// Update the workspace store
-				workspaceStore.linkSimFileToFolder(song.path, result.data);
+				workspaceStore.linkSimFileToFolder(song.path, linkedSimfile);
 
 				// Hide success message after 3 seconds
 				setTimeout(() => {
@@ -413,51 +442,57 @@
 	};
 
 	// Handle cloud song selection from autocomplete
-	const handleCloudSongSelect = async (selectedSong: CloudSong) => {
-		showAutocomplete = false;
+	const handleCloudSongSelect = (selectedSong: CloudSong) => {
+		void (async () => {
+			showAutocomplete = false;
 
-		if (!selectedSong || !song.path) return;
+			if (!selectedSong || !song.path) return;
 
-		isLinking = true;
-		linkingError = null;
-		linkingSuccess = false;
+			isLinking = true;
+			linkingError = null;
+			linkingSuccess = false;
 
-		try {
-			// Call IPC to get the cloud song data (no file caching in main process)
-			const result: FetchCloudSongResult = await window.electron.ipcRenderer.invoke(
-				'fetch-cloud-song',
-				{
-					cloudSongId: selectedSong.id
+			try {
+				const result: FetchCloudSongResult = await window.electron.ipcRenderer.invoke(
+					'fetch-cloud-song',
+					{
+						cloudSongId: selectedSong.id
+					}
+				);
+
+				if (
+					result.success &&
+					result.cloudSongData &&
+					isSimfileWithDtx(result.cloudSongData)
+				) {
+					const linkedSimfile = normalizeSimfile(result.cloudSongData);
+					linkingSuccess = true;
+					song.linkedSimFileId = String(selectedSong.id);
+					song.linkedSimFile = linkedSimfile;
+
+					// Update the workspace store (this will automatically cache to localStorage)
+					workspaceStore.linkSimFileToFolder(song.path, linkedSimfile);
+
+					// Hide success message after 3 seconds
+					setTimeout(() => {
+						linkingSuccess = false;
+					}, 3000);
+				} else {
+					throw new Error(result.error || 'Failed to link song to cloud');
 				}
-			);
+			} catch (error) {
+				console.error('Error linking song to cloud:', error);
+				linkingError =
+					error instanceof Error ? error.message : 'Failed to link song to cloud';
 
-			if (result.success) {
-				linkingSuccess = true;
-				// Update the song with the linked data
-				song.linkedSimFileId = selectedSong.id;
-				song.linkedSimFile = result.cloudSongData || selectedSong;
-
-				// Update the workspace store (this will automatically cache to localStorage)
-				workspaceStore.linkSimFileToFolder(song.path, song.linkedSimFile);
-
-				// Hide success message after 3 seconds
+				// Clear error message after 10 seconds
 				setTimeout(() => {
-					linkingSuccess = false;
-				}, 3000);
-			} else {
-				throw new Error(result.error || 'Failed to link song to cloud');
+					linkingError = null;
+				}, 10000);
+			} finally {
+				isLinking = false;
 			}
-		} catch (error) {
-			console.error('Error linking song to cloud:', error);
-			linkingError = error instanceof Error ? error.message : 'Failed to link song to cloud';
-
-			// Clear error message after 10 seconds
-			setTimeout(() => {
-				linkingError = null;
-			}, 10000);
-		} finally {
-			isLinking = false;
-		}
+		})();
 	};
 
 	// Handle updating linked simfile
@@ -501,13 +536,17 @@
 				}
 			);
 
-			if (result.success) {
+			if (result.success && song.linkedSimFile) {
 				updateSuccess = true;
 				// Update the local song data with the new information
-				song.linkedSimFile = { ...song.linkedSimFile, ...result.data };
+				const updatedSimfile = normalizeSimfile({
+					...song.linkedSimFile,
+					...(result.data || {})
+				} as SimfileWithDtx);
+				song.linkedSimFile = updatedSimfile;
 
 				// Update the workspace store
-				workspaceStore.linkSimFileToFolder(song.path, song.linkedSimFile);
+				workspaceStore.linkSimFileToFolder(song.path, updatedSimfile);
 
 				// Hide success message after 3 seconds
 				setTimeout(() => {
@@ -624,26 +663,34 @@
 	// Convert song data to simfile format for ChartDetail component
 	// Use parsed local data as fallback when linked simfile data is missing
 	const simfileData = $derived(() => {
+		const linkedSimfile = song.linkedSimFile ? normalizeSimfile(song.linkedSimFile) : null;
+		const fallbackDtxFiles: Partial<Tables<'dtx_files'>>[] = parsedLocalData.levels
+			? parsedLocalData.levels.map((l, index) => ({
+					id: index + 1,
+					label: l.label || 'Unknown',
+					level: Number(l.level || 0),
+					simfile_id: 0
+				}))
+			: [];
+		const dtxFiles: Partial<Tables<'dtx_files'>>[] =
+			linkedSimfile?.dtx_files?.map((file, index) => ({
+				...file,
+				level: file?.level !== undefined ? Number(file.level) : undefined,
+				id: (file as { id?: number })?.id ?? index + 1,
+				simfile_id: (file as { simfile_id?: number })?.simfile_id
+			})) || fallbackDtxFiles;
+
 		return {
-			title: song.songTitle || song.name,
-			artist: song.linkedSimFile?.artist || parsedLocalData.artist,
-			bpm: song.linkedSimFile?.bpm || parsedLocalData.bpm,
-			publish_date: song.linkedSimFile?.publish_date || publishDate,
-			display_id: song.linkedSimFile?.display_id || displayId,
-			is_published: song.linkedSimFile?.is_published || false,
-			download_url: song.linkedSimFile?.download_url || downloadUrl,
-			video_preview_url: song.linkedSimFile?.video_preview_url || videoPreviewUrl,
-			dtx_files:
-				song.linkedSimFile?.dtx_files ||
-				(parsedLocalData.levels
-					? parsedLocalData.levels.map((l, index) => ({
-							id: index + 1,
-							label: l.label || 'Unknown',
-							level: l.level || 0,
-							simfile_id: 0
-						}))
-					: [])
-		};
+			title: linkedSimfile?.title || song.songTitle || song.name,
+			artist: linkedSimfile?.artist || parsedLocalData.artist,
+			bpm: linkedSimfile?.bpm ?? parsedLocalData.bpm,
+			publish_date: linkedSimfile?.publish_date || publishDate,
+			display_id: linkedSimfile?.display_id ?? displayId,
+			is_published: linkedSimfile?.is_published ?? false,
+			download_url: linkedSimfile?.download_url || downloadUrl,
+			video_preview_url: linkedSimfile?.video_preview_url || videoPreviewUrl,
+			dtx_files: dtxFiles
+		} satisfies Partial<Tables<'simfiles'>> & { dtx_files: Partial<Tables<'dtx_files'>>[] };
 	});
 
 	// Initialize reactive form values from simfileData

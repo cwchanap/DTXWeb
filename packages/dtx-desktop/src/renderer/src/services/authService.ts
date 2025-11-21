@@ -16,6 +16,18 @@ const DEFAULT_SERVER_URL = 'http://localhost:5173';
 const SERVER_URL = import.meta.env.VITE_DTX_SERVER_URL || DEFAULT_SERVER_URL;
 const WEB_APP_LOGIN_URL = `${SERVER_URL}/login?redirect=desktop`;
 
+type StoredUserData = {
+	id: string;
+	email?: string | null;
+	user_metadata?: { name?: string };
+};
+
+const isStoredUserData = (data: unknown): data is StoredUserData => {
+	if (!data || typeof data !== 'object') return false;
+	const candidate = data as StoredUserData;
+	return typeof candidate.id === 'string';
+};
+
 type MagicLinkResult = {
 	success: boolean;
 	error?: string;
@@ -145,6 +157,11 @@ export const authService = {
 		try {
 			const sessionData = getStoredSessionData();
 			if (!sessionData) {
+				return false;
+			}
+
+			if (!isStoredUserData(sessionData.userData)) {
+				clearStoredSessionData();
 				return false;
 			}
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import type { Action } from 'svelte/action';
 
 	export let isOpen = false;
 	export let onToggle: ((open: boolean) => void) | undefined = undefined;
@@ -14,16 +15,18 @@
 	let triggerButton: HTMLButtonElement | null = null;
 	let menuItemRefs: HTMLButtonElement[] = [];
 
-	function setMenuItemRef(index: number) {
-		return (node: HTMLButtonElement) => {
+	const setMenuItemRef: Action<HTMLButtonElement, number> = (node, index) => {
+		if (typeof index === 'number') {
 			menuItemRefs[index] = node;
-			return {
-				destroy() {
+		}
+		return {
+			destroy() {
+				if (typeof index === 'number') {
 					menuItemRefs[index] = undefined as unknown as HTMLButtonElement;
 				}
-			};
+			}
 		};
-	}
+	};
 
 	async function openMenu() {
 		if (isOpen) return;

@@ -87,7 +87,10 @@
 
 		const checkNodes = (nodes: TreeNode[]): boolean => {
 			for (const node of nodes) {
-				if (node.linkedSimFileId === simFileId) {
+				if (
+					node.linkedSimFileId !== undefined &&
+					String(node.linkedSimFileId) === String(simFileId)
+				) {
 					return true;
 				}
 				if (node.children && node.children.length > 0) {

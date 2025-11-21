@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { linkageCacheService } from './linkageCacheService';
+import type { SimfileWithDtx } from '@dtx/common';
 
 // Mock localStorage
 const localStorageMock = {
@@ -7,6 +8,21 @@ const localStorageMock = {
 	setItem: vi.fn(),
 	removeItem: vi.fn(),
 	clear: vi.fn()
+};
+
+const sampleSimfile: SimfileWithDtx = {
+	id: 1,
+	title: 'Test Song',
+	artist: 'Artist',
+	bpm: 120,
+	preview_url: null,
+	sound_preview_url: null,
+	download_url: null,
+	is_published: false,
+	display_id: null,
+	publish_date: '2024-01-01',
+	video_preview_url: null,
+	dtx_files: []
 };
 
 // Replace global localStorage with mock
@@ -26,7 +42,7 @@ describe('linkageCacheService', () => {
 		it('should save linkage data to localStorage', () => {
 			const songPath = '/path/to/song';
 			const cloudSongId = 'song123';
-			const cloudSongData = { id: 'song123', title: 'Test Song' };
+			const cloudSongData = sampleSimfile;
 
 			linkageCacheService.saveLinkage(songPath, cloudSongId, cloudSongData);
 
@@ -51,7 +67,7 @@ describe('linkageCacheService', () => {
 
 			// Should not throw
 			expect(() => {
-				linkageCacheService.saveLinkage('/path', 'id', {});
+				linkageCacheService.saveLinkage('/path', 'id', sampleSimfile);
 			}).not.toThrow();
 		});
 	});
@@ -62,7 +78,7 @@ describe('linkageCacheService', () => {
 			const linkageData = {
 				linkedSimFileId: 'song123',
 				linkedAt: '2025-06-28T12:00:00.000Z',
-				cloudSongData: { id: 'song123', title: 'Test Song' }
+				cloudSongData: sampleSimfile
 			};
 
 			localStorageMock.getItem.mockReturnValue(JSON.stringify({ [songPath]: linkageData }));
@@ -91,8 +107,16 @@ describe('linkageCacheService', () => {
 	describe('removeLinkage', () => {
 		it('should remove linkage data for specific song path', () => {
 			const existingCache = {
-				'/path/to/song1': { linkedSimFileId: 'id1', linkedAt: '', cloudSongData: {} },
-				'/path/to/song2': { linkedSimFileId: 'id2', linkedAt: '', cloudSongData: {} }
+				'/path/to/song1': {
+					linkedSimFileId: 'id1',
+					linkedAt: '',
+					cloudSongData: sampleSimfile
+				},
+				'/path/to/song2': {
+					linkedSimFileId: 'id2',
+					linkedAt: '',
+					cloudSongData: sampleSimfile
+				}
 			};
 
 			localStorageMock.getItem.mockReturnValue(JSON.stringify(existingCache));
@@ -136,8 +160,16 @@ describe('linkageCacheService', () => {
 	describe('getLinkedSongPaths', () => {
 		it('should return all song paths with linkage data', () => {
 			const cache = {
-				'/path/to/song1': { linkedSimFileId: 'id1', linkedAt: '', cloudSongData: {} },
-				'/path/to/song2': { linkedSimFileId: 'id2', linkedAt: '', cloudSongData: {} }
+				'/path/to/song1': {
+					linkedSimFileId: 'id1',
+					linkedAt: '',
+					cloudSongData: sampleSimfile
+				},
+				'/path/to/song2': {
+					linkedSimFileId: 'id2',
+					linkedAt: '',
+					cloudSongData: sampleSimfile
+				}
 			};
 
 			localStorageMock.getItem.mockReturnValue(JSON.stringify(cache));

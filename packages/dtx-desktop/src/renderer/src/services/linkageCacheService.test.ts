@@ -125,7 +125,11 @@ describe('linkageCacheService', () => {
 
 			const savedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
 			expect(savedData).toEqual({
-				'/path/to/song2': { linkedSimFileId: 'id2', linkedAt: '', cloudSongData: {} }
+				'/path/to/song2': {
+					linkedSimFileId: 'id2',
+					linkedAt: '',
+					cloudSongData: sampleSimfile
+				}
 			});
 		});
 	});

@@ -25,7 +25,9 @@ jobs:
         run: npm ci
 
       - name: Generate SvelteKit types
-        run: npm run build -w=dtx-web -- --mode types-only || npx svelte-kit sync --config packages/dtx-web/svelte.config.js
+        run: |
+          npm run build -w=dtx-web -- --mode types-only \
+            || (cd packages/dtx-web && npx svelte-kit sync)
         working-directory: ${{ github.workspace }}
 
       - name: Build packages

@@ -1,5 +1,4 @@
 <script lang="ts">
-	/* eslint-disable @typescript-eslint/no-explicit-any */
 	// Desktop Editor component that uses common package components directly
 	import { onMount } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
@@ -8,7 +7,7 @@
 	import { Editor, Preloader, MainMenu, EventBus, EventType } from '@dtx/common/game';
 	import { DesktopPreview } from '../scenes/DesktopPreview';
 	import { store } from '@dtx/common';
-	import { DTXFile, SimFile, setFileProvider } from '@dtx/common';
+	import { DTXFile, LaneMeasureNote, SimFile, SoundChip, setFileProvider } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
 	import { editorMappingStore } from '../stores/editorMappingStore';
 
@@ -32,6 +31,18 @@
 		soundChips: SoundChipData[];
 	}
 
+	interface ChartFile {
+		name: string;
+		path: string;
+	}
+
+	interface ChartState {
+		name: string;
+		dtxFiles: ChartFile[];
+		currentDTX: string;
+		folderPath: string;
+	}
+
 	interface Props {
 		simFileId?: string;
 	}
@@ -49,7 +60,7 @@
 	let isLocalEditingMode = $state(false); // Track if we should treat this as local editing
 	let isSidebarCollapsed = $state(false); // Track sidebar collapse state
 	let currentSongName = $state<string | null>(null); // Track current song name
-	let currentChart = $state<any>(null); // Track current chart with DTX files
+	let currentChart = $state<ChartState | null>(null); // Track current chart with DTX files
 	let sidebarWidth = $state(320); // Sidebar width in pixels (default 80 * 0.25rem = 320px)
 	let isDragging = $state(false);
 	let minSidebarWidth = 200;
@@ -299,11 +310,11 @@
 	const loadLocalFilesFromPath = async (
 		folderPath: string,
 		songName: string,
-		remoteMetadata: any = null
+		remoteMetadata: Partial<ChartMetadata> | null = null
 	) => {
 		// Try to load SET.def file first directly from the folder path
 		let setDefFile: File | undefined;
-		let localSimFile: any = null;
+		let localSimFile: SimFile | null = null;
 
 		try {
 			// Read SET.def directly from folder path
@@ -338,9 +349,9 @@
 		}
 
 		// Try to load DTX files for sound chips and notes
-		let soundChips: any[] = [];
+		let soundChips: SoundChip[] = [];
 		let dtxFile: DTXFile | null = null;
-		let notes: any[] = [];
+		let notes: LaneMeasureNote[] = [];
 		let bpmNotes: Record<string, number> = {};
 
 		try {
@@ -422,11 +433,11 @@
 			}
 
 			// Filter DTX files (list-files returns files with different structure)
-			const dtxFiles = folderContents.files
-				.filter((file: any) =>
+			const dtxFiles: ChartFile[] = folderContents.files
+				.filter((file: { fileName: string }) =>
 					dtxExtensions.some((ext) => file.fileName.toLowerCase().endsWith(ext))
 				)
-				.map((file: any) => ({
+				.map((file: { fileName: string }) => ({
 					name: file.fileName,
 					path: `${folderPath}/${file.fileName}`
 				}));
@@ -437,7 +448,7 @@
 				const difficultyPriority = ['real.dtx', 'mas.dtx', 'ext.dtx', 'adv.dtx', 'bas.dtx'];
 				const defaultDTX =
 					difficultyPriority.find((difficulty) =>
-						dtxFiles.some((file: any) => file.name.toLowerCase() === difficulty)
+						dtxFiles.some((file) => file.name.toLowerCase() === difficulty)
 					) || dtxFiles[0].name;
 
 				currentChart = {
@@ -467,9 +478,9 @@
 
 			// Load the selected DTX file
 			let dtxFile: DTXFile | null = null;
-			let notes: any[] = [];
+			let notes: LaneMeasureNote[] = [];
 			let bpmNotes: Record<string, number> = {};
-			let soundChips: any[] = [];
+			let soundChips: SoundChip[] = [];
 
 			const dtxResult = await window.electron.ipcRenderer.invoke(
 				'read-file',
@@ -526,11 +537,11 @@
 								previewScene.scene.stop();
 							}
 							// Force editor to be dirty so Preview rebuilds completely
-							if (
-								editorScene &&
-								typeof (editorScene as any).setDirty === 'function'
-							) {
-								(editorScene as any).setDirty(true);
+							const dirtyScene = editorScene as Phaser.Scene & {
+								setDirty?: (flag?: boolean) => void;
+							};
+							if (typeof dirtyScene.setDirty === 'function') {
+								dirtyScene.setDirty(true);
 							}
 						}
 					}

@@ -30,8 +30,7 @@ jobs:
           key: ${{ runner.os }}-node_modules-${{ hashFiles('package-lock.json') }}
 
       - name: Generate SvelteKit types
-        run: npm run build -w=dtx-web -- --mode types-only || npx svelte-kit sync --config packages/dtx-web/svelte.config.js
-        working-directory: ${{ github.workspace }}
+        run: cd packages/dtx-web && npx svelte-kit sync
 
       - name: Build packages
         run: npm run build -w=@dtx/common

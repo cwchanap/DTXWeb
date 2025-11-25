@@ -66,6 +66,7 @@
 	let minSidebarWidth = 200;
 	let maxSidebarWidth = 600;
 	let collapseThreshold = 50; // Width below which sidebar collapses
+	const keyboardResizeStep = 20;
 	let validationError = $state<string | null>(null); // Track validation errors
 
 	// Helper function to create DTXFile from ChartMetadata
@@ -97,24 +98,30 @@
 		document.body.style.userSelect = 'none';
 	};
 
-	const handleMouseMove = (e: MouseEvent) => {
-		if (!isDragging) return;
+	const clampSidebarWidth = (width: number) =>
+		Math.min(Math.max(width, minSidebarWidth), maxSidebarWidth);
 
-		const newWidth = e.clientX;
-
+	const applySidebarWidth = (newWidth: number) => {
 		// Only collapse/expand, don't resize when collapsed
 		if (isSidebarCollapsed) {
 			if (newWidth > collapseThreshold) {
 				isSidebarCollapsed = false;
-				sidebarWidth = Math.min(Math.max(newWidth, minSidebarWidth), maxSidebarWidth);
+				sidebarWidth = clampSidebarWidth(newWidth);
 			}
-		} else {
-			if (newWidth < collapseThreshold) {
-				isSidebarCollapsed = true;
-			} else {
-				sidebarWidth = Math.min(newWidth, maxSidebarWidth);
-			}
+			return;
 		}
+
+		if (newWidth < collapseThreshold) {
+			isSidebarCollapsed = true;
+			return;
+		}
+
+		sidebarWidth = clampSidebarWidth(newWidth);
+	};
+
+	const handleMouseMove = (e: MouseEvent) => {
+		if (!isDragging) return;
+		applySidebarWidth(e.clientX);
 	};
 
 	const handleMouseUp = () => {
@@ -127,6 +134,23 @@
 		// Ensure minimum width when drag ends (but don't collapse)
 		if (!isSidebarCollapsed && sidebarWidth < minSidebarWidth) {
 			sidebarWidth = minSidebarWidth;
+		}
+	};
+
+	const handleKeyResize = (e: KeyboardEvent) => {
+		if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+			e.preventDefault();
+			const delta = e.key === 'ArrowLeft' ? -keyboardResizeStep : keyboardResizeStep;
+			const targetWidth = (isSidebarCollapsed ? minSidebarWidth : sidebarWidth) + delta;
+			applySidebarWidth(targetWidth);
+		} else if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			if (isSidebarCollapsed) {
+				isSidebarCollapsed = false;
+				sidebarWidth = clampSidebarWidth(sidebarWidth || minSidebarWidth);
+			} else {
+				isSidebarCollapsed = true;
+			}
 		}
 	};
 
@@ -674,11 +698,13 @@
 						? 'bg-blue-500'
 						: ''}"
 					onmousedown={handleMouseDown}
-					onkeydown={(e) =>
-						(e.key === 'Enter' || e.key === ' ') &&
-						handleMouseDown(e as unknown as MouseEvent)}
+					onkeydown={handleKeyResize}
 					tabindex="0"
 					aria-label="Resize sidebar"
+					aria-valuemin={minSidebarWidth}
+					aria-valuemax={maxSidebarWidth}
+					aria-valuenow={isSidebarCollapsed ? 0 : sidebarWidth}
+					aria-expanded={!isSidebarCollapsed}
 				></button>
 			</div>
 		{:else}

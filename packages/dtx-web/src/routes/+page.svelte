@@ -1,16 +1,16 @@
-<script>
+<script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
-	const navigateToBlog = () => {
+	const handleNavigateToBlog = (): void => {
 		goto('/blog');
 	};
 
-	const navigateToTools = () => {
+	const handleNavigateToTools = (): void => {
 		goto('/tool');
 	};
 
-	const navigateToEditor = () => {
+	const handleNavigateToEditor = (): void => {
 		goto('/editor');
 	};
 
@@ -76,9 +76,11 @@
 	<main class="relative z-10 container mx-auto px-6 py-16">
 		<section class="mb-20 text-center">
 			<div
-				class="transform transition-all duration-1000 {heroAnimated
-					? 'translate-y-0 opacity-100'
-					: 'translate-y-8 opacity-0'}"
+				class="transform transition-all duration-1000"
+				class:translate-y-0={heroAnimated}
+				class:opacity-100={heroAnimated}
+				class:translate-y-8={!heroAnimated}
+				class:opacity-0={!heroAnimated}
 			>
 				<h2 class="mb-6 text-6xl leading-tight font-bold md:text-7xl">
 					<span
@@ -119,17 +121,20 @@
 
 				<!-- Action buttons -->
 				<div class="flex flex-col items-center justify-center gap-6 sm:flex-row">
-					<button on:click={navigateToBlog} class="music-btn-primary px-8 py-4 text-lg">
+					<button
+						on:click={handleNavigateToBlog}
+						class="music-btn-primary px-8 py-4 text-lg"
+					>
 						🎵 Explore Charts
 					</button>
 					<button
-						on:click={navigateToEditor}
+						on:click={handleNavigateToEditor}
 						class="music-btn-secondary px-8 py-4 text-lg"
 					>
 						✏️ Chart Editor
 					</button>
 					<button
-						on:click={navigateToTools}
+						on:click={handleNavigateToTools}
 						class="music-btn-secondary px-8 py-4 text-lg"
 					>
 						🛠️ DTX Tools

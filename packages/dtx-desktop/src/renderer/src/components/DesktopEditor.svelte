@@ -412,14 +412,18 @@
 			comment: dtxFile?.comment || '',
 			bpm: remoteMetadata?.bpm || dtxFile?.bpm || 120,
 			level: dtxFile?.level || 1,
-			soundChips: soundChips.map((chip) => ({
-				label: chip.label,
-				id: chip.id,
-				volume: chip.volume,
-				position: chip.position,
-				fileName: chip.fileName,
-				filePath: chip.filePath
-			}))
+			soundChips: soundChips.map((chip) => {
+				const chipPath =
+					'filePath' in chip ? (chip as { filePath?: string }).filePath : undefined;
+				return {
+					label: chip.label,
+					id: chip.id,
+					volume: chip.volume,
+					position: chip.position,
+					fileName: chip.fileName,
+					filePath: chipPath
+				};
+			})
 		};
 
 		// Create DTXFile for MainTab
@@ -525,14 +529,20 @@
 					chartMetadata.comment = dtxFile.comment || '';
 					chartMetadata.bpm = dtxFile.bpm || chartMetadata.bpm;
 					chartMetadata.level = dtxFile.level || 1;
-					chartMetadata.soundChips = soundChips.map((chip) => ({
-						label: chip.label,
-						id: chip.id,
-						volume: chip.volume,
-						position: chip.position,
-						fileName: chip.fileName,
-						filePath: chip.filePath
-					}));
+					chartMetadata.soundChips = soundChips.map((chip) => {
+						const chipPath =
+							'filePath' in chip
+								? (chip as { filePath?: string }).filePath
+								: undefined;
+						return {
+							label: chip.label,
+							id: chip.id,
+							volume: chip.volume,
+							position: chip.position,
+							fileName: chip.fileName,
+							filePath: chipPath
+						};
+					});
 				}
 			} else {
 				console.error('Failed to load DTX file:', dtxFileName);
@@ -701,10 +711,6 @@
 					onkeydown={handleKeyResize}
 					tabindex="0"
 					aria-label="Resize sidebar"
-					aria-valuemin={minSidebarWidth}
-					aria-valuemax={maxSidebarWidth}
-					aria-valuenow={isSidebarCollapsed ? 0 : sidebarWidth}
-					aria-expanded={!isSidebarCollapsed}
 				></button>
 			</div>
 		{:else}

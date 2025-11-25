@@ -10,12 +10,12 @@
 	let { show = $bindable(), onConfirm, onCancel }: Props = $props();
 
 	let wasOpen = show;
-	$: {
+	$effect(() => {
 		if (wasOpen && !show) {
 			onCancel?.();
 		}
 		wasOpen = show;
-	}
+	});
 </script>
 
 <Modal

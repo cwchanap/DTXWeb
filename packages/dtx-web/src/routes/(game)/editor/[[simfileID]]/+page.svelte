@@ -743,11 +743,7 @@
 </Modal>
 
 <!-- Workspace DTX Switcher Modal -->
-<DTXSwitcherModal
-	bind:show={showDTXSwitchModal}
-	onSwitchDTX={switchWorkspaceDTX}
-	onClose={() => (showDTXSwitchModal = false)}
-/>
+<DTXSwitcherModal bind:show={showDTXSwitchModal} onSwitchDTX={switchWorkspaceDTX} />
 
 <!-- New File Confirmation Modal -->
 <NewFileModal

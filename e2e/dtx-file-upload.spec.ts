@@ -215,8 +215,6 @@ test.describe('DTX File Upload E2E Tests', () => {
 	});
 
 	test('should support drag and drop upload', async ({ page }) => {
-		const dtxFilePath = path.join(__dirname, 'fixtures', 'test-sample.dtx');
-
 		const dropZone = page.locator('[data-testid="drop-zone"]');
 		await expect(dropZone).toBeVisible();
 

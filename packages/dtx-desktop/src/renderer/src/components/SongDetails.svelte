@@ -101,11 +101,12 @@
 		window.dispatchEvent(new HashChangeEvent('hashchange'));
 	};
 
+	import { toBlobPart, type FileContent } from '../utils/fileUtils';
+
 	// Helper function to create File object with custom properties
-	type FileContent = string | ArrayBuffer | Uint8Array;
 
 	const createFileObject = (content: FileContent, fileInfo: ListedFile) => {
-		const file = new File([content], fileInfo.fileName, {
+		const file = new File([toBlobPart(content)], fileInfo.fileName, {
 			lastModified: new Date(fileInfo.lastModified).getTime()
 		});
 		// Add the file path as a custom property for desktop uploads

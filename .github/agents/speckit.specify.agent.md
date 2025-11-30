@@ -1,0 +1,1 @@
+../../.claude/commands/speckit.specify.md

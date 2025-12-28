@@ -2,7 +2,6 @@ import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@
 import { ensureSupabaseAuth, getSupabaseClient } from './auth';
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 
 // SimFile service functions
 export interface SimFileServiceResult {
@@ -68,25 +67,14 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 }
 
 export function getPreviewUrl(preview_url: string): string {
-	const supabaseClient = getSupabaseClient();
-	if (!supabaseClient) {
-		throw new Error('Supabase client not initialized');
-	}
-	const PREVIEW_BUCKET_NAME = 'simfile-previews';
-	return supabaseClient.storage.from(PREVIEW_BUCKET_NAME).getPublicUrl(`${preview_url}`).data
-		.publicUrl;
+	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
+	return `${bucketUrl}/${preview_url}`;
 }
 
 export function getSoundPreviewUrl(sound_preview_url: string | null): string | null {
 	if (!sound_preview_url) return null;
-	const supabaseClient = getSupabaseClient();
-	if (!supabaseClient) {
-		throw new Error('Supabase client not initialized');
-	}
-	const SOUND_PREVIEW_BUCKET_NAME = 'simfile-sound-previews';
-	return supabaseClient.storage
-		.from(SOUND_PREVIEW_BUCKET_NAME)
-		.getPublicUrl(`${sound_preview_url}`).data.publicUrl;
+	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
+	return `${bucketUrl}/${sound_preview_url}`;
 }
 
 export interface CreateSimfileData {
@@ -126,9 +114,6 @@ export async function createSimfileRecord(
 		if (userError || !user) {
 			throw new Error('User not authenticated');
 		}
-
-		const PREVIEW_BUCKET_NAME = 'simfile-previews';
-		const SOUND_PREVIEW_BUCKET_NAME = 'simfile-sound-previews';
 
 		// Find and read preview files from the song directory
 		let previewBuffer: Buffer | undefined;
@@ -171,50 +156,13 @@ export async function createSimfileRecord(
 			}
 		}
 
-		// Upload preview image to Supabase storage
-		let previewUrl = '';
-		const previewHash = crypto.randomUUID();
-		if (previewBuffer) {
-			previewUrl = `${user.id}/${previewHash}.jpg`;
-
-			const { error: uploadError } = await supabaseClient.storage
-				.from(PREVIEW_BUCKET_NAME)
-				.upload(previewUrl, previewBuffer, {
-					contentType: 'image/jpeg',
-					upsert: true
-				});
-
-			if (uploadError) {
-				console.error('Error uploading preview image:', uploadError.message);
-				throw new Error(`Error uploading preview image: ${uploadError.message}`);
-			}
-		}
-
-		// Upload sound preview file
-		let soundPreviewUrl = '';
-		if (soundPreviewBuffer) {
-			soundPreviewUrl = `${user.id}/${previewHash}.mp3`;
-
-			const { error: uploadError } = await supabaseClient.storage
-				.from(SOUND_PREVIEW_BUCKET_NAME)
-				.upload(soundPreviewUrl, soundPreviewBuffer, {
-					contentType: 'audio/mpeg',
-					upsert: true
-				});
-
-			if (uploadError) {
-				console.error('Error uploading sound preview file:', uploadError.message);
-				throw new Error(`Error uploading sound preview file: ${uploadError.message}`);
-			}
-		}
-
-		// Insert simfile data into the database
+		// First, insert simfile data into the database to get the simfileId
 		const insertData = {
 			title: simfileData.title,
 			artist: simfileData.artist,
 			bpm: simfileData.bpm,
-			preview_url: previewUrl,
-			sound_preview_url: soundPreviewUrl,
+			preview_url: '',
+			sound_preview_url: '',
 			user_id: user.id,
 			display_id: simfileData.displayId,
 			is_published: simfileData.isPublished,
@@ -234,12 +182,78 @@ export async function createSimfileRecord(
 			throw new Error(`Error creating simfile: ${error.message}`);
 		}
 
+		const simfileId = simFileData.id;
+		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
+
+		// Upload preview files to R2 via API
+		let previewUrl = '';
+		let soundPreviewUrl = '';
+
+		if (previewBuffer) {
+			previewUrl = `${simfileId}/preview.jpg`;
+			const formData = new FormData();
+			// Convert Buffer to Uint8Array for Blob compatibility
+			const previewUint8 = new Uint8Array(previewBuffer);
+			formData.append(
+				'file',
+				new Blob([previewUint8], { type: 'image/jpeg' }),
+				'preview.jpg'
+			);
+			formData.append('simFileId', String(simfileId));
+
+			const response = await fetch(`${apiBaseUrl}/api/simFile/upload`, {
+				method: 'POST',
+				body: formData
+			});
+
+			if (!response.ok) {
+				console.error('Error uploading preview image to R2');
+				// Continue without preview - don't fail the whole operation
+				previewUrl = '';
+			}
+		}
+
+		if (soundPreviewBuffer) {
+			soundPreviewUrl = `${simfileId}/preview.mp3`;
+			const formData = new FormData();
+			// Convert Buffer to Uint8Array for Blob compatibility
+			const soundUint8 = new Uint8Array(soundPreviewBuffer);
+			formData.append('file', new Blob([soundUint8], { type: 'audio/mpeg' }), 'preview.mp3');
+			formData.append('simFileId', String(simfileId));
+
+			const response = await fetch(`${apiBaseUrl}/api/simFile/upload`, {
+				method: 'POST',
+				body: formData
+			});
+
+			if (!response.ok) {
+				console.error('Error uploading sound preview to R2');
+				// Continue without sound preview - don't fail the whole operation
+				soundPreviewUrl = '';
+			}
+		}
+
+		// Update the simfile record with preview URLs if they were uploaded
+		if (previewUrl || soundPreviewUrl) {
+			const { error: updateError } = await supabaseClient
+				.from('simfiles')
+				.update({
+					preview_url: previewUrl,
+					sound_preview_url: soundPreviewUrl
+				})
+				.eq('id', simfileId);
+
+			if (updateError) {
+				console.error('Error updating simfile with preview URLs:', updateError.message);
+			}
+		}
+
 		// Insert dtx_files data into the database
 		if (simfileData.levels && simfileData.levels.length > 0) {
 			const { error: dtxError } = await supabaseClient.from('dtx_files').insert(
 				simfileData.levels.map((level) => ({
 					level: level.level,
-					simfile_id: simFileData.id,
+					simfile_id: simfileId,
 					label: level.label
 				}))
 			);
@@ -252,8 +266,8 @@ export async function createSimfileRecord(
 
 		return {
 			success: true,
-			simfileId: simFileData.id,
-			data: simFileData
+			simfileId: simfileId,
+			data: { ...simFileData, preview_url: previewUrl, sound_preview_url: soundPreviewUrl }
 		};
 	} catch (error) {
 		console.error('Error creating simfile record:', error);

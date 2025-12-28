@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
+	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
@@ -120,14 +120,12 @@
 	}
 
 	function getPreviewUrl(preview_url: string) {
-		return supabase.storage.from(PREVIEW_BUCKET_NAME).getPublicUrl(`${preview_url}`).data
-			.publicUrl;
+		return `${PUBLIC_SIMFILE_BUCKET_URL}/${preview_url}`;
 	}
 
 	function getSoundPreviewUrl(sound_preview_url: string | null) {
 		if (!sound_preview_url) return null;
-		return supabase.storage.from(SOUND_PREVIEW_BUCKET_NAME).getPublicUrl(`${sound_preview_url}`)
-			.data.publicUrl;
+		return `${PUBLIC_SIMFILE_BUCKET_URL}/${sound_preview_url}`;
 	}
 
 	function handleSearchInput() {
@@ -138,29 +136,21 @@
 		}, 500);
 	}
 
-	async function onFileDelete(id: number, preview_url?: string, sound_preview_url?: string) {
-		if (preview_url) {
-			const { error: deletePreviewError } = await supabase.storage
-				.from(PREVIEW_BUCKET_NAME)
-				.remove([preview_url]);
-			if (deletePreviewError) {
-				toastStore.error({
-					title: 'Failed to delete preview',
-					duration: 3000
-				});
+	async function onFileDelete(id: number) {
+		// Delete files from R2 bucket
+		try {
+			const response = await fetch(`/api/simFile/delete/${id}`, {
+				method: 'DELETE'
+			});
+			if (!response.ok) {
+				const errorData = await response.json();
+				console.error('Failed to delete R2 files:', errorData);
 			}
+		} catch (error) {
+			console.error('Failed to delete R2 files:', error);
 		}
-		if (sound_preview_url) {
-			const { error: deleteSoundPreviewError } = await supabase.storage
-				.from(SOUND_PREVIEW_BUCKET_NAME)
-				.remove([sound_preview_url]);
-			if (deleteSoundPreviewError) {
-				toastStore.error({
-					title: 'Failed to delete sound preview',
-					duration: 3000
-				});
-			}
-		}
+
+		// Delete the database record
 		const { error } = await supabase.from('simfiles').delete().eq('id', id);
 		if (error) {
 			toastStore.error({

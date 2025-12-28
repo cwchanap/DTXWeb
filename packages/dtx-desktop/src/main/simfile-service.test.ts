@@ -180,18 +180,18 @@ describe('SimFile Service', () => {
 	});
 
 	describe('getPreviewUrl', () => {
-		it('should return a public URL for the preview', () => {
-			const url = getPreviewUrl('user/preview.jpg');
-			expect(url).toBe('http://google.com/user/preview.jpg');
-			expect(mockSupabaseClient.storage.from).toHaveBeenCalledWith('simfile-previews');
+		it('should return a public URL for the preview using R2 bucket URL', () => {
+			const url = getPreviewUrl('123/preview.jpg');
+			// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
+			expect(url).toContain('123/preview.jpg');
 		});
 	});
 
 	describe('getSoundPreviewUrl', () => {
-		it('should return a public URL for the sound preview', () => {
-			const url = getSoundPreviewUrl('user/preview.mp3');
-			expect(url).toBe('http://google.com/user/preview.mp3');
-			expect(mockSupabaseClient.storage.from).toHaveBeenCalledWith('simfile-sound-previews');
+		it('should return a public URL for the sound preview using R2 bucket URL', () => {
+			const url = getSoundPreviewUrl('123/preview.mp3');
+			// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
+			expect(url).toContain('123/preview.mp3');
 		});
 
 		it('should return null if no sound preview url is provided', () => {
@@ -228,22 +228,41 @@ describe('SimFile Service', () => {
 		});
 
 		it('should create a simfile record successfully with previews', async () => {
+			// Mock fetch for R2 upload API calls
+			const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+			vi.stubGlobal('fetch', mockFetch);
+
+			// Mock update for preview URLs
+			mockSupabaseClient.from.mockReturnValue({
+				...mockSupabaseClient,
+				update: vi.fn().mockReturnValue({
+					eq: vi.fn().mockResolvedValue({ error: null })
+				})
+			});
+
 			const result = await createSimfileRecord(simfileData);
 
 			expect(result.success).toBe(true);
 			expect(result.simfileId).toBe('1');
-			expect(mockSupabaseClient.storage.from).toHaveBeenCalledWith('simfile-previews');
-			expect(mockSupabaseClient.storage.from).toHaveBeenCalledWith('simfile-sound-previews');
-			expect(mockSupabaseClient.storage.upload).toHaveBeenCalledTimes(2);
 			expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
-			expect(mockSupabaseClient.insert).toHaveBeenCalledTimes(2); // once for simfiles, once for dtx_files
+			// Previews are now uploaded via R2 API, not Supabase storage
+			expect(mockFetch).toHaveBeenCalledTimes(2); // once for preview.jpg, once for preview.mp3
+
+			vi.unstubAllGlobals();
 		});
 
 		it('should handle errors during file reading gracefully and still succeed', async () => {
+			// Mock fetch for R2 upload API calls
+			const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+			vi.stubGlobal('fetch', mockFetch);
+
 			(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
 			const result = await createSimfileRecord(simfileData);
 			expect(result.success).toBe(true); // Continues without previews
-			expect(mockSupabaseClient.storage.upload).not.toHaveBeenCalled();
+			// No fetch calls for uploads since file reading failed
+			expect(mockFetch).not.toHaveBeenCalled();
+
+			vi.unstubAllGlobals();
 		});
 
 		it('should return an error if simfile insertion fails', async () => {

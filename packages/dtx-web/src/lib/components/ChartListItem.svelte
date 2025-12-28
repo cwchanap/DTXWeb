@@ -14,14 +14,14 @@
 			togglePublishChart: (id: number, published: boolean) => Promise<void>;
 			getPreviewUrl: (preview_url: string) => string;
 			getSoundPreviewUrl: (sound_preview_url: string | null) => string | null;
-			onFileDelete: (id: number, preview_url?: string, sound_preview_url?: string) => void;
+			onFileDelete: (id: number) => void;
 		}>();
 
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
 	function handleDeleteConfirm() {
-		onFileDelete(item.id, item.preview_url, item.sound_preview_url);
+		onFileDelete(item.id);
 	}
 
 	function openModal() {

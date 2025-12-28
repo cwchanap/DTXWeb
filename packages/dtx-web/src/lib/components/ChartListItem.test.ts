@@ -149,14 +149,10 @@ describe('ChartListItem Component Logic', () => {
 	// Test the onFileDelete function
 	it('calls onFileDelete with correct parameters', () => {
 		// Call the function directly with the expected parameters
-		mockOnFileDelete(mockItem.id, mockItem.preview_url, mockItem.sound_preview_url);
+		mockOnFileDelete(mockItem.id);
 
 		// Verify the function was called with the correct parameters
-		expect(mockOnFileDelete).toHaveBeenCalledWith(
-			mockItem.id,
-			mockItem.preview_url,
-			mockItem.sound_preview_url
-		);
+		expect(mockOnFileDelete).toHaveBeenCalledWith(mockItem.id);
 		expect(mockOnFileDelete).toHaveBeenCalledTimes(1);
 	});
 

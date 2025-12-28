@@ -10,7 +10,7 @@
 		item: Partial<Tables<'simfiles'>>;
 		isBlog: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
-		onFileDelete: (id: number, preview_url?: string, sound_preview_url?: string) => void;
+		onFileDelete: (id: number) => void;
 	}>();
 
 	let popoverOpen = $state(false);
@@ -18,7 +18,7 @@
 	let tooltipOpen = $state(false);
 
 	function handleDeleteConfirm() {
-		onFileDelete(item.id, item.preview_url, item.sound_preview_url);
+		onFileDelete(item.id);
 	}
 
 	function openModal() {

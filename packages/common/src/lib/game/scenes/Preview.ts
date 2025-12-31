@@ -74,7 +74,11 @@ export class Preview extends BaseGame {
 		this.startMeasure = data.startMeasure;
 
 		store.playSpeed.subscribe((value) => {
-			const oldPlaySpeed = this.playSpeed;
+			const seekTime =
+				this.previewTween && Number.isFinite(this.previewTween.elapsed)
+					? this.previewTween.elapsed
+					: null;
+
 			this.playSpeed = value;
 
 			// Update camera zoom based on play speed
@@ -84,11 +88,12 @@ export class Preview extends BaseGame {
 
 			// Update tween if it exists
 			if (this.previewTween) {
-				// Use our consolidated method to recreate the tween with current position and progress
-				const cameraScaleOffset = this.cameras.main.height * (oldPlaySpeed - 1);
-				this.createPreviewTween(
-					((this.panelContainer.y + cameraScaleOffset) / oldPlaySpeed) * value
-				);
+				// Recreate the tween with the new scale and seek to the correct time offset
+				this.createPreviewTween();
+
+				if (this.previewTween && seekTime !== null) {
+					this.previewTween.seek(seekTime);
+				}
 			}
 		});
 	}
@@ -769,10 +774,11 @@ export class Preview extends BaseGame {
 	 */
 	createPreviewTween(startY: number | undefined = undefined) {
 		// Calculate target distances
-		const cameraScaleOffset = this.cameras.main.height * (this.playSpeed - 1);
+		const zoomOffset = this.getZoomOffset(this.playSpeed);
 		const targetY = this.getTotalMesaureOffest(this.startMeasure) * this.playSpeed;
 		const totalDistance =
-			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed - cameraScaleOffset;
+			this.getTotalMesaureOffest(this.measureCount) * this.playSpeed - zoomOffset;
+		const startPosition = startY ?? targetY - zoomOffset;
 
 		// Calculate total duration based on BPM
 		const totalDuration =
@@ -787,12 +793,12 @@ export class Preview extends BaseGame {
 		}
 
 		// Set the panel position if different from current
-		this.panelContainer.setPosition(0, startY || targetY - cameraScaleOffset);
+		this.panelContainer.setPosition(0, startPosition);
 
 		// Create a new tween
 		this.previewTween = this.tweens.add({
 			targets: this.panelContainer,
-			y: totalDistance,
+			y: { from: startPosition, to: totalDistance },
 			duration: totalDuration,
 			ease: 'Linear',
 			repeat: -1,
@@ -1042,6 +1048,10 @@ export class Preview extends BaseGame {
 					(obj as Phaser.GameObjects.Graphics).setScale(1, 1 / this.playSpeed)
 				);
 		}
+	}
+
+	private getZoomOffset(scale: number): number {
+		return this.offsetY * (scale - 1);
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars

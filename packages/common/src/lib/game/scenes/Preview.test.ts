@@ -126,4 +126,96 @@ describe('Preview Scene', () => {
 		// Verify the play speed was updated
 		expect(previewScene['playSpeed']).toBe(2);
 	});
+
+	it('should seek new tween to previous elapsed time on play speed change', () => {
+		const testData = {
+			measureCount: 10,
+			notes: { '01': [] },
+			bpm: 120,
+			bpmNotes: { '08': 120 },
+			startMeasure: 0
+		};
+
+		previewScene.init(testData);
+
+		const subscribeCallback = mockStore.playSpeed.subscribe.mock.calls[0][0];
+		const oldTween = { elapsed: 1500 } as any;
+		const newTween = { seek: vi.fn() } as any;
+
+		previewScene['previewTween'] = oldTween;
+
+		const createPreviewTweenSpy = vi
+			.spyOn(previewScene as any, 'createPreviewTween')
+			.mockImplementation(() => {
+				previewScene['previewTween'] = newTween;
+				return newTween;
+			});
+
+		try {
+			subscribeCallback(2);
+
+			expect(createPreviewTweenSpy).toHaveBeenCalled();
+			expect(newTween.seek).toHaveBeenCalledWith(1500);
+		} finally {
+			createPreviewTweenSpy.mockRestore();
+		}
+	});
+
+	it('should not seek when previous elapsed time is not finite', () => {
+		const testData = {
+			measureCount: 10,
+			notes: { '01': [] },
+			bpm: 120,
+			bpmNotes: { '08': 120 },
+			startMeasure: 0
+		};
+
+		previewScene.init(testData);
+
+		const subscribeCallback = mockStore.playSpeed.subscribe.mock.calls[0][0];
+		const oldTween = { elapsed: Number.NaN } as any;
+		const newTween = { seek: vi.fn() } as any;
+
+		previewScene['previewTween'] = oldTween;
+
+		const createPreviewTweenSpy = vi
+			.spyOn(previewScene as any, 'createPreviewTween')
+			.mockImplementation(() => {
+				previewScene['previewTween'] = newTween;
+				return newTween;
+			});
+
+		try {
+			subscribeCallback(2);
+
+			expect(createPreviewTweenSpy).toHaveBeenCalled();
+			expect(newTween.seek).not.toHaveBeenCalled();
+		} finally {
+			createPreviewTweenSpy.mockRestore();
+		}
+	});
+
+	it('should not recreate tween when no preview tween exists', () => {
+		const testData = {
+			measureCount: 10,
+			notes: { '01': [] },
+			bpm: 120,
+			bpmNotes: { '08': 120 },
+			startMeasure: 0
+		};
+
+		previewScene.init(testData);
+
+		const subscribeCallback = mockStore.playSpeed.subscribe.mock.calls[0][0];
+		const createPreviewTweenSpy = vi.spyOn(previewScene as any, 'createPreviewTween');
+
+		try {
+			previewScene['previewTween'] = null;
+			subscribeCallback(2);
+
+			expect(createPreviewTweenSpy).not.toHaveBeenCalled();
+		} finally {
+			createPreviewTweenSpy.mockRestore();
+		}
+	});
 });

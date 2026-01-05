@@ -24,6 +24,14 @@ vi.mock('$lib/toaster', () => ({
 	}
 }));
 
+beforeEach(() => {
+	vi.clearAllMocks();
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
+
 const toastMock = toastStore as unknown as {
 	error: ReturnType<typeof vi.fn>;
 	success: ReturnType<typeof vi.fn>;

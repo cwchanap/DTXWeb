@@ -2,6 +2,8 @@ import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@
 import { ensureSupabaseAuth, getSupabaseClient } from './auth';
 import fs from 'fs';
 import path from 'path';
+import FormData from 'form-data';
+import fetch from 'node-fetch';
 
 // SimFile service functions
 export interface SimFileServiceResult {
@@ -68,13 +70,80 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 
 export function getPreviewUrl(preview_url: string): string {
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
-	return `${bucketUrl}/${preview_url}`;
+	if (!bucketUrl) {
+		throw new Error('PUBLIC_SIMFILE_BUCKET_URL environment variable is not set');
+	}
+	if (!preview_url) {
+		throw new Error('preview_url is required');
+	}
+	const normalizedUrl = bucketUrl.replace(/\/$/, '');
+	const normalizedPath = preview_url.replace(/^\//, '');
+	return `${normalizedUrl}/${normalizedPath}`;
 }
 
 export function getSoundPreviewUrl(sound_preview_url: string | null): string | null {
 	if (!sound_preview_url) return null;
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
-	return `${bucketUrl}/${sound_preview_url}`;
+	if (!bucketUrl) return null;
+	const normalizedUrl = bucketUrl.replace(/\/$/, '');
+	const normalizedPath = sound_preview_url.replace(/^\//, '');
+	return `${normalizedUrl}/${normalizedPath}`;
+}
+
+/**
+ * Helper function to upload a file to R2 via the upload API
+ * @param buffer - File content as Buffer
+ * @param simfileId - Simfile ID
+ * @param filename - Filename (e.g., 'preview.jpg', 'preview.mp3')
+ * @param contentType - MIME type (e.g., 'image/jpeg', 'audio/mpeg')
+ * @param apiBaseUrl - Base URL for API
+ * @returns The file path relative to the bucket, or empty string on failure
+ */
+async function uploadPreviewFile(
+	buffer: Buffer,
+	simfileId: number,
+	filename: string,
+	contentType: string,
+	apiBaseUrl: string
+): Promise<string> {
+	try {
+		// Create FormData using the form-data package
+		const form = new FormData();
+		form.append('file', buffer, { filename, contentType });
+		form.append('simFileId', String(simfileId));
+
+		// Set up timeout using AbortController
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+		try {
+			const response = (await fetch(`${apiBaseUrl}/api/simFile/upload`, {
+				method: 'POST',
+				body: form as any, // Type assertion for node-fetch
+				signal: controller.signal
+			})) as { ok: boolean; status: number };
+
+			if (!response.ok) {
+				console.error(`Failed to upload ${filename}: HTTP ${response.status}`);
+				return '';
+			}
+
+			return `${simfileId}/${filename}`;
+		} finally {
+			clearTimeout(timeoutId);
+		}
+	} catch (error) {
+		if (error instanceof Error) {
+			if (error.name === 'AbortError') {
+				console.error(`Upload timeout for ${filename}`);
+			} else {
+				console.error(`Upload error for ${filename}:`, error.message);
+			}
+		} else {
+			console.error(`Upload error for ${filename}:`, error);
+		}
+		return '';
+	}
 }
 
 export interface CreateSimfileData {
@@ -161,8 +230,8 @@ export async function createSimfileRecord(
 			title: simfileData.title,
 			artist: simfileData.artist,
 			bpm: simfileData.bpm,
-			preview_url: '',
-			sound_preview_url: '',
+			preview_url: null,
+			sound_preview_url: null,
 			user_id: user.id,
 			display_id: simfileData.displayId,
 			is_published: simfileData.isPublished,
@@ -183,54 +252,35 @@ export async function createSimfileRecord(
 		}
 
 		const simfileId = simFileData.id;
-		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
+		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL;
 
-		// Upload preview files to R2 via API
+		// Validate apiBaseUrl
+		if (!apiBaseUrl || !apiBaseUrl.startsWith('http')) {
+			throw new Error('VITE_DTX_SERVER_URL must be set to a valid absolute URL');
+		}
+
+		// Upload preview files to R2 via API using the helper function
 		let previewUrl = '';
 		let soundPreviewUrl = '';
 
 		if (previewBuffer) {
-			previewUrl = `${simfileId}/preview.jpg`;
-			const formData = new FormData();
-			// Convert Buffer to Uint8Array for Blob compatibility
-			const previewUint8 = new Uint8Array(previewBuffer);
-			formData.append(
-				'file',
-				new Blob([previewUint8], { type: 'image/jpeg' }),
-				'preview.jpg'
+			previewUrl = await uploadPreviewFile(
+				previewBuffer,
+				simfileId,
+				'preview.jpg',
+				'image/jpeg',
+				apiBaseUrl
 			);
-			formData.append('simFileId', String(simfileId));
-
-			const response = await fetch(`${apiBaseUrl}/api/simFile/upload`, {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!response.ok) {
-				console.error('Error uploading preview image to R2');
-				// Continue without preview - don't fail the whole operation
-				previewUrl = '';
-			}
 		}
 
 		if (soundPreviewBuffer) {
-			soundPreviewUrl = `${simfileId}/preview.mp3`;
-			const formData = new FormData();
-			// Convert Buffer to Uint8Array for Blob compatibility
-			const soundUint8 = new Uint8Array(soundPreviewBuffer);
-			formData.append('file', new Blob([soundUint8], { type: 'audio/mpeg' }), 'preview.mp3');
-			formData.append('simFileId', String(simfileId));
-
-			const response = await fetch(`${apiBaseUrl}/api/simFile/upload`, {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!response.ok) {
-				console.error('Error uploading sound preview to R2');
-				// Continue without sound preview - don't fail the whole operation
-				soundPreviewUrl = '';
-			}
+			soundPreviewUrl = await uploadPreviewFile(
+				soundPreviewBuffer,
+				simfileId,
+				'preview.mp3',
+				'audio/mpeg',
+				apiBaseUrl
+			);
 		}
 
 		// Update the simfile record with preview URLs if they were uploaded

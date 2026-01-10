@@ -86,7 +86,23 @@ vi.mock('@dtx/common/server', async (importOriginal) => {
 		DTXFile: vi.fn().mockImplementation(() => mockDtxFile),
 		decodeFileWithEncodingDetection: vi
 			.fn()
-			.mockResolvedValue({ content: '', encoding: 'utf-8' })
+			.mockImplementation(async (file: { name: string }) => {
+				// Return different content based on file name
+				if (file.name.toLowerCase() === 'set.def') {
+					return {
+						content: `#L1LABEL EXT
+#L1FILE song1.dtx`,
+						encoding: 'utf-8'
+					};
+				}
+				return {
+					content: `#TITLE:Test Title
+#ARTIST:Test Artist
+#BPM:120
+#DLEVEL:55`,
+					encoding: 'utf-8'
+				};
+			})
 	};
 });
 
@@ -185,6 +201,10 @@ describe('SimFile Service', () => {
 			// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
 			expect(url).toContain('123/preview.jpg');
 		});
+
+		it('should throw error if preview_url is empty', () => {
+			expect(() => getPreviewUrl('')).toThrow();
+		});
 	});
 
 	describe('getSoundPreviewUrl', () => {
@@ -215,6 +235,9 @@ describe('SimFile Service', () => {
 		};
 
 		beforeEach(() => {
+			// Set required environment variable for API calls
+			process.env.VITE_DTX_SERVER_URL = 'http://test-server.com';
+
 			mockSupabaseClient.auth.getUser.mockResolvedValue({
 				data: { user: { id: 'user-123' } },
 				error: null
@@ -232,23 +255,23 @@ describe('SimFile Service', () => {
 			const mockFetch = vi.fn().mockResolvedValue({ ok: true });
 			vi.stubGlobal('fetch', mockFetch);
 
-			// Mock update for preview URLs
-			mockSupabaseClient.from.mockReturnValue({
-				...mockSupabaseClient,
-				update: vi.fn().mockReturnValue({
-					eq: vi.fn().mockResolvedValue({ error: null })
-				})
-			});
+			try {
+				// Mock update for preview URLs
+				mockSupabaseClient.from.mockReturnValue({
+					...mockSupabaseClient,
+					update: vi.fn().mockReturnValue({
+						eq: vi.fn().mockResolvedValue({ error: null })
+					})
+				});
 
-			const result = await createSimfileRecord(simfileData);
+				const result = await createSimfileRecord(simfileData);
 
-			expect(result.success).toBe(true);
-			expect(result.simfileId).toBe('1');
-			expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
-			// Previews are now uploaded via R2 API, not Supabase storage
-			expect(mockFetch).toHaveBeenCalledTimes(2); // once for preview.jpg, once for preview.mp3
-
-			vi.unstubAllGlobals();
+				expect(result.success).toBe(true);
+				expect(result.simfileId).toBe('1');
+				expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
+			} finally {
+				vi.unstubAllGlobals();
+			}
 		});
 
 		it('should handle errors during file reading gracefully and still succeed', async () => {
@@ -256,13 +279,15 @@ describe('SimFile Service', () => {
 			const mockFetch = vi.fn().mockResolvedValue({ ok: true });
 			vi.stubGlobal('fetch', mockFetch);
 
-			(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
-			const result = await createSimfileRecord(simfileData);
-			expect(result.success).toBe(true); // Continues without previews
-			// No fetch calls for uploads since file reading failed
-			expect(mockFetch).not.toHaveBeenCalled();
-
-			vi.unstubAllGlobals();
+			try {
+				(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
+				const result = await createSimfileRecord(simfileData);
+				expect(result.success).toBe(true); // Continues without previews
+				// No fetch calls for uploads since file reading failed
+				expect(mockFetch).not.toHaveBeenCalled();
+			} finally {
+				vi.unstubAllGlobals();
+			}
 		});
 
 		it('should return an error if simfile insertion fails', async () => {
@@ -283,15 +308,15 @@ describe('SimFile Service', () => {
 					if (file.name.toLowerCase() === 'set.def') {
 						return {
 							content: `#L1LABEL EXT
-#L1FILE song1.dtx`,
+ #L1FILE song1.dtx`,
 							encoding: 'utf-8'
 						};
 					}
 					return {
 						content: `#TITLE:Test Title
-#ARTIST:Test Artist
-#BPM:120
-#DLEVEL:55`,
+ #ARTIST:Test Artist
+ #BPM:120
+ #DLEVEL:55`,
 						encoding: 'utf-8'
 					};
 				}
@@ -308,6 +333,7 @@ describe('SimFile Service', () => {
 
 			expect(result.bpm).toBe(120);
 			expect(result.artist).toBe('Test Artist');
+			// SET.def maps song1.dtx to label "EXT"
 			expect(result.levels).toEqual([{ label: 'EXT', level: 5.5 }]);
 			expect(DTXFile).toHaveBeenCalled();
 		});

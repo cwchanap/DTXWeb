@@ -3,16 +3,48 @@ import logger from '$lib/server/logger';
 
 export async function DELETE({
 	params,
-	platform
+	platform,
+	locals
 }: {
 	params: { simfileID: string };
 	platform: App.Platform;
+	locals: App.Locals;
 }) {
 	try {
+		// Check if user is authenticated
+		const { session } = await locals.safeGetSession();
+		if (!session || !session.user) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
 		const { simfileID } = params;
 
 		if (!simfileID) {
 			return json({ error: 'SimFile ID is required' }, { status: 400 });
+		}
+
+		// Verify that the user owns this simfile
+		const { data: simfile, error: simfileError } = await locals.supabase
+			.from('simfiles')
+			.select('user_id')
+			.eq('id', parseInt(simfileID, 10))
+			.maybeSingle();
+
+		if (simfileError) {
+			logger.error('Failed to query simfile:', simfileError);
+			return json({ error: 'Failed to verify ownership' }, { status: 500 });
+		}
+
+		if (!simfile) {
+			return json({ error: 'Simfile not found' }, { status: 404 });
+		}
+
+		// Check if the authenticated user is the owner of the simfile
+		if (simfile.user_id !== session.user.id) {
+			logger.warn(
+				`Unauthorized delete attempt: user ${session.user.id} tried to delete simfile ${simfileID} owned by ${simfile.user_id}`
+			);
+			return json({ error: 'Forbidden' }, { status: 403 });
 		}
 
 		const bucket = platform?.env?.DTXFILE_BUCKET;

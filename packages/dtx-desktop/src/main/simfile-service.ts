@@ -119,6 +119,7 @@ async function uploadPreviewFile(
 		try {
 			const response = (await fetch(`${apiBaseUrl}/api/simFile/upload`, {
 				method: 'POST',
+				headers: form.getHeaders(),
 				body: form as any, // Type assertion for node-fetch
 				signal: controller.signal
 			})) as { ok: boolean; status: number };

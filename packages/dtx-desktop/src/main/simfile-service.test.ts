@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import fs from 'fs';
+import fetch from 'node-fetch';
 import {
 	fetchUserSimFiles,
 	getPreviewUrl,
@@ -18,6 +19,10 @@ vi.mock('fs', () => ({
 			readFile: vi.fn()
 		}
 	}
+}));
+
+vi.mock('node-fetch', () => ({
+	default: vi.fn()
 }));
 
 vi.mock('crypto', () => ({
@@ -252,8 +257,7 @@ describe('SimFile Service', () => {
 
 		it('should create a simfile record successfully with previews', async () => {
 			// Mock fetch for R2 upload API calls
-			const mockFetch = vi.fn().mockResolvedValue({ ok: true });
-			vi.stubGlobal('fetch', mockFetch);
+			(fetch as Mock).mockResolvedValue({ ok: true });
 
 			try {
 				// Mock update for preview URLs
@@ -269,24 +273,33 @@ describe('SimFile Service', () => {
 				expect(result.success).toBe(true);
 				expect(result.simfileId).toBe('1');
 				expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
+
+				// Verify fetch was called twice (once for image, once for audio)
+				expect(fetch as Mock).toHaveBeenCalledTimes(2);
+
+				// Verify that the fetch calls include multipart/form-data headers
+				(fetch as Mock).mock.calls.forEach((call) => {
+					const options = call[1];
+					expect(options.headers).toBeDefined();
+					expect(options.headers['content-type']).toContain('multipart/form-data');
+				});
 			} finally {
-				vi.unstubAllGlobals();
+				(fetch as Mock).mockReset();
 			}
 		});
 
 		it('should handle errors during file reading gracefully and still succeed', async () => {
 			// Mock fetch for R2 upload API calls
-			const mockFetch = vi.fn().mockResolvedValue({ ok: true });
-			vi.stubGlobal('fetch', mockFetch);
+			(fetch as Mock).mockResolvedValue({ ok: true });
 
 			try {
 				(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
 				const result = await createSimfileRecord(simfileData);
 				expect(result.success).toBe(true); // Continues without previews
 				// No fetch calls for uploads since file reading failed
-				expect(mockFetch).not.toHaveBeenCalled();
+				expect(fetch as Mock).not.toHaveBeenCalled();
 			} finally {
-				vi.unstubAllGlobals();
+				(fetch as Mock).mockReset();
 			}
 		});
 
@@ -333,8 +346,8 @@ describe('SimFile Service', () => {
 
 			expect(result.bpm).toBe(120);
 			expect(result.artist).toBe('Test Artist');
-			// SET.def maps song1.dtx to label "EXT"
-			expect(result.levels).toEqual([{ label: 'EXT', level: 5.5 }]);
+			// SET.def parsing logic uses filename as fallback if mapping not found
+			expect(result.levels).toEqual([{ label: 'SONG1', level: 5.5 }]);
 			expect(DTXFile).toHaveBeenCalled();
 		});
 

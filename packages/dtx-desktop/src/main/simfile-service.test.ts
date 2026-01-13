@@ -8,7 +8,7 @@ import {
 	createSimfileRecord,
 	parseDtxFiles
 } from './simfile-service';
-import { getSupabaseClient, ensureSupabaseAuth } from './auth';
+import { getSupabaseClient, ensureSupabaseAuth, getCurrentSession } from './auth';
 import { DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 
 // Mock dependencies
@@ -33,7 +33,8 @@ vi.mock('crypto', () => ({
 
 vi.mock('./auth', () => ({
 	ensureSupabaseAuth: vi.fn(),
-	getSupabaseClient: vi.fn()
+	getSupabaseClient: vi.fn(),
+	getCurrentSession: vi.fn()
 }));
 
 // Use the global Supabase mock
@@ -149,6 +150,10 @@ describe('SimFile Service', () => {
 
 		(getSupabaseClient as Mock).mockReturnValue(mockSupabaseClient);
 		(ensureSupabaseAuth as Mock).mockResolvedValue(true);
+		(getCurrentSession as Mock).mockReturnValue({
+			access_token: 'mock-access-token',
+			user: { id: 'user-123' }
+		});
 	});
 
 	describe('fetchUserSimFiles', () => {
@@ -282,11 +287,16 @@ describe('SimFile Service', () => {
 				// Verify fetch was called twice (once for image, once for audio)
 				expect(fetch as Mock).toHaveBeenCalledTimes(2);
 
-				// Verify that the fetch calls include multipart/form-data headers
+				// Verify that the fetch calls include proper headers
 				(fetch as Mock).mock.calls.forEach((call) => {
 					const options = call[1];
 					expect(options.headers).toBeDefined();
 					expect(options.headers['content-type']).toContain('multipart/form-data');
+					// Verify authentication header is included (note: case matters for header names)
+					expect(options.headers['Authorization']).toBe('Bearer mock-access-token');
+					// Verify desktop app identifiers for CSRF protection
+					expect(options.headers['User-Agent']).toBe('DTXDesktopApp');
+					expect(options.headers['X-Requested-With']).toBe('DTXDesktopApp');
 				});
 			} finally {
 				(fetch as Mock).mockReset();
@@ -316,6 +326,27 @@ describe('SimFile Service', () => {
 			const result = await createSimfileRecord(simfileData);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Insert failed');
+		});
+
+		it('should handle missing authentication gracefully and skip uploads', async () => {
+			// Mock getCurrentSession to return null (no session)
+			(getCurrentSession as Mock).mockReturnValue(null);
+
+			// Mock update for preview URLs (should still be called with null URLs)
+			mockSupabaseClient.from.mockReturnValue({
+				...mockSupabaseClient,
+				update: vi.fn().mockReturnValue({
+					eq: vi.fn().mockResolvedValue({ error: null })
+				})
+			});
+
+			const result = await createSimfileRecord(simfileData);
+
+			expect(result.success).toBe(true);
+			expect(result.simfileId).toBe('1');
+
+			// Verify fetch was NOT called since there's no session
+			expect(fetch as Mock).not.toHaveBeenCalled();
 		});
 	});
 

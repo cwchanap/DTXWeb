@@ -1,5 +1,5 @@
 import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
-import { ensureSupabaseAuth, getSupabaseClient } from './auth';
+import { ensureSupabaseAuth, getSupabaseClient, getCurrentSession } from './auth';
 import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
@@ -107,6 +107,13 @@ async function uploadPreviewFile(
 	apiBaseUrl: string
 ): Promise<string> {
 	try {
+		// Get current session for authentication
+		const session = getCurrentSession();
+		if (!session?.access_token) {
+			console.error('No valid session for file upload');
+			return '';
+		}
+
 		// Create FormData using the form-data package
 		const form = new FormData();
 		form.append('file', buffer, { filename, contentType });
@@ -119,7 +126,14 @@ async function uploadPreviewFile(
 		try {
 			const response = (await fetch(`${apiBaseUrl}/api/simFile/upload`, {
 				method: 'POST',
-				headers: form.getHeaders(),
+				headers: {
+					...form.getHeaders(),
+					// Add authentication header with access token
+					Authorization: `Bearer ${session.access_token}`,
+					// Add desktop app identifiers to pass CSRF checks
+					'User-Agent': 'DTXDesktopApp',
+					'X-Requested-With': 'DTXDesktopApp'
+				},
 				body: form as any, // Type assertion for node-fetch
 				signal: controller.signal
 			})) as { ok: boolean; status: number };

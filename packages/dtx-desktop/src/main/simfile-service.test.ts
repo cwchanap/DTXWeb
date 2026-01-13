@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import fs from 'fs';
 import fetch from 'node-fetch';
 import {
@@ -239,6 +239,11 @@ describe('SimFile Service', () => {
 			songPath: '/path/to/song'
 		};
 
+		afterEach(() => {
+			// Clean up environment variable after each test
+			delete process.env.VITE_DTX_SERVER_URL;
+		});
+
 		beforeEach(() => {
 			// Set required environment variable for API calls
 			process.env.VITE_DTX_SERVER_URL = 'http://test-server.com';
@@ -321,15 +326,15 @@ describe('SimFile Service', () => {
 					if (file.name.toLowerCase() === 'set.def') {
 						return {
 							content: `#L1LABEL EXT
- #L1FILE song1.dtx`,
+#L1FILE song1.dtx`,
 							encoding: 'utf-8'
 						};
 					}
 					return {
 						content: `#TITLE:Test Title
- #ARTIST:Test Artist
- #BPM:120
- #DLEVEL:55`,
+#ARTIST:Test Artist
+#BPM:120
+#DLEVEL:55`,
 						encoding: 'utf-8'
 					};
 				}
@@ -346,8 +351,8 @@ describe('SimFile Service', () => {
 
 			expect(result.bpm).toBe(120);
 			expect(result.artist).toBe('Test Artist');
-			// SET.def parsing logic uses filename as fallback if mapping not found
-			expect(result.levels).toEqual([{ label: 'SONG1', level: 5.5 }]);
+			// SET.def parsing correctly extracts the 'EXT' label from the mapping
+			expect(result.levels).toEqual([{ label: 'EXT', level: 5.5 }]);
 			expect(DTXFile).toHaveBeenCalled();
 		});
 

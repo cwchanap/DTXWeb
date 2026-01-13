@@ -23,11 +23,17 @@ export async function DELETE({
 			return json({ error: 'SimFile ID is required' }, { status: 400 });
 		}
 
+		// Validate and parse the simfileID
+		const id = parseInt(simfileID, 10);
+		if (Number.isNaN(id) || !Number.isInteger(id)) {
+			return json({ error: 'Invalid SimFile ID' }, { status: 400 });
+		}
+
 		// Verify that the user owns this simfile
 		const { data: simfile, error: simfileError } = await locals.supabase
 			.from('simfiles')
 			.select('user_id')
-			.eq('id', parseInt(simfileID, 10))
+			.eq('id', id)
 			.maybeSingle();
 
 		if (simfileError) {
@@ -55,12 +61,19 @@ export async function DELETE({
 
 		// List all files with the simfileID prefix
 		// Note: R2 Workers API doesn't support cursor-based pagination natively.
-		// The limit parameter can be increased if needed (default is typically 1000).
-		const listResult = await bucket.list({ prefix: `${simfileID}/`, limit: 1000 });
+		// Increased limit to handle larger simfiles, though extremely large file counts
+		// (>10000 files per simfile) may still require a different approach.
+		const listResult = await bucket.list({ prefix: `${simfileID}/`, limit: 10000 });
 
 		if (!listResult.objects || listResult.objects.length === 0) {
 			logger.info(`No files found for simfile: ${simfileID}`);
 			return json({ message: 'No files to delete', deleted: 0 });
+		}
+
+		if (listResult.truncated) {
+			logger.warn(
+				`File list was truncated for simfile ${simfileID}. Some files may not have been deleted.`
+			);
 		}
 
 		// Delete all files using Promise.allSettled to handle partial failures
@@ -83,8 +96,14 @@ export async function DELETE({
 			`Deleted ${successfulDeletions.length}/${listResult.objects.length} files for simfile: ${simfileID}`
 		);
 
+		// Return conditional message based on failed deletions
+		const message =
+			failedDeletions.length === 0
+				? 'Files deleted successfully'
+				: `Some files failed to delete (${failedDeletions.length}/${listResult.objects.length})`;
+
 		return json({
-			message: 'Files deleted successfully',
+			message,
 			deleted: successfulDeletions.length,
 			failed: failedDeletions.length,
 			total: listResult.objects.length

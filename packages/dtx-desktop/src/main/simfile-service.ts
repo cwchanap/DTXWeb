@@ -226,6 +226,13 @@ export async function createSimfileRecord(
 			}
 		}
 
+		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL;
+
+		// Validate apiBaseUrl before creating simfile record
+		if (!apiBaseUrl || !apiBaseUrl.startsWith('http')) {
+			throw new Error('VITE_DTX_SERVER_URL must be set to a valid absolute URL');
+		}
+
 		// First, insert simfile data into the database to get the simfileId
 		const insertData = {
 			title: simfileData.title,
@@ -253,12 +260,6 @@ export async function createSimfileRecord(
 		}
 
 		const simfileId = simFileData.id;
-		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL;
-
-		// Validate apiBaseUrl
-		if (!apiBaseUrl || !apiBaseUrl.startsWith('http')) {
-			throw new Error('VITE_DTX_SERVER_URL must be set to a valid absolute URL');
-		}
 
 		// Upload preview files to R2 via API using the helper function
 		let previewUrl = '';
@@ -289,8 +290,8 @@ export async function createSimfileRecord(
 			const { error: updateError } = await supabaseClient
 				.from('simfiles')
 				.update({
-					preview_url: previewUrl,
-					sound_preview_url: soundPreviewUrl
+					preview_url: previewUrl || null,
+					sound_preview_url: soundPreviewUrl || null
 				})
 				.eq('id', simfileId);
 
@@ -318,7 +319,11 @@ export async function createSimfileRecord(
 		return {
 			success: true,
 			simfileId: simfileId,
-			data: { ...simFileData, preview_url: previewUrl, sound_preview_url: soundPreviewUrl }
+			data: {
+				...simFileData,
+				preview_url: previewUrl || null,
+				sound_preview_url: soundPreviewUrl || null
+			}
 		};
 	} catch (error) {
 		console.error('Error creating simfile record:', error);

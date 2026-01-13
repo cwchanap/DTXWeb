@@ -218,7 +218,7 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		expect(data.failed).toBe(0);
 		expect(data.total).toBe(3);
 
-		expect(mockBucket.list).toHaveBeenCalledWith({ prefix: '123/', limit: 1000 });
+		expect(mockBucket.list).toHaveBeenCalledWith({ prefix: '123/', limit: 10000 });
 		expect(mockBucket.delete).toHaveBeenCalledTimes(3);
 	});
 

@@ -307,4 +307,175 @@ describe('/api/simFile/upload', () => {
 		// If upload fails for other reasons, it returns generic error
 		expect(data.error).toBeTruthy();
 	});
+
+	it('accepts bearer token authentication from desktop app', async () => {
+		// Add arrayBuffer method to File prototype for jsdom environment
+		const originalArrayBuffer = File.prototype.arrayBuffer;
+		File.prototype.arrayBuffer = async function () {
+			return new ArrayBuffer(8);
+		};
+
+		try {
+			const mockBucket = createMockBucket();
+			const formData = new FormData();
+			formData.append('file', new File(['content'], 'test.wav'));
+			formData.append('simFileId', '123');
+
+			const request = createMockRequest(
+				'POST',
+				'http://localhost:5173/api/simFile/upload',
+				formData
+			);
+			// Add Authorization header for bearer token
+			request.headers.set('Authorization', 'Bearer test-bearer-token');
+
+			const simfileData = {
+				id: 123,
+				user_id: 'test-user-id'
+			};
+
+			const mockSupabaseClient = createMockSupabaseClient(simfileData, null);
+			// Mock getUser to validate bearer token
+			mockSupabaseClient.auth = {
+				getUser: vi.fn().mockResolvedValue({
+					data: { user: createMockSession().user },
+					error: null
+				})
+			} as any;
+
+			const response = await POST({
+				request,
+				platform: { env: { DTXFILE_BUCKET: mockBucket } },
+				locals: {
+					supabase: mockSupabaseClient,
+					safeGetSession: async () => ({ session: null, user: null }),
+					session: null,
+					user: null
+				}
+			} as any);
+
+			expect(response.status).toBe(200);
+			const data = await response.json();
+			expect(data.message).toBe('File uploaded successfully');
+			expect(mockSupabaseClient.auth.getUser).toHaveBeenCalledWith('test-bearer-token');
+		} finally {
+			// Restore original method
+			if (originalArrayBuffer) {
+				File.prototype.arrayBuffer = originalArrayBuffer;
+			} else {
+				// @ts-expect-error - Removing non-existent property from prototype
+				delete File.prototype.arrayBuffer;
+			}
+		}
+	});
+
+	it('returns 401 when bearer token is invalid', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+		// Add invalid Authorization header
+		request.headers.set('Authorization', 'Bearer invalid-token');
+
+		const mockSupabaseClient = createMockSupabaseClient(null, null);
+		// Mock getUser to return error for invalid token
+		mockSupabaseClient.auth = {
+			getUser: vi.fn().mockResolvedValue({
+				data: { user: null },
+				error: { message: 'Invalid token' }
+			})
+		} as any;
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: mockSupabaseClient,
+				safeGetSession: async () => ({ session: null, user: null }),
+				session: null,
+				user: null
+			}
+		} as any);
+
+		expect(response.status).toBe(401);
+		const data = await response.json();
+		expect(data.error).toBe('Unauthorized');
+	});
+
+	it('returns 401 when no cookie session and no bearer token', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+		// No Authorization header and no cookie session
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(),
+				safeGetSession: async () => ({ session: null, user: null }),
+				session: null,
+				user: null
+			}
+		} as any);
+
+		expect(response.status).toBe(401);
+		const data = await response.json();
+		expect(data.error).toBe('Unauthorized');
+	});
+
+	it('returns 403 when bearer token user does not own simfile', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+		request.headers.set('Authorization', 'Bearer test-bearer-token');
+
+		const simfileData = {
+			id: 123,
+			user_id: 'different-user-id'
+		};
+
+		const mockSupabaseClient = createMockSupabaseClient(simfileData, null);
+		mockSupabaseClient.auth = {
+			getUser: vi.fn().mockResolvedValue({
+				data: { user: createMockSession('test-user-id').user },
+				error: null
+			})
+		} as any;
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: mockSupabaseClient,
+				safeGetSession: async () => ({ session: null, user: null }),
+				session: null,
+				user: null
+			}
+		} as any);
+
+		expect(response.status).toBe(403);
+		const data = await response.json();
+		expect(data.error).toBe('Forbidden');
+	});
 });

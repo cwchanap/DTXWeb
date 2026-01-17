@@ -57,11 +57,11 @@ test.describe('MIDI to DTX Converter Tool', () => {
 
 			// Verify DTX metadata section appears
 			await expect(page.getByRole('heading', { name: 'DTX File Settings' })).toBeVisible();
-			await expect(page.getByLabelText('Title')).toBeVisible();
-			await expect(page.getByLabelText('Artist')).toBeVisible();
-			await expect(page.getByLabelText('Difficulty Level')).toBeVisible();
-			await expect(page.getByLabelText('BPM')).toBeVisible();
-			await expect(page.getByLabelText('Comment')).toBeVisible();
+			await expect(page.getByLabel('Title')).toBeVisible();
+			await expect(page.getByLabel('Artist')).toBeVisible();
+			await expect(page.getByLabel('Difficulty Level')).toBeVisible();
+			await expect(page.getByLabel('BPM')).toBeVisible();
+			await expect(page.getByLabel('Comment')).toBeVisible();
 
 			// Verify MIDI note mapping section appears
 			await expect(

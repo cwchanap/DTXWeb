@@ -49,12 +49,12 @@ test.describe('MIDI Preview Tool', () => {
 
 			// Verify file information section appears
 			await expect(page.getByRole('heading', { name: 'File Information' })).toBeVisible();
-			await expect(page.getByText('Format')).toBeVisible();
-			await expect(page.getByText('Tracks')).toBeVisible();
-			await expect(page.getByText('Total Notes')).toBeVisible();
-			await expect(page.getByText('Duration')).toBeVisible();
-			await expect(page.getByText('Tempo')).toBeVisible();
-			await expect(page.getByText('BPM')).toBeVisible();
+			await expect(page.getByText('Format', { exact: true })).toBeVisible();
+			await expect(page.getByText('Tracks', { exact: true })).toBeVisible();
+			await expect(page.getByText('Total Notes', { exact: true })).toBeVisible();
+			await expect(page.getByText('Duration', { exact: true })).toBeVisible();
+			await expect(page.getByText('Tempo', { exact: true })).toBeVisible();
+			await expect(page.getByText('BPM', { exact: true })).toBeVisible();
 
 			// Verify track details section appears
 			await expect(page.getByRole('heading', { name: 'Track Details' })).toBeVisible();

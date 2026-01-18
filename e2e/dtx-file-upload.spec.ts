@@ -16,7 +16,7 @@ test.describe('DTX to MIDI upload workflow', () => {
 		await expect(
 			page.getByRole('heading', { name: 'DTX to MIDI Converter', level: 1 })
 		).toBeVisible();
-		await page.waitForSelector('input[type="file"]');
+		await page.waitForSelector('input[type="file"]', { state: 'attached' });
 	});
 
 	test('uploads a DTX file and shows ready state', async ({ page }) => {

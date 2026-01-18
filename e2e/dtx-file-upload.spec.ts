@@ -14,10 +14,7 @@ test.describe('DTX to MIDI upload workflow', () => {
 	});
 
 	test('uploads a DTX file and shows ready state', async ({ page }) => {
-		const fileChooserPromise = page.waitForEvent('filechooser');
-		await page.getByRole('button', { name: 'Choose File' }).click();
-		const fileChooser = await fileChooserPromise;
-		await fileChooser.setFiles([testDtxPath]);
+		await page.setInputFiles('input[type="file"]', testDtxPath);
 
 		await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible();
 		await expect(page.getByText('test-sample.dtx')).toBeVisible();
@@ -25,10 +22,7 @@ test.describe('DTX to MIDI upload workflow', () => {
 	});
 
 	test('converts and downloads a MIDI file', async ({ page }) => {
-		const fileChooserPromise = page.waitForEvent('filechooser');
-		await page.getByRole('button', { name: 'Choose File' }).click();
-		const fileChooser = await fileChooserPromise;
-		await fileChooser.setFiles([testDtxPath]);
+		await page.setInputFiles('input[type="file"]', testDtxPath);
 
 		await page.getByRole('button', { name: 'Convert to MIDI' }).click();
 		await expect(page.getByRole('heading', { name: 'Conversion Complete!' })).toBeVisible();

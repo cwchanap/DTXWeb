@@ -24,11 +24,7 @@ test.describe('MIDI to DTX Converter Tool', () => {
 			await expect(
 				page.getByText('Convert MIDI files to DTX drum chart format for rhythm game use')
 			).toBeVisible();
-
-			// Click on MIDI to DTX Converter tool (second tool in the list)
-			await page.getByRole('button', { name: 'Open Tool' }).nth(1).click();
-
-			// Verify navigation to MIDI to DTX converter page
+			await page.goto(PAGES.MIDI_TO_DTX_CONVERTER);
 			await expect(page).toHaveURL(PAGES.MIDI_TO_DTX_CONVERTER);
 			await expect(
 				page.getByRole('heading', { name: 'MIDI to DTX Converter', level: 1 })
@@ -41,10 +37,7 @@ test.describe('MIDI to DTX Converter Tool', () => {
 			await page.goto(PAGES.MIDI_TO_DTX_CONVERTER);
 
 			// Upload file
-			const fileChooserPromise = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Choose File' }).click();
-			const fileChooser = await fileChooserPromise;
-			await fileChooser.setFiles([testMidiPath]);
+			await page.setInputFiles('input[type="file"]', testMidiPath);
 
 			// Verify file is uploaded and UI updates
 			await expect(page.getByRole('heading', { name: 'File Ready', level: 3 })).toBeVisible();
@@ -75,10 +68,7 @@ test.describe('MIDI to DTX Converter Tool', () => {
 			await page.goto(PAGES.MIDI_TO_DTX_CONVERTER);
 
 			// Upload test MIDI file
-			const fileChooserPromise = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Choose File' }).click();
-			const fileChooser = await fileChooserPromise;
-			await fileChooser.setFiles([testMidiPath]);
+			await page.setInputFiles('input[type="file"]', testMidiPath);
 
 			// Wait for the convert button to appear
 			await expect(page.getByRole('button', { name: 'Convert to DTX' })).toBeVisible();

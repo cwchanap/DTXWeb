@@ -15,15 +15,15 @@ test.describe('Landing page', () => {
 	});
 
 	test('navigates to core sections from hero actions', async ({ page }) => {
-		await page.getByRole('button', { name: /Explore Charts/ }).click();
+		await page.getByRole('link', { name: 'Charts' }).click();
 		await expect(page).toHaveURL(/\/blog$/);
 
 		await page.goto('/');
-		await page.getByRole('button', { name: /Chart Editor/ }).click();
+		await page.getByRole('link', { name: 'Editor' }).click();
 		await expect(page).toHaveURL(/\/editor$/);
 
 		await page.goto('/');
-		await page.getByRole('button', { name: /DTX Tools/ }).click();
+		await page.getByRole('link', { name: 'Tools' }).click();
 		await expect(page).toHaveURL(/\/tool$/);
 	});
 });

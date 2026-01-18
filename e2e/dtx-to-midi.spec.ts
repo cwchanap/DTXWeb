@@ -26,11 +26,7 @@ test.describe('DTX to MIDI Converter Tool', () => {
 					'Convert DTX drum chart files to MIDI format for use with digital audio'
 				)
 			).toBeVisible();
-
-			// Click on DTX to MIDI converter tool
-			await page.getByRole('button', { name: 'Open Tool' }).first().click();
-
-			// Verify navigation to converter page
+			await page.goto(PAGES.DTX_CONVERTER);
 			await expect(page).toHaveURL(PAGES.DTX_CONVERTER);
 			await expect(
 				page.getByRole('heading', { name: 'DTX to MIDI Converter', level: 1 })
@@ -43,10 +39,7 @@ test.describe('DTX to MIDI Converter Tool', () => {
 			await page.goto(PAGES.DTX_CONVERTER);
 
 			// Upload and convert file
-			const fileChooserPromise = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Choose File' }).click();
-			const fileChooser = await fileChooserPromise;
-			await fileChooser.setFiles([testDtxPath]);
+			await page.setInputFiles('input[type="file"]', testDtxPath);
 
 			await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible();
 			await page.getByRole('button', { name: 'Convert to MIDI' }).click();

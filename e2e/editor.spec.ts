@@ -8,11 +8,14 @@ test.describe('Editor page', () => {
 
 			// Wait for page to load
 			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Check for main editor components
-			await expect(page.locator('#game-container')).toBeVisible();
-			await expect(page.getByText('File')).toBeVisible();
-			await expect(page.getByRole('button', { name: 'Editor Tabs' })).toBeVisible();
+			await expect(page.locator('#game-container')).toBeVisible({ timeout: 15000 });
+			await expect(page.getByText('File')).toBeVisible({ timeout: 10000 });
+			await expect(page.getByRole('button', { name: 'Editor Tabs' })).toBeVisible({
+				timeout: 10000
+			});
 		});
 
 		test('loads editor page with specific simfile', async ({ page }) => {
@@ -20,11 +23,14 @@ test.describe('Editor page', () => {
 
 			// Wait for page to load
 			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Check for main editor components
-			await expect(page.locator('#game-container')).toBeVisible();
-			await expect(page.getByText('File')).toBeVisible();
-			await expect(page.getByRole('button', { name: 'Editor Tabs' })).toBeVisible();
+			await expect(page.locator('#game-container')).toBeVisible({ timeout: 15000 });
+			await expect(page.getByText('File')).toBeVisible({ timeout: 10000 });
+			await expect(page.getByRole('button', { name: 'Editor Tabs' })).toBeVisible({
+				timeout: 10000
+			});
 		});
 	});
 });

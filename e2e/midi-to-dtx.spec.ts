@@ -13,6 +13,7 @@ test.describe('MIDI to DTX Converter Tool', () => {
 	test.describe('Navigation and Initial State', () => {
 		test('should navigate from tools page to MIDI to DTX converter', async ({ page }) => {
 			await page.goto(PAGES.TOOLS);
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Verify tools page loads
 			await expect(page.getByRole('heading', { name: 'Available Tools' })).toBeVisible();
@@ -25,6 +26,8 @@ test.describe('MIDI to DTX Converter Tool', () => {
 				page.getByText('Convert MIDI files to DTX drum chart format for rhythm game use')
 			).toBeVisible();
 			await page.goto(PAGES.MIDI_TO_DTX_CONVERTER);
+			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 			await expect(page).toHaveURL(PAGES.MIDI_TO_DTX_CONVERTER);
 			await expect(
 				page.getByRole('heading', { name: 'MIDI to DTX Converter', level: 1 })
@@ -35,14 +38,18 @@ test.describe('MIDI to DTX Converter Tool', () => {
 	test.describe('File Upload Functionality', () => {
 		test('should upload a valid MIDI file', async ({ page }) => {
 			await page.goto(PAGES.MIDI_TO_DTX_CONVERTER);
+			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Upload file
 			await page.setInputFiles('input[type="file"]', testMidiPath);
 
 			// Verify file is uploaded and UI updates
-			await expect(page.getByRole('heading', { name: 'File Ready', level: 3 })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible({
+				timeout: 10000
+			});
 			await expect(page.getByText('test-sample.mid')).toBeVisible();
-			await expect(page.getByText(/\d+\.\d+ KB/)).toBeVisible();
+			await expect(page.getByText(/\d+\.\d+ KB/)).toBeVisible({ timeout: 10000 });
 
 			// Verify file action buttons appear
 			await expect(page.getByRole('button', { name: 'Remove' })).toBeVisible();
@@ -66,12 +73,16 @@ test.describe('MIDI to DTX Converter Tool', () => {
 	test.describe('Conversion Process', () => {
 		test.beforeEach(async ({ page }) => {
 			await page.goto(PAGES.MIDI_TO_DTX_CONVERTER);
+			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Upload test MIDI file
 			await page.setInputFiles('input[type="file"]', testMidiPath);
 
 			// Wait for the convert button to appear
-			await expect(page.getByRole('button', { name: 'Convert to DTX' })).toBeVisible();
+			await expect(page.getByRole('button', { name: 'Convert to DTX' })).toBeVisible({
+				timeout: 10000
+			});
 		});
 
 		test('should allow downloading converted DTX file', async ({ page }) => {

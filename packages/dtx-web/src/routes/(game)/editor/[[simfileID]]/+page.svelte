@@ -634,6 +634,7 @@
 </script>
 
 <div
+	data-testid="editor-root"
 	class="grid h-screen grid-cols-1 grid-rows-[auto_1fr]"
 	style="background: var(--music-bg-primary);"
 >

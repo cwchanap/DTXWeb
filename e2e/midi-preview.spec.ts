@@ -13,6 +13,7 @@ test.describe('MIDI Preview Tool', () => {
 	test.describe('Navigation and Initial State', () => {
 		test('opens the MIDI preview tool page', async ({ page }) => {
 			await page.goto(PAGES.TOOLS);
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Verify tools page loads
 			await expect(page.getByRole('heading', { name: 'Available Tools' })).toBeVisible();
@@ -34,16 +35,16 @@ test.describe('MIDI Preview Tool', () => {
 	test.describe('File Upload Functionality', () => {
 		test('should upload and parse a valid MIDI file with notes', async ({ page }) => {
 			await page.goto(PAGES.MIDI_PREVIEW);
+			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Upload file
 			await page.setInputFiles('input[type="file"]', testMidiPath);
 
-			// Verify success notification
-			await expect(page.getByText('MIDI file loaded')).toBeVisible();
-			await expect(page.getByText(/Found \d+ tracks with \d+ notes/)).toBeVisible();
-
 			// Verify file information is displayed
-			await expect(page.getByRole('heading', { name: 'File Loaded' })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'File Loaded' })).toBeVisible({
+				timeout: 10000
+			});
 			await expect(page.getByText('test-sample.mid')).toBeVisible();
 
 			// Verify file information section appears

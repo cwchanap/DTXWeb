@@ -54,7 +54,7 @@ test.describe('MIDI Preview Tool', () => {
 			await expect(page.getByText('Total Notes', { exact: true })).toBeVisible();
 			await expect(page.getByText('Duration', { exact: true })).toBeVisible();
 			await expect(page.getByText('Tempo', { exact: true })).toBeVisible();
-			await expect(page.getByText('BPM', { exact: true })).toBeVisible();
+			await expect(page.getByText(/\bBPM\b/)).toBeVisible();
 
 			// Verify track details section appears
 			await expect(page.getByRole('heading', { name: 'Track Details' })).toBeVisible();

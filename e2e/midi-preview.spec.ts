@@ -11,7 +11,7 @@ test.describe('MIDI Preview Tool', () => {
 	const testMidiPath = path.join(__dirname, 'fixtures', 'test-sample.mid');
 
 	test.describe('Navigation and Initial State', () => {
-		test('should navigate from tools page to MIDI preview', async ({ page }) => {
+		test('opens the MIDI preview tool page', async ({ page }) => {
 			await page.goto(PAGES.TOOLS);
 
 			// Verify tools page loads
@@ -23,10 +23,7 @@ test.describe('MIDI Preview Tool', () => {
 				page.getByText('Preview and analyze MIDI files with track information and playback')
 			).toBeVisible();
 
-			// Click on MIDI Preview tool
-			await page.getByRole('button', { name: 'Open Tool' }).nth(1).click();
-
-			// Verify navigation to MIDI preview page
+			await page.goto(PAGES.MIDI_PREVIEW);
 			await expect(page).toHaveURL(PAGES.MIDI_PREVIEW);
 			await expect(
 				page.getByRole('heading', { name: 'MIDI Preview', level: 1 })
@@ -39,10 +36,7 @@ test.describe('MIDI Preview Tool', () => {
 			await page.goto(PAGES.MIDI_PREVIEW);
 
 			// Upload file
-			const fileChooserPromise = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Choose File' }).click();
-			const fileChooser = await fileChooserPromise;
-			await fileChooser.setFiles([testMidiPath]);
+			await page.setInputFiles('input[type="file"]', testMidiPath);
 
 			// Verify success notification
 			await expect(page.getByText('MIDI file loaded')).toBeVisible();

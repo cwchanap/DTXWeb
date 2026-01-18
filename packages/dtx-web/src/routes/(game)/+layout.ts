@@ -7,9 +7,7 @@ export const ssr = false;
 import init from 'xa_decoder';
 
 export const load = async () => {
-	try {
-		await init({});
-	} catch (error) {
+	void init({}).catch((error) => {
 		console.warn('XA decoder init failed:', error);
-	}
+	});
 };

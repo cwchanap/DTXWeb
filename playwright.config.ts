@@ -66,6 +66,12 @@ export default defineConfig({
 	webServer: {
 		command: 'npm run dev -w=dtx-web',
 		url: 'http://localhost:5173',
-		reuseExistingServer: !process.env.CI
+		reuseExistingServer: !process.env.CI,
+		env: {
+			...process.env,
+			VITE_E2E: 'true',
+			PUBLIC_SIMFILE_BUCKET_URL: process.env.PUBLIC_SIMFILE_BUCKET_URL ?? baseURL,
+			VITE_DTX_SERVER_URL: process.env.VITE_DTX_SERVER_URL ?? baseURL
+		}
 	}
 });

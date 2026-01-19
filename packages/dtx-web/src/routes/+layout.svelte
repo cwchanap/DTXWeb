@@ -9,7 +9,7 @@
 	let { session, supabase } = $derived(data);
 
 	onMount(() => {
-		if (import.meta.env.DEV) {
+		if (import.meta.env.DEV || import.meta.env.VITE_E2E === 'true') {
 			document.documentElement.dataset.e2eHydrated = 'true';
 		}
 

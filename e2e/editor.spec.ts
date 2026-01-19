@@ -1,5 +1,25 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { PAGES } from './constants';
+
+const waitForXaDecoder = async (page: Page) => {
+	await page.waitForFunction(
+		() =>
+			(window as { __xaDecoderReady?: boolean; __xaDecoderError?: string })
+				.__xaDecoderReady === true ||
+			(window as { __xaDecoderReady?: boolean; __xaDecoderError?: string }).__xaDecoderError,
+		{ timeout: 30000 }
+	);
+
+	const error = await page.evaluate(
+		() => (window as { __xaDecoderError?: string }).__xaDecoderError
+	);
+	expect(error).toBeFalsy();
+
+	const ready = await page.evaluate(
+		() => (window as { __xaDecoderReady?: boolean }).__xaDecoderReady
+	);
+	expect(ready).toBe(true);
+};
 
 test.describe('Editor page', () => {
 	test.describe('Basic Editor Loading', () => {
@@ -9,6 +29,7 @@ test.describe('Editor page', () => {
 			// Wait for page to load
 			await page.waitForLoadState('networkidle');
 			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			await waitForXaDecoder(page);
 
 			// Check for main editor components
 			await expect(page.getByTestId('editor-root')).toBeVisible({ timeout: 15000 });
@@ -24,6 +45,7 @@ test.describe('Editor page', () => {
 			// Wait for page to load
 			await page.waitForLoadState('networkidle');
 			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			await waitForXaDecoder(page);
 
 			// Check for main editor components
 			await expect(page.getByTestId('editor-root')).toBeVisible({ timeout: 15000 });

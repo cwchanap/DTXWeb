@@ -1,4 +1,6 @@
-import init, { WasmXADecoder } from 'xa_decoder';
+type XaDecoderModule = typeof import('xa_decoder');
+
+let xaDecoderModule: XaDecoderModule | null = null;
 
 export class XAAudioContext extends AudioContext {
 	private initialized = false;
@@ -24,7 +26,9 @@ export class XAAudioContext extends AudioContext {
 
 	private async performInitialization(): Promise<void> {
 		try {
-			await init();
+			const module = await import('xa_decoder');
+			xaDecoderModule = module;
+			await module.default();
 			this.initialized = true;
 			this.initializationPromise = null; // Clear promise after completion
 		} catch (error) {
@@ -42,7 +46,11 @@ export class XAAudioContext extends AudioContext {
 		try {
 			await this.ensureInitialized();
 
-			const decoder = new WasmXADecoder();
+			const decoderCtor = xaDecoderModule?.WasmXADecoder;
+			if (!decoderCtor) {
+				throw new Error('XA decoder is not initialized');
+			}
+			const decoder = new decoderCtor();
 			try {
 				const data = decoder.decode(new Uint8Array(audioData));
 				const format = decoder.get_format();

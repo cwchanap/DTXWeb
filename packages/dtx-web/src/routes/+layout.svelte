@@ -9,6 +9,10 @@
 	let { session, supabase } = $derived(data);
 
 	onMount(() => {
+		if (import.meta.env.DEV || import.meta.env.VITE_E2E === 'true') {
+			document.documentElement.dataset.e2eHydrated = 'true';
+		}
+
 		// Initialize file provider for dtx-web (client-only)
 		(async () => {
 			const { setFileProvider } = await import('@dtx/common');

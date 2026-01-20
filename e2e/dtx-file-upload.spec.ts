@@ -1,50 +1,51 @@
 import { test, expect } from '@playwright/test';
+import { PAGES } from './constants';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-test.describe('DTX File Upload E2E Tests', () => {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+test.describe('DTX to MIDI upload workflow', () => {
+	const testDtxPath = path.join(__dirname, 'fixtures', 'test-sample.dtx');
+
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
-		// Navigate to upload section or ensure we're in the right area
-		await page.waitForSelector('[data-testid="file-upload"]', { timeout: 10000 });
+		await page.goto(PAGES.DTX_CONVERTER);
+		await page.waitForLoadState('networkidle');
+		await page.waitForSelector('html[data-e2e-hydrated="true"]');
+		await expect(
+			page.getByRole('heading', { name: 'DTX to MIDI Converter', level: 1 })
+		).toBeVisible();
+		await page.waitForSelector('input[type="file"]', { state: 'attached' });
 	});
 
-	test('should complete full upload workflow for valid DTX file with assets', async ({
-		page
-	}) => {
-		// Prepare test files
-		const dtxFilePath = path.join(__dirname, 'fixtures', 'test-sample.dtx');
-		const audioFile1Path = path.join(__dirname, 'fixtures', 'kick.wav');
-		const audioFile2Path = path.join(__dirname, 'fixtures', 'snare.wav');
+	test('uploads a DTX file and shows ready state', async ({ page }) => {
+		await page.setInputFiles('input[type="file"]', testDtxPath);
 
-		// Start file upload
-		const fileInput = page.locator('input[type="file"]');
-		await fileInput.setInputFiles([dtxFilePath, audioFile1Path, audioFile2Path]);
-
-		// Wait for upload to process
-		await page.waitForSelector('[data-testid="upload-progress"]', { timeout: 5000 });
-		await page.waitForSelector('[data-testid="upload-success"]', { timeout: 30000 });
-
-		// Verify the simfile was created and is visible
-		await expect(page.locator('text=Test Song')).toBeVisible();
-		await expect(page.locator('text=Test Artist')).toBeVisible();
-		await expect(page.locator('text=120 BPM')).toBeVisible();
-
-		// Verify asset files were processed
-		await expect(page.locator('text=2 asset files')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible({
+			timeout: 10000
+		});
+		await expect(page.getByText('test-sample.dtx')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Convert to MIDI' })).toBeVisible();
 	});
 
-	test('should handle DTX-only upload without asset files', async ({ page }) => {
-		const dtxFilePath = path.join(__dirname, 'fixtures', 'simple-test.dtx');
+	test('converts and downloads a MIDI file', async ({ page }) => {
+		await page.setInputFiles('input[type="file"]', testDtxPath);
+		await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible({
+			timeout: 10000
+		});
+		await expect(page.getByRole('button', { name: 'Convert to MIDI' })).toBeVisible({
+			timeout: 10000
+		});
 
-		const fileInput = page.locator('input[type="file"]');
-		await fileInput.setInputFiles([dtxFilePath]);
+		await page.getByRole('button', { name: 'Convert to MIDI' }).click();
+		await expect(page.getByRole('heading', { name: 'Conversion Complete!' })).toBeVisible({
+			timeout: 15000
+		});
 
-		await page.waitForSelector('[data-testid="upload-success"]', { timeout: 30000 });
-
-		// Verify the simfile was created
-		await expect(page.locator('[data-testid="simfile-item"]')).toBeVisible();
-
-		// Should not show asset files count for DTX-only upload
-		await expect(page.locator('text=0 asset files')).toBeVisible();
+		const downloadPromise = page.waitForEvent('download');
+		await page.getByRole('button', { name: 'Download MIDI File' }).click();
+		const download = await downloadPromise;
+		expect(download.suggestedFilename()).toBe('test-sample.mid');
 	});
 });

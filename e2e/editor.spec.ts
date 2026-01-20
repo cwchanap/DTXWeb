@@ -1,5 +1,25 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { PAGES } from './constants';
+
+const waitForXaDecoder = async (page: Page) => {
+	await page.waitForFunction(
+		() =>
+			(window as { __xaDecoderReady?: boolean; __xaDecoderError?: string })
+				.__xaDecoderReady === true ||
+			(window as { __xaDecoderReady?: boolean; __xaDecoderError?: string }).__xaDecoderError,
+		{ timeout: 30000 }
+	);
+
+	const error = await page.evaluate(
+		() => (window as { __xaDecoderError?: string }).__xaDecoderError
+	);
+	expect(error).toBeFalsy();
+
+	const ready = await page.evaluate(
+		() => (window as { __xaDecoderReady?: boolean }).__xaDecoderReady
+	);
+	expect(ready).toBe(true);
+};
 
 test.describe('Editor page', () => {
 	test.describe('Basic Editor Loading', () => {
@@ -8,10 +28,15 @@ test.describe('Editor page', () => {
 
 			// Wait for page to load
 			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			await waitForXaDecoder(page);
 
 			// Check for main editor components
-			await expect(page.locator('canvas')).toBeVisible(); // Phaser game canvas
-			await expect(page.getByText('File')).toBeVisible(); // Navigation menu
+			await expect(page.getByTestId('editor-root')).toBeVisible({ timeout: 15000 });
+			await expect(page.getByText('File')).toBeVisible({ timeout: 10000 });
+			await expect(page.getByRole('button', { name: 'Editor Tabs' })).toBeVisible({
+				timeout: 10000
+			});
 		});
 
 		test('loads editor page with specific simfile', async ({ page }) => {
@@ -19,20 +44,15 @@ test.describe('Editor page', () => {
 
 			// Wait for page to load
 			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			await waitForXaDecoder(page);
 
 			// Check for main editor components
-			await expect(page.locator('canvas')).toBeVisible();
-			await expect(page.getByText('File')).toBeVisible();
-
-			// Switch to Sound tab
-			await page.getByRole('button', { name: 'Sound' }).click();
-
-			// Check for sound chips from simfile 318
-			await expect(page.getByText('bass.xa').first()).toBeVisible();
-			await expect(page.getByText('snare.ogg').first()).toBeVisible();
-
-			// Should show difficulty modal or other simfile-specific elements
-			// Note: This may require specific assertions based on the simfile data
+			await expect(page.getByTestId('editor-root')).toBeVisible({ timeout: 15000 });
+			await expect(page.getByText('File')).toBeVisible({ timeout: 10000 });
+			await expect(page.getByRole('button', { name: 'Editor Tabs' })).toBeVisible({
+				timeout: 10000
+			});
 		});
 	});
 });

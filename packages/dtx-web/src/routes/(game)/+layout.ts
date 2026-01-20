@@ -4,8 +4,22 @@ This line of code is to tell sveltekit to not render the page in the server and 
 */
 export const ssr = false;
 
-import init from 'xa_decoder';
-
 export const load = async () => {
-	await init({});
+	const globalTarget = globalThis as typeof globalThis & {
+		__xaDecoderReady?: boolean;
+		__xaDecoderError?: string;
+	};
+
+	globalTarget.__xaDecoderReady = false;
+	globalTarget.__xaDecoderError = undefined;
+
+	void import('xa_decoder')
+		.then(({ default: init }) => init({}))
+		.then(() => {
+			globalTarget.__xaDecoderReady = true;
+		})
+		.catch((error) => {
+			globalTarget.__xaDecoderError = error instanceof Error ? error.message : String(error);
+			console.warn('XA decoder init failed:', error);
+		});
 };

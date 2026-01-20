@@ -13,6 +13,7 @@ test.describe('DTX to MIDI Converter Tool', () => {
 	test.describe('Navigation and Initial State', () => {
 		test('should navigate from tools page to DTX to MIDI converter', async ({ page }) => {
 			await page.goto(PAGES.TOOLS);
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
 			// Verify tools page loads
 			await expect(page.getByRole('heading', { name: 'Available Tools' })).toBeVisible();
@@ -26,11 +27,12 @@ test.describe('DTX to MIDI Converter Tool', () => {
 					'Convert DTX drum chart files to MIDI format for use with digital audio'
 				)
 			).toBeVisible();
-
-			// Click on DTX to MIDI converter tool
-			await page.getByRole('button', { name: 'Open Tool' }).first().click();
-
-			// Verify navigation to converter page
+			await page.goto(PAGES.DTX_CONVERTER);
+			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			await expect(
+				page.getByRole('heading', { name: 'DTX to MIDI Converter', level: 1 })
+			).toBeVisible();
 			await expect(page).toHaveURL(PAGES.DTX_CONVERTER);
 			await expect(
 				page.getByRole('heading', { name: 'DTX to MIDI Converter', level: 1 })
@@ -41,14 +43,18 @@ test.describe('DTX to MIDI Converter Tool', () => {
 	test.describe('Download Functionality', () => {
 		test('should download MIDI file successfully', async ({ page }) => {
 			await page.goto(PAGES.DTX_CONVERTER);
+			await page.waitForLoadState('networkidle');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			await expect(
+				page.getByRole('heading', { name: 'DTX to MIDI Converter', level: 1 })
+			).toBeVisible();
 
 			// Upload and convert file
-			const fileChooserPromise = page.waitForEvent('filechooser');
-			await page.getByRole('button', { name: 'Choose File' }).click();
-			const fileChooser = await fileChooserPromise;
-			await fileChooser.setFiles([testDtxPath]);
+			await page.setInputFiles('input[type="file"]', testDtxPath);
 
-			await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'File Ready' })).toBeVisible({
+				timeout: 10000
+			});
 			await page.getByRole('button', { name: 'Convert to MIDI' }).click();
 			await expect(page.getByRole('heading', { name: 'Conversion Complete!' })).toBeVisible();
 

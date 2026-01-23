@@ -127,9 +127,31 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		redirect(303, redirectUrl);
 	}
 
-	// Handle unauthenticated API access
+	// Handle unauthenticated API access for /api/simFile routes
+	// Support both cookie-based auth (web app) and bearer token auth (desktop app)
 	if (!event.locals.session && event.url.pathname.startsWith('/api/simFile')) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
+		const authHeader = event.request.headers.get('Authorization');
+		if (authHeader?.startsWith('Bearer ')) {
+			const token = authHeader.replace('Bearer ', '');
+			// Validate the bearer token using Supabase
+			const { data: userData, error: userError } =
+				await event.locals.supabase.auth.getUser(token);
+			if (userError || !userData.user) {
+				return json({ error: 'Unauthorized' }, { status: 401 });
+			}
+			// Set user from bearer token for route handlers
+			event.locals.user = userData.user;
+			// Create a minimal session object for compatibility
+			event.locals.session = {
+				access_token: token,
+				refresh_token: '',
+				expires_in: 3600,
+				token_type: 'bearer',
+				user: userData.user
+			} as any;
+		} else {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
 	}
 
 	return resolve(event);

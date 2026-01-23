@@ -12,6 +12,23 @@ vi.mock('$lib/server/logger', () => ({
 	}
 }));
 
+// Create a mock Request object
+const createMockRequest = (headers?: Headers): Request => {
+	return {
+		headers: headers ?? new Headers(),
+		json: async () => ({}),
+		text: async () => '',
+		blob: async () => new Blob(),
+		arrayBuffer: async () => new ArrayBuffer(0),
+		formData: async () => new FormData(),
+		clone: function () {
+			return createMockRequest(headers);
+		},
+		body: null,
+		bodyUsed: false
+	} as Request;
+};
+
 // Mock R2 Bucket
 const createMockBucket = (
 	objects: Array<{ key: string; size?: number; uploaded?: Date }> = []
@@ -27,7 +44,12 @@ const createMockBucket = (
 	}) as unknown as R2Bucket;
 
 // Mock Supabase client
-const createMockSupabaseClient = (simfileData: any | null = null, error: any = null) =>
+const createMockSupabaseClient = (
+	simfileData: any | null = null,
+	error: any = null,
+	userData: any | null = null,
+	userError: any = null
+) =>
 	({
 		from: vi.fn(() => ({
 			select: vi.fn(() => ({
@@ -35,7 +57,10 @@ const createMockSupabaseClient = (simfileData: any | null = null, error: any = n
 					maybeSingle: vi.fn().mockResolvedValue({ data: simfileData, error })
 				}))
 			}))
-		}))
+		})),
+		auth: {
+			getUser: vi.fn().mockResolvedValue({ data: userData, error: userError })
+		}
 	}) as unknown as SupabaseClient;
 
 // Create mock session
@@ -70,6 +95,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const mockBucket = createMockBucket();
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
@@ -85,10 +111,60 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(data.error).toBe('Unauthorized');
 	});
 
+	it('returns 401 when bearer token is invalid', async () => {
+		const mockBucket = createMockBucket();
+		const headers = new Headers({ Authorization: 'Bearer invalid-token' });
+
+		const response = await GET({
+			request: createMockRequest(headers),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(
+					null,
+					null,
+					{ user: null },
+					new Error('Invalid')
+				),
+				safeGetSession: async () => ({ session: null, user: null }),
+				session: null,
+				user: null
+			}
+		} as any);
+
+		expect(response.status).toBe(401);
+		const data = await response.json();
+		expect(data.error).toBe('Unauthorized');
+	});
+
+	it('returns 500 when simfile lookup fails', async () => {
+		const mockBucket = createMockBucket();
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(null, new Error('db error')),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.error).toBe('Failed to verify ownership');
+	});
+
 	it('returns 404 when simfile does not exist', async () => {
 		const mockBucket = createMockBucket();
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
@@ -116,6 +192,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		};
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
@@ -147,6 +224,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		};
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
@@ -182,6 +260,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		};
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
@@ -204,6 +283,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const mockBucket = createMockBucket();
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
@@ -229,6 +309,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		};
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: {} },
 			locals: {
@@ -261,6 +342,7 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		};
 
 		const response = await GET({
+			request: createMockRequest(),
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {

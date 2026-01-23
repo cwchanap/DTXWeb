@@ -2,18 +2,36 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 
 export async function DELETE({
+	request,
 	params,
 	platform,
 	locals
 }: {
+	request: Request;
 	params: { simfileID: string };
 	platform: App.Platform;
 	locals: App.Locals;
 }) {
 	try {
-		// Check if user is authenticated
-		const { session } = await locals.safeGetSession();
-		if (!session || !session.user) {
+		const { session: cookieSession } = await locals.safeGetSession();
+		let user = cookieSession?.user;
+
+		if (!user) {
+			const authHeader = request.headers.get('Authorization');
+			if (authHeader?.startsWith('Bearer ')) {
+				const token = authHeader.replace('Bearer ', '');
+				const { data: userData, error: userError } =
+					await locals.supabase.auth.getUser(token);
+				if (userError || !userData.user) {
+					return json({ error: 'Unauthorized' }, { status: 401 });
+				}
+				user = userData.user;
+			} else {
+				return json({ error: 'Unauthorized' }, { status: 401 });
+			}
+		}
+
+		if (!user) {
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
@@ -46,9 +64,9 @@ export async function DELETE({
 		}
 
 		// Check if the authenticated user is the owner of the simfile
-		if (simfile.user_id !== session.user.id) {
+		if (simfile.user_id !== user.id) {
 			logger.warn(
-				`Unauthorized delete attempt: user ${session.user.id} tried to delete simfile ${simfileID} owned by ${simfile.user_id}`
+				`Unauthorized delete attempt: user ${user.id} tried to delete simfile ${simfileID} owned by ${simfile.user_id}`
 			);
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
@@ -96,17 +114,29 @@ export async function DELETE({
 			`Deleted ${successfulDeletions.length}/${listResult.objects.length} files for simfile: ${simfileID}`
 		);
 
-		// Return conditional message based on failed deletions
+		const totalFiles = listResult.objects.length;
 		const message =
 			failedDeletions.length === 0
 				? 'Files deleted successfully'
-				: `Some files failed to delete (${failedDeletions.length}/${listResult.objects.length})`;
+				: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
+
+		if (failedDeletions.length === totalFiles && totalFiles > 0) {
+			return json(
+				{
+					message,
+					deleted: successfulDeletions.length,
+					failed: failedDeletions.length,
+					total: totalFiles
+				},
+				{ status: 500 }
+			);
+		}
 
 		return json({
 			message,
 			deleted: successfulDeletions.length,
 			failed: failedDeletions.length,
-			total: listResult.objects.length
+			total: totalFiles
 		});
 	} catch (error) {
 		logger.error('Delete error:', error);

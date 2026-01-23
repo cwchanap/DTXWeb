@@ -3,7 +3,7 @@ import { ensureSupabaseAuth, getSupabaseClient, getCurrentSession } from './auth
 import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
-import fetch from 'node-fetch';
+import fetch, { type BodyInit, type Response } from 'node-fetch';
 
 // SimFile service functions
 export interface SimFileServiceResult {
@@ -134,9 +134,9 @@ async function uploadPreviewFile(
 					'User-Agent': 'DTXDesktopApp',
 					'X-Requested-With': 'DTXDesktopApp'
 				},
-				body: form as any, // Type assertion for node-fetch
+				body: form as BodyInit,
 				signal: controller.signal
-			})) as { ok: boolean; status: number };
+			})) as Response;
 
 			if (!response.ok) {
 				console.error(`Failed to upload ${filename}: HTTP ${response.status}`);

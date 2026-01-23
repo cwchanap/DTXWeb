@@ -2,10 +2,12 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 
 export async function GET({
+	request,
 	params,
 	platform,
 	locals
 }: {
+	request: Request;
 	params: { simfileID: string };
 	platform: App.Platform;
 	locals: App.Locals;
@@ -17,9 +19,25 @@ export async function GET({
 	}
 
 	try {
-		// Check if user is authenticated
-		const { session } = await locals.safeGetSession();
-		if (!session || !session.user) {
+		const { session: cookieSession } = await locals.safeGetSession();
+		let user = cookieSession?.user;
+
+		if (!user) {
+			const authHeader = request.headers.get('Authorization');
+			if (authHeader?.startsWith('Bearer ')) {
+				const token = authHeader.replace('Bearer ', '');
+				const { data: userData, error: userError } =
+					await locals.supabase.auth.getUser(token);
+				if (userError || !userData.user) {
+					return json({ error: 'Unauthorized' }, { status: 401 });
+				}
+				user = userData.user;
+			} else {
+				return json({ error: 'Unauthorized' }, { status: 401 });
+			}
+		}
+
+		if (!user) {
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
@@ -40,9 +58,9 @@ export async function GET({
 		}
 
 		// Check if the authenticated user is the owner of the simfile
-		if (simfile.user_id !== session.user.id) {
+		if (simfile.user_id !== user.id) {
 			logger.warn(
-				`Unauthorized list attempt: user ${session.user.id} tried to list files for simfile ${simfileID} owned by ${simfile.user_id}`
+				`Unauthorized list attempt: user ${user.id} tried to list files for simfile ${simfileID} owned by ${simfile.user_id}`
 			);
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}

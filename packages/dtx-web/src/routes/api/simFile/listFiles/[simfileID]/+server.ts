@@ -18,24 +18,16 @@ export async function GET({
 		return json({ error: 'SimfileID is required' }, { status: 400 });
 	}
 
-	try {
-		const { session: cookieSession } = await locals.safeGetSession();
-		let user = cookieSession?.user;
+	// Validate simfileID is a valid integer
+	const id = parseInt(simfileID, 10);
+	if (Number.isNaN(id) || !Number.isInteger(id)) {
+		return json({ error: 'Invalid SimFile ID' }, { status: 400 });
+	}
 
-		if (!user) {
-			const authHeader = request.headers.get('Authorization');
-			if (authHeader?.startsWith('Bearer ')) {
-				const token = authHeader.replace('Bearer ', '');
-				const { data: userData, error: userError } =
-					await locals.supabase.auth.getUser(token);
-				if (userError || !userData.user) {
-					return json({ error: 'Unauthorized' }, { status: 401 });
-				}
-				user = userData.user;
-			} else {
-				return json({ error: 'Unauthorized' }, { status: 401 });
-			}
-		}
+	try {
+		// Authentication is handled by hooks.server.ts
+		// locals.user is set for both cookie session and Bearer token auth
+		const user = locals.user;
 
 		if (!user) {
 			return json({ error: 'Unauthorized' }, { status: 401 });
@@ -45,7 +37,7 @@ export async function GET({
 		const { data: simfile, error: simfileError } = await locals.supabase
 			.from('simfiles')
 			.select('user_id')
-			.eq('id', parseInt(simfileID, 10))
+			.eq('id', id)
 			.maybeSingle();
 
 		if (simfileError) {

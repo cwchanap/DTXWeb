@@ -5,12 +5,17 @@ import path from 'path';
 import FormData from 'form-data';
 import fetch, { type BodyInit, type Response } from 'node-fetch';
 
-// SimFile service functions
-export interface SimFileServiceResult {
-	data: SimfileWithDtx[];
-	fromCache: boolean;
-	error?: string;
-}
+// SimFile service functions - using discriminated union type
+export type SimFileServiceResult =
+	| {
+			success: true;
+			data: SimfileWithDtx[];
+			fromCache: boolean;
+	  }
+	| {
+			success: false;
+			error: string;
+	  };
 
 export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 	try {
@@ -55,14 +60,14 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		const simFiles = data || [];
 
 		return {
+			success: true,
 			data: simFiles,
 			fromCache: false
 		};
 	} catch (error) {
 		console.error('Error fetching simFiles:', error);
 		return {
-			data: [],
-			fromCache: false,
+			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error occurred'
 		};
 	}
@@ -84,10 +89,18 @@ export function getPreviewUrl(preview_url: string): string {
 export function getSoundPreviewUrl(sound_preview_url: string | null): string | null {
 	if (!sound_preview_url) return null;
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
-	if (!bucketUrl) return null;
+	if (!bucketUrl) {
+		throw new Error('PUBLIC_SIMFILE_BUCKET_URL environment variable is not set');
+	}
 	const normalizedUrl = bucketUrl.replace(/\/$/, '');
 	const normalizedPath = sound_preview_url.replace(/^\//, '');
 	return `${normalizedUrl}/${normalizedPath}`;
+}
+
+interface UploadPreviewFileResult {
+	success: boolean;
+	path?: string;
+	error?: string;
 }
 
 /**
@@ -97,7 +110,7 @@ export function getSoundPreviewUrl(sound_preview_url: string | null): string | n
  * @param filename - Filename (e.g., 'preview.jpg', 'preview.mp3')
  * @param contentType - MIME type (e.g., 'image/jpeg', 'audio/mpeg')
  * @param apiBaseUrl - Base URL for API
- * @returns The file path relative to the bucket, or empty string on failure
+ * @returns Result object with success status and path or error
  */
 async function uploadPreviewFile(
 	buffer: Buffer,
@@ -105,13 +118,14 @@ async function uploadPreviewFile(
 	filename: string,
 	contentType: string,
 	apiBaseUrl: string
-): Promise<string> {
+): Promise<UploadPreviewFileResult> {
 	try {
 		// Get current session for authentication
 		const session = getCurrentSession();
 		if (!session?.access_token) {
-			console.error('No valid session for file upload');
-			return '';
+			const error = 'No valid session for file upload';
+			console.error(error);
+			return { success: false, error };
 		}
 
 		// Create FormData using the form-data package
@@ -139,25 +153,28 @@ async function uploadPreviewFile(
 			})) as Response;
 
 			if (!response.ok) {
-				console.error(`Failed to upload ${filename}: HTTP ${response.status}`);
-				return '';
+				const error = `Failed to upload ${filename}: HTTP ${response.status}`;
+				console.error(error);
+				return { success: false, error };
 			}
 
-			return `${simfileId}/${filename}`;
+			return { success: true, path: `${simfileId}/${filename}` };
 		} finally {
 			clearTimeout(timeoutId);
 		}
 	} catch (error) {
+		let errorMessage: string;
 		if (error instanceof Error) {
 			if (error.name === 'AbortError') {
-				console.error(`Upload timeout for ${filename}`);
+				errorMessage = `Upload timeout for ${filename}`;
 			} else {
-				console.error(`Upload error for ${filename}:`, error.message);
+				errorMessage = `Upload error for ${filename}: ${error.message}`;
 			}
 		} else {
-			console.error(`Upload error for ${filename}:`, error);
+			errorMessage = `Upload error for ${filename}: ${String(error)}`;
 		}
-		return '';
+		console.error(errorMessage);
+		return { success: false, error: errorMessage };
 	}
 }
 
@@ -179,6 +196,7 @@ export interface CreateSimfileResult {
 	simfileId?: string;
 	data?: unknown;
 	error?: string;
+	warnings?: string[];
 }
 
 export async function createSimfileRecord(
@@ -276,27 +294,38 @@ export async function createSimfileRecord(
 		const simfileId = simFileData.id;
 
 		// Upload preview files to R2 via API using the helper function
-		let previewUrl = '';
-		let soundPreviewUrl = '';
+		let previewUrl: string | null = null;
+		let soundPreviewUrl: string | null = null;
+		const uploadErrors: string[] = [];
 
 		if (previewBuffer) {
-			previewUrl = await uploadPreviewFile(
+			const result = await uploadPreviewFile(
 				previewBuffer,
 				simfileId,
 				'preview.jpg',
 				'image/jpeg',
 				apiBaseUrl
 			);
+			if (result.success && result.path) {
+				previewUrl = result.path;
+			} else if (result.error) {
+				uploadErrors.push(`Preview image: ${result.error}`);
+			}
 		}
 
 		if (soundPreviewBuffer) {
-			soundPreviewUrl = await uploadPreviewFile(
+			const result = await uploadPreviewFile(
 				soundPreviewBuffer,
 				simfileId,
 				'preview.mp3',
 				'audio/mpeg',
 				apiBaseUrl
 			);
+			if (result.success && result.path) {
+				soundPreviewUrl = result.path;
+			} else if (result.error) {
+				uploadErrors.push(`Sound preview: ${result.error}`);
+			}
 		}
 
 		// Update the simfile record with preview URLs if they were uploaded
@@ -304,13 +333,15 @@ export async function createSimfileRecord(
 			const { error: updateError } = await supabaseClient
 				.from('simfiles')
 				.update({
-					preview_url: previewUrl || null,
-					sound_preview_url: soundPreviewUrl || null
+					preview_url: previewUrl,
+					sound_preview_url: soundPreviewUrl
 				})
 				.eq('id', simfileId);
 
 			if (updateError) {
-				console.error('Error updating simfile with preview URLs:', updateError.message);
+				const errorMsg = `Error updating simfile with preview URLs: ${updateError.message}`;
+				console.error(errorMsg);
+				throw new Error(errorMsg);
 			}
 		}
 
@@ -330,15 +361,22 @@ export async function createSimfileRecord(
 			}
 		}
 
-		return {
+		const result: CreateSimfileResult = {
 			success: true,
 			simfileId: simfileId,
 			data: {
 				...simFileData,
-				preview_url: previewUrl || null,
-				sound_preview_url: soundPreviewUrl || null
+				preview_url: previewUrl,
+				sound_preview_url: soundPreviewUrl
 			}
 		};
+
+		// Include warnings if preview uploads failed
+		if (uploadErrors.length > 0) {
+			result.warnings = uploadErrors;
+		}
+
+		return result;
 	} catch (error) {
 		console.error('Error creating simfile record:', error);
 		return {

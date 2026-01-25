@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { sequence } from '@sveltejs/kit/hooks';
+import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { json } from '@sveltejs/kit';
 import type { Handle } from '@sveltejs/kit';
@@ -28,7 +29,7 @@ const supabase: Handle = async ({ event, resolve }) => {
 				}
 			}
 		}
-	);
+	) as unknown as typeof event.locals.supabase;
 
 	event.locals.safeGetSession = async () => {
 		const {
@@ -83,8 +84,29 @@ const authGuard: Handle = async ({ event, resolve }) => {
 				token_type: 'bearer',
 				user: userData.user
 			} satisfies Partial<Session>;
-			// Update the Supabase client to use the authenticated session
-			await event.locals.supabase.auth.setSession({ access_token: token, refresh_token: '' });
+			// Create a new Supabase client configured with the bearer token
+			// This ensures RLS policies work correctly for subsequent database queries
+			event.locals.supabase = createClient<Database>(
+				'https://test.supabase.co',
+				'test-anon-key',
+				{
+					auth: {
+						persistSession: false,
+						autoRefreshToken: false,
+						detectSessionInUrl: false,
+						storage: {
+							getItem: () => token,
+							setItem: () => {},
+							removeItem: () => {}
+						}
+					},
+					global: {
+						headers: {
+							Authorization: `Bearer ${token}`
+						}
+					}
+				}
+			) as unknown as typeof event.locals.supabase;
 		} else {
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
@@ -123,8 +145,7 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		vi.clearAllMocks();
 	});
 
-	it('calls setSession when valid bearer token is provided for /api/simFile routes', async () => {
-		const mockSetSession = vi.fn().mockResolvedValue({ error: null });
+	it('creates a new Supabase client when valid bearer token is provided for /api/simFile routes', async () => {
 		const mockGetUser = vi.fn().mockResolvedValue({
 			data: { user: { id: 'test-user-id', email: 'test@example.com' } },
 			error: null
@@ -137,14 +158,15 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 			Authorization: 'Bearer test-token'
 		});
 
-		// Mock the Supabase client
-		event.locals.supabase = {
+		// Mock the initial Supabase client
+		const initialSupabaseClient = {
 			auth: {
 				getSession: mockGetSession,
-				getUser: mockGetUser,
-				setSession: mockSetSession
+				getUser: mockGetUser
 			}
 		} as unknown as SupabaseClient;
+
+		event.locals.supabase = initialSupabaseClient;
 
 		// Mock safeGetSession
 		event.locals.safeGetSession = async () => {
@@ -161,23 +183,19 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		// Run authGuard handle
 		await authGuard({ event, resolve });
 
-		// Verify getUser was called with the bearer token
+		// Verify getUser was called with the bearer token on the initial client
 		expect(mockGetUser).toHaveBeenCalledWith('test-token');
-
-		// Verify setSession was called with the token
-		expect(mockSetSession).toHaveBeenCalledWith({
-			access_token: 'test-token',
-			refresh_token: ''
-		});
 
 		// Verify locals.user and locals.session are set
 		expect(event.locals.user).toBeTruthy();
 		expect(event.locals.session).toBeTruthy();
 		expect(event.locals.session?.access_token).toBe('test-token');
+
+		// Verify that a new Supabase client was created for locals.supabase
+		expect(event.locals.supabase).not.toBe(initialSupabaseClient);
 	});
 
-	it('does not call setSession when bearer token is invalid', async () => {
-		const mockSetSession = vi.fn().mockResolvedValue({ error: null });
+	it('returns 401 when bearer token is invalid', async () => {
 		const mockGetUser = vi.fn().mockResolvedValue({
 			data: { user: null },
 			error: { message: 'Invalid token' }
@@ -193,8 +211,7 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		event.locals.supabase = {
 			auth: {
 				getSession: mockGetSession,
-				getUser: mockGetUser,
-				setSession: mockSetSession
+				getUser: mockGetUser
 			}
 		} as unknown as SupabaseClient;
 
@@ -214,9 +231,6 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		// Verify getUser was called with the bearer token
 		expect(mockGetUser).toHaveBeenCalledWith('invalid-token');
 
-		// Verify setSession was NOT called for invalid token
-		expect(mockSetSession).not.toHaveBeenCalled();
-
 		// Verify the response is a 401 error
 		expect(result).toBeInstanceOf(Response);
 		expect(result?.status).toBe(401);
@@ -227,7 +241,6 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 	});
 
 	it('returns 401 when no bearer token or session is provided for /api/simFile routes', async () => {
-		const mockSetSession = vi.fn().mockResolvedValue({ error: null });
 		const mockGetUser = vi.fn();
 		const mockGetSession = vi.fn().mockResolvedValue({
 			data: { session: null }
@@ -238,8 +251,7 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		event.locals.supabase = {
 			auth: {
 				getSession: mockGetSession,
-				getUser: mockGetUser,
-				setSession: mockSetSession
+				getUser: mockGetUser
 			}
 		} as unknown as SupabaseClient;
 
@@ -258,9 +270,6 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 
 		// Verify getUser was NOT called (no token provided)
 		expect(mockGetUser).not.toHaveBeenCalled();
-
-		// Verify setSession was NOT called
-		expect(mockSetSession).not.toHaveBeenCalled();
 
 		// Verify the response is a 401 error
 		expect(result).toBeInstanceOf(Response);

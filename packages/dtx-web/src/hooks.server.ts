@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
@@ -67,7 +68,7 @@ const supabase: Handle = async ({ event, resolve }) => {
 				}
 			}
 		}
-	);
+	) as unknown as typeof event.locals.supabase;
 
 	/**
 	 * Unlike `supabase.auth.getSession()`, which returns the session _without_
@@ -152,9 +153,30 @@ const authGuard: Handle = async ({ event, resolve }) => {
 				token_type: 'bearer',
 				user: userData.user
 			} satisfies Partial<Session>;
-			// Update the Supabase client to use the authenticated session
+			// Create a new Supabase client configured with the bearer token
 			// This ensures RLS policies work correctly for subsequent database queries
-			await event.locals.supabase.auth.setSession({ access_token: token, refresh_token: '' });
+			// We use createClient instead of setSession because setSession requires a refresh token
+			event.locals.supabase = createClient<Database>(
+				PUBLIC_SUPABASE_URL,
+				PUBLIC_SUPABASE_ANON_KEY,
+				{
+					auth: {
+						persistSession: false,
+						autoRefreshToken: false,
+						detectSessionInUrl: false,
+						storage: {
+							getItem: () => token,
+							setItem: () => {},
+							removeItem: () => {}
+						}
+					},
+					global: {
+						headers: {
+							Authorization: `Bearer ${token}`
+						}
+					}
+				}
+			) as typeof event.locals.supabase;
 		} else {
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}

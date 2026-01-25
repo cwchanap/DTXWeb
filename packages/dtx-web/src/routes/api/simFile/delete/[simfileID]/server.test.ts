@@ -300,20 +300,18 @@ describe('/api/simFile/delete/[simfileID]', () => {
 			user_id: 'token-user-id'
 		};
 
+		// Simulate what the hooks would do after validating the bearer token
+		const mockUser = createMockSession('token-user-id').user;
+
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
 			platform: { env: { DTXFILE_BUCKET: mockBucket } },
 			locals: {
-				supabase: createMockSupabaseClient(
-					simfileData,
-					null,
-					{ user: createMockSession('token-user-id').user },
-					null
-				),
+				supabase: createMockSupabaseClient(simfileData, null, null, null),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
-				user: null
+				user: mockUser // Simulate hooks setting this after validation
 			}
 		} as any);
 

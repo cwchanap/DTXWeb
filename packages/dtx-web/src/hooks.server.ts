@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import type { Database } from '@dtx/common';
+import type { Session } from '@supabase/supabase-js';
 
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 import { json, text } from '@sveltejs/kit';
@@ -151,6 +152,9 @@ const authGuard: Handle = async ({ event, resolve }) => {
 				token_type: 'bearer',
 				user: userData.user
 			} satisfies Partial<Session>;
+			// Update the Supabase client to use the authenticated session
+			// This ensures RLS policies work correctly for subsequent database queries
+			await event.locals.supabase.auth.setSession({ access_token: token, refresh_token: '' });
 		} else {
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}

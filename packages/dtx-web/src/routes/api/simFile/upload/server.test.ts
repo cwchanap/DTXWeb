@@ -335,13 +335,9 @@ describe('/api/simFile/upload', () => {
 			};
 
 			const mockSupabaseClient = createMockSupabaseClient(simfileData, null);
-			// Mock getUser to validate bearer token
-			mockSupabaseClient.auth = {
-				getUser: vi.fn().mockResolvedValue({
-					data: { user: createMockSession().user },
-					error: null
-				})
-			} as any;
+
+			// Simulate what the hooks would do after validating the bearer token
+			const mockUser = createMockSession().user;
 
 			const response = await POST({
 				request,
@@ -350,14 +346,13 @@ describe('/api/simFile/upload', () => {
 					supabase: mockSupabaseClient,
 					safeGetSession: async () => ({ session: null, user: null }),
 					session: null,
-					user: null
+					user: mockUser // Simulate hooks setting this after validation
 				}
 			} as any);
 
 			expect(response.status).toBe(200);
 			const data = await response.json();
 			expect(data.message).toBe('File uploaded successfully');
-			expect(mockSupabaseClient.auth.getUser).toHaveBeenCalledWith('test-bearer-token');
 		} finally {
 			// Restore original method
 			if (originalArrayBuffer) {
@@ -384,13 +379,6 @@ describe('/api/simFile/upload', () => {
 		request.headers.set('Authorization', 'Bearer invalid-token');
 
 		const mockSupabaseClient = createMockSupabaseClient(null, null);
-		// Mock getUser to return error for invalid token
-		mockSupabaseClient.auth = {
-			getUser: vi.fn().mockResolvedValue({
-				data: { user: null },
-				error: { message: 'Invalid token' }
-			})
-		} as any;
 
 		const response = await POST({
 			request,
@@ -456,12 +444,9 @@ describe('/api/simFile/upload', () => {
 		};
 
 		const mockSupabaseClient = createMockSupabaseClient(simfileData, null);
-		mockSupabaseClient.auth = {
-			getUser: vi.fn().mockResolvedValue({
-				data: { user: createMockSession('test-user-id').user },
-				error: null
-			})
-		} as any;
+
+		// Simulate what the hooks would do after validating the bearer token
+		const mockUser = createMockSession('test-user-id').user;
 
 		const response = await POST({
 			request,
@@ -470,7 +455,7 @@ describe('/api/simFile/upload', () => {
 				supabase: mockSupabaseClient,
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
-				user: null
+				user: mockUser // Simulate hooks setting this after validation
 			}
 		} as any);
 

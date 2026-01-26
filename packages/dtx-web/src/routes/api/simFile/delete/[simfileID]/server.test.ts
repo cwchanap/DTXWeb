@@ -32,14 +32,18 @@ const createMockRequest = (method: string, url: string, headers?: Headers): Requ
 };
 
 // Mock R2 Bucket
-const createMockBucket = (objects: Array<{ key: string }> = []): R2Bucket =>
+const createMockBucket = (
+	objects: Array<{ key: string }> = [],
+	truncated: boolean = false
+): R2Bucket =>
 	({
 		list: vi.fn().mockResolvedValue({
 			objects: objects.map((obj) => ({
 				key: obj.key,
 				size: 1024,
 				uploaded: new Date()
-			}))
+			})),
+			truncated
 		}),
 		delete: vi.fn().mockResolvedValue(undefined)
 	}) as unknown as R2Bucket;
@@ -49,7 +53,8 @@ const createMockSupabaseClient = (
 	simfileData: any | null = null,
 	error: any = null,
 	userData: any | null = null,
-	userError: any = null
+	userError: any = null,
+	deleteError: any = null
 ) =>
 	({
 		from: vi.fn(() => ({
@@ -57,6 +62,9 @@ const createMockSupabaseClient = (
 				eq: vi.fn(() => ({
 					maybeSingle: vi.fn().mockResolvedValue({ data: simfileData, error })
 				}))
+			})),
+			delete: vi.fn(() => ({
+				eq: vi.fn().mockResolvedValue({ error: deleteError })
 			}))
 		})),
 		auth: {
@@ -283,6 +291,9 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		expect(mockBucket.list).toHaveBeenCalledWith({ prefix: '123/', limit: 10000 });
 		expect(mockBucket.delete).toHaveBeenCalledTimes(3);
+		expect(mockBucket.delete.mock.calls.map((call) => call[0])).toEqual(
+			mockObjects.map((obj) => obj.key)
+		);
 	});
 
 	it('successfully deletes files with bearer token', async () => {
@@ -351,6 +362,42 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		expect(data.deleted).toBe(0);
 	});
 
+	it('returns 500 when simfile record delete fails', async () => {
+		const mockObjects = [{ key: '123/file1.dtx' }];
+		const mockBucket = createMockBucket(mockObjects);
+		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
+
+		const simfileData = {
+			id: 123,
+			user_id: 'test-user-id'
+		};
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(
+					simfileData,
+					null,
+					null,
+					null,
+					new Error('Delete failed')
+				),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.error).toBe('Failed to delete simfile record');
+	});
+
 	it('returns 400 when simfileID is missing', async () => {
 		const mockBucket = createMockBucket();
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/');
@@ -373,6 +420,57 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		expect(response.status).toBe(400);
 		const data = await response.json();
 		expect(data.error).toBe('SimFile ID is required');
+	});
+
+	it('returns 400 when simfileID is invalid', async () => {
+		const mockBucket = createMockBucket();
+		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/abc');
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: 'abc' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('returns 400 when simfileID is not a whole number', async () => {
+		const mockBucket = createMockBucket();
+		const request = createMockRequest(
+			'DELETE',
+			'http://localhost:5173/api/simFile/delete/123.45'
+		);
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '123.45' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
 	});
 
 	it('returns 500 when bucket is not available', async () => {
@@ -442,7 +540,7 @@ describe('/api/simFile/delete/[simfileID]', () => {
 			}
 		} as any);
 
-		expect(response.status).toBe(200);
+		expect(response.status).toBe(500);
 		const data = await response.json();
 		expect(data.deleted).toBe(1);
 		expect(data.failed).toBe(1);
@@ -489,5 +587,35 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		expect(data.deleted).toBe(0);
 		expect(data.failed).toBe(1);
 		expect(data.total).toBe(1);
+	});
+
+	it('returns 500 when list is truncated', async () => {
+		const mockObjects = [{ key: '123/file1.dtx' }];
+		const mockBucket = createMockBucket(mockObjects, true);
+		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
+
+		const simfileData = {
+			id: 123,
+			user_id: 'test-user-id'
+		};
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.message).toBe('File list was truncated; some files may not have been deleted');
 	});
 });

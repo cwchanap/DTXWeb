@@ -138,7 +138,6 @@
 
 	async function onFileDelete(id: number) {
 		// Delete files from R2 bucket first
-		let r2DeleteSuccess = false;
 		try {
 			const response = await fetch(`/api/simFile/delete/${id}`, {
 				method: 'DELETE'
@@ -152,7 +151,6 @@
 				});
 				return; // Abort if R2 deletion fails
 			}
-			r2DeleteSuccess = true;
 		} catch (error) {
 			console.error('Failed to delete R2 files:', error);
 			toastStore.error({
@@ -162,23 +160,12 @@
 			return; // Abort if R2 deletion fails
 		}
 
-		// Only delete the database record if R2 deletion succeeded
-		if (r2DeleteSuccess) {
-			const { error } = await supabase.from('simfiles').delete().eq('id', id);
-			if (error) {
-				toastStore.error({
-					title: 'Failed to delete chart',
-					duration: 3000
-				});
-			} else {
-				toastStore.success({
-					title: 'Chart deleted',
-					duration: 3000
-				});
-				filteredItems = filteredItems.filter((item) => item.id !== id);
-			}
-			loadItems();
-		}
+		toastStore.success({
+			title: 'Chart deleted',
+			duration: 3000
+		});
+		filteredItems = filteredItems.filter((item) => item.id !== id);
+		loadItems();
 	}
 
 	onMount(() => {

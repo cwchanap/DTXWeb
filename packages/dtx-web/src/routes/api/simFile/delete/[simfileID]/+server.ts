@@ -28,8 +28,11 @@ export async function DELETE({
 		}
 
 		// Validate and parse the simfileID
-		const id = parseInt(simfileID, 10);
-		if (Number.isNaN(id) || !Number.isInteger(id)) {
+		if (!/^\d+$/.test(simfileID)) {
+			return json({ error: 'Invalid SimFile ID' }, { status: 400 });
+		}
+		const id = Number(simfileID);
+		if (!Number.isSafeInteger(id)) {
 			return json({ error: 'Invalid SimFile ID' }, { status: 400 });
 		}
 
@@ -69,12 +72,13 @@ export async function DELETE({
 		// (>10000 files per simfile) may still require a different approach.
 		const listResult = await bucket.list({ prefix: `${simfileID}/`, limit: 10000 });
 
-		if (!listResult.objects || listResult.objects.length === 0) {
+		const objects = listResult.objects ?? [];
+		if (objects.length === 0) {
 			logger.info(`No files found for simfile: ${simfileID}`);
-			return json({ message: 'No files to delete', deleted: 0 });
 		}
 
-		if (listResult.truncated) {
+		const isTruncated = listResult.truncated === true;
+		if (isTruncated) {
 			logger.warn(
 				`File list was truncated for simfile ${simfileID}. Some files may not have been deleted.`
 			);
@@ -82,7 +86,7 @@ export async function DELETE({
 
 		// Delete all files using Promise.allSettled to handle partial failures
 		const deleteResults = await Promise.allSettled(
-			listResult.objects.map((obj) => bucket.delete(obj.key))
+			objects.map((obj) => bucket.delete(obj.key))
 		);
 
 		// Separate successful from failed deletions
@@ -90,23 +94,54 @@ export async function DELETE({
 		const failedDeletions = deleteResults.filter((r) => r.status === 'rejected');
 
 		if (failedDeletions.length > 0) {
-			const failedKeys = listResult.objects
+			const failedKeys = objects
 				.filter((_, i) => deleteResults[i]?.status === 'rejected')
 				.map((obj) => obj.key);
-			logger.error(`Failed to delete ${failedDeletions.length} files:`, failedKeys);
+			const failedDetails = deleteResults
+				.map((result, index) => {
+					if (result.status === 'rejected') {
+						const reason =
+							result.reason instanceof Error
+								? result.reason.message
+								: typeof result.reason === 'string'
+									? result.reason
+									: JSON.stringify(result.reason);
+						return {
+							key: objects[index]?.key,
+							reason
+						};
+					}
+					return null;
+				})
+				.filter(
+					(
+						entry
+					): entry is {
+						key: string | undefined;
+						reason: string;
+					} => entry !== null
+				);
+			logger.error(`Failed to delete ${failedDeletions.length} files:`, {
+				failedKeys,
+				errors: failedDetails
+			});
 		}
 
 		logger.info(
-			`Deleted ${successfulDeletions.length}/${listResult.objects.length} files for simfile: ${simfileID}`
+			`Deleted ${successfulDeletions.length}/${objects.length} files for simfile: ${simfileID}`
 		);
 
-		const totalFiles = listResult.objects.length;
+		const totalFiles = objects.length;
 		const message =
-			failedDeletions.length === 0
-				? 'Files deleted successfully'
-				: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
+			totalFiles === 0
+				? 'No files to delete'
+				: failedDeletions.length === 0 && !isTruncated
+					? 'Files deleted successfully'
+					: isTruncated
+						? 'File list was truncated; some files may not have been deleted'
+						: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
 
-		if (failedDeletions.length === totalFiles && totalFiles > 0) {
+		if (failedDeletions.length > 0 || isTruncated) {
 			return json(
 				{
 					message,
@@ -116,6 +151,13 @@ export async function DELETE({
 				},
 				{ status: 500 }
 			);
+		}
+
+		const { error: deleteError } = await locals.supabase.from('simfiles').delete().eq('id', id);
+
+		if (deleteError) {
+			logger.error('Failed to delete simfile record:', deleteError);
+			return json({ error: 'Failed to delete simfile record' }, { status: 500 });
 		}
 
 		return json({

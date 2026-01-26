@@ -136,6 +136,37 @@ describe('/api/simFile/upload', () => {
 		expect(data.error).toBe('Simfile not found');
 	});
 
+	it('returns 500 when simfile lookup fails', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(null, new Error('db error')),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.error).toBe('Failed to verify ownership');
+	});
+
 	it('returns 403 when user does not own simfile', async () => {
 		const mockBucket = createMockBucket();
 		const formData = new FormData();

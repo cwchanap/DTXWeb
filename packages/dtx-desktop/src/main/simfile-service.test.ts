@@ -117,7 +117,8 @@ describe('SimFile Service', () => {
 	// We just need to get a reference to it for our test setup
 	const mockSupabaseClient = {
 		auth: {
-			getUser: vi.fn()
+			getUser: vi.fn(),
+			getSession: vi.fn()
 		},
 		from: vi.fn().mockReturnThis(),
 		select: vi.fn().mockReturnThis(),
@@ -139,6 +140,10 @@ describe('SimFile Service', () => {
 		// Set up default successful responses
 		mockSupabaseClient.auth.getUser.mockResolvedValue({
 			data: { user: { id: 'user-123' } },
+			error: null
+		});
+		mockSupabaseClient.auth.getSession.mockResolvedValue({
+			data: { session: { access_token: 'mock-access-token' } },
 			error: null
 		});
 		mockSupabaseClient.order.mockResolvedValue({ data: [], error: null });
@@ -346,6 +351,19 @@ describe('SimFile Service', () => {
 			expect(result.simfileId).toBe('1');
 
 			// Verify fetch was NOT called since there's no session
+			expect(fetch as Mock).not.toHaveBeenCalled();
+		});
+
+		it('should skip uploads when session refresh fails', async () => {
+			(fetch as Mock).mockResolvedValue({ ok: true });
+			mockSupabaseClient.auth.getSession.mockResolvedValue({
+				data: { session: null },
+				error: new Error('Session expired')
+			});
+
+			const result = await createSimfileRecord(simfileData);
+
+			expect(result.success).toBe(true);
 			expect(fetch as Mock).not.toHaveBeenCalled();
 		});
 	});

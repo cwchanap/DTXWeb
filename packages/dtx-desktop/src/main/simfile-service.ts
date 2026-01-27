@@ -122,9 +122,20 @@ async function uploadPreviewFile(
 	try {
 		// Get current session for authentication
 		const session = getCurrentSession();
-		if (!session?.access_token) {
+		const supabaseClient = getSupabaseClient();
+		if (!session || !supabaseClient) {
 			const error = 'No valid session for file upload';
 			console.error(error);
+			return { success: false, error };
+		}
+
+		const {
+			data: { session: refreshedSession },
+			error: sessionError
+		} = await supabaseClient.auth.getSession();
+		if (sessionError || !refreshedSession?.access_token) {
+			const error = 'Failed to get valid session for file upload';
+			console.error(error, sessionError);
 			return { success: false, error };
 		}
 
@@ -143,7 +154,7 @@ async function uploadPreviewFile(
 				headers: {
 					...form.getHeaders(),
 					// Add authentication header with access token
-					Authorization: `Bearer ${session.access_token}`,
+					Authorization: `Bearer ${refreshedSession.access_token}`,
 					// Add desktop app identifiers to pass CSRF checks
 					'User-Agent': 'DTXDesktopApp',
 					'X-Requested-With': 'DTXDesktopApp'

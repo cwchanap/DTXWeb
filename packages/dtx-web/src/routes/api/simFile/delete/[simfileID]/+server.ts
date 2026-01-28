@@ -2,12 +2,10 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 
 export async function DELETE({
-	request,
 	params,
 	platform,
 	locals
 }: {
-	request: Request;
 	params: { simfileID: string };
 	platform: App.Platform;
 	locals: App.Locals;

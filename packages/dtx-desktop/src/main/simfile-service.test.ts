@@ -173,9 +173,12 @@ describe('SimFile Service', () => {
 
 			const result = await fetchUserSimFiles();
 
+			expect(result.success).toBe(true);
+			if (!result.success) {
+				throw new Error('Expected success result');
+			}
 			expect(result.data).toEqual(mockSimfiles);
 			expect(result.fromCache).toBe(false);
-			expect(result.error).toBeUndefined();
 			expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
 			expect(mockSupabaseClient.select).toHaveBeenCalledWith(expect.any(String));
 			expect(mockSupabaseClient.eq).toHaveBeenCalledWith('user_id', mockUser.id);
@@ -184,6 +187,10 @@ describe('SimFile Service', () => {
 		it('should return an error if authentication is not ready', async () => {
 			(ensureSupabaseAuth as Mock).mockResolvedValue(false);
 			const result = await fetchUserSimFiles();
+			expect(result.success).toBe(false);
+			if (result.success) {
+				throw new Error('Expected error result');
+			}
 			expect(result.error).toBe('Authentication not available. Please log in first.');
 		});
 
@@ -193,6 +200,10 @@ describe('SimFile Service', () => {
 				error: null
 			});
 			const result = await fetchUserSimFiles();
+			expect(result.success).toBe(false);
+			if (result.success) {
+				throw new Error('Expected error result');
+			}
 			expect(result.error).toBe('User not authenticated');
 		});
 
@@ -206,6 +217,10 @@ describe('SimFile Service', () => {
 				error: { message: 'Fetch failed' }
 			});
 			const result = await fetchUserSimFiles();
+			expect(result.success).toBe(false);
+			if (result.success) {
+				throw new Error('Expected error result');
+			}
 			expect(result.error).toContain('Failed to fetch simFiles: Fetch failed');
 		});
 	});

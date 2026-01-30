@@ -139,7 +139,9 @@ async function uploadPreviewFile(
 
 		// Create FormData for the upload payload
 		const form = new FormData();
-		form.append('file', new Blob([buffer], { type: contentType }), filename);
+		const fileBytes = new Uint8Array(buffer.byteLength);
+		fileBytes.set(buffer);
+		form.append('file', new Blob([fileBytes], { type: contentType }), filename);
 		form.append('simFileId', String(simfileId));
 
 		// Set up timeout using AbortController

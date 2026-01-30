@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import fs from 'fs';
-import fetch from 'node-fetch';
 import {
 	fetchUserSimFiles,
 	getPreviewUrl,
@@ -19,10 +18,6 @@ vi.mock('fs', () => ({
 			readFile: vi.fn()
 		}
 	}
-}));
-
-vi.mock('node-fetch', () => ({
-	default: vi.fn()
 }));
 
 vi.mock('crypto', () => ({
@@ -113,6 +108,8 @@ vi.mock('@dtx/common/server', async (importOriginal) => {
 });
 
 describe('SimFile Service', () => {
+	const fetchMock: Mock = vi.fn();
+
 	// The global mock will be automatically used via vi.mock('@supabase/supabase-js')
 	// We just need to get a reference to it for our test setup
 	const mockSupabaseClient = {
@@ -136,6 +133,8 @@ describe('SimFile Service', () => {
 	beforeEach(() => {
 		// Reset and configure mocks for each test
 		vi.clearAllMocks();
+		fetchMock.mockReset();
+		vi.stubGlobal('fetch', fetchMock);
 
 		// Set up default successful responses
 		mockSupabaseClient.auth.getUser.mockResolvedValue({
@@ -159,6 +158,10 @@ describe('SimFile Service', () => {
 			access_token: 'mock-access-token',
 			user: { id: 'user-123' }
 		});
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	describe('fetchUserSimFiles', () => {
@@ -225,28 +228,46 @@ describe('SimFile Service', () => {
 		});
 	});
 
-	describe('getPreviewUrl', () => {
-		it('should return a public URL for the preview using R2 bucket URL', () => {
-			const url = getPreviewUrl('123/preview.jpg');
-			// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
-			expect(url).toContain('123/preview.jpg');
+	describe('preview url helpers', () => {
+		let originalBucketUrl: string | undefined;
+
+		beforeEach(() => {
+			originalBucketUrl = process.env.PUBLIC_SIMFILE_BUCKET_URL;
+			vi.stubEnv('PUBLIC_SIMFILE_BUCKET_URL', 'https://example.com/');
 		});
 
-		it('should throw error if preview_url is empty', () => {
-			expect(() => getPreviewUrl('')).toThrow();
-		});
-	});
-
-	describe('getSoundPreviewUrl', () => {
-		it('should return a public URL for the sound preview using R2 bucket URL', () => {
-			const url = getSoundPreviewUrl('123/preview.mp3');
-			// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
-			expect(url).toContain('123/preview.mp3');
+		afterEach(() => {
+			vi.unstubAllEnvs();
+			if (originalBucketUrl === undefined) {
+				delete process.env.PUBLIC_SIMFILE_BUCKET_URL;
+			} else {
+				process.env.PUBLIC_SIMFILE_BUCKET_URL = originalBucketUrl;
+			}
 		});
 
-		it('should return null if no sound preview url is provided', () => {
-			const url = getSoundPreviewUrl(null);
-			expect(url).toBeNull();
+		describe('getPreviewUrl', () => {
+			it('should return a public URL for the preview using R2 bucket URL', () => {
+				const url = getPreviewUrl('123/preview.jpg');
+				// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
+				expect(url).toContain('123/preview.jpg');
+			});
+
+			it('should throw error if preview_url is empty', () => {
+				expect(() => getPreviewUrl('')).toThrow();
+			});
+		});
+
+		describe('getSoundPreviewUrl', () => {
+			it('should return a public URL for the sound preview using R2 bucket URL', () => {
+				const url = getSoundPreviewUrl('123/preview.mp3');
+				// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
+				expect(url).toContain('123/preview.mp3');
+			});
+
+			it('should return null if no sound preview url is provided', () => {
+				const url = getSoundPreviewUrl(null);
+				expect(url).toBeNull();
+			});
 		});
 	});
 
@@ -287,7 +308,7 @@ describe('SimFile Service', () => {
 
 		it('should create a simfile record successfully with previews', async () => {
 			// Mock fetch for R2 upload API calls
-			(fetch as Mock).mockResolvedValue({ ok: true });
+			fetchMock.mockResolvedValue({ ok: true });
 
 			try {
 				// Mock update for preview URLs
@@ -305,36 +326,37 @@ describe('SimFile Service', () => {
 				expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
 
 				// Verify fetch was called twice (once for image, once for audio)
-				expect(fetch as Mock).toHaveBeenCalledTimes(2);
+				expect(fetchMock).toHaveBeenCalledTimes(2);
 
 				// Verify that the fetch calls include proper headers
-				(fetch as Mock).mock.calls.forEach((call) => {
-					const options = call[1];
-					expect(options.headers).toBeDefined();
-					expect(options.headers['content-type']).toContain('multipart/form-data');
+				fetchMock.mock.calls.forEach((call) => {
+					const options = call[1] ?? {};
+					const headers = (options as RequestInit).headers as Record<string, string>;
+					expect(headers).toBeDefined();
 					// Verify authentication header is included (note: case matters for header names)
-					expect(options.headers['Authorization']).toBe('Bearer mock-access-token');
+					expect(headers['Authorization']).toBe('Bearer mock-access-token');
 					// Verify desktop app identifiers for CSRF protection
-					expect(options.headers['User-Agent']).toBe('DTXDesktopApp');
-					expect(options.headers['X-Requested-With']).toBe('DTXDesktopApp');
+					expect(headers['User-Agent']).toBe('DTXDesktopApp');
+					expect(headers['X-Requested-With']).toBe('DTXDesktopApp');
+					expect((options as RequestInit).body).toBeInstanceOf(FormData);
 				});
 			} finally {
-				(fetch as Mock).mockReset();
+				fetchMock.mockReset();
 			}
 		});
 
 		it('should handle errors during file reading gracefully and still succeed', async () => {
 			// Mock fetch for R2 upload API calls
-			(fetch as Mock).mockResolvedValue({ ok: true });
+			fetchMock.mockResolvedValue({ ok: true });
 
 			try {
 				(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
 				const result = await createSimfileRecord(simfileData);
 				expect(result.success).toBe(true); // Continues without previews
 				// No fetch calls for uploads since file reading failed
-				expect(fetch as Mock).not.toHaveBeenCalled();
+				expect(fetchMock).not.toHaveBeenCalled();
 			} finally {
-				(fetch as Mock).mockReset();
+				fetchMock.mockReset();
 			}
 		});
 
@@ -366,11 +388,11 @@ describe('SimFile Service', () => {
 			expect(result.simfileId).toBe('1');
 
 			// Verify fetch was NOT called since there's no session
-			expect(fetch as Mock).not.toHaveBeenCalled();
+			expect(fetchMock).not.toHaveBeenCalled();
 		});
 
 		it('should skip uploads when session refresh fails', async () => {
-			(fetch as Mock).mockResolvedValue({ ok: true });
+			fetchMock.mockResolvedValue({ ok: true });
 			mockSupabaseClient.auth.getSession.mockResolvedValue({
 				data: { session: null },
 				error: new Error('Session expired')
@@ -379,7 +401,7 @@ describe('SimFile Service', () => {
 			const result = await createSimfileRecord(simfileData);
 
 			expect(result.success).toBe(true);
-			expect(fetch as Mock).not.toHaveBeenCalled();
+			expect(fetchMock).not.toHaveBeenCalled();
 		});
 	});
 

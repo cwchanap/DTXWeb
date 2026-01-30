@@ -37,7 +37,7 @@ const createMockBucket = (
 		list: vi.fn().mockResolvedValue({
 			objects: objects.map((obj) => ({
 				key: obj.key,
-				size: obj.size || 1024,
+				size: obj.size ?? 1024,
 				uploaded: obj.uploaded || new Date()
 			}))
 		})

@@ -21,7 +21,9 @@
 	let modalOpen = $state(false);
 
 	function handleDeleteConfirm() {
-		onFileDelete(item.id);
+		if (item.id !== undefined) {
+			onFileDelete(item.id);
+		}
 	}
 
 	function openModal() {

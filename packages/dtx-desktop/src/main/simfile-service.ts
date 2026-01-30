@@ -2,8 +2,6 @@ import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@
 import { ensureSupabaseAuth, getSupabaseClient, getCurrentSession } from './auth';
 import fs from 'fs';
 import path from 'path';
-import FormData from 'form-data';
-import fetch, { type BodyInit, type Response } from 'node-fetch';
 
 // SimFile service functions - using discriminated union type
 export type SimFileServiceResult =
@@ -139,9 +137,9 @@ async function uploadPreviewFile(
 			return { success: false, error };
 		}
 
-		// Create FormData using the form-data package
+		// Create FormData for the upload payload
 		const form = new FormData();
-		form.append('file', buffer, { filename, contentType });
+		form.append('file', new Blob([buffer], { type: contentType }), filename);
 		form.append('simFileId', String(simfileId));
 
 		// Set up timeout using AbortController
@@ -149,19 +147,18 @@ async function uploadPreviewFile(
 		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
 		try {
-			const response = (await fetch(`${apiBaseUrl}/api/simFile/upload`, {
+			const response = await fetch(`${apiBaseUrl}/api/simFile/upload`, {
 				method: 'POST',
 				headers: {
-					...form.getHeaders(),
 					// Add authentication header with access token
 					Authorization: `Bearer ${refreshedSession.access_token}`,
 					// Add desktop app identifiers to pass CSRF checks
 					'User-Agent': 'DTXDesktopApp',
 					'X-Requested-With': 'DTXDesktopApp'
 				},
-				body: form as BodyInit,
+				body: form,
 				signal: controller.signal
-			})) as Response;
+			});
 
 			if (!response.ok) {
 				const error = `Failed to upload ${filename}: HTTP ${response.status}`;

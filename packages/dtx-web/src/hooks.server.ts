@@ -106,7 +106,7 @@ const supabase: Handle = async ({ event, resolve }) => {
 	});
 };
 
-const authGuard: Handle = async ({ event, resolve }) => {
+export const authGuard: Handle = async ({ event, resolve }) => {
 	const { session, user } = await event.locals.safeGetSession();
 	event.locals.session = session;
 	event.locals.user = user;
@@ -152,7 +152,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 				expires_at: Math.floor(Date.now() / 1000) + 3600,
 				token_type: 'bearer',
 				user: userData.user
-			} satisfies Partial<Session>;
+			};
 			// Create a new Supabase client configured with the bearer token
 			// This ensures RLS policies work correctly for subsequent database queries
 			// We use createClient instead of setSession because setSession requires a refresh token

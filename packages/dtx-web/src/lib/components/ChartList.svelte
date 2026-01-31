@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
+	import { PUBLIC_SIMFILE_BUCKET_URL, PUBLIC_SUPABASE_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
@@ -10,6 +10,7 @@
 	import IconCheck from '@lucide/svelte/icons/check';
 	import IconTable from '@lucide/svelte/icons/table';
 	import IconGrid from '@lucide/svelte/icons/grid';
+	import { PREVIEW_BUCKET_NAME, SOUND_PREVIEW_BUCKET_NAME } from '@/constant';
 	import { supabase } from '../supabase';
 	import { formatLevelDisplay } from '../utils';
 
@@ -120,12 +121,28 @@
 	}
 
 	function getPreviewUrl(preview_url: string) {
-		return `${PUBLIC_SIMFILE_BUCKET_URL}/${preview_url}`;
+		if (preview_url.startsWith('http://') || preview_url.startsWith('https://')) {
+			return preview_url;
+		}
+		if (preview_url.startsWith('preview') || preview_url.startsWith('sound')) {
+			return `${PUBLIC_SIMFILE_BUCKET_URL}/${preview_url.replace(/^\//, '')}`;
+		}
+		const normalizedSupabaseUrl = PUBLIC_SUPABASE_URL.replace(/\/$/, '');
+		const normalizedPath = preview_url.replace(/^\//, '');
+		return `${normalizedSupabaseUrl}/storage/v1/object/public/${PREVIEW_BUCKET_NAME}/${normalizedPath}`;
 	}
 
 	function getSoundPreviewUrl(sound_preview_url: string | null) {
 		if (!sound_preview_url) return null;
-		return `${PUBLIC_SIMFILE_BUCKET_URL}/${sound_preview_url}`;
+		if (sound_preview_url.startsWith('http://') || sound_preview_url.startsWith('https://')) {
+			return sound_preview_url;
+		}
+		if (sound_preview_url.startsWith('preview') || sound_preview_url.startsWith('sound')) {
+			return `${PUBLIC_SIMFILE_BUCKET_URL}/${sound_preview_url.replace(/^\//, '')}`;
+		}
+		const normalizedSupabaseUrl = PUBLIC_SUPABASE_URL.replace(/\/$/, '');
+		const normalizedPath = sound_preview_url.replace(/^\//, '');
+		return `${normalizedSupabaseUrl}/storage/v1/object/public/${SOUND_PREVIEW_BUCKET_NAME}/${normalizedPath}`;
 	}
 
 	function handleSearchInput() {

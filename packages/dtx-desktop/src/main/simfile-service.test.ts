@@ -230,10 +230,13 @@ describe('SimFile Service', () => {
 
 	describe('preview url helpers', () => {
 		let originalBucketUrl: string | undefined;
+		let originalSupabaseUrl: string | undefined;
 
 		beforeEach(() => {
 			originalBucketUrl = process.env.PUBLIC_SIMFILE_BUCKET_URL;
+			originalSupabaseUrl = process.env.PUBLIC_SUPABASE_URL;
 			vi.stubEnv('PUBLIC_SIMFILE_BUCKET_URL', 'https://example.com/');
+			vi.stubEnv('PUBLIC_SUPABASE_URL', 'https://supabase.example');
 		});
 
 		afterEach(() => {
@@ -243,6 +246,11 @@ describe('SimFile Service', () => {
 			} else {
 				process.env.PUBLIC_SIMFILE_BUCKET_URL = originalBucketUrl;
 			}
+			if (originalSupabaseUrl === undefined) {
+				delete process.env.PUBLIC_SUPABASE_URL;
+			} else {
+				process.env.PUBLIC_SUPABASE_URL = originalSupabaseUrl;
+			}
 		});
 
 		describe('getPreviewUrl', () => {
@@ -250,6 +258,18 @@ describe('SimFile Service', () => {
 				const url = getPreviewUrl('123/preview.jpg');
 				// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
 				expect(url).toContain('123/preview.jpg');
+			});
+
+			it('should return a legacy Supabase URL for non-R2 paths', () => {
+				const url = getPreviewUrl('user-123/preview.jpg');
+				expect(url).toBe(
+					'https://supabase.example/storage/v1/object/public/simfile-previews/user-123/preview.jpg'
+				);
+			});
+
+			it('should return absolute URLs as-is', () => {
+				const url = getPreviewUrl('https://cdn.example.com/preview.jpg');
+				expect(url).toBe('https://cdn.example.com/preview.jpg');
 			});
 
 			it('should throw error if preview_url is empty', () => {
@@ -262,6 +282,18 @@ describe('SimFile Service', () => {
 				const url = getSoundPreviewUrl('123/preview.mp3');
 				// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
 				expect(url).toContain('123/preview.mp3');
+			});
+
+			it('should return a legacy Supabase URL for non-R2 paths', () => {
+				const url = getSoundPreviewUrl('user-123/preview.mp3');
+				expect(url).toBe(
+					'https://supabase.example/storage/v1/object/public/simfile-sound-previews/user-123/preview.mp3'
+				);
+			});
+
+			it('should return absolute URLs as-is', () => {
+				const url = getSoundPreviewUrl('https://cdn.example.com/preview.mp3');
+				expect(url).toBe('https://cdn.example.com/preview.mp3');
 			});
 
 			it('should return null if no sound preview url is provided', () => {

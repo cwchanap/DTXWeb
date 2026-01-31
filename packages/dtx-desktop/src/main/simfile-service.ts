@@ -79,6 +79,18 @@ export function getPreviewUrl(preview_url: string): string {
 	if (!preview_url) {
 		throw new Error('preview_url is required');
 	}
+	if (preview_url.startsWith('http://') || preview_url.startsWith('https://')) {
+		return preview_url;
+	}
+	if (!preview_url.startsWith('preview') && !preview_url.startsWith('sound')) {
+		const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+		if (!supabaseUrl) {
+			throw new Error('PUBLIC_SUPABASE_URL environment variable is not set');
+		}
+		const normalizedSupabaseUrl = supabaseUrl.replace(/\/$/, '');
+		const normalizedPath = preview_url.replace(/^\//, '');
+		return `${normalizedSupabaseUrl}/storage/v1/object/public/simfile-previews/${normalizedPath}`;
+	}
 	const normalizedUrl = bucketUrl.replace(/\/$/, '');
 	const normalizedPath = preview_url.replace(/^\//, '');
 	return `${normalizedUrl}/${normalizedPath}`;
@@ -89,6 +101,18 @@ export function getSoundPreviewUrl(sound_preview_url: string | null): string | n
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
 	if (!bucketUrl) {
 		throw new Error('PUBLIC_SIMFILE_BUCKET_URL environment variable is not set');
+	}
+	if (sound_preview_url.startsWith('http://') || sound_preview_url.startsWith('https://')) {
+		return sound_preview_url;
+	}
+	if (!sound_preview_url.startsWith('preview') && !sound_preview_url.startsWith('sound')) {
+		const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+		if (!supabaseUrl) {
+			throw new Error('PUBLIC_SUPABASE_URL environment variable is not set');
+		}
+		const normalizedSupabaseUrl = supabaseUrl.replace(/\/$/, '');
+		const normalizedPath = sound_preview_url.replace(/^\//, '');
+		return `${normalizedSupabaseUrl}/storage/v1/object/public/simfile-sound-previews/${normalizedPath}`;
 	}
 	const normalizedUrl = bucketUrl.replace(/\/$/, '');
 	const normalizedPath = sound_preview_url.replace(/^\//, '');

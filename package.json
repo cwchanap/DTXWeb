@@ -14,6 +14,8 @@
 		"dev:desktop": "npm run dev -w=dtx-desktop",
 		"dev:common": "npm run dev -w=@dtx/common",
 		"dev:all": "turbo run dtx-web#dev dtx-desktop#dev @dtx/common#dev",
+		"deploy:web": "npm run deploy:prod -w=dtx-web",
+		"deploy:web:preprod": "npm run deploy:preprod -w=dtx-web",
 		"prepare": "husky || true",
 		"clean": "turbo run clean",
 		"gen-types": "turbo run gen-types",

@@ -22,5 +22,19 @@
 		"logs": {
 			"enabled": true
 		}
+	},
+	"env": {
+		"pre-prod": {
+			"route": {
+				"pattern": "pre-prod.dtx.hapadona.com",
+				"custom_domain": true
+			},
+			"r2_buckets": [
+				{
+					"binding": "DTXFILE_BUCKET",
+					"bucket_name": "simfile-dtx"
+				}
+			]
+		}
 	}
 }

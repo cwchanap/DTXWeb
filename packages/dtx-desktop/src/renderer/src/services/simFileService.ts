@@ -117,16 +117,18 @@ class SimFileService {
 
 	/**
 	 * Gets preview URL for a simFile via main process
+	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.jpg
 	 */
-	async getPreviewUrl(preview_url: string): Promise<string> {
-		return await window.electron.ipcRenderer.invoke('get-preview-url', preview_url);
+	async getPreviewUrl(simfileId: number): Promise<string> {
+		return await window.electron.ipcRenderer.invoke('get-preview-url', simfileId);
 	}
 
 	/**
 	 * Gets sound preview URL for a simFile via main process
+	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.mp3
 	 */
-	async getSoundPreviewUrl(sound_preview_url: string | null): Promise<string | null> {
-		return await window.electron.ipcRenderer.invoke('get-sound-preview-url', sound_preview_url);
+	async getSoundPreviewUrl(simfileId: number): Promise<string> {
+		return await window.electron.ipcRenderer.invoke('get-sound-preview-url', simfileId);
 	}
 }
 

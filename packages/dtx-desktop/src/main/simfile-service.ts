@@ -46,7 +46,7 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		const { data, error } = await supabaseClient
 			.from('simfiles')
 			.select(
-				`id, title, artist, bpm, preview_url, sound_preview_url, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level, label)`
+				`id, title, artist, bpm, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level, label)`
 			)
 			.eq('user_id', user.id)
 			.order('publish_date', { ascending: false });
@@ -71,52 +71,24 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 	}
 }
 
-export function getPreviewUrl(preview_url: string): string {
+export function getPreviewUrl(simfileId: number): string {
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
 	if (!bucketUrl) {
 		throw new Error('PUBLIC_SIMFILE_BUCKET_URL environment variable is not set');
 	}
-	if (!preview_url) {
-		throw new Error('preview_url is required');
-	}
-	if (preview_url.startsWith('http://') || preview_url.startsWith('https://')) {
-		return preview_url;
-	}
-	if (!preview_url.startsWith('preview') && !preview_url.startsWith('sound')) {
-		const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
-		if (!supabaseUrl) {
-			throw new Error('PUBLIC_SUPABASE_URL environment variable is not set');
-		}
-		const normalizedSupabaseUrl = supabaseUrl.replace(/\/$/, '');
-		const normalizedPath = preview_url.replace(/^\//, '');
-		return `${normalizedSupabaseUrl}/storage/v1/object/public/simfile-previews/${normalizedPath}`;
-	}
+	// Always construct R2 URL: {BUCKET_URL}/{simfile_id}/preview.jpg
 	const normalizedUrl = bucketUrl.replace(/\/$/, '');
-	const normalizedPath = preview_url.replace(/^\//, '');
-	return `${normalizedUrl}/${normalizedPath}`;
+	return `${normalizedUrl}/${simfileId}/preview.jpg`;
 }
 
-export function getSoundPreviewUrl(sound_preview_url: string | null): string | null {
-	if (!sound_preview_url) return null;
+export function getSoundPreviewUrl(simfileId: number): string {
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;
 	if (!bucketUrl) {
 		throw new Error('PUBLIC_SIMFILE_BUCKET_URL environment variable is not set');
 	}
-	if (sound_preview_url.startsWith('http://') || sound_preview_url.startsWith('https://')) {
-		return sound_preview_url;
-	}
-	if (!sound_preview_url.startsWith('preview') && !sound_preview_url.startsWith('sound')) {
-		const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
-		if (!supabaseUrl) {
-			throw new Error('PUBLIC_SUPABASE_URL environment variable is not set');
-		}
-		const normalizedSupabaseUrl = supabaseUrl.replace(/\/$/, '');
-		const normalizedPath = sound_preview_url.replace(/^\//, '');
-		return `${normalizedSupabaseUrl}/storage/v1/object/public/simfile-sound-previews/${normalizedPath}`;
-	}
+	// Always construct R2 URL: {BUCKET_URL}/{simfile_id}/preview.mp3
 	const normalizedUrl = bucketUrl.replace(/\/$/, '');
-	const normalizedPath = sound_preview_url.replace(/^\//, '');
-	return `${normalizedUrl}/${normalizedPath}`;
+	return `${normalizedUrl}/${simfileId}/preview.mp3`;
 }
 
 interface UploadPreviewFileResult {

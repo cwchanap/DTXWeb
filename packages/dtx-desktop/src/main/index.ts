@@ -295,16 +295,13 @@ if (!gotTheLock) {
 			return await fetchUserSimFiles();
 		});
 
-		ipcMain.handle('get-preview-url', async (_event, preview_url: string) => {
-			return getPreviewUrl(preview_url);
+		ipcMain.handle('get-preview-url', async (_event, simfileId: number) => {
+			return getPreviewUrl(simfileId);
 		});
 
-		ipcMain.handle(
-			'get-sound-preview-url',
-			async (_event, sound_preview_url: string | null) => {
-				return getSoundPreviewUrl(sound_preview_url);
-			}
-		);
+		ipcMain.handle('get-sound-preview-url', async (_event, simfileId: number) => {
+			return getSoundPreviewUrl(simfileId);
+		});
 
 		// Handle loading asset files from API
 		ipcMain.handle('load-asset-files', async (_event, simfileId: string) => {

@@ -254,51 +254,26 @@ describe('SimFile Service', () => {
 		});
 
 		describe('getPreviewUrl', () => {
-			it('should return a public URL for the preview using R2 bucket URL', () => {
-				const url = getPreviewUrl('123/preview.jpg');
-				// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
-				expect(url).toContain('123/preview.jpg');
+			it('should construct R2 URL from simfile ID', () => {
+				const url = getPreviewUrl(123);
+				expect(url).toBe('https://example.com/123/preview.jpg');
 			});
 
-			it('should return a legacy Supabase URL for non-R2 paths', () => {
-				const url = getPreviewUrl('user-123/preview.jpg');
-				expect(url).toBe(
-					'https://supabase.example/storage/v1/object/public/simfile-previews/user-123/preview.jpg'
-				);
-			});
-
-			it('should return absolute URLs as-is', () => {
-				const url = getPreviewUrl('https://cdn.example.com/preview.jpg');
-				expect(url).toBe('https://cdn.example.com/preview.jpg');
-			});
-
-			it('should throw error if preview_url is empty', () => {
-				expect(() => getPreviewUrl('')).toThrow();
+			it('should handle different simfile IDs', () => {
+				const url = getPreviewUrl(456);
+				expect(url).toBe('https://example.com/456/preview.jpg');
 			});
 		});
 
 		describe('getSoundPreviewUrl', () => {
-			it('should return a public URL for the sound preview using R2 bucket URL', () => {
-				const url = getSoundPreviewUrl('123/preview.mp3');
-				// URL should be constructed from PUBLIC_SIMFILE_BUCKET_URL env var
-				expect(url).toContain('123/preview.mp3');
+			it('should construct R2 URL from simfile ID', () => {
+				const url = getSoundPreviewUrl(123);
+				expect(url).toBe('https://example.com/123/preview.mp3');
 			});
 
-			it('should return a legacy Supabase URL for non-R2 paths', () => {
-				const url = getSoundPreviewUrl('user-123/preview.mp3');
-				expect(url).toBe(
-					'https://supabase.example/storage/v1/object/public/simfile-sound-previews/user-123/preview.mp3'
-				);
-			});
-
-			it('should return absolute URLs as-is', () => {
-				const url = getSoundPreviewUrl('https://cdn.example.com/preview.mp3');
-				expect(url).toBe('https://cdn.example.com/preview.mp3');
-			});
-
-			it('should return null if no sound preview url is provided', () => {
-				const url = getSoundPreviewUrl(null);
-				expect(url).toBeNull();
+			it('should handle different simfile IDs', () => {
+				const url = getSoundPreviewUrl(456);
+				expect(url).toBe('https://example.com/456/preview.mp3');
 			});
 		});
 	});

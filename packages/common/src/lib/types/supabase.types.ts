@@ -232,8 +232,8 @@ export interface SimfileWithDtx {
 	title: string;
 	artist: string;
 	bpm: number;
-	preview_url: string | null;
-	sound_preview_url: string | null;
+	preview_url?: string | null; // Optional: No longer used, URLs constructed from simfile ID
+	sound_preview_url?: string | null; // Optional: No longer used, URLs constructed from simfile ID
 	download_url: string | null;
 	is_published: boolean;
 	display_id: number | null;

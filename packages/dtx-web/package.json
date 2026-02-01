@@ -13,7 +13,9 @@
 		"test:coverage": "vitest --run --coverage",
 		"prepare": "ln -sf ../../.env .env",
 		"wrangler:dev": "wrangler dev",
+		"deploy": "npm run deploy:prod",
 		"deploy:prod": "npm run build && wrangler deploy",
+		"deploy:preprod": "npm run build && wrangler deploy --env pre-prod",
 		"deploy:preview": "npm run build && wrangler deploy --env preview",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
 	},

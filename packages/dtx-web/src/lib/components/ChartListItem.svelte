@@ -185,10 +185,18 @@
 		<div
 			class="relative overflow-hidden rounded-lg transition-shadow duration-200 group-hover:shadow-lg"
 		>
-			<ImageAudio
-				previewUrl={`${simfileBucketUrl}/${item.id}/preview.jpg`}
-				soundPreviewUrl={`${simfileBucketUrl}/${item.id}/preview.mp3`}
-			/>
+			{#if item.id}
+				<ImageAudio
+					previewUrl={`${simfileBucketUrl}/${item.id}/preview.jpg`}
+					soundPreviewUrl={`${simfileBucketUrl}/${item.id}/preview.mp3`}
+				/>
+			{:else}
+				<div
+					class="flex h-full min-h-[120px] items-center justify-center text-xs text-slate-500"
+				>
+					Preview unavailable
+				</div>
+			{/if}
 		</div>
 	</div>
 

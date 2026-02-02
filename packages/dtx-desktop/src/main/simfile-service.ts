@@ -13,6 +13,8 @@ export type SimFileServiceResult =
 	| {
 			success: false;
 			error: string;
+			data: SimfileWithDtx[];
+			fromCache: boolean;
 	  };
 
 export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
@@ -66,7 +68,9 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		console.error('Error fetching simFiles:', error);
 		return {
 			success: false,
-			error: error instanceof Error ? error.message : 'Unknown error occurred'
+			error: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: [],
+			fromCache: false
 		};
 	}
 }

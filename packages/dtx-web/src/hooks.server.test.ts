@@ -1,12 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { authGuard } from './hooks.server';
 import type { Database } from '@dtx/common';
+
+vi.mock('@supabase/supabase-js', () => ({
+	createClient: vi.fn(() => ({
+		auth: {
+			getUser: vi.fn(),
+			getSession: vi.fn()
+		}
+	}))
+}));
 
 vi.mock('$env/static/public', () => ({
 	PUBLIC_SUPABASE_URL: 'http://localhost:5173',
 	PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key'
 }));
+
+let authGuard: typeof import('./hooks.server').authGuard;
+
+beforeAll(async () => {
+	({ authGuard } = await import('./hooks.server'));
+});
 
 // Helper function to create a mock event
 function createMockEvent(url: string, headers?: HeadersInit) {

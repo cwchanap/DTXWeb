@@ -21,6 +21,7 @@ declare global {
 		interface Platform {
 			env?: {
 				DTXFILE_BUCKET: R2Bucket;
+				DTXFILE_BUCKET_PREPROD?: R2Bucket;
 			};
 		}
 	}

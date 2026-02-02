@@ -30,7 +30,11 @@ class SimFileService {
 			const result = await window.electron.ipcRenderer.invoke('fetch-user-simfiles');
 
 			if (result.error) {
-				return result;
+				return {
+					data: result.data ?? [],
+					fromCache: false,
+					error: result.error
+				};
 			}
 
 			// Cache the result

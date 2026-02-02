@@ -195,6 +195,8 @@ describe('SimFile Service', () => {
 				throw new Error('Expected error result');
 			}
 			expect(result.error).toBe('Authentication not available. Please log in first.');
+			expect(result.data).toEqual([]);
+			expect(result.fromCache).toBe(false);
 		});
 
 		it('should return an error if user is not authenticated', async () => {
@@ -208,6 +210,8 @@ describe('SimFile Service', () => {
 				throw new Error('Expected error result');
 			}
 			expect(result.error).toBe('User not authenticated');
+			expect(result.data).toEqual([]);
+			expect(result.fromCache).toBe(false);
 		});
 
 		it('should return an error if fetching fails', async () => {
@@ -225,6 +229,8 @@ describe('SimFile Service', () => {
 				throw new Error('Expected error result');
 			}
 			expect(result.error).toContain('Failed to fetch simFiles: Fetch failed');
+			expect(result.data).toEqual([]);
+			expect(result.fromCache).toBe(false);
 		});
 	});
 

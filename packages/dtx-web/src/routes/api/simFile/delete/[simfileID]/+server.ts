@@ -58,7 +58,7 @@ export async function DELETE({
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
 
-		const bucket = platform?.env?.DTXFILE_BUCKET;
+		const bucket = platform?.env?.DTXFILE_BUCKET_PREPROD ?? platform?.env?.DTXFILE_BUCKET;
 		if (!bucket) {
 			logger.error('DTXFILE_BUCKET binding not available');
 			return json({ error: 'Bucket not available' }, { status: 500 });
@@ -115,9 +115,9 @@ export async function DELETE({
 					(
 						entry
 					): entry is {
-						key: string | undefined;
+						key: string;
 						reason: string;
-					} => entry !== null
+					} => entry !== null && entry.key !== undefined
 				);
 			logger.error(`Failed to delete ${failedDeletions.length} files:`, {
 				failedKeys,

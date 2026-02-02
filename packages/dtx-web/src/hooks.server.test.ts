@@ -3,6 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { authGuard } from './hooks.server';
 import type { Database } from '@dtx/common';
 
+vi.mock('$env/static/public', () => ({
+	PUBLIC_SUPABASE_URL: 'http://localhost:5173',
+	PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key'
+}));
+
 // Helper function to create a mock event
 function createMockEvent(url: string, headers?: HeadersInit) {
 	return {

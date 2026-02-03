@@ -17,10 +17,14 @@ export async function GET({
 	}
 
 	// Validate simfileID is a valid integer
-	const id = parseInt(simfileID, 10);
-	if (Number.isNaN(id) || !Number.isInteger(id)) {
+	if (!/^\d+$/.test(simfileID)) {
 		return json({ error: 'Invalid SimFile ID' }, { status: 400 });
 	}
+	const id = Number(simfileID);
+	if (!Number.isSafeInteger(id)) {
+		return json({ error: 'Invalid SimFile ID' }, { status: 400 });
+	}
+	const canonicalSimfileId = String(id);
 
 	try {
 		// Authentication is handled by hooks.server.ts
@@ -50,12 +54,12 @@ export async function GET({
 		// Check if the authenticated user is the owner of the simfile
 		if (simfile.user_id !== user.id) {
 			logger.warn(
-				`Unauthorized list attempt: user ${user.id} tried to list files for simfile ${simfileID} owned by ${simfile.user_id}`
+				`Unauthorized list attempt: user ${user.id} tried to list files for simfile ${canonicalSimfileId} owned by ${simfile.user_id}`
 			);
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
 
-		logger.info(`Listing files for simfile: ${simfileID}`);
+		logger.info(`Listing files for simfile: ${canonicalSimfileId}`);
 
 		// Access the R2 bucket binding directly (same as other APIs)
 		const bucket = platform?.env?.DTXFILE_BUCKET_PREPROD ?? platform?.env?.DTXFILE_BUCKET;
@@ -65,14 +69,14 @@ export async function GET({
 		}
 
 		// List objects using R2 bucket binding with simfileID as prefix
-		const objects = await bucket.list({ prefix: simfileID + '/' });
+		const objects = await bucket.list({ prefix: `${canonicalSimfileId}/` });
 
 		// Extract file names from the response (same logic as before)
 		const files = (objects.objects || [])
 			.map((file) => {
 				// Remove the prefix from the key to get just the filename
 				const key = file.key || '';
-				const fileName = key.replace(`${simfileID}/`, '');
+				const fileName = key.replace(`${canonicalSimfileId}/`, '');
 
 				return {
 					fileName,

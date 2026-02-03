@@ -233,6 +233,37 @@ describe('/api/simFile/upload', () => {
 		expect(data.error).toBe('Invalid input data');
 	});
 
+	it('returns 400 when simFileId is not a valid integer', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '123abc');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
 	it('returns 400 when simFileId is missing', async () => {
 		const mockBucket = createMockBucket();
 		const formData = new FormData();

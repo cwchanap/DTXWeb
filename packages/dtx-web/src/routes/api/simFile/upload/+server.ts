@@ -43,13 +43,19 @@ export async function POST({
 
 		const { file: validatedFile, simFileId: validatedSimFileId } = validation.data;
 
-		logger.info(`Uploading file: ${validatedFile.name} for simFile: ${validatedSimFileId}`);
+		const simfileIdValue = Number(validatedSimFileId);
+		if (!Number.isSafeInteger(simfileIdValue)) {
+			return json({ error: 'Invalid SimFile ID' }, { status: 400 });
+		}
+		const canonicalSimfileId = String(simfileIdValue);
+
+		logger.info(`Uploading file: ${validatedFile.name} for simFile: ${canonicalSimfileId}`);
 
 		// Verify that the user owns this simfile
 		const { data: simfile, error: simfileError } = await locals.supabase
 			.from('simfiles')
 			.select('user_id')
-			.eq('id', parseInt(validatedSimFileId, 10))
+			.eq('id', simfileIdValue)
 			.maybeSingle();
 
 		if (simfileError) {
@@ -64,7 +70,7 @@ export async function POST({
 		// Check if the authenticated user is the owner of the simfile
 		if (simfile.user_id !== user.id) {
 			logger.warn(
-				`Unauthorized upload attempt: user ${user.id} tried to upload to simfile ${validatedSimFileId} owned by ${simfile.user_id}`
+				`Unauthorized upload attempt: user ${user.id} tried to upload to simfile ${canonicalSimfileId} owned by ${simfile.user_id}`
 			);
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
@@ -77,7 +83,7 @@ export async function POST({
 		}
 
 		// Create the key path (same as worker: simFileId/filename)
-		const key = `${validatedSimFileId}/${validatedFile.name}`;
+		const key = `${canonicalSimfileId}/${validatedFile.name}`;
 
 		// Upload using R2 bucket binding (same as worker approach)
 		const result = await bucket.put(key, await validatedFile.arrayBuffer());

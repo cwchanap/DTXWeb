@@ -111,6 +111,29 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(data.error).toBe('Unauthorized');
 	});
 
+	it('returns 400 when simfileID is not a valid integer', async () => {
+		const mockBucket = createMockBucket();
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123abc' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
 	it('returns 401 when bearer token is invalid', async () => {
 		const mockBucket = createMockBucket();
 		const headers = new Headers({ Authorization: 'Bearer invalid-token' });

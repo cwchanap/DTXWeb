@@ -86,7 +86,12 @@ export async function POST({
 		const key = `${canonicalSimfileId}/${validatedFile.name}`;
 
 		// Upload using R2 bucket binding (same as worker approach)
-		const result = await bucket.put(key, await validatedFile.arrayBuffer());
+		const result = await bucket.put(key, await validatedFile.arrayBuffer(), {
+			httpMetadata: {
+				contentType: validatedFile.type,
+				cacheControl: 'public, max-age=31536000'
+			}
+		});
 
 		if (!result) {
 			logger.error('Failed to upload file to R2');

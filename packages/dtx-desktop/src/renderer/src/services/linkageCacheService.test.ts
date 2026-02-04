@@ -16,7 +16,6 @@ const sampleSimfile: SimfileWithDtx = {
 	artist: 'Artist',
 	bpm: 120,
 	preview_url: null,
-	sound_preview_url: null,
 	download_url: null,
 	is_published: false,
 	display_id: null,

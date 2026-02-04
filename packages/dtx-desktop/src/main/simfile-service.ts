@@ -281,7 +281,6 @@ export async function createSimfileRecord(
 			artist: simfileData.artist,
 			bpm: simfileData.bpm,
 			preview_url: null,
-			sound_preview_url: null,
 			user_id: user.id,
 			display_id: simfileData.displayId,
 			is_published: simfileData.isPublished,
@@ -305,7 +304,6 @@ export async function createSimfileRecord(
 
 		// Upload preview files to R2 via API using the helper function
 		let previewUrl: string | null = null;
-		let soundPreviewUrl: string | null = null;
 		const uploadErrors: string[] = [];
 
 		if (previewBuffer) {
@@ -331,20 +329,17 @@ export async function createSimfileRecord(
 				'audio/mpeg',
 				apiBaseUrl
 			);
-			if (result.success && result.path) {
-				soundPreviewUrl = result.path;
-			} else if (result.error) {
+			if (result.error) {
 				uploadErrors.push(`Sound preview: ${result.error}`);
 			}
 		}
 
 		// Update the simfile record with preview URLs if they were uploaded
-		if (previewUrl || soundPreviewUrl) {
+		if (previewUrl) {
 			const { error: updateError } = await supabaseClient
 				.from('simfiles')
 				.update({
-					preview_url: previewUrl,
-					sound_preview_url: soundPreviewUrl
+					preview_url: previewUrl
 				})
 				.eq('id', simfileId);
 
@@ -376,8 +371,7 @@ export async function createSimfileRecord(
 			simfileId: simfileId,
 			data: {
 				...simFileData,
-				preview_url: previewUrl,
-				sound_preview_url: soundPreviewUrl
+				preview_url: previewUrl
 			}
 		};
 

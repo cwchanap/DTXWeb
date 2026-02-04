@@ -43,7 +43,6 @@ export type Database = {
 					is_published: boolean;
 					preview_url: string | null;
 					publish_date: string;
-					sound_preview_url: string | null;
 					title: string;
 					updated_at: string;
 					user_id: string;
@@ -59,7 +58,6 @@ export type Database = {
 					is_published?: boolean;
 					preview_url?: string | null;
 					publish_date?: string;
-					sound_preview_url?: string | null;
 					title?: string;
 					updated_at?: string;
 					user_id: string;
@@ -75,7 +73,6 @@ export type Database = {
 					is_published?: boolean;
 					preview_url?: string | null;
 					publish_date?: string;
-					sound_preview_url?: string | null;
 					title?: string;
 					updated_at?: string;
 					user_id?: string;
@@ -233,7 +230,6 @@ export interface SimfileWithDtx {
 	artist: string;
 	bpm: number;
 	preview_url?: string | null; // Optional: No longer used, URLs constructed from simfile ID
-	sound_preview_url?: string | null; // Optional: No longer used, URLs constructed from simfile ID
 	download_url: string | null;
 	is_published: boolean;
 	display_id: number | null;

@@ -36,7 +36,6 @@ const mockItem = {
 	artist: 'Test Artist 1',
 	bpm: 120,
 	preview_url: 'preview1.jpg',
-	sound_preview_url: 'sound1.mp3',
 	download_url: 'https://example.com/download1',
 	is_published: true,
 	display_id: 1, // Changed from 'TST001' to number
@@ -64,7 +63,6 @@ const mockItemNoPreview = {
 	artist: 'Test Artist 2',
 	bpm: 140,
 	preview_url: null,
-	sound_preview_url: null,
 	download_url: null,
 	is_published: false,
 	display_id: 2, // Changed from 'TST002' to number
@@ -96,9 +94,6 @@ describe('ChartListItem Component Logic', () => {
 	// Mock functions for props
 	const mockTogglePublishChart = vi.fn().mockResolvedValue(undefined);
 	const mockGetPreviewUrl = vi.fn().mockImplementation((url) => `https://example.com/${url}`);
-	const mockGetSoundPreviewUrl = vi
-		.fn()
-		.mockImplementation((url) => (url ? `https://example.com/${url}` : null));
 	const mockOnFileDelete = vi.fn();
 
 	beforeEach(() => {
@@ -117,33 +112,6 @@ describe('ChartListItem Component Logic', () => {
 		// Verify the function was called with the correct parameters
 		expect(mockTogglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.is_published);
 		expect(mockTogglePublishChart).toHaveBeenCalledTimes(1);
-	});
-
-	// Test the getPreviewUrl function
-	it('calls getPreviewUrl with correct parameters', () => {
-		// Call the function directly with the expected parameters
-		mockGetPreviewUrl(mockItem.preview_url);
-
-		// Verify the function was called with the correct parameters
-		expect(mockGetPreviewUrl).toHaveBeenCalledWith(mockItem.preview_url);
-	});
-
-	// Test the getSoundPreviewUrl function
-	it('calls getSoundPreviewUrl with correct parameters', () => {
-		// Call the function directly with the expected parameters
-		mockGetSoundPreviewUrl(mockItem.sound_preview_url);
-
-		// Verify the function was called with the correct parameters
-		expect(mockGetSoundPreviewUrl).toHaveBeenCalledWith(mockItem.sound_preview_url);
-	});
-
-	// Test the getSoundPreviewUrl function with null input
-	it('handles null sound preview URL correctly', () => {
-		// Call the function directly with null
-		mockGetSoundPreviewUrl(null);
-
-		// Verify the function was called with null
-		expect(mockGetSoundPreviewUrl).toHaveBeenCalledWith(null);
 	});
 
 	// Test the onFileDelete function

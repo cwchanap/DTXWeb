@@ -64,11 +64,12 @@ export async function DELETE({
 			return json({ error: 'Bucket not available' }, { status: 500 });
 		}
 
-		// List all files with the simfileID prefix
+		// List all files with the canonical simfileID prefix
+		// Use the normalized numeric ID (not the raw route param) for consistency with upload/list
 		// Note: R2 Workers API doesn't support cursor-based pagination natively.
 		// Increased limit to handle larger simfiles, though extremely large file counts
 		// (>10000 files per simfile) may still require a different approach.
-		const listResult = await bucket.list({ prefix: `${simfileID}/`, limit: 10000 });
+		const listResult = await bucket.list({ prefix: `${id}/`, limit: 10000 });
 
 		const objects = listResult.objects ?? [];
 		if (objects.length === 0) {

@@ -197,18 +197,35 @@ describe('ChartListItem Component Logic', () => {
 	});
 
 	describe('Sound Preview URL Logic', () => {
-		it('constructs sound preview URL correctly for items with id', () => {
+		it('constructs sound preview URL correctly for items with preview_url', () => {
 			// Simulate the logic from ChartListItem.svelte
 			const simfileBucketUrl = 'https://example.com/bucket';
 			const itemId = 1;
+			const previewUrl = '1/preview.jpg'; // Non-null indicates preview files exist
 
 			// This mimics the logic in the component:
-			// soundPreviewUrl={`${simfileBucketUrl}/${item.id}/preview.mp3`}
-			const expectedSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
-			const actualSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
+			// soundPreviewUrl={item.preview_url ? `${simfileBucketUrl}/${item.id}/preview.mp3` : null}
+			const actualSoundPreviewUrl = previewUrl
+				? `${simfileBucketUrl}/${itemId}/preview.mp3`
+				: null;
 
-			expect(actualSoundPreviewUrl).toBe(expectedSoundPreviewUrl);
 			expect(actualSoundPreviewUrl).toBe('https://example.com/bucket/1/preview.mp3');
+			expect(actualSoundPreviewUrl).not.toBeNull();
+		});
+
+		it('returns null for sound preview URL when preview_url is null', () => {
+			// Simulate the logic from ChartListItem.svelte
+			const simfileBucketUrl = 'https://example.com/bucket';
+			const itemId = 2;
+			const previewUrl = null; // null indicates no preview files
+
+			// This mimics the logic in the component:
+			// soundPreviewUrl={item.preview_url ? `${simfileBucketUrl}/${item.id}/preview.mp3` : null}
+			const actualSoundPreviewUrl = previewUrl
+				? `${simfileBucketUrl}/${itemId}/preview.mp3`
+				: null;
+
+			expect(actualSoundPreviewUrl).toBeNull();
 		});
 
 		it('constructs image preview URL correctly for items with id', () => {

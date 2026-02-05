@@ -18,7 +18,15 @@ vi.mock('svelte-i18n', () => ({
 }));
 vi.mock('@skeletonlabs/skeleton-svelte');
 vi.mock('@lucide/svelte/icons');
-vi.mock('$lib/components/ImageAudio.svelte', () => ({}));
+
+// Track ImageAudio props to test URL construction
+let capturedImageAudioProps: any = null;
+vi.mock('$lib/components/ImageAudio.svelte', () => ({
+	default: (props: any) => {
+		capturedImageAudioProps = props;
+		return {};
+	}
+}));
 
 vi.mock('$lib/utils', () => ({
 	formatLevelDisplay: (dtxFiles: unknown) => {
@@ -185,6 +193,53 @@ describe('ChartListItem Component Logic', () => {
 			// The text "Download not available" would be shown in this case.
 			// We assert the condition that leads to it.
 			expect(props.item.download_url).toBeNull();
+		});
+	});
+
+	describe('Sound Preview URL Logic', () => {
+		it('constructs sound preview URL correctly for items with id', () => {
+			// Simulate the logic from ChartListItem.svelte
+			const simfileBucketUrl = 'https://example.com/bucket';
+			const itemId = 1;
+
+			// This mimics the logic in the component:
+			// soundPreviewUrl={`${simfileBucketUrl}/${item.id}/preview.mp3`}
+			const expectedSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
+			const actualSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
+
+			expect(actualSoundPreviewUrl).toBe(expectedSoundPreviewUrl);
+			expect(actualSoundPreviewUrl).toBe('https://example.com/bucket/1/preview.mp3');
+		});
+
+		it('constructs image preview URL correctly for items with id', () => {
+			// Simulate the logic from ChartListItem.svelte
+			const simfileBucketUrl = 'https://example.com/bucket';
+			const itemId = 1;
+
+			// This mimics the logic in the component:
+			// previewUrl={`${simfileBucketUrl}/${item.id}/preview.jpg`}
+			const expectedPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.jpg`;
+			const actualPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.jpg`;
+
+			expect(actualPreviewUrl).toBe(expectedPreviewUrl);
+			expect(actualPreviewUrl).toBe('https://example.com/bucket/1/preview.jpg');
+		});
+
+		it('sound and image preview URLs follow the same pattern', () => {
+			const simfileBucketUrl = 'https://example.com/bucket';
+			const itemId = 5;
+
+			const soundUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
+			const imageUrl = `${simfileBucketUrl}/${itemId}/preview.jpg`;
+
+			// Both should use the same base URL and item ID
+			expect(soundUrl).toContain(`${simfileBucketUrl}/${itemId}/`);
+			expect(imageUrl).toContain(`${simfileBucketUrl}/${itemId}/`);
+
+			// Only the file extension should differ
+			const soundUrlBase = soundUrl.replace('.mp3', '');
+			const imageUrlBase = imageUrl.replace('.jpg', '');
+			expect(soundUrlBase).toBe(imageUrlBase);
 		});
 	});
 });

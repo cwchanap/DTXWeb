@@ -63,7 +63,7 @@
 			let query = supabase
 				.from('simfiles')
 				.select(
-					`id, title, artist, bpm, download_url, is_published, display_id, publish_date, dtx_files(level)`,
+					`id, title, artist, bpm, download_url, is_published, display_id, publish_date, preview_url, dtx_files(level)`,
 					{ count: 'exact' }
 				)
 				.order('publish_date', { ascending: false })

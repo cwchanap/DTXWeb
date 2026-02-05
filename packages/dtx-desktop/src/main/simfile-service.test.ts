@@ -416,6 +416,24 @@ describe('SimFile Service', () => {
 			expect(result.success).toBe(true);
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
+
+		it('should create simfile successfully without preview files and no server URL', async () => {
+			// Remove VITE_DTX_SERVER_URL to simulate offline/misconfigured environment
+			delete process.env.VITE_DTX_SERVER_URL;
+
+			// Mock readdir to return no preview files
+			(fs.promises.readdir as Mock).mockResolvedValue([
+				{ name: 'song.dtx', isFile: () => true }
+			]);
+
+			const result = await createSimfileRecord(simfileData);
+
+			expect(result.success).toBe(true);
+			expect(result.simfileId).toBe('1');
+
+			// Verify fetch was NOT called since there are no preview files
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('parseDtxFiles', () => {

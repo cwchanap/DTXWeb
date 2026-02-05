@@ -270,9 +270,14 @@ export async function createSimfileRecord(
 
 		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL;
 
-		// Validate apiBaseUrl before creating simfile record
-		if (!apiBaseUrl || !apiBaseUrl.startsWith('http')) {
-			throw new Error('VITE_DTX_SERVER_URL must be set to a valid absolute URL');
+		// Validate apiBaseUrl only if preview files need to be uploaded
+		if (
+			(previewBuffer || soundPreviewBuffer) &&
+			(!apiBaseUrl || !apiBaseUrl.startsWith('http'))
+		) {
+			throw new Error(
+				'VITE_DTX_SERVER_URL must be set to a valid absolute URL when preview files are present'
+			);
 		}
 
 		// First, insert simfile data into the database to get the simfileId

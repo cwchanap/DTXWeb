@@ -66,26 +66,39 @@ export async function DELETE({
 
 		// List all files with the canonical simfileID prefix
 		// Use the normalized numeric ID (not the raw route param) for consistency with upload/list
-		// Note: R2 Workers API doesn't support cursor-based pagination natively.
-		// Increased limit to handle larger simfiles, though extremely large file counts
-		// (>10000 files per simfile) may still require a different approach.
-		const listResult = await bucket.list({ prefix: `${id}/`, limit: 10000 });
+		// Loop through all batches using cursor-based pagination
+		let allObjects: { key: string }[] = [];
+		let cursor: string | undefined;
+		let isTruncated = true;
 
-		const objects = listResult.objects ?? [];
-		if (objects.length === 0) {
-			logger.info(`No files found for simfile: ${simfileID}`);
+		while (isTruncated) {
+			const listResult = await bucket.list({
+				prefix: `${id}/`,
+				limit: 10000,
+				cursor
+			});
+
+			const objects = listResult.objects ?? [];
+			allObjects = allObjects.concat(objects);
+
+			isTruncated = listResult.truncated === true;
+			// cursor only exists when truncated is true
+			cursor = isTruncated ? (listResult as { cursor: string }).cursor : undefined;
+
+			if (isTruncated) {
+				logger.info(
+					`File list truncated for simfile ${simfileID}, continuing with cursor...`
+				);
+			}
 		}
 
-		const isTruncated = listResult.truncated === true;
-		if (isTruncated) {
-			logger.warn(
-				`File list was truncated for simfile ${simfileID}. Some files may not have been deleted.`
-			);
+		if (allObjects.length === 0) {
+			logger.info(`No files found for simfile: ${simfileID}`);
 		}
 
 		// Delete all files using Promise.allSettled to handle partial failures
 		const deleteResults = await Promise.allSettled(
-			objects.map((obj) => bucket.delete(obj.key))
+			allObjects.map((obj) => bucket.delete(obj.key))
 		);
 
 		// Separate successful from failed deletions
@@ -93,7 +106,7 @@ export async function DELETE({
 		const failedDeletions = deleteResults.filter((r) => r.status === 'rejected');
 
 		if (failedDeletions.length > 0) {
-			const failedKeys = objects
+			const failedKeys = allObjects
 				.filter((_, i) => deleteResults[i]?.status === 'rejected')
 				.map((obj) => obj.key);
 			const failedDetails = deleteResults
@@ -106,7 +119,7 @@ export async function DELETE({
 									? result.reason
 									: JSON.stringify(result.reason);
 						return {
-							key: objects[index]?.key,
+							key: allObjects[index]?.key,
 							reason
 						};
 					}
@@ -127,20 +140,18 @@ export async function DELETE({
 		}
 
 		logger.info(
-			`Deleted ${successfulDeletions.length}/${objects.length} files for simfile: ${simfileID}`
+			`Deleted ${successfulDeletions.length}/${allObjects.length} files for simfile: ${simfileID}`
 		);
 
-		const totalFiles = objects.length;
+		const totalFiles = allObjects.length;
 		const message =
 			totalFiles === 0
 				? 'No files to delete'
-				: failedDeletions.length === 0 && !isTruncated
+				: failedDeletions.length === 0
 					? 'Files deleted successfully'
-					: isTruncated
-						? 'File list was truncated; some files may not have been deleted'
-						: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
+					: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
 
-		if (failedDeletions.length > 0 || isTruncated) {
+		if (failedDeletions.length > 0) {
 			return json(
 				{
 					message,

@@ -8,6 +8,30 @@ const uploadSchema = z.object({
 	simFileId: z.string().min(1, 'SimFile ID is required')
 });
 
+// Helper function to sanitize filename for safe storage keys
+const sanitizeFilename = (filename: string): string => {
+	// Remove path traversal sequences and path separators
+	let sanitized = filename
+		.replace(/\.\.[/\\]/g, '') // Remove ../ and ..\
+		.replace(/[/\\]/g, '_') // Replace path separators with underscore
+		.replace(/[^a-zA-Z0-9._-]/g, '_'); // Allow only alphanumeric, dots, hyphens, underscores
+
+	// Truncate to reasonable max length (255 chars for most filesystems)
+	const MAX_LENGTH = 255;
+	if (sanitized.length > MAX_LENGTH) {
+		const ext = sanitized.slice(sanitized.lastIndexOf('.'));
+		const nameWithoutExt = sanitized.slice(0, sanitized.lastIndexOf('.'));
+		sanitized = nameWithoutExt.slice(0, MAX_LENGTH - ext.length) + ext;
+	}
+
+	// Fallback if result is empty or just dots
+	if (!sanitized || sanitized.match(/^[._-]*$/)) {
+		sanitized = `file_${Date.now()}`;
+	}
+
+	return sanitized;
+};
+
 export async function POST({
 	request,
 	platform,
@@ -42,6 +66,11 @@ export async function POST({
 		}
 
 		const { file: validatedFile, simFileId: validatedSimFileId } = validation.data;
+
+		// Validate simFileId format (must be digits only)
+		if (!/^\d+$/.test(validatedSimFileId)) {
+			return json({ error: 'Invalid SimFile ID' }, { status: 400 });
+		}
 
 		const simfileIdValue = Number(validatedSimFileId);
 		if (!Number.isSafeInteger(simfileIdValue)) {
@@ -82,8 +111,9 @@ export async function POST({
 			return json({ error: 'Bucket not available' }, { status: 500 });
 		}
 
-		// Create the key path (same as worker: simFileId/filename)
-		const key = `${canonicalSimfileId}/${validatedFile.name}`;
+		// Create the key path using sanitized filename to prevent path traversal
+		const sanitizedFilename = sanitizeFilename(validatedFile.name);
+		const key = `${canonicalSimfileId}/${sanitizedFilename}`;
 
 		// Upload using R2 bucket binding (same as worker approach)
 		const result = await bucket.put(key, await validatedFile.arrayBuffer(), {

@@ -18,6 +18,12 @@
 	let audio: HTMLAudioElement | null = $state(null);
 	let imageError = $state(false);
 
+	// Reset imageError when previewUrl changes so new images can load
+	$effect(() => {
+		previewUrl;
+		imageError = false;
+	});
+
 	const handlePlayPause = async () => {
 		if (isPlaying) {
 			audio?.pause();

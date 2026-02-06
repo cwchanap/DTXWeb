@@ -52,7 +52,11 @@
 				</a>
 
 				<Button
-					onclick={() => togglePublishChart(item.id, item.is_published)}
+					onclick={() => {
+						if (item.id !== undefined) {
+							togglePublishChart(item.id, !!item.is_published);
+						}
+					}}
 					variant="menuItem"
 					fullWidth
 					justify="start"

@@ -151,12 +151,12 @@
 			return; // Abort if R2 deletion fails
 		}
 
+		filteredItems = filteredItems.filter((item) => item.id !== id);
+		await loadItems();
 		toastStore.success({
 			title: 'Chart deleted',
 			duration: 3000
 		});
-		filteredItems = filteredItems.filter((item) => item.id !== id);
-		loadItems();
 	}
 
 	onMount(() => {

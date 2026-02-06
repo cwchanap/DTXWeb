@@ -264,6 +264,130 @@ describe('/api/simFile/upload', () => {
 		expect(data.error).toBe('Invalid SimFile ID');
 	});
 
+	it('returns 400 when simFileId is hexadecimal', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '0x10');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient({ id: 16, user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('returns 400 when simFileId is negative', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '-123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('returns 400 when simFileId uses scientific notation', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '1e2');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient({ id: 100, user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('returns 400 when simFileId is whitespace-padded', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', ' 123 ');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
 	it('returns 400 when simFileId is missing', async () => {
 		const mockBucket = createMockBucket();
 		const formData = new FormData();

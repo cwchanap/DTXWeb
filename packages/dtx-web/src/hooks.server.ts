@@ -7,6 +7,19 @@ import type { Database } from '@dtx/common';
 import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 import { json, text } from '@sveltejs/kit';
 
+// Helper function to decode JWT payload without verification
+const decodeJwtPayload = (token: string): { exp?: number } => {
+	try {
+		const base64Url = token.split('.')[1];
+		if (!base64Url) return {};
+		const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+		const jsonPayload = atob(base64);
+		return JSON.parse(jsonPayload);
+	} catch {
+		return {};
+	}
+};
+
 const isFormContentType = (request: Request): boolean => {
 	const contentType = request.headers.get('content-type');
 	return (
@@ -144,11 +157,16 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 			event.locals.user = userData.user;
 			// Create a synthetic session object for bearer token auth
 			// This session should not be used for refresh operations
+			// Decode JWT payload to get actual expiration time
+			const payload = decodeJwtPayload(token);
+			const nowSeconds = Math.floor(Date.now() / 1000);
+			const expiresIn = payload.exp ? payload.exp - nowSeconds : 3600;
+			const expiresAt = payload.exp ?? nowSeconds + 3600;
 			event.locals.session = {
 				access_token: token,
 				refresh_token: '', // No refresh token for bearer auth
-				expires_in: 3600,
-				expires_at: Math.floor(Date.now() / 1000) + 3600,
+				expires_in: expiresIn,
+				expires_at: expiresAt,
 				token_type: 'bearer',
 				user: userData.user
 			};
@@ -164,9 +182,25 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 						autoRefreshToken: false,
 						detectSessionInUrl: false,
 						storage: {
-							getItem: () => token,
-							setItem: () => {},
-							removeItem: () => {}
+							getItem: (key: string) => {
+								// Return token only for expected auth storage keys
+								if (key === 'sb-auth-token' || key.startsWith('sb-')) {
+									return token;
+								}
+								return null;
+							},
+							setItem: (_key: string, _value: string) => {
+								// Only handle auth-related keys
+								if (_key === 'sb-auth-token' || _key.startsWith('sb-')) {
+									// No-op: we don't persist bearer tokens
+								}
+							},
+							removeItem: (key: string) => {
+								// Only handle auth-related keys
+								if (key === 'sb-auth-token' || key.startsWith('sb-')) {
+									// No-op: nothing to remove
+								}
+							}
 						}
 					},
 					global: {

@@ -9,7 +9,7 @@ load_dotenv()
 def cli():
     ...
 
-@click.command()
+@cli.command()
 @click.argument('input_path')
 @click.argument('destination', required=False)
 def upload_r2(input_path, destination):

@@ -160,8 +160,9 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 			// Decode JWT payload to get actual expiration time
 			const payload = decodeJwtPayload(token);
 			const nowSeconds = Math.floor(Date.now() / 1000);
-			const expiresIn = payload.exp ? payload.exp - nowSeconds : 3600;
-			const expiresAt = payload.exp ?? nowSeconds + 3600;
+			// Clamp expiresIn to minimum 0 to handle clock skew (negative values when payload.exp < nowSeconds)
+			const expiresIn = Math.max(0, payload.exp ? payload.exp - nowSeconds : 3600);
+			const expiresAt = nowSeconds + expiresIn;
 			event.locals.session = {
 				access_token: token,
 				refresh_token: '', // No refresh token for bearer auth

@@ -190,7 +190,7 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 								}
 								return null;
 							},
-							setItem: (_key: string, _value: string) => {
+							setItem: (_key: string) => {
 								// Only handle auth-related keys
 								if (_key === 'sb-auth-token' || _key.startsWith('sb-')) {
 									// No-op: we don't persist bearer tokens

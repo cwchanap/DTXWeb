@@ -32,6 +32,7 @@
 		"e2e:ui": "npx playwright test --ui"
 	},
 	"lint-staged": {
+		"*.{js,ts,svelte}": "eslint",
 		"*.{js,ts,json,md,svelte,css,html}": "prettier --write"
 	},
 	"devDependencies": {

@@ -19,9 +19,16 @@ const sanitizeFilename = (filename: string): string => {
 	// Truncate to reasonable max length (255 chars for most filesystems)
 	const MAX_LENGTH = 255;
 	if (sanitized.length > MAX_LENGTH) {
-		const ext = sanitized.slice(sanitized.lastIndexOf('.'));
-		const nameWithoutExt = sanitized.slice(0, sanitized.lastIndexOf('.'));
-		sanitized = nameWithoutExt.slice(0, MAX_LENGTH - ext.length) + ext;
+		const lastDot = sanitized.lastIndexOf('.');
+		// Only treat as extension if dot exists and is not at the start (e.g., ".gitignore")
+		if (lastDot > 0) {
+			const ext = sanitized.slice(lastDot);
+			const nameWithoutExt = sanitized.slice(0, lastDot);
+			sanitized = nameWithoutExt.slice(0, MAX_LENGTH - ext.length) + ext;
+		} else {
+			// No extension or dot-first filename - truncate the whole string
+			sanitized = sanitized.slice(0, MAX_LENGTH);
+		}
 	}
 
 	// Fallback if result is empty or just dots

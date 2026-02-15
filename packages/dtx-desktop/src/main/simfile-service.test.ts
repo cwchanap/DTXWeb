@@ -324,14 +324,6 @@ describe('SimFile Service', () => {
 			fetchMock.mockResolvedValue({ ok: true });
 
 			try {
-				// Mock update for preview URLs
-				mockSupabaseClient.from.mockReturnValue({
-					...mockSupabaseClient,
-					update: vi.fn().mockReturnValue({
-						eq: vi.fn().mockResolvedValue({ error: null })
-					})
-				});
-
 				const result = await createSimfileRecord(simfileData);
 
 				expect(result.success).toBe(true);
@@ -386,14 +378,6 @@ describe('SimFile Service', () => {
 		it('should handle missing authentication gracefully and skip uploads', async () => {
 			// Mock getCurrentSession to return null (no session)
 			(getCurrentSession as Mock).mockReturnValue(null);
-
-			// Mock update for preview URLs (should still be called with null URLs)
-			mockSupabaseClient.from.mockReturnValue({
-				...mockSupabaseClient,
-				update: vi.fn().mockReturnValue({
-					eq: vi.fn().mockResolvedValue({ error: null })
-				})
-			});
 
 			const result = await createSimfileRecord(simfileData);
 

@@ -43,7 +43,6 @@ const mockItem = {
 	title: 'Test Song 1',
 	artist: 'Test Artist 1',
 	bpm: 120,
-	preview_url: 'preview1.jpg',
 	download_url: 'https://example.com/download1',
 	is_published: true,
 	display_id: 1, // Changed from 'TST001' to number
@@ -70,7 +69,6 @@ const mockItemNoPreview = {
 	title: 'Test Song 2',
 	artist: 'Test Artist 2',
 	bpm: 140,
-	preview_url: null,
 	download_url: null,
 	is_published: false,
 	display_id: 2, // Changed from 'TST002' to number
@@ -167,8 +165,6 @@ describe('ChartListItem Component Logic', () => {
 			isBlog: true,
 			// Mock other required props not relevant to this specific logic
 			togglePublishChart: vi.fn(),
-			getPreviewUrl: vi.fn(),
-			getSoundPreviewUrl: vi.fn(),
 			onFileDelete: vi.fn()
 		};
 
@@ -197,35 +193,21 @@ describe('ChartListItem Component Logic', () => {
 	});
 
 	describe('Sound Preview URL Logic', () => {
-		it('constructs sound preview URL correctly for items with preview_url', () => {
-			// Simulate the logic from ChartListItem.svelte
+		it('constructs sound preview URL from bucket URL and simfile ID', () => {
 			const simfileBucketUrl = 'https://example.com/bucket';
 			const itemId = 1;
-			const previewUrl = '1/preview.jpg'; // Non-null indicates preview files exist
-
-			// This mimics the logic in the component:
-			// soundPreviewUrl={item.preview_url ? `${simfileBucketUrl}/${item.id}/preview.mp3` : null}
-			const actualSoundPreviewUrl = previewUrl
-				? `${simfileBucketUrl}/${itemId}/preview.mp3`
-				: null;
+			const actualSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
 
 			expect(actualSoundPreviewUrl).toBe('https://example.com/bucket/1/preview.mp3');
 			expect(actualSoundPreviewUrl).not.toBeNull();
 		});
 
-		it('returns null for sound preview URL when preview_url is null', () => {
-			// Simulate the logic from ChartListItem.svelte
+		it('constructs sound preview URL regardless of legacy preview_url field', () => {
 			const simfileBucketUrl = 'https://example.com/bucket';
 			const itemId = 2;
-			const previewUrl = null; // null indicates no preview files
+			const actualSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
 
-			// This mimics the logic in the component:
-			// soundPreviewUrl={item.preview_url ? `${simfileBucketUrl}/${item.id}/preview.mp3` : null}
-			const actualSoundPreviewUrl = previewUrl
-				? `${simfileBucketUrl}/${itemId}/preview.mp3`
-				: null;
-
-			expect(actualSoundPreviewUrl).toBeNull();
+			expect(actualSoundPreviewUrl).toBe('https://example.com/bucket/2/preview.mp3');
 		});
 
 		it('constructs image preview URL correctly for items with id', () => {

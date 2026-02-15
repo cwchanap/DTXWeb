@@ -188,9 +188,7 @@
 			{#if item.id}
 				<ImageAudio
 					previewUrl={`${simfileBucketUrl}/${item.id}/preview.jpg`}
-					soundPreviewUrl={item.preview_url
-						? `${simfileBucketUrl}/${item.id}/preview.mp3`
-						: null}
+					soundPreviewUrl={`${simfileBucketUrl}/${item.id}/preview.mp3`}
 				/>
 			{:else}
 				<div

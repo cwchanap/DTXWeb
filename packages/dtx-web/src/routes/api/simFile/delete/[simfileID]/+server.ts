@@ -82,8 +82,27 @@ export async function DELETE({
 			allObjects = allObjects.concat(objects);
 
 			isTruncated = listResult.truncated === true;
-			// cursor only exists when truncated is true
-			cursor = isTruncated ? (listResult as { cursor: string }).cursor : undefined;
+			if (isTruncated) {
+				const nextCursor = (listResult as { cursor?: string }).cursor;
+
+				if (!nextCursor || nextCursor === cursor) {
+					logger.error(
+						`Invalid R2 pagination state while deleting simfile ${simfileID}: truncated response without a valid next cursor`
+					);
+					return json(
+						{
+							error: 'Failed to list all files for deletion',
+							message:
+								'File listing was truncated but pagination cursor was invalid; some files may not have been deleted'
+						},
+						{ status: 500 }
+					);
+				}
+
+				cursor = nextCursor;
+			} else {
+				cursor = undefined;
+			}
 
 			if (isTruncated) {
 				logger.info(

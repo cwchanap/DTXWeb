@@ -291,9 +291,9 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		expect(mockBucket.list).toHaveBeenCalledWith({ prefix: '123/', limit: 10000 });
 		expect(mockBucket.delete).toHaveBeenCalledTimes(3);
-		expect(mockBucket.delete.mock.calls.map((call) => call[0])).toEqual(
-			mockObjects.map((obj) => obj.key)
-		);
+		for (const obj of mockObjects) {
+			expect(mockBucket.delete).toHaveBeenCalledWith(obj.key);
+		}
 	});
 
 	it('successfully deletes files with bearer token', async () => {
@@ -616,6 +616,9 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		expect(response.status).toBe(500);
 		const data = await response.json();
-		expect(data.message).toBe('File list was truncated; some files may not have been deleted');
+		expect(data.error).toBe('Failed to list all files for deletion');
+		expect(data.message).toBe(
+			'File listing was truncated but pagination cursor was invalid; some files may not have been deleted'
+		);
 	});
 });

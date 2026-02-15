@@ -285,7 +285,6 @@ export async function createSimfileRecord(
 			title: simfileData.title,
 			artist: simfileData.artist,
 			bpm: simfileData.bpm,
-			preview_url: null,
 			user_id: user.id,
 			display_id: simfileData.displayId,
 			is_published: simfileData.isPublished,
@@ -308,7 +307,6 @@ export async function createSimfileRecord(
 		const simfileId = simFileData.id;
 
 		// Upload preview files to R2 via API using the helper function
-		let previewUrl: string | null = null;
 		const uploadErrors: string[] = [];
 
 		if (previewBuffer) {
@@ -319,9 +317,7 @@ export async function createSimfileRecord(
 				'image/jpeg',
 				apiBaseUrl
 			);
-			if (result.success && result.path) {
-				previewUrl = result.path;
-			} else if (result.error) {
+			if (!result.success && result.error) {
 				uploadErrors.push(`Preview image: ${result.error}`);
 			}
 		}
@@ -336,22 +332,6 @@ export async function createSimfileRecord(
 			);
 			if (result.error) {
 				uploadErrors.push(`Sound preview: ${result.error}`);
-			}
-		}
-
-		// Update the simfile record with preview URLs if they were uploaded
-		if (previewUrl) {
-			const { error: updateError } = await supabaseClient
-				.from('simfiles')
-				.update({
-					preview_url: previewUrl
-				})
-				.eq('id', simfileId);
-
-			if (updateError) {
-				const errorMsg = `Error updating simfile with preview URLs: ${updateError.message}`;
-				console.error(errorMsg);
-				throw new Error(errorMsg);
 			}
 		}
 
@@ -374,10 +354,7 @@ export async function createSimfileRecord(
 		const result: CreateSimfileResult = {
 			success: true,
 			simfileId: simfileId,
-			data: {
-				...simFileData,
-				preview_url: previewUrl
-			}
+			data: simFileData
 		};
 
 		// Include warnings if preview uploads failed

@@ -330,7 +330,7 @@ export async function createSimfileRecord(
 				'audio/mpeg',
 				apiBaseUrl
 			);
-			if (result.error) {
+			if (!result.success && result.error) {
 				uploadErrors.push(`Sound preview: ${result.error}`);
 			}
 		}

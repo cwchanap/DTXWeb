@@ -77,7 +77,7 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 	}
 
 	// Get R2 bucket from platform
-	const bucket = platform?.env?.DTXFILE_BUCKET_PREPROD ?? platform?.env?.DTXFILE_BUCKET;
+	const bucket = platform?.env?.DTXFILE_BUCKET;
 
 	// Check if bucket is a ProxyStub (development) or real R2 bucket (production)
 	// ProxyStub toString() returns "[object R2Bucket]" in development

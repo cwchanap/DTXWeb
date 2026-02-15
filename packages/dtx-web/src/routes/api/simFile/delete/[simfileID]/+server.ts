@@ -214,8 +214,7 @@ export async function DELETE({
 		logger.error('Delete error:', error);
 		return json(
 			{
-				error: 'Internal server error',
-				message: error instanceof Error ? error.message : 'Unknown error'
+				error: 'An unexpected error occurred'
 			},
 			{ status: 500 }
 		);

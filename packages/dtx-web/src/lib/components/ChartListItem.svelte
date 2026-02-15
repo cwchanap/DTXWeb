@@ -192,9 +192,10 @@
 			class="relative overflow-hidden rounded-lg transition-shadow duration-200 group-hover:shadow-lg"
 		>
 			{#if item.id}
+				{@const normalizedBucketUrl = simfileBucketUrl.replace(/\/$/, '')}
 				<ImageAudio
-					previewUrl={`${simfileBucketUrl}/${item.id}/preview.jpg`}
-					soundPreviewUrl={`${simfileBucketUrl}/${item.id}/preview.mp3`}
+					previewUrl={`${normalizedBucketUrl}/${item.id}/preview.jpg`}
+					soundPreviewUrl={`${normalizedBucketUrl}/${item.id}/preview.mp3`}
 				/>
 			{:else}
 				<div

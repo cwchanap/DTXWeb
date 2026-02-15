@@ -188,9 +188,10 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 						detectSessionInUrl: false,
 						storage: {
 							getItem: (key: string) => {
-								// Return token only for expected auth storage keys
+								// Supabase expects a JSON stringified session object or null
+								// Returning raw token causes parse errors
 								if (key === 'sb-auth-token' || key.startsWith('sb-')) {
-									return token;
+									return null;
 								}
 								return null;
 							},

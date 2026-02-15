@@ -25,3 +25,6 @@ coverage/
 
 .turbo
 .playwright-mcp
+
+# Claude settings
+.claude/settings.local.json

@@ -163,17 +163,19 @@ export async function DELETE({
 		);
 
 		const totalFiles = allObjects.length;
-		const message =
-			totalFiles === 0
-				? 'No files to delete'
-				: failedDeletions.length === 0
-					? 'Files deleted successfully'
-					: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
 
-		if (failedDeletions.length > 0) {
+		// Always delete the DB record even if some files failed to delete
+		// to avoid broken references in the database
+		const { error: deleteError } = await locals.supabase.from('simfiles').delete().eq('id', id);
+
+		if (deleteError) {
+			logger.error('Failed to delete simfile record:', deleteError);
 			return json(
 				{
-					message,
+					error: 'Failed to delete simfile record',
+					message:
+						'Database record could not be deleted. Files may have been partially deleted.',
+					partialDeletion: true,
 					deleted: successfulDeletions.length,
 					failed: failedDeletions.length,
 					total: totalFiles
@@ -182,18 +184,21 @@ export async function DELETE({
 			);
 		}
 
-		const { error: deleteError } = await locals.supabase.from('simfiles').delete().eq('id', id);
+		const message =
+			totalFiles === 0
+				? 'No files to delete'
+				: failedDeletions.length === 0
+					? 'Files deleted successfully'
+					: `Some files failed to delete (${failedDeletions.length}/${totalFiles})`;
 
-		if (deleteError) {
-			logger.error('Failed to delete simfile record:', deleteError);
-			return json({ error: 'Failed to delete simfile record' }, { status: 500 });
-		}
-
+		// Return 200 if DB record was deleted, even if some files failed
+		// Include partialDeletion flag to indicate files may remain in storage
 		return json({
 			message,
 			deleted: successfulDeletions.length,
 			failed: failedDeletions.length,
-			total: totalFiles
+			total: totalFiles,
+			partialDeletion: failedDeletions.length > 0
 		});
 	} catch (error) {
 		logger.error('Delete error:', error);

@@ -295,12 +295,26 @@ if (!gotTheLock) {
 			return await fetchUserSimFiles();
 		});
 
-		ipcMain.handle('get-preview-url', async (_event, simfileId: number) => {
-			return getPreviewUrl(simfileId);
+		ipcMain.handle('get-preview-url', async (_event, simfileId: string) => {
+			if (!simfileId || simfileId === '' || simfileId === '0') {
+				throw new Error('Invalid simfileId: must be a non-empty string');
+			}
+			const id = Number(simfileId);
+			if (Number.isNaN(id) || id <= 0) {
+				throw new Error(`Invalid simfileId: ${simfileId} is not a valid positive number`);
+			}
+			return await getPreviewUrl(id);
 		});
 
-		ipcMain.handle('get-sound-preview-url', async (_event, simfileId: number) => {
-			return getSoundPreviewUrl(simfileId);
+		ipcMain.handle('get-sound-preview-url', async (_event, simfileId: string) => {
+			if (!simfileId || simfileId === '' || simfileId === '0') {
+				throw new Error('Invalid simfileId: must be a non-empty string');
+			}
+			const id = Number(simfileId);
+			if (Number.isNaN(id) || id <= 0) {
+				throw new Error(`Invalid simfileId: ${simfileId} is not a valid positive number`);
+			}
+			return await getSoundPreviewUrl(id);
 		});
 
 		// Handle loading asset files from API

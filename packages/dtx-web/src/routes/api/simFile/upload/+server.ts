@@ -24,7 +24,13 @@ const sanitizeFilename = (filename: string): string => {
 		if (lastDot > 0) {
 			const ext = sanitized.slice(lastDot);
 			const nameWithoutExt = sanitized.slice(0, lastDot);
-			sanitized = nameWithoutExt.slice(0, MAX_LENGTH - ext.length) + ext;
+			const allowedNameLen = Math.max(0, MAX_LENGTH - ext.length);
+			if (allowedNameLen > 0) {
+				sanitized = nameWithoutExt.slice(0, allowedNameLen) + ext;
+			} else {
+				// Extension itself exceeds max length, truncate extension
+				sanitized = ext.slice(0, MAX_LENGTH);
+			}
 		} else {
 			// No extension or dot-first filename - truncate the whole string
 			sanitized = sanitized.slice(0, MAX_LENGTH);

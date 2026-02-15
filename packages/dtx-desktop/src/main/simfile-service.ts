@@ -353,7 +353,7 @@ export async function createSimfileRecord(
 
 		const result: CreateSimfileResult = {
 			success: true,
-			simfileId: simfileId,
+			simfileId: String(simfileId),
 			data: simFileData
 		};
 

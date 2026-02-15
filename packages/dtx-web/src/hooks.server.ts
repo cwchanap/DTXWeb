@@ -198,12 +198,24 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 								// Only handle auth-related keys
 								if (_key === 'sb-auth-token' || _key.startsWith('sb-')) {
 									// No-op: we don't persist bearer tokens
+									console.debug(
+										'Bearer auth storage: ignoring setItem for auth key',
+										{
+											key: _key
+										}
+									);
 								}
 							},
 							removeItem: (key: string) => {
 								// Only handle auth-related keys
 								if (key === 'sb-auth-token' || key.startsWith('sb-')) {
 									// No-op: nothing to remove
+									console.debug(
+										'Bearer auth storage: ignoring removeItem for auth key',
+										{
+											key
+										}
+									);
 								}
 							}
 						}

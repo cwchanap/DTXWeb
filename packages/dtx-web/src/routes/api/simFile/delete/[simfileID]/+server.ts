@@ -58,7 +58,7 @@ export async function DELETE({
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
 
-		const bucket = platform?.env?.DTXFILE_BUCKET_PREPROD ?? platform?.env?.DTXFILE_BUCKET;
+		const bucket = platform?.env?.DTXFILE_BUCKET;
 		if (!bucket) {
 			logger.error('DTXFILE_BUCKET binding not available');
 			return json({ error: 'Bucket not available' }, { status: 500 });
@@ -169,10 +169,20 @@ export async function DELETE({
 		const { error: deleteError } = await locals.supabase.from('simfiles').delete().eq('id', id);
 
 		if (deleteError) {
-			logger.error('Failed to delete simfile record:', deleteError);
+			// NOTE: At this point, all associated R2 files have already been deleted.
+			// If the database deletion fails, the system will be left with a
+			// dangling simfile record that no longer has backing files. This is a
+			// known, non-transactional edge case between object storage and the DB.
+			logger.error('Failed to delete simfile record after deleting R2 files:', {
+				error: deleteError,
+				simfileID: id,
+				totalFiles,
+				deletedFiles: successfulDeletions.length,
+				failedFiles: failedDeletions.length
+			});
 			return json(
 				{
-					error: 'Failed to delete simfile record',
+					error: 'Failed to delete simfile record after deleting R2 files',
 					message:
 						'Database record could not be deleted. Files may have been partially deleted.',
 					partialDeletion: true,

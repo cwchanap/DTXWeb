@@ -14,7 +14,8 @@ const sanitizeFilename = (filename: string): string => {
 	let sanitized = filename
 		.replace(/\.\.[/\\]/g, '') // Remove ../ and ..\
 		.replace(/[/\\]/g, '_') // Replace path separators with underscore
-		.replace(/[^a-zA-Z0-9._-]/g, '_'); // Allow only alphanumeric, dots, hyphens, underscores
+		.replace(/[^a-zA-Z0-9._-]/g, '_') // Allow only alphanumeric, dots, hyphens, underscores
+		.replace(/_+/g, '_'); // Collapse multiple consecutive underscores into a single underscore
 
 	// Truncate to reasonable max length (255 chars for most filesystems)
 	const MAX_LENGTH = 255;
@@ -118,7 +119,7 @@ export async function POST({
 		}
 
 		// Access the R2 bucket binding directly (same as worker approach)
-		const bucket = platform?.env?.DTXFILE_BUCKET_PREPROD ?? platform?.env?.DTXFILE_BUCKET;
+		const bucket = platform?.env?.DTXFILE_BUCKET;
 		if (!bucket) {
 			logger.error('DTXFILE_BUCKET binding not available');
 			return json({ error: 'Bucket not available' }, { status: 500 });

@@ -395,7 +395,7 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		expect(response.status).toBe(500);
 		const data = await response.json();
-		expect(data.error).toBe('Failed to delete simfile record');
+		expect(data.error).toBe('Failed to delete simfile record after deleting R2 files');
 	});
 
 	it('returns 400 when simfileID is missing', async () => {

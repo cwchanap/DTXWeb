@@ -20,12 +20,6 @@ export default defineConfig({
 		},
 		// Force browser conditions for Svelte 5
 		pool: 'forks',
-		// Add browser conditions to ensure client-side Svelte
-		environmentOptions: {
-			jsdom: {
-				resources: 'usable'
-			}
-		},
 		// Exclude playwright tests
 		exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
 		coverage: {

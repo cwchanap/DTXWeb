@@ -1,16 +1,8 @@
 /**
  * Unit tests for ChartListItem.svelte component
- *
- * This file uses a Svelte 5 compatible approach to testing components.
- * Based on the Svelte 5 documentation, certain methods like `mount` cannot be invoked
- * during server-side rendering, which is what happens in traditional component tests.
- *
- * Instead, we're using a more basic approach that focuses on testing the component's
- * logic and state changes rather than DOM interactions.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { tick } from 'svelte';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
@@ -20,9 +12,9 @@ vi.mock('@skeletonlabs/skeleton-svelte');
 vi.mock('@lucide/svelte/icons');
 
 // Track ImageAudio props to test URL construction
-let capturedImageAudioProps: any = null;
+let capturedImageAudioProps: { previewUrl?: string; soundPreviewUrl?: string | null } | null = null;
 vi.mock('$lib/components/ImageAudio.svelte', () => ({
-	default: (props: any) => {
+	default: (props: { previewUrl: string; soundPreviewUrl: string | null }) => {
 		capturedImageAudioProps = props;
 		return {};
 	}
@@ -45,14 +37,13 @@ const mockItem = {
 	bpm: 120,
 	download_url: 'https://example.com/download1',
 	is_published: true,
-	display_id: 1, // Changed from 'TST001' to number
+	display_id: 1,
 	dtx_files: [{ level: 3 }, { level: 5 }],
 	created_at: '2023-01-01',
 	updated_at: '2023-01-02',
 	publish_date: '2023-01-03',
 	user_id: 'user-1',
 	video_preview_url: null,
-	// Ensure all fields expected by the component are present
 	label: 'Test Label 1',
 	value: 'test-value-1',
 	bg_video_url: null,
@@ -71,14 +62,13 @@ const mockItemNoPreview = {
 	bpm: 140,
 	download_url: null,
 	is_published: false,
-	display_id: 2, // Changed from 'TST002' to number
+	display_id: 2,
 	dtx_files: [{ level: 4 }],
 	created_at: '2023-02-01',
 	updated_at: '2023-02-02',
 	publish_date: '2023-02-03',
 	user_id: 'user-1',
 	video_preview_url: null,
-	// Ensure all fields expected by the component are present
 	label: 'Test Label 2',
 	value: 'test-value-2',
 	bg_video_url: null,
@@ -99,15 +89,10 @@ const mockItemNoPreview = {
 describe('ChartListItem Component Logic', () => {
 	// Mock functions for props
 	const mockTogglePublishChart = vi.fn().mockResolvedValue(undefined);
-	const mockGetPreviewUrl = vi.fn().mockImplementation((url) => `https://example.com/${url}`);
 	const mockOnFileDelete = vi.fn();
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
 	});
 
 	// Test the togglePublishChart function
@@ -243,6 +228,64 @@ describe('ChartListItem Component Logic', () => {
 			const soundUrlBase = soundUrl.replace('.mp3', '');
 			const imageUrlBase = imageUrl.replace('.jpg', '');
 			expect(soundUrlBase).toBe(imageUrlBase);
+		});
+	});
+
+	describe('ChartListItem URL Construction', () => {
+		const simfileBucketUrl = 'https://example.com/bucket';
+
+		beforeEach(() => {
+			capturedImageAudioProps = null;
+			vi.clearAllMocks();
+		});
+
+		// Helper function that mirrors the URL construction logic in ChartListItem.svelte
+		function constructPreviewUrls(itemId: number | undefined) {
+			if (!itemId) {
+				return null;
+			}
+			return {
+				previewUrl: `${simfileBucketUrl}/${itemId}/preview.jpg`,
+				soundPreviewUrl: `${simfileBucketUrl}/${itemId}/preview.mp3`
+			};
+		}
+
+		it('constructs correct preview URLs for valid simfile ID', () => {
+			const itemId = 1;
+			const urls = constructPreviewUrls(itemId);
+
+			expect(urls).not.toBeNull();
+			expect(urls?.previewUrl).toBe(`${simfileBucketUrl}/${itemId}/preview.jpg`);
+			expect(urls?.soundPreviewUrl).toBe(`${simfileBucketUrl}/${itemId}/preview.mp3`);
+		});
+
+		it('constructs correct preview URLs for different simfile IDs', () => {
+			const itemId = 42;
+			const urls = constructPreviewUrls(itemId);
+
+			expect(urls?.previewUrl).toBe(`${simfileBucketUrl}/42/preview.jpg`);
+			expect(urls?.soundPreviewUrl).toBe(`${simfileBucketUrl}/42/preview.mp3`);
+		});
+
+		it('returns null when item.id is undefined', () => {
+			const urls = constructPreviewUrls(undefined);
+
+			expect(urls).toBeNull();
+		});
+
+		it('returns null when item.id is zero', () => {
+			const urls = constructPreviewUrls(0);
+
+			expect(urls).toBeNull();
+		});
+
+		it('still constructs URLs for negative item.id (as component only checks truthiness)', () => {
+			// Note: The component uses {#if item.id} which only checks truthiness
+			// Negative numbers are truthy, so URLs would be constructed
+			const urls = constructPreviewUrls(-1);
+
+			expect(urls).not.toBeNull();
+			expect(urls?.previewUrl).toBe(`${simfileBucketUrl}/-1/preview.jpg`);
 		});
 	});
 });

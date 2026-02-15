@@ -134,7 +134,7 @@
 					onerror={() => (imageError = true)}
 				/>
 			{/if}
-			{#if soundPreviewUrl && !imageError}
+			{#if soundPreviewUrl}
 				{@render playButton()}
 			{/if}
 		</div>

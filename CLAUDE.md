@@ -214,6 +214,10 @@ import { Button } from '@dtx/common/components';
 - **Database**: Supabase PostgreSQL with real-time subscriptions
 - **Storage**: AWS S3 and Cloudflare R2 for game assets
 
+### R2 Bucket Configuration
+
+**Important**: Both production and pre-production environments use the **same R2 bucket** (`simfile-dtx`). The `DTXFILE_BUCKET` binding in `wrangler.jsonc` points to the same bucket name for both environments. There is no separate pre-prod bucket - data isolation between environments is handled at the application level, not at the storage level.
+
 ## Environment Setup
 
 - Node.js v22.14.0 (see `.nvmrc`)

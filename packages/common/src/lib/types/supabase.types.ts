@@ -229,7 +229,8 @@ export interface SimfileWithDtx {
 	title: string;
 	artist: string;
 	bpm: number;
-	preview_url?: string | null; // Deprecated: still populated for backward compatibility. Prefer constructing URLs from simfile ID.
+	/** @deprecated Use `${simfileBucketUrl}/${id}/preview.jpg` instead. The preview_url field is no longer populated but preserved for backward compatibility. */
+	preview_url: string | null;
 	download_url: string | null;
 	is_published: boolean;
 	display_id: number | null;

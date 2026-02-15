@@ -540,14 +540,16 @@ describe('/api/simFile/delete/[simfileID]', () => {
 			}
 		} as any);
 
-		expect(response.status).toBe(500);
+		// Now returns 200 even with partial failures since DB record is deleted
+		expect(response.status).toBe(200);
 		const data = await response.json();
 		expect(data.deleted).toBe(1);
 		expect(data.failed).toBe(1);
 		expect(data.total).toBe(2);
+		expect(data.partialDeletion).toBe(true);
 	});
 
-	it('returns 500 when all deletions fail', async () => {
+	it('returns 200 with partialDeletion when all deletions fail but DB record is deleted', async () => {
 		const mockObjects = [{ key: '123/file1.dtx' }];
 		const mockBucket = {
 			list: vi.fn().mockResolvedValue({
@@ -582,11 +584,13 @@ describe('/api/simFile/delete/[simfileID]', () => {
 			}
 		} as any);
 
-		expect(response.status).toBe(500);
+		// Now returns 200 even with all file deletions failing since DB record is deleted
+		expect(response.status).toBe(200);
 		const data = await response.json();
 		expect(data.deleted).toBe(0);
 		expect(data.failed).toBe(1);
 		expect(data.total).toBe(1);
+		expect(data.partialDeletion).toBe(true);
 	});
 
 	it('returns 500 when list is truncated', async () => {

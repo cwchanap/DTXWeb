@@ -30,7 +30,7 @@ export async function GET({
 		logger.info(`Listing files for simFile: ${simFileId}`);
 
 		// Access the R2 bucket binding directly (same as worker approach)
-		const bucket = platform?.env?.DTXFILE_BUCKET_PREPROD ?? platform?.env?.DTXFILE_BUCKET;
+		const bucket = platform?.env?.DTXFILE_BUCKET;
 		if (!bucket) {
 			logger.error('DTXFILE_BUCKET binding not available');
 			return json({ error: 'Bucket not available' }, { status: 500 });

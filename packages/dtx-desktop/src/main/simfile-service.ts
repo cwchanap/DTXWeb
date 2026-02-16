@@ -48,7 +48,7 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		const { data, error } = await supabaseClient
 			.from('simfiles')
 			.select(
-				`id, title, artist, bpm, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level, label)`
+				`id, title, artist, bpm, preview_url, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level, label)`
 			)
 			.eq('user_id', user.id)
 			.order('publish_date', { ascending: false });

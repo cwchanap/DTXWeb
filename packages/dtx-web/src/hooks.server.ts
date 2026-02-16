@@ -149,8 +149,8 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 	// Support both cookie-based auth (web app) and bearer token auth (desktop app)
 	if (!event.locals.session && event.url.pathname.startsWith('/api/simFile')) {
 		const authHeader = event.request.headers.get('Authorization');
-		if (authHeader?.startsWith('Bearer ')) {
-			const token = authHeader.replace('Bearer ', '');
+		if (authHeader?.toLowerCase().startsWith('bearer ')) {
+			const token = authHeader.slice(7);
 			// Validate the bearer token using Supabase
 			const { data: userData, error: userError } =
 				await event.locals.supabase.auth.getUser(token);

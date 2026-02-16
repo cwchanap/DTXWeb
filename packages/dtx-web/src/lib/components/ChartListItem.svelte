@@ -193,10 +193,10 @@
 		<div
 			class="relative overflow-hidden rounded-lg transition-shadow duration-200 group-hover:shadow-lg"
 		>
-			{#if item.id}
+			{#if item.id !== undefined}
 				<ImageAudio
-					previewUrl={buildPreviewUrl(simfileBucketUrl, item.id, 'jpg') ?? undefined}
-					soundPreviewUrl={buildPreviewUrl(simfileBucketUrl, item.id, 'mp3') ?? undefined}
+					previewUrl={buildPreviewUrl(simfileBucketUrl, item.id, 'jpg')!}
+					soundPreviewUrl={buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')}
 				/>
 			{:else}
 				<div

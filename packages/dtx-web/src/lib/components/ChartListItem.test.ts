@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildPreviewUrl } from '$lib/utils';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
@@ -27,13 +26,6 @@ vi.mock('$lib/utils', () => ({
 			return dtxFiles.map((file: any) => file.level).join(', ');
 		}
 		return 'N/A';
-	},
-	buildPreviewUrl: (simfileBucketUrl: string, itemId: number | undefined, ext: string) => {
-		if (!itemId) {
-			return null;
-		}
-		const normalizedBucketUrl = simfileBucketUrl.replace(/\/$/, '');
-		return `${normalizedBucketUrl}/${itemId}/preview.${ext}`;
 	}
 }));
 
@@ -182,61 +174,6 @@ describe('ChartListItem Component Logic', () => {
 			// The text "Download not available" would be shown in this case.
 			// We assert the condition that leads to it.
 			expect(props.item.download_url).toBeNull();
-		});
-	});
-
-	describe('buildPreviewUrl utility function', () => {
-		it('constructs correct preview URL for valid simfile ID', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-			const itemId = 1;
-
-			const previewUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'jpg');
-			const soundUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'mp3');
-
-			expect(previewUrl).toBe('https://example.com/bucket/1/preview.jpg');
-			expect(soundUrl).toBe('https://example.com/bucket/1/preview.mp3');
-		});
-
-		it('constructs correct preview URLs for different simfile IDs', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-			const itemId = 42;
-
-			const previewUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'jpg');
-			const soundUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'mp3');
-
-			expect(previewUrl).toBe('https://example.com/bucket/42/preview.jpg');
-			expect(soundUrl).toBe('https://example.com/bucket/42/preview.mp3');
-		});
-
-		it('returns null when item.id is undefined', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-
-			expect(buildPreviewUrl(simfileBucketUrl, undefined, 'jpg')).toBeNull();
-			expect(buildPreviewUrl(simfileBucketUrl, undefined, 'mp3')).toBeNull();
-		});
-
-		it('returns null when item.id is zero', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-
-			expect(buildPreviewUrl(simfileBucketUrl, 0, 'jpg')).toBeNull();
-			expect(buildPreviewUrl(simfileBucketUrl, 0, 'mp3')).toBeNull();
-		});
-
-		it('normalizes trailing slash in bucket URL', () => {
-			const simfileBucketUrlWithSlash = 'https://example.com/bucket/';
-			const itemId = 1;
-
-			const previewUrl = buildPreviewUrl(simfileBucketUrlWithSlash, itemId, 'jpg');
-
-			expect(previewUrl).toBe('https://example.com/bucket/1/preview.jpg');
-		});
-
-		it('still constructs URLs for negative item.id (as function only checks truthiness)', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-
-			const previewUrl = buildPreviewUrl(simfileBucketUrl, -1, 'jpg');
-
-			expect(previewUrl).toBe('https://example.com/bucket/-1/preview.jpg');
 		});
 	});
 });

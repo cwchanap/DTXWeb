@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { buildPreviewUrl } from '$lib/utils';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
@@ -26,6 +27,13 @@ vi.mock('$lib/utils', () => ({
 			return dtxFiles.map((file: any) => file.level).join(', ');
 		}
 		return 'N/A';
+	},
+	buildPreviewUrl: (simfileBucketUrl: string, itemId: number | undefined, ext: string) => {
+		if (!itemId) {
+			return null;
+		}
+		const normalizedBucketUrl = simfileBucketUrl.replace(/\/$/, '');
+		return `${normalizedBucketUrl}/${itemId}/preview.${ext}`;
 	}
 }));
 
@@ -177,115 +185,58 @@ describe('ChartListItem Component Logic', () => {
 		});
 	});
 
-	describe('Sound Preview URL Logic', () => {
-		it('constructs sound preview URL from bucket URL and simfile ID', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-			const itemId = 1;
-			const actualSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
-
-			expect(actualSoundPreviewUrl).toBe('https://example.com/bucket/1/preview.mp3');
-			expect(actualSoundPreviewUrl).not.toBeNull();
-		});
-
-		it('constructs sound preview URL regardless of legacy preview_url field', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-			const itemId = 2;
-			const actualSoundPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
-
-			expect(actualSoundPreviewUrl).toBe('https://example.com/bucket/2/preview.mp3');
-		});
-
-		it('constructs image preview URL correctly for items with id', () => {
-			// Simulate the logic from ChartListItem.svelte
+	describe('buildPreviewUrl utility function', () => {
+		it('constructs correct preview URL for valid simfile ID', () => {
 			const simfileBucketUrl = 'https://example.com/bucket';
 			const itemId = 1;
 
-			// Expected URL based on component logic: `${simfileBucketUrl}/${item.id}/preview.jpg`
-			const expectedPreviewUrl = `${simfileBucketUrl}/${itemId}/preview.jpg`;
+			const previewUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'jpg');
+			const soundUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'mp3');
 
-			// The actual URL is computed from the captured props or derived from the component logic
-			// Since capturedImageAudioProps captures the props passed to ImageAudio,
-			// we verify the URL construction logic is correct
-			expect(expectedPreviewUrl).toBe('https://example.com/bucket/1/preview.jpg');
-
-			// Also verify the captured props are set when component would be rendered
-			// (mock captures props that would be passed)
-			expect(capturedImageAudioProps).toBeNull(); // Currently null since we don't render
-		});
-
-		it('sound and image preview URLs follow the same pattern', () => {
-			const simfileBucketUrl = 'https://example.com/bucket';
-			const itemId = 5;
-
-			const soundUrl = `${simfileBucketUrl}/${itemId}/preview.mp3`;
-			const imageUrl = `${simfileBucketUrl}/${itemId}/preview.jpg`;
-
-			// Both should use the same base URL and item ID
-			expect(soundUrl).toContain(`${simfileBucketUrl}/${itemId}/`);
-			expect(imageUrl).toContain(`${simfileBucketUrl}/${itemId}/`);
-
-			// Only the file extension should differ
-			const soundUrlBase = soundUrl.replace('.mp3', '');
-			const imageUrlBase = imageUrl.replace('.jpg', '');
-			expect(soundUrlBase).toBe(imageUrlBase);
-		});
-	});
-
-	describe('ChartListItem URL Construction', () => {
-		const simfileBucketUrl = 'https://example.com/bucket';
-
-		beforeEach(() => {
-			capturedImageAudioProps = null;
-			vi.clearAllMocks();
-		});
-
-		// Helper function that mirrors the URL construction logic in ChartListItem.svelte
-		function constructPreviewUrls(itemId: number | undefined) {
-			if (!itemId) {
-				return null;
-			}
-			return {
-				previewUrl: `${simfileBucketUrl}/${itemId}/preview.jpg`,
-				soundPreviewUrl: `${simfileBucketUrl}/${itemId}/preview.mp3`
-			};
-		}
-
-		it('constructs correct preview URLs for valid simfile ID', () => {
-			const itemId = 1;
-			const urls = constructPreviewUrls(itemId);
-
-			expect(urls).not.toBeNull();
-			expect(urls?.previewUrl).toBe(`${simfileBucketUrl}/${itemId}/preview.jpg`);
-			expect(urls?.soundPreviewUrl).toBe(`${simfileBucketUrl}/${itemId}/preview.mp3`);
+			expect(previewUrl).toBe('https://example.com/bucket/1/preview.jpg');
+			expect(soundUrl).toBe('https://example.com/bucket/1/preview.mp3');
 		});
 
 		it('constructs correct preview URLs for different simfile IDs', () => {
+			const simfileBucketUrl = 'https://example.com/bucket';
 			const itemId = 42;
-			const urls = constructPreviewUrls(itemId);
 
-			expect(urls?.previewUrl).toBe(`${simfileBucketUrl}/42/preview.jpg`);
-			expect(urls?.soundPreviewUrl).toBe(`${simfileBucketUrl}/42/preview.mp3`);
+			const previewUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'jpg');
+			const soundUrl = buildPreviewUrl(simfileBucketUrl, itemId, 'mp3');
+
+			expect(previewUrl).toBe('https://example.com/bucket/42/preview.jpg');
+			expect(soundUrl).toBe('https://example.com/bucket/42/preview.mp3');
 		});
 
 		it('returns null when item.id is undefined', () => {
-			const urls = constructPreviewUrls(undefined);
+			const simfileBucketUrl = 'https://example.com/bucket';
 
-			expect(urls).toBeNull();
+			expect(buildPreviewUrl(simfileBucketUrl, undefined, 'jpg')).toBeNull();
+			expect(buildPreviewUrl(simfileBucketUrl, undefined, 'mp3')).toBeNull();
 		});
 
 		it('returns null when item.id is zero', () => {
-			const urls = constructPreviewUrls(0);
+			const simfileBucketUrl = 'https://example.com/bucket';
 
-			expect(urls).toBeNull();
+			expect(buildPreviewUrl(simfileBucketUrl, 0, 'jpg')).toBeNull();
+			expect(buildPreviewUrl(simfileBucketUrl, 0, 'mp3')).toBeNull();
 		});
 
-		it('still constructs URLs for negative item.id (as component only checks truthiness)', () => {
-			// Note: The component uses {#if item.id} which only checks truthiness
-			// Negative numbers are truthy, so URLs would be constructed
-			const urls = constructPreviewUrls(-1);
+		it('normalizes trailing slash in bucket URL', () => {
+			const simfileBucketUrlWithSlash = 'https://example.com/bucket/';
+			const itemId = 1;
 
-			expect(urls).not.toBeNull();
-			expect(urls?.previewUrl).toBe(`${simfileBucketUrl}/-1/preview.jpg`);
+			const previewUrl = buildPreviewUrl(simfileBucketUrlWithSlash, itemId, 'jpg');
+
+			expect(previewUrl).toBe('https://example.com/bucket/1/preview.jpg');
+		});
+
+		it('still constructs URLs for negative item.id (as function only checks truthiness)', () => {
+			const simfileBucketUrl = 'https://example.com/bucket';
+
+			const previewUrl = buildPreviewUrl(simfileBucketUrl, -1, 'jpg');
+
+			expect(previewUrl).toBe('https://example.com/bucket/-1/preview.jpg');
 		});
 	});
 });

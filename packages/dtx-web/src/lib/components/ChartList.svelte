@@ -134,7 +134,13 @@
 				method: 'DELETE'
 			});
 			if (!response.ok) {
-				const errorData = await response.json();
+				// Safely parse error response, handling non-JSON responses
+				let errorData: unknown;
+				try {
+					errorData = await response.json();
+				} catch {
+					errorData = await response.text();
+				}
 				console.error('Failed to delete R2 files:', errorData);
 				toastStore.error({
 					title: 'Failed to delete chart files',
@@ -151,7 +157,7 @@
 			return; // Abort if R2 deletion fails
 		}
 
-		filteredItems = filteredItems.filter((item) => item.id !== id);
+		// filteredItems is derived reactively from items via $effect, so no manual update needed
 		await loadItems();
 		toastStore.success({
 			title: 'Chart deleted',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatLevelDisplay, filterFiles } from './utils';
+import { formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
 import type { Tables } from '@dtx/common';
 
 describe('utils', () => {
@@ -191,6 +191,47 @@ describe('utils', () => {
 			const result = filterFiles(files, ['.dtx']);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe('song.dtx');
+		});
+	});
+
+	describe('buildPreviewUrl', () => {
+		it('should construct correct preview URL for valid inputs', () => {
+			const result = buildPreviewUrl('https://example.com/bucket', 1, 'jpg');
+			expect(result).toBe('https://example.com/bucket/1/preview.jpg');
+		});
+
+		it('should construct correct preview URL for mp3 extension', () => {
+			const result = buildPreviewUrl('https://example.com/bucket', 1, 'mp3');
+			expect(result).toBe('https://example.com/bucket/1/preview.mp3');
+		});
+
+		it('should normalize trailing slash in bucket URL', () => {
+			const result = buildPreviewUrl('https://example.com/bucket/', 1, 'jpg');
+			expect(result).toBe('https://example.com/bucket/1/preview.jpg');
+		});
+
+		it('should return null for undefined itemId', () => {
+			const result = buildPreviewUrl('https://example.com/bucket', undefined, 'jpg');
+			expect(result).toBeNull();
+		});
+
+		it('should return null for zero itemId', () => {
+			const result = buildPreviewUrl('https://example.com/bucket', 0, 'jpg');
+			expect(result).toBeNull();
+		});
+
+		it('should construct URL for negative itemId (truthy check)', () => {
+			const result = buildPreviewUrl('https://example.com/bucket', -1, 'jpg');
+			expect(result).toBe('https://example.com/bucket/-1/preview.jpg');
+		});
+
+		it('should handle different simfile IDs', () => {
+			expect(buildPreviewUrl('https://example.com/bucket', 42, 'jpg')).toBe(
+				'https://example.com/bucket/42/preview.jpg'
+			);
+			expect(buildPreviewUrl('https://example.com/bucket', 100, 'mp3')).toBe(
+				'https://example.com/bucket/100/preview.mp3'
+			);
 		});
 	});
 });

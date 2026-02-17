@@ -5,6 +5,7 @@
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
 	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 	import toastStore from '$lib/toaster';
 
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
@@ -23,8 +24,8 @@
 			onFileDelete(item.id);
 		} else {
 			toastStore.error({
-				title: 'Error',
-				description: 'Cannot delete chart: invalid chart ID'
+				title: get(_)('toast.error_title'),
+				description: get(_)('toast.cannot_delete_chart_invalid_id')
 			});
 		}
 	}
@@ -32,8 +33,8 @@
 	function openModal() {
 		if (item.id === undefined) {
 			toastStore.error({
-				title: 'Error',
-				description: 'Cannot delete chart: invalid chart ID'
+				title: get(_)('toast.error_title'),
+				description: get(_)('toast.cannot_delete_chart_invalid_id')
 			});
 			return;
 		}
@@ -65,14 +66,11 @@
 				</a>
 
 				<Button
-					onclick={() => {
-						if (item.id !== undefined) {
-							togglePublishChart(item.id, !!item.is_published);
-						}
-					}}
+					onclick={() => togglePublishChart(item.id!, !!item.is_published)}
 					variant="menuItem"
 					fullWidth
 					justify="start"
+					disabled={item.id === undefined}
 				>
 					{#snippet children()}{item.is_published ? 'Unpublish' : 'Publish'}{/snippet}
 				</Button>

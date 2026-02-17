@@ -128,7 +128,7 @@
 	}
 
 	async function onFileDelete(id: number) {
-		// Delete files from R2 bucket first
+		// API call handles complete deletion (R2 bucket files + database records)
 		try {
 			const response = await fetch(`/api/simFile/delete/${id}`, {
 				method: 'DELETE'

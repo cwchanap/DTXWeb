@@ -11,11 +11,21 @@ const uploadSchema = z.object({
 // Helper function to sanitize filename for safe storage keys
 // Preserves directory structure and non-ASCII characters while preventing path traversal
 export const sanitizeFilename = (filename: string): string => {
-	// Remove path traversal sequences (../ and ..\) while preserving legitimate paths
-	let sanitized = filename
-		.replace(/\.\.(?:\/|\\)/g, '') // Remove ../ and ..\ patterns
-		.replace(/^[/\\]+/, '') // Remove leading slashes/backslashes
-		.replace(/[/\\]+$/, ''); // Remove trailing slashes/backslashes
+	let sanitized = filename;
+
+	// Iteratively remove path traversal sequences until the string stabilizes
+	// This prevents bypass attacks like "....//path" which could reduce to "../path"
+	let previousSanitized: string;
+	do {
+		previousSanitized = sanitized;
+		sanitized = sanitized
+			.replace(/\.\.(?:\/|\\)/g, '') // Remove ../ and ..\ patterns
+			.replace(/^[/\\]+/, '') // Remove leading slashes/backslashes
+			.replace(/[/\\]+$/, ''); // Remove trailing slashes/backslashes
+	} while (sanitized !== previousSanitized);
+
+	// Collapse runs of dots followed by slashes (e.g., "....//" -> "")
+	sanitized = sanitized.replace(/\.{2,}([/\\]+)/g, '');
 
 	// Normalize path separators to forward slash for consistency
 	sanitized = sanitized.replace(/\\/g, '/');

@@ -9,20 +9,31 @@ const uploadSchema = z.object({
 });
 
 // Helper function to sanitize filename for safe storage keys
-const sanitizeFilename = (filename: string): string => {
-	// Remove path traversal sequences and path separators
+// Preserves directory structure and non-ASCII characters while preventing path traversal
+export const sanitizeFilename = (filename: string): string => {
+	// Remove path traversal sequences (../ and ..\) while preserving legitimate paths
 	let sanitized = filename
-		.replace(/\.\.[/\\]/g, '') // Remove ../ and ..\
-		.replace(/[/\\]/g, '_') // Replace path separators with underscore
-		.replace(/[^a-zA-Z0-9._-]/g, '_') // Allow only alphanumeric, dots, hyphens, underscores
-		.replace(/_+/g, '_'); // Collapse multiple consecutive underscores into a single underscore
+		.replace(/\.\.(?:\/|\\)/g, '') // Remove ../ and ..\ patterns
+		.replace(/^[/\\]+/, '') // Remove leading slashes/backslashes
+		.replace(/[/\\]+$/, ''); // Remove trailing slashes/backslashes
 
-	// Truncate to reasonable max length (255 chars for most filesystems)
-	const MAX_LENGTH = 255;
+	// Normalize path separators to forward slash for consistency
+	sanitized = sanitized.replace(/\\/g, '/');
+
+	// Remove null bytes and control characters (security measure)
+	// eslint-disable-next-line no-control-regex
+	sanitized = sanitized.replace(/[\x00-\x1f]/g, '');
+
+	// Truncate to reasonable max length (1024 chars for S3/object storage compatibility)
+	// We allow longer paths since we're preserving directory structure
+	const MAX_LENGTH = 1024;
 	if (sanitized.length > MAX_LENGTH) {
+		// Find the last path separator to try to preserve file extension
+		const lastSlash = sanitized.lastIndexOf('/');
 		const lastDot = sanitized.lastIndexOf('.');
-		// Only treat as extension if dot exists and is not at the start (e.g., ".gitignore")
-		if (lastDot > 0) {
+
+		// Only treat as extension if dot exists after the last slash and is not at the start of filename
+		if (lastDot > lastSlash && lastDot > lastSlash + 1) {
 			const ext = sanitized.slice(lastDot);
 			const nameWithoutExt = sanitized.slice(0, lastDot);
 			const allowedNameLen = Math.max(0, MAX_LENGTH - ext.length);
@@ -38,8 +49,8 @@ const sanitizeFilename = (filename: string): string => {
 		}
 	}
 
-	// Fallback if result is empty or just dots
-	if (!sanitized || sanitized.match(/^[._-]*$/)) {
+	// Fallback if result is empty or just dots/slashes
+	if (!sanitized || sanitized.match(/^[./\\_-]*$/)) {
 		sanitized = `file_${Date.now()}`;
 	}
 

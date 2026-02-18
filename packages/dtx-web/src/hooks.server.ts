@@ -195,29 +195,14 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 								}
 								return null;
 							},
+							// eslint-disable-next-line @typescript-eslint/no-unused-vars
 							setItem: (_key: string) => {
-								// Only handle auth-related keys
-								if (_key === 'sb-auth-token' || _key.startsWith('sb-')) {
-									// No-op: we don't persist bearer tokens
-									console.debug(
-										'Bearer auth storage: ignoring setItem for auth key',
-										{
-											key: _key
-										}
-									);
-								}
+								// No-op: we don't persist bearer tokens
+								// Intentionally ignores all setItem calls for this in-memory storage
 							},
-							removeItem: (key: string) => {
-								// Only handle auth-related keys
-								if (key === 'sb-auth-token' || key.startsWith('sb-')) {
-									// No-op: nothing to remove
-									console.debug(
-										'Bearer auth storage: ignoring removeItem for auth key',
-										{
-											key
-										}
-									);
-								}
+							// eslint-disable-next-line @typescript-eslint/no-unused-vars
+							removeItem: (_key: string) => {
+								// No-op: nothing to remove in this in-memory storage
 							}
 						}
 					},

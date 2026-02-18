@@ -17,11 +17,18 @@
 	let isLoading = $state(false);
 	let audio: HTMLAudioElement | null = $state(null);
 	let imageError = $state(false);
+	let audioError = $state(false);
 
 	// Reset imageError when previewUrl changes so new images can load
 	$effect(() => {
 		previewUrl;
 		imageError = false;
+	});
+
+	// Reset audioError when soundPreviewUrl changes
+	$effect(() => {
+		soundPreviewUrl;
+		audioError = false;
 	});
 
 	const handlePlayPause = async () => {
@@ -54,8 +61,14 @@
 					store.playingAudio.set(null);
 					isPlaying = false;
 				});
+				audio.addEventListener('error', () => {
+					console.error('Audio load error');
+					audioError = true;
+					isLoading = false;
+				});
 			} catch (error) {
 				console.error('Error playing audio:', error);
+				audioError = true;
 				isLoading = false;
 			}
 		}
@@ -100,7 +113,7 @@
 <div class="relative">
 	{#if preview}
 		{@render preview()}
-		{#if soundPreviewUrl}
+		{#if soundPreviewUrl && !audioError}
 			{@render playButton()}
 		{/if}
 	{:else}
@@ -134,7 +147,7 @@
 					onerror={() => (imageError = true)}
 				/>
 			{/if}
-			{#if soundPreviewUrl}
+			{#if soundPreviewUrl && !audioError}
 				{@render playButton()}
 			{/if}
 		</div>

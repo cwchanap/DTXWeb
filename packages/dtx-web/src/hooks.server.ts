@@ -196,7 +196,7 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 								return null;
 							},
 							// eslint-disable-next-line @typescript-eslint/no-unused-vars
-							setItem: (_key: string) => {
+							setItem: (_key: string, _value: string) => {
 								// No-op: we don't persist bearer tokens
 								// Intentionally ignores all setItem calls for this in-memory storage
 							},

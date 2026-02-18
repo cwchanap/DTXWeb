@@ -44,9 +44,9 @@ describe('SimFileService', () => {
 			];
 
 			mockInvoke.mockResolvedValue({
+				success: true,
 				data: mockData,
-				fromCache: false,
-				error: null
+				fromCache: false
 			});
 
 			const result = await simFileService.fetchUserSimFiles();
@@ -74,6 +74,7 @@ describe('SimFileService', () => {
 
 		it('should handle errors from main process', async () => {
 			mockInvoke.mockResolvedValue({
+				success: false,
 				data: [],
 				fromCache: false,
 				error: 'Authentication failed'
@@ -97,6 +98,7 @@ describe('SimFileService', () => {
 		it('should refresh user simFiles by clearing cache and fetching new data', async () => {
 			const mockData = [{ id: '1', title: 'Refreshed Song' }];
 			mockInvoke.mockResolvedValue({
+				success: true,
 				data: mockData,
 				fromCache: false
 			});

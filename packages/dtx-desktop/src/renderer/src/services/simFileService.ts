@@ -45,7 +45,7 @@ class SimFileService {
 				'fetch-user-simfiles'
 			)) as MainProcessSimFileResult;
 
-			if (!result.success) {
+			if (result.success === false) {
 				return {
 					data: result.data,
 					fromCache: result.fromCache,

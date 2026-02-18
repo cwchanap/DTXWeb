@@ -10,7 +10,7 @@ const uploadSchema = z.object({
 
 // Helper function to sanitize filename for safe storage keys
 // Preserves directory structure and non-ASCII characters while preventing path traversal
-export const sanitizeFilename = (filename: string): string => {
+export const _sanitizeFilename = (filename: string): string => {
 	let sanitized = filename;
 
 	// Iteratively remove path traversal sequences until the string stabilizes
@@ -147,7 +147,7 @@ export async function POST({
 		}
 
 		// Create the key path using sanitized filename to prevent path traversal
-		const sanitizedFilename = sanitizeFilename(validatedFile.name);
+		const sanitizedFilename = _sanitizeFilename(validatedFile.name);
 		const key = `${canonicalSimfileId}/${sanitizedFilename}`;
 
 		// Upload using R2 bucket binding (same as worker approach)

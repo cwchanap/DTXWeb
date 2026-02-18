@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeFilename } from './+server';
+import { _sanitizeFilename as sanitizeFilename } from './+server';
 
 describe('sanitizeFilename', () => {
 	it('preserves simple filenames', () => {

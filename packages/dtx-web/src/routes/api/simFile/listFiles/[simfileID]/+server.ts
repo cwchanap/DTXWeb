@@ -35,10 +35,10 @@ export async function GET({
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
-		// Verify that the user owns this simfile
+		// Verify that the user owns this simfile OR the simfile is published
 		const { data: simfile, error: simfileError } = await locals.supabase
 			.from('simfiles')
-			.select('user_id')
+			.select('user_id, is_published')
 			.eq('id', id)
 			.maybeSingle();
 
@@ -51,10 +51,10 @@ export async function GET({
 			return json({ error: 'Simfile not found' }, { status: 404 });
 		}
 
-		// Check if the authenticated user is the owner of the simfile
-		if (simfile.user_id !== user.id) {
+		// Allow access if user is owner OR simfile is published
+		if (simfile.user_id !== user.id && !simfile.is_published) {
 			logger.warn(
-				`Unauthorized list attempt: user ${user.id} tried to list files for simfile ${canonicalSimfileId} owned by ${simfile.user_id}`
+				`Unauthorized list attempt: user ${user.id} tried to list files for unpublished simfile ${canonicalSimfileId} owned by ${simfile.user_id}`
 			);
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}

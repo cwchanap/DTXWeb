@@ -4,6 +4,20 @@ const CACHE_KEY = 'simfiles_cache';
 const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+// Match the discriminated union type from main process
+type MainProcessSimFileResult =
+	| {
+			success: true;
+			data: SimfileWithDtx[];
+			fromCache: boolean;
+	  }
+	| {
+			success: false;
+			error: string;
+			data: SimfileWithDtx[];
+			fromCache: boolean;
+	  };
+
 export interface SimFileServiceResult {
 	data: SimfileWithDtx[];
 	fromCache: boolean;
@@ -27,12 +41,14 @@ class SimFileService {
 			}
 
 			// Call main process to fetch simFiles
-			const result = await window.electron.ipcRenderer.invoke('fetch-user-simfiles');
+			const result = (await window.electron.ipcRenderer.invoke(
+				'fetch-user-simfiles'
+			)) as MainProcessSimFileResult;
 
-			if (result.error) {
+			if (!result.success) {
 				return {
-					data: result.data ?? [],
-					fromCache: false,
+					data: result.data,
+					fromCache: result.fromCache,
 					error: result.error
 				};
 			}
@@ -42,7 +58,7 @@ class SimFileService {
 
 			return {
 				data: result.data,
-				fromCache: false
+				fromCache: result.fromCache
 			};
 		} catch (error) {
 			console.error('Error fetching simFiles:', error);

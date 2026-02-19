@@ -295,26 +295,18 @@ if (!gotTheLock) {
 			return await fetchUserSimFiles();
 		});
 
-		ipcMain.handle('get-preview-url', async (_event, simfileId: string) => {
-			if (!simfileId || simfileId === '' || simfileId === '0') {
-				throw new Error('Invalid simfileId: must be a non-empty string');
+		ipcMain.handle('get-preview-url', async (_event, simfileId: number) => {
+			if (!Number.isSafeInteger(simfileId) || simfileId <= 0) {
+				throw new Error(`Invalid simfileId: ${simfileId} must be a positive integer`);
 			}
-			const id = Number(simfileId);
-			if (Number.isNaN(id) || id <= 0) {
-				throw new Error(`Invalid simfileId: ${simfileId} is not a valid positive number`);
-			}
-			return await getPreviewUrl(id);
+			return await getPreviewUrl(simfileId);
 		});
 
-		ipcMain.handle('get-sound-preview-url', async (_event, simfileId: string) => {
-			if (!simfileId || simfileId === '' || simfileId === '0') {
-				throw new Error('Invalid simfileId: must be a non-empty string');
+		ipcMain.handle('get-sound-preview-url', async (_event, simfileId: number) => {
+			if (!Number.isSafeInteger(simfileId) || simfileId <= 0) {
+				throw new Error(`Invalid simfileId: ${simfileId} must be a positive integer`);
 			}
-			const id = Number(simfileId);
-			if (Number.isNaN(id) || id <= 0) {
-				throw new Error(`Invalid simfileId: ${simfileId} is not a valid positive number`);
-			}
-			return await getSoundPreviewUrl(id);
+			return await getSoundPreviewUrl(simfileId);
 		});
 
 		// Handle loading asset files from API

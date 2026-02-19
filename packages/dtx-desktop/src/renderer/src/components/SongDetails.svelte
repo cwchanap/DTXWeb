@@ -209,6 +209,7 @@
 	let isUploading = $state(false);
 	let uploadError = $state<string | null>(null);
 	let uploadSuccess = $state(false);
+	let uploadWarnings = $state<string[]>([]);
 
 	// Reactive form values that mirror the ChartDetail component's state
 	let displayId = $state(0);
@@ -363,6 +364,7 @@
 		isUploading = true;
 		uploadError = null;
 		uploadSuccess = false;
+		uploadWarnings = [];
 
 		try {
 			// Create plain object without any Svelte reactivity
@@ -406,6 +408,12 @@
 
 				// Update the workspace store
 				workspaceStore.linkSimFileToFolder(song.path, linkedSimfile);
+
+				// Surface any preview upload warnings (e.g. image/audio failed to upload)
+				if (result.warnings && result.warnings.length > 0) {
+					console.warn('Preview upload warnings:', result.warnings);
+					uploadWarnings = result.warnings;
+				}
 
 				// Hide success message after 3 seconds
 				setTimeout(() => {
@@ -1067,6 +1075,21 @@
 							<span class="text-sm text-red-800 dark:text-red-200">
 								Upload failed: {uploadError}
 							</span>
+						</div>
+					</div>
+				{/if}
+
+				{#if uploadWarnings.length > 0 && $authStore.isAuthenticated}
+					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+						<div class="flex flex-col gap-1">
+							<span class="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+								Song uploaded, but some preview files could not be uploaded:
+							</span>
+							{#each uploadWarnings as warning}
+								<span class="text-xs text-yellow-700 dark:text-yellow-300"
+									>{warning}</span
+								>
+							{/each}
 						</div>
 					</div>
 				{/if}

@@ -163,7 +163,13 @@ async function uploadPreviewFile(
 			});
 
 			if (!response.ok) {
-				const error = `Failed to upload ${filename}: HTTP ${response.status}`;
+				let responseBody = '';
+				try {
+					responseBody = await response.text();
+				} catch {
+					// ignore body read failure
+				}
+				const error = `Failed to upload ${filename}: HTTP ${response.status}${responseBody ? ` - ${responseBody}` : ''}`;
 				console.error(error);
 				return { success: false, error };
 			}

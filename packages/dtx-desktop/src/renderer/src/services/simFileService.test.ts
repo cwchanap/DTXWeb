@@ -85,6 +85,23 @@ describe('SimFileService', () => {
 			expect(result.error).toBe('Authentication failed');
 			expect(result.data).toEqual([]);
 		});
+
+		it('clears corrupt cache entry and falls through to IPC on JSON parse failure', async () => {
+			localStorageMock.getItem
+				.mockReturnValueOnce('NOT_VALID_JSON')
+				.mockReturnValueOnce(Date.now().toString());
+
+			mockInvoke.mockResolvedValue({
+				success: true,
+				data: [],
+				fromCache: false
+			});
+
+			await simFileService.fetchUserSimFiles();
+
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache');
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_timestamp');
+		});
 	});
 
 	describe('cache management', () => {

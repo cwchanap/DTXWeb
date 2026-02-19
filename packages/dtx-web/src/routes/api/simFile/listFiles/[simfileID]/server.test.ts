@@ -31,17 +31,36 @@ const createMockRequest = (headers?: Headers): Request => {
 
 // Mock R2 Bucket
 const createMockBucket = (
-	objects: Array<{ key: string; size?: number; uploaded?: Date }> = []
-): R2Bucket =>
-	({
-		list: vi.fn().mockResolvedValue({
-			objects: objects.map((obj) => ({
-				key: obj.key,
-				size: obj.size ?? 1024,
-				uploaded: obj.uploaded || new Date()
-			}))
+	objects: Array<{ key: string; size?: number; uploaded?: Date }> = [],
+	secondPageObjects?: Array<{ key: string; size?: number; uploaded?: Date }>
+): R2Bucket => {
+	let callCount = 0;
+	return {
+		list: vi.fn().mockImplementation(() => {
+			callCount++;
+			if (secondPageObjects && callCount === 1) {
+				return Promise.resolve({
+					objects: objects.map((obj) => ({
+						key: obj.key,
+						size: obj.size ?? 1024,
+						uploaded: obj.uploaded || new Date()
+					})),
+					truncated: true,
+					cursor: 'page2-cursor'
+				});
+			}
+			const page = secondPageObjects && callCount === 2 ? secondPageObjects : objects;
+			return Promise.resolve({
+				objects: page.map((obj) => ({
+					key: obj.key,
+					size: obj.size ?? 1024,
+					uploaded: obj.uploaded || new Date()
+				})),
+				truncated: false
+			});
 		})
-	}) as unknown as R2Bucket;
+	} as unknown as R2Bucket;
+};
 
 // Mock Supabase client
 const createMockSupabaseClient = (
@@ -271,7 +290,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(data.files[1].key).toBe('123/file2.wav');
 		expect(data.files[1].size).toBe(2048);
 
-		expect(mockBucket.list).toHaveBeenCalledWith({ prefix: '123/' });
+		expect(mockBucket.list).toHaveBeenCalledWith({
+			prefix: '123/',
+			limit: 1000,
+			cursor: undefined
+		});
 	});
 
 	it('returns empty array when no files exist', async () => {
@@ -384,5 +407,35 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(data.files).toHaveLength(2);
 		expect(data.files[0].fileName).toBe('file1.dtx');
 		expect(data.files[1].fileName).toBe('file2.wav');
+	});
+
+	it('returns all files across paginated R2 responses', async () => {
+		const page1Objects = [{ key: '123/file1.dtx', size: 1024 }];
+		const page2Objects = [{ key: '123/file2.wav', size: 2048 }];
+		const mockBucket = createMockBucket(page1Objects, page2Objects);
+
+		const simfileData = { id: 123, user_id: 'test-user-id', is_published: false };
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.files).toHaveLength(2);
+		expect(data.files[0].fileName).toBe('file1.dtx');
+		expect(data.files[1].fileName).toBe('file2.wav');
+		expect(mockBucket.list).toHaveBeenCalledTimes(2);
 	});
 });

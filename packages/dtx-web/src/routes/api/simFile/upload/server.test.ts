@@ -77,6 +77,39 @@ describe('/api/simFile/upload', () => {
 		vi.restoreAllMocks();
 	});
 
+	it('returns 400 when file exceeds 50MB size limit', async () => {
+		const oversizedFile = new File(['x'], 'test.dtx', { type: 'application/octet-stream' });
+		Object.defineProperty(oversizedFile, 'size', { value: 51 * 1024 * 1024 });
+
+		const formData = new FormData();
+		formData.append('file', oversizedFile);
+		formData.append('simFileId', '123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: createMockBucket() } },
+			locals: {
+				supabase: createMockSupabaseClient({ user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid input data');
+	});
+
 	it('returns 401 when user is not authenticated', async () => {
 		const mockBucket = createMockBucket();
 		const formData = new FormData();

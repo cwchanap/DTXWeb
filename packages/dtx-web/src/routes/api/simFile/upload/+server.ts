@@ -3,8 +3,10 @@ import { z } from 'zod';
 import logger from '$lib/server/logger';
 
 // Validation schema for upload form data
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
 const uploadSchema = z.object({
-	file: z.instanceof(File),
+	file: z.instanceof(File).refine((f) => f.size <= MAX_FILE_SIZE, 'File too large (max 50MB)'),
 	simFileId: z.string().min(1, 'SimFile ID is required')
 });
 

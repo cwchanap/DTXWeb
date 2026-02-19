@@ -45,6 +45,7 @@
 		simfileId?: string;
 		data?: SimfileWithDtx;
 		error?: string;
+		warnings?: string[];
 	};
 
 	type UpdateSimfileResult = {

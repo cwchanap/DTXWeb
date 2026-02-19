@@ -99,6 +99,9 @@ class SimFileService {
 			return JSON.parse(cachedData);
 		} catch (error) {
 			console.error('Error reading cache:', error);
+			// Clear the corrupt entry so it self-heals on next call
+			localStorage.removeItem(cacheKey);
+			localStorage.removeItem(timestampKey);
 			return null;
 		}
 	}

@@ -593,6 +593,57 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		expect(data.partialDeletion).toBe(true);
 	});
 
+	it('successfully deletes files across multiple paginated R2 responses', async () => {
+		let listCallCount = 0;
+		const mockBucket = {
+			list: vi.fn().mockImplementation(() => {
+				listCallCount++;
+				if (listCallCount === 1) {
+					return Promise.resolve({
+						objects: [{ key: '123/file1.dtx' }],
+						truncated: true,
+						cursor: 'page2-cursor'
+					});
+				}
+				return Promise.resolve({
+					objects: [{ key: '123/file2.wav' }],
+					truncated: false
+				});
+			}),
+			delete: vi.fn().mockResolvedValue(undefined)
+		} as unknown as R2Bucket;
+
+		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
+		const simfileData = { id: 123, user_id: 'test-user-id' };
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.total).toBe(2);
+		expect(data.deleted).toBe(2);
+		expect(data.failed).toBe(0);
+		expect(data.partialDeletion).toBe(false);
+		expect(mockBucket.list).toHaveBeenCalledTimes(2);
+		expect(mockBucket.list).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ cursor: 'page2-cursor' })
+		);
+	});
+
 	it('returns 500 when list is truncated', async () => {
 		const mockObjects = [{ key: '123/file1.dtx' }];
 		const mockBucket = createMockBucket(mockObjects, true);

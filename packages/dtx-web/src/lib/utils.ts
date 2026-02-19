@@ -29,14 +29,14 @@ export function filterFiles(files: FileList | File[], filters: string[]) {
  * @param simfileBucketUrl - The base bucket URL (e.g., 'https://example.com/bucket')
  * @param itemId - The simfile ID
  * @param ext - The file extension (e.g., 'jpg', 'mp3')
- * @returns The full preview URL or null if itemId is undefined or falsy
+ * @returns The full preview URL or null if itemId is undefined, zero, or negative
  */
 export function buildPreviewUrl(
 	simfileBucketUrl: string,
 	itemId: number | undefined,
 	ext: string
 ): string | null {
-	if (!itemId) {
+	if (itemId === undefined || itemId <= 0) {
 		return null;
 	}
 	const normalizedBucketUrl = simfileBucketUrl.replace(/\/$/, '');

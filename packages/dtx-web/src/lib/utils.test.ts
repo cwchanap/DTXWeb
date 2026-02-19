@@ -220,9 +220,9 @@ describe('utils', () => {
 			expect(result).toBeNull();
 		});
 
-		it('should construct URL for negative itemId (truthy check)', () => {
+		it('should return null for negative itemId', () => {
 			const result = buildPreviewUrl('https://example.com/bucket', -1, 'jpg');
-			expect(result).toBe('https://example.com/bucket/-1/preview.jpg');
+			expect(result).toBeNull();
 		});
 
 		it('should handle different simfile IDs', () => {

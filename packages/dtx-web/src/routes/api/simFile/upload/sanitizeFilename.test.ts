@@ -29,6 +29,15 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('..\\audio\\song.wav')).toBe('audio/song.wav');
 	});
 
+	it('handles multi-dot bypass sequences that collapse to path traversal', () => {
+		// "....//path" collapses to "../path" in a single-pass replacement; iterative loop prevents it
+		expect(sanitizeFilename('....//secret.txt')).toBe('secret.txt');
+		// "..../path" (4 dots + 1 slash) removes the inner "../" leaving "..secret.txt" — safe, no slash after dots
+		expect(sanitizeFilename('..../secret.txt')).toBe('..secret.txt');
+		// ".....\\path" (4 dots + 2 backslashes) iteratively collapses to "secret.txt"
+		expect(sanitizeFilename('....\\\\secret.txt')).toBe('secret.txt');
+	});
+
 	it('preserves non-ASCII characters', () => {
 		expect(sanitizeFilename('歌曲.wav')).toBe('歌曲.wav');
 		expect(sanitizeFilename('ミュージック.mp3')).toBe('ミュージック.mp3');

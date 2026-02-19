@@ -230,7 +230,8 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 
 		const simfileData = {
 			id: 123,
-			user_id: 'different-user-id'
+			user_id: 'different-user-id',
+			is_published: false
 		};
 
 		const response = await GET({
@@ -437,5 +438,68 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(data.files[0].fileName).toBe('file1.dtx');
 		expect(data.files[1].fileName).toBe('file2.wav');
 		expect(mockBucket.list).toHaveBeenCalledTimes(2);
+	});
+
+	it('returns 200 when simfile is published and requesting user is not the owner', async () => {
+		const mockObjects = [
+			{ key: '123/file1.dtx', size: 1024, uploaded: new Date('2024-01-01') }
+		];
+		const mockBucket = createMockBucket(mockObjects);
+
+		// Owned by a different user, but published
+		const simfileData = {
+			id: 123,
+			user_id: 'different-owner-id',
+			is_published: true
+		};
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.files).toHaveLength(1);
+		expect(data.files[0].fileName).toBe('file1.dtx');
+	});
+
+	it('returns 403 when simfile is unpublished and requesting user is not the owner', async () => {
+		const mockBucket = createMockBucket();
+
+		const simfileData = {
+			id: 123,
+			user_id: 'different-owner-id',
+			is_published: false
+		};
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(403);
+		const data = await response.json();
+		expect(data.error).toBe('Forbidden');
 	});
 });

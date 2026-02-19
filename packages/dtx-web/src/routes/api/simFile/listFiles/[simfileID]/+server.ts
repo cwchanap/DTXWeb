@@ -68,16 +68,40 @@ export async function GET({
 			return json({ error: 'Bucket not available' }, { status: 500 });
 		}
 
-		// List objects using R2 bucket binding with simfileID as prefix
-		const objects = await bucket.list({ prefix: `${canonicalSimfileId}/` });
+		// List all files with pagination (R2 returns a limited number of objects per call)
+		let allObjects: { key: string; size: number; uploaded: Date }[] = [];
+		let cursor: string | undefined;
+		let isTruncated = true;
 
-		// Extract file names from the response (same logic as before)
-		const files = (objects.objects || [])
+		while (isTruncated) {
+			const listResult = await bucket.list({
+				prefix: `${canonicalSimfileId}/`,
+				limit: 1000,
+				cursor
+			});
+
+			const objects = listResult.objects ?? [];
+			allObjects = allObjects.concat(objects);
+
+			isTruncated = listResult.truncated === true;
+			if (isTruncated) {
+				const nextCursor = (listResult as { cursor?: string }).cursor;
+				if (!nextCursor || nextCursor === cursor) {
+					logger.warn(
+						`Truncated R2 list response without valid cursor for simfile ${canonicalSimfileId}`
+					);
+					isTruncated = false;
+				} else {
+					cursor = nextCursor;
+				}
+			}
+		}
+
+		// Extract file names from the response
+		const files = allObjects
 			.map((file) => {
-				// Remove the prefix from the key to get just the filename
 				const key = file.key || '';
 				const fileName = key.replace(`${canonicalSimfileId}/`, '');
-
 				return {
 					fileName,
 					key,
@@ -85,11 +109,9 @@ export async function GET({
 					lastModified: file.uploaded
 				};
 			})
-			.filter((file) => file.fileName !== ''); // Filter out the directory itself if it appears
+			.filter((file) => file.fileName !== '');
 
-		return json({
-			files
-		});
+		return json({ files });
 	} catch (error) {
 		logger.error('Error listing files:', error);
 		return json({ error: 'Failed to list files' }, { status: 500 });

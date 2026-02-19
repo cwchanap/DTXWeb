@@ -25,10 +25,21 @@
 		imageError = false;
 	});
 
-	// Reset audioError when soundPreviewUrl changes
+	// Reset audioError and clean up audio when soundPreviewUrl changes
 	$effect(() => {
 		soundPreviewUrl;
 		audioError = false;
+		// Clean up existing audio playback
+		if (audio) {
+			audio.pause();
+			audio.currentTime = 0;
+			audio.src = '';
+			audio.load();
+		}
+		if (isPlaying) {
+			isPlaying = false;
+			store.playingAudio.set(null);
+		}
 	});
 
 	const handlePlayPause = async () => {
@@ -65,11 +76,15 @@
 					console.error('Audio load error');
 					audioError = true;
 					isLoading = false;
+					isPlaying = false;
+					store.playingAudio.set(null);
 				});
 			} catch (error) {
 				console.error('Error playing audio:', error);
 				audioError = true;
 				isLoading = false;
+				isPlaying = false;
+				store.playingAudio.set(null);
 			}
 		}
 	};

@@ -143,7 +143,12 @@ class SimFileService {
 	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.jpg
 	 */
 	async getPreviewUrl(simfileId: number): Promise<string> {
-		return await window.electron.ipcRenderer.invoke('get-preview-url', simfileId);
+		try {
+			return await window.electron.ipcRenderer.invoke('get-preview-url', simfileId);
+		} catch (error) {
+			console.error('Failed to get preview URL for simfile', simfileId, error);
+			return '';
+		}
 	}
 
 	/**
@@ -151,7 +156,12 @@ class SimFileService {
 	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.mp3
 	 */
 	async getSoundPreviewUrl(simfileId: number): Promise<string> {
-		return await window.electron.ipcRenderer.invoke('get-sound-preview-url', simfileId);
+		try {
+			return await window.electron.ipcRenderer.invoke('get-sound-preview-url', simfileId);
+		} catch (error) {
+			console.error('Failed to get sound preview URL for simfile', simfileId, error);
+			return '';
+		}
 	}
 }
 

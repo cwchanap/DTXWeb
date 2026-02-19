@@ -682,4 +682,39 @@ describe('/api/simFile/upload', () => {
 		const data = await response.json();
 		expect(data.error).toBe('Forbidden');
 	});
+
+	it('returns 500 when R2 bucket.put throws an exception', async () => {
+		const throwingBucket = {
+			put: vi.fn().mockRejectedValue(new Error('R2 connection error'))
+		} as unknown as R2Bucket;
+
+		const file = new File(['content'], 'test.dtx', { type: 'application/octet-stream' });
+		const formData = new FormData();
+		formData.append('file', file);
+		formData.append('simFileId', '123');
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: throwingBucket } },
+			locals: {
+				supabase: createMockSupabaseClient({ user_id: 'test-user-id' }, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.error).toBe('Internal server error');
+	});
 });

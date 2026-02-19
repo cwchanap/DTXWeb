@@ -19,7 +19,8 @@ const decodeJwtPayload = (token: string): { exp?: number } => {
 		}
 		const jsonPayload = atob(base64);
 		return JSON.parse(jsonPayload);
-	} catch {
+	} catch (err) {
+		console.warn('decodeJwtPayload: failed to parse JWT payload', err);
 		return {};
 	}
 };

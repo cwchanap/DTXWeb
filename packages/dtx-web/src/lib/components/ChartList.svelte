@@ -148,6 +148,18 @@
 				});
 				return; // Abort if R2 deletion fails
 			}
+
+			// Check if some R2 files failed to delete (partial deletion)
+			const deleteResult = await response.json();
+			if (deleteResult.partialDeletion) {
+				console.warn('Partial deletion: some R2 files could not be removed', deleteResult);
+				await loadItems();
+				toastStore.error({
+					title: 'Chart deleted from library, but some files may remain in storage. Please contact support.',
+					duration: 6000
+				});
+				return;
+			}
 		} catch (error) {
 			console.error('Failed to delete R2 files:', error);
 			toastStore.error({

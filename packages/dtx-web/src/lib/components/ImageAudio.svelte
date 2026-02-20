@@ -44,21 +44,29 @@
 			store.playingAudio.set(null);
 		}
 
-		// Pre-check if audio exists
+		// Pre-check if audio exists using HEAD request for reliability
+		let cancelled = false;
 		if (soundPreviewUrl) {
-			const checkAudio = new Audio(soundPreviewUrl);
-			checkAudio.preload = 'metadata';
-			checkAudio.oncanplaythrough = () => {
-				audioExists = true;
-				checkAudio.remove();
-			};
-			checkAudio.onerror = () => {
-				audioExists = false;
-				checkAudio.remove();
-			};
+			// Use fetch HEAD request - more reliable than Audio element events
+			fetch(soundPreviewUrl, { method: 'HEAD' })
+				.then((response) => {
+					if (!cancelled) {
+						audioExists = response.ok;
+					}
+				})
+				.catch(() => {
+					if (!cancelled) {
+						audioExists = false;
+					}
+				});
 		} else {
 			audioExists = false;
 		}
+
+		// Cleanup: prevent stale updates if URL changes before fetch completes
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	const handlePlayPause = async () => {

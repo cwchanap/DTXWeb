@@ -502,4 +502,80 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const data = await response.json();
 		expect(data.error).toBe('Forbidden');
 	});
+
+	it('returns 500 when R2 list is truncated but no cursor is provided', async () => {
+		// Mock bucket that returns truncated without a cursor
+		const mockBucket = {
+			list: vi.fn().mockResolvedValue({
+				objects: [{ key: '123/file1.dtx', size: 1024, uploaded: new Date() }],
+				truncated: true
+				// No cursor provided
+			})
+		} as unknown as R2Bucket;
+
+		const simfileData = {
+			id: 123,
+			user_id: 'test-user-id',
+			is_published: false
+		};
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.error).toBe('Failed to list all files: pagination cursor unavailable');
+	});
+
+	it('returns 500 when R2 list cursor is the same as previous cursor (infinite loop)', async () => {
+		let callCount = 0;
+		// Mock bucket that returns same cursor repeatedly
+		const mockBucket = {
+			list: vi.fn().mockImplementation(() => {
+				callCount++;
+				return Promise.resolve({
+					objects: [{ key: '123/file1.dtx', size: 1024, uploaded: new Date() }],
+					truncated: true,
+					cursor: 'same-cursor' // Same cursor every time
+				});
+			})
+		} as unknown as R2Bucket;
+
+		const simfileData = {
+			id: 123,
+			user_id: 'test-user-id',
+			is_published: false
+		};
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			locals: {
+				supabase: createMockSupabaseClient(simfileData, null),
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(500);
+		const data = await response.json();
+		expect(data.error).toBe('Failed to list all files: pagination cursor unavailable');
+	});
 });

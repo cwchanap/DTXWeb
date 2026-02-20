@@ -91,6 +91,11 @@ export async function GET({
 						`Truncated R2 list response without valid cursor for simfile ${canonicalSimfileId}`
 					);
 					isTruncated = false;
+					// Return error to indicate incomplete results - caller should retry
+					return json(
+						{ error: 'Failed to list all files: pagination cursor unavailable' },
+						{ status: 500 }
+					);
 				} else {
 					cursor = nextCursor;
 				}

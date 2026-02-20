@@ -18,6 +18,8 @@
 	let audio: HTMLAudioElement | null = $state(null);
 	let imageError = $state(false);
 	let audioError = $state(false);
+	// null = checking, true = exists, false = doesn't exist
+	let audioExists = $state<boolean | null>(null);
 
 	// Reset imageError when previewUrl changes so new images can load
 	$effect(() => {
@@ -25,10 +27,11 @@
 		imageError = false;
 	});
 
-	// Reset audioError and clean up audio when soundPreviewUrl changes
+	// Check audio existence and reset state when soundPreviewUrl changes
 	$effect(() => {
 		soundPreviewUrl;
 		audioError = false;
+		audioExists = null;
 		// Clean up existing audio playback
 		if (audio) {
 			audio.pause();
@@ -39,6 +42,22 @@
 		if (isPlaying) {
 			isPlaying = false;
 			store.playingAudio.set(null);
+		}
+
+		// Pre-check if audio exists
+		if (soundPreviewUrl) {
+			const checkAudio = new Audio(soundPreviewUrl);
+			checkAudio.preload = 'metadata';
+			checkAudio.oncanplaythrough = () => {
+				audioExists = true;
+				checkAudio.remove();
+			};
+			checkAudio.onerror = () => {
+				audioExists = false;
+				checkAudio.remove();
+			};
+		} else {
+			audioExists = false;
 		}
 	});
 
@@ -128,7 +147,7 @@
 <div class="relative">
 	{#if preview}
 		{@render preview()}
-		{#if soundPreviewUrl && !audioError}
+		{#if audioExists === true && !audioError}
 			{@render playButton()}
 		{/if}
 	{:else}
@@ -162,7 +181,7 @@
 					onerror={() => (imageError = true)}
 				/>
 			{/if}
-			{#if soundPreviewUrl && !audioError}
+			{#if audioExists === true && !audioError}
 				{@render playButton()}
 			{/if}
 		</div>

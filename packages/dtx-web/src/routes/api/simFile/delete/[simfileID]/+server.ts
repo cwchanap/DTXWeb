@@ -74,7 +74,7 @@ export async function DELETE({
 		while (isTruncated) {
 			const listResult = await bucket.list({
 				prefix: `${id}/`,
-				limit: 10000,
+				limit: 1000, // R2 API maximum is 1000 per request
 				cursor
 			});
 

@@ -1,9 +1,61 @@
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import logger from '$lib/server/logger';
+import { env } from '$env/dynamic/private';
+import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 
 // Validation schema for upload form data
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
+/**
+ * Purges the Cloudflare cache for a specific file URL after upload.
+ * This ensures that when a file is overwritten, clients get the new version immediately
+ * instead of being served stale content from the cache.
+ */
+export async function _purgeCacheForFile(fileUrl: string): Promise<boolean> {
+	const zoneId = env.CLOUDFLARE_ZONE_ID;
+	const apiToken = env.CLOUDFLARE_API_TOKEN;
+
+	// If credentials aren't configured, skip cache purge (log warning)
+	if (!zoneId || !apiToken) {
+		logger.warn(
+			'Cloudflare cache purge skipped: CLOUDFLARE_ZONE_ID or CLOUDFLARE_API_TOKEN not configured'
+		);
+		return false;
+	}
+
+	try {
+		const response = await fetch(
+			`https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${apiToken}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ files: [fileUrl] })
+			}
+		);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			logger.error(`Failed to purge cache for ${fileUrl}: ${response.status} ${errorText}`);
+			return false;
+		}
+
+		const result = (await response.json()) as { success?: boolean; errors?: string[] };
+		if (result.success) {
+			logger.info(`Successfully purged cache for: ${fileUrl}`);
+			return true;
+		} else {
+			logger.error(`Cache purge failed for ${fileUrl}:`, result.errors);
+			return false;
+		}
+	} catch (error) {
+		logger.error(`Error purging cache for ${fileUrl}:`, error);
+		return false;
+	}
+}
 
 const uploadSchema = z.object({
 	file: z.instanceof(File).refine((f) => f.size <= MAX_FILE_SIZE, 'File too large (max 50MB)'),
@@ -166,6 +218,14 @@ export async function POST({
 		}
 
 		logger.info(`Successfully uploaded file: ${validatedFile.name} to ${key}`);
+
+		// Purge the cache for this file to ensure clients get the new version
+		// This is especially important when overwriting existing files
+		const fileUrl = `${PUBLIC_SIMFILE_BUCKET_URL}/${key}`;
+		// Fire-and-forget cache purge - don't block the response
+		_purgeCacheForFile(fileUrl).catch((err: unknown) => {
+			logger.error('Unexpected error in cache purge:', err);
+		});
 
 		const uploadResult = {
 			fileName: validatedFile.name,

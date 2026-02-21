@@ -180,13 +180,15 @@ describe('ChartListItem Component Logic', () => {
 	});
 
 	describe('Menu Layering Regression', () => {
-		it('sets Popover zIndex to keep menu clickable above card content', () => {
+		it('sets Popover zIndex higher than card stacking layer', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartListItem.svelte'),
 				'utf-8'
 			);
+			const popoverZIndexMatch = source.match(/<Popover[\s\S]*?zIndex="(\d+)"/);
 
-			expect(source).toMatch(/<Popover[\s\S]*zIndex="120"/);
+			expect(popoverZIndexMatch).not.toBeNull();
+			expect(Number(popoverZIndexMatch?.[1])).toBeGreaterThan(30);
 		});
 
 		it('keeps card overflow visible so dropdown is not clipped', () => {

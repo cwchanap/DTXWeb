@@ -47,8 +47,9 @@
 	<Popover
 		open={popoverOpen}
 		onOpenChange={(details) => (popoverOpen = details.open)}
+		zIndex="120"
 		positioning={{ placement: 'bottom-start' }}
-		contentBase="w-48 p-0 z-50 rounded-sm border border-gray-300 bg-white shadow-lg"
+		contentBase="w-48 p-0 rounded-sm border border-gray-300 bg-white shadow-lg"
 	>
 		{#snippet trigger()}
 			<Button variant="ghost" size="icon" padding="1">

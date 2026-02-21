@@ -15,49 +15,49 @@ Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monore
 
 ### Package-specific commands
 
-Use `-w={package}` flag to run commands in specific packages:
+Use `--filter={package}` flag to run commands in specific packages:
 
 ```bash
 # Building (only build common if modified)
-npm run build -w=@dtx/common    # Build shared package ONLY if you modified it
+bun run --filter=@dtx/common build    # Build shared package ONLY if you modified it
 
 # Testing
-npm run test -w=dtx-web         # Run web app tests
-npm run test -w=dtx-web -- TestFile.test.ts  # Run specific test
-npm run test -w=dtx-desktop     # Run desktop app tests
-npm run test -w=@dtx/common     # Run common package tests
-npm run test -w=@dtx/ui-components  # Run UI components tests
+bun run --filter=dtx-web test         # Run web app tests
+bun run --filter=dtx-web test -- TestFile.test.ts  # Run specific test
+bun run --filter=dtx-desktop test     # Run desktop app tests
+bun run --filter=@dtx/common test     # Run common package tests
+bun run --filter=@dtx/ui-components test  # Run UI components tests
 
 # Type checking
-npm run check -w=dtx-web        # TypeScript/Svelte check
-npm run check -w=dtx-desktop    # Desktop TypeScript check
-npm run typecheck:node -w=dtx-desktop  # Desktop Node.js type check
+bun run --filter=dtx-web check        # TypeScript/Svelte check
+bun run --filter=dtx-desktop check    # Desktop TypeScript check
+bun run --filter=dtx-desktop typecheck:node  # Desktop Node.js type check
 ```
 
 ### Project-wide commands
 
 ```bash
 # Development servers
-npm run dev                     # Run both web and desktop dev servers
-npm run dev:web                 # Run web app only (port 5173)
-npm run dev:desktop             # Run desktop app only
-npm run dev:common              # Run common package dev server (port 5175)
-npm run dev:all                 # Run all dev servers
+bun run dev                     # Run both web and desktop dev servers
+bun run dev:web                 # Run web app only (port 5173)
+bun run dev:desktop             # Run desktop app only
+bun run dev:common              # Run common package dev server (port 5175)
+bun run dev:all                 # Run all dev servers
 
 # Linting & formatting
-npm run lint                    # Check formatting and lint
-npm run format                  # Auto-format code
+bun run lint                    # Check formatting and lint
+bun run format                  # Auto-format code
 
 # Building and testing
-npm run build                   # Build all packages
-npm run test                    # Run tests for all packages
-npm run test:coverage           # Run tests with coverage
+bun run build                   # Build all packages
+bun run test                    # Run tests for all packages
+bun run test:coverage           # Run tests with coverage
 
 # Supabase type generation
-npm run gen-types              # Generate TypeScript types from Supabase schema
+bun run gen-types              # Generate TypeScript types from Supabase schema
 
 # Clean dependencies
-npm run clean                  # Remove all node_modules
+bun run clean                  # Remove all node_modules
 ```
 
 ## Architecture
@@ -69,7 +69,7 @@ npm run clean                  # Remove all node_modules
 - **Styling**: TailwindCSS 4.x + Skeleton UI components
 - **Backend**: Supabase (auth/database) + Cloudflare Workers (API)
 - **Desktop**: Electron 35.x with Svelte frontend
-- **Build**: Vite 6.x + npm workspaces
+- **Build**: Vite 6.x + bun workspaces
 
 ### DTX File Processing
 
@@ -158,7 +158,7 @@ Check `__mocks__/` folder before creating new mocks:
 
 ### Testing Commands
 
-- Use workspace-specific: `npm test -w=dtx-web -- TestFile.test.ts`
+- Use workspace-specific: `bun run --filter=dtx-web test -- TestFile.test.ts`
 - Vitest with jsdom environment
 - Global mocks auto-loaded
 
@@ -220,8 +220,8 @@ import { Button } from '@dtx/common/components';
 
 ## Environment Setup
 
-- Node.js v22.14.0 (see `.nvmrc`)
-- Uses npm workspaces for monorepo management
+- Bun v1.3.9 (package manager and runtime)
+- Uses bun workspaces for monorepo management
 - Turborepo for build orchestration and caching
 - Uses husky + lint-staged for git hooks
 - Prettier for code formatting (tabs, single quotes, width 100)
@@ -238,7 +238,7 @@ import { Button } from '@dtx/common/components';
 - NEVER create files unless they're absolutely necessary for achieving your goal
 - ALWAYS prefer editing an existing file to creating a new one
 - NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User
-- NEVER run development servers (`npm run dev`) or build commands (`npm run build`) unless the user explicitly instructs you to do so
+- NEVER run development servers (`bun run dev`) or build commands (`bun run build`) unless the user explicitly instructs you to do so
 - ONLY build the shared package (`@dtx/common`) if you have made changes to files within that package
 
 # important-instruction-reminders

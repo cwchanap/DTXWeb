@@ -15,6 +15,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { tick } from 'svelte';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
@@ -228,5 +230,28 @@ describe('ChartList Component Logic', () => {
 
 		// Verify the eq was called with the correct parameters
 		expect(eqMock).toHaveBeenCalledWith('is_published', true);
+	});
+
+	describe('Table View Menu Layering Regression', () => {
+		it('sets table row wrapper stacking classes for dropdown interactions', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain('hover:z-30');
+			expect(source).toContain('focus-within:z-30');
+		});
+
+		it('sets table popover zIndex higher than row stacking layer', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartListTableItem.svelte'),
+				'utf-8'
+			);
+			const popoverZIndexMatch = source.match(/<Popover[\s\S]*?zIndex="(\d+)"/);
+
+			expect(popoverZIndexMatch).not.toBeNull();
+			expect(Number(popoverZIndexMatch?.[1])).toBeGreaterThan(30);
+		});
 	});
 });

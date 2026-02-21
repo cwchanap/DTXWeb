@@ -282,7 +282,9 @@
 {:else if viewMode === 'table'}
 	<div class="space-y-4">
 		{#each filteredItems as item (item.id)}
-			<div class="music-card group p-6 transition-all duration-300 hover:scale-[1.02]">
+			<div
+				class="music-card group relative z-0 p-6 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-[1.02]"
+			>
 				<div class="flex items-start justify-between">
 					<div class="flex-1">
 						<div class="mb-3 flex items-center gap-3">

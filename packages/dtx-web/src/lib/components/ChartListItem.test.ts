@@ -3,6 +3,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
@@ -174,6 +176,26 @@ describe('ChartListItem Component Logic', () => {
 			// The text "Download not available" would be shown in this case.
 			// We assert the condition that leads to it.
 			expect(props.item.download_url).toBeNull();
+		});
+	});
+
+	describe('Menu Layering Regression', () => {
+		it('sets Popover zIndex to keep menu clickable above card content', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartListItem.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toMatch(/<Popover[\s\S]*zIndex="120"/);
+		});
+
+		it('keeps card overflow visible so dropdown is not clipped', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartListItem.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain('style="overflow: visible;"');
 		});
 	});
 });

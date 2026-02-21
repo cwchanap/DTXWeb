@@ -26,19 +26,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-          cache: 'npm'
+          bun-version: '1.3.9'
 
       - name: Install Dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build Electron App for Windows
         run: |
-          npm run build -w=@dtx/common
-          npm run build:win -w=dtx-desktop
+          bun run --filter=@dtx/common build
+          bun run --filter=dtx-desktop build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -69,19 +68,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-          cache: 'npm'
+          bun-version: '1.3.9'
 
       - name: Install Dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build Electron App for macOS
         run: |
-          npm run build -w=@dtx/common
-          npm run build:mac -w=dtx-desktop
+          bun run --filter=@dtx/common build
+          bun run --filter=dtx-desktop build:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -164,13 +162,13 @@ jobs:
           ls -la dist/artifacts/all/
         shell: bash
 
-      - name: Setup Node.js for Wrangler
-        uses: actions/setup-node@v4
+      - name: Setup Bun for Wrangler
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
+          bun-version: '1.3.9'
 
       - name: Install Wrangler
-        run: npm install -g wrangler
+        run: bun install -g wrangler
 
       - name: Deploy to Cloudflare R2 using Wrangler
         run: |

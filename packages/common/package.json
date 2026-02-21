@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"scripts": {
 		"dev": "vite dev --port 5175",
-		"build": "vite build && npm run prepack && node scripts/fix-extensions.js",
+		"build": "vite build && bun run prepack && node scripts/fix-extensions.js",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"prepack": "if [ \"$CI\" = \"true\" ]; then svelte-kit sync && svelte-package && publint; else svelte-kit sync && svelte-package; fi",

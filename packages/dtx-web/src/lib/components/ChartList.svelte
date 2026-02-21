@@ -374,7 +374,9 @@
 {:else if viewMode === 'card'}
 	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 		{#each filteredItems as item (item.id)}
-			<div class="transform transition-all duration-300 hover:scale-105">
+			<div
+				class="relative z-0 transform transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-105"
+			>
 				<ChartListItem
 					{item}
 					{isBlog}

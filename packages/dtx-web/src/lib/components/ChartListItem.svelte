@@ -30,7 +30,7 @@
 	}
 </script>
 
-<div class="music-card group relative flex min-h-[280px] flex-col overflow-hidden">
+<div class="music-card group relative flex min-h-[280px] flex-col" style="overflow: visible;">
 	<!-- Header with title and menu -->
 	<div class="p-6 pb-4">
 		<div class="mb-3 flex items-start justify-between">
@@ -53,8 +53,9 @@
 				<Popover
 					open={popoverOpen}
 					onOpenChange={(details) => (popoverOpen = details.open)}
+					zIndex="120"
 					positioning={{ placement: 'bottom-start' }}
-					contentBase="w-48 p-0 z-50 rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl backdrop-blur-sm"
+					contentBase="w-48 p-0 rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl backdrop-blur-sm"
 				>
 					{#snippet trigger()}
 						<button

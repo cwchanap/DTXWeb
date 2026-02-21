@@ -28,7 +28,7 @@
 	},
 	"scripts": {
 		"dev": "vite dev --port 5176",
-		"build": "vite build && npm run prepack",
+		"build": "vite build && bun run prepack",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"prepack": "if [ \"$CI\" = \"true\" ]; then svelte-package && svelte-kit sync && publint; else svelte-package && svelte-kit sync; fi",

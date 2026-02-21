@@ -1,7 +1,7 @@
 <script lang="ts">
 	import store from '../store';
 	import { get } from 'svelte/store';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
 
@@ -18,8 +18,6 @@
 	let audio: HTMLAudioElement | null = $state(null);
 	let imageError = $state(false);
 	let audioError = $state(false);
-	// null = checking, true = exists, false = doesn't exist
-	let audioExists = $state<boolean | null>(null);
 
 	// Reset imageError when previewUrl changes so new images can load
 	$effect(() => {
@@ -27,46 +25,23 @@
 		imageError = false;
 	});
 
-	// Check audio existence and reset state when soundPreviewUrl changes
+	// Reset audioError and clean up audio when soundPreviewUrl changes
 	$effect(() => {
 		soundPreviewUrl;
 		audioError = false;
-		audioExists = null;
-		// Clean up existing audio playback
-		if (audio) {
-			audio.pause();
-			audio.currentTime = 0;
-			audio.src = '';
-			audio.load();
-		}
-		if (isPlaying) {
-			isPlaying = false;
-			store.playingAudio.set(null);
-		}
-
-		// Pre-check if audio exists using HEAD request for reliability
-		let cancelled = false;
-		if (soundPreviewUrl) {
-			// Use fetch HEAD request - more reliable than Audio element events
-			fetch(soundPreviewUrl, { method: 'HEAD' })
-				.then((response) => {
-					if (!cancelled) {
-						audioExists = response.ok;
-					}
-				})
-				.catch(() => {
-					if (!cancelled) {
-						audioExists = false;
-					}
-				});
-		} else {
-			audioExists = false;
-		}
-
-		// Cleanup: prevent stale updates if URL changes before fetch completes
-		return () => {
-			cancelled = true;
-		};
+		// Clean up existing audio playback - use untrack to prevent re-triggering when audio/isPlaying change
+		untrack(() => {
+			if (audio) {
+				audio.pause();
+				audio.currentTime = 0;
+				audio.src = '';
+				audio.load();
+			}
+			if (isPlaying) {
+				isPlaying = false;
+				store.playingAudio.set(null);
+			}
+		});
 	});
 
 	const handlePlayPause = async () => {
@@ -155,7 +130,7 @@
 <div class="relative">
 	{#if preview}
 		{@render preview()}
-		{#if audioExists === true && !audioError}
+		{#if soundPreviewUrl && !audioError}
 			{@render playButton()}
 		{/if}
 	{:else}
@@ -189,7 +164,7 @@
 					onerror={() => (imageError = true)}
 				/>
 			{/if}
-			{#if audioExists === true && !audioError}
+			{#if soundPreviewUrl && !audioError}
 				{@render playButton()}
 			{/if}
 		</div>

@@ -62,5 +62,8 @@
 		"packages/dtx-desktop",
 		"packages/common",
 		"packages/ui-components"
-	]
+	],
+	"dependencies": {
+		"jszip": "^3.10.1"
+	}
 }

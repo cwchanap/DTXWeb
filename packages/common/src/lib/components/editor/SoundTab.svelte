@@ -39,7 +39,7 @@
 		}
 	};
 
-	const classes = themeClasses[theme];
+	let classes = $derived(themeClasses[theme]);
 
 	let soundChips: SoundChip[] = $state([]);
 	let simfile: SimFile | null = null;

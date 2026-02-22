@@ -24,7 +24,7 @@
 	};
 
 	// Remove the DTXFiles. prefix for display
-	const displayName = subWorkspace.replace(/^DTXFiles\./, '');
+	let displayName = $derived(subWorkspace.replace(/^DTXFiles\./, ''));
 </script>
 
 <button

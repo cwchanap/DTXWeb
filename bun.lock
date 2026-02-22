@@ -1,9 +1,11 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "drumery",
+      "dependencies": {
+        "jszip": "^3.10.1",
+      },
       "devDependencies": {
         "@playwright/test": "^1.52.0",
         "@types/eslint": "^8.56.0",

@@ -57,6 +57,9 @@
 	},
 	"type": "module",
 	"packageManager": "bun@1.3.9",
+	"engines": {
+		"bun": ">=1.3.9"
+	},
 	"workspaces": [
 		"packages/dtx-web",
 		"packages/dtx-desktop",

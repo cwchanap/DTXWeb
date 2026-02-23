@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import DeleteWorkspaceModal from './DeleteWorkspaceModal.svelte';
 import { makeWorkspace } from '../../../../tests/mocks/services';
@@ -21,6 +21,10 @@ describe('DeleteWorkspaceModal', () => {
 		onConfirm: vi.fn(),
 		onCancel: vi.fn()
 	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it('does not render when workspaceToDelete is null', () => {
 		render(DeleteWorkspaceModal, { props: { ...defaultProps, workspaceToDelete: null } });

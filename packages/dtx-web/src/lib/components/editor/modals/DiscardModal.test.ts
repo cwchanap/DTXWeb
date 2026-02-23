@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import DiscardModal from './DiscardModal.svelte';
 
@@ -10,6 +10,10 @@ describe('DiscardModal', () => {
 		onConfirm: vi.fn(),
 		onCancel: vi.fn()
 	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	describe('Rendering', () => {
 		it('renders when show is true', () => {

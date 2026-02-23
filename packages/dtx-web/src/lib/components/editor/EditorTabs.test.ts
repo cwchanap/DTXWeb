@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@dtx/common/components', () => ({
@@ -21,6 +21,10 @@ const defaultProps = {
 };
 
 describe('EditorTabs', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it('renders Editor Tabs heading', () => {
 		render(EditorTabs, { props: defaultProps });
 		expect(screen.getByText('Editor Tabs')).toBeInTheDocument();

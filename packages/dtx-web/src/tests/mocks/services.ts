@@ -10,7 +10,7 @@ export const makeWorkspace = (overrides: Partial<Workspace> = {}): Workspace => 
 		{ name: 'advanced.dtx', content: 'DTX content', path: '/workspace/test/advanced.dtx' }
 	],
 	audioFiles: [{ name: 'kick.wav', path: '/workspace/test/kick.wav', isLarge: false }],
-	lastModified: new Date('2024-01-15').toISOString(),
+	lastModified: new Date('2024-01-15').getTime(),
 	...overrides
 });
 
@@ -27,7 +27,10 @@ export const mockWorkspaceService = () => ({
 		},
 		simFile: { files: [] }
 	}),
-	switchDTXFile: vi.fn()
+	switchDTXFile: vi.fn(),
+	importFolder: vi.fn().mockResolvedValue(makeWorkspace()),
+	saveWorkspace: vi.fn(),
+	getWorkspace: vi.fn(() => makeWorkspace())
 });
 
 export const mockSoundLibrary = () => ({

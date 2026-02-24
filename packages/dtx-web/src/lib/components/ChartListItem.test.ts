@@ -3,14 +3,28 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import ModalStub from '../../tests/stubs/ModalStub.svelte';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
-	_: (key: string) => key // Simple mock for i18n
+	_: {
+		subscribe: (cb: (fn: (key: string) => string) => void) => {
+			cb((key: string) => key);
+			return () => {};
+		}
+	}
 }));
-vi.mock('@skeletonlabs/skeleton-svelte');
+vi.mock('@skeletonlabs/skeleton-svelte', async () => {
+	const { default: PopoverStub } = await import('../../tests/stubs/PopoverStub.svelte');
+	return { Popover: PopoverStub };
+});
+vi.mock('@dtx/ui-components/components', () => ({
+	Modal: ModalStub,
+	Button: vi.fn()
+}));
 vi.mock('@lucide/svelte/icons');
 
 // Track ImageAudio props to test URL construction
@@ -28,8 +42,11 @@ vi.mock('$lib/utils', () => ({
 			return dtxFiles.map((file: any) => file.level).join(', ');
 		}
 		return 'N/A';
-	}
+	},
+	buildPreviewUrl: vi.fn(() => 'https://cdn.example.com/preview.jpg')
 }));
+
+import ChartListItem from './ChartListItem.svelte';
 
 // Test data
 const mockItem = {
@@ -176,6 +193,65 @@ describe('ChartListItem Component Logic', () => {
 			// The text "Download not available" would be shown in this case.
 			// We assert the condition that leads to it.
 			expect(props.item.download_url).toBeNull();
+		});
+	});
+
+	describe('Rendering', () => {
+		const renderProps = {
+			item: mockItem,
+			isBlog: false,
+			togglePublishChart: vi.fn().mockResolvedValue(undefined),
+			simfileBucketUrl: 'https://cdn.example.com',
+			onFileDelete: vi.fn()
+		};
+
+		it('renders display_id', () => {
+			render(ChartListItem, { props: renderProps });
+			expect(screen.getByText(/#1/)).toBeInTheDocument();
+		});
+
+		it('renders title', () => {
+			render(ChartListItem, { props: renderProps });
+			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
+		});
+
+		it('renders artist', () => {
+			render(ChartListItem, { props: renderProps });
+			expect(screen.getByText('Test Artist 1')).toBeInTheDocument();
+		});
+
+		it('renders BPM', () => {
+			render(ChartListItem, { props: renderProps });
+			expect(screen.getByText(/120 BPM/)).toBeInTheDocument();
+		});
+
+		it('renders action menu trigger button in non-blog mode', () => {
+			render(ChartListItem, { props: renderProps });
+			// In non-blog mode, a Popover trigger button is rendered for the action menu
+			const buttons = screen.getAllByRole('button');
+			expect(buttons.length).toBeGreaterThan(0);
+		});
+
+		it('does not render action menu in blog mode', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
+			// In blog mode, no action menu buttons
+			expect(screen.queryAllByRole('button').length).toBe(0);
+		});
+
+		it('shows download link in blog mode when download_url is set', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
+			expect(screen.getByRole('link')).toBeInTheDocument();
+		});
+
+		it('shows "Download not available" in blog mode when download_url is null', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: { ...mockItem, download_url: null }
+				}
+			});
+			expect(screen.getByText('Download not available')).toBeInTheDocument();
 		});
 	});
 

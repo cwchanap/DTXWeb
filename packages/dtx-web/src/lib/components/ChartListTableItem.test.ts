@@ -64,14 +64,11 @@ describe('ChartListTableItem', () => {
 		render(ChartListTableItem, {
 			props: { ...defaultProps, item: { ...mockItem, id: undefined } }
 		});
-		// Component renders without throwing
-		expect(document.body).toBeTruthy();
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
 
 	it('renders action buttons in non-blog mode', () => {
 		render(ChartListTableItem, { props: defaultProps });
-		// The Popover trigger button renders (even if content has mocked Buttons)
-		// Component renders without crash
-		expect(document.body).toBeTruthy();
+		expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
 	});
 });

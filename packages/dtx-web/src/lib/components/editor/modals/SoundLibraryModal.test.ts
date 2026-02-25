@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import ModalStub from '../../../../tests/stubs/ModalStub.svelte';
 
 const soundLibMock = vi.hoisted(() => ({
@@ -156,6 +156,38 @@ describe('SoundLibraryModal', () => {
 			await fireEvent.click(dialogCancelButton!);
 
 			expect(screen.queryByRole('dialog', { name: 'Remove File' })).not.toBeInTheDocument();
+		});
+	});
+
+	describe('Clear All confirmation flow', () => {
+		it('shows clear library confirmation modal when Clear All is clicked', async () => {
+			render(SoundLibraryModal, { props: defaultProps });
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
+
+			expect(screen.getByRole('dialog', { name: 'Clear Library' })).toBeInTheDocument();
+		});
+
+		it('calls SoundLibrary.clear when confirmed', async () => {
+			render(SoundLibraryModal, { props: defaultProps });
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
+
+			const dialog = screen.getByRole('dialog', { name: 'Clear Library' });
+			await fireEvent.click(within(dialog).getByRole('button', { name: 'Clear All' }));
+
+			expect(soundLibMock.clear).toHaveBeenCalledOnce();
+		});
+
+		it('dismisses the clear confirm modal when Cancel is clicked', async () => {
+			render(SoundLibraryModal, { props: defaultProps });
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
+
+			const dialog = screen.getByRole('dialog', { name: 'Clear Library' });
+			await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+			expect(screen.queryByRole('dialog', { name: 'Clear Library' })).not.toBeInTheDocument();
 		});
 	});
 

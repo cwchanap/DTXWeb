@@ -204,5 +204,32 @@ describe('ExportWorkspaceModal', () => {
 				expect(toastMock.error).toHaveBeenCalled();
 			});
 		});
+
+		it('calls toastStore.error when workspace has no exportable files', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Empty Workspace',
+					dtxFiles: [
+						{ name: 'empty.dtx', content: '', path: '/workspace/empty/empty.dtx' }
+					],
+					audioFiles: []
+				})
+			]);
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			const workspaceButtons = screen.getAllByRole('button');
+			const emptyWorkspaceButton = workspaceButtons.find(
+				(btn) =>
+					btn.textContent?.includes('Empty Workspace') &&
+					!btn.textContent?.includes('Cancel')
+			);
+			expect(emptyWorkspaceButton).toBeDefined();
+			await fireEvent.click(emptyWorkspaceButton!);
+
+			await vi.waitFor(() => {
+				expect(toastMock.error).toHaveBeenCalled();
+			});
+		});
 	});
 });

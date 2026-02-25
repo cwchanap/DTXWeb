@@ -18,16 +18,16 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
-	function handleDeleteConfirm() {
+	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
 			onFileDelete(item.id);
 		}
-	}
+	};
 
-	function openModal() {
+	const handleOpenModal = () => {
 		modalOpen = true;
-		popoverOpen = false; // Close popover when modal opens
-	}
+		popoverOpen = false;
+	};
 </script>
 
 <div class="music-card group relative flex min-h-[280px] flex-col" style="overflow: visible;">
@@ -123,7 +123,7 @@
 
 							{#if item.id !== undefined}
 								<Button
-									onclick={openModal}
+									onclick={handleOpenModal}
 									variant="menuItem"
 									fullWidth
 									justify="start"

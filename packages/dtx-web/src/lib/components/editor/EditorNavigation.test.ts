@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
-import PopoverStub from '../../../tests/stubs/PopoverStub.svelte';
 import { makeWorkspace } from '../../../tests/mocks/services';
 
-vi.mock('@skeletonlabs/skeleton-svelte', () => ({
-	Popover: PopoverStub
-}));
+vi.mock('@skeletonlabs/skeleton-svelte', async () => {
+	const { default: PopoverStub } = await import('../../../tests/stubs/PopoverStub.svelte');
+	return { Popover: PopoverStub };
+});
 
 import EditorNavigation from './EditorNavigation.svelte';
 

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 import ModalStub from '../../../../tests/stubs/ModalStub.svelte';
 
 vi.mock('@dtx/ui-components/components', () => ({
@@ -9,6 +9,14 @@ vi.mock('@dtx/ui-components/components', () => ({
 import NewFileModal from './NewFileModal.svelte';
 
 describe('NewFileModal', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+	});
+
 	it('renders warning content when show is true', () => {
 		render(NewFileModal, {
 			props: { show: true, onConfirm: vi.fn() }

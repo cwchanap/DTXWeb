@@ -50,12 +50,12 @@ export const mockSoundLibrary = () => ({
 			dateAdded: Date.now()
 		}
 	]),
-	getStats: vi.fn(() => ({ fileCount: 2, sizeFormatted: '3.0 KB' })),
+	getStats: vi.fn(() => ({ fileCount: 2, sizeFormatted: '3.0 KB', totalSize: 3072 })),
 	addFiles: vi.fn().mockResolvedValue({ added: 2, skipped: 0, errors: [] }),
 	removeFile: vi.fn(),
-	clearAll: vi.fn(),
+	clear: vi.fn(),
 	findByFileName: vi.fn(() => []),
-	toFile: vi.fn(() => null)
+	toFile: vi.fn(() => new File([''], 'kick.wav', { type: 'audio/wav' }))
 });
 
 export const mockToastStore = () => ({

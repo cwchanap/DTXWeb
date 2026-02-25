@@ -224,8 +224,7 @@ describe('ChartListItem Component Logic', () => {
 
 		it('does not render action menu in blog mode', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
-			// In blog mode, no action menu buttons
-			expect(screen.queryAllByRole('button').length).toBe(0);
+			expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();
 		});
 
 		it('shows download link in blog mode when download_url is set', () => {

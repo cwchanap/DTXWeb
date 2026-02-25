@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
-vi.mock('@lucide/svelte/icons', () => ({
-	ChevronDown: vi.fn()
-}));
+vi.mock('@lucide/svelte/icons');
 
 import EditorTips from './EditorTips.svelte';
 

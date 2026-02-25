@@ -8,15 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ModalStub from '../../tests/stubs/ModalStub.svelte';
 
-// Mock modules that would be imported by the component
-vi.mock('svelte-i18n', () => ({
-	_: {
-		subscribe: (cb: (fn: (key: string) => string) => void) => {
-			cb((key: string) => key);
-			return () => {};
-		}
-	}
-}));
+vi.mock('svelte-i18n');
 vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 	const { default: PopoverStub } = await import('../../tests/stubs/PopoverStub.svelte');
 	return { Popover: PopoverStub };
@@ -227,7 +219,6 @@ describe('ChartListItem Component Logic', () => {
 
 		it('renders action menu trigger button in non-blog mode', () => {
 			render(ChartListItem, { props: renderProps });
-			// In non-blog mode, a Popover trigger button is rendered for the action menu
 			const buttons = screen.getAllByRole('button');
 			expect(buttons.length).toBeGreaterThan(0);
 		});

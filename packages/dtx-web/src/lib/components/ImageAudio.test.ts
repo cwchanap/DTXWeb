@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
 const mockPlayingAudio = vi.hoisted(() => ({
@@ -23,8 +23,6 @@ const mockAudio = vi.hoisted(() => ({
 	load: vi.fn()
 }));
 
-global.Audio = vi.fn(() => mockAudio) as unknown as typeof Audio;
-
 import ImageAudio from './ImageAudio.svelte';
 
 describe('ImageAudio', () => {
@@ -35,11 +33,19 @@ describe('ImageAudio', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => mockAudio)
+		);
 		mockPlayingAudio.subscribe.mockImplementation((cb: (v: unknown) => void) => {
 			cb(null);
 			return () => {};
 		});
 		mockAudio.play.mockResolvedValue(undefined);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	it('renders the preview image', () => {

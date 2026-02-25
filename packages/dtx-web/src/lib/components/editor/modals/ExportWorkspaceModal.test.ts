@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { makeWorkspace } from '../../../../tests/mocks/services';
+
+const originalCreateObjectURL = global.URL.createObjectURL;
+const originalRevokeObjectURL = global.URL.revokeObjectURL;
 
 const mockService = vi.hoisted(() => ({
 	getWorkspaces: vi.fn(() => [
@@ -44,9 +47,6 @@ vi.mock('$lib/toaster', () => ({ default: toastMock }));
 
 vi.mock('jszip', () => ({ default: mockJSZipConstructor }));
 
-global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
-global.URL.revokeObjectURL = vi.fn();
-
 import ExportWorkspaceModal from './ExportWorkspaceModal.svelte';
 
 const defaultProps = {
@@ -57,6 +57,8 @@ const defaultProps = {
 describe('ExportWorkspaceModal', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+		global.URL.revokeObjectURL = vi.fn();
 		mockService.getWorkspaces.mockReturnValue([
 			makeWorkspace({ name: 'Workspace A' }),
 			makeWorkspace({ name: 'Workspace B' })
@@ -65,6 +67,11 @@ describe('ExportWorkspaceModal', () => {
 		mockZipInstance.generateAsync.mockResolvedValue(new Blob(['zip content']));
 		mockJSZipConstructor.mockImplementation(() => mockZipInstance);
 		(global.URL.createObjectURL as ReturnType<typeof vi.fn>).mockReturnValue('blob:mock-url');
+	});
+
+	afterEach(() => {
+		global.URL.createObjectURL = originalCreateObjectURL;
+		global.URL.revokeObjectURL = originalRevokeObjectURL;
 	});
 
 	describe('Rendering', () => {

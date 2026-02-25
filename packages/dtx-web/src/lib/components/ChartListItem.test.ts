@@ -219,8 +219,7 @@ describe('ChartListItem Component Logic', () => {
 
 		it('renders action menu trigger button in non-blog mode', () => {
 			render(ChartListItem, { props: renderProps });
-			const buttons = screen.getAllByRole('button');
-			expect(buttons.length).toBeGreaterThan(0);
+			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
 		it('does not render action menu in blog mode', () => {

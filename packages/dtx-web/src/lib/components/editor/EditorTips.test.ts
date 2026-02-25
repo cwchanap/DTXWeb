@@ -1,9 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/svelte';
 
 vi.mock('@lucide/svelte/icons');
 
 import EditorTips from './EditorTips.svelte';
+
+beforeEach(() => {
+	vi.resetAllMocks();
+});
+
+afterEach(() => {
+	cleanup();
+});
 
 describe('EditorTips', () => {
 	it('renders tip content when showTips is true', () => {

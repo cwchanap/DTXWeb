@@ -59,6 +59,7 @@
 				>
 					{#snippet trigger()}
 						<button
+							aria-label="Actions"
 							class="rounded-lg p-2 text-slate-400 transition-all duration-200 hover:bg-purple-600/20 hover:text-purple-300"
 						>
 							<EllipsisVertical size="18" />

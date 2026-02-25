@@ -85,4 +85,22 @@ describe('ImageAudio', () => {
 		await fireEvent.error(img);
 		expect(screen.getByText('Preview unavailable')).toBeInTheDocument();
 	});
+
+	it('hides play button when audio error event fires', async () => {
+		render(ImageAudio, { props: defaultProps });
+
+		await fireEvent.click(screen.getByRole('button'));
+
+		const errorCall = mockAudio.addEventListener.mock.calls.find(
+			([event]: [string]) => event === 'error'
+		);
+		expect(errorCall).toBeDefined();
+		const [, errorCallback] = errorCall!;
+
+		errorCallback();
+
+		await vi.waitFor(() => {
+			expect(screen.queryByRole('button')).not.toBeInTheDocument();
+		});
+	});
 });

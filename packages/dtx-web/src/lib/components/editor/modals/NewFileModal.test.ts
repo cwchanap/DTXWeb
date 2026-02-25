@@ -40,4 +40,11 @@ describe('NewFileModal', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Create New' }));
 		expect(onConfirm).toHaveBeenCalledOnce();
 	});
+
+	it('calls onCancel when the modal is closed via Cancel button', async () => {
+		const onCancel = vi.fn();
+		render(NewFileModal, { props: { show: true, onConfirm: vi.fn(), onCancel } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(onCancel).toHaveBeenCalledOnce();
+	});
 });

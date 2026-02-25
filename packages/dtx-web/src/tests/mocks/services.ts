@@ -1,4 +1,3 @@
-import { vi } from 'vitest';
 import type { Workspace } from '$lib/services/workspaceService';
 
 export const makeWorkspace = (overrides: Partial<Workspace> = {}): Workspace => ({
@@ -12,53 +11,4 @@ export const makeWorkspace = (overrides: Partial<Workspace> = {}): Workspace => 
 	audioFiles: [{ name: 'kick.wav', path: '/workspace/test/kick.wav', isLarge: false }],
 	lastModified: new Date('2024-01-15').getTime(),
 	...overrides
-});
-
-export const mockWorkspaceService = () => ({
-	getWorkspaces: vi.fn(() => [makeWorkspace(), makeWorkspace({ name: 'Second Workspace' })]),
-	getCurrentWorkspace: vi.fn(() => makeWorkspace()),
-	setCurrentWorkspace: vi.fn(),
-	deleteWorkspace: vi.fn(),
-	parseDTXFile: vi.fn().mockResolvedValue({
-		dtxFile: {
-			parseNotes: vi.fn(() => []),
-			parseBPMChanges: vi.fn(() => []),
-			parseSoundChips: vi.fn(() => [])
-		},
-		simFile: { files: [] }
-	}),
-	switchDTXFile: vi.fn(),
-	importFolder: vi.fn().mockResolvedValue(makeWorkspace()),
-	saveWorkspace: vi.fn(),
-	getWorkspace: vi.fn(() => makeWorkspace())
-});
-
-export const mockSoundLibrary = () => ({
-	getAll: vi.fn(() => [
-		{
-			hash: 'abc123',
-			fileName: 'kick.wav',
-			size: 1024,
-			fileType: 'audio/wav',
-			dateAdded: Date.now()
-		},
-		{
-			hash: 'def456',
-			fileName: 'snare.wav',
-			size: 2048,
-			fileType: 'audio/wav',
-			dateAdded: Date.now()
-		}
-	]),
-	getStats: vi.fn(() => ({ fileCount: 2, sizeFormatted: '3.0 KB', totalSize: 3072 })),
-	addFiles: vi.fn().mockResolvedValue({ added: 2, skipped: 0, errors: [] }),
-	removeFile: vi.fn(),
-	clear: vi.fn(),
-	findByFileName: vi.fn(() => []),
-	toFile: vi.fn(() => new File([''], 'kick.wav', { type: 'audio/wav' }))
-});
-
-export const mockToastStore = () => ({
-	success: vi.fn(),
-	error: vi.fn()
 });

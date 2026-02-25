@@ -153,6 +153,23 @@ describe('WorkspaceManagerModal', () => {
 			expect(mockService.deleteWorkspace).toHaveBeenCalled();
 		});
 
+		it('calls setCurrentWorkspace(null) when the current workspace is deleted', async () => {
+			render(WorkspaceManagerModal, { props: defaultProps });
+
+			mockService.deleteWorkspace.mockImplementationOnce(() => {
+				mockService.getWorkspaces.mockReturnValue([makeWorkspace({ name: 'Workspace B' })]);
+			});
+
+			const deleteButtons = screen.getAllByRole('button', { name: 'Delete workspace' });
+			await fireEvent.click(deleteButtons[0]); // Delete Workspace A (current workspace)
+
+			const confirmButton = screen.getByRole('button', { name: 'Delete' });
+			await fireEvent.click(confirmButton);
+
+			expect(mockService.deleteWorkspace).toHaveBeenCalledWith('Workspace A');
+			expect(mockService.setCurrentWorkspace).toHaveBeenCalledWith(null);
+		});
+
 		it('dismisses the delete confirm modal when Cancel is clicked', async () => {
 			render(WorkspaceManagerModal, { props: defaultProps });
 

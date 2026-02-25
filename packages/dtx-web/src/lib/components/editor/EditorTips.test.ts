@@ -5,23 +5,23 @@ vi.mock('@lucide/svelte/icons');
 
 import EditorTips from './EditorTips.svelte';
 
-beforeEach(() => {
-	vi.resetAllMocks();
-});
-
-afterEach(() => {
-	cleanup();
-});
-
 describe('EditorTips', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+	});
+
 	it('renders tip content when showTips is true', () => {
 		render(EditorTips, { props: { showTips: true } });
-		expect(screen.getByText('📝 Editor Tips')).toBeInTheDocument();
+		expect(screen.getByText(/Editor Tips/)).toBeInTheDocument();
 	});
 
 	it('does not render tips when showTips is false', () => {
 		render(EditorTips, { props: { showTips: false } });
-		expect(screen.queryByText('📝 Editor Tips')).not.toBeInTheDocument();
+		expect(screen.queryByText(/Editor Tips/)).not.toBeInTheDocument();
 	});
 
 	it('shows all keyboard shortcut tips', () => {

@@ -13,10 +13,13 @@ vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 	const { default: PopoverStub } = await import('../../tests/stubs/PopoverStub.svelte');
 	return { Popover: PopoverStub };
 });
-vi.mock('@dtx/ui-components/components', () => ({
-	Modal: ModalStub,
-	Button: vi.fn()
-}));
+vi.mock('@dtx/ui-components/components', async () => {
+	const { default: ModalStub } = await import('../../tests/stubs/ModalStub.svelte');
+	return {
+		Modal: ModalStub,
+		Button: vi.fn()
+	};
+});
 vi.mock('@lucide/svelte/icons');
 
 // Track ImageAudio props to test URL construction
@@ -229,7 +232,9 @@ describe('ChartListItem Component Logic', () => {
 
 		it('shows download link in blog mode when download_url is set', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
-			expect(screen.getByRole('link')).toBeInTheDocument();
+			const downloadLink = screen.getByRole('link', { name: /download/i });
+			expect(downloadLink).toBeInTheDocument();
+			expect(downloadLink).toHaveAttribute('href', renderProps.item.download_url);
 		});
 
 		it('shows "Download not available" in blog mode when download_url is null', () => {

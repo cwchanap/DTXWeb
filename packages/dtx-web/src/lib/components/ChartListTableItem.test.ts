@@ -2,14 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import ModalStub from '../../tests/stubs/ModalStub.svelte';
 
-vi.mock('svelte-i18n', () => ({
-	_: {
-		subscribe: (cb: (fn: (key: string) => string) => void) => {
-			cb((key: string) => key);
-			return () => {};
-		}
-	}
-}));
+vi.mock('svelte-i18n');
 
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 

@@ -1,11 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@dtx/common/components', () => ({
-	MainTab: vi.fn(),
-	SoundTab: vi.fn(),
-	PreviewTab: vi.fn()
-}));
+vi.mock('@dtx/common/components');
 
 import EditorTabs from './EditorTabs.svelte';
 

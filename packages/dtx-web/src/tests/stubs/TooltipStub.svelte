@@ -1,6 +1,7 @@
 <script lang="ts">
 	type Snippet = () => unknown;
-	let { trigger } = $props<{ trigger?: Snippet; content?: Snippet }>();
+	let { trigger, content } = $props<{ trigger?: Snippet; content?: Snippet }>();
 </script>
 
 {@render trigger?.()}
+{@render content?.()}

@@ -10,7 +10,6 @@
 	import IconCheck from '@lucide/svelte/icons/check';
 	import IconTable from '@lucide/svelte/icons/table';
 	import IconGrid from '@lucide/svelte/icons/grid';
-	import { supabase } from '../supabase';
 	import { formatLevelDisplay } from '../utils';
 
 	interface Props {
@@ -39,19 +38,29 @@
 	});
 
 	async function togglePublishChart(id: number, published: boolean) {
-		const { error } = await supabase
-			.from('simfiles')
-			.update({ is_published: !published })
-			.eq('id', id);
-
-		if (error) {
-			toastStore.error({
-				title: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
-				duration: 3000
+		try {
+			const response = await fetch(`/api/chart/${id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ is_published: !published })
 			});
-		} else {
+
+			if (!response.ok) {
+				throw new Error('Failed to update');
+			}
+
+			// Update local state
+			items = items.map((item) =>
+				item.id === id ? { ...item, is_published: !published } : item
+			);
+
 			toastStore.success({
 				title: `Chart ${published ? 'unpublished' : 'published'}`,
+				duration: 3000
+			});
+		} catch {
+			toastStore.error({
+				title: `Failed to ${published ? 'unpublish' : 'publish'} chart`,
 				duration: 3000
 			});
 		}
@@ -60,38 +69,25 @@
 	async function loadItems() {
 		loading = true;
 		try {
-			let query = supabase
-				.from('simfiles')
-				.select(
-					`id, title, artist, bpm, download_url, is_published, display_id, publish_date, dtx_files(level)`,
-					{ count: 'exact' }
-				)
-				.order('publish_date', { ascending: false })
-				.range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+			const params = new URLSearchParams({
+				page: String(currentPage),
+				pageSize: String(pageSize),
+				scope: isBlog ? 'published' : 'mine'
+			});
 
-			// Apply search filter to both artist and title if search term is provided
 			if (searchFilter.trim()) {
-				query = query.or(`artist.ilike.%${searchFilter}%,title.ilike.%${searchFilter}%`);
+				params.set('search', searchFilter);
 			}
 
-			if (!isBlog) {
-				const {
-					data: { user }
-				} = await supabase.auth.getUser();
-				if (!user) return;
-				query = query.eq('user_id', user.id);
-			} else {
-				query = query.eq('is_published', true);
-			}
-
-			const { data, error, count } = await query;
-
-			if (error) {
-				console.error('Failed to load items:', error);
+			const response = await fetch(`/api/chart?${params}`);
+			if (!response.ok) {
+				console.error('Failed to load items:', await response.text());
 				return;
 			}
-			items = data || [];
-			totalCount = count || 0;
+
+			const result = await response.json();
+			items = result.data || [];
+			totalCount = result.count || 0;
 			totalPages = Math.ceil(totalCount / pageSize);
 		} catch (error) {
 			console.error('Failed to load items:', error);

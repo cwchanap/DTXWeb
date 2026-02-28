@@ -25,6 +25,20 @@ export type {
 	SimfileWithDtx
 } from './types/supabase.types';
 
+// Export D1 types
+export type {
+	SimfileRow,
+	SimfileInsert,
+	SimfileUpdate,
+	DtxFileRow,
+	DtxFileInsert,
+	UserProfileRow,
+	UserProfileInsert,
+	UserProfileUpdate,
+	SimfileWithDtxFiles
+} from './types/d1.types';
+export { toSimfileWithDtx } from './types/d1.types';
+
 // Game classes are exported in './game' to avoid SSR issues with Phaser
 // Import from '@dtx/common/game' instead of '@dtx/common' for game classes
 

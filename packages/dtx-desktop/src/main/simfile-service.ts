@@ -1,5 +1,6 @@
 import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 import { ensureSupabaseAuth, getSupabaseClient, getCurrentSession } from './auth';
+import { apiGet, apiPost } from './api-client';
 import fs from 'fs';
 import path from 'path';
 
@@ -25,43 +26,18 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 			throw new Error('Authentication not available. Please log in first.');
 		}
 
-		const supabaseClient = getSupabaseClient();
-		if (!supabaseClient) {
-			throw new Error('Supabase client not available');
+		// Fetch simfiles from web API instead of Supabase directly
+		const result = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
+			'/api/chart?scope=mine&pageSize=100'
+		);
+
+		if (!result.success || !result.data) {
+			throw new Error(result.error || 'Failed to fetch simFiles');
 		}
-
-		// Get authenticated user
-		const {
-			data: { user },
-			error: authError
-		} = await supabaseClient.auth.getUser();
-
-		if (authError) {
-			throw new Error(`Authentication error: ${authError.message}`);
-		}
-
-		if (!user) {
-			throw new Error('User not authenticated');
-		}
-
-		// Fetch simFiles from Supabase - based on ChartList.svelte query
-		const { data, error } = await supabaseClient
-			.from('simfiles')
-			.select(
-				`id, title, artist, bpm, preview_url, download_url, is_published, display_id, publish_date, created_at, updated_at, user_id, video_preview_url, dtx_files(level, label)`
-			)
-			.eq('user_id', user.id)
-			.order('publish_date', { ascending: false });
-
-		if (error) {
-			throw new Error(`Failed to fetch simFiles: ${error.message}`);
-		}
-
-		const simFiles = data || [];
 
 		return {
 			success: true,
-			data: simFiles,
+			data: result.data.data || [],
 			fromCache: false
 		};
 	} catch (error) {
@@ -286,31 +262,30 @@ export async function createSimfileRecord(
 			);
 		}
 
-		// First, insert simfile data into the database to get the simfileId
-		const insertData = {
+		// Create simfile via web API (also creates dtx_files)
+		const apiResult = await apiPost<{
+			id: number;
+			title: string;
+			artist: string;
+			bpm: number;
+			[key: string]: unknown;
+		}>('/api/chart', {
 			title: simfileData.title,
 			artist: simfileData.artist,
 			bpm: simfileData.bpm,
-			user_id: user.id,
-			display_id: simfileData.displayId,
-			is_published: simfileData.isPublished,
-			publish_date: simfileData.publishDate,
-			download_url: simfileData.downloadUrl,
-			video_preview_url: simfileData.videoPreviewUrl
-		};
+			displayId: simfileData.displayId,
+			isPublished: simfileData.isPublished,
+			publishDate: simfileData.publishDate,
+			downloadUrl: simfileData.downloadUrl,
+			videoPreviewUrl: simfileData.videoPreviewUrl,
+			levels: simfileData.levels
+		});
 
-		const { data: simFileData, error } = await supabaseClient
-			.from('simfiles')
-			.insert(insertData)
-			.select()
-			.single();
-
-		if (error) {
-			console.error('Error creating simfiles:', error.message);
-			throw new Error(`Error creating simfile: ${error.message}`);
+		if (!apiResult.success || !apiResult.data) {
+			throw new Error(apiResult.error || 'Failed to create simfile');
 		}
 
-		const simfileId = simFileData.id;
+		const simfileId = apiResult.data.id;
 
 		// Upload preview files to R2 via API using the helper function
 		const uploadErrors: string[] = [];
@@ -341,26 +316,10 @@ export async function createSimfileRecord(
 			}
 		}
 
-		// Insert dtx_files data into the database
-		if (simfileData.levels && simfileData.levels.length > 0) {
-			const { error: dtxError } = await supabaseClient.from('dtx_files').insert(
-				simfileData.levels.map((level) => ({
-					level: level.level,
-					simfile_id: simfileId,
-					label: level.label
-				}))
-			);
-
-			if (dtxError) {
-				console.error('Error creating dtx_files:', dtxError.message);
-				throw new Error(`Error creating dtx_files: ${dtxError.message}`);
-			}
-		}
-
 		const result: CreateSimfileResult = {
 			success: true,
 			simfileId: String(simfileId),
-			data: simFileData
+			data: apiResult.data
 		};
 
 		// Include warnings if preview uploads failed

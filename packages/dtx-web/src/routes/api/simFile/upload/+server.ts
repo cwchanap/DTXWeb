@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import logger from '$lib/server/logger';
+import { getDb, getSimfileOwner } from '$lib/server/db';
 import { env } from '$env/dynamic/private';
 import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 
@@ -169,17 +170,9 @@ export async function POST({
 
 		logger.info(`Uploading file: ${validatedFile.name} for simFile: ${canonicalSimfileId}`);
 
-		// Verify that the user owns this simfile
-		const { data: simfile, error: simfileError } = await locals.supabase
-			.from('simfiles')
-			.select('user_id')
-			.eq('id', simfileIdValue)
-			.maybeSingle();
-
-		if (simfileError) {
-			logger.error('Failed to query simfile:', simfileError);
-			return json({ error: 'Failed to verify ownership' }, { status: 500 });
-		}
+		// Verify that the user owns this simfile via D1
+		const db = getDb(platform);
+		const simfile = await getSimfileOwner(db, simfileIdValue);
 
 		if (!simfile) {
 			return json({ error: 'Simfile not found' }, { status: 404 });

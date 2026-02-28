@@ -17,6 +17,14 @@
 			"bucket_name": "simfile-dtx"
 		}
 	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "drumery-db",
+			"database_id": "TO_BE_CREATED",
+			"migrations_dir": "d1-migrations"
+		}
+	],
 	"keep_vars": true,
 	"observability": {
 		"logs": {
@@ -33,6 +41,14 @@
 				{
 					"binding": "DTXFILE_BUCKET",
 					"bucket_name": "simfile-dtx"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "drumery-db-preprod",
+					"database_id": "TO_BE_CREATED",
+					"migrations_dir": "d1-migrations"
 				}
 			]
 		}

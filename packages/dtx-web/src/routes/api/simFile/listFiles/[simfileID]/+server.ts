@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
+import { getDb, getSimfileOwner } from '$lib/server/db';
 
 export async function GET({
 	params,
@@ -35,17 +36,9 @@ export async function GET({
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
-		// Verify that the user owns this simfile OR the simfile is published
-		const { data: simfile, error: simfileError } = await locals.supabase
-			.from('simfiles')
-			.select('user_id, is_published')
-			.eq('id', id)
-			.maybeSingle();
-
-		if (simfileError) {
-			logger.error('Failed to query simfile:', simfileError);
-			return json({ error: 'Failed to verify ownership' }, { status: 500 });
-		}
+		// Verify that the user owns this simfile OR the simfile is published via D1
+		const db = getDb(platform);
+		const simfile = await getSimfileOwner(db, id);
 
 		if (!simfile) {
 			return json({ error: 'Simfile not found' }, { status: 404 });

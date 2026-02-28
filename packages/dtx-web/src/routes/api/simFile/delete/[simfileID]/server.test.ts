@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DELETE } from './+server';
 import type { R2Bucket } from '@cloudflare/workers-types';
-import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
+import { getDb, getSimfileOwner, deleteSimfile } from '$lib/server/db';
 
 // Mock logger
 vi.mock('$lib/server/logger', () => ({
@@ -11,6 +12,8 @@ vi.mock('$lib/server/logger', () => ({
 		warn: vi.fn()
 	}
 }));
+
+vi.mock('$lib/server/db');
 
 // Create a mock Request object
 const createMockRequest = (method: string, url: string, headers?: Headers): Request => {
@@ -48,30 +51,6 @@ const createMockBucket = (
 		delete: vi.fn().mockResolvedValue(undefined)
 	}) as unknown as R2Bucket;
 
-// Mock Supabase client
-const createMockSupabaseClient = (
-	simfileData: any | null = null,
-	error: any = null,
-	userData: any | null = null,
-	userError: any = null,
-	deleteError: any = null
-) =>
-	({
-		from: vi.fn(() => ({
-			select: vi.fn(() => ({
-				eq: vi.fn(() => ({
-					maybeSingle: vi.fn().mockResolvedValue({ data: simfileData, error })
-				}))
-			})),
-			delete: vi.fn(() => ({
-				eq: vi.fn().mockResolvedValue({ error: deleteError })
-			}))
-		})),
-		auth: {
-			getUser: vi.fn().mockResolvedValue({ data: userData, error: userError })
-		}
-	}) as unknown as SupabaseClient;
-
 // Create mock session
 const createMockSession = (userId: string = 'test-user-id'): Session => ({
 	access_token: 'test-token',
@@ -94,6 +73,9 @@ const createMockSession = (userId: string = 'test-user-id'): Session => ({
 describe('/api/simFile/delete/[simfileID]', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getDb).mockReturnValue({} as any);
+		vi.mocked(getSimfileOwner).mockResolvedValue({ user_id: 'test-user-id', is_published: 0 });
+		vi.mocked(deleteSimfile).mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -107,9 +89,8 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -133,14 +114,8 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(
-					null,
-					null,
-					{ user: null },
-					new Error('Invalid')
-				),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -153,15 +128,15 @@ describe('/api/simFile/delete/[simfileID]', () => {
 	});
 
 	it('returns 500 when simfile lookup fails', async () => {
+		vi.mocked(getSimfileOwner).mockRejectedValue(new Error('db error'));
 		const mockBucket = createMockBucket();
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(null, new Error('db error')),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -173,7 +148,7 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		expect(response.status).toBe(500);
 		const data = await response.json();
-		expect(data.error).toBe('Failed to verify ownership');
+		expect(data.error).toBe('An unexpected error occurred');
 	});
 
 	it('returns 401 when session exists but user is null', async () => {
@@ -186,9 +161,8 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({ session: mockSession, user: null }),
 				session: mockSession,
 				user: null
@@ -201,15 +175,15 @@ describe('/api/simFile/delete/[simfileID]', () => {
 	});
 
 	it('returns 404 when simfile does not exist', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue(null);
 		const mockBucket = createMockBucket();
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(null, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -225,20 +199,18 @@ describe('/api/simFile/delete/[simfileID]', () => {
 	});
 
 	it('returns 403 when user does not own the simfile', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue({
+			user_id: 'different-user-id',
+			is_published: 0
+		});
 		const mockBucket = createMockBucket();
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
-
-		const simfileData = {
-			id: 123,
-			user_id: 'different-user-id'
-		};
 
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -262,17 +234,11 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const mockBucket = createMockBucket(mockObjects);
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -301,6 +267,7 @@ describe('/api/simFile/delete/[simfileID]', () => {
 	});
 
 	it('successfully deletes files with bearer token', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue({ user_id: 'token-user-id', is_published: 0 });
 		const mockObjects = [{ key: '123/file1.dtx' }];
 		const mockBucket = createMockBucket(mockObjects);
 		const headers = new Headers({ Authorization: 'Bearer valid-token' });
@@ -310,20 +277,14 @@ describe('/api/simFile/delete/[simfileID]', () => {
 			headers
 		);
 
-		const simfileData = {
-			id: 123,
-			user_id: 'token-user-id'
-		};
-
 		// Simulate what the hooks would do after validating the bearer token
 		const mockUser = createMockSession('token-user-id').user;
 
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null, null, null),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: mockUser // Simulate hooks setting this after validation
@@ -340,17 +301,11 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const mockBucket = createMockBucket([]);
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -367,27 +322,16 @@ describe('/api/simFile/delete/[simfileID]', () => {
 	});
 
 	it('returns 500 when simfile record delete fails', async () => {
+		vi.mocked(deleteSimfile).mockRejectedValue(new Error('Delete failed'));
 		const mockObjects = [{ key: '123/file1.dtx' }];
 		const mockBucket = createMockBucket(mockObjects);
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(
-					simfileData,
-					null,
-					null,
-					null,
-					new Error('Delete failed')
-				),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -409,9 +353,8 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const response = await DELETE({
 			request,
 			params: { simfileID: '' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -433,9 +376,8 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const response = await DELETE({
 			request,
 			params: { simfileID: 'abc' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -460,9 +402,8 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123.45' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -480,17 +421,11 @@ describe('/api/simFile/delete/[simfileID]', () => {
 	it('returns 500 when bucket is not available', async () => {
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: {} },
+			platform: { env: { DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -524,17 +459,11 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -568,17 +497,11 @@ describe('/api/simFile/delete/[simfileID]', () => {
 
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -618,14 +541,12 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		} as unknown as R2Bucket;
 
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
-		const simfileData = { id: 123, user_id: 'test-user-id' };
 
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -653,17 +574,11 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		const mockBucket = createMockBucket(mockObjects, true);
 		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await DELETE({
 			request,
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user

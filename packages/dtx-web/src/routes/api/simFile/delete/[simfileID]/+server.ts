@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
+import { getDb, getSimfileOwner, deleteSimfile } from '$lib/server/db';
 
 export async function DELETE({
 	params,
@@ -34,17 +35,9 @@ export async function DELETE({
 			return json({ error: 'Invalid SimFile ID' }, { status: 400 });
 		}
 
-		// Verify that the user owns this simfile
-		const { data: simfile, error: simfileError } = await locals.supabase
-			.from('simfiles')
-			.select('user_id')
-			.eq('id', id)
-			.maybeSingle();
-
-		if (simfileError) {
-			logger.error('Failed to query simfile:', simfileError);
-			return json({ error: 'Failed to verify ownership' }, { status: 500 });
-		}
+		// Verify that the user owns this simfile via D1
+		const db = getDb(platform);
+		const simfile = await getSimfileOwner(db, id);
 
 		if (!simfile) {
 			return json({ error: 'Simfile not found' }, { status: 404 });
@@ -166,15 +159,15 @@ export async function DELETE({
 
 		// Always delete the DB record even if some files failed to delete
 		// to avoid broken references in the database
-		const { error: deleteError } = await locals.supabase.from('simfiles').delete().eq('id', id);
-
-		if (deleteError) {
+		try {
+			await deleteSimfile(db, id);
+		} catch (deleteError) {
 			// NOTE: At this point, all associated R2 files have already been deleted.
 			// If the database deletion fails, the system will be left with a
 			// dangling simfile record that no longer has backing files. This is a
 			// known, non-transactional edge case between object storage and the DB.
 			logger.error('Failed to delete simfile record after deleting R2 files:', {
-				error: deleteError,
+				error: deleteError instanceof Error ? deleteError.message : deleteError,
 				simfileID: id,
 				totalFiles,
 				deletedFiles: successfulDeletions.length,

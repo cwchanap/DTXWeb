@@ -16,23 +16,20 @@
 	let updatedSimfile: SimFile | null = $state(null);
 	let userUploadedFiles: File[] = $state([]);
 	let { data } = $props();
-	let { supabase } = $derived(data);
 
 	onMount(async () => {
-		const { id } = $page.params;
-		await loadSimfileDetails(id);
+		const id = $page.params.id;
+		if (id) await loadSimfileDetails(id);
 	});
 
 	async function loadSimfileDetails(id: string) {
 		try {
-			const { data, error: fetchError } = await supabase
-				.from('simfiles')
-				.select('*, dtx_files(level, label)')
-				.eq('id', id)
-				.single();
-
-			if (fetchError) throw fetchError;
-			simfile = data;
+			const response = await fetch(`/api/chart/${id}`);
+			if (!response.ok) {
+				const err = await response.json();
+				throw new Error(err.error || 'Failed to load chart');
+			}
+			simfile = await response.json();
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : 'Failed to load chart';
 		} finally {
@@ -66,20 +63,24 @@
 			updateFields.title = updatedSimfile.title;
 		}
 
-		const { data, error } = await supabase
-			.from('simfiles')
-			.update(updateFields)
-			.eq('id', id)
-			.select();
-
-		if (!data || error) {
-			toastStore.error({
-				title: 'Error updating simfile',
-				duration: 5000
+		try {
+			const response = await fetch(`/api/chart/${id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(updateFields)
 			});
-		} else {
+
+			if (!response.ok) {
+				throw new Error('Failed to update');
+			}
+
 			toastStore.success({
 				title: 'Simfile updated successfully',
+				duration: 5000
+			});
+		} catch {
+			toastStore.error({
+				title: 'Error updating simfile',
 				duration: 5000
 			});
 		}

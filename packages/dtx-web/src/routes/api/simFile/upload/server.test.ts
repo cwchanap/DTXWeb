@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { POST } from './+server';
 import type { R2Bucket } from '@cloudflare/workers-types';
-import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
+import { getDb, getSimfileOwner } from '$lib/server/db';
 
 // Mock logger
 vi.mock('$lib/server/logger', () => ({
@@ -12,23 +13,13 @@ vi.mock('$lib/server/logger', () => ({
 	}
 }));
 
+vi.mock('$lib/server/db');
+
 // Mock R2 Bucket
 const createMockBucket = (): R2Bucket =>
 	({
 		put: vi.fn().mockResolvedValue({ success: true })
 	}) as unknown as R2Bucket;
-
-// Mock Supabase client
-const createMockSupabaseClient = (simfileData: any | null = null, error: any = null) =>
-	({
-		from: vi.fn(() => ({
-			select: vi.fn(() => ({
-				eq: vi.fn(() => ({
-					maybeSingle: vi.fn().mockResolvedValue({ data: simfileData, error })
-				}))
-			}))
-		}))
-	}) as unknown as SupabaseClient;
 
 // Create mock session
 const createMockSession = (userId: string = 'test-user-id'): Session => ({
@@ -71,6 +62,8 @@ const createMockRequest = (method: string, url: string, formData: FormData): Req
 describe('/api/simFile/upload', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getDb).mockReturnValue({} as any);
+		vi.mocked(getSimfileOwner).mockResolvedValue({ user_id: 'test-user-id', is_published: 0 });
 	});
 
 	afterEach(() => {
@@ -93,9 +86,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: createMockBucket() } },
+			platform: { env: { DTXFILE_BUCKET: createMockBucket(), DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -124,9 +116,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -139,6 +130,7 @@ describe('/api/simFile/upload', () => {
 	});
 
 	it('returns 404 when simfile does not exist', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue(null);
 		const mockBucket = createMockBucket();
 		const formData = new FormData();
 		formData.append('file', new File(['content'], 'test.wav'));
@@ -152,9 +144,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(null, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -170,6 +161,7 @@ describe('/api/simFile/upload', () => {
 	});
 
 	it('returns 500 when simfile lookup fails', async () => {
+		vi.mocked(getSimfileOwner).mockRejectedValue(new Error('db error'));
 		const mockBucket = createMockBucket();
 		const formData = new FormData();
 		formData.append('file', new File(['content'], 'test.wav'));
@@ -183,9 +175,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(null, new Error('db error')),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -197,10 +188,14 @@ describe('/api/simFile/upload', () => {
 
 		expect(response.status).toBe(500);
 		const data = await response.json();
-		expect(data.error).toBe('Failed to verify ownership');
+		expect(data.error).toBe('Internal server error');
 	});
 
 	it('returns 403 when user does not own simfile', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue({
+			user_id: 'different-user-id',
+			is_published: 0
+		});
 		const mockBucket = createMockBucket();
 		const formData = new FormData();
 		formData.append('file', new File(['content'], 'test.wav'));
@@ -212,16 +207,10 @@ describe('/api/simFile/upload', () => {
 			formData
 		);
 
-		const simfileData = {
-			id: 123,
-			user_id: 'different-user-id'
-		};
-
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -249,9 +238,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -280,9 +268,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -311,9 +298,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 16, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -342,9 +328,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -373,9 +358,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 100, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -404,9 +388,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -434,9 +417,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ id: 123, user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -462,16 +444,10 @@ describe('/api/simFile/upload', () => {
 			formData
 		);
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await POST({
 			request,
-			platform: { env: {} },
+			platform: { env: { DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -508,9 +484,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -548,21 +523,13 @@ describe('/api/simFile/upload', () => {
 			// Add Authorization header for bearer token
 			request.headers.set('Authorization', 'Bearer test-bearer-token');
 
-			const simfileData = {
-				id: 123,
-				user_id: 'test-user-id'
-			};
-
-			const mockSupabaseClient = createMockSupabaseClient(simfileData, null);
-
 			// Simulate what the hooks would do after validating the bearer token
 			const mockUser = createMockSession().user;
 
 			const response = await POST({
 				request,
-				platform: { env: { DTXFILE_BUCKET: mockBucket } },
+				platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 				locals: {
-					supabase: mockSupabaseClient,
 					safeGetSession: async () => ({ session: null, user: null }),
 					session: null,
 					user: mockUser // Simulate hooks setting this after validation
@@ -597,13 +564,10 @@ describe('/api/simFile/upload', () => {
 		// Add invalid Authorization header
 		request.headers.set('Authorization', 'Bearer invalid-token');
 
-		const mockSupabaseClient = createMockSupabaseClient(null, null);
-
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: mockSupabaseClient,
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -630,9 +594,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -645,6 +608,10 @@ describe('/api/simFile/upload', () => {
 	});
 
 	it('returns 403 when bearer token user does not own simfile', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue({
+			user_id: 'different-user-id',
+			is_published: 0
+		});
 		const mockBucket = createMockBucket();
 		const formData = new FormData();
 		formData.append('file', new File(['content'], 'test.wav'));
@@ -657,21 +624,13 @@ describe('/api/simFile/upload', () => {
 		);
 		request.headers.set('Authorization', 'Bearer test-bearer-token');
 
-		const simfileData = {
-			id: 123,
-			user_id: 'different-user-id'
-		};
-
-		const mockSupabaseClient = createMockSupabaseClient(simfileData, null);
-
 		// Simulate what the hooks would do after validating the bearer token
 		const mockUser = createMockSession('test-user-id').user;
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: mockSupabaseClient,
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: mockUser // Simulate hooks setting this after validation
@@ -701,9 +660,8 @@ describe('/api/simFile/upload', () => {
 
 		const response = await POST({
 			request,
-			platform: { env: { DTXFILE_BUCKET: throwingBucket } },
+			platform: { env: { DTXFILE_BUCKET: throwingBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient({ user_id: 'test-user-id' }, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user

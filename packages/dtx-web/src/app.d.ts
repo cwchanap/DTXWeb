@@ -21,6 +21,7 @@ declare global {
 		interface Platform {
 			env?: {
 				DTXFILE_BUCKET: R2Bucket;
+				DB: D1Database;
 			};
 		}
 	}

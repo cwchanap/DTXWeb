@@ -9,6 +9,7 @@ import {
 	handleProtocolUrl,
 	getSupabaseClient
 } from './auth';
+import { apiGet, apiPatch } from './api-client';
 import {
 	fetchUserSimFiles,
 	getPreviewUrl,
@@ -392,34 +393,18 @@ if (!gotTheLock) {
 			'search-cloud-songs',
 			async (_event, { query, limit = 8, excludeLinkedSongIds = [] }) => {
 				try {
-					const supabaseClient = getSupabaseClient();
-					if (!supabaseClient) {
-						return { success: false, error: 'User not authenticated' };
-					}
-
-					// Build the query
-					let queryBuilder = supabaseClient
-						.from('simfiles')
-						.select('id, title, artist, bpm, is_published')
-						.or(`title.ilike.%${query}%, artist.ilike.%${query}%`);
-
-					// Exclude already linked song IDs if provided
+					const params = new URLSearchParams({ q: query, limit: String(limit) });
 					if (excludeLinkedSongIds.length > 0) {
-						queryBuilder = queryBuilder.not(
-							'id',
-							'in',
-							`(${excludeLinkedSongIds.join(',')})`
-						);
+						params.set('exclude', excludeLinkedSongIds.join(','));
 					}
 
-					const { data, error } = await queryBuilder.limit(limit);
+					const result = await apiGet<{ data: unknown[] }>(`/api/chart/search?${params}`);
 
-					if (error) {
-						console.error('Error searching cloud songs:', error);
-						return { success: false, error: error.message };
+					if (!result.success) {
+						return { success: false, error: result.error };
 					}
 
-					return { success: true, data: data || [] };
+					return { success: true, data: result.data?.data || [] };
 				} catch (error) {
 					console.error('Error searching cloud songs:', error);
 					return {
@@ -433,40 +418,19 @@ if (!gotTheLock) {
 		// Handle fetching cloud song data without file caching
 		ipcMain.handle('fetch-cloud-song', async (_event, { cloudSongId }) => {
 			try {
-				const supabaseClient = getSupabaseClient();
-				if (!supabaseClient) {
-					throw new Error('User not authenticated');
+				const result = await apiGet<unknown>(`/api/chart/${cloudSongId}`);
+
+				if (!result.success) {
+					return { success: false, error: result.error };
 				}
 
-				// Fetch full simfile data including dtx_files
-				const { data: simfileData, error } = await supabaseClient
-					.from('simfiles')
-					.select(
-						`
-						*,
-						dtx_files (
-							id,
-							label,
-							level,
-							simfile_id
-						)
-					`
-					)
-					.eq('id', cloudSongId)
-					.single();
-
-				if (error) {
-					console.error('Error fetching cloud song data:', error);
-					return { success: false, error: error.message };
-				}
-
-				if (!simfileData) {
+				if (!result.data) {
 					return { success: false, error: 'Cloud song not found' };
 				}
 
 				return {
 					success: true,
-					cloudSongData: simfileData
+					cloudSongData: result.data
 				};
 			} catch (error) {
 				console.error('Error fetching cloud song data:', error);
@@ -480,24 +444,13 @@ if (!gotTheLock) {
 		// Handle updating simfile record in database
 		ipcMain.handle('update-simfile-record', async (_event, { simfileId, updateData }) => {
 			try {
-				const supabaseClient = getSupabaseClient();
-				if (!supabaseClient) {
-					return { success: false, error: 'User not authenticated' };
+				const result = await apiPatch<unknown>(`/api/chart/${simfileId}`, updateData);
+
+				if (!result.success) {
+					return { success: false, error: result.error };
 				}
 
-				const { data, error } = await supabaseClient
-					.from('simfiles')
-					.update(updateData)
-					.eq('id', simfileId)
-					.select()
-					.single();
-
-				if (error) {
-					console.error('Error updating simfile:', error);
-					return { success: false, error: error.message };
-				}
-
-				return { success: true, data };
+				return { success: true, data: result.data };
 			} catch (error) {
 				console.error('Error updating simfile:', error);
 				return {

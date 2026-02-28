@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from './+server';
 import type { R2Bucket } from '@cloudflare/workers-types';
-import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
+import { getDb, getSimfileOwner } from '$lib/server/db';
 
 // Mock logger
 vi.mock('$lib/server/logger', () => ({
@@ -11,6 +12,8 @@ vi.mock('$lib/server/logger', () => ({
 		warn: vi.fn()
 	}
 }));
+
+vi.mock('$lib/server/db');
 
 // Create a mock Request object
 const createMockRequest = (headers?: Headers): Request => {
@@ -62,26 +65,6 @@ const createMockBucket = (
 	} as unknown as R2Bucket;
 };
 
-// Mock Supabase client
-const createMockSupabaseClient = (
-	simfileData: any | null = null,
-	error: any = null,
-	userData: any | null = null,
-	userError: any = null
-) =>
-	({
-		from: vi.fn(() => ({
-			select: vi.fn(() => ({
-				eq: vi.fn(() => ({
-					maybeSingle: vi.fn().mockResolvedValue({ data: simfileData, error })
-				}))
-			}))
-		})),
-		auth: {
-			getUser: vi.fn().mockResolvedValue({ data: userData, error: userError })
-		}
-	}) as unknown as SupabaseClient;
-
 // Create mock session
 const createMockSession = (userId: string = 'test-user-id'): Session => ({
 	access_token: 'test-token',
@@ -104,6 +87,8 @@ const createMockSession = (userId: string = 'test-user-id'): Session => ({
 describe('/api/simFile/listFiles/[simfileID]', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(getDb).mockReturnValue({} as any);
+		vi.mocked(getSimfileOwner).mockResolvedValue({ user_id: 'test-user-id', is_published: 0 });
 	});
 
 	afterEach(() => {
@@ -116,9 +101,8 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -136,9 +120,8 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123abc' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -160,14 +143,8 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const response = await GET({
 			request: createMockRequest(headers),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(
-					null,
-					null,
-					{ user: null },
-					new Error('Invalid')
-				),
 				safeGetSession: async () => ({ session: null, user: null }),
 				session: null,
 				user: null
@@ -180,14 +157,14 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 	});
 
 	it('returns 500 when simfile lookup fails', async () => {
+		vi.mocked(getSimfileOwner).mockRejectedValue(new Error('db error'));
 		const mockBucket = createMockBucket();
 
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(null, new Error('db error')),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -199,18 +176,18 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 
 		expect(response.status).toBe(500);
 		const data = await response.json();
-		expect(data.error).toBe('Failed to verify ownership');
+		expect(data.error).toBe('Failed to list files');
 	});
 
 	it('returns 404 when simfile does not exist', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue(null);
 		const mockBucket = createMockBucket();
 
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(null, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -226,20 +203,17 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 	});
 
 	it('returns 403 when user does not own simfile', async () => {
-		const mockBucket = createMockBucket();
-
-		const simfileData = {
-			id: 123,
+		vi.mocked(getSimfileOwner).mockResolvedValue({
 			user_id: 'different-user-id',
-			is_published: false
-		};
+			is_published: 0
+		});
+		const mockBucket = createMockBucket();
 
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -261,17 +235,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		];
 		const mockBucket = createMockBucket(mockObjects);
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -301,17 +269,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 	it('returns empty array when no files exist', async () => {
 		const mockBucket = createMockBucket([]);
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -332,9 +294,8 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -350,17 +311,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 	});
 
 	it('returns 500 when bucket is not available', async () => {
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: {} },
+			platform: { env: { DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -383,17 +338,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		];
 		const mockBucket = createMockBucket(mockObjects);
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id'
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -415,14 +364,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		const page2Objects = [{ key: '123/file2.wav', size: 2048 }];
 		const mockBucket = createMockBucket(page1Objects, page2Objects);
 
-		const simfileData = { id: 123, user_id: 'test-user-id', is_published: false };
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -441,24 +387,20 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 	});
 
 	it('returns 200 when simfile is published and requesting user is not the owner', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue({
+			user_id: 'different-owner-id',
+			is_published: 1
+		});
 		const mockObjects = [
 			{ key: '123/file1.dtx', size: 1024, uploaded: new Date('2024-01-01') }
 		];
 		const mockBucket = createMockBucket(mockObjects);
 
-		// Owned by a different user, but published
-		const simfileData = {
-			id: 123,
-			user_id: 'different-owner-id',
-			is_published: true
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -475,20 +417,17 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 	});
 
 	it('returns 403 when simfile is unpublished and requesting user is not the owner', async () => {
-		const mockBucket = createMockBucket();
-
-		const simfileData = {
-			id: 123,
+		vi.mocked(getSimfileOwner).mockResolvedValue({
 			user_id: 'different-owner-id',
-			is_published: false
-		};
+			is_published: 0
+		});
+		const mockBucket = createMockBucket();
 
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -513,18 +452,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 			})
 		} as unknown as R2Bucket;
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id',
-			is_published: false
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user
@@ -553,18 +485,11 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 			})
 		} as unknown as R2Bucket;
 
-		const simfileData = {
-			id: 123,
-			user_id: 'test-user-id',
-			is_published: false
-		};
-
 		const response = await GET({
 			request: createMockRequest(),
 			params: { simfileID: '123' },
-			platform: { env: { DTXFILE_BUCKET: mockBucket } },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
 			locals: {
-				supabase: createMockSupabaseClient(simfileData, null),
 				safeGetSession: async () => ({
 					session: createMockSession(),
 					user: createMockSession().user

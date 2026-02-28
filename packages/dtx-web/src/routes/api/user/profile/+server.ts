@@ -1,0 +1,52 @@
+import { json } from '@sveltejs/kit';
+import { getDb, getUserProfile, upsertUserProfile } from '$lib/server/db';
+import logger from '$lib/server/logger';
+
+/** GET /api/user/profile — Get current user's profile */
+export async function GET({ platform, locals }: { platform: App.Platform; locals: App.Locals }) {
+	const user = locals.user;
+	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
+
+	try {
+		const db = getDb(platform);
+		const profile = await getUserProfile(db, user.id);
+		if (!profile) return json({ error: 'Profile not found' }, { status: 404 });
+		return json(profile);
+	} catch (error) {
+		logger.error('Error getting user profile:', error);
+		return json({ error: 'Failed to get profile' }, { status: 500 });
+	}
+}
+
+/** PUT /api/user/profile — Create or update user profile */
+export async function PUT({
+	request,
+	platform,
+	locals
+}: {
+	request: Request;
+	platform: App.Platform;
+	locals: App.Locals;
+}) {
+	const user = locals.user;
+	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
+
+	try {
+		const db = getDb(platform);
+		const body = await request.json();
+
+		if (!body.username || typeof body.username !== 'string') {
+			return json({ error: 'Username is required' }, { status: 400 });
+		}
+
+		const profile = await upsertUserProfile(db, {
+			user_id: user.id,
+			username: body.username
+		});
+
+		return json(profile);
+	} catch (error) {
+		logger.error('Error upserting user profile:', error);
+		return json({ error: 'Failed to update profile' }, { status: 500 });
+	}
+}

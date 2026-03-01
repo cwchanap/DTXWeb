@@ -20,8 +20,8 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "drumery-db",
-			"database_id": "TO_BE_CREATED",
+			"database_name": "dtx-web",
+			"database_id": "19376000-d389-4e0e-a5a8-00d9e31a9ffb",
 			"migrations_dir": "d1-migrations"
 		}
 	],
@@ -40,14 +40,14 @@
 			"r2_buckets": [
 				{
 					"binding": "DTXFILE_BUCKET",
-					"bucket_name": "simfile-dtx"
+					"bucket_name": "simfile-dtx-preprod"
 				}
 			],
 			"d1_databases": [
 				{
 					"binding": "DB",
-					"database_name": "drumery-db-preprod",
-					"database_id": "TO_BE_CREATED",
+					"database_name": "dtx-web-preprod",
+					"database_id": "6fedd126-9dcf-419f-bc2e-eaf8c23d9510",
 					"migrations_dir": "d1-migrations"
 				}
 			]

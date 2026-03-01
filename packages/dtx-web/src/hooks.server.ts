@@ -146,9 +146,9 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 		redirect(303, redirectUrl);
 	}
 
-	// Handle unauthenticated API access for /api/simFile routes
+	// Handle unauthenticated API access for all /api/ routes
 	// Support both cookie-based auth (web app) and bearer token auth (desktop app)
-	if (!event.locals.session && event.url.pathname.startsWith('/api/simFile')) {
+	if (!event.locals.session && event.url.pathname.startsWith('/api/')) {
 		const authHeader = event.request.headers.get('Authorization');
 		if (authHeader?.toLowerCase().startsWith('bearer ')) {
 			const token = authHeader.slice(7);

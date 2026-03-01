@@ -67,12 +67,13 @@ export async function POST({
 			publish_date: body.publishDate
 		});
 
-		// Insert dtx_files if provided
+		// Insert dtx_files if provided (accepts either "dtx_files" or "levels" key)
 		let dtxFiles: { level: number; label: string }[] = [];
-		if (body.levels && Array.isArray(body.levels) && body.levels.length > 0) {
+		const dtxInput = body.dtx_files ?? body.levels;
+		if (Array.isArray(dtxInput) && dtxInput.length > 0) {
 			const created = await createDtxFiles(
 				db,
-				body.levels.map((l: { label: string; level: number }) => ({
+				dtxInput.map((l: { label: string; level: number }) => ({
 					label: l.label,
 					level: l.level,
 					simfile_id: simfile.id

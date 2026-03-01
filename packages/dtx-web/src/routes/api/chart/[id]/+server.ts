@@ -82,7 +82,9 @@ export async function PATCH({
 		if (body.videoPreviewUrl !== undefined) updateData.video_preview_url = body.videoPreviewUrl;
 
 		const updated = await updateSimfile(db, id, updateData);
-		return json(updated);
+		// Fetch the full record with dtx_files and apply type conversion
+		const full = await getSimfile(db, updated.id);
+		return json(full ?? updated);
 	} catch (error) {
 		logger.error('Error updating chart:', error);
 		return json(

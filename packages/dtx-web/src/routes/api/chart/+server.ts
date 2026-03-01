@@ -14,17 +14,26 @@ export async function GET({
 	locals: App.Locals;
 }) {
 	const user = locals.user;
-	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
+	const scope = url.searchParams.get('scope') ?? 'mine';
+
+	// Published charts are public — no auth required
+	if (!user && scope !== 'published') {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+
+	// 'mine' scope requires auth
+	if (scope === 'mine' && !user) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
 
 	try {
 		const db = getDb(platform);
 		const page = Math.max(1, Number(url.searchParams.get('page') ?? 1));
 		const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize') ?? 20)));
 		const search = url.searchParams.get('search') || undefined;
-		const scope = url.searchParams.get('scope') ?? 'mine';
 
 		const { data, count } = await listSimfiles(db, {
-			userId: scope === 'mine' ? user.id : undefined,
+			userId: scope === 'mine' ? user!.id : undefined,
 			publishedOnly: scope === 'published',
 			search,
 			page,

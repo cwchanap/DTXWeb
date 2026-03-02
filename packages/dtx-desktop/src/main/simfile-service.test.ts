@@ -8,6 +8,7 @@ import {
 	parseDtxFiles
 } from './simfile-service';
 import { getSupabaseClient, ensureSupabaseAuth, getCurrentSession } from './auth';
+import { apiGet, apiPost } from './api-client';
 import { DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 
 // Mock dependencies
@@ -30,6 +31,12 @@ vi.mock('./auth', () => ({
 	ensureSupabaseAuth: vi.fn(),
 	getSupabaseClient: vi.fn(),
 	getCurrentSession: vi.fn()
+}));
+
+vi.mock('./api-client', () => ({
+	apiGet: vi.fn(),
+	apiPost: vi.fn(),
+	apiPatch: vi.fn()
 }));
 
 // Use the global Supabase mock
@@ -158,6 +165,11 @@ describe('SimFile Service', () => {
 			access_token: 'mock-access-token',
 			user: { id: 'user-123' }
 		});
+		(apiGet as Mock).mockResolvedValue({ success: true, data: { data: [], count: 0 } });
+		(apiPost as Mock).mockResolvedValue({
+			success: true,
+			data: { id: 1, title: 'New Song', artist: 'New Artist', bpm: 150 }
+		});
 	});
 
 	afterEach(() => {
@@ -166,13 +178,11 @@ describe('SimFile Service', () => {
 
 	describe('fetchUserSimFiles', () => {
 		it('should fetch user simfiles successfully', async () => {
-			const mockUser = { id: 'user-123' };
 			const mockSimfiles = [{ id: 'sim-1', title: 'Test Simfile' }];
-			mockSupabaseClient.auth.getUser.mockResolvedValue({
-				data: { user: mockUser },
-				error: null
+			(apiGet as Mock).mockResolvedValue({
+				success: true,
+				data: { data: mockSimfiles, count: 1 }
 			});
-			mockSupabaseClient.order.mockResolvedValue({ data: mockSimfiles, error: null });
 
 			const result = await fetchUserSimFiles();
 
@@ -182,9 +192,7 @@ describe('SimFile Service', () => {
 			}
 			expect(result.data).toEqual(mockSimfiles);
 			expect(result.fromCache).toBe(false);
-			expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
-			expect(mockSupabaseClient.select).toHaveBeenCalledWith(expect.any(String));
-			expect(mockSupabaseClient.eq).toHaveBeenCalledWith('user_id', mockUser.id);
+			expect(apiGet).toHaveBeenCalledWith('/api/chart?scope=mine&pageSize=100');
 		});
 
 		it('should return an error if authentication is not ready', async () => {
@@ -200,10 +208,7 @@ describe('SimFile Service', () => {
 		});
 
 		it('should return an error if user is not authenticated', async () => {
-			mockSupabaseClient.auth.getUser.mockResolvedValue({
-				data: { user: null },
-				error: null
-			});
+			(apiGet as Mock).mockResolvedValue({ success: false, error: 'User not authenticated' });
 			const result = await fetchUserSimFiles();
 			expect(result.success).toBe(false);
 			if (result.success) {
@@ -215,20 +220,13 @@ describe('SimFile Service', () => {
 		});
 
 		it('should return an error if fetching fails', async () => {
-			mockSupabaseClient.auth.getUser.mockResolvedValue({
-				data: { user: { id: '123' } },
-				error: null
-			});
-			mockSupabaseClient.order.mockResolvedValue({
-				data: null,
-				error: { message: 'Fetch failed' }
-			});
+			(apiGet as Mock).mockResolvedValue({ success: false, error: 'Fetch failed' });
 			const result = await fetchUserSimFiles();
 			expect(result.success).toBe(false);
 			if (result.success) {
 				throw new Error('Expected error result');
 			}
-			expect(result.error).toContain('Failed to fetch simFiles: Fetch failed');
+			expect(result.error).toContain('Fetch failed');
 			expect(result.data).toEqual([]);
 			expect(result.fromCache).toBe(false);
 		});
@@ -328,7 +326,7 @@ describe('SimFile Service', () => {
 
 				expect(result.success).toBe(true);
 				expect(result.simfileId).toBe('1');
-				expect(mockSupabaseClient.from).toHaveBeenCalledWith('simfiles');
+				expect(apiPost).toHaveBeenCalledWith('/api/chart', expect.any(Object));
 
 				// Verify fetch was called twice (once for image, once for audio)
 				expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -366,10 +364,7 @@ describe('SimFile Service', () => {
 		});
 
 		it('should return an error if simfile insertion fails', async () => {
-			mockSupabaseClient.single.mockResolvedValue({
-				data: null,
-				error: { message: 'Insert failed' }
-			});
+			(apiPost as Mock).mockResolvedValue({ success: false, error: 'Insert failed' });
 			const result = await createSimfileRecord(simfileData);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Insert failed');

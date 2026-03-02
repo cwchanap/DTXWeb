@@ -8,7 +8,7 @@ export interface SimfileRow {
 	artist: string;
 	bpm: number;
 	user_id: string;
-	is_published: number; // SQLite boolean: 0 | 1
+	is_published: 0 | 1; // SQLite boolean
 	display_id: number | null;
 	download_url: string | null;
 	preview_url: string | null;
@@ -23,7 +23,7 @@ export interface SimfileInsert {
 	artist?: string;
 	bpm: number;
 	user_id: string;
-	is_published?: number;
+	is_published?: 0 | 1;
 	display_id?: number | null;
 	download_url?: string | null;
 	preview_url?: string | null;
@@ -35,13 +35,12 @@ export interface SimfileUpdate {
 	title?: string;
 	artist?: string;
 	bpm?: number;
-	is_published?: number;
+	is_published?: 0 | 1;
 	display_id?: number | null;
 	download_url?: string | null;
 	preview_url?: string | null;
 	video_preview_url?: string | null;
 	publish_date?: string;
-	updated_at?: string;
 }
 
 export interface DtxFileRow {
@@ -72,21 +71,9 @@ export interface UserProfileUpdate {
 	username?: string;
 }
 
-/** Simfile with joined dtx_files — matches the shape of SimfileWithDtx */
-export interface SimfileWithDtxFiles {
-	id: number;
-	title: string;
-	artist: string;
-	bpm: number;
-	user_id: string;
+/** Simfile with joined dtx_files — the API-facing shape with boolean is_published */
+export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published'> {
 	is_published: boolean;
-	display_id: number | null;
-	download_url: string | null;
-	preview_url: string | null;
-	video_preview_url: string | null;
-	publish_date: string;
-	created_at: string;
-	updated_at: string;
 	dtx_files: { level: number; label: string }[];
 }
 

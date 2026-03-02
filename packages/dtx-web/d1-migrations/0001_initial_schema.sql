@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS simfiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL DEFAULT '',
     artist TEXT NOT NULL DEFAULT '',
-    bpm INTEGER NOT NULL,
+    bpm REAL NOT NULL,
     user_id TEXT NOT NULL,
     is_published INTEGER NOT NULL DEFAULT 0,
     display_id INTEGER,

@@ -31,7 +31,7 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 			'/api/chart?scope=mine&pageSize=100'
 		);
 
-		if (!result.success || !result.data) {
+		if (!result.success) {
 			throw new Error(result.error || 'Failed to fetch simFiles');
 		}
 
@@ -281,7 +281,7 @@ export async function createSimfileRecord(
 			levels: simfileData.levels
 		});
 
-		if (!apiResult.success || !apiResult.data) {
+		if (!apiResult.success) {
 			throw new Error(apiResult.error || 'Failed to create simfile');
 		}
 

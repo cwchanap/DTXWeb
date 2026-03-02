@@ -68,7 +68,7 @@ export const listSimfiles = async (
 	const conditions: string[] = [];
 	const params: unknown[] = [];
 
-	if (opts.userId && !opts.publishedOnly) {
+	if (opts.userId) {
 		conditions.push('s.user_id = ?');
 		params.push(opts.userId);
 	}

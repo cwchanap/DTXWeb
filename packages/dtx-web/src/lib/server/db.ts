@@ -226,9 +226,12 @@ export const updateSimfile = async (
 };
 
 export const deleteSimfile = async (db: D1Database, id: number): Promise<void> => {
-	// CASCADE on dtx_files FK handles child deletion
-	await db.prepare('PRAGMA foreign_keys = ON').run();
-	await db.prepare('DELETE FROM simfiles WHERE id = ?').bind(id).run();
+	// Explicitly delete children first since D1 doesn't guarantee FK cascade PRAGMA applies
+	const [, simfileResult] = await db.batch([
+		db.prepare('DELETE FROM dtx_files WHERE simfile_id = ?').bind(id),
+		db.prepare('DELETE FROM simfiles WHERE id = ?').bind(id)
+	]);
+	if (simfileResult.meta.changes === 0) throw new Error('Simfile not found');
 };
 
 // ---------------------------------------------------------------------------

@@ -252,7 +252,8 @@ export const createDtxFiles = async (
 			)
 			.bind(f.label ?? '', f.level ?? 0, f.simfile_id)
 			.first<DtxFileRow>();
-		if (row) results.push(row);
+		if (!row) throw new Error(`Failed to insert dtx_file for simfile_id=${f.simfile_id}`);
+		results.push(row);
 	}
 	return results;
 };

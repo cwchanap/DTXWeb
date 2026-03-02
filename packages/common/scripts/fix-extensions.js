@@ -19,9 +19,8 @@ async function fixImportExtensions(dir) {
 				const fixedContent = content.replace(
 					/from\s+['"]((\.\/|\.\.\/)+.+?)['"];?/g,
 					(match, importPath) => {
-						// Don't add .js if already has a file extension
-						const pathAfterRelative = importPath.replace(/^(\.\/|\.\.\/)+/, '');
-						if (pathAfterRelative.includes('.')) {
+						// Don't add .js if already has a known file extension
+						if (/\.(js|ts|jsx|tsx|css|json|svelte|html)$/.test(importPath)) {
 							return match;
 						}
 						// Replace the import path with .js extension

@@ -35,11 +35,7 @@ const getHeaders = async (): Promise<Record<string, string>> => {
 	};
 };
 
-export interface ApiResult<T = unknown> {
-	success: boolean;
-	data?: T;
-	error?: string;
-}
+export type ApiResult<T = unknown> = { success: true; data: T } | { success: false; error: string };
 
 /** Make an authenticated GET request to the web API. */
 export const apiGet = async <T = unknown>(path: string): Promise<ApiResult<T>> => {

@@ -54,6 +54,13 @@ export async function PATCH({
 	const id = Number(params.id);
 	if (!Number.isSafeInteger(id)) return json({ error: 'Invalid chart ID' }, { status: 400 });
 
+	let body: Record<string, unknown>;
+	try {
+		body = await request.json();
+	} catch {
+		return json({ error: 'Invalid request body' }, { status: 400 });
+	}
+
 	try {
 		const db = getDb(platform);
 
@@ -61,8 +68,6 @@ export async function PATCH({
 		const owner = await getSimfileOwner(db, id);
 		if (!owner) return json({ error: 'Chart not found' }, { status: 404 });
 		if (owner.user_id !== user.id) return json({ error: 'Forbidden' }, { status: 403 });
-
-		const body = await request.json();
 
 		// Map API fields to DB fields, converting boolean to integer
 		const updateData: Record<string, unknown> = {};
@@ -80,6 +85,8 @@ export async function PATCH({
 		if (body.video_preview_url !== undefined)
 			updateData.video_preview_url = body.video_preview_url;
 		if (body.videoPreviewUrl !== undefined) updateData.video_preview_url = body.videoPreviewUrl;
+		if (body.preview_url !== undefined) updateData.preview_url = body.preview_url;
+		if (body.previewUrl !== undefined) updateData.preview_url = body.previewUrl;
 
 		const updated = await updateSimfile(db, id, updateData);
 		// Fetch the full record with dtx_files and apply type conversion

@@ -21,11 +21,6 @@ export async function GET({
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	// 'mine' scope requires auth
-	if (scope === 'mine' && !user) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
-
 	try {
 		const db = getDb(platform);
 		const page = Math.max(1, Number(url.searchParams.get('page') ?? 1));

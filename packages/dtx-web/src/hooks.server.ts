@@ -8,10 +8,10 @@ import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/publi
 import { json, text } from '@sveltejs/kit';
 
 // Helper function to decode JWT payload without verification
-const decodeJwtPayload = (token: string): { exp?: number } => {
+const decodeJwtPayload = (token: string): { exp?: number } | null => {
 	try {
 		const base64Url = token.split('.')[1];
-		if (!base64Url) return {};
+		if (!base64Url) return null;
 		let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
 		// Add required padding for Base64 decoding (RFC 7515)
 		while (base64.length % 4 !== 0) {
@@ -20,8 +20,8 @@ const decodeJwtPayload = (token: string): { exp?: number } => {
 		const jsonPayload = atob(base64);
 		return JSON.parse(jsonPayload);
 	} catch (err) {
-		console.warn('decodeJwtPayload: failed to parse JWT payload', err);
-		return {};
+		console.error('decodeJwtPayload: failed to parse JWT payload — rejecting token', err);
+		return null;
 	}
 };
 
@@ -168,6 +168,9 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 			// This session should not be used for refresh operations
 			// Decode JWT payload to get actual expiration time
 			const payload = decodeJwtPayload(token);
+			if (!payload) {
+				return json({ error: 'Unauthorized' }, { status: 401 });
+			}
 			const nowSeconds = Math.floor(Date.now() / 1000);
 			// Clamp expiresIn to minimum 0 to handle clock skew (negative values when payload.exp < nowSeconds)
 			const expiresIn = Math.max(0, payload.exp ? payload.exp - nowSeconds : 3600);

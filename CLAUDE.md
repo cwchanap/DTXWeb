@@ -216,7 +216,7 @@ import { Button } from '@dtx/common/components';
 
 ### R2 Bucket Configuration
 
-**Important**: Both production and pre-production environments use the **same R2 bucket** (`simfile-dtx`). The `DTXFILE_BUCKET` binding in `wrangler.jsonc` points to the same bucket name for both environments. There is no separate pre-prod bucket - data isolation between environments is handled at the application level, not at the storage level.
+**Important**: Production uses R2 bucket `simfile-dtx`; pre-production uses `simfile-dtx-preprod`. Both environments also have separate D1 databases (`dtx-web` and `dtx-web-preprod`). Data isolation is enforced at the storage level.
 
 ## Environment Setup
 

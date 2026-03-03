@@ -59,8 +59,12 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 			data: { session: null }
 		});
 
+		// Use a valid JWT-format token so decodeJwtPayload succeeds
+		const testToken =
+			'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJleHAiOjk5OTk5OTk5OTl9.signature';
+
 		const event = createMockEvent('http://localhost:5173/api/simFile/upload', {
-			Authorization: 'Bearer test-token'
+			Authorization: `Bearer ${testToken}`
 		});
 
 		// Mock the initial Supabase client
@@ -89,12 +93,12 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		await authGuard({ event, resolve });
 
 		// Verify getUser was called with the bearer token on the initial client
-		expect(mockGetUser).toHaveBeenCalledWith('test-token');
+		expect(mockGetUser).toHaveBeenCalledWith(testToken);
 
 		// Verify locals.user and locals.session are set
 		expect(event.locals.user).toBeTruthy();
 		expect(event.locals.session).toBeTruthy();
-		expect(event.locals.session?.access_token).toBe('test-token');
+		expect(event.locals.session?.access_token).toBe(testToken);
 
 		// Verify that a new Supabase client was created for locals.supabase
 		expect(event.locals.supabase).not.toBe(initialSupabaseClient);

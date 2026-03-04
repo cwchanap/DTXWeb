@@ -148,9 +148,13 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 
 	// Handle unauthenticated API access for all /api/ routes
 	// Support both cookie-based auth (web app) and bearer token auth (desktop app)
-	// Exception: /api/chart?scope=published is public (blog page)
+	// Exceptions:
+	// - GET /api/chart?scope=published is public (blog page listing)
+	// - GET /api/chart/[id] is public for published charts (handled by route)
 	const isPublicApiRoute =
-		event.url.pathname === '/api/chart' && event.url.searchParams.get('scope') === 'published';
+		(event.url.pathname === '/api/chart' &&
+			event.url.searchParams.get('scope') === 'published') ||
+		(/^\/api\/chart\/\d+$/.test(event.url.pathname) && event.request.method === 'GET');
 
 	if (!event.locals.session && event.url.pathname.startsWith('/api/') && !isPublicApiRoute) {
 		const authHeader = event.request.headers.get('Authorization');

@@ -3,7 +3,7 @@ import { getDb, getUserProfile, upsertUserProfile } from '$lib/server/db';
 import logger from '$lib/server/logger';
 
 /** GET /api/user/profile — Get current user's profile */
-export async function GET({ platform, locals }: { platform: App.Platform; locals: App.Locals }) {
+export const GET = async ({ platform, locals }: { platform: App.Platform; locals: App.Locals }) => {
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -16,10 +16,10 @@ export async function GET({ platform, locals }: { platform: App.Platform; locals
 		logger.error('Error getting user profile:', error);
 		return json({ error: 'Failed to get profile' }, { status: 500 });
 	}
-}
+};
 
 /** PUT /api/user/profile — Create or update user profile */
-export async function PUT({
+export const PUT = async ({
 	request,
 	platform,
 	locals
@@ -27,21 +27,28 @@ export async function PUT({
 	request: Request;
 	platform: App.Platform;
 	locals: App.Locals;
-}) {
+}) => {
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
+	let body: Record<string, unknown>;
+	try {
+		body = await request.json();
+	} catch {
+		return json({ error: 'Invalid JSON' }, { status: 400 });
+	}
+
+	const username = typeof body.username === 'string' ? body.username.trim() : '';
+	if (!username || username.length > 30) {
+		return json({ error: 'Username must be 1-30 characters' }, { status: 400 });
+	}
+
 	try {
 		const db = getDb(platform);
-		const body = await request.json();
-
-		if (!body.username || typeof body.username !== 'string') {
-			return json({ error: 'Username is required' }, { status: 400 });
-		}
 
 		const profile = await upsertUserProfile(db, {
 			user_id: user.id,
-			username: body.username
+			username
 		});
 
 		return json(profile);
@@ -49,4 +56,4 @@ export async function PUT({
 		logger.error('Error upserting user profile:', error);
 		return json({ error: 'Failed to update profile' }, { status: 500 });
 	}
-}
+};

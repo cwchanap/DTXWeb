@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 
-export async function GET({
+export const GET = async ({
 	params,
 	platform,
 	locals
@@ -10,7 +10,7 @@ export async function GET({
 	params: { simfileID: string };
 	platform: App.Platform;
 	locals: App.Locals;
-}) {
+}) => {
 	const { simfileID } = params;
 
 	if (!simfileID) {
@@ -114,4 +114,4 @@ export async function GET({
 		logger.error('Error listing files:', error);
 		return json({ error: 'Failed to list files' }, { status: 500 });
 	}
-}
+};

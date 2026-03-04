@@ -37,7 +37,7 @@
 		filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
 	});
 
-	async function togglePublishChart(id: number, published: boolean) {
+	const togglePublishChart = async (id: number, published: boolean) => {
 		try {
 			const response = await fetch(`/api/chart/${id}`, {
 				method: 'PATCH',
@@ -64,9 +64,9 @@
 				duration: 3000
 			});
 		}
-	}
+	};
 
-	async function loadItems() {
+	const loadItems = async () => {
 		loading = true;
 		try {
 			const params = new URLSearchParams({
@@ -94,14 +94,14 @@
 		} finally {
 			loading = false;
 		}
-	}
+	};
 
-	function changePage(newPage: number) {
+	const changePage = (newPage: number) => {
 		if (newPage >= 1 && newPage <= totalPages) {
 			currentPage = newPage;
 			loadItems();
 		}
-	}
+	};
 
 	// Handle page changes from Skeleton UI Pagination
 	function handlePageChange(event: { page: number }) {
@@ -123,7 +123,7 @@
 		}, 500);
 	}
 
-	async function onFileDelete(id: number) {
+	const handleFileDelete = async (id: number) => {
 		// API call handles complete deletion (R2 bucket files + database records)
 		try {
 			const response = await fetch(`/api/simFile/delete/${id}`, {
@@ -171,7 +171,7 @@
 			title: 'Chart deleted',
 			duration: 3000
 		});
-	}
+	};
 
 	onMount(() => {
 		loadItems();
@@ -363,7 +363,12 @@
 						{/if}
 					</div>
 					<div class="ml-4 flex items-center gap-2">
-						<ChartListTableItem {item} {isBlog} {togglePublishChart} {onFileDelete} />
+						<ChartListTableItem
+							{item}
+							{isBlog}
+							{togglePublishChart}
+							onFileDelete={handleFileDelete}
+						/>
 					</div>
 				</div>
 			</div>
@@ -379,7 +384,7 @@
 					{item}
 					{isBlog}
 					{togglePublishChart}
-					{onFileDelete}
+					onFileDelete={handleFileDelete}
 					simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 				/>
 			</div>

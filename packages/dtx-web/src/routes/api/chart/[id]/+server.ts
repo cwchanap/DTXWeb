@@ -3,7 +3,7 @@ import { getDb, getSimfile, getSimfileOwner, updateSimfile } from '$lib/server/d
 import logger from '$lib/server/logger';
 
 /** GET /api/chart/[id] — Get chart detail */
-export async function GET({
+export const GET = async ({
 	params,
 	platform,
 	locals
@@ -11,9 +11,8 @@ export async function GET({
 	params: { id: string };
 	platform: App.Platform;
 	locals: App.Locals;
-}) {
+}) => {
 	const user = locals.user;
-	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
 	const id = Number(params.id);
 	if (!Number.isSafeInteger(id)) return json({ error: 'Invalid chart ID' }, { status: 400 });
@@ -23,9 +22,11 @@ export async function GET({
 		const simfile = await getSimfile(db, id);
 
 		if (!simfile) return json({ error: 'Chart not found' }, { status: 404 });
+		if (simfile.is_published) return json(simfile);
+		if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
-		// Only owner or published charts are accessible
-		if (simfile.user_id !== user.id && !simfile.is_published) {
+		// Unpublished charts are only accessible by owner
+		if (simfile.user_id !== user.id) {
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}
 
@@ -34,10 +35,10 @@ export async function GET({
 		logger.error('Error getting chart:', error);
 		return json({ error: 'Failed to get chart' }, { status: 500 });
 	}
-}
+};
 
 /** PATCH /api/chart/[id] — Update chart */
-export async function PATCH({
+export const PATCH = async ({
 	params,
 	request,
 	platform,
@@ -47,7 +48,7 @@ export async function PATCH({
 	request: Request;
 	platform: App.Platform;
 	locals: App.Locals;
-}) {
+}) => {
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -74,8 +75,18 @@ export async function PATCH({
 		if (body.title !== undefined) updateData.title = body.title;
 		if (body.artist !== undefined) updateData.artist = body.artist;
 		if (body.bpm !== undefined) updateData.bpm = body.bpm;
-		if (body.is_published !== undefined) updateData.is_published = body.is_published ? 1 : 0;
-		if (body.isPublished !== undefined) updateData.is_published = body.isPublished ? 1 : 0;
+		if (body.is_published !== undefined) {
+			if (typeof body.is_published !== 'boolean') {
+				return json({ error: 'Invalid is_published' }, { status: 400 });
+			}
+			updateData.is_published = body.is_published ? 1 : 0;
+		}
+		if (body.isPublished !== undefined) {
+			if (typeof body.isPublished !== 'boolean') {
+				return json({ error: 'Invalid isPublished' }, { status: 400 });
+			}
+			updateData.is_published = body.isPublished ? 1 : 0;
+		}
 		if (body.display_id !== undefined) updateData.display_id = body.display_id;
 		if (body.displayId !== undefined) updateData.display_id = body.displayId;
 		if (body.download_url !== undefined) updateData.download_url = body.download_url;
@@ -94,6 +105,9 @@ export async function PATCH({
 		return json(full ?? updated);
 	} catch (error) {
 		logger.error('Error updating chart:', error);
+		if (error instanceof Error && error.message.includes('No fields to update')) {
+			return json({ error: 'Bad Request', message: error.message }, { status: 400 });
+		}
 		return json(
 			{
 				error: 'Failed to update chart',
@@ -102,4 +116,4 @@ export async function PATCH({
 			{ status: 500 }
 		);
 	}
-}
+};

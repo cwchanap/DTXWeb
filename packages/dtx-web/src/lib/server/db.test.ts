@@ -13,6 +13,7 @@ import {
 	upsertUserProfile,
 	updateUserProfile
 } from './db';
+import type { D1Database } from '@cloudflare/workers-types';
 
 vi.mock('@dtx/common', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@dtx/common')>();

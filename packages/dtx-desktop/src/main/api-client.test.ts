@@ -157,12 +157,10 @@ describe('api-client', () => {
 			const { apiPatch } = await importApiClient();
 			vi.stubGlobal(
 				'fetch',
-				vi
-					.fn()
-					.mockResolvedValue({
-						ok: true,
-						json: async () => ({ id: 1, title: 'Updated' })
-					})
+				vi.fn().mockResolvedValue({
+					ok: true,
+					json: async () => ({ id: 1, title: 'Updated' })
+				})
 			);
 			const result = await apiPatch('/api/chart/1', { title: 'Updated' });
 			expect(result).toEqual({ success: true, data: { id: 1, title: 'Updated' } });

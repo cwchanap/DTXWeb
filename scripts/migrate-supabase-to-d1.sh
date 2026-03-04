@@ -32,6 +32,11 @@ D1_DB_NAME="${D1_DB_NAME:-drumery-db}"
 WRANGLER_DIR="packages/dtx-web"
 OUTPUT_DIR="$(mktemp -d)"
 
+cleanup() {
+  rm -rf "$OUTPUT_DIR"
+}
+trap cleanup EXIT
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -63,6 +68,11 @@ fi
 
 if ! command -v wrangler &> /dev/null && [ "$DRY_RUN" = false ]; then
   err "wrangler is not installed. Install with: npm install -g wrangler"
+  exit 1
+fi
+
+if ! command -v python3 &> /dev/null; then
+  err "python3 is not installed. Install Python 3 to run CSV-safe migration processing."
   exit 1
 fi
 
@@ -99,38 +109,47 @@ echo ""
 log "Step 1: Exporting data from Supabase PostgreSQL..."
 
 # Export simfiles
-psql "$SUPABASE_DB_URL" -t -A -F'|' -c "
-  SELECT id, title, artist, bpm, user_id,
-         CASE WHEN is_published THEN 1 ELSE 0 END as is_published,
-         display_id, download_url, preview_url, video_preview_url,
-         to_char(publish_date, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as publish_date,
-         to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
-         to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
-  FROM public.simfiles
-  ORDER BY id;
+psql "$SUPABASE_DB_URL" -c "
+  COPY (
+    SELECT id, title, artist, bpm, user_id,
+           CASE WHEN is_published THEN 1 ELSE 0 END as is_published,
+           display_id, download_url, preview_url, video_preview_url,
+           to_char(publish_date, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as publish_date,
+           to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+           to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    FROM public.simfiles
+    ORDER BY id
+  ) TO STDOUT WITH (FORMAT CSV, HEADER, NULL '\\N');
 " > "$OUTPUT_DIR/simfiles.csv"
 
-SIMFILE_COUNT=$(wc -l < "$OUTPUT_DIR/simfiles.csv" | tr -d ' ')
+SIMFILE_COUNT=$(( $(wc -l < "$OUTPUT_DIR/simfiles.csv" | tr -d ' ') - 1 ))
+if [ "$SIMFILE_COUNT" -lt 0 ]; then SIMFILE_COUNT=0; fi
 log "  Exported $SIMFILE_COUNT simfiles"
 
 # Export dtx_files
-psql "$SUPABASE_DB_URL" -t -A -F'|' -c "
-  SELECT id, label, level, simfile_id
-  FROM public.dtx_files
-  ORDER BY id;
+psql "$SUPABASE_DB_URL" -c "
+  COPY (
+    SELECT id, label, level, simfile_id
+    FROM public.dtx_files
+    ORDER BY id
+  ) TO STDOUT WITH (FORMAT CSV, HEADER, NULL '\\N');
 " > "$OUTPUT_DIR/dtx_files.csv"
 
-DTX_COUNT=$(wc -l < "$OUTPUT_DIR/dtx_files.csv" | tr -d ' ')
+DTX_COUNT=$(( $(wc -l < "$OUTPUT_DIR/dtx_files.csv" | tr -d ' ') - 1 ))
+if [ "$DTX_COUNT" -lt 0 ]; then DTX_COUNT=0; fi
 log "  Exported $DTX_COUNT dtx_files"
 
 # Export user_profiles
-psql "$SUPABASE_DB_URL" -t -A -F'|' -c "
-  SELECT id, user_id, username
-  FROM public.user_profiles
-  ORDER BY id;
+psql "$SUPABASE_DB_URL" -c "
+  COPY (
+    SELECT id, user_id, username
+    FROM public.user_profiles
+    ORDER BY id
+  ) TO STDOUT WITH (FORMAT CSV, HEADER, NULL '\\N');
 " > "$OUTPUT_DIR/user_profiles.csv"
 
-PROFILE_COUNT=$(wc -l < "$OUTPUT_DIR/user_profiles.csv" | tr -d ' ')
+PROFILE_COUNT=$(( $(wc -l < "$OUTPUT_DIR/user_profiles.csv" | tr -d ' ') - 1 ))
+if [ "$PROFILE_COUNT" -lt 0 ]; then PROFILE_COUNT=0; fi
 log "  Exported $PROFILE_COUNT user_profiles"
 
 echo ""
@@ -153,45 +172,74 @@ HEADER
 # Replace timestamp
 sed -i.bak "s/TIMESTAMP_PLACEHOLDER/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" "$SQL_FILE"
 
-# Helper: escape single quotes for SQLite
-escape_sql() {
-  echo "$1" | sed "s/'/''/g"
-}
+# Generate INSERT statements using CSV-safe parsing
+log "  Generating INSERT statements from CSV exports..."
+python3 - "$OUTPUT_DIR/simfiles.csv" "$OUTPUT_DIR/dtx_files.csv" "$OUTPUT_DIR/user_profiles.csv" "$SQL_FILE" <<'PY'
+import csv
+import sys
 
-# Generate INSERT statements for simfiles
-log "  Generating simfiles INSERT statements..."
-while IFS='|' read -r id title artist bpm user_id is_published display_id download_url preview_url video_preview_url publish_date created_at updated_at; do
-  [ -z "$id" ] && continue
+simfiles_csv, dtx_files_csv, user_profiles_csv, sql_file = sys.argv[1:5]
 
-  # Handle NULL values
-  display_id_val="${display_id:+$display_id}"
-  [ -z "$display_id_val" ] && display_id_val="NULL" || display_id_val="$display_id_val"
 
-  download_url_val="${download_url}"
-  [ -z "$download_url_val" ] && download_url_val="NULL" || download_url_val="'$(escape_sql "$download_url_val")'"
+def is_null(value: str | None) -> bool:
+    return value is None or value == "\\N"
 
-  preview_url_val="${preview_url}"
-  [ -z "$preview_url_val" ] && preview_url_val="NULL" || preview_url_val="'$(escape_sql "$preview_url_val")'"
 
-  video_preview_url_val="${video_preview_url}"
-  [ -z "$video_preview_url_val" ] && video_preview_url_val="NULL" || video_preview_url_val="'$(escape_sql "$video_preview_url_val")'"
+def sql_text(value: str | None, *, nullable: bool = False) -> str:
+    if is_null(value):
+        return "NULL" if nullable else "''"
+    return "'" + value.replace("'", "''") + "'"
 
-  echo "INSERT INTO simfiles (id, title, artist, bpm, user_id, is_published, display_id, download_url, preview_url, video_preview_url, publish_date, created_at, updated_at) VALUES ($id, '$(escape_sql "$title")', '$(escape_sql "$artist")', $bpm, '$(escape_sql "$user_id")', $is_published, $display_id_val, $download_url_val, $preview_url_val, $video_preview_url_val, '$publish_date', '$created_at', '$updated_at');" >> "$SQL_FILE"
-done < "$OUTPUT_DIR/simfiles.csv"
 
-# Generate INSERT statements for dtx_files
-log "  Generating dtx_files INSERT statements..."
-while IFS='|' read -r id label level simfile_id; do
-  [ -z "$id" ] && continue
-  echo "INSERT INTO dtx_files (id, label, level, simfile_id) VALUES ($id, '$(escape_sql "$label")', $level, $simfile_id);" >> "$SQL_FILE"
-done < "$OUTPUT_DIR/dtx_files.csv"
+def sql_number(value: str | None, *, nullable: bool = False) -> str:
+    if is_null(value):
+        return "NULL" if nullable else "0"
+    return value
 
-# Generate INSERT statements for user_profiles
-log "  Generating user_profiles INSERT statements..."
-while IFS='|' read -r id user_id username; do
-  [ -z "$id" ] && continue
-  echo "INSERT INTO user_profiles (id, user_id, username) VALUES ($id, '$(escape_sql "$user_id")', '$(escape_sql "$username")');" >> "$SQL_FILE"
-done < "$OUTPUT_DIR/user_profiles.csv"
+
+with open(sql_file, "a", encoding="utf-8", newline="") as out:
+    with open(simfiles_csv, "r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            out.write(
+                "INSERT INTO simfiles (id, title, artist, bpm, user_id, is_published, display_id, download_url, preview_url, video_preview_url, publish_date, created_at, updated_at) "
+                "VALUES ({id}, {title}, {artist}, {bpm}, {user_id}, {is_published}, {display_id}, {download_url}, {preview_url}, {video_preview_url}, {publish_date}, {created_at}, {updated_at});\n".format(
+                    id=sql_number(row.get("id")),
+                    title=sql_text(row.get("title")),
+                    artist=sql_text(row.get("artist")),
+                    bpm=sql_number(row.get("bpm")),
+                    user_id=sql_text(row.get("user_id")),
+                    is_published=sql_number(row.get("is_published")),
+                    display_id=sql_number(row.get("display_id"), nullable=True),
+                    download_url=sql_text(row.get("download_url"), nullable=True),
+                    preview_url=sql_text(row.get("preview_url"), nullable=True),
+                    video_preview_url=sql_text(row.get("video_preview_url"), nullable=True),
+                    publish_date=sql_text(row.get("publish_date"), nullable=True),
+                    created_at=sql_text(row.get("created_at")),
+                    updated_at=sql_text(row.get("updated_at")),
+                )
+            )
+
+    with open(dtx_files_csv, "r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            out.write(
+                "INSERT INTO dtx_files (id, label, level, simfile_id) VALUES ({id}, {label}, {level}, {simfile_id});\n".format(
+                    id=sql_number(row.get("id")),
+                    label=sql_text(row.get("label")),
+                    level=sql_number(row.get("level")),
+                    simfile_id=sql_number(row.get("simfile_id")),
+                )
+            )
+
+    with open(user_profiles_csv, "r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            out.write(
+                "INSERT INTO user_profiles (id, user_id, username) VALUES ({id}, {user_id}, {username});\n".format(
+                    id=sql_number(row.get("id")),
+                    user_id=sql_text(row.get("user_id")),
+                    username=sql_text(row.get("username")),
+                )
+            )
+PY
 
 echo "" >> "$SQL_FILE"
 echo "COMMIT;" >> "$SQL_FILE"
@@ -239,6 +287,4 @@ else
   warn "⚠️  Count mismatch detected. Please verify the data manually."
 fi
 
-# Cleanup
-rm -rf "$OUTPUT_DIR"
 log "Temporary files cleaned up."

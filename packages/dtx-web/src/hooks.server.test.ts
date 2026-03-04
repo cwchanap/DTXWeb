@@ -22,6 +22,12 @@ beforeAll(async () => {
 	({ authGuard } = await import('./hooks.server'));
 });
 
+const createTestJwt = (payload: Record<string, unknown>): string => {
+	const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+	const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+	return `${header}.${body}.signature`;
+};
+
 // Helper function to create a mock event
 function createMockEvent(url: string, headers?: HeadersInit) {
 	return {
@@ -60,8 +66,7 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		});
 
 		// Use a valid JWT-format token so decodeJwtPayload succeeds
-		const testToken =
-			'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJleHAiOjk5OTk5OTk5OTl9.signature';
+		const testToken = createTestJwt({ sub: 'test-user', exp: 9999999999 });
 
 		const event = createMockEvent('http://localhost:5173/api/simFile/upload', {
 			Authorization: `Bearer ${testToken}`

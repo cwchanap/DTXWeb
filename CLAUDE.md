@@ -216,7 +216,7 @@ import { Button } from '@dtx/common/components';
 
 ### R2 Bucket Configuration
 
-**Important**: Production uses R2 bucket `simfile-dtx`; pre-production uses `simfile-dtx-preprod`. Both environments also have separate D1 databases (`dtx-web` and `dtx-web-preprod`). Data isolation is enforced at the storage level.
+**Important**: Production and pre-production both use the same R2 bucket `simfile-dtx` (intentional due to resource constraints; only the production bucket is currently available). D1 databases remain separate (`dtx-web` and `dtx-web-preprod`) for environment-level persistence isolation.
 
 ## Environment Setup
 

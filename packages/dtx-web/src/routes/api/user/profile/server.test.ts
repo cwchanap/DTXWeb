@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, PUT } from './+server';
 import { getDb, getUserProfile, upsertUserProfile } from '$lib/server/db';
+import type { D1Database } from '@cloudflare/workers-types';
 
 vi.mock('$lib/server/db');
 vi.mock('$lib/server/logger', () => ({
@@ -80,6 +81,47 @@ describe('PUT /api/user/profile', () => {
 			locals: { user: mockUser } as App.Locals
 		});
 		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 for malformed JSON', async () => {
+		const request = {
+			json: async () => {
+				throw new SyntaxError('Unexpected token');
+			}
+		} as unknown as Request;
+
+		const response = await PUT({
+			request,
+			platform: mockPlatform as App.Platform,
+			locals: { user: mockUser } as App.Locals
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid JSON');
+	});
+
+	it('trims username before upsert', async () => {
+		vi.mocked(upsertUserProfile).mockResolvedValue(mockProfile);
+		await PUT({
+			request: createMockRequest({ username: '  testuser  ' }),
+			platform: mockPlatform as App.Platform,
+			locals: { user: mockUser } as App.Locals
+		});
+		expect(upsertUserProfile).toHaveBeenCalledWith(expect.anything(), {
+			user_id: 'user-1',
+			username: 'testuser'
+		});
+	});
+
+	it('returns 400 when username exceeds 30 characters', async () => {
+		const response = await PUT({
+			request: createMockRequest({ username: 'a'.repeat(31) }),
+			platform: mockPlatform as App.Platform,
+			locals: { user: mockUser } as App.Locals
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Username must be 1-30 characters');
 	});
 
 	it('returns 400 when username is not a string', async () => {

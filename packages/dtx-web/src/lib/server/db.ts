@@ -9,6 +9,7 @@ import type {
 	UserProfileUpdate,
 	SimfileWithDtxFiles
 } from '@dtx/common';
+import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '@dtx/common';
 
 // Re-export for convenience
@@ -46,11 +47,11 @@ export const getSimfile = async (
 export const getSimfileOwner = async (
 	db: D1Database,
 	id: number
-): Promise<{ user_id: string; is_published: number } | null> => {
+): Promise<{ user_id: string; is_published: 0 | 1 } | null> => {
 	return db
 		.prepare('SELECT user_id, is_published FROM simfiles WHERE id = ?')
 		.bind(id)
-		.first<{ user_id: string; is_published: number }>();
+		.first<{ user_id: string; is_published: 0 | 1 }>();
 };
 
 export interface ListSimfilesOptions {
@@ -82,8 +83,12 @@ export const listSimfiles = async (
 	}
 
 	const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-	const page = opts.page ?? 1;
-	const pageSize = opts.pageSize ?? 20;
+	const pageRaw = opts.page ?? 1;
+	const pageSizeRaw = opts.pageSize ?? 20;
+	const page = Number.isFinite(pageRaw) ? Math.max(1, Math.trunc(pageRaw)) : 1;
+	const pageSize = Number.isFinite(pageSizeRaw)
+		? Math.min(100, Math.max(1, Math.trunc(pageSizeRaw)))
+		: 20;
 	const offset = (page - 1) * pageSize;
 
 	// Count query
@@ -128,10 +133,18 @@ export interface SearchSimfilesOptions {
 	limit?: number;
 }
 
+export interface SearchSimfileResult {
+	id: number;
+	title: string;
+	artist: string;
+	bpm: number;
+	is_published: 0 | 1;
+}
+
 export const searchSimfiles = async (
 	db: D1Database,
 	opts: SearchSimfilesOptions
-): Promise<SimfileRow[]> => {
+): Promise<SearchSimfileResult[]> => {
 	const conditions: string[] = ['(title LIKE ? OR artist LIKE ?)'];
 	const pattern = `%${opts.query}%`;
 	const params: unknown[] = [pattern, pattern];
@@ -142,7 +155,8 @@ export const searchSimfiles = async (
 		params.push(...opts.excludeIds);
 	}
 
-	const limit = opts.limit ?? 8;
+	const limitRaw = opts.limit ?? 8;
+	const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, Math.trunc(limitRaw))) : 8;
 	const where = conditions.join(' AND ');
 
 	return (
@@ -151,7 +165,7 @@ export const searchSimfiles = async (
 				`SELECT id, title, artist, bpm, is_published FROM simfiles WHERE ${where} LIMIT ?`
 			)
 			.bind(...params, limit)
-			.all<SimfileRow>()
+			.all<SearchSimfileResult>()
 	).results;
 };
 

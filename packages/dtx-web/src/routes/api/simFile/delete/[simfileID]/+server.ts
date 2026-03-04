@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner, deleteSimfile } from '$lib/server/db';
 
-export async function DELETE({
+export const DELETE = async ({
 	params,
 	platform,
 	locals
@@ -10,7 +10,7 @@ export async function DELETE({
 	params: { simfileID: string };
 	platform: App.Platform;
 	locals: App.Locals;
-}) {
+}) => {
 	try {
 		// Authentication is handled by hooks.server.ts
 		// locals.user is set for both cookie session and Bearer token auth
@@ -212,4 +212,4 @@ export async function DELETE({
 			{ status: 500 }
 		);
 	}
-}
+};

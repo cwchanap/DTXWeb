@@ -36,5 +36,3 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     user_id TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL
 );
-
-CREATE INDEX idx_user_profiles_user_id ON user_profiles(user_id);

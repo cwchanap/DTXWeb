@@ -37,12 +37,16 @@ const getHeaders = async (): Promise<Record<string, string>> => {
 
 export type ApiResult<T = unknown> = { success: true; data: T } | { success: false; error: string };
 
-/** Make an authenticated GET request to the web API. */
-export const apiGet = async <T = unknown>(path: string): Promise<ApiResult<T>> => {
+const apiRequest = async <T = unknown>(
+	method: 'GET' | 'POST' | 'PATCH',
+	path: string,
+	body?: unknown
+): Promise<ApiResult<T>> => {
 	try {
 		const response = await fetch(`${getApiBaseUrl()}${path}`, {
-			method: 'GET',
-			headers: await getHeaders()
+			method,
+			headers: await getHeaders(),
+			...(body === undefined ? {} : { body: JSON.stringify(body) })
 		});
 
 		if (!response.ok) {
@@ -59,51 +63,15 @@ export const apiGet = async <T = unknown>(path: string): Promise<ApiResult<T>> =
 		};
 	}
 };
+
+/** Make an authenticated GET request to the web API. */
+export const apiGet = async <T = unknown>(path: string): Promise<ApiResult<T>> =>
+	apiRequest<T>('GET', path);
 
 /** Make an authenticated POST request to the web API. */
-export const apiPost = async <T = unknown>(path: string, body: unknown): Promise<ApiResult<T>> => {
-	try {
-		const response = await fetch(`${getApiBaseUrl()}${path}`, {
-			method: 'POST',
-			headers: await getHeaders(),
-			body: JSON.stringify(body)
-		});
-
-		if (!response.ok) {
-			const err = await response.json().catch(() => ({ error: response.statusText }));
-			return { success: false, error: err.error || `HTTP ${response.status}` };
-		}
-
-		const data = await response.json();
-		return { success: true, data: data as T };
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : 'Unknown error'
-		};
-	}
-};
+export const apiPost = async <T = unknown>(path: string, body: unknown): Promise<ApiResult<T>> =>
+	apiRequest<T>('POST', path, body);
 
 /** Make an authenticated PATCH request to the web API. */
-export const apiPatch = async <T = unknown>(path: string, body: unknown): Promise<ApiResult<T>> => {
-	try {
-		const response = await fetch(`${getApiBaseUrl()}${path}`, {
-			method: 'PATCH',
-			headers: await getHeaders(),
-			body: JSON.stringify(body)
-		});
-
-		if (!response.ok) {
-			const err = await response.json().catch(() => ({ error: response.statusText }));
-			return { success: false, error: err.error || `HTTP ${response.status}` };
-		}
-
-		const data = await response.json();
-		return { success: true, data: data as T };
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : 'Unknown error'
-		};
-	}
-};
+export const apiPatch = async <T = unknown>(path: string, body: unknown): Promise<ApiResult<T>> =>
+	apiRequest<T>('PATCH', path, body);

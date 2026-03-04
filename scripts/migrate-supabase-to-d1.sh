@@ -28,7 +28,7 @@
 set -euo pipefail
 
 # Configuration
-D1_DB_NAME="${D1_DB_NAME:-drumery-db}"
+D1_DB_NAME="${D1_DB_NAME:-dtx-web}"
 WRANGLER_DIR="packages/dtx-web"
 OUTPUT_DIR="$(mktemp -d)"
 

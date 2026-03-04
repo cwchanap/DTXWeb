@@ -27,8 +27,9 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		}
 
 		// Fetch simfiles from web API instead of Supabase directly
+		// Use large pageSize to fetch all user charts (pagination not implemented in desktop)
 		const result = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
-			'/api/chart?scope=mine&pageSize=100'
+			'/api/chart?scope=mine&pageSize=10000'
 		);
 
 		if (!result.success) {

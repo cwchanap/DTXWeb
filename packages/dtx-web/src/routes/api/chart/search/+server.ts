@@ -3,7 +3,7 @@ import { getDb, searchSimfiles } from '$lib/server/db';
 import logger from '$lib/server/logger';
 
 /** GET /api/chart/search — Search charts by title/artist */
-export async function GET({
+export const GET = async ({
 	url,
 	platform,
 	locals
@@ -11,7 +11,7 @@ export async function GET({
 	url: URL;
 	platform: App.Platform;
 	locals: App.Locals;
-}) {
+}) => {
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -35,4 +35,4 @@ export async function GET({
 		logger.error('Error searching charts:', error);
 		return json({ error: 'Failed to search charts' }, { status: 500 });
 	}
-}
+};

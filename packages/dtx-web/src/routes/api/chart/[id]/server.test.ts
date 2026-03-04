@@ -34,7 +34,17 @@ describe('GET /api/chart/[id]', () => {
 		vi.mocked(getSimfile).mockResolvedValue(mockSimfile);
 	});
 
-	it('returns 401 when unauthenticated', async () => {
+	it('returns 200 when unauthenticated for published chart', async () => {
+		const response = await GET({
+			params: { id: '1' },
+			platform: mockPlatform as any,
+			locals: { user: null } as any
+		});
+		expect(response.status).toBe(200);
+	});
+
+	it('returns 401 when unauthenticated for unpublished chart', async () => {
+		vi.mocked(getSimfile).mockResolvedValue({ ...mockSimfile, is_published: false });
 		const response = await GET({
 			params: { id: '1' },
 			platform: mockPlatform as any,
@@ -247,5 +257,36 @@ describe('PATCH /api/chart/[id]', () => {
 			1,
 			expect.objectContaining({ is_published: 1 })
 		);
+	});
+
+	it('returns 400 when isPublished is not boolean', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ isPublished: 'true' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 when no fields are provided', async () => {
+		vi.mocked(updateSimfile).mockRejectedValue(new Error('No fields to update'));
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({})
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
 	});
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, POST } from './+server';
-import { getDb, listSimfiles, createSimfile, createDtxFiles } from '$lib/server/db';
+import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 
 vi.mock('$lib/server/db');
@@ -68,16 +68,31 @@ describe('GET /api/chart', () => {
 		);
 	});
 
-	it('clamps pageSize to 100', async () => {
-		await GET({
+	it('returns 400 for invalid scope', async () => {
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=all'),
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 for invalid page', async () => {
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=published&page=abc'),
+			platform: mockPlatform as any,
+			locals: { user: null } as any
+		});
+		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 for invalid pageSize', async () => {
+		const response = await GET({
 			url: new URL('http://localhost/api/chart?scope=published&pageSize=9999'),
 			platform: mockPlatform as any,
 			locals: { user: null } as any
 		});
-		expect(listSimfiles).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ pageSize: 100 })
-		);
+		expect(response.status).toBe(400);
 	});
 
 	it('returns 500 when listSimfiles throws', async () => {
@@ -113,6 +128,7 @@ describe('POST /api/chart', () => {
 		vi.mocked(getDb).mockReturnValue({} as any);
 		vi.mocked(createSimfile).mockResolvedValue(mockSimfileRow);
 		vi.mocked(createDtxFiles).mockResolvedValue([]);
+		vi.mocked(deleteSimfile).mockResolvedValue(undefined);
 		vi.mocked(toSimfileWithDtx).mockReturnValue({
 			...mockSimfileRow,
 			is_published: false,
@@ -132,6 +148,34 @@ describe('POST /api/chart', () => {
 			locals: { user: null } as any
 		});
 		expect(response.status).toBe(401);
+	});
+
+	it('returns 400 for malformed JSON request body', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: 'not-json'
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 for non-boolean isPublished', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, isPublished: 'false' })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
 	});
 
 	it('creates simfile and returns 201', async () => {
@@ -184,5 +228,23 @@ describe('POST /api/chart', () => {
 			locals: { user: mockUser } as any
 		});
 		expect(response.status).toBe(500);
+	});
+
+	it('deletes created simfile if createDtxFiles fails', async () => {
+		vi.mocked(createDtxFiles).mockRejectedValue(new Error('dtx insert failed'));
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, levels: [{ label: 'EXT', level: 50 }] })
+		});
+
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+
+		expect(response.status).toBe(500);
+		expect(deleteSimfile).toHaveBeenCalledWith(expect.anything(), 1);
 	});
 });

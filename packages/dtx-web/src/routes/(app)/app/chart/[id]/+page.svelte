@@ -12,8 +12,8 @@
 	let simfile: Tables<'simfiles'> | null = $state(null);
 	let loading = $state(true);
 	let error: string | null = $state(null);
-	let updatedHighestDtx: DTXFile | null = $state(null);
-	let updatedSimfile: SimFile | null = $state(null);
+	let updatedHighestDtx = $state<DTXFile | null>(null);
+	let updatedSimfile = $state<SimFile | null>(null);
 	let userUploadedFiles: File[] = $state([]);
 	let { data } = $props();
 
@@ -22,7 +22,7 @@
 		if (id) await loadSimfileDetails(id);
 	});
 
-	async function loadSimfileDetails(id: string) {
+	const loadSimfileDetails = async (id: string) => {
 		try {
 			const response = await fetch(`/api/chart/${id}`);
 			if (!response.ok) {
@@ -35,19 +35,19 @@
 		} finally {
 			loading = false;
 		}
-	}
+	};
 
-	function goBack() {
+	const handleGoBack = () => {
 		goto('/app/chart');
-	}
+	};
 
-	async function updateSimfile(
+	const handleUpdateSimfile = async (
 		displayId: number,
 		publishDate: string,
 		isPublished: boolean,
 		downloadUrl: string,
 		videoPreviewUrl: string
-	) {
+	) => {
 		const { id } = $page.params;
 		let updateFields: Record<string, unknown> = {
 			download_url: downloadUrl,
@@ -84,11 +84,11 @@
 				duration: 5000
 			});
 		}
-	}
+	};
 </script>
 
 <div class="container mx-auto p-4">
-	<button onclick={goBack} class="mb-4 text-blue-500 hover:text-blue-700">
+	<button onclick={handleGoBack} class="mb-4 text-blue-500 hover:text-blue-700">
 		← Back to List
 	</button>
 	{#if loading}
@@ -99,7 +99,7 @@
 		<ChartDetail
 			{simfile}
 			on:onSave={(e) =>
-				updateSimfile(
+				handleUpdateSimfile(
 					e.detail.displayId,
 					e.detail.publishDate,
 					e.detail.isPublished,

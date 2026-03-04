@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from './+server';
 import { getDb, searchSimfiles } from '$lib/server/db';
+import type { D1Database } from '@cloudflare/workers-types';
 
 vi.mock('$lib/server/db');
 vi.mock('$lib/server/logger', () => ({
@@ -38,6 +39,10 @@ describe('GET /api/chart/search', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getDb).mockReturnValue({} as D1Database);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
 	});
 
 	it('returns 401 when unauthenticated', async () => {

@@ -129,6 +129,7 @@ export const listSimfiles = async (
 
 export interface SearchSimfilesOptions {
 	query: string;
+	userId?: string;
 	excludeIds?: number[];
 	limit?: number;
 }
@@ -148,6 +149,15 @@ export const searchSimfiles = async (
 	const conditions: string[] = ['(title LIKE ? OR artist LIKE ?)'];
 	const pattern = `%${opts.query}%`;
 	const params: unknown[] = [pattern, pattern];
+
+	// Restrict to published charts or owned by the user
+	if (opts.userId) {
+		conditions.push('(is_published = 1 OR user_id = ?)');
+		params.push(opts.userId);
+	} else {
+		// If no userId provided, only show published charts
+		conditions.push('is_published = 1');
+	}
 
 	if (opts.excludeIds && opts.excludeIds.length > 0) {
 		const placeholders = opts.excludeIds.map(() => '?').join(',');

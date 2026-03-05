@@ -177,7 +177,7 @@ describe('SimFile Service', () => {
 	});
 
 	describe('fetchUserSimFiles', () => {
-		it('should fetch user simfiles successfully', async () => {
+		it('should fetch user simfiles successfully with single page', async () => {
 			const mockSimfiles = [{ id: 'sim-1', title: 'Test Simfile' }];
 			(apiGet as Mock).mockResolvedValue({
 				success: true,
@@ -192,7 +192,40 @@ describe('SimFile Service', () => {
 			}
 			expect(result.data).toEqual(mockSimfiles);
 			expect(result.fromCache).toBe(false);
-			expect(apiGet).toHaveBeenCalledWith('/api/chart?scope=mine&pageSize=100');
+			expect(apiGet).toHaveBeenCalledWith('/api/chart?scope=mine&page=1&pageSize=100');
+		});
+
+		it('should fetch user simfiles with pagination for multiple pages', async () => {
+			const mockSimfiles = Array.from({ length: 150 }, (_, i) => ({
+				id: `sim-${i}`,
+				title: `Song ${i}`
+			}));
+
+			// First call returns 100 items and total count 150
+			const firstPageData = mockSimfiles.slice(0, 100);
+			const secondPageData = mockSimfiles.slice(100);
+
+			(apiGet as Mock)
+				.mockResolvedValueOnce({
+					success: true,
+					data: { data: firstPageData, count: 150 }
+				})
+				.mockResolvedValueOnce({
+					success: true,
+					data: { data: secondPageData, count: 150 }
+				});
+
+			const result = await fetchUserSimFiles();
+
+			expect(result.success).toBe(true);
+			if (!result.success) {
+				throw new Error('Expected success result');
+			}
+			expect(result.data).toHaveLength(150);
+			expect(result.fromCache).toBe(false);
+			expect(apiGet).toHaveBeenCalledTimes(2);
+			expect(apiGet).toHaveBeenNthCalledWith(1, '/api/chart?scope=mine&page=1&pageSize=100');
+			expect(apiGet).toHaveBeenNthCalledWith(2, '/api/chart?scope=mine&page=2&pageSize=100');
 		});
 
 		it('should return an error if authentication is not ready', async () => {
@@ -229,6 +262,32 @@ describe('SimFile Service', () => {
 			expect(result.error).toContain('Fetch failed');
 			expect(result.data).toEqual([]);
 			expect(result.fromCache).toBe(false);
+		});
+
+		it('should handle pagination error on subsequent pages', async () => {
+			const mockSimfiles = Array.from({ length: 100 }, (_, i) => ({
+				id: `sim-${i}`,
+				title: `Song ${i}`
+			}));
+
+			// First call succeeds, second call fails
+			(apiGet as Mock)
+				.mockResolvedValueOnce({
+					success: true,
+					data: { data: mockSimfiles, count: 150 }
+				})
+				.mockResolvedValueOnce({
+					success: false,
+					error: 'Page fetch failed'
+				});
+
+			const result = await fetchUserSimFiles();
+
+			expect(result.success).toBe(false);
+			if (result.success) {
+				throw new Error('Expected error result');
+			}
+			expect(result.error).toContain('Page fetch failed');
 		});
 	});
 

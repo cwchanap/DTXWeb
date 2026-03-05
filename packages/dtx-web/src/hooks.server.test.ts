@@ -239,4 +239,37 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		expect(event.locals.session).toBeTruthy();
 		expect(event.locals.session?.access_token).toBe(testToken);
 	});
+
+	it('allows unauthenticated GET /api/chart/:id without bearer token', async () => {
+		const mockGetUser = vi.fn();
+		const mockGetSession = vi.fn().mockResolvedValue({
+			data: { session: null }
+		});
+
+		const event = createMockEvent('http://localhost:5173/api/chart/123', {});
+
+		event.locals.supabase = {
+			auth: {
+				getSession: mockGetSession,
+				getUser: mockGetUser
+			}
+		} as unknown as SupabaseClient;
+
+		event.locals.safeGetSession = async () => {
+			const result = await event.locals.supabase.auth.getSession();
+			if (!result.data.session) {
+				return { session: null, user: null };
+			}
+			return { session: result.data.session, user: result.data.session.user };
+		};
+
+		const resolveResponse = new Response('OK', { status: 200 });
+		const resolve = vi.fn().mockResolvedValue(resolveResponse);
+
+		const result = await authGuard({ event, resolve });
+
+		expect(result).toBe(resolveResponse);
+		expect(resolve).toHaveBeenCalledTimes(1);
+		expect(mockGetUser).not.toHaveBeenCalled();
+	});
 });

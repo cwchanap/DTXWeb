@@ -177,21 +177,22 @@ log "  Generating INSERT statements from CSV exports..."
 python3 - "$OUTPUT_DIR/simfiles.csv" "$OUTPUT_DIR/dtx_files.csv" "$OUTPUT_DIR/user_profiles.csv" "$SQL_FILE" <<'PY'
 import csv
 import sys
+from typing import Optional
 
 simfiles_csv, dtx_files_csv, user_profiles_csv, sql_file = sys.argv[1:5]
 
 
-def is_null(value: str | None) -> bool:
+def is_null(value: Optional[str]) -> bool:
     return value is None or value == "\\N"
 
 
-def sql_text(value: str | None, *, nullable: bool = False) -> str:
+def sql_text(value: Optional[str], *, nullable: bool = False) -> str:
     if is_null(value):
         return "NULL" if nullable else "''"
     return "'" + value.replace("'", "''") + "'"
 
 
-def sql_number(value: str | None, *, nullable: bool = False) -> str:
+def sql_number(value: Optional[str], *, nullable: bool = False) -> str:
     if is_null(value):
         return "NULL" if nullable else "0"
     return value

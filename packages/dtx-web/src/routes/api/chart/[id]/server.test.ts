@@ -274,6 +274,52 @@ describe('PATCH /api/chart/[id]', () => {
 		expect(response.status).toBe(400);
 	});
 
+	it('returns 400 when bpm is not a finite number', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: '120' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 when downloadUrl is not a string or null', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ downloadUrl: 123 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+	});
+
+	it('returns 500 when updated chart cannot be reloaded', async () => {
+		vi.mocked(getSimfile).mockResolvedValue(null);
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: 'Updated' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(500);
+	});
+
 	it('returns 400 when no fields are provided', async () => {
 		vi.mocked(updateSimfile).mockRejectedValue(new Error('No fields to update'));
 		const request = new Request('http://localhost/api/chart/1', {

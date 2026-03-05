@@ -30,7 +30,11 @@ export const GET = async ({
 	try {
 		const db = getDb(platform);
 		const results = await searchSimfiles(db, { query, userId: user.id, excludeIds, limit });
-		return json({ data: results });
+		const data = results.map((result) => ({
+			...result,
+			is_published: result.is_published === 1
+		}));
+		return json({ data });
 	} catch (error) {
 		logger.error('Error searching charts:', error);
 		return json({ error: 'Failed to search charts' }, { status: 500 });

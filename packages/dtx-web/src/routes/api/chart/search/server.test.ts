@@ -86,6 +86,7 @@ describe('GET /api/chart/search', () => {
 		expect(response.status).toBe(200);
 		const data = await response.json();
 		expect(data.data).toHaveLength(1);
+		expect(data.data[0].is_published).toBe(true);
 	});
 
 	it('passes userId to searchSimfiles', async () => {

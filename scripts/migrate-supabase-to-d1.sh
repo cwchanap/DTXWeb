@@ -33,7 +33,10 @@ WRANGLER_DIR="packages/dtx-web"
 OUTPUT_DIR="$(mktemp -d)"
 
 cleanup() {
-  rm -rf "$OUTPUT_DIR"
+  # Skip cleanup in dry-run mode to preserve SQL for manual review
+  if [ "$DRY_RUN" = false ]; then
+    rm -rf "$OUTPUT_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -257,6 +260,7 @@ if [ "$DRY_RUN" = true ]; then
   echo ""
   echo "  cd $WRANGLER_DIR && npx wrangler d1 execute $D1_DB_NAME --file=$SQL_FILE --$MODE"
   echo ""
+  log "Note: Temporary directory $OUTPUT_DIR is preserved for manual review"
   exit 0
 fi
 

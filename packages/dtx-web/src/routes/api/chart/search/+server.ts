@@ -29,7 +29,7 @@ export const GET = async ({
 
 	try {
 		const db = getDb(platform);
-		const results = await searchSimfiles(db, { query, excludeIds, limit });
+		const results = await searchSimfiles(db, { query, userId: user.id, excludeIds, limit });
 		return json({ data: results });
 	} catch (error) {
 		logger.error('Error searching charts:', error);

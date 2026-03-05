@@ -183,20 +183,42 @@ describe('listSimfiles', () => {
 describe('searchSimfiles', () => {
 	it('returns matching rows', async () => {
 		const db = createMockDb(() => createMockStmt(null, [baseSimfileRow]));
-		const result = await searchSimfiles(db as unknown as D1Database, { query: 'test' });
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1'
+		});
 		expect(result).toEqual([baseSimfileRow]);
+	});
+
+	it('applies userId filter for published or owned charts', async () => {
+		const db = createMockDb(() => createMockStmt(null, []));
+		await searchSimfiles(db as unknown as D1Database, { query: 'test', userId: 'user-1' });
+		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+		expect(sql).toContain('(is_published = 1 OR user_id = ?)');
+	});
+
+	it('applies only published filter when no userId provided', async () => {
+		const db = createMockDb(() => createMockStmt(null, []));
+		await searchSimfiles(db as unknown as D1Database, { query: 'test' });
+		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+		expect(sql).toContain('is_published = 1');
+		expect(sql).not.toContain('user_id');
 	});
 
 	it('applies excludeIds when provided', async () => {
 		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, { query: 'test', excludeIds: [1, 2] });
+		await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			excludeIds: [1, 2]
+		});
 		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
 		expect(sql).toContain('id NOT IN');
 	});
 
 	it('uses default limit of 8', async () => {
 		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, { query: 'test' });
+		await searchSimfiles(db as unknown as D1Database, { query: 'test', userId: 'user-1' });
 		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
 		const bindArgs = stmt?.bind.mock.calls[0] as unknown[];
 		expect(bindArgs[bindArgs.length - 1]).toBe(8);
@@ -204,7 +226,11 @@ describe('searchSimfiles', () => {
 
 	it('uses custom limit', async () => {
 		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, { query: 'test', limit: 5 });
+		await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 5
+		});
 		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
 		const bindArgs = stmt?.bind.mock.calls[0] as unknown[];
 		expect(bindArgs[bindArgs.length - 1]).toBe(5);

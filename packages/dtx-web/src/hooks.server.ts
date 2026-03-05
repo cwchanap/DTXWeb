@@ -151,10 +151,10 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 	// Exceptions:
 	// - GET /api/chart?scope=published is public (blog page listing)
 	// - GET /api/chart/[id] is public for published charts (handled by route)
+	// Note: GET /api/chart/[id] must go through auth processing to set locals.user
+	// for unpublished chart access checks in the route handler
 	const isPublicApiRoute =
-		(event.url.pathname === '/api/chart' &&
-			event.url.searchParams.get('scope') === 'published') ||
-		(/^\/api\/chart\/\d+$/.test(event.url.pathname) && event.request.method === 'GET');
+		event.url.pathname === '/api/chart' && event.url.searchParams.get('scope') === 'published';
 
 	if (!event.locals.session && event.url.pathname.startsWith('/api/') && !isPublicApiRoute) {
 		const authHeader = event.request.headers.get('Authorization');

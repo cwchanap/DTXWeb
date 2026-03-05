@@ -88,6 +88,19 @@ describe('GET /api/chart/search', () => {
 		expect(data.data).toHaveLength(1);
 	});
 
+	it('passes userId to searchSimfiles', async () => {
+		vi.mocked(searchSimfiles).mockResolvedValue([]);
+		await GET({
+			url: createUrl({ q: 'test' }),
+			platform: mockPlatform as App.Platform,
+			locals: { user: mockUser } as App.Locals
+		});
+		expect(searchSimfiles).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ userId: 'user-1' })
+		);
+	});
+
 	it('passes excludeIds from query param', async () => {
 		vi.mocked(searchSimfiles).mockResolvedValue([]);
 		await GET({

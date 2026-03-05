@@ -26,19 +26,44 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 			throw new Error('Authentication not available. Please log in first.');
 		}
 
-		// Fetch simfiles from web API instead of Supabase directly
-		// Use large pageSize to fetch all user charts (pagination not implemented in desktop)
-		const result = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
-			'/api/chart?scope=mine&pageSize=10000'
+		// Fetch simfiles from web API with pagination
+		// API limits pageSize to 100, so we need to paginate
+		const pageSize = 100;
+		let allData: SimfileWithDtx[] = [];
+		let page = 1;
+		let totalCount = 0;
+
+		// Fetch first page to get total count
+		const firstPageResult = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
+			`/api/chart?scope=mine&page=${page}&pageSize=${pageSize}`
 		);
 
-		if (!result.success) {
-			throw new Error(result.error || 'Failed to fetch simFiles');
+		if (!firstPageResult.success) {
+			throw new Error(firstPageResult.error || 'Failed to fetch simFiles');
+		}
+
+		allData = firstPageResult.data.data || [];
+		totalCount = firstPageResult.data.count || 0;
+
+		// Calculate total pages needed
+		const totalPages = Math.ceil(totalCount / pageSize);
+
+		// Fetch remaining pages if needed
+		for (page = 2; page <= totalPages; page++) {
+			const pageResult = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
+				`/api/chart?scope=mine&page=${page}&pageSize=${pageSize}`
+			);
+
+			if (!pageResult.success) {
+				throw new Error(pageResult.error || 'Failed to fetch simFiles');
+			}
+
+			allData = allData.concat(pageResult.data.data || []);
 		}
 
 		return {
 			success: true,
-			data: result.data.data || [],
+			data: allData,
 			fromCache: false
 		};
 	} catch (error) {

@@ -55,12 +55,18 @@ export const PATCH = async ({
 	const id = Number(params.id);
 	if (!Number.isSafeInteger(id)) return json({ error: 'Invalid chart ID' }, { status: 400 });
 
-	let body: Record<string, unknown>;
+	let body: unknown;
 	try {
 		body = await request.json();
 	} catch {
 		return json({ error: 'Invalid request body' }, { status: 400 });
 	}
+
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return json({ error: 'Invalid request body' }, { status: 400 });
+	}
+
+	const payload = body as Record<string, unknown>;
 
 	try {
 		const db = getDb(platform);
@@ -72,37 +78,121 @@ export const PATCH = async ({
 
 		// Map API fields to DB fields, converting boolean to integer
 		const updateData: Record<string, unknown> = {};
-		if (body.title !== undefined) updateData.title = body.title;
-		if (body.artist !== undefined) updateData.artist = body.artist;
-		if (body.bpm !== undefined) updateData.bpm = body.bpm;
-		if (body.is_published !== undefined) {
-			if (typeof body.is_published !== 'boolean') {
+		if (payload.title !== undefined) {
+			if (typeof payload.title !== 'string') {
+				return json({ error: 'Invalid title' }, { status: 400 });
+			}
+			updateData.title = payload.title;
+		}
+		if (payload.artist !== undefined) {
+			if (typeof payload.artist !== 'string') {
+				return json({ error: 'Invalid artist' }, { status: 400 });
+			}
+			updateData.artist = payload.artist;
+		}
+		if (payload.bpm !== undefined) {
+			if (typeof payload.bpm !== 'number' || !Number.isFinite(payload.bpm)) {
+				return json({ error: 'Invalid bpm' }, { status: 400 });
+			}
+			updateData.bpm = payload.bpm;
+		}
+		if (payload.is_published !== undefined) {
+			if (typeof payload.is_published !== 'boolean') {
 				return json({ error: 'Invalid is_published' }, { status: 400 });
 			}
-			updateData.is_published = body.is_published ? 1 : 0;
+			updateData.is_published = payload.is_published ? 1 : 0;
 		}
-		if (body.isPublished !== undefined) {
-			if (typeof body.isPublished !== 'boolean') {
+		if (payload.isPublished !== undefined) {
+			if (typeof payload.isPublished !== 'boolean') {
 				return json({ error: 'Invalid isPublished' }, { status: 400 });
 			}
-			updateData.is_published = body.isPublished ? 1 : 0;
+			updateData.is_published = payload.isPublished ? 1 : 0;
 		}
-		if (body.display_id !== undefined) updateData.display_id = body.display_id;
-		if (body.displayId !== undefined) updateData.display_id = body.displayId;
-		if (body.download_url !== undefined) updateData.download_url = body.download_url;
-		if (body.downloadUrl !== undefined) updateData.download_url = body.downloadUrl;
-		if (body.publish_date !== undefined) updateData.publish_date = body.publish_date;
-		if (body.publishDate !== undefined) updateData.publish_date = body.publishDate;
-		if (body.video_preview_url !== undefined)
-			updateData.video_preview_url = body.video_preview_url;
-		if (body.videoPreviewUrl !== undefined) updateData.video_preview_url = body.videoPreviewUrl;
-		if (body.preview_url !== undefined) updateData.preview_url = body.preview_url;
-		if (body.previewUrl !== undefined) updateData.preview_url = body.previewUrl;
+		if (payload.display_id !== undefined) {
+			if (
+				payload.display_id !== null &&
+				(typeof payload.display_id !== 'number' ||
+					!Number.isSafeInteger(payload.display_id))
+			) {
+				return json({ error: 'Invalid display_id' }, { status: 400 });
+			}
+			updateData.display_id = payload.display_id;
+		}
+		if (payload.displayId !== undefined) {
+			if (
+				payload.displayId !== null &&
+				(typeof payload.displayId !== 'number' || !Number.isSafeInteger(payload.displayId))
+			) {
+				return json({ error: 'Invalid displayId' }, { status: 400 });
+			}
+			updateData.display_id = payload.displayId;
+		}
+		if (payload.download_url !== undefined) {
+			if (payload.download_url !== null && typeof payload.download_url !== 'string') {
+				return json({ error: 'Invalid download_url' }, { status: 400 });
+			}
+			updateData.download_url = payload.download_url;
+		}
+		if (payload.downloadUrl !== undefined) {
+			if (payload.downloadUrl !== null && typeof payload.downloadUrl !== 'string') {
+				return json({ error: 'Invalid downloadUrl' }, { status: 400 });
+			}
+			updateData.download_url = payload.downloadUrl;
+		}
+		if (payload.publish_date !== undefined) {
+			if (
+				typeof payload.publish_date !== 'string' ||
+				Number.isNaN(Date.parse(payload.publish_date))
+			) {
+				return json({ error: 'Invalid publish_date' }, { status: 400 });
+			}
+			updateData.publish_date = payload.publish_date;
+		}
+		if (payload.publishDate !== undefined) {
+			if (
+				typeof payload.publishDate !== 'string' ||
+				Number.isNaN(Date.parse(payload.publishDate))
+			) {
+				return json({ error: 'Invalid publishDate' }, { status: 400 });
+			}
+			updateData.publish_date = payload.publishDate;
+		}
+		if (payload.video_preview_url !== undefined) {
+			if (
+				payload.video_preview_url !== null &&
+				typeof payload.video_preview_url !== 'string'
+			) {
+				return json({ error: 'Invalid video_preview_url' }, { status: 400 });
+			}
+			updateData.video_preview_url = payload.video_preview_url;
+		}
+		if (payload.videoPreviewUrl !== undefined) {
+			if (payload.videoPreviewUrl !== null && typeof payload.videoPreviewUrl !== 'string') {
+				return json({ error: 'Invalid videoPreviewUrl' }, { status: 400 });
+			}
+			updateData.video_preview_url = payload.videoPreviewUrl;
+		}
+		if (payload.preview_url !== undefined) {
+			if (payload.preview_url !== null && typeof payload.preview_url !== 'string') {
+				return json({ error: 'Invalid preview_url' }, { status: 400 });
+			}
+			updateData.preview_url = payload.preview_url;
+		}
+		if (payload.previewUrl !== undefined) {
+			if (payload.previewUrl !== null && typeof payload.previewUrl !== 'string') {
+				return json({ error: 'Invalid previewUrl' }, { status: 400 });
+			}
+			updateData.preview_url = payload.previewUrl;
+		}
 
 		const updated = await updateSimfile(db, id, updateData);
 		// Fetch the full record with dtx_files and apply type conversion
 		const full = await getSimfile(db, updated.id);
-		return json(full ?? updated);
+		if (!full) {
+			logger.error('Updated chart not found after update', { id: updated.id });
+			return json({ error: 'Failed to load updated chart' }, { status: 500 });
+		}
+		return json(full);
 	} catch (error) {
 		logger.error('Error updating chart:', error);
 		if (error instanceof Error && error.message.includes('No fields to update')) {

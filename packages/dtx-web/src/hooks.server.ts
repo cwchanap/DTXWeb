@@ -62,6 +62,8 @@ const csrf: Handle = async ({ event, resolve }) => {
 };
 
 const supabase: Handle = async ({ event, resolve }) => {
+	type CookieSetOptions = Parameters<typeof event.cookies.set>[2];
+
 	/**
 	 * Creates a Supabase client specific to this server request.
 	 *
@@ -78,9 +80,15 @@ const supabase: Handle = async ({ event, resolve }) => {
 				 * the cookie options. Setting `path` to `/` replicates previous/
 				 * standard behavior.
 				 */
-				setAll: (cookiesToSet) => {
+				setAll: (
+					cookiesToSet: Array<{
+						name: string;
+						value: string;
+						options: CookieSetOptions;
+					}>
+				) => {
 					cookiesToSet.forEach(({ name, value, options }) => {
-						event.cookies.set(name, value, { ...options, path: '/' });
+						event.cookies.set(name, value, { ...(options ?? {}), path: '/' });
 					});
 				}
 			}
@@ -148,15 +156,17 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 
 	// Handle unauthenticated API access for all /api/ routes
 	// Support both cookie-based auth (web app) and bearer token auth (desktop app)
-	// Exceptions:
-	// - GET /api/chart?scope=published is public (blog page listing)
-	// - GET /api/chart/[id] is public for published charts (handled by route)
-	// Note: GET /api/chart/[id] must go through auth processing to set locals.user
-	// for unpublished chart access checks in the route handler
-	const isPublicApiRoute =
+	// Public routes (when no bearer token is provided):
+	// - GET /api/chart?scope=published (blog page listing)
+	// - GET /api/chart/[id] (route enforces published/owner checks)
+	const isPublicChartListRoute =
 		event.url.pathname === '/api/chart' && event.url.searchParams.get('scope') === 'published';
+	const requestMethod = event.request.method || 'GET';
+	const isPublicChartDetailRoute =
+		requestMethod === 'GET' && /^\/api\/chart\/\d+$/.test(event.url.pathname);
+	const isPublicApiRoute = isPublicChartListRoute || isPublicChartDetailRoute;
 
-	if (!event.locals.session && event.url.pathname.startsWith('/api/') && !isPublicApiRoute) {
+	if (!event.locals.session && event.url.pathname.startsWith('/api/')) {
 		const authHeader = event.request.headers.get('Authorization');
 		if (authHeader?.toLowerCase().startsWith('bearer ')) {
 			const token = authHeader.slice(7);
@@ -225,7 +235,7 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 					}
 				}
 			) as typeof event.locals.supabase;
-		} else {
+		} else if (!isPublicApiRoute) {
 			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
 	}

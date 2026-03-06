@@ -82,10 +82,13 @@ fi
 # Get Supabase connection string
 if [ -z "${SUPABASE_DB_URL:-}" ]; then
   # Try to construct from .env file
+  SUPABASE_URL=""
+  PROJECT_ID=""
   if [ -f "packages/dtx-web/.env" ]; then
-    # Extract project ID from SUPABASE_URL
-    SUPABASE_URL=$(grep -E '^PUBLIC_SUPABASE_URL=' packages/dtx-web/.env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-    PROJECT_ID=$(echo "$SUPABASE_URL" | sed -E 's|https://([^.]+)\.supabase\.co.*|\1|')
+    if grep -q -E '^PUBLIC_SUPABASE_URL=' packages/dtx-web/.env; then
+      SUPABASE_URL=$(grep -E '^PUBLIC_SUPABASE_URL=' packages/dtx-web/.env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+      PROJECT_ID=$(printf '%s' "$SUPABASE_URL" | sed -En 's|https://([^.]+)\.supabase\.co.*|\1|p')
+    fi
 
     if [ -n "$PROJECT_ID" ]; then
       warn "Supabase project ID detected: $PROJECT_ID"
@@ -217,7 +220,7 @@ with open(sql_file, "a", encoding="utf-8", newline="") as out:
                     download_url=sql_text(row.get("download_url"), nullable=True),
                     preview_url=sql_text(row.get("preview_url"), nullable=True),
                     video_preview_url=sql_text(row.get("video_preview_url"), nullable=True),
-                    publish_date=sql_text(row.get("publish_date"), nullable=True),
+                    publish_date=sql_text(row.get("publish_date")),
                     created_at=sql_text(row.get("created_at")),
                     updated_at=sql_text(row.get("updated_at")),
                 )

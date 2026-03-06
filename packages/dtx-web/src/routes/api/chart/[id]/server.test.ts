@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET, PATCH } from './+server';
 import { getDb, getSimfile, getSimfileOwner, updateSimfile } from '$lib/server/db';
+import logger from '$lib/server/logger';
 
 vi.mock('$lib/server/db');
 vi.mock('$lib/server/logger', () => ({
@@ -26,6 +27,10 @@ const mockSimfile = {
 	updated_at: '2024-01-01',
 	dtx_files: []
 };
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 describe('GET /api/chart/[id]', () => {
 	beforeEach(() => {
@@ -318,6 +323,28 @@ describe('PATCH /api/chart/[id]', () => {
 			locals: { user: mockUser } as any
 		});
 		expect(response.status).toBe(500);
+	});
+
+	it('returns a generic 500 error when update fails unexpectedly', async () => {
+		vi.mocked(updateSimfile).mockRejectedValue(new Error('Database exploded'));
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: 'Updated' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+
+		expect(response.status).toBe(500);
+		expect(await response.json()).toEqual({
+			error: 'Failed to update chart',
+			message: 'Internal server error'
+		});
+		expect(logger.error).toHaveBeenCalledWith('Error updating chart:', expect.any(Error));
 	});
 
 	it('returns 400 when no fields are provided', async () => {

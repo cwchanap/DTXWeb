@@ -3,6 +3,7 @@ import { GET } from './+server';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { Session } from '@supabase/supabase-js';
 import { getDb, getSimfileOwner } from '$lib/server/db';
+import logger from '$lib/server/logger';
 
 // Mock logger
 vi.mock('$lib/server/logger', () => ({
@@ -226,6 +227,35 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(response.status).toBe(403);
 		const data = await response.json();
 		expect(data.error).toBe('Forbidden');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'Unauthorized list attempt: user test...r-id tried to list files for unpublished simfile 123 owned by diff...r-id'
+		);
+	});
+
+	it('returns 200 when simfile is published and user is not authenticated', async () => {
+		vi.mocked(getSimfileOwner).mockResolvedValue({
+			user_id: 'different-owner-id',
+			is_published: 1
+		});
+		const mockBucket = createMockBucket([
+			{ key: '123/file1.dtx', size: 1024, uploaded: new Date('2024-01-01') }
+		]);
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({ session: null, user: null }),
+				session: null,
+				user: null
+			}
+		} as any);
+
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.files).toHaveLength(1);
+		expect(data.files[0].fileName).toBe('file1.dtx');
 	});
 
 	it('successfully lists files when user owns simfile', async () => {

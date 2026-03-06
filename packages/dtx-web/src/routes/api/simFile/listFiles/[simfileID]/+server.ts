@@ -2,6 +2,14 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 
+const redactIdentifier = (value: string): string => {
+	if (value.length <= 8) {
+		return `${value.slice(0, 2)}...${value.slice(-2)}`;
+	}
+
+	return `${value.slice(0, 4)}...${value.slice(-4)}`;
+};
+
 export const GET = async ({
 	params,
 	platform,
@@ -32,10 +40,6 @@ export const GET = async ({
 		// locals.user is set for both cookie session and Bearer token auth
 		const user = locals.user;
 
-		if (!user) {
-			return json({ error: 'Unauthorized' }, { status: 401 });
-		}
-
 		// Verify that the user owns this simfile OR the simfile is published via D1
 		const db = getDb(platform);
 		const simfile = await getSimfileOwner(db, id);
@@ -44,10 +48,15 @@ export const GET = async ({
 			return json({ error: 'Simfile not found' }, { status: 404 });
 		}
 
-		// Allow access if user is owner OR simfile is published
-		if (simfile.user_id !== user.id && !simfile.is_published) {
+		if (!simfile.is_published && !user) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		if (user && simfile.user_id !== user.id && !simfile.is_published) {
+			const requesterId = redactIdentifier(user.id);
+			const ownerId = redactIdentifier(simfile.user_id);
 			logger.warn(
-				`Unauthorized list attempt: user ${user.id} tried to list files for unpublished simfile ${canonicalSimfileId} owned by ${simfile.user_id}`
+				`Unauthorized list attempt: user ${requesterId} tried to list files for unpublished simfile ${canonicalSimfileId} owned by ${ownerId}`
 			);
 			return json({ error: 'Forbidden' }, { status: 403 });
 		}

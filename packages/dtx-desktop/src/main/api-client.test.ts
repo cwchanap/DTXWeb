@@ -105,6 +105,16 @@ describe('api-client', () => {
 			expect(headers['Authorization']).toBe('Bearer test-token');
 			expect(headers['User-Agent']).toBe('DTXDesktopApp');
 			expect(headers['X-Requested-With']).toBe('DTXDesktopApp');
+			expect(init.signal).toBeDefined();
+		});
+
+		it('returns a timeout error when fetch is aborted', async () => {
+			const { apiGet } = await importApiClient();
+			const abortError = new Error('The operation was aborted.');
+			abortError.name = 'AbortError';
+			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+			const result = await apiGet('/api/chart');
+			expect(result).toEqual({ success: false, error: 'Request timed out after 30000ms' });
 		});
 	});
 

@@ -15,8 +15,9 @@ export const GET = async ({
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
-	const query = url.searchParams.get('q') ?? '';
-	if (!query.trim()) return json({ data: [] });
+	const queryRaw = url.searchParams.get('q') ?? '';
+	const query = queryRaw.trim();
+	if (!query) return json({ data: [] });
 
 	const excludeParam = url.searchParams.get('exclude') ?? '';
 	const excludeIds = excludeParam
@@ -25,7 +26,8 @@ export const GET = async ({
 				.map(Number)
 				.filter((n) => Number.isSafeInteger(n))
 		: [];
-	const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 8)));
+	const limitParam = parseInt(url.searchParams.get('limit') ?? '', 10);
+	const limit = Math.min(50, Math.max(1, Number.isFinite(limitParam) ? limitParam : 8));
 
 	try {
 		const db = getDb(platform);

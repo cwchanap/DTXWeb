@@ -35,6 +35,22 @@ const getHeaders = async (): Promise<Record<string, string>> => {
 	};
 };
 
+const API_REQUEST_TIMEOUT_MS = 30000;
+
+const isAbortError = (error: unknown): boolean =>
+	typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError';
+
+const fetchWithTimeout = async (input: string, init: RequestInit): Promise<Response> => {
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+
+	try {
+		return await fetch(input, { ...init, signal: controller.signal });
+	} finally {
+		clearTimeout(timeoutId);
+	}
+};
+
 export type ApiResult<T = unknown> = { success: true; data: T } | { success: false; error: string };
 
 const apiRequest = async <T = unknown>(
@@ -43,7 +59,7 @@ const apiRequest = async <T = unknown>(
 	body?: unknown
 ): Promise<ApiResult<T>> => {
 	try {
-		const response = await fetch(`${getApiBaseUrl()}${path}`, {
+		const response = await fetchWithTimeout(`${getApiBaseUrl()}${path}`, {
 			method,
 			headers: await getHeaders(),
 			...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -57,6 +73,13 @@ const apiRequest = async <T = unknown>(
 		const data = await response.json();
 		return { success: true, data: data as T };
 	} catch (error) {
+		if (isAbortError(error)) {
+			return {
+				success: false,
+				error: `Request timed out after ${API_REQUEST_TIMEOUT_MS}ms`
+			};
+		}
+
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'

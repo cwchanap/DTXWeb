@@ -271,5 +271,44 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		expect(result).toBe(resolveResponse);
 		expect(resolve).toHaveBeenCalledTimes(1);
 		expect(mockGetUser).not.toHaveBeenCalled();
+		expect(event.locals.user).toBeNull();
+		expect(event.locals.session).toBeNull();
+	});
+
+	it('returns 401 for non-GET /api/chart?scope=published without authentication', async () => {
+		const mockGetUser = vi.fn();
+		const mockGetSession = vi.fn().mockResolvedValue({
+			data: { session: null }
+		});
+
+		const event = createMockEvent('http://localhost:5173/api/chart?scope=published', {});
+		event.request = {
+			...event.request,
+			method: 'POST',
+			headers: new Headers()
+		} as Request;
+
+		event.locals.supabase = {
+			auth: {
+				getSession: mockGetSession,
+				getUser: mockGetUser
+			}
+		} as unknown as SupabaseClient;
+
+		event.locals.safeGetSession = async () => {
+			const result = await event.locals.supabase.auth.getSession();
+			if (!result.data.session) {
+				return { session: null, user: null };
+			}
+			return { session: result.data.session, user: result.data.session.user };
+		};
+
+		const resolve = vi.fn().mockResolvedValue(new Response('OK', { status: 200 }));
+		const result = await authGuard({ event, resolve });
+
+		expect(result).toBeInstanceOf(Response);
+		expect(result?.status).toBe(401);
+		expect(resolve).not.toHaveBeenCalled();
+		expect(mockGetUser).not.toHaveBeenCalled();
 	});
 });

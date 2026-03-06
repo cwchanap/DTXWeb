@@ -102,6 +102,19 @@ describe('GET /api/chart/search', () => {
 		);
 	});
 
+	it('trims the query before searching', async () => {
+		vi.mocked(searchSimfiles).mockResolvedValue([]);
+		await GET({
+			url: createUrl({ q: '  test  ' }),
+			platform: mockPlatform as App.Platform,
+			locals: { user: mockUser } as App.Locals
+		});
+		expect(searchSimfiles).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ query: 'test' })
+		);
+	});
+
 	it('passes excludeIds from query param', async () => {
 		vi.mocked(searchSimfiles).mockResolvedValue([]);
 		await GET({
@@ -151,6 +164,19 @@ describe('GET /api/chart/search', () => {
 		expect(searchSimfiles).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ limit: 1 })
+		);
+	});
+
+	it('defaults limit to 8 when the query param is not numeric', async () => {
+		vi.mocked(searchSimfiles).mockResolvedValue([]);
+		await GET({
+			url: createUrl({ q: 'test', limit: 'abc' }),
+			platform: mockPlatform as App.Platform,
+			locals: { user: mockUser } as App.Locals
+		});
+		expect(searchSimfiles).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ limit: 8 })
 		);
 	});
 

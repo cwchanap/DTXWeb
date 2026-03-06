@@ -199,10 +199,7 @@ export const PATCH = async ({
 			return json({ error: 'Bad Request', message: error.message }, { status: 400 });
 		}
 		return json(
-			{
-				error: 'Failed to update chart',
-				message: error instanceof Error ? error.message : 'Unknown error'
-			},
+			{ error: 'Failed to update chart', message: 'Internal server error' },
 			{ status: 500 }
 		);
 	}

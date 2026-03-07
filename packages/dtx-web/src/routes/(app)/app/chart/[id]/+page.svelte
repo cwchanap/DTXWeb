@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import type { Tables } from '@dtx/common';
+	import type { SimfileWithDtxFiles } from '@dtx/common';
 	import { goto } from '$app/navigation';
 	import type { SimFile, DTXFile } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
@@ -9,7 +9,7 @@
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { loadAssetFiles } from '@dtx/common/services/assetFileService';
 
-	let simfile: Tables<'simfiles'> | null = $state(null);
+	let simfile: SimfileWithDtxFiles | null = $state(null);
 	let loading = $state(true);
 	let error: string | null = $state(null);
 	let updatedHighestDtx = $state<DTXFile | null>(null);

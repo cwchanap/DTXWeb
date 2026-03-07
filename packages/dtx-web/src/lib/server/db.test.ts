@@ -319,17 +319,38 @@ describe('createDtxFiles', () => {
 		expect(result).toEqual([]);
 	});
 
-	it('inserts each file and returns rows', async () => {
+	it('uses batch to insert files and returns rows', async () => {
 		const dtxRow = { id: 1, label: 'BASIC', level: 5, simfile_id: 1 };
-		const db = createMockDb(() => createMockStmt(dtxRow));
+		const db = createMockDb();
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([{ results: [dtxRow] }]);
 		const result = await createDtxFiles(db as unknown as D1Database, [
 			{ simfile_id: 1, label: 'BASIC', level: 5 }
 		]);
+		expect(db.batch).toHaveBeenCalled();
 		expect(result).toEqual([dtxRow]);
 	});
 
-	it('throws when insert returns null', async () => {
-		const db = createMockDb(() => createMockStmt(null));
+	it('inserts multiple files in a single batch', async () => {
+		const dtxRows = [
+			{ id: 1, label: 'BASIC', level: 5, simfile_id: 1 },
+			{ id: 2, label: 'ADVANCED', level: 7, simfile_id: 1 }
+		];
+		const db = createMockDb();
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ results: [dtxRows[0]] },
+			{ results: [dtxRows[1]] }
+		]);
+		const result = await createDtxFiles(db as unknown as D1Database, [
+			{ simfile_id: 1, label: 'BASIC', level: 5 },
+			{ simfile_id: 1, label: 'ADVANCED', level: 7 }
+		]);
+		expect(db.batch).toHaveBeenCalledTimes(1);
+		expect(result).toEqual(dtxRows);
+	});
+
+	it('throws when batch insert returns null for a row', async () => {
+		const db = createMockDb();
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([{ results: [] }]);
 		await expect(
 			createDtxFiles(db as unknown as D1Database, [{ simfile_id: 1 }])
 		).rejects.toThrow('Failed to insert dtx_file');

@@ -136,9 +136,12 @@ export const listSimfiles = async (
 	const countRow = await countStmt.bind(...params).first<{ cnt: number }>();
 	const count = countRow?.cnt ?? 0;
 
-	// Data query
+	// Data query - only select public-safe fields when listing published charts
+	const selectFields = opts.publishedOnly
+		? 's.id, s.title, s.artist, s.bpm, s.is_published, s.display_id, s.download_url, s.preview_url, s.video_preview_url, s.publish_date, s.created_at, s.updated_at'
+		: 's.*';
 	const dataStmt = db.prepare(
-		`SELECT s.* FROM simfiles s ${where} ORDER BY s.publish_date DESC LIMIT ? OFFSET ?`
+		`SELECT ${selectFields} FROM simfiles s ${where} ORDER BY s.publish_date DESC LIMIT ? OFFSET ?`
 	);
 	const rows = await dataStmt.bind(...params, pageSize, offset).all<SimfileRow>();
 

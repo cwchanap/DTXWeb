@@ -311,4 +311,90 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		expect(resolve).not.toHaveBeenCalled();
 		expect(mockGetUser).not.toHaveBeenCalled();
 	});
+
+	it('allows unauthenticated GET /api/simFile/listFiles/:simfileID without bearer token', async () => {
+		const mockGetUser = vi.fn();
+		const mockGetSession = vi.fn().mockResolvedValue({
+			data: { session: null }
+		});
+
+		const event = createMockEvent('http://localhost:5173/api/simFile/listFiles/123', {});
+
+		event.locals.supabase = {
+			auth: {
+				getSession: mockGetSession,
+				getUser: mockGetUser
+			}
+		} as unknown as SupabaseClient;
+
+		event.locals.safeGetSession = async () => {
+			const result = await event.locals.supabase.auth.getSession();
+			if (!result.data.session) {
+				return { session: null, user: null };
+			}
+			return { session: result.data.session, user: result.data.session.user };
+		};
+
+		const resolveResponse = new Response('OK', { status: 200 });
+		const resolve = vi.fn().mockResolvedValue(resolveResponse);
+
+		const result = await authGuard({ event, resolve });
+
+		// Should allow the request through to the route handler
+		expect(result).toBe(resolveResponse);
+		expect(resolve).toHaveBeenCalledTimes(1);
+		expect(mockGetUser).not.toHaveBeenCalled();
+		expect(event.locals.user).toBeNull();
+		expect(event.locals.session).toBeNull();
+	});
+
+	it('authenticates bearer token for GET /api/simFile/listFiles/:simfileID requests', async () => {
+		const mockGetUser = vi.fn().mockResolvedValue({
+			data: { user: { id: 'test-user-id', email: 'test@example.com' } },
+			error: null
+		});
+		const mockGetSession = vi.fn().mockResolvedValue({
+			data: { session: null }
+		});
+
+		// Use a valid JWT-format token so decodeJwtPayload succeeds
+		const testToken = createTestJwt({ sub: 'test-user', exp: 9999999999 });
+
+		const event = createMockEvent('http://localhost:5173/api/simFile/listFiles/456', {
+			Authorization: `Bearer ${testToken}`
+		});
+
+		// Mock the initial Supabase client
+		const initialSupabaseClient = {
+			auth: {
+				getSession: mockGetSession,
+				getUser: mockGetUser
+			}
+		} as unknown as SupabaseClient;
+
+		event.locals.supabase = initialSupabaseClient;
+
+		// Mock safeGetSession
+		event.locals.safeGetSession = async () => {
+			const result = await event.locals.supabase.auth.getSession();
+			if (!result.data.session) {
+				return { session: null, user: null };
+			}
+			return { session: result.data.session, user: result.data.session.user };
+		};
+
+		// Create a mock resolve function
+		const resolve = vi.fn().mockResolvedValue(new Response('OK', { status: 200 }));
+
+		// Run authGuard handle
+		await authGuard({ event, resolve });
+
+		// Verify getUser was called with the bearer token
+		expect(mockGetUser).toHaveBeenCalledWith(testToken);
+
+		// Verify locals.user and locals.session are set
+		expect(event.locals.user).toBeTruthy();
+		expect(event.locals.session).toBeTruthy();
+		expect(event.locals.session?.access_token).toBe(testToken);
+	});
 });

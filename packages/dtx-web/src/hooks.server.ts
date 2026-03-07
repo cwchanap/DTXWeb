@@ -159,6 +159,7 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 	// Public routes (when no bearer token is provided):
 	// - GET /api/chart?scope=published (blog page listing)
 	// - GET /api/chart/[id] (route enforces published/owner checks)
+	// - GET /api/simFile/listFiles/[simfileID] (route enforces published/owner checks)
 	const requestMethod = event.request.method || 'GET';
 	const isPublicChartListRoute =
 		requestMethod === 'GET' &&
@@ -166,7 +167,10 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 		event.url.searchParams.get('scope') === 'published';
 	const isPublicChartDetailRoute =
 		requestMethod === 'GET' && /^\/api\/chart\/\d+$/.test(event.url.pathname);
-	const isPublicApiRoute = isPublicChartListRoute || isPublicChartDetailRoute;
+	const isPublicListFilesRoute =
+		requestMethod === 'GET' && /^\/api\/simFile\/listFiles\/\d+$/.test(event.url.pathname);
+	const isPublicApiRoute =
+		isPublicChartListRoute || isPublicChartDetailRoute || isPublicListFilesRoute;
 
 	if (!event.locals.session && event.url.pathname.startsWith('/api/')) {
 		const authHeader = event.request.headers.get('Authorization');

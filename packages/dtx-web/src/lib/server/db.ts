@@ -268,15 +268,22 @@ export const createDtxFiles = async (
 ): Promise<DtxFileRow[]> => {
 	if (files.length === 0) return [];
 
-	const results: DtxFileRow[] = [];
-	for (const f of files) {
-		const row = await db
+	// Use batched inserts to reduce latency and round-trips to D1
+	const statements = files.map((f) =>
+		db
 			.prepare(
 				'INSERT INTO dtx_files (label, level, simfile_id) VALUES (?, ?, ?) RETURNING *'
 			)
 			.bind(f.label ?? '', f.level ?? 0, f.simfile_id)
-			.first<DtxFileRow>();
-		if (!row) throw new Error(`Failed to insert dtx_file for simfile_id=${f.simfile_id}`);
+	);
+	const batchResults = await db.batch(statements);
+	const results: DtxFileRow[] = [];
+	for (let i = 0; i < batchResults.length; i++) {
+		const result = batchResults[i] as { results?: unknown[] };
+		const row = (result.results?.[0] ?? null) as DtxFileRow | null;
+		if (!row) {
+			throw new Error(`Failed to insert dtx_file for simfile_id=${files[i]?.simfile_id}`);
+		}
 		results.push(row);
 	}
 	return results;

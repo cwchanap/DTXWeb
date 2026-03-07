@@ -54,7 +54,7 @@
 			video_preview_url: videoPreviewUrl,
 			publish_date: publishDate,
 			is_published: isPublished,
-			display_id: displayId
+			display_id: displayId ? Number(displayId) : null
 		};
 
 		if (updatedSimfile && updatedHighestDtx) {

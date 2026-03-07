@@ -15,10 +15,50 @@ import { toSimfileWithDtx } from '@dtx/common';
 // Re-export for convenience
 export type { SimfileWithDtxFiles };
 
-/** Get the D1 database binding from the platform env, throwing if unavailable. */
+/**
+ * Mock D1Database for local development when Cloudflare bindings are not available.
+ * This allows local development to continue without requiring wrangler dev.
+ */
+const createMockD1Database = (): D1Database => {
+	const createMockStmt = () => {
+		const stmt = {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			bind: (..._args: unknown[]) => stmt,
+			first: async () => null,
+			all: async () => ({ results: [] }),
+			run: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
+			raw: async () => ({ results: [] })
+		};
+		return stmt;
+	};
+
+	return {
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		prepare: (_query: string) => createMockStmt(),
+		batch: async (statements: unknown[]) => {
+			// Simulate batch operations returning success
+			return statements.map(() => ({
+				success: true,
+				meta: { changes: 0, duration: 0 },
+				results: []
+			})) as unknown as ReturnType<D1Database['batch']>;
+		},
+		exec: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
+		dump: async () => [],
+		withSession: () => createMockD1Database()
+	} as unknown as D1Database;
+};
+
+/** Get the D1 database binding from the platform env, providing a mock for local dev. */
 export const getDb = (platform: App.Platform | undefined): D1Database => {
 	const db = platform?.env?.DB;
-	if (!db) throw new Error('D1 database binding (DB) not available');
+	if (!db) {
+		// Provide a fallback for local development (vite dev) when Cloudflare bindings are not available
+		console.warn(
+			'D1 database binding (DB) not available. Using mock database for local development. Use `bun run wrangler:dev` for full database functionality.'
+		);
+		return createMockD1Database();
+	}
 	return db;
 };
 

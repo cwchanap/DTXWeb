@@ -77,6 +77,12 @@ export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published'> {
 	dtx_files: { level: number; label: string }[];
 }
 
+/** Simfile with joined dtx_files — desktop-compatible shape matching old Supabase type */
+export interface SimfileWithDtx extends Omit<SimfileRow, 'is_published'> {
+	is_published: boolean;
+	dtx_files: Partial<DtxFileRow>[];
+}
+
 /** Convert a raw D1 simfile row (integer booleans) to the API-facing shape */
 export const toSimfileWithDtx = (
 	row: SimfileRow,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SimfileRow } from '@dtx/common';
+	import type { SimfileWithDtx } from '@dtx/common';
 	import { Popover, Tooltip } from '@skeletonlabs/skeleton-svelte';
 	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
 	import { Modal } from '@dtx/ui-components/components';
@@ -9,7 +9,7 @@
 	import toastStore from '$lib/toaster';
 
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
-		item: Partial<SimfileRow> & { is_published?: boolean };
+		item: Partial<SimfileWithDtx>;
 		isBlog: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		onFileDelete: (id: number) => void;

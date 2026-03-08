@@ -29,7 +29,7 @@ const mockItem = {
 	title: 'Song A',
 	is_published: false,
 	download_url: null as string | null,
-	display_id: 'A001'
+	display_id: null as number | null
 };
 
 describe('ChartListTableItem', () => {

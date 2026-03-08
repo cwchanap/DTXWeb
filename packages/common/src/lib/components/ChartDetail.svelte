@@ -1,30 +1,13 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { DtxFileRow } from '../types/d1.types';
+	import type { SimfileWithDtx } from '../types/d1.types';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';
 	import IconCheck from '@lucide/svelte/icons/check';
 
-	type SimfileWithDtxFiles = {
-		id?: number;
-		title?: string;
-		artist?: string;
-		bpm?: number;
-		user_id?: string;
-		display_id?: number | null;
-		download_url?: string | null;
-		preview_url?: string | null;
-		video_preview_url?: string | null;
-		publish_date?: string;
-		created_at?: string;
-		updated_at?: string;
-		is_published?: boolean;
-		dtx_files?: Partial<DtxFileRow>[];
-	};
-
 	interface Props {
-		simfile?: Partial<SimfileWithDtxFiles> | null;
+		simfile?: Partial<SimfileWithDtx> | null;
 		preview?: import('svelte').Snippet;
 		folder_upload?: import('svelte').Snippet;
 		asset_files?: import('svelte').Snippet;
@@ -66,7 +49,7 @@
 		videoPreviewUrl = $bindable(simfile?.video_preview_url || '')
 	}: Props = $props();
 
-	let dtxFiles = $derived((simfile?.dtx_files || []) as Partial<DtxFileRow>[]);
+	let dtxFiles = $derived(simfile?.dtx_files || []);
 
 	// Derived values for display
 	let displayBpm = $derived(simfile?.bpm);

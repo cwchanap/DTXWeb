@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
 	import ImageAudio from './ImageAudio.svelte';
-	import type { SimfileRow } from '@dtx/common';
+	import type { SimfileWithDtx } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay, buildPreviewUrl } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
 	import { Modal, Button } from '@dtx/ui-components/components';
 
 	let { item, isBlog, togglePublishChart, simfileBucketUrl, onFileDelete } = $props<{
-		item: Partial<SimfileRow> & { is_published?: boolean };
+		item: Partial<SimfileWithDtx>;
 		isBlog: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		simfileBucketUrl: string;

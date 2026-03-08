@@ -6,7 +6,7 @@
 	import { authStore } from '../stores/authStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
-	import type { SimfileWithDtx, SimfileRow, DtxFileRow } from '@dtx/common';
+	import type { SimfileWithDtx, DtxFileRow } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 
@@ -190,9 +190,6 @@
 			loadLocalFiles();
 		}
 	});
-
-	// Mock client for local-only functionality (not used, just for API compatibility)
-	const mockSupabaseClient = {};
 
 	// State for parsed local DTX data
 	let parsedLocalData = $state<{
@@ -695,10 +692,7 @@
 			download_url: linkedSimfile?.download_url || downloadUrl,
 			video_preview_url: linkedSimfile?.video_preview_url || videoPreviewUrl,
 			dtx_files: dtxFiles
-		} satisfies Partial<SimfileRow> & {
-			is_published?: boolean;
-			dtx_files: Partial<DtxFileRow>[];
-		};
+		} satisfies Partial<SimfileWithDtx>;
 	});
 
 	// Initialize reactive form values from simfileData
@@ -914,7 +908,6 @@
 						<UploadedAssetFiles
 							simfileId={song.linkedSimFileId?.toString() || ''}
 							userFiles={localFiles}
-							supabaseClient={mockSupabaseClient}
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
 							isDesktop={true}
@@ -1189,7 +1182,6 @@
 						<UploadedAssetFiles
 							simfileId={song.linkedSimFileId?.toString() || ''}
 							userFiles={localFiles}
-							supabaseClient={mockSupabaseClient}
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
 							isDesktop={true}

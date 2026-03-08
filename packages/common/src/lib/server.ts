@@ -12,18 +12,6 @@ export {
 // Export constants (server-safe)
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
-// Export server-safe types
-export type {
-	Database,
-	Tables,
-	TablesInsert,
-	TablesUpdate,
-	Enums,
-	CompositeTypes,
-	DtxFile,
-	SimfileWithDtx
-} from './types/supabase.types';
-
 // Export D1 types
 export type {
 	SimfileRow,

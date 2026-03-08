@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
-import type { Tables } from '@dtx/common';
+import type { DtxFileRow } from '@dtx/common';
 
 describe('utils', () => {
 	describe('formatLevelDisplay', () => {
 		it('should format level display for normal levels', () => {
-			const dtxFiles: Tables<'dtx_files'>[] = [
+			const dtxFiles: DtxFileRow[] = [
 				{
 					level: 25,
 					id: 1,
@@ -31,7 +31,7 @@ describe('utils', () => {
 		});
 
 		it('should format level display for high levels (> 100)', () => {
-			const dtxFiles: Tables<'dtx_files'>[] = [
+			const dtxFiles: DtxFileRow[] = [
 				{
 					level: 150,
 					id: 1,
@@ -51,7 +51,7 @@ describe('utils', () => {
 		});
 
 		it('should handle mixed level ranges', () => {
-			const dtxFiles: Tables<'dtx_files'>[] = [
+			const dtxFiles: DtxFileRow[] = [
 				{
 					level: 25,
 					id: 1,
@@ -73,7 +73,7 @@ describe('utils', () => {
 		});
 
 		it('should handle zero levels', () => {
-			const dtxFiles: Tables<'dtx_files'>[] = [
+			const dtxFiles: DtxFileRow[] = [
 				{
 					level: 0,
 					id: 1,
@@ -98,7 +98,7 @@ describe('utils', () => {
 		});
 
 		it('should sort levels correctly', () => {
-			const dtxFiles: Tables<'dtx_files'>[] = [
+			const dtxFiles: DtxFileRow[] = [
 				{
 					level: 35,
 					id: 3,

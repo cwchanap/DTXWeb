@@ -6,10 +6,9 @@
 	import { authStore } from '../stores/authStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
-	import type { SimfileWithDtx, Tables } from '@dtx/common';
+	import type { SimfileWithDtx, SimfileRow, DtxFileRow } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
-	import type { SupabaseClient } from '@supabase/supabase-js';
 
 	interface Props {
 		song: TreeNode;
@@ -192,12 +191,8 @@
 		}
 	});
 
-	// Mock Supabase client for local-only functionality
-	const mockSupabaseClient = {
-		auth: {
-			getSession: () => Promise.resolve({ data: { session: null }, error: null })
-		}
-	} as unknown as SupabaseClient;
+	// Mock client for local-only functionality (not used, just for API compatibility)
+	const mockSupabaseClient = {};
 
 	// State for parsed local DTX data
 	let parsedLocalData = $state<{
@@ -674,7 +669,7 @@
 	// Use parsed local data as fallback when linked simfile data is missing
 	const simfileData = $derived(() => {
 		const linkedSimfile = song.linkedSimFile ? normalizeSimfile(song.linkedSimFile) : null;
-		const fallbackDtxFiles: Partial<Tables<'dtx_files'>>[] = parsedLocalData.levels
+		const fallbackDtxFiles: Partial<DtxFileRow>[] = parsedLocalData.levels
 			? parsedLocalData.levels.map((l, index) => ({
 					id: index + 1,
 					label: l.label || 'Unknown',
@@ -682,7 +677,7 @@
 					simfile_id: 0
 				}))
 			: [];
-		const dtxFiles: Partial<Tables<'dtx_files'>>[] =
+		const dtxFiles: Partial<DtxFileRow>[] =
 			linkedSimfile?.dtx_files?.map((file, index) => ({
 				...file,
 				level: file?.level !== undefined ? Number(file.level) : undefined,
@@ -700,7 +695,10 @@
 			download_url: linkedSimfile?.download_url || downloadUrl,
 			video_preview_url: linkedSimfile?.video_preview_url || videoPreviewUrl,
 			dtx_files: dtxFiles
-		} satisfies Partial<Tables<'simfiles'>> & { dtx_files: Partial<Tables<'dtx_files'>>[] };
+		} satisfies Partial<SimfileRow> & {
+			is_published?: boolean;
+			dtx_files: Partial<DtxFileRow>[];
+		};
 	});
 
 	// Initialize reactive form values from simfileData

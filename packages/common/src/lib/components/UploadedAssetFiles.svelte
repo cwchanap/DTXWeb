@@ -2,14 +2,11 @@
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import dayjs from 'dayjs';
 	import { DownloadCloud } from '@lucide/svelte';
-	import type { SupabaseClient } from '@supabase/supabase-js';
 	import { isValidDtxFile } from '../index.js';
 
 	let {
 		simfileId = '',
 		userFiles = [],
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		supabaseClient: _supabaseClient,
 		simfileBucketUrl,
 		loadAssetFiles,
 		isDesktop = false,
@@ -18,7 +15,6 @@
 	} = $props<{
 		simfileId?: string;
 		userFiles?: Array<File>;
-		supabaseClient: SupabaseClient;
 		simfileBucketUrl: string;
 		loadAssetFiles: (
 			simfileId: string

@@ -13,18 +13,6 @@ export { normalizePosition } from './utils/position';
 // Export constants
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
-// Export Supabase types
-export type {
-	Database,
-	Tables,
-	TablesInsert,
-	TablesUpdate,
-	Enums,
-	CompositeTypes,
-	DtxFile,
-	SimfileWithDtx
-} from './types/supabase.types';
-
 // Export D1 types
 export type {
 	SimfileRow,

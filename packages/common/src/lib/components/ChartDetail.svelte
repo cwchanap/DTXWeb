@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { Tables } from '../types/supabase.types';
+	import type { SimfileRow, DtxFileRow } from '../types/d1.types';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';
 	import IconCheck from '@lucide/svelte/icons/check';
 
-	type simFileWithDtxFiles = Tables<'simfiles'> & {
-		dtx_files: Partial<Tables<'dtx_files'>>[];
+	type SimfileWithDtxFiles = Partial<SimfileRow> & {
+		is_published?: boolean;
+		dtx_files: Partial<DtxFileRow>[];
 	};
 
 	interface Props {
-		simfile?: Partial<simFileWithDtxFiles> | null;
+		simfile?: Partial<SimfileWithDtxFiles> | null;
 		preview?: import('svelte').Snippet;
 		folder_upload?: import('svelte').Snippet;
 		asset_files?: import('svelte').Snippet;
@@ -53,7 +54,7 @@
 		videoPreviewUrl = $bindable(simfile?.video_preview_url || '')
 	}: Props = $props();
 
-	let dtxFiles = $derived((simfile?.dtx_files || []) as Tables<'dtx_files'>[]);
+	let dtxFiles = $derived((simfile?.dtx_files || []) as Partial<DtxFileRow>[]);
 
 	// Derived values for display
 	let displayBpm = $derived(simfile?.bpm);

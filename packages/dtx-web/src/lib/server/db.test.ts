@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { toSimfileWithDtx } from '@dtx/common';
 import {
 	getDb,
 	getSimfile,
@@ -17,7 +18,14 @@ import type { D1Database } from '@cloudflare/workers-types';
 
 vi.mock('@dtx/common', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@dtx/common')>();
-	return { ...actual };
+	return {
+		...actual,
+		toSimfileWithDtx: vi.fn((row, dtxFiles) => ({
+			...row,
+			is_published: row.is_published === 1,
+			dtx_files: dtxFiles
+		}))
+	};
 });
 
 // Helpers to build D1 mock objects
@@ -97,6 +105,10 @@ describe('getDb', () => {
 // getSimfile
 // ---------------------------------------------------------------------------
 describe('getSimfile', () => {
+	beforeEach(() => {
+		vi.mocked(toSimfileWithDtx).mockClear();
+	});
+
 	it('returns null when row not found', async () => {
 		const db = createMockDb(() => createMockStmt(null));
 		const result = await getSimfile(db as unknown as D1Database, 1);
@@ -116,6 +128,7 @@ describe('getSimfile', () => {
 		expect(result?.id).toBe(1);
 		expect(result?.is_published).toBe(true);
 		expect(result?.dtx_files).toEqual(dtxRows);
+		expect(toSimfileWithDtx).toHaveBeenCalledWith(baseSimfileRow, dtxRows);
 	});
 });
 
@@ -141,6 +154,10 @@ describe('getSimfileOwner', () => {
 // listSimfiles
 // ---------------------------------------------------------------------------
 describe('listSimfiles', () => {
+	beforeEach(() => {
+		vi.mocked(toSimfileWithDtx).mockClear();
+	});
+
 	it('returns empty data with count 0 when no rows', async () => {
 		const db = createMockDb(() => createMockStmt({ cnt: 0 }, []));
 		const result = await listSimfiles(db as unknown as D1Database, {});
@@ -162,6 +179,9 @@ describe('listSimfiles', () => {
 		expect(result.data).toHaveLength(1);
 		expect(result.data[0].is_published).toBe(true);
 		expect(result.data[0].dtx_files).toEqual([{ level: 5, label: 'BASIC' }]);
+		expect(toSimfileWithDtx).toHaveBeenCalledWith(baseSimfileRow, [
+			{ level: 5, label: 'BASIC' }
+		]);
 	});
 
 	it('applies userId filter', async () => {
@@ -182,7 +202,14 @@ describe('listSimfiles', () => {
 		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
 		await listSimfiles(db as unknown as D1Database, { search: 'rock' });
 		const prepareCall = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(prepareCall).toContain('s.title LIKE ?');
+		expect(prepareCall).toContain("s.title LIKE ? ESCAPE '\\'");
+	});
+
+	it('escapes LIKE metacharacters in search filter params', async () => {
+		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
+		await listSimfiles(db as unknown as D1Database, { search: '100%_\\mix' });
+		const countStmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
+		expect(countStmt?.bind).toHaveBeenCalledWith('%100\\%\\_\\\\mix%', '%100\\%\\_\\\\mix%');
 	});
 
 	it('uses default page and pageSize', async () => {
@@ -219,6 +246,7 @@ describe('searchSimfiles', () => {
 		await searchSimfiles(db as unknown as D1Database, { query: 'test', userId: 'user-1' });
 		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
 		expect(sql).toContain('(is_published = 1 OR user_id = ?)');
+		expect(sql).toContain("title LIKE ? ESCAPE '\\'");
 	});
 
 	it('applies only published filter when no userId provided', async () => {
@@ -258,6 +286,21 @@ describe('searchSimfiles', () => {
 		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
 		const bindArgs = stmt?.bind.mock.calls[0] as unknown[];
 		expect(bindArgs[bindArgs.length - 1]).toBe(5);
+	});
+
+	it('escapes LIKE metacharacters in searchSimfiles params', async () => {
+		const db = createMockDb(() => createMockStmt(null, []));
+		await searchSimfiles(db as unknown as D1Database, {
+			query: '100%_\\mix',
+			userId: 'user-1'
+		});
+		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
+		expect(stmt?.bind).toHaveBeenCalledWith(
+			'%100\\%\\_\\\\mix%',
+			'%100\\%\\_\\\\mix%',
+			'user-1',
+			8
+		);
 	});
 });
 

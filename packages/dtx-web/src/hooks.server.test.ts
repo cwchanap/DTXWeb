@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@dtx/common';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 vi.mock('@supabase/supabase-js', () => ({
 	createClient: vi.fn(() => ({
@@ -226,18 +225,32 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		};
 
 		// Create a mock resolve function
-		const resolve = vi.fn().mockResolvedValue(new Response('OK', { status: 200 }));
+		const resolveResponse = new Response('OK', { status: 200 });
+		const resolve = vi.fn().mockResolvedValue(resolveResponse);
 
 		// Run authGuard handle
-		await authGuard({ event, resolve });
+		const result = await authGuard({ event, resolve });
 
 		// Verify getUser was called with the bearer token
 		expect(mockGetUser).toHaveBeenCalledWith(testToken);
+		expect(result).toBe(resolveResponse);
+		expect(resolve).toHaveBeenCalledTimes(1);
 
 		// Verify locals.user and locals.session are set
 		expect(event.locals.user).toBeTruthy();
 		expect(event.locals.session).toBeTruthy();
 		expect(event.locals.session?.access_token).toBe(testToken);
+		expect(vi.mocked(createClient)).toHaveBeenCalledWith(
+			'http://localhost:5173',
+			'test-anon-key',
+			expect.objectContaining({
+				global: {
+					headers: {
+						Authorization: `Bearer ${testToken}`
+					}
+				}
+			})
+		);
 	});
 
 	it('allows unauthenticated GET /api/chart/:id without bearer token', async () => {
@@ -309,6 +322,43 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		expect(result).toBeInstanceOf(Response);
 		expect(result?.status).toBe(401);
 		expect(resolve).not.toHaveBeenCalled();
+		expect(mockGetUser).not.toHaveBeenCalled();
+	});
+
+	it('allows unauthenticated GET /api/chart?scope=published', async () => {
+		const mockGetUser = vi.fn();
+		const mockGetSession = vi.fn().mockResolvedValue({
+			data: { session: null }
+		});
+
+		const event = createMockEvent('http://localhost:5173/api/chart?scope=published', {});
+		event.request = {
+			...event.request,
+			method: 'GET',
+			headers: new Headers()
+		} as Request;
+
+		event.locals.supabase = {
+			auth: {
+				getSession: mockGetSession,
+				getUser: mockGetUser
+			}
+		} as unknown as SupabaseClient;
+
+		event.locals.safeGetSession = async () => {
+			const result = await event.locals.supabase.auth.getSession();
+			if (!result.data.session) {
+				return { session: null, user: null };
+			}
+			return { session: result.data.session, user: result.data.session.user };
+		};
+
+		const resolveResponse = new Response('OK', { status: 200 });
+		const resolve = vi.fn().mockResolvedValue(resolveResponse);
+		const result = await authGuard({ event, resolve });
+
+		expect(result).toBe(resolveResponse);
+		expect(resolve).toHaveBeenCalledTimes(1);
 		expect(mockGetUser).not.toHaveBeenCalled();
 	});
 

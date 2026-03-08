@@ -69,8 +69,8 @@ if ! command -v psql &> /dev/null; then
   exit 1
 fi
 
-if ! command -v wrangler &> /dev/null && [ "$DRY_RUN" = false ]; then
-  err "wrangler is not installed. Install with: npm install -g wrangler"
+if [ "$DRY_RUN" = false ] && ! command -v wrangler &> /dev/null && ! command -v npx &> /dev/null; then
+  err "wrangler is not installed. Install with: npm install -g wrangler or ensure npx is available"
   exit 1
 fi
 

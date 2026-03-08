@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockGetSession = vi.fn();
 const mockGetSupabaseClient = vi.fn();
@@ -27,6 +27,10 @@ describe('api-client', () => {
 		});
 	});
 
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
 	describe('apiGet', () => {
 		it('returns success with data on 200 response', async () => {
 			const { apiGet } = await importApiClient();
@@ -34,11 +38,26 @@ describe('api-client', () => {
 				'fetch',
 				vi.fn().mockResolvedValue({
 					ok: true,
+					headers: new Headers({ 'Content-Type': 'application/json' }),
 					json: async () => ({ id: 1 })
 				})
 			);
 			const result = await apiGet('/api/chart');
 			expect(result).toEqual({ success: true, data: { id: 1 } });
+		});
+
+		it('returns success with undefined data on 204 response', async () => {
+			const { apiGet } = await importApiClient();
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					status: 204,
+					headers: new Headers()
+				})
+			);
+			const result = await apiGet('/api/chart');
+			expect(result).toEqual({ success: true, data: undefined });
 		});
 
 		it('returns error when response is not ok', async () => {
@@ -97,7 +116,11 @@ describe('api-client', () => {
 
 		it('includes auth headers and user agent', async () => {
 			const { apiGet } = await importApiClient();
-			const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+			const mockFetch = vi.fn().mockResolvedValue({
+				ok: true,
+				headers: new Headers({ 'Content-Type': 'application/json' }),
+				json: async () => ({})
+			});
 			vi.stubGlobal('fetch', mockFetch);
 			await apiGet('/api/chart');
 			const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -123,7 +146,11 @@ describe('api-client', () => {
 			const { apiPost } = await importApiClient();
 			vi.stubGlobal(
 				'fetch',
-				vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 2 }) })
+				vi.fn().mockResolvedValue({
+					ok: true,
+					headers: new Headers({ 'Content-Type': 'application/json' }),
+					json: async () => ({ id: 2 })
+				})
 			);
 			const result = await apiPost('/api/chart', { title: 'New Song' });
 			expect(result).toEqual({ success: true, data: { id: 2 } });
@@ -131,7 +158,11 @@ describe('api-client', () => {
 
 		it('sends JSON body with POST method', async () => {
 			const { apiPost } = await importApiClient();
-			const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+			const mockFetch = vi.fn().mockResolvedValue({
+				ok: true,
+				headers: new Headers({ 'Content-Type': 'application/json' }),
+				json: async () => ({})
+			});
 			vi.stubGlobal('fetch', mockFetch);
 			await apiPost('/api/chart', { title: 'Test' });
 			const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -169,6 +200,7 @@ describe('api-client', () => {
 				'fetch',
 				vi.fn().mockResolvedValue({
 					ok: true,
+					headers: new Headers({ 'Content-Type': 'application/json' }),
 					json: async () => ({ id: 1, title: 'Updated' })
 				})
 			);
@@ -178,7 +210,11 @@ describe('api-client', () => {
 
 		it('sends JSON body with PATCH method', async () => {
 			const { apiPatch } = await importApiClient();
-			const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+			const mockFetch = vi.fn().mockResolvedValue({
+				ok: true,
+				headers: new Headers({ 'Content-Type': 'application/json' }),
+				json: async () => ({})
+			});
 			vi.stubGlobal('fetch', mockFetch);
 			await apiPatch('/api/chart/1', { title: 'Test' });
 			const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];

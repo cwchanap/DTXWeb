@@ -40,6 +40,20 @@ const API_REQUEST_TIMEOUT_MS = 30000;
 const isAbortError = (error: unknown): boolean =>
 	typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError';
 
+const hasJsonResponseBody = (response: Response): boolean => {
+	if (response.status === 204 || response.status === 205) {
+		return false;
+	}
+
+	const contentLength = response.headers.get('Content-Length');
+	if (contentLength === '0') {
+		return false;
+	}
+
+	const contentType = response.headers.get('Content-Type')?.toLowerCase();
+	return contentType?.includes('application/json') ?? false;
+};
+
 const fetchWithTimeout = async (input: string, init: RequestInit): Promise<Response> => {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
@@ -68,6 +82,10 @@ const apiRequest = async <T = unknown>(
 		if (!response.ok) {
 			const err = await response.json().catch(() => ({ error: response.statusText }));
 			return { success: false, error: err.error || `HTTP ${response.status}` };
+		}
+
+		if (!hasJsonResponseBody(response)) {
+			return { success: true, data: undefined as T };
 		}
 
 		const data = await response.json();

@@ -102,6 +102,9 @@ export interface ListSimfilesOptions {
 	pageSize?: number;
 }
 
+const escapeLikePattern = (value: string): string =>
+	value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+
 export const listSimfiles = async (
 	db: D1Database,
 	opts: ListSimfilesOptions
@@ -117,8 +120,8 @@ export const listSimfiles = async (
 		conditions.push('s.is_published = 1');
 	}
 	if (opts.search) {
-		conditions.push('(s.title LIKE ? OR s.artist LIKE ?)');
-		const pattern = `%${opts.search}%`;
+		conditions.push("(s.title LIKE ? ESCAPE '\\' OR s.artist LIKE ? ESCAPE '\\')");
+		const pattern = `%${escapeLikePattern(opts.search)}%`;
 		params.push(pattern, pattern);
 	}
 
@@ -189,8 +192,8 @@ export const searchSimfiles = async (
 	db: D1Database,
 	opts: SearchSimfilesOptions
 ): Promise<SearchSimfileResult[]> => {
-	const conditions: string[] = ['(title LIKE ? OR artist LIKE ?)'];
-	const pattern = `%${opts.query}%`;
+	const conditions: string[] = ["(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\')"];
+	const pattern = `%${escapeLikePattern(opts.query)}%`;
 	const params: unknown[] = [pattern, pattern];
 
 	// Restrict to published charts or owned by the user

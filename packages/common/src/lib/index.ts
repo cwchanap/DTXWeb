@@ -23,7 +23,8 @@ export type {
 	UserProfileRow,
 	UserProfileInsert,
 	UserProfileUpdate,
-	SimfileWithDtxFiles
+	SimfileWithDtxFiles,
+	SimfileWithDtx
 } from './types/d1.types';
 export { toSimfileWithDtx } from './types/d1.types';
 

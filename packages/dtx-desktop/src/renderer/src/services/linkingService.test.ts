@@ -147,6 +147,11 @@ describe('LinkingService', () => {
 				download_url: null,
 				is_published: true,
 				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'test-user-id',
 				dtx_files: []
 			},
 			{
@@ -158,6 +163,11 @@ describe('LinkingService', () => {
 				download_url: null,
 				is_published: true,
 				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'test-user-id',
 				dtx_files: []
 			}
 		];
@@ -241,6 +251,11 @@ describe('LinkingService', () => {
 					download_url: null,
 					is_published: true,
 					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'test-user-id',
 					dtx_files: []
 				},
 				{
@@ -252,6 +267,11 @@ describe('LinkingService', () => {
 					download_url: null,
 					is_published: true,
 					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'test-user-id',
 					dtx_files: []
 				}
 			];
@@ -283,6 +303,11 @@ describe('LinkingService', () => {
 					download_url: null,
 					is_published: true,
 					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'test-user-id',
 					dtx_files: []
 				}
 			];
@@ -316,6 +341,11 @@ describe('LinkingService', () => {
 					download_url: null,
 					is_published: true,
 					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'test-user-id',
 					dtx_files: []
 				}
 			];
@@ -352,6 +382,11 @@ describe('LinkingService', () => {
 					download_url: null,
 					is_published: true,
 					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'test-user-id',
 					dtx_files: []
 				}
 			];
@@ -388,6 +423,11 @@ describe('LinkingService', () => {
 					download_url: null,
 					is_published: true,
 					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'test-user-id',
 					dtx_files: []
 				}
 			];

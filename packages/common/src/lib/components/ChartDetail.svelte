@@ -1,14 +1,26 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { SimfileRow, DtxFileRow } from '../types/d1.types';
+	import type { DtxFileRow } from '../types/d1.types';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';
 	import IconCheck from '@lucide/svelte/icons/check';
 
-	type SimfileWithDtxFiles = Partial<SimfileRow> & {
+	type SimfileWithDtxFiles = {
+		id?: number;
+		title?: string;
+		artist?: string;
+		bpm?: number;
+		user_id?: string;
+		display_id?: number | null;
+		download_url?: string | null;
+		preview_url?: string | null;
+		video_preview_url?: string | null;
+		publish_date?: string;
+		created_at?: string;
+		updated_at?: string;
 		is_published?: boolean;
-		dtx_files: Partial<DtxFileRow>[];
+		dtx_files?: Partial<DtxFileRow>[];
 	};
 
 	interface Props {

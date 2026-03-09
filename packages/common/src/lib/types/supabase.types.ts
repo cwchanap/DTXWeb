@@ -206,34 +206,27 @@ export type TablesUpdate<
 		: never;
 
 export type Enums<
-	PublicEnumNameOrOptions extends
-		| keyof (PublicSchema['Enums'] & PublicSchema['CompositeTypes'])
-		| { schema: keyof Database },
+	PublicEnumNameOrOptions extends keyof PublicSchema['Enums'] | { schema: keyof Database },
 	EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-		? keyof (Database[PublicEnumNameOrOptions['schema']]['Enums'] &
-				Database[PublicEnumNameOrOptions['schema']]['CompositeTypes'])
+		? keyof Database[PublicEnumNameOrOptions['schema']]['Enums']
 		: never = never
 > = PublicEnumNameOrOptions extends { schema: keyof Database }
-	? (Database[PublicEnumNameOrOptions['schema']]['Enums'] &
-			Database[PublicEnumNameOrOptions['schema']]['CompositeTypes'])[EnumName]
-	: PublicEnumNameOrOptions extends keyof (PublicSchema['Enums'] & PublicSchema['CompositeTypes'])
-		? (PublicSchema['Enums'] & PublicSchema['CompositeTypes'])[PublicEnumNameOrOptions]
+	? Database[PublicEnumNameOrOptions['schema']]['Enums'][EnumName]
+	: PublicEnumNameOrOptions extends keyof PublicSchema['Enums']
+		? PublicSchema['Enums'][PublicEnumNameOrOptions]
 		: never;
 
 export type CompositeTypes<
 	PublicCompositeTypeNameOrOptions extends
-		| keyof (PublicSchema['Enums'] & PublicSchema['CompositeTypes'])
+		| keyof PublicSchema['CompositeTypes']
 		| { schema: keyof Database },
 	CompositeTypeName extends PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
-		? keyof (Database[PublicCompositeTypeNameOrOptions['schema']]['Enums'] &
-				Database[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'])
+		? keyof Database[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
 		: never = never
 > = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
-	? (Database[PublicCompositeTypeNameOrOptions['schema']]['Enums'] &
-			Database[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'])[CompositeTypeName]
-	: PublicCompositeTypeNameOrOptions extends keyof (PublicSchema['Enums'] &
-				PublicSchema['CompositeTypes'])
-		? (PublicSchema['Enums'] & PublicSchema['CompositeTypes'])[PublicCompositeTypeNameOrOptions]
+	? Database[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
+	: PublicCompositeTypeNameOrOptions extends keyof PublicSchema['CompositeTypes']
+		? PublicSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
 		: never;
 
 // Legacy types for backward compatibility

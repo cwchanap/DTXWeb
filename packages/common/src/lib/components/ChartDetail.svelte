@@ -42,11 +42,11 @@
 		showPublishingControls = true,
 		showPublishedToggle = true,
 		saveButtonText = 'Update',
-		displayId = $bindable(simfile?.display_id || 0),
-		publishDate = $bindable(simfile?.publish_date || dayjs().format('YYYY-MM-DD')),
-		isPublished = $bindable(simfile?.is_published || true),
-		downloadUrl = $bindable(simfile?.download_url || ''),
-		videoPreviewUrl = $bindable(simfile?.video_preview_url || '')
+		displayId = $bindable(simfile?.display_id ?? 0),
+		publishDate = $bindable(simfile?.publish_date ?? dayjs().format('YYYY-MM-DD')),
+		isPublished = $bindable(simfile?.is_published ?? true),
+		downloadUrl = $bindable(simfile?.download_url ?? ''),
+		videoPreviewUrl = $bindable(simfile?.video_preview_url ?? '')
 	}: Props = $props();
 
 	let dtxFiles = $derived(simfile?.dtx_files || []);

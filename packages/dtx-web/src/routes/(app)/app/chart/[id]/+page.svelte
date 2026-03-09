@@ -15,7 +15,6 @@
 	let updatedHighestDtx = $state<DTXFile | null>(null);
 	let updatedSimfile = $state<SimFile | null>(null);
 	let userUploadedFiles: File[] = $state([]);
-	let { data } = $props();
 
 	onMount(async () => {
 		const id = $page.params.id;
@@ -111,7 +110,6 @@
 				<UploadedAssetFiles
 					simfileId={simfile?.id?.toString() || ''}
 					userFiles={userUploadedFiles}
-					supabaseClient={data.supabase}
 					simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 					{loadAssetFiles}
 				/>

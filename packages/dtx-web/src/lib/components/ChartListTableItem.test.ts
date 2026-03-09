@@ -26,10 +26,8 @@ import ChartListTableItem from './ChartListTableItem.svelte';
 
 const mockItem = {
 	id: 10,
-	title: 'Song A',
 	is_published: false,
-	download_url: null as string | null,
-	display_id: null as number | null
+	download_url: null as string | null
 };
 
 describe('ChartListTableItem', () => {
@@ -58,13 +56,6 @@ describe('ChartListTableItem', () => {
 			}
 		});
 		expect(screen.getByRole('link')).toBeInTheDocument();
-	});
-
-	it('renders without crash when item.id is undefined', () => {
-		render(ChartListTableItem, {
-			props: { ...defaultProps, item: { ...mockItem, id: undefined } }
-		});
-		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
 
 	it('renders action buttons in non-blog mode', () => {

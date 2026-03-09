@@ -78,8 +78,16 @@ export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published'> {
 }
 
 /** Simfile with joined dtx_files — desktop-compatible shape matching old Supabase type */
-export interface SimfileWithDtx extends Omit<SimfileRow, 'is_published'> {
+export interface SimfileWithDtx extends Omit<
+	SimfileRow,
+	'is_published' | 'publish_date' | 'created_at' | 'updated_at' | 'user_id' | 'video_preview_url'
+> {
 	is_published: boolean;
+	publish_date?: string;
+	created_at?: string;
+	updated_at?: string;
+	user_id?: string;
+	video_preview_url?: string | null;
 	dtx_files: Partial<DtxFileRow>[];
 }
 

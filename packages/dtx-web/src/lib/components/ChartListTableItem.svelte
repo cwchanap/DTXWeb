@@ -5,11 +5,9 @@
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
 	import { _ } from 'svelte-i18n';
-	import { get } from 'svelte/store';
-	import toastStore from '$lib/toaster';
 
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
-		item: Partial<SimfileWithDtx>;
+		item: Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'>;
 		isBlog: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		onFileDelete: (id: number) => void;
@@ -20,24 +18,10 @@
 	let tooltipOpen = $state(false);
 
 	function handleDeleteConfirm() {
-		if (item.id !== undefined) {
-			onFileDelete(item.id);
-		} else {
-			toastStore.error({
-				title: get(_)('toast.error_title'),
-				description: get(_)('toast.cannot_delete_chart_invalid_id')
-			});
-		}
+		onFileDelete(item.id);
 	}
 
 	function openModal() {
-		if (item.id === undefined) {
-			toastStore.error({
-				title: get(_)('toast.error_title'),
-				description: get(_)('toast.cannot_delete_chart_invalid_id')
-			});
-			return;
-		}
 		modalOpen = true;
 		popoverOpen = false; // Close popover when modal opens
 	}
@@ -67,22 +51,15 @@
 				</a>
 
 				<Button
-					onclick={() => togglePublishChart(item.id!, !!item.is_published)}
+					onclick={() => togglePublishChart(item.id, item.is_published)}
 					variant="menuItem"
 					fullWidth
 					justify="start"
-					disabled={item.id === undefined}
 				>
 					{#snippet children()}{item.is_published ? 'Unpublish' : 'Publish'}{/snippet}
 				</Button>
 
-				<Button
-					onclick={openModal}
-					variant="menuItem"
-					fullWidth
-					justify="start"
-					disabled={item.id === undefined}
-				>
+				<Button onclick={openModal} variant="menuItem" fullWidth justify="start">
 					{#snippet children()}Delete{/snippet}
 				</Button>
 			</div>

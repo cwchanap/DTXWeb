@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { SimfileWithDtx } from '../types/d1.types';
+	import type { SimfileWithDtx } from '$lib/types/d1.types';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';
@@ -50,6 +50,15 @@
 	}: Props = $props();
 
 	let dtxFiles = $derived(simfile?.dtx_files || []);
+
+	$effect(() => {
+		if (!simfile) return;
+		displayId = simfile.display_id ?? 0;
+		publishDate = simfile.publish_date ?? dayjs().format('YYYY-MM-DD');
+		isPublished = simfile.is_published ?? true;
+		downloadUrl = simfile.download_url ?? '';
+		videoPreviewUrl = simfile.video_preview_url ?? '';
+	});
 
 	// Derived values for display
 	let displayBpm = $derived(simfile?.bpm);

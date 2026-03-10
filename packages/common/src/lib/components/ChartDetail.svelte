@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { SimfileWithDtx } from '$lib/types/d1.types';
+	import type { SimfileWithDtx } from '../types/d1.types';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';

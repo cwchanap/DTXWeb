@@ -14,14 +14,7 @@ export { normalizePosition } from './utils/position';
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
 // Export Supabase types (for backward compatibility with auth)
-export type {
-	Database,
-	Tables,
-	TablesInsert,
-	TablesUpdate,
-	Enums,
-	CompositeTypes
-} from './types/supabase.types';
+export type { Database } from './types/supabase.types';
 
 // Export D1 types
 export type {

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toSimfileWithDtx } from '@dtx/common';
 import { simfiles, dtxFiles, userProfiles } from '$lib/server/db/schema';
+import { drizzle } from 'drizzle-orm/d1';
 import {
+	createDrizzleDb,
 	getDb,
 	getSimfile,
 	getSimfileOwner,
@@ -16,6 +18,10 @@ import {
 	updateUserProfile
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
+
+vi.mock('drizzle-orm/d1', () => ({
+	drizzle: vi.fn(() => ({ mocked: true }))
+}));
 
 vi.mock('@dtx/common', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@dtx/common')>();
@@ -62,6 +68,18 @@ describe('db schema', () => {
 		expect(simfiles).toBeDefined();
 		expect(dtxFiles).toBeDefined();
 		expect(userProfiles).toBeDefined();
+	});
+});
+
+describe('createDrizzleDb', () => {
+	it('wraps the provided D1 database', () => {
+		const rawDb = createMockDb() as unknown as D1Database;
+		const orm = createDrizzleDb(rawDb);
+
+		expect(drizzle).toHaveBeenCalledWith(rawDb, {
+			schema: { simfiles, dtxFiles, userProfiles }
+		});
+		expect(orm).toEqual({ mocked: true });
 	});
 });
 

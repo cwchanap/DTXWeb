@@ -10,8 +10,9 @@ export function formatLevelDisplay(dtx_files: Array<{ level?: string | number }>
 				return levelA - levelB;
 			})
 			.map((file) => {
-				const level =
+				const parsedLevel =
 					typeof file.level === 'string' ? parseFloat(file.level) : file.level || 0;
+				const level = Number.isFinite(parsedLevel) ? parsedLevel : 0;
 				return (level > 100 ? level / 100 : level / 10).toFixed(2);
 			})
 			.join(' / ') || 'N/A'

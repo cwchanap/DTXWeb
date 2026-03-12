@@ -176,6 +176,31 @@ describe('WebFileProvider', () => {
 
 			consoleSpy.mockRestore();
 		});
+
+		it('should return true without removals when no keys match simfileId', async () => {
+			const simfileId = 'target-simfile';
+			mockFileManager.getKeys.mockReturnValue(['other:file1.dtx', 'another:file2.wav']);
+
+			const result = await provider.clearFiles(simfileId);
+
+			expect(result).toBe(true);
+			expect(mockFileManager.removeFile).not.toHaveBeenCalled();
+		});
+
+		it('should handle errors in simfile-specific clear path and return false', async () => {
+			mockFileManager.getKeys.mockImplementation(() => {
+				throw new Error('Get keys error');
+			});
+
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+			const result = await provider.clearFiles('test-simfile');
+
+			expect(result).toBe(false);
+			expect(consoleSpy).toHaveBeenCalledWith('Failed to clear files:', expect.any(Error));
+
+			consoleSpy.mockRestore();
+		});
 	});
 
 	describe('getFileKeys', () => {
@@ -224,6 +249,16 @@ describe('WebFileProvider', () => {
 			const result = await provider.getFileKeys(simfileId);
 
 			expect(result).toEqual([]);
+		});
+
+		it('should treat empty simfileId as local prefix', async () => {
+			const allKeys = ['local:file1.dtx', 'local:file2.wav', 'remote:file3.wav'];
+
+			mockFileManager.getKeys.mockReturnValue(allKeys);
+
+			const result = await provider.getFileKeys('');
+
+			expect(result).toEqual(['file1.dtx', 'file2.wav']);
 		});
 	});
 });

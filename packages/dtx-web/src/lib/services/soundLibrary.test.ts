@@ -87,6 +87,26 @@ describe('SoundLibrary', () => {
 			const result = SoundLibrary.getAll();
 			expect(result).toEqual([]);
 		});
+
+		it('should return memory files when localStorage access fails', () => {
+			const memoryFile: SoundLibraryFile = {
+				hash: 'memory-hash',
+				fileName: 'memory.wav',
+				fileType: 'audio/wav',
+				fileData: '',
+				size: 4096,
+				dateAdded: Date.now()
+			};
+
+			(SoundLibrary as any).memoryFiles.set(memoryFile.hash, memoryFile);
+			mockLocalStorage.getItem.mockImplementation(() => {
+				throw new Error('localStorage unavailable');
+			});
+
+			const result = SoundLibrary.getAll();
+
+			expect(result).toEqual([memoryFile]);
+		});
 	});
 
 	describe('addFiles', () => {
@@ -123,6 +143,21 @@ describe('SoundLibrary', () => {
 			expect(result.errors).toBeDefined();
 		});
 
+		it('should add a normal audio file to localStorage-backed library', async () => {
+			const audioFile = new File(['audio data'], 'test.wav', { type: 'audio/wav' });
+			mockLocalStorage.getItem.mockReturnValue('[]');
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('hash-normal');
+			vi.spyOn(SoundLibrary as any, 'fileToBase64').mockResolvedValue('encoded-data');
+
+			const result = await SoundLibrary.addFiles([audioFile]);
+
+			expect(result).toEqual({ added: 1, skipped: 0, errors: [] });
+			expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
+				'dtx_sound_library',
+				expect.stringContaining('hash-normal')
+			);
+		});
+
 		it('should accept audio files by extension', async () => {
 			const audioFile = new File(['audio data'], 'test.mp3', { type: '' });
 			mockLocalStorage.getItem.mockReturnValue('[]');
@@ -147,6 +182,26 @@ describe('SoundLibrary', () => {
 			// Test that both calls complete without errors
 			expect(result1).toBeDefined();
 			expect(result2).toBeDefined();
+		});
+
+		it('should skip duplicate file hashes from memory entries', async () => {
+			const audioFile = new File(['audio data'], 'dupe.wav', { type: 'audio/wav' });
+			const existingHash = 'hash-duplicate';
+			(SoundLibrary as any).memoryFiles.set(existingHash, {
+				hash: existingHash,
+				fileName: 'existing.wav',
+				fileType: 'audio/wav',
+				fileData: '',
+				size: 1234,
+				dateAdded: Date.now()
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue(existingHash);
+
+			const result = await SoundLibrary.addFiles([audioFile]);
+
+			expect(result).toEqual({ added: 0, skipped: 1, errors: [] });
+			expect(mockLocalStorage.setItem).not.toHaveBeenCalled();
 		});
 
 		it('should handle large files in memory', async () => {
@@ -244,6 +299,32 @@ describe('SoundLibrary', () => {
 			const result = SoundLibrary.getByHash('hash1');
 
 			expect(result).toEqual(mockFile);
+		});
+
+		it('should prioritize memory file over localStorage when hashes match', () => {
+			const memoryFile: SoundLibraryFile = {
+				hash: 'same-hash',
+				fileName: 'memory.wav',
+				fileType: 'audio/wav',
+				fileData: '',
+				size: 100,
+				dateAdded: Date.now()
+			};
+			const storageFile: SoundLibraryFile = {
+				hash: 'same-hash',
+				fileName: 'storage.wav',
+				fileType: 'audio/wav',
+				fileData: 'data',
+				size: 100,
+				dateAdded: Date.now()
+			};
+
+			(SoundLibrary as any).memoryFiles.set('same-hash', memoryFile);
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify([storageFile]));
+
+			const result = SoundLibrary.getByHash('same-hash');
+
+			expect(result).toEqual(memoryFile);
 		});
 
 		it('should return null for non-existent hash', () => {

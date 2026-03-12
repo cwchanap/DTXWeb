@@ -12,7 +12,7 @@ import type {
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '@dtx/common';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
-import { and, count as countRows, desc, eq, inArray, like, notInArray, or } from 'drizzle-orm';
+import { and, count as countRows, desc, eq, inArray, notInArray, or, sql } from 'drizzle-orm';
 import { dtxFiles, simfiles, userProfiles } from '$lib/server/db/schema';
 
 // Re-export for convenience
@@ -158,7 +158,9 @@ export const listSimfiles = async (
 	}
 	if (opts.search) {
 		const pattern = `%${escapeLikePattern(opts.search)}%`;
-		conditions.push(or(like(simfiles.title, pattern), like(simfiles.artist, pattern)));
+		conditions.push(
+			sql`(${simfiles.title} LIKE ${pattern} ESCAPE '\\' OR ${simfiles.artist} LIKE ${pattern} ESCAPE '\\')`
+		);
 	}
 
 	const pageRaw = opts.page ?? 1;
@@ -257,7 +259,9 @@ export const searchSimfiles = async (
 ): Promise<SearchSimfileResult[]> => {
 	const orm = createDrizzleDb(db);
 	const pattern = `%${escapeLikePattern(opts.query)}%`;
-	const conditions = [or(like(simfiles.title, pattern), like(simfiles.artist, pattern))];
+	const conditions = [
+		sql`(${simfiles.title} LIKE ${pattern} ESCAPE '\\' OR ${simfiles.artist} LIKE ${pattern} ESCAPE '\\')`
+	];
 
 	if (opts.userId) {
 		conditions.push(or(eq(simfiles.isPublished, 1), eq(simfiles.userId, opts.userId)));

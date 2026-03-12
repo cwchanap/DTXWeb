@@ -32,9 +32,7 @@ vi.mock('./soundLibrary', () => ({
 	}
 }));
 
-vi.mock('@dtx/common/services/fileManager', () => ({
-	setFile: vi.fn()
-}));
+vi.mock('@dtx/common/services/fileManager');
 
 // Mock localStorage
 const mockLocalStorage = {

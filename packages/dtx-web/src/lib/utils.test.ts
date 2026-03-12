@@ -144,7 +144,7 @@ describe('utils', () => {
 
 			const result = formatLevelDisplay(dtxFiles);
 
-			expect(result).toBe('NaN / 0.00 / 2.00');
+			expect(result).toBe('0.00 / 0.00 / 2.00');
 		});
 	});
 

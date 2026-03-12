@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toSimfileWithDtx } from '@dtx/common';
+import { simfiles, dtxFiles, userProfiles } from '$lib/server/db/schema';
 import {
 	getDb,
 	getSimfile,
@@ -55,6 +56,14 @@ const baseSimfileRow = {
 	created_at: '2024-01-01T00:00:00.000Z',
 	updated_at: '2024-01-01T00:00:00.000Z'
 };
+
+describe('db schema', () => {
+	it('exports the D1 tables used by the query layer', () => {
+		expect(simfiles).toBeDefined();
+		expect(dtxFiles).toBeDefined();
+		expect(userProfiles).toBeDefined();
+	});
+});
 
 // ---------------------------------------------------------------------------
 // getDb

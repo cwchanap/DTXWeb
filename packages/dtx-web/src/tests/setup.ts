@@ -26,3 +26,5 @@ vi.mock('svelte/store');
 vi.mock('@dtx/common');
 // Global mocks are now handled by the __mocks__ folder
 // - @dtx/common is mocked in __mocks__/@dtx/common.ts
+
+vi.mock('@dtx/common/services/fileManager');

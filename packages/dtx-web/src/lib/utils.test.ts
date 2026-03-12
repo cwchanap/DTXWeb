@@ -122,6 +122,30 @@ describe('utils', () => {
 			const result = formatLevelDisplay(dtxFiles);
 			expect(result).toBe('1.50 / 2.50 / 3.50');
 		});
+
+		it('should not mutate the original dtx_files array order', () => {
+			const dtxFiles: DtxFileRow[] = [
+				{ level: 35, id: 3, label: 'Third', simfile_id: 1 },
+				{ level: 15, id: 1, label: 'First', simfile_id: 1 },
+				{ level: 25, id: 2, label: 'Second', simfile_id: 1 }
+			];
+
+			formatLevelDisplay(dtxFiles);
+
+			expect(dtxFiles.map((file) => file.label)).toEqual(['Third', 'First', 'Second']);
+		});
+
+		it('should treat non-finite string levels as zero during sorting', () => {
+			const dtxFiles = [
+				{ level: 'invalid' },
+				{ level: '20' },
+				{ level: undefined }
+			] as DtxFileRow[];
+
+			const result = formatLevelDisplay(dtxFiles);
+
+			expect(result).toBe('0.00 / 0.00 / 2.00');
+		});
 	});
 
 	describe('filterFiles', () => {
@@ -191,6 +215,16 @@ describe('utils', () => {
 			const result = filterFiles(files, ['.dtx']);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe('song.dtx');
+		});
+
+		it('should use the last extension segment for multi-dot filenames', () => {
+			const files = [createFile('archive.tar.gz'), createFile('song.backup.dtx')];
+
+			const result = filterFiles(files, ['.gz', '.dtx']);
+
+			expect(result).toHaveLength(2);
+			expect(result[0].name).toBe('archive.tar.gz');
+			expect(result[1].name).toBe('song.backup.dtx');
 		});
 	});
 

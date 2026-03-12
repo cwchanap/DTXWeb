@@ -8,7 +8,7 @@ export const simfiles = sqliteTable(
 		artist: text('artist').notNull().default(''),
 		bpm: real('bpm').notNull(),
 		userId: text('user_id').notNull(),
-		isPublished: integer('is_published').notNull().default(0),
+		isPublished: integer('is_published').$type<0 | 1>().notNull().default(0),
 		displayId: integer('display_id'),
 		downloadUrl: text('download_url'),
 		previewUrl: text('preview_url'),

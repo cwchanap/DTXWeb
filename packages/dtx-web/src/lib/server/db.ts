@@ -12,6 +12,7 @@ import type {
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '@dtx/common';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
+import { and, count as countRows, desc, eq, inArray, like, notInArray, or } from 'drizzle-orm';
 import { dtxFiles, simfiles, userProfiles } from '$lib/server/db/schema';
 
 // Re-export for convenience
@@ -81,28 +82,54 @@ export const getSimfile = async (
 	db: D1Database,
 	id: number
 ): Promise<SimfileWithDtxFiles | null> => {
-	const row = await db
-		.prepare('SELECT * FROM simfiles WHERE id = ?')
-		.bind(id)
-		.first<SimfileRow>();
+	const orm = createDrizzleDb(db);
+	const [row] = await orm
+		.select({
+			id: simfiles.id,
+			title: simfiles.title,
+			artist: simfiles.artist,
+			bpm: simfiles.bpm,
+			user_id: simfiles.userId,
+			is_published: simfiles.isPublished,
+			display_id: simfiles.displayId,
+			download_url: simfiles.downloadUrl,
+			preview_url: simfiles.previewUrl,
+			video_preview_url: simfiles.videoPreviewUrl,
+			publish_date: simfiles.publishDate,
+			created_at: simfiles.createdAt,
+			updated_at: simfiles.updatedAt
+		})
+		.from(simfiles)
+		.where(eq(simfiles.id, id))
+		.limit(1);
 	if (!row) return null;
 
-	const dtx = await db
-		.prepare('SELECT level, label FROM dtx_files WHERE simfile_id = ?')
-		.bind(id)
-		.all<{ level: number; label: string }>();
+	const dtx = await orm
+		.select({
+			level: dtxFiles.level,
+			label: dtxFiles.label
+		})
+		.from(dtxFiles)
+		.where(eq(dtxFiles.simfileId, id));
 
-	return toSimfileWithDtx(row, dtx.results);
+	return toSimfileWithDtx(row as SimfileRow, dtx);
 };
 
 export const getSimfileOwner = async (
 	db: D1Database,
 	id: number
 ): Promise<{ user_id: string; is_published: 0 | 1 } | null> => {
-	return db
-		.prepare('SELECT user_id, is_published FROM simfiles WHERE id = ?')
-		.bind(id)
-		.first<{ user_id: string; is_published: 0 | 1 }>();
+	const orm = createDrizzleDb(db);
+	const [owner] = await orm
+		.select({
+			user_id: simfiles.userId,
+			is_published: simfiles.isPublished
+		})
+		.from(simfiles)
+		.where(eq(simfiles.id, id))
+		.limit(1);
+
+	return (owner as { user_id: string; is_published: 0 | 1 } | undefined) ?? null;
 };
 
 export interface ListSimfilesOptions {
@@ -120,23 +147,20 @@ export const listSimfiles = async (
 	db: D1Database,
 	opts: ListSimfilesOptions
 ): Promise<{ data: SimfileWithDtxFiles[]; count: number }> => {
-	const conditions: string[] = [];
-	const params: unknown[] = [];
+	const orm = createDrizzleDb(db);
+	const conditions = [];
 
 	if (opts.userId) {
-		conditions.push('s.user_id = ?');
-		params.push(opts.userId);
+		conditions.push(eq(simfiles.userId, opts.userId));
 	}
 	if (opts.publishedOnly) {
-		conditions.push('s.is_published = 1');
+		conditions.push(eq(simfiles.isPublished, 1));
 	}
 	if (opts.search) {
-		conditions.push("(s.title LIKE ? ESCAPE '\\' OR s.artist LIKE ? ESCAPE '\\')");
 		const pattern = `%${escapeLikePattern(opts.search)}%`;
-		params.push(pattern, pattern);
+		conditions.push(or(like(simfiles.title, pattern), like(simfiles.artist, pattern)));
 	}
 
-	const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 	const pageRaw = opts.page ?? 1;
 	const pageSizeRaw = opts.pageSize ?? 20;
 	const page = Number.isFinite(pageRaw) ? Math.max(1, Math.trunc(pageRaw)) : 1;
@@ -144,43 +168,71 @@ export const listSimfiles = async (
 		? Math.min(100, Math.max(1, Math.trunc(pageSizeRaw)))
 		: 20;
 	const offset = (page - 1) * pageSize;
+	const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-	// Count query
-	const countStmt = db.prepare(`SELECT COUNT(*) as cnt FROM simfiles s ${where}`);
-	const countRow = await countStmt.bind(...params).first<{ cnt: number }>();
-	const count = countRow?.cnt ?? 0;
+	const [countRow] = await orm.select({ cnt: countRows() }).from(simfiles).where(whereClause);
+	const count = Number(countRow?.cnt ?? 0);
 
-	// Data query - only select public-safe fields when listing published charts
 	const selectFields = opts.publishedOnly
-		? 's.id, s.title, s.artist, s.bpm, s.is_published, s.display_id, s.download_url, s.preview_url, s.video_preview_url, s.publish_date, s.created_at, s.updated_at'
-		: 's.*';
-	const dataStmt = db.prepare(
-		`SELECT ${selectFields} FROM simfiles s ${where} ORDER BY s.publish_date DESC LIMIT ? OFFSET ?`
-	);
-	const rows = await dataStmt.bind(...params, pageSize, offset).all<SimfileRow>();
+		? {
+				id: simfiles.id,
+				title: simfiles.title,
+				artist: simfiles.artist,
+				bpm: simfiles.bpm,
+				is_published: simfiles.isPublished,
+				display_id: simfiles.displayId,
+				download_url: simfiles.downloadUrl,
+				preview_url: simfiles.previewUrl,
+				video_preview_url: simfiles.videoPreviewUrl,
+				publish_date: simfiles.publishDate,
+				created_at: simfiles.createdAt,
+				updated_at: simfiles.updatedAt
+			}
+		: {
+				id: simfiles.id,
+				title: simfiles.title,
+				artist: simfiles.artist,
+				bpm: simfiles.bpm,
+				user_id: simfiles.userId,
+				is_published: simfiles.isPublished,
+				display_id: simfiles.displayId,
+				download_url: simfiles.downloadUrl,
+				preview_url: simfiles.previewUrl,
+				video_preview_url: simfiles.videoPreviewUrl,
+				publish_date: simfiles.publishDate,
+				created_at: simfiles.createdAt,
+				updated_at: simfiles.updatedAt
+			};
+	const rows = await orm
+		.select(selectFields)
+		.from(simfiles)
+		.where(whereClause)
+		.orderBy(desc(simfiles.publishDate))
+		.limit(pageSize)
+		.offset(offset);
 
-	if (rows.results.length === 0) {
+	if (rows.length === 0) {
 		return { data: [], count };
 	}
 
-	// Batch-fetch dtx_files for all returned simfiles
-	const ids = rows.results.map((r) => r.id);
-	const placeholders = ids.map(() => '?').join(',');
-	const dtxRows = await db
-		.prepare(
-			`SELECT simfile_id, level, label FROM dtx_files WHERE simfile_id IN (${placeholders})`
-		)
-		.bind(...ids)
-		.all<{ simfile_id: number; level: number; label: string }>();
+	const ids = rows.map((r) => r.id);
+	const dtxRows = await orm
+		.select({
+			simfile_id: dtxFiles.simfileId,
+			level: dtxFiles.level,
+			label: dtxFiles.label
+		})
+		.from(dtxFiles)
+		.where(inArray(dtxFiles.simfileId, ids));
 
 	const dtxMap = new Map<number, { level: number; label: string }[]>();
-	for (const d of dtxRows.results) {
+	for (const d of dtxRows) {
 		const arr = dtxMap.get(d.simfile_id) ?? [];
 		arr.push({ level: d.level, label: d.label });
 		dtxMap.set(d.simfile_id, arr);
 	}
 
-	const data = rows.results.map((r) => toSimfileWithDtx(r, dtxMap.get(r.id) ?? []));
+	const data = rows.map((r) => toSimfileWithDtx(r as SimfileRow, dtxMap.get(r.id) ?? []));
 	return { data, count };
 };
 
@@ -203,37 +255,34 @@ export const searchSimfiles = async (
 	db: D1Database,
 	opts: SearchSimfilesOptions
 ): Promise<SearchSimfileResult[]> => {
-	const conditions: string[] = ["(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\')"];
+	const orm = createDrizzleDb(db);
 	const pattern = `%${escapeLikePattern(opts.query)}%`;
-	const params: unknown[] = [pattern, pattern];
+	const conditions = [or(like(simfiles.title, pattern), like(simfiles.artist, pattern))];
 
-	// Restrict to published charts or owned by the user
 	if (opts.userId) {
-		conditions.push('(is_published = 1 OR user_id = ?)');
-		params.push(opts.userId);
+		conditions.push(or(eq(simfiles.isPublished, 1), eq(simfiles.userId, opts.userId)));
 	} else {
-		// If no userId provided, only show published charts
-		conditions.push('is_published = 1');
+		conditions.push(eq(simfiles.isPublished, 1));
 	}
 
 	if (opts.excludeIds && opts.excludeIds.length > 0) {
-		const placeholders = opts.excludeIds.map(() => '?').join(',');
-		conditions.push(`id NOT IN (${placeholders})`);
-		params.push(...opts.excludeIds);
+		conditions.push(notInArray(simfiles.id, opts.excludeIds));
 	}
 
 	const limitRaw = opts.limit ?? 8;
 	const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, Math.trunc(limitRaw))) : 8;
-	const where = conditions.join(' AND ');
 
-	return (
-		await db
-			.prepare(
-				`SELECT id, title, artist, bpm, is_published FROM simfiles WHERE ${where} LIMIT ?`
-			)
-			.bind(...params, limit)
-			.all<SearchSimfileResult>()
-	).results;
+	return (await orm
+		.select({
+			id: simfiles.id,
+			title: simfiles.title,
+			artist: simfiles.artist,
+			bpm: simfiles.bpm,
+			is_published: simfiles.isPublished
+		})
+		.from(simfiles)
+		.where(and(...conditions))
+		.limit(limit)) as SearchSimfileResult[];
 };
 
 export const createSimfile = async (db: D1Database, data: SimfileInsert): Promise<SimfileRow> => {

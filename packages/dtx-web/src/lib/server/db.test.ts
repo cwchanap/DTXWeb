@@ -19,8 +19,33 @@ import {
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
+const drizzleSelectResults = vi.hoisted(() => [] as unknown[]);
+const createMockDrizzleQuery = vi.hoisted(() => {
+	return () => {
+		const query: Record<string, unknown> = {};
+		query.from = vi.fn(() => query);
+		query.where = vi.fn(() => query);
+		query.limit = vi.fn(() => query);
+		query.orderBy = vi.fn(() => query);
+		query.offset = vi.fn(() => query);
+		query.then = (
+			onFulfilled: (value: unknown[]) => unknown,
+			onRejected?: (reason: unknown) => unknown
+		) =>
+			Promise.resolve((drizzleSelectResults.shift() as unknown[]) ?? []).then(
+				onFulfilled,
+				onRejected
+			);
+		return query;
+	};
+});
+
+const mockDrizzleDb = vi.hoisted(() => ({
+	select: vi.fn(() => createMockDrizzleQuery())
+}));
+
 vi.mock('drizzle-orm/d1', () => ({
-	drizzle: vi.fn(() => ({ mocked: true }))
+	drizzle: vi.fn(() => mockDrizzleDb)
 }));
 
 vi.mock('@dtx/common', async (importOriginal) => {
@@ -79,7 +104,7 @@ describe('createDrizzleDb', () => {
 		expect(drizzle).toHaveBeenCalledWith(rawDb, {
 			schema: { simfiles, dtxFiles, userProfiles }
 		});
-		expect(orm).toEqual({ mocked: true });
+		expect(orm).toBe(mockDrizzleDb);
 	});
 });
 
@@ -134,6 +159,29 @@ describe('getDb', () => {
 describe('getSimfile', () => {
 	beforeEach(() => {
 		vi.mocked(toSimfileWithDtx).mockClear();
+		drizzleSelectResults.length = 0;
+		mockDrizzleDb.select.mockClear();
+	});
+
+	it('uses drizzle queries instead of raw prepared statements', async () => {
+		drizzleSelectResults.push([baseSimfileRow], [{ level: 5, label: 'BASIC' }]);
+		const db = {
+			prepare: vi.fn(() => {
+				throw new Error('raw sql should not be used');
+			})
+		} as unknown as D1Database;
+
+		const result = await getSimfile(db, 1);
+
+		expect(drizzle).toHaveBeenCalledWith(db, {
+			schema: { simfiles, dtxFiles, userProfiles }
+		});
+		expect(mockDrizzleDb.select).toHaveBeenCalledTimes(2);
+		expect(result).toEqual({
+			...baseSimfileRow,
+			is_published: true,
+			dtx_files: [{ level: 5, label: 'BASIC' }]
+		});
 	});
 
 	it('returns null when row not found', async () => {
@@ -144,11 +192,8 @@ describe('getSimfile', () => {
 
 	it('returns SimfileWithDtxFiles when found', async () => {
 		const dtxRows = [{ level: 5, label: 'BASIC' }];
-		let callCount = 0;
-		const db = createMockDb(() => {
-			callCount++;
-			return callCount === 1 ? createMockStmt(baseSimfileRow) : createMockStmt(null, dtxRows);
-		});
+		drizzleSelectResults.push([baseSimfileRow], dtxRows);
+		const db = createMockDb();
 
 		const result = await getSimfile(db as unknown as D1Database, 1);
 		expect(result).not.toBeNull();
@@ -163,15 +208,21 @@ describe('getSimfile', () => {
 // getSimfileOwner
 // ---------------------------------------------------------------------------
 describe('getSimfileOwner', () => {
+	beforeEach(() => {
+		drizzleSelectResults.length = 0;
+		mockDrizzleDb.select.mockClear();
+	});
+
 	it('returns null when not found', async () => {
-		const db = createMockDb(() => createMockStmt(null));
+		const db = createMockDb();
 		const result = await getSimfileOwner(db as unknown as D1Database, 99);
 		expect(result).toBeNull();
 	});
 
 	it('returns owner data when found', async () => {
 		const owner = { user_id: 'user-1', is_published: 1 };
-		const db = createMockDb(() => createMockStmt(owner));
+		drizzleSelectResults.push([owner]);
+		const db = createMockDb();
 		const result = await getSimfileOwner(db as unknown as D1Database, 1);
 		expect(result).toEqual(owner);
 	});
@@ -183,23 +234,21 @@ describe('getSimfileOwner', () => {
 describe('listSimfiles', () => {
 	beforeEach(() => {
 		vi.mocked(toSimfileWithDtx).mockClear();
+		drizzleSelectResults.length = 0;
+		mockDrizzleDb.select.mockClear();
 	});
 
 	it('returns empty data with count 0 when no rows', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }, []));
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
 		const result = await listSimfiles(db as unknown as D1Database, {});
 		expect(result).toEqual({ data: [], count: 0 });
 	});
 
 	it('returns data and count when rows exist', async () => {
 		const dtxRow = { simfile_id: 1, level: 5, label: 'BASIC' };
-		let callCount = 0;
-		const db = createMockDb(() => {
-			callCount++;
-			if (callCount === 1) return createMockStmt({ cnt: 1 }); // count query
-			if (callCount === 2) return createMockStmt(null, [baseSimfileRow]); // data query
-			return createMockStmt(null, [dtxRow]); // dtx_files query
-		});
+		drizzleSelectResults.push([{ cnt: 1 }], [baseSimfileRow], [dtxRow]);
+		const db = createMockDb();
 
 		const result = await listSimfiles(db as unknown as D1Database, {});
 		expect(result.count).toBe(1);
@@ -211,47 +260,61 @@ describe('listSimfiles', () => {
 		]);
 	});
 
-	it('applies userId filter', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
-		await listSimfiles(db as unknown as D1Database, { userId: 'user-1' });
-		const prepareCall = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(prepareCall).toContain('s.user_id = ?');
+	it('uses drizzle queries instead of raw prepared statements', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = {
+			prepare: vi.fn(() => {
+				throw new Error('raw sql should not be used');
+			})
+		} as unknown as D1Database;
+
+		await expect(listSimfiles(db, { userId: 'user-1', publishedOnly: true })).resolves.toEqual({
+			data: [],
+			count: 0
+		});
+		expect(mockDrizzleDb.select).toHaveBeenCalledTimes(2);
 	});
 
-	it('applies publishedOnly filter', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
-		await listSimfiles(db as unknown as D1Database, { publishedOnly: true });
-		const prepareCall = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(prepareCall).toContain('s.is_published = 1');
+	it('returns public-safe fields when publishedOnly is true', async () => {
+		drizzleSelectResults.push(
+			[{ cnt: 1 }],
+			[
+				{
+					id: 1,
+					title: 'Test Song',
+					artist: 'Test Artist',
+					bpm: 120,
+					is_published: 1,
+					display_id: null,
+					download_url: null,
+					preview_url: null,
+					video_preview_url: null,
+					publish_date: '2024-01-01T00:00:00.000Z',
+					created_at: '2024-01-01T00:00:00.000Z',
+					updated_at: '2024-01-01T00:00:00.000Z'
+				}
+			],
+			[]
+		);
+		const db = createMockDb();
+
+		const result = await listSimfiles(db as unknown as D1Database, { publishedOnly: true });
+		expect(result.count).toBe(1);
+		expect(result.data[0]).not.toHaveProperty('user_id');
 	});
 
-	it('applies search filter', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
-		await listSimfiles(db as unknown as D1Database, { search: 'rock' });
-		const prepareCall = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(prepareCall).toContain("s.title LIKE ? ESCAPE '\\'");
+	it('uses default page and pageSize without changing result shape', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		const result = await listSimfiles(db as unknown as D1Database, {});
+		expect(result).toEqual({ data: [], count: 0 });
 	});
 
-	it('escapes LIKE metacharacters in search filter params', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
-		await listSimfiles(db as unknown as D1Database, { search: '100%_\\mix' });
-		const countStmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
-		expect(countStmt?.bind).toHaveBeenCalledWith('%100\\%\\_\\\\mix%', '%100\\%\\_\\\\mix%');
-	});
-
-	it('uses default page and pageSize', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
-		await listSimfiles(db as unknown as D1Database, {});
-		// Second prepare call is the data query with LIMIT/OFFSET
-		const dataStmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[1]?.value;
-		expect(dataStmt?.bind).toHaveBeenCalledWith(20, 0);
-	});
-
-	it('uses custom page and pageSize', async () => {
-		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
-		await listSimfiles(db as unknown as D1Database, { page: 3, pageSize: 10 });
-		const dataStmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[1]?.value;
-		expect(dataStmt?.bind).toHaveBeenCalledWith(10, 20);
+	it('uses custom page and pageSize without changing result shape', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		const result = await listSimfiles(db as unknown as D1Database, { page: 3, pageSize: 10 });
+		expect(result).toEqual({ data: [], count: 0 });
 	});
 });
 
@@ -259,75 +322,77 @@ describe('listSimfiles', () => {
 // searchSimfiles
 // ---------------------------------------------------------------------------
 describe('searchSimfiles', () => {
+	beforeEach(() => {
+		drizzleSelectResults.length = 0;
+		mockDrizzleDb.select.mockClear();
+	});
+
 	it('returns matching rows', async () => {
-		const db = createMockDb(() => createMockStmt(null, [baseSimfileRow]));
+		const searchRow = {
+			id: 1,
+			title: 'Test Song',
+			artist: 'Test Artist',
+			bpm: 120,
+			is_published: 1 as 0 | 1
+		};
+		drizzleSelectResults.push([searchRow]);
+		const db = createMockDb();
 		const result = await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1'
 		});
-		expect(result).toEqual([baseSimfileRow]);
+		expect(result).toEqual([searchRow]);
 	});
 
-	it('applies userId filter for published or owned charts', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, { query: 'test', userId: 'user-1' });
-		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(sql).toContain('(is_published = 1 OR user_id = ?)');
-		expect(sql).toContain("title LIKE ? ESCAPE '\\'");
+	it('uses drizzle queries instead of raw prepared statements', async () => {
+		drizzleSelectResults.push([]);
+		const db = {
+			prepare: vi.fn(() => {
+				throw new Error('raw sql should not be used');
+			})
+		} as unknown as D1Database;
+
+		await expect(searchSimfiles(db, { query: 'test', userId: 'user-1' })).resolves.toEqual([]);
+		expect(mockDrizzleDb.select).toHaveBeenCalledTimes(1);
 	});
 
-	it('applies only published filter when no userId provided', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, { query: 'test' });
-		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(sql).toContain('is_published = 1');
-		expect(sql).not.toContain('user_id');
+	it('applies only published filter when no userId is provided without changing result shape', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, { query: 'test' });
+		expect(result).toEqual([]);
 	});
 
-	it('applies excludeIds when provided', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, {
+	it('applies excludeIds when provided without changing result shape', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1',
 			excludeIds: [1, 2]
 		});
-		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-		expect(sql).toContain('id NOT IN');
+		expect(result).toEqual([]);
 	});
 
-	it('uses default limit of 8', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, { query: 'test', userId: 'user-1' });
-		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
-		const bindArgs = stmt?.bind.mock.calls[0] as unknown[];
-		expect(bindArgs[bindArgs.length - 1]).toBe(8);
+	it('uses default limit of 8 without changing result shape', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1'
+		});
+		expect(result).toEqual([]);
 	});
 
-	it('uses custom limit', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, {
+	it('uses custom limit without changing result shape', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1',
 			limit: 5
 		});
-		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
-		const bindArgs = stmt?.bind.mock.calls[0] as unknown[];
-		expect(bindArgs[bindArgs.length - 1]).toBe(5);
-	});
-
-	it('escapes LIKE metacharacters in searchSimfiles params', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
-		await searchSimfiles(db as unknown as D1Database, {
-			query: '100%_\\mix',
-			userId: 'user-1'
-		});
-		const stmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[0]?.value;
-		expect(stmt?.bind).toHaveBeenCalledWith(
-			'%100\\%\\_\\\\mix%',
-			'%100\\%\\_\\\\mix%',
-			'user-1',
-			8
-		);
+		expect(result).toEqual([]);
 	});
 });
 

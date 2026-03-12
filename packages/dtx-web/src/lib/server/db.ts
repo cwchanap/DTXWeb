@@ -11,9 +11,20 @@ import type {
 } from '@dtx/common';
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '@dtx/common';
+import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
+import { dtxFiles, simfiles, userProfiles } from '$lib/server/db/schema';
 
 // Re-export for convenience
 export type { SimfileWithDtxFiles };
+
+const drizzleSchema = {
+	simfiles,
+	dtxFiles,
+	userProfiles
+};
+
+export const createDrizzleDb = (db: D1Database): DrizzleD1Database<typeof drizzleSchema> =>
+	drizzle(db, { schema: drizzleSchema });
 
 /**
  * Mock D1Database for local development when Cloudflare bindings are not available.

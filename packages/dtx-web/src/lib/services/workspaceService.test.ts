@@ -62,6 +62,7 @@ describe('WorkspaceService', () => {
 
 	beforeEach(async () => {
 		workspaceService = new WorkspaceService();
+		WorkspaceService.clearSessionFiles();
 		vi.clearAllMocks();
 		mockLocalStorage.getItem.mockReturnValue(null);
 		mockLocation.hash = '';

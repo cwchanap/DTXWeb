@@ -12,7 +12,17 @@ import type {
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '@dtx/common';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
-import { and, count as countRows, desc, eq, inArray, notInArray, or, sql } from 'drizzle-orm';
+import {
+	type SQL,
+	and,
+	count as countRows,
+	desc,
+	eq,
+	inArray,
+	notInArray,
+	or,
+	sql
+} from 'drizzle-orm';
 import { dtxFiles, simfiles, userProfiles } from '$lib/server/db/schema';
 
 // Re-export for convenience
@@ -39,7 +49,7 @@ const createMockD1Database = (): D1Database => {
 			first: async () => null,
 			all: async () => ({ results: [] }),
 			run: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
-			raw: async () => ({ results: [] })
+			raw: async () => []
 		};
 		return stmt;
 	};
@@ -175,36 +185,21 @@ export const listSimfiles = async (
 	const [countRow] = await orm.select({ cnt: countRows() }).from(simfiles).where(whereClause);
 	const count = Number(countRow?.cnt ?? 0);
 
-	const selectFields = opts.publishedOnly
-		? {
-				id: simfiles.id,
-				title: simfiles.title,
-				artist: simfiles.artist,
-				bpm: simfiles.bpm,
-				is_published: simfiles.isPublished,
-				display_id: simfiles.displayId,
-				download_url: simfiles.downloadUrl,
-				preview_url: simfiles.previewUrl,
-				video_preview_url: simfiles.videoPreviewUrl,
-				publish_date: simfiles.publishDate,
-				created_at: simfiles.createdAt,
-				updated_at: simfiles.updatedAt
-			}
-		: {
-				id: simfiles.id,
-				title: simfiles.title,
-				artist: simfiles.artist,
-				bpm: simfiles.bpm,
-				user_id: simfiles.userId,
-				is_published: simfiles.isPublished,
-				display_id: simfiles.displayId,
-				download_url: simfiles.downloadUrl,
-				preview_url: simfiles.previewUrl,
-				video_preview_url: simfiles.videoPreviewUrl,
-				publish_date: simfiles.publishDate,
-				created_at: simfiles.createdAt,
-				updated_at: simfiles.updatedAt
-			};
+	const selectFields = {
+		id: simfiles.id,
+		title: simfiles.title,
+		artist: simfiles.artist,
+		bpm: simfiles.bpm,
+		user_id: simfiles.userId,
+		is_published: simfiles.isPublished,
+		display_id: simfiles.displayId,
+		download_url: simfiles.downloadUrl,
+		preview_url: simfiles.previewUrl,
+		video_preview_url: simfiles.videoPreviewUrl,
+		publish_date: simfiles.publishDate,
+		created_at: simfiles.createdAt,
+		updated_at: simfiles.updatedAt
+	};
 	const rows = await orm
 		.select(selectFields)
 		.from(simfiles)
@@ -259,12 +254,12 @@ export const searchSimfiles = async (
 ): Promise<SearchSimfileResult[]> => {
 	const orm = createDrizzleDb(db);
 	const pattern = `%${escapeLikePattern(opts.query)}%`;
-	const conditions = [
+	const conditions: SQL[] = [
 		sql`(${simfiles.title} LIKE ${pattern} ESCAPE '\\' OR ${simfiles.artist} LIKE ${pattern} ESCAPE '\\')`
 	];
 
 	if (opts.userId) {
-		conditions.push(or(eq(simfiles.isPublished, 1), eq(simfiles.userId, opts.userId)));
+		conditions.push(or(eq(simfiles.isPublished, 1), eq(simfiles.userId, opts.userId)) as SQL);
 	} else {
 		conditions.push(eq(simfiles.isPublished, 1));
 	}

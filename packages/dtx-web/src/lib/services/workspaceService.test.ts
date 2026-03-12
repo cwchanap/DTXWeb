@@ -32,6 +32,10 @@ vi.mock('./soundLibrary', () => ({
 	}
 }));
 
+vi.mock('@dtx/common/services/fileManager', () => ({
+	setFile: vi.fn()
+}));
+
 // Mock localStorage
 const mockLocalStorage = {
 	getItem: vi.fn(),
@@ -163,6 +167,17 @@ describe('WorkspaceService', () => {
 
 			expect(result.name).toBe('MyFolder (2)');
 		});
+
+		it('should use fallback workspace name when webkitRelativePath is unavailable', async () => {
+			const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+			const fileList = [dtxFile] as unknown as FileList;
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder(fileList);
+
+			expect(result.name).toBe('Imported Folder');
+			expect(result.path).toBe('Imported Folder');
+		});
 	});
 
 	describe('parseDTXFile', () => {
@@ -238,6 +253,84 @@ describe('WorkspaceService', () => {
 
 			expect(result).toBeNull();
 		});
+
+		it('should map library and session files and register them in file manager', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { setFile } = await import('@dtx/common/services/fileManager');
+
+			const soundChips = [
+				{ fileName: 'kick.wav' },
+				{ fileName: 'large.wav' },
+				{ fileName: 'missing.wav' }
+			];
+			const mockDTXFile = {
+				parseFromText: vi.fn().mockResolvedValue(undefined),
+				parseSoundChips: vi.fn().mockReturnValue(soundChips),
+				title: 'Mapped Song'
+			};
+			const mockSimFile = { files: [], title: '' };
+
+			vi.mocked(DTXFile).mockImplementation(() => mockDTXFile as any);
+			vi.mocked(SimFile).mockImplementation(() => mockSimFile as any);
+
+			const kickFile = new File(['kick'], 'kick.wav', { type: 'audio/wav' });
+			const largeFile = new File(['large'], 'large.wav', { type: 'audio/wav' });
+
+			vi.mocked(SoundLibrary.getAll).mockReturnValue([
+				{ fileName: 'kick.wav', fileData: 'data' } as any,
+				{ fileName: 'large.wav', fileData: 'data' } as any
+			]);
+			vi.mocked(SoundLibrary.toFile).mockReturnValue(kickFile);
+
+			(WorkspaceService as any).sessionLargeFiles.set('Test Workspace/large.wav', largeFile);
+
+			const workspace: Workspace = {
+				name: 'Test Workspace',
+				path: 'test-path',
+				dtxFiles: [{ name: 'test.dtx', content: '#TITLE: mapped', path: 'test.dtx' }],
+				audioFiles: [
+					{ name: 'kick.wav', path: 'kick.wav', isLarge: false },
+					{ name: 'large.wav', path: 'large.wav', isLarge: true }
+				],
+				currentDTX: 'test.dtx',
+				lastModified: Date.now()
+			};
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
+
+			expect(result).not.toBeNull();
+			expect(result!.simFile.files).toEqual([kickFile, largeFile]);
+			expect(soundChips[0].file).toBe(kickFile);
+			expect(soundChips[1].file).toBe(largeFile);
+			expect(soundChips[2].file).toBeUndefined();
+			expect(setFile).toHaveBeenCalledWith('local:kick.wav', kickFile);
+			expect(setFile).toHaveBeenCalledWith('local:large.wav', largeFile);
+			expect(setFile).toHaveBeenCalledTimes(2);
+		});
+
+		it('should return null when parsing throws an error', async () => {
+			const { DTXFile } = await import('@dtx/common');
+			const mockDTXFile = {
+				parseFromText: vi.fn().mockRejectedValue(new Error('parse failed')),
+				parseSoundChips: vi.fn()
+			};
+			vi.mocked(DTXFile).mockImplementation(() => mockDTXFile as any);
+
+			const workspace: Workspace = {
+				name: 'Test Workspace',
+				path: 'test-path',
+				dtxFiles: [{ name: 'test.dtx', content: 'bad-content', path: 'test.dtx' }],
+				audioFiles: [],
+				currentDTX: 'test.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
+
+			expect(result).toBeNull();
+		});
 	});
 
 	describe('switchDTXFile', () => {
@@ -272,6 +365,30 @@ describe('WorkspaceService', () => {
 			workspaceService.switchDTXFile(workspace, 'nonexistent.dtx');
 
 			expect(workspace.currentDTX).toBe('song1.dtx'); // Should remain unchanged
+		});
+
+		it('should update lastModified and persist when switching DTX files', () => {
+			const workspace: Workspace = {
+				name: 'Test Workspace',
+				path: 'test-path',
+				dtxFiles: [
+					{ name: 'song1.dtx', content: 'content1', path: 'song1.dtx' },
+					{ name: 'song2.dtx', content: 'content2', path: 'song2.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'song1.dtx',
+				lastModified: 1000
+			};
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+			const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(123456);
+
+			workspaceService.switchDTXFile(workspace, 'song2.dtx');
+
+			expect(workspace.currentDTX).toBe('song2.dtx');
+			expect(workspace.lastModified).toBe(123456);
+			expect(mockLocalStorage.setItem).toHaveBeenCalled();
+			nowSpy.mockRestore();
 		});
 	});
 
@@ -368,6 +485,32 @@ describe('WorkspaceService', () => {
 			expect(mockLocalStorage.setItem).toHaveBeenCalled();
 		});
 
+		it('should omit file objects when saving audio files', () => {
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Serializable Workspace',
+				path: 'serializable-path',
+				dtxFiles: [],
+				audioFiles: [
+					{
+						name: 'kick.wav',
+						path: 'kick.wav',
+						isLarge: false,
+						file: new File(['data'], 'kick.wav', { type: 'audio/wav' })
+					}
+				],
+				currentDTX: null,
+				lastModified: Date.now()
+			};
+
+			workspaceService.saveWorkspace(workspace);
+
+			const savedPayload = mockLocalStorage.setItem.mock.calls[0][1] as string;
+			expect(savedPayload).toContain('Serializable Workspace');
+			expect(savedPayload).not.toContain('"file"');
+		});
+
 		it('should handle localStorage errors', () => {
 			mockLocalStorage.setItem.mockImplementation(() => {
 				throw new Error('Storage error');
@@ -412,6 +555,16 @@ describe('WorkspaceService', () => {
 
 			expect(mockLocalStorage.setItem).toHaveBeenCalledWith('dtx_workspaces', '[]');
 		});
+
+		it('should handle localStorage errors gracefully', () => {
+			mockLocalStorage.getItem.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
+
+			expect(() => {
+				workspaceService.deleteWorkspace('Workspace 1');
+			}).not.toThrow();
+		});
 	});
 
 	describe('getCurrentWorkspace', () => {
@@ -441,6 +594,30 @@ describe('WorkspaceService', () => {
 		it('should return null when no current workspace', () => {
 			mockLocation.hash = '';
 			mockLocalStorage.getItem.mockReturnValue(null);
+
+			const result = workspaceService.getCurrentWorkspace();
+
+			expect(result).toBeNull();
+		});
+
+		it('should ignore non-workspace hash and use localStorage fallback', () => {
+			mockLocation.hash = '#editor';
+			mockLocalStorage.getItem
+				.mockReturnValueOnce('Last Workspace')
+				.mockReturnValueOnce(
+					JSON.stringify([{ name: 'Last Workspace', path: 'last-path' }])
+				);
+
+			const result = workspaceService.getCurrentWorkspace();
+
+			expect(result).toEqual({ name: 'Last Workspace', path: 'last-path' });
+		});
+
+		it('should return null when localStorage throws in fallback path', () => {
+			mockLocation.hash = '';
+			mockLocalStorage.getItem.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
 
 			const result = workspaceService.getCurrentWorkspace();
 
@@ -486,6 +663,13 @@ describe('WorkspaceService', () => {
 			expect(() => {
 				workspaceService.setCurrentWorkspace(workspace);
 			}).not.toThrow();
+		});
+
+		it('should clear current workspace when null is provided', () => {
+			workspaceService.setCurrentWorkspace(null);
+
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('last_workspace');
+			expect(mockLocation.hash).toBe('');
 		});
 	});
 

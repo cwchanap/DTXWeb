@@ -272,6 +272,20 @@ describe('TempChartStorage', () => {
 			expect(mockLocalStorage.removeItem).not.toHaveBeenCalledWith('another_key');
 		});
 
+		it('should ignore null keys while iterating localStorage', () => {
+			mockLocalStorage.length = 3;
+			mockLocalStorage.key
+				.mockReturnValueOnce('dtx_temp_chart_test1')
+				.mockReturnValueOnce(null)
+				.mockReturnValueOnce('dtx_temp_chart_test2');
+
+			TempChartStorage.clearAll();
+
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('dtx_temp_chart_test1');
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('dtx_temp_chart_test2');
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledTimes(2);
+		});
+
 		it('should handle localStorage errors gracefully', () => {
 			mockLocalStorage.key.mockImplementation(() => {
 				throw new Error('Storage error');
@@ -281,6 +295,18 @@ describe('TempChartStorage', () => {
 			expect(() => {
 				TempChartStorage.clearAll();
 			}).not.toThrow();
+		});
+	});
+
+	describe('getStorageKey', () => {
+		it('should return storage key with prefix for simFileID and difficulty', () => {
+			const key = TempChartStorage.getStorageKey('song123', 'master');
+			expect(key).toBe('dtx_temp_chart_song123_master');
+		});
+
+		it('should return default temp key when simFileID is null', () => {
+			const key = TempChartStorage.getStorageKey(null, 'master');
+			expect(key).toBe('dtx_temp_chart_temp');
 		});
 	});
 

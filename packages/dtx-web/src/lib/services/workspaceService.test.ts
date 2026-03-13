@@ -257,7 +257,7 @@ describe('WorkspaceService', () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
 			const { setFile } = await import('@dtx/common/services/fileManager');
 
-			const soundChips = [
+			const soundChips: { fileName: string; file?: File }[] = [
 				{ fileName: 'kick.wav' },
 				{ fileName: 'large.wav' },
 				{ fileName: 'missing.wav' }

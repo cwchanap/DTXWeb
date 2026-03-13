@@ -681,7 +681,11 @@ export class NoteManager {
 				const hasGetBounds = (
 					obj: unknown
 				): obj is { getBounds(): Phaser.Geom.Rectangle } => {
-					return obj && typeof obj.getBounds === 'function';
+					return (
+						typeof obj === 'object' &&
+						obj !== null &&
+						typeof (obj as Record<string, unknown>).getBounds === 'function'
+					);
 				};
 
 				// Fast bounds check using Phaser's built-in bounds if available

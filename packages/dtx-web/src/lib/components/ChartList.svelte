@@ -199,7 +199,7 @@
 						<Switch
 							checked={hideUnpublished}
 							onCheckedChange={(e) => (hideUnpublished = e.checked)}
-							class="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none data-[checked]:bg-purple-600"
+							classes="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none data-[checked]:bg-purple-600"
 						>
 							{#snippet inactiveChild()}<IconX
 									size="14"

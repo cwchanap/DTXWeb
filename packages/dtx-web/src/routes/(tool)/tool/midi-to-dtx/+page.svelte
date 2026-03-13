@@ -79,28 +79,33 @@
 			dtxFile = new DTXFile();
 			await dtxFile.parseFromMidi(uploadedFile);
 
+			const parsedDtxFile = dtxFile;
 			// Override metadata with user settings
-			dtxFile.title = title;
-			dtxFile.artist = artist;
-			dtxFile.level = level;
-			dtxFile.comment = comment;
+			parsedDtxFile.title = title;
+			parsedDtxFile.artist = artist;
+			parsedDtxFile.level = level;
+			parsedDtxFile.comment = comment;
 
 			// Parse MIDI file again to get the raw data for note conversion
 			const arrayBuffer = await uploadedFile.arrayBuffer();
 			const data = new Uint8Array(arrayBuffer);
 			const midiData = (
-				dtxFile as unknown as { parseMidiFile: (data: Uint8Array) => unknown }
+				parsedDtxFile as unknown as {
+					parseMidiFile: (
+						data: Uint8Array
+					) => Parameters<typeof parsedDtxFile.convertMidiNotesToDtx>[0];
+				}
 			).parseMidiFile(data);
 
 			// Override BPM if detected from MIDI
-			if (dtxFile.bpm && dtxFile.bpm !== 120) {
-				bpm = dtxFile.bpm;
+			if (parsedDtxFile.bpm && parsedDtxFile.bpm !== 120) {
+				bpm = parsedDtxFile.bpm;
 			} else {
-				dtxFile.bpm = bpm;
+				parsedDtxFile.bpm = bpm;
 			}
 
 			// Convert MIDI notes to DTX format
-			convertedNotes = dtxFile.convertMidiNotesToDtx(midiData);
+			convertedNotes = parsedDtxFile.convertMidiNotesToDtx(midiData);
 
 			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
 			convertedFileName = `${baseName}.dtx`;

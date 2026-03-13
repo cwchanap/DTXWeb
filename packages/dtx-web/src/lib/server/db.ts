@@ -158,7 +158,7 @@ export const listSimfiles = async (
 	opts: ListSimfilesOptions
 ): Promise<{ data: SimfileWithDtxFiles[]; count: number }> => {
 	const orm = createDrizzleDb(db);
-	const conditions = [];
+	const conditions: SQL[] = [];
 
 	if (opts.userId) {
 		conditions.push(eq(simfiles.userId, opts.userId));

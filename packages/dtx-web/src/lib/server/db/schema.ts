@@ -1,4 +1,5 @@
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 
 export const simfiles = sqliteTable(
 	'simfiles',
@@ -13,9 +14,15 @@ export const simfiles = sqliteTable(
 		downloadUrl: text('download_url'),
 		previewUrl: text('preview_url'),
 		videoPreviewUrl: text('video_preview_url'),
-		publishDate: text('publish_date').notNull(),
-		createdAt: text('created_at').notNull(),
-		updatedAt: text('updated_at').notNull()
+		publishDate: text('publish_date')
+			.notNull()
+			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`),
+		createdAt: text('created_at')
+			.notNull()
+			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`),
+		updatedAt: text('updated_at')
+			.notNull()
+			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`)
 	},
 	(table) => ({
 		userIdIdx: index('idx_simfiles_user_id').on(table.userId),

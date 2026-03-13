@@ -140,7 +140,7 @@ describe('utils', () => {
 				{ level: 'invalid' },
 				{ level: '20' },
 				{ level: undefined }
-			] as DtxFileRow[];
+			] as unknown as DtxFileRow[];
 
 			const result = formatLevelDisplay(dtxFiles);
 

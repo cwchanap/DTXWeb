@@ -190,7 +190,7 @@ export const listSimfiles = async (
 		title: simfiles.title,
 		artist: simfiles.artist,
 		bpm: simfiles.bpm,
-		user_id: simfiles.userId,
+		...(opts.publishedOnly ? {} : { user_id: simfiles.userId }),
 		is_published: simfiles.isPublished,
 		display_id: simfiles.displayId,
 		download_url: simfiles.downloadUrl,

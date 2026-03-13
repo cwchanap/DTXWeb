@@ -212,7 +212,7 @@ export class DTXFile {
 	exportToMidi(
 		notes: Record<string, LaneMeasureNote[]>,
 		laneNoteMap: Record<string, number>
-	): Uint8Array {
+	): Uint8Array<ArrayBuffer> {
 		const TICKS_PER_QUARTER = 480;
 
 		// Create MIDI header
@@ -635,7 +635,13 @@ export class DTXFile {
 				currentTime += event.deltaTime;
 
 				// Only process Note On events with velocity > 0
-				if (event.type === 'channel' && event.command === 0x9 && event.velocity > 0) {
+				if (
+					event.type === 'channel' &&
+					event.command === 0x9 &&
+					event.note !== undefined &&
+					event.velocity !== undefined &&
+					event.velocity > 0
+				) {
 					const laneId = midiToDtxMap[event.note];
 					if (laneId) {
 						const measure = Math.floor(currentTime / ticksPerMeasure);

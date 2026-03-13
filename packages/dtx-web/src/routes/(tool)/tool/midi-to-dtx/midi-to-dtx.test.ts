@@ -56,26 +56,28 @@ describe('MIDI to DTX Converter Logic', () => {
 
 		// Create mock MIDI data with specific notes
 		const mockMidiData = {
+			format: 0,
+			trackCount: 1,
 			ticksPerQuarter: 480,
 			tracks: [
 				[
 					{
 						deltaTime: 0,
-						type: 'channel',
+						type: 'channel' as const,
 						command: 0x9, // Note on
 						note: 36, // Bass drum
 						velocity: 100
 					},
 					{
 						deltaTime: 240,
-						type: 'channel',
+						type: 'channel' as const,
 						command: 0x9, // Note on
 						note: 38, // Snare
 						velocity: 100
 					},
 					{
 						deltaTime: 240,
-						type: 'channel',
+						type: 'channel' as const,
 						command: 0x9, // Note on
 						note: 42, // Hi-hat
 						velocity: 100

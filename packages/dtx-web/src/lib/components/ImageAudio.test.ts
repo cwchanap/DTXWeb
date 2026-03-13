@@ -92,7 +92,7 @@ describe('ImageAudio', () => {
 		await fireEvent.click(screen.getByRole('button'));
 
 		const errorCall = mockAudio.addEventListener.mock.calls.find(
-			([event]: [string]) => event === 'error'
+			(args: unknown[]) => args[0] === 'error'
 		);
 		expect(errorCall).toBeDefined();
 		const [, errorCallback] = errorCall!;

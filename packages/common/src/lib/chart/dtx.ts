@@ -419,6 +419,10 @@ export class DTXFile {
 		return bytes;
 	}
 
+	parseMidiForConversion(data: Uint8Array): ParsedMidi {
+		return this.parseMidiFile(data);
+	}
+
 	async parseFromMidi(file: File): Promise<void> {
 		const arrayBuffer = await file.arrayBuffer();
 		const data = new Uint8Array(arrayBuffer);

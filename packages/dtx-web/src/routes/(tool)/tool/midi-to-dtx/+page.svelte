@@ -89,13 +89,7 @@
 			// Parse MIDI file again to get the raw data for note conversion
 			const arrayBuffer = await uploadedFile.arrayBuffer();
 			const data = new Uint8Array(arrayBuffer);
-			const midiData = (
-				parsedDtxFile as unknown as {
-					parseMidiFile: (
-						data: Uint8Array
-					) => Parameters<typeof parsedDtxFile.convertMidiNotesToDtx>[0];
-				}
-			).parseMidiFile(data);
+			const midiData = parsedDtxFile.parseMidiForConversion(data);
 
 			// Override BPM if detected from MIDI
 			if (parsedDtxFile.bpm && parsedDtxFile.bpm !== 120) {

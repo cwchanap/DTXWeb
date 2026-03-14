@@ -193,11 +193,11 @@
 			<div class="flex flex-wrap items-center gap-4">
 				{#if !isBlog}
 					<div class="flex items-center gap-3">
-						<label for="is_published" class="text-sm font-medium text-slate-300"
+						<label for="hide_unpublished" class="text-sm font-medium text-slate-300"
 							>Hide unpublished:</label
 						>
 						<Switch
-							id="is_published"
+							id="hide_unpublished"
 							checked={hideUnpublished}
 							onCheckedChange={(e) => (hideUnpublished = e.checked)}
 							classes="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none data-[checked]:bg-purple-600"

@@ -136,11 +136,11 @@ describe('utils', () => {
 		});
 
 		it('should treat non-finite string levels as zero during sorting', () => {
-			const dtxFiles = [
+			const dtxFiles: Array<{ level?: string | number }> = [
 				{ level: 'invalid' },
 				{ level: '20' },
 				{ level: undefined }
-			] as unknown as DtxFileRow[];
+			];
 
 			const result = formatLevelDisplay(dtxFiles);
 

@@ -75,9 +75,10 @@ const createMockD1Database = (): D1Database => {
 export const getDb = (platform: App.Platform | undefined): D1Database => {
 	const db = platform?.env?.DB;
 	if (!db) {
-		// Provide a fallback for local development (vite dev) when Cloudflare bindings are not available
-		console.warn(
-			'D1 database binding (DB) not available. Using mock database for local development. Use `bun run wrangler:dev` for full database functionality.'
+		console.error(
+			'CRITICAL: D1 database binding (DB) not available. All database reads will return empty data. ' +
+				'Verify the DB binding is configured in wrangler.toml and the deployment environment. ' +
+				'Use `bun run wrangler:dev` for full database functionality.'
 		);
 		return createMockD1Database();
 	}

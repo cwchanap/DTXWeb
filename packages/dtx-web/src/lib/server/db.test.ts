@@ -316,6 +316,14 @@ describe('listSimfiles', () => {
 		const result = await listSimfiles(db as unknown as D1Database, { page: 3, pageSize: 10 });
 		expect(result).toEqual({ data: [], count: 0 });
 	});
+
+	it('throws when count query returns no rows', async () => {
+		drizzleSelectResults.push([]); // count query returns empty array
+		const db = createMockDb();
+		await expect(listSimfiles(db as unknown as D1Database, {})).rejects.toThrow(
+			'listSimfiles: count query returned no rows'
+		);
+	});
 });
 
 // ---------------------------------------------------------------------------

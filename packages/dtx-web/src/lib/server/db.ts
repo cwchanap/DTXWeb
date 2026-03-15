@@ -189,12 +189,11 @@ export const listSimfiles = async (
 	}
 	const count = Number(countRow.cnt);
 
-	const selectFields = {
+	const baseFields = {
 		id: simfiles.id,
 		title: simfiles.title,
 		artist: simfiles.artist,
 		bpm: simfiles.bpm,
-		user_id: simfiles.userId,
 		is_published: simfiles.isPublished,
 		display_id: simfiles.displayId,
 		download_url: simfiles.downloadUrl,
@@ -204,6 +203,9 @@ export const listSimfiles = async (
 		created_at: simfiles.createdAt,
 		updated_at: simfiles.updatedAt
 	};
+	const selectFields = opts.publishedOnly
+		? baseFields
+		: { ...baseFields, user_id: simfiles.userId };
 	const rows = await orm
 		.select(selectFields)
 		.from(simfiles)
@@ -233,7 +235,7 @@ export const listSimfiles = async (
 		dtxMap.set(d.simfile_id, arr);
 	}
 
-	const data = rows.map((r) => toSimfileWithDtx(r, dtxMap.get(r.id) ?? []));
+	const data = rows.map((r) => toSimfileWithDtx(r as SimfileRow, dtxMap.get(r.id) ?? []));
 	return { data, count };
 };
 

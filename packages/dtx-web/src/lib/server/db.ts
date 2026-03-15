@@ -123,7 +123,7 @@ export const getSimfile = async (
 		.from(dtxFiles)
 		.where(eq(dtxFiles.simfileId, id));
 
-	return toSimfileWithDtx(row as SimfileRow, dtx);
+	return toSimfileWithDtx(row, dtx);
 };
 
 export const getSimfileOwner = async (
@@ -140,7 +140,7 @@ export const getSimfileOwner = async (
 		.where(eq(simfiles.id, id))
 		.limit(1);
 
-	return (owner as { user_id: string; is_published: 0 | 1 } | undefined) ?? null;
+	return owner ?? null;
 };
 
 export interface ListSimfilesOptions {
@@ -233,7 +233,7 @@ export const listSimfiles = async (
 		dtxMap.set(d.simfile_id, arr);
 	}
 
-	const data = rows.map((r) => toSimfileWithDtx(r as SimfileRow, dtxMap.get(r.id) ?? []));
+	const data = rows.map((r) => toSimfileWithDtx(r, dtxMap.get(r.id) ?? []));
 	return { data, count };
 };
 
@@ -275,7 +275,7 @@ export const searchSimfiles = async (
 	const limitRaw = opts.limit ?? 8;
 	const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, Math.trunc(limitRaw))) : 8;
 
-	return (await orm
+	return orm
 		.select({
 			id: simfiles.id,
 			title: simfiles.title,
@@ -285,7 +285,7 @@ export const searchSimfiles = async (
 		})
 		.from(simfiles)
 		.where(and(...conditions))
-		.limit(limit)) as SearchSimfileResult[];
+		.limit(limit);
 };
 
 export const createSimfile = async (db: D1Database, data: SimfileInsert): Promise<SimfileRow> => {

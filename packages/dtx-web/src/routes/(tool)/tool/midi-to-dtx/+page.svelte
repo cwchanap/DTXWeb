@@ -77,7 +77,7 @@
 		try {
 			// Parse the MIDI file
 			dtxFile = new DTXFile();
-			await dtxFile.parseFromMidi(uploadedFile);
+			const midiData = await dtxFile.parseFromMidi(uploadedFile);
 
 			const parsedDtxFile = dtxFile;
 			// Override metadata with user settings
@@ -85,11 +85,6 @@
 			parsedDtxFile.artist = artist;
 			parsedDtxFile.level = level;
 			parsedDtxFile.comment = comment;
-
-			// Parse MIDI file again to get the raw data for note conversion
-			const arrayBuffer = await uploadedFile.arrayBuffer();
-			const data = new Uint8Array(arrayBuffer);
-			const midiData = parsedDtxFile.parseMidiForConversion(data);
 
 			// Override BPM if detected from MIDI
 			if (parsedDtxFile.bpm && parsedDtxFile.bpm !== 120) {

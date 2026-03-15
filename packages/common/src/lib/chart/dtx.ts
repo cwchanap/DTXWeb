@@ -419,11 +419,7 @@ export class DTXFile {
 		return bytes;
 	}
 
-	parseMidiForConversion(data: Uint8Array): ParsedMidi {
-		return this.parseMidiFile(data);
-	}
-
-	async parseFromMidi(file: File): Promise<void> {
+	async parseFromMidi(file: File): Promise<ParsedMidi> {
 		const arrayBuffer = await file.arrayBuffer();
 		const data = new Uint8Array(arrayBuffer);
 
@@ -432,6 +428,8 @@ export class DTXFile {
 
 		// Convert MIDI data to DTX format
 		this.convertMidiToDtx(midiData);
+
+		return midiData;
 	}
 
 	private parseMidiFile(data: Uint8Array): ParsedMidi {

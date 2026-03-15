@@ -276,31 +276,35 @@ describe('listSimfiles', () => {
 	});
 
 	it('returns public-safe fields when publishedOnly is true', async () => {
-		drizzleSelectResults.push(
-			[{ cnt: 1 }],
-			[
-				{
-					id: 1,
-					title: 'Test Song',
-					artist: 'Test Artist',
-					bpm: 120,
-					is_published: 1,
-					display_id: null,
-					download_url: null,
-					preview_url: null,
-					video_preview_url: null,
-					publish_date: '2024-01-01T00:00:00.000Z',
-					created_at: '2024-01-01T00:00:00.000Z',
-					updated_at: '2024-01-01T00:00:00.000Z'
-				}
-			],
-			[]
-		);
+		// baseSimfileRow includes user_id; this row simulates what publishedOnly select returns (no user_id)
+		const rowWithoutUserId = {
+			id: 1,
+			title: 'Test Song',
+			artist: 'Test Artist',
+			bpm: 120,
+			is_published: 1 as 0 | 1,
+			display_id: null,
+			download_url: null,
+			preview_url: null,
+			video_preview_url: null,
+			publish_date: '2024-01-01T00:00:00.000Z',
+			created_at: '2024-01-01T00:00:00.000Z',
+			updated_at: '2024-01-01T00:00:00.000Z'
+		};
+		drizzleSelectResults.push([{ cnt: 1 }], [rowWithoutUserId], []);
 		const db = createMockDb();
 
 		const result = await listSimfiles(db as unknown as D1Database, { publishedOnly: true });
 		expect(result.count).toBe(1);
 		expect(result.data[0]).not.toHaveProperty('user_id');
+	});
+
+	it('includes user_id in result when not publishedOnly', async () => {
+		drizzleSelectResults.push([{ cnt: 1 }], [baseSimfileRow], []);
+		const db = createMockDb();
+
+		const result = await listSimfiles(db as unknown as D1Database, { userId: 'user-1' });
+		expect(result.data[0]).toHaveProperty('user_id', 'user-1');
 	});
 
 	it('uses default page and pageSize without changing result shape', async () => {

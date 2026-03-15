@@ -235,7 +235,11 @@ export const listSimfiles = async (
 		dtxMap.set(d.simfile_id, arr);
 	}
 
-	const data = rows.map((r) => toSimfileWithDtx(r, dtxMap.get(r.id) ?? []));
+	// Cast is required: when publishedOnly is true, user_id is intentionally excluded
+	// from the SELECT projection. This matches the pre-Drizzle behavior where the public
+	// query also omitted user_id. The spread in toSimfileWithDtx naturally propagates
+	// only the fields present in the row.
+	const data = rows.map((r) => toSimfileWithDtx(r as SimfileRow, dtxMap.get(r.id) ?? []));
 	return { data, count };
 };
 

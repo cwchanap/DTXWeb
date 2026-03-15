@@ -4,6 +4,7 @@ import { simfiles, dtxFiles, userProfiles } from '$lib/server/db/schema';
 import { drizzle } from 'drizzle-orm/d1';
 import {
 	createDrizzleDb,
+	escapeLikePattern,
 	getDb,
 	getSimfile,
 	getSimfileOwner,
@@ -87,6 +88,35 @@ const baseSimfileRow = {
 	created_at: '2024-01-01T00:00:00.000Z',
 	updated_at: '2024-01-01T00:00:00.000Z'
 };
+
+// ---------------------------------------------------------------------------
+// escapeLikePattern
+// ---------------------------------------------------------------------------
+describe('escapeLikePattern', () => {
+	it('leaves plain strings unchanged', () => {
+		expect(escapeLikePattern('hello world')).toBe('hello world');
+	});
+
+	it('escapes percent signs', () => {
+		expect(escapeLikePattern('100%')).toBe('100\\%');
+	});
+
+	it('escapes underscores', () => {
+		expect(escapeLikePattern('some_thing')).toBe('some\\_thing');
+	});
+
+	it('escapes backslashes first to avoid double-escaping', () => {
+		expect(escapeLikePattern('a\\b')).toBe('a\\\\b');
+	});
+
+	it('escapes all metacharacters in a combined string', () => {
+		expect(escapeLikePattern('100%_\\mix')).toBe('100\\%\\_\\\\mix');
+	});
+
+	it('returns empty string unchanged', () => {
+		expect(escapeLikePattern('')).toBe('');
+	});
+});
 
 describe('db schema', () => {
 	it('exports the D1 tables used by the query layer', () => {
@@ -313,18 +343,55 @@ describe('listSimfiles', () => {
 		expect(secondSelectCall).toHaveProperty('user_id');
 	});
 
-	it('uses default page and pageSize without changing result shape', async () => {
+	it('uses default page (1) and pageSize (20) for limit and offset', async () => {
 		drizzleSelectResults.push([{ cnt: 0 }], []);
 		const db = createMockDb();
-		const result = await listSimfiles(db as unknown as D1Database, {});
-		expect(result).toEqual({ data: [], count: 0 });
+		await listSimfiles(db as unknown as D1Database, {});
+		// results[1] is the data query (results[0] is the count query)
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		expect(dataQuery?.limit).toHaveBeenCalledWith(20);
+		expect(dataQuery?.offset).toHaveBeenCalledWith(0);
 	});
 
-	it('uses custom page and pageSize without changing result shape', async () => {
+	it('computes correct limit and offset for page 3 with pageSize 10', async () => {
 		drizzleSelectResults.push([{ cnt: 0 }], []);
 		const db = createMockDb();
-		const result = await listSimfiles(db as unknown as D1Database, { page: 3, pageSize: 10 });
-		expect(result).toEqual({ data: [], count: 0 });
+		await listSimfiles(db as unknown as D1Database, { page: 3, pageSize: 10 });
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		expect(dataQuery?.limit).toHaveBeenCalledWith(10);
+		expect(dataQuery?.offset).toHaveBeenCalledWith(20); // (3-1) * 10
+	});
+
+	it('clamps page to minimum of 1 when page is 0', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		await listSimfiles(db as unknown as D1Database, { page: 0 });
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		expect(dataQuery?.offset).toHaveBeenCalledWith(0); // page clamped to 1
+	});
+
+	it('clamps pageSize to maximum of 100', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		await listSimfiles(db as unknown as D1Database, { pageSize: 999 });
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		expect(dataQuery?.limit).toHaveBeenCalledWith(100);
 	});
 
 	it('throws when count query returns no rows', async () => {
@@ -374,43 +441,60 @@ describe('searchSimfiles', () => {
 		expect(mockDrizzleDb.select).toHaveBeenCalledTimes(1);
 	});
 
-	it('applies only published filter when no userId is provided without changing result shape', async () => {
+	it('applies where filter for all search calls', async () => {
 		drizzleSelectResults.push([]);
 		const db = createMockDb();
-		const result = await searchSimfiles(db as unknown as D1Database, { query: 'test' });
-		expect(result).toEqual([]);
+		await searchSimfiles(db as unknown as D1Database, { query: 'test' });
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.where).toHaveBeenCalled();
 	});
 
-	it('applies excludeIds when provided without changing result shape', async () => {
+	it('uses default limit of 8', async () => {
 		drizzleSelectResults.push([]);
 		const db = createMockDb();
-		const result = await searchSimfiles(db as unknown as D1Database, {
-			query: 'test',
-			userId: 'user-1',
-			excludeIds: [1, 2]
-		});
-		expect(result).toEqual([]);
+		await searchSimfiles(db as unknown as D1Database, { query: 'test', userId: 'user-1' });
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(8);
 	});
 
-	it('uses default limit of 8 without changing result shape', async () => {
+	it('uses custom limit', async () => {
 		drizzleSelectResults.push([]);
 		const db = createMockDb();
-		const result = await searchSimfiles(db as unknown as D1Database, {
-			query: 'test',
-			userId: 'user-1'
-		});
-		expect(result).toEqual([]);
-	});
-
-	it('uses custom limit without changing result shape', async () => {
-		drizzleSelectResults.push([]);
-		const db = createMockDb();
-		const result = await searchSimfiles(db as unknown as D1Database, {
+		await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1',
 			limit: 5
 		});
-		expect(result).toEqual([]);
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(5);
+	});
+
+	it('applies excludeIds filter when provided', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			excludeIds: [1, 2]
+		});
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.where).toHaveBeenCalled();
 	});
 });
 

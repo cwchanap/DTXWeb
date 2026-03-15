@@ -151,7 +151,7 @@ export interface ListSimfilesOptions {
 	pageSize?: number;
 }
 
-const escapeLikePattern = (value: string): string =>
+export const escapeLikePattern = (value: string): string =>
 	value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 
 export const listSimfiles = async (

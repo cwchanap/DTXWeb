@@ -297,6 +297,9 @@ describe('listSimfiles', () => {
 		const result = await listSimfiles(db as unknown as D1Database, { publishedOnly: true });
 		expect(result.count).toBe(1);
 		expect(result.data[0]).not.toHaveProperty('user_id');
+
+		const secondSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[1]?.[0];
+		expect(secondSelectCall).not.toHaveProperty('user_id');
 	});
 
 	it('includes user_id in result when not publishedOnly', async () => {
@@ -305,6 +308,9 @@ describe('listSimfiles', () => {
 
 		const result = await listSimfiles(db as unknown as D1Database, { userId: 'user-1' });
 		expect(result.data[0]).toHaveProperty('user_id', 'user-1');
+
+		const secondSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[1]?.[0];
+		expect(secondSelectCall).toHaveProperty('user_id');
 	});
 
 	it('uses default page and pageSize without changing result shape', async () => {

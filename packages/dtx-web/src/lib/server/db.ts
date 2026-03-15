@@ -235,7 +235,7 @@ export const listSimfiles = async (
 		dtxMap.set(d.simfile_id, arr);
 	}
 
-	const data = rows.map((r) => toSimfileWithDtx(r as SimfileRow, dtxMap.get(r.id) ?? []));
+	const data = rows.map((r) => toSimfileWithDtx(r, dtxMap.get(r.id) ?? []));
 	return { data, count };
 };
 

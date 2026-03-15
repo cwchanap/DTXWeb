@@ -72,8 +72,9 @@ export interface UserProfileUpdate {
 }
 
 /** Simfile with joined dtx_files — the API-facing shape with boolean is_published */
-export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published'> {
+export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published' | 'user_id'> {
 	is_published: boolean;
+	user_id?: string;
 	dtx_files: { level: number; label: string }[];
 }
 
@@ -93,7 +94,7 @@ export interface SimfileWithDtx extends Omit<
 
 /** Convert a raw D1 simfile row (integer booleans) to the API-facing shape */
 export const toSimfileWithDtx = (
-	row: SimfileRow,
+	row: Omit<SimfileRow, 'user_id'> & { user_id?: string },
 	dtxFiles: { level: number; label: string }[]
 ): SimfileWithDtxFiles => ({
 	...row,

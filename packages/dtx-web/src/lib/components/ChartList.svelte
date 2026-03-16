@@ -193,24 +193,25 @@
 			<div class="flex flex-wrap items-center gap-4">
 				{#if !isBlog}
 					<div class="flex items-center gap-3">
-						<label for="hide_unpublished" class="text-sm font-medium text-slate-300"
-							>Hide unpublished:</label
+						<label
+							class="flex cursor-pointer items-center gap-3 text-sm font-medium text-slate-300"
 						>
-						<Switch
-							id="hide_unpublished"
-							checked={hideUnpublished}
-							onCheckedChange={(e) => (hideUnpublished = e.checked)}
-							classes="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none data-[checked]:bg-purple-600"
-						>
-							{#snippet inactiveChild()}<IconX
-									size="14"
-									class="text-slate-400"
-								/>{/snippet}
-							{#snippet activeChild()}<IconCheck
-									size="14"
-									class="text-purple-200"
-								/>{/snippet}
-						</Switch>
+							Hide unpublished:
+							<Switch
+								checked={hideUnpublished}
+								onCheckedChange={(e) => (hideUnpublished = e.checked)}
+								classes="relative inline-flex h-6 w-11 items-center rounded-full bg-slate-600 transition-colors focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none data-[checked]:bg-purple-600"
+							>
+								{#snippet inactiveChild()}<IconX
+										size="14"
+										class="text-slate-400"
+									/>{/snippet}
+								{#snippet activeChild()}<IconCheck
+										size="14"
+										class="text-purple-200"
+									/>{/snippet}
+							</Switch>
+						</label>
 					</div>
 				{/if}
 

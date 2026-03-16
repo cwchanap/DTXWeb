@@ -5,6 +5,8 @@ vi.mock('winston', () => {
 	const mockFormat = {
 		combine: vi.fn().mockReturnValue('combined-format'),
 		timestamp: vi.fn().mockReturnValue('timestamp-format'),
+		errors: vi.fn().mockReturnValue('errors-format'),
+		splat: vi.fn().mockReturnValue('splat-format'),
 		printf: vi.fn().mockReturnValue('printf-format')
 	};
 

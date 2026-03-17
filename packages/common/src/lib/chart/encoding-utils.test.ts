@@ -365,7 +365,8 @@ describe('encoding-utils', () => {
 			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					if (encoding === 'utf-8') return 'no match';
-					return fallbackContent;
+					if (encoding === 'shift-jis') return fallbackContent;
+					return 'other encoding';
 				})
 			}));
 
@@ -377,6 +378,8 @@ describe('encoding-utils', () => {
 			);
 
 			expect(result).toBe(fallbackContent);
+			expect(mockTextDecoder).toHaveBeenCalledWith('utf-8');
+			expect(mockTextDecoder).toHaveBeenCalledWith('shift-jis');
 		});
 	});
 

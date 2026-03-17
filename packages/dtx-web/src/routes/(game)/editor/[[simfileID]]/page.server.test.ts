@@ -86,12 +86,15 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 
 	it('handles UTF-16LE BOM encoded def file', async () => {
 		const defText = '#TITLE BOM Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
-		const encoder = new TextEncoder('utf-16le' as any);
-		// Create UTF-16LE BOM + content
-		const utf16Encoder = new TextEncoder();
-		const utf8Bytes = utf16Encoder.encode(defText);
-		// Add UTF-16LE BOM: 0xFF 0xFE
-		const bomBuffer = new Uint8Array([0xff, 0xfe, ...utf8Bytes]).buffer;
+		// Build a proper UTF-16LE buffer: each code unit → 2 little-endian bytes
+		const utf16Bytes = new Uint8Array(defText.length * 2);
+		for (let i = 0; i < defText.length; i++) {
+			const codePoint = defText.charCodeAt(i);
+			utf16Bytes[i * 2] = codePoint & 0xff;
+			utf16Bytes[i * 2 + 1] = (codePoint >> 8) & 0xff;
+		}
+		// Prepend UTF-16LE BOM: 0xFF 0xFE
+		const bomBuffer = new Uint8Array([0xff, 0xfe, ...utf16Bytes]).buffer;
 
 		const realBucket = {
 			toString: () => 'R2Bucket',
@@ -106,7 +109,8 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		} as any);
 
 		expect(result.simfileID).toBe('sim-bom');
-		expect(result.metadata).toBeDefined();
+		expect(result.metadata?.title).toBe('BOM Song');
+		expect(result.metadata?.levels[1]).toEqual({ label: 'BASIC', fileName: 'bas.dtx' });
 	});
 
 	it('handles UTF-8 BOM encoded def file', async () => {

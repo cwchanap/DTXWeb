@@ -36,6 +36,12 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
+const makeLoadArgs = (cookies: Array<{ name: string; value: string }> = []) => ({
+	data: { cookies },
+	depends: vi.fn(),
+	fetch: vi.fn()
+});
+
 describe('+layout load', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -55,11 +61,7 @@ describe('+layout load', () => {
 		mockGetSession.mockResolvedValue({ data: { session: mockSession } });
 		mockGetUser.mockResolvedValue({ data: { user: mockUser } });
 
-		const result = await load({
-			data: { cookies: [] },
-			depends: vi.fn(),
-			fetch: vi.fn()
-		} as any);
+		const result = await load(makeLoadArgs() as any);
 
 		expect(result.session).toEqual(mockSession);
 		expect(result.user).toEqual(mockUser);
@@ -67,18 +69,24 @@ describe('+layout load', () => {
 
 	it('creates server client when not in browser', async () => {
 		vi.mocked(isBrowser).mockReturnValue(false);
+		const mockFetch = vi.fn();
+		const cookies = [{ name: 'test', value: 'cookie' }];
 
-		await load({
-			data: { cookies: [{ name: 'test', value: 'cookie' }] },
-			depends: vi.fn(),
-			fetch: vi.fn()
-		} as any);
+		await load({ data: { cookies }, depends: vi.fn(), fetch: mockFetch } as any);
 
 		expect(createServerClient).toHaveBeenCalledWith(
 			'https://test.supabase.co',
 			'test-anon-key',
-			expect.any(Object)
+			expect.objectContaining({
+				global: expect.objectContaining({ fetch: mockFetch }),
+				cookies: expect.objectContaining({ getAll: expect.any(Function) })
+			})
 		);
+		expect(createBrowserClient).not.toHaveBeenCalled();
+
+		// Verify cookies.getAll returns the passed-in cookies array
+		const callOptions = vi.mocked(createServerClient).mock.calls[0][2] as any;
+		expect(callOptions.cookies.getAll()).toEqual(cookies);
 	});
 
 	it('creates browser client when in browser', async () => {
@@ -87,11 +95,7 @@ describe('+layout load', () => {
 			auth: { getSession: mockGetSession, getUser: mockGetUser }
 		} as any);
 
-		await load({
-			data: { cookies: [] },
-			depends: vi.fn(),
-			fetch: vi.fn()
-		} as any);
+		await load(makeLoadArgs() as any);
 
 		expect(createBrowserClient).toHaveBeenCalledWith(
 			'https://test.supabase.co',
@@ -103,21 +107,13 @@ describe('+layout load', () => {
 	it('calls depends with supabase:auth', async () => {
 		const mockDepends = vi.fn();
 
-		await load({
-			data: { cookies: [] },
-			depends: mockDepends,
-			fetch: vi.fn()
-		} as any);
+		await load({ ...makeLoadArgs(), depends: mockDepends } as any);
 
 		expect(mockDepends).toHaveBeenCalledWith('supabase:auth');
 	});
 
 	it('returns supabase client in result', async () => {
-		const result = await load({
-			data: { cookies: [] },
-			depends: vi.fn(),
-			fetch: vi.fn()
-		} as any);
+		const result = await load(makeLoadArgs() as any);
 
 		expect(result.supabase).toBeDefined();
 	});
@@ -126,11 +122,7 @@ describe('+layout load', () => {
 		mockGetSession.mockResolvedValue({ data: { session: null } });
 		mockGetUser.mockResolvedValue({ data: { user: null } });
 
-		const result = await load({
-			data: { cookies: [] },
-			depends: vi.fn(),
-			fetch: vi.fn()
-		} as any);
+		const result = await load(makeLoadArgs() as any);
 
 		expect(result.session).toBeNull();
 		expect(result.user).toBeNull();

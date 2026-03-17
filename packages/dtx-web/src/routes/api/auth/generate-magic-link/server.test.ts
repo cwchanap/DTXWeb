@@ -34,9 +34,6 @@ afterEach(() => {
 describe('POST /api/auth/generate-magic-link', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockCreateClient.mockReturnValue({
-			auth: { admin: { generateLink: mockGenerateLink } }
-		});
 	});
 
 	it('returns 401 when user is not authenticated', async () => {

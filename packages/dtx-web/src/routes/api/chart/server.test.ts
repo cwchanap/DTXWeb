@@ -247,4 +247,153 @@ describe('POST /api/chart', () => {
 		expect(response.status).toBe(500);
 		expect(deleteSimfile).toHaveBeenCalledWith(expect.anything(), 1);
 	});
+
+	it('returns 500 and logs when both createDtxFiles and deleteSimfile fail', async () => {
+		vi.mocked(createDtxFiles).mockRejectedValue(new Error('dtx insert failed'));
+		vi.mocked(deleteSimfile).mockRejectedValue(new Error('delete also failed'));
+		const loggerModule = await import('$lib/server/logger');
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, levels: [{ label: 'EXT', level: 50 }] })
+		});
+
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+
+		expect(response.status).toBe(500);
+		expect(loggerModule.default.error).toHaveBeenCalledWith(
+			'Failed cleanup after createDtxFiles error:',
+			expect.objectContaining({ simfileId: 1 })
+		);
+	});
+
+	it('returns 400 for invalid displayId', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, displayId: 'not-a-number' })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid displayId');
+	});
+
+	it('returns 400 for invalid downloadUrl', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, downloadUrl: 12345 })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid downloadUrl');
+	});
+
+	it('returns 400 for invalid videoPreviewUrl', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, videoPreviewUrl: 99 })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid videoPreviewUrl');
+	});
+
+	it('returns 400 for invalid publishDate', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, publishDate: 'not-a-date' })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid publishDate');
+	});
+
+	it('returns 400 for non-array dtx_files', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, dtx_files: 'not-an-array' })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid dtx files payload');
+	});
+
+	it('returns 400 when dtx_files entry has invalid label', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, dtx_files: [{ label: 123, level: 50 }] })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid dtx file label');
+	});
+
+	it('returns 400 when dtx_files entry has invalid level', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, dtx_files: [{ label: 'BASIC', level: 'one' }] })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid dtx file level');
+	});
+
+	it('accepts null displayId and null downloadUrl', async () => {
+		const request = new Request('http://localhost/api/chart', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bpm: 120, displayId: null, downloadUrl: null })
+		});
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(201);
+	});
 });

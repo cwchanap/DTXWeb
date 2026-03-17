@@ -362,4 +362,180 @@ describe('PATCH /api/chart/[id]', () => {
 		});
 		expect(response.status).toBe(400);
 	});
+
+	it('returns 400 when title is not a string', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: 123 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid title');
+	});
+
+	it('returns 400 when artist is not a string', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ artist: 42 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid artist');
+	});
+
+	it('returns 400 when snake_case is_published is not boolean', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ is_published: 'yes' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid is_published');
+	});
+
+	it('returns 400 when display_id is not a safe integer or null', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ display_id: 'not-a-number' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid display_id');
+	});
+
+	it('returns 400 when displayId is not a safe integer or null', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ displayId: 'bad' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid displayId');
+	});
+
+	it('returns 400 when snake_case download_url is invalid', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ download_url: 99 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid download_url');
+	});
+
+	it('returns 400 when publish_date is not a valid date string', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ publish_date: 'not-a-date' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid publish_date');
+	});
+
+	it('returns 400 when publishDate is not a valid date string', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ publishDate: 'not-a-date' })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid publishDate');
+	});
+
+	it('returns 400 when video_preview_url is invalid', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ video_preview_url: 55 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid video_preview_url');
+	});
+
+	it('returns 400 when videoPreviewUrl is invalid', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ videoPreviewUrl: 55 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid videoPreviewUrl');
+	});
+
+	it('returns 400 when preview_url is invalid', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ preview_url: 55 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid preview_url');
+	});
 });

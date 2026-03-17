@@ -3,11 +3,10 @@ import { SimFile } from './simFile';
 
 const mockDTXParse = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const MockDTXFile = vi.hoisted(() =>
-	vi.fn().mockImplementation((file: File, label: string) => ({
+	vi.fn().mockImplementation((file?: File | string, label?: string) => ({
 		parse: mockDTXParse,
 		label,
-		fileName: file.name,
-		getFileName: () => file.name
+		getFileName: () => (file instanceof File ? file.name : null)
 	}))
 );
 
@@ -20,16 +19,16 @@ describe('SimFile', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockDTXParse.mockResolvedValue(undefined);
-		MockDTXFile.mockImplementation((file: File, label: string) => ({
+		MockDTXFile.mockImplementation((file?: File | string, label?: string) => ({
 			parse: mockDTXParse,
 			label,
-			fileName: file.name,
-			getFileName: () => file.name
+			getFileName: () => (file instanceof File ? file.name : null)
 		}));
 	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
 	});
 
 	describe('parseHeader', () => {
@@ -348,8 +347,6 @@ describe('SimFile', () => {
 
 			expect(result).toBe(mockUrl);
 			expect(URL.createObjectURL).toHaveBeenCalledWith(previewFile);
-
-			vi.unstubAllGlobals();
 		});
 
 		it('should return object URL for sound preview file', () => {
@@ -365,24 +362,25 @@ describe('SimFile', () => {
 
 			expect(result).toBe(mockUrl);
 			expect(URL.createObjectURL).toHaveBeenCalledWith(soundFile);
-
-			vi.unstubAllGlobals();
 		});
 
 		it('should find preview file case-sensitively by name', () => {
 			const file1 = new File(['audio'], 'drum.wav');
-			const file2 = new File(['preview'], 'preview.mp3');
-			const simFile = new SimFile([file1, file2]);
+			const file2 = new File(['preview lowercase'], 'preview.mp3');
+			const file3 = new File(['preview uppercase'], 'Preview.mp3');
+			const simFile = new SimFile([file1, file2, file3]);
 			const mockDTX = { parse: vi.fn(), preview: 'preview.mp3' } as any;
 			simFile.levels[1] = { label: 'BASIC', file: mockDTX };
 
-			vi.stubGlobal('URL', { createObjectURL: vi.fn().mockReturnValue('blob:url') });
+			const createObjectURLMock = vi.fn().mockReturnValue('blob:url');
+			vi.stubGlobal('URL', { createObjectURL: createObjectURLMock });
 
 			simFile.getPreview();
 
-			expect(URL.createObjectURL).toHaveBeenCalledWith(file2);
-
-			vi.unstubAllGlobals();
+			// Verify the exact file passed — name must be lowercase 'preview.mp3', not 'Preview.mp3'
+			const passedFile = createObjectURLMock.mock.calls[0][0] as File;
+			expect(passedFile.name).toBe('preview.mp3');
+			expect(passedFile.name).not.toBe('Preview.mp3');
 		});
 	});
 

@@ -10,7 +10,9 @@ vi.mock('$lib/server/logger', () => ({
 	}
 }));
 
-const createMockBucket = (objects: Array<{ key: string; size?: number }> = []) => ({
+type MockObject = { key: string; size?: number };
+
+const createMockBucket = (objects: MockObject[] = []) => ({
 	list: vi.fn().mockResolvedValue({
 		objects: objects.map((obj) => ({ key: obj.key, size: obj.size ?? 1024 })),
 		truncated: false
@@ -135,6 +137,6 @@ describe('GET /api/simFile/list/[simFileId]', () => {
 			platform: { env: { DTXFILE_BUCKET: createMockBucket(), DB: {} } }
 		} as any);
 
-		expect(logger.error).toHaveBeenCalled();
+		expect(logger.error).toHaveBeenCalledWith('Validation failed:', expect.any(Object));
 	});
 });

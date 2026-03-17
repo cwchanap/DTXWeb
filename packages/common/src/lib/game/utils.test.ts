@@ -18,8 +18,9 @@ describe('getAssetPath', () => {
 		expect(result.startsWith('/skin/')).toBe(true);
 	});
 
-	it('returns undefined-based path for unknown asset names', () => {
-		const result = getAssetPath('unknown-asset' as AssetName);
-		expect(result).toBe('/skin/undefined');
+	it('throws for unknown asset names', () => {
+		expect(() => getAssetPath('unknown-asset' as AssetName)).toThrow(
+			'Unknown asset name: unknown-asset'
+		);
 	});
 });

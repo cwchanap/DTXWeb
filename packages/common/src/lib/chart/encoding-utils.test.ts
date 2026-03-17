@@ -353,6 +353,7 @@ describe('encoding-utils', () => {
 			);
 
 			expect(result).toBe(testContent);
+			expect(mockTextDecoder).toHaveBeenCalledWith('utf-8');
 		});
 
 		it('should fall back and return content from fallback encoding', async () => {

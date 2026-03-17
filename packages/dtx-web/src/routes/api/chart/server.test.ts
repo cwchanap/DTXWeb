@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, POST } from './+server';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
+import logger from '$lib/server/logger';
 
 vi.mock('$lib/server/db');
 vi.mock('@dtx/common', async (importOriginal) => {
@@ -251,7 +252,6 @@ describe('POST /api/chart', () => {
 	it('returns 500 and logs when both createDtxFiles and deleteSimfile fail', async () => {
 		vi.mocked(createDtxFiles).mockRejectedValue(new Error('dtx insert failed'));
 		vi.mocked(deleteSimfile).mockRejectedValue(new Error('delete also failed'));
-		const loggerModule = await import('$lib/server/logger');
 		const request = new Request('http://localhost/api/chart', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -265,7 +265,7 @@ describe('POST /api/chart', () => {
 		});
 
 		expect(response.status).toBe(500);
-		expect(loggerModule.default.error).toHaveBeenCalledWith(
+		expect(logger.error).toHaveBeenCalledWith(
 			'Failed cleanup after createDtxFiles error:',
 			expect.objectContaining({ simfileId: 1 })
 		);

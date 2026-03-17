@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('$env/static/public', () => ({
 	PUBLIC_SUPABASE_URL: 'https://test.supabase.co',

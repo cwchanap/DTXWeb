@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SimFile } from './simFile';
 
 const mockDTXParse = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const MockDTXFile = vi.hoisted(() =>
-	vi.fn().mockImplementation((file?: File | string, label?: string) => ({
-		parse: mockDTXParse,
-		label,
-		getFileName: () => (file instanceof File ? file.name : null)
-	}))
-);
+const MockDTXFile = vi.hoisted(() => vi.fn());
+
+const createMockDTXFile = (file?: File | string, label?: string) => ({
+	parse: mockDTXParse,
+	label,
+	getFileName: () => (file instanceof File ? file.name : null)
+});
 
 vi.mock('./dtx', () => ({
 	DTXFile: MockDTXFile
@@ -19,11 +19,7 @@ describe('SimFile', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockDTXParse.mockResolvedValue(undefined);
-		MockDTXFile.mockImplementation((file?: File | string, label?: string) => ({
-			parse: mockDTXParse,
-			label,
-			getFileName: () => (file instanceof File ? file.name : null)
-		}));
+		MockDTXFile.mockImplementation(createMockDTXFile);
 	});
 
 	afterEach(() => {
@@ -365,10 +361,10 @@ describe('SimFile', () => {
 		});
 
 		it('should find preview file case-sensitively by name', () => {
-			const file1 = new File(['audio'], 'drum.wav');
-			const file2 = new File(['preview lowercase'], 'preview.mp3');
-			const file3 = new File(['preview uppercase'], 'Preview.mp3');
-			const simFile = new SimFile([file1, file2, file3]);
+			const drumFile = new File(['audio'], 'drum.wav');
+			const exactPreviewFile = new File(['preview lowercase'], 'preview.mp3');
+			const wrongCasePreviewFile = new File(['preview uppercase'], 'Preview.mp3');
+			const simFile = new SimFile([drumFile, exactPreviewFile, wrongCasePreviewFile]);
 			const mockDTX = { parse: vi.fn(), preview: 'preview.mp3' } as any;
 			simFile.levels[1] = { label: 'BASIC', file: mockDTX };
 
@@ -378,6 +374,7 @@ describe('SimFile', () => {
 			simFile.getPreview();
 
 			// Verify the exact file passed — name must be lowercase 'preview.mp3', not 'Preview.mp3'
+			expect(createObjectURLMock).toHaveBeenCalledTimes(1);
 			const passedFile = createObjectURLMock.mock.calls[0][0] as File;
 			expect(passedFile.name).toBe('preview.mp3');
 			expect(passedFile.name).not.toBe('Preview.mp3');

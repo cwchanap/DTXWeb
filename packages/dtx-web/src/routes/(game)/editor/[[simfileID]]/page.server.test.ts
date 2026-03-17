@@ -133,7 +133,8 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		} as any);
 
 		expect(result.simfileID).toBe('sim-utf8bom');
-		expect(result.metadata).toBeDefined();
+		expect(result.metadata?.title).toBe('UTF8 BOM Song');
+		expect(result.metadata?.levels[1]).toEqual({ label: 'BASIC', fileName: 'bas.dtx' });
 	});
 
 	it('throws 500 when R2 get throws an unexpected error', async () => {

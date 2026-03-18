@@ -1,33 +1,55 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-// Set up window.electron.process mock before importing the store
-Object.defineProperty(window, 'electron', {
-	configurable: true,
-	writable: true,
-	value: {
-		ipcRenderer: {
-			send: vi.fn(),
-			on: vi.fn(),
-			invoke: vi.fn()
-		},
-		process: {
-			env: {
-				HOME: '/home/testuser',
-				USERPROFILE: 'C:\\Users\\TestUser',
-				USERNAME: 'TestUser'
-			}
+// Save the original window.electron set by setup.ts so it can be restored after each test
+const originalElectron = window.electron;
+
+const mockElectron = {
+	ipcRenderer: {
+		send: vi.fn(),
+		on: vi.fn(),
+		invoke: vi.fn()
+	},
+	process: {
+		env: {
+			HOME: '/home/testuser',
+			USERPROFILE: 'C:\\Users\\TestUser',
+			USERNAME: 'TestUser'
 		}
 	}
-});
+};
+
+// Set window.electron (with process.env) before the top-level import so
+// getDefaultDownloadsPath() resolves correctly during store creation.
+window.electron = mockElectron;
 
 const { settingsStore } = await import('./settingsStore');
 
 describe('settingsStore', () => {
 	beforeEach(() => {
+		// Re-apply the mock (with fresh spy instances) before every test
+		window.electron = {
+			ipcRenderer: {
+				send: vi.fn(),
+				on: vi.fn(),
+				invoke: vi.fn()
+			},
+			process: {
+				env: {
+					HOME: '/home/testuser',
+					USERPROFILE: 'C:\\Users\\TestUser',
+					USERNAME: 'TestUser'
+				}
+			}
+		};
 		vi.clearAllMocks();
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		settingsStore.reset();
+	});
+
+	afterEach(() => {
+		// Restore original window.electron to avoid leaking state to other test files
+		window.electron = originalElectron;
 	});
 
 	it('should initialize with a default export directory', () => {
@@ -112,25 +134,55 @@ describe('settingsStore', () => {
 	});
 
 	describe('localStorage loading', () => {
-		it('should use stored export directory if available', () => {
+		it('should load persisted export directory on initialization', async () => {
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify({ exportDirectory: '/stored/path' })
+				JSON.stringify({ exportDirectory: '/stored/export/path' })
 			);
 
-			// The store is singleton, but we can verify loadSettings would read from localStorage
-			// by checking that localStorage.getItem was used during test setup phase
-			expect(window.localStorage.getItem).toBeDefined();
+			// Reset module cache so the store re-initializes from localStorage
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
+			expect(get(freshStore).exportDirectory).toBe('/stored/export/path');
 		});
 
-		it('should fall back to default when localStorage has no exportDirectory', () => {
+		it('should fall back to default when exportDirectory is missing in stored data', async () => {
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
 				JSON.stringify({})
 			);
 
-			// Reset calls loadSettings which uses default when exportDirectory missing
-			settingsStore.reset();
-			const state = get(settingsStore);
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
+			// exportDirectory key is absent — should fall back to OS default
+			const state = get(freshStore);
 			expect(state.exportDirectory).toBeDefined();
+			expect(state.exportDirectory).toBe('/home/testuser/Downloads');
+		});
+
+		it('should use default path when localStorage is empty', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
+			expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads');
+		});
+
+		it('should use default path when localStorage contains invalid JSON', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				'not-valid-json{'
+			);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
+			// Parse error falls back to default
+			expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads');
 		});
 	});
 });

@@ -1,8 +1,106 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SimFile } from './simFile';
+
+const mockDTXParse = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const MockDTXFile = vi.hoisted(() => vi.fn());
+
+const createMockDTXFile = (file?: File | string, label?: string) => ({
+	parse: mockDTXParse,
+	label,
+	getFileName: () => (file instanceof File ? file.name : null)
+});
+
+vi.mock('./dtx', () => ({
+	DTXFile: MockDTXFile
+}));
 
 // Simple tests focusing on public API and structure
 describe('SimFile', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockDTXParse.mockResolvedValue(undefined);
+		MockDTXFile.mockImplementation(createMockDTXFile);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	describe('parseHeader', () => {
+		it('parses title from def file content', async () => {
+			const defContent = '#TITLE My Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx data'], 'bas.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.title).toBe('My Song');
+		});
+
+		it('sets empty title when #TITLE not found', async () => {
+			const defContent = '#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx data'], 'bas.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.title).toBe('');
+		});
+
+		it('populates levels from def file', async () => {
+			const defContent = '#TITLE Test\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx data'], 'bas.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[1]).toBeDefined();
+			expect(simFile.levels[1]?.label).toBe('BASIC');
+		});
+
+		it('skips level when dtx file not found in files array', async () => {
+			const defContent = '#TITLE Test\n#L2LABEL ADVANCED\n#L2FILE adv.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			// No adv.dtx in the files array
+			const simFile = new SimFile([defFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[2]).toBeUndefined();
+		});
+
+		it('parses multiple levels from def file', async () => {
+			const defContent =
+				'#TITLE Multi\n#L1LABEL BASIC\n#L1FILE bas.dtx\n#L3LABEL EXTREME\n#L3FILE ext.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile1 = new File(['dtx'], 'bas.dtx');
+			const dtxFile3 = new File(['dtx'], 'ext.dtx');
+			const simFile = new SimFile([defFile, dtxFile1, dtxFile3]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[1]).toBeDefined();
+			expect(simFile.levels[3]).toBeDefined();
+			expect(simFile.levels[2]).toBeUndefined();
+		});
+	});
+
+	describe('parse', () => {
+		it('calls parseHeader with the def file', async () => {
+			const defContent = '#TITLE Test Song\n';
+			const defFile = new File([defContent], 'set.def');
+			const simFile = new SimFile([defFile]);
+			const parseHeaderSpy = vi.spyOn(simFile, 'parseHeader').mockResolvedValue(undefined);
+
+			await simFile.parse();
+
+			expect(parseHeaderSpy).toHaveBeenCalledWith(defFile);
+		});
+	});
 	describe('constructor', () => {
 		it('should create SimFile with files', () => {
 			const mockFiles = [new File(['test'], 'test.dtx')];
@@ -228,6 +326,88 @@ describe('SimFile', () => {
 			const zip = simFile.getZip();
 			expect(zip).toBeDefined();
 			expect(typeof zip.generateAsync).toBe('function');
+		});
+	});
+
+	describe('getPreview and getSoundPreview', () => {
+		it('should return object URL for preview file', () => {
+			const previewFile = new File(['preview data'], 'preview.wav');
+			const simFile = new SimFile([previewFile]);
+			const mockDTX = { parse: vi.fn(), preview: 'preview.wav' } as any;
+			simFile.levels[1] = { label: 'BASIC', file: mockDTX };
+
+			const mockUrl = 'blob:http://localhost/preview-url';
+			vi.stubGlobal('URL', { createObjectURL: vi.fn().mockReturnValue(mockUrl) });
+
+			const result = simFile.getPreview();
+
+			expect(result).toBe(mockUrl);
+			expect(URL.createObjectURL).toHaveBeenCalledWith(previewFile);
+		});
+
+		it('should return object URL for sound preview file', () => {
+			const soundFile = new File(['sound data'], 'preview_sound.ogg');
+			const simFile = new SimFile([soundFile]);
+			const mockDTX = { parse: vi.fn(), soundPreview: 'preview_sound.ogg' } as any;
+			simFile.levels[1] = { label: 'BASIC', file: mockDTX };
+
+			const mockUrl = 'blob:http://localhost/sound-url';
+			vi.stubGlobal('URL', { createObjectURL: vi.fn().mockReturnValue(mockUrl) });
+
+			const result = simFile.getSoundPreview();
+
+			expect(result).toBe(mockUrl);
+			expect(URL.createObjectURL).toHaveBeenCalledWith(soundFile);
+		});
+
+		it('should find preview file case-sensitively by name', () => {
+			const drumFile = new File(['audio'], 'drum.wav');
+			const exactPreviewFile = new File(['preview lowercase'], 'preview.mp3');
+			const wrongCasePreviewFile = new File(['preview uppercase'], 'Preview.mp3');
+			const simFile = new SimFile([drumFile, exactPreviewFile, wrongCasePreviewFile]);
+			const mockDTX = { parse: vi.fn(), preview: 'preview.mp3' } as any;
+			simFile.levels[1] = { label: 'BASIC', file: mockDTX };
+
+			const createObjectURLMock = vi.fn().mockReturnValue('blob:url');
+			vi.stubGlobal('URL', { createObjectURL: createObjectURLMock });
+
+			simFile.getPreview();
+
+			// Verify the exact file passed — name must be lowercase 'preview.mp3', not 'Preview.mp3'
+			expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+			const passedFile = createObjectURLMock.mock.calls[0][0] as File;
+			expect(passedFile.name).toBe('preview.mp3');
+			expect(passedFile.name).not.toBe('Preview.mp3');
+		});
+	});
+
+	describe('generateDefFileContent with existing levels', () => {
+		it('should use existing level data when available', () => {
+			const simFile = new SimFile([]);
+			const mockDTX = {
+				parse: vi.fn(),
+				getFileName: vi.fn().mockReturnValue('extreme.dtx')
+			} as any;
+			simFile.levels[3] = { label: 'EXTREME', file: mockDTX };
+
+			const content = simFile.generateDefFileContent();
+
+			expect(content).toContain('#L3LABEL EXTREME');
+			expect(content).toContain('#L3FILE extreme.dtx');
+		});
+
+		it('should use defaultFile when getFileName returns null', () => {
+			const simFile = new SimFile([]);
+			const mockDTX = {
+				parse: vi.fn(),
+				getFileName: vi.fn().mockReturnValue(null)
+			} as any;
+			simFile.levels[2] = { label: 'ADVANCED', file: mockDTX };
+
+			const content = simFile.generateDefFileContent();
+
+			expect(content).toContain('#L2LABEL ADVANCED');
+			expect(content).toContain('#L2FILE adv.dtx');
 		});
 	});
 });

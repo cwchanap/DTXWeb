@@ -1,9 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { decodeFileWithEncodingDetection, type ContentValidationCallback } from './encoding-utils';
+import {
+	decodeFileWithEncodingDetection,
+	decodeFileWithEncodingDetectionLegacy,
+	decodeFileWithSpecificEncoding,
+	type ContentValidationCallback
+} from './encoding-utils';
 
 // Mock TextDecoder
 const mockTextDecoder = vi.fn();
 global.TextDecoder = mockTextDecoder;
+
+const createMockFile = (content: string, fileName: string = 'test.dtx'): File => {
+	const blob = new Blob([content], { type: 'text/plain' });
+	return new File([blob], fileName);
+};
+
+const createMockArrayBuffer = (content: string): ArrayBuffer => {
+	const encoder = new TextEncoder();
+	return encoder.encode(content).buffer;
+};
+
+const mockValidationCallback: ContentValidationCallback = (content: string) => {
+	return content.includes('#TITLE:') || content.includes('#BPM:');
+};
 
 describe('encoding-utils', () => {
 	beforeEach(() => {
@@ -11,20 +30,6 @@ describe('encoding-utils', () => {
 	});
 
 	describe('decodeFileWithEncodingDetection', () => {
-		const createMockFile = (content: string, fileName: string = 'test.dtx'): File => {
-			const blob = new Blob([content], { type: 'text/plain' });
-			return new File([blob], fileName);
-		};
-
-		const createMockArrayBuffer = (content: string): ArrayBuffer => {
-			const encoder = new TextEncoder();
-			return encoder.encode(content).buffer;
-		};
-
-		const mockValidationCallback: ContentValidationCallback = (content: string) => {
-			return content.includes('#TITLE:') || content.includes('#BPM:');
-		};
-
 		it('should decode file with first valid encoding', async () => {
 			const testContent = '#TITLE: Test Song\n#BPM: 120';
 			const mockFile = createMockFile(testContent);
@@ -307,6 +312,119 @@ describe('encoding-utils', () => {
 					'utf-8'
 				)
 			).rejects.toThrow('File read error');
+		});
+	});
+
+	describe('decodeFileWithEncodingDetectionLegacy', () => {
+		it('should return just the content string (not an object)', async () => {
+			const testContent = '#TITLE: Test Song\n#BPM: 120';
+			const mockFile = createMockFile(testContent);
+
+			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
+
+			mockTextDecoder.mockImplementation(() => ({
+				decode: vi.fn().mockReturnValue(testContent)
+			}));
+
+			const result = await decodeFileWithEncodingDetectionLegacy(
+				mockFile,
+				mockValidationCallback,
+				['utf-8'],
+				'utf-8'
+			);
+
+			expect(typeof result).toBe('string');
+			expect(result).toBe(testContent);
+		});
+
+		it('should use default encodings when none provided', async () => {
+			const testContent = '#BPM: 120';
+			const mockFile = createMockFile(testContent);
+
+			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
+
+			mockTextDecoder.mockImplementation(() => ({
+				decode: vi.fn().mockReturnValue(testContent)
+			}));
+
+			const result = await decodeFileWithEncodingDetectionLegacy(
+				mockFile,
+				mockValidationCallback
+			);
+
+			expect(result).toBe(testContent);
+			expect(mockTextDecoder).toHaveBeenCalledWith('utf-8');
+		});
+
+		it('should fall back and return content from fallback encoding', async () => {
+			const fallbackContent = '#TITLE: Fallback';
+			const mockFile = createMockFile('test');
+
+			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer('test'));
+
+			mockTextDecoder.mockImplementation((encoding: string) => ({
+				decode: vi.fn().mockImplementation(() => {
+					if (encoding === 'utf-8') return 'no match';
+					if (encoding === 'shift-jis') return fallbackContent;
+					return 'other encoding';
+				})
+			}));
+
+			const result = await decodeFileWithEncodingDetectionLegacy(
+				mockFile,
+				(content) => content.includes('#TITLE:'),
+				['utf-8'],
+				'shift-jis'
+			);
+
+			expect(result).toBe(fallbackContent);
+			expect(mockTextDecoder).toHaveBeenCalledWith('utf-8');
+			expect(mockTextDecoder).toHaveBeenCalledWith('shift-jis');
+		});
+	});
+
+	describe('decodeFileWithSpecificEncoding', () => {
+		it('should decode file using the specified encoding', async () => {
+			const testContent = 'Hello World';
+			const mockFile = createMockFile(testContent);
+
+			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
+
+			mockTextDecoder.mockImplementation(() => ({
+				decode: vi.fn().mockReturnValue(testContent)
+			}));
+
+			const result = await decodeFileWithSpecificEncoding(mockFile, 'utf-8');
+
+			expect(result).toBe(testContent);
+			expect(mockTextDecoder).toHaveBeenCalledWith('utf-8');
+		});
+
+		it('should use the specified encoding without trying alternatives', async () => {
+			const content = 'Shift-JIS content';
+			const mockFile = createMockFile(content);
+
+			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(content));
+
+			mockTextDecoder.mockImplementation(() => ({
+				decode: vi.fn().mockReturnValue(content)
+			}));
+
+			const result = await decodeFileWithSpecificEncoding(mockFile, 'shift-jis');
+
+			expect(result).toBe(content);
+			expect(mockTextDecoder).toHaveBeenCalledWith('shift-jis');
+			expect(mockTextDecoder).toHaveBeenCalledTimes(1);
+		});
+
+		it('should propagate errors from arrayBuffer', async () => {
+			const mockFile = createMockFile('test');
+
+			vi.spyOn(mockFile, 'arrayBuffer').mockRejectedValue(new Error('Read error'));
+
+			await expect(decodeFileWithSpecificEncoding(mockFile, 'utf-8')).rejects.toThrow(
+				'Read error'
+			);
 		});
 	});
 

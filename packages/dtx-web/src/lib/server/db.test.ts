@@ -148,10 +148,10 @@ describe('getDb', () => {
 		expect(typeof db.prepare).toBe('function');
 	});
 
-	it('returns a mock database when DB binding is missing', () => {
-		const db = getDb({ env: {} } as App.Platform);
-		expect(db).toBeDefined();
-		expect(typeof db.prepare).toBe('function');
+	it('throws when platform.env exists but DB binding is missing', () => {
+		expect(() => getDb({ env: {} } as App.Platform)).toThrow(
+			'D1 database binding (DB) is missing from the runtime environment.'
+		);
 	});
 
 	it('returns the DB binding when present', () => {

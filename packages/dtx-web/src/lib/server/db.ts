@@ -73,14 +73,15 @@ const createMockD1Database = (): D1Database => {
 
 /** Get the D1 database binding from the platform env, providing a mock for local dev. */
 export const getDb = (platform: App.Platform | undefined): D1Database => {
-	const db = platform?.env?.DB;
-	if (!db) {
-		console.error(
-			'CRITICAL: D1 database binding (DB) not available. All database reads will return empty data. ' +
-				'Verify the DB binding is configured in wrangler.jsonc and the deployment environment. ' +
-				'Use `bun run wrangler:dev` for full database functionality.'
-		);
+	if (platform === undefined || platform.env === undefined) {
 		return createMockD1Database();
+	}
+	const db = platform.env.DB;
+	if (!db) {
+		throw new Error(
+			'D1 database binding (DB) is missing from the runtime environment. ' +
+				'Verify the DB binding is configured in wrangler.jsonc and the deployment environment.'
+		);
 	}
 	return db;
 };

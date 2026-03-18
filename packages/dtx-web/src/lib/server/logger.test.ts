@@ -56,6 +56,8 @@ describe('Logger', () => {
 		await import('./logger');
 
 		expect(winston.format.timestamp).toHaveBeenCalled();
+		expect(winston.format.errors).toHaveBeenCalled();
+		expect(winston.format.splat).toHaveBeenCalled();
 		expect(winston.format.printf).toHaveBeenCalled();
 		expect(winston.format.combine).toHaveBeenCalled();
 	});

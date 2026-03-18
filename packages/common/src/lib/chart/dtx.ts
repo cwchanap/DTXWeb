@@ -12,7 +12,7 @@ interface MidiEvent {
 	velocity?: number;
 }
 
-interface ParsedMidi {
+export interface ParsedMidi {
 	format: number;
 	trackCount: number;
 	ticksPerQuarter: number;

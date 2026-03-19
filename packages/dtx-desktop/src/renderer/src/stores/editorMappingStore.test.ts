@@ -1,27 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-// Mock localStorage before importing the store
-const localStorageMock = {
-	getItem: vi.fn().mockReturnValue(null),
-	setItem: vi.fn(),
-	removeItem: vi.fn(),
-	clear: vi.fn()
-};
-
-Object.defineProperty(window, 'localStorage', {
-	value: localStorageMock,
-	writable: true,
-	configurable: true
-});
-
-// Import store after localStorage mock is set up
+// The shared localStorage mock from src/tests/setup.ts is already applied to
+// window.localStorage before this module runs, so no local redefinition needed.
 const { editorMappingStore } = await import('./editorMappingStore');
 
 describe('editorMappingStore', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		localStorageMock.getItem.mockReturnValue(null);
+		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		editorMappingStore.clearMappings();
 	});
 
@@ -42,7 +29,7 @@ describe('editorMappingStore', () => {
 		it('should persist to localStorage', () => {
 			editorMappingStore.setMapping('sim-1', '/path/to/folder');
 
-			expect(localStorageMock.setItem).toHaveBeenCalledWith(
+			expect(window.localStorage.setItem).toHaveBeenCalledWith(
 				'editor_mapping_cache',
 				expect.stringContaining('sim-1')
 			);
@@ -81,7 +68,7 @@ describe('editorMappingStore', () => {
 		it('should persist metadata to localStorage', () => {
 			editorMappingStore.setMappingWithMetadata('sim-1', '/path/to/folder', 'My Song');
 
-			expect(localStorageMock.setItem).toHaveBeenCalledWith(
+			expect(window.localStorage.setItem).toHaveBeenCalledWith(
 				'editor_mapping_cache',
 				expect.stringContaining('My Song')
 			);
@@ -164,7 +151,7 @@ describe('editorMappingStore', () => {
 			vi.clearAllMocks();
 			editorMappingStore.removeMapping('sim-1');
 
-			expect(localStorageMock.setItem).toHaveBeenCalled();
+			expect(window.localStorage.setItem).toHaveBeenCalled();
 		});
 
 		it('should not affect other mappings when removing one', () => {
@@ -196,7 +183,7 @@ describe('editorMappingStore', () => {
 		it('should persist cleared state to localStorage', () => {
 			editorMappingStore.clearMappings();
 
-			expect(localStorageMock.setItem).toHaveBeenCalledWith(
+			expect(window.localStorage.setItem).toHaveBeenCalledWith(
 				'editor_mapping_cache',
 				JSON.stringify({ simFileIdToFolderPath: {}, simFileIdToMetadata: {} })
 			);
@@ -210,15 +197,17 @@ describe('editorMappingStore', () => {
 			editorMappingStore.setMapping('sim-2', '/path/2');
 
 			// Verify each operation persisted
-			expect(localStorageMock.setItem).toHaveBeenCalledTimes(2);
-			const lastCall = localStorageMock.setItem.mock.calls.at(-1);
+			expect(window.localStorage.setItem).toHaveBeenCalledTimes(2);
+			const lastCall = (
+				window.localStorage.setItem as ReturnType<typeof vi.fn>
+			).mock.calls.at(-1);
 			expect(lastCall?.[0]).toBe('editor_mapping_cache');
 			const saved = JSON.parse(lastCall?.[1]);
 			expect(saved.simFileIdToFolderPath['sim-2']).toBe('/path/2');
 		});
 
 		it('should not throw when localStorage.setItem fails', () => {
-			localStorageMock.setItem.mockImplementation(() => {
+			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mockImplementation(() => {
 				throw new Error('localStorage full');
 			});
 

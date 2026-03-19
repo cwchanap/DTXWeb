@@ -77,7 +77,6 @@ describe('templateStore', () => {
 
 			const state = get(templateStore);
 			const createdAt = state.templates[0].createdAt;
-			expect(() => new Date(createdAt)).not.toThrow();
 			expect(new Date(createdAt).toISOString()).toBe(createdAt);
 		});
 	});

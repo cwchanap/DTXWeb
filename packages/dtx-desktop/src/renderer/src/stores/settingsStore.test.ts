@@ -19,6 +19,13 @@ const mockElectron = {
 	}
 };
 
+// Pin navigator.platform to Linux so getDefaultDownloadsPath() always takes
+// the Linux branch during this test file, regardless of the host OS.
+Object.defineProperty(window.navigator, 'platform', {
+	value: 'Linux x86_64',
+	configurable: true
+});
+
 // Set window.electron (with process.env) before the top-level import so
 // getDefaultDownloadsPath() resolves correctly during store creation.
 window.electron = mockElectron;

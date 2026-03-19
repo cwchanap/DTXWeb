@@ -61,37 +61,10 @@ describe('fileProvider', () => {
 		});
 
 		it('should throw error when no provider set', () => {
-			// Reset to clean state by setting to a mock implementation first
-			const mockImplementation = {
-				getFile: vi.fn(),
-				setFile: vi.fn(),
-				removeFile: vi.fn(),
-				clearFiles: vi.fn(),
-				getFileKeys: vi.fn()
-			};
-			setFileProvider(mockImplementation);
+			// Set provider to null to simulate uninitialized state
+			setFileProvider(null as unknown as IFileProvider);
 
-			// Now simulate the error state by directly modifying the module's state
-			// Since we can't directly access the internal variable, we'll test the error case
-			// by mocking the module to return null temporarily
-			vi.doMock('./fileProvider', async () => {
-				const actual = await vi.importActual('./fileProvider');
-				return {
-					...actual,
-					getFileProvider: vi.fn(() => {
-						throw new Error(
-							'No file provider has been set. Call setFileProvider() during app initialization.'
-						);
-					})
-				};
-			});
-
-			// For this test, we'll verify the error message format
-			expect(() => {
-				throw new Error(
-					'No file provider has been set. Call setFileProvider() during app initialization.'
-				);
-			}).toThrow(
+			expect(() => getFileProvider()).toThrow(
 				'No file provider has been set. Call setFileProvider() during app initialization.'
 			);
 		});

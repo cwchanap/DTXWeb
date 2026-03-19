@@ -551,6 +551,23 @@ describe('DTXFile', () => {
 			expect(noteLines[1]).toContain('#00111:');
 		});
 
+		it('should sort notes by lane ID when in the same measure', async () => {
+			const notes = {
+				'1B': [new LaneMeasureNote(0, '1B', [{ noteID: '02', position: 0 }])],
+				'1A': [new LaneMeasureNote(0, '1A', [{ noteID: '01', position: 0 }])]
+			};
+
+			await dtxFile.export(notes);
+
+			const content = getCapturedBlobContent();
+			const lines = content.split('\r\n');
+			const noteLines = lines.filter((line) => line.match(/^#\d+/));
+
+			// Same measure (0), sorted by lane ID: 1A before 1B
+			expect(noteLines[0]).toContain('#0001A:');
+			expect(noteLines[1]).toContain('#0001B:');
+		});
+
 		it('should use title as filename', async () => {
 			await dtxFile.export();
 

@@ -335,4 +335,231 @@ describe('Editor Scene', () => {
 		// Clean up spy
 		handlePointerUpSpy.mockRestore();
 	});
+
+	describe('setDirty and getDirty', () => {
+		it('should start with isDirty false', () => {
+			expect(editorScene.getDirty()).toBe(false);
+		});
+
+		it('should set dirty to true when setDirty called with true', () => {
+			editorScene.setDirty(true);
+			expect(editorScene.getDirty()).toBe(true);
+		});
+
+		it('should set dirty to false when setDirty called with false', () => {
+			editorScene.setDirty(true);
+			editorScene.setDirty(false);
+			expect(editorScene.getDirty()).toBe(false);
+		});
+
+		it('should default to true when setDirty called without arguments', () => {
+			editorScene.setDirty();
+			expect(editorScene.getDirty()).toBe(true);
+		});
+	});
+
+	describe('getIsLoaded', () => {
+		it('should return false before scene is loaded', () => {
+			expect(editorScene.getIsLoaded()).toBe(false);
+		});
+	});
+
+	describe('normalizePosition', () => {
+		it('should normalize position using high-resolution grid (192 cells)', () => {
+			// 0.5 normalized by 192 cells: Math.round(0.5 * 192) / 192 = 96/192 = 0.5
+			expect(editorScene['normalizePosition'](0.5)).toBeCloseTo(0.5);
+		});
+
+		it('should round to nearest 192nd note position', () => {
+			// 1/16 = 0.0625 -> Math.round(0.0625 * 192) / 192 = 12/192 = 0.0625
+			expect(editorScene['normalizePosition'](1 / 16)).toBeCloseTo(1 / 16);
+		});
+
+		it('should handle 24th note positions (1/24)', () => {
+			// 1/24 -> Math.round((1/24) * 192) / 192 = 8/192 = 1/24
+			expect(editorScene['normalizePosition'](1 / 24)).toBeCloseTo(1 / 24);
+		});
+
+		it('should return 0 for offset 0', () => {
+			expect(editorScene['normalizePosition'](0)).toBe(0);
+		});
+
+		it('should return 1 for offset 1', () => {
+			expect(editorScene['normalizePosition'](1)).toBe(1);
+		});
+	});
+
+	describe('simple getter methods', () => {
+		it('should return isEditing state from getIsEditing', () => {
+			expect(editorScene.getIsEditing()).toBe(false);
+		});
+
+		it('should return lane configs from getLaneConfigs', () => {
+			const configs = editorScene.getLaneConfigs();
+			expect(Array.isArray(configs)).toBe(true);
+			expect(configs.length).toBeGreaterThan(0);
+		});
+
+		it('should return notes from getNotes', () => {
+			expect(editorScene.getNotes()).toBeDefined();
+		});
+
+		it('should return cell width from getCellWidth', () => {
+			expect(editorScene.getCellWidth()).toBe(50);
+		});
+
+		it('should return cell height value from getCellHeightValue', () => {
+			expect(editorScene.getCellHeightValue()).toBe(25);
+		});
+
+		it('should return cell margin from getCellMargin', () => {
+			expect(editorScene.getCellMargin()).toBe(2);
+		});
+
+		it('should return cells per measure from getCellsPerMeasure', () => {
+			expect(editorScene.getCellsPerMeasure()).toBe(16);
+		});
+
+		it('should return grid spacing from getGridSpacing', () => {
+			expect(editorScene.getGridSpacing()).toBe(16);
+		});
+
+		it('should return note size from getNoteSize', () => {
+			expect(editorScene.getNoteSize()).toBe(25);
+		});
+
+		it('should return measure count from getMeasureCount', () => {
+			expect(editorScene.getMeasureCount()).toBeGreaterThanOrEqual(0);
+		});
+
+		it('should return isSelecting state from isSelecting getter', () => {
+			expect(editorScene.isSelecting).toBe(false);
+		});
+
+		it('should return selectionStartX from getter', () => {
+			expect(editorScene.selectionStartX).toBe(0);
+		});
+
+		it('should return selectionStartY from getter', () => {
+			expect(editorScene.selectionStartY).toBe(0);
+		});
+
+		it('should return selectionRectangle from getter', () => {
+			// Without noteManager initialized, should return undefined
+			expect(editorScene.selectionRectangle).toBeUndefined();
+		});
+
+		it('should return selectedNotes from getter via create', () => {
+			editorScene.create();
+			const notes = editorScene.selectedNotes;
+			expect(notes instanceof Set).toBe(true);
+		});
+
+		it('should set isSelecting via setter when noteManager exists', () => {
+			editorScene.create();
+			editorScene.isSelecting = true;
+			expect(editorScene.isSelecting).toBe(true);
+			editorScene.isSelecting = false;
+			expect(editorScene.isSelecting).toBe(false);
+		});
+
+		it('should set selectionStartX via setter when noteManager exists', () => {
+			editorScene.create();
+			editorScene.selectionStartX = 100;
+			expect(editorScene.selectionStartX).toBe(100);
+		});
+
+		it('should set selectionStartY via setter when noteManager exists', () => {
+			editorScene.create();
+			editorScene.selectionStartY = 200;
+			expect(editorScene.selectionStartY).toBe(200);
+		});
+
+		it('should return cell height at specific measure and cell via getCellHeightAt', () => {
+			const height = editorScene.getCellHeightAt(0, 0);
+			expect(typeof height).toBe('number');
+		});
+	});
+
+	describe('getByName', () => {
+		it('should delegate to panelContainer getByName and return the found object', () => {
+			const mockObj = { name: 'note-0-1-0' };
+			const mockContainer = { getByName: vi.fn().mockReturnValue(mockObj) };
+			editorScene['panelContainer'] = mockContainer as any;
+
+			const result = editorScene.getByName('note-0-1-0');
+
+			expect(mockContainer.getByName).toHaveBeenCalledWith('note-0-1-0');
+			expect(result).toBe(mockObj);
+		});
+
+		it('should return null when name not found', () => {
+			const mockContainer = { getByName: vi.fn().mockReturnValue(null) };
+			editorScene['panelContainer'] = mockContainer as any;
+
+			const result = editorScene.getByName('nonexistent');
+
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('clearTempStorage', () => {
+		it('should set dirty to false after clearing temp storage', () => {
+			editorScene.setDirty(true);
+			editorScene.clearTempStorage();
+			expect(editorScene.getDirty()).toBe(false);
+		});
+	});
+
+	describe('autoSaveChart', () => {
+		it('should resolve without throwing (default no-op implementation)', async () => {
+			await expect(editorScene.autoSaveChart()).resolves.toBeUndefined();
+		});
+	});
+
+	describe('updateGridSpacing', () => {
+		it('should ignore invalid (zero) cellsPerMeasure values', () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			editorScene.updateGridSpacing(0);
+			expect(warnSpy).toHaveBeenCalledWith('Invalid cellsPerMeasure value:', 0);
+			warnSpy.mockRestore();
+		});
+
+		it('should ignore negative cellsPerMeasure values', () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			editorScene.updateGridSpacing(-4);
+			expect(warnSpy).toHaveBeenCalledWith('Invalid cellsPerMeasure value:', -4);
+			warnSpy.mockRestore();
+		});
+
+		it('should ignore non-integer cellsPerMeasure values', () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			editorScene.updateGridSpacing(4.5);
+			expect(warnSpy).toHaveBeenCalledWith('Invalid cellsPerMeasure value:', 4.5);
+			warnSpy.mockRestore();
+		});
+	});
+
+	describe('updateCellHeight', () => {
+		it('should ignore invalid (zero) cell height values', () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			editorScene.updateCellHeight(0);
+			expect(warnSpy).toHaveBeenCalledWith('Invalid cell height value:', 0);
+			warnSpy.mockRestore();
+		});
+
+		it('should ignore negative cell height values', () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			editorScene.updateCellHeight(-10);
+			expect(warnSpy).toHaveBeenCalledWith('Invalid cell height value:', -10);
+			warnSpy.mockRestore();
+		});
+
+		it('should ignore cell height values exceeding 100', () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			editorScene.updateCellHeight(101);
+			expect(warnSpy).toHaveBeenCalledWith('Invalid cell height value:', 101);
+			warnSpy.mockRestore();
+		});
+	});
 });

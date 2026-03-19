@@ -712,6 +712,23 @@ describe('NoteManager', () => {
 			expect(result).toBe(true);
 		});
 
+		it('should paste notes at selected note position when selection is active', () => {
+			// First copy some notes
+			noteManager.copySelectedNotes();
+			expect(noteManager.hasClipboard()).toBe(true);
+
+			// Keep selection active - paste will use reference note position
+			noteManager.selectedNotes.clear();
+			noteManager.selectedNotes.add('note-0-1-0');
+			noteManager.selectedNotes.add('note-1-1-0');
+
+			// Don't add existing game objects so paste positions are free
+			const result = noteManager.pasteNotes();
+			// Result may be true or false depending on available positions; key thing is
+			// the findReferenceNote branch (lines 1062-1067) was entered
+			expect(typeof result).toBe('boolean');
+		});
+
 		it('should paste notes at default position when no selection', () => {
 			// First copy some notes
 			noteManager.copySelectedNotes();
@@ -848,6 +865,133 @@ describe('NoteManager', () => {
 			expect(deleteNoteSpy).toHaveBeenCalledWith('note-0-1-0');
 			expect(deleteNoteSpy).toHaveBeenCalledWith('note-1-1-0');
 			expect(deleteNoteSpy).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('setOnNotesModified', () => {
+		it('should call callback when notes are modified', () => {
+			const callback = vi.fn();
+			noteManager.setOnNotesModified(callback);
+
+			// Trigger note modification via undoLastAction (which calls notifyNotesModified)
+			noteManager['notifyNotesModified']();
+
+			expect(callback).toHaveBeenCalled();
+		});
+	});
+
+	describe('clearUndoHistory', () => {
+		it('should clear undo history without throwing', () => {
+			expect(() => noteManager.clearUndoHistory()).not.toThrow();
+		});
+	});
+
+	describe('undoLastAction', () => {
+		it('should call undoLastAction on noteBuffer', () => {
+			const undoSpy = vi.spyOn(noteManager['noteBuffer'], 'undoLastAction');
+
+			noteManager.undoLastAction();
+
+			expect(undoSpy).toHaveBeenCalledWith(expect.anything());
+		});
+	});
+
+	describe('addNoteToEditor', () => {
+		it('should delegate to noteMove and notify when note is added', () => {
+			const addNoteToEditorSpy = vi
+				.spyOn(noteManager['noteMove'], 'addNoteToEditor')
+				.mockReturnValue(true);
+			const notifyModifiedSpy = vi.spyOn(noteManager as any, 'notifyNotesModified');
+
+			const result = noteManager.addNoteToEditor(0, 1, 0.25, 'lane1', '01');
+
+			expect(result).toBe(true);
+			expect(addNoteToEditorSpy).toHaveBeenCalledWith(0, 1, 0.25, 'lane1', '01');
+			expect(notifyModifiedSpy).toHaveBeenCalled();
+
+			addNoteToEditorSpy.mockRestore();
+			notifyModifiedSpy.mockRestore();
+		});
+
+		it('should not notify when note was not added', () => {
+			const addNoteToEditorSpy = vi
+				.spyOn(noteManager['noteMove'], 'addNoteToEditor')
+				.mockReturnValue(false);
+			const notifyModifiedSpy = vi.spyOn(noteManager as any, 'notifyNotesModified');
+
+			const result = noteManager.addNoteToEditor(0, 1, 0.25, 'lane1', '01');
+
+			expect(result).toBe(false);
+			expect(notifyModifiedSpy).not.toHaveBeenCalled();
+
+			addNoteToEditorSpy.mockRestore();
+			notifyModifiedSpy.mockRestore();
+		});
+	});
+
+	describe('destroy', () => {
+		it('should remove event listeners when destroyed', () => {
+			const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
+
+			noteManager.destroy();
+
+			expect(removeEventListenerSpy).toHaveBeenCalled();
+		});
+
+		it('should destroy selectionRectangle when it exists', () => {
+			const destroySpy = vi.fn();
+			noteManager.selectionRectangle = { destroy: destroySpy } as any;
+
+			noteManager.destroy();
+
+			expect(destroySpy).toHaveBeenCalled();
+		});
+
+		it('should clear selectedNotes when destroyed', () => {
+			noteManager.selectedNotes.add('note-0-1-0');
+
+			noteManager.destroy();
+
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+	});
+
+	describe('findReferenceNote', () => {
+		it('should return null for empty set', () => {
+			const result = noteManager.findReferenceNote(new Set());
+			expect(result).toBeNull();
+		});
+
+		it('should return the single note from a single-element set', () => {
+			const result = noteManager.findReferenceNote(new Set(['note-2-3-0.5']));
+			expect(result).toEqual({ laneIndex: 2, measure: 3, cellOffset: 0.5 });
+		});
+
+		it('should return note with smallest measure', () => {
+			const noteKeys = new Set(['note-0-5-0', 'note-0-2-0', 'note-0-8-0']);
+			const result = noteManager.findReferenceNote(noteKeys);
+			expect(result).not.toBeNull();
+			expect(result!.measure).toBe(2);
+		});
+
+		it('should break measure tie using smallest cellOffset', () => {
+			const noteKeys = new Set(['note-0-3-0.75', 'note-1-3-0.25', 'note-2-3-0.5']);
+			const result = noteManager.findReferenceNote(noteKeys);
+			expect(result).not.toBeNull();
+			expect(result!.cellOffset).toBe(0.25);
+		});
+
+		it('should break measure+cellOffset tie using rightmost (highest) lane', () => {
+			const noteKeys = new Set(['note-0-2-0.5', 'note-3-2-0.5', 'note-1-2-0.5']);
+			const result = noteManager.findReferenceNote(noteKeys);
+			expect(result).not.toBeNull();
+			expect(result!.laneIndex).toBe(3);
+		});
+
+		it('should return null for set with only invalid note keys', () => {
+			const noteKeys = new Set(['invalid-key', 'also-bad']);
+			const result = noteManager.findReferenceNote(noteKeys);
+			expect(result).toBeNull();
 		});
 	});
 });

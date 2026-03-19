@@ -394,12 +394,11 @@ describe('listSimfiles', () => {
 		expect(dataQuery?.limit).toHaveBeenCalledWith(100);
 	});
 
-	it('throws when count query returns no rows', async () => {
+	it('returns empty result when count query returns no rows', async () => {
 		drizzleSelectResults.push([]); // count query returns empty array
 		const db = createMockDb();
-		await expect(listSimfiles(db as unknown as D1Database, {})).rejects.toThrow(
-			'listSimfiles: count query returned no rows'
-		);
+		const result = await listSimfiles(db as unknown as D1Database, {});
+		expect(result).toEqual({ data: [], count: 0 });
 	});
 });
 

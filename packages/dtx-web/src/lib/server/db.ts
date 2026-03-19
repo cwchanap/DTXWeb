@@ -186,7 +186,7 @@ export const listSimfiles = async (
 
 	const [countRow] = await orm.select({ cnt: countRows() }).from(simfiles).where(whereClause);
 	if (countRow === undefined) {
-		throw new Error('listSimfiles: count query returned no rows');
+		return { data: [], count: 0 };
 	}
 	const count = Number(countRow.cnt);
 

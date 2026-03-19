@@ -109,6 +109,19 @@ describe('Preloader', () => {
 		});
 	});
 
+	describe('preload', () => {
+		it('should execute without errors', () => {
+			expect(() => preloader.preload()).not.toThrow();
+		});
+	});
+
+	describe('create', () => {
+		it('should add text to the scene', () => {
+			preloader.create();
+			expect(mockAdd.text).toHaveBeenCalledWith(20, 20, 'Loading game...');
+		});
+	});
+
 	describe('error handling', () => {
 		it('should handle store access errors', () => {
 			vi.mocked(get).mockImplementation(() => {

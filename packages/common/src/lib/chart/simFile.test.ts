@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SimFile } from './simFile';
 
+const mockJSZip = vi.hoisted(() => {
+	const mockLoadAsync = vi.fn();
+	const MockJSZip = vi.fn(() => ({
+		loadAsync: mockLoadAsync,
+		file: vi.fn(),
+		generateAsync: vi.fn().mockResolvedValue(new Blob())
+	}));
+	(MockJSZip as any).mockLoadAsync = mockLoadAsync;
+	return MockJSZip;
+});
+
+vi.mock('jszip', () => ({ default: mockJSZip }));
+
 const mockDTXParse = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const MockDTXFile = vi.hoisted(() => vi.fn());
 
@@ -378,6 +391,171 @@ describe('SimFile', () => {
 			const passedFile = createObjectURLMock.mock.calls[0][0] as File;
 			expect(passedFile.name).toBe('preview.mp3');
 			expect(passedFile.name).not.toBe('Preview.mp3');
+		});
+	});
+
+	describe('parseFromRemoteURL', () => {
+		it('fetches set.def and creates a SimFile from remote URL', async () => {
+			const mockBlob = new Blob(['#TITLE Remote Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({ blob: () => Promise.resolve(mockBlob) })
+			);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const dtxBlob = new Blob(['dtx content']);
+			vi.mocked(global.fetch)
+				.mockResolvedValueOnce({ blob: () => Promise.resolve(mockBlob) } as any)
+				.mockResolvedValue({ ok: true, blob: () => Promise.resolve(dtxBlob) } as any);
+
+			const simFile = await SimFile.parseFromRemoteURL('sim-001', 'https://example.com');
+
+			expect(simFile).toBeInstanceOf(SimFile);
+			expect(simFile.title).toBe('Remote Song');
+		});
+	});
+
+	describe('parseFromRemoteURLWithMetadata', () => {
+		it('creates a SimFile using server-provided metadata', async () => {
+			const dtxBlob = new Blob(['dtx content']);
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(dtxBlob) })
+			);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const metadata = {
+				title: 'Metadata Song',
+				levels: {
+					1: { label: 'BASIC', fileName: 'bas.dtx' },
+					3: { label: 'EXTREME', fileName: 'ext.dtx' }
+				}
+			};
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'sim-002',
+				'https://example.com',
+				metadata
+			);
+
+			expect(simFile).toBeInstanceOf(SimFile);
+			expect(simFile.title).toBe('Metadata Song');
+			expect(simFile.levels[1]).toBeDefined();
+			expect(simFile.levels[3]).toBeDefined();
+			expect(simFile.levels[2]).toBeUndefined();
+		});
+
+		it('skips levels where fetch response is not ok', async () => {
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, blob: vi.fn() }));
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const metadata = {
+				title: 'Partial Song',
+				levels: {
+					1: { label: 'BASIC', fileName: 'bas.dtx' }
+				}
+			};
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'sim-003',
+				'https://example.com',
+				metadata
+			);
+
+			expect(simFile.levels[1]).toBeUndefined();
+		});
+
+		it('handles fetch errors gracefully and continues processing', async () => {
+			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+
+			const metadata = {
+				title: 'Error Song',
+				levels: {
+					1: { label: 'BASIC', fileName: 'bas.dtx' }
+				}
+			};
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'sim-004',
+				'https://example.com',
+				metadata
+			);
+
+			expect(simFile).toBeInstanceOf(SimFile);
+			expect(simFile.levels[1]).toBeUndefined();
+		});
+
+		it('returns a SimFile with empty levels for empty metadata', async () => {
+			const metadata = {
+				title: 'Empty Song',
+				levels: {}
+			};
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'sim-005',
+				'https://example.com',
+				metadata
+			);
+
+			expect(simFile).toBeInstanceOf(SimFile);
+			expect(simFile.title).toBe('Empty Song');
+		});
+	});
+
+	describe('parseFromZip', () => {
+		it('should extract files from zip and create a SimFile', async () => {
+			const defBlob = new Blob(['#TITLE Zip Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);
+			const dtxBlob = new Blob(['dtx content']);
+
+			(mockJSZip as any).mockLoadAsync.mockResolvedValue({
+				files: {
+					'set.def': { dir: false, async: vi.fn().mockResolvedValue(defBlob) },
+					'bas.dtx': { dir: false, async: vi.fn().mockResolvedValue(dtxBlob) },
+					'subdir/': { dir: true, async: vi.fn() }
+				}
+			});
+
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const simFile = await SimFile.parseFromZip('dummy-zip-path');
+
+			expect(simFile).toBeInstanceOf(SimFile);
+		});
+	});
+
+	describe('parseFromRemoteURL with non-ok DTX fetch', () => {
+		it('skips levels where DTX fetch response is not ok', async () => {
+			const defContent = '#TITLE Bad DTX\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+			const defBlob = new Blob([defContent]);
+
+			vi.stubGlobal(
+				'fetch',
+				vi
+					.fn()
+					.mockResolvedValueOnce({ blob: () => Promise.resolve(defBlob) })
+					.mockResolvedValue({ ok: false, blob: vi.fn() })
+			);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const simFile = await SimFile.parseFromRemoteURL('sim-bad', 'https://example.com');
+
+			expect(simFile).toBeInstanceOf(SimFile);
+			expect(simFile.title).toBe('Bad DTX');
+			expect(simFile.levels[1]).toBeUndefined();
+		});
+	});
+
+	describe('parseHeader with only #L1FILE content', () => {
+		it('parses header when content has only #L1FILE (no #TITLE or #L1LABEL)', async () => {
+			// Content that will trigger the third branch of validateSimFileContent
+			const defContent = '#L1FILE bas.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx data'], 'bas.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.title).toBe('');
 		});
 	});
 

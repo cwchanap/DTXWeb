@@ -275,16 +275,27 @@ describe('NoteCopy', () => {
 			const selectedNotes = new Set(['note-0-1-0.75', 'note-1-2-0.25']);
 			noteCopy.copyNotes(selectedNotes, mockEditor);
 
-			// Paste at (targetLane=0, targetMeasure=5, targetCellOffset=0.5)
-			// A (reference): newMeasure=5, newCellOffset=0.5
-			// B: newMeasure=6, newCellOffset = 0.5 + (-0.5) = 0.0 (no wrap needed here)
-			// Let's use a paste position that forces wrap: paste at cellOffset 0.3
-			// B: newMeasure=6, newCellOffset = 0.3 + (-0.5) = -0.2 → wrap to 0.8, measure=5
+			// Paste at targetLane=0, targetMeasure=5, targetCellOffset=0.3
+			// A (reference, laneIndex=0): newMeasure=5, newCellOffset=0.3+0=0.3
+			// B (laneIndex=1): newMeasure=6, newCellOffset=0.3+(-0.5)=-0.2
+			//   → while (newCellOffset < 0.0): newCellOffset+=1.0 → 0.8, newMeasure=5
 			const result = noteCopy.pasteNotes(0, 5, 0.3, mockEditor);
 
 			expect(result).toBe(true);
-			// The while (newCellOffset < 0.0) branch was triggered
-			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalled();
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				5,
+				0,
+				0.3,
+				'lane1',
+				'11'
+			);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				5,
+				1,
+				expect.closeTo(0.8, 10),
+				'lane2',
+				'12'
+			);
 		});
 
 		it('should wrap cellOffset into next measure when >= 1.0', () => {

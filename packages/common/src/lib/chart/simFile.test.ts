@@ -395,6 +395,14 @@ describe('SimFile', () => {
 	});
 
 	describe('parseFromRemoteURL', () => {
+		it('should throw when set.def fetch fails', async () => {
+			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+
+			await expect(
+				SimFile.parseFromRemoteURL('sim-fail', 'https://example.com')
+			).rejects.toThrow('Network error');
+		});
+
 		it('fetches set.def and creates a SimFile from remote URL', async () => {
 			const mockBlob = new Blob(['#TITLE Remote Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);
 			vi.stubGlobal(
@@ -503,7 +511,7 @@ describe('SimFile', () => {
 	});
 
 	describe('parseFromZip', () => {
-		it('should extract files from zip and create a SimFile', async () => {
+		it('should extract files from zip, exclude directories, and parse title', async () => {
 			const defBlob = new Blob(['#TITLE Zip Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);
 			const dtxBlob = new Blob(['dtx content']);
 
@@ -520,6 +528,11 @@ describe('SimFile', () => {
 			const simFile = await SimFile.parseFromZip('dummy-zip-path');
 
 			expect(simFile).toBeInstanceOf(SimFile);
+			expect(simFile.files).toHaveLength(2);
+			expect(simFile.files.map((f) => f.name)).toEqual(
+				expect.arrayContaining(['set.def', 'bas.dtx'])
+			);
+			expect(simFile.files.map((f) => f.name)).not.toContain('subdir/');
 		});
 	});
 

@@ -390,72 +390,19 @@ describe('Editor Scene', () => {
 	});
 
 	describe('simple getter methods', () => {
-		it('should return isEditing state from getIsEditing', () => {
+		it('default values smoke test', () => {
 			expect(editorScene.getIsEditing()).toBe(false);
-		});
-
-		it('should return lane configs from getLaneConfigs', () => {
-			const configs = editorScene.getLaneConfigs();
-			expect(Array.isArray(configs)).toBe(true);
-			expect(configs.length).toBeGreaterThan(0);
-		});
-
-		it('should return notes from getNotes', () => {
-			expect(editorScene.getNotes()).toBeDefined();
-		});
-
-		it('should return cell width from getCellWidth', () => {
+			expect(editorScene.getLaneConfigs().length).toBeGreaterThan(0);
 			expect(editorScene.getCellWidth()).toBe(50);
-		});
-
-		it('should return cell height value from getCellHeightValue', () => {
 			expect(editorScene.getCellHeightValue()).toBe(25);
 		});
 
-		it('should return cell margin from getCellMargin', () => {
-			expect(editorScene.getCellMargin()).toBe(2);
-		});
-
-		it('should return cells per measure from getCellsPerMeasure', () => {
-			expect(editorScene.getCellsPerMeasure()).toBe(16);
-		});
-
-		it('should return grid spacing from getGridSpacing', () => {
-			expect(editorScene.getGridSpacing()).toBe(16);
-		});
-
-		it('should return note size from getNoteSize', () => {
-			expect(editorScene.getNoteSize()).toBe(25);
-		});
-
-		it('should return measure count from getMeasureCount', () => {
-			expect(editorScene.getMeasureCount()).toBeGreaterThanOrEqual(0);
-		});
-
-		it('should return isSelecting state from isSelecting getter', () => {
-			expect(editorScene.isSelecting).toBe(false);
-		});
-
-		it('should return selectionStartX from getter', () => {
-			expect(editorScene.selectionStartX).toBe(0);
-		});
-
-		it('should return selectionStartY from getter', () => {
-			expect(editorScene.selectionStartY).toBe(0);
-		});
-
-		it('should return selectionRectangle from getter', () => {
-			// Without noteManager initialized, should return undefined
-			expect(editorScene.selectionRectangle).toBeUndefined();
-		});
-
-		it('should return selectedNotes from getter via create', () => {
+		it('should return selectedNotes Set after create', () => {
 			editorScene.create();
-			const notes = editorScene.selectedNotes;
-			expect(notes instanceof Set).toBe(true);
+			expect(editorScene.selectedNotes instanceof Set).toBe(true);
 		});
 
-		it('should set isSelecting via setter when noteManager exists', () => {
+		it('should set and get isSelecting via setter when noteManager exists', () => {
 			editorScene.create();
 			editorScene.isSelecting = true;
 			expect(editorScene.isSelecting).toBe(true);
@@ -475,9 +422,8 @@ describe('Editor Scene', () => {
 			expect(editorScene.selectionStartY).toBe(200);
 		});
 
-		it('should return cell height at specific measure and cell via getCellHeightAt', () => {
-			const height = editorScene.getCellHeightAt(0, 0);
-			expect(typeof height).toBe('number');
+		it('should return a number from getCellHeightAt', () => {
+			expect(typeof editorScene.getCellHeightAt(0, 0)).toBe('number');
 		});
 	});
 

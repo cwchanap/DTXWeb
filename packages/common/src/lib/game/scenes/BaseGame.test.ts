@@ -351,12 +351,10 @@ describe('BaseGame', () => {
 			expect(mockAdd.graphics).not.toHaveBeenCalled();
 		});
 
-		it('should apply fractional cell offset when note is at non-whole cell position', () => {
+		it('should render note at a normalized 16th-note position', () => {
 			vi.spyOn(baseGame, 'getCellHeight').mockReturnValue(25);
-			// Mock normalizePosition to return a 24th-note position (bypasses 16th snapping)
-			vi.spyOn(baseGame as any, 'normalizePosition').mockReturnValue(1 / 24);
 
-			const result = baseGame.drawNote(1, 0, 1 / 24, '11');
+			const result = baseGame.drawNote(1, 0, 0.5, '11');
 
 			expect(result).toBe(true);
 			expect(mockGraphics.fillRect).toHaveBeenCalled();

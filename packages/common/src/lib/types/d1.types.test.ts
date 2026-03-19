@@ -29,6 +29,11 @@ describe('toSimfileWithDtx', () => {
 		expect(result.is_published).toBe(true);
 	});
 
+	it('treats non-1 is_published values as false (strict equality)', () => {
+		const result = toSimfileWithDtx({ ...baseRow, is_published: 2 as any }, []);
+		expect(result.is_published).toBe(false);
+	});
+
 	it('includes provided dtx files', () => {
 		const dtxFiles = [
 			{ level: 50, label: 'BASIC' },

@@ -713,20 +713,32 @@ describe('NoteManager', () => {
 		});
 
 		it('should paste notes at selected note position when selection is active', () => {
-			// First copy some notes
+			// First copy some notes to populate clipboard
 			noteManager.copySelectedNotes();
 			expect(noteManager.hasClipboard()).toBe(true);
 
-			// Keep selection active - paste will use reference note position
+			// Keep selection active — reference note is highest laneIndex at same measure+offset
+			// note-0-1-0 → laneIndex=0, measure=1, cellOffset=0
+			// note-1-1-0 → laneIndex=1, measure=1, cellOffset=0  (reference: highest laneIndex)
 			noteManager.selectedNotes.clear();
 			noteManager.selectedNotes.add('note-0-1-0');
 			noteManager.selectedNotes.add('note-1-1-0');
 
-			// Don't add existing game objects so paste positions are free
-			const result = noteManager.pasteNotes();
-			// Result may be true or false depending on available positions; key thing is
-			// the findReferenceNote branch (lines 1062-1067) was entered
-			expect(typeof result).toBe('boolean');
+			// Spy on noteCopy.pasteNotes to confirm the selection-based reference is used
+			const pasteNoteSpy = vi
+				.spyOn(noteManager['noteCopy'], 'pasteNotes')
+				.mockReturnValue(true);
+
+			noteManager.pasteNotes();
+
+			expect(pasteNoteSpy).toHaveBeenCalledOnce();
+			expect(pasteNoteSpy).toHaveBeenCalledWith(
+				1, // pasteLaneIndex from reference note
+				1, // pasteMeasure from reference note
+				0, // pasteCellOffset from reference note
+				expect.anything(),
+				expect.any(Function)
+			);
 		});
 
 		it('should paste notes at default position when no selection', () => {

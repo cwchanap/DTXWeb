@@ -885,7 +885,7 @@ describe('NoteManager', () => {
 			const callback = vi.fn();
 			noteManager.setOnNotesModified(callback);
 
-			// Trigger note modification via undoLastAction (which calls notifyNotesModified)
+			// Directly trigger the internal notification to verify the callback is invoked
 			noteManager['notifyNotesModified']();
 
 			expect(callback).toHaveBeenCalled();

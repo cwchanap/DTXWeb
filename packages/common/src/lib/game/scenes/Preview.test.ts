@@ -295,11 +295,15 @@ describe('Preview Scene', () => {
 			expect(previewScene.getTimeElapsed(3)).toBeCloseTo(6, 5);
 		});
 
-		it('should cache results and return same value on repeated calls', () => {
+		it('should cache results and not recompute on repeated calls', () => {
 			previewScene.init(baseData);
 			const firstCall = previewScene.getTimeElapsed(2);
+			const cache = (previewScene as any)['timeElapsedCache'] as Map<number, number>;
+			expect(cache.has(2)).toBe(true);
+			const cacheSizeAfterFirst = cache.size;
 			const secondCall = previewScene.getTimeElapsed(2);
-			expect(firstCall).toBe(secondCall);
+			expect(secondCall).toBe(firstCall);
+			expect(cache.size).toBe(cacheSizeAfterFirst);
 		});
 
 		it('should calculate in-measure time when noteChipPosition is provided', () => {
@@ -331,9 +335,12 @@ describe('Preview Scene', () => {
 				bpmNotes: { bpm150: 150 }
 			};
 			previewScene.init(dataWithBpmNote);
-			// Time calculation with BPM change in measure
+			// Measure 0 has BPM 120→150 at position 0.5:
+			// first half:  (60/120) * 4 * 0.5 = 1.0s
+			// second half: (60/150) * 4 * 0.5 = 0.8s
+			// total elapsed to end of measure 0 = 1.8s
 			const elapsed = previewScene.getTimeElapsed(1);
-			expect(elapsed).toBeGreaterThan(0);
+			expect(elapsed).toBeCloseTo(1.8, 5);
 		});
 
 		it('should invalidate cache when data changes', () => {
@@ -350,7 +357,7 @@ describe('Preview Scene', () => {
 		});
 	});
 
-	describe('getTotalMesaureOffest', () => {
+	describe('getTotalMeasureOffset', () => {
 		it('should return 0 for measure 0', () => {
 			previewScene.init({
 				measureCount: 5,
@@ -362,7 +369,7 @@ describe('Preview Scene', () => {
 			expect(previewScene.getTotalMesaureOffest(0)).toBe(0);
 		});
 
-		it('should cache results on repeated calls', () => {
+		it('should cache results and not recompute on repeated calls', () => {
 			previewScene.init({
 				measureCount: 5,
 				notes: {},
@@ -371,8 +378,12 @@ describe('Preview Scene', () => {
 				startMeasure: 0
 			});
 			const first = previewScene.getTotalMesaureOffest(2);
+			const cache = (previewScene as any)['measureOffsetCache'] as Map<number, number>;
+			expect(cache.has(2)).toBe(true);
+			const cacheSizeAfterFirst = cache.size;
 			const second = previewScene.getTotalMesaureOffest(2);
-			expect(first).toBe(second);
+			expect(second).toBe(first);
+			expect(cache.size).toBe(cacheSizeAfterFirst);
 		});
 	});
 

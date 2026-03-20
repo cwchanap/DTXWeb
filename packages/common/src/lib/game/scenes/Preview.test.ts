@@ -257,7 +257,7 @@ describe('Preview Scene', () => {
 	});
 
 	describe('boundResumePreview', () => {
-		it('should update startMeasure when called with data', () => {
+		it('should update startMeasure and invoke startPreviewWithoutSoundReload when called with data', () => {
 			const startPreviewWithoutSoundReloadSpy = vi
 				.spyOn(previewScene as any, 'startPreviewWithoutSoundReload')
 				.mockImplementation(() => {});
@@ -265,6 +265,7 @@ describe('Preview Scene', () => {
 			previewScene['boundResumePreview']({ startMeasure: 5 });
 
 			expect(previewScene['startMeasure']).toBe(5);
+			expect(startPreviewWithoutSoundReloadSpy).toHaveBeenCalled();
 			startPreviewWithoutSoundReloadSpy.mockRestore();
 		});
 	});
@@ -314,10 +315,17 @@ describe('Preview Scene', () => {
 
 		it('should not cache results when noteChipPosition is non-zero', () => {
 			previewScene.init(baseData);
-			const result1 = previewScene.getTimeElapsed(0, 0.25);
-			const result2 = previewScene.getTimeElapsed(0, 0.75);
-			// Different positions should yield different results
-			expect(result1).not.toBe(result2);
+			// Prime the hash so validateCache won't call clear() during the spied call
+			previewScene.getTimeElapsed(0);
+			const cache = (previewScene as any)['timeElapsedCache'] as Map<number, number>;
+			const getSpy = vi.spyOn(cache, 'get');
+			const setSpy = vi.spyOn(cache, 'set');
+
+			previewScene.getTimeElapsed(0, 0.25);
+
+			// Cache must not be read from or written to for non-zero noteChipPosition
+			expect(getSpy).not.toHaveBeenCalled();
+			expect(setSpy).not.toHaveBeenCalled();
 		});
 
 		it('should handle BPM changes within a measure via bpmNotes', () => {
@@ -347,9 +355,8 @@ describe('Preview Scene', () => {
 			previewScene.init(baseData);
 			const originalTime = previewScene.getTimeElapsed(1);
 
-			// Change bpm manually (simulating a data update)
-			previewScene['bpm'] = 240; // Double the BPM
-			previewScene['lastDataHash'] = ''; // Force cache invalidation
+			// Re-init with double the BPM; the hash change triggers natural cache invalidation
+			previewScene.init({ ...baseData, bpm: 240 });
 
 			const newTime = previewScene.getTimeElapsed(1);
 			// At 240 BPM: 1 second per measure (half of 120 BPM)

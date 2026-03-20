@@ -351,7 +351,7 @@ describe('BaseGame', () => {
 			expect(mockAdd.graphics).not.toHaveBeenCalled();
 		});
 
-		it('should render note at a normalized 16th-note position', () => {
+		it('should render a note and call fillRect', () => {
 			vi.spyOn(baseGame, 'getCellHeight').mockReturnValue(25);
 
 			const result = baseGame.drawNote(1, 0, 0.5, '11');

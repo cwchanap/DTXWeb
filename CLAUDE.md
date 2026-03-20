@@ -53,6 +53,12 @@ bun run build                   # Build all packages
 bun run test                    # Run tests for all packages
 bun run test:coverage           # Run tests with coverage
 
+# E2E tests (Playwright)
+bun run e2e                     # Run all Playwright e2e tests
+bun run e2e:ui                  # Run e2e tests in interactive UI mode
+bun run fixtures:generate       # Generate MIDI test fixtures for e2e tests
+bun run fixtures:verify         # Verify e2e test fixtures are valid
+
 # Supabase type generation
 bun run gen-types              # Generate TypeScript types from Supabase schema
 
@@ -180,12 +186,17 @@ Check `__mocks__/` folder before creating new mocks:
 - Use `class:` directive over ternary operators in classes
 - TypeScript types for all functions/components
 
+### Accessibility
+
+Interactive elements (non-button tags with click handlers) must include `tabindex="0"`, `aria-label`, and `on:keydown` alongside `on:click`.
+
 ### Styling
 
-- Use Skeleton UI components when available
+- Use Skeleton UI (3.x) components when available
 - TailwindCSS utility classes in markup
 - No direct CSS/style modifications to base.css
 - Dynamic classes with template literals when needed
+- For complex components, use `@apply` in a scoped `<style>` block rather than long inline class strings
 
 ### Import Patterns
 

@@ -543,7 +543,6 @@ describe('Preview Scene', () => {
 		});
 
 		it('should use bpm from a current measure bpm note before the current cell', () => {
-			const cellsPerMeasure = previewScene['cellsPerMeasure'];
 			previewScene.init({
 				...baseData,
 				bpm: 120,
@@ -558,6 +557,7 @@ describe('Preview Scene', () => {
 				},
 				bpmNotes: { bpm180: 180 }
 			});
+			const cellsPerMeasure = previewScene['cellsPerMeasure'];
 			// cell at position 0.5 * cellsPerMeasure is after the bpm change at position 0.25
 			const cellAfterChange = Math.floor(0.5 * cellsPerMeasure);
 			const result = previewScene.getCellHeight(0, cellAfterChange);

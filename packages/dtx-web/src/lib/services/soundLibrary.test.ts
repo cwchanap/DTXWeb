@@ -559,8 +559,14 @@ describe('SoundLibrary', () => {
 
 	describe('generateFileHash', () => {
 		const fakeHashBuffer = new Uint8Array(32).map((_, i) => i).buffer as ArrayBuffer;
+		let originalArrayBufferDescriptor: PropertyDescriptor | undefined;
 
 		beforeEach(() => {
+			// Capture original descriptor (if any) before patching
+			originalArrayBufferDescriptor = Object.getOwnPropertyDescriptor(
+				File.prototype,
+				'arrayBuffer'
+			);
 			// jsdom does not implement File.arrayBuffer — patch it onto the prototype
 			Object.defineProperty(File.prototype, 'arrayBuffer', {
 				configurable: true,
@@ -575,9 +581,13 @@ describe('SoundLibrary', () => {
 		});
 
 		afterEach(() => {
-			// Remove the polyfill to avoid leaking between tests
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			delete (File.prototype as any).arrayBuffer;
+			// Restore original descriptor to avoid leaking between tests
+			if (originalArrayBufferDescriptor) {
+				Object.defineProperty(File.prototype, 'arrayBuffer', originalArrayBufferDescriptor);
+			} else {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				delete (File.prototype as any).arrayBuffer;
+			}
 			vi.restoreAllMocks();
 		});
 

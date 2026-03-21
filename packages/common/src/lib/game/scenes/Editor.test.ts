@@ -526,20 +526,20 @@ describe('Editor Scene', () => {
 
 	describe('additional getter methods', () => {
 		it('should return offsetX from getOffsetX', () => {
-			expect(typeof editorScene.getOffsetX()).toBe('number');
+			expect(editorScene.getOffsetX()).toBe(editorScene['offsetX']);
 		});
 
 		it('should return offsetY from getOffsetY', () => {
-			expect(typeof editorScene.getOffsetY()).toBe('number');
+			expect(editorScene.getOffsetY()).toBe(editorScene['offsetY']);
 		});
 
 		it('should return cellMargin from getCellMargin', () => {
-			expect(typeof editorScene.getCellMargin()).toBe('number');
+			expect(editorScene.getCellMargin()).toBe(editorScene['cellMargin']);
 		});
 
 		it('should return cellsPerMeasure from getCellsPerMeasure', () => {
 			const value = editorScene.getCellsPerMeasure();
-			expect(typeof value).toBe('number');
+			expect(value).toBe(editorScene['cellsPerMeasure']);
 			expect(value).toBeGreaterThan(0);
 		});
 
@@ -548,7 +548,7 @@ describe('Editor Scene', () => {
 		});
 
 		it('should return noteSize from getNoteSize', () => {
-			expect(typeof editorScene.getNoteSize()).toBe('number');
+			expect(editorScene.getNoteSize()).toBe(editorScene['noteSize']);
 		});
 
 		it('should return measureCount from getMeasureCount', () => {

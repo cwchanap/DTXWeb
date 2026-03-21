@@ -1195,4 +1195,148 @@ describe('DTXFile', () => {
 			expect(content).toContain('#BPM: 120'); // Default value
 		});
 	});
+
+	describe('exportToMidi', () => {
+		let dtxFile: DTXFile;
+
+		beforeEach(() => {
+			dtxFile = new DTXFile();
+			dtxFile.bpm = 120;
+		});
+
+		it('should return a valid MIDI byte array with MThd and MTrk headers', () => {
+			const result = dtxFile.exportToMidi({}, {});
+
+			expect(result).toBeInstanceOf(Uint8Array);
+			// MIDI header "MThd"
+			expect(result[0]).toBe(0x4d);
+			expect(result[1]).toBe(0x54);
+			expect(result[2]).toBe(0x68);
+			expect(result[3]).toBe(0x64);
+			// Track chunk "MTrk"
+			expect(result[14]).toBe(0x4d);
+			expect(result[15]).toBe(0x54);
+			expect(result[16]).toBe(0x72);
+			expect(result[17]).toBe(0x6b);
+		});
+
+		it('should include tempo meta event (0xFF 0x51) in track data', () => {
+			const result = dtxFile.exportToMidi({}, {});
+
+			let foundTempo = false;
+			for (let i = 22; i < result.length - 1; i++) {
+				if (result[i] === 0xff && result[i + 1] === 0x51) {
+					foundTempo = true;
+					break;
+				}
+			}
+			expect(foundTempo).toBe(true);
+		});
+
+		it('should produce longer output when notes are provided', () => {
+			const notes: Record<string, LaneMeasureNote[]> = {
+				'11': [new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }])]
+			};
+			const withNotes = dtxFile.exportToMidi(notes, { '11': 36 });
+			const withoutNotes = dtxFile.exportToMidi({}, {});
+
+			expect(withNotes.length).toBeGreaterThan(withoutNotes.length);
+		});
+	});
+
+	describe('MIDI parsing edge cases', () => {
+		let dtxFile: DTXFile;
+
+		beforeEach(() => {
+			dtxFile = new DTXFile();
+		});
+
+		const buildMidiData = (trackEvents: number[]): Uint8Array => {
+			const header = new Uint8Array(14);
+			header.set([0x4d, 0x54, 0x68, 0x64]);
+			header.set([0x00, 0x00, 0x00, 0x06], 4);
+			header.set([0x00, 0x00], 8);
+			header.set([0x00, 0x01], 10);
+			header.set([0x01, 0xe0], 12);
+
+			const trackLen = trackEvents.length;
+			const trackHeader = [
+				0x4d,
+				0x54,
+				0x72,
+				0x6b,
+				(trackLen >> 24) & 0xff,
+				(trackLen >> 16) & 0xff,
+				(trackLen >> 8) & 0xff,
+				trackLen & 0xff
+			];
+
+			const midiData = new Uint8Array(header.length + trackHeader.length + trackLen);
+			midiData.set(header, 0);
+			midiData.set(trackHeader, header.length);
+			midiData.set(trackEvents, header.length + trackHeader.length);
+			return midiData;
+		};
+
+		it('should skip non-note channel messages (e.g. Control Change)', () => {
+			const trackEvents = [
+				0x00,
+				0xb9,
+				0x07,
+				0x64, // CC ch9 ctrl=7 val=100
+				0x00,
+				0xff,
+				0x2f,
+				0x00 // End of Track
+			];
+			const midiData = buildMidiData(trackEvents);
+
+			const parsedData = (dtxFile as any).parseMidiFile(midiData);
+			expect(parsedData.tracks).toHaveLength(1);
+			const ccEvent = parsedData.tracks[0].find((e: any) => e.command === 0xb);
+			expect(ccEvent).toBeUndefined();
+		});
+
+		it('should handle MIDI running status for consecutive note events', () => {
+			const trackEvents = [
+				// First Note On: status=0x99, note=36, vel=100
+				0x00, 0x99, 0x24, 0x64,
+				// Second note using running status: delta=0x00 is valid, note=38 (0x26 < 0x80), vel=80
+				0x00,
+				0x26, 0x50,
+				// End of Track
+				0x00, 0xff, 0x2f, 0x00
+			];
+			const midiData = buildMidiData(trackEvents);
+
+			const parsedData = (dtxFile as any).parseMidiFile(midiData);
+			const noteEvents = parsedData.tracks[0].filter(
+				(e: any) => e.type === 'channel' && e.command === 0x9
+			);
+			expect(noteEvents.length).toBeGreaterThanOrEqual(2);
+		});
+
+		it('should throw when MIDI track header is not MTrk', () => {
+			// Build a MIDI file where the track header is 'BADk' instead of 'MTrk'
+			const invalidTrack = new Uint8Array([
+				// MThd header
+				0x4d, 0x54, 0x68, 0x64,
+				// Header length = 6
+				0x00, 0x00, 0x00, 0x06,
+				// Format = 0
+				0x00, 0x00,
+				// Track count = 1
+				0x00, 0x01,
+				// Ticks per quarter = 480
+				0x01, 0xe0,
+				// Invalid track header 'BADk' instead of 'MTrk'
+				0x42, 0x41, 0x44, 0x6b,
+				// Track length = 0
+				0x00, 0x00, 0x00, 0x00
+			]);
+			expect(() => (dtxFile as any).parseMidiFile(invalidTrack)).toThrow(
+				'Invalid MIDI track'
+			);
+		});
+	});
 });

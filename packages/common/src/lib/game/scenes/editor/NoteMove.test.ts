@@ -393,4 +393,40 @@ describe('NoteMove', () => {
 			expect(() => noteMove.updateDrag()).not.toThrow();
 		});
 	});
+
+	describe('addNoteToEditor fallback branch (no addNote method)', () => {
+		it('should push note to notes array when existingMeasureNote lacks addNote', () => {
+			const noteObj = { position: 0, noteID: '01' };
+			const plainMeasureNote = {
+				measure: 1,
+				notes: [noteObj],
+				measureLength: 1
+				// deliberately no addNote method
+			};
+
+			mockEditor._setMockNotes({ lane1: [plainMeasureNote as any] });
+
+			// drawNote returns true (note is added)
+			mockEditor.drawNote.mockReturnValue(true);
+
+			noteMove.addNoteToEditor(1, 0, 0.5, 'lane1', '11');
+
+			// The fallback branch should have added position 0.5 to the notes array
+			const addedNote = plainMeasureNote.notes.find((n) => n.position === 0.5);
+			expect(addedNote).toBeDefined();
+		});
+
+		it('should call addNote when existingMeasureNote has the method', () => {
+			// Use a real LaneMeasureNote so addNote exists
+			const realNote = mockEditor._addMockNote('lane1', 2, 0, '01');
+
+			mockEditor.drawNote.mockReturnValue(true);
+
+			noteMove.addNoteToEditor(2, 0, 0.5, 'lane1', '11');
+
+			// addNote should have been called on the existing LaneMeasureNote
+			const addedChip = realNote.notes.find((n) => n.position === 0.5);
+			expect(addedChip).toBeDefined();
+		});
+	});
 });

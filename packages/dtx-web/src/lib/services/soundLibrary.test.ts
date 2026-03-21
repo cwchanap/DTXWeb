@@ -556,4 +556,43 @@ describe('SoundLibrary', () => {
 			await expect(promise).rejects.toThrow('FileReader error');
 		});
 	});
+
+	describe('generateFileHash', () => {
+		const fakeHashBuffer = new Uint8Array(32).map((_, i) => i).buffer as ArrayBuffer;
+
+		beforeEach(() => {
+			// jsdom does not implement File.arrayBuffer — patch it onto the prototype
+			Object.defineProperty(File.prototype, 'arrayBuffer', {
+				configurable: true,
+				writable: true,
+				value: function () {
+					return Promise.resolve(new ArrayBuffer(4));
+				}
+			});
+
+			// Mock crypto.subtle.digest to return predictable 32-byte hash
+			vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(fakeHashBuffer);
+		});
+
+		afterEach(() => {
+			// Remove the polyfill to avoid leaking between tests
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			delete (File.prototype as any).arrayBuffer;
+			vi.restoreAllMocks();
+		});
+
+		it('should generate a hex string of length 64', async () => {
+			const file = new File([], 'test.wav');
+			const hash = await (SoundLibrary as any).generateFileHash(file);
+			expect(typeof hash).toBe('string');
+			expect(hash.length).toBe(64);
+			expect(hash).toMatch(/^[0-9a-f]+$/);
+		});
+
+		it('should call crypto.subtle.digest with SHA-256 algorithm', async () => {
+			const file = new File([], 'test.wav');
+			await (SoundLibrary as any).generateFileHash(file);
+			expect(crypto.subtle.digest).toHaveBeenCalledWith('SHA-256', expect.any(ArrayBuffer));
+		});
+	});
 });

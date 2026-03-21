@@ -567,14 +567,16 @@ describe('SoundLibrary', () => {
 				File.prototype,
 				'arrayBuffer'
 			);
-			// jsdom does not implement File.arrayBuffer — patch it onto the prototype
-			Object.defineProperty(File.prototype, 'arrayBuffer', {
-				configurable: true,
-				writable: true,
-				value: function () {
-					return Promise.resolve(new ArrayBuffer(4));
-				}
-			});
+			// jsdom does not implement File.arrayBuffer — patch it only if missing or configurable
+			if (!originalArrayBufferDescriptor || originalArrayBufferDescriptor.configurable) {
+				Object.defineProperty(File.prototype, 'arrayBuffer', {
+					configurable: true,
+					writable: true,
+					value: function () {
+						return Promise.resolve(new ArrayBuffer(4));
+					}
+				});
+			}
 
 			// Mock crypto.subtle.digest to return predictable 32-byte hash
 			vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(fakeHashBuffer);

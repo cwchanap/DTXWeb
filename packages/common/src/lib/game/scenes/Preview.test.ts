@@ -51,7 +51,8 @@ vi.mock('../../services/fileProvider', () => ({
 vi.mock('../EventBus', () => ({
 	EventBus: {
 		emit: vi.fn(),
-		on: vi.fn()
+		on: vi.fn(),
+		off: vi.fn()
 	}
 }));
 
@@ -408,6 +409,267 @@ describe('Preview Scene', () => {
 		it('should handle mixed-case filenames', () => {
 			const soundChip = { id: 3, fileName: 'HiHat.ogg' } as any;
 			expect(previewScene.getCacheKey(soundChip)).toBe('soundchip_hihat.ogg');
+		});
+	});
+
+	describe('shutdown', () => {
+		it('should stop and destroy previewTween when it exists', () => {
+			const mockTween = { stop: vi.fn(), destroy: vi.fn(), pause: vi.fn() };
+			previewScene['previewTween'] = mockTween as any;
+
+			previewScene.shutdown();
+
+			expect(mockTween.stop).toHaveBeenCalled();
+			expect(mockTween.destroy).toHaveBeenCalled();
+			expect(previewScene['previewTween']).toBeNull();
+		});
+
+		it('should stop all playing audio on shutdown', () => {
+			const mockAudio1 = { stop: vi.fn() };
+			const mockAudio2 = { stop: vi.fn() };
+			previewScene['playingAudio'] = [mockAudio1 as any, mockAudio2 as any];
+
+			previewScene.shutdown();
+
+			expect(mockAudio1.stop).toHaveBeenCalled();
+			expect(mockAudio2.stop).toHaveBeenCalled();
+			expect(previewScene['playingAudio']).toHaveLength(0);
+		});
+
+		it('should call time.removeAllEvents on shutdown', () => {
+			previewScene.shutdown();
+			expect(previewScene.time.removeAllEvents).toHaveBeenCalled();
+		});
+
+		it('should call storeUnsubscribe and null it out when set', () => {
+			const unsubscribeFn = vi.fn();
+			previewScene['storeUnsubscribe'] = unsubscribeFn;
+
+			previewScene.shutdown();
+
+			expect(unsubscribeFn).toHaveBeenCalled();
+			expect(previewScene['storeUnsubscribe']).toBeNull();
+		});
+
+		it('should remove EventBus event listeners', () => {
+			previewScene.shutdown();
+			expect(EventBus.off).toHaveBeenCalledWith(
+				EventType.STOP_PREVIEW,
+				previewScene['boundStopPreview']
+			);
+			expect(EventBus.off).toHaveBeenCalledWith(
+				EventType.RESUME_PREVIEW,
+				previewScene['boundResumePreview']
+			);
+		});
+
+		it('should reset isInitialized to false', () => {
+			previewScene['isInitialized'] = true;
+			previewScene.shutdown();
+			expect(previewScene['isInitialized']).toBe(false);
+		});
+
+		it('should handle null previewTween without errors', () => {
+			previewScene['previewTween'] = null;
+			expect(() => previewScene.shutdown()).not.toThrow();
+		});
+
+		it('should reset container scales when containers exist', () => {
+			const mockGridContainer = { setScale: vi.fn() };
+			const mockNotesContainer = { setScale: vi.fn() };
+			previewScene['gridContainer'] = mockGridContainer as any;
+			previewScene['notesContainer'] = mockNotesContainer as any;
+
+			previewScene.shutdown();
+
+			expect(mockGridContainer.setScale).toHaveBeenCalledWith(1);
+			expect(mockNotesContainer.setScale).toHaveBeenCalledWith(1);
+		});
+	});
+
+	describe('cleanUp', () => {
+		it('should call pausePreview when cleanUp is called', () => {
+			const pauseSpy = vi
+				.spyOn(previewScene as any, 'pausePreview')
+				.mockImplementation(() => {});
+			previewScene.cleanUp();
+			expect(pauseSpy).toHaveBeenCalled();
+			pauseSpy.mockRestore();
+		});
+	});
+
+	describe('getCellHeight', () => {
+		const baseData = {
+			measureCount: 5,
+			notes: {},
+			bpm: 120,
+			bpmNotes: {},
+			startMeasure: 0
+		};
+
+		it('should return scaled cellHeight when no bpm notes exist', () => {
+			previewScene.init(baseData);
+			// referenceBPM=120, bpm=120 → scale=1 → returns cellHeight
+			const result = previewScene.getCellHeight(0, 0);
+			expect(result).toBeCloseTo(previewScene['cellHeight'], 5);
+		});
+
+		it('should return half cellHeight at double BPM', () => {
+			previewScene.init({ ...baseData, bpm: 240 });
+			// referenceBPM=120, bpm=240 → scale=0.5
+			const result = previewScene.getCellHeight(0, 0);
+			expect(result).toBeCloseTo(previewScene['cellHeight'] * 0.5, 5);
+		});
+
+		it('should use bpm from a previous measure bpm note', () => {
+			previewScene.init({
+				...baseData,
+				bpm: 120,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm200', position: 0 }]
+						} as any
+					]
+				},
+				bpmNotes: { bpm200: 200 }
+			});
+			// measure 1, cell 0 — BPM change in previous measure 0 sets BPM to 200
+			const result = previewScene.getCellHeight(1, 0);
+			// referenceBPM=120, currentBPM=200 → scale = 120/200 = 0.6
+			expect(result).toBeCloseTo(previewScene['cellHeight'] * (120 / 200), 5);
+		});
+
+		it('should use bpm from a current measure bpm note before the current cell', () => {
+			const cellsPerMeasure = previewScene['cellsPerMeasure'];
+			previewScene.init({
+				...baseData,
+				bpm: 120,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm180', position: 0.25 }]
+						} as any
+					]
+				},
+				bpmNotes: { bpm180: 180 }
+			});
+			// cell at position 0.5 * cellsPerMeasure is after the bpm change at position 0.25
+			const cellAfterChange = Math.floor(0.5 * cellsPerMeasure);
+			const result = previewScene.getCellHeight(0, cellAfterChange);
+			// After BPM change: currentBPM = 180, scale = 120/180 ≈ 0.667
+			expect(result).toBeCloseTo(previewScene['cellHeight'] * (120 / 180), 5);
+		});
+	});
+
+	describe('getZoomOffset', () => {
+		it('should return 0 when scale is 1', () => {
+			expect(previewScene['getZoomOffset'](1)).toBe(0);
+		});
+
+		it('should return offsetY * (scale - 1) for arbitrary scale', () => {
+			const offsetY = previewScene['offsetY'];
+			expect(previewScene['getZoomOffset'](2)).toBeCloseTo(offsetY, 5);
+		});
+
+		it('should return negative value for sub-1 scale', () => {
+			const result = previewScene['getZoomOffset'](0.5);
+			expect(result).toBeLessThan(0);
+		});
+	});
+
+	describe('audioBufferToWavBlob', () => {
+		it('should return a Blob of type audio/wav', () => {
+			const mockAudioBuffer = {
+				numberOfChannels: 1,
+				length: 4,
+				sampleRate: 44100,
+				getChannelData: vi.fn().mockReturnValue(new Float32Array([0, 0.5, -0.5, 1]))
+			} as unknown as AudioBuffer;
+
+			const result = previewScene['audioBufferToWavBlob'](mockAudioBuffer);
+			expect(result).toBeInstanceOf(Blob);
+			expect(result.type).toBe('audio/wav');
+		});
+
+		it('should produce correct WAV byte size for stereo audio', () => {
+			const frames = 10;
+			const channels = 2;
+			const mockAudioBuffer = {
+				numberOfChannels: channels,
+				length: frames,
+				sampleRate: 44100,
+				getChannelData: vi.fn().mockReturnValue(new Float32Array(frames).fill(0))
+			} as unknown as AudioBuffer;
+
+			const result = previewScene['audioBufferToWavBlob'](mockAudioBuffer);
+			// Expected size = frames * channels * 2 (bytes per sample) + 44 (header)
+			expect(result.size).toBe(frames * channels * 2 + 44);
+		});
+
+		it('should clamp audio samples to [-1, 1] range without throwing', () => {
+			const mockAudioBuffer = {
+				numberOfChannels: 1,
+				length: 3,
+				sampleRate: 44100,
+				getChannelData: vi.fn().mockReturnValue(new Float32Array([2.0, -2.0, 0.5]))
+			} as unknown as AudioBuffer;
+
+			expect(() => previewScene['audioBufferToWavBlob'](mockAudioBuffer)).not.toThrow();
+		});
+	});
+
+	describe('drawNote', () => {
+		beforeEach(() => {
+			// Set up notesContainer mock for Preview.drawNote
+			previewScene['notesContainer'] = { add: vi.fn() } as any;
+			previewScene['measureLength'] = [1];
+
+			// Provide a getTotalMesaureOffest spy (Preview overrides it with caching)
+			vi.spyOn(previewScene, 'getTotalMesaureOffest').mockReturnValue(0);
+			vi.spyOn(previewScene, 'getCellHeight').mockReturnValue(25);
+		});
+
+		it('should return false for a non-playable lane config', () => {
+			// laneConfigs in Preview are already filtered to playable, but we can
+			// patch one to not be playable to test the early-return branch
+			const originalConfigs = previewScene['laneConfigs'];
+			previewScene['laneConfigs'] = [
+				{ id: 'BPM', name: 'BPM', noteColor: 0, playable: false }
+			] as any;
+
+			const result = previewScene.drawNote(0, 0, 0, '08');
+			expect(result).toBe(false);
+
+			previewScene['laneConfigs'] = originalConfigs;
+		});
+
+		it('should create container and sprites when note does not exist', () => {
+			// children.getByName returns falsy (note not existing)
+			previewScene.children.getByName = vi.fn().mockReturnValue(null);
+
+			const result = previewScene.drawNote(0, 0, 0, '1A');
+
+			expect(result).toBe(true);
+			expect(previewScene.add.container).toHaveBeenCalled();
+			expect(previewScene.add.sprite).toHaveBeenCalled();
+			expect((previewScene['notesContainer'] as any).add).toHaveBeenCalled();
+		});
+
+		it('should destroy existing note and return false when note already exists', () => {
+			const destroyFn = vi.fn();
+			const fakeNote = { destroy: destroyFn };
+			previewScene.children.getByName = vi.fn().mockReturnValue(fakeNote);
+			previewScene.children.getAll = vi.fn().mockReturnValue([fakeNote]);
+
+			const result = previewScene.drawNote(0, 0, 0, '1A');
+
+			expect(destroyFn).toHaveBeenCalled();
+			expect(result).toBe(false);
 		});
 	});
 

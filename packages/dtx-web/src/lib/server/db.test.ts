@@ -400,6 +400,14 @@ describe('listSimfiles', () => {
 		const result = await listSimfiles(db as unknown as D1Database, {});
 		expect(result).toEqual({ data: [], count: 0 });
 	});
+
+	it('defaults pageSize to 20 when non-finite value provided', async () => {
+		const db = createMockDb(() => createMockStmt({ cnt: 0 }));
+		await listSimfiles(db as unknown as D1Database, { pageSize: NaN });
+		const dataStmt = (db.prepare as ReturnType<typeof vi.fn>).mock.results[1]?.value;
+		// pageSize defaults to 20, page defaults to 1, so offset = 0
+		expect(dataStmt?.bind).toHaveBeenCalledWith(20, 0);
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -508,4 +508,89 @@ describe('Editor Scene', () => {
 			warnSpy.mockRestore();
 		});
 	});
+
+	describe('selectionRectangle getter', () => {
+		it('should return undefined when noteManager is not initialized', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(editorScene.selectionRectangle).toBeUndefined();
+		});
+
+		it('should return the noteManager selectionRectangle when initialized', () => {
+			const mockRect = { setStrokeStyle: vi.fn(), setVisible: vi.fn() };
+			editorScene['noteManager'] = {
+				selectionRectangle: mockRect
+			} as any;
+			expect(editorScene.selectionRectangle).toBe(mockRect);
+		});
+	});
+
+	describe('additional getter methods', () => {
+		it('should return offsetX from getOffsetX', () => {
+			expect(typeof editorScene.getOffsetX()).toBe('number');
+		});
+
+		it('should return offsetY from getOffsetY', () => {
+			expect(typeof editorScene.getOffsetY()).toBe('number');
+		});
+
+		it('should return cellMargin from getCellMargin', () => {
+			expect(typeof editorScene.getCellMargin()).toBe('number');
+		});
+
+		it('should return cellsPerMeasure from getCellsPerMeasure', () => {
+			const value = editorScene.getCellsPerMeasure();
+			expect(typeof value).toBe('number');
+			expect(value).toBeGreaterThan(0);
+		});
+
+		it('should return same value from getGridSpacing and getCellsPerMeasure', () => {
+			expect(editorScene.getGridSpacing()).toBe(editorScene.getCellsPerMeasure());
+		});
+
+		it('should return noteSize from getNoteSize', () => {
+			expect(typeof editorScene.getNoteSize()).toBe('number');
+		});
+
+		it('should return measureCount from getMeasureCount', () => {
+			expect(editorScene.getMeasureCount()).toBe(editorScene['measureCount']);
+		});
+	});
+
+	describe('setter guard branches (noteManager not initialized)', () => {
+		it('should not throw when setting isSelecting with no noteManager', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(() => {
+				editorScene.isSelecting = true;
+			}).not.toThrow();
+		});
+
+		it('should return false for isSelecting when noteManager is undefined', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(editorScene.isSelecting).toBe(false);
+		});
+
+		it('should not throw when setting selectionStartX with no noteManager', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(() => {
+				editorScene.selectionStartX = 50;
+			}).not.toThrow();
+		});
+
+		it('should return 0 for selectionStartX when noteManager is undefined', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(editorScene.selectionStartX).toBe(0);
+		});
+
+		it('should not throw when setting selectionStartY with no noteManager', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(() => {
+				editorScene.selectionStartY = 50;
+			}).not.toThrow();
+		});
+
+		it('should return 0 for selectionStartY when noteManager is undefined', () => {
+			editorScene['noteManager'] = undefined as any;
+			expect(editorScene.selectionStartY).toBe(0);
+		});
+	});
 });

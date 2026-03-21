@@ -1123,8 +1123,10 @@ describe('NoteManager', () => {
 			const pointer = createMockPointer(110, 190);
 			noteManager.handlePointerDown(pointer);
 
-			// Exactly one note should be selected
+			// Both notes have stackIndex=0 (mockNotes is empty); sort is stable so the
+			// first note in the container (note-0-0-0) wins as the "topmost"
 			expect(noteManager.selectedNotes.size).toBe(1);
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
 		});
 
 		it('should ignore non-Graphics objects in container list', () => {
@@ -1183,7 +1185,11 @@ describe('NoteManager', () => {
 		});
 
 		it('should cover fractional cell position in calculateSimplifiedNoteBounds', () => {
-			// 24th note position: cellOffset=1/24 ≈ 0.041666... gives fractionalCell > 0
+			// 24th note position: cellOffset=1/24 ≈ 0.041666... gives fractionalCell=0.6667>0
+			// wholeCells=0, cellsYOffset=0.6667*20=13.33, y=200-13.33+2-18=170.67
+			// Note bounds: Rectangle(102, 170.67, 46, 14) → x:102-148, y:170.67-184.67
+			// Selection rect { x:150, y:190, width:100, height:50 } → Rectangle(100, 165, 100, 50)
+			// x:100-200, y:165-215 → overlaps → note IS selected
 			const noteKey = 'note-0-0-0.041666666666666664';
 			const rect = noteManager['selectionRectangle'];
 			Object.assign(rect, { width: 100, height: 50, x: 150, y: 190 });
@@ -1195,8 +1201,8 @@ describe('NoteManager', () => {
 			noteManager.isSelecting = true;
 			noteManager.handlePointerMove(createMockPointer(200, 200));
 
-			// Just verify it doesn't throw (fractional cell path exercised)
-			expect(noteManager.selectedNotes.size).toBeGreaterThanOrEqual(0);
+			// The fractional cell code path is exercised and the note is within the selection
+			expect(noteManager.selectedNotes.has(noteKey)).toBe(true);
 		});
 
 		it('should not change selection when selection rectangle does not overlap any notes', () => {

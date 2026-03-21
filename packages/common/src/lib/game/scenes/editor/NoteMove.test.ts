@@ -419,12 +419,14 @@ describe('NoteMove', () => {
 		it('should call addNote when existingMeasureNote has the method', () => {
 			// Use a real LaneMeasureNote so addNote exists
 			const realNote = mockEditor._addMockNote('lane1', 2, 0, '01');
+			const addNoteSpy = vi.spyOn(realNote, 'addNote');
 
 			mockEditor.drawNote.mockReturnValue(true);
 
 			noteMove.addNoteToEditor(2, 0, 0.5, 'lane1', '11');
 
-			// addNote should have been called on the existing LaneMeasureNote
+			// addNote(noteID, position) should have been explicitly called on the existing LaneMeasureNote
+			expect(addNoteSpy).toHaveBeenCalledWith('11', 0.5);
 			const addedChip = realNote.notes.find((n) => n.position === 0.5);
 			expect(addedChip).toBeDefined();
 		});

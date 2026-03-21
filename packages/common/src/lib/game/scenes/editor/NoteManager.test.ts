@@ -1117,16 +1117,24 @@ describe('NoteManager', () => {
 			mockEditor.getPanelContainer().list.push(graphics1);
 			mockEditor.getPanelContainer().list.push(graphics2);
 
+			// Stub findNearbyNotes so note-0-0-0.005 has a higher stackIndex (topmost)
+			const findNearbyNotesSpy = vi
+				.spyOn(noteManager as any, 'findNearbyNotes')
+				.mockImplementation((_measure: number, _laneIndex: number, cellOffset: number) =>
+					cellOffset === 0.005 ? ['note-0-0-0'] : []
+				);
+
 			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
 			mockEditor.add.graphics.mockReturnValue(mockOverlay);
 
 			const pointer = createMockPointer(110, 190);
 			noteManager.handlePointerDown(pointer);
 
-			// Both notes have stackIndex=0 (mockNotes is empty); sort is stable so the
-			// first note in the container (note-0-0-0) wins as the "topmost"
+			// note-0-0-0.005 has stackIndex=1 (one nearby note) vs note-0-0-0 stackIndex=0,
+			// so it should be selected as the topmost note
 			expect(noteManager.selectedNotes.size).toBe(1);
-			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
+			expect(noteManager.selectedNotes.has('note-0-0-0.005')).toBe(true);
+			findNearbyNotesSpy.mockRestore();
 		});
 
 		it('should ignore non-Graphics objects in container list', () => {

@@ -3,7 +3,7 @@
 
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 import type { Database } from '@dtx/common'; // import shared types
-import { R2Bucket } from '@cloudflare/workers-types';
+import { KVNamespace, R2Bucket } from '@cloudflare/workers-types';
 
 declare global {
 	namespace App {
@@ -22,6 +22,7 @@ declare global {
 			env?: {
 				DTXFILE_BUCKET: R2Bucket;
 				DB: D1Database;
+				RATE_LIMIT: KVNamespace;
 			};
 		}
 	}

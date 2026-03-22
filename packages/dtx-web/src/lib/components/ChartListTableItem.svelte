@@ -1,11 +1,10 @@
 <script lang="ts">
 	import type { SimfileWithDtx } from '@dtx/common';
-	import { Popover, Tooltip } from '@skeletonlabs/skeleton-svelte';
-	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
+	import { EllipsisVertical } from '@lucide/svelte/icons';
+	import DownloadDropdown from './DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
-	import { _ } from 'svelte-i18n';
-
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
 		item: Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'>;
 		isBlog: boolean;
@@ -15,7 +14,6 @@
 
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
-	let tooltipOpen = $state(false);
 
 	function handleDeleteConfirm() {
 		onFileDelete(item.id);
@@ -65,27 +63,8 @@
 			</div>
 		{/snippet}
 	</Popover>
-{:else if item.download_url}
-	<a
-		href={item.download_url}
-		target="_blank"
-		rel="noopener noreferrer"
-		class="inline-flex items-center justify-center rounded-full bg-blue-100 p-2 text-blue-600 hover:bg-blue-200"
-		title={$_('chart.download_simfile')}
-	>
-		<Tooltip
-			open={tooltipOpen}
-			onOpenChange={(e) => (tooltipOpen = e.open)}
-			positioning={{ placement: 'top' }}
-			triggerBase="underline"
-			contentBase="card preset-filled p-2"
-			openDelay={200}
-			arrow
-		>
-			{#snippet trigger()}<ExternalLink size="16" />{/snippet}
-			{#snippet content()}Download Simfile{/snippet}
-		</Tooltip>
-	</a>
+{:else}
+	<DownloadDropdown simfileId={item.id} externalUrl={item.download_url ?? null} compact={true} />
 {/if}
 
 <!-- Delete Confirmation Modal -->

@@ -169,8 +169,16 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 		requestMethod === 'GET' && /^\/api\/chart\/\d+$/.test(event.url.pathname);
 	const isPublicListFilesRoute =
 		requestMethod === 'GET' && /^\/api\/simFile\/listFiles\/\d+$/.test(event.url.pathname);
+	const isPublicDownloadRoute =
+		requestMethod === 'GET' && /^\/api\/simFile\/download\/\d+$/.test(event.url.pathname);
+	const isPublicBulkDownloadRoute =
+		requestMethod === 'POST' && event.url.pathname === '/api/simFile/download/bulk';
 	const isPublicApiRoute =
-		isPublicChartListRoute || isPublicChartDetailRoute || isPublicListFilesRoute;
+		isPublicChartListRoute ||
+		isPublicChartDetailRoute ||
+		isPublicListFilesRoute ||
+		isPublicDownloadRoute ||
+		isPublicBulkDownloadRoute;
 
 	if (!event.locals.session && event.url.pathname.startsWith('/api/')) {
 		const authHeader = event.request.headers.get('Authorization');

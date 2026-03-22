@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+export const Download = vi.fn();
 export const EllipsisVertical = vi.fn();
 export const ExternalLink = vi.fn();
 export const ChevronDown = vi.fn();

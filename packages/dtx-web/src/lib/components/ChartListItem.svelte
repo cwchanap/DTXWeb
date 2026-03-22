@@ -6,6 +6,7 @@
 	import { formatLevelDisplay, buildPreviewUrl } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
 	import { Modal, Button } from '@dtx/ui-components/components';
+	import DownloadDropdown from './DownloadDropdown.svelte';
 
 	let { item, isBlog, togglePublishChart, simfileBucketUrl, onFileDelete } = $props<{
 		item: Partial<SimfileWithDtx>;
@@ -229,26 +230,7 @@
 
 		{#if isBlog}
 			<div class="mt-4">
-				{#if item.download_url}
-					<a
-						href={item.download_url ?? undefined}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="music-btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"
-					>
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-							></path>
-						</svg>
-						{$_('blog.download')}
-					</a>
-				{:else}
-					<div class="text-sm text-slate-500 italic">Download not available</div>
-				{/if}
+				<DownloadDropdown simfileId={item.id!} externalUrl={item.download_url ?? null} />
 			</div>
 		{/if}
 	</div>

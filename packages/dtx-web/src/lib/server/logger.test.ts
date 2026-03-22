@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import winston from 'winston';
 
 // Capture the printf callback so it can be invoked in tests
@@ -30,6 +30,15 @@ vi.mock('winston', () => {
 });
 
 describe('Logger', () => {
+	beforeEach(() => {
+		capturedPrintfCallback = null;
+	});
+
+	afterEach(() => {
+		vi.resetModules();
+		vi.clearAllMocks();
+	});
+
 	it('should create winston logger with correct configuration', async () => {
 		const mockLogger = {
 			info: vi.fn(),

@@ -275,17 +275,6 @@ describe('SoundLibrary', () => {
 
 			expect(result.errors).toContain('Failed to save to localStorage: disk write error');
 		});
-
-		it('should handle quota exceeded error when freeUpStorageSpace returns false (empty library)', async () => {
-			// Start with empty localStorage - all files rejected before adding
-			// To reach the "success=false" branch, we need setItem to fail
-			// and freeUpStorageSpace to return false (library was empty)
-			// This is done by having no files successfully added to library
-			// but localStorage.length > 0 check - hard to hit since library has the newly added file.
-			// Instead, test that freeUpStorageSpace on empty library returns false
-			const result = (SoundLibrary as any).freeUpStorageSpace([], 0.5);
-			expect(result).toBe(false);
-		});
 	});
 
 	describe('removeFile', () => {

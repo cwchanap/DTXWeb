@@ -234,6 +234,14 @@ describe('ExportWorkspaceModal', () => {
 
 		it('exports audio files found in sound library', async () => {
 			const mockFile = new File(['audio data'], 'kick.wav', { type: 'audio/wav' });
+			const expectedEntry = {
+				hash: 'abc',
+				fileName: 'kick.wav',
+				fileType: 'audio/wav',
+				fileData: 'base64',
+				size: 1024,
+				dateAdded: expect.any(Number)
+			};
 			soundLibMock.findByFileName.mockReturnValue([
 				{
 					hash: 'abc',
@@ -244,7 +252,10 @@ describe('ExportWorkspaceModal', () => {
 					dateAdded: Date.now()
 				}
 			]);
-			soundLibMock.toFile.mockReturnValue(mockFile);
+			soundLibMock.toFile.mockImplementation((arg) => {
+				expect(arg).toEqual(expectedEntry);
+				return mockFile;
+			});
 
 			render(ExportWorkspaceModal, { props: defaultProps });
 
@@ -306,6 +317,49 @@ describe('ExportWorkspaceModal', () => {
 					'large.wav'
 				);
 				expect(mockZipInstance.file).toHaveBeenCalledWith('large.wav', largeFile);
+			});
+
+			appendChild.mockRestore();
+			removeChild.mockRestore();
+		});
+
+		it('skips large audio file when getLargeFile returns undefined', async () => {
+			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(undefined);
+
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Large Workspace',
+					audioFiles: [{ name: 'large.wav', path: '/workspace/large.wav', isLarge: true }]
+				})
+			]);
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			const appendChild = vi
+				.spyOn(document.body, 'appendChild')
+				.mockImplementation((el) => el);
+			const removeChild = vi
+				.spyOn(document.body, 'removeChild')
+				.mockImplementation((el) => el);
+
+			const workspaceButtons = screen.getAllByRole('button');
+			const largeWorkspaceButton = workspaceButtons.find(
+				(btn) =>
+					btn.textContent?.includes('Large Workspace') &&
+					!btn.textContent?.includes('Cancel')
+			);
+			await fireEvent.click(largeWorkspaceButton!);
+
+			await vi.waitFor(() => {
+				expect(mockWorkspaceServiceClass.getLargeFile).toHaveBeenCalledWith(
+					'Large Workspace',
+					'large.wav'
+				);
+				// zip.file should not have been called for the skipped large file
+				expect(mockZipInstance.file).not.toHaveBeenCalledWith(
+					'large.wav',
+					expect.anything()
+				);
 			});
 
 			appendChild.mockRestore();

@@ -17,6 +17,12 @@
 			"bucket_name": "simfile-dtx"
 		}
 	],
+	"kv_namespaces": [
+		{
+			"binding": "RATE_LIMIT",
+			"id": "63599182f2d44b3abb6556ce270075cc"
+		}
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -41,6 +47,12 @@
 				{
 					"binding": "DTXFILE_BUCKET",
 					"bucket_name": "simfile-dtx-preprod"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "RATE_LIMIT",
+					"id": "47c55a7f9ec0479480c5932090e2f5cc"
 				}
 			],
 			"d1_databases": [

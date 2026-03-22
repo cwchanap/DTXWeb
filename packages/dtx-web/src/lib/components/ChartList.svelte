@@ -31,6 +31,9 @@
 	let hideUnpublished = $state(false);
 	let filteredItems = $state<SimfileWithDtx[]>([]);
 	let viewMode = $state<'card' | 'table'>('card');
+	let selectMode = $state(false);
+	let selectedIds = $state(new Set<number>());
+	let bulkDownloading = $state(false);
 
 	// Replace the run() function with a reactive effect using $effect
 	$effect(() => {
@@ -173,6 +176,54 @@
 		});
 	};
 
+	const toggleSelect = (id: number) => {
+		const next = new Set(selectedIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		selectedIds = next;
+	};
+
+	const handleBulkDownload = async () => {
+		if (selectedIds.size === 0) return;
+		bulkDownloading = true;
+		try {
+			const response = await fetch('/api/simFile/download/bulk', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ids: [...selectedIds] })
+			});
+			if (!response.ok) {
+				let errMsg = 'Bulk download failed';
+				try {
+					const data = await response.json();
+					if (typeof data?.error === 'string') errMsg = data.error;
+				} catch {
+					// ignore parse error
+				}
+				toastStore.error({ title: errMsg, duration: 3000 });
+				return;
+			}
+			const blob = await response.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = 'drumery-charts.zip';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+			selectMode = false;
+			selectedIds = new Set();
+		} catch {
+			toastStore.error({ title: 'Bulk download failed', duration: 3000 });
+		} finally {
+			bulkDownloading = false;
+		}
+	};
+
 	onMount(() => {
 		loadItems();
 	});
@@ -227,6 +278,31 @@
 						<option value={48}>48</option>
 					</select>
 				</div>
+
+				{#if isBlog}
+					<!-- Multi-select controls -->
+					<button
+						class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 {selectMode
+							? 'border-purple-500 bg-purple-600/20 text-purple-300'
+							: 'border-purple-500/30 bg-slate-800/50 text-slate-300 hover:bg-purple-600/20 hover:text-purple-300'}"
+						onclick={() => {
+							selectMode = !selectMode;
+							selectedIds = new Set();
+						}}
+						aria-pressed={selectMode}
+					>
+						{selectMode ? 'Cancel' : 'Select'}
+					</button>
+					{#if selectMode && selectedIds.size > 0}
+						<button
+							class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all duration-200 hover:shadow-xl disabled:opacity-50"
+							onclick={handleBulkDownload}
+							disabled={bulkDownloading}
+						>
+							{bulkDownloading ? 'Downloading…' : `Download (${selectedIds.size})`}
+						</button>
+					{/if}
+				{/if}
 
 				<!-- View Mode Selector -->
 				<div class="flex items-center gap-2">
@@ -363,6 +439,17 @@
 						{/if}
 					</div>
 					<div class="ml-4 flex items-center gap-2">
+						{#if selectMode && isBlog}
+							<label>
+								<input
+									type="checkbox"
+									checked={selectedIds.has(item.id)}
+									onchange={() => toggleSelect(item.id)}
+									aria-label="Select {item.title}"
+									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
+								/>
+							</label>
+						{/if}
 						<ChartListTableItem
 							{item}
 							{isBlog}
@@ -380,6 +467,17 @@
 			<div
 				class="relative z-0 transform transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-105"
 			>
+				{#if selectMode && isBlog}
+					<label class="absolute top-3 left-3 z-10 cursor-pointer">
+						<input
+							type="checkbox"
+							checked={selectedIds.has(item.id)}
+							onchange={() => toggleSelect(item.id)}
+							aria-label="Select {item.title}"
+							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
+						/>
+					</label>
+				{/if}
 				<ChartListItem
 					{item}
 					{isBlog}

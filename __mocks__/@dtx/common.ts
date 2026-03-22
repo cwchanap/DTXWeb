@@ -16,13 +16,18 @@ export class SimFile {
 }
 
 export class DTXFile {
-	constructor() {}
+	constructor(_input?: any) {}
 	level = 1;
 	artist = 'Mock Artist';
 	bpm = 120;
 	difficulty = 'BASIC';
 	title = 'Mock Title';
 	comment = 'Mock Comment';
+	detectedEncoding?: string;
+
+	parse = vi.fn().mockResolvedValue(undefined);
+	parseNotes = vi.fn().mockReturnValue([]);
+	exportToMidi = vi.fn().mockReturnValue(new Uint8Array([0x4d, 0x54, 0x68, 0x64]));
 
 	async parseFromMidi(file: File): Promise<void> {
 		// Mock implementation - check for invalid files
@@ -41,6 +46,8 @@ export class DTXFile {
 	): Record<string, LaneMeasureNote[]> {
 		// Mock implementation that matches test expectations
 		const result: Record<string, LaneMeasureNote[]> = {};
+
+		if (!midiData) return result;
 
 		// Default MIDI to DTX mapping
 		const defaultMapping = {

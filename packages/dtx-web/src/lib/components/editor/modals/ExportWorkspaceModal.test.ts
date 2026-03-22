@@ -231,5 +231,136 @@ describe('ExportWorkspaceModal', () => {
 				expect(toastMock.error).toHaveBeenCalled();
 			});
 		});
+
+		it('exports audio files found in sound library', async () => {
+			const mockFile = new File(['audio data'], 'kick.wav', { type: 'audio/wav' });
+			soundLibMock.findByFileName.mockReturnValue([
+				{
+					hash: 'abc',
+					fileName: 'kick.wav',
+					fileType: 'audio/wav',
+					fileData: 'base64',
+					size: 1024,
+					dateAdded: Date.now()
+				}
+			]);
+			soundLibMock.toFile.mockReturnValue(mockFile);
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			const appendChild = vi
+				.spyOn(document.body, 'appendChild')
+				.mockImplementation((el) => el);
+			const removeChild = vi
+				.spyOn(document.body, 'removeChild')
+				.mockImplementation((el) => el);
+
+			const workspaceButtons = screen.getAllByRole('button');
+			const workspaceAButton = workspaceButtons.find(
+				(btn) =>
+					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
+			);
+			await fireEvent.click(workspaceAButton!);
+
+			await vi.waitFor(() => {
+				expect(soundLibMock.findByFileName).toHaveBeenCalled();
+				expect(soundLibMock.toFile).toHaveBeenCalled();
+				expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', mockFile);
+			});
+
+			appendChild.mockRestore();
+			removeChild.mockRestore();
+		});
+
+		it('handles large audio files from session storage', async () => {
+			const largeFile = new File(['large audio'], 'large.wav', { type: 'audio/wav' });
+			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(largeFile);
+
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Large Workspace',
+					audioFiles: [{ name: 'large.wav', path: '/workspace/large.wav', isLarge: true }]
+				})
+			]);
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			const appendChild = vi
+				.spyOn(document.body, 'appendChild')
+				.mockImplementation((el) => el);
+			const removeChild = vi
+				.spyOn(document.body, 'removeChild')
+				.mockImplementation((el) => el);
+
+			const workspaceButtons = screen.getAllByRole('button');
+			const largeWorkspaceButton = workspaceButtons.find(
+				(btn) =>
+					btn.textContent?.includes('Large Workspace') &&
+					!btn.textContent?.includes('Cancel')
+			);
+			await fireEvent.click(largeWorkspaceButton!);
+
+			await vi.waitFor(() => {
+				expect(mockWorkspaceServiceClass.getLargeFile).toHaveBeenCalledWith(
+					'Large Workspace',
+					'large.wav'
+				);
+				expect(mockZipInstance.file).toHaveBeenCalledWith('large.wav', largeFile);
+			});
+
+			appendChild.mockRestore();
+			removeChild.mockRestore();
+		});
+
+		it('catches audio file errors and continues export', async () => {
+			// Workspace A has 2 DTX files (basic.dtx, advanced.dtx) and 1 audio file (kick.wav)
+			// mock zip.file to succeed for both DTX files and then throw for the audio file
+			mockZipInstance.file
+				.mockImplementationOnce(() => undefined) // basic.dtx succeeds
+				.mockImplementationOnce(() => undefined) // advanced.dtx succeeds
+				.mockImplementationOnce(() => {
+					throw new Error('failed to add audio');
+				}); // kick.wav audio fails
+
+			soundLibMock.findByFileName.mockReturnValue([
+				{
+					hash: 'abc',
+					fileName: 'kick.wav',
+					fileType: 'audio/wav',
+					fileData: 'base64',
+					size: 1024,
+					dateAdded: Date.now()
+				}
+			]);
+			soundLibMock.toFile.mockReturnValue(new File(['audio'], 'kick.wav'));
+
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			const appendChild = vi
+				.spyOn(document.body, 'appendChild')
+				.mockImplementation((el) => el);
+			const removeChild = vi
+				.spyOn(document.body, 'removeChild')
+				.mockImplementation((el) => el);
+
+			const workspaceButtons = screen.getAllByRole('button');
+			const workspaceAButton = workspaceButtons.find(
+				(btn) =>
+					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
+			);
+			await fireEvent.click(workspaceAButton!);
+
+			await vi.waitFor(() => {
+				expect(warnSpy).toHaveBeenCalledWith(
+					expect.stringContaining('Failed to add audio file kick.wav'),
+					expect.any(Error)
+				);
+			});
+
+			warnSpy.mockRestore();
+			appendChild.mockRestore();
+			removeChild.mockRestore();
+		});
 	});
 });

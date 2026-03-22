@@ -3,6 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import ModalStub from '../../../../tests/stubs/ModalStub.svelte';
 import { makeWorkspace } from '../../../../tests/mocks/services';
 
+const mockSoundChip = (fileName: string) => ({
+	fileName,
+	file: undefined as File | undefined
+});
+
 const mockService = vi.hoisted(() => ({
 	getCurrentWorkspace: vi.fn(),
 	parseDTXFile: vi.fn().mockResolvedValue({
@@ -106,5 +111,82 @@ describe('DTXSwitcherModal', () => {
 	it('does not render content when show is false', () => {
 		render(DTXSwitcherModal, { props: { ...defaultProps, show: false } });
 		expect(screen.queryByText('basic.dtx')).not.toBeInTheDocument();
+	});
+
+	it('maps sound chips to files from simFile using case-insensitive match', async () => {
+		const kickFile = new File(['audio'], 'KICK.WAV');
+		mockService.parseDTXFile.mockResolvedValueOnce({
+			dtxFile: {
+				parseNotes: vi.fn(() => []),
+				parseBPMChanges: vi.fn(() => ({})),
+				parseSoundChips: vi.fn(() => [mockSoundChip('kick.wav')])
+			},
+			simFile: { files: [kickFile] }
+		});
+
+		render(DTXSwitcherModal, { props: defaultProps });
+		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		await fireEvent.click(advancedBtn);
+
+		// FileManager.setFile should have been called for the matched chip
+		const { setFile } = await import('@dtx/common/services/fileManager');
+		expect(setFile).toHaveBeenCalled();
+	});
+
+	it('maps sound chips to files using exact match when case-insensitive match fails', async () => {
+		const exactFile = new File(['audio'], 'snare.wav');
+		mockService.parseDTXFile.mockResolvedValueOnce({
+			dtxFile: {
+				parseNotes: vi.fn(() => []),
+				parseBPMChanges: vi.fn(() => ({})),
+				parseSoundChips: vi.fn(() => [mockSoundChip('snare.wav')])
+			},
+			// simFile.files has a file that only matches exactly (same case)
+			simFile: { files: [exactFile] }
+		});
+
+		render(DTXSwitcherModal, { props: defaultProps });
+		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		await fireEvent.click(advancedBtn);
+
+		const { setFile } = await import('@dtx/common/services/fileManager');
+		expect(setFile).toHaveBeenCalled();
+	});
+
+	it('handles sound chips with no matching file in simFile', async () => {
+		mockService.parseDTXFile.mockResolvedValueOnce({
+			dtxFile: {
+				parseNotes: vi.fn(() => []),
+				parseBPMChanges: vi.fn(() => ({})),
+				parseSoundChips: vi.fn(() => [mockSoundChip('missing.wav')])
+			},
+			simFile: { files: [] }
+		});
+
+		render(DTXSwitcherModal, { props: defaultProps });
+		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		// Should not throw even when file is not found
+		await expect(fireEvent.click(advancedBtn)).resolves.not.toThrow();
+	});
+
+	it('catches and logs errors from switchWorkspaceDTX', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockService.parseDTXFile.mockResolvedValueOnce({
+			dtxFile: {
+				parseNotes: vi.fn(() => {
+					throw new Error('parse error');
+				}),
+				parseBPMChanges: vi.fn(() => ({})),
+				parseSoundChips: vi.fn(() => [])
+			},
+			simFile: { files: [] }
+		});
+
+		render(DTXSwitcherModal, { props: defaultProps });
+		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		await fireEvent.click(advancedBtn);
+
+		expect(consoleSpy).toHaveBeenCalledWith('Error switching DTX file:', expect.any(Error));
+		consoleSpy.mockRestore();
 	});
 });

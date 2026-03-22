@@ -671,6 +671,15 @@ describe('Preview Scene', () => {
 			expect(destroyFn).toHaveBeenCalled();
 			expect(result).toBe(false);
 		});
+
+		it('should calculate cellsYOffset using whole cells and fractional cell (non-zero offset)', () => {
+			// cellOffset = 7/24 → wholeCells=4, fractionalCell≈0.667 → covers loop + fractional branch
+			previewScene.children.getByName = vi.fn().mockReturnValue(null);
+
+			const result = previewScene.drawNote(0, 1, 7 / 24, '1A');
+
+			expect(result).toBe(true);
+		});
 	});
 
 	describe('cache management', () => {
@@ -727,6 +736,393 @@ describe('Preview Scene', () => {
 			const secondHash = previewScene['lastDataHash'];
 
 			expect(firstHash).not.toBe(secondHash);
+		});
+	});
+
+	describe('create()', () => {
+		it('should set up containers, draw panel/notes, and emit SCENE_READY', async () => {
+			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
+			// Reset static flag so createNoteAnimations branch is exercised
+			(Preview as any).animationsCreated = false;
+
+			const createNoteAnimationsSpy = vi
+				.spyOn(previewScene as any, 'createNoteAnimations')
+				.mockImplementation(() => {});
+			const drawPanelSpy = vi
+				.spyOn(previewScene as any, 'drawPanel')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const setupSoundsSpy = vi
+				.spyOn(previewScene as any, 'setupSoundsAsync')
+				.mockResolvedValue(undefined);
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
+
+			await previewScene.create();
+
+			expect(createNoteAnimationsSpy).toHaveBeenCalled();
+			expect((Preview as any).animationsCreated).toBe(true);
+			expect(drawPanelSpy).toHaveBeenCalled();
+			expect(drawNotesSpy).toHaveBeenCalled();
+			expect(setupSoundsSpy).toHaveBeenCalled();
+			expect(startPreviewSpy).toHaveBeenCalled();
+			expect(previewScene['isInitialized']).toBe(true);
+			expect(EventBus.emit).toHaveBeenCalledWith(EventType.SCENE_READY, previewScene);
+			expect(EventBus.on).toHaveBeenCalledWith(EventType.STOP_PREVIEW, expect.any(Function));
+			expect(EventBus.on).toHaveBeenCalledWith(
+				EventType.RESUME_PREVIEW,
+				expect.any(Function)
+			);
+
+			createNoteAnimationsSpy.mockRestore();
+			drawPanelSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			setupSoundsSpy.mockRestore();
+			startPreviewSpy.mockRestore();
+		});
+
+		it('should skip createNoteAnimations when animationsCreated is already true', async () => {
+			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
+			(Preview as any).animationsCreated = true;
+
+			const createNoteAnimationsSpy = vi
+				.spyOn(previewScene as any, 'createNoteAnimations')
+				.mockImplementation(() => {});
+			const drawPanelSpy = vi
+				.spyOn(previewScene as any, 'drawPanel')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const setupSoundsSpy = vi
+				.spyOn(previewScene as any, 'setupSoundsAsync')
+				.mockResolvedValue(undefined);
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
+
+			await previewScene.create();
+
+			expect(createNoteAnimationsSpy).not.toHaveBeenCalled();
+
+			createNoteAnimationsSpy.mockRestore();
+			drawPanelSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			setupSoundsSpy.mockRestore();
+			startPreviewSpy.mockRestore();
+		});
+	});
+
+	describe('updateData()', () => {
+		it('should update all fields, invalidate cache, and redraw', () => {
+			const mockContainer = { removeAll: vi.fn(), add: vi.fn() };
+			previewScene['gridContainer'] = mockContainer as any;
+			previewScene['notesContainer'] = mockContainer as any;
+			previewScene['panelContainer'] = mockContainer as any;
+
+			const drawGridLinesSpy = vi
+				.spyOn(previewScene as any, 'drawGridLines')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
+			const parseMeasureLengthSpy = vi
+				.spyOn(previewScene as any, 'parseMesaureLength')
+				.mockImplementation(() => {});
+
+			previewScene.updateData({
+				bpm: 140,
+				bpmNotes: { '08': 200 },
+				notes: { '01': [] },
+				measureCount: 8,
+				startMeasure: 2
+			});
+
+			expect(previewScene['bpm']).toBe(140);
+			expect(previewScene['measureCount']).toBe(8);
+			expect(previewScene['startMeasure']).toBe(2);
+			expect(mockContainer.removeAll).toHaveBeenCalled();
+			expect(drawGridLinesSpy).toHaveBeenCalled();
+			expect(drawNotesSpy).toHaveBeenCalled();
+			expect(startPreviewSpy).toHaveBeenCalled();
+
+			drawGridLinesSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			startPreviewSpy.mockRestore();
+			parseMeasureLengthSpy.mockRestore();
+		});
+
+		it('should work when panelContainer is undefined', () => {
+			const mockContainer = { removeAll: vi.fn(), add: vi.fn() };
+			previewScene['gridContainer'] = mockContainer as any;
+			previewScene['notesContainer'] = mockContainer as any;
+			previewScene['panelContainer'] = undefined as any;
+
+			const drawGridLinesSpy = vi
+				.spyOn(previewScene as any, 'drawGridLines')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
+			const parseMeasureLengthSpy = vi
+				.spyOn(previewScene as any, 'parseMesaureLength')
+				.mockImplementation(() => {});
+
+			expect(() =>
+				previewScene.updateData({
+					bpm: 120,
+					bpmNotes: {},
+					notes: {},
+					measureCount: 5,
+					startMeasure: 0
+				})
+			).not.toThrow();
+
+			drawGridLinesSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			startPreviewSpy.mockRestore();
+			parseMeasureLengthSpy.mockRestore();
+		});
+	});
+
+	describe('setupSoundsAsync()', () => {
+		it('should return early when soundChips is null', async () => {
+			// Configure the store subscribe to return null for currentSoundChip
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
+				(callback: (v: null) => void) => {
+					callback(null);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+			await expect(previewScene['setupSoundsAsync']()).resolves.toBeUndefined();
+		});
+
+		it('should return early when all sound chips are already loaded', async () => {
+			const mockSoundChips = [{ fileName: 'kick.wav' }];
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+
+			// Mock cache.audio.exists to return true (already loaded)
+			(previewScene['cache'] as any) = {
+				audio: { exists: vi.fn().mockReturnValue(true) }
+			};
+			(previewScene['sound'] as any).get = vi.fn().mockReturnValue({});
+
+			await expect(previewScene['setupSoundsAsync']()).resolves.toBeUndefined();
+		});
+	});
+
+	describe('updateCameraZoom()', () => {
+		it('should scale gridContainer and notesContainer by playSpeed', () => {
+			const mockObj = { setScale: vi.fn() };
+			const mockGridContainer = {
+				setScale: vi.fn(),
+				getAll: vi.fn().mockReturnValue([mockObj])
+			};
+			const mockNotesContainer = {
+				setScale: vi.fn(),
+				getAll: vi.fn().mockReturnValue([mockObj])
+			};
+			previewScene['gridContainer'] = mockGridContainer as any;
+			previewScene['notesContainer'] = mockNotesContainer as any;
+			previewScene['playSpeed'] = 1.5;
+
+			previewScene.updateCameraZoom();
+
+			expect(mockGridContainer.setScale).toHaveBeenCalledWith(1, 1.5);
+			expect(mockNotesContainer.setScale).toHaveBeenCalledWith(1, 1.5);
+		});
+
+		it('should handle missing gridContainer and notesContainer gracefully', () => {
+			previewScene['gridContainer'] = undefined as any;
+			previewScene['notesContainer'] = undefined as any;
+
+			expect(() => previewScene.updateCameraZoom()).not.toThrow();
+		});
+	});
+
+	describe('createPreviewTween()', () => {
+		const baseData = {
+			measureCount: 5,
+			notes: {},
+			bpm: 120,
+			bpmNotes: {},
+			startMeasure: 0
+		};
+
+		it('should create a new tween and return it', () => {
+			previewScene.init(baseData);
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const result = previewScene.createPreviewTween();
+
+			expect(previewScene.tweens.add).toHaveBeenCalled();
+			expect(result).toBeDefined();
+		});
+
+		it('should stop and destroy existing tween before creating a new one', () => {
+			previewScene.init(baseData);
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const oldTween = { stop: vi.fn(), destroy: vi.fn() };
+			previewScene['previewTween'] = oldTween as any;
+
+			previewScene.createPreviewTween();
+
+			expect(oldTween.stop).toHaveBeenCalled();
+			expect(oldTween.destroy).toHaveBeenCalled();
+		});
+
+		it('should accept a custom startY parameter', () => {
+			previewScene.init(baseData);
+			const mockContainer = { setPosition: vi.fn(), y: 0 };
+			previewScene['panelContainer'] = mockContainer as any;
+
+			previewScene.createPreviewTween(100);
+
+			expect(mockContainer.setPosition).toHaveBeenCalledWith(0, 100);
+		});
+	});
+
+	describe('startPreview()', () => {
+		it('should call setupSoundsAsync and then startPreviewWithoutSoundReload', async () => {
+			const setupSoundsSpy = vi
+				.spyOn(previewScene as any, 'setupSoundsAsync')
+				.mockResolvedValue(undefined);
+			const startSpy = vi
+				.spyOn(previewScene as any, 'startPreviewWithoutSoundReload')
+				.mockImplementation(() => {});
+
+			previewScene.startPreview();
+			await vi.waitFor(() => expect(startSpy).toHaveBeenCalled());
+
+			setupSoundsSpy.mockRestore();
+			startSpy.mockRestore();
+		});
+	});
+
+	describe('startPreviewWithoutSoundReload()', () => {
+		const baseData = {
+			measureCount: 5,
+			notes: {},
+			bpm: 120,
+			bpmNotes: {},
+			startMeasure: 0
+		};
+
+		it('should call updateCameraZoom and createPreviewTween', () => {
+			previewScene.init(baseData);
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const updateCameraZoomSpy = vi
+				.spyOn(previewScene as any, 'updateCameraZoom')
+				.mockImplementation(() => {});
+			const createPreviewTweenSpy = vi
+				.spyOn(previewScene as any, 'createPreviewTween')
+				.mockImplementation(() => {});
+
+			previewScene['startPreviewWithoutSoundReload']();
+
+			expect(updateCameraZoomSpy).toHaveBeenCalled();
+			expect(createPreviewTweenSpy).toHaveBeenCalled();
+
+			updateCameraZoomSpy.mockRestore();
+			createPreviewTweenSpy.mockRestore();
+		});
+
+		it('should stop and clear existing previewTween before starting', () => {
+			previewScene.init(baseData);
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const oldTween = { stop: vi.fn(), destroy: vi.fn() };
+			previewScene['previewTween'] = oldTween as any;
+
+			const createPreviewTweenSpy = vi
+				.spyOn(previewScene as any, 'createPreviewTween')
+				.mockImplementation(() => {});
+			const updateCameraZoomSpy = vi
+				.spyOn(previewScene as any, 'updateCameraZoom')
+				.mockImplementation(() => {});
+
+			previewScene['startPreviewWithoutSoundReload']();
+
+			expect(oldTween.stop).toHaveBeenCalled();
+			expect(oldTween.destroy).toHaveBeenCalled();
+			expect(previewScene['previewTween']).toBeNull();
+
+			createPreviewTweenSpy.mockRestore();
+			updateCameraZoomSpy.mockRestore();
+		});
+
+		it('should stop playing audio and clear timed events', () => {
+			previewScene.init(baseData);
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const mockAudio = { stop: vi.fn() };
+			previewScene['playingAudio'] = [mockAudio as any];
+
+			const createPreviewTweenSpy = vi
+				.spyOn(previewScene as any, 'createPreviewTween')
+				.mockImplementation(() => {});
+			const updateCameraZoomSpy = vi
+				.spyOn(previewScene as any, 'updateCameraZoom')
+				.mockImplementation(() => {});
+
+			previewScene['startPreviewWithoutSoundReload']();
+
+			expect(mockAudio.stop).toHaveBeenCalled();
+			expect(previewScene['playingAudio']).toHaveLength(0);
+			expect(previewScene.time.removeAllEvents).toHaveBeenCalled();
+
+			createPreviewTweenSpy.mockRestore();
+			updateCameraZoomSpy.mockRestore();
+		});
+	});
+
+	describe('drawPanel()', () => {
+		it('should create panelContainer and set up the grid hierarchy', () => {
+			previewScene['gridContainer'] = previewScene.add.container(0, 0) as any;
+			previewScene['notesContainer'] = previewScene.add.container(0, 0) as any;
+			previewScene.init({
+				measureCount: 2,
+				notes: {},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+
+			expect(() => previewScene.drawPanel()).not.toThrow();
+			expect(previewScene['panelContainer']).toBeDefined();
+		});
+	});
+
+	describe('drawGridLines()', () => {
+		it('should add graphic objects to gridContainer without throwing', () => {
+			const mockGridContainer = { add: vi.fn(), setScale: vi.fn() };
+			previewScene['gridContainer'] = mockGridContainer as any;
+			previewScene.init({
+				measureCount: 2,
+				notes: {},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+
+			expect(() => previewScene.drawGridLines()).not.toThrow();
+			expect(mockGridContainer.add).toHaveBeenCalled();
 		});
 	});
 });

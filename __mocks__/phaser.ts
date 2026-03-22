@@ -315,6 +315,9 @@ const Phaser = {
 	Tweens,
 	Events,
 	Scene,
+	Math: {
+		Clamp: (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+	},
 	AUTO: 0,
 	CANVAS: 1,
 	WEBGL: 2,

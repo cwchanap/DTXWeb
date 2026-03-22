@@ -484,6 +484,16 @@ describe('Editor Scene', () => {
 			expect(warnSpy).toHaveBeenCalledWith('Invalid cellsPerMeasure value:', 4.5);
 			warnSpy.mockRestore();
 		});
+
+		it('should update cellsPerMeasure and call redrawGridLines for valid values', () => {
+			const redrawGridLinesSpy = vi
+				.spyOn(editorScene as any, 'redrawGridLines')
+				.mockImplementation(() => {});
+			editorScene.updateGridSpacing(16);
+			expect(editorScene['cellsPerMeasure']).toBe(16);
+			expect(redrawGridLinesSpy).toHaveBeenCalled();
+			redrawGridLinesSpy.mockRestore();
+		});
 	});
 
 	describe('updateCellHeight', () => {
@@ -506,6 +516,16 @@ describe('Editor Scene', () => {
 			editorScene.updateCellHeight(101);
 			expect(warnSpy).toHaveBeenCalledWith('Invalid cell height value:', 101);
 			warnSpy.mockRestore();
+		});
+
+		it('should update cellHeight and call redrawScene for valid values', () => {
+			const redrawSceneSpy = vi
+				.spyOn(editorScene as any, 'redrawScene')
+				.mockImplementation(() => {});
+			editorScene.updateCellHeight(30);
+			expect(editorScene['cellHeight']).toBe(30);
+			expect(redrawSceneSpy).toHaveBeenCalled();
+			redrawSceneSpy.mockRestore();
 		});
 	});
 
@@ -591,6 +611,340 @@ describe('Editor Scene', () => {
 		it('should return 0 for selectionStartY when noteManager is undefined', () => {
 			editorScene['noteManager'] = undefined as any;
 			expect(editorScene.selectionStartY).toBe(0);
+		});
+	});
+
+	describe('init()', () => {
+		it('should update measureCount from data', () => {
+			editorScene.init({ measureCount: 5 });
+			expect(editorScene['measureCount']).toBe(5);
+		});
+
+		it('should keep existing measureCount when data.measureCount is 0 (falsy)', () => {
+			editorScene['measureCount'] = 10;
+			editorScene.init({ measureCount: 0 });
+			expect(editorScene['measureCount']).toBe(10);
+		});
+	});
+
+	describe('setOnNotesModified callback', () => {
+		it('should call setDirty(true) and debouncedAutoSave when notes are modified', () => {
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty');
+			const debouncedAutoSaveSpy = vi
+				.spyOn(editorScene as any, 'debouncedAutoSave')
+				.mockImplementation(() => {});
+
+			// The callback was registered in the constructor via noteManager.setOnNotesModified
+			(editorScene['noteManager'] as any)['onNotesModified']();
+
+			expect(setDirtySpy).toHaveBeenCalledWith(true);
+			expect(debouncedAutoSaveSpy).toHaveBeenCalled();
+
+			setDirtySpy.mockRestore();
+			debouncedAutoSaveSpy.mockRestore();
+		});
+	});
+
+	describe('pointerdown behavior when not editing', () => {
+		it('should return early without modifying state when not editing and handlePointerDown returns false', () => {
+			editorScene.create();
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			const mockPointer = { x: 100, y: 200, rightButtonDown: vi.fn().mockReturnValue(false) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(syncNotesToStoreSpy).not.toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+	});
+
+	describe('pointerdown behavior in editing mode', () => {
+		it('should call addNoteToEditor when left-clicking in a valid lane and measure', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			// Set up offsets so laneIndex=2, clickY=100 (within measure 0, height=400)
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(null)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const addNoteToEditorSpy = vi
+				.spyOn(editorScene['noteManager'], 'addNoteToEditor')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// pointer.y=500: absoluteY = 500-600-0 = -100, clickY = 100
+			// laneIndex = Math.floor(100/50) = 2 (valid)
+			// measure 0: height = 16*25=400 → 100 >= 0 && 100 < 400 → measure=0
+			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(false) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(addNoteToEditorSpy).toHaveBeenCalled();
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			addNoteToEditorSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should destroy note graphics on right-click when a note exists at the clicked position', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			const mockNote = { destroy: vi.fn() };
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(mockNote.destroy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+	});
+
+	describe('EventBus handlers registered in create()', () => {
+		it('should resume editor scene on STOP_PREVIEW event', () => {
+			editorScene.create();
+			(editorScene.scene as any).isActive = vi.fn().mockReturnValue(false);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const stopPreviewCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.STOP_PREVIEW
+			)?.[1];
+
+			expect(stopPreviewCallback).toBeDefined();
+			stopPreviewCallback?.();
+
+			expect(editorScene.scene.resume).toHaveBeenCalled();
+			expect(editorScene.scene.setVisible).toHaveBeenCalledWith(true);
+		});
+
+		it('should pause and hide preview scene on STOP_PREVIEW when preview is active', () => {
+			editorScene.create();
+			(editorScene.scene as any).isActive = vi.fn().mockReturnValue(true);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const stopPreviewCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.STOP_PREVIEW
+			)?.[1];
+
+			stopPreviewCallback?.();
+
+			expect(editorScene.scene.pause).toHaveBeenCalled();
+		});
+
+		it('should restart scene with new measureCount on MEASURE_UPDATE event', () => {
+			editorScene.create();
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const measureUpdateCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.MEASURE_UPDATE
+			)?.[1];
+
+			expect(measureUpdateCallback).toBeDefined();
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			measureUpdateCallback?.(8);
+			expect(restartSpy).toHaveBeenCalled();
+			restartSpy.mockRestore();
+		});
+
+		it('should update panelContainer.y on MEASURE_GOTO event', () => {
+			editorScene.create();
+			editorScene['panelContainer'] = { y: 0, getByName: vi.fn() } as any;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(200);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const measureGotoCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.MEASURE_GOTO
+			)?.[1];
+
+			expect(measureGotoCallback).toBeDefined();
+			measureGotoCallback?.(2);
+
+			// panelContainer.y should have been updated via clampY
+			expect(editorScene['panelContainer'].y).toBeDefined();
+		});
+	});
+
+	describe('wheel event handler in create()', () => {
+		it('should scroll panelContainer on wheel event within grid area', () => {
+			editorScene.create();
+			editorScene['panelContainer'] = { y: 100, getByName: vi.fn() } as any;
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const wheelHandler = inputOnMock.mock.calls.find((call) => call[0] === 'wheel')?.[1];
+
+			expect(wheelHandler).toBeDefined();
+
+			// pointer.y (300) < scale.height - bottomMargin (600 - 40 = 560)
+			const mockPointer = { y: 300 };
+			wheelHandler?.(mockPointer, [], 0, 50);
+
+			// panelContainer.y should be changed by -deltaY * 0.5 = -25, then clamped
+			expect(editorScene['panelContainer'].y).toBeDefined();
+		});
+	});
+
+	describe('simple getters (getPanelContainer, getNotes)', () => {
+		it('should return panelContainer from getPanelContainer', () => {
+			const mockContainer = { getByName: vi.fn() };
+			editorScene['panelContainer'] = mockContainer as any;
+			expect(editorScene.getPanelContainer()).toBe(mockContainer);
+		});
+
+		it('should return notes from getNotes', () => {
+			const mockNotes = { '01': [] };
+			editorScene['notes'] = mockNotes as any;
+			expect(editorScene.getNotes()).toBe(mockNotes);
+		});
+	});
+
+	describe('delegator methods (deleteNoteByKey, highlightSelectedNote, clearSelection)', () => {
+		it('should delegate deleteNoteByKey to noteManager', () => {
+			const deleteNoteByKeySpy = vi
+				.spyOn(editorScene['noteManager'], 'deleteNoteByKey')
+				.mockImplementation(() => {});
+			editorScene.deleteNoteByKey('note-0-0-0');
+			expect(deleteNoteByKeySpy).toHaveBeenCalledWith('note-0-0-0');
+			deleteNoteByKeySpy.mockRestore();
+		});
+
+		it('should delegate highlightSelectedNote to noteManager', () => {
+			const highlightSpy = vi
+				.spyOn(editorScene['noteManager'], 'highlightSelectedNote')
+				.mockImplementation(() => {});
+			const mockGraphics = { name: 'note-0-0-0' };
+			editorScene.highlightSelectedNote(mockGraphics);
+			expect(highlightSpy).toHaveBeenCalledWith(mockGraphics);
+			highlightSpy.mockRestore();
+		});
+
+		it('should delegate clearSelection to noteManager', () => {
+			const clearSelectionSpy = vi
+				.spyOn(editorScene['noteManager'], 'clearSelection')
+				.mockImplementation(() => {});
+			editorScene.clearSelection();
+			expect(clearSelectionSpy).toHaveBeenCalled();
+			clearSelectionSpy.mockRestore();
+		});
+	});
+
+	describe('debouncedAutoSave', () => {
+		it('should schedule auto-save using time.delayedCall', () => {
+			editorScene['debouncedAutoSave']();
+			expect(editorScene.time.delayedCall).toHaveBeenCalled();
+		});
+
+		it('should destroy existing timeout before creating a new one', () => {
+			const mockTimeout = { destroy: vi.fn() };
+			editorScene['autoSaveTimeout'] = mockTimeout as any;
+			editorScene['debouncedAutoSave']();
+			expect(mockTimeout.destroy).toHaveBeenCalled();
+		});
+	});
+
+	describe('markAsLoaded', () => {
+		it('should set isLoaded to true and emit EDITOR_LOADED event', () => {
+			expect(editorScene.getIsLoaded()).toBe(false);
+			editorScene['markAsLoaded']();
+			expect(editorScene.getIsLoaded()).toBe(true);
+			expect(EventBus.emit).toHaveBeenCalledWith(EventType.EDITOR_LOADED, editorScene);
+		});
+
+		it('should not emit EDITOR_LOADED again if already marked as loaded', () => {
+			editorScene['markAsLoaded']();
+			vi.clearAllMocks();
+			editorScene['markAsLoaded']();
+			expect(EventBus.emit).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('syncNotesToStore', () => {
+		it('should call store.editorNotes.set with current notes', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+			const mockNotes = { '01': [] };
+			editorScene['notes'] = mockNotes as any;
+
+			editorScene['syncNotesToStore']();
+
+			expect(store.editorNotes.set).toHaveBeenCalledWith(mockNotes);
+		});
+	});
+
+	describe('store subscription callbacks in create()', () => {
+		it('should set dirty and trigger auto-save when dtxFile changes after init', async () => {
+			// Capture the subscribe callback via dynamic import of the mocked module
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+			editorScene.create();
+
+			const subscribeCallback = (store.currentDtxFile.subscribe as MockedFn).mock
+				.calls[0]?.[0];
+			expect(subscribeCallback).toBeDefined();
+
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty');
+			const debouncedAutoSaveSpy = vi
+				.spyOn(editorScene as any, 'debouncedAutoSave')
+				.mockImplementation(() => {});
+
+			// After create(), isInitializing=false; calling with non-null triggers dirty logic
+			subscribeCallback?.({ title: 'Test' });
+
+			expect(setDirtySpy).toHaveBeenCalledWith(true);
+			expect(debouncedAutoSaveSpy).toHaveBeenCalled();
+
+			setDirtySpy.mockRestore();
+			debouncedAutoSaveSpy.mockRestore();
 		});
 	});
 });

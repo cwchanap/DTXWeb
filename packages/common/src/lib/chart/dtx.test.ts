@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DTXFile, SoundChip } from './dtx';
 import { LaneMeasureNote } from './note';
+import { decodeFileWithEncodingDetection, decodeFileWithSpecificEncoding } from './encoding-utils';
 
 // Mock encoding utilities
 vi.mock('./encoding-utils', () => ({
@@ -575,6 +576,94 @@ describe('DTXFile', () => {
 
 			// The download property should be set after createElement returns the mock element
 			expect(createElementCall).toBeTruthy();
+		});
+	});
+
+	describe('parse', () => {
+		beforeEach(() => {
+			vi.clearAllMocks();
+		});
+
+		it('should parse from string content directly', async () => {
+			const content = '#TITLE: String Song\r\n#ARTIST: String Artist\r\n#BPM: 160\r\n';
+			const dtxFile = new DTXFile(content);
+
+			await dtxFile.parse();
+
+			expect(dtxFile.title).toBe('String Song');
+			expect(dtxFile.artist).toBe('String Artist');
+			expect(dtxFile.bpm).toBe(160);
+		});
+
+		it('should call parseWithEncodingDetection when parsing a File without encoding', async () => {
+			const mockContent = '#TITLE: Encoded Song\r\n#ARTIST: Encoded Artist\r\n#BPM: 120\r\n';
+			vi.mocked(decodeFileWithEncodingDetection).mockResolvedValue({
+				content: mockContent,
+				encoding: 'shift-jis'
+			});
+
+			const file = new File(['raw bytes'], 'test.dtx');
+			const dtxFile = new DTXFile(file);
+
+			await dtxFile.parse();
+
+			expect(decodeFileWithEncodingDetection).toHaveBeenCalledWith(
+				file,
+				expect.any(Function),
+				expect.any(Array),
+				expect.any(String)
+			);
+			expect(dtxFile.title).toBe('Encoded Song');
+			expect(dtxFile.artist).toBe('Encoded Artist');
+			expect(dtxFile.detectedEncoding).toBe('shift-jis');
+		});
+
+		it('should call parseWithSpecificEncoding when parsing a File with explicit encoding', async () => {
+			const mockContent = '#TITLE: UTF8 Song\r\n#BPM: 140\r\n';
+			vi.mocked(decodeFileWithSpecificEncoding).mockResolvedValue(mockContent);
+
+			const file = new File(['raw bytes'], 'test.dtx');
+			const dtxFile = new DTXFile(file);
+
+			await dtxFile.parse('utf-8');
+
+			expect(decodeFileWithSpecificEncoding).toHaveBeenCalledWith(file, 'utf-8');
+			expect(dtxFile.title).toBe('UTF8 Song');
+			expect(dtxFile.bpm).toBe(140);
+		});
+
+		it('should handle no file set gracefully', async () => {
+			const dtxFile = new DTXFile();
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+			await dtxFile.parse();
+
+			expect(consoleSpy).toHaveBeenCalledWith('File is not set');
+			consoleSpy.mockRestore();
+		});
+
+		it('should invoke DTX content validation callback correctly', async () => {
+			// Capture the validation callback and test it
+			let capturedValidateCallback: ((content: string) => boolean) | undefined;
+			vi.mocked(decodeFileWithEncodingDetection).mockImplementation(
+				async (_file, validateContent) => {
+					capturedValidateCallback = validateContent;
+					return { content: '#TITLE: Test\r\n', encoding: 'utf-8' };
+				}
+			);
+
+			const file = new File(['raw bytes'], 'test.dtx');
+			const dtxFile = new DTXFile(file);
+			await dtxFile.parse();
+
+			expect(capturedValidateCallback).toBeDefined();
+			// Valid DTX content
+			expect(capturedValidateCallback!('#TITLE: My Song')).toBe(true);
+			expect(capturedValidateCallback!('#ARTIST: Artist')).toBe(true);
+			expect(capturedValidateCallback!('#BPM: 120')).toBe(true);
+			expect(capturedValidateCallback!('#WAV01: kick.wav')).toBe(true);
+			// Invalid content
+			expect(capturedValidateCallback!('some random text')).toBe(false);
 		});
 	});
 

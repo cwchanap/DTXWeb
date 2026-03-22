@@ -47,7 +47,7 @@ describe('ChartListTableItem', () => {
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
 
-	it('renders a download link in blog mode when download_url is set', () => {
+	it('renders R2 download link and external link in blog mode', () => {
 		render(ChartListTableItem, {
 			props: {
 				...defaultProps,
@@ -55,7 +55,11 @@ describe('ChartListTableItem', () => {
 				item: { ...mockItem, download_url: 'https://dl.example.com' }
 			}
 		});
-		expect(screen.getByRole('link')).toBeInTheDocument();
+		const r2Link = screen.getByRole('link', { name: /download chart/i });
+		expect(r2Link).toBeInTheDocument();
+		expect(r2Link).toHaveAttribute('href', `/api/simFile/download/${mockItem.id}`);
+		const externalLink = screen.getByRole('link', { name: /external download link/i });
+		expect(externalLink).toHaveAttribute('href', 'https://dl.example.com');
 	});
 
 	it('renders action buttons in non-blog mode', () => {

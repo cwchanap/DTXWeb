@@ -31,9 +31,6 @@ vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 	Popover: PopoverStub
 }));
 
-// Hoisted controllable mock for parseFromMidi rejections in render tests
-const parseFromMidiMock = vi.hoisted(() => vi.fn());
-
 import { DTXFile } from '@dtx/common';
 import MidiToDtx from './+page.svelte';
 

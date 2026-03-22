@@ -128,9 +128,10 @@ describe('DTXSwitcherModal', () => {
 		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
 		await fireEvent.click(advancedBtn);
 
-		// FileManager.setFile should have been called for the matched chip
 		const { setFile } = await import('@dtx/common/services/fileManager');
-		expect(setFile).toHaveBeenCalled();
+		await vi.waitFor(() => {
+			expect(setFile).toHaveBeenCalledWith('key', kickFile);
+		});
 	});
 
 	it('maps sound chips to files using exact match when case-insensitive match fails', async () => {
@@ -150,7 +151,9 @@ describe('DTXSwitcherModal', () => {
 		await fireEvent.click(advancedBtn);
 
 		const { setFile } = await import('@dtx/common/services/fileManager');
-		expect(setFile).toHaveBeenCalled();
+		await vi.waitFor(() => {
+			expect(setFile).toHaveBeenCalledWith('key', exactFile);
+		});
 	});
 
 	it('handles sound chips with no matching file in simFile', async () => {
@@ -165,8 +168,9 @@ describe('DTXSwitcherModal', () => {
 
 		render(DTXSwitcherModal, { props: defaultProps });
 		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		await fireEvent.click(advancedBtn);
 		// Should not throw even when file is not found
-		await expect(fireEvent.click(advancedBtn)).resolves.not.toThrow();
+		expect(mockService.parseDTXFile).toHaveBeenCalled();
 	});
 
 	it('catches and logs errors from switchWorkspaceDTX', async () => {
@@ -184,9 +188,11 @@ describe('DTXSwitcherModal', () => {
 
 		render(DTXSwitcherModal, { props: defaultProps });
 		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
-		await fireEvent.click(advancedBtn);
-
-		expect(consoleSpy).toHaveBeenCalledWith('Error switching DTX file:', expect.any(Error));
-		consoleSpy.mockRestore();
+		try {
+			await fireEvent.click(advancedBtn);
+			expect(consoleSpy).toHaveBeenCalledWith('Error switching DTX file:', expect.any(Error));
+		} finally {
+			consoleSpy.mockRestore();
+		}
 	});
 });

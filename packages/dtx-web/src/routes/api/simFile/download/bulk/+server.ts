@@ -7,6 +7,19 @@ import { tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 const MAX_BULK_IDS = 20;
 
+const anonymizeIp = (ip: string): string => {
+	const octets = ip.split('.');
+	if (octets.length === 4) {
+		return `${octets[0]}.${octets[1]}.${octets[2]}.x`;
+	}
+
+	if (ip.includes(':')) {
+		return `${ip.split(':').slice(0, 4).join(':')}:*`;
+	}
+
+	return 'redacted';
+};
+
 export const POST = async ({
 	request,
 	platform,
@@ -61,23 +74,52 @@ export const POST = async ({
 		}
 
 		const user = locals.user;
+		const requestedIds = ids as number[];
 
 		// Resolve which IDs are accessible: published OR owned by the authenticated user
 		const simfileResults = await Promise.all(
-			(ids as number[]).map(async (id) => {
+			requestedIds.map(async (id) => {
 				const simfile = await getSimfileOwner(db, id);
-				if (!simfile) return null;
-				if (simfile.is_published || (user && simfile.user_id === user.id)) return id;
-				return null;
+				if (!simfile) return { id, status: 'not_found' as const };
+				if (simfile.is_published || (user && simfile.user_id === user.id)) {
+					return { id, status: 'accessible' as const };
+				}
+				return { id, status: user ? ('forbidden' as const) : ('unauthorized' as const) };
 			})
 		);
-		const accessibleIds = simfileResults.filter((id): id is number => id !== null);
+		const accessibleIds = simfileResults
+			.filter((result) => result.status === 'accessible')
+			.map((result) => result.id);
+		const unauthorizedIds = simfileResults
+			.filter((result) => result.status === 'unauthorized')
+			.map((result) => result.id);
+		const forbiddenIds = simfileResults
+			.filter((result) => result.status === 'forbidden')
+			.map((result) => result.id);
+		const missingIds = simfileResults
+			.filter((result) => result.status === 'not_found')
+			.map((result) => result.id);
 
-		if (accessibleIds.length === 0) {
+		if (unauthorizedIds.length > 0) {
 			return json(
-				{ error: 'No accessible charts found for the provided ids' },
-				{ status: 404 }
+				{ error: 'Unauthorized', inaccessibleIds: unauthorizedIds },
+				{ status: 401 }
 			);
+		}
+
+		if (forbiddenIds.length > 0) {
+			return json({ error: 'Forbidden', inaccessibleIds: forbiddenIds }, { status: 403 });
+		}
+
+		if (missingIds.length > 0) {
+			return json({ error: 'Simfile not found', missingIds }, { status: 404 });
+		}
+
+		const forwardedIp =
+			request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
+		const ip = forwardedIp?.split(',')[0].trim();
+		if (!ip || ip.toLowerCase() === 'unknown') {
+			return json({ error: 'Client IP address is required' }, { status: 400 });
 		}
 
 		// List all objects per simfile for rate limit size estimation
@@ -89,13 +131,6 @@ export const POST = async ({
 
 		// Rate limiting — skipped in local dev when KV binding is absent
 		const kv = platform?.env?.RATE_LIMIT;
-		const ip = (
-			request.headers.get('cf-connecting-ip') ??
-			request.headers.get('x-forwarded-for') ??
-			'unknown'
-		)
-			.split(',')[0]
-			.trim();
 
 		if (kv) {
 			const { allowed } = await tryConsumeRateLimit(kv, ip, estimatedBytes);
@@ -107,7 +142,11 @@ export const POST = async ({
 			}
 		}
 
-		logger.info(`Bulk downloading ${accessibleIds.length} simfiles for IP ${ip}`);
+		const requestId = request.headers.get('cf-ray') ?? request.headers.get('x-request-id');
+		logger.info(`Bulk downloading ${accessibleIds.length} simfiles`, {
+			anonymizedIp: anonymizeIp(ip),
+			...(requestId ? { requestId } : {})
+		});
 
 		// Fetch file contents for each simfile, nested under chart-{id}/ in the ZIP
 		const entriesPerSimfile = await Promise.all(
@@ -134,12 +173,6 @@ export const POST = async ({
 		});
 	} catch (error) {
 		logger.error('Bulk download error:', error);
-		return json(
-			{
-				error: 'Internal server error',
-				message: error instanceof Error ? error.message : 'Unknown error'
-			},
-			{ status: 500 }
-		);
+		return json({ error: 'Internal server error' }, { status: 500 });
 	}
 };

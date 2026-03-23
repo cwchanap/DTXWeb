@@ -260,6 +260,24 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 			expect(screen.getByText('External Link')).toBeInTheDocument();
 		});
+
+		it('does not render the download dropdown when the simfile id is missing', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: {
+						...mockItem,
+						id: undefined,
+						download_url: 'https://example.com/download1'
+					}
+				}
+			});
+			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('link', { name: /external download link/i })
+			).not.toBeInTheDocument();
+		});
 	});
 
 	describe('Menu Layering Regression', () => {

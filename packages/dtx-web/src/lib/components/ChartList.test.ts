@@ -254,4 +254,18 @@ describe('ChartList Component Logic', () => {
 			expect(Number(popoverZIndexMatch?.[1])).toBeGreaterThan(30);
 		});
 	});
+
+	describe('Bulk Download Error Handling', () => {
+		it('logs request and blob preparation failures while cleaning up download resources', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain("console.error('Bulk download request failed:'");
+			expect(source).toContain("console.error('Failed to prepare bulk download:'");
+			expect(source).toContain('const clearBulkSelection = () => {');
+			expect(source).toContain('URL.revokeObjectURL(downloadUrl);');
+		});
+	});
 });

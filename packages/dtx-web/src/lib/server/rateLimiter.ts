@@ -11,9 +11,10 @@ export interface RateLimitResult {
 const getRateLimitKey = (ip: string, nowMinute: number): string => `dl:${ip}:${nowMinute}`;
 
 /**
- * Atomically checks and consumes bandwidth quota for the given IP.
- * Reads KV once, checks the limit, and writes the incremented value only if allowed.
- * Returns { allowed: false } without writing when the quota would be exceeded.
+ * Best-effort bandwidth limiter for the given IP using Cloudflare KV.
+ * Cloudflare KV does not provide atomic read-modify-write semantics, so this reads once,
+ * writes only when the limit appears to allow it, and may still permit brief concurrent overages.
+ * Returns { allowed: false } without writing when the quota would be exceeded by the observed value.
  * @param nowMinute injectable for testing — defaults to current UTC minute
  */
 export const tryConsumeRateLimit = async (

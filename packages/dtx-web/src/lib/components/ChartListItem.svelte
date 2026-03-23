@@ -228,9 +228,9 @@
 			</div>
 		</div>
 
-		{#if isBlog}
+		{#if isBlog && item.id !== undefined}
 			<div class="mt-4">
-				<DownloadDropdown simfileId={item.id!} externalUrl={item.download_url ?? null} />
+				<DownloadDropdown simfileId={item.id} externalUrl={item.download_url ?? null} />
 			</div>
 		{/if}
 	</div>

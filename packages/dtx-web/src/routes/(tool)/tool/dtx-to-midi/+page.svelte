@@ -4,6 +4,13 @@
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import toastStore from '$lib/toaster';
 	import { DTXFile } from '@dtx/common';
+	import {
+		DEFAULT_LANE_NOTE_MAP,
+		isValidDtxFile,
+		generateMidiFilename,
+		formatFileSizeKB,
+		groupNotesByLane
+	} from './midi-helpers';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
@@ -18,20 +25,7 @@
 	let dtxFile = $state<DTXFile | null>(null);
 
 	// Default lane to MIDI note mapping (General MIDI drum map)
-	let laneNoteMap = $state<Record<string, number>>({
-		'01': 36, // Bass Drum
-		'02': 38, // Snare
-		'03': 42, // Closed Hi-Hat
-		'04': 46, // Open Hi-Hat
-		'05': 49, // Crash Cymbal
-		'06': 51, // Ride Cymbal
-		'07': 45, // Low Tom
-		'08': 47, // Mid Tom
-		'09': 50, // High Tom
-		'0A': 44, // Pedal Hi-Hat
-		'0B': 57, // Crash 2
-		'0C': 59 // Ride 2
-	});
+	let laneNoteMap = $state<Record<string, number>>({ ...DEFAULT_LANE_NOTE_MAP });
 
 	let fileInput: HTMLInputElement;
 
@@ -39,10 +33,7 @@
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 
-		if (
-			file &&
-			(file.name.toLowerCase().endsWith('.dtx') || file.name.toLowerCase().endsWith('.txt'))
-		) {
+		if (file && isValidDtxFile(file)) {
 			uploadedFile = file;
 			isConverted = false;
 		} else if (file) {
@@ -69,8 +60,7 @@
 			dtxFile = new DTXFile(uploadedFile);
 			await dtxFile.parse();
 
-			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
-			convertedFileName = `${baseName}.mid`;
+			convertedFileName = generateMidiFilename(uploadedFile.name);
 			isConverting = false;
 			isConverted = true;
 		} catch (error) {
@@ -88,16 +78,7 @@
 
 		try {
 			// Parse notes from DTX file and convert to MIDI
-			const notes = dtxFile.parseNotes();
-			const notesByLane: Record<string, import('@dtx/common').LaneMeasureNote[]> = {};
-
-			// Group notes by lane
-			notes.forEach((note) => {
-				if (!notesByLane[note.laneID]) {
-					notesByLane[note.laneID] = [];
-				}
-				notesByLane[note.laneID].push(note);
-			});
+			const notesByLane = groupNotesByLane(dtxFile.parseNotes());
 
 			// Export to MIDI using our custom converter
 			const midiData = dtxFile.exportToMidi(notesByLane, laneNoteMap);
@@ -272,7 +253,7 @@
 								<h3 class="text-lg font-medium text-slate-200">File Ready</h3>
 								<p class="text-slate-300">{uploadedFile.name}</p>
 								<p class="text-sm text-slate-400">
-									{(uploadedFile.size / 1024).toFixed(1)} KB
+									{formatFileSizeKB(uploadedFile.size)} KB
 								</p>
 							</div>
 							<div class="flex justify-center gap-3">

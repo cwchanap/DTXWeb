@@ -16,7 +16,8 @@ vi.mock('../../store', () => ({
 			subscribe: vi.fn((callback) => {
 				callback('01');
 				return vi.fn();
-			})
+			}),
+			set: vi.fn()
 		},
 		editorNotes: { set: vi.fn() },
 		keyBindings: {
@@ -156,6 +157,42 @@ describe('Editor Scene', () => {
 		expect(removeEventListenerSpy).toHaveBeenCalledWith('contextmenu', expect.any(Function));
 	});
 
+	it('should clean up subscriptions when restarted after create()', () => {
+		editorScene.create();
+
+		// Spy on the subscription cleanup functions
+		const activeNoteUnsub = editorScene['activeNoteSubscription'];
+		const keyBindingsUnsub = editorScene['keyBindingsSubscription'];
+		const dtxFileUnsub = editorScene['dtxFileSubscription'];
+		const soundChipUnsub = editorScene['soundChipSubscription'];
+
+		// All subscriptions should be set after create()
+		expect(activeNoteUnsub).toBeDefined();
+		expect(keyBindingsUnsub).toBeDefined();
+		expect(dtxFileUnsub).toBeDefined();
+		expect(soundChipUnsub).toBeDefined();
+
+		editorScene.restart();
+
+		// After restart, subscriptions should be cleared
+		expect(editorScene['activeNoteSubscription']).toBeNull();
+		expect(editorScene['keyBindingsSubscription']).toBeNull();
+		expect(editorScene['dtxFileSubscription']).toBeNull();
+		expect(editorScene['soundChipSubscription']).toBeNull();
+	});
+
+	it('should destroy and null out autoSaveTimeout when restarting with active timeout', () => {
+		editorScene.create();
+
+		const mockTimeout = { destroy: vi.fn() };
+		editorScene['autoSaveTimeout'] = mockTimeout as any;
+
+		editorScene.restart();
+
+		expect(mockTimeout.destroy).toHaveBeenCalled();
+		expect(editorScene['autoSaveTimeout']).toBeNull();
+	});
+
 	it('should enable browser context menu when scene is shut down', () => {
 		// First create the scene to set up the event listener
 		editorScene.create();
@@ -168,6 +205,18 @@ describe('Editor Scene', () => {
 
 		// Verify that removeEventListener was called
 		expect(removeEventListenerSpy).toHaveBeenCalledWith('contextmenu', expect.any(Function));
+	});
+
+	it('should destroy and null out autoSaveTimeout when shutting down with active timeout', () => {
+		editorScene.create();
+
+		const mockTimeout = { destroy: vi.fn() };
+		editorScene['autoSaveTimeout'] = mockTimeout as any;
+
+		editorScene.shutdown();
+
+		expect(mockTimeout.destroy).toHaveBeenCalled();
+		expect(editorScene['autoSaveTimeout']).toBeNull();
 	});
 
 	it('should handle missing game container gracefully', () => {
@@ -361,6 +410,43 @@ describe('Editor Scene', () => {
 	describe('getIsLoaded', () => {
 		it('should return false before scene is loaded', () => {
 			expect(editorScene.getIsLoaded()).toBe(false);
+		});
+	});
+
+	describe('update', () => {
+		it('should not throw when called', () => {
+			expect(() => editorScene.update()).not.toThrow();
+		});
+	});
+
+	describe('store subscription callbacks: activeNote and keyBindings', () => {
+		it('should call updateCursorForEditingMode when activeNote changes while editing', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			const updateCursorSpy = vi
+				.spyOn(editorScene as any, 'updateCursorForEditingMode')
+				.mockImplementation(() => {});
+
+			const subscribeCallback = (store.activeNote.subscribe as MockedFn).mock.calls[0]?.[0];
+			subscribeCallback?.('11');
+
+			expect(updateCursorSpy).toHaveBeenCalled();
+			updateCursorSpy.mockRestore();
+		});
+
+		it('should populate keyBindings map when keyBindings store changes with non-empty data', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+			editorScene.create();
+
+			const subscribeCallback = (store.keyBindings.subscribe as MockedFn).mock.calls[0]?.[0];
+			subscribeCallback?.({ '11': 'h', '12': 's' });
+
+			expect(editorScene['keyBindings']['h']).toBe('11');
+			expect(editorScene['keyBindings']['s']).toBe('12');
 		});
 	});
 
@@ -945,6 +1031,575 @@ describe('Editor Scene', () => {
 
 			setDirtySpy.mockRestore();
 			debouncedAutoSaveSpy.mockRestore();
+		});
+	});
+
+	describe('store subscription: soundChip changes after init', () => {
+		it('should set dirty and trigger auto-save when soundChips are truthy after init', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+			editorScene.create();
+
+			const subscribeCallback = (store.currentSoundChip.subscribe as MockedFn).mock
+				.calls[0]?.[0];
+			expect(subscribeCallback).toBeDefined();
+
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty');
+			const debouncedAutoSaveSpy = vi
+				.spyOn(editorScene as any, 'debouncedAutoSave')
+				.mockImplementation(() => {});
+
+			// After create(), isInitializing=false; truthy soundChips triggers dirty logic
+			subscribeCallback?.([{ id: 1 }]);
+
+			expect(setDirtySpy).toHaveBeenCalledWith(true);
+			expect(debouncedAutoSaveSpy).toHaveBeenCalled();
+
+			setDirtySpy.mockRestore();
+			debouncedAutoSaveSpy.mockRestore();
+		});
+	});
+
+	describe('redrawScene', () => {
+		let mockPanelContainer: { removeAll: ReturnType<typeof vi.fn> };
+		let mockFooterContainer: { removeAll: ReturnType<typeof vi.fn> };
+		let drawPanelSpy: ReturnType<typeof vi.spyOn>;
+		let drawNotesSpy: ReturnType<typeof vi.spyOn>;
+		let debouncedAutoSaveSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			editorScene.create();
+			mockPanelContainer = { removeAll: vi.fn() };
+			mockFooterContainer = { removeAll: vi.fn() };
+			editorScene['panelContainer'] = mockPanelContainer as any;
+			editorScene['footerContainer'] = mockFooterContainer as any;
+
+			drawPanelSpy = vi.spyOn(editorScene, 'drawPanel').mockImplementation(() => {});
+			drawNotesSpy = vi.spyOn(editorScene, 'drawNotes').mockImplementation(() => {});
+			debouncedAutoSaveSpy = vi
+				.spyOn(editorScene as any, 'debouncedAutoSave')
+				.mockImplementation(() => {});
+		});
+
+		afterEach(() => {
+			drawPanelSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			debouncedAutoSaveSpy.mockRestore();
+		});
+
+		it('should clear panel and footer containers', () => {
+			editorScene['redrawScene']();
+
+			expect(mockPanelContainer.removeAll).toHaveBeenCalledWith(true);
+			expect(mockFooterContainer.removeAll).toHaveBeenCalledWith(true);
+		});
+
+		it('should null out all graphics references', () => {
+			editorScene['cellLinesGraphics'] = {} as any;
+			editorScene['beatLinesGraphics'] = {} as any;
+			editorScene['measureLinesGraphics'] = {} as any;
+			editorScene['verticalLinesGraphics'] = {} as any;
+
+			editorScene['redrawScene']();
+
+			expect(editorScene['cellLinesGraphics']).toBeNull();
+			expect(editorScene['beatLinesGraphics']).toBeNull();
+			expect(editorScene['measureLinesGraphics']).toBeNull();
+			expect(editorScene['verticalLinesGraphics']).toBeNull();
+		});
+
+		it('should call drawPanel and drawNotes to rebuild the scene', () => {
+			editorScene['redrawScene']();
+
+			expect(drawPanelSpy).toHaveBeenCalled();
+			expect(drawNotesSpy).toHaveBeenCalled();
+		});
+
+		it('should call setDirty and debouncedAutoSave', () => {
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty');
+
+			editorScene['redrawScene']();
+
+			expect(setDirtySpy).toHaveBeenCalledWith(true);
+			expect(debouncedAutoSaveSpy).toHaveBeenCalled();
+
+			setDirtySpy.mockRestore();
+		});
+	});
+
+	describe('setupKeyBindingListener', () => {
+		beforeEach(() => {
+			editorScene.create();
+			// Enable editing mode and set up key bindings
+			editorScene['isEditing'] = true;
+			editorScene['keyBindings'] = { h: '11', s: '12' };
+		});
+
+		afterEach(() => {
+			// Clean up the registered listener after each test
+			editorScene['removeKeyBindingListener']();
+		});
+
+		it('should register a keyBindingHandler after create()', () => {
+			// create() already calls setupKeyBindingListener, so handler should be defined
+			expect(editorScene['keyBindingHandler']).toBeDefined();
+			expect(typeof editorScene['keyBindingHandler']).toBe('function');
+		});
+
+		it('should activate the bound note when a mapped key is pressed', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+
+			const updateCursorSpy = vi
+				.spyOn(editorScene as any, 'updateCursorForEditingMode')
+				.mockImplementation(() => {});
+
+			// Dispatch to document.body so event.target is a real element (not null)
+			const event = new KeyboardEvent('keydown', {
+				key: 'h',
+				bubbles: true,
+				cancelable: true
+			});
+			document.body.dispatchEvent(event);
+
+			expect(store.activeNote.set).toHaveBeenCalledWith('11');
+			expect(updateCursorSpy).toHaveBeenCalled();
+
+			updateCursorSpy.mockRestore();
+		});
+
+		it('should not activate note when modifier keys are held', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'h',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			editorScene['keyBindingHandler']?.(event);
+
+			expect(store.activeNote.set).not.toHaveBeenCalled();
+		});
+
+		it('should not activate note when editor is not in editing mode', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+			editorScene['isEditing'] = false;
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'h',
+				bubbles: true,
+				cancelable: true
+			});
+			editorScene['keyBindingHandler']?.(event);
+
+			expect(store.activeNote.set).not.toHaveBeenCalled();
+		});
+
+		it('should not activate note when typing in an INPUT element', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+
+			const input = document.createElement('input');
+			input.type = 'text';
+			document.body.appendChild(input);
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'h',
+				bubbles: true,
+				cancelable: true
+			});
+			Object.defineProperty(event, 'target', { value: input, writable: false });
+			editorScene['keyBindingHandler']?.(event);
+
+			expect(store.activeNote.set).not.toHaveBeenCalled();
+
+			document.body.removeChild(input);
+		});
+
+		it('should not activate note when key has no binding', async () => {
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+
+			// Dispatch to document.body so event.target is a real element (not null)
+			const event = new KeyboardEvent('keydown', {
+				key: 'z', // 'z' has no binding
+				bubbles: true,
+				cancelable: true
+			});
+			document.body.dispatchEvent(event);
+
+			expect(store.activeNote.set).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('removeKeyBindingListener', () => {
+		it('should remove the keydown listener from document', () => {
+			editorScene.create();
+			const handler = editorScene['keyBindingHandler'];
+			expect(handler).toBeDefined();
+
+			const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
+			editorScene['removeKeyBindingListener']();
+
+			expect(removeEventListenerSpy).toHaveBeenCalledWith('keydown', handler);
+			expect(editorScene['keyBindingHandler']).toBeNull();
+
+			removeEventListenerSpy.mockRestore();
+		});
+
+		it('should do nothing when keyBindingHandler is already null', () => {
+			editorScene['keyBindingHandler'] = null;
+			const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
+
+			editorScene['removeKeyBindingListener']();
+
+			expect(removeEventListenerSpy).not.toHaveBeenCalled();
+			removeEventListenerSpy.mockRestore();
+		});
+	});
+
+	describe('debouncedAutoSave callback execution', () => {
+		it('should call autoSaveChart and null out timeout in the delayed callback', async () => {
+			const autoSaveChartSpy = vi
+				.spyOn(editorScene, 'autoSaveChart')
+				.mockResolvedValue(undefined);
+
+			// Capture the callback passed to time.delayedCall
+			let capturedCallback: (() => Promise<void>) | null = null;
+			(editorScene.time.delayedCall as ReturnType<typeof vi.fn>).mockImplementation(
+				(_delay: number, cb: () => Promise<void>) => {
+					capturedCallback = cb;
+					return { destroy: vi.fn() };
+				}
+			);
+
+			editorScene['debouncedAutoSave']();
+			expect(capturedCallback).not.toBeNull();
+
+			// Execute the captured callback
+			await capturedCallback!();
+
+			expect(autoSaveChartSpy).toHaveBeenCalled();
+			expect(editorScene['autoSaveTimeout']).toBeNull();
+
+			autoSaveChartSpy.mockRestore();
+		});
+	});
+
+	describe('createNoteCursor', () => {
+		let mockCtx: Record<string, ReturnType<typeof vi.fn>>;
+		let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
+		let originalToDataURL: typeof HTMLCanvasElement.prototype.toDataURL;
+
+		beforeEach(() => {
+			// Set up a mock 2D canvas context for all createNoteCursor tests
+			mockCtx = {
+				fillStyle: '',
+				strokeStyle: '',
+				lineWidth: 0,
+				font: '',
+				textAlign: '',
+				textBaseline: '',
+				fillRect: vi.fn(),
+				strokeRect: vi.fn(),
+				strokeText: vi.fn(),
+				fillText: vi.fn()
+			};
+			originalGetContext = HTMLCanvasElement.prototype.getContext;
+			originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+
+			HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(mockCtx) as any;
+			HTMLCanvasElement.prototype.toDataURL = vi
+				.fn()
+				.mockReturnValue('data:image/png;base64,abc');
+		});
+
+		afterEach(() => {
+			HTMLCanvasElement.prototype.getContext = originalGetContext;
+			HTMLCanvasElement.prototype.toDataURL = originalToDataURL;
+		});
+
+		it('should draw active note text on cursor when activeNote is truthy', async () => {
+			const { get } = await import('svelte/store');
+			vi.mocked(get).mockReturnValue('11' as any);
+
+			const cursor = editorScene['createNoteCursor'](0);
+
+			// Should call text drawing functions
+			expect(mockCtx.strokeText).toHaveBeenCalledWith(
+				'11',
+				expect.any(Number),
+				expect.any(Number)
+			);
+			expect(mockCtx.fillText).toHaveBeenCalledWith(
+				'11',
+				expect.any(Number),
+				expect.any(Number)
+			);
+			// Should return a cursor URL
+			expect(cursor).toContain('url(');
+			expect(cursor).toContain('auto');
+		});
+
+		it('should not draw text when activeNote is falsy', async () => {
+			const { get } = await import('svelte/store');
+			vi.mocked(get).mockReturnValue(null as any);
+
+			const cursor = editorScene['createNoteCursor'](0);
+
+			expect(mockCtx.strokeText).not.toHaveBeenCalled();
+			expect(mockCtx.fillText).not.toHaveBeenCalled();
+			expect(cursor).toContain('url(');
+		});
+
+		it('should return default when canvas context is unavailable', () => {
+			HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(null) as any;
+
+			const cursor = editorScene['createNoteCursor'](0);
+
+			expect(cursor).toBe('default');
+		});
+	});
+
+	describe('drawFooterLane', () => {
+		it('should add a text element to the footer container', () => {
+			editorScene.create();
+			editorScene['footerContainer'] = { add: vi.fn() } as any;
+
+			const laneConfig = { name: 'HH', noteColor: 0x0d1cde, id: '11', playable: true };
+			editorScene.drawFooterLane(laneConfig, 100);
+
+			expect(editorScene['footerContainer'].add).toHaveBeenCalled();
+			expect(editorScene.add.text).toHaveBeenCalled();
+		});
+	});
+
+	describe('drawNote', () => {
+		let mockPanelContainer: {
+			getByName: ReturnType<typeof vi.fn>;
+			add: ReturnType<typeof vi.fn>;
+		};
+
+		beforeEach(() => {
+			mockPanelContainer = {
+				getByName: vi.fn().mockReturnValue(null),
+				add: vi.fn()
+			};
+			editorScene['panelContainer'] = mockPanelContainer as any;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+			vi.spyOn(editorScene['noteManager'], 'findNearbyNotes').mockReturnValue([]);
+		});
+
+		it('should return false when laneConfig does not exist for given laneIndex', () => {
+			const result = editorScene.drawNote(0, 9999, 0, '01');
+			expect(result).toBe(false);
+		});
+
+		it('should return false when note already exists at position', () => {
+			mockPanelContainer.getByName.mockReturnValue({ name: 'note-0-0-0' });
+
+			const result = editorScene.drawNote(0, 0, 0, '01');
+			expect(result).toBe(false);
+		});
+
+		it('should return true when drawing a new note', () => {
+			const result = editorScene.drawNote(0, 0, 0, '01');
+			expect(result).toBe(true);
+		});
+
+		it('should create graphics and add to panelContainer for new note', () => {
+			editorScene.drawNote(0, 0, 0, '01');
+
+			expect(editorScene.add.graphics).toHaveBeenCalled();
+			// Should add graphics and text to panelContainer (2 calls)
+			expect(mockPanelContainer.add).toHaveBeenCalledTimes(2);
+		});
+
+		it('should create text label and add to panelContainer', () => {
+			editorScene.drawNote(0, 0, 0, '11');
+
+			expect(editorScene.add.text).toHaveBeenCalled();
+		});
+
+		it('should use reduced opacity fill for stacked notes', () => {
+			const nearbyNotes = [{ key: 'existing-note', measure: 0, laneIndex: 0 }];
+			vi.spyOn(editorScene['noteManager'], 'findNearbyNotes').mockReturnValue(
+				nearbyNotes as any
+			);
+
+			editorScene.drawNote(0, 0, 0, '01');
+
+			// The graphics fillStyle should be called with 0.9 opacity for stacked notes
+			const graphicsMock = (editorScene.add.graphics as ReturnType<typeof vi.fn>).mock
+				.results[0]?.value;
+			expect(graphicsMock?.fillStyle).toHaveBeenCalledWith(expect.any(Number), 0.9);
+		});
+
+		it('should use full opacity fill for non-stacked notes', () => {
+			vi.spyOn(editorScene['noteManager'], 'findNearbyNotes').mockReturnValue([]);
+
+			editorScene.drawNote(0, 0, 0, '01');
+
+			const graphicsMock = (editorScene.add.graphics as ReturnType<typeof vi.fn>).mock
+				.results[0]?.value;
+			expect(graphicsMock?.fillStyle).toHaveBeenCalledWith(expect.any(Number), 1.0);
+		});
+
+		it('should handle cellOffset with wholeCells > 0 (triggers for-loop body)', () => {
+			// cellOffset=0.5, cellsPerMeasure=16: visualCellPosition=8 → wholeCells=8, fractionalCell=0
+			// This exercises the getCellHeight loop (lines 739-741)
+			const result = editorScene.drawNote(0, 0, 0.5, '01');
+			expect(result).toBe(true);
+		});
+
+		it('should handle cellOffset with fractionalCell > 0 (triggers fractional branch)', () => {
+			// cellOffset=1/12: visualCellPosition=1.333 → wholeCells=1, fractionalCell=0.333
+			// This exercises the fractionalCell if-block (lines 743-746)
+			const result = editorScene.drawNote(0, 0, 1 / 12, '01');
+			expect(result).toBe(true);
+		});
+	});
+
+	describe('redrawGridLines', () => {
+		let mockPanelContainer: {
+			remove: ReturnType<typeof vi.fn>;
+			addAt: ReturnType<typeof vi.fn>;
+		};
+		let drawHorizontalSpy: ReturnType<typeof vi.spyOn>;
+		let debouncedAutoSaveSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			editorScene.create();
+			mockPanelContainer = { remove: vi.fn(), addAt: vi.fn() };
+			editorScene['panelContainer'] = mockPanelContainer as any;
+
+			drawHorizontalSpy = vi
+				.spyOn(editorScene as any, 'drawHorizontalGridLines')
+				.mockImplementation(() => {});
+			debouncedAutoSaveSpy = vi
+				.spyOn(editorScene as any, 'debouncedAutoSave')
+				.mockImplementation(() => {});
+		});
+
+		afterEach(() => {
+			drawHorizontalSpy.mockRestore();
+			debouncedAutoSaveSpy.mockRestore();
+		});
+
+		it('should remove and destroy existing grid graphics', () => {
+			const mockGraphics = { destroy: vi.fn() };
+			editorScene['cellLinesGraphics'] = mockGraphics as any;
+			editorScene['beatLinesGraphics'] = mockGraphics as any;
+			editorScene['measureLinesGraphics'] = mockGraphics as any;
+
+			editorScene['redrawGridLines']();
+
+			expect(mockPanelContainer.remove).toHaveBeenCalledTimes(3);
+			expect(mockGraphics.destroy).toHaveBeenCalledTimes(3);
+		});
+
+		it('should null out graphics references after removal', () => {
+			const mockGraphics = { destroy: vi.fn() };
+			editorScene['cellLinesGraphics'] = mockGraphics as any;
+			editorScene['beatLinesGraphics'] = mockGraphics as any;
+			editorScene['measureLinesGraphics'] = mockGraphics as any;
+
+			editorScene['redrawGridLines']();
+
+			expect(editorScene['cellLinesGraphics']).toBeNull();
+			expect(editorScene['beatLinesGraphics']).toBeNull();
+			expect(editorScene['measureLinesGraphics']).toBeNull();
+		});
+
+		it('should skip removal when no existing grid graphics', () => {
+			editorScene['cellLinesGraphics'] = null;
+			editorScene['beatLinesGraphics'] = null;
+			editorScene['measureLinesGraphics'] = null;
+
+			editorScene['redrawGridLines']();
+
+			expect(mockPanelContainer.remove).not.toHaveBeenCalled();
+		});
+
+		it('should call drawHorizontalGridLines to recreate lines', () => {
+			editorScene['redrawGridLines']();
+
+			expect(drawHorizontalSpy).toHaveBeenCalled();
+		});
+
+		it('should call setDirty and debouncedAutoSave', () => {
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty');
+
+			editorScene['redrawGridLines']();
+
+			expect(setDirtySpy).toHaveBeenCalledWith(true);
+			expect(debouncedAutoSaveSpy).toHaveBeenCalled();
+
+			setDirtySpy.mockRestore();
+		});
+	});
+
+	describe('drawHorizontalGridLines', () => {
+		let mockPanelContainer: {
+			addAt: ReturnType<typeof vi.fn>;
+		};
+		let drawMeasureSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			editorScene.create();
+			mockPanelContainer = { addAt: vi.fn() };
+			editorScene['panelContainer'] = mockPanelContainer as any;
+			editorScene['measureCount'] = 1;
+
+			drawMeasureSpy = vi.spyOn(editorScene as any, 'drawMeasure').mockReturnValue(400);
+		});
+
+		afterEach(() => {
+			drawMeasureSpy.mockRestore();
+		});
+
+		it('should create three graphics objects for cell, beat, and measure lines', () => {
+			// Reset the mock call count after create() may have called add.graphics
+			(editorScene.add.graphics as ReturnType<typeof vi.fn>).mockClear();
+
+			editorScene['drawHorizontalGridLines']();
+
+			expect(editorScene.add.graphics).toHaveBeenCalledTimes(3);
+		});
+
+		it('should add all three graphics to panelContainer at index 0', () => {
+			editorScene['measureCount'] = 0;
+
+			editorScene['drawHorizontalGridLines']();
+
+			expect(mockPanelContainer.addAt).toHaveBeenCalledTimes(3);
+			for (const call of mockPanelContainer.addAt.mock.calls) {
+				expect(call[1]).toBe(0);
+			}
+		});
+
+		it('should call drawMeasure for each measure', () => {
+			editorScene['measureCount'] = 3;
+			drawMeasureSpy.mockReturnValue(400);
+
+			editorScene['drawHorizontalGridLines']();
+
+			expect(drawMeasureSpy).toHaveBeenCalledTimes(3);
+		});
+
+		it('should set cellLinesGraphics, beatLinesGraphics, and measureLinesGraphics', () => {
+			editorScene['cellLinesGraphics'] = null;
+			editorScene['beatLinesGraphics'] = null;
+			editorScene['measureLinesGraphics'] = null;
+
+			editorScene['drawHorizontalGridLines']();
+
+			expect(editorScene['cellLinesGraphics']).not.toBeNull();
+			expect(editorScene['beatLinesGraphics']).not.toBeNull();
+			expect(editorScene['measureLinesGraphics']).not.toBeNull();
 		});
 	});
 });

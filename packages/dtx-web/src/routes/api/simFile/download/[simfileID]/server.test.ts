@@ -161,4 +161,17 @@ describe('GET /api/simFile/download/[simfileID]', () => {
 		} as never);
 		expect(res.status).toBe(200);
 	});
+
+	it('returns a generic 500 payload on unexpected errors', async () => {
+		vi.mocked(listAllR2Objects).mockRejectedValueOnce(new Error('bucket exploded'));
+		const res = await GET({
+			params: { simfileID: '42' },
+			platform: createMockPlatform(),
+			locals: { user: null },
+			request: createMockRequest({ 'cf-connecting-ip': '1.2.3.4' })
+		} as never);
+		expect(res.status).toBe(500);
+		expect(await res.json()).toEqual({ error: 'Internal server error' });
+		expect(logger.error).toHaveBeenCalledWith('Download error:', expect.any(Error));
+	});
 });

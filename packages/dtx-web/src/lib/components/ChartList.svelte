@@ -186,6 +186,11 @@
 		selectedIds = next;
 	};
 
+	const clearBulkSelection = () => {
+		selectMode = false;
+		selectedIds = new Set();
+	};
+
 	const handleBulkDownload = async () => {
 		if (selectedIds.size === 0) return;
 		bulkDownloading = true;
@@ -204,21 +209,39 @@
 					// ignore parse error
 				}
 				toastStore.error({ title: errMsg, duration: 3000 });
+				clearBulkSelection();
 				return;
 			}
-			const blob = await response.blob();
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = 'drumery-charts.zip';
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-			selectMode = false;
-			selectedIds = new Set();
-		} catch {
+
+			let downloadUrl: string | null = null;
+			let downloadAnchor: HTMLAnchorElement | null = null;
+
+			try {
+				const blob = await response.blob();
+				downloadUrl = URL.createObjectURL(blob);
+				downloadAnchor = document.createElement('a');
+				downloadAnchor.href = downloadUrl;
+				downloadAnchor.download = 'drumery-charts.zip';
+				document.body.appendChild(downloadAnchor);
+				downloadAnchor.click();
+				clearBulkSelection();
+			} catch (error) {
+				console.error('Failed to prepare bulk download:', error);
+				toastStore.error({ title: 'Bulk download failed', duration: 3000 });
+				clearBulkSelection();
+			} finally {
+				if (downloadAnchor && document.body.contains(downloadAnchor)) {
+					document.body.removeChild(downloadAnchor);
+				}
+
+				if (downloadUrl) {
+					URL.revokeObjectURL(downloadUrl);
+				}
+			}
+		} catch (error) {
+			console.error('Bulk download request failed:', error);
 			toastStore.error({ title: 'Bulk download failed', duration: 3000 });
+			clearBulkSelection();
 		} finally {
 			bulkDownloading = false;
 		}

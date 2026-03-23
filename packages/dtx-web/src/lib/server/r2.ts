@@ -15,16 +15,19 @@ export const listAllR2Objects = async (
 	bucket: R2Bucket,
 	prefix: string
 ): Promise<R2ObjectMeta[]> => {
-	let allObjects: R2ObjectMeta[] = [];
+	const allObjects: R2ObjectMeta[] = [];
 	let cursor: string | undefined;
 	let isTruncated = true;
 
 	while (isTruncated) {
 		const listResult = await bucket.list({ prefix, limit: 1000, cursor });
 		const objects = listResult.objects ?? [];
-		allObjects = allObjects.concat(
-			objects.map((obj) => ({ key: obj.key, size: obj.size, uploaded: obj.uploaded }))
-		);
+		const mappedObjects = objects.map((obj) => ({
+			key: obj.key,
+			size: obj.size,
+			uploaded: obj.uploaded
+		}));
+		allObjects.push(...mappedObjects);
 
 		isTruncated = listResult.truncated === true;
 		if (isTruncated) {

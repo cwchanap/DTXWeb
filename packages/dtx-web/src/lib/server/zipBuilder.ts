@@ -7,6 +7,8 @@ export interface ZipEntry {
 	data: ArrayBuffer;
 }
 
+const MAX_CONCURRENT_R2_FETCHES = 4;
+
 /**
  * Fetches the body of each R2 object and returns ZipEntry records.
  * Objects whose key yields an empty filename after stripping the keyPrefix are skipped.
@@ -20,17 +22,32 @@ export const fetchR2Entries = async (
 	keyPrefix: string,
 	pathPrefix: string
 ): Promise<ZipEntry[]> => {
-	const entries = await Promise.all(
-		objects.map(async (obj) => {
-			const filename = obj.key.startsWith(keyPrefix) ? obj.key.slice(keyPrefix.length) : '';
-			if (!filename || filename.includes('..') || filename.startsWith('/')) return null;
-			const r2obj = await bucket.get(obj.key);
-			if (!r2obj) return null;
-			const data = await r2obj.arrayBuffer();
-			const path = pathPrefix ? `${pathPrefix}/${filename}` : filename;
-			return { path, data } satisfies ZipEntry;
+	const entries: Array<ZipEntry | null> = new Array(objects.length).fill(null);
+	let nextIndex = 0;
+
+	const fetchEntry = async (obj: R2ObjectMeta): Promise<ZipEntry | null> => {
+		const filename = obj.key.startsWith(keyPrefix) ? obj.key.slice(keyPrefix.length) : '';
+		if (!filename || filename.includes('..') || filename.startsWith('/')) return null;
+
+		const r2obj = await bucket.get(obj.key);
+		if (!r2obj) return null;
+
+		const data = await r2obj.arrayBuffer();
+		const path = pathPrefix ? `${pathPrefix}/${filename}` : filename;
+		return { path, data } satisfies ZipEntry;
+	};
+
+	const workerCount = Math.min(MAX_CONCURRENT_R2_FETCHES, objects.length);
+	await Promise.all(
+		Array.from({ length: workerCount }, async () => {
+			while (nextIndex < objects.length) {
+				const currentIndex = nextIndex;
+				nextIndex += 1;
+				entries[currentIndex] = await fetchEntry(objects[currentIndex]);
+			}
 		})
 	);
+
 	return entries.filter((e): e is ZipEntry => e !== null);
 };
 

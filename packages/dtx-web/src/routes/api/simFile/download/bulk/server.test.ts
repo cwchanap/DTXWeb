@@ -14,9 +14,9 @@ vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/zipBuilder', () => ({ fetchR2Entries: vi.fn(), buildZip: vi.fn() }));
 vi.mock('$lib/server/rateLimiter', () => ({ tryConsumeRateLimit: vi.fn() }));
 
-const createRequest = (body: unknown): Request =>
+const createRequest = (body: unknown, headers?: Record<string, string>): Request =>
 	({
-		headers: new Headers({ 'cf-connecting-ip': '1.2.3.4' }),
+		headers: new Headers({ 'cf-connecting-ip': '1.2.3.4', ...headers }),
 		json: async () => body
 	}) as unknown as Request;
 
@@ -111,14 +111,17 @@ describe('POST /api/simFile/download/bulk', () => {
 		expect(logger.error).toHaveBeenCalledWith('DTXFILE_BUCKET binding not available');
 	});
 
-	it('returns 404 when no accessible charts found', async () => {
-		vi.mocked(getSimfileOwner).mockResolvedValue(null);
+	it('returns 404 when any requested chart is missing', async () => {
+		vi.mocked(getSimfileOwner)
+			.mockResolvedValueOnce({ user_id: 'owner', is_published: 1 })
+			.mockResolvedValueOnce(null);
 		const res = await POST({
-			request: createRequest({ ids: [99, 100] }),
+			request: createRequest({ ids: [1, 99] }),
 			platform: createMockPlatform(),
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(404);
+		expect(await res.json()).toMatchObject({ error: 'Simfile not found', missingIds: [99] });
 	});
 
 	it('returns 429 when rate limit is exceeded', async () => {
@@ -144,7 +147,7 @@ describe('POST /api/simFile/download/bulk', () => {
 		);
 	});
 
-	it('skips unpublished charts for unauthenticated users', async () => {
+	it('returns 401 when any requested chart is unpublished for an unauthenticated user', async () => {
 		vi.mocked(getSimfileOwner)
 			.mockResolvedValueOnce({ user_id: 'owner', is_published: 1 })
 			.mockResolvedValueOnce({ user_id: 'owner', is_published: 0 });
@@ -153,9 +156,62 @@ describe('POST /api/simFile/download/bulk', () => {
 			platform: createMockPlatform(),
 			locals: { user: null }
 		} as never);
-		expect(res.status).toBe(200);
-		// Only 1 simfile was accessible, so listAllR2Objects called once
-		expect(listAllR2Objects).toHaveBeenCalledTimes(1);
+		expect(res.status).toBe(401);
+		expect(await res.json()).toMatchObject({ error: 'Unauthorized', inaccessibleIds: [2] });
+		expect(listAllR2Objects).not.toHaveBeenCalled();
+	});
+
+	it('returns 403 when any requested chart is inaccessible to a different authenticated user', async () => {
+		vi.mocked(getSimfileOwner)
+			.mockResolvedValueOnce({ user_id: 'owner', is_published: 1 })
+			.mockResolvedValueOnce({ user_id: 'owner', is_published: 0 });
+		const res = await POST({
+			request: createRequest({ ids: [1, 2] }),
+			platform: createMockPlatform(),
+			locals: { user: { id: 'other-user', email: 'x@x.com' } as never }
+		} as never);
+		expect(res.status).toBe(403);
+		expect(await res.json()).toMatchObject({ error: 'Forbidden', inaccessibleIds: [2] });
+		expect(listAllR2Objects).not.toHaveBeenCalled();
+	});
+
+	it('returns 400 when the client IP header is missing', async () => {
+		const req = {
+			headers: new Headers(),
+			json: async () => ({ ids: [1] })
+		} as unknown as Request;
+		const res = await POST({
+			request: req,
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({ error: 'Client IP address is required' });
+		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
+	});
+
+	it('logs an anonymized client identifier for successful bulk downloads', async () => {
+		await POST({
+			request: createRequest({ ids: [1, 2] }),
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+		expect(logger.info).toHaveBeenCalledWith(
+			'Bulk downloading 2 simfiles',
+			expect.objectContaining({ anonymizedIp: '1.2.3.x' })
+		);
+	});
+
+	it('returns a generic 500 payload on unexpected errors', async () => {
+		vi.mocked(listAllR2Objects).mockRejectedValueOnce(new Error('bucket exploded'));
+		const res = await POST({
+			request: createRequest({ ids: [1] }),
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+		expect(res.status).toBe(500);
+		expect(await res.json()).toEqual({ error: 'Internal server error' });
+		expect(logger.error).toHaveBeenCalledWith('Bulk download error:', expect.any(Error));
 	});
 
 	it('skips rate limiting when KV binding is absent (local dev)', async () => {

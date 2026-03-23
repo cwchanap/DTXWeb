@@ -1134,4 +1134,291 @@ describe('Preview Scene', () => {
 			expect(mockGridContainer.add).toHaveBeenCalled();
 		});
 	});
+
+	describe('createNoteAnimations()', () => {
+		const playableLaneConfigs = [
+			{
+				name: 'HHC',
+				noteColor: 0x0d1cde,
+				id: '11',
+				playable: true,
+				iconFrameIndex: 1,
+				width: 48
+			},
+			{
+				name: 'SN',
+				noteColor: 0xefec1b,
+				id: '12',
+				playable: true,
+				iconFrameIndex: 4,
+				width: 64
+			},
+			{
+				name: 'BD',
+				noteColor: 0x567dcb,
+				id: '13',
+				playable: true,
+				iconFrameIndex: 8,
+				width: 70
+			}
+		];
+
+		beforeEach(() => {
+			// Set preview scene lane configs to a controlled subset
+			previewScene['laneConfigs'] = playableLaneConfigs as any;
+			// Reset animationsCreated flag to allow createNoteAnimations to run
+			(Preview as any).animationsCreated = false;
+		});
+
+		it('should call textures.get with DRUM_CHIPS asset name', () => {
+			previewScene['createNoteAnimations']();
+			expect(previewScene.textures.get).toHaveBeenCalledWith('drum-chips');
+		});
+
+		it('should check for and remove existing animations for each playable lane', () => {
+			(previewScene.anims.exists as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+			previewScene['createNoteAnimations']();
+
+			// For each playable lane, both base and overlay keys should be checked
+			const existsCalls = (previewScene.anims.exists as ReturnType<typeof vi.fn>).mock.calls;
+			expect(existsCalls.length).toBe(playableLaneConfigs.length * 2);
+
+			// Should check for base and overlay keys for each lane
+			for (const lane of playableLaneConfigs) {
+				expect(previewScene.anims.exists).toHaveBeenCalledWith(`note-${lane.id}-base`);
+				expect(previewScene.anims.exists).toHaveBeenCalledWith(`note-${lane.id}-overlay`);
+			}
+		});
+
+		it('should remove existing animations when they exist', () => {
+			(previewScene.anims.exists as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+			previewScene['createNoteAnimations']();
+
+			for (const lane of playableLaneConfigs) {
+				expect(previewScene.anims.remove).toHaveBeenCalledWith(`note-${lane.id}-base`);
+				expect(previewScene.anims.remove).toHaveBeenCalledWith(`note-${lane.id}-overlay`);
+			}
+		});
+
+		it('should not call remove when animations do not exist', () => {
+			(previewScene.anims.exists as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+			previewScene['createNoteAnimations']();
+
+			expect(previewScene.anims.remove).not.toHaveBeenCalled();
+		});
+
+		it('should add 11 texture frames per playable lane', () => {
+			const mockTexture = { add: vi.fn() };
+			(previewScene.textures.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTexture);
+
+			previewScene['createNoteAnimations']();
+
+			// 11 frames (rows 0-10) per lane
+			expect(mockTexture.add).toHaveBeenCalledTimes(playableLaneConfigs.length * 11);
+		});
+
+		it('should create base and overlay animations for each playable lane', () => {
+			previewScene['createNoteAnimations']();
+
+			// 2 animations per lane (base + overlay)
+			expect(previewScene.anims.create).toHaveBeenCalledTimes(playableLaneConfigs.length * 2);
+		});
+
+		it('should create base animation with correct frameRate and repeat settings', () => {
+			previewScene['createNoteAnimations']();
+
+			const animCalls = (previewScene.anims.create as ReturnType<typeof vi.fn>).mock.calls;
+			const baseAnimCalls = animCalls.filter(([config]) =>
+				(config as { key: string }).key.endsWith('-base')
+			);
+
+			for (const [config] of baseAnimCalls) {
+				expect(config.frameRate).toBe(12);
+				expect(config.repeat).toBe(-1);
+				expect(config.frames).toHaveLength(8); // frames 2-9
+			}
+		});
+
+		it('should create overlay animation with correct frameRate and repeat settings', () => {
+			previewScene['createNoteAnimations']();
+
+			const animCalls = (previewScene.anims.create as ReturnType<typeof vi.fn>).mock.calls;
+			const overlayAnimCalls = animCalls.filter(([config]) =>
+				(config as { key: string }).key.endsWith('-overlay')
+			);
+
+			for (const [config] of overlayAnimCalls) {
+				expect(config.frameRate).toBe(8);
+				expect(config.repeat).toBe(-1);
+				expect(config.frames).toHaveLength(3); // frames 0, 1, 10
+			}
+		});
+
+		it('should skip non-playable lanes and lanes without width', () => {
+			previewScene['laneConfigs'] = [
+				{ name: 'BPM', noteColor: 0x000000, id: '08', playable: false },
+				{ name: 'HHC', noteColor: 0x0d1cde, id: '11', playable: true, width: 48 },
+				{ name: 'NW', noteColor: 0xffffff, id: '99', playable: true } // no width
+			] as any;
+
+			previewScene['createNoteAnimations']();
+
+			// Only '11' should have animations created (BPM is not playable, '99' has no width)
+			expect(previewScene.anims.create).toHaveBeenCalledTimes(2); // base + overlay for '11' only
+		});
+
+		it('should calculate correct texture frame x positions based on note order', () => {
+			const mockTexture = { add: vi.fn() };
+			(previewScene.textures.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTexture);
+
+			// Set laneConfigs to match the known noteOrder to test x position calculation
+			previewScene['laneConfigs'] = [
+				{ name: 'BD', noteColor: 0x567dcb, id: '13', playable: true, width: 70 }, // first in noteOrder
+				{ name: 'RD', noteColor: 0x14bfc4, id: '19', playable: true, width: 58 } // second in noteOrder
+			] as any;
+
+			previewScene['createNoteAnimations']();
+
+			const textureCalls = mockTexture.add.mock.calls;
+			// '13' should start at x=0
+			const bd13Calls = textureCalls.filter(([frameName]) =>
+				(frameName as string).startsWith('13_')
+			);
+			expect(bd13Calls[0][2]).toBe(0); // xPosition for '13' (first in noteOrder)
+
+			// '19' should start at x=70 (after '13' width=70)
+			const rd19Calls = textureCalls.filter(([frameName]) =>
+				(frameName as string).startsWith('19_')
+			);
+			expect(rd19Calls[0][2]).toBe(70); // xPosition for '19'
+		});
+	});
+
+	describe('createPreviewTween', () => {
+		let mockContainer: { setPosition: ReturnType<typeof vi.fn> };
+
+		beforeEach(() => {
+			mockContainer = { setPosition: vi.fn() };
+			previewScene['panelContainer'] = mockContainer as any;
+			vi.spyOn(previewScene as any, 'getZoomOffset').mockReturnValue(10);
+			vi.spyOn(previewScene, 'getTotalMesaureOffest').mockReturnValue(500);
+			vi.spyOn(previewScene, 'getTimeElapsed').mockReturnValue(5);
+		});
+
+		it('should call tweens.add and return the tween', () => {
+			const result = previewScene.createPreviewTween();
+
+			expect(previewScene.tweens.add).toHaveBeenCalled();
+			expect(result).toBeDefined();
+		});
+
+		it('should set panelContainer position', () => {
+			previewScene.createPreviewTween();
+
+			expect(mockContainer.setPosition).toHaveBeenCalled();
+		});
+
+		it('should stop and destroy existing tween before creating new one', () => {
+			const mockTween = { stop: vi.fn(), destroy: vi.fn() };
+			previewScene['previewTween'] = mockTween as any;
+
+			previewScene.createPreviewTween();
+
+			expect(mockTween.stop).toHaveBeenCalled();
+			expect(mockTween.destroy).toHaveBeenCalled();
+		});
+
+		it('should use provided startY when given', () => {
+			previewScene.createPreviewTween(100);
+
+			expect(mockContainer.setPosition).toHaveBeenCalledWith(0, 100);
+		});
+
+		it('should not throw when previewTween is null', () => {
+			previewScene['previewTween'] = null;
+
+			expect(() => previewScene.createPreviewTween()).not.toThrow();
+		});
+
+		it('should null out previewTween reference before creating new tween', () => {
+			const mockTween = { stop: vi.fn(), destroy: vi.fn() };
+			previewScene['previewTween'] = mockTween as any;
+
+			previewScene.createPreviewTween();
+
+			// After the destroy, previewTween should have been set to the new tween
+			expect(previewScene['previewTween']).not.toBe(mockTween);
+		});
+	});
+
+	describe('scheduleNotePlayback', () => {
+		let mockNote: LaneMeasureNote;
+
+		beforeEach(() => {
+			mockNote = {
+				measure: 0,
+				measureLength: 2, // non-default value, so won't be reassigned
+				notes: [
+					{ noteID: '01', position: 0 },
+					{ noteID: '02', position: 0.5 }
+				]
+			} as any;
+
+			vi.spyOn(previewScene, 'getTimeElapsed').mockReturnValue(0);
+		});
+
+		it('should call time.delayedCall for notes with non-negative delay', () => {
+			vi.spyOn(previewScene, 'getTimeElapsed')
+				.mockReturnValueOnce(1) // noteAbsoluteTime > startTime → delay=1
+				.mockReturnValueOnce(0); // startTime
+
+			previewScene.scheduleNotePlayback(mockNote, 1, 0);
+
+			expect(previewScene.time.delayedCall).toHaveBeenCalled();
+		});
+
+		it('should not schedule notes with negative delay', () => {
+			vi.spyOn(previewScene, 'getTimeElapsed')
+				.mockReturnValueOnce(0) // noteAbsoluteTime < startTime → delay<0
+				.mockReturnValueOnce(1); // startTime → delay = -1
+
+			previewScene.scheduleNotePlayback(
+				{ ...mockNote, notes: [{ noteID: '01', position: 0 }] } as any,
+				1,
+				0
+			);
+
+			expect(previewScene.time.delayedCall).not.toHaveBeenCalled();
+		});
+
+		it('should update measureLength from array when default value of 1', () => {
+			const noteWithDefault = { ...mockNote, measureLength: 1, measure: 0 };
+			previewScene['measureLength'] = [3];
+
+			previewScene.scheduleNotePlayback(noteWithDefault as any, 1, 0);
+
+			expect(noteWithDefault.measureLength).toBe(3);
+		});
+
+		it('should keep measureLength as 1 if not in measureLength array', () => {
+			const noteWithDefault = { ...mockNote, measureLength: 1, measure: 5 };
+			previewScene['measureLength'] = []; // empty, measure 5 not defined
+
+			previewScene.scheduleNotePlayback(noteWithDefault as any, 1, 0);
+
+			expect(noteWithDefault.measureLength).toBe(1);
+		});
+
+		it('should not modify measureLength when it is not 1', () => {
+			const note = { ...mockNote, measureLength: 2, measure: 0 };
+			previewScene['measureLength'] = [4];
+
+			previewScene.scheduleNotePlayback(note as any, 1, 0);
+
+			expect(note.measureLength).toBe(2); // unchanged
+		});
+	});
 });

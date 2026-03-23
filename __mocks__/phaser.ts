@@ -25,6 +25,8 @@ const GameObjects = {
 	},
 	Container: class MockContainer {
 		add: ReturnType<typeof vi.fn>;
+		addAt: ReturnType<typeof vi.fn>;
+		remove: ReturnType<typeof vi.fn>;
 		setSize: ReturnType<typeof vi.fn>;
 		setPosition: ReturnType<typeof vi.fn>;
 		setMask: ReturnType<typeof vi.fn>;
@@ -37,6 +39,8 @@ const GameObjects = {
 
 		constructor() {
 			this.add = vi.fn();
+			this.addAt = vi.fn();
+			this.remove = vi.fn();
 			this.setSize = vi.fn();
 			this.setPosition = vi.fn();
 			this.setMask = vi.fn();
@@ -59,6 +63,7 @@ const GameObjects = {
 		clear: ReturnType<typeof vi.fn>;
 		strokeRect: ReturnType<typeof vi.fn>;
 		setName: ReturnType<typeof vi.fn>;
+		destroy: ReturnType<typeof vi.fn>;
 		name: string;
 
 		constructor() {
@@ -72,6 +77,7 @@ const GameObjects = {
 			this.clear = vi.fn().mockReturnThis();
 			this.strokeRect = vi.fn().mockReturnThis();
 			this.setName = vi.fn().mockReturnThis();
+			this.destroy = vi.fn();
 			this.name = '';
 		}
 	},
@@ -89,10 +95,12 @@ const GameObjects = {
 	Text: class MockText {
 		setOrigin: ReturnType<typeof vi.fn>;
 		setAlpha: ReturnType<typeof vi.fn>;
+		setName: ReturnType<typeof vi.fn>;
 
 		constructor() {
 			this.setOrigin = vi.fn().mockReturnThis();
 			this.setAlpha = vi.fn().mockReturnThis();
+			this.setName = vi.fn().mockReturnThis();
 		}
 	},
 	Rectangle: class MockRectangle {
@@ -206,7 +214,9 @@ const Scene = class MockScene {
 	};
 
 	anims = {
-		create: vi.fn()
+		create: vi.fn(),
+		exists: vi.fn().mockReturnValue(false),
+		remove: vi.fn()
 	};
 
 	cache = {

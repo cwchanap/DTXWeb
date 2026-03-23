@@ -1456,4 +1456,224 @@ describe('NoteManager', () => {
 			expect(plainMeasureNote.notes).toHaveLength(0);
 		});
 	});
+
+	describe('initializeKeyboardEvents', () => {
+		let copySelectedNotesSpy: ReturnType<typeof vi.spyOn>;
+		let cutSelectedNotesSpy: ReturnType<typeof vi.spyOn>;
+		let pasteNotesSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			copySelectedNotesSpy = vi
+				.spyOn(noteManager, 'copySelectedNotes')
+				.mockReturnValue(false);
+			cutSelectedNotesSpy = vi.spyOn(noteManager, 'cutSelectedNotes').mockReturnValue(false);
+			pasteNotesSpy = vi.spyOn(noteManager, 'pasteNotes').mockReturnValue(false);
+		});
+
+		afterEach(() => {
+			copySelectedNotesSpy.mockRestore();
+			cutSelectedNotesSpy.mockRestore();
+			pasteNotesSpy.mockRestore();
+		});
+
+		it('should call copySelectedNotes when Ctrl+C is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should call copySelectedNotes when Cmd+C (metaKey) is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				metaKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should call cutSelectedNotes when Ctrl+X is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'x',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(cutSelectedNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should call pasteNotes when Ctrl+V is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'v',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(pasteNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should debounce rapid key presses', () => {
+			// Reset lastKeyboardAction to ensure first press always goes through
+			noteManager['lastKeyboardAction'] = 0;
+
+			const event1 = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event1);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+
+			// Second rapid press should be debounced
+			const event2 = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event2);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1); // still 1, debounced
+		});
+
+		it('should not trigger shortcuts when typing in a textarea with text selected', () => {
+			const textarea = document.createElement('textarea');
+			textarea.value = 'selected text';
+			document.body.appendChild(textarea);
+			textarea.setSelectionRange(0, 8);
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			Object.defineProperty(event, 'target', { value: textarea, writable: false });
+
+			// Dispatch directly on the textarea to test target-based filtering
+			noteManager['keydownHandler']?.(event);
+
+			expect(copySelectedNotesSpy).not.toHaveBeenCalled();
+
+			document.body.removeChild(textarea);
+		});
+
+		it('should trigger shortcuts when typing in a textarea with no text selected', () => {
+			noteManager['lastKeyboardAction'] = 0;
+
+			const textarea = document.createElement('textarea');
+			textarea.value = 'some text';
+			document.body.appendChild(textarea);
+			textarea.setSelectionRange(4, 4); // cursor but no selection
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			Object.defineProperty(event, 'target', { value: textarea, writable: false });
+
+			noteManager['keydownHandler']?.(event);
+
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+
+			document.body.removeChild(textarea);
+		});
+	});
+
+	describe('initializeMouseTracking', () => {
+		it('should update lastMouseX and lastMouseY when mousemove fires with canvas available', () => {
+			const canvas = document.createElement('canvas');
+			document.body.appendChild(canvas);
+			vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+				left: 10,
+				top: 20,
+				right: 810,
+				bottom: 620,
+				width: 800,
+				height: 600,
+				x: 10,
+				y: 20,
+				toJSON: () => {}
+			});
+
+			// Set the game canvas on the mock editor
+			(mockEditor as any).game = { canvas };
+
+			// Re-initialize to pick up the game.canvas
+			const freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager.initialize();
+
+			const event = new MouseEvent('mousemove', { clientX: 110, clientY: 70, bubbles: true });
+			document.dispatchEvent(event);
+
+			expect(freshManager['lastMouseX']).toBe(100); // 110 - left(10)
+			expect(freshManager['lastMouseY']).toBe(50); // 70 - top(20)
+
+			document.body.removeChild(canvas);
+		});
+
+		it('should fall back to querySelector canvas when game.canvas is unavailable', () => {
+			// Make sure game.canvas is null
+			(mockEditor as any).game = { canvas: null };
+
+			const canvas = document.createElement('canvas');
+			document.body.appendChild(canvas);
+			vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+				left: 5,
+				top: 15,
+				right: 805,
+				bottom: 615,
+				width: 800,
+				height: 600,
+				x: 5,
+				y: 15,
+				toJSON: () => {}
+			});
+
+			const freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager.initialize();
+
+			const event = new MouseEvent('mousemove', { clientX: 105, clientY: 65, bubbles: true });
+			document.dispatchEvent(event);
+
+			expect(freshManager['lastMouseX']).toBe(100); // 105 - 5
+			expect(freshManager['lastMouseY']).toBe(50); // 65 - 15
+
+			document.body.removeChild(canvas);
+		});
+
+		it('should not update coordinates when no canvas is available', () => {
+			// Ensure no canvas elements in document and game.canvas is null
+			const existingCanvases = document.querySelectorAll('canvas');
+			existingCanvases.forEach((c) => c.remove());
+
+			(mockEditor as any).game = { canvas: null };
+
+			const freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager['lastMouseX'] = 999;
+			freshManager['lastMouseY'] = 888;
+			freshManager.initialize();
+
+			const event = new MouseEvent('mousemove', {
+				clientX: 200,
+				clientY: 300,
+				bubbles: true
+			});
+			document.dispatchEvent(event);
+
+			// Should remain unchanged since no canvas found
+			expect(freshManager['lastMouseX']).toBe(999);
+			expect(freshManager['lastMouseY']).toBe(888);
+		});
+	});
 });

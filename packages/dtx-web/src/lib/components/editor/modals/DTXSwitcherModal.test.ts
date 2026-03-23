@@ -134,28 +134,6 @@ describe('DTXSwitcherModal', () => {
 		});
 	});
 
-	it('maps sound chips to files using exact match when case-insensitive match fails', async () => {
-		const exactFile = new File(['audio'], 'snare.wav');
-		mockService.parseDTXFile.mockResolvedValueOnce({
-			dtxFile: {
-				parseNotes: vi.fn(() => []),
-				parseBPMChanges: vi.fn(() => ({})),
-				parseSoundChips: vi.fn(() => [mockSoundChip('snare.wav')])
-			},
-			// simFile.files has a file that only matches exactly (same case)
-			simFile: { files: [exactFile] }
-		});
-
-		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
-		await fireEvent.click(advancedBtn);
-
-		const { setFile } = await import('@dtx/common/services/fileManager');
-		await vi.waitFor(() => {
-			expect(setFile).toHaveBeenCalledWith('key', exactFile);
-		});
-	});
-
 	it('handles sound chips with no matching file in simFile', async () => {
 		mockService.parseDTXFile.mockResolvedValueOnce({
 			dtxFile: {

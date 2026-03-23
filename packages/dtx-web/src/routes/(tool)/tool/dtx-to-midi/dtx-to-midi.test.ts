@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import PopoverStub from '../../../../tests/stubs/PopoverStub.svelte';
 
@@ -323,8 +323,15 @@ describe('DTX to MIDI Converter Logic', () => {
 describe('DTX to MIDI Component Rendering', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
-		global.URL.revokeObjectURL = vi.fn();
+		vi.stubGlobal('URL', {
+			...URL,
+			createObjectURL: vi.fn(() => 'blob:mock-url'),
+			revokeObjectURL: vi.fn()
+		});
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	it('renders the page with initial upload state', () => {

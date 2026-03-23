@@ -740,6 +740,15 @@ describe('Preview Scene', () => {
 	});
 
 	describe('create()', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.runAllTimers();
+			vi.useRealTimers();
+		});
+
 		it('should set up containers, draw panel/notes, and emit SCENE_READY', async () => {
 			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
 			// Reset static flag so createNoteAnimations branch is exercised

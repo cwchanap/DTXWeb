@@ -129,7 +129,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(404);
-		expect(await res.json()).toMatchObject({ error: 'Simfile not found', missingIds: [99] });
+		expect(await res.json()).toMatchObject({ error: 'Simfile not found' });
 	});
 
 	it('returns 429 when rate limit is exceeded', async () => {
@@ -165,7 +165,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(401);
-		expect(await res.json()).toMatchObject({ error: 'Unauthorized', inaccessibleIds: [2] });
+		expect(await res.json()).toMatchObject({ error: 'Unauthorized' });
 		expect(listAllR2Objects).not.toHaveBeenCalled();
 	});
 
@@ -179,7 +179,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: { id: 'other-user', email: 'x@x.com' } as never }
 		} as never);
 		expect(res.status).toBe(403);
-		expect(await res.json()).toMatchObject({ error: 'Forbidden', inaccessibleIds: [2] });
+		expect(await res.json()).toMatchObject({ error: 'Forbidden' });
 		expect(listAllR2Objects).not.toHaveBeenCalled();
 	});
 
@@ -221,7 +221,10 @@ describe('POST /api/simFile/download/bulk', () => {
 		} as never);
 		expect(res.status).toBe(500);
 		expect(await res.json()).toEqual({ error: 'Internal server error' });
-		expect(logger.error).toHaveBeenCalledWith('Bulk download error:', expect.any(Error));
+		expect(logger.error).toHaveBeenCalledWith(
+			'Bulk download error for ids [1]:',
+			expect.any(Error)
+		);
 	});
 
 	it('skips rate limiting when KV binding is absent (local dev)', async () => {

@@ -1,5 +1,6 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
 import JSZip from 'jszip';
+import logger from '$lib/server/logger';
 import type { R2ObjectMeta } from '$lib/server/r2';
 
 export interface ZipEntry {
@@ -46,12 +47,17 @@ export const fetchR2Entries = async (
 		const filename = obj.key.startsWith(keyPrefix) ? obj.key.slice(keyPrefix.length) : '';
 		if (!isSafeFilename(filename)) return null;
 
-		const r2obj = await bucket.get(obj.key);
-		if (!r2obj) return null;
+		try {
+			const r2obj = await bucket.get(obj.key);
+			if (!r2obj) return null;
 
-		const data = await r2obj.arrayBuffer();
-		const path = pathPrefix ? `${pathPrefix}/${filename}` : filename;
-		return { path, data } satisfies ZipEntry;
+			const data = await r2obj.arrayBuffer();
+			const path = pathPrefix ? `${pathPrefix}/${filename}` : filename;
+			return { path, data } satisfies ZipEntry;
+		} catch (error) {
+			logger.warn(`Failed to fetch R2 object: ${obj.key}`, error);
+			return null;
+		}
 	};
 
 	const workerCount = Math.min(MAX_CONCURRENT_R2_FETCHES, objects.length);

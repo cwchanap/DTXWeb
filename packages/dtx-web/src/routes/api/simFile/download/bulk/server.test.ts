@@ -12,7 +12,15 @@ vi.mock('$lib/server/logger', () => ({
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/zipBuilder', () => ({ fetchR2Entries: vi.fn(), buildZip: vi.fn() }));
-vi.mock('$lib/server/rateLimiter', () => ({ tryConsumeRateLimit: vi.fn() }));
+vi.mock('$lib/server/rateLimiter', () => ({
+	getClientIp: vi.fn((request: Request) => {
+		const forwardedIp =
+			request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
+		const ip = forwardedIp?.split(',')[0]?.trim();
+		return !ip || ip.toLowerCase() === 'unknown' ? null : ip;
+	}),
+	tryConsumeRateLimit: vi.fn()
+}));
 
 const createRequest = (body: unknown, headers?: Record<string, string>): Request =>
 	({
@@ -186,7 +194,9 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(400);
-		expect(await res.json()).toMatchObject({ error: 'Client IP address is required' });
+		expect(await res.json()).toMatchObject({
+			error: 'Unable to determine client IP for rate limiting.'
+		});
 		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
 	});
 
@@ -216,7 +226,10 @@ describe('POST /api/simFile/download/bulk', () => {
 
 	it('skips rate limiting when KV binding is absent (local dev)', async () => {
 		const res = await POST({
-			request: createRequest({ ids: [1] }),
+			request: {
+				headers: new Headers(),
+				json: async () => ({ ids: [1] })
+			} as unknown as Request,
 			platform: createMockPlatform(false),
 			locals: { user: null }
 		} as never);

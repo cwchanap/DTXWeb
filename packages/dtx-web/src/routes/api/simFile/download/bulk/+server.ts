@@ -3,7 +3,7 @@ import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
 import { fetchR2Entries, buildZip } from '$lib/server/zipBuilder';
-import { tryConsumeRateLimit } from '$lib/server/rateLimiter';
+import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 const MAX_BULK_IDS = 20;
 
@@ -115,13 +115,6 @@ export const POST = async ({
 			return json({ error: 'Simfile not found', missingIds }, { status: 404 });
 		}
 
-		const forwardedIp =
-			request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
-		const ip = forwardedIp?.split(',')[0].trim();
-		if (!ip || ip.toLowerCase() === 'unknown') {
-			return json({ error: 'Client IP address is required' }, { status: 400 });
-		}
-
 		// List all objects per simfile for rate limit size estimation
 		const objectsPerSimfile = await Promise.all(
 			accessibleIds.map((id) => listAllR2Objects(bucket, `${id}/`))
@@ -131,8 +124,16 @@ export const POST = async ({
 
 		// Rate limiting — skipped in local dev when KV binding is absent
 		const kv = platform?.env?.RATE_LIMIT;
+		const ip = getClientIp(request);
 
 		if (kv) {
+			if (!ip) {
+				return json(
+					{ error: 'Unable to determine client IP for rate limiting.' },
+					{ status: 400 }
+				);
+			}
+
 			const { allowed } = await tryConsumeRateLimit(kv, ip, estimatedBytes);
 			if (!allowed) {
 				return json(
@@ -144,7 +145,7 @@ export const POST = async ({
 
 		const requestId = request.headers.get('cf-ray') ?? request.headers.get('x-request-id');
 		logger.info(`Bulk downloading ${accessibleIds.length} simfiles`, {
-			anonymizedIp: anonymizeIp(ip),
+			anonymizedIp: ip ? anonymizeIp(ip) : 'redacted',
 			...(requestId ? { requestId } : {})
 		});
 
@@ -162,8 +163,9 @@ export const POST = async ({
 		}
 
 		const zip = await buildZip(allEntries);
+		const zipBody = Uint8Array.from(zip).buffer;
 
-		return new Response(zip, {
+		return new Response(zipBody, {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',

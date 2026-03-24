@@ -39,4 +39,28 @@ describe('fetchR2Entries', () => {
 		);
 		expect(maxConcurrentFetches).toBeLessThanOrEqual(4);
 	});
+
+	it('skips unsafe filenames when building ZIP entries', async () => {
+		const bucket = {
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => new TextEncoder().encode(key).buffer
+			}))
+		} as unknown as R2Bucket;
+
+		const objects: R2ObjectMeta[] = [
+			{ key: '42/file.dtx', size: 32, uploaded: new Date() },
+			{ key: '42/../secret.txt', size: 32, uploaded: new Date() },
+			{ key: '42/folder\\evil.dtx', size: 32, uploaded: new Date() },
+			{ key: '42/C:/evil.dtx', size: 32, uploaded: new Date() },
+			{ key: '42//double-slash.dtx', size: 32, uploaded: new Date() }
+		];
+
+		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
+
+		expect(entries).toHaveLength(1);
+		expect(entries[0].path).toBe('chart-42/file.dtx');
+		expect(entries[0].data.byteLength).toBeGreaterThan(0);
+		expect(bucket.get).toHaveBeenCalledTimes(1);
+		expect(bucket.get).toHaveBeenCalledWith('42/file.dtx');
+	});
 });

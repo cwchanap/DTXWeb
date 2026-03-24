@@ -1,4 +1,5 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
+import logger from '$lib/server/logger';
 
 const RATE_LIMIT_BYTES = 1073741824; // 1 GiB per minute
 const KV_TTL_SECONDS = 120; // cover current and previous minute window
@@ -36,12 +37,17 @@ export const tryConsumeRateLimit = async (
 	nowMinute = Math.floor(Date.now() / 60000)
 ): Promise<RateLimitResult> => {
 	const key = getRateLimitKey(ip, nowMinute);
-	const storedValue = await kv.get(key);
-	const parsedValue = storedValue === null ? 0 : Number.parseInt(storedValue, 10);
-	const current = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
-	const allowed = current + bytes <= RATE_LIMIT_BYTES;
-	if (allowed) {
-		await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });
+	try {
+		const storedValue = await kv.get(key);
+		const parsedValue = storedValue === null ? 0 : Number.parseInt(storedValue, 10);
+		const current = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
+		const allowed = current + bytes <= RATE_LIMIT_BYTES;
+		if (allowed) {
+			await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });
+		}
+		return { allowed, remainingBytes: Math.max(0, RATE_LIMIT_BYTES - current) };
+	} catch (error) {
+		logger.error('Rate limit KV error', { key, error });
+		throw error;
 	}
-	return { allowed, remainingBytes: Math.max(0, RATE_LIMIT_BYTES - current) };
 };

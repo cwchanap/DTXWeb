@@ -194,6 +194,9 @@ describe('GET /api/simFile/download/[simfileID]', () => {
 		} as never);
 		expect(res.status).toBe(500);
 		expect(await res.json()).toEqual({ error: 'Internal server error' });
-		expect(logger.error).toHaveBeenCalledWith('Download error:', expect.any(Error));
+		expect(logger.error).toHaveBeenCalledWith(
+			'Download error for simfile 42:',
+			expect.any(Error)
+		);
 	});
 });

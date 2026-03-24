@@ -74,14 +74,14 @@ export const POST = async ({
 		}
 
 		const user = locals.user;
-		const requestedIds = ids as number[];
+		const requestedIds = [...new Set(ids as number[])];
 
 		// Resolve which IDs are accessible: published OR owned by the authenticated user
 		const simfileResults = await Promise.all(
 			requestedIds.map(async (id) => {
 				const simfile = await getSimfileOwner(db, id);
 				if (!simfile) return { id, status: 'not_found' as const };
-				if (simfile.is_published || (user && simfile.user_id === user.id)) {
+				if (simfile.is_published === 1 || (user && simfile.user_id === user.id)) {
 					return { id, status: 'accessible' as const };
 				}
 				return { id, status: user ? ('forbidden' as const) : ('unauthorized' as const) };
@@ -101,18 +101,15 @@ export const POST = async ({
 			.map((result) => result.id);
 
 		if (unauthorizedIds.length > 0) {
-			return json(
-				{ error: 'Unauthorized', inaccessibleIds: unauthorizedIds },
-				{ status: 401 }
-			);
+			return json({ error: 'Unauthorized' }, { status: 401 });
 		}
 
 		if (forbiddenIds.length > 0) {
-			return json({ error: 'Forbidden', inaccessibleIds: forbiddenIds }, { status: 403 });
+			return json({ error: 'Forbidden' }, { status: 403 });
 		}
 
 		if (missingIds.length > 0) {
-			return json({ error: 'Simfile not found', missingIds }, { status: 404 });
+			return json({ error: 'Simfile not found' }, { status: 404 });
 		}
 
 		// List all objects per simfile for rate limit size estimation
@@ -126,7 +123,9 @@ export const POST = async ({
 		const kv = platform?.env?.RATE_LIMIT;
 		const ip = getClientIp(request);
 
-		if (kv) {
+		if (!kv) {
+			logger.warn('RATE_LIMIT KV binding not available; rate limiting is disabled');
+		} else {
 			if (!ip) {
 				return json(
 					{ error: 'Unable to determine client IP for rate limiting.' },
@@ -163,9 +162,8 @@ export const POST = async ({
 		}
 
 		const zip = await buildZip(allEntries);
-		const zipBody = Uint8Array.from(zip).buffer;
 
-		return new Response(zipBody, {
+		return new Response(zip, {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
@@ -174,7 +172,7 @@ export const POST = async ({
 			}
 		});
 	} catch (error) {
-		logger.error('Bulk download error:', error);
+		logger.error(`Bulk download error for ids [${(ids as number[]).join(',')}]:`, error);
 		return json({ error: 'Internal server error' }, { status: 500 });
 	}
 };

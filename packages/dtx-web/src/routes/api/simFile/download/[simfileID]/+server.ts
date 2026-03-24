@@ -64,7 +64,9 @@ export const GET = async ({
 		const kv = platform?.env?.RATE_LIMIT;
 		const ip = getClientIp(request);
 
-		if (kv) {
+		if (!kv) {
+			logger.warn('RATE_LIMIT KV binding not available; rate limiting is disabled');
+		} else {
 			if (!ip) {
 				return json(
 					{ error: 'Unable to determine client IP for rate limiting.' },
@@ -90,9 +92,8 @@ export const GET = async ({
 		}
 
 		const zip = await buildZip(entries);
-		const zipBody = Uint8Array.from(zip).buffer;
 
-		return new Response(zipBody, {
+		return new Response(zip, {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
@@ -101,7 +102,7 @@ export const GET = async ({
 			}
 		});
 	} catch (error) {
-		logger.error('Download error:', error);
+		logger.error(`Download error for simfile ${simfileID}:`, error);
 		return json({ error: 'Internal server error' }, { status: 500 });
 	}
 };

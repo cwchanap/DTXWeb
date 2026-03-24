@@ -1608,4 +1608,158 @@ describe('Editor Scene', () => {
 			expect(editorScene['measureLinesGraphics']).not.toBeNull();
 		});
 	});
+
+	describe('NOTE_IMPORT event handler', () => {
+		it('should reset notes, populate from imported notes, and restart', async () => {
+			editorScene.create();
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+			const autoSaveSpy = vi.spyOn(editorScene, 'autoSaveChart').mockResolvedValue(undefined);
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty');
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			expect(noteImportCallback).toBeDefined();
+
+			const storeModule = await import('../../store');
+			const store = storeModule.default;
+
+			const mockNotes = [
+				{ laneID: '01', measure: 0, notes: [{ noteID: '01', position: 0 }] },
+				{ laneID: '01', measure: 2, notes: [{ noteID: '01', position: 0.5 }] },
+				{ laneID: '02', measure: 1, notes: [{ noteID: '01', position: 0.25 }] }
+			] as any;
+			const mockBpmNotes = { '01': 120 };
+
+			await noteImportCallback?.(mockNotes, mockBpmNotes);
+
+			expect(editorScene['isLoaded']).toBe(false);
+			expect(editorScene['notes']['01']).toHaveLength(2);
+			expect(editorScene['notes']['02']).toHaveLength(1);
+			expect(editorScene['bpmNotes']).toBe(mockBpmNotes);
+			expect(store.measureCount.set).toHaveBeenCalled();
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+			expect(autoSaveSpy).toHaveBeenCalled();
+			expect(setDirtySpy).toHaveBeenCalledWith(false);
+			expect(restartSpy).toHaveBeenCalled();
+
+			restartSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+			autoSaveSpy.mockRestore();
+			setDirtySpy.mockRestore();
+		});
+
+		it('should expand measureCount when imported notes exceed current count', async () => {
+			editorScene.create();
+			editorScene['measureCount'] = 5;
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockResolvedValue(undefined);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			const mockNotes = [{ laneID: '01', measure: 9, notes: [] }] as any;
+			await noteImportCallback?.(mockNotes, {});
+
+			// measureCount should expand to maxMeasure + 1 = 10
+			expect(editorScene['measureCount']).toBe(10);
+			expect(restartSpy).toHaveBeenCalledWith({ measureCount: 10 });
+
+			restartSpy.mockRestore();
+		});
+	});
+
+	describe('START_PREVIEW event handler', () => {
+		it('should launch new preview scene when preview is not active or paused', () => {
+			editorScene.create();
+			editorScene['panelContainer'] = { y: 0, getByName: vi.fn() } as any;
+
+			(editorScene.scene as any).isActive = vi.fn().mockReturnValue(false);
+			(editorScene.scene as any).isPaused = vi.fn().mockReturnValue(false);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const startPreviewCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.START_PREVIEW
+			)?.[1];
+
+			expect(startPreviewCallback).toBeDefined();
+			startPreviewCallback?.(120);
+
+			expect(editorScene.scene.pause).toHaveBeenCalled();
+			expect(editorScene.scene.launch).toHaveBeenCalledWith('Preview', expect.any(Object));
+		});
+
+		it('should update and resume existing preview when isDirty and previewScene exists', () => {
+			editorScene.create();
+			editorScene['panelContainer'] = { y: 0, getByName: vi.fn() } as any;
+			editorScene['isDirty'] = true;
+
+			(editorScene.scene as any).isActive = vi.fn().mockReturnValue(true);
+			(editorScene.scene as any).isPaused = vi.fn().mockReturnValue(false);
+
+			const mockPreviewScene = { updateData: vi.fn() };
+			(editorScene.scene as any).get = vi.fn().mockReturnValue(mockPreviewScene);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const startPreviewCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.START_PREVIEW
+			)?.[1];
+
+			startPreviewCallback?.(120);
+
+			expect(mockPreviewScene.updateData).toHaveBeenCalled();
+			expect(editorScene.scene.resume).toHaveBeenCalledWith('Preview');
+		});
+
+		it('should fallback to launch when isDirty but previewScene not found', () => {
+			editorScene.create();
+			editorScene['panelContainer'] = { y: 0, getByName: vi.fn() } as any;
+			editorScene['isDirty'] = true;
+
+			(editorScene.scene as any).isActive = vi.fn().mockReturnValue(true);
+			(editorScene.scene as any).isPaused = vi.fn().mockReturnValue(false);
+			(editorScene.scene as any).get = vi.fn().mockReturnValue(null);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const startPreviewCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.START_PREVIEW
+			)?.[1];
+
+			startPreviewCallback?.(120);
+
+			expect(editorScene.scene.launch).toHaveBeenCalledWith('Preview', expect.any(Object));
+		});
+
+		it('should resume existing preview and emit RESUME_PREVIEW when not dirty', () => {
+			editorScene.create();
+			editorScene['panelContainer'] = { y: 0, getByName: vi.fn() } as any;
+			editorScene['isDirty'] = false;
+
+			(editorScene.scene as any).isActive = vi.fn().mockReturnValue(true);
+			(editorScene.scene as any).isPaused = vi.fn().mockReturnValue(false);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const startPreviewCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.START_PREVIEW
+			)?.[1];
+
+			startPreviewCallback?.(120);
+
+			expect(editorScene.scene.resume).toHaveBeenCalledWith('Preview');
+			expect(EventBus.emit).toHaveBeenCalledWith(
+				EventType.RESUME_PREVIEW,
+				expect.any(Object)
+			);
+		});
+	});
 });

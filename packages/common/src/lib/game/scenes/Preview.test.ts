@@ -1420,5 +1420,114 @@ describe('Preview Scene', () => {
 
 			expect(note.measureLength).toBe(2); // unchanged
 		});
+
+		it('should play audio when soundChip and audio found in cache', () => {
+			const mockAudio = { play: vi.fn() };
+			// id must match parseInt('1', 36) = 1
+			const mockSoundChip = { id: 1, volume: 80, fileName: 'drum.wav' };
+
+			// Configure mock store to return sound chip via get()
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (chips: any[]) => void) => {
+					callback([mockSoundChip]);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(mockAudio);
+
+			vi.spyOn(previewScene, 'getTimeElapsed').mockReturnValue(0);
+			vi.spyOn(previewScene, 'getCacheKey').mockReturnValue('soundchip_drum.wav');
+
+			const note = {
+				measure: 0,
+				measureLength: 2,
+				notes: [{ noteID: '1', position: 0 }]
+			} as any;
+
+			previewScene.scheduleNotePlayback(note, 1, 0);
+
+			// Invoke the delayedCall callback to test the inner branch
+			const delayedCallMock = previewScene.time.delayedCall as ReturnType<typeof vi.fn>;
+			const callback = delayedCallMock.mock.calls[0]?.[1];
+			callback?.();
+
+			expect(mockAudio.play).toHaveBeenCalledWith({ volume: 0.8 });
+			expect(previewScene['playingAudio']).toContain(mockAudio);
+		});
+	});
+
+	describe('scheduleBGMPlayback', () => {
+		it('should call time.delayedCall for BGM notes', () => {
+			vi.spyOn(previewScene, 'getTimeElapsed').mockReturnValue(0);
+
+			const note = {
+				measure: 0,
+				measureLength: 2,
+				notes: [{ noteID: '01', position: 0 }]
+			} as any;
+
+			previewScene.scheduleBGMPlayback(note, 1, 0);
+
+			expect(previewScene.time.delayedCall).toHaveBeenCalled();
+		});
+
+		it('should play audio with seek when soundChip and audio found in cache', () => {
+			const mockAudio = { play: vi.fn() };
+			const mockSoundChip = { id: 1, volume: 100, fileName: 'bgm.wav' };
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (chips: any[]) => void) => {
+					callback([mockSoundChip]);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(mockAudio);
+
+			vi.spyOn(previewScene, 'getTimeElapsed').mockReturnValue(0);
+			vi.spyOn(previewScene, 'getCacheKey').mockReturnValue('soundchip_bgm.wav');
+
+			const note = {
+				measure: 0,
+				measureLength: 2,
+				notes: [{ noteID: '1', position: 0 }]
+			} as any;
+
+			previewScene.scheduleBGMPlayback(note, 1, 0);
+
+			const delayedCallMock = previewScene.time.delayedCall as ReturnType<typeof vi.fn>;
+			const callback = delayedCallMock.mock.calls[0]?.[1];
+			callback?.();
+
+			expect(mockAudio.play).toHaveBeenCalledWith({ seek: 0, volume: 1 });
+		});
+	});
+
+	describe('getCellHeight - break when BPM note is after current cell', () => {
+		it('should not apply BPM change when note is after the current cell', () => {
+			previewScene.init({
+				measureCount: 5,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm240', position: 0.75 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: { bpm240: 240 },
+				startMeasure: 0
+			});
+
+			const cellsPerMeasure = previewScene['cellsPerMeasure'];
+			// Request cell at position 0.25 which is BEFORE the BPM change at 0.75
+			const cellBeforeChange = Math.floor(0.25 * cellsPerMeasure);
+			const result = previewScene.getCellHeight(0, cellBeforeChange);
+
+			// BPM note at 0.75 is after current cell, so break is hit
+			// currentBPM stays at initial bpm=120, scale = 120/120 = 1
+			expect(result).toBeCloseTo(previewScene['cellHeight'], 5);
+		});
 	});
 });

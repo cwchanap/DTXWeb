@@ -45,7 +45,12 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'@': path.resolve(__dirname, './src/renderer/src')
+			'@': path.resolve(__dirname, './src/renderer/src'),
+			'@dtx/common/server': path.resolve(
+				__dirname,
+				'../../packages/common/src/lib/server.ts'
+			),
+			'@dtx/common': path.resolve(__dirname, '../../packages/common/src/lib/index.ts')
 		}
 	}
 });

@@ -1591,6 +1591,15 @@ describe('NoteManager', () => {
 	});
 
 	describe('initializeMouseTracking', () => {
+		let freshManager: InstanceType<typeof import('./NoteManager').NoteManager> | null = null;
+
+		afterEach(() => {
+			if (freshManager) {
+				freshManager.destroy();
+				freshManager = null;
+			}
+		});
+
 		it('should update lastMouseX and lastMouseY when mousemove fires with canvas available', () => {
 			const canvas = document.createElement('canvas');
 			document.body.appendChild(canvas);
@@ -1610,7 +1619,7 @@ describe('NoteManager', () => {
 			(mockEditor as any).game = { canvas };
 
 			// Re-initialize to pick up the game.canvas
-			const freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager = new NoteManager(mockEditor as unknown as Editor);
 			freshManager.initialize();
 
 			const event = new MouseEvent('mousemove', { clientX: 110, clientY: 70, bubbles: true });
@@ -1640,7 +1649,7 @@ describe('NoteManager', () => {
 				toJSON: () => {}
 			});
 
-			const freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager = new NoteManager(mockEditor as unknown as Editor);
 			freshManager.initialize();
 
 			const event = new MouseEvent('mousemove', { clientX: 105, clientY: 65, bubbles: true });
@@ -1659,7 +1668,7 @@ describe('NoteManager', () => {
 
 			(mockEditor as any).game = { canvas: null };
 
-			const freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager = new NoteManager(mockEditor as unknown as Editor);
 			freshManager['lastMouseX'] = 999;
 			freshManager['lastMouseY'] = 888;
 			freshManager.initialize();

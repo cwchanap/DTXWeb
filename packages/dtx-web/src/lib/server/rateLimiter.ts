@@ -10,6 +10,18 @@ export interface RateLimitResult {
 
 const getRateLimitKey = (ip: string, nowMinute: number): string => `dl:${ip}:${nowMinute}`;
 
+export const getClientIp = (request: Request): string | null => {
+	const forwardedIp =
+		request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
+	const ip = forwardedIp?.split(',')[0]?.trim();
+
+	if (!ip || ip.toLowerCase() === 'unknown') {
+		return null;
+	}
+
+	return ip;
+};
+
 /**
  * Best-effort bandwidth limiter for the given IP using Cloudflare KV.
  * Cloudflare KV does not provide atomic read-modify-write semantics, so this reads once,
@@ -24,7 +36,9 @@ export const tryConsumeRateLimit = async (
 	nowMinute = Math.floor(Date.now() / 60000)
 ): Promise<RateLimitResult> => {
 	const key = getRateLimitKey(ip, nowMinute);
-	const current = Number((await kv.get(key)) ?? '0');
+	const storedValue = await kv.get(key);
+	const parsedValue = storedValue === null ? 0 : Number.parseInt(storedValue, 10);
+	const current = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
 	const allowed = current + bytes <= RATE_LIMIT_BYTES;
 	if (allowed) {
 		await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });

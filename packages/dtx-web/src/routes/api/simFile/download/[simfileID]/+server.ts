@@ -3,7 +3,7 @@ import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
 import { fetchR2Entries, buildZip } from '$lib/server/zipBuilder';
-import { tryConsumeRateLimit } from '$lib/server/rateLimiter';
+import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 export const GET = async ({
 	params,
@@ -62,15 +62,16 @@ export const GET = async ({
 
 		// Rate limiting — skipped in local dev when KV binding is absent
 		const kv = platform?.env?.RATE_LIMIT;
-		const ip = (
-			request.headers.get('cf-connecting-ip') ??
-			request.headers.get('x-forwarded-for') ??
-			'unknown'
-		)
-			.split(',')[0]
-			.trim();
+		const ip = getClientIp(request);
 
 		if (kv) {
+			if (!ip) {
+				return json(
+					{ error: 'Unable to determine client IP for rate limiting.' },
+					{ status: 400 }
+				);
+			}
+
 			const { allowed } = await tryConsumeRateLimit(kv, ip, estimatedBytes);
 			if (!allowed) {
 				return json(
@@ -89,8 +90,9 @@ export const GET = async ({
 		}
 
 		const zip = await buildZip(entries);
+		const zipBody = Uint8Array.from(zip).buffer;
 
-		return new Response(zip, {
+		return new Response(zipBody, {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',

@@ -12,7 +12,15 @@ vi.mock('$lib/server/logger', () => ({
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/zipBuilder', () => ({ fetchR2Entries: vi.fn(), buildZip: vi.fn() }));
-vi.mock('$lib/server/rateLimiter', () => ({ tryConsumeRateLimit: vi.fn() }));
+vi.mock('$lib/server/rateLimiter', () => ({
+	getClientIp: vi.fn((request: Request) => {
+		const forwardedIp =
+			request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
+		const ip = forwardedIp?.split(',')[0]?.trim();
+		return !ip || ip.toLowerCase() === 'unknown' ? null : ip;
+	}),
+	tryConsumeRateLimit: vi.fn()
+}));
 
 const createMockRequest = (headers?: Record<string, string>): Request => {
 	const h = new Headers(headers);
@@ -140,6 +148,20 @@ describe('GET /api/simFile/download/[simfileID]', () => {
 		expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="chart-42.zip"');
 	});
 
+	it('returns 400 when the client IP header is missing and rate limiting is enabled', async () => {
+		const res = await GET({
+			params: { simfileID: '42' },
+			platform: createMockPlatform(),
+			locals: { user: null },
+			request: createMockRequest()
+		} as never);
+		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({
+			error: 'Unable to determine client IP for rate limiting.'
+		});
+		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
+	});
+
 	it('skips rate limiting when KV binding is absent (local dev)', async () => {
 		const res = await GET({
 			params: { simfileID: '42' },
@@ -157,7 +179,7 @@ describe('GET /api/simFile/download/[simfileID]', () => {
 			params: { simfileID: '42' },
 			platform: createMockPlatform(),
 			locals: { user: mockUser },
-			request: createMockRequest()
+			request: createMockRequest({ 'cf-connecting-ip': '1.2.3.4' })
 		} as never);
 		expect(res.status).toBe(200);
 	});

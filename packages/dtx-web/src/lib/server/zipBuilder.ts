@@ -25,9 +25,26 @@ export const fetchR2Entries = async (
 	const entries: Array<ZipEntry | null> = new Array(objects.length).fill(null);
 	let nextIndex = 0;
 
+	const isSafeFilename = (filename: string): boolean => {
+		if (
+			!filename ||
+			filename.startsWith('/') ||
+			filename.startsWith('\\') ||
+			filename.includes(':')
+		) {
+			return false;
+		}
+
+		const segments = filename.split('/');
+		return segments.every(
+			(segment) =>
+				segment.length > 0 && segment !== '.' && segment !== '..' && !segment.includes('\\')
+		);
+	};
+
 	const fetchEntry = async (obj: R2ObjectMeta): Promise<ZipEntry | null> => {
 		const filename = obj.key.startsWith(keyPrefix) ? obj.key.slice(keyPrefix.length) : '';
-		if (!filename || filename.includes('..') || filename.startsWith('/')) return null;
+		if (!isSafeFilename(filename)) return null;
 
 		const r2obj = await bucket.get(obj.key);
 		if (!r2obj) return null;

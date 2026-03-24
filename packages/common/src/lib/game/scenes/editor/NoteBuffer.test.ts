@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
 	NoteBuffer,
 	type UndoAction,
+	type MoveUndoAction,
+	type PasteUndoAction,
+	type CutUndoAction,
 	type DeletedNoteData,
 	type MovedNoteData,
 	type PastedNoteData,
@@ -638,7 +641,7 @@ describe('NoteBuffer', () => {
 		});
 
 		it('should return early from undoMove when movedNotes array is empty', () => {
-			const emptyMoveAction: UndoAction = { type: 'move', data: [] };
+			const emptyMoveAction: MoveUndoAction = { type: 'move', data: [] };
 			noteBuffer['undoHistory'] = [emptyMoveAction];
 
 			const deleteNoteByKeySpy = vi.spyOn(mockEditor as unknown as Editor, 'deleteNoteByKey');
@@ -649,7 +652,7 @@ describe('NoteBuffer', () => {
 		});
 
 		it('should throw when undoMove is called but noteMove is not set', () => {
-			const moveAction: UndoAction = {
+			const moveAction: MoveUndoAction = {
 				type: 'move',
 				data: [
 					{
@@ -795,6 +798,18 @@ describe('NoteBuffer', () => {
 			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('note-1-2-0.5');
 			expect(mockEditor.clearSelection).toHaveBeenCalled();
 		});
+
+		it('should return early from undoPaste when pastedNotes array is empty', () => {
+			// Directly inject empty paste action to bypass recordAction filtering
+			const emptyPasteAction: PasteUndoAction = { type: 'paste', data: [] };
+			noteBuffer['undoHistory'] = [emptyPasteAction];
+
+			const deleteNoteByKeySpy = vi.spyOn(mockEditor as unknown as Editor, 'deleteNoteByKey');
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			expect(deleteNoteByKeySpy).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('undoCut', () => {
@@ -936,21 +951,9 @@ describe('NoteBuffer', () => {
 			);
 		});
 
-		it('should return early from undoPaste when pastedNotes array is empty', () => {
-			// Directly inject empty paste action to bypass recordAction filtering
-			const emptyPasteAction: UndoAction = { type: 'paste', data: [] };
-			noteBuffer['undoHistory'] = [emptyPasteAction];
-
-			const deleteNoteByKeySpy = vi.spyOn(mockEditor as unknown as Editor, 'deleteNoteByKey');
-			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
-
-			expect(result).toBe(true);
-			expect(deleteNoteByKeySpy).not.toHaveBeenCalled();
-		});
-
 		it('should return early from undoCut when cutNotes array is empty', () => {
 			// Directly inject empty cut action to bypass recordAction filtering
-			const emptyCutAction: UndoAction = { type: 'cut', data: [] };
+			const emptyCutAction: CutUndoAction = { type: 'cut', data: [] };
 			noteBuffer['undoHistory'] = [emptyCutAction];
 
 			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);

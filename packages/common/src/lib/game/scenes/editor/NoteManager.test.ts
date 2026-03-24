@@ -1521,7 +1521,11 @@ describe('NoteManager', () => {
 		});
 
 		it('should debounce rapid key presses', () => {
-			// Reset lastKeyboardAction to ensure first press always goes through
+			// Pin Date.now() to a fixed value so timing is deterministic regardless of
+			// how long the test takes to execute on CI runners.
+			const fixedNow = 100_000;
+			const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow);
+
 			noteManager['lastKeyboardAction'] = 0;
 
 			const event1 = new KeyboardEvent('keydown', {
@@ -1533,7 +1537,8 @@ describe('NoteManager', () => {
 			document.dispatchEvent(event1);
 			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
 
-			// Second rapid press should be debounced
+			// Second press: Date.now() still returns fixedNow, so
+			// fixedNow - lastKeyboardAction(fixedNow) = 0 < KEYBOARD_DEBOUNCE_MS → debounced
 			const event2 = new KeyboardEvent('keydown', {
 				key: 'c',
 				ctrlKey: true,
@@ -1542,6 +1547,8 @@ describe('NoteManager', () => {
 			});
 			document.dispatchEvent(event2);
 			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1); // still 1, debounced
+
+			dateNowSpy.mockRestore();
 		});
 
 		it('should not trigger shortcuts when typing in a textarea with text selected', () => {

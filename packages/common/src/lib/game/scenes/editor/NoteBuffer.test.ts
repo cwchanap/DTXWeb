@@ -187,6 +187,14 @@ describe('NoteBuffer', () => {
 			expect(result).toBe(false);
 		});
 
+		it('should return false for unknown action type (default switch case)', () => {
+			noteBuffer['undoHistory'] = [{ type: 'unknown_type', data: [] }] as any;
+
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(false);
+		});
+
 		it('should successfully undo a delete action', () => {
 			// Setup: Add a note to editor and record its deletion
 			mockEditor.notes['lane1'] = [];
@@ -628,6 +636,69 @@ describe('NoteBuffer', () => {
 				1
 			);
 		});
+
+		it('should return early from undoMove when movedNotes array is empty', () => {
+			const emptyMoveAction: UndoAction = { type: 'move', data: [] };
+			noteBuffer['undoHistory'] = [emptyMoveAction];
+
+			const deleteNoteByKeySpy = vi.spyOn(mockEditor as unknown as Editor, 'deleteNoteByKey');
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			expect(deleteNoteByKeySpy).not.toHaveBeenCalled();
+		});
+
+		it('should throw when undoMove is called but noteMove is not set', () => {
+			const moveAction: UndoAction = {
+				type: 'move',
+				data: [
+					{
+						originalNoteKey: 'note-0-0-0',
+						newNoteKey: 'note-0-1-0',
+						laneIndex: 0,
+						measure: 0,
+						cellOffset: 0,
+						noteId: '01',
+						measureLength: 1,
+						laneId: '11'
+					}
+				] as MovedNoteData[]
+			};
+			const bufferWithoutNoteMove = new NoteBuffer();
+			bufferWithoutNoteMove['undoHistory'] = [moveAction];
+
+			expect(() =>
+				bufferWithoutNoteMove.undoLastAction(mockEditor as unknown as Editor)
+			).toThrow(
+				'NoteMove instance not set. Call setNoteMove() before using undo functionality.'
+			);
+		});
+	});
+
+	describe('undoDelete', () => {
+		it('should throw when noteMove is not set', () => {
+			const deleteAction: UndoAction = {
+				type: 'delete',
+				data: [
+					{
+						measure: 0,
+						laneIndex: 0,
+						cellOffset: 0,
+						noteId: '01',
+						laneId: '11',
+						measureLength: 1
+					}
+				] as DeletedNoteData[]
+			};
+			const bufferWithoutNoteMove = new NoteBuffer();
+			bufferWithoutNoteMove['undoHistory'] = [deleteAction];
+
+			expect(() =>
+				bufferWithoutNoteMove.undoLastAction(mockEditor as unknown as Editor)
+			).toThrow(
+				'NoteMove instance not set. Call setNoteMove() before using undo functionality.'
+			);
+		});
 	});
 
 	describe('undoPaste', () => {
@@ -857,75 +928,6 @@ describe('NoteBuffer', () => {
 		it('should handle cut undo when NoteMove is not set', () => {
 			const bufferWithoutNoteMove = new NoteBuffer();
 			bufferWithoutNoteMove.recordAction('cut', [mockCutNoteData]);
-
-			expect(() =>
-				bufferWithoutNoteMove.undoLastAction(mockEditor as unknown as Editor)
-			).toThrow(
-				'NoteMove instance not set. Call setNoteMove() before using undo functionality.'
-			);
-		});
-
-		it('should return early from undoMove when movedNotes array is empty', () => {
-			const emptyMoveAction: UndoAction = { type: 'move', data: [] };
-			noteBuffer['undoHistory'] = [emptyMoveAction];
-
-			const deleteNoteByKeySpy = vi.spyOn(mockEditor as unknown as Editor, 'deleteNoteByKey');
-			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
-
-			expect(result).toBe(true);
-			expect(deleteNoteByKeySpy).not.toHaveBeenCalled();
-		});
-
-		it('should throw when undoMove is called but noteMove is not set', () => {
-			const moveAction: UndoAction = {
-				type: 'move',
-				data: [
-					{
-						originalNoteKey: 'note-0-0-0',
-						newNoteKey: 'note-0-1-0',
-						laneIndex: 0,
-						measure: 0,
-						cellOffset: 0,
-						noteId: '01',
-						measureLength: 1,
-						laneId: '11'
-					}
-				] as MovedNoteData[]
-			};
-			const bufferWithoutNoteMove = new NoteBuffer();
-			bufferWithoutNoteMove['undoHistory'] = [moveAction];
-
-			expect(() =>
-				bufferWithoutNoteMove.undoLastAction(mockEditor as unknown as Editor)
-			).toThrow(
-				'NoteMove instance not set. Call setNoteMove() before using undo functionality.'
-			);
-		});
-
-		it('should return false for unknown action type (default switch case)', () => {
-			noteBuffer['undoHistory'] = [{ type: 'unknown_type', data: [] }] as any;
-
-			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
-
-			expect(result).toBe(false);
-		});
-
-		it('should throw when undoDelete is called but noteMove is not set', () => {
-			const deleteAction: UndoAction = {
-				type: 'delete',
-				data: [
-					{
-						measure: 0,
-						laneIndex: 0,
-						cellOffset: 0,
-						noteId: '01',
-						laneId: '11',
-						measureLength: 1
-					}
-				] as DeletedNoteData[]
-			};
-			const bufferWithoutNoteMove = new NoteBuffer();
-			bufferWithoutNoteMove['undoHistory'] = [deleteAction];
 
 			expect(() =>
 				bufferWithoutNoteMove.undoLastAction(mockEditor as unknown as Editor)

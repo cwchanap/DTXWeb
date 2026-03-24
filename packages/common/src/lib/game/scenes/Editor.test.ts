@@ -160,13 +160,13 @@ describe('Editor Scene', () => {
 	it('should clean up subscriptions when restarted after create()', () => {
 		editorScene.create();
 
-		// Spy on the subscription cleanup functions
-		const activeNoteUnsub = editorScene['activeNoteSubscription'];
-		const keyBindingsUnsub = editorScene['keyBindingsSubscription'];
-		const dtxFileUnsub = editorScene['dtxFileSubscription'];
-		const soundChipUnsub = editorScene['soundChipSubscription'];
+		// Capture the unsubscribe functions assigned during create().
+		// The store subscribe mocks return vi.fn() values which are stored on the scene.
+		const activeNoteUnsub = editorScene['activeNoteSubscription'] as ReturnType<typeof vi.fn>;
+		const keyBindingsUnsub = editorScene['keyBindingsSubscription'] as ReturnType<typeof vi.fn>;
+		const dtxFileUnsub = editorScene['dtxFileSubscription'] as ReturnType<typeof vi.fn>;
+		const soundChipUnsub = editorScene['soundChipSubscription'] as ReturnType<typeof vi.fn>;
 
-		// All subscriptions should be set after create()
 		expect(activeNoteUnsub).toBeDefined();
 		expect(keyBindingsUnsub).toBeDefined();
 		expect(dtxFileUnsub).toBeDefined();
@@ -174,7 +174,13 @@ describe('Editor Scene', () => {
 
 		editorScene.restart();
 
-		// After restart, subscriptions should be cleared
+		// Each unsubscribe function should have been invoked during cleanup
+		expect(activeNoteUnsub).toHaveBeenCalled();
+		expect(keyBindingsUnsub).toHaveBeenCalled();
+		expect(dtxFileUnsub).toHaveBeenCalled();
+		expect(soundChipUnsub).toHaveBeenCalled();
+
+		// Subscription fields should be nulled after restart
 		expect(editorScene['activeNoteSubscription']).toBeNull();
 		expect(editorScene['keyBindingsSubscription']).toBeNull();
 		expect(editorScene['dtxFileSubscription']).toBeNull();

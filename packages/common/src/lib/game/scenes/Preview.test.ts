@@ -1427,7 +1427,7 @@ describe('Preview Scene', () => {
 			const mockSoundChip = { id: 1, volume: 80, fileName: 'drum.wav' };
 
 			// Configure mock store to return sound chip via get()
-			mockStore.currentSoundChip.subscribe.mockImplementation(
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (chips: any[]) => void) => {
 					callback([mockSoundChip]);
 					return { unsubscribe: vi.fn() };
@@ -1475,7 +1475,7 @@ describe('Preview Scene', () => {
 			const mockAudio = { play: vi.fn() };
 			const mockSoundChip = { id: 1, volume: 100, fileName: 'bgm.wav' };
 
-			mockStore.currentSoundChip.subscribe.mockImplementation(
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (chips: any[]) => void) => {
 					callback([mockSoundChip]);
 					return { unsubscribe: vi.fn() };

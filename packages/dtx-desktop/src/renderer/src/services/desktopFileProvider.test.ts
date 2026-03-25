@@ -208,8 +208,10 @@ describe('DesktopFileProvider', () => {
 			await provider.setFile('sim1', 'test.dtx', file2);
 
 			const retrieved = await provider.getFile('sim1', 'test.dtx');
-			// getFile from cache should return the second file
-			expect(retrieved).toBeDefined();
+			// getFile from cache should return the second file (same reference)
+			expect(retrieved).toBeInstanceOf(File);
+			expect(retrieved?.name).toBe(file2.name);
+			expect(retrieved).toBe(file2);
 		});
 
 		it('stores local file with null simfileId', async () => {

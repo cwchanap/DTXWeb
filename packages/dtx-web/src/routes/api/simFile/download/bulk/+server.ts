@@ -7,6 +7,58 @@ import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 const MAX_BULK_IDS = 20;
 
+const parseRequestedIds = (rawIds: unknown): number[] | null => {
+	if (!Array.isArray(rawIds) || rawIds.length === 0) {
+		return null;
+	}
+
+	const parsedIds: number[] = [];
+
+	for (const rawId of rawIds) {
+		if (typeof rawId === 'number') {
+			if (!Number.isInteger(rawId) || rawId <= 0 || !Number.isSafeInteger(rawId)) {
+				return null;
+			}
+
+			parsedIds.push(rawId);
+			continue;
+		}
+
+		if (typeof rawId === 'string' && /^\d+$/.test(rawId)) {
+			const parsedId = Number(rawId);
+			if (!Number.isSafeInteger(parsedId) || parsedId <= 0) {
+				return null;
+			}
+
+			parsedIds.push(parsedId);
+			continue;
+		}
+
+		return null;
+	}
+
+	return parsedIds;
+};
+
+const parseRequestBody = async (request: Request): Promise<Record<string, unknown>> => {
+	const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+
+	if (
+		contentType === 'application/x-www-form-urlencoded' ||
+		contentType === 'multipart/form-data'
+	) {
+		const formData = await request.formData();
+		return { ids: formData.getAll('ids') };
+	}
+
+	const body = await request.json();
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		throw new Error('Invalid request body');
+	}
+
+	return body as Record<string, unknown>;
+};
+
 const anonymizeIp = (ip: string): string => {
 	const octets = ip.split('.');
 	if (octets.length === 4) {
@@ -29,21 +81,16 @@ export const POST = async ({
 	platform: App.Platform;
 	locals: App.Locals;
 }) => {
-	let body: unknown;
+	let payload: Record<string, unknown>;
 	try {
-		body = await request.json();
+		payload = await parseRequestBody(request);
 	} catch {
-		return json({ error: 'Invalid JSON' }, { status: 400 });
-	}
-
-	if (!body || typeof body !== 'object' || Array.isArray(body)) {
 		return json({ error: 'Invalid request body' }, { status: 400 });
 	}
 
-	const payload = body as Record<string, unknown>;
-	const ids = payload.ids;
+	const ids = parseRequestedIds(payload.ids);
 
-	if (!Array.isArray(ids) || ids.length === 0) {
+	if (!ids) {
 		return json({ error: 'ids must be a non-empty array' }, { status: 400 });
 	}
 
@@ -54,16 +101,14 @@ export const POST = async ({
 		);
 	}
 
-	for (const id of ids) {
-		if (
-			typeof id !== 'number' ||
-			!Number.isInteger(id) ||
-			id <= 0 ||
-			!Number.isSafeInteger(id)
-		) {
-			return json({ error: 'All ids must be positive integers' }, { status: 400 });
-		}
+	if (parseRequestedIds(payload.ids) === null) {
+		return json({ error: 'All ids must be positive integers' }, { status: 400 });
 	}
+
+	const requestUrl = new URL(
+		typeof request.url === 'string' ? request.url : 'http://localhost/api/simFile/download/bulk'
+	);
+	const validateOnly = requestUrl.searchParams.get('validate') === '1';
 
 	try {
 		const db = getDb(platform);
@@ -74,7 +119,7 @@ export const POST = async ({
 		}
 
 		const user = locals.user;
-		const requestedIds = [...new Set(ids as number[])];
+		const requestedIds = [...new Set(ids)];
 
 		// Resolve which IDs are accessible: published OR owned by the authenticated user
 		const simfileResults = await Promise.all(
@@ -123,6 +168,10 @@ export const POST = async ({
 		const kv = platform?.env?.RATE_LIMIT;
 		const ip = getClientIp(request);
 
+		if (validateOnly) {
+			return json({ ok: true, fileCount: objectsPerSimfile.flat().length });
+		}
+
 		if (!kv) {
 			logger.warn('RATE_LIMIT KV binding not available; rate limiting is disabled');
 		} else {
@@ -156,15 +205,24 @@ export const POST = async ({
 			return json({ error: 'No files found for the requested charts' }, { status: 404 });
 		}
 
-		return new Response(buildZipStream(bucket, allSources), {
+		const response = new Response(buildZipStream(bucket, allSources), {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
 				'Content-Disposition': 'attachment; filename="drumery-charts.zip"'
 			}
 		});
+
+		if (request.headers.get('accept') === 'application/zip') {
+			return response;
+		}
+
+		return json({
+			ok: true,
+			url: URL.createObjectURL(response.body.getReadableStream().pipeTo(new Blob()))
+		});
 	} catch (error) {
-		logger.error(`Bulk download error for ids [${(ids as number[]).join(',')}]:`, error);
+		logger.error(`Bulk download error for ids [${ids.join(',')}]:`, error);
 		return json({ error: 'Internal server error' }, { status: 500 });
 	}
 };

@@ -20,6 +20,8 @@ const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP_VERSION = 20;
 const ZIP_DATA_DESCRIPTOR_FLAG = 0x0008;
+const ZIP_UTF8_FLAG = 0x0800;
+const ZIP_GENERAL_PURPOSE_FLAGS = ZIP_DATA_DESCRIPTOR_FLAG | ZIP_UTF8_FLAG;
 const ZIP_STORE_COMPRESSION = 0;
 const ZIP_MAX_32BIT_VALUE = 0xffffffff;
 const textEncoder = new TextEncoder();
@@ -74,7 +76,7 @@ const createLocalFileHeader = (pathBytes: Uint8Array): Uint8Array => {
 	const view = new DataView(header.buffer);
 	view.setUint32(0, ZIP_LOCAL_FILE_HEADER_SIGNATURE, true);
 	view.setUint16(4, ZIP_VERSION, true);
-	view.setUint16(6, ZIP_DATA_DESCRIPTOR_FLAG, true);
+	view.setUint16(6, ZIP_GENERAL_PURPOSE_FLAGS, true);
 	view.setUint16(8, ZIP_STORE_COMPRESSION, true);
 	view.setUint16(10, 0, true);
 	view.setUint16(12, 0, true);
@@ -108,7 +110,7 @@ const createCentralDirectoryEntry = (
 	view.setUint32(0, ZIP_CENTRAL_DIRECTORY_SIGNATURE, true);
 	view.setUint16(4, ZIP_VERSION, true);
 	view.setUint16(6, ZIP_VERSION, true);
-	view.setUint16(8, ZIP_DATA_DESCRIPTOR_FLAG, true);
+	view.setUint16(8, ZIP_GENERAL_PURPOSE_FLAGS, true);
 	view.setUint16(10, ZIP_STORE_COMPRESSION, true);
 	view.setUint16(12, 0, true);
 	view.setUint16(14, 0, true);

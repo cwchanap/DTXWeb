@@ -4,6 +4,9 @@ import JSZip from 'jszip';
 import { buildZipStream, createZipSources, fetchR2Entries } from './zipBuilder';
 import type { R2ObjectMeta } from './r2';
 
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+const ZIP_GENERAL_PURPOSE_UTF8_AND_DESCRIPTOR_FLAGS = 0x0808;
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const readStream = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Array> => {
@@ -13,13 +16,12 @@ const readStream = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Arra
 	let done = false;
 
 	while (!done) {
-		const result = await reader.read();
-		done = result.done;
-		if (done) {
+		const { done: streamDone, value } = await reader.read();
+		done = streamDone;
+		if (done || !value) {
 			break;
 		}
 
-		const value = result.value;
 		chunks.push(value);
 		totalLength += value.byteLength;
 	}
@@ -32,6 +34,17 @@ const readStream = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Arra
 	}
 
 	return merged;
+};
+
+const findSignatureOffset = (bytes: Uint8Array, signature: number) => {
+	for (let offset = 0; offset <= bytes.length - 4; offset += 1) {
+		const value = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
+		if (value === signature) {
+			return offset;
+		}
+	}
+
+	return -1;
 };
 
 describe('fetchR2Entries', () => {
@@ -140,5 +153,60 @@ describe('buildZipStream', () => {
 		expect(await zip.file('file.dtx')?.async('string')).toBe('chart-body');
 		expect(await zip.file('hi:hat.wav')?.async('string')).toBe('hat-body');
 		expect(bucket.get).toHaveBeenCalledTimes(2);
+	});
+
+	it('sets UTF-8 and data descriptor flags for non-ASCII filenames', async () => {
+		const files = new Map([['42/テスト.dtx', 'chart-body']]);
+		const bucket = {
+			get: vi.fn(async (key: string) => {
+				const content = files.get(key);
+				if (!content) {
+					return null;
+				}
+
+				const encoded = new TextEncoder().encode(content);
+				return {
+					body: new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(encoded);
+							controller.close();
+						}
+					}),
+					arrayBuffer: async () => encoded.buffer
+				};
+			})
+		} as unknown as R2Bucket;
+
+		const objects: R2ObjectMeta[] = [
+			{
+				key: '42/テスト.dtx',
+				size: 'chart-body'.length,
+				uploaded: new Date()
+			}
+		];
+		const zipBytes = await readStream(
+			buildZipStream(bucket, createZipSources(objects, '42/', ''))
+		);
+		const localHeaderView = new DataView(
+			zipBytes.buffer,
+			zipBytes.byteOffset,
+			zipBytes.byteLength
+		);
+		const centralDirectoryOffset = findSignatureOffset(
+			zipBytes,
+			ZIP_CENTRAL_DIRECTORY_SIGNATURE
+		);
+
+		expect(localHeaderView.getUint16(6, true)).toBe(
+			ZIP_GENERAL_PURPOSE_UTF8_AND_DESCRIPTOR_FLAGS
+		);
+		expect(centralDirectoryOffset).toBeGreaterThanOrEqual(0);
+		expect(
+			new DataView(
+				zipBytes.buffer,
+				zipBytes.byteOffset + centralDirectoryOffset,
+				46
+			).getUint16(8, true)
+		).toBe(ZIP_GENERAL_PURPOSE_UTF8_AND_DESCRIPTOR_FLAGS);
 	});
 });

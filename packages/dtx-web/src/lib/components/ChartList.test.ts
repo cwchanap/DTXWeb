@@ -266,7 +266,22 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('const clearBulkSelection = () => {');
 			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
 			expect(source).toContain("form.action = '/api/simFile/download/bulk';");
+			expect(source).toContain('if (!data?.ok || data.fileCount === 0) {');
+			expect(source).toContain('No uploaded files found for the selected charts');
 			expect(source).not.toContain('response.blob()');
+		});
+
+		it('keeps the hidden iframe alive until it finishes loading instead of using a fixed timeout', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain(
+				"iframe.addEventListener('load', handleIframeLoad, { once: true });"
+			);
+			expect(source).toContain('window.requestAnimationFrame(() => {');
+			expect(source).not.toContain('}, 1000);');
 		});
 
 		it('enforces the 20-chart bulk download limit in the UI', () => {

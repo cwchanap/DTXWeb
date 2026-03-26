@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
@@ -37,6 +37,7 @@
 	let selectMode = $state(false);
 	let selectedIds = $state(new Set<number>());
 	let bulkDownloading = $state(false);
+	const bulkDownloadIframes = new Set<HTMLIFrameElement>();
 
 	// Replace the run() function with a reactive effect using $effect
 	$effect(() => {
@@ -201,10 +202,33 @@
 		selectedIds = new Set();
 	};
 
+	const cleanupBulkDownloadIframe = (iframe: HTMLIFrameElement, form?: HTMLFormElement) => {
+		if (form && document.body.contains(form)) {
+			document.body.removeChild(form);
+		}
+
+		if (document.body.contains(iframe)) {
+			document.body.removeChild(iframe);
+		}
+
+		bulkDownloadIframes.delete(iframe);
+	};
+
+	const cleanupBulkDownloadIframes = () => {
+		for (const iframe of bulkDownloadIframes) {
+			if (document.body.contains(iframe)) {
+				document.body.removeChild(iframe);
+			}
+		}
+
+		bulkDownloadIframes.clear();
+	};
+
 	const submitBulkDownload = (ids: number[]) => {
 		const iframe = document.createElement('iframe');
 		iframe.name = `bulk-download-${Date.now()}`;
 		iframe.hidden = true;
+		bulkDownloadIframes.add(iframe);
 
 		const form = document.createElement('form');
 		form.method = 'POST';
@@ -223,16 +247,16 @@
 		document.body.appendChild(iframe);
 		document.body.appendChild(form);
 		form.submit();
+		const handleIframeLoad = () => {
+			cleanupBulkDownloadIframe(iframe, form);
+		};
+		iframe.addEventListener('load', handleIframeLoad, { once: true });
 
-		window.setTimeout(() => {
+		window.requestAnimationFrame(() => {
 			if (document.body.contains(form)) {
 				document.body.removeChild(form);
 			}
-
-			if (document.body.contains(iframe)) {
-				document.body.removeChild(iframe);
-			}
-		}, 1000);
+		});
 	};
 
 	const handleBulkDownload = async () => {
@@ -267,15 +291,22 @@
 
 			try {
 				const data = await response.json();
-				if (!data?.ok) {
-					throw new Error('Bulk download validation failed');
+				if (!data?.ok || data.fileCount === 0) {
+					throw new Error(
+						typeof data?.error === 'string'
+							? data.error
+							: 'No uploaded files found for the selected charts'
+					);
 				}
 
 				submitBulkDownload(ids);
 				clearBulkSelection();
 			} catch (error) {
 				console.error('Failed to start bulk download:', error);
-				toastStore.error({ title: 'Bulk download failed', duration: 3000 });
+				toastStore.error({
+					title: error instanceof Error ? error.message : 'Bulk download failed',
+					duration: 3000
+				});
 				clearBulkSelection();
 			}
 		} catch (error) {
@@ -286,6 +317,11 @@
 			bulkDownloading = false;
 		}
 	};
+
+	onDestroy(() => {
+		clearTimeout(searchTimeout);
+		cleanupBulkDownloadIframes();
+	});
 
 	onMount(() => {
 		loadItems();

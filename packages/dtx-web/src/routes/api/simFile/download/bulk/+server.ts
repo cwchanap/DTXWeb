@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
-import { fetchR2Entries, buildZip } from '$lib/server/zipBuilder';
+import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
 import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 const MAX_BULK_IDS = 20;
@@ -148,27 +148,19 @@ export const POST = async ({
 			...(requestId ? { requestId } : {})
 		});
 
-		// Fetch file contents for each simfile, nested under chart-{id}/ in the ZIP
-		const entriesPerSimfile = await Promise.all(
-			accessibleIds.map((id, i) =>
-				fetchR2Entries(bucket, objectsPerSimfile[i], `${id}/`, `chart-${id}`)
-			)
+		const allSources = accessibleIds.flatMap((id, i) =>
+			createZipSources(objectsPerSimfile[i], `${id}/`, `chart-${id}`)
 		);
 
-		const allEntries = entriesPerSimfile.flat();
-
-		if (allEntries.length === 0) {
+		if (allSources.length === 0) {
 			return json({ error: 'No files found for the requested charts' }, { status: 404 });
 		}
 
-		const zip = await buildZip(allEntries);
-
-		return new Response(zip, {
+		return new Response(buildZipStream(bucket, allSources), {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
-				'Content-Disposition': 'attachment; filename="drumery-charts.zip"',
-				'Content-Length': String(zip.byteLength)
+				'Content-Disposition': 'attachment; filename="drumery-charts.zip"'
 			}
 		});
 	} catch (error) {

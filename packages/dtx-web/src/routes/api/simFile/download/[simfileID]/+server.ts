@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
-import { fetchR2Entries, buildZip } from '$lib/server/zipBuilder';
+import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
 import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 export const GET = async ({
@@ -85,20 +85,17 @@ export const GET = async ({
 
 		logger.info(`Downloading ${objects.length} files for simfile: ${canonicalId}`);
 
-		const entries = await fetchR2Entries(bucket, objects, `${canonicalId}/`, '');
+		const sources = createZipSources(objects, `${canonicalId}/`, '');
 
-		if (entries.length === 0) {
+		if (sources.length === 0) {
 			return json({ error: 'No files found for this chart' }, { status: 404 });
 		}
 
-		const zip = await buildZip(entries);
-
-		return new Response(zip, {
+		return new Response(buildZipStream(bucket, sources), {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
-				'Content-Disposition': `attachment; filename="chart-${canonicalId}.zip"`,
-				'Content-Length': String(zip.byteLength)
+				'Content-Disposition': `attachment; filename="chart-${canonicalId}.zip"`
 			}
 		});
 	} catch (error) {

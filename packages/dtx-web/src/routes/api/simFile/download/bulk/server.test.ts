@@ -67,7 +67,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(400);
-		expect(await res.json()).toMatchObject({ error: 'Invalid JSON' });
+		expect(await res.json()).toMatchObject({ error: 'Invalid request body' });
 	});
 
 	it('returns 400 when ids is missing', async () => {
@@ -109,6 +109,29 @@ describe('POST /api/simFile/download/bulk', () => {
 		expect(await res.json()).toMatchObject({ error: 'All ids must be positive integers' });
 	});
 
+	it('accepts form submissions for bulk downloads', async () => {
+		const request = new Request('http://localhost/api/simFile/download/bulk', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'cf-connecting-ip': '1.2.3.4'
+			},
+			body: new URLSearchParams([
+				['ids', '1'],
+				['ids', '2']
+			])
+		});
+
+		const res = await POST({
+			request,
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+
+		expect(res.status).toBe(200);
+		expect(res.headers.get('Content-Type')).toBe('application/zip');
+	});
+
 	it('returns 500 when bucket is not available', async () => {
 		const res = await POST({
 			request: createRequest({ ids: [1] }),
@@ -140,6 +163,27 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(429);
+	});
+
+	it('returns JSON success for validation-only requests without consuming rate limit', async () => {
+		const request = new Request('http://localhost/api/simFile/download/bulk?validate=1', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'cf-connecting-ip': '1.2.3.4'
+			},
+			body: JSON.stringify({ ids: [1, 2] })
+		});
+
+		const res = await POST({
+			request,
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: true, fileCount: 2 });
+		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
 	});
 
 	it('returns 200 ZIP for valid published ids', async () => {

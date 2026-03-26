@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './+server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
-import { fetchR2Entries, buildZip } from '$lib/server/zipBuilder';
+import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
 import { tryConsumeRateLimit } from '$lib/server/rateLimiter';
 import logger from '$lib/server/logger';
 
@@ -11,7 +11,7 @@ vi.mock('$lib/server/logger', () => ({
 }));
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
-vi.mock('$lib/server/zipBuilder', () => ({ fetchR2Entries: vi.fn(), buildZip: vi.fn() }));
+vi.mock('$lib/server/zipBuilder', () => ({ buildZipStream: vi.fn(), createZipSources: vi.fn() }));
 vi.mock('$lib/server/rateLimiter', () => ({
 	getClientIp: vi.fn((request: Request) => {
 		const forwardedIp =
@@ -48,10 +48,10 @@ describe('GET /api/simFile/download/[simfileID]', () => {
 		vi.mocked(listAllR2Objects).mockResolvedValue([
 			{ key: '42/file.dtx', size: 1024, uploaded: new Date() }
 		]);
-		vi.mocked(fetchR2Entries).mockResolvedValue([
-			{ path: 'file.dtx', data: new ArrayBuffer(1024) }
+		vi.mocked(createZipSources).mockReturnValue([
+			{ path: 'file.dtx', objectKey: '42/file.dtx', size: 1024 }
 		]);
-		vi.mocked(buildZip).mockResolvedValue(new Uint8Array([0x50, 0x4b]));
+		vi.mocked(buildZipStream).mockReturnValue(new ReadableStream<Uint8Array>());
 		vi.mocked(tryConsumeRateLimit).mockResolvedValue({
 			allowed: true,
 			remainingBytes: 1073741824

@@ -28,7 +28,8 @@ import ChartListTableItem from './ChartListTableItem.svelte';
 const mockItem = {
 	id: 10,
 	is_published: false,
-	download_url: null as string | null
+	download_url: null as string | null,
+	has_uploaded_files: true
 };
 
 describe('ChartListTableItem', () => {
@@ -61,6 +62,22 @@ describe('ChartListTableItem', () => {
 		expect(r2Link).toHaveAttribute('href', `/api/simFile/download/${mockItem.id}`);
 		const externalLink = screen.getByRole('link', { name: /external download link/i });
 		expect(externalLink).toHaveAttribute('href', 'https://dl.example.com');
+	});
+
+	it('hides the R2 download link in blog mode when uploaded files are unavailable', () => {
+		render(ChartListTableItem, {
+			props: {
+				...defaultProps,
+				isBlog: true,
+				item: {
+					...mockItem,
+					has_uploaded_files: false,
+					download_url: 'https://dl.example.com'
+				}
+			}
+		});
+		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
 	});
 
 	it('renders action buttons in non-blog mode', () => {

@@ -19,9 +19,12 @@
 
 	import type { SimfileWithDtx } from '@dtx/common';
 
+	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
+	const MAX_BULK_DOWNLOAD_CHARTS = 20;
+
 	let { pageSize = 12, isBlog = false }: Props = $props();
 
-	let items: SimfileWithDtx[] = $state([]);
+	let items: ListedChart[] = $state([]);
 	let currentPage = $state(1);
 	let totalPages = $state(1);
 	let totalCount = $state(0);
@@ -29,7 +32,7 @@
 	let searchFilter: string = $state('');
 	let searchTimeout: ReturnType<typeof setTimeout>;
 	let hideUnpublished = $state(false);
-	let filteredItems = $state<SimfileWithDtx[]>([]);
+	let filteredItems = $state<ListedChart[]>([]);
 	let viewMode = $state<'card' | 'table'>('card');
 	let selectMode = $state(false);
 	let selectedIds = $state(new Set<number>());
@@ -181,6 +184,13 @@
 		if (next.has(id)) {
 			next.delete(id);
 		} else {
+			if (next.size >= MAX_BULK_DOWNLOAD_CHARTS) {
+				toastStore.error({
+					title: `You can download up to ${MAX_BULK_DOWNLOAD_CHARTS} charts at once`,
+					duration: 3000
+				});
+				return;
+			}
 			next.add(id);
 		}
 		selectedIds = next;
@@ -193,6 +203,13 @@
 
 	const handleBulkDownload = async () => {
 		if (selectedIds.size === 0) return;
+		if (selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS) {
+			toastStore.error({
+				title: `You can download up to ${MAX_BULK_DOWNLOAD_CHARTS} charts at once`,
+				duration: 3000
+			});
+			return;
+		}
 		bulkDownloading = true;
 		try {
 			const response = await fetch('/api/simFile/download/bulk', {
@@ -318,9 +335,10 @@
 					</button>
 					{#if selectMode && selectedIds.size > 0}
 						<button
-							class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all duration-200 hover:shadow-xl disabled:opacity-50"
+							class="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-purple-600 to-cyan-600 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all duration-200 hover:shadow-xl disabled:opacity-50"
 							onclick={handleBulkDownload}
-							disabled={bulkDownloading}
+							disabled={bulkDownloading ||
+								selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS}
 						>
 							{bulkDownloading ? 'Downloading…' : `Download (${selectedIds.size})`}
 						</button>
@@ -384,7 +402,7 @@
 					<div class="flex-1">
 						<div class="mb-3 flex items-center gap-3">
 							<div
-								class="h-2 w-2 rounded-full bg-gradient-to-r from-purple-400 to-cyan-400"
+								class="h-2 w-2 rounded-full bg-linear-to-r from-purple-400 to-cyan-400"
 							></div>
 							<h3
 								class="text-lg font-semibold text-slate-100 transition-colors group-hover:text-purple-300"
@@ -452,7 +470,7 @@
 								<div class="flex flex-wrap gap-1">
 									{#each formatLevelDisplay(item.dtx_files).split(', ') as level}
 										<span
-											class="rounded-full border border-purple-500/30 bg-gradient-to-r from-purple-600/30 to-cyan-600/30 px-2 py-1 text-xs text-purple-200"
+											class="rounded-full border border-purple-500/30 bg-linear-to-r from-purple-600/30 to-cyan-600/30 px-2 py-1 text-xs text-purple-200"
 										>
 											{level}
 										</span>
@@ -527,7 +545,7 @@
 				showFirstLastButtons={true}
 				classes="flex items-center gap-1 flex-nowrap"
 				buttonBase="px-2 py-1 text-xs font-medium rounded-lg transition-all duration-200 border border-purple-500/30 whitespace-nowrap"
-				buttonActive="bg-gradient-to-r from-purple-600 to-cyan-600 text-white shadow-lg hover:shadow-xl"
+				buttonActive="bg-linear-to-r from-purple-600 to-cyan-600 text-white shadow-lg hover:shadow-xl"
 				buttonInactive="bg-slate-800/50 text-slate-300 hover:bg-purple-600/20 hover:text-purple-300 hover:border-purple-400/50"
 			>
 				{#snippet labelFirst()}

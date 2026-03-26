@@ -8,8 +8,10 @@
 	import { Modal, Button } from '@dtx/ui-components/components';
 	import DownloadDropdown from './DownloadDropdown.svelte';
 
+	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
+
 	let { item, isBlog, togglePublishChart, simfileBucketUrl, onFileDelete } = $props<{
-		item: Partial<SimfileWithDtx>;
+		item: ChartListItemData;
 		isBlog: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		simfileBucketUrl: string;
@@ -230,7 +232,11 @@
 
 		{#if isBlog && item.id !== undefined}
 			<div class="mt-4">
-				<DownloadDropdown simfileId={item.id} externalUrl={item.download_url ?? null} />
+				<DownloadDropdown
+					simfileId={item.id}
+					externalUrl={item.download_url ?? null}
+					hasUploadedFiles={item.has_uploaded_files ?? false}
+				/>
 			</div>
 		{/if}
 	</div>

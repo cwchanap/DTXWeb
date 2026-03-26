@@ -5,8 +5,13 @@
 	import DownloadDropdown from './DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
+
+	type ChartListTableItemData = Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'> & {
+		has_uploaded_files?: boolean;
+	};
+
 	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
-		item: Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'>;
+		item: ChartListTableItemData;
 		isBlog: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		onFileDelete: (id: number) => void;
@@ -64,7 +69,12 @@
 		{/snippet}
 	</Popover>
 {:else}
-	<DownloadDropdown simfileId={item.id} externalUrl={item.download_url ?? null} compact={true} />
+	<DownloadDropdown
+		simfileId={item.id}
+		externalUrl={item.download_url ?? null}
+		hasUploadedFiles={item.has_uploaded_files ?? false}
+		compact={true}
+	/>
 {/if}
 
 <!-- Delete Confirmation Modal -->

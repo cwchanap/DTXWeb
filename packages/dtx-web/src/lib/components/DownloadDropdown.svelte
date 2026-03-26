@@ -4,10 +4,12 @@
 	let {
 		simfileId,
 		externalUrl,
+		hasUploadedFiles = false,
 		compact = false
 	} = $props<{
 		simfileId: number;
 		externalUrl: string | null;
+		hasUploadedFiles?: boolean;
 		compact?: boolean;
 	}>();
 
@@ -30,16 +32,18 @@
 </script>
 
 <div class={containerClass}>
-	<a
-		href="/api/simFile/download/{simfileId}"
-		download="chart-{simfileId}.zip"
-		class={downloadClass}
-		aria-label="Download chart"
-		title="Download chart"
-	>
-		<Download size="16" />
-		{#if !compact}Download{/if}
-	</a>
+	{#if hasUploadedFiles}
+		<a
+			href="/api/simFile/download/{simfileId}"
+			download="chart-{simfileId}.zip"
+			class={downloadClass}
+			aria-label="Download chart"
+			title="Download chart"
+		>
+			<Download size="16" />
+			{#if !compact}Download{/if}
+		</a>
+	{/if}
 	{#if externalUrl}
 		<a
 			href={externalUrl}

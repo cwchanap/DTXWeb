@@ -50,6 +50,7 @@ const mockItem = {
 	artist: 'Test Artist 1',
 	bpm: 120,
 	download_url: 'https://example.com/download1',
+	has_uploaded_files: true,
 	is_published: true,
 	display_id: 1,
 	dtx_files: [{ level: 3 }, { level: 5 }],
@@ -75,6 +76,7 @@ const mockItemNoPreview = {
 	artist: 'Test Artist 2',
 	bpm: 140,
 	download_url: null,
+	has_uploaded_files: false,
 	is_published: false,
 	display_id: 2,
 	dtx_files: [{ level: 4 }],
@@ -238,6 +240,17 @@ describe('ChartListItem Component Logic', () => {
 				'href',
 				`/api/simFile/download/${renderProps.item.id}`
 			);
+		});
+
+		it('hides R2 download link in blog mode when uploaded files are unavailable', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: { ...mockItem, has_uploaded_files: false }
+				}
+			});
+			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
 		});
 
 		it('shows external link in blog mode when download_url is set', () => {

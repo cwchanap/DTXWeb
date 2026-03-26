@@ -267,5 +267,16 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('const clearBulkSelection = () => {');
 			expect(source).toContain('URL.revokeObjectURL(downloadUrl);');
 		});
+
+		it('enforces the 20-chart bulk download limit in the UI', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain('const MAX_BULK_DOWNLOAD_CHARTS = 20;');
+			expect(source).toContain('if (next.size >= MAX_BULK_DOWNLOAD_CHARTS) {');
+			expect(source).toContain('if (selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS) {');
+		});
 	});
 });

@@ -3,24 +3,33 @@ import { GET, POST } from './+server';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
+import { listAllR2Objects } from '$lib/server/r2';
 
-vi.mock('$lib/server/db');
+vi.mock('$lib/server/db', () => ({
+	getDb: vi.fn(),
+	listSimfiles: vi.fn(),
+	createSimfile: vi.fn(),
+	createDtxFiles: vi.fn(),
+	deleteSimfile: vi.fn()
+}));
 vi.mock('@dtx/common', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@dtx/common')>();
 	return { ...actual, toSimfileWithDtx: vi.fn() };
 });
+vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/logger', () => ({
 	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };
-const mockPlatform = { env: { DB: {} } };
+const mockPlatform = { env: { DB: {}, DTXFILE_BUCKET: {} } };
 
 describe('GET /api/chart', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getDb).mockReturnValue({} as any);
 		vi.mocked(listSimfiles).mockResolvedValue({ data: [], count: 0 });
+		vi.mocked(listAllR2Objects).mockResolvedValue([]);
 	});
 
 	it('returns 401 when unauthenticated and scope is not published', async () => {
@@ -104,6 +113,51 @@ describe('GET /api/chart', () => {
 			locals: { user: mockUser } as any
 		});
 		expect(response.status).toBe(500);
+	});
+
+	it('adds has_uploaded_files for published chart responses', async () => {
+		vi.mocked(listSimfiles).mockResolvedValue({
+			data: [
+				{
+					id: 7,
+					title: 'Published Chart',
+					artist: 'Artist',
+					bpm: 120,
+					download_url: null,
+					is_published: true,
+					display_id: 7,
+					dtx_files: [],
+					preview_url: null,
+					video_preview_url: null,
+					publish_date: '2024-01-01',
+					created_at: '2024-01-01',
+					updated_at: '2024-01-02',
+					user_id: 'user-1'
+				}
+			],
+			count: 1
+		});
+		vi.mocked(listAllR2Objects).mockResolvedValue([
+			{ key: '7/file.dtx', size: 100, uploaded: new Date() }
+		]);
+
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=published'),
+			platform: mockPlatform as any,
+			locals: { user: null } as any
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			data: [
+				expect.objectContaining({
+					id: 7,
+					has_uploaded_files: true
+				})
+			],
+			count: 1
+		});
+		expect(listAllR2Objects).toHaveBeenCalledWith(mockPlatform.env.DTXFILE_BUCKET, '7/');
 	});
 });
 

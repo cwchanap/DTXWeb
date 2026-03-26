@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
-import { listAllR2Objects } from '$lib/server/r2';
+import { hasR2Objects } from '$lib/server/r2';
 
 /** GET /api/chart — List charts (paginated, filtered) */
 export const GET = async ({
@@ -64,8 +64,8 @@ export const GET = async ({
 		const dataWithUploadFlags = await Promise.all(
 			data.map(async (item) => {
 				try {
-					const objects = await listAllR2Objects(bucket, `${item.id}/`);
-					return { ...item, has_uploaded_files: objects.length > 0 };
+					const hasUploadedFiles = await hasR2Objects(bucket, `${item.id}/`);
+					return { ...item, has_uploaded_files: hasUploadedFiles };
 				} catch (error) {
 					logger.warn(`Failed to check uploaded files for chart ${item.id}:`, error);
 					return { ...item, has_uploaded_files: false };

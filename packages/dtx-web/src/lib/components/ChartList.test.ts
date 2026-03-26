@@ -256,16 +256,18 @@ describe('ChartList Component Logic', () => {
 	});
 
 	describe('Bulk Download Error Handling', () => {
-		it('logs request and blob preparation failures while cleaning up download resources', () => {
+		it('uses validation plus hidden form submission for bulk downloads without blob buffering', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
 			);
 
 			expect(source).toContain("console.error('Bulk download request failed:'");
-			expect(source).toContain("console.error('Failed to prepare bulk download:'");
+			expect(source).toContain("console.error('Failed to start bulk download:'");
 			expect(source).toContain('const clearBulkSelection = () => {');
-			expect(source).toContain('URL.revokeObjectURL(downloadUrl);');
+			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
+			expect(source).toContain("form.action = '/api/simFile/download/bulk';");
+			expect(source).not.toContain('response.blob()');
 		});
 
 		it('enforces the 20-chart bulk download limit in the UI', () => {

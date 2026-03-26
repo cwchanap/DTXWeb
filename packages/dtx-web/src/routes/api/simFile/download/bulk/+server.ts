@@ -88,10 +88,14 @@ export const POST = async ({
 		return json({ error: 'Invalid request body' }, { status: 400 });
 	}
 
+	if (!Array.isArray(payload.ids) || payload.ids.length === 0) {
+		return json({ error: 'ids must be a non-empty array' }, { status: 400 });
+	}
+
 	const ids = parseRequestedIds(payload.ids);
 
 	if (!ids) {
-		return json({ error: 'ids must be a non-empty array' }, { status: 400 });
+		return json({ error: 'All ids must be positive integers' }, { status: 400 });
 	}
 
 	if (ids.length > MAX_BULK_IDS) {
@@ -99,10 +103,6 @@ export const POST = async ({
 			{ error: `Cannot download more than ${MAX_BULK_IDS} charts at once` },
 			{ status: 400 }
 		);
-	}
-
-	if (parseRequestedIds(payload.ids) === null) {
-		return json({ error: 'All ids must be positive integers' }, { status: 400 });
 	}
 
 	const requestUrl = new URL(
@@ -205,21 +205,12 @@ export const POST = async ({
 			return json({ error: 'No files found for the requested charts' }, { status: 404 });
 		}
 
-		const response = new Response(buildZipStream(bucket, allSources), {
+		return new Response(buildZipStream(bucket, allSources), {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
 				'Content-Disposition': 'attachment; filename="drumery-charts.zip"'
 			}
-		});
-
-		if (request.headers.get('accept') === 'application/zip') {
-			return response;
-		}
-
-		return json({
-			ok: true,
-			url: URL.createObjectURL(response.body.getReadableStream().pipeTo(new Blob()))
 		});
 	} catch (error) {
 		logger.error(`Bulk download error for ids [${ids.join(',')}]:`, error);

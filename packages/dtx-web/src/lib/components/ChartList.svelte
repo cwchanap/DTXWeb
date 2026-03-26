@@ -201,6 +201,40 @@
 		selectedIds = new Set();
 	};
 
+	const submitBulkDownload = (ids: number[]) => {
+		const iframe = document.createElement('iframe');
+		iframe.name = `bulk-download-${Date.now()}`;
+		iframe.hidden = true;
+
+		const form = document.createElement('form');
+		form.method = 'POST';
+		form.action = '/api/simFile/download/bulk';
+		form.target = iframe.name;
+		form.hidden = true;
+
+		for (const id of ids) {
+			const input = document.createElement('input');
+			input.type = 'hidden';
+			input.name = 'ids';
+			input.value = String(id);
+			form.appendChild(input);
+		}
+
+		document.body.appendChild(iframe);
+		document.body.appendChild(form);
+		form.submit();
+
+		window.setTimeout(() => {
+			if (document.body.contains(form)) {
+				document.body.removeChild(form);
+			}
+
+			if (document.body.contains(iframe)) {
+				document.body.removeChild(iframe);
+			}
+		}, 1000);
+	};
+
 	const handleBulkDownload = async () => {
 		if (selectedIds.size === 0) return;
 		if (selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS) {
@@ -212,10 +246,11 @@
 		}
 		bulkDownloading = true;
 		try {
-			const response = await fetch('/api/simFile/download/bulk', {
+			const ids = [...selectedIds];
+			const response = await fetch('/api/simFile/download/bulk?validate=1', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ ids: [...selectedIds] })
+				body: JSON.stringify({ ids })
 			});
 			if (!response.ok) {
 				let errMsg = 'Bulk download failed';
@@ -230,30 +265,18 @@
 				return;
 			}
 
-			let downloadUrl: string | null = null;
-			let downloadAnchor: HTMLAnchorElement | null = null;
-
 			try {
-				const blob = await response.blob();
-				downloadUrl = URL.createObjectURL(blob);
-				downloadAnchor = document.createElement('a');
-				downloadAnchor.href = downloadUrl;
-				downloadAnchor.download = 'drumery-charts.zip';
-				document.body.appendChild(downloadAnchor);
-				downloadAnchor.click();
+				const data = await response.json();
+				if (!data?.ok) {
+					throw new Error('Bulk download validation failed');
+				}
+
+				submitBulkDownload(ids);
 				clearBulkSelection();
 			} catch (error) {
-				console.error('Failed to prepare bulk download:', error);
+				console.error('Failed to start bulk download:', error);
 				toastStore.error({ title: 'Bulk download failed', duration: 3000 });
 				clearBulkSelection();
-			} finally {
-				if (downloadAnchor && document.body.contains(downloadAnchor)) {
-					document.body.removeChild(downloadAnchor);
-				}
-
-				if (downloadUrl) {
-					URL.revokeObjectURL(downloadUrl);
-				}
 			}
 		} catch (error) {
 			console.error('Bulk download request failed:', error);

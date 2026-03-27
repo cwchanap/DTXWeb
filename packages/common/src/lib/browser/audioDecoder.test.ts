@@ -235,6 +235,21 @@ describe('XAAudioContext', () => {
 			await expect(xaContext.decodeAudioData(testData)).rejects.toThrow('WASM init failed');
 		});
 
+		it('should throw when WasmXADecoder is not available after initialization', async () => {
+			const testData = createMockXAData();
+			const xaDecoderMod = await import('xa_decoder');
+			const origDecoder = xaDecoderMod.WasmXADecoder;
+			(xaDecoderMod as any).WasmXADecoder = undefined;
+
+			try {
+				await expect(xaContext.decodeAudioData(testData)).rejects.toThrow(
+					'XA decoder is not initialized'
+				);
+			} finally {
+				(xaDecoderMod as any).WasmXADecoder = origDecoder;
+			}
+		});
+
 		it('should handle XA decoder creation failure', async () => {
 			const testData = createMockXAData();
 

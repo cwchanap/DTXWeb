@@ -366,6 +366,67 @@ describe('ExportWorkspaceModal', () => {
 			removeChild.mockRestore();
 		});
 
+		it('catches DTX file errors and continues export', async () => {
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			// First zip.file call throws (for basic.dtx); second call (advanced.dtx) uses default → succeeds
+			mockZipInstance.file.mockImplementationOnce(() => {
+				throw new Error('failed to add dtx');
+			});
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			const appendChild = vi
+				.spyOn(document.body, 'appendChild')
+				.mockImplementation((el) => el);
+			const removeChild = vi
+				.spyOn(document.body, 'removeChild')
+				.mockImplementation((el) => el);
+
+			const workspaceAButton = screen
+				.getAllByRole('button')
+				.find(
+					(btn) =>
+						btn.textContent?.includes('Workspace A') &&
+						!btn.textContent?.includes('Cancel')
+				)!;
+			await fireEvent.click(workspaceAButton);
+
+			await vi.waitFor(() => {
+				expect(warnSpy).toHaveBeenCalledWith(
+					expect.stringContaining('Failed to add DTX file basic.dtx'),
+					expect.any(Error)
+				);
+			});
+
+			warnSpy.mockRestore();
+			appendChild.mockRestore();
+			removeChild.mockRestore();
+		});
+
+		it('clears exportWorkspaceError after 10 seconds via setTimeout', async () => {
+			vi.useFakeTimers();
+			try {
+				mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('zip failed'));
+				render(ExportWorkspaceModal, { props: defaultProps });
+
+				const workspaceAButton = screen
+					.getAllByRole('button')
+					.find(
+						(btn) =>
+							btn.textContent?.includes('Workspace A') &&
+							!btn.textContent?.includes('Cancel')
+					)!;
+
+				fireEvent.click(workspaceAButton);
+				// Flush all promises and timers (including the 10s setTimeout)
+				await vi.runAllTimersAsync();
+
+				expect(toastMock.error).toHaveBeenCalled();
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
 		it('catches audio file errors and continues export', async () => {
 			// Workspace A has 2 DTX files (basic.dtx, advanced.dtx) and 1 audio file (kick.wav)
 			// mock zip.file to succeed for both DTX files and then throw for the audio file

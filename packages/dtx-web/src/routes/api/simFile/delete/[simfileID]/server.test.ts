@@ -392,6 +392,100 @@ describe('/api/simFile/delete/[simfileID]', () => {
 		expect(data.error).toBe('Invalid SimFile ID');
 	});
 
+	it('returns 400 when simfileID passes digit check but is not a safe integer', async () => {
+		const mockBucket = createMockBucket();
+		const request = createMockRequest(
+			'DELETE',
+			'http://localhost:5173/api/simFile/delete/99999999999999999999'
+		);
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '99999999999999999999' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('handles partial failures with string rejection reason', async () => {
+		const mockObjects = [{ key: '123/file1.dtx' }];
+		const mockBucket = {
+			list: vi.fn().mockResolvedValue({
+				objects: mockObjects.map((obj) => ({
+					key: obj.key,
+					size: 1024,
+					uploaded: new Date()
+				}))
+			}),
+			delete: vi.fn().mockRejectedValue('string-error-reason')
+		} as unknown as R2Bucket;
+
+		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.failed).toBe(1);
+	});
+
+	it('handles partial failures with object rejection reason (JSON.stringify fallback)', async () => {
+		const mockObjects = [{ key: '123/file1.dtx' }];
+		const mockBucket = {
+			list: vi.fn().mockResolvedValue({
+				objects: mockObjects.map((obj) => ({
+					key: obj.key,
+					size: 1024,
+					uploaded: new Date()
+				}))
+			}),
+			delete: vi.fn().mockRejectedValue({ code: 'R2_ERROR', status: 503 })
+		} as unknown as R2Bucket;
+
+		const request = createMockRequest('DELETE', 'http://localhost:5173/api/simFile/delete/123');
+
+		const response = await DELETE({
+			request,
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.failed).toBe(1);
+	});
+
 	it('returns 400 when simfileID is not a whole number', async () => {
 		const mockBucket = createMockBucket();
 		const request = createMockRequest(

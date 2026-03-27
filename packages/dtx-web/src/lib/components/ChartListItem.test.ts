@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ModalStub from '../../tests/stubs/ModalStub.svelte';
@@ -15,9 +15,10 @@ vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 });
 vi.mock('@dtx/ui-components/components', async () => {
 	const { default: ModalStub } = await import('../../tests/stubs/ModalStub.svelte');
+	const { default: ButtonStub } = await import('../../tests/stubs/ButtonStub.svelte');
 	return {
 		Modal: ModalStub,
-		Button: vi.fn()
+		Button: ButtonStub
 	};
 });
 vi.mock('@lucide/svelte/icons');
@@ -246,6 +247,43 @@ describe('ChartListItem Component Logic', () => {
 				}
 			});
 			expect(screen.getByText('Download not available')).toBeInTheDocument();
+		});
+	});
+
+	describe('Handler coverage', () => {
+		const handlerProps = {
+			item: mockItem,
+			isBlog: false,
+			togglePublishChart: vi.fn().mockResolvedValue(undefined),
+			simfileBucketUrl: 'https://cdn.example.com',
+			onFileDelete: vi.fn()
+		};
+
+		it('clicking Delete opens modal and confirming calls onFileDelete', async () => {
+			const onFileDelete = vi.fn();
+			render(ChartListItem, { props: { ...handlerProps, onFileDelete } });
+
+			// Click the Delete button in popover content (only one Delete button initially)
+			await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+			// Modal should now be open
+			const dialog = screen.getByRole('dialog');
+			expect(dialog).toBeInTheDocument();
+
+			// Click confirm button inside the dialog
+			const allDeleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+			const dialogDeleteButton = allDeleteButtons.find((btn) => dialog.contains(btn));
+			await fireEvent.click(dialogDeleteButton!);
+
+			expect(onFileDelete).toHaveBeenCalledWith(mockItem.id);
+		});
+
+		it('clicking Unpublish calls togglePublishChart with correct args', async () => {
+			const togglePublishChart = vi.fn().mockResolvedValue(undefined);
+			render(ChartListItem, { props: { ...handlerProps, togglePublishChart } });
+
+			await fireEvent.click(screen.getByRole('button', { name: /unpublish/i }));
+			expect(togglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.is_published);
 		});
 	});
 

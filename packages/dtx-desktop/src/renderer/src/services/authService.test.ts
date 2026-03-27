@@ -27,6 +27,29 @@ vi.mock('./supabaseService', () => ({
 	getCurrentSession: vi.fn()
 }));
 
+const mockWorkspaceSubscribeFn = vi.hoisted(() => vi.fn());
+vi.mock('../stores/workspaceStore', () => ({
+	workspaceStore: {
+		subscribe: mockWorkspaceSubscribeFn.mockImplementation((callback: (state: any) => void) => {
+			callback({ treeStructure: [], path: null });
+			return vi.fn();
+		}),
+		setTreeStructure: vi.fn()
+	}
+}));
+
+vi.mock('./linkageCacheService', () => ({
+	linkageCacheService: { clearCache: vi.fn() }
+}));
+
+vi.mock('./simFileService', () => ({
+	simFileService: { clearCache: vi.fn() }
+}));
+
+vi.mock('../stores/simFileStore', () => ({
+	simFileStore: { reset: vi.fn() }
+}));
+
 describe('AuthService', () => {
 	beforeEach(() => {
 		// Clear all mocks before each test
@@ -308,6 +331,69 @@ describe('AuthService', () => {
 		});
 	});
 
+	describe('handleMagicLinkResult', () => {
+		it('should store session and set user when magic link succeeds', async () => {
+			const mockSession = { access_token: 'abc', refresh_token: 'xyz' };
+			const result = {
+				success: true,
+				session: mockSession,
+				user: {
+					id: 'user-1',
+					email: 'test@example.com',
+					user_metadata: { name: 'Test User' }
+				}
+			};
+
+			await authService.handleMagicLinkResult(result as any);
+
+			expect(storeSessionData).toHaveBeenCalledWith(mockSession);
+			expect(authStore.setUser).toHaveBeenCalledWith({
+				id: 'user-1',
+				email: 'test@example.com',
+				name: 'Test User'
+			});
+		});
+
+		it('should fall back to email as name when user_metadata has no name', async () => {
+			const result = {
+				success: true,
+				session: { access_token: 'abc', refresh_token: 'xyz' },
+				user: { id: 'user-1', email: 'foo@bar.com', user_metadata: {} }
+			};
+
+			await authService.handleMagicLinkResult(result as any);
+
+			expect(authStore.setUser).toHaveBeenCalledWith(
+				expect.objectContaining({ name: 'foo@bar.com' })
+			);
+		});
+
+		it('should set error when result.success is false', async () => {
+			const result = {
+				success: false,
+				error: 'Token expired',
+				user: { id: '', email: null }
+			};
+
+			await authService.handleMagicLinkResult(result as any);
+
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+			expect(authStore.setUser).not.toHaveBeenCalled();
+		});
+
+		it('should set error when session is missing from successful result', async () => {
+			const result = {
+				success: true,
+				session: null,
+				user: { id: 'user-1', email: 'test@example.com' }
+			};
+
+			await authService.handleMagicLinkResult(result as any);
+
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+		});
+	});
+
 	describe('logout', () => {
 		it('should clear session and call store logout', async () => {
 			// Arrange
@@ -320,6 +406,59 @@ describe('AuthService', () => {
 			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('logout-session');
 			expect(clearStoredSessionData).toHaveBeenCalled();
 			expect(authStore.logout).toHaveBeenCalled();
+		});
+
+		it('should still clear local state when IPC invoke throws', async () => {
+			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('IPC error'));
+
+			await authService.logout();
+
+			expect(clearStoredSessionData).toHaveBeenCalled();
+			expect(authStore.logout).toHaveBeenCalled();
+		});
+
+		it('should clear linkages from tree nodes when treeStructure is non-empty', async () => {
+			(window.electron.ipcRenderer.invoke as any).mockResolvedValue(true);
+
+			const treeNode = {
+				name: 'song-folder',
+				path: '/workspace/song',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				linkedSimFileId: 'sim-123',
+				linkedSimFile: { id: 'sim-123' }
+			};
+
+			mockWorkspaceSubscribeFn.mockImplementationOnce((callback: (state: any) => void) => {
+				callback({ treeStructure: [treeNode], path: '/workspace' });
+				return vi.fn();
+			});
+
+			await authService.logout();
+
+			const { workspaceStore } = await import('../stores/workspaceStore');
+			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith(
+				expect.arrayContaining([
+					expect.objectContaining({ linkedSimFileId: null, linkedSimFile: null })
+				])
+			);
+		});
+	});
+
+	describe('restoreSession - invalid userData', () => {
+		it('should clear stored data and return false when userData has no id field', async () => {
+			(getStoredSessionData as any).mockReturnValue({
+				accessToken: 'tok',
+				refreshToken: 'ref',
+				userData: { email: 'no-id@test.com' } // missing `id` field
+			});
+
+			const result = await authService.restoreSession();
+
+			expect(clearStoredSessionData).toHaveBeenCalled();
+			expect(result).toBe(false);
 		});
 	});
 });

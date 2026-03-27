@@ -45,6 +45,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Editor } from './Editor';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
+import { LaneMeasureNote } from '../../chart/note';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 
@@ -263,6 +264,88 @@ describe('Editor Scene', () => {
 		expect(setDefaultCursorSpy).toHaveBeenCalledWith('default');
 
 		setDefaultCursorSpy.mockRestore();
+	});
+
+	it('should call deleteSelectedNotes when BACKSPACE key is pressed and not editing', () => {
+		editorScene.create();
+		editorScene['isEditing'] = false;
+
+		const keyboardOnMock = editorScene.input.keyboard?.on as MockedFn;
+		const backspaceHandler = keyboardOnMock.mock.calls.find(
+			(call) => call[0] === 'keydown-BACKSPACE'
+		)?.[1];
+
+		expect(backspaceHandler).toBeDefined();
+
+		const deleteSelectedNotesSpy = vi
+			.spyOn(editorScene['noteManager'], 'deleteSelectedNotes')
+			.mockImplementation(() => {});
+
+		backspaceHandler?.();
+		expect(deleteSelectedNotesSpy).toHaveBeenCalled();
+
+		deleteSelectedNotesSpy.mockRestore();
+	});
+
+	it('should call deleteSelectedNotes when DELETE key is pressed and not editing', () => {
+		editorScene.create();
+		editorScene['isEditing'] = false;
+
+		const keyboardOnMock = editorScene.input.keyboard?.on as MockedFn;
+		const deleteHandler = keyboardOnMock.mock.calls.find(
+			(call) => call[0] === 'keydown-DELETE'
+		)?.[1];
+
+		expect(deleteHandler).toBeDefined();
+
+		const deleteSelectedNotesSpy = vi
+			.spyOn(editorScene['noteManager'], 'deleteSelectedNotes')
+			.mockImplementation(() => {});
+
+		deleteHandler?.();
+		expect(deleteSelectedNotesSpy).toHaveBeenCalled();
+
+		deleteSelectedNotesSpy.mockRestore();
+	});
+
+	it('should call undoLastAction when Ctrl+Z is pressed and not editing', () => {
+		editorScene.create();
+		editorScene['isEditing'] = false;
+
+		const keyboardOnMock = editorScene.input.keyboard?.on as MockedFn;
+		const keydownZHandler = keyboardOnMock.mock.calls.find(
+			(call) => call[0] === 'keydown-Z'
+		)?.[1];
+
+		expect(keydownZHandler).toBeDefined();
+
+		const undoLastActionSpy = vi
+			.spyOn(editorScene['noteManager'], 'undoLastAction')
+			.mockImplementation(() => {});
+
+		keydownZHandler?.({ ctrlKey: true, metaKey: false } as KeyboardEvent);
+		expect(undoLastActionSpy).toHaveBeenCalled();
+
+		undoLastActionSpy.mockRestore();
+	});
+
+	it('should not call deleteSelectedNotes when BACKSPACE is pressed while editing', () => {
+		editorScene.create();
+		editorScene['isEditing'] = true;
+
+		const keyboardOnMock = editorScene.input.keyboard?.on as MockedFn;
+		const backspaceHandler = keyboardOnMock.mock.calls.find(
+			(call) => call[0] === 'keydown-BACKSPACE'
+		)?.[1];
+
+		const deleteSelectedNotesSpy = vi
+			.spyOn(editorScene['noteManager'], 'deleteSelectedNotes')
+			.mockImplementation(() => {});
+
+		backspaceHandler?.();
+		expect(deleteSelectedNotesSpy).not.toHaveBeenCalled();
+
+		deleteSelectedNotesSpy.mockRestore();
 	});
 
 	it('should update cursor color when hovering over different lanes in editing mode', () => {
@@ -838,6 +921,203 @@ describe('Editor Scene', () => {
 			expect(mockNote.destroy).toHaveBeenCalled();
 
 			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should iterate through measures when click is in measure 1 (covering currentY += measureHeight)', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const addNoteToEditorSpy = vi
+				.spyOn(editorScene['noteManager'], 'addNoteToEditor')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(null)
+			} as any;
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// y=100 → absoluteY=100-600-0=-500 → clickY=500
+			// measure 0 height=400 (16*25), 500 >= 400 → loop: currentY += 400 (line 133 covered!)
+			// measure 1: 500 >= 400 && 500 < 800 → measure=1
+			const mockPointer = { x: 100, y: 100, rightButtonDown: vi.fn().mockReturnValue(false) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(addNoteToEditorSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			addNoteToEditorSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should use fallback note removal when LaneMeasureNote has no removeNote method', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			// Use a plain object without removeNote to cover the fallback path (lines 220-223)
+			const laneId = '18';
+			const legacyNote = {
+				measure: 0,
+				laneID: laneId,
+				measureLength: 1,
+				notes: [{ noteID: '01', position: 0.25 }]
+				// No removeNote method!
+			};
+			editorScene['notes'] = { [laneId]: [legacyNote] } as any;
+
+			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const recordDeleteActionSpy = vi
+				.spyOn(editorScene['noteManager'], 'recordDeleteAction')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			// Note should be removed via the fallback filter path
+			expect(legacyNote.notes).toHaveLength(0);
+
+			handlePointerDownSpy.mockRestore();
+			recordDeleteActionSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should call recordDeleteAction when a note with data exists at right-click position', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			// laneIndex=2 → laneId='18', measure=0, cellOffset=0.25
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
+			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const recordDeleteActionSpy = vi
+				.spyOn(editorScene['noteManager'], 'recordDeleteAction')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// x=100 → laneIndex=2, y=500 → clickY=100, measure=0, cellOffset=0.25
+			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(recordDeleteActionSpy).toHaveBeenCalledWith(
+				expect.arrayContaining([
+					expect.objectContaining({ laneId, measure: 0, cellOffset: 0.25 })
+				])
+			);
+
+			handlePointerDownSpy.mockRestore();
+			recordDeleteActionSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should remove note from this.notes and clean up lane when last note is deleted via right-click', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			// laneIndex=2 → laneId='18', measure=0, cellOffset=0.25
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
+			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const recordDeleteActionSpy = vi
+				.spyOn(editorScene['noteManager'], 'recordDeleteAction')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			// After deletion, the lane entry should be removed since it's the last note
+			expect(editorScene['notes'][laneId]).toBeUndefined();
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			recordDeleteActionSpy.mockRestore();
 			syncNotesToStoreSpy.mockRestore();
 		});
 	});
@@ -1760,6 +2040,34 @@ describe('Editor Scene', () => {
 				EventType.RESUME_PREVIEW,
 				expect.any(Object)
 			);
+		});
+	});
+
+	describe('onGridSpacingUpdate and onCellHeightUpdate callbacks', () => {
+		it('should call updateGridSpacing when onGridSpacingUpdate is invoked', () => {
+			editorScene.create();
+
+			const updateGridSpacingSpy = vi
+				.spyOn(editorScene as any, 'updateGridSpacing')
+				.mockImplementation(() => {});
+
+			editorScene['onGridSpacingUpdate']?.(16);
+
+			expect(updateGridSpacingSpy).toHaveBeenCalledWith(16);
+			updateGridSpacingSpy.mockRestore();
+		});
+
+		it('should call updateCellHeight when onCellHeightUpdate is invoked', () => {
+			editorScene.create();
+
+			const updateCellHeightSpy = vi
+				.spyOn(editorScene as any, 'updateCellHeight')
+				.mockImplementation(() => {});
+
+			editorScene['onCellHeightUpdate']?.(30);
+
+			expect(updateCellHeightSpy).toHaveBeenCalledWith(30);
+			updateCellHeightSpy.mockRestore();
 		});
 	});
 });

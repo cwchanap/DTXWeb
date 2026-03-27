@@ -4,6 +4,8 @@ import EventType from '../EventType';
 import { get } from 'svelte/store';
 import { Preview } from './Preview';
 import { LaneMeasureNote } from '../../chart/note';
+import { XAaudioContext } from '$lib/browser/audioDecoder';
+import { getFileProvider } from '../../services/fileProvider';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 
@@ -932,6 +934,162 @@ describe('Preview Scene', () => {
 
 			await expect(previewScene['setupSoundsAsync']()).resolves.toBeUndefined();
 		});
+
+		it('should load unloaded sound chips via fileProvider', async () => {
+			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
+			const mockFile = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+			const mockGetFile = vi.fn().mockResolvedValue(mockFile);
+
+			// Use subscribe mock to return sound chips via get()
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+
+			// Cache not loaded
+			(previewScene['cache'] as any) = {
+				audio: { exists: vi.fn().mockReturnValue(false), remove: vi.fn() }
+			};
+			(previewScene['sound'] as any).get = vi.fn().mockReturnValue(null);
+
+			// fileProvider returns the file
+			vi.mocked(getFileProvider).mockReturnValueOnce({ getFile: mockGetFile } as any);
+
+			// load.once triggers callback immediately to resolve promise
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(_event: string, callback: () => void) => {
+					callback();
+				}
+			);
+
+			await previewScene['setupSoundsAsync']();
+
+			expect(previewScene.load.audio).toHaveBeenCalled();
+		});
+
+		it('should use global sound cache when processed entry exists for XA file', async () => {
+			const mockSoundChips = [{ fileName: 'kick.xa', id: 1 }];
+			const mockFile = new File([new Uint8Array(4)], 'kick.xa');
+			const cachedBlob = new Blob(['wav'], { type: 'audio/wav' });
+			const cacheKey = 'soundchip_kick.xa';
+			const mockGetFile = vi.fn().mockResolvedValue(mockFile);
+
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+
+			// Cache not loaded in Phaser
+			(previewScene['cache'] as any) = {
+				audio: { exists: vi.fn().mockReturnValue(false), remove: vi.fn() }
+			};
+			(previewScene['sound'] as any).get = vi.fn().mockReturnValue(null);
+
+			// Set up global sound cache with a processed entry (XA path uses cachedBlob)
+			Preview['soundCacheMap'].set(cacheKey, { blob: cachedBlob, processed: true });
+
+			vi.mocked(getFileProvider).mockReturnValueOnce({ getFile: mockGetFile } as any);
+
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(_event: string, callback: () => void) => {
+					callback();
+				}
+			);
+
+			await previewScene['setupSoundsAsync']();
+
+			expect(URL.createObjectURL).toHaveBeenCalledWith(cachedBlob);
+
+			// Clean up global cache
+			Preview['soundCacheMap'].delete(cacheKey);
+		});
+
+		it('should handle null file from fileProvider gracefully', async () => {
+			const mockSoundChips = [{ fileName: 'missing.wav', id: 2 }];
+			const mockGetFile = vi.fn().mockResolvedValue(null);
+
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+
+			(previewScene['cache'] as any) = {
+				audio: { exists: vi.fn().mockReturnValue(false), remove: vi.fn() }
+			};
+			(previewScene['sound'] as any).get = vi.fn().mockReturnValue(null);
+			vi.mocked(getFileProvider).mockReturnValueOnce({ getFile: mockGetFile } as any);
+
+			await expect(previewScene['setupSoundsAsync']()).resolves.toBeUndefined();
+		});
+
+		it('should handle fileProvider.getFile throwing an error', async () => {
+			const mockSoundChips = [{ fileName: 'error.wav', id: 3 }];
+			const mockGetFile = vi.fn().mockRejectedValue(new Error('file not found'));
+
+			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return { unsubscribe: vi.fn() };
+				}
+			);
+
+			(previewScene['cache'] as any) = {
+				audio: { exists: vi.fn().mockReturnValue(false), remove: vi.fn() }
+			};
+			(previewScene['sound'] as any).get = vi.fn().mockReturnValue(null);
+			vi.mocked(getFileProvider).mockReturnValueOnce({ getFile: mockGetFile } as any);
+
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+			await expect(previewScene['setupSoundsAsync']()).resolves.toBeUndefined();
+
+			expect(warnSpy).toHaveBeenCalledWith(
+				expect.stringContaining('Failed to setup sound chip'),
+				expect.any(Error)
+			);
+			warnSpy.mockRestore();
+		});
+	});
+
+	describe('create() setTimeout subscription', () => {
+		it('should subscribe to currentSoundChip after 100ms when scene is active', async () => {
+			vi.useFakeTimers();
+
+			previewScene.create();
+
+			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(true);
+			const setupSoundsAsyncSpy = vi
+				.spyOn(previewScene as any, 'setupSoundsAsync')
+				.mockResolvedValue(undefined);
+
+			// Advance past the 100ms setTimeout
+			vi.advanceTimersByTime(200);
+
+			expect(previewScene['storeUnsubscribe']).toBeDefined();
+
+			vi.useRealTimers();
+			setupSoundsAsyncSpy.mockRestore();
+		});
+
+		it('should not subscribe when scene is not active after 100ms', () => {
+			vi.useFakeTimers();
+
+			previewScene.create();
+
+			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
+
+			vi.advanceTimersByTime(200);
+
+			expect(previewScene['storeUnsubscribe']).toBeFalsy();
+
+			vi.useRealTimers();
+		});
 	});
 
 	describe('updateCameraZoom()', () => {
@@ -1528,6 +1686,390 @@ describe('Preview Scene', () => {
 			// BPM note at 0.75 is after current cell, so break is hit
 			// currentBPM stays at initial bpm=120, scale = 120/120 = 1
 			expect(result).toBeCloseTo(previewScene['cellHeight'], 5);
+		});
+	});
+
+	describe('getCellHeight - two BPM notes in the same measure', () => {
+		it('should hit sort return 0 branch when two BPM notes share the same measure', () => {
+			// Two BPM notes at measure 0 — the sort comparator returns 0 (same measure)
+			previewScene.init({
+				measureCount: 5,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm120', position: 0 }]
+						} as any,
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm200', position: 0.5 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: { bpm120: 120, bpm200: 200 },
+				startMeasure: 0
+			});
+
+			// Calling getCellHeight triggers the sort that returns 0 for same-measure notes
+			const result = previewScene.getCellHeight(1, 0);
+			// Both notes at measure 0, so after sorting (return 0 branch hit), last note applies
+			expect(result).toBeGreaterThan(0);
+		});
+	});
+
+	describe('scheduleBGMPlayback - measureLength update', () => {
+		it('should update measureLength when note has default value of 1', () => {
+			previewScene.init({
+				measureCount: 5,
+				notes: {},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+
+			// Set measureLength array so measure 0 maps to length 3
+			previewScene['measureLength'] = [3];
+
+			const note = {
+				measure: 0,
+				measureLength: 1, // default value — should be updated
+				notes: [{ noteID: '1', position: 0 }]
+			} as any;
+
+			vi.spyOn(previewScene, 'getTimeElapsed').mockReturnValue(0);
+			previewScene.scheduleBGMPlayback(note, 1, 0);
+
+			// measureLength should be updated from the array
+			expect(note.measureLength).toBe(3);
+		});
+	});
+
+	describe('startPreviewWithoutSoundReload - BGM and playable note scheduling', () => {
+		it('should schedule BGM playback when notes[01] is non-empty', () => {
+			previewScene.init({
+				measureCount: 2,
+				notes: {
+					'01': [
+						{
+							measure: 0,
+							measureLength: 2,
+							notes: [{ noteID: '1', position: 0 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const scheduleBGMSpy = vi
+				.spyOn(previewScene as any, 'scheduleBGMPlayback')
+				.mockImplementation(() => {});
+			const createPreviewTweenSpy = vi
+				.spyOn(previewScene as any, 'createPreviewTween')
+				.mockImplementation(() => {});
+			const updateCameraZoomSpy = vi
+				.spyOn(previewScene as any, 'updateCameraZoom')
+				.mockImplementation(() => {});
+
+			previewScene['startPreviewWithoutSoundReload']();
+
+			expect(scheduleBGMSpy).toHaveBeenCalled();
+
+			scheduleBGMSpy.mockRestore();
+			createPreviewTweenSpy.mockRestore();
+			updateCameraZoomSpy.mockRestore();
+		});
+
+		it('should schedule note playback when playable lane notes are present', () => {
+			// Use '1A' (LC) which is a playable lane
+			previewScene.init({
+				measureCount: 2,
+				notes: {
+					'1A': [
+						{
+							measure: 0,
+							measureLength: 2,
+							notes: [{ noteID: '01', position: 0 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+			previewScene['panelContainer'] = { setPosition: vi.fn(), y: 0 } as any;
+
+			const scheduleNoteSpy = vi
+				.spyOn(previewScene as any, 'scheduleNotePlayback')
+				.mockImplementation(() => {});
+			const createPreviewTweenSpy = vi
+				.spyOn(previewScene as any, 'createPreviewTween')
+				.mockImplementation(() => {});
+			const updateCameraZoomSpy = vi
+				.spyOn(previewScene as any, 'updateCameraZoom')
+				.mockImplementation(() => {});
+
+			previewScene['startPreviewWithoutSoundReload']();
+
+			expect(scheduleNoteSpy).toHaveBeenCalled();
+
+			scheduleNoteSpy.mockRestore();
+			createPreviewTweenSpy.mockRestore();
+			updateCameraZoomSpy.mockRestore();
+		});
+	});
+
+	describe('getTimeElapsed - noteChipPosition with BPM changes', () => {
+		it('should calculate time correctly when BPM changes before noteChipPosition', () => {
+			previewScene.init({
+				measureCount: 5,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm150', position: 0.25 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: { bpm150: 150 },
+				startMeasure: 0
+			});
+			// noteChipPosition=0.5 is past the BPM change at 0.25
+			// first segment: (60/120)*4*0.25 = 0.5s
+			// second segment: (60/150)*4*(0.5-0.25) = 0.4s
+			const elapsed = previewScene.getTimeElapsed(0, 0.5);
+			expect(elapsed).toBeCloseTo(0.9, 5);
+		});
+
+		it('should stop BPM segment calculation when note position exceeds noteChipPosition', () => {
+			previewScene.init({
+				measureCount: 5,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: 'bpm200', position: 0.75 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: { bpm200: 200 },
+				startMeasure: 0
+			});
+			// noteChipPosition=0.5 is before the BPM change at 0.75
+			// Only the range 0..0.5 at 120 BPM: (60/120)*4*0.5 = 1.0s
+			// Then noteChipPosition > lastPosition (0.5 > 0), add remaining
+			const elapsed = previewScene.getTimeElapsed(0, 0.5);
+			expect(elapsed).toBeCloseTo(1.0, 5);
+		});
+
+		it('should skip notes with noteID "00" in BPM segment calculation', () => {
+			previewScene.init({
+				measureCount: 5,
+				notes: {
+					'08': [
+						{
+							measure: 0,
+							measureLength: 1,
+							notes: [{ noteID: '00', position: 0.25 }]
+						} as any
+					]
+				},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+			// noteID '00' is skipped, so no BPM change happens
+			// noteChipPosition=0.5 at 120 BPM: (60/120)*4*0.5 = 1.0s
+			const elapsed = previewScene.getTimeElapsed(0, 0.5);
+			expect(elapsed).toBeCloseTo(1.0, 5);
+		});
+	});
+
+	describe('loadSoundChipAsync()', () => {
+		it('should load non-XA audio file, call setupAudioListeners and load.start', async () => {
+			const mockSoundChip = { fileName: 'kick.wav' } as any;
+			const mockFile = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+			const cacheKey = 'soundchip_kick.wav';
+
+			// Make load.once call the callback immediately (simulating filecomplete)
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(_event: string, callback: () => void) => {
+					callback();
+				}
+			);
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			await previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
+
+			expect(previewScene.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
+			expect(previewScene.load.start).toHaveBeenCalled();
+			expect(previewScene.sound.add).toHaveBeenCalledWith(cacheKey);
+		});
+
+		it('should load XA file using XAaudioContext.decodeAudioData when no cachedBlob', async () => {
+			const mockSoundChip = { fileName: 'drum.xa' } as any;
+			const mockFile = new File([new Uint8Array(4)], 'drum.xa', { type: 'audio/xa' });
+			Object.defineProperty(mockFile, 'arrayBuffer', {
+				value: vi.fn().mockResolvedValue(new ArrayBuffer(4))
+			});
+			const cacheKey = 'soundchip_drum.xa';
+			const mockAudioBuffer = {
+				numberOfChannels: 1,
+				sampleRate: 44100,
+				length: 100,
+				getChannelData: vi.fn().mockReturnValue(new Float32Array(100))
+			} as any;
+
+			(XAaudioContext as any).decodeAudioData = vi.fn().mockResolvedValue(mockAudioBuffer);
+
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(_event: string, callback: () => void) => {
+					callback();
+				}
+			);
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue({});
+
+			await previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
+
+			expect(previewScene.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
+		});
+
+		it('should use cachedBlob when provided for XA file', async () => {
+			const mockSoundChip = { fileName: 'snare.xa' } as any;
+			const mockFile = new File([new Uint8Array(4)], 'snare.xa');
+			const cacheKey = 'soundchip_snare.xa';
+			const cachedBlob = new Blob(['wav-data'], { type: 'audio/wav' });
+
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(_event: string, callback: () => void) => {
+					callback();
+				}
+			);
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue({});
+
+			await previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey, cachedBlob);
+
+			expect(URL.createObjectURL).toHaveBeenCalledWith(cachedBlob);
+			expect(previewScene.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
+		});
+
+		it('should resolve without loading when scene is not initialized', async () => {
+			const mockSoundChip = { fileName: 'kick.wav' } as any;
+			const mockFile = new File(['audio'], 'kick.wav');
+			const cacheKey = 'soundchip_kick.wav';
+
+			(previewScene as any).load = null;
+
+			await expect(
+				previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey)
+			).resolves.toBeUndefined();
+		});
+
+		it('should resolve and log warning when XA decoding throws', async () => {
+			const mockSoundChip = { fileName: 'bad.xa' } as any;
+			const mockFile = new File([new Uint8Array(4)], 'bad.xa');
+			Object.defineProperty(mockFile, 'arrayBuffer', {
+				value: vi.fn().mockResolvedValue(new ArrayBuffer(4))
+			});
+			const cacheKey = 'soundchip_bad.xa';
+
+			(XAaudioContext as any).decodeAudioData = vi
+				.fn()
+				.mockRejectedValue(new Error('decode failed'));
+
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+			await expect(
+				previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey)
+			).resolves.toBeUndefined();
+
+			expect(warnSpy).toHaveBeenCalledWith(
+				expect.stringContaining('Failed to decode XA file'),
+				expect.any(Error)
+			);
+			warnSpy.mockRestore();
+		});
+	});
+
+	describe('setupAudioListeners()', () => {
+		it('should register filecomplete and loaderror listeners and set a timeout', () => {
+			vi.useFakeTimers();
+			const resolve = vi.fn();
+			const cacheKey = 'soundchip_test.wav';
+
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(() => {});
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			previewScene['setupAudioListeners'](cacheKey, resolve);
+
+			expect(previewScene.load.once).toHaveBeenCalledWith(
+				`filecomplete-audio-${cacheKey}`,
+				expect.any(Function)
+			);
+			expect(previewScene.load.once).toHaveBeenCalledWith(
+				`loaderror-audio-${cacheKey}`,
+				expect.any(Function)
+			);
+
+			// Advance past the 10s timeout
+			vi.advanceTimersByTime(11000);
+			expect(resolve).toHaveBeenCalled();
+
+			vi.useRealTimers();
+		});
+
+		it('should resolve and add sound on filecomplete when sound not yet in cache', () => {
+			const resolve = vi.fn();
+			const cacheKey = 'soundchip_test.wav';
+
+			// Capture all handlers in order (filecomplete is registered twice)
+			const allHandlers: Array<[string, (...args: unknown[]) => unknown]> = [];
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(event: string, callback: (...args: unknown[]) => unknown) => {
+					allHandlers.push([event, callback]);
+				}
+			);
+			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			previewScene['setupAudioListeners'](cacheKey, resolve);
+
+			// First filecomplete handler is the one that calls sound.add and resolve
+			const firstFilecomplete = allHandlers.find(
+				([event]) => event === `filecomplete-audio-${cacheKey}`
+			)?.[1];
+			firstFilecomplete?.();
+
+			expect(previewScene.sound.add).toHaveBeenCalledWith(cacheKey);
+			expect(resolve).toHaveBeenCalled();
+		});
+
+		it('should resolve on loaderror without adding sound', () => {
+			const resolve = vi.fn();
+			const cacheKey = 'soundchip_err.wav';
+
+			const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+			(previewScene.load.once as ReturnType<typeof vi.fn>).mockImplementation(
+				(event: string, callback: (...args: unknown[]) => unknown) => {
+					handlers[event] = callback;
+				}
+			);
+
+			previewScene['setupAudioListeners'](cacheKey, resolve);
+
+			// Trigger loaderror
+			handlers[`loaderror-audio-${cacheKey}`]?.({});
+
+			expect(resolve).toHaveBeenCalled();
+			expect(previewScene.sound.add).not.toHaveBeenCalled();
 		});
 	});
 });

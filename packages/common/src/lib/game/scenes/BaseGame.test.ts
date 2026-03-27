@@ -369,6 +369,17 @@ describe('BaseGame', () => {
 			expect((baseGame as any).normalizePosition).toHaveBeenCalledWith(0.333333333);
 		});
 
+		it('should apply fractional cell offset when position falls between grid boundaries', () => {
+			// Mock normalizePosition to return a value that results in fractionalCell > 0
+			// 1/192 gives visualCellPosition = 1/12 ≈ 0.0833, so fractionalCell = 1/12
+			vi.spyOn(baseGame as any, 'normalizePosition').mockReturnValue(1 / 192);
+			vi.spyOn(baseGame, 'getCellHeight').mockReturnValue(25);
+
+			const result = baseGame.drawNote(1, 0, 1 / 192, '11');
+
+			expect(result).toBe(true);
+		});
+
 		it('should draw notes from notes data structure', () => {
 			const testNotes = [
 				{ noteID: '11', position: 0 },

@@ -462,5 +462,50 @@ describe('LinkingService', () => {
 		});
 	});
 
-	// Removed trivial store-forwarding tests for linking/unlinking
+	describe('unlinkSimFileFromFolder', () => {
+		it('should call workspaceStore.unlinkSimFileFromFolder with the folder path', () => {
+			linkingService.unlinkSimFileFromFolder('/path/to/folder');
+			expect(workspaceStore.unlinkSimFileFromFolder).toHaveBeenCalledWith('/path/to/folder');
+		});
+	});
+
+	describe('linkSimFilesToNewNodes - already linked folder', () => {
+		it('should skip folders that already have a linked simFile', () => {
+			const mockSimFiles: SimfileWithDtx[] = [
+				{
+					id: 1,
+					title: 'Song',
+					artist: 'Artist',
+					bpm: 120,
+					preview_url: null,
+					download_url: null,
+					is_published: true,
+					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'user',
+					dtx_files: []
+				}
+			];
+
+			const alreadyLinkedNode: TreeNode = {
+				name: 'Linked Folder',
+				path: '/path/linked',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'Song',
+				linkedSimFileId: 'already-linked-id'
+			};
+
+			linkingService.linkSimFilesToNewNodes(mockSimFiles, [alreadyLinkedNode]);
+
+			// Already linked folder should be skipped — no new link call
+			expect(workspaceStore.linkSimFileToFolder).not.toHaveBeenCalled();
+		});
+	});
 });

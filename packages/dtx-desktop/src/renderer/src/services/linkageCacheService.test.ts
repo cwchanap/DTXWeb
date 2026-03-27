@@ -191,4 +191,67 @@ describe('linkageCacheService', () => {
 			expect(result).toEqual([]);
 		});
 	});
+
+	describe('removeLinkage error handling', () => {
+		it('should handle localStorage errors gracefully', () => {
+			localStorageMock.getItem.mockImplementation(() => {
+				throw new Error('localStorage error');
+			});
+
+			expect(() => linkageCacheService.removeLinkage('/path')).not.toThrow();
+		});
+	});
+
+	describe('clearCache error handling', () => {
+		it('should handle localStorage errors gracefully', () => {
+			localStorageMock.removeItem.mockImplementation(() => {
+				throw new Error('localStorage error');
+			});
+
+			expect(() => linkageCacheService.clearCache()).not.toThrow();
+		});
+	});
+
+	describe('getAllLinkageData', () => {
+		it('should return all cache data and log debug output', () => {
+			const cache = {
+				'/path/song1': {
+					linkedSimFileId: 'id1',
+					linkedAt: '2025-01-01T00:00:00Z',
+					cloudSongData: sampleSimfile
+				}
+			};
+			localStorageMock.getItem.mockReturnValue(JSON.stringify(cache));
+
+			const result = linkageCacheService.getAllLinkageData();
+
+			expect(result).toEqual(cache);
+		});
+
+		it('should return empty object when cache is empty', () => {
+			localStorageMock.getItem.mockReturnValue(JSON.stringify({}));
+
+			const result = linkageCacheService.getAllLinkageData();
+
+			expect(result).toEqual({});
+		});
+	});
+
+	describe('debugLocalStorage', () => {
+		it('should log debug info without throwing', () => {
+			localStorageMock.getItem.mockReturnValue(
+				JSON.stringify({
+					'/path': { linkedSimFileId: 'id', linkedAt: '', cloudSongData: {} }
+				})
+			);
+
+			expect(() => linkageCacheService.debugLocalStorage()).not.toThrow();
+		});
+
+		it('should handle invalid JSON in localStorage gracefully', () => {
+			localStorageMock.getItem.mockReturnValue('INVALID_JSON');
+
+			expect(() => linkageCacheService.debugLocalStorage()).not.toThrow();
+		});
+	});
 });

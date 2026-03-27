@@ -123,6 +123,75 @@ describe('WorkspaceService', () => {
 			expect(result.audioFiles[0].isLarge).toBe(true);
 		});
 
+		it('should sort DTX files: file with difficulty before file without', async () => {
+			// One file has a difficulty keyword, one does not
+			const unknownFile = new File(['u'], 'unknown_song.dtx', { type: 'text/plain' });
+			const basicFile = new File(['b'], 'song_basic.dtx', { type: 'text/plain' });
+			[unknownFile, basicFile].forEach((file) => {
+				Object.defineProperty(file, 'webkitRelativePath', {
+					value: `Folder/${file.name}`,
+					writable: false
+				});
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([
+				unknownFile,
+				basicFile
+			] as unknown as FileList);
+
+			// basic (diff=1) should come before unknown_song (diff=0)
+			expect(result.dtxFiles[0].name).toBe('song_basic.dtx');
+			expect(result.dtxFiles[1].name).toBe('unknown_song.dtx');
+		});
+
+		it('should sort DTX files alphabetically when neither has a difficulty keyword', async () => {
+			const fileB = new File(['b'], 'songB.dtx', { type: 'text/plain' });
+			const fileA = new File(['a'], 'songA.dtx', { type: 'text/plain' });
+			[fileA, fileB].forEach((file) => {
+				Object.defineProperty(file, 'webkitRelativePath', {
+					value: `Folder/${file.name}`,
+					writable: false
+				});
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([
+				fileB,
+				fileA
+			] as unknown as FileList);
+
+			// Neither has a difficulty keyword, so alphabetical order applies
+			expect(result.dtxFiles[0].name).toBe('songA.dtx');
+			expect(result.dtxFiles[1].name).toBe('songB.dtx');
+		});
+
+		it('should call validateDtxContent callback when decoding DTX file', async () => {
+			const { decodeFileWithEncodingDetection } = await vi.importMock('@dtx/common');
+			(decodeFileWithEncodingDetection as any).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					// Call the callback with content that hits different branches
+					validate('#TITLE:Test');
+					validate('#ARTIST:Only');
+					validate('#BPM:120');
+					validate('#WAV01:kick.wav');
+					validate('non-empty content');
+					return { content: '#TITLE:Test', encoding: 'utf-8' };
+				}
+			);
+			const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+			Object.defineProperty(dtxFile, 'webkitRelativePath', {
+				value: 'Folder/song.dtx',
+				writable: false
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([dtxFile] as unknown as FileList);
+
+			expect(result.dtxFiles).toHaveLength(1);
+			expect(decodeFileWithEncodingDetection).toHaveBeenCalled();
+		});
+
 		it('should sort DTX files by difficulty', async () => {
 			const basicFile = new File(['basic content'], 'song_basic.dtx', { type: 'text/plain' });
 			const masterFile = new File(['master content'], 'song_master.dtx', {
@@ -562,6 +631,17 @@ describe('WorkspaceService', () => {
 
 			expect(() => {
 				workspaceService.deleteWorkspace('Workspace 1');
+			}).not.toThrow();
+		});
+
+		it('should handle setItem error gracefully in deleteWorkspace', () => {
+			mockLocalStorage.getItem.mockReturnValue('[]');
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw new Error('setItem error');
+			});
+
+			expect(() => {
+				workspaceService.deleteWorkspace('any-name');
 			}).not.toThrow();
 		});
 	});

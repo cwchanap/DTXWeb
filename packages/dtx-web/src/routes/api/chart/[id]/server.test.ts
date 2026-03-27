@@ -67,6 +67,17 @@ describe('GET /api/chart/[id]', () => {
 		expect(response.status).toBe(400);
 	});
 
+	it('returns 500 when getSimfile throws', async () => {
+		vi.mocked(getSimfile).mockRejectedValue(new Error('db error'));
+		const response = await GET({
+			params: { id: '1' },
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(500);
+		expect(logger.error).toHaveBeenCalledWith('Error getting chart:', expect.any(Error));
+	});
+
 	it('returns 404 when simfile not found', async () => {
 		vi.mocked(getSimfile).mockResolvedValue(null);
 		const response = await GET({
@@ -185,6 +196,38 @@ describe('PATCH /api/chart/[id]', () => {
 			locals: { user: mockUser } as any
 		});
 		expect(response.status).toBe(400);
+	});
+
+	it('returns 400 for array body', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify([{ title: 'New' }])
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid request body');
+	});
+
+	it('returns 400 when display_id is a number but not a safe integer', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ display_id: Number.MAX_SAFE_INTEGER + 1 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid display_id');
 	});
 
 	it('returns 404 when simfile not found', async () => {
@@ -537,5 +580,50 @@ describe('PATCH /api/chart/[id]', () => {
 		});
 		expect(response.status).toBe(400);
 		expect((await response.json()).error).toBe('Invalid preview_url');
+	});
+
+	it('returns 400 when previewUrl (camelCase) is invalid', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ previewUrl: 99 })
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toBe('Invalid previewUrl');
+	});
+
+	it('updates all fields at once with valid values', async () => {
+		const request = new Request('http://localhost/api/chart/1', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				artist: 'New Artist',
+				bpm: 140,
+				is_published: true,
+				display_id: null,
+				displayId: 2,
+				download_url: 'https://dl.example.com',
+				downloadUrl: 'https://dl2.example.com',
+				publish_date: '2024-06-01',
+				publishDate: '2024-07-01',
+				video_preview_url: null,
+				videoPreviewUrl: 'https://vid.example.com',
+				preview_url: null,
+				previewUrl: 'https://preview.example.com'
+			})
+		});
+		const response = await PATCH({
+			params: { id: '1' },
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(200);
 	});
 });

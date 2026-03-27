@@ -125,5 +125,81 @@ describe('SimFileService', () => {
 			expect(localStorageMock.removeItem).toHaveBeenCalled();
 			expect(result.data).toEqual(mockData);
 		});
+
+		it('should fall through to IPC when cache timestamp is expired', async () => {
+			const expiredTimestamp = (Date.now() - 10 * 60 * 1000).toString();
+			localStorageMock.getItem
+				.mockReturnValueOnce(JSON.stringify([{ id: '1' }]))
+				.mockReturnValueOnce(expiredTimestamp);
+
+			mockInvoke.mockResolvedValue({ success: true, data: [], fromCache: false });
+
+			await simFileService.fetchUserSimFiles();
+
+			expect(mockInvoke).toHaveBeenCalledWith('fetch-user-simfiles');
+		});
+
+		it('should handle setCachedData localStorage errors gracefully', async () => {
+			localStorageMock.getItem.mockReturnValue(null);
+			localStorageMock.setItem.mockImplementation(() => {
+				throw new Error('Storage full');
+			});
+			mockInvoke.mockResolvedValue({
+				success: true,
+				data: [{ id: '1', title: 'Test' }],
+				fromCache: false
+			});
+
+			await expect(simFileService.fetchUserSimFiles()).resolves.toBeDefined();
+		});
+
+		it('should return error result when IPC throws', async () => {
+			localStorageMock.getItem.mockReturnValue(null);
+			mockInvoke.mockRejectedValue(new Error('IPC failure'));
+
+			const result = await simFileService.fetchUserSimFiles();
+
+			expect(result.data).toEqual([]);
+			expect(result.fromCache).toBe(false);
+			expect(result.error).toBe('IPC failure');
+		});
+	});
+
+	describe('getPreviewUrl', () => {
+		it('should return preview URL from IPC', async () => {
+			mockInvoke.mockResolvedValue('https://cdn.example.com/1/preview.jpg');
+
+			const url = await simFileService.getPreviewUrl(1);
+
+			expect(mockInvoke).toHaveBeenCalledWith('get-preview-url', 1);
+			expect(url).toBe('https://cdn.example.com/1/preview.jpg');
+		});
+
+		it('should return empty string on IPC error', async () => {
+			mockInvoke.mockRejectedValue(new Error('network error'));
+
+			const url = await simFileService.getPreviewUrl(42);
+
+			expect(url).toBe('');
+		});
+	});
+
+	describe('getSoundPreviewUrl', () => {
+		it('should return sound preview URL from IPC', async () => {
+			mockInvoke.mockResolvedValue('https://cdn.example.com/1/preview.mp3');
+
+			const url = await simFileService.getSoundPreviewUrl(1);
+
+			expect(mockInvoke).toHaveBeenCalledWith('get-sound-preview-url', 1);
+			expect(url).toBe('https://cdn.example.com/1/preview.mp3');
+		});
+
+		it('should return empty string on IPC error', async () => {
+			mockInvoke.mockRejectedValue(new Error('network error'));
+
+			const url = await simFileService.getSoundPreviewUrl(99);
+
+			expect(url).toBe('');
+		});
 	});
 });

@@ -216,9 +216,9 @@ describe('MIDI Preview', () => {
 		// Wait for file info
 		await screen.findByText('File Information');
 
-		// Should show instrument info (not "None specified")
-		const instrumentsLabel = screen.getByText('Instruments');
-		expect(instrumentsLabel).toBeInTheDocument();
+		// Should show parsed instrument info, not fallback text
+		expect(screen.getByText('Instruments')).toBeInTheDocument();
+		expect(screen.queryByText('None specified')).not.toBeInTheDocument();
 	});
 
 	it('surfaces parse errors for malformed MIDI files', async () => {
@@ -371,22 +371,25 @@ describe('MIDI Preview', () => {
 
 	it('throws when track header is invalid', async () => {
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-		// Valid MIDI header but track starts with "XYZW" instead of "MTrk"
-		const midiBytes = new Uint8Array([
-			0x4d, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xe0,
-			0x58, 0x59, 0x5a, 0x57, 0x00, 0x00, 0x00, 0x04, 0x00, 0xff, 0x2f, 0x00
-		]);
-		const { container } = render(MidiPreview);
-		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		await fireEvent.change(input, {
-			target: { files: [new File([midiBytes], 'badtrack.mid', { type: 'audio/midi' })] }
-		});
-		await waitFor(() => {
-			expect(toastMock.error).toHaveBeenCalledWith(
-				expect.objectContaining({ title: 'Failed to parse MIDI' })
-			);
-		});
-		consoleSpy.mockRestore();
+		try {
+			// Valid MIDI header but track starts with "XYZW" instead of "MTrk"
+			const midiBytes = new Uint8Array([
+				0x4d, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x01, 0xe0,
+				0x58, 0x59, 0x5a, 0x57, 0x00, 0x00, 0x00, 0x04, 0x00, 0xff, 0x2f, 0x00
+			]);
+			const { container } = render(MidiPreview);
+			const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+			await fireEvent.change(input, {
+				target: { files: [new File([midiBytes], 'badtrack.mid', { type: 'audio/midi' })] }
+			});
+			await waitFor(() => {
+				expect(toastMock.error).toHaveBeenCalledWith(
+					expect.objectContaining({ title: 'Failed to parse MIDI' })
+				);
+			});
+		} finally {
+			consoleSpy.mockRestore();
+		}
 	});
 
 	it('clicking Choose File triggers file input click', async () => {

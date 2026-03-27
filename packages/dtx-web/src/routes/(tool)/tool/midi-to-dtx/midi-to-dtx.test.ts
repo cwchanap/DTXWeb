@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import PopoverStub from '../../../../tests/stubs/PopoverStub.svelte';
 
@@ -580,6 +580,9 @@ describe('MIDI to DTX Component Rendering', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
 
 	it('renders the page with initial upload state', () => {
 		render(MidiToDtx);
@@ -759,18 +762,29 @@ describe('MIDI to DTX Component Rendering', () => {
 		const convertSpy = vi
 			.spyOn(DTXFile.prototype, 'convertMidiNotesToDtx')
 			.mockReturnValueOnce({} as any);
+		const exportSpy = vi
+			.spyOn(DTXFile.prototype, 'export')
+			.mockImplementationOnce(async function (this: DTXFile) {
+				expect(this.bpm).toBe(140);
+			});
 
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 		await fireEvent.change(input, {
 			target: { files: [new File(['data'], 'test.mid', { type: 'audio/midi' })] }
 		});
+		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+		await fireEvent.input(bpmInput, { target: { value: '140' } });
+
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 		await vi.waitFor(() => {
 			expect(screen.getByText('Conversion Complete!')).toBeInTheDocument();
 		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
 
 		parseSpy.mockRestore();
 		convertSpy.mockRestore();
+		exportSpy.mockRestore();
 	});
 });

@@ -178,7 +178,7 @@ describe('WorkspaceService', () => {
 		});
 	});
 	describe('selectWorkspace', () => {
-		it('should select a workspace and load structure when a path is chosen', async () => {
+		it('should select a workspace and update path and loading state when a path is chosen', async () => {
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
 				if (channel === 'select-folder') {
 					return Promise.resolve({ canceled: false, filePaths: ['/new/workspace'] });
@@ -428,6 +428,7 @@ describe('WorkspaceService', () => {
 
 			await workspaceService.expandTreeNode('/test/node');
 
+			expect(linkageCacheService.getLinkage).toHaveBeenCalledWith('/test/node/child');
 			const updateCall = (workspaceStore.updateTreeNode as any).mock.calls.find(
 				(call: any[]) => call[0] === '/test/node' && call[1].children !== undefined
 			);
@@ -510,7 +511,7 @@ describe('WorkspaceService', () => {
 	});
 
 	describe('setCurrentSubWorkspace', () => {
-		it('should set sub-workspace and reload tree', async () => {
+		it('should set sub-workspace', async () => {
 			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
 				callback({ path: '/test/workspace', currentSubWorkspace: 'DTXFiles.Sub' });
 				return vi.fn();

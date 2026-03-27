@@ -1058,10 +1058,15 @@ describe('Preview Scene', () => {
 	});
 
 	describe('create() setTimeout subscription', () => {
+		afterEach(() => {
+			vi.runAllTimers();
+			vi.useRealTimers();
+		});
+
 		it('should subscribe to currentSoundChip after 100ms when scene is active', async () => {
 			vi.useFakeTimers();
 
-			previewScene.create();
+			await previewScene.create();
 
 			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(true);
 			const setupSoundsAsyncSpy = vi
@@ -1073,22 +1078,19 @@ describe('Preview Scene', () => {
 
 			expect(previewScene['storeUnsubscribe']).toBeDefined();
 
-			vi.useRealTimers();
 			setupSoundsAsyncSpy.mockRestore();
 		});
 
-		it('should not subscribe when scene is not active after 100ms', () => {
+		it('should not subscribe when scene is not active after 100ms', async () => {
 			vi.useFakeTimers();
 
-			previewScene.create();
+			await previewScene.create();
 
 			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
 
 			vi.advanceTimersByTime(200);
 
 			expect(previewScene['storeUnsubscribe']).toBeFalsy();
-
-			vi.useRealTimers();
 		});
 	});
 

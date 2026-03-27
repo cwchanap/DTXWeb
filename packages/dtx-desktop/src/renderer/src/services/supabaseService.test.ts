@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
 	storeSessionData,
 	getStoredSessionData,
@@ -14,14 +14,22 @@ const localStorageMock = {
 	clear: vi.fn()
 };
 
-Object.defineProperty(window, 'localStorage', {
-	value: localStorageMock,
-	writable: true
-});
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
 
 describe('supabaseService', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		Object.defineProperty(window, 'localStorage', {
+			value: localStorageMock,
+			writable: true,
+			configurable: true
+		});
+	});
+
+	afterEach(() => {
+		if (originalLocalStorageDescriptor) {
+			Object.defineProperty(window, 'localStorage', originalLocalStorageDescriptor);
+		}
 	});
 
 	describe('storeSessionData', () => {

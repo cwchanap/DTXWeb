@@ -7,6 +7,7 @@ import {
 	clearStoredSessionData,
 	validateSession
 } from './supabaseService';
+import { workspaceStore } from '../stores/workspaceStore';
 
 // Mock the authStore
 vi.mock('../stores/authStore', () => ({
@@ -438,7 +439,6 @@ describe('AuthService', () => {
 
 			await authService.logout();
 
-			const { workspaceStore } = await import('../stores/workspaceStore');
 			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith(
 				expect.arrayContaining([
 					expect.objectContaining({ linkedSimFileId: null, linkedSimFile: null })

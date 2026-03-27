@@ -146,6 +146,17 @@ describe('WorkspaceService', () => {
 			);
 		});
 
+		it('should set empty tree when no path is set', async () => {
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: null, currentSubWorkspace: null });
+				return vi.fn();
+			});
+
+			await workspaceService.loadTreeStructure();
+
+			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([]);
+		});
+
 		it('should handle errors gracefully', async () => {
 			// Mock the store subscription to return a test path
 			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
@@ -249,94 +260,6 @@ describe('WorkspaceService', () => {
 			await workspaceService.loadSubWorkspaces();
 
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load sub-workspaces');
-		});
-	});
-
-	describe('loadTreeStructure', () => {
-		it('should load tree structure with song titles parsed by SimFile class', async () => {
-			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
-				callback({
-					path: '/test/workspace',
-					currentSubWorkspace: null,
-					subWorkspaces: []
-				});
-				return vi.fn();
-			});
-
-			await workspaceService.loadTreeStructure();
-
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'load-tree-structure',
-				'/test/workspace'
-			);
-			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([
-				{
-					name: 'TestSong',
-					path: '/test/path/TestSong',
-					isExpanded: false,
-					isLoading: false,
-					children: [],
-					hasChildren: false,
-					containsDtxFiles: true,
-					songTitle: 'Test Song Title'
-				},
-				{
-					name: 'AnotherSong',
-					path: '/test/path/AnotherSong',
-					isExpanded: false,
-					isLoading: false,
-					children: [],
-					hasChildren: false,
-					containsDtxFiles: true,
-					songTitle: null
-				}
-			]);
-		});
-
-		it('should handle sub-workspace path correctly', async () => {
-			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
-				callback({
-					path: '/test/workspace',
-					currentSubWorkspace: 'DTXFiles.TestSubWorkspace',
-					subWorkspaces: ['DTXFiles.TestSubWorkspace']
-				});
-				return vi.fn();
-			});
-
-			await workspaceService.loadTreeStructure();
-
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'load-tree-structure',
-				'/test/workspace',
-				'DTXFiles.TestSubWorkspace'
-			);
-		});
-
-		it('should set empty tree when no path is set', async () => {
-			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
-				callback({ path: null, currentSubWorkspace: null });
-				return vi.fn();
-			});
-
-			await workspaceService.loadTreeStructure();
-
-			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([]);
-		});
-
-		it('should handle errors gracefully', async () => {
-			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
-				callback({
-					path: '/test/workspace',
-					currentSubWorkspace: null,
-					subWorkspaces: []
-				});
-				return vi.fn();
-			});
-			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('Test error'));
-
-			await workspaceService.loadTreeStructure();
-
-			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
 		});
 	});
 

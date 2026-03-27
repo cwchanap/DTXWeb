@@ -417,7 +417,7 @@ describe('ExportWorkspaceModal', () => {
 							!btn.textContent?.includes('Cancel')
 					)!;
 
-				fireEvent.click(workspaceAButton);
+				await fireEvent.click(workspaceAButton);
 				// Flush all promises and timers (including the 10s setTimeout)
 				await vi.runAllTimersAsync();
 

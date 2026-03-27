@@ -625,5 +625,19 @@ describe('PATCH /api/chart/[id]', () => {
 			locals: { user: mockUser } as any
 		});
 		expect(response.status).toBe(200);
+		expect(updateSimfile).toHaveBeenCalledWith(
+			expect.anything(),
+			1,
+			expect.objectContaining({
+				artist: 'New Artist',
+				bpm: 140,
+				is_published: 1,
+				display_id: 2,
+				download_url: 'https://dl2.example.com',
+				publish_date: '2024-07-01',
+				video_preview_url: 'https://vid.example.com',
+				preview_url: 'https://preview.example.com'
+			})
+		);
 	});
 });

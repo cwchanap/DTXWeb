@@ -440,8 +440,12 @@ describe('listSimfiles', () => {
 		drizzleSelectResults.push([{ cnt: 2 }], []);
 		const db = createMockDb();
 		await listSimfiles(db as unknown as D1Database, { search: 'test song' });
-		// The search should proceed without throwing
-		expect(mockDrizzleDb.select).toHaveBeenCalled();
+		// Verify where() was invoked on both count and data queries (search condition applied)
+		const queries = mockDrizzleDb.select.mock.results as {
+			value: Record<string, ReturnType<typeof vi.fn>>;
+		}[];
+		expect(queries[0]?.value?.where).toHaveBeenCalled();
+		expect(queries[1]?.value?.where).toHaveBeenCalled();
 	});
 });
 

@@ -241,13 +241,16 @@ describe('auth module', () => {
 		it('skips sending when no windows open for legacy callback', async () => {
 			const auth = await import('./auth');
 			const electron = await import('electron');
+
+			// Capture the send mock from the default window before overriding
+			const send = electron.BrowserWindow.getAllWindows()[0].webContents.send;
 			vi.mocked(electron.BrowserWindow.getAllWindows).mockReturnValueOnce([]);
 
 			await auth.handleProtocolUrl(
 				'dtxweb://auth-callback?access_token=tok&refresh_token=ref'
 			);
 
-			// Should not throw - and no windows means send is never called
+			expect(send).not.toHaveBeenCalled();
 		});
 
 		it('handles non-auth-callback protocol URL without calling send', async () => {

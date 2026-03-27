@@ -3,8 +3,10 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import MidiPreview from './+page.svelte';
 import toastStore from '$lib/toaster';
 
+const gotoMock = vi.hoisted(() => vi.fn());
+
 vi.mock('$app/navigation', () => ({
-	goto: vi.fn()
+	goto: gotoMock
 }));
 
 vi.mock('svelte-i18n', () => ({
@@ -94,8 +96,6 @@ const createMinimalMidiFile = () => {
 
 	return new File([midiBytes], 'sample.mid', { type: 'audio/midi' });
 };
-
-const gotoMock = vi.mocked((await import('$app/navigation')).goto);
 
 const createMidiFileWithProgramChange = () => {
 	// MIDI format 0 with program change event (instrument)

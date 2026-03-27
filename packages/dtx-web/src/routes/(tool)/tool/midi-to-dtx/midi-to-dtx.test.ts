@@ -736,26 +736,26 @@ describe('MIDI to DTX Component Rendering', () => {
 
 		const firstSelect = selects[0] as HTMLSelectElement;
 		await fireEvent.change(firstSelect, { target: { value: '02' } });
-		// Change event fired - no error means onchange handler executed
+		expect(firstSelect.value).toBe('02');
 	});
 
 	it('clicking Choose File button triggers handleUploadClick', async () => {
-		render(MidiToDtx);
+		const { container } = render(MidiToDtx);
 		const button = screen.getByRole('button', { name: 'Choose File' });
-		// Just clicking the button covers handleUploadClick / fileInput?.click()
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const clickSpy = vi.spyOn(fileInput, 'click').mockImplementation(() => {});
 		await fireEvent.click(button);
-		expect(button).toBeInTheDocument();
+		expect(clickSpy).toHaveBeenCalled();
+		clickSpy.mockRestore();
 	});
 
 	it('uses state BPM when parsed DTX bpm is falsy after conversion', async () => {
-		const parseSpy = vi
-			.spyOn(DTXFile.prototype, 'parseFromMidi')
-			.mockResolvedValueOnce({
-				format: 0,
-				trackCount: 0,
-				ticksPerQuarter: 480,
-				tracks: []
-			} as any);
+		const parseSpy = vi.spyOn(DTXFile.prototype, 'parseFromMidi').mockResolvedValueOnce({
+			format: 0,
+			trackCount: 0,
+			ticksPerQuarter: 480,
+			tracks: []
+		} as any);
 		const convertSpy = vi
 			.spyOn(DTXFile.prototype, 'convertMidiNotesToDtx')
 			.mockReturnValueOnce({} as any);

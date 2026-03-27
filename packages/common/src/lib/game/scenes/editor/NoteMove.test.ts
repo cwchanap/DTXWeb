@@ -380,6 +380,7 @@ describe('NoteMove', () => {
 
 			// Should not throw and should complete the drag
 			expect(noteMove.isCurrentlyDragging).toBe(false);
+			expect(mockRecordMoveAction).toHaveBeenCalled();
 		});
 
 		it('should allow move when existing note at target position is part of dragged set', () => {
@@ -417,6 +418,8 @@ describe('NoteMove', () => {
 
 			// Origin note moved to note-0-1-0.5 (where dragged note was) - allowed
 			expect(noteMove.isCurrentlyDragging).toBe(false);
+			expect(mockRecordMoveAction).toHaveBeenCalled();
+			expect(mockEditor.drawNote).toHaveBeenCalled();
 		});
 	});
 

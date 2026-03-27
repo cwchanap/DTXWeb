@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockFail = vi.hoisted(() => vi.fn((status: number, data: object) => ({ status, data })));
 const mockRedirect = vi.hoisted(() =>
@@ -33,6 +33,10 @@ const makeEvent = (fields: Record<string, string>, signInError: Error | null = n
 });
 
 describe('login/+page.server actions', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	describe('login action', () => {
 		it('returns fail(400) when signInWithPassword errors', async () => {
 			const authError = new Error('Invalid credentials');

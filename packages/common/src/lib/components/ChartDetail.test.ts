@@ -40,27 +40,27 @@ describe('ChartDetail', () => {
 
 	it('renders without simfile (default props)', () => {
 		render(ChartDetail, { props: {} });
-		// Component renders with no simfile
-		expect(document.querySelector('form, div')).toBeTruthy();
+		// Title is absent when no simfile provided
+		expect(screen.queryByText('Test Song')).not.toBeInTheDocument();
 	});
 
-	it('renders with showEditor=false', () => {
+	it('renders with showEditor=false hides Open in Editor link', () => {
 		render(ChartDetail, { props: { simfile: mockSimfile, showEditor: false } });
-		expect(document.body).toBeTruthy();
+		expect(screen.queryByText('Open in Editor')).not.toBeInTheDocument();
 	});
 
-	it('renders with showPublishingControls=false', () => {
+	it('renders with showPublishingControls=false hides Display ID input', () => {
 		render(ChartDetail, {
 			props: { simfile: mockSimfile, showPublishingControls: false }
 		});
-		expect(document.body).toBeTruthy();
+		expect(screen.queryByLabelText('Display ID:')).not.toBeInTheDocument();
 	});
 
-	it('renders with showPublishedToggle=false', () => {
+	it('renders with showPublishedToggle=false hides Published label', () => {
 		render(ChartDetail, {
 			props: { simfile: mockSimfile, showPublishedToggle: false }
 		});
-		expect(document.body).toBeTruthy();
+		expect(screen.queryByText('Published:')).not.toBeInTheDocument();
 	});
 
 	it('renders DTX file list when dtx_files present', () => {
@@ -69,10 +69,11 @@ describe('ChartDetail', () => {
 		expect(screen.getByText('ADVANCED')).toBeInTheDocument();
 	});
 
-	it('renders with empty dtx_files array', () => {
+	it('renders with empty dtx_files array shows no DTX entries', () => {
 		render(ChartDetail, {
 			props: { simfile: { ...mockSimfile, dtx_files: [] } }
 		});
-		expect(document.body).toBeTruthy();
+		expect(screen.queryByText('BASIC')).not.toBeInTheDocument();
+		expect(screen.queryByText('ADVANCED')).not.toBeInTheDocument();
 	});
 });

@@ -45,7 +45,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Editor } from './Editor';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
-import { LaneMeasureNote } from '../../chart/note';
+import { LaneMeasureNote } from '$lib/chart/note';
 
 type MockedFn = ReturnType<typeof vi.fn>;
 
@@ -959,6 +959,8 @@ describe('Editor Scene', () => {
 			pointerdownHandler?.(mockPointer);
 
 			expect(addNoteToEditorSpy).toHaveBeenCalled();
+			const callArgs = addNoteToEditorSpy.mock.calls[0];
+			expect(callArgs?.[0]).toBe(1); // measure should be 1
 
 			handlePointerDownSpy.mockRestore();
 			addNoteToEditorSpy.mockRestore();
@@ -974,7 +976,7 @@ describe('Editor Scene', () => {
 			editorScene['cellWidth'] = 50;
 
 			// Use a plain object without removeNote to cover the fallback path (lines 220-223)
-			const laneId = '18';
+			const laneId = editorScene.getLaneConfigs()[2].id;
 			const legacyNote = {
 				measure: 0,
 				laneID: laneId,

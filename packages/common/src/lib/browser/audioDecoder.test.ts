@@ -238,15 +238,21 @@ describe('XAAudioContext', () => {
 		it('should throw when WasmXADecoder is not available after initialization', async () => {
 			const testData = createMockXAData();
 			const xaDecoderMod = await import('xa_decoder');
-			const origDecoder = xaDecoderMod.WasmXADecoder;
-			(xaDecoderMod as any).WasmXADecoder = undefined;
+			const origDescriptor = Object.getOwnPropertyDescriptor(xaDecoderMod, 'WasmXADecoder');
+			Object.defineProperty(xaDecoderMod, 'WasmXADecoder', {
+				value: undefined,
+				writable: true,
+				configurable: true
+			});
 
 			try {
 				await expect(xaContext.decodeAudioData(testData)).rejects.toThrow(
 					'XA decoder is not initialized'
 				);
 			} finally {
-				(xaDecoderMod as any).WasmXADecoder = origDecoder;
+				if (origDescriptor) {
+					Object.defineProperty(xaDecoderMod, 'WasmXADecoder', origDescriptor);
+				}
 			}
 		});
 

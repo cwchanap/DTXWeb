@@ -282,6 +282,8 @@ describe('SoundLibrary', () => {
 			expect(result.errors).toContain(
 				'Storage quota exceeded - unable to store files even after cleanup. Please free up browser storage space.'
 			);
+			// setItem should have been called more than once (initial attempt + retry after cleanup)
+			expect(mockLocalStorage.setItem.mock.calls.length).toBeGreaterThanOrEqual(2);
 		});
 
 		it('should report no-files-to-remove error when freeUpStorageSpace returns false', async () => {

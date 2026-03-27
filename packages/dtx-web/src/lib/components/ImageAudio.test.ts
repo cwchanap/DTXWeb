@@ -125,14 +125,16 @@ describe('ImageAudio', () => {
 	it('handles audio.play() rejection gracefully', async () => {
 		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		mockAudio.play.mockRejectedValueOnce(new Error('NotAllowedError'));
+		try {
+			render(ImageAudio, { props: defaultProps });
+			await fireEvent.click(screen.getByRole('button'));
 
-		render(ImageAudio, { props: defaultProps });
-		await fireEvent.click(screen.getByRole('button'));
-
-		await vi.waitFor(() => {
-			expect(screen.queryByRole('button')).not.toBeInTheDocument();
-		});
-		consoleSpy.mockRestore();
+			await vi.waitFor(() => {
+				expect(screen.queryByRole('button')).not.toBeInTheDocument();
+			});
+		} finally {
+			consoleSpy.mockRestore();
+		}
 	});
 
 	it('cleans up previous audio instance when replaying after ended', async () => {
@@ -145,6 +147,7 @@ describe('ImageAudio', () => {
 		const endedCall = mockAudio.addEventListener.mock.calls.find(
 			(args: unknown[]) => args[0] === 'ended'
 		);
+		expect(endedCall).toBeDefined();
 		const [, endedCallback] = endedCall!;
 		endedCallback();
 

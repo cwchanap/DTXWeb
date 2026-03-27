@@ -75,6 +75,7 @@ describe('upload server utilities', () => {
 			const longExt = '.' + 'x'.repeat(1025);
 			const result = _sanitizeFilename('song' + longExt);
 			expect(result.length).toBeLessThanOrEqual(1024);
+			expect(result).toMatch(/^\.[x]+$/);
 		});
 
 		it('should truncate filename without extension when too long', () => {

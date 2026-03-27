@@ -26,7 +26,11 @@ vi.mock('@supabase/ssr', () => ({
 }));
 
 const mockBrowserEnv = vi.hoisted(() => ({ browser: false }));
-vi.mock('$app/environment', () => mockBrowserEnv);
+vi.mock('$app/environment', () => ({
+	get browser() {
+		return mockBrowserEnv.browser;
+	}
+}));
 
 import { load } from './+layout';
 import { createBrowserClient, createServerClient, isBrowser } from '@supabase/ssr';

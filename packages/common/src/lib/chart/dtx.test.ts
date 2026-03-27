@@ -1428,4 +1428,22 @@ describe('DTXFile', () => {
 			);
 		});
 	});
+
+	describe('parseWithSpecificEncoding and parseWithEncodingDetection error paths', () => {
+		it('should throw when parseWithSpecificEncoding called with non-File', async () => {
+			const dtx = new DTXFile();
+			dtx['file'] = null as any;
+			await expect((dtx as any).parseWithSpecificEncoding('utf-8')).rejects.toThrow(
+				'File is not set'
+			);
+		});
+
+		it('should throw when parseWithEncodingDetection called with non-File', async () => {
+			const dtx = new DTXFile();
+			dtx['file'] = null as any;
+			await expect((dtx as any).parseWithEncodingDetection()).rejects.toThrow(
+				'File is not set'
+			);
+		});
+	});
 });

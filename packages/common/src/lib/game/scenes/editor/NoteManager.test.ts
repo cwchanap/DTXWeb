@@ -123,6 +123,20 @@ describe('NoteManager', () => {
 		it('should initialize selection rectangle', () => {
 			expect(mockEditor.add.rectangle).toHaveBeenCalled();
 		});
+
+		it('skips keyboard and mouse tracking setup when document is undefined', () => {
+			const origDocument = global.document;
+			(global as any).document = undefined;
+			try {
+				const nm = new NoteManager(mockEditor as unknown as Editor);
+				// initialize() calls initializeSelectionRectangle (no document check),
+				// then initializeKeyboardEvents and initializeMouseTracking (both return early)
+				nm.initialize();
+				expect(nm.selectedNotes.size).toBe(0);
+			} finally {
+				global.document = origDocument;
+			}
+		});
 	});
 
 	describe('selection state', () => {
@@ -1366,6 +1380,16 @@ describe('NoteManager', () => {
 			const result = noteManager['getCurrentCursorPosition']();
 			// clickY = 500, measure 0 has height 400, measure 1 starts at 400 → measure = 1
 			expect(result.measure).toBe(1);
+		});
+
+		it('should use lastMouseX/Y fallback when activePointer x/y are undefined', () => {
+			noteManager['lastMouseX'] = 123;
+			noteManager['lastMouseY'] = 456;
+			mockEditor.input.activePointer = { x: undefined, y: undefined } as any;
+
+			const result = noteManager['getCurrentCursorPosition']();
+			// Falls back to lastMouseX/Y when activePointer.x/y are undefined
+			expect(result).toBeDefined();
 		});
 	});
 

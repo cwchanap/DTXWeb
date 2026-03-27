@@ -296,6 +296,20 @@ describe('TempChartStorage', () => {
 				TempChartStorage.clearAll();
 			}).not.toThrow();
 		});
+
+		it('should handle localStorage errors gracefully when length is non-zero', () => {
+			const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockImplementation(() => {
+				throw new Error('Storage unavailable');
+			});
+			expect(() => TempChartStorage.clearAll()).not.toThrow();
+			expect(consoleSpy).toHaveBeenCalledWith(
+				'Failed to clear temporary chart data:',
+				expect.any(Error)
+			);
+			consoleSpy.mockRestore();
+		});
 	});
 
 	describe('getStorageKey', () => {

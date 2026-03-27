@@ -69,6 +69,22 @@ describe('upload server utilities', () => {
 			expect(result.endsWith('.dtx')).toBe(true);
 		});
 
+		it('should truncate filename when extension itself exceeds max length', () => {
+			// Extension is 1025 chars, allowedNameLen = max(0, 1024-1025) = 0
+			// So it takes the "truncate extension" branch
+			const longExt = '.' + 'x'.repeat(1025);
+			const result = _sanitizeFilename('song' + longExt);
+			expect(result.length).toBeLessThanOrEqual(1024);
+		});
+
+		it('should truncate filename without extension when too long', () => {
+			// No dot → no extension → truncate whole string
+			const longNoExt = 'a'.repeat(1100);
+			const result = _sanitizeFilename(longNoExt);
+			expect(result.length).toBeLessThanOrEqual(1024);
+			expect(result).toBe('a'.repeat(1024));
+		});
+
 		it('should generate fallback for empty or invalid results', () => {
 			const result1 = _sanitizeFilename('');
 			expect(result1.startsWith('file_')).toBe(true);

@@ -1,11 +1,10 @@
 import { defineConfig } from 'vitest/config';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
 export default defineConfig({
-	plugins: [tailwindcss(), svelte({ hot: false, compilerOptions: { runes: true } }), sveltekit()],
+	plugins: [tailwindcss(), sveltekit()],
 	test: {
 		environment: 'jsdom',
 		globals: true,
@@ -28,22 +27,21 @@ export default defineConfig({
 				'**/vitest.config.ts',
 				'**/svelte.config.js',
 				'**/app.html',
-				'**/app.d.ts'
+				'**/app.d.ts',
+				'**/__mocks__/**'
 			],
 			include: ['src/**/*.{js,ts,svelte}'],
 			all: true
 		},
+		// Force browser conditions for Svelte 5 client rendering
+		pool: 'forks',
 		deps: {
-			optimizer: {
-				web: {
-					include: ['svelte', '@testing-library/svelte']
-				}
-			},
 			moduleDirectories: ['node_modules', path.resolve(__dirname, '../..')]
 		},
 		server: {
 			deps: {
-				external: ['phaser3spectorjs']
+				inline: [/^svelte/, /@dtx\/common/],
+				external: ['phaser3spectorjs', 'svelte/server']
 			}
 		}
 	},
@@ -52,6 +50,7 @@ export default defineConfig({
 			'@': path.resolve(__dirname, './src'),
 			$lib: path.resolve(__dirname, './src/lib'),
 			phaser: path.resolve(__dirname, '../../__mocks__/phaser.ts')
-		}
+		},
+		conditions: ['browser']
 	}
 });

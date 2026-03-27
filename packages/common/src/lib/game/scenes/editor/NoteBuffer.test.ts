@@ -190,6 +190,13 @@ describe('NoteBuffer', () => {
 			expect(result).toBe(false);
 		});
 
+		it('should return false when pop returns undefined despite non-zero length', () => {
+			// Inject undefined into history to cover the !lastAction branch (lines 158-160)
+			noteBuffer['undoHistory'] = [undefined] as any;
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+			expect(result).toBe(false);
+		});
+
 		it('should return false for unknown action type (default switch case)', () => {
 			noteBuffer['undoHistory'] = [{ type: 'unknown_type', data: [] }] as any;
 

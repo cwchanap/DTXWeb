@@ -25,12 +25,12 @@ vi.mock('@supabase/ssr', () => ({
 	})
 }));
 
-vi.mock('$app/environment', () => ({
-	browser: false
-}));
+const mockBrowserEnv = vi.hoisted(() => ({ browser: false }));
+vi.mock('$app/environment', () => mockBrowserEnv);
 
 import { load } from './+layout';
 import { createBrowserClient, createServerClient, isBrowser } from '@supabase/ssr';
+import { locale } from 'svelte-i18n';
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -126,5 +126,15 @@ describe('+layout load', () => {
 
 		expect(result.session).toBeNull();
 		expect(result.user).toBeNull();
+	});
+
+	it('sets locale when browser is true', async () => {
+		mockBrowserEnv.browser = true;
+		try {
+			await load(makeLoadArgs() as any);
+			expect(vi.mocked(locale.set)).toHaveBeenCalledWith(expect.any(String));
+		} finally {
+			mockBrowserEnv.browser = false;
+		}
 	});
 });

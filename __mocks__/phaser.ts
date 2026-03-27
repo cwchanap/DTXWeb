@@ -228,7 +228,9 @@ const Scene = class MockScene {
 	load = {
 		audio: vi.fn(),
 		spritesheet: vi.fn(),
-		image: vi.fn()
+		image: vi.fn(),
+		once: vi.fn(),
+		start: vi.fn()
 	};
 
 	time = {

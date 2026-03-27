@@ -254,4 +254,38 @@ describe('DTX to MIDI Component Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert Another File' }));
 		expect(screen.getByText('Upload DTX File')).toBeInTheDocument();
 	});
+
+	it('shows error toast when download fails', async () => {
+		exportToMidiMock.mockImplementationOnce(() => {
+			throw new Error('export error');
+		});
+
+		const { container } = render(DtxToMidi);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		await fireEvent.change(input, { target: { files: [dtxFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download MIDI File' }));
+
+		await vi.waitFor(() => {
+			expect(toastMock.error).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Download failed' })
+			);
+		});
+	});
+
+	it('clicks file input when Choose Different File is clicked', async () => {
+		const { container } = render(DtxToMidi);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		await fireEvent.change(input, { target: { files: [dtxFile] } });
+
+		// File is uploaded - Choose Different File button is now visible
+		const clickSpy = vi.spyOn(input, 'click').mockImplementation(() => {});
+		await fireEvent.click(screen.getByRole('button', { name: 'Choose Different File' }));
+		expect(clickSpy).toHaveBeenCalled();
+		clickSpy.mockRestore();
+	});
 });

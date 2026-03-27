@@ -218,6 +218,25 @@ describe('SoundLibrary', () => {
 			expect(result.errors).toBeDefined();
 		});
 
+		it('should store large file in memory and return added=1', async () => {
+			// Use generateFileHash spy so this is fast and deterministic
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue(
+				'large-hash-unique'
+			);
+
+			// Create a small File but override its size to exceed the 2MB threshold
+			const smallFile = new File(['audio'], 'big.wav', { type: 'audio/wav' });
+			Object.defineProperty(smallFile, 'size', { value: 3 * 1024 * 1024 });
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await SoundLibrary.addFiles([smallFile]);
+
+			expect(result.added).toBe(1);
+			expect(result.errors).toHaveLength(0);
+			expect((SoundLibrary as any).memoryFiles.has('large-hash-unique')).toBe(true);
+		});
+
 		it('should handle storage quota exceeded error', async () => {
 			const audioFile = new File(['audio data'], 'test.wav', { type: 'audio/wav' });
 			mockLocalStorage.getItem.mockReturnValue('[]');
@@ -232,6 +251,59 @@ describe('SoundLibrary', () => {
 			const result = await SoundLibrary.addFiles([audioFile]);
 
 			expect(result.errors.length).toBeGreaterThan(0);
+		});
+
+		it('should retry setItem after freeUpStorageSpace succeeds and surface error if retry fails', async () => {
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('quota-retry-hash');
+			vi.spyOn(SoundLibrary as any, 'fileToBase64').mockResolvedValue('base64data');
+
+			// Pre-populate library with an existing file so freeUp has something to remove
+			const existingFile = {
+				hash: 'old-hash',
+				fileName: 'old.wav',
+				fileType: 'audio/wav',
+				fileData: 'olddata',
+				size: 1024,
+				dateAdded: Date.now() - 10000
+			};
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify([existingFile]));
+
+			const quotaError = new Error('QuotaExceededError');
+			quotaError.name = 'QuotaExceededError';
+			// Both first and retry setItem calls throw QuotaExceededError
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw quotaError;
+			});
+
+			const newFile = new File(['audio'], 'new.wav', { type: 'audio/wav' });
+			const result = await SoundLibrary.addFiles([newFile]);
+
+			// freeUpStorageSpace should succeed (removed existingFile), retry fails too
+			expect(result.errors).toContain(
+				'Storage quota exceeded - unable to store files even after cleanup. Please free up browser storage space.'
+			);
+		});
+
+		it('should report no-files-to-remove error when freeUpStorageSpace returns false', async () => {
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('quota-empty-hash');
+			vi.spyOn(SoundLibrary as any, 'fileToBase64').mockResolvedValue('base64data');
+			// Force freeUpStorageSpace to return false (simulating no removable files)
+			vi.spyOn(SoundLibrary as any, 'freeUpStorageSpace').mockReturnValue(false);
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const quotaError = new Error('QuotaExceededError');
+			quotaError.name = 'QuotaExceededError';
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw quotaError;
+			});
+
+			const newFile = new File(['audio'], 'empty.wav', { type: 'audio/wav' });
+			const result = await SoundLibrary.addFiles([newFile]);
+
+			expect(result.errors).toContain(
+				'Storage quota exceeded - no files available to remove for cleanup'
+			);
 		});
 
 		it('should reject file that would exceed storage limit', async () => {

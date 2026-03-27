@@ -348,6 +348,76 @@ describe('NoteMove', () => {
 			// Should handle the collision appropriately
 			expect(deleteNoteByKey).toHaveBeenCalled();
 		});
+
+		it('should handle backward measure boundary crossing when cellOffset goes negative', () => {
+			// Origin note at cell 0.5, another dragged note at cell 0.0625
+			// Target is measure 2 cellOffset 0, so delta = -0.5
+			// Note at 0.0625 gets newCellOffset = -0.4375, triggering while(newCellOffset < 0)
+			const selectedNotes = new Set(['note-0-2-0.5', 'note-0-2-0.0625']);
+			const clearSelection = vi.fn();
+			const highlightSelectedNote = vi.fn();
+			const deleteNoteByKey = vi.fn();
+
+			// Set up notes in measure 2
+			const lane1Note = mockEditor._addMockNote('lane1', 2, 0.5, '01');
+			const lane1Note2 = mockEditor._addMockNote('lane1', 2, 0.0625, '01');
+			mockEditor._setMockNotes({
+				lane1: [lane1Note, lane1Note2]
+			});
+
+			// Set activePointer so that targetMeasure=2, targetCellOffset=0
+			// clickY = 200 - pointer.y = 801 → measure 2 (currentY=800), positionInMeasure=1/400≈0
+			mockEditor.input.activePointer = { x: 150, y: -601 } as any;
+
+			const startPointer = createMockPointer(150, -601);
+			noteMove.startDrag(startPointer, 'note-0-2-0.5', selectedNotes);
+			noteMove.completeDrag(
+				selectedNotes,
+				clearSelection,
+				highlightSelectedNote,
+				deleteNoteByKey
+			);
+
+			// Should not throw and should complete the drag
+			expect(noteMove.isCurrentlyDragging).toBe(false);
+		});
+
+		it('should allow move when existing note at target position is part of dragged set', () => {
+			// Origin at note-0-1-0, also dragging note-0-1-0.5
+			// Target: measure 1, cellOffset 0.5 → origin moves to where note-0-1-0.5 is
+			// note-0-1-0.5 is in draggedNotes, so movement is allowed
+			const selectedNotes = new Set(['note-0-1-0', 'note-0-1-0.5']);
+			const clearSelection = vi.fn();
+			const highlightSelectedNote = vi.fn();
+			const deleteNoteByKey = vi.fn();
+
+			const lane1Note = mockEditor._addMockNote('lane1', 1, 0, '01');
+			const lane1Note2 = mockEditor._addMockNote('lane1', 1, 0.5, '01');
+			mockEditor._setMockNotes({
+				lane1: [lane1Note, lane1Note2]
+			});
+
+			// Add a game object for note-0-1-0.5 so getByName returns it
+			mockEditor._addMockGameObject('note-0-1-0.5');
+
+			// Set activePointer: targetLaneIndex=0 (x=100→x-offsetX=0→lane 0),
+			// targetMeasure=1, targetCellOffset=0.5
+			// clickY=600 → measure1(currentY=400), positionInMeasure=200/400=0.5
+			// 200 - pointer.y = 600 → pointer.y = -400
+			mockEditor.input.activePointer = { x: 100, y: -400 } as any;
+
+			const startPointer = createMockPointer(100, -400);
+			noteMove.startDrag(startPointer, 'note-0-1-0', selectedNotes);
+			noteMove.completeDrag(
+				selectedNotes,
+				clearSelection,
+				highlightSelectedNote,
+				deleteNoteByKey
+			);
+
+			// Origin note moved to note-0-1-0.5 (where dragged note was) - allowed
+			expect(noteMove.isCurrentlyDragging).toBe(false);
+		});
 	});
 
 	describe('cleanup', () => {
@@ -429,6 +499,78 @@ describe('NoteMove', () => {
 			expect(addNoteSpy).toHaveBeenCalledWith('11', 0.5);
 			const addedChip = realNote.notes.find((n) => n.position === 0.5);
 			expect(addedChip).toBeDefined();
+		});
+	});
+
+	describe('updateSelectionAfterMove with Graphics instances', () => {
+		it('should call highlightSelectedNote when getByName returns a Graphics instance for moved notes', () => {
+			const highlightSelectedNote = vi.fn();
+			const clearSelection = vi.fn();
+			const deleteNoteByKey = vi.fn();
+
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+			mockEditor._setMockNotes({ lane1: [lane1Note] });
+
+			const mockGraphics = new Phaser.GameObjects.Graphics();
+			// First call: return null so target position is NOT occupied (note can move)
+			// Subsequent calls: return mockGraphics so highlight branch is triggered
+			mockEditor.getPanelContainer.mockReturnValue({
+				getByName: vi.fn().mockReturnValueOnce(null).mockReturnValue(mockGraphics),
+				y: 0
+			});
+
+			const pointer = { x: 200, y: 100, worldX: 200, worldY: 100 } as Phaser.Input.Pointer;
+			const selectedNotes = new Set(['note-0-1-0']);
+
+			noteMove.startDrag(pointer, 'note-0-1-0', selectedNotes);
+			noteMove.completeDrag(
+				selectedNotes,
+				clearSelection,
+				highlightSelectedNote,
+				deleteNoteByKey
+			);
+
+			// highlightSelectedNote should have been called with the Graphics instance
+			expect(highlightSelectedNote).toHaveBeenCalledWith(mockGraphics);
+		});
+
+		it('should call highlightSelectedNote for unmovable notes that have Graphics instances', () => {
+			const highlightSelectedNote = vi.fn();
+			const clearSelection = vi.fn();
+			const deleteNoteByKey = vi.fn();
+
+			// Set up two notes: one in each lane at measure 1
+			// note-0-1-0 (lane 0) → will move to lane 1 (within bounds → movable)
+			// note-1-1-0 (lane 1) → would move to lane 2 (out of bounds → unmovable)
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
+			const lane2Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
+			mockEditor._setMockNotes({ lane1: [lane1Note], lane2: [lane2Note] });
+
+			const mockGraphics = new Phaser.GameObjects.Graphics();
+			// First call returns null (target position not occupied → note-0-1-0 is movable)
+			// Subsequent calls return mockGraphics (for highlighting moved + unmovable notes)
+			mockEditor.getPanelContainer.mockReturnValue({
+				getByName: vi.fn().mockReturnValueOnce(null).mockReturnValue(mockGraphics),
+				y: 0
+			});
+
+			const pointer = { x: 200, y: 100, worldX: 200, worldY: 100 } as Phaser.Input.Pointer;
+			// Drag both notes — note-1-1-0 goes out of bounds (lane 2) → unmovable
+			const selectedNotes = new Set(['note-0-1-0', 'note-1-1-0']);
+
+			noteMove.startDrag(pointer, 'note-0-1-0', selectedNotes);
+			noteMove.completeDrag(
+				selectedNotes,
+				clearSelection,
+				highlightSelectedNote,
+				deleteNoteByKey
+			);
+
+			// highlightSelectedNote should have been called for both moved and unmovable notes
+			expect(highlightSelectedNote).toHaveBeenCalledWith(mockGraphics);
 		});
 	});
 });

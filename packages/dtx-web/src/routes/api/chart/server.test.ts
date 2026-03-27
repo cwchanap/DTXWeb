@@ -168,6 +168,18 @@ describe('POST /api/chart', () => {
 		expect(response.status).toBe(400);
 	});
 
+	it('returns 400 for array body', async () => {
+		const request = buildPostRequest([{ bpm: 120 }]);
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid request body');
+	});
+
 	it('returns 400 for non-boolean isPublished', async () => {
 		const request = buildPostRequest({ bpm: 120, isPublished: 'false' });
 		const response = await POST({
@@ -345,5 +357,29 @@ describe('POST /api/chart', () => {
 			locals: { user: mockUser } as any
 		});
 		expect(response.status).toBe(201);
+	});
+
+	it('returns 400 for invalid bpm (not a finite number)', async () => {
+		const request = buildPostRequest({ bpm: 'fast' });
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid bpm');
+	});
+
+	it('returns 400 when dtx_files entry is null', async () => {
+		const request = buildPostRequest({ bpm: 120, dtx_files: [null] });
+		const response = await POST({
+			request,
+			platform: mockPlatform as any,
+			locals: { user: mockUser } as any
+		});
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid dtx files payload');
 	});
 });

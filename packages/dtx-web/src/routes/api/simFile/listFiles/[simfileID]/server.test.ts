@@ -137,6 +137,56 @@ describe('/api/simFile/listFiles/[simfileID]', () => {
 		expect(data.error).toBe('Invalid SimFile ID');
 	});
 
+	it('returns 400 when simfileID passes digit check but is not a safe integer', async () => {
+		const mockBucket = createMockBucket();
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '99999999999999999999' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('returns 403 when user with short ID does not own unpublished simfile', async () => {
+		// This covers the redactIdentifier branch for short IDs (<=8 chars)
+		vi.mocked(getSimfileOwner).mockResolvedValue({
+			user_id: 'owner123',
+			is_published: 0
+		});
+		const mockBucket = createMockBucket();
+		const shortIdSession = createMockSession('user123');
+
+		const response = await GET({
+			request: createMockRequest(),
+			params: { simfileID: '123' },
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({
+					session: shortIdSession,
+					user: shortIdSession.user
+				}),
+				session: shortIdSession,
+				user: shortIdSession.user
+			}
+		} as any);
+
+		expect(response.status).toBe(403);
+		const data = await response.json();
+		expect(data.error).toBe('Forbidden');
+	});
+
 	it('returns 401 when bearer token is invalid', async () => {
 		const mockBucket = createMockBucket();
 		const headers = new Headers({ Authorization: 'Bearer invalid-token' });

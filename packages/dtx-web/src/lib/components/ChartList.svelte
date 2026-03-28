@@ -300,7 +300,6 @@
 				}
 
 				submitBulkDownload(ids);
-				clearBulkSelection();
 			} catch (error) {
 				console.error('Failed to start bulk download:', error);
 				toastStore.error({

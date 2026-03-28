@@ -255,7 +255,7 @@ describe('ChartList Component Logic', () => {
 	});
 
 	describe('Bulk Download Error Handling', () => {
-		it('uses validation plus hidden form submission for bulk downloads without blob buffering', () => {
+		it('uses validation plus hidden form submission without clearing selection immediately after submit', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
@@ -268,6 +268,8 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain("form.action = '/api/simFile/download/bulk';");
 			expect(source).toContain('if (!data?.ok || data.fileCount === 0) {');
 			expect(source).toContain('No uploaded files found for the selected charts');
+			expect(source).toContain('submitBulkDownload(ids);');
+			expect(source).not.toContain('submitBulkDownload(ids);\n\t\t\t\tclearBulkSelection();');
 			expect(source).not.toContain('response.blob()');
 		});
 

@@ -163,14 +163,23 @@ export const POST = async ({
 		);
 
 		const estimatedBytes = objectsPerSimfile.flat().reduce((sum, obj) => sum + obj.size, 0);
+		const missingUploadIds = objectsPerSimfile
+			.map((objects, index) => (objects.length === 0 ? accessibleIds[index] : null))
+			.filter((id): id is number => id !== null);
+
+		if (missingUploadIds.length > 0) {
+			return json(
+				{
+					error: 'Some selected charts do not have uploaded files available.',
+					ids: missingUploadIds
+				},
+				{ status: 400 }
+			);
+		}
 
 		// Rate limiting — skipped in local dev when KV binding is absent
 		const kv = platform?.env?.RATE_LIMIT;
 		const ip = getClientIp(request);
-
-		if (validateOnly) {
-			return json({ ok: true, fileCount: objectsPerSimfile.flat().length });
-		}
 
 		if (!kv) {
 			logger.warn('RATE_LIMIT KV binding not available; rate limiting is disabled');
@@ -182,13 +191,23 @@ export const POST = async ({
 				);
 			}
 
-			const { allowed } = await tryConsumeRateLimit(kv, ip, estimatedBytes);
+			const { allowed } = await tryConsumeRateLimit(
+				kv,
+				ip,
+				estimatedBytes,
+				undefined,
+				!validateOnly
+			);
 			if (!allowed) {
 				return json(
 					{ error: 'Rate limit exceeded. Please try again later.' },
 					{ status: 429 }
 				);
 			}
+		}
+
+		if (validateOnly) {
+			return json({ ok: true, fileCount: objectsPerSimfile.flat().length });
 		}
 
 		const requestId = request.headers.get('cf-ray') ?? request.headers.get('x-request-id');

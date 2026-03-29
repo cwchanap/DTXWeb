@@ -265,13 +265,46 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain("console.error('Bulk download request failed:'");
 			expect(source).toContain("console.error('Failed to start bulk download:'");
 			expect(source).toContain('const clearBulkSelection = () => {');
+			expect(source).toContain('const resetBulkSelection = () => {');
 			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
 			expect(source).toContain("form.action = '/api/simFile/download/bulk';");
+			expect(source).toContain(
+				'const canBulkSelect = (item: ListedChart) => item.has_uploaded_files ?? false;'
+			);
+			expect(source).toContain('const hasUnavailableSelection = ids.some((id) => {');
+			expect(source).toContain('Some selected charts do not have uploaded files available');
+			expect(source).toContain('This chart does not have uploaded files available');
 			expect(source).toContain('if (!data?.ok || data.fileCount === 0) {');
 			expect(source).toContain('No uploaded files found for the selected charts');
 			expect(source).toContain('submitBulkDownload(ids);');
 			expect(source).not.toContain('submitBulkDownload(ids);\n\t\t\t\tclearBulkSelection();');
 			expect(source).not.toContain('response.blob()');
+		});
+
+		it('resets bulk selections when page, page size, or search changes', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain('const changePage = (newPage: number) => {');
+			expect(source).toContain('resetBulkSelection();\n\t\t\tcurrentPage = newPage;');
+			expect(source).toContain(
+				'function handlePageSizeChange(event: { pageSize: number }) {'
+			);
+			expect(source).toContain('resetBulkSelection();\n\t\tpageSize = event.pageSize;');
+			expect(source).toContain('searchTimeout = setTimeout(() => {');
+			expect(source).toContain('resetBulkSelection();\n\t\t\tcurrentPage = 1;');
+		});
+
+		it('disables bulk selection controls for charts without uploaded files', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain('disabled={!canBulkSelect(item)}');
+			expect(source).toContain('disabled:cursor-not-allowed disabled:opacity-50');
 		});
 
 		it('keeps the hidden iframe alive until it finishes loading instead of using a fixed timeout', () => {

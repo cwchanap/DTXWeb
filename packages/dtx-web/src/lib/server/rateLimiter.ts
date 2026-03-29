@@ -34,7 +34,8 @@ export const tryConsumeRateLimit = async (
 	kv: KVNamespace,
 	ip: string,
 	bytes: number,
-	nowMinute = Math.floor(Date.now() / 60000)
+	nowMinute = Math.floor(Date.now() / 60000),
+	consume = true
 ): Promise<RateLimitResult> => {
 	const key = getRateLimitKey(ip, nowMinute);
 	try {
@@ -42,7 +43,7 @@ export const tryConsumeRateLimit = async (
 		const parsedValue = storedValue === null ? 0 : Number.parseInt(storedValue, 10);
 		const current = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
 		const allowed = current + bytes <= RATE_LIMIT_BYTES;
-		if (allowed) {
+		if (allowed && consume) {
 			await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });
 		}
 		return { allowed, remainingBytes: Math.max(0, RATE_LIMIT_BYTES - current) };

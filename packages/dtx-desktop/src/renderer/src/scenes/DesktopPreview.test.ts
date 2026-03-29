@@ -15,8 +15,8 @@ vi.mock('@dtx/common/game', () => {
 	return {
 		Preview: MockPreview,
 		AssetName: {
-			LANE_ICONS: 'lane_icons',
-			DRUM_CHIPS: 'drum_chips'
+			LANE_ICONS: 'lane-icons',
+			DRUM_CHIPS: 'drum-chips'
 		}
 	};
 });
@@ -122,7 +122,7 @@ describe('DesktopPreview', () => {
 		expect(
 			(scene as unknown as { textures: { addSpriteSheet: ReturnType<typeof vi.fn> } })
 				.textures.addSpriteSheet
-		).toHaveBeenCalledWith('lane_icons', expect.anything(), {
+		).toHaveBeenCalledWith('lane-icons', expect.anything(), {
 			frameWidth: 96,
 			frameHeight: 96
 		});
@@ -136,7 +136,7 @@ describe('DesktopPreview', () => {
 		expect(
 			(scene as unknown as { textures: { addImage: ReturnType<typeof vi.fn> } }).textures
 				.addImage
-		).toHaveBeenCalledWith('drum_chips', expect.anything());
+		).toHaveBeenCalledWith('drum-chips', expect.anything());
 	});
 
 	it('create() logs warning but does not throw when lane icons fail to load (success:false)', async () => {
@@ -144,7 +144,7 @@ describe('DesktopPreview', () => {
 			.mockResolvedValueOnce({ success: false, error: 'Not found' })
 			.mockResolvedValueOnce({ success: false, error: 'Not found' });
 
-		await expect(scene.create()).resolves.not.toThrow();
+		await expect(scene.create()).resolves.toBeUndefined();
 	});
 
 	it('create() logs warning but does not throw when drum chips fail to load (success:false)', async () => {
@@ -152,7 +152,7 @@ describe('DesktopPreview', () => {
 			.mockResolvedValueOnce({ success: true, dataUrl: 'data:image/png;base64,abc' })
 			.mockResolvedValueOnce({ success: false, error: 'Not found' });
 
-		await expect(scene.create()).resolves.not.toThrow();
+		await expect(scene.create()).resolves.toBeUndefined();
 	});
 
 	it('create() throws when IPC invoke rejects', async () => {

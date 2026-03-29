@@ -54,6 +54,7 @@ describe('(game)/+layout load', () => {
 
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+		expect((globalThis as Record<string, unknown>).__xaDecoderReady).toBe(false);
 		expect((globalThis as Record<string, unknown>).__xaDecoderError).toBe('string error');
 	});
 });

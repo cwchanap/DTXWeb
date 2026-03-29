@@ -26,10 +26,10 @@ describe('Home Page', () => {
 		expect(screen.getByText('Feel the Beat')).toBeInTheDocument();
 	});
 
-	it('navigates to blog when Charts nav link clicked', async () => {
+	it('exposes blog navigation via Charts link', () => {
 		render(HomePage);
-		const chartsLinks = screen.getAllByRole('link', { name: /charts/i });
-		await fireEvent.click(chartsLinks[0]);
+		const chartsLink = screen.getAllByRole('link', { name: /charts/i })[0];
+		expect(chartsLink).toHaveAttribute('href', '/blog');
 	});
 
 	it('navigates to blog when Explore Charts button is clicked', async () => {

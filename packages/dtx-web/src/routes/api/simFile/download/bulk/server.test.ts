@@ -165,7 +165,36 @@ describe('POST /api/simFile/download/bulk', () => {
 		expect(res.status).toBe(429);
 	});
 
-	it('returns JSON success for validation-only requests without consuming rate limit', async () => {
+	it('returns JSON success for validation-only requests after a non-consuming rate limit check', async () => {
+		const platform = createMockPlatform();
+		const request = new Request('http://localhost/api/simFile/download/bulk?validate=1', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'cf-connecting-ip': '1.2.3.4'
+			},
+			body: JSON.stringify({ ids: [1, 2] })
+		});
+
+		const res = await POST({
+			request,
+			platform,
+			locals: { user: null }
+		} as never);
+
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ ok: true, fileCount: 2 });
+		expect(tryConsumeRateLimit).toHaveBeenCalledWith(
+			platform.env.RATE_LIMIT,
+			'1.2.3.4',
+			1024,
+			undefined,
+			false
+		);
+	});
+
+	it('returns 429 for validation-only requests when rate limit is exceeded', async () => {
+		vi.mocked(tryConsumeRateLimit).mockResolvedValue({ allowed: false, remainingBytes: 0 });
 		const request = new Request('http://localhost/api/simFile/download/bulk?validate=1', {
 			method: 'POST',
 			headers: {
@@ -181,8 +210,31 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 
-		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ ok: true, fileCount: 2 });
+		expect(res.status).toBe(429);
+		expect(await res.json()).toMatchObject({
+			error: 'Rate limit exceeded. Please try again later.'
+		});
+	});
+
+	it('returns 400 for validation-only requests when client IP cannot be determined', async () => {
+		const request = new Request('http://localhost/api/simFile/download/bulk?validate=1', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ ids: [1] })
+		});
+
+		const res = await POST({
+			request,
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+
+		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({
+			error: 'Unable to determine client IP for rate limiting.'
+		});
 		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
 	});
 
@@ -240,6 +292,25 @@ describe('POST /api/simFile/download/bulk', () => {
 		expect(res.status).toBe(400);
 		expect(await res.json()).toMatchObject({
 			error: 'Unable to determine client IP for rate limiting.'
+		});
+		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
+	});
+
+	it('returns 400 when any requested chart has no uploaded files', async () => {
+		vi.mocked(listAllR2Objects)
+			.mockResolvedValueOnce([{ key: '1/file.dtx', size: 512, uploaded: new Date() }])
+			.mockResolvedValueOnce([]);
+
+		const res = await POST({
+			request: createRequest({ ids: [1, 2] }),
+			platform: createMockPlatform(),
+			locals: { user: null }
+		} as never);
+
+		expect(res.status).toBe(400);
+		expect(await res.json()).toEqual({
+			error: 'Some selected charts do not have uploaded files available.',
+			ids: [2]
 		});
 		expect(tryConsumeRateLimit).not.toHaveBeenCalled();
 	});

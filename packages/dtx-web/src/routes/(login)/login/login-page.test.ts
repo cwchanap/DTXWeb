@@ -16,9 +16,7 @@ vi.mock('$app/stores', () => ({
 	}
 }));
 
-vi.mock('@lucide/svelte', () => ({
-	Loader: vi.fn()
-}));
+vi.mock('@lucide/svelte');
 
 import LoginPage from './+page.svelte';
 

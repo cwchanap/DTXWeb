@@ -474,15 +474,14 @@ describe('SimFile Service', () => {
 		});
 
 		it('should return error when preview files exist but server URL is invalid', async () => {
-			// Set an invalid (non-http) server URL
-			process.env.VITE_DTX_SERVER_URL = 'invalid-url';
+			vi.stubEnv('VITE_DTX_SERVER_URL', 'invalid-url');
 
 			// beforeEach already mocks readdir to return preview.jpg and preview.mp3
 
 			const result = await createSimfileRecord(simfileData);
 
 			expect(result.success).toBe(false);
-			expect(result.error).toContain('VITE_DTX_SERVER_URL');
+			expect(result.error).toContain('valid absolute URL');
 		});
 	});
 

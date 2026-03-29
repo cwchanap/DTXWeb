@@ -104,6 +104,15 @@ describe('linkageCacheService', () => {
 			const result = linkageCacheService.getLinkage('/path');
 			expect(result).toBeNull();
 		});
+
+		it('should handle getCache throwing gracefully', () => {
+			vi.spyOn(linkageCacheService, 'getCache').mockImplementationOnce(() => {
+				throw new Error('unexpected error');
+			});
+
+			const result = linkageCacheService.getLinkage('/path');
+			expect(result).toBeNull();
+		});
 	});
 
 	describe('removeLinkage', () => {

@@ -270,4 +270,24 @@ describe('auth module', () => {
 			await expect(auth.handleProtocolUrl('not-a-valid-url')).resolves.toBeUndefined();
 		});
 	});
+
+	it('verifyMagicLink returns failure when supabaseClient cannot be initialized', async () => {
+		vi.stubEnv('PUBLIC_SUPABASE_URL', '');
+		vi.stubEnv('PUBLIC_SUPABASE_ANON_KEY', '');
+		const auth = await import('./auth');
+		// Do NOT call initializeSupabase() - supabaseClient starts null
+		// initializeSupabase() is called internally and returns null due to missing env vars
+		const res = await auth.verifyMagicLink('https://example.com/cb?token_hash=1');
+		expect(res.success).toBe(false);
+		expect((res as { success: false; error: string }).error).toMatch(/initialize/i);
+	});
+
+	it('ensureSupabaseAuth returns false when supabaseClient cannot be initialized', async () => {
+		vi.stubEnv('PUBLIC_SUPABASE_URL', '');
+		vi.stubEnv('PUBLIC_SUPABASE_ANON_KEY', '');
+		const auth = await import('./auth');
+		// Do NOT call initializeSupabase() - supabaseClient starts null
+		const result = await auth.ensureSupabaseAuth();
+		expect(result).toBe(false);
+	});
 });

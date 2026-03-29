@@ -43,4 +43,16 @@ describe('tryConsumeRateLimit', () => {
 		expect(result).toEqual({ allowed: false, remainingBytes: 0 });
 		expect(kv.put).not.toHaveBeenCalled();
 	});
+
+	it('supports non-consuming validation checks', async () => {
+		const kv = {
+			get: vi.fn().mockResolvedValue('256'),
+			put: vi.fn().mockResolvedValue(undefined)
+		} as unknown as KVNamespace;
+
+		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123, false);
+
+		expect(result).toEqual({ allowed: true, remainingBytes: 1073741568 });
+		expect(kv.put).not.toHaveBeenCalled();
+	});
 });

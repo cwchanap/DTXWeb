@@ -105,6 +105,7 @@
 
 	const changePage = (newPage: number) => {
 		if (newPage >= 1 && newPage <= totalPages) {
+			resetBulkSelection();
 			currentPage = newPage;
 			loadItems();
 		}
@@ -117,6 +118,7 @@
 
 	// Handle page size changes from Skeleton UI Pagination
 	function handlePageSizeChange(event: { pageSize: number }) {
+		resetBulkSelection();
 		pageSize = event.pageSize;
 		currentPage = 1; // Reset to first page when page size changes
 		loadItems();
@@ -125,6 +127,7 @@
 	function handleSearchInput() {
 		clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => {
+			resetBulkSelection();
 			currentPage = 1;
 			loadItems();
 		}, 500);
@@ -181,6 +184,15 @@
 	};
 
 	const toggleSelect = (id: number) => {
+		const item = items.find((candidate) => candidate.id === id);
+		if (!item || !canBulkSelect(item)) {
+			toastStore.error({
+				title: 'This chart does not have uploaded files available',
+				duration: 3000
+			});
+			return;
+		}
+
 		const next = new Set(selectedIds);
 		if (next.has(id)) {
 			next.delete(id);
@@ -199,8 +211,14 @@
 
 	const clearBulkSelection = () => {
 		selectMode = false;
+		resetBulkSelection();
+	};
+
+	const resetBulkSelection = () => {
 		selectedIds = new Set();
 	};
+
+	const canBulkSelect = (item: ListedChart) => item.has_uploaded_files ?? false;
 
 	const cleanupBulkDownloadIframe = (iframe: HTMLIFrameElement, form?: HTMLFormElement) => {
 		if (form && document.body.contains(form)) {
@@ -271,6 +289,19 @@
 		bulkDownloading = true;
 		try {
 			const ids = [...selectedIds];
+			const hasUnavailableSelection = ids.some((id) => {
+				const item = items.find((candidate) => candidate.id === id);
+				return !item || !canBulkSelect(item);
+			});
+
+			if (hasUnavailableSelection) {
+				toastStore.error({
+					title: 'Some selected charts do not have uploaded files available',
+					duration: 3000
+				});
+				return;
+			}
+
 			const response = await fetch('/api/simFile/download/bulk?validate=1', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -385,7 +416,7 @@
 							: 'border-purple-500/30 bg-slate-800/50 text-slate-300 hover:bg-purple-600/20 hover:text-purple-300'}"
 						onclick={() => {
 							selectMode = !selectMode;
-							selectedIds = new Set();
+							resetBulkSelection();
 						}}
 						aria-pressed={selectMode}
 					>
@@ -543,9 +574,10 @@
 								<input
 									type="checkbox"
 									checked={selectedIds.has(item.id)}
+									disabled={!canBulkSelect(item)}
 									onchange={() => toggleSelect(item.id)}
 									aria-label="Select {item.title}"
-									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
+									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
 								/>
 							</label>
 						{/if}
@@ -571,9 +603,10 @@
 						<input
 							type="checkbox"
 							checked={selectedIds.has(item.id)}
+							disabled={!canBulkSelect(item)}
 							onchange={() => toggleSelect(item.id)}
 							aria-label="Select {item.title}"
-							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
+							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
 						/>
 					</label>
 				{/if}

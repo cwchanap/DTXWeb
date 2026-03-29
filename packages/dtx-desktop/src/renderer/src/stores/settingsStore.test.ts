@@ -191,5 +191,60 @@ describe('settingsStore', () => {
 			// Parse error falls back to default
 			expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads');
 		});
+
+		it('should return Windows download path when platform is Win32', async () => {
+			Object.defineProperty(window.navigator, 'platform', {
+				value: 'Win32',
+				configurable: true
+			});
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			const state = get(freshStore);
+			expect(state.exportDirectory).toContain('C:\\Users');
+			expect(state.exportDirectory).toContain('Downloads');
+
+			// Restore platform
+			Object.defineProperty(window.navigator, 'platform', {
+				value: 'Linux x86_64',
+				configurable: true
+			});
+		});
+
+		it('should return macOS fallback path when platform is Mac and HOME is not set', async () => {
+			Object.defineProperty(window.navigator, 'platform', {
+				value: 'MacIntel',
+				configurable: true
+			});
+			window.electron = {
+				...window.electron,
+				process: { env: {} }
+			};
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			const state = get(freshStore);
+			expect(state.exportDirectory).toBe('/Users/Downloads');
+
+			// Restore
+			Object.defineProperty(window.navigator, 'platform', {
+				value: 'Linux x86_64',
+				configurable: true
+			});
+		});
+	});
+
+	describe('saveSettings error handling', () => {
+		it('should handle localStorage.setItem error gracefully', () => {
+			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+				throw new Error('Storage full');
+			});
+
+			expect(() => settingsStore.set({ exportDirectory: '/test' })).not.toThrow();
+		});
 	});
 });

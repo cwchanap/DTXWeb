@@ -177,6 +177,30 @@ describe('DesktopFileProvider', () => {
 			expect(file?.name).toBe('audio.xa');
 		});
 
+		it('returns File for mp3 audio files', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+				error: null,
+				content: new Uint8Array([1, 2, 3])
+			});
+
+			const file = await provider.getFile('sim1', 'audio.mp3');
+			expect(file).toBeInstanceOf(File);
+			expect(file?.name).toBe('audio.mp3');
+		});
+
+		it('returns File for def files', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+				error: null,
+				content: new Uint8Array([1, 2, 3])
+			});
+
+			const file = await provider.getFile('sim1', 'set.def');
+			expect(file).toBeInstanceOf(File);
+			expect(file?.name).toBe('set.def');
+		});
+
 		it('returns File for unknown extensions', async () => {
 			provider.setWorkspaceRoot('/workspace');
 			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({

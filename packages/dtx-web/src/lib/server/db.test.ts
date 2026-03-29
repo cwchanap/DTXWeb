@@ -447,6 +447,20 @@ describe('listSimfiles', () => {
 		expect(queries[0]?.value?.where).toHaveBeenCalled();
 		expect(queries[1]?.value?.where).toHaveBeenCalled();
 	});
+
+	it('defaults page to 1 when non-finite page value provided', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		await listSimfiles(db as unknown as D1Database, { page: NaN });
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		// page defaults to 1, pageSize defaults to 20, so offset = 0
+		expect(dataQuery?.limit).toHaveBeenCalledWith(20);
+		expect(dataQuery?.offset).toHaveBeenCalledWith(0);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -541,6 +555,18 @@ describe('searchSimfiles', () => {
 			}[]
 		)[0]?.value;
 		expect(query?.where).toHaveBeenCalled();
+	});
+
+	it('defaults limit to 8 when non-finite limit value provided', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		await searchSimfiles(db as unknown as D1Database, { query: 'test', limit: NaN });
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(8);
 	});
 });
 

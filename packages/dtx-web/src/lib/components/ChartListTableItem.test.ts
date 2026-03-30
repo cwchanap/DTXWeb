@@ -64,6 +64,21 @@ describe('ChartListTableItem', () => {
 		expect(externalLink).toHaveAttribute('href', 'https://dl.example.com');
 	});
 
+	it('shows the R2 download link in blog mode when upload availability is omitted', () => {
+		render(ChartListTableItem, {
+			props: {
+				...defaultProps,
+				isBlog: true,
+				item: (() => {
+					const item = { ...mockItem, download_url: 'https://dl.example.com' };
+					delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+					return item;
+				})()
+			}
+		});
+		expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+	});
+
 	it('hides the R2 download link in blog mode when uploaded files are unavailable', () => {
 		render(ChartListTableItem, {
 			props: {

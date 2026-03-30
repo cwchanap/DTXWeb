@@ -37,7 +37,6 @@
 	let selectMode = $state(false);
 	let selectedIds = $state(new Set<number>());
 	let bulkDownloading = $state(false);
-	const bulkDownloadIframes = new Set<HTMLIFrameElement>();
 
 	// Replace the run() function with a reactive effect using $effect
 	$effect(() => {
@@ -218,63 +217,61 @@
 		selectedIds = new Set();
 	};
 
-	const canBulkSelect = (item: ListedChart) => item.has_uploaded_files ?? false;
+	const canBulkSelect = (item: ListedChart) => item.has_uploaded_files !== false;
 
-	const cleanupBulkDownloadIframe = (iframe: HTMLIFrameElement, form?: HTMLFormElement) => {
-		if (form && document.body.contains(form)) {
-			document.body.removeChild(form);
+	const getResponseErrorMessage = async (response: Response, fallback: string) => {
+		try {
+			const data = await response.json();
+			if (typeof data?.error === 'string') {
+				return data.error;
+			}
+		} catch {
+			// ignore parse error
 		}
 
-		if (document.body.contains(iframe)) {
-			document.body.removeChild(iframe);
-		}
-
-		bulkDownloadIframes.delete(iframe);
+		return fallback;
 	};
 
-	const cleanupBulkDownloadIframes = () => {
-		for (const iframe of bulkDownloadIframes) {
-			if (document.body.contains(iframe)) {
-				document.body.removeChild(iframe);
-			}
+	const getBulkDownloadFilename = (response: Response) => {
+		const contentDisposition = response.headers.get('Content-Disposition');
+		const utf8FilenameMatch = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i);
+		if (utf8FilenameMatch?.[1]) {
+			return decodeURIComponent(utf8FilenameMatch[1]);
 		}
 
-		bulkDownloadIframes.clear();
+		const filenameMatch = contentDisposition?.match(/filename="?([^";]+)"?/i);
+		if (filenameMatch?.[1]) {
+			return filenameMatch[1];
+		}
+
+		return 'drumery-charts.zip';
 	};
 
-	const submitBulkDownload = (ids: number[]) => {
-		const iframe = document.createElement('iframe');
-		iframe.name = `bulk-download-${Date.now()}`;
-		iframe.hidden = true;
-		bulkDownloadIframes.add(iframe);
-
-		const form = document.createElement('form');
-		form.method = 'POST';
-		form.action = '/api/simFile/download/bulk';
-		form.target = iframe.name;
-		form.hidden = true;
-
-		for (const id of ids) {
-			const input = document.createElement('input');
-			input.type = 'hidden';
-			input.name = 'ids';
-			input.value = String(id);
-			form.appendChild(input);
-		}
-
-		document.body.appendChild(iframe);
-		document.body.appendChild(form);
-		form.submit();
-		const handleIframeLoad = () => {
-			cleanupBulkDownloadIframe(iframe, form);
-		};
-		iframe.addEventListener('load', handleIframeLoad, { once: true });
-
-		window.requestAnimationFrame(() => {
-			if (document.body.contains(form)) {
-				document.body.removeChild(form);
-			}
+	const submitBulkDownload = async (ids: number[]) => {
+		const response = await fetch('/api/simFile/download/bulk', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ids })
 		});
+
+		if (!response.ok) {
+			throw new Error(await getResponseErrorMessage(response, 'Bulk download failed'));
+		}
+
+		const blob = await response.blob();
+		if (blob.size === 0) {
+			throw new Error('Bulk download failed');
+		}
+
+		const downloadUrl = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = downloadUrl;
+		link.download = getBulkDownloadFilename(response);
+		link.hidden = true;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(downloadUrl);
 	};
 
 	const handleBulkDownload = async () => {
@@ -330,7 +327,7 @@
 					);
 				}
 
-				submitBulkDownload(ids);
+				await submitBulkDownload(ids);
 			} catch (error) {
 				console.error('Failed to start bulk download:', error);
 				toastStore.error({
@@ -350,7 +347,6 @@
 
 	onDestroy(() => {
 		clearTimeout(searchTimeout);
-		cleanupBulkDownloadIframes();
 	});
 
 	onMount(() => {

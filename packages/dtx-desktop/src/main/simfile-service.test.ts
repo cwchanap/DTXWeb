@@ -568,6 +568,7 @@ describe('SimFile Service', () => {
 		});
 
 		it('should invoke validateSetDefContent callback during SET.def parsing', async () => {
+			let validateSetDefContentCalled = false;
 			(fs.promises.readdir as Mock).mockResolvedValue([
 				{ name: 'SET.def', isFile: () => true },
 				{ name: 'song.dtx', isFile: () => true }
@@ -580,13 +581,15 @@ describe('SimFile Service', () => {
 			(decodeFileWithEncodingDetection as Mock).mockImplementationOnce(
 				async (_file: unknown, validator: (content: string) => boolean) => {
 					const content = '#L1LABEL EASY\n#L1FILE song.dtx';
-					validator(content);
+					validateSetDefContentCalled = true;
+					expect(validator(content)).toBe(true);
 					return { content, encoding: 'utf-8' };
 				}
 			);
 
 			const result = await parseDtxFiles('/fake/path');
 			expect(result.bpm).toBe(120);
+			expect(validateSetDefContentCalled).toBe(true);
 		});
 
 		it('should continue when SET.def read fails', async () => {
@@ -607,6 +610,7 @@ describe('SimFile Service', () => {
 		});
 
 		it('should invoke validateDtxContent callback during DTX parsing', async () => {
+			let validateDtxContentCalled = false;
 			(fs.promises.readdir as Mock).mockResolvedValue([
 				{ name: 'song.dtx', isFile: () => true }
 			]);
@@ -616,13 +620,15 @@ describe('SimFile Service', () => {
 			(decodeFileWithEncodingDetection as Mock).mockImplementationOnce(
 				async (_file: unknown, validator: (content: string) => boolean) => {
 					const content = '#TITLE:Test\n#ARTIST:Artist\n#BPM:120';
-					validator(content);
+					validateDtxContentCalled = true;
+					expect(validator(content)).toBe(true);
 					return { content, encoding: 'utf-8' };
 				}
 			);
 
 			const result = await parseDtxFiles('/fake/path');
 			expect(result.bpm).toBe(120);
+			expect(validateDtxContentCalled).toBe(true);
 		});
 	});
 });

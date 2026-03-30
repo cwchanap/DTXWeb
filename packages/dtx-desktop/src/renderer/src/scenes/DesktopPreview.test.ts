@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the parent Preview class and AssetName from common
 vi.mock('@dtx/common/game', () => {
@@ -94,6 +94,10 @@ describe('DesktopPreview', () => {
 		scene = new DesktopPreview();
 	});
 
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it('has static key "Preview"', () => {
 		expect(DesktopPreview.key).toBe('Preview');
 	});
@@ -162,8 +166,8 @@ describe('DesktopPreview', () => {
 	});
 
 	it('createTextureFromDataUrl rejects when Image fails to load', async () => {
-		// Override Image mock to trigger onerror
-		vi.spyOn(global, 'Image').mockImplementation(
+		// Override the existing Image spy to trigger onerror instead of onload
+		vi.mocked(global.Image).mockImplementation(
 			() => createErrorImage(new Error('img error')) as unknown as HTMLImageElement
 		);
 

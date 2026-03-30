@@ -235,7 +235,7 @@
 				<DownloadDropdown
 					simfileId={item.id}
 					externalUrl={item.download_url ?? null}
-					hasUploadedFiles={item.has_uploaded_files ?? false}
+					hasUploadedFiles={item.has_uploaded_files}
 				/>
 			</div>
 		{/if}

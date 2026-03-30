@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
-import { hasR2Objects } from '$lib/server/r2';
 
 /** GET /api/chart — List charts (paginated, filtered) */
 export const GET = async ({
@@ -49,31 +48,7 @@ export const GET = async ({
 			pageSize
 		});
 
-		if (scope !== 'published') {
-			return json({ data, count });
-		}
-
-		const bucket = platform?.env?.DTXFILE_BUCKET;
-		if (!bucket) {
-			return json({
-				data: data.map((item) => ({ ...item, has_uploaded_files: false })),
-				count
-			});
-		}
-
-		const dataWithUploadFlags = await Promise.all(
-			data.map(async (item) => {
-				try {
-					const hasUploadedFiles = await hasR2Objects(bucket, `${item.id}/`);
-					return { ...item, has_uploaded_files: hasUploadedFiles };
-				} catch (error) {
-					logger.warn(`Failed to check uploaded files for chart ${item.id}:`, error);
-					return { ...item, has_uploaded_files: false };
-				}
-			})
-		);
-
-		return json({ data: dataWithUploadFlags, count });
+		return json({ data, count });
 	} catch (error) {
 		logger.error('Error listing charts:', error);
 		return json({ error: 'Failed to list charts' }, { status: 500 });

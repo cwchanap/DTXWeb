@@ -4,7 +4,7 @@
 	let {
 		simfileId,
 		externalUrl,
-		hasUploadedFiles = false,
+		hasUploadedFiles,
 		compact = false
 	} = $props<{
 		simfileId: number;
@@ -12,6 +12,8 @@
 		hasUploadedFiles?: boolean;
 		compact?: boolean;
 	}>();
+
+	const showUploadedDownload = $derived(hasUploadedFiles !== false);
 
 	const containerClass = $derived(compact ? 'flex items-center gap-1' : 'flex flex-col gap-2');
 	const downloadClass = $derived(
@@ -32,7 +34,7 @@
 </script>
 
 <div class={containerClass}>
-	{#if hasUploadedFiles}
+	{#if showUploadedDownload}
 		<a
 			href="/api/simFile/download/{simfileId}"
 			download="chart-{simfileId}.zip"

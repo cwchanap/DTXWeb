@@ -243,6 +243,21 @@ describe('ChartListItem Component Logic', () => {
 			);
 		});
 
+		it('shows R2 download link in blog mode when upload availability is omitted', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: (() => {
+						const item = { ...mockItem };
+						delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+						return item;
+					})()
+				}
+			});
+			expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+		});
+
 		it('hides R2 download link in blog mode when uploaded files are unavailable', () => {
 			render(ChartListItem, {
 				props: {

@@ -256,7 +256,7 @@ describe('ChartList Component Logic', () => {
 	});
 
 	describe('Bulk Download Error Handling', () => {
-		it('uses validation plus hidden form submission without clearing selection immediately after submit', () => {
+		it('uses validation plus fetch/blob download submission so real POST failures can surface', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
@@ -267,18 +267,18 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('const clearBulkSelection = () => {');
 			expect(source).toContain('const resetBulkSelection = () => {');
 			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
-			expect(source).toContain("form.action = '/api/simFile/download/bulk';");
+			expect(source).toContain("fetch('/api/simFile/download/bulk', {");
 			expect(source).toContain(
-				'const canBulkSelect = (item: ListedChart) => item.has_uploaded_files ?? false;'
+				'const canBulkSelect = (item: ListedChart) => item.has_uploaded_files !== false;'
 			);
 			expect(source).toContain('const hasUnavailableSelection = ids.some((id) => {');
 			expect(source).toContain('Some selected charts do not have uploaded files available');
 			expect(source).toContain('This chart does not have uploaded files available');
 			expect(source).toContain('if (!data?.ok || data.fileCount === 0) {');
 			expect(source).toContain('No uploaded files found for the selected charts');
-			expect(source).toContain('submitBulkDownload(ids);');
-			expect(source).not.toContain('submitBulkDownload(ids);\n\t\t\t\tclearBulkSelection();');
-			expect(source).not.toContain('response.blob()');
+			expect(source).toContain('await submitBulkDownload(ids);');
+			expect(source).toContain('const blob = await response.blob();');
+			expect(source).toContain('URL.createObjectURL(blob)');
 		});
 
 		it('resets bulk selections when page, page size, or search changes', () => {
@@ -307,17 +307,18 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('disabled:cursor-not-allowed disabled:opacity-50');
 		});
 
-		it('keeps the hidden iframe alive until it finishes loading instead of using a fixed timeout', () => {
+		it('downloads via a temporary object URL instead of a hidden iframe', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
 			);
 
-			expect(source).toContain(
+			expect(source).toContain("const link = document.createElement('a');");
+			expect(source).toContain('link.download = getBulkDownloadFilename(response);');
+			expect(source).toContain('URL.revokeObjectURL(downloadUrl);');
+			expect(source).not.toContain(
 				"iframe.addEventListener('load', handleIframeLoad, { once: true });"
 			);
-			expect(source).toContain('window.requestAnimationFrame(() => {');
-			expect(source).not.toContain('}, 1000);');
 		});
 
 		it('enforces the 20-chart bulk download limit in the UI', () => {

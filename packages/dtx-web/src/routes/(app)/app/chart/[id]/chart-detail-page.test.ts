@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
 vi.mock('$env/static/public', () => ({
@@ -56,6 +56,10 @@ describe('Chart Detail Page', () => {
 				json: vi.fn().mockResolvedValue({ error: 'Not found' })
 			})
 		);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	it('renders loading state initially', () => {

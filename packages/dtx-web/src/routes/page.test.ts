@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
 const gotoMock = vi.hoisted(() => vi.fn());
@@ -9,6 +9,10 @@ vi.mock('$app/navigation', () => ({
 import HomePage from './+page.svelte';
 
 describe('Home Page', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it('renders the Drumery brand name', () => {
 		render(HomePage);
 		expect(screen.getAllByText('Drumery').length).toBeGreaterThan(0);

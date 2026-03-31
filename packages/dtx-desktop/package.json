@@ -17,7 +17,6 @@
 		"build:win": "bun run build && electron-builder --win",
 		"build:mac": "bun run build && electron-builder --mac",
 		"build:linux": "bun run build && electron-builder --linux",
-		"prepare": "ln -sf ../../.env .env",
 		"test": "vitest --run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest --run --coverage"

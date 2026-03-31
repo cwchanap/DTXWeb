@@ -2,10 +2,14 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import wasm from 'vite-plugin-wasm';
+import { fileURLToPath } from 'url';
 import path from 'path';
+
+const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export default defineConfig({
 	main: {
+		envDir: workspaceRoot,
 		plugins: [externalizeDepsPlugin()],
 		envPrefix: ['VITE_', 'PUBLIC_'],
 		resolve: {
@@ -20,6 +24,7 @@ export default defineConfig({
 		}
 	},
 	preload: {
+		envDir: workspaceRoot,
 		plugins: [externalizeDepsPlugin()],
 		build: {
 			rollupOptions: {
@@ -40,8 +45,8 @@ export default defineConfig({
 		}
 	},
 	renderer: {
+		envDir: workspaceRoot,
 		plugins: [wasm(), tailwindcss(), svelte()],
-		envDir: '../../',
 		envPrefix: ['VITE_', 'PUBLIC_'],
 		publicDir: 'static',
 		server: {

@@ -23,12 +23,24 @@ vi.mock('@lucide/svelte');
 import AppPage from './+page.svelte';
 
 describe('App Home Page – desktop redirect flow', () => {
+	const originalLocation = window.location;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+		Object.defineProperty(window, 'location', {
+			value: { href: '' },
+			writable: true,
+			configurable: true
+		});
 	});
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		Object.defineProperty(window, 'location', {
+			value: originalLocation,
+			writable: true,
+			configurable: true
+		});
 	});
 
 	it('shows redirecting spinner when redirect=desktop is in URL and fetch succeeds', async () => {
@@ -39,9 +51,6 @@ describe('App Home Page – desktop redirect flow', () => {
 				json: vi.fn().mockResolvedValue({ magicLinkUrl: 'https://example.com/magic' })
 			})
 		);
-		// Mock window.location.href setter
-		const locationMock = { href: '' };
-		Object.defineProperty(window, 'location', { value: locationMock, writable: true });
 
 		render(AppPage);
 

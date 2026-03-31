@@ -546,26 +546,31 @@ describe('index.ts IPC handlers', () => {
 	});
 
 	// ── app lifecycle ────────────────────────────────────────────────────────
-	describe('app window-all-closed', () => {
-		it('calls app.quit on non-darwin platforms', () => {
-			const originalPlatform = process.platform;
-			Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-			appListeners['window-all-closed']();
-			expect(mockApp.quit).toHaveBeenCalled();
+	const originalPlatform = process.platform;
+	const withPlatform = (platform: NodeJS.Platform, run: () => void) => {
+		Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+		try {
+			run();
+		} finally {
 			Object.defineProperty(process, 'platform', {
 				value: originalPlatform,
 				configurable: true
 			});
+		}
+	};
+
+	describe('app window-all-closed', () => {
+		it('calls app.quit on non-darwin platforms', () => {
+			withPlatform('win32', () => {
+				appListeners['window-all-closed']();
+				expect(mockApp.quit).toHaveBeenCalled();
+			});
 		});
 
 		it('does not quit on darwin', () => {
-			const originalPlatform = process.platform;
-			Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
-			appListeners['window-all-closed']();
-			expect(mockApp.quit).not.toHaveBeenCalled();
-			Object.defineProperty(process, 'platform', {
-				value: originalPlatform,
-				configurable: true
+			withPlatform('darwin', () => {
+				appListeners['window-all-closed']();
+				expect(mockApp.quit).not.toHaveBeenCalled();
 			});
 		});
 	});

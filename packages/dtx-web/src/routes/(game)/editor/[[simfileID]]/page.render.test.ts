@@ -6,8 +6,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-vi.mock('phaser', () => ({ Scene: vi.fn() }));
-
 vi.mock('@dtx/common/game', () => ({
 	default: vi.fn().mockReturnValue(null),
 	Editor: { key: 'EditorScene' },
@@ -32,25 +30,41 @@ vi.mock('@dtx/ui-components/components', () => ({
 	Modal: vi.fn().mockReturnValue(null)
 }));
 
-vi.mock('$lib/store', () => ({
-	default: {
-		currentDtxFile: { subscribe: vi.fn(), set: vi.fn() },
-		currentSimfile: { subscribe: vi.fn(), set: vi.fn() },
-		activeScene: { subscribe: vi.fn(), set: vi.fn() },
-		editorNotes: { subscribe: vi.fn(), set: vi.fn() },
-		isPreviewing: { subscribe: vi.fn(), set: vi.fn() },
-		currentSoundChip: { subscribe: vi.fn(), set: vi.fn() },
-		currentSimfileID: { subscribe: vi.fn(), set: vi.fn() },
-		currentDifficulty: { subscribe: vi.fn(), set: vi.fn() }
-	}
-}));
+vi.mock('$lib/store', () => {
+	const ms = (initial: unknown = null) => ({
+		subscribe: vi.fn((run: (v: unknown) => void) => {
+			run(initial);
+			return () => {};
+		}),
+		set: vi.fn()
+	});
+	return {
+		default: {
+			currentDtxFile: ms(),
+			currentSimfile: ms(),
+			activeScene: ms(),
+			editorNotes: ms(),
+			isPreviewing: ms(false),
+			currentSoundChip: ms(),
+			currentSimfileID: ms(),
+			currentDifficulty: ms()
+		}
+	};
+});
 
-vi.mock('svelte/store', () => ({
-	get: vi.fn().mockReturnValue(null),
-	writable: vi.fn(() => ({ subscribe: vi.fn(), set: vi.fn() })),
-	derived: vi.fn(() => ({ subscribe: vi.fn() })),
-	readable: vi.fn(() => ({ subscribe: vi.fn() }))
-}));
+vi.mock('svelte/store', () => {
+	const makeSub = (initial: unknown) =>
+		vi.fn((run: (v: unknown) => void) => {
+			run(initial);
+			return () => {};
+		});
+	return {
+		get: vi.fn().mockReturnValue(null),
+		writable: vi.fn((initial: unknown) => ({ subscribe: makeSub(initial), set: vi.fn() })),
+		derived: vi.fn(() => ({ subscribe: makeSub(null) })),
+		readable: vi.fn((initial: unknown) => ({ subscribe: makeSub(initial) }))
+	};
+});
 
 vi.mock('$app/state', () => ({
 	page: { url: { searchParams: { get: vi.fn().mockReturnValue(null) } } }
@@ -129,6 +143,8 @@ vi.mock('$lib/components/editor/modals/DeleteWorkspaceModal.svelte', () => ({
 }));
 
 import EditorPage from './+page.svelte';
+import store from '$lib/store';
+import { workspaceService } from '$lib/services/workspaceService';
 
 const defaultData = { simfileID: null, metadata: null };
 
@@ -161,13 +177,11 @@ describe('Editor Page render', () => {
 	it('sets simfileID from data on initialization', async () => {
 		const data = { simfileID: 'simfile-abc', metadata: { title: 'Song', levels: {} } };
 		render(EditorPage, { props: { data } });
-		// Component initializes simfileID from data.simfileID in onMount
-		// Verify component mounted without errors
-		expect(true).toBe(true);
+		// Component calls store.currentSimfileID.set(data.simfileID) in onMount
+		expect(store.currentSimfileID.set).toHaveBeenCalledWith('simfile-abc');
 	});
 
-	it('shows import result modal content after successful folder import', async () => {
-		const { workspaceService } = await import('$lib/services/workspaceService');
+	it('does not call importFolder on initial render', () => {
 		vi.mocked(workspaceService.importFolder).mockResolvedValue({
 			name: 'MyWorkspace',
 			dtxFiles: [{ name: 'a.dtx', content: '', path: '/a.dtx' }],
@@ -176,17 +190,10 @@ describe('Editor Page render', () => {
 			lastModified: Date.now()
 		});
 
-		render(EditorPage, { props: { data: defaultData } });
+		const { container } = render(EditorPage, { props: { data: defaultData } });
 
-		// Simulate a folder import by dispatching a change event on a file input
-		const input = document.createElement('input');
-		input.type = 'file';
-		Object.defineProperty(input, 'files', {
-			value: [new File([''], 'test.dtx')],
-			writable: false
-		});
-
-		// The import happens via importFolder — just verify component is stable
-		expect(true).toBe(true);
+		// importFolder should only be called when user explicitly triggers an import, not on mount
+		expect(workspaceService.importFolder).not.toHaveBeenCalled();
+		expect(container).toBeTruthy();
 	});
 });

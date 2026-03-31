@@ -38,15 +38,26 @@ export const tryConsumeRateLimit = async (
 	consume = true
 ): Promise<RateLimitResult> => {
 	const key = getRateLimitKey(ip, nowMinute);
+	const previousKey = getRateLimitKey(ip, nowMinute - 1);
 	try {
-		const storedValue = await kv.get(key);
+		const [storedValue, previousStoredValue] = await Promise.all([
+			kv.get(key),
+			kv.get(previousKey)
+		]);
 		const parsedValue = storedValue === null ? 0 : Number.parseInt(storedValue, 10);
+		const parsedPreviousValue =
+			previousStoredValue === null ? 0 : Number.parseInt(previousStoredValue, 10);
 		const current = Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
-		const allowed = current + bytes <= RATE_LIMIT_BYTES;
+		const previous =
+			Number.isFinite(parsedPreviousValue) && parsedPreviousValue >= 0
+				? parsedPreviousValue
+				: 0;
+		const windowTotal = current + previous;
+		const allowed = windowTotal + bytes <= RATE_LIMIT_BYTES;
 		if (allowed && consume) {
 			await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });
 		}
-		return { allowed, remainingBytes: Math.max(0, RATE_LIMIT_BYTES - current) };
+		return { allowed, remainingBytes: Math.max(0, RATE_LIMIT_BYTES - windowTotal) };
 	} catch (error) {
 		logger.error('Rate limit KV error', { key, error });
 		throw error;

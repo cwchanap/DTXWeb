@@ -63,7 +63,7 @@ describe('ChartListTableItem', () => {
 		expect(externalLink).toHaveAttribute('href', 'https://dl.example.com');
 	});
 
-	it('shows the R2 download link in blog mode when upload availability is omitted', () => {
+	it('hides the R2 download link in blog mode when upload availability is omitted', () => {
 		render(ChartListTableItem, {
 			props: {
 				...defaultProps,
@@ -75,7 +75,8 @@ describe('ChartListTableItem', () => {
 				})()
 			}
 		});
-		expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
 	});
 
 	it('hides the R2 download link in blog mode when uploaded files are unavailable', () => {

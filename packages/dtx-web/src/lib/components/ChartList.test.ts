@@ -268,7 +268,7 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
 			expect(source).toContain("fetch('/api/simFile/download/bulk', {");
 			expect(source).toContain(
-				'const canBulkSelect = (item: ListedChart) => item.has_uploaded_files !== false;'
+				'const canBulkSelect = (item: ListedChart) => item.has_uploaded_files === true;'
 			);
 			expect(source).toContain('const hasUnavailableSelection = ids.some((id) => {');
 			expect(source).toContain('Some selected charts do not have uploaded files available');

@@ -22,19 +22,21 @@ describe('getClientIp', () => {
 describe('tryConsumeRateLimit', () => {
 	it('falls back to zero when KV contains an invalid value', async () => {
 		const kv = {
-			get: vi.fn().mockResolvedValue('not-a-number'),
+			get: vi.fn().mockResolvedValueOnce('not-a-number').mockResolvedValueOnce(null),
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123);
 
 		expect(result).toEqual({ allowed: true, remainingBytes: 1073741824 });
+		expect(kv.get).toHaveBeenNthCalledWith(1, 'dl:1.2.3.4:123');
+		expect(kv.get).toHaveBeenNthCalledWith(2, 'dl:1.2.3.4:122');
 		expect(kv.put).toHaveBeenCalledWith('dl:1.2.3.4:123', '128', { expirationTtl: 120 });
 	});
 
 	it('blocks requests that exceed the per-minute byte budget', async () => {
 		const kv = {
-			get: vi.fn().mockResolvedValue('1073741824'),
+			get: vi.fn().mockResolvedValueOnce('1073741824').mockResolvedValueOnce(null),
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
@@ -46,13 +48,25 @@ describe('tryConsumeRateLimit', () => {
 
 	it('supports non-consuming validation checks', async () => {
 		const kv = {
-			get: vi.fn().mockResolvedValue('256'),
+			get: vi.fn().mockResolvedValueOnce('256').mockResolvedValueOnce('512'),
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123, false);
 
-		expect(result).toEqual({ allowed: true, remainingBytes: 1073741568 });
+		expect(result).toEqual({ allowed: true, remainingBytes: 1073741056 });
+		expect(kv.put).not.toHaveBeenCalled();
+	});
+
+	it('counts usage from the previous minute when enforcing the limit', async () => {
+		const kv = {
+			get: vi.fn().mockResolvedValueOnce('512').mockResolvedValueOnce('1073741312'),
+			put: vi.fn().mockResolvedValue(undefined)
+		} as unknown as KVNamespace;
+
+		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, 123);
+
+		expect(result).toEqual({ allowed: false, remainingBytes: 0 });
 		expect(kv.put).not.toHaveBeenCalled();
 	});
 });

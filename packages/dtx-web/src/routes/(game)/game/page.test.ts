@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
 const gotoMock = vi.hoisted(() => vi.fn());
@@ -24,6 +24,10 @@ vi.mock('@dtx/common/game', async () => {
 import GamePage from './+page.svelte';
 
 describe('Game Page', () => {
+	beforeEach(() => {
+		gotoMock.mockClear();
+	});
+
 	it('renders the Editor button', () => {
 		render(GamePage);
 		expect(screen.getByText('Editor')).toBeInTheDocument();

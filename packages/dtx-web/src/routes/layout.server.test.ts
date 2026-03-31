@@ -3,6 +3,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { load } from './+layout.server';
 
 type LayoutServerLoadArg = Parameters<typeof load>[0];
+type LayoutServerLoadResult = Exclude<Awaited<ReturnType<typeof load>>, void>;
+
+const requireLayoutLoadResult = (
+	result: Awaited<ReturnType<typeof load>>
+): LayoutServerLoadResult => {
+	if (result === undefined) {
+		throw new Error('Expected load() to return layout data');
+	}
+	return result;
+};
 
 describe('+layout.server load', () => {
 	beforeEach(() => {
@@ -26,7 +36,7 @@ describe('+layout.server load', () => {
 			}
 		};
 
-		const result = await load(event as unknown as LayoutServerLoadArg);
+		const result = requireLayoutLoadResult(await load(event as unknown as LayoutServerLoadArg));
 
 		expect(result.session).toEqual(mockSession);
 		expect(result.cookies).toEqual(mockCookies);
@@ -42,7 +52,7 @@ describe('+layout.server load', () => {
 			}
 		};
 
-		const result = await load(event as unknown as LayoutServerLoadArg);
+		const result = requireLayoutLoadResult(await load(event as unknown as LayoutServerLoadArg));
 
 		expect(result.session).toBeNull();
 		expect(result.cookies).toEqual([]);

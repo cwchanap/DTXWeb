@@ -170,27 +170,18 @@ describe('ChartListItem Component Logic', () => {
 			onFileDelete: vi.fn()
 		};
 
-		it('evaluates to show download link when download_url is available and in blog mode', () => {
+		it('evaluates to show the uploaded chart download link when uploaded files are available in blog mode', () => {
 			const props = { ...baseProps, item: mockItem };
-			// This condition mimics the logic within the component's template:
-			// {#if isBlog}
-			//   {#if item.download_url}
-			const shouldShowDownloadLink = props.isBlog && props.item.download_url;
-			expect(shouldShowDownloadLink).toBeTruthy(); // Changed from .toBe(true)
-			// We can also assert that the download URL itself is what we expect
-			expect(props.item.download_url).toBe('https://example.com/download1');
+			const shouldShowDownloadLink = props.isBlog && props.item.has_uploaded_files === true;
+			expect(shouldShowDownloadLink).toBe(true);
 		});
 
-		it('evaluates not to show download link when download_url is absent, even in blog mode', () => {
+		it('evaluates not to show the uploaded chart download link when upload availability is omitted', () => {
 			const props = { ...baseProps, item: mockItemNoPreview };
-			// This condition mimics the logic within the component's template:
-			// {#if isBlog}
-			//   {#if item.download_url} ... {:else} Download not available
-			const shouldShowDownloadLink = props.isBlog && props.item.download_url;
-			expect(shouldShowDownloadLink).toBeFalsy(); // It will be null, which is falsy
-			// The text "Download not available" would be shown in this case.
-			// We assert the condition that leads to it.
-			expect(props.item.download_url).toBeNull();
+			const item = { ...props.item };
+			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+			const shouldShowDownloadLink = props.isBlog && item.has_uploaded_files === true;
+			expect(shouldShowDownloadLink).toBe(false);
 		});
 	});
 
@@ -243,7 +234,7 @@ describe('ChartListItem Component Logic', () => {
 			);
 		});
 
-		it('shows R2 download link in blog mode when upload availability is omitted', () => {
+		it('hides R2 download link in blog mode when upload availability is omitted', () => {
 			render(ChartListItem, {
 				props: {
 					...renderProps,
@@ -255,7 +246,10 @@ describe('ChartListItem Component Logic', () => {
 					})()
 				}
 			});
-			expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.getByRole('link', { name: /external download link/i })
+			).toBeInTheDocument();
 		});
 
 		it('hides R2 download link in blog mode when uploaded files are unavailable', () => {

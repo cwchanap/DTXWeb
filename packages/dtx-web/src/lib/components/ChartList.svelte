@@ -217,7 +217,7 @@
 		selectedIds = new Set();
 	};
 
-	const canBulkSelect = (item: ListedChart) => item.has_uploaded_files !== false;
+	const canBulkSelect = (item: ListedChart) => item.has_uploaded_files === true;
 
 	const getResponseErrorMessage = async (response: Response, fallback: string) => {
 		try {

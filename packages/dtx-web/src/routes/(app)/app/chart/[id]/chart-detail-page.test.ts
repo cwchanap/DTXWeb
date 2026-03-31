@@ -44,6 +44,7 @@ vi.mock('@dtx/common', () => ({
 	UploadedAssetFiles: vi.fn()
 }));
 
+import { fireEvent } from '@testing-library/svelte';
 import ChartDetailPage from './+page.svelte';
 
 describe('Chart Detail Page', () => {
@@ -70,5 +71,47 @@ describe('Chart Detail Page', () => {
 	it('renders the back button', () => {
 		render(ChartDetailPage);
 		expect(screen.getByText('← Back to List')).toBeInTheDocument();
+	});
+
+	it('shows error state after failed fetch', async () => {
+		render(ChartDetailPage);
+		await vi.waitFor(() => {
+			expect(screen.getByText(/Error: Not found/i)).toBeInTheDocument();
+		});
+	});
+
+	it('shows error when fetch response has no error field', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: false,
+				json: vi.fn().mockResolvedValue({})
+			})
+		);
+		render(ChartDetailPage);
+		await vi.waitFor(() => {
+			expect(screen.getByText(/Error: Failed to load chart/i)).toBeInTheDocument();
+		});
+	});
+
+	it('shows simfile data after successful fetch', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ id: '123', title: 'Test Song' })
+			})
+		);
+		render(ChartDetailPage);
+		await vi.waitFor(() => {
+			expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+		});
+	});
+
+	it('calls goto when back button is clicked', async () => {
+		render(ChartDetailPage);
+		const backBtn = screen.getByText('← Back to List');
+		await fireEvent.click(backBtn);
+		expect(gotoMock).toHaveBeenCalledWith('/app/chart');
 	});
 });

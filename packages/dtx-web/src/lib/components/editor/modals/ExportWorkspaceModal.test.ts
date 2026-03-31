@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import type { SoundLibraryFile } from '$lib/services/soundLibrary';
 import { makeWorkspace } from '../../../../tests/mocks/services';
 
 const originalCreateObjectURL = global.URL.createObjectURL;
@@ -14,12 +15,19 @@ const mockService = vi.hoisted(() => ({
 }));
 
 const mockWorkspaceServiceClass = vi.hoisted(() => ({
-	getLargeFile: vi.fn(() => null)
+	getLargeFile: vi.fn<(workspaceName: string, fileName: string) => File | undefined>(
+		() => undefined
+	)
 }));
 
 const soundLibMock = vi.hoisted(() => ({
-	findByFileName: vi.fn(() => []),
-	toFile: vi.fn(() => null)
+	findByFileName: vi.fn<(fileName: string) => SoundLibraryFile[]>(() => []),
+	toFile: vi.fn<(libraryFile: SoundLibraryFile) => File>(
+		(libraryFile) =>
+			new File([], libraryFile.fileName, {
+				type: libraryFile.fileType
+			})
+	)
 }));
 
 const toastMock = vi.hoisted(() => ({

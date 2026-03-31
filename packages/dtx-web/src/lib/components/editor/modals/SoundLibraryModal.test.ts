@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import ModalStub from '../../../../tests/stubs/ModalStub.svelte';
 
@@ -198,6 +198,111 @@ describe('SoundLibraryModal', () => {
 
 			await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 			expect(onClose).toHaveBeenCalledOnce();
+		});
+	});
+
+	describe('File import via addSoundFiles', () => {
+		afterEach(() => {
+			vi.restoreAllMocks();
+		});
+
+		// Helper to capture the file input created by addSoundFiles
+		const captureFileInput = (): (() => HTMLInputElement | null) => {
+			let capturedInput: HTMLInputElement | null = null;
+			const origCreateElement = document.createElement.bind(document);
+			vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+				const el = origCreateElement(tagName);
+				if (tagName === 'input') {
+					capturedInput = el as HTMLInputElement;
+					(el as HTMLInputElement).click = vi.fn();
+				}
+				return el;
+			});
+			return () => capturedInput;
+		};
+
+		// Helper to trigger the onchange handler with mock files
+		const triggerFileSelect = async (
+			getInput: () => HTMLInputElement | null,
+			files: File[]
+		): Promise<void> => {
+			const input = getInput();
+			expect(input).not.toBeNull();
+			if (!input) return;
+			Object.defineProperty(input, 'files', { value: files, configurable: true });
+			const fakeEvent: { target: HTMLInputElement } = { target: input };
+			await input.onchange!(fakeEvent as unknown as Event);
+		};
+
+		it('calls SoundLibrary.addFiles when files are selected via input', async () => {
+			const getInput = captureFileInput();
+			const onImportResult = vi.fn();
+			render(SoundLibraryModal, { props: { ...defaultProps, onImportResult } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Add Files' }));
+
+			const mockFile = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+			await triggerFileSelect(getInput, [mockFile]);
+
+			await vi.waitFor(() => {
+				expect(soundLibMock.addFiles).toHaveBeenCalledWith([mockFile]);
+			});
+		});
+
+		it('does not call addFiles when no files are selected', async () => {
+			const getInput = captureFileInput();
+			render(SoundLibraryModal, { props: defaultProps });
+			await fireEvent.click(screen.getByRole('button', { name: 'Add Files' }));
+
+			await triggerFileSelect(getInput, []);
+
+			expect(soundLibMock.addFiles).not.toHaveBeenCalled();
+		});
+
+		it('passes result message to onImportResult with skipped and errors', async () => {
+			soundLibMock.addFiles.mockResolvedValueOnce({
+				added: 1,
+				skipped: 2,
+				errors: ['file1.txt: Not an audio file']
+			});
+
+			const getInput = captureFileInput();
+			const onImportResult = vi.fn();
+			render(SoundLibraryModal, { props: { ...defaultProps, onImportResult } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Add Files' }));
+
+			const mockFile = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+			await triggerFileSelect(getInput, [mockFile]);
+
+			await vi.waitFor(() => {
+				expect(onImportResult).toHaveBeenCalledWith(
+					expect.stringContaining('Added 1 files')
+				);
+				expect(onImportResult).toHaveBeenCalledWith(
+					expect.stringContaining('skipped 2 duplicates')
+				);
+				expect(onImportResult).toHaveBeenCalledWith(
+					expect.stringContaining('file1.txt: Not an audio file')
+				);
+			});
+		});
+
+		it('calls onImportResult with error message when addFiles throws', async () => {
+			soundLibMock.addFiles.mockRejectedValueOnce(new Error('unexpected error'));
+
+			const getInput = captureFileInput();
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const onImportResult = vi.fn();
+			render(SoundLibraryModal, { props: { ...defaultProps, onImportResult } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Add Files' }));
+
+			const mockFile = new File(['audio'], 'test.wav', { type: 'audio/wav' });
+			await triggerFileSelect(getInput, [mockFile]);
+
+			await vi.waitFor(() => {
+				expect(onImportResult).toHaveBeenCalledWith('Failed to import sound files');
+			});
+
+			consoleSpy.mockRestore();
 		});
 	});
 });

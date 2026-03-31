@@ -123,6 +123,20 @@ describe('NoteManager', () => {
 		it('should initialize selection rectangle', () => {
 			expect(mockEditor.add.rectangle).toHaveBeenCalled();
 		});
+
+		it('skips keyboard and mouse tracking setup when document is undefined', () => {
+			const origDocument = global.document;
+			(global as any).document = undefined;
+			try {
+				const nm = new NoteManager(mockEditor as unknown as Editor);
+				// initialize() calls initializeSelectionRectangle (no document check),
+				// then initializeKeyboardEvents and initializeMouseTracking (both return early)
+				nm.initialize();
+				expect(nm.selectedNotes.size).toBe(0);
+			} finally {
+				global.document = origDocument;
+			}
+		});
 	});
 
 	describe('selection state', () => {
@@ -141,6 +155,47 @@ describe('NoteManager', () => {
 			noteManager.clearSelection();
 
 			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should destroy overlays when clearing selection', () => {
+			const destroyFn = vi.fn();
+			const mockOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn(),
+				destroy: destroyFn
+			};
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			// Create an overlay by highlighting a note
+			noteManager.highlightSelectedNote({ name: 'note-0-1-0.5' });
+			expect(noteManager['selectionOverlays'].size).toBe(1);
+
+			noteManager.clearSelection();
+
+			expect(destroyFn).toHaveBeenCalled();
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should destroy overlay for note when deleteNoteByKey is called', () => {
+			const destroyFn = vi.fn();
+			const mockOverlay = {
+				lineStyle: vi.fn(),
+				strokeRect: vi.fn(),
+				setName: vi.fn(),
+				destroy: destroyFn
+			};
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			// Create an overlay in selectionOverlays for 'note-0-0-0'
+			noteManager.highlightSelectedNote({ name: 'note-0-0-0' });
+			expect(noteManager['selectionOverlays'].has('note-0-0-0')).toBe(true);
+
+			// deleteNoteByKey → cleanupNoteVisuals → destroys the overlay
+			noteManager.deleteNoteByKey('note-0-0-0');
+
+			expect(destroyFn).toHaveBeenCalled();
+			expect(noteManager['selectionOverlays'].has('note-0-0-0')).toBe(false);
 		});
 
 		it('should handle multiple selections', () => {
@@ -1004,6 +1059,661 @@ describe('NoteManager', () => {
 			const noteKeys = new Set(['invalid-key', 'also-bad']);
 			const result = noteManager.findReferenceNote(noteKeys);
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('getClickedNote (via handlePointerDown)', () => {
+		const createMockPointer = (x = 100, y = 200) =>
+			({
+				x,
+				y,
+				worldX: x,
+				worldY: y
+			}) as Phaser.Input.Pointer;
+
+		// With default mock editor values:
+		// getOffsetX()=100, getCellWidth()=50, getCellMargin()=2
+		// getOffsetY()=200, getNoteSize()=18, panelContainer.y=0
+		// note-0-0-0 bounds: x=102, y=184, width=46, height=14
+		// Pointer at (110, 190) is inside bounds
+
+		it('should select note when pointer hits within note bounds', () => {
+			const graphics = new Phaser.GameObjects.Graphics();
+			graphics.name = 'note-0-0-0';
+			mockEditor.getPanelContainer().list.push(graphics);
+
+			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			const pointer = createMockPointer(110, 190);
+			const result = noteManager.handlePointerDown(pointer);
+
+			expect(result).toBe(true);
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
+		});
+
+		it('should start drag when pointer hits an already-selected note', () => {
+			const graphics = new Phaser.GameObjects.Graphics();
+			graphics.name = 'note-0-0-0';
+			mockEditor.getPanelContainer().list.push(graphics);
+
+			noteManager.selectedNotes.add('note-0-0-0');
+
+			const startDragSpy = vi
+				.spyOn(noteManager['noteMove'], 'startDrag')
+				.mockImplementation(() => {});
+			const pointer = createMockPointer(110, 190);
+			const result = noteManager.handlePointerDown(pointer);
+
+			expect(result).toBe(true);
+			expect(startDragSpy).toHaveBeenCalled();
+			startDragSpy.mockRestore();
+		});
+
+		it('should not select note when pointer misses note bounds', () => {
+			const graphics = new Phaser.GameObjects.Graphics();
+			graphics.name = 'note-0-0-0';
+			mockEditor.getPanelContainer().list.push(graphics);
+
+			// Pointer far away from note bounds (102-148, 184-198)
+			const pointer = createMockPointer(50, 50);
+			noteManager.handlePointerDown(pointer);
+
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(false);
+		});
+
+		it('should return topmost note when multiple notes overlap', () => {
+			// Two notes at the same position (will both pass bounds check)
+			const graphics1 = new Phaser.GameObjects.Graphics();
+			graphics1.name = 'note-0-0-0';
+			const graphics2 = new Phaser.GameObjects.Graphics();
+			graphics2.name = 'note-0-0-0.005';
+			mockEditor.getPanelContainer().list.push(graphics1);
+			mockEditor.getPanelContainer().list.push(graphics2);
+
+			// Stub findNearbyNotes so note-0-0-0.005 has a higher stackIndex (topmost)
+			const findNearbyNotesSpy = vi
+				.spyOn(noteManager as any, 'findNearbyNotes')
+				.mockImplementation((_measure: number, _laneIndex: number, cellOffset: number) =>
+					cellOffset === 0.005 ? ['note-0-0-0'] : []
+				);
+
+			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			const pointer = createMockPointer(110, 190);
+			noteManager.handlePointerDown(pointer);
+
+			// note-0-0-0.005 has stackIndex=1 (one nearby note) vs note-0-0-0 stackIndex=0,
+			// so it should be selected as the topmost note
+			expect(noteManager.selectedNotes.size).toBe(1);
+			expect(noteManager.selectedNotes.has('note-0-0-0.005')).toBe(true);
+			findNearbyNotesSpy.mockRestore();
+		});
+
+		it('should ignore non-Graphics objects in container list', () => {
+			// Add a non-Graphics object with a note name (should be skipped)
+			const nonGraphics = { name: 'note-0-0-0' }; // plain object, not instanceof Graphics
+			mockEditor.getPanelContainer().list.push(nonGraphics as any);
+
+			const pointer = createMockPointer(110, 190);
+			noteManager.handlePointerDown(pointer);
+
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+	});
+
+	describe('updateSelectedNotes (via handlePointerMove)', () => {
+		const createMockPointer = (x = 100, y = 200) =>
+			({
+				x,
+				y,
+				worldX: x,
+				worldY: y
+			}) as Phaser.Input.Pointer;
+
+		it('should clear selection when selection rectangle is too small (width and height < 5)', () => {
+			// Set up a tiny selection rectangle (width < 5, height < 5)
+			const rect = noteManager['selectionRectangle'];
+			Object.assign(rect, { width: 2, height: 2, x: 100, y: 200 });
+			noteManager.selectedNotes.add('note-0-0-0');
+			noteManager.isSelecting = true;
+
+			noteManager.handlePointerMove(createMockPointer(105, 205));
+
+			expect(noteManager.selectedNotes.size).toBe(0);
+		});
+
+		it('should select notes overlapping with the selection rectangle', () => {
+			// selectionRectangle: width=100, height=20, x=150, y=190
+			// → selectionRect = Rectangle(100, 180, 100, 20) covers x:100-200, y:180-200
+			// note-0-0-0 simplified bounds: Rectangle(102, 184, 46, 14) → x:102-148, y:184-198 → overlaps
+			const rect = noteManager['selectionRectangle'];
+			Object.assign(rect, { width: 100, height: 20, x: 150, y: 190 });
+
+			const graphics = new Phaser.GameObjects.Graphics();
+			graphics.name = 'note-0-0-0';
+			mockEditor.getPanelContainer().list.push(graphics);
+
+			// Also register in mockGameObjects so getByName returns it for highlightSelectedNote
+			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+			mockEditor._addMockGameObject('note-0-0-0');
+
+			noteManager.isSelecting = true;
+			noteManager.handlePointerMove(createMockPointer(200, 200));
+
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
+		});
+
+		it('should cover fractional cell position in calculateSimplifiedNoteBounds', () => {
+			// 24th note position: cellOffset=1/24 ≈ 0.041666... gives fractionalCell=0.6667>0
+			// wholeCells=0, cellsYOffset=0.6667*20=13.33, y=200-13.33+2-18=170.67
+			// Note bounds: Rectangle(102, 170.67, 46, 14) → x:102-148, y:170.67-184.67
+			// Selection rect { x:150, y:190, width:100, height:50 } → Rectangle(100, 165, 100, 50)
+			// x:100-200, y:165-215 → overlaps → note IS selected
+			const noteKey = 'note-0-0-0.041666666666666664';
+			const rect = noteManager['selectionRectangle'];
+			Object.assign(rect, { width: 100, height: 50, x: 150, y: 190 });
+
+			const graphics = new Phaser.GameObjects.Graphics();
+			graphics.name = noteKey;
+			mockEditor.getPanelContainer().list.push(graphics);
+
+			noteManager.isSelecting = true;
+			noteManager.handlePointerMove(createMockPointer(200, 200));
+
+			// The fractional cell code path is exercised and the note is within the selection
+			expect(noteManager.selectedNotes.has(noteKey)).toBe(true);
+		});
+
+		it('should not change selection when selection rectangle does not overlap any notes', () => {
+			// selectionRectangle far from all notes
+			const rect = noteManager['selectionRectangle'];
+			Object.assign(rect, { width: 50, height: 50, x: 500, y: 500 });
+
+			const graphics = new Phaser.GameObjects.Graphics();
+			graphics.name = 'note-0-0-0';
+			mockEditor.getPanelContainer().list.push(graphics);
+
+			noteManager.isSelecting = true;
+			noteManager.handlePointerMove(createMockPointer(550, 550));
+
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(false);
+		});
+
+		it('should use getBounds when available on note graphics', () => {
+			const rect = noteManager['selectionRectangle'];
+			Object.assign(rect, { width: 100, height: 20, x: 150, y: 190 });
+
+			// Graphics object that has getBounds (returns bounds within selection)
+			const graphicsWithBounds = new Phaser.GameObjects.Graphics() as any;
+			graphicsWithBounds.name = 'note-0-0-0';
+			graphicsWithBounds.getBounds = vi
+				.fn()
+				.mockReturnValue(new Phaser.Geom.Rectangle(102, 184, 46, 14));
+			mockEditor.getPanelContainer().list.push(graphicsWithBounds);
+
+			noteManager.isSelecting = true;
+			noteManager.handlePointerMove(createMockPointer(200, 200));
+
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
+		});
+	});
+
+	describe('findNearbyNotes', () => {
+		it('should return empty array when no notes exist in container', () => {
+			mockEditor.getPanelContainer().getAll.mockReturnValue([]);
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+			expect(result).toEqual([]);
+		});
+
+		it('should return notes within threshold of same lane and measure', () => {
+			// HIGH_RESOLUTION_CELLS = 192, threshold = (1/192) * 2 ≈ 0.01042
+			// note-0-1-0.5 checking for nearby notes at cellOffset=0.505
+			const note1 = { name: 'note-0-1-0.505' }; // within threshold of 0.5
+			const note2 = { name: 'note-0-1-0.6' }; // too far from 0.5
+			mockEditor.getPanelContainer().getAll.mockReturnValue([note1, note2]);
+
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+
+			expect(result).toContain('note-0-1-0.505');
+			expect(result).not.toContain('note-0-1-0.6');
+		});
+
+		it('should not include a note at the exact same cellOffset', () => {
+			const sameNote = { name: 'note-0-1-0.5' }; // exact match - should be excluded
+			mockEditor.getPanelContainer().getAll.mockReturnValue([sameNote]);
+
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+
+			expect(result).not.toContain('note-0-1-0.5');
+		});
+
+		it('should skip notes in different lanes', () => {
+			const differentLane = { name: 'note-1-1-0.505' }; // lane 1, not lane 0
+			mockEditor.getPanelContainer().getAll.mockReturnValue([differentLane]);
+
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+
+			expect(result).toHaveLength(0);
+		});
+
+		it('should skip notes in different measures', () => {
+			const differentMeasure = { name: 'note-0-2-0.505' }; // measure 2, not 1
+			mockEditor.getPanelContainer().getAll.mockReturnValue([differentMeasure]);
+
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+
+			expect(result).toHaveLength(0);
+		});
+
+		it('should skip notes without valid name format', () => {
+			const badNote1 = { name: '' }; // no name
+			const badNote2 = { name: 'bad-format' }; // wrong format
+			const badNote3 = { name: 'note-0-1' }; // only 3 parts
+			mockEditor.getPanelContainer().getAll.mockReturnValue([badNote1, badNote2, badNote3]);
+
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+
+			expect(result).toHaveLength(0);
+		});
+
+		it('should return sorted results', () => {
+			const note1 = { name: 'note-0-1-0.508' };
+			const note2 = { name: 'note-0-1-0.503' };
+			mockEditor.getPanelContainer().getAll.mockReturnValue([note1, note2]);
+
+			const result = noteManager.findNearbyNotes(1, 0, 0.5);
+
+			expect(result).toEqual(['note-0-1-0.503', 'note-0-1-0.508']);
+		});
+	});
+
+	describe('handlePointerUp with isSelecting state', () => {
+		it('should hide selection rectangle and reset isSelecting when pointer up during selection', () => {
+			const mockRect = noteManager.selectionRectangle;
+			noteManager.isSelecting = true;
+
+			noteManager.handlePointerUp();
+
+			expect(noteManager.isSelecting).toBe(false);
+			expect(mockRect.setVisible).toHaveBeenCalledWith(false);
+		});
+	});
+
+	describe('recordMoveAction', () => {
+		it('should record a move action in the note buffer', () => {
+			const recordSpy = vi
+				.spyOn(noteManager['noteBuffer'], 'recordAction')
+				.mockImplementation(() => {});
+			const movedNotes = [
+				{
+					originalNoteKey: 'note-0-0-0',
+					originalLaneIndex: 0,
+					originalMeasure: 0,
+					originalCellOffset: 0,
+					originalLaneId: 'lane1',
+					noteId: '01',
+					newNoteKey: 'note-0-1-0',
+					newLaneIndex: 0,
+					newMeasure: 1,
+					newCellOffset: 0,
+					newLaneId: 'lane1'
+				}
+			];
+			noteManager.recordMoveAction(movedNotes);
+			expect(recordSpy).toHaveBeenCalledWith('move', movedNotes);
+			recordSpy.mockRestore();
+		});
+	});
+
+	describe('getCurrentCursorPosition iteration beyond first measure', () => {
+		it('should find the correct measure when cursor is beyond the first measure', () => {
+			// mockEditor.getMeasureHeight returns 400, getOffsetY returns 200, panelContainer.y = 0
+			// clickY = -(mouseY - offsetY - panelContainer.y)
+			// To hit measure 1: clickY must be between 400 and 800
+			// So mouseY must satisfy: -(mouseY - 200) >= 400 → mouseY <= -200
+			mockEditor.input.activePointer.x = 150; // laneIndex = (150-100)/50 = 1
+			mockEditor.input.activePointer.y = -300; // clickY = -(-300 - 200) = 500 → measure 1
+
+			const result = noteManager['getCurrentCursorPosition']();
+			// clickY = 500, measure 0 has height 400, measure 1 starts at 400 → measure = 1
+			expect(result.measure).toBe(1);
+		});
+
+		it('should use lastMouseX/Y fallback when activePointer x/y are undefined', () => {
+			noteManager['lastMouseX'] = 123;
+			noteManager['lastMouseY'] = 456;
+			mockEditor.input.activePointer = { x: undefined, y: undefined } as any;
+
+			const result = noteManager['getCurrentCursorPosition']();
+			// Falls back to lastMouseX/Y when activePointer.x/y are undefined
+			expect(result).toBeDefined();
+		});
+	});
+
+	describe('handlePointerMove when dragging', () => {
+		it('should call noteMove.updateDrag when isCurrentlyDragging is true', () => {
+			const updateDragSpy = vi
+				.spyOn(noteManager['noteMove'], 'updateDrag')
+				.mockImplementation(() => {});
+			// Set private isDragging to true via bracket access
+			noteManager['noteMove']['isDragging'] = true;
+
+			const pointer = { x: 100, y: 200 } as Phaser.Input.Pointer;
+			noteManager.handlePointerMove(pointer);
+
+			expect(updateDragSpy).toHaveBeenCalled();
+			noteManager['noteMove']['isDragging'] = false;
+			updateDragSpy.mockRestore();
+		});
+	});
+
+	describe('handlePointerUp when dragging', () => {
+		it('should call noteMove.completeDrag when isCurrentlyDragging is true', () => {
+			const completeDragSpy = vi
+				.spyOn(noteManager['noteMove'], 'completeDrag')
+				.mockImplementation(() => {});
+			noteManager['noteMove']['isDragging'] = true;
+
+			noteManager.handlePointerUp();
+
+			expect(completeDragSpy).toHaveBeenCalled();
+			noteManager['noteMove']['isDragging'] = false;
+			completeDragSpy.mockRestore();
+		});
+	});
+
+	describe('deleteSelectedNotes fallback branch (no removeNote method)', () => {
+		it('should filter notes array when plain measureNote lacks removeNote', () => {
+			const noteObj = { position: 0, noteID: '01' };
+			const plainMeasureNote = {
+				measure: 0,
+				notes: [noteObj],
+				measureLength: 1
+				// no removeNote method
+			};
+
+			mockEditor._setMockNotes({ lane1: [plainMeasureNote as any] });
+			mockEditor._addMockGameObject('note-0-0-0');
+			noteManager.selectedNotes.add('note-0-0-0');
+
+			noteManager.deleteSelectedNotes();
+
+			expect(plainMeasureNote.notes).toHaveLength(0);
+		});
+	});
+
+	describe('cleanupNoteVisuals text destruction', () => {
+		it('should destroy text element when it exists in the panel container', () => {
+			// Add a note graphics object with name 'note-0-0-0'
+			const noteGraphics = mockEditor._addMockGameObject('note-0-0-0');
+			// Add a corresponding text object with name 'text-0-0-0'
+			const textObj = mockEditor._addMockGameObject('text-0-0-0');
+
+			// Delete the note — this invokes cleanupNoteVisuals which should destroy the text
+			noteManager.deleteNoteByKey('note-0-0-0');
+
+			expect(textObj.destroy).toHaveBeenCalled();
+		});
+	});
+
+	describe('deleteNoteByKey fallback branch (no removeNote method)', () => {
+		it('should filter notes array when measureNote lacks removeNote', () => {
+			// Set up notes with a plain object that has no removeNote method
+			const noteObj = { position: 0, noteID: '01' };
+			const plainMeasureNote = {
+				measure: 0,
+				notes: [noteObj],
+				measureLength: 1
+				// deliberately no removeNote method
+			};
+
+			mockEditor._setMockNotes({ lane1: [plainMeasureNote as any] });
+			// Also add the graphics object so cleanupNoteVisuals doesn't fail
+			mockEditor._addMockGameObject('note-0-0-0');
+
+			// Should not throw and should remove the note via the fallback filter
+			noteManager.deleteNoteByKey('note-0-0-0');
+
+			expect(plainMeasureNote.notes).toHaveLength(0);
+		});
+	});
+
+	describe('initializeKeyboardEvents', () => {
+		let copySelectedNotesSpy: ReturnType<typeof vi.spyOn>;
+		let cutSelectedNotesSpy: ReturnType<typeof vi.spyOn>;
+		let pasteNotesSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			copySelectedNotesSpy = vi
+				.spyOn(noteManager, 'copySelectedNotes')
+				.mockReturnValue(false);
+			cutSelectedNotesSpy = vi.spyOn(noteManager, 'cutSelectedNotes').mockReturnValue(false);
+			pasteNotesSpy = vi.spyOn(noteManager, 'pasteNotes').mockReturnValue(false);
+		});
+
+		afterEach(() => {
+			copySelectedNotesSpy.mockRestore();
+			cutSelectedNotesSpy.mockRestore();
+			pasteNotesSpy.mockRestore();
+		});
+
+		it('should call copySelectedNotes when Ctrl+C is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should call copySelectedNotes when Cmd+C (metaKey) is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				metaKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should call cutSelectedNotes when Ctrl+X is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'x',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(cutSelectedNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should call pasteNotes when Ctrl+V is pressed', () => {
+			const event = new KeyboardEvent('keydown', {
+				key: 'v',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+			expect(pasteNotesSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should debounce rapid key presses', () => {
+			// Pin Date.now() to a fixed value so timing is deterministic regardless of
+			// how long the test takes to execute on CI runners.
+			const fixedNow = 100_000;
+			const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow);
+
+			noteManager['lastKeyboardAction'] = 0;
+
+			const event1 = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event1);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+
+			// Second press: Date.now() still returns fixedNow, so
+			// fixedNow - lastKeyboardAction(fixedNow) = 0 < KEYBOARD_DEBOUNCE_MS → debounced
+			const event2 = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event2);
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1); // still 1, debounced
+
+			dateNowSpy.mockRestore();
+		});
+
+		it('should not trigger shortcuts when typing in a textarea with text selected', () => {
+			const textarea = document.createElement('textarea');
+			textarea.value = 'selected text';
+			document.body.appendChild(textarea);
+			textarea.setSelectionRange(0, 8);
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			Object.defineProperty(event, 'target', { value: textarea, writable: false });
+
+			// Dispatch directly on the textarea to test target-based filtering
+			noteManager['keydownHandler']?.(event);
+
+			expect(copySelectedNotesSpy).not.toHaveBeenCalled();
+
+			document.body.removeChild(textarea);
+		});
+
+		it('should trigger shortcuts when typing in a textarea with no text selected', () => {
+			noteManager['lastKeyboardAction'] = 0;
+
+			const textarea = document.createElement('textarea');
+			textarea.value = 'some text';
+			document.body.appendChild(textarea);
+			textarea.setSelectionRange(4, 4); // cursor but no selection
+
+			const event = new KeyboardEvent('keydown', {
+				key: 'c',
+				ctrlKey: true,
+				bubbles: true,
+				cancelable: true
+			});
+			Object.defineProperty(event, 'target', { value: textarea, writable: false });
+
+			noteManager['keydownHandler']?.(event);
+
+			expect(copySelectedNotesSpy).toHaveBeenCalledTimes(1);
+
+			document.body.removeChild(textarea);
+		});
+	});
+
+	describe('initializeMouseTracking', () => {
+		let freshManager: InstanceType<typeof import('./NoteManager').NoteManager> | null = null;
+
+		afterEach(() => {
+			if (freshManager) {
+				freshManager.destroy();
+				freshManager = null;
+			}
+		});
+
+		it('should update lastMouseX and lastMouseY when mousemove fires with canvas available', () => {
+			const canvas = document.createElement('canvas');
+			document.body.appendChild(canvas);
+			vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+				left: 10,
+				top: 20,
+				right: 810,
+				bottom: 620,
+				width: 800,
+				height: 600,
+				x: 10,
+				y: 20,
+				toJSON: () => {}
+			});
+
+			// Set the game canvas on the mock editor
+			(mockEditor as any).game = { canvas };
+
+			// Re-initialize to pick up the game.canvas
+			freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager.initialize();
+
+			const event = new MouseEvent('mousemove', { clientX: 110, clientY: 70, bubbles: true });
+			document.dispatchEvent(event);
+
+			expect(freshManager['lastMouseX']).toBe(100); // 110 - left(10)
+			expect(freshManager['lastMouseY']).toBe(50); // 70 - top(20)
+
+			document.body.removeChild(canvas);
+		});
+
+		it('should fall back to querySelector canvas when game.canvas is unavailable', () => {
+			// Make sure game.canvas is null
+			(mockEditor as any).game = { canvas: null };
+
+			const canvas = document.createElement('canvas');
+			document.body.appendChild(canvas);
+			vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+				left: 5,
+				top: 15,
+				right: 805,
+				bottom: 615,
+				width: 800,
+				height: 600,
+				x: 5,
+				y: 15,
+				toJSON: () => {}
+			});
+
+			freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager.initialize();
+
+			const event = new MouseEvent('mousemove', { clientX: 105, clientY: 65, bubbles: true });
+			document.dispatchEvent(event);
+
+			expect(freshManager['lastMouseX']).toBe(100); // 105 - 5
+			expect(freshManager['lastMouseY']).toBe(50); // 65 - 15
+
+			document.body.removeChild(canvas);
+		});
+
+		it('should not update coordinates when no canvas is available', () => {
+			// Ensure no canvas elements in document and game.canvas is null
+			const existingCanvases = document.querySelectorAll('canvas');
+			existingCanvases.forEach((c) => c.remove());
+
+			(mockEditor as any).game = { canvas: null };
+
+			freshManager = new NoteManager(mockEditor as unknown as Editor);
+			freshManager['lastMouseX'] = 999;
+			freshManager['lastMouseY'] = 888;
+			freshManager.initialize();
+
+			const event = new MouseEvent('mousemove', {
+				clientX: 200,
+				clientY: 300,
+				bubbles: true
+			});
+			document.dispatchEvent(event);
+
+			// Should remain unchanged since no canvas found
+			expect(freshManager['lastMouseX']).toBe(999);
+			expect(freshManager['lastMouseY']).toBe(888);
 		});
 	});
 });

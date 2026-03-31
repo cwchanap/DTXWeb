@@ -472,6 +472,17 @@ describe('SimFile Service', () => {
 			// Verify fetch was NOT called since there are no preview files
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
+
+		it('should return error when preview files exist but server URL is invalid', async () => {
+			vi.stubEnv('VITE_DTX_SERVER_URL', 'invalid-url');
+
+			// beforeEach already mocks readdir to return preview.jpg and preview.mp3
+
+			const result = await createSimfileRecord(simfileData);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('valid absolute URL');
+		});
 	});
 
 	describe('parseDtxFiles', () => {
@@ -527,6 +538,97 @@ describe('SimFile Service', () => {
 			expect(result.levels).toEqual([]);
 			expect(result.bpm).toBeUndefined();
 			expect(result.artist).toBeUndefined();
+		});
+
+		it('should skip DTX files that fail to parse and continue with others', async () => {
+			(fs.promises.readdir as Mock).mockResolvedValue([
+				{ name: 'bad.dtx', isFile: () => true },
+				{ name: 'good.dtx', isFile: () => true }
+			]);
+
+			// First readFile call throws, second succeeds
+			(fs.promises.readFile as Mock)
+				.mockRejectedValueOnce(new Error('read error'))
+				.mockResolvedValueOnce(Buffer.from('mock'));
+
+			const result = await parseDtxFiles('/fake/path');
+
+			// good.dtx is still parsed
+			expect(result.bpm).toBe(120);
+			expect(result.artist).toBe('Test Artist');
+		});
+
+		it('should return empty result when top-level readdir throws', async () => {
+			(fs.promises.readdir as Mock).mockRejectedValue(new Error('EACCES'));
+
+			const result = await parseDtxFiles('/fake/path');
+			expect(result.bpm).toBeUndefined();
+			expect(result.artist).toBeUndefined();
+			expect(result.levels).toEqual([]);
+		});
+
+		it('should invoke validateSetDefContent callback during SET.def parsing', async () => {
+			let validateSetDefContentCalled = false;
+			(fs.promises.readdir as Mock).mockResolvedValue([
+				{ name: 'SET.def', isFile: () => true },
+				{ name: 'song.dtx', isFile: () => true }
+			]);
+			(fs.promises.readFile as Mock)
+				.mockResolvedValueOnce(Buffer.from('mock-set-def')) // for SET.def
+				.mockResolvedValueOnce(Buffer.from('mock-dtx')); // for song.dtx
+
+			// Make the mock call the SET.def validator
+			(decodeFileWithEncodingDetection as Mock).mockImplementationOnce(
+				async (_file: unknown, validator: (content: string) => boolean) => {
+					const content = '#L1LABEL EASY\n#L1FILE song.dtx';
+					validateSetDefContentCalled = true;
+					expect(validator(content)).toBe(true);
+					return { content, encoding: 'utf-8' };
+				}
+			);
+
+			const result = await parseDtxFiles('/fake/path');
+			expect(result.bpm).toBe(120);
+			expect(validateSetDefContentCalled).toBe(true);
+		});
+
+		it('should continue when SET.def read fails', async () => {
+			(fs.promises.readdir as Mock).mockResolvedValue([
+				{ name: 'SET.def', isFile: () => true },
+				{ name: 'song.dtx', isFile: () => true }
+			]);
+			// First readFile (for SET.def) throws, second (for DTX) succeeds
+			(fs.promises.readFile as Mock)
+				.mockRejectedValueOnce(new Error('EACCES'))
+				.mockResolvedValueOnce(Buffer.from('mock'));
+
+			const result = await parseDtxFiles('/fake/path');
+			expect(result.bpm).toBe(120);
+			expect(result.artist).toBe('Test Artist');
+			// Label falls back to filename without extension (uppercased)
+			expect(result.levels).toEqual([{ label: 'SONG', level: 5.5 }]);
+		});
+
+		it('should invoke validateDtxContent callback during DTX parsing', async () => {
+			let validateDtxContentCalled = false;
+			(fs.promises.readdir as Mock).mockResolvedValue([
+				{ name: 'song.dtx', isFile: () => true }
+			]);
+			(fs.promises.readFile as Mock).mockResolvedValueOnce(Buffer.from('mock'));
+
+			// Make the mock actually call the validator
+			(decodeFileWithEncodingDetection as Mock).mockImplementationOnce(
+				async (_file: unknown, validator: (content: string) => boolean) => {
+					const content = '#TITLE:Test\n#ARTIST:Artist\n#BPM:120';
+					validateDtxContentCalled = true;
+					expect(validator(content)).toBe(true);
+					return { content, encoding: 'utf-8' };
+				}
+			);
+
+			const result = await parseDtxFiles('/fake/path');
+			expect(result.bpm).toBe(120);
+			expect(validateDtxContentCalled).toBe(true);
 		});
 	});
 });

@@ -40,6 +40,13 @@ describe('filesystem utilities', () => {
 	});
 
 	describe('loadTreeStructure', () => {
+		it('returns empty array when top-level directory read fails', async () => {
+			(fs.promises.readdir as unknown as Mock).mockRejectedValueOnce(new Error('EACCES'));
+
+			const nodes = await loadTreeStructure('/music');
+			expect(nodes).toEqual([]);
+		});
+
 		it('includes folders with .dtx files and reads SET.def title', async () => {
 			// Top-level has one directory
 			(fs.promises.readdir as unknown as Mock)
@@ -84,6 +91,19 @@ describe('filesystem utilities', () => {
 			expect(nodes[0].name).toBe('DTXFiles.Bad');
 			expect(nodes[0].containsDtxFiles).toBe(false);
 			expect(nodes[0].songTitle).toBeNull();
+		});
+	});
+
+	describe('selectDirectory', () => {
+		it('returns the dialog result', async () => {
+			const { selectDirectory } = await import('./filesystem');
+			const { dialog } = await import('electron');
+			const mockResult = { canceled: false, filePaths: ['/some/path'] };
+			(dialog.showOpenDialog as unknown as Mock).mockResolvedValue(mockResult);
+
+			const result = await selectDirectory();
+			expect(result).toBe(mockResult);
+			expect(dialog.showOpenDialog).toHaveBeenCalledWith({ properties: ['openDirectory'] });
 		});
 	});
 
@@ -137,6 +157,179 @@ describe('filesystem utilities', () => {
 			expect(res.error).toBeNull();
 			expect(res.isText).toBe(false);
 			expect(res.content).toBe(buf);
+		});
+
+		it('reads .def file using utf-16le encoding priority', async () => {
+			const filePath = path.join(base, 'set.def');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('mock'));
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+			expect(res.isText).toBe(true);
+			expect(decodeFileWithEncodingDetection).toHaveBeenCalled();
+		});
+
+		it('returns error object when fs.promises.stat throws', async () => {
+			const filePath = path.join(base, 'chart.dtx');
+			(fs.promises.stat as unknown as Mock).mockRejectedValue(new Error('ENOENT'));
+
+			const res = await readFile(filePath, base);
+			expect(res.error).toBe('ENOENT');
+			expect(res.content).toBe('');
+		});
+
+		it('derives workspace root from file path when workspaceRoot is omitted', async () => {
+			const filePath = path.join(base, 'chart.dtx');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('mock'));
+
+			// No second argument — workspaceRoot is undefined
+			const res = (await readFile(filePath)) as Extract<ReadFileResult, { isText: true }>;
+			expect(res.error).toBeNull();
+			expect(res.isText).toBe(true);
+		});
+
+		it('calls validateFileContent callback for .def files', async () => {
+			const filePath = path.join(base, 'set.def');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('#TITLE:Test'));
+
+			// Override mock to call the validateFileContent callback
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					validate('#TITLE:Test'); // triggers the .def branch
+					return { content: '#TITLE:Test', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+			expect(res.content).toBe('#TITLE:Test');
+		});
+
+		it('calls validateFileContent callback for .dtx files', async () => {
+			const filePath = path.join(base, 'chart.dtx');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('#WAV01'));
+
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					validate('#WAV01'); // triggers the non-.def branch
+					return { content: '#WAV01', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+			expect(res.content).toBe('#WAV01');
+		});
+
+		it('validates .def content with #ARTIST: when #TITLE: is absent', async () => {
+			const filePath = path.join(base, 'set.def');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(
+				Buffer.from('#ARTIST:Test')
+			);
+
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					// Use content that hits the ||#ARTIST:|| branch (no #TITLE:)
+					validate('#ARTIST:Test');
+					return { content: '#ARTIST:Test', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+		});
+
+		it('validates .def content reaching #BPM: check', async () => {
+			const filePath = path.join(base, 'set.def');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('#BPM:120'));
+
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					validate('#BPM:120'); // no #TITLE: or #ARTIST:, reaches #BPM: check (line 180)
+					return { content: '#BPM:120', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+		});
+
+		it('validates .def content reaching [ bracket check', async () => {
+			const filePath = path.join(base, 'set.def');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('[section]'));
+
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					validate('[section]'); // no #TITLE:/#ARTIST:/#BPM:, reaches [ check (line 181)
+					return { content: '[section]', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+		});
+
+		it('validates .def content reaching content.length > 0 check', async () => {
+			const filePath = path.join(base, 'set.def');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('plain text'));
+
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					validate('plain text'); // none of the markers present, reaches length check (line 182)
+					return { content: 'plain text', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
+		});
+
+		it('validates .dtx content reaching content.length > 0 check', async () => {
+			const filePath = path.join(base, 'chart.dtx');
+			(fs.promises.stat as unknown as Mock).mockResolvedValue({ size: 10 });
+			(fs.promises.readFile as unknown as Mock).mockResolvedValue(Buffer.from('plain text'));
+
+			(decodeFileWithEncodingDetection as unknown as Mock).mockImplementationOnce(
+				async (_file: File, validate: (content: string) => boolean) => {
+					validate('plain text'); // no #TITLE:/#ARTIST:/#BPM:/#WAV, reaches length check (line 191)
+					return { content: 'plain text', encoding: 'utf-8' };
+				}
+			);
+
+			const res = (await readFile(filePath, base)) as Extract<
+				ReadFileResult,
+				{ isText: true }
+			>;
+			expect(res.error).toBeNull();
 		});
 	});
 });

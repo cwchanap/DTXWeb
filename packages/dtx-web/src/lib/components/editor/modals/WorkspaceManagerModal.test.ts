@@ -170,6 +170,44 @@ describe('WorkspaceManagerModal', () => {
 			expect(mockService.setCurrentWorkspace).toHaveBeenCalledWith(null);
 		});
 
+		it('calls onClose when last workspace is deleted', async () => {
+			const onClose = vi.fn();
+			// Start with only one workspace
+			mockService.getWorkspaces.mockReturnValue([makeWorkspace({ name: 'Only Workspace' })]);
+			mockService.getCurrentWorkspace.mockReturnValue(
+				makeWorkspace({ name: 'Only Workspace' })
+			);
+
+			render(WorkspaceManagerModal, { props: { ...defaultProps, onClose } });
+
+			// After delete, return empty list
+			mockService.deleteWorkspace.mockImplementationOnce(() => {
+				mockService.getWorkspaces.mockReturnValue([]);
+			});
+
+			const deleteButton = screen.getByRole('button', { name: 'Delete workspace' });
+			await fireEvent.click(deleteButton);
+			await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+			expect(onClose).toHaveBeenCalled();
+		});
+
+		it('handles deleteWorkspace error gracefully', async () => {
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+			mockService.deleteWorkspace.mockImplementationOnce(() => {
+				throw new Error('Delete failed');
+			});
+
+			render(WorkspaceManagerModal, { props: defaultProps });
+
+			const deleteButtons = screen.getAllByRole('button', { name: 'Delete workspace' });
+			await fireEvent.click(deleteButtons[1]);
+			await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+			expect(consoleSpy).toHaveBeenCalledWith('Error deleting workspace:', expect.any(Error));
+			consoleSpy.mockRestore();
+		});
+
 		it('dismisses the delete confirm modal when Cancel is clicked', async () => {
 			render(WorkspaceManagerModal, { props: defaultProps });
 

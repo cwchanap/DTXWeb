@@ -1,22 +1,38 @@
-import { describe, it, expect, vi } from 'vitest';
-import { DTXFile } from '@dtx/common';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/svelte';
+import PopoverStub from '../../../../tests/stubs/PopoverStub.svelte';
 
 // Mock dependencies for component logic tests
+const gotoMock = vi.hoisted(() => vi.fn());
 vi.mock('$app/navigation', () => ({
-	goto: vi.fn()
+	goto: gotoMock
 }));
 
 vi.mock('svelte-i18n', () => ({
 	locale: { set: vi.fn() },
-	locales: { subscribe: vi.fn(() => () => {}) }
+	locales: {
+		subscribe: (run: (value: string[]) => void) => {
+			run(['en']);
+			return () => {};
+		}
+	}
+}));
+
+const toastMock = vi.hoisted(() => ({
+	error: vi.fn(),
+	success: vi.fn()
 }));
 
 vi.mock('$lib/toaster', () => ({
-	default: {
-		error: vi.fn(),
-		success: vi.fn()
-	}
+	default: toastMock
 }));
+
+vi.mock('@skeletonlabs/skeleton-svelte', () => ({
+	Popover: PopoverStub
+}));
+
+import { DTXFile } from '@dtx/common';
+import MidiToDtx from './+page.svelte';
 
 describe('MIDI to DTX Converter Logic', () => {
 	it('should validate MIDI file extensions', () => {
@@ -557,5 +573,218 @@ describe('MIDI to DTX Converter Logic', () => {
 			workflowState = 'downloaded';
 			expect(workflowState).toBe('downloaded');
 		});
+	});
+});
+
+describe('MIDI to DTX Component Rendering', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('renders the page with initial upload state', () => {
+		render(MidiToDtx);
+		expect(screen.getByText('MIDI to DTX Converter')).toBeInTheDocument();
+		expect(screen.getByText('Upload MIDI File')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Choose File' })).toBeInTheDocument();
+	});
+
+	it('shows Back to Tools button that calls goto', async () => {
+		render(MidiToDtx);
+		await fireEvent.click(screen.getByRole('button', { name: '← Back to Tools' }));
+		expect(gotoMock).toHaveBeenCalledWith('/tool');
+	});
+
+	it('shows file ready state after uploading a valid .mid file', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'track.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		expect(screen.getByText('File Ready')).toBeInTheDocument();
+		expect(screen.getByText('track.mid')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Convert to DTX' })).toBeInTheDocument();
+	});
+
+	it('shows error toast for invalid file extension', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const badFile = new File(['bad'], 'audio.mp3', { type: 'audio/mpeg' });
+		await fireEvent.change(input, { target: { files: [badFile] } });
+		expect(toastMock.error).toHaveBeenCalledWith(
+			expect.objectContaining({ title: 'Invalid file type' })
+		);
+	});
+
+	it('shows DTX metadata fields after file upload', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'track.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		expect(screen.getByLabelText('Title')).toBeInTheDocument();
+		expect(screen.getByLabelText('Artist')).toBeInTheDocument();
+		expect(screen.getByLabelText('BPM')).toBeInTheDocument();
+	});
+
+	it('performs conversion and shows download section', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+
+		await vi.waitFor(() => {
+			expect(screen.getByText('Conversion Complete!')).toBeInTheDocument();
+		});
+		expect(screen.getByRole('button', { name: 'Download DTX File' })).toBeInTheDocument();
+		expect(screen.getByText('song.dtx')).toBeInTheDocument();
+	});
+
+	it('shows error toast when conversion fails', async () => {
+		const spy = vi
+			.spyOn(DTXFile.prototype, 'parseFromMidi')
+			.mockRejectedValueOnce(new Error('bad midi'));
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['bad'], 'invalid.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+
+		await vi.waitFor(() => {
+			expect(toastMock.error).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Conversion failed' })
+			);
+		});
+		spy.mockRestore();
+	});
+
+	it('downloads DTX file and shows success toast', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+
+		await vi.waitFor(() => {
+			expect(toastMock.success).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Success' })
+			);
+		});
+	});
+
+	it('resets to initial state when Remove button is clicked', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		expect(screen.getByText('File Ready')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+		expect(screen.getByText('Upload MIDI File')).toBeInTheDocument();
+	});
+
+	it('resets to initial state when Convert Another File button is clicked', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert Another File' }));
+		expect(screen.getByText('Upload MIDI File')).toBeInTheDocument();
+	});
+
+	it('shows error toast when download fails', async () => {
+		const exportSpy = vi
+			.spyOn(DTXFile.prototype, 'export')
+			.mockRejectedValueOnce(new Error('export failed'));
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+
+		await vi.waitFor(() => {
+			expect(toastMock.error).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Download failed' })
+			);
+		});
+		exportSpy.mockRestore();
+	});
+
+	it('updates MIDI to DTX lane mapping when select changes', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		// The mapping section is rendered when uploadedFile is set
+		// Find the first select element (for MIDI note 36 → DTX lane mapping)
+		const selects = container.querySelectorAll('select');
+		expect(selects.length).toBeGreaterThan(0);
+
+		const firstSelect = selects[0] as HTMLSelectElement;
+		await fireEvent.change(firstSelect, { target: { value: '02' } });
+		expect(firstSelect.value).toBe('02');
+	});
+
+	it('clicking Choose File button triggers handleUploadClick', async () => {
+		const { container } = render(MidiToDtx);
+		const button = screen.getByRole('button', { name: 'Choose File' });
+		const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const clickSpy = vi.spyOn(fileInput, 'click').mockImplementation(() => {});
+		await fireEvent.click(button);
+		expect(clickSpy).toHaveBeenCalled();
+		clickSpy.mockRestore();
+	});
+
+	it('uses state BPM when parsed DTX bpm is falsy after conversion', async () => {
+		const parseSpy = vi.spyOn(DTXFile.prototype, 'parseFromMidi').mockResolvedValueOnce({
+			format: 0,
+			trackCount: 0,
+			ticksPerQuarter: 480,
+			tracks: []
+		} as any);
+		const convertSpy = vi
+			.spyOn(DTXFile.prototype, 'convertMidiNotesToDtx')
+			.mockReturnValueOnce({} as any);
+		const exportSpy = vi
+			.spyOn(DTXFile.prototype, 'export')
+			.mockImplementationOnce(async function (this: DTXFile) {
+				expect(this.bpm).toBe(140);
+			});
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		await fireEvent.change(input, {
+			target: { files: [new File(['data'], 'test.mid', { type: 'audio/midi' })] }
+		});
+		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+		await fireEvent.input(bpmInput, { target: { value: '140' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => {
+			expect(screen.getByText('Conversion Complete!')).toBeInTheDocument();
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		parseSpy.mockRestore();
+		convertSpy.mockRestore();
+		exportSpy.mockRestore();
 	});
 });

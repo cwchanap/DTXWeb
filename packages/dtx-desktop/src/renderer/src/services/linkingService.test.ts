@@ -454,13 +454,256 @@ describe('LinkingService', () => {
 		});
 	});
 
+	describe('findMatchingFolder', () => {
+		const mockFolders: TreeNode[] = [
+			{
+				name: 'Song Folder',
+				path: '/path/song',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'Test Song'
+			},
+			{
+				name: 'Another Folder',
+				path: '/path/another',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: null
+			}
+		];
+
+		it('returns null when simFile has no title', () => {
+			const simFile = {
+				id: 1,
+				title: null as unknown as string,
+				artist: 'Artist',
+				bpm: 120,
+				preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'user-id',
+				dtx_files: []
+			};
+
+			const result = linkingService.findMatchingFolder(simFile, mockFolders);
+			expect(result).toBeNull();
+		});
+
+		it('returns exact matching folder by title', () => {
+			const simFile = {
+				id: 1,
+				title: 'Test Song',
+				artist: 'Artist',
+				bpm: 120,
+				preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'user-id',
+				dtx_files: []
+			};
+
+			const result = linkingService.findMatchingFolder(simFile, mockFolders);
+			expect(result).not.toBeNull();
+			expect(result?.songTitle).toBe('Test Song');
+		});
+
+		it('returns fuzzy matching folder when no exact match', () => {
+			const simFile = {
+				id: 1,
+				title: 'Test Song Extended',
+				artist: 'Artist',
+				bpm: 120,
+				preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'user-id',
+				dtx_files: []
+			};
+
+			const result = linkingService.findMatchingFolder(simFile, mockFolders);
+			expect(result?.songTitle).toBe('Test Song');
+		});
+
+		it('returns null when no folder matches', () => {
+			const simFile = {
+				id: 1,
+				title: 'Completely Different Song XYZ',
+				artist: 'Artist',
+				bpm: 120,
+				preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'user-id',
+				dtx_files: []
+			};
+
+			const result = linkingService.findMatchingFolder(simFile, mockFolders);
+			expect(result).toBeNull();
+		});
+
+		it('skips folders without songTitle during matching', () => {
+			const foldersWithoutTitles: TreeNode[] = [
+				{
+					name: 'No Title',
+					path: '/path/notitle',
+					isExpanded: false,
+					isLoading: false,
+					children: [],
+					hasChildren: false,
+					containsDtxFiles: true,
+					songTitle: null
+				}
+			];
+			const simFile = {
+				id: 1,
+				title: 'Any Song',
+				artist: 'Artist',
+				bpm: 120,
+				preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'user-id',
+				dtx_files: []
+			};
+
+			const result = linkingService.findMatchingFolder(simFile, foldersWithoutTitles);
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('findMatchingSimFile - null songTitle', () => {
+		it('returns null when folder has no songTitle', () => {
+			const folderWithNoTitle: TreeNode = {
+				name: 'Empty Folder',
+				path: '/path/empty',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: null
+			};
+
+			const result = linkingService.findMatchingSimFile(folderWithNoTitle, []);
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('linkSimFileToFolder', () => {
+		it('calls workspaceStore.linkSimFileToFolder with correct arguments', () => {
+			const simFile = {
+				id: 1,
+				title: 'Test Song',
+				artist: 'Test Artist',
+				bpm: 120,
+				preview_url: null,
+				download_url: null,
+				is_published: true,
+				display_id: null,
+				publish_date: '2024-01-01',
+				video_preview_url: null,
+				created_at: '2024-01-01T00:00:00Z',
+				updated_at: '2024-01-01T00:00:00Z',
+				user_id: 'test-user-id',
+				dtx_files: []
+			};
+
+			linkingService.linkSimFileToFolder(simFile, '/path/to/folder');
+
+			expect(workspaceStore.linkSimFileToFolder).toHaveBeenCalledWith(
+				'/path/to/folder',
+				simFile
+			);
+		});
+	});
+
 	describe('calculateSimilarity', () => {
 		it('should calculate similarity correctly', () => {
 			expect(linkingService.calculateSimilarity('test', 'test')).toBe(1);
 			expect(linkingService.calculateSimilarity('test', 'testing')).toBeGreaterThan(0.5);
 			expect(linkingService.calculateSimilarity('abc', 'xyz')).toBeLessThan(0.5);
 		});
+
+		it('should return 1 when both strings are empty', () => {
+			expect(linkingService.calculateSimilarity('', '')).toBe(1);
+		});
 	});
 
-	// Removed trivial store-forwarding tests for linking/unlinking
+	describe('unlinkSimFileFromFolder', () => {
+		it('should call workspaceStore.unlinkSimFileFromFolder with the folder path', () => {
+			linkingService.unlinkSimFileFromFolder('/path/to/folder');
+			expect(workspaceStore.unlinkSimFileFromFolder).toHaveBeenCalledWith('/path/to/folder');
+		});
+	});
+
+	describe('linkSimFilesToNewNodes - already linked folder', () => {
+		it('should skip folders that already have a linked simFile', () => {
+			const mockSimFiles: SimfileWithDtx[] = [
+				{
+					id: 1,
+					title: 'Song',
+					artist: 'Artist',
+					bpm: 120,
+					preview_url: null,
+					download_url: null,
+					is_published: true,
+					display_id: null,
+					publish_date: '2024-01-01',
+					video_preview_url: null,
+					created_at: '2024-01-01T00:00:00Z',
+					updated_at: '2024-01-01T00:00:00Z',
+					user_id: 'user',
+					dtx_files: []
+				}
+			];
+
+			const alreadyLinkedNode: TreeNode = {
+				name: 'Linked Folder',
+				path: '/path/linked',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'Song',
+				linkedSimFileId: 'already-linked-id'
+			};
+
+			linkingService.linkSimFilesToNewNodes(mockSimFiles, [alreadyLinkedNode]);
+
+			// Already linked folder should be skipped — no new link call
+			expect(workspaceStore.linkSimFileToFolder).not.toHaveBeenCalled();
+		});
+	});
 });

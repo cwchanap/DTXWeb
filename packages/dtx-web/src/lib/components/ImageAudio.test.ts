@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { get as mockGet } from 'svelte/store';
 
 const mockPlayingAudio = vi.hoisted(() => ({
 	subscribe: vi.fn((cb: (v: unknown) => void) => {
@@ -101,6 +102,99 @@ describe('ImageAudio', () => {
 
 		await vi.waitFor(() => {
 			expect(screen.queryByRole('button')).not.toBeInTheDocument();
+		});
+	});
+
+	it('resets isPlaying and clears playingAudio when audio ends', async () => {
+		render(ImageAudio, { props: defaultProps });
+		await fireEvent.click(screen.getByRole('button'));
+
+		const endedCall = mockAudio.addEventListener.mock.calls.find(
+			(args: unknown[]) => args[0] === 'ended'
+		);
+		expect(endedCall).toBeDefined();
+		const [, endedCallback] = endedCall!;
+
+		endedCallback();
+
+		await vi.waitFor(() => {
+			expect(mockPlayingAudio.set).toHaveBeenCalledWith(null);
+		});
+	});
+
+	it('handles audio.play() rejection gracefully', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockAudio.play.mockRejectedValueOnce(new Error('NotAllowedError'));
+		try {
+			render(ImageAudio, { props: defaultProps });
+			await fireEvent.click(screen.getByRole('button'));
+
+			await vi.waitFor(() => {
+				expect(screen.queryByRole('button')).not.toBeInTheDocument();
+			});
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
+
+	it('cleans up previous audio instance when replaying after ended', async () => {
+		render(ImageAudio, { props: defaultProps });
+
+		// First play
+		await fireEvent.click(screen.getByRole('button'));
+
+		// Trigger ended event to set isPlaying = false while audio is still set
+		const endedCall = mockAudio.addEventListener.mock.calls.find(
+			(args: unknown[]) => args[0] === 'ended'
+		);
+		expect(endedCall).toBeDefined();
+		const [, endedCallback] = endedCall!;
+		endedCallback();
+
+		// Wait for isPlaying to be false (play button visible again)
+		await vi.waitFor(() => {
+			expect(screen.getByRole('button')).toBeInTheDocument();
+		});
+
+		mockAudio.pause.mockClear();
+		mockAudio.remove.mockClear();
+
+		// Second play - should clean up the previous audio (lines 62-65)
+		await fireEvent.click(screen.getByRole('button'));
+
+		expect(mockAudio.pause).toHaveBeenCalled();
+		expect(mockAudio.remove).toHaveBeenCalled();
+	});
+
+	it('pauses and removes currently playing audio from store before starting new', async () => {
+		const existingAudio = { pause: vi.fn(), remove: vi.fn() };
+		// The global __mocks__/svelte/store.ts mocks `get` as vi.fn() returning undefined.
+		// Make it return existingAudio for the next call so lines 57-61 in ImageAudio.svelte execute.
+		vi.mocked(mockGet).mockReturnValueOnce(existingAudio as unknown as HTMLAudioElement);
+
+		render(ImageAudio, { props: defaultProps });
+		await fireEvent.click(screen.getByRole('button'));
+
+		expect(existingAudio.pause).toHaveBeenCalled();
+		expect(existingAudio.remove).toHaveBeenCalled();
+		expect(mockPlayingAudio.set).toHaveBeenCalledWith(null);
+	});
+
+	it('cleans up audio when soundPreviewUrl prop changes', async () => {
+		const { rerender } = render(ImageAudio, { props: defaultProps });
+
+		// Start playing first
+		await fireEvent.click(screen.getByRole('button'));
+
+		// Change the soundPreviewUrl to trigger the $effect cleanup
+		await rerender({
+			previewUrl: defaultProps.previewUrl,
+			soundPreviewUrl: 'https://cdn.example.com/new.mp3'
+		});
+
+		// The $effect should clean up audio (pause, reset src, reload)
+		await vi.waitFor(() => {
+			expect(mockAudio.pause).toHaveBeenCalled();
 		});
 	});
 });

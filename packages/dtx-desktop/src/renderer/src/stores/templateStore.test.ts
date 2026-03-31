@@ -268,4 +268,14 @@ describe('templateStore', () => {
 			expect(state.templates).toEqual([]);
 		});
 	});
+
+	describe('saveTemplatesToStorage error handling', () => {
+		it('should not throw when localStorage.setItem fails during addTemplate', () => {
+			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+				throw new Error('Storage quota exceeded');
+			});
+
+			expect(() => templateStore.addTemplate('My Template', '/path')).not.toThrow();
+		});
+	});
 });

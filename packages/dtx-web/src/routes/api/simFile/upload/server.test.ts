@@ -675,4 +675,81 @@ describe('/api/simFile/upload', () => {
 		const data = await response.json();
 		expect(data.error).toBe('Internal server error');
 	});
+
+	it('returns 400 when simFileId passes digit check but exceeds safe integer range', async () => {
+		const mockBucket = createMockBucket();
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.wav'));
+		formData.append('simFileId', '99999999999999999999'); // too large, not a safe integer
+
+		const request = createMockRequest(
+			'POST',
+			'http://localhost:5173/api/simFile/upload',
+			formData
+		);
+
+		const response = await POST({
+			request,
+			platform: { env: { DTXFILE_BUCKET: mockBucket, DB: {} } },
+			locals: {
+				safeGetSession: async () => ({
+					session: createMockSession(),
+					user: createMockSession().user
+				}),
+				session: createMockSession(),
+				user: createMockSession().user
+			}
+		} as any);
+
+		expect(response.status).toBe(400);
+		const data = await response.json();
+		expect(data.error).toBe('Invalid SimFile ID');
+	});
+
+	it('returns 500 when bucket.put returns null (R2 upload failure)', async () => {
+		const originalArrayBuffer = File.prototype.arrayBuffer;
+		File.prototype.arrayBuffer = async function () {
+			return new ArrayBuffer(8);
+		};
+
+		try {
+			const nullResultBucket = {
+				put: vi.fn().mockResolvedValue(null)
+			} as unknown as R2Bucket;
+
+			const formData = new FormData();
+			formData.append('file', new File(['content'], 'test.wav'));
+			formData.append('simFileId', '123');
+
+			const request = createMockRequest(
+				'POST',
+				'http://localhost:5173/api/simFile/upload',
+				formData
+			);
+
+			const response = await POST({
+				request,
+				platform: { env: { DTXFILE_BUCKET: nullResultBucket, DB: {} } },
+				locals: {
+					safeGetSession: async () => ({
+						session: createMockSession(),
+						user: createMockSession().user
+					}),
+					session: createMockSession(),
+					user: createMockSession().user
+				}
+			} as any);
+
+			expect(response.status).toBe(500);
+			const data = await response.json();
+			expect(data.error).toBe('Failed to upload file');
+		} finally {
+			if (originalArrayBuffer) {
+				File.prototype.arrayBuffer = originalArrayBuffer;
+			} else {
+				// @ts-expect-error - Removing non-existent property from prototype
+				delete File.prototype.arrayBuffer;
+			}
+		}
+	});
 });

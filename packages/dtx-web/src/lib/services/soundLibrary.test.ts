@@ -218,6 +218,25 @@ describe('SoundLibrary', () => {
 			expect(result.errors).toBeDefined();
 		});
 
+		it('should store large file in memory and return added=1', async () => {
+			// Use generateFileHash spy so this is fast and deterministic
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue(
+				'large-hash-unique'
+			);
+
+			// Create a small File but override its size to exceed the 2MB threshold
+			const smallFile = new File(['audio'], 'big.wav', { type: 'audio/wav' });
+			Object.defineProperty(smallFile, 'size', { value: 3 * 1024 * 1024 });
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await SoundLibrary.addFiles([smallFile]);
+
+			expect(result.added).toBe(1);
+			expect(result.errors).toHaveLength(0);
+			expect((SoundLibrary as any).memoryFiles.has('large-hash-unique')).toBe(true);
+		});
+
 		it('should handle storage quota exceeded error', async () => {
 			const audioFile = new File(['audio data'], 'test.wav', { type: 'audio/wav' });
 			mockLocalStorage.getItem.mockReturnValue('[]');
@@ -232,6 +251,103 @@ describe('SoundLibrary', () => {
 			const result = await SoundLibrary.addFiles([audioFile]);
 
 			expect(result.errors.length).toBeGreaterThan(0);
+		});
+
+		it('should retry setItem after freeUpStorageSpace succeeds and surface error if retry fails', async () => {
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('quota-retry-hash');
+			vi.spyOn(SoundLibrary as any, 'fileToBase64').mockResolvedValue('base64data');
+
+			// Pre-populate library with an existing file so freeUp has something to remove
+			const existingFile = {
+				hash: 'old-hash',
+				fileName: 'old.wav',
+				fileType: 'audio/wav',
+				fileData: 'olddata',
+				size: 1024,
+				dateAdded: Date.now() - 10000
+			};
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify([existingFile]));
+
+			const quotaError = new Error('QuotaExceededError');
+			quotaError.name = 'QuotaExceededError';
+			// Both first and retry setItem calls throw QuotaExceededError
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw quotaError;
+			});
+
+			const newFile = new File(['audio'], 'new.wav', { type: 'audio/wav' });
+			const result = await SoundLibrary.addFiles([newFile]);
+
+			// freeUpStorageSpace should succeed (removed existingFile), retry fails too
+			expect(result.errors).toContain(
+				'Storage quota exceeded - unable to store files even after cleanup. Please free up browser storage space.'
+			);
+			// setItem should have been called more than once (initial attempt + retry after cleanup)
+			expect(mockLocalStorage.setItem.mock.calls.length).toBeGreaterThanOrEqual(2);
+		});
+
+		it('should report no-files-to-remove error when freeUpStorageSpace returns false', async () => {
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('quota-empty-hash');
+			vi.spyOn(SoundLibrary as any, 'fileToBase64').mockResolvedValue('base64data');
+			// Force freeUpStorageSpace to return false (simulating no removable files)
+			vi.spyOn(SoundLibrary as any, 'freeUpStorageSpace').mockReturnValue(false);
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const quotaError = new Error('QuotaExceededError');
+			quotaError.name = 'QuotaExceededError';
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw quotaError;
+			});
+
+			const newFile = new File(['audio'], 'empty.wav', { type: 'audio/wav' });
+			const result = await SoundLibrary.addFiles([newFile]);
+
+			expect(result.errors).toContain(
+				'Storage quota exceeded - no files available to remove for cleanup'
+			);
+		});
+
+		it('should reject file that would exceed storage limit', async () => {
+			// Create existing files that exactly fill the 50MB limit
+			const nearLimitFiles = [
+				{
+					hash: 'existing-1',
+					fileName: 'big1.wav',
+					fileType: 'audio/wav',
+					fileData: 'data',
+					size: 50 * 1024 * 1024, // 50MB - exactly at limit
+					dateAdded: Date.now()
+				}
+			];
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify(nearLimitFiles));
+
+			// New file (any size > 0) that would push total over 50MB
+			const newFile = new File(['audio data'], 'new.wav', { type: 'audio/wav' });
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('hash-new');
+
+			const result = await SoundLibrary.addFiles([newFile]);
+
+			expect(result.added).toBe(0);
+			expect(result.errors.length).toBeGreaterThan(0);
+			expect(result.errors[0]).toContain('Would exceed storage limit');
+		});
+
+		it('should handle non-QuotaExceededError from localStorage.setItem', async () => {
+			const audioFile = new File(['audio data'], 'test.wav', { type: 'audio/wav' });
+			mockLocalStorage.getItem.mockReturnValue('[]');
+			vi.spyOn(SoundLibrary as any, 'generateFileHash').mockResolvedValue('hash-normal-err');
+			vi.spyOn(SoundLibrary as any, 'fileToBase64').mockResolvedValue('encoded-data');
+
+			// Throw a generic error (not QuotaExceededError)
+			const genericError = new Error('disk write error');
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw genericError;
+			});
+
+			const result = await SoundLibrary.addFiles([audioFile]);
+
+			expect(result.errors).toContain('Failed to save to localStorage: disk write error');
 		});
 	});
 
@@ -272,9 +388,31 @@ describe('SoundLibrary', () => {
 			expect(result).toBe(false);
 		});
 
-		it('should handle localStorage errors', () => {
+		it('should handle localStorage getItem errors', () => {
 			mockLocalStorage.getItem.mockImplementation(() => {
 				throw new Error('localStorage error');
+			});
+
+			const result = SoundLibrary.removeFile('hash1');
+
+			expect(result).toBe(false);
+		});
+
+		it('should return false when setItem throws during removeFile', () => {
+			const mockFiles: SoundLibraryFile[] = [
+				{
+					hash: 'hash1',
+					fileName: 'test1.wav',
+					fileType: 'audio/wav',
+					fileData: 'base64data',
+					size: 1024,
+					dateAdded: Date.now()
+				}
+			];
+
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify(mockFiles));
+			mockLocalStorage.setItem.mockImplementation(() => {
+				throw new Error('setItem failed');
 			});
 
 			const result = SoundLibrary.removeFile('hash1');
@@ -554,6 +692,57 @@ describe('SoundLibrary', () => {
 			mockFileReader.onerror(mockError);
 
 			await expect(promise).rejects.toThrow('FileReader error');
+		});
+	});
+
+	describe('generateFileHash', () => {
+		const fakeHashBuffer = new Uint8Array(32).map((_, i) => i).buffer as ArrayBuffer;
+		let originalArrayBufferDescriptor: PropertyDescriptor | undefined;
+
+		beforeEach(() => {
+			// Capture original descriptor (if any) before patching
+			originalArrayBufferDescriptor = Object.getOwnPropertyDescriptor(
+				File.prototype,
+				'arrayBuffer'
+			);
+			// jsdom does not implement File.arrayBuffer — patch it only if missing or configurable
+			if (!originalArrayBufferDescriptor || originalArrayBufferDescriptor.configurable) {
+				Object.defineProperty(File.prototype, 'arrayBuffer', {
+					configurable: true,
+					writable: true,
+					value: function () {
+						return Promise.resolve(new ArrayBuffer(4));
+					}
+				});
+			}
+
+			// Mock crypto.subtle.digest to return predictable 32-byte hash
+			vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(fakeHashBuffer);
+		});
+
+		afterEach(() => {
+			// Restore original descriptor to avoid leaking between tests
+			if (originalArrayBufferDescriptor) {
+				Object.defineProperty(File.prototype, 'arrayBuffer', originalArrayBufferDescriptor);
+			} else {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				delete (File.prototype as any).arrayBuffer;
+			}
+			vi.restoreAllMocks();
+		});
+
+		it('should generate a hex string of length 64', async () => {
+			const file = new File([], 'test.wav');
+			const hash = await (SoundLibrary as any).generateFileHash(file);
+			expect(typeof hash).toBe('string');
+			expect(hash.length).toBe(64);
+			expect(hash).toMatch(/^[0-9a-f]+$/);
+		});
+
+		it('should call crypto.subtle.digest with SHA-256 algorithm', async () => {
+			const file = new File([], 'test.wav');
+			await (SoundLibrary as any).generateFileHash(file);
+			expect(crypto.subtle.digest).toHaveBeenCalledWith('SHA-256', expect.any(ArrayBuffer));
 		});
 	});
 });

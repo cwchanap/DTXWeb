@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
 // The shared localStorage mock from src/tests/setup.ts is already applied to
@@ -10,6 +10,41 @@ describe('editorMappingStore', () => {
 		vi.clearAllMocks();
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		editorMappingStore.clearMappings();
+	});
+
+	afterEach(() => {
+		vi.resetModules();
+	});
+
+	describe('loadInitialState', () => {
+		it('should load state from localStorage when valid JSON is stored', async () => {
+			const storedState = {
+				simFileIdToFolderPath: { 'sim-1': '/path/1' },
+				simFileIdToMetadata: {}
+			};
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify(storedState)
+			);
+
+			vi.resetModules();
+			const { editorMappingStore: freshStore } = await import('./editorMappingStore');
+			const state = get(freshStore);
+
+			expect(state.simFileIdToFolderPath['sim-1']).toBe('/path/1');
+		});
+
+		it('should fall back to empty state when localStorage contains invalid JSON', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				'not-valid-json{'
+			);
+
+			vi.resetModules();
+			const { editorMappingStore: freshStore } = await import('./editorMappingStore');
+			const state = get(freshStore);
+
+			expect(state.simFileIdToFolderPath).toEqual({});
+			expect(state.simFileIdToMetadata).toEqual({});
+		});
 	});
 
 	it('should initialize with empty state when localStorage is empty', () => {

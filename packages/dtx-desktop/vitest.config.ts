@@ -45,7 +45,13 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
-			'@': path.resolve(__dirname, './src/renderer/src')
+			'@': path.resolve(__dirname, './src/renderer/src'),
+			'@dtx/common/game': path.resolve(__dirname, '../../packages/common/src/lib/game.ts'),
+			'@dtx/common/server': path.resolve(
+				__dirname,
+				'../../packages/common/src/lib/server.ts'
+			),
+			'@dtx/common': path.resolve(__dirname, '../../packages/common/src/lib/index.ts')
 		}
 	}
 });

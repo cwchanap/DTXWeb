@@ -63,7 +63,15 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			'@': path.resolve(__dirname, './src'),
-			$lib: path.resolve(__dirname, './src/lib')
+			$lib: path.resolve(__dirname, './src/lib'),
+			'@dtx/ui-components/components': path.resolve(
+				__dirname,
+				'../../__mocks__/@dtx/ui-components/components.ts'
+			),
+			'@dtx/ui-components': path.resolve(
+				__dirname,
+				'../../packages/ui-components/src/lib/index.ts'
+			)
 		},
 		conditions: ['browser']
 	}

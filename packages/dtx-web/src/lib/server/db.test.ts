@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toSimfileWithDtx } from '@dtx/common';
 import { simfiles, dtxFiles, userProfiles } from '$lib/server/db/schema';
+import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import { drizzle } from 'drizzle-orm/d1';
 import {
 	createDrizzleDb,
@@ -123,6 +124,26 @@ describe('db schema', () => {
 		expect(simfiles).toBeDefined();
 		expect(dtxFiles).toBeDefined();
 		expect(userProfiles).toBeDefined();
+	});
+
+	it('defines correct indexes on simfiles', () => {
+		const config = getTableConfig(simfiles);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_simfiles_user_id');
+		expect(indexNames).toContain('idx_simfiles_is_published');
+		expect(indexNames).toContain('idx_simfiles_publish_date');
+	});
+
+	it('defines correct index on dtxFiles', () => {
+		const config = getTableConfig(dtxFiles);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_dtx_files_simfile_id');
+	});
+
+	it('defines unique index on userProfiles', () => {
+		const config = getTableConfig(userProfiles);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('user_profiles_user_id_unique');
 	});
 });
 
@@ -400,6 +421,46 @@ describe('listSimfiles', () => {
 		const result = await listSimfiles(db as unknown as D1Database, {});
 		expect(result).toEqual({ data: [], count: 0 });
 	});
+
+	it('defaults pageSize to 20 when non-finite value provided', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		await listSimfiles(db as unknown as D1Database, { pageSize: NaN });
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		// pageSize defaults to 20, page defaults to 1, so offset = 0
+		expect(dataQuery?.limit).toHaveBeenCalledWith(20);
+		expect(dataQuery?.offset).toHaveBeenCalledWith(0);
+	});
+
+	it('applies search condition when search option is provided', async () => {
+		drizzleSelectResults.push([{ cnt: 2 }], []);
+		const db = createMockDb();
+		await listSimfiles(db as unknown as D1Database, { search: 'test song' });
+		// Verify where() was invoked on both count and data queries (search condition applied)
+		const queries = mockDrizzleDb.select.mock.results as {
+			value: Record<string, ReturnType<typeof vi.fn>>;
+		}[];
+		expect(queries[0]?.value?.where).toHaveBeenCalled();
+		expect(queries[1]?.value?.where).toHaveBeenCalled();
+	});
+
+	it('defaults page to 1 when non-finite page value provided', async () => {
+		drizzleSelectResults.push([{ cnt: 0 }], []);
+		const db = createMockDb();
+		await listSimfiles(db as unknown as D1Database, { page: NaN });
+		const dataQuery = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[1]?.value;
+		// page defaults to 1, pageSize defaults to 20, so offset = 0
+		expect(dataQuery?.limit).toHaveBeenCalledWith(20);
+		expect(dataQuery?.offset).toHaveBeenCalledWith(0);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -494,6 +555,18 @@ describe('searchSimfiles', () => {
 			}[]
 		)[0]?.value;
 		expect(query?.where).toHaveBeenCalled();
+	});
+
+	it('defaults limit to 8 when non-finite limit value provided', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		await searchSimfiles(db as unknown as D1Database, { query: 'test', limit: NaN });
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(8);
 	});
 });
 

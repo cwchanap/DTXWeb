@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import ModalStub from '../../tests/stubs/ModalStub.svelte';
 
 vi.mock('svelte-i18n');
@@ -16,9 +16,10 @@ vi.mock('@dtx/ui-components/components', () => ({
 	Modal: ModalStub
 }));
 
-vi.mock('@dtx/ui-components', () => ({
-	Button: vi.fn()
-}));
+vi.mock('@dtx/ui-components', async () => {
+	const { default: ButtonStub } = await import('../../tests/stubs/ButtonStub.svelte');
+	return { Button: ButtonStub };
+});
 
 vi.mock('$lib/toaster', () => ({ default: toastMock }));
 
@@ -98,5 +99,31 @@ describe('ChartListTableItem', () => {
 	it('renders action buttons in non-blog mode', () => {
 		render(ChartListTableItem, { props: defaultProps });
 		expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
+	});
+
+	it('clicking Delete opens the confirmation modal', async () => {
+		render(ChartListTableItem, { props: defaultProps });
+
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+	});
+
+	it('confirming delete calls onFileDelete', async () => {
+		const onFileDelete = vi.fn();
+		render(ChartListTableItem, { props: { ...defaultProps, onFileDelete } });
+
+		// Open modal
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+		// Confirm inside dialog
+		const dialog = screen.getByRole('dialog');
+		const allDeleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+		const dialogDeleteButton = allDeleteButtons.find((btn) => dialog.contains(btn));
+		await fireEvent.click(dialogDeleteButton!);
+
+		expect(onFileDelete).toHaveBeenCalledWith(mockItem.id);
 	});
 });

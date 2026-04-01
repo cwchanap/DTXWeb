@@ -41,9 +41,8 @@ vi.mock('path', async (importOriginal) => {
 import { BrowserWindow, shell, app } from 'electron';
 
 describe('createWindow', () => {
-	beforeEach(async () => {
+	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.resetModules();
 		mockWebContents = createMockWebContents();
 		mockMainWindow = createMockWindow();
 		vi.mocked(BrowserWindow).mockImplementation(
@@ -53,8 +52,8 @@ describe('createWindow', () => {
 	});
 
 	const importCreateWindow = async () => {
-		const module = await import('./window?t=' + Date.now());
-		return module.createWindow;
+		const { createWindow } = await import('./window');
+		return createWindow;
 	};
 
 	it('creates a BrowserWindow with correct default options', async () => {

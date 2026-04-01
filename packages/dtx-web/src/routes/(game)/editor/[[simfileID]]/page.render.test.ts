@@ -103,11 +103,6 @@ vi.mock('$lib/services/workspaceService', () => ({
 	}
 }));
 
-vi.mock('@dtx/common/services/fileManager', () => ({
-	readFileAsArrayBuffer: vi.fn(),
-	readFileAsText: vi.fn()
-}));
-
 vi.mock('$lib/components/editor/EditorTips.svelte', () => ({
 	default: vi.fn().mockReturnValue(null)
 }));

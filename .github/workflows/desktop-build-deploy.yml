@@ -1,218 +1,222 @@
 name: Desktop App Cross-Platform Build and Deploy
 
 on:
-  pull_request:
-    branches: [main, master]
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch: # Allows manual triggering
+    pull_request:
+        branches: [main, master]
+    push:
+        branches:
+            - preview
+        tags:
+            - "v*"
+    workflow_dispatch: # Allows manual triggering
 
 jobs:
-  build-windows:
-    name: Windows Electron Build
-    runs-on: ubuntu-latest
-    container:
-      image: electronuserland/builder:wine
-      options: --user 1001
-    environment: Electron
-    env:
-      PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
-      VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
-      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.9'
-
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build Electron App for Windows
-        run: |
-          bun run --filter=@dtx/common build
-          bun run --filter=dtx-desktop build:win
+    build-windows:
+        name: Windows Electron Build
+        if: github.event_name != 'pull_request' || github.head_ref != 'preview'
+        runs-on: ubuntu-latest
+        container:
+            image: electronuserland/builder:wine
+            options: --user 1001
+        environment: Electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
+            PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+            VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
+            VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
 
-      - name: Organize Artifacts
-        run: |
-          mkdir -p dist/artifacts
-          cp packages/dtx-desktop/dist/*.exe dist/artifacts/
-          cp packages/dtx-desktop/dist/latest.yml dist/artifacts/latest.yml
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: electron-app-win
-          path: dist/artifacts/
-          retention-days: 5
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: "1.3.9"
 
-  build-mac:
-    name: macOS Electron Build
-    runs-on: macos-latest
-    environment: Electron
-    env:
-      PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
-      VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
-      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
+            - name: Install Dependencies
+              run: bun install --frozen-lockfile
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+            - name: Build Electron App for Windows
+              run: |
+                  bun run --filter=@dtx/common build
+                  bun run --filter=dtx-desktop build:win
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.9'
+            - name: Organize Artifacts
+              run: |
+                  mkdir -p dist/artifacts
+                  cp packages/dtx-desktop/dist/*.exe dist/artifacts/
+                  cp packages/dtx-desktop/dist/latest.yml dist/artifacts/latest.yml
 
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
+            - name: Upload Artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: electron-app-win
+                  path: dist/artifacts/
+                  retention-days: 5
 
-      - name: Build Electron App for macOS
-        run: |
-          bun run --filter=@dtx/common build
-          bun run --filter=dtx-desktop build:mac
+    build-mac:
+        name: macOS Electron Build
+        if: github.event_name != 'pull_request' || github.head_ref != 'preview'
+        runs-on: macos-latest
+        environment: Electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
+            PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+            VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
+            VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
 
-      - name: Organize Artifacts
-        run: |
-          mkdir -p dist/artifacts
-          cp packages/dtx-desktop/dist/*.dmg dist/artifacts/ 2>/dev/null || true
-          cp packages/dtx-desktop/dist/*.zip dist/artifacts/ 2>/dev/null || true
-          cp packages/dtx-desktop/dist/latest-mac.yml dist/artifacts/latest-mac.yml 2>/dev/null || true
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: electron-app-mac
-          path: dist/artifacts/
-          retention-days: 5
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: "1.3.9"
 
-  deploy:
-    name: Deploy to Cloudflare R2
-    needs: [build-windows, build-mac]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+            - name: Install Dependencies
+              run: bun install --frozen-lockfile
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+            - name: Build Electron App for macOS
+              run: |
+                  bun run --filter=@dtx/common build
+                  bun run --filter=dtx-desktop build:mac
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download Windows Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: electron-app-win
-          path: dist/artifacts/win
+            - name: Organize Artifacts
+              run: |
+                  mkdir -p dist/artifacts
+                  cp packages/dtx-desktop/dist/*.dmg dist/artifacts/ 2>/dev/null || true
+                  cp packages/dtx-desktop/dist/*.zip dist/artifacts/ 2>/dev/null || true
+                  cp packages/dtx-desktop/dist/latest-mac.yml dist/artifacts/latest-mac.yml 2>/dev/null || true
 
-      - name: Download macOS Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: electron-app-mac
-          path: dist/artifacts/mac
+            - name: Upload Artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: electron-app-mac
+                  path: dist/artifacts/
+                  retention-days: 5
 
-      - name: Set Release Version
-        id: version
-        run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-          else
-            VERSION=$(date +'%Y%m%d%H%M%S')
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        shell: bash
+    deploy:
+        name: Deploy to Cloudflare R2
+        needs: [build-windows, build-mac]
+        runs-on: ubuntu-latest
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
 
-      - name: Prepare Deployment Files
-        run: |
-          TAG_VERSION=${{ env.VERSION }}
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
 
-          # Organize all artifacts into a single directory
-          mkdir -p dist/artifacts/all
-          cp dist/artifacts/win/* dist/artifacts/all/ 2>/dev/null || true
-          cp dist/artifacts/mac/* dist/artifacts/all/ 2>/dev/null || true
+            - name: Download Windows Artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  name: electron-app-win
+                  path: dist/artifacts/win
 
-          # Create a latest.json file for auto-updates
-          cat > dist/artifacts/all/latest.json << EOF
-          {
-            "version": "$TAG_VERSION",
-            "notes": "Release version $TAG_VERSION",
-            "platforms": {
-              "win64": {
-                "file": "ddtx-desktop-1.0.0-setup.exe",
-                "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-win-${TAG_VERSION}.exe"
-              },
-              "darwin": {
-                "file": "ddtx-desktop-1.0.0.dmg",
-                "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-mac-${TAG_VERSION}.dmg"
-              }
-            }
-          }
-          EOF
+            - name: Download macOS Artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  name: electron-app-mac
+                  path: dist/artifacts/mac
 
-          # List all deployment files
-          ls -la dist/artifacts/all/
-        shell: bash
+            - name: Set Release Version
+              id: version
+              run: |
+                  if [[ $GITHUB_REF == refs/tags/v* ]]; then
+                    VERSION=${GITHUB_REF#refs/tags/v}
+                  else
+                    VERSION=$(date +'%Y%m%d%H%M%S')
+                  fi
+                  echo "VERSION=$VERSION" >> $GITHUB_ENV
+                  echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+              shell: bash
 
-      - name: Setup Bun for Wrangler
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.9'
+            - name: Prepare Deployment Files
+              run: |
+                  TAG_VERSION=${{ env.VERSION }}
 
-      - name: Install Wrangler
-        run: bun add --global wrangler
+                  # Organize all artifacts into a single directory
+                  mkdir -p dist/artifacts/all
+                  cp dist/artifacts/win/* dist/artifacts/all/ 2>/dev/null || true
+                  cp dist/artifacts/mac/* dist/artifacts/all/ 2>/dev/null || true
 
-      - name: Deploy to Cloudflare R2 using Wrangler
-        run: |
-          # Create temporary wrangler.toml file
-          cat > wrangler.toml << EOF
-          name = "drumery-desktop"
+                  # Create a latest.json file for auto-updates
+                  cat > dist/artifacts/all/latest.json << EOF
+                  {
+                    "version": "$TAG_VERSION",
+                    "notes": "Release version $TAG_VERSION",
+                    "platforms": {
+                      "win64": {
+                        "file": "ddtx-desktop-1.0.0-setup.exe",
+                        "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-win-${TAG_VERSION}.exe"
+                      },
+                      "darwin": {
+                        "file": "ddtx-desktop-1.0.0.dmg",
+                        "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-mac-${TAG_VERSION}.dmg"
+                      }
+                    }
+                  }
+                  EOF
 
-          [[r2_buckets]]
-          binding = "MY_BUCKET"
-          bucket_name = "${{ vars.R2_BUCKET }}"
-          EOF
+                  # List all deployment files
+                  ls -la dist/artifacts/all/
+              shell: bash
 
-          # Upload each file with appropriate content-type and cache-control
-          for file in dist/artifacts/all/*; do
-            filename=$(basename "$file")
-            content_type="application/octet-stream"
-            
-            if [[ $filename == *.exe ]]; then
-              content_type="application/vnd.microsoft.portable-executable"
-            elif [[ $filename == *.dmg ]]; then
-              content_type="application/x-apple-diskimage"
-            elif [[ $filename == *.zip ]]; then
-              content_type="application/zip"
-            elif [[ $filename == *.yml ]] || [[ $filename == *.json ]]; then
-              content_type="application/json"
-            fi
-            
-            echo "Uploading $filename with content-type: $content_type"
-            wrangler r2 object put "${{ vars.R2_BUCKET }}/$filename" --file="$file" \
-              --content-type="$content_type" --remote
-          done
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+            - name: Setup Bun for Wrangler
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: "1.3.9"
 
-      - name: Create Release (for tags only)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          draft: false
-          prerelease: false
-          name: Release ${{ env.VERSION }}
-          files: |
-            dist/artifacts/all/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install Wrangler
+              run: bun add --global wrangler
+
+            - name: Deploy to Cloudflare R2 using Wrangler
+              run: |
+                  # Create temporary wrangler.toml file
+                  cat > wrangler.toml << EOF
+                  name = "drumery-desktop"
+
+                  [[r2_buckets]]
+                  binding = "MY_BUCKET"
+                  bucket_name = "${{ vars.R2_BUCKET }}"
+                  EOF
+
+                  # Upload each file with appropriate content-type and cache-control
+                  for file in dist/artifacts/all/*; do
+                    filename=$(basename "$file")
+                    content_type="application/octet-stream"
+                    
+                    if [[ $filename == *.exe ]]; then
+                      content_type="application/vnd.microsoft.portable-executable"
+                    elif [[ $filename == *.dmg ]]; then
+                      content_type="application/x-apple-diskimage"
+                    elif [[ $filename == *.zip ]]; then
+                      content_type="application/zip"
+                    elif [[ $filename == *.yml ]] || [[ $filename == *.json ]]; then
+                      content_type="application/json"
+                    fi
+                    
+                    echo "Uploading $filename with content-type: $content_type"
+                    wrangler r2 object put "${{ vars.R2_BUCKET }}/$filename" --file="$file" \
+                      --content-type="$content_type" --remote
+                  done
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+            - name: Create Release (for tags only)
+              if: startsWith(github.ref, 'refs/tags/')
+              uses: softprops/action-gh-release@v1
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  draft: false
+                  prerelease: false
+                  name: Release ${{ env.VERSION }}
+                  files: |
+                      dist/artifacts/all/*
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

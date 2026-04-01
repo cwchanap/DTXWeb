@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main, master]
   push:
+    branches:
+      - preview
     tags:
       - 'v*'
   workflow_dispatch: # Allows manual triggering
@@ -11,6 +13,7 @@ on:
 jobs:
   build-windows:
     name: Windows Electron Build
+    if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: ubuntu-latest
     container:
       image: electronuserland/builder:wine
@@ -56,6 +59,7 @@ jobs:
 
   build-mac:
     name: macOS Electron Build
+    if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: macos-latest
     environment: Electron
     env:
@@ -140,19 +144,33 @@ jobs:
           cp dist/artifacts/win/* dist/artifacts/all/ 2>/dev/null || true
           cp dist/artifacts/mac/* dist/artifacts/all/ 2>/dev/null || true
 
-          # Create a latest.json file for auto-updates
+          WIN_FILE_PATH=$(find dist/artifacts/all -maxdepth 1 -type f -name 'dtx-desktop-*-setup.exe' -print -quit)
+          if [[ -z "$WIN_FILE_PATH" ]]; then
+            echo "Missing Windows installer artifact in dist/artifacts/all" >&2
+            exit 1
+          fi
+          WIN_FILE=$(basename "$WIN_FILE_PATH")
+
+          MAC_FILE_PATH=$(find dist/artifacts/all -maxdepth 1 -type f -name 'dtx-desktop-*.dmg' -print -quit)
+          if [[ -z "$MAC_FILE_PATH" ]]; then
+            echo "Missing macOS DMG artifact in dist/artifacts/all" >&2
+            exit 1
+          fi
+          MAC_FILE=$(basename "$MAC_FILE_PATH")
+
+          # Create a latest.json file for auto-updates using the staged artifact names
           cat > dist/artifacts/all/latest.json << EOF
           {
             "version": "$TAG_VERSION",
             "notes": "Release version $TAG_VERSION",
             "platforms": {
               "win64": {
-                "file": "ddtx-desktop-1.0.0-setup.exe",
-                "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-win-${TAG_VERSION}.exe"
+                "file": "$WIN_FILE",
+                "url": "${{ vars.R2_PUBLIC_URL }}/$WIN_FILE"
               },
               "darwin": {
-                "file": "ddtx-desktop-1.0.0.dmg",
-                "url": "${{ vars.R2_PUBLIC_URL }}/drumery-desktop-mac-${TAG_VERSION}.dmg"
+                "file": "$MAC_FILE",
+                "url": "${{ vars.R2_PUBLIC_URL }}/$MAC_FILE"
               }
             }
           }
@@ -206,7 +224,7 @@ jobs:
 
       - name: Create Release (for tags only)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false

@@ -11,26 +11,39 @@ vi.mock('@sveltejs/kit', () => ({
 
 import { load } from './+page.server';
 
+type EditorPageLoadResult = Exclude<Awaited<ReturnType<typeof load>>, void>;
+
+const requirePageLoadResult = (result: Awaited<ReturnType<typeof load>>): EditorPageLoadResult => {
+	if (result === undefined) {
+		throw new Error('Expected load() to return editor page data');
+	}
+	return result;
+};
+
 afterEach(() => {
 	vi.restoreAllMocks();
 });
 
 describe('editor/[[simfileID]]/+page.server load', () => {
 	it('returns null metadata when no simfileID is provided', async () => {
-		const result = await load({
-			params: { simfileID: '' },
-			platform: undefined
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: '' },
+				platform: undefined
+			} as any)
+		);
 
 		expect(result.simfileID).toBeNull();
 		expect(result.metadata).toBeNull();
 	});
 
 	it('returns null metadata when bucket is not available', async () => {
-		const result = await load({
-			params: { simfileID: 'sim-123' },
-			platform: { env: {} }
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-123' },
+				platform: { env: {} }
+			} as any)
+		);
 
 		expect(result.simfileID).toBe('sim-123');
 		expect(result.metadata).toBeNull();
@@ -39,10 +52,12 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 	it('returns null metadata when bucket is a ProxyStub', async () => {
 		const proxyStub = { toString: () => '[object R2Bucket]', get: vi.fn() };
 
-		const result = await load({
-			params: { simfileID: 'sim-123' },
-			platform: { env: { DTXFILE_BUCKET: proxyStub } }
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-123' },
+				platform: { env: { DTXFILE_BUCKET: proxyStub } }
+			} as any)
+		);
 
 		expect(result.simfileID).toBe('sim-123');
 		expect(result.metadata).toBeNull();
@@ -74,10 +89,12 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 			})
 		};
 
-		const result = await load({
-			params: { simfileID: 'sim-123' },
-			platform: { env: { DTXFILE_BUCKET: realBucket } }
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-123' },
+				platform: { env: { DTXFILE_BUCKET: realBucket } }
+			} as any)
+		);
 
 		expect(result.simfileID).toBe('sim-123');
 		expect(result.metadata?.title).toBe('Test Song');
@@ -103,10 +120,12 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 			})
 		};
 
-		const result = await load({
-			params: { simfileID: 'sim-bom' },
-			platform: { env: { DTXFILE_BUCKET: realBucket } }
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-bom' },
+				platform: { env: { DTXFILE_BUCKET: realBucket } }
+			} as any)
+		);
 
 		expect(result.simfileID).toBe('sim-bom');
 		expect(result.metadata?.title).toBe('BOM Song');
@@ -127,10 +146,12 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 			})
 		};
 
-		const result = await load({
-			params: { simfileID: 'sim-utf8bom' },
-			platform: { env: { DTXFILE_BUCKET: realBucket } }
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-utf8bom' },
+				platform: { env: { DTXFILE_BUCKET: realBucket } }
+			} as any)
+		);
 
 		expect(result.simfileID).toBe('sim-utf8bom');
 		expect(result.metadata?.title).toBe('UTF8 BOM Song');
@@ -163,10 +184,12 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 			})
 		};
 
-		const result = await load({
-			params: { simfileID: 'sim-colon' },
-			platform: { env: { DTXFILE_BUCKET: realBucket } }
-		} as any);
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-colon' },
+				platform: { env: { DTXFILE_BUCKET: realBucket } }
+			} as any)
+		);
 
 		expect(result.metadata?.title).toBe('Colon Title');
 	});

@@ -1,10 +1,14 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import wasm from 'vite-plugin-wasm';
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'url';
 import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
 
+const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
+
 export default defineConfig({
+	envDir: workspaceRoot,
 	plugins: [wasm(), tailwindcss(), sveltekit()],
 	resolve: {
 		alias: {
@@ -23,7 +27,7 @@ export default defineConfig({
 	},
 	server: {
 		fs: {
-			allow: [path.resolve(__dirname, '../../')]
+			allow: [workspaceRoot]
 		}
 	}
 });

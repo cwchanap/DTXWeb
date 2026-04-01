@@ -1,5 +1,8 @@
 import adapter from '@sveltejs/adapter-cloudflare';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { fileURLToPath } from 'node:url';
+
+const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -14,6 +17,9 @@ const config = {
 		adapter: adapter({
 			fallback: 'plaintext'
 		}),
+		env: {
+			dir: workspaceRoot
+		},
 		alias: {
 			'@': './src',
 			'@dtx/common/components': '../common/src/lib/components.ts',

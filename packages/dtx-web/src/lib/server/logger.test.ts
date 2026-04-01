@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import type { TransformableInfo } from 'logform';
 import winston from 'winston';
 
 vi.mock('winston');
@@ -6,7 +7,7 @@ vi.mock('winston');
 describe('Logger', () => {
 	const mockLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
 	let capturedLogger: ReturnType<typeof winston.createLogger>;
-	let capturedPrintfCallback: ((info: Record<string, unknown>) => string) | undefined;
+	let capturedPrintfCallback: ((info: TransformableInfo) => string) | undefined;
 
 	beforeAll(async () => {
 		vi.mocked(winston.createLogger).mockReturnValue(mockLogger as any);

@@ -49,7 +49,12 @@ export default defineConfig({
 		alias: {
 			'@': path.resolve(__dirname, './src'),
 			$lib: path.resolve(__dirname, './src/lib'),
-			phaser: path.resolve(__dirname, '../../__mocks__/phaser.ts')
+			phaser: path.resolve(__dirname, '../../__mocks__/phaser.ts'),
+			'@dtx/common/game': path.resolve(__dirname, './src/lib/game.ts'),
+			'@dtx/common/components': path.resolve(__dirname, './src/lib/components.ts'),
+			'@dtx/common/server': path.resolve(__dirname, './src/lib/server.ts'),
+			'@dtx/common': path.resolve(__dirname, './src/lib/index.ts'),
+			'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib/index.ts')
 		},
 		conditions: ['browser']
 	}

@@ -26,6 +26,7 @@ describe('App Home Page – desktop redirect flow', () => {
 	const originalLocation = window.location;
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		vi.clearAllMocks();
 		Object.defineProperty(window, 'location', {
 			value: { href: '' },
@@ -35,6 +36,8 @@ describe('App Home Page – desktop redirect flow', () => {
 	});
 
 	afterEach(() => {
+		vi.runAllTimers();
+		vi.useRealTimers();
 		vi.unstubAllGlobals();
 		Object.defineProperty(window, 'location', {
 			value: originalLocation,

@@ -1,40 +1,39 @@
 /**
  * Unit tests for ChartList.svelte component
- *
- * This file uses a Svelte 5 compatible approach to testing components.
- * Based on the Svelte 5 documentation, certain methods like `mount` cannot be invoked
- * during server-side rendering, which is what happens in traditional component tests.
- *
- * Instead, we're using a more basic approach that focuses on testing the component's
- * logic and state changes rather than DOM interactions.
- *
- * Note: This test file uses 'any' type in several places to work around TypeScript errors
- * that occur when testing Svelte components, especially with complex dependencies like Supabase.
- * In a real-world scenario, you might want to create more specific types for your mocks.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 // Mock modules that would be imported by the component
 vi.mock('svelte-i18n', () => ({
-	_: () => (key: string) => key
+	_: {
+		subscribe: (cb: (fn: (key: string) => string) => void) => {
+			cb((key: string) => key);
+			return () => {};
+		}
+	}
 }));
 
-vi.mock('@skeletonlabs/skeleton', () => ({
-	popup: () => ({}),
-	getModalStore: () => ({
-		trigger: vi.fn()
-	}),
-	getToastStore: () => ({
-		trigger: vi.fn()
-	}),
-	SlideToggle: vi.fn()
+vi.mock('@skeletonlabs/skeleton-svelte', () => ({
+	Switch: vi.fn(),
+	Pagination: vi.fn()
 }));
 
-vi.mock('$lib/components/ImageAudio.svelte', () => ({}));
+vi.mock('@lucide/svelte/icons/x', () => ({ default: vi.fn() }));
+vi.mock('@lucide/svelte/icons/check', () => ({ default: vi.fn() }));
+vi.mock('@lucide/svelte/icons/table', () => ({ default: vi.fn() }));
+vi.mock('@lucide/svelte/icons/grid', () => ({ default: vi.fn() }));
+
+vi.mock('@/lib/toaster', () => ({
+	default: { success: vi.fn(), error: vi.fn() }
+}));
+
+vi.mock('$lib/components/ChartListItem.svelte', () => ({ default: vi.fn() }));
+vi.mock('$lib/components/ChartListTableItem.svelte', () => ({ default: vi.fn() }));
 
 vi.mock('$lib/utils', () => ({
 	formatLevelDisplay: (dtxFiles: unknown) => {
@@ -253,5 +252,172 @@ describe('ChartList Component Logic', () => {
 			expect(popoverZIndexMatch).not.toBeNull();
 			expect(Number(popoverZIndexMatch?.[1])).toBeGreaterThan(30);
 		});
+	});
+});
+
+import ChartList from './ChartList.svelte';
+
+const mockFetchSuccess = (data = [], count = 0) => {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn().mockResolvedValue({
+			ok: true,
+			json: vi.fn().mockResolvedValue({ data, count })
+		})
+	);
+};
+
+describe('ChartList Rendering', () => {
+	beforeEach(() => {
+		mockFetchSuccess();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('renders search input on mount', async () => {
+		render(ChartList);
+		expect(screen.getByRole('textbox')).toBeInTheDocument();
+	});
+
+	it('calls fetch to load items on mount', async () => {
+		render(ChartList);
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('/api/chart?'));
+		});
+	});
+
+	it('renders card view button and table view button', async () => {
+		render(ChartList);
+		expect(screen.getByRole('button', { name: 'Card view' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Table view' })).toBeInTheDocument();
+	});
+
+	it('switches to table view when table button clicked', async () => {
+		render(ChartList);
+		const tableBtn = screen.getByRole('button', { name: 'Table view' });
+		await fireEvent.click(tableBtn);
+		expect(tableBtn).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('switches back to card view when card button clicked', async () => {
+		render(ChartList);
+		const cardBtn = screen.getByRole('button', { name: 'Card view' });
+		const tableBtn = screen.getByRole('button', { name: 'Table view' });
+		await fireEvent.click(tableBtn);
+		await fireEvent.click(cardBtn);
+		expect(cardBtn).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('renders page size selector', async () => {
+		render(ChartList);
+		expect(screen.getByRole('combobox')).toBeInTheDocument();
+	});
+
+	it('uses blog scope when isBlog prop is true', async () => {
+		render(ChartList, { props: { isBlog: true } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+				expect.stringContaining('scope=published')
+			);
+		});
+	});
+
+	it('uses mine scope when isBlog is false', async () => {
+		render(ChartList, { props: { isBlog: false } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('scope=mine'));
+		});
+	});
+
+	it('renders chart items in table view when data is returned', async () => {
+		mockFetchSuccess(
+			[
+				{
+					id: 1,
+					title: 'My Song',
+					artist: 'Artist',
+					bpm: 120,
+					is_published: true,
+					display_id: 1,
+					dtx_files: [],
+					publish_date: '2024-01-01',
+					download_url: null,
+					video_preview_url: null
+				}
+			],
+			1
+		);
+		render(ChartList, { props: { isBlog: false } });
+		// Switch to table view so titles render in the HTML directly
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => {
+			expect(screen.getByText(/My Song/)).toBeInTheDocument();
+		});
+	});
+
+	it('shows loading state while fetching', async () => {
+		let resolveFetch!: (value: unknown) => void;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockReturnValue(
+				new Promise((resolve) => {
+					resolveFetch = resolve;
+				})
+			)
+		);
+		render(ChartList);
+		expect(screen.getByText('Loading charts...')).toBeInTheDocument();
+		resolveFetch({ ok: true, json: async () => ({ data: [], count: 0 }) });
+	});
+
+	it('handles fetch error gracefully', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+		render(ChartList);
+		await waitFor(() => {
+			expect(screen.queryByText('Loading charts...')).not.toBeInTheDocument();
+		});
+	});
+
+	it('handles non-ok fetch response gracefully', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: false,
+				text: vi.fn().mockResolvedValue('Internal Server Error')
+			})
+		);
+		render(ChartList);
+		await waitFor(() => {
+			expect(screen.queryByText('Loading charts...')).not.toBeInTheDocument();
+		});
+	});
+
+	it('triggers search after input with debounce', async () => {
+		vi.useFakeTimers();
+		mockFetchSuccess();
+		render(ChartList);
+		const input = screen.getByRole('textbox');
+		await fireEvent.input(input, { target: { value: 'test' } });
+		vi.advanceTimersByTime(600);
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+		});
+		vi.useRealTimers();
+	});
+
+	it('passes pageSize prop correctly to fetch', async () => {
+		render(ChartList, { props: { pageSize: 6 } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('pageSize=6'));
+		});
+	});
+
+	it('changes page size from selector', async () => {
+		render(ChartList);
+		const select = screen.getByRole('combobox');
+		await fireEvent.change(select);
+		expect(vi.mocked(fetch)).toHaveBeenCalled();
 	});
 });

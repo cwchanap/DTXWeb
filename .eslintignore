@@ -16,3 +16,6 @@ yarn.lock
 dist/
 out/
 dist-server/
+
+# Auto-generated Svelte type declarations
+**/*.svelte.d.ts

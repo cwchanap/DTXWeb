@@ -36,6 +36,7 @@ describe('ChartListTableItem', () => {
 	const defaultProps = {
 		item: mockItem,
 		isBlog: false,
+		enableDownload: false,
 		togglePublishChart: vi.fn().mockResolvedValue(undefined),
 		onFileDelete: vi.fn()
 	};
@@ -54,6 +55,7 @@ describe('ChartListTableItem', () => {
 			props: {
 				...defaultProps,
 				isBlog: true,
+				enableDownload: true,
 				item: { ...mockItem, download_url: 'https://dl.example.com' }
 			}
 		});
@@ -69,6 +71,7 @@ describe('ChartListTableItem', () => {
 			props: {
 				...defaultProps,
 				isBlog: true,
+				enableDownload: true,
 				item: (() => {
 					const item = { ...mockItem, download_url: 'https://dl.example.com' };
 					delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
@@ -85,6 +88,7 @@ describe('ChartListTableItem', () => {
 			props: {
 				...defaultProps,
 				isBlog: true,
+				enableDownload: true,
 				item: { ...mockItem, download_url: null }
 			}
 		});
@@ -96,6 +100,7 @@ describe('ChartListTableItem', () => {
 			props: {
 				...defaultProps,
 				isBlog: true,
+				enableDownload: true,
 				item: { ...mockItem, download_url: null, has_uploaded_files: false }
 			}
 		});
@@ -108,6 +113,7 @@ describe('ChartListTableItem', () => {
 			props: {
 				...defaultProps,
 				isBlog: true,
+				enableDownload: true,
 				item: {
 					...mockItem,
 					has_uploaded_files: false,
@@ -117,6 +123,23 @@ describe('ChartListTableItem', () => {
 		});
 		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
+	});
+
+	it('does not render the in-app download link in blog table mode when downloads are disabled', () => {
+		render(ChartListTableItem, {
+			props: {
+				...defaultProps,
+				isBlog: true,
+				enableDownload: false,
+				item: { ...mockItem, download_url: 'https://dl.example.com' }
+			}
+		});
+
+		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
+			'href',
+			'https://dl.example.com'
+		);
 	});
 
 	it('renders action buttons in non-blog mode', () => {

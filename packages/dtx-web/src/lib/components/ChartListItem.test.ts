@@ -161,27 +161,34 @@ describe('ChartListItem Component Logic', () => {
 	});
 
 	describe('Blog Mode Download Logic', () => {
-		// Simulates the props that would be passed to the component
 		const baseProps = {
-			// item will be overridden per test
 			isBlog: true,
-			// Mock other required props not relevant to this specific logic
 			togglePublishChart: vi.fn(),
 			onFileDelete: vi.fn()
 		};
 
 		it('evaluates to show the uploaded chart download link when uploaded files are available in blog mode', () => {
 			const props = { ...baseProps, item: mockItem };
-			const shouldShowDownloadLink = props.isBlog && props.item.has_uploaded_files === true;
-			expect(shouldShowDownloadLink).toBe(true);
+			const externalUrl = props.item.download_url ?? null;
+			const showUploadedDownload = !externalUrl || props.item.has_uploaded_files === true;
+			expect(showUploadedDownload).toBe(true);
 		});
 
-		it('evaluates not to show the uploaded chart download link when upload availability is omitted', () => {
+		it('evaluates to show the download link when there is no external URL', () => {
 			const props = { ...baseProps, item: mockItemNoPreview };
-			const item = { ...props.item };
-			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
-			const shouldShowDownloadLink = props.isBlog && item.has_uploaded_files === true;
-			expect(shouldShowDownloadLink).toBe(false);
+			const externalUrl = props.item.download_url ?? null;
+			const showUploadedDownload = !externalUrl || props.item.has_uploaded_files === true;
+			expect(showUploadedDownload).toBe(true);
+		});
+
+		it('evaluates not to show the download link when external URL exists and uploads are unavailable', () => {
+			const props = {
+				...baseProps,
+				item: { ...mockItem, has_uploaded_files: false }
+			};
+			const externalUrl = props.item.download_url ?? null;
+			const showUploadedDownload = !externalUrl || props.item.has_uploaded_files === true;
+			expect(showUploadedDownload).toBe(false);
 		});
 	});
 
@@ -282,6 +289,18 @@ describe('ChartListItem Component Logic', () => {
 				screen.queryByRole('link', { name: /external download link/i })
 			).not.toBeInTheDocument();
 			expect(screen.getByText('External Link')).toBeInTheDocument();
+		});
+
+		it('shows R2 download link in blog mode when download_url is null', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: { ...mockItem, download_url: null }
+				}
+			});
+			const downloadLink = screen.getByRole('link', { name: /download chart/i });
+			expect(downloadLink).toBeInTheDocument();
 		});
 
 		it('does not render the download dropdown when the simfile id is missing', () => {

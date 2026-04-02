@@ -232,7 +232,14 @@ describe('ChartListItem Component Logic', () => {
 		});
 
 		it('shows R2 download link in blog mode', () => {
-			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					enableDownload: true,
+					item: { ...renderProps.item, download_url: 'https://example.com/download1' }
+				}
+			});
 			const downloadLink = screen.getByRole('link', { name: /download chart/i });
 			expect(downloadLink).toBeInTheDocument();
 			expect(downloadLink).toHaveAttribute(
@@ -246,6 +253,7 @@ describe('ChartListItem Component Logic', () => {
 				props: {
 					...renderProps,
 					isBlog: true,
+					enableDownload: true,
 					item: (() => {
 						const item = { ...mockItem };
 						delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
@@ -264,20 +272,21 @@ describe('ChartListItem Component Logic', () => {
 				props: {
 					...renderProps,
 					isBlog: true,
+					enableDownload: true,
 					item: { ...mockItem, has_uploaded_files: false }
 				}
 			});
 			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
 		});
 
-		it('shows external link in blog mode when download_url is set', () => {
+		it('shows external link in blog mode when download_url is set and downloads are disabled', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
-			const externalLink = screen.getByRole('link', { name: /external download link/i });
+			const externalLink = screen.getByRole('link', { name: /blog\.download/i });
 			expect(externalLink).toBeInTheDocument();
 			expect(externalLink).toHaveAttribute('href', renderProps.item.download_url);
 		});
 
-		it('shows disabled external link in blog mode when download_url is null', () => {
+		it('shows download unavailable state in blog mode when download_url is null and downloads are disabled', () => {
 			render(ChartListItem, {
 				props: {
 					...renderProps,
@@ -288,7 +297,7 @@ describe('ChartListItem Component Logic', () => {
 			expect(
 				screen.queryByRole('link', { name: /external download link/i })
 			).not.toBeInTheDocument();
-			expect(screen.getByText('External Link')).toBeInTheDocument();
+			expect(screen.getByText('Download not available')).toBeInTheDocument();
 		});
 
 		it('shows R2 download link in blog mode when download_url is null', () => {
@@ -296,6 +305,7 @@ describe('ChartListItem Component Logic', () => {
 				props: {
 					...renderProps,
 					isBlog: true,
+					enableDownload: true,
 					item: { ...mockItem, download_url: null }
 				}
 			});
@@ -308,11 +318,12 @@ describe('ChartListItem Component Logic', () => {
 				props: {
 					...renderProps,
 					isBlog: true,
+					enableDownload: true,
 					item: { ...mockItemNoPreview, download_url: null, has_uploaded_files: false }
 				}
 			});
 			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
-			expect(screen.getByText('External Link')).toBeInTheDocument();
+			expect(screen.getByTitle('No external link available')).toBeInTheDocument();
 		});
 
 		it('does not render the download dropdown when the simfile id is missing', () => {

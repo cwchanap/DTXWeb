@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { SimfileWithDtx } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
-	import { EllipsisVertical } from '@lucide/svelte/icons';
+	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
 	import DownloadDropdown from './DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
@@ -10,9 +10,16 @@
 		has_uploaded_files?: boolean;
 	};
 
-	let { item, isBlog, togglePublishChart, onFileDelete } = $props<{
+	let {
+		item,
+		isBlog,
+		enableDownload = false,
+		togglePublishChart,
+		onFileDelete
+	} = $props<{
 		item: ChartListTableItemData;
 		isBlog: boolean;
+		enableDownload?: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		onFileDelete: (id: number) => void;
 	}>();
@@ -68,13 +75,32 @@
 			</div>
 		{/snippet}
 	</Popover>
-{:else}
+{:else if enableDownload}
 	<DownloadDropdown
 		simfileId={item.id}
 		externalUrl={item.download_url ?? null}
 		hasUploadedFiles={item.has_uploaded_files}
 		compact={true}
 	/>
+{:else if item.download_url}
+	<a
+		href={item.download_url}
+		target="_blank"
+		rel="noopener noreferrer"
+		class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+		aria-label="External download link"
+		title="External download link"
+	>
+		<ExternalLink size="16" />
+	</a>
+{:else}
+	<span
+		class="inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50"
+		aria-disabled="true"
+		title="No external link available"
+	>
+		<ExternalLink size="16" />
+	</span>
 {/if}
 
 <!-- Delete Confirmation Modal -->

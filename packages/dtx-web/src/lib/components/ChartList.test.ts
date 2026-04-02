@@ -280,7 +280,10 @@ describe('ChartList Component Logic', () => {
 			);
 
 			expect(source).toContain('const streamToFile');
-			expect(source).toContain('window.showSaveFilePicker');
+			expect(source).toContain('type SaveFilePickerWindow = Window &');
+			expect(source).toContain(
+				"typeof saveFilePickerWindow.showSaveFilePicker === 'function'"
+			);
 			expect(source).toContain('response.body.pipeTo(writable)');
 		});
 
@@ -310,7 +313,9 @@ describe('ChartList Component Logic', () => {
 				'const canBulkSelect = (item: ListedChart & { has_uploaded_files?: boolean }) =>'
 			);
 			expect(source).toContain('item.has_uploaded_files === true');
-			expect(source).toContain('{#if selectMode && isBlog && canBulkSelect(item)}');
+			expect(source).toContain(
+				'{#if selectMode && isBlog && enableDownload && canBulkSelect(item)}'
+			);
 		});
 
 		it('enforces the 20-chart bulk download limit in the UI', () => {

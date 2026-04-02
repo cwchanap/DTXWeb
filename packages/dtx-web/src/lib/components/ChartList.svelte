@@ -21,6 +21,18 @@
 	import type { SimfileWithDtx } from '@dtx/common';
 
 	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
+	type SaveFilePickerHandle = {
+		createWritable: () => Promise<WritableStream<Uint8Array>>;
+	};
+	type SaveFilePickerWindow = {
+		showSaveFilePicker?: (options?: {
+			suggestedName?: string;
+			types?: Array<{
+				description: string;
+				accept: Record<string, string[]>;
+			}>;
+		}) => Promise<SaveFilePickerHandle>;
+	} & Window;
 	const MAX_BULK_DOWNLOAD_CHARTS = 20;
 
 	let { pageSize = 12, isBlog = false, enableDownload = false }: Props = $props();
@@ -245,8 +257,9 @@
 			throw new Error('No response body');
 		}
 
-		if (typeof window.showSaveFilePicker === 'function') {
-			const handle = await window.showSaveFilePicker({
+		const saveFilePickerWindow = window as SaveFilePickerWindow;
+		if (typeof saveFilePickerWindow.showSaveFilePicker === 'function') {
+			const handle = await saveFilePickerWindow.showSaveFilePicker({
 				suggestedName: filename,
 				types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }]
 			});
@@ -578,6 +591,7 @@
 						<ChartListTableItem
 							{item}
 							{isBlog}
+							{enableDownload}
 							{togglePublishChart}
 							onFileDelete={handleFileDelete}
 						/>

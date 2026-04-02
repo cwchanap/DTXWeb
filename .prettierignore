@@ -2,3 +2,4 @@
 static/
 out/
 dist/
+**/*.svelte.d.ts

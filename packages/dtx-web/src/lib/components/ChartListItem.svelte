@@ -10,9 +10,17 @@
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 
-	let { item, isBlog, togglePublishChart, simfileBucketUrl, onFileDelete } = $props<{
+	let {
+		item,
+		isBlog,
+		enableDownload = false,
+		togglePublishChart,
+		simfileBucketUrl,
+		onFileDelete
+	} = $props<{
 		item: ChartListItemData;
 		isBlog: boolean;
+		enableDownload?: boolean;
 		togglePublishChart: (id: number, published: boolean) => Promise<void>;
 		simfileBucketUrl: string;
 		onFileDelete: (id: number) => void;
@@ -230,7 +238,7 @@
 			</div>
 		</div>
 
-		{#if isBlog && item.id !== undefined}
+		{#if isBlog && enableDownload && item.id !== undefined}
 			<div class="mt-4">
 				<DownloadDropdown
 					simfileId={item.id}

@@ -15,6 +15,7 @@
 	interface Props {
 		pageSize?: number;
 		isBlog?: boolean;
+		enableDownload?: boolean;
 	}
 
 	import type { SimfileWithDtx } from '@dtx/common';
@@ -22,7 +23,7 @@
 	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
 	const MAX_BULK_DOWNLOAD_CHARTS = 20;
 
-	let { pageSize = 12, isBlog = false }: Props = $props();
+	let { pageSize = 12, isBlog = false, enableDownload = false }: Props = $props();
 
 	let items: ListedChart[] = $state([]);
 	let currentPage = $state(1);
@@ -402,7 +403,7 @@
 					</select>
 				</div>
 
-				{#if isBlog}
+				{#if isBlog && enableDownload}
 					<!-- Multi-select controls -->
 					<button
 						class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 {selectMode
@@ -563,7 +564,7 @@
 						{/if}
 					</div>
 					<div class="ml-4 flex items-center gap-2">
-						{#if selectMode && isBlog && canBulkSelect(item)}
+						{#if selectMode && isBlog && enableDownload && canBulkSelect(item)}
 							<label>
 								<input
 									type="checkbox"
@@ -591,7 +592,7 @@
 			<div
 				class="relative z-0 transform transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-105"
 			>
-				{#if selectMode && isBlog && canBulkSelect(item)}
+				{#if selectMode && isBlog && enableDownload && canBulkSelect(item)}
 					<label class="absolute top-3 left-3 z-10 cursor-pointer">
 						<input
 							type="checkbox"
@@ -605,6 +606,7 @@
 				<ChartListItem
 					{item}
 					{isBlog}
+					{enableDownload}
 					{togglePublishChart}
 					onFileDelete={handleFileDelete}
 					simfileBucketUrl={PUBLIC_SIMFILE_BUCKET_URL}

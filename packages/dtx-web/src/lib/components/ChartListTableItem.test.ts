@@ -91,6 +91,18 @@ describe('ChartListTableItem', () => {
 		expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
 	});
 
+	it('hides the R2 download link in blog mode when download_url is null and uploads are unavailable', () => {
+		render(ChartListTableItem, {
+			props: {
+				...defaultProps,
+				isBlog: true,
+				item: { ...mockItem, download_url: null, has_uploaded_files: false }
+			}
+		});
+		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(screen.getByTitle('No external link available')).toBeInTheDocument();
+	});
+
 	it('hides the R2 download link in blog mode when uploaded files are unavailable', () => {
 		render(ChartListTableItem, {
 			props: {

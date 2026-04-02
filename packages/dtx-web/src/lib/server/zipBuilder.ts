@@ -241,11 +241,13 @@ export const buildZipStream = (
 						r2obj = await bucket.get(source.objectKey);
 					} catch (error) {
 						logger.warn(`Failed to fetch R2 object: ${source.objectKey}`, error);
-						continue;
+						throw new Error(
+							`Failed to fetch R2 object for ZIP source: ${source.objectKey}`
+						);
 					}
 
 					if (!r2obj) {
-						continue;
+						throw new Error(`Missing R2 object for ZIP source: ${source.objectKey}`);
 					}
 
 					const pathBytes = textEncoder.encode(source.path);

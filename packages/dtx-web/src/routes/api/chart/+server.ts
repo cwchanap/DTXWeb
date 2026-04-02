@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
+import { listAllR2Objects } from '$lib/server/r2';
 
 /** GET /api/chart — List charts (paginated, filtered) */
 export const GET = async ({
@@ -48,7 +49,30 @@ export const GET = async ({
 			pageSize
 		});
 
-		return json({ data, count });
+		if (scope !== 'published') {
+			return json({ data, count });
+		}
+
+		const bucket = platform?.env?.DTXFILE_BUCKET;
+		if (!bucket) {
+			logger.warn('DTXFILE_BUCKET binding not available for chart upload enrichment');
+			return json({
+				data: data.map((chart) => ({ ...chart, has_uploaded_files: false })),
+				count
+			});
+		}
+
+		const chartsWithUploadAvailability = await Promise.all(
+			data.map(async (chart) => {
+				const objects = await listAllR2Objects(bucket, `${chart.id}/`);
+				return {
+					...chart,
+					has_uploaded_files: objects.length > 0
+				};
+			})
+		);
+
+		return json({ data: chartsWithUploadAvailability, count });
 	} catch (error) {
 		logger.error('Error listing charts:', error);
 		return json({ error: 'Failed to list charts' }, { status: 500 });

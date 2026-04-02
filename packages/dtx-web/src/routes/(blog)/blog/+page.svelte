@@ -1,7 +1,10 @@
 <script lang="ts">
 	import ChartList from '$lib/components/ChartList.svelte';
+	import { PUBLIC_ENABLE_BLOG_DOWNLOAD } from '$env/static/public';
 	import { locale, locales } from 'svelte-i18n';
 	import { _ } from 'svelte-i18n';
+
+	const enableBlogDownload = PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
@@ -99,7 +102,7 @@
 			>
 				{$_('blog.latest_simfiles')}
 			</h2>
-			<ChartList isBlog={true} />
+			<ChartList isBlog={true} enableDownload={enableBlogDownload} />
 		</section>
 	</main>
 </div>

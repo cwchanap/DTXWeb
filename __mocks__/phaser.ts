@@ -320,6 +320,7 @@ const Input = {
 
 // Mock global Phaser object
 const Phaser = {
+	Game: vi.fn().mockImplementation(() => ({ destroy: vi.fn() })),
 	GameObjects,
 	Geom,
 	Input,

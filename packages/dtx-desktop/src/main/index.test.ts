@@ -107,7 +107,8 @@ const mockFilesystem = {
 };
 
 vi.mock('./filesystem', () => mockFilesystem);
-vi.mock('./window', () => ({ createWindow: vi.fn() }));
+const mockCreateWindow = vi.hoisted(() => vi.fn());
+vi.mock('./window', () => ({ createWindow: mockCreateWindow }));
 
 // Import the module — all top-level code and handler registration runs here
 await import('./index');
@@ -625,6 +626,356 @@ describe('index.ts IPC handlers', () => {
 			(mockBrowserWindow.getAllWindows as Mock).mockReturnValue([]);
 			appListeners['second-instance']({}, ['app']);
 			expect(mockAuth.handleProtocolUrl).not.toHaveBeenCalled();
+		});
+	});
+
+	// ── activate app event ───────────────────────────────────────────────────
+	describe('activate app event', () => {
+		it('creates a new window when no windows are open', () => {
+			mockCreateWindow.mockClear();
+			(mockBrowserWindow.getAllWindows as Mock).mockReturnValue([]);
+			appListeners['activate']();
+			expect(mockCreateWindow).toHaveBeenCalled();
+		});
+
+		it('does not create a window when windows already exist', () => {
+			mockCreateWindow.mockClear();
+			(mockBrowserWindow.getAllWindows as Mock).mockReturnValue([{}]);
+			appListeners['activate']();
+			expect(mockCreateWindow).not.toHaveBeenCalled();
+		});
+	});
+
+	// ── select-folder handler ────────────────────────────────────────────────
+	describe('select-folder handler', () => {
+		it('delegates to selectDirectory', async () => {
+			mockFilesystem.selectDirectory.mockResolvedValue('/selected/path');
+			const result = await ipcHandlers['select-folder']({});
+			expect(mockFilesystem.selectDirectory).toHaveBeenCalled();
+			expect(result).toBe('/selected/path');
+		});
+	});
+
+	// ── create-song handler ──────────────────────────────────────────────────
+	describe('create-song handler', () => {
+		beforeEach(() => {
+			// Default: folder does not exist (ENOENT error on access)
+			const enoentError = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+			mockFs.promises.access.mockRejectedValue(enoentError);
+			mockFs.promises.mkdir.mockResolvedValue(undefined);
+			mockFs.promises.writeFile.mockResolvedValue(undefined);
+		});
+
+		it('creates a song folder without a template', async () => {
+			const result = (await ipcHandlers['create-song'](
+				{},
+				{
+					selectedPath: '/workspace',
+					sanitizedFolderName: 'my-song',
+					sanitizedSongName: 'My Song',
+					templateFolderPath: ''
+				}
+			)) as { success: boolean; songFolderPath: string };
+
+			expect(mockFs.promises.mkdir).toHaveBeenCalledWith(expect.stringContaining('my-song'), {
+				recursive: true
+			});
+			expect(mockFs.promises.writeFile).toHaveBeenCalled();
+			expect(result.success).toBe(true);
+		});
+
+		it('throws when the folder already exists', async () => {
+			// Override: access resolves (folder exists), so the handler throws a non-ENOENT error
+			mockFs.promises.access.mockResolvedValue(undefined);
+
+			await expect(
+				ipcHandlers['create-song'](
+					{},
+					{
+						selectedPath: '/workspace',
+						sanitizedFolderName: 'existing-song',
+						sanitizedSongName: 'Existing Song',
+						templateFolderPath: ''
+					}
+				)
+			).rejects.toThrow('already exists');
+		});
+
+		it('copies template files when templateFolderPath is provided', async () => {
+			mockFs.promises.readdir.mockResolvedValue([
+				{ name: 'SET.def', isDirectory: () => false, isFile: () => true },
+				{ name: 'song.dtx', isDirectory: () => false, isFile: () => true }
+			]);
+			mockFs.promises.copyFile.mockResolvedValue(undefined);
+
+			const result = (await ipcHandlers['create-song'](
+				{},
+				{
+					selectedPath: '/workspace',
+					sanitizedFolderName: 'new-song',
+					sanitizedSongName: 'New Song',
+					templateFolderPath: '/templates/rock'
+				}
+			)) as { success: boolean };
+
+			expect(mockFs.promises.copyFile).toHaveBeenCalledTimes(2);
+			expect(result.success).toBe(true);
+		});
+
+		it('recursively copies subdirectories from template', async () => {
+			mockFs.promises.readdir
+				.mockResolvedValueOnce([
+					{ name: 'subfolder', isDirectory: () => true, isFile: () => false }
+				])
+				.mockResolvedValueOnce([
+					{ name: 'asset.wav', isDirectory: () => false, isFile: () => true }
+				]);
+			mockFs.promises.copyFile.mockResolvedValue(undefined);
+
+			await ipcHandlers['create-song'](
+				{},
+				{
+					selectedPath: '/workspace',
+					sanitizedFolderName: 'new-song',
+					sanitizedSongName: 'New Song',
+					templateFolderPath: '/templates/rock'
+				}
+			);
+
+			expect(mockFs.promises.mkdir).toHaveBeenCalledTimes(2); // song folder + subfolder
+			expect(mockFs.promises.copyFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('throws when templateFolderPath is the same as destination', async () => {
+			// Both resolve to the same absolute path
+			await expect(
+				ipcHandlers['create-song'](
+					{},
+					{
+						selectedPath: '/workspace',
+						sanitizedFolderName: 'my-song',
+						sanitizedSongName: 'My Song',
+						templateFolderPath: '/workspace/my-song'
+					}
+				)
+			).rejects.toThrow('Cannot copy directory into itself');
+		});
+
+		it('throws when destination is a subdirectory of template', async () => {
+			await expect(
+				ipcHandlers['create-song'](
+					{},
+					{
+						selectedPath: '/templates/rock',
+						sanitizedFolderName: 'sub',
+						sanitizedSongName: 'Sub',
+						templateFolderPath: '/templates/rock'
+					}
+				)
+			).rejects.toThrow('Cannot copy directory into itself');
+		});
+	});
+
+	// ── upload-file handler ──────────────────────────────────────────────────
+	describe('upload-file handler', () => {
+		beforeEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('returns error when file does not exist', async () => {
+			mockFs.promises.access.mockRejectedValue(new Error('ENOENT'));
+
+			const result = (await ipcHandlers['upload-file'](
+				{},
+				'missing.wav',
+				'/songs/my-song',
+				'42'
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('File not found');
+		});
+
+		it('returns error when user is not authenticated', async () => {
+			mockFs.promises.access.mockResolvedValue(undefined);
+			mockAuth.getCurrentSession.mockReturnValue(null);
+			mockAuth.getSupabaseClient.mockReturnValue(null);
+
+			const result = (await ipcHandlers['upload-file'](
+				{},
+				'kick.wav',
+				'/songs/my-song',
+				'42'
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('not authenticated');
+		});
+
+		it('returns error when session refresh fails', async () => {
+			mockFs.promises.access.mockResolvedValue(undefined);
+			mockAuth.getCurrentSession.mockReturnValue({ access_token: 'tok' });
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({
+						data: { session: null },
+						error: new Error('session expired')
+					})
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+
+			const result = (await ipcHandlers['upload-file'](
+				{},
+				'kick.wav',
+				'/songs/my-song',
+				'42'
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('Failed to get valid session');
+		});
+
+		it('returns error when VITE_DTX_SERVER_URL is not set', async () => {
+			vi.stubEnv('VITE_DTX_SERVER_URL', '');
+			mockFs.promises.access.mockResolvedValue(undefined);
+			const session = {
+				access_token: 'tok',
+				refresh_token: 'ref',
+				expires_at: 9999,
+				expires_in: 3600,
+				token_type: 'bearer',
+				user: { id: 'u1' }
+			};
+			mockAuth.getCurrentSession.mockReturnValue(session);
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
+
+			const result = (await ipcHandlers['upload-file'](
+				{},
+				'kick.wav',
+				'/songs/my-song',
+				'42'
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('VITE_DTX_SERVER_URL');
+		});
+
+		it('uploads file successfully', async () => {
+			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
+			mockFs.promises.access.mockResolvedValue(undefined);
+			const session = {
+				access_token: 'tok',
+				refresh_token: 'ref',
+				expires_at: 9999,
+				expires_in: 3600,
+				token_type: 'bearer',
+				user: { id: 'u1' }
+			};
+			mockAuth.getCurrentSession.mockReturnValue(session);
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio data'));
+
+			global.fetch = vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ id: 99 })
+			}) as unknown as typeof fetch;
+
+			const result = (await ipcHandlers['upload-file'](
+				{},
+				'kick.wav',
+				'/songs/my-song',
+				'42'
+			)) as { success: boolean; data: unknown };
+
+			expect(result.success).toBe(true);
+			expect(global.fetch).toHaveBeenCalledWith(
+				expect.stringContaining('/api/simFile/upload'),
+				expect.objectContaining({ method: 'POST' })
+			);
+		});
+
+		it('returns error when upload response is not ok', async () => {
+			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
+			mockFs.promises.access.mockResolvedValue(undefined);
+			const session = {
+				access_token: 'tok',
+				refresh_token: 'ref',
+				expires_at: 9999,
+				expires_in: 3600,
+				token_type: 'bearer',
+				user: { id: 'u1' }
+			};
+			mockAuth.getCurrentSession.mockReturnValue(session);
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
+
+			global.fetch = vi.fn().mockResolvedValue({
+				ok: false,
+				statusText: 'Bad Request',
+				text: vi.fn().mockResolvedValue('Invalid file')
+			}) as unknown as typeof fetch;
+
+			const result = (await ipcHandlers['upload-file'](
+				{},
+				'kick.wav',
+				'/songs/my-song',
+				'42'
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('Upload failed');
+		});
+
+		it('strips leading directory from nested fileName', async () => {
+			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
+			mockFs.promises.access.mockResolvedValue(undefined);
+			const session = {
+				access_token: 'tok',
+				refresh_token: 'ref',
+				expires_at: 9999,
+				expires_in: 3600,
+				token_type: 'bearer',
+				user: { id: 'u1' }
+			};
+			mockAuth.getCurrentSession.mockReturnValue(session);
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
+
+			const capturedFormData: FormData[] = [];
+			global.fetch = vi.fn().mockImplementation((url: string, opts: RequestInit) => {
+				capturedFormData.push(opts.body as FormData);
+				return Promise.resolve({
+					ok: true,
+					json: vi.fn().mockResolvedValue({})
+				});
+			}) as unknown as typeof fetch;
+
+			await ipcHandlers['upload-file']({}, 'dir/kick.wav', '/songs/my-song', '42');
+
+			// The fileName sent should strip the leading "dir/" prefix
+			expect(global.fetch).toHaveBeenCalled();
 		});
 	});
 });

@@ -28,15 +28,16 @@ export const getClientIp = (request: Request): string | null => {
  * Cloudflare KV does not provide atomic read-modify-write semantics, so this reads once,
  * writes only when the limit appears to allow it, and may still permit brief concurrent overages.
  * Returns { allowed: false } without writing when the quota would be exceeded by the observed value.
- * @param nowMinute injectable for testing — defaults to current UTC minute
+ * @param now injectable for testing — defaults to the current timestamp in milliseconds
  */
 export const tryConsumeRateLimit = async (
 	kv: KVNamespace,
 	ip: string,
 	bytes: number,
-	nowMinute = Math.floor(Date.now() / 60000),
+	now = Date.now(),
 	consume = true
 ): Promise<RateLimitResult> => {
+	const nowMinute = Math.floor(now / 60000);
 	const key = getRateLimitKey(ip, nowMinute);
 	const previousKey = getRateLimitKey(ip, nowMinute - 1);
 	try {
@@ -52,12 +53,17 @@ export const tryConsumeRateLimit = async (
 			Number.isFinite(parsedPreviousValue) && parsedPreviousValue >= 0
 				? parsedPreviousValue
 				: 0;
-		const windowTotal = current + previous;
+		const currentMinuteElapsedMs = now - nowMinute * 60000;
+		const previousWindowWeight = Math.max(0, (60000 - currentMinuteElapsedMs) / 60000);
+		const windowTotal = current + previous * previousWindowWeight;
 		const allowed = windowTotal + bytes <= RATE_LIMIT_BYTES;
 		if (allowed && consume) {
 			await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });
 		}
-		return { allowed, remainingBytes: Math.max(0, RATE_LIMIT_BYTES - windowTotal) };
+		return {
+			allowed,
+			remainingBytes: Math.max(0, Math.floor(RATE_LIMIT_BYTES - windowTotal))
+		};
 	} catch (error) {
 		logger.error('Rate limit KV error', { key, error });
 		throw error;

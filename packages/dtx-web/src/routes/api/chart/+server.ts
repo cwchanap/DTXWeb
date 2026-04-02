@@ -64,9 +64,22 @@ export const GET = async ({
 
 		const chartsWithUploadAvailability = await Promise.all(
 			data.map(async (chart) => {
+				const prefix = `${chart.id}/`;
+				let hasUploadedFiles = false;
+
+				try {
+					hasUploadedFiles = await hasR2Objects(bucket, prefix);
+				} catch (error) {
+					logger.warn('Failed to determine chart upload availability', {
+						chartId: chart.id,
+						prefix,
+						error
+					});
+				}
+
 				return {
 					...chart,
-					has_uploaded_files: await hasR2Objects(bucket, `${chart.id}/`)
+					has_uploaded_files: hasUploadedFiles
 				};
 			})
 		);

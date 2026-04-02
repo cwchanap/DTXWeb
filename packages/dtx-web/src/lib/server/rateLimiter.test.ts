@@ -26,7 +26,7 @@ describe('tryConsumeRateLimit', () => {
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
-		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123);
+		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123 * 60000);
 
 		expect(result).toEqual({ allowed: true, remainingBytes: 1073741824 });
 		expect(kv.get).toHaveBeenNthCalledWith(1, 'dl:1.2.3.4:123');
@@ -40,7 +40,7 @@ describe('tryConsumeRateLimit', () => {
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
-		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, 123);
+		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, 123 * 60000);
 
 		expect(result).toEqual({ allowed: false, remainingBytes: 0 });
 		expect(kv.put).not.toHaveBeenCalled();
@@ -52,21 +52,23 @@ describe('tryConsumeRateLimit', () => {
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
-		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123, false);
+		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123 * 60000, false);
 
 		expect(result).toEqual({ allowed: true, remainingBytes: 1073741056 });
 		expect(kv.put).not.toHaveBeenCalled();
 	});
 
-	it('counts usage from the previous minute when enforcing the limit', async () => {
+	it('weights prior-minute usage by the overlapping portion of the trailing window', async () => {
 		const kv = {
 			get: vi.fn().mockResolvedValueOnce('512').mockResolvedValueOnce('1073741312'),
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
-		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, 123);
+		const expectedRemainingBytes = 1055845623;
+		const now = 123 * 60000 + 59000;
+		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, now);
 
-		expect(result).toEqual({ allowed: false, remainingBytes: 0 });
-		expect(kv.put).not.toHaveBeenCalled();
+		expect(result).toEqual({ allowed: true, remainingBytes: expectedRemainingBytes });
+		expect(kv.put).toHaveBeenCalledWith('dl:1.2.3.4:123', '513', { expirationTtl: 120 });
 	});
 });

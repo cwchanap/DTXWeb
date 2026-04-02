@@ -63,6 +63,32 @@
 					"migrations_dir": "d1-migrations"
 				}
 			]
+		},
+		"pre-prod-prod-data": {
+			"route": {
+				"pattern": "pre-prod.dtx.hapadona.com",
+				"custom_domain": true
+			},
+			"r2_buckets": [
+				{
+					"binding": "DTXFILE_BUCKET",
+					"bucket_name": "simfile-dtx"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "RATE_LIMIT",
+					"id": "47c55a7f9ec0479480c5932090e2f5cc"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "dtx-web",
+					"database_id": "19376000-d389-4e0e-a5a8-00d9e31a9ffb",
+					"migrations_dir": "d1-migrations"
+				}
+			]
 		}
 	}
 }

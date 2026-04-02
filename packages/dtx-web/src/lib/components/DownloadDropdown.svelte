@@ -13,7 +13,7 @@
 		compact?: boolean;
 	}>();
 
-	const showUploadedDownload = $derived(hasUploadedFiles === true);
+	const showUploadedDownload = $derived(!externalUrl || hasUploadedFiles === true);
 
 	const containerClass = $derived(compact ? 'flex items-center gap-1' : 'flex flex-col gap-2');
 	const downloadClass = $derived(

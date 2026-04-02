@@ -19,7 +19,7 @@
 
 	import type { SimfileWithDtx } from '@dtx/common';
 
-	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
+	type ListedChart = SimfileWithDtx;
 	const MAX_BULK_DOWNLOAD_CHARTS = 20;
 
 	let { pageSize = 12, isBlog = false }: Props = $props();
@@ -183,15 +183,6 @@
 	};
 
 	const toggleSelect = (id: number) => {
-		const item = items.find((candidate) => candidate.id === id);
-		if (!item || !canBulkSelect(item)) {
-			toastStore.error({
-				title: 'This chart does not have uploaded files available',
-				duration: 3000
-			});
-			return;
-		}
-
 		const next = new Set(selectedIds);
 		if (next.has(id)) {
 			next.delete(id);
@@ -216,8 +207,6 @@
 	const resetBulkSelection = () => {
 		selectedIds = new Set();
 	};
-
-	const canBulkSelect = (item: ListedChart) => item.has_uploaded_files === true;
 
 	const getResponseErrorMessage = async (response: Response, fallback: string) => {
 		try {
@@ -247,6 +236,36 @@
 		return 'drumery-charts.zip';
 	};
 
+	const streamToFile = async (response: Response, filename: string) => {
+		if (!response.body) {
+			throw new Error('No response body');
+		}
+
+		if (typeof window.showSaveFilePicker === 'function') {
+			const handle = await window.showSaveFilePicker({
+				suggestedName: filename,
+				types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }]
+			});
+			const writable = await handle.createWritable();
+			await response.body.pipeTo(writable);
+			return;
+		}
+
+		const blob = await response.blob();
+		if (blob.size === 0) {
+			throw new Error('Bulk download failed');
+		}
+		const downloadUrl = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = downloadUrl;
+		link.download = filename;
+		link.hidden = true;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(downloadUrl);
+	};
+
 	const submitBulkDownload = async (ids: number[]) => {
 		const response = await fetch('/api/simFile/download/bulk', {
 			method: 'POST',
@@ -258,20 +277,8 @@
 			throw new Error(await getResponseErrorMessage(response, 'Bulk download failed'));
 		}
 
-		const blob = await response.blob();
-		if (blob.size === 0) {
-			throw new Error('Bulk download failed');
-		}
-
-		const downloadUrl = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = downloadUrl;
-		link.download = getBulkDownloadFilename(response);
-		link.hidden = true;
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-		URL.revokeObjectURL(downloadUrl);
+		const filename = getBulkDownloadFilename(response);
+		await streamToFile(response, filename);
 	};
 
 	const handleBulkDownload = async () => {
@@ -286,18 +293,6 @@
 		bulkDownloading = true;
 		try {
 			const ids = [...selectedIds];
-			const hasUnavailableSelection = ids.some((id) => {
-				const item = items.find((candidate) => candidate.id === id);
-				return !item || !canBulkSelect(item);
-			});
-
-			if (hasUnavailableSelection) {
-				toastStore.error({
-					title: 'Some selected charts do not have uploaded files available',
-					duration: 3000
-				});
-				return;
-			}
 
 			const response = await fetch('/api/simFile/download/bulk?validate=1', {
 				method: 'POST',
@@ -570,10 +565,9 @@
 								<input
 									type="checkbox"
 									checked={selectedIds.has(item.id)}
-									disabled={!canBulkSelect(item)}
 									onchange={() => toggleSelect(item.id)}
 									aria-label="Select {item.title}"
-									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
 								/>
 							</label>
 						{/if}
@@ -599,10 +593,9 @@
 						<input
 							type="checkbox"
 							checked={selectedIds.has(item.id)}
-							disabled={!canBulkSelect(item)}
 							onchange={() => toggleSelect(item.id)}
 							aria-label="Select {item.title}"
-							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
 						/>
 					</label>
 				{/if}

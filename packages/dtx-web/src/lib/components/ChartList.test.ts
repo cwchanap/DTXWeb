@@ -255,7 +255,7 @@ describe('ChartList Component Logic', () => {
 	});
 
 	describe('Bulk Download Error Handling', () => {
-		it('uses validation plus fetch/blob download submission so real POST failures can surface', () => {
+		it('uses validation plus download submission so real POST failures can surface', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
@@ -267,17 +267,20 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('const resetBulkSelection = () => {');
 			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
 			expect(source).toContain("fetch('/api/simFile/download/bulk', {");
-			expect(source).toContain(
-				'const canBulkSelect = (item: ListedChart) => item.has_uploaded_files === true;'
-			);
-			expect(source).toContain('const hasUnavailableSelection = ids.some((id) => {');
-			expect(source).toContain('Some selected charts do not have uploaded files available');
-			expect(source).toContain('This chart does not have uploaded files available');
 			expect(source).toContain('if (!data?.ok || data.fileCount === 0) {');
 			expect(source).toContain('No uploaded files found for the selected charts');
 			expect(source).toContain('await submitBulkDownload(ids);');
-			expect(source).toContain('const blob = await response.blob();');
-			expect(source).toContain('URL.createObjectURL(blob)');
+		});
+
+		it('streams bulk downloads via showSaveFilePicker when available', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			expect(source).toContain('const streamToFile');
+			expect(source).toContain('window.showSaveFilePicker');
+			expect(source).toContain('response.body.pipeTo(writable)');
 		});
 
 		it('resets bulk selections when page, page size, or search changes', () => {
@@ -296,28 +299,14 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('resetBulkSelection();\n\t\t\tcurrentPage = 1;');
 		});
 
-		it('disables bulk selection controls for charts without uploaded files', () => {
+		it('allows bulk selection for all charts without client-side gating', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
 			);
 
-			expect(source).toContain('disabled={!canBulkSelect(item)}');
-			expect(source).toContain('disabled:cursor-not-allowed disabled:opacity-50');
-		});
-
-		it('downloads via a temporary object URL instead of a hidden iframe', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
-
-			expect(source).toContain("const link = document.createElement('a');");
-			expect(source).toContain('link.download = getBulkDownloadFilename(response);');
-			expect(source).toContain('URL.revokeObjectURL(downloadUrl);');
-			expect(source).not.toContain(
-				"iframe.addEventListener('load', handleIframeLoad, { once: true });"
-			);
+			expect(source).not.toContain('canBulkSelect');
+			expect(source).not.toContain('has_uploaded_files');
 		});
 
 		it('enforces the 20-chart bulk download limit in the UI', () => {

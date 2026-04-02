@@ -179,6 +179,7 @@ describe('Editor Page render', () => {
 	it('does not call importFolder on initial render', () => {
 		vi.mocked(workspaceService.importFolder).mockResolvedValue({
 			name: 'MyWorkspace',
+			path: '/MyWorkspace',
 			dtxFiles: [{ name: 'a.dtx', content: '', path: '/a.dtx' }],
 			audioFiles: [{ name: 'kick.wav', path: '/kick.wav' }],
 			currentDTX: 'a.dtx',

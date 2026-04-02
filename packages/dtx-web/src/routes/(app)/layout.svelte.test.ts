@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import type { Snippet } from 'svelte';
+import type { LayoutProps } from '../../../.svelte-kit/types/src/routes/(app)/$types';
 
 const gotoMock = vi.hoisted(() => vi.fn());
 
@@ -9,6 +11,8 @@ vi.mock('$app/navigation', () => ({
 
 import AppLayout from './+layout.svelte';
 
+const noopChildren = (() => null) as unknown as Snippet;
+
 const makeData = () => {
 	const mockSupabase = {
 		auth: {
@@ -16,7 +20,11 @@ const makeData = () => {
 		}
 	};
 	return {
-		data: { supabase: mockSupabase },
+		data: {
+			session: null,
+			user: null,
+			supabase: mockSupabase as unknown as LayoutProps['data']['supabase']
+		} satisfies LayoutProps['data'],
 		mockSupabase
 	};
 };
@@ -32,19 +40,19 @@ describe('(app)/+layout.svelte', () => {
 
 	it('renders without crashing', () => {
 		const { data } = makeData();
-		const { container } = render(AppLayout, { props: { data, children: undefined } });
+		const { container } = render(AppLayout, { props: { data, children: noopChildren } });
 		expect(container).toBeTruthy();
 	});
 
 	it('renders Drumery brand name in expanded sidebar', () => {
 		const { data } = makeData();
-		render(AppLayout, { props: { data, children: undefined } });
+		render(AppLayout, { props: { data, children: noopChildren } });
 		expect(screen.getByText('Drumery')).toBeInTheDocument();
 	});
 
 	it('renders navigation links', () => {
 		const { data } = makeData();
-		render(AppLayout, { props: { data, children: undefined } });
+		render(AppLayout, { props: { data, children: noopChildren } });
 		expect(screen.getByText('My Charts')).toBeInTheDocument();
 		expect(screen.getByText('Editor')).toBeInTheDocument();
 		expect(screen.getByText('Play Game')).toBeInTheDocument();
@@ -52,7 +60,7 @@ describe('(app)/+layout.svelte', () => {
 
 	it('toggles sidebar collapse on button click', async () => {
 		const { data } = makeData();
-		render(AppLayout, { props: { data, children: undefined } });
+		render(AppLayout, { props: { data, children: noopChildren } });
 
 		// Sidebar starts expanded — Drumery title visible
 		expect(screen.getByText('Drumery')).toBeInTheDocument();
@@ -67,7 +75,7 @@ describe('(app)/+layout.svelte', () => {
 
 	it('calls supabase.auth.signOut and navigates to /login on logout', async () => {
 		const { data, mockSupabase } = makeData();
-		render(AppLayout, { props: { data, children: undefined } });
+		render(AppLayout, { props: { data, children: noopChildren } });
 
 		const logoutBtn = screen.getByText('Logout').closest('button')!;
 		await fireEvent.click(logoutBtn);
@@ -81,7 +89,7 @@ describe('(app)/+layout.svelte', () => {
 	it('calls navigateToProfile when Profile is clicked', async () => {
 		const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 		const { data } = makeData();
-		render(AppLayout, { props: { data, children: undefined } });
+		render(AppLayout, { props: { data, children: noopChildren } });
 
 		const profileBtn = screen.getByText('Profile').closest('button')!;
 		await fireEvent.click(profileBtn);

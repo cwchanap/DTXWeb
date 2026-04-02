@@ -77,8 +77,8 @@ describe('UploadedAssetFiles', () => {
 		render(UploadedAssetFiles, {
 			props: makeProps({ simfileId: '', loadAssetFiles })
 		});
-		// Wait a tick and verify no call was made
-		await new Promise((r) => setTimeout(r, 50));
+		// Flush microtasks and verify no call was made
+		await Promise.resolve();
 		expect(loadAssetFiles).not.toHaveBeenCalled();
 	});
 
@@ -99,16 +99,14 @@ describe('UploadedAssetFiles', () => {
 	});
 
 	it('formats 0 bytes correctly', async () => {
-		const loadAssetFiles = vi
-			.fn()
-			.mockResolvedValue([
-				{
-					fileName: 'empty.dtx',
-					size: 0,
-					lastModified: '2024-01-01T00:00:00Z',
-					key: 'songs/1/empty.dtx'
-				}
-			]);
+		const loadAssetFiles = vi.fn().mockResolvedValue([
+			{
+				fileName: 'empty.dtx',
+				size: 0,
+				lastModified: '2024-01-01T00:00:00Z',
+				key: 'songs/1/empty.dtx'
+			}
+		]);
 		render(UploadedAssetFiles, { props: makeProps({ simfileId: 'sim-1', loadAssetFiles }) });
 		await waitFor(() => {
 			expect(screen.getByText('0 Bytes')).toBeInTheDocument();

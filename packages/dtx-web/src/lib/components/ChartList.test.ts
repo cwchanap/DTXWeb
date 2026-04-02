@@ -274,6 +274,7 @@ describe('ChartList Rendering', () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
 	});
 
 	it('renders search input on mount', async () => {
@@ -396,7 +397,6 @@ describe('ChartList Rendering', () => {
 
 	it('triggers search after input with debounce', async () => {
 		vi.useFakeTimers();
-		mockFetchSuccess();
 		render(ChartList);
 		const input = screen.getByRole('textbox');
 		await fireEvent.input(input, { target: { value: 'test' } });
@@ -414,10 +414,12 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
-	it('changes page size from selector', async () => {
+	it('changes page size from selector and re-fetches', async () => {
 		render(ChartList);
 		const select = screen.getByRole('combobox');
-		await fireEvent.change(select);
-		expect(vi.mocked(fetch)).toHaveBeenCalled();
+		await fireEvent.change(select, { target: { value: '24' } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('pageSize=24'));
+		});
 	});
 });

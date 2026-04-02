@@ -102,14 +102,14 @@ describe('PreviewTab', () => {
 	});
 
 	it('emits START_PREVIEW when play button clicked', async () => {
-		render(PreviewTab);
+		render(PreviewTab, { props: { isEditorReady: true } });
 		const btn = screen.getByRole('button');
 		await fireEvent.click(btn);
 		expect(mockEmit).toHaveBeenCalledWith('start-preview', expect.anything());
 	});
 
 	it('emits STOP_PREVIEW when stop button clicked', async () => {
-		render(PreviewTab);
+		render(PreviewTab, { props: { isEditorReady: true } });
 		const btn = screen.getByRole('button');
 		await fireEvent.click(btn); // start
 		await fireEvent.click(btn); // stop

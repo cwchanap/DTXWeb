@@ -3,6 +3,7 @@ import { GET, POST } from './+server';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
+import { listAllR2Objects } from '$lib/server/r2';
 
 vi.mock('$lib/server/db', () => ({
 	getDb: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('@dtx/common', async (importOriginal) => {
 vi.mock('$lib/server/logger', () => ({
 	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
+vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };
 const mockPlatform = { env: { DB: {}, DTXFILE_BUCKET: {} } };
@@ -27,6 +29,7 @@ describe('GET /api/chart', () => {
 		vi.clearAllMocks();
 		vi.mocked(getDb).mockReturnValue({} as any);
 		vi.mocked(listSimfiles).mockResolvedValue({ data: [], count: 0 });
+		vi.mocked(listAllR2Objects).mockResolvedValue([]);
 	});
 
 	it('returns 401 when unauthenticated and scope is not published', async () => {
@@ -112,7 +115,7 @@ describe('GET /api/chart', () => {
 		expect(response.status).toBe(500);
 	});
 
-	it('returns published chart responses without per-chart upload enrichment', async () => {
+	it('returns published chart responses with upload availability enrichment', async () => {
 		vi.mocked(listSimfiles).mockResolvedValue({
 			data: [
 				{
@@ -134,6 +137,9 @@ describe('GET /api/chart', () => {
 			],
 			count: 1
 		});
+		vi.mocked(listAllR2Objects).mockResolvedValueOnce([
+			{ key: '7/file.dtx', size: 512, uploaded: new Date() }
+		]);
 
 		const response = await GET({
 			url: new URL('http://localhost/api/chart?scope=published'),
@@ -145,7 +151,8 @@ describe('GET /api/chart', () => {
 		expect(await response.json()).toEqual({
 			data: [
 				expect.objectContaining({
-					id: 7
+					id: 7,
+					has_uploaded_files: true
 				})
 			],
 			count: 1

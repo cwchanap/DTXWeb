@@ -19,7 +19,7 @@
 
 	import type { SimfileWithDtx } from '@dtx/common';
 
-	type ListedChart = SimfileWithDtx;
+	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
 	const MAX_BULK_DOWNLOAD_CHARTS = 20;
 
 	let { pageSize = 12, isBlog = false }: Props = $props();
@@ -207,6 +207,9 @@
 	const resetBulkSelection = () => {
 		selectedIds = new Set();
 	};
+
+	const canBulkSelect = (item: ListedChart & { has_uploaded_files?: boolean }) =>
+		item.has_uploaded_files === true;
 
 	const getResponseErrorMessage = async (response: Response, fallback: string) => {
 		try {
@@ -560,7 +563,7 @@
 						{/if}
 					</div>
 					<div class="ml-4 flex items-center gap-2">
-						{#if selectMode && isBlog}
+						{#if selectMode && isBlog && canBulkSelect(item)}
 							<label>
 								<input
 									type="checkbox"
@@ -588,7 +591,7 @@
 			<div
 				class="relative z-0 transform transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-105"
 			>
-				{#if selectMode && isBlog}
+				{#if selectMode && isBlog && canBulkSelect(item)}
 					<label class="absolute top-3 left-3 z-10 cursor-pointer">
 						<input
 							type="checkbox"

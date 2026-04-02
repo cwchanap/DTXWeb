@@ -174,11 +174,11 @@ describe('ChartListItem Component Logic', () => {
 			expect(showUploadedDownload).toBe(true);
 		});
 
-		it('evaluates to show the download link when there is no external URL', () => {
+		it('evaluates not to show the download link when no external URL exists and uploads are unavailable', () => {
 			const props = { ...baseProps, item: mockItemNoPreview };
 			const externalUrl = props.item.download_url ?? null;
-			const showUploadedDownload = !externalUrl || props.item.has_uploaded_files === true;
-			expect(showUploadedDownload).toBe(true);
+			const showUploadedDownload = props.item.has_uploaded_files === true;
+			expect(showUploadedDownload).toBe(false);
 		});
 
 		it('evaluates not to show the download link when external URL exists and uploads are unavailable', () => {
@@ -301,6 +301,18 @@ describe('ChartListItem Component Logic', () => {
 			});
 			const downloadLink = screen.getByRole('link', { name: /download chart/i });
 			expect(downloadLink).toBeInTheDocument();
+		});
+
+		it('hides R2 download link in blog mode when download_url is null and uploads are unavailable', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: { ...mockItemNoPreview, download_url: null, has_uploaded_files: false }
+				}
+			});
+			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(screen.getByText('External Link')).toBeInTheDocument();
 		});
 
 		it('does not render the download dropdown when the simfile id is missing', () => {

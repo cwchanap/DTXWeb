@@ -209,4 +209,42 @@ describe('buildZipStream', () => {
 			).getUint16(8, true)
 		).toBe(ZIP_GENERAL_PURPOSE_UTF8_AND_DESCRIPTOR_FLAGS);
 	});
+
+	it('fails the ZIP stream when a listed R2 object is missing at fetch time', async () => {
+		const bucket = {
+			get: vi.fn(async () => null)
+		} as unknown as R2Bucket;
+
+		const objects: R2ObjectMeta[] = [
+			{
+				key: '42/file.dtx',
+				size: 10,
+				uploaded: new Date()
+			}
+		];
+
+		await expect(
+			readStream(buildZipStream(bucket, createZipSources(objects, '42/', '')))
+		).rejects.toThrow('Missing R2 object for ZIP source: 42/file.dtx');
+	});
+
+	it('fails the ZIP stream when fetching a listed R2 object throws', async () => {
+		const bucket = {
+			get: vi.fn(async () => {
+				throw new Error('bucket exploded');
+			})
+		} as unknown as R2Bucket;
+
+		const objects: R2ObjectMeta[] = [
+			{
+				key: '42/file.dtx',
+				size: 10,
+				uploaded: new Date()
+			}
+		];
+
+		await expect(
+			readStream(buildZipStream(bucket, createZipSources(objects, '42/', '')))
+		).rejects.toThrow('Failed to fetch R2 object for ZIP source: 42/file.dtx');
+	});
 });

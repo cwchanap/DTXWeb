@@ -300,14 +300,17 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('resetBulkSelection();\n\t\t\tcurrentPage = 1;');
 		});
 
-		it('allows bulk selection for all charts without client-side gating', () => {
+		it('gates bulk selection to charts with uploaded files', () => {
 			const source = readFileSync(
 				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
 				'utf-8'
 			);
 
-			expect(source).not.toContain('canBulkSelect');
-			expect(source).not.toContain('has_uploaded_files');
+			expect(source).toContain(
+				'const canBulkSelect = (item: ListedChart & { has_uploaded_files?: boolean }) =>'
+			);
+			expect(source).toContain('item.has_uploaded_files === true');
+			expect(source).toContain('{#if selectMode && isBlog && canBulkSelect(item)}');
 		});
 
 		it('enforces the 20-chart bulk download limit in the UI', () => {

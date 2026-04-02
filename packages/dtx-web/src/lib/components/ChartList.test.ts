@@ -282,9 +282,17 @@ describe('ChartList Component Logic', () => {
 			expect(source).toContain('const streamToFile');
 			expect(source).toContain('type SaveFilePickerWindow = Window &');
 			expect(source).toContain(
-				"typeof saveFilePickerWindow.showSaveFilePicker === 'function'"
+				"typeof saveFilePickerWindow.showSaveFilePicker !== 'function'"
 			);
 			expect(source).toContain('response.body.pipeTo(writable)');
+			expect(source).not.toContain('await response.blob()');
+			expect(source).toContain(
+				'Bulk download requires a browser that supports direct file saving.'
+			);
+			expect(source).toContain('supportsBulkDownloadStreaming');
+			expect(source).toContain(
+				'{#if isBlog && enableDownload && supportsBulkDownloadStreaming}'
+			);
 		});
 
 		it('resets bulk selections when page, page size, or search changes', () => {

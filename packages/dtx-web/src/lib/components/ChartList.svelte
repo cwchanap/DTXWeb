@@ -24,7 +24,7 @@
 	type SaveFilePickerHandle = {
 		createWritable: () => Promise<WritableStream<Uint8Array>>;
 	};
-	type SaveFilePickerWindow = {
+	type SaveFilePickerWindow = Window & {
 		showSaveFilePicker?: (options?: {
 			suggestedName?: string;
 			types?: Array<{
@@ -32,8 +32,10 @@
 				accept: Record<string, string[]>;
 			}>;
 		}) => Promise<SaveFilePickerHandle>;
-	} & Window;
+	};
 	const MAX_BULK_DOWNLOAD_CHARTS = 20;
+	const BULK_DOWNLOAD_UNSUPPORTED_MESSAGE =
+		'Bulk download requires a browser that supports direct file saving.';
 
 	let { pageSize = 12, isBlog = false, enableDownload = false }: Props = $props();
 
@@ -50,6 +52,7 @@
 	let selectMode = $state(false);
 	let selectedIds = $state(new Set<number>());
 	let bulkDownloading = $state(false);
+	let supportsBulkDownloadStreaming = $state(false);
 
 	// Replace the run() function with a reactive effect using $effect
 	$effect(() => {
@@ -258,29 +261,16 @@
 		}
 
 		const saveFilePickerWindow = window as SaveFilePickerWindow;
-		if (typeof saveFilePickerWindow.showSaveFilePicker === 'function') {
-			const handle = await saveFilePickerWindow.showSaveFilePicker({
-				suggestedName: filename,
-				types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }]
-			});
-			const writable = await handle.createWritable();
-			await response.body.pipeTo(writable);
-			return;
+		if (typeof saveFilePickerWindow.showSaveFilePicker !== 'function') {
+			throw new Error(BULK_DOWNLOAD_UNSUPPORTED_MESSAGE);
 		}
 
-		const blob = await response.blob();
-		if (blob.size === 0) {
-			throw new Error('Bulk download failed');
-		}
-		const downloadUrl = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = downloadUrl;
-		link.download = filename;
-		link.hidden = true;
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-		URL.revokeObjectURL(downloadUrl);
+		const handle = await saveFilePickerWindow.showSaveFilePicker({
+			suggestedName: filename,
+			types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }]
+		});
+		const writable = await handle.createWritable();
+		await response.body.pipeTo(writable);
 	};
 
 	const submitBulkDownload = async (ids: number[]) => {
@@ -300,6 +290,14 @@
 
 	const handleBulkDownload = async () => {
 		if (selectedIds.size === 0) return;
+		if (!supportsBulkDownloadStreaming) {
+			toastStore.error({
+				title: BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,
+				duration: 4000
+			});
+			clearBulkSelection();
+			return;
+		}
 		if (selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS) {
 			toastStore.error({
 				title: `You can download up to ${MAX_BULK_DOWNLOAD_CHARTS} charts at once`,
@@ -362,6 +360,8 @@
 	});
 
 	onMount(() => {
+		supportsBulkDownloadStreaming =
+			typeof (window as SaveFilePickerWindow).showSaveFilePicker === 'function';
 		loadItems();
 	});
 </script>
@@ -416,7 +416,7 @@
 					</select>
 				</div>
 
-				{#if isBlog && enableDownload}
+				{#if isBlog && enableDownload && supportsBulkDownloadStreaming}
 					<!-- Multi-select controls -->
 					<button
 						class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 {selectMode

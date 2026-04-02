@@ -5,8 +5,7 @@
 		control?: Snippet;
 		panel?: Snippet;
 		children?: Snippet;
-		value?: string;
-		panelPadding?: string;
+		[key: string]: unknown;
 	}>();
 </script>
 

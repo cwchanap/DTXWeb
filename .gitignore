@@ -29,3 +29,6 @@ coverage/
 
 # Claude settings
 .claude/settings.local.json
+
+# Auto-generated Svelte type declarations
+**/*.svelte.d.ts

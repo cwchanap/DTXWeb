@@ -4,6 +4,8 @@ import type { SimfileWithDtxFiles } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
 
+const MAX_CONCURRENT_R2_CHECKS = 4;
+
 const enrichWithUploadedFiles = async (
 	data: SimfileWithDtxFiles[],
 	bucket: import('@cloudflare/workers-types').R2Bucket | undefined
@@ -12,16 +14,27 @@ const enrichWithUploadedFiles = async (
 		return data.map((item) => ({ ...item, has_uploaded_files: false }));
 	}
 
-	const results = await Promise.all(
-		data.map(async (item) => {
+	const results: (SimfileWithDtxFiles & { has_uploaded_files: boolean })[] = new Array(
+		data.length
+	);
+	let nextIndex = 0;
+
+	const worker = async () => {
+		while (nextIndex < data.length) {
+			const idx = nextIndex++;
+			const item = data[idx];
 			try {
 				const listed = await bucket.list({ prefix: `${item.id}/`, limit: 1 });
-				return { ...item, has_uploaded_files: listed.objects.length > 0 };
+				results[idx] = { ...item, has_uploaded_files: listed.objects.length > 0 };
 			} catch (err) {
 				logger.warn(`R2 list failed for simfile ${item.id}:`, err);
-				return { ...item, has_uploaded_files: false };
+				results[idx] = { ...item, has_uploaded_files: false };
 			}
-		})
+		}
+	};
+
+	await Promise.all(
+		Array.from({ length: Math.min(MAX_CONCURRENT_R2_CHECKS, data.length) }, () => worker())
 	);
 	return results;
 };

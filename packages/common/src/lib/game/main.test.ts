@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { config } from './main';
 
 describe('main game configuration', () => {
@@ -61,7 +61,10 @@ describe('main.svelte component', () => {
 		render(MainGame, { props: { currentActiveScene } });
 
 		// Grab the SCENE_READY callback registered on EventBus.on
-		const [, sceneReadyCallback] = mockEventBus.on.mock.calls[0];
+		const sceneReadyCall = mockEventBus.on.mock.calls.find(
+			([event]: [string]) => event === 'current-scene-ready'
+		);
+		const [, sceneReadyCallback] = sceneReadyCall!;
 		const mockScene = { key: 'Editor' };
 		sceneReadyCallback(mockScene);
 

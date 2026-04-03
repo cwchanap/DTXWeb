@@ -24,6 +24,7 @@ const ZIP_UTF8_FLAG = 0x0800;
 const ZIP_GENERAL_PURPOSE_FLAGS = ZIP_DATA_DESCRIPTOR_FLAG | ZIP_UTF8_FLAG;
 const ZIP_STORE_COMPRESSION = 0;
 const ZIP_MAX_32BIT_VALUE = 0xffffffff;
+const ZIP_MAX_16BIT_VALUE = 0xffff;
 const textEncoder = new TextEncoder();
 
 const crcTable = (() => {
@@ -316,6 +317,11 @@ export const buildZipStream = (
 				const centralDirectorySize = offset - centralDirectoryOffset;
 				ensureZip32Range(centralDirectoryEntries.length, 'ZIP entry count');
 				ensureZip32Range(centralDirectorySize, 'Central directory size');
+				if (centralDirectoryEntries.length > ZIP_MAX_16BIT_VALUE) {
+					throw new Error(
+						`ZIP entry count ${centralDirectoryEntries.length} exceeds 16-bit field limit (${ZIP_MAX_16BIT_VALUE}); ZIP64 not supported`
+					);
+				}
 				const endOfCentralDirectory = createEndOfCentralDirectory(
 					centralDirectoryEntries.length,
 					centralDirectorySize,

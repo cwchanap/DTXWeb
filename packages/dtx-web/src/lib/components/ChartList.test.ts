@@ -15,7 +15,7 @@ vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 	Pagination: vi.fn().mockReturnValue(null)
 }));
 
-vi.mock('@/lib/toaster', () => ({
+vi.mock('$lib/toaster', () => ({
 	default: toastStore
 }));
 

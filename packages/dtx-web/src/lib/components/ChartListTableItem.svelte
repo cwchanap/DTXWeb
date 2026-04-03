@@ -2,7 +2,7 @@
 	import type { SimfileWithDtx } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
-	import DownloadDropdown from './DownloadDropdown.svelte';
+	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
 

@@ -6,7 +6,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import ModalStub from '../../tests/stubs/ModalStub.svelte';
 
 vi.mock('svelte-i18n');
 vi.mock('@skeletonlabs/skeleton-svelte', async () => {
@@ -163,32 +162,41 @@ describe('ChartListItem Component Logic', () => {
 	describe('Blog Mode Download Logic', () => {
 		const baseProps = {
 			isBlog: true,
+			enableDownload: true,
 			togglePublishChart: vi.fn(),
+			simfileBucketUrl: 'https://cdn.example.com',
 			onFileDelete: vi.fn()
 		};
 
-		it('evaluates to show the uploaded chart download link when uploaded files are available in blog mode', () => {
-			const props = { ...baseProps, item: mockItem };
-			const externalUrl = props.item.download_url ?? null;
-			const showUploadedDownload = !externalUrl || props.item.has_uploaded_files === true;
-			expect(showUploadedDownload).toBe(true);
+		it('renders the uploaded chart download link when uploaded files are available in blog mode', () => {
+			render(ChartListItem, { props: { ...baseProps, item: mockItem } });
+
+			expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+			expect(
+				screen.getByRole('link', { name: /external download link/i })
+			).toBeInTheDocument();
 		});
 
-		it('evaluates not to show the download link when no external URL exists and uploads are unavailable', () => {
-			const props = { ...baseProps, item: mockItemNoPreview };
-			const externalUrl = props.item.download_url ?? null;
-			const showUploadedDownload = props.item.has_uploaded_files === true;
-			expect(showUploadedDownload).toBe(false);
+		it('omits the uploaded chart download link when no external URL exists and uploads are unavailable', () => {
+			render(ChartListItem, { props: { ...baseProps, item: mockItemNoPreview } });
+
+			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(screen.getByTitle('No external link available')).toBeInTheDocument();
 		});
 
-		it('evaluates not to show the download link when external URL exists and uploads are unavailable', () => {
-			const props = {
-				...baseProps,
-				item: { ...mockItem, has_uploaded_files: false }
-			};
-			const externalUrl = props.item.download_url ?? null;
-			const showUploadedDownload = !externalUrl || props.item.has_uploaded_files === true;
-			expect(showUploadedDownload).toBe(false);
+		it('omits the uploaded chart download link when only the external URL is available', () => {
+			render(ChartListItem, {
+				props: {
+					...baseProps,
+					item: { ...mockItem, has_uploaded_files: false }
+				}
+			});
+
+			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
+				'href',
+				mockItem.download_url
+			);
 		});
 	});
 
@@ -331,6 +339,7 @@ describe('ChartListItem Component Logic', () => {
 				props: {
 					...renderProps,
 					isBlog: true,
+					enableDownload: true,
 					item: {
 						...mockItem,
 						id: undefined,

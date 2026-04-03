@@ -23,6 +23,9 @@
 			"id": "63599182f2d44b3abb6556ce270075cc"
 		}
 	],
+	"vars": {
+		"RATE_LIMIT_ENV": "prod"
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -55,6 +58,9 @@
 					"id": "47c55a7f9ec0479480c5932090e2f5cc"
 				}
 			],
+			"vars": {
+				"RATE_LIMIT_ENV": "pre-prod"
+			},
 			"d1_databases": [
 				{
 					"binding": "DB",
@@ -81,6 +87,9 @@
 					"id": "47c55a7f9ec0479480c5932090e2f5cc"
 				}
 			],
+			"vars": {
+				"RATE_LIMIT_ENV": "pre-prod-prod-data"
+			},
 			"d1_databases": [
 				{
 					"binding": "DB",

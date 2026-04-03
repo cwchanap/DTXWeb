@@ -3,7 +3,7 @@ import { POST } from './+server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
 import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
-import { tryConsumeRateLimit } from '$lib/server/rateLimiter';
+import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 import logger from '$lib/server/logger';
 
 vi.mock('$lib/server/logger', () => ({
@@ -12,18 +12,18 @@ vi.mock('$lib/server/logger', () => ({
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/zipBuilder', () => ({ buildZipStream: vi.fn(), createZipSources: vi.fn() }));
-vi.mock('$lib/server/rateLimiter', () => ({
-	getClientIp: vi.fn((request: Request) => {
-		const forwardedIp =
-			request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
-		const ip = forwardedIp?.split(',')[0]?.trim();
-		return !ip || ip.toLowerCase() === 'unknown' ? null : ip;
-	}),
-	tryConsumeRateLimit: vi.fn()
-}));
+vi.mock('$lib/server/rateLimiter', async () => {
+	const actual =
+		await vi.importActual<typeof import('$lib/server/rateLimiter')>('$lib/server/rateLimiter');
+	return {
+		...actual,
+		tryConsumeRateLimit: vi.fn()
+	};
+});
 
 const createRequest = (body: unknown, headers?: Record<string, string>): Request =>
 	({
+		url: 'http://localhost/api/simFile/download/bulk',
 		headers: new Headers({ 'cf-connecting-ip': '1.2.3.4', ...headers }),
 		json: async () => body
 	}) as unknown as Request;
@@ -32,7 +32,7 @@ const createMockPlatform = (withKv = true) => ({
 	env: {
 		DTXFILE_BUCKET: {},
 		DB: {},
-		...(withKv ? { RATE_LIMIT: {} } : {})
+		...(withKv ? { RATE_LIMIT: {}, RATE_LIMIT_ENV: 'test' } : {})
 	}
 });
 
@@ -41,8 +41,8 @@ describe('POST /api/simFile/download/bulk', () => {
 		vi.clearAllMocks();
 		vi.mocked(getDb).mockReturnValue({} as never);
 		vi.mocked(getSimfileOwner).mockResolvedValue({ user_id: 'owner', is_published: 1 });
-		vi.mocked(listAllR2Objects).mockResolvedValue([
-			{ key: '1/file.dtx', size: 512, uploaded: new Date() }
+		vi.mocked(listAllR2Objects).mockImplementation(async (_bucket, prefix) => [
+			{ key: `${prefix}file.dtx`, size: 512, uploaded: new Date() }
 		]);
 		vi.mocked(createZipSources).mockReturnValue([
 			{ path: 'chart-1/file.dtx', objectKey: '1/file.dtx', size: 512 }
@@ -56,6 +56,7 @@ describe('POST /api/simFile/download/bulk', () => {
 
 	it('returns 400 for invalid JSON', async () => {
 		const req = {
+			url: 'http://localhost/api/simFile/download/bulk',
 			headers: new Headers(),
 			json: async () => {
 				throw new Error('bad json');
@@ -152,7 +153,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(404);
-		expect(await res.json()).toMatchObject({ error: 'Simfile not found' });
+		expect(await res.json()).toMatchObject({ error: 'Simfile not found', ids: [99] });
 	});
 
 	it('returns 429 when rate limit is exceeded', async () => {
@@ -184,9 +185,10 @@ describe('POST /api/simFile/download/bulk', () => {
 
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ ok: true, fileCount: 2 });
+		expect(getClientIp(request)).toBe('1.2.3.4');
 		expect(tryConsumeRateLimit).toHaveBeenCalledWith(
 			platform.env.RATE_LIMIT,
-			'1.2.3.4',
+			'test:1.2.3.4',
 			1024,
 			undefined,
 			false
@@ -261,7 +263,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: null }
 		} as never);
 		expect(res.status).toBe(401);
-		expect(await res.json()).toMatchObject({ error: 'Unauthorized' });
+		expect(await res.json()).toMatchObject({ error: 'Unauthorized', ids: [2] });
 		expect(listAllR2Objects).not.toHaveBeenCalled();
 	});
 
@@ -275,12 +277,13 @@ describe('POST /api/simFile/download/bulk', () => {
 			locals: { user: { id: 'other-user', email: 'x@x.com' } as never }
 		} as never);
 		expect(res.status).toBe(403);
-		expect(await res.json()).toMatchObject({ error: 'Forbidden' });
+		expect(await res.json()).toMatchObject({ error: 'Forbidden', ids: [2] });
 		expect(listAllR2Objects).not.toHaveBeenCalled();
 	});
 
 	it('returns 400 when the client IP header is missing', async () => {
 		const req = {
+			url: 'http://localhost/api/simFile/download/bulk',
 			headers: new Headers(),
 			json: async () => ({ ids: [1] })
 		} as unknown as Request;
@@ -345,6 +348,7 @@ describe('POST /api/simFile/download/bulk', () => {
 	it('skips rate limiting when KV binding is absent (local dev)', async () => {
 		const res = await POST({
 			request: {
+				url: 'http://localhost/api/simFile/download/bulk',
 				headers: new Headers(),
 				json: async () => ({ ids: [1] })
 			} as unknown as Request,

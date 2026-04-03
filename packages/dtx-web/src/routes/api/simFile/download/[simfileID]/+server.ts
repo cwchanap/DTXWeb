@@ -74,7 +74,11 @@ export const GET = async ({
 				);
 			}
 
-			const { allowed } = await tryConsumeRateLimit(kv, ip, estimatedBytes);
+			const { allowed } = await tryConsumeRateLimit(
+				kv,
+				`${platform?.env?.RATE_LIMIT_ENV ?? 'prod'}:${ip}`,
+				estimatedBytes
+			);
 			if (!allowed) {
 				return json(
 					{ error: 'Rate limit exceeded. Please try again later.' },

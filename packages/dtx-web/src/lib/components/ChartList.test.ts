@@ -1,344 +1,311 @@
-/**
- * Unit tests for ChartList.svelte component
- */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import { tick } from 'svelte';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-// Mock modules that would be imported by the component
-vi.mock('svelte-i18n', () => ({
-	_: {
-		subscribe: (cb: (fn: (key: string) => string) => void) => {
-			cb((key: string) => key);
-			return () => {};
-		}
+const { toastStore } = vi.hoisted(() => ({
+	toastStore: {
+		error: vi.fn(),
+		success: vi.fn()
 	}
 }));
+
+vi.mock('svelte-i18n');
 
 vi.mock('@skeletonlabs/skeleton-svelte', () => ({
-	Switch: vi.fn(),
-	Pagination: vi.fn()
+	Switch: vi.fn().mockReturnValue(null),
+	Pagination: vi.fn().mockReturnValue(null)
 }));
-
-vi.mock('@lucide/svelte/icons/x', () => ({ default: vi.fn() }));
-vi.mock('@lucide/svelte/icons/check', () => ({ default: vi.fn() }));
-vi.mock('@lucide/svelte/icons/table', () => ({ default: vi.fn() }));
-vi.mock('@lucide/svelte/icons/grid', () => ({ default: vi.fn() }));
 
 vi.mock('@/lib/toaster', () => ({
-	default: { success: vi.fn(), error: vi.fn() }
+	default: toastStore
 }));
 
-vi.mock('$lib/components/ChartListItem.svelte', () => ({ default: vi.fn() }));
-vi.mock('$lib/components/ChartListTableItem.svelte', () => ({ default: vi.fn() }));
+vi.mock('./ChartListItem.svelte', async () => {
+	const { default: ModalStub } = await import('../../tests/stubs/ModalStub.svelte');
+	return { default: ModalStub };
+});
 
-vi.mock('$lib/utils', () => ({
-	formatLevelDisplay: (dtxFiles: unknown) => {
-		if (Array.isArray(dtxFiles)) {
-			return dtxFiles.map((file: { level: number }) => file.level).join(', ');
-		}
-		return 'N/A';
-	}
-}));
+vi.mock('./ChartListTableItem.svelte', async () => {
+	const { default: ModalStub } = await import('../../tests/stubs/ModalStub.svelte');
+	return { default: ModalStub };
+});
 
-// Create a mock Supabase client
-const createMockSupabase = () => {
-	// Create a mock that returns the test data
-	return {
-		from: vi.fn().mockImplementation(() => ({
-			select: vi.fn().mockReturnThis(),
-			order: vi.fn().mockReturnThis(),
-			ilike: vi.fn().mockReturnThis(),
-			eq: vi.fn().mockReturnThis(),
-			range: vi.fn().mockReturnThis(),
-			then: vi.fn().mockImplementation((callback) => {
-				callback({
-					data: mockItems,
-					error: null,
-					count: mockItems.length
-				});
-				return { catch: vi.fn() };
-			})
-		})),
-		storage: {
-			from: vi.fn().mockReturnValue({
-				getPublicUrl: vi.fn().mockReturnValue({
-					data: { publicUrl: 'https://example.com/mock-url' }
-				})
-			})
-		},
-		auth: {
-			getUser: vi.fn().mockResolvedValue({
-				data: { user: { id: 'mock-user-id' } }
-			})
-		}
-	};
+vi.mock('@lucide/svelte/icons');
+
+import ChartList from './ChartList.svelte';
+import * as chartListHelpers from './ChartList.helpers';
+
+const mockListedChart = {
+	id: 1,
+	title: 'Test Song 1',
+	artist: 'Test Artist 1',
+	bpm: 120,
+	download_url: 'https://example.com/download1',
+	has_uploaded_files: true,
+	is_published: true,
+	display_id: 'TST001',
+	dtx_files: [{ level: 3 }, { level: 5 }],
+	created_at: '2023-01-01',
+	updated_at: '2023-01-02',
+	publish_date: '2023-01-03',
+	user_id: 'user-1',
+	video_preview_url: null
 };
 
-// Test data
-const mockItems = [
-	{
-		id: 1,
-		title: 'Test Song 1',
-		artist: 'Test Artist 1',
-		bpm: 120,
-		download_url: 'https://example.com/download1',
-		is_published: true,
-		display_id: 'TST001',
-		dtx_files: [{ level: 3 }, { level: 5 }],
-		created_at: '2023-01-01',
-		updated_at: '2023-01-02',
-		publish_date: '2023-01-03',
-		user_id: 'user-1',
-		video_preview_url: null
-	},
-	{
-		id: 2,
-		title: 'Test Song 2',
-		artist: 'Test Artist 2',
-		bpm: 140,
-		download_url: null,
-		is_published: false,
-		display_id: 'TST002',
-		dtx_files: [{ level: 4 }],
-		created_at: '2023-02-01',
-		updated_at: '2023-02-02',
-		publish_date: '2023-02-03',
-		user_id: 'user-1',
-		video_preview_url: null
-	}
-];
+const createJsonResponse = (body: unknown, status = 200): Response =>
+	({
+		ok: status >= 200 && status < 300,
+		status,
+		headers: new Headers({ 'Content-Type': 'application/json' }),
+		json: async () => body
+	}) as Response;
 
-/**
- * Instead of testing the component by rendering it and interacting with the DOM,
- * we'll test the component's logic directly by creating instances of the component
- * and testing its state and methods.
- *
- * This approach avoids the lifecycle_function_unavailable error in Svelte 5.
- */
-describe('ChartList Component Logic', () => {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let mockSupabase: any;
+const createDownloadResponse = (pipeTo = vi.fn().mockResolvedValue(undefined)): Response =>
+	({
+		ok: true,
+		status: 200,
+		headers: new Headers({ 'Content-Type': 'application/zip' }),
+		body: { pipeTo } as unknown as ReadableStream<Uint8Array>
+	}) as Response;
 
+const renderChartListWithSelection = async () => {
+	const fetchMock = vi
+		.fn()
+		.mockResolvedValue(createJsonResponse({ data: [mockListedChart], count: 1 }));
+	vi.stubGlobal('fetch', fetchMock);
+	Object.defineProperty(window, 'showSaveFilePicker', {
+		configurable: true,
+		value: vi.fn()
+	});
+
+	render(ChartList, {
+		props: {
+			isBlog: true,
+			enableDownload: true
+		}
+	});
+
+	await fireEvent.click(await screen.findByRole('button', { name: 'Select' }));
+	const checkbox = await screen.findByRole('checkbox', {
+		name: `Select ${mockListedChart.title}`
+	});
+	await fireEvent.click(checkbox);
+	await screen.findByRole('button', { name: /download \(1\)/i });
+
+	return { checkbox, fetchMock };
+};
+
+describe('ChartList helpers', () => {
 	beforeEach(() => {
-		mockSupabase = createMockSupabase();
-		vi.useFakeTimers();
+		vi.clearAllMocks();
 	});
 
 	afterEach(() => {
-		vi.restoreAllMocks();
-		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	});
 
-	// Test the Supabase query construction
-	it('constructs correct Supabase query', () => {
-		// Verify the mock was called correctly
-		expect(mockSupabase.from).toBeDefined();
-
-		// We can't easily test the loadItems method directly in Svelte 5,
-		// but we can verify that our mock is properly set up
-		const query = mockSupabase.from();
-		expect(query.select).toBeDefined();
-		expect(query.order).toBeDefined();
-		expect(query.ilike).toBeDefined();
-		expect(query.range).toBeDefined();
+	it('detects browser support for bulk download streaming', () => {
+		expect(chartListHelpers.supportsBulkDownloadStreaming({})).toBe(false);
+		expect(
+			chartListHelpers.supportsBulkDownloadStreaming({
+				showSaveFilePicker: vi.fn()
+			})
+		).toBe(true);
 	});
 
-	// Test filtering by artist
-	it('filters items by artist name', () => {
-		// Create a mock with filter functionality
-		const filterMock = vi.fn();
-		const mockSupabaseWithFilter = {
-			from: vi.fn().mockReturnValue({
-				select: vi.fn().mockReturnThis(),
-				order: vi.fn().mockReturnThis(),
-				ilike: filterMock,
-				eq: vi.fn().mockReturnThis(),
-				range: vi.fn().mockReturnThis()
+	it('opens the save picker before validation and download requests', async () => {
+		const callOrder: string[] = [];
+		const writable = {} as WritableStream<Uint8Array>;
+		const handle = {
+			createWritable: vi.fn(async () => {
+				callOrder.push('createWritable');
+				return writable;
 			})
 		};
-
-		// Simulate filtering by artist
-		mockSupabaseWithFilter.from().ilike('artist', '%Artist 1%');
-
-		// Verify the filter was called with the correct parameters
-		expect(filterMock).toHaveBeenCalledWith('artist', '%Artist 1%');
-	});
-
-	// Test the hideUnpublished filter
-	it('filters unpublished items', async () => {
-		// Create a reactive variable for filteredItems
-		let filteredItems = [...mockItems];
-		let hideUnpublished = false;
-
-		// Initially, all items should be visible
-		expect(filteredItems.length).toBe(2);
-
-		hideUnpublished = true;
-
-		// Replace the run() call with tick()
-		await tick();
-		filteredItems = hideUnpublished ? mockItems.filter((item) => item.is_published) : mockItems;
-
-		await tick();
-		// Now only published items should be visible
-		expect(filteredItems.length).toBe(1);
-		expect(filteredItems[0].is_published).toBe(true);
-	});
-
-	// Test pagination
-	it('handles pagination correctly', () => {
-		// Create a mock with range functionality
-		const rangeMock = vi.fn();
-		const mockSupabaseWithPagination = {
-			from: vi.fn().mockReturnValue({
-				select: vi.fn().mockReturnThis(),
-				order: vi.fn().mockReturnThis(),
-				ilike: vi.fn().mockReturnThis(),
-				eq: vi.fn().mockReturnThis(),
-				range: rangeMock
+		const pipeTo = vi.fn(async () => {
+			callOrder.push('pipeTo');
+		});
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn(async () => {
+				callOrder.push('picker');
+				return handle;
 			})
 		};
+		const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			callOrder.push(url);
+			if (url.endsWith('?validate=1')) {
+				return createJsonResponse({ ok: true, fileCount: 1 });
+			}
+			return createDownloadResponse(pipeTo);
+		});
 
-		// Simulate pagination - page 2 with pageSize 10
-		mockSupabaseWithPagination.from().range(10, 19);
+		await chartListHelpers.startBulkDownload({
+			ids: [mockListedChart.id],
+			fetchFn,
+			saveFilePickerWindow
+		});
 
-		// Verify the range was called with the correct parameters
-		expect(rangeMock).toHaveBeenCalledWith(10, 19);
+		expect(callOrder).toEqual([
+			'picker',
+			'/api/simFile/download/bulk?validate=1',
+			'/api/simFile/download/bulk',
+			'createWritable',
+			'pipeTo'
+		]);
 	});
 
-	// Test blog mode differences
-	it('handles blog mode correctly', () => {
-		// Create a mock with eq functionality
-		const eqMock = vi.fn();
-		const mockSupabaseWithBlogMode = {
-			from: vi.fn().mockReturnValue({
-				select: vi.fn().mockReturnThis(),
-				order: vi.fn().mockReturnThis(),
-				ilike: vi.fn().mockReturnThis(),
-				eq: eqMock,
-				range: vi.fn().mockReturnThis()
+	it('does not issue validation or download requests when the save picker is cancelled', async () => {
+		const abortError = new DOMException('The operation was aborted.', 'AbortError');
+		const fetchFn = vi.fn();
+
+		await expect(
+			chartListHelpers.startBulkDownload({
+				ids: [mockListedChart.id],
+				fetchFn,
+				saveFilePickerWindow: {
+					showSaveFilePicker: vi.fn().mockRejectedValue(abortError)
+				}
 			})
+		).rejects.toBe(abortError);
+
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it('creates a writable from a file handle only when the response is streamed', async () => {
+		const writable = {} as WritableStream<Uint8Array>;
+		const handle = {
+			createWritable: vi.fn().mockResolvedValue(writable)
 		};
+		const pipeTo = vi.fn().mockResolvedValue(undefined);
 
-		// Simulate blog mode query
-		mockSupabaseWithBlogMode.from().eq('is_published', true);
+		await chartListHelpers.streamToFile(
+			{
+				body: { pipeTo } as unknown as ReadableStream<Uint8Array>
+			} as Response,
+			handle
+		);
 
-		// Verify the eq was called with the correct parameters
-		expect(eqMock).toHaveBeenCalledWith('is_published', true);
+		expect(handle.createWritable).toHaveBeenCalledTimes(1);
+		expect(pipeTo).toHaveBeenCalledWith(writable);
 	});
 
-	describe('Table View Menu Layering Regression', () => {
-		it('sets table row wrapper stacking classes for dropdown interactions', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
+	it('accepts a writable stream directly when streaming the download response', async () => {
+		const writable = {} as WritableStream<Uint8Array>;
+		const pipeTo = vi.fn().mockResolvedValue(undefined);
 
-			expect(source).toContain('hover:z-30');
-			expect(source).toContain('focus-within:z-30');
-		});
+		await chartListHelpers.streamToFile(
+			{
+				body: { pipeTo } as unknown as ReadableStream<Uint8Array>
+			} as Response,
+			writable
+		);
 
-		it('sets table popover zIndex higher than row stacking layer', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartListTableItem.svelte'),
-				'utf-8'
-			);
-			const popoverZIndexMatch = source.match(/<Popover[\s\S]*?zIndex="(\d+)"/);
-
-			expect(popoverZIndexMatch).not.toBeNull();
-			expect(Number(popoverZIndexMatch?.[1])).toBeGreaterThan(30);
-		});
+		expect(pipeTo).toHaveBeenCalledWith(writable);
 	});
 
-	describe('Bulk Download Error Handling', () => {
-		it('uses validation plus download submission so real POST failures can surface', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
+	it('recognizes AbortError values', () => {
+		expect(
+			chartListHelpers.isAbortError(
+				new DOMException('The operation was aborted.', 'AbortError')
+			)
+		).toBe(true);
+		expect(chartListHelpers.isAbortError({ name: 'AbortError' })).toBe(true);
+		expect(chartListHelpers.isAbortError(new Error('Nope'))).toBe(false);
+	});
 
-			expect(source).toContain("console.error('Bulk download request failed:'");
-			expect(source).toContain("console.error('Failed to start bulk download:'");
-			expect(source).toContain('const clearBulkSelection = () => {');
-			expect(source).toContain('const resetBulkSelection = () => {');
-			expect(source).toContain("fetch('/api/simFile/download/bulk?validate=1'");
-			expect(source).toContain("fetch('/api/simFile/download/bulk', {");
-			expect(source).toContain('if (!data?.ok || data.fileCount === 0) {');
-			expect(source).toContain('No uploaded files found for the selected charts');
-			expect(source).toContain('await submitBulkDownload(ids);');
+	it('exposes the bulk download chart limit', () => {
+		expect(chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS).toBe(20);
+	});
+
+	it('allows bulk selection only for charts with uploaded files', () => {
+		expect(chartListHelpers.canBulkSelect(mockListedChart)).toBe(true);
+		expect(
+			chartListHelpers.canBulkSelect({ ...mockListedChart, has_uploaded_files: false })
+		).toBe(false);
+		expect(chartListHelpers.canBulkSelect({})).toBe(false);
+	});
+
+	it('returns a cleared bulk selection set', () => {
+		expect([...chartListHelpers.resetBulkSelection()]).toEqual([]);
+	});
+
+	it('returns page changes that stay within the available range', () => {
+		expect(chartListHelpers.changePage(2, 3)).toEqual({
+			currentPage: 2,
+			selectedIds: new Set<number>()
 		});
+		expect(chartListHelpers.changePage(0, 3)).toBeNull();
+		expect(chartListHelpers.changePage(4, 3)).toBeNull();
+	});
 
-		it('streams bulk downloads via showSaveFilePicker when available', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
-
-			expect(source).toContain('const streamToFile');
-			expect(source).toContain('type SaveFilePickerWindow = Window &');
-			expect(source).toContain(
-				"typeof saveFilePickerWindow.showSaveFilePicker !== 'function'"
-			);
-			expect(source).toContain('response.body.pipeTo(writable)');
-			expect(source).not.toContain('await response.blob()');
-			expect(source).toContain(
-				'Bulk download requires a browser that supports direct file saving.'
-			);
-			expect(source).toContain('supportsBulkDownloadStreaming');
-			expect(source).toContain(
-				'{#if isBlog && enableDownload && supportsBulkDownloadStreaming}'
-			);
-		});
-
-		it('resets bulk selections when page, page size, or search changes', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
-
-			expect(source).toContain('const changePage = (newPage: number) => {');
-			expect(source).toContain('resetBulkSelection();\n\t\t\tcurrentPage = newPage;');
-			expect(source).toContain(
-				'function handlePageSizeChange(event: { pageSize: number }) {'
-			);
-			expect(source).toContain('resetBulkSelection();\n\t\tpageSize = event.pageSize;');
-			expect(source).toContain('searchTimeout = setTimeout(() => {');
-			expect(source).toContain('resetBulkSelection();\n\t\t\tcurrentPage = 1;');
-		});
-
-		it('gates bulk selection to charts with uploaded files', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
-
-			expect(source).toContain(
-				'const canBulkSelect = (item: ListedChart & { has_uploaded_files?: boolean }) =>'
-			);
-			expect(source).toContain('item.has_uploaded_files === true');
-			expect(source).toContain(
-				'{#if selectMode && isBlog && enableDownload && canBulkSelect(item)}'
-			);
-		});
-
-		it('enforces the 20-chart bulk download limit in the UI', () => {
-			const source = readFileSync(
-				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
-				'utf-8'
-			);
-
-			expect(source).toContain('const MAX_BULK_DOWNLOAD_CHARTS = 20;');
-			expect(source).toContain('if (next.size >= MAX_BULK_DOWNLOAD_CHARTS) {');
-			expect(source).toContain('if (selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS) {');
+	it('resets selection and jumps back to the first page when the page size changes', () => {
+		expect(chartListHelpers.handlePageSizeChange(24)).toEqual({
+			pageSize: 24,
+			currentPage: 1,
+			selectedIds: new Set<number>()
 		});
 	});
 });
 
-import ChartList from './ChartList.svelte';
+describe('ChartList component bulk download behavior', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it('treats AbortError as a no-op and preserves the current selection', async () => {
+		const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const startBulkDownloadSpy = vi
+			.spyOn(chartListHelpers, 'startBulkDownload')
+			.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'));
+
+		const { fetchMock, checkbox } = await renderChartListWithSelection();
+
+		await fireEvent.click(screen.getByRole('button', { name: /download \(1\)/i }));
+
+		await waitFor(() => expect(startBulkDownloadSpy).toHaveBeenCalled());
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(toastStore.error).not.toHaveBeenCalled();
+		expect(consoleErrorSpy).not.toHaveBeenCalled();
+		expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /download \(1\)/i })).toBeInTheDocument();
+		expect(checkbox).toBeChecked();
+	});
+
+	it('reports non-abort failures and clears the bulk selection', async () => {
+		const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const startBulkDownloadSpy = vi
+			.spyOn(chartListHelpers, 'startBulkDownload')
+			.mockRejectedValueOnce(new Error('Bulk download failed'));
+
+		await renderChartListWithSelection();
+
+		await fireEvent.click(screen.getByRole('button', { name: /download \(1\)/i }));
+
+		await waitFor(() =>
+			expect(toastStore.error).toHaveBeenCalledWith({
+				title: 'Bulk download failed',
+				duration: 3000
+			})
+		);
+
+		expect(startBulkDownloadSpy).toHaveBeenCalled();
+		expect(consoleErrorSpy).toHaveBeenCalledWith(
+			'Failed to start bulk download:',
+			expect.any(Error)
+		);
+		expect(screen.getByRole('button', { name: 'Select' })).toBeInTheDocument();
+		expect(
+			screen.queryByRole('checkbox', { name: `Select ${mockListedChart.title}` })
+		).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /download \(1\)/i })).not.toBeInTheDocument();
+	});
+});
 
 const mockFetchSuccess = (data = [], count = 0) => {
 	vi.stubGlobal(
@@ -434,7 +401,6 @@ describe('ChartList Rendering', () => {
 			1
 		);
 		render(ChartList, { props: { isBlog: false } });
-		// Switch to table view so titles render in the HTML directly
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 		await waitFor(() => {
 			expect(screen.getByText(/My Song/)).toBeInTheDocument();

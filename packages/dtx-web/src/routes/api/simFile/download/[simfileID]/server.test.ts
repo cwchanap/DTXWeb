@@ -3,7 +3,7 @@ import { GET } from './+server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
 import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
-import { tryConsumeRateLimit } from '$lib/server/rateLimiter';
+import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 import logger from '$lib/server/logger';
 
 vi.mock('$lib/server/logger', () => ({
@@ -12,15 +12,14 @@ vi.mock('$lib/server/logger', () => ({
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/zipBuilder', () => ({ buildZipStream: vi.fn(), createZipSources: vi.fn() }));
-vi.mock('$lib/server/rateLimiter', () => ({
-	getClientIp: vi.fn((request: Request) => {
-		const forwardedIp =
-			request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for');
-		const ip = forwardedIp?.split(',')[0]?.trim();
-		return !ip || ip.toLowerCase() === 'unknown' ? null : ip;
-	}),
-	tryConsumeRateLimit: vi.fn()
-}));
+vi.mock('$lib/server/rateLimiter', async () => {
+	const actual =
+		await vi.importActual<typeof import('$lib/server/rateLimiter')>('$lib/server/rateLimiter');
+	return {
+		...actual,
+		tryConsumeRateLimit: vi.fn()
+	};
+});
 
 const createMockRequest = (headers?: Record<string, string>): Request => {
 	const h = new Headers(headers);
@@ -31,7 +30,7 @@ const createMockPlatform = (withKv = true) => ({
 	env: {
 		DTXFILE_BUCKET: {} as unknown,
 		DB: {},
-		...(withKv ? { RATE_LIMIT: {} } : {})
+		...(withKv ? { RATE_LIMIT: {}, RATE_LIMIT_ENV: 'test' } : {})
 	}
 });
 
@@ -146,6 +145,8 @@ describe('GET /api/simFile/download/[simfileID]', () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get('Content-Type')).toBe('application/zip');
 		expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="chart-42.zip"');
+		expect(getClientIp(createMockRequest({ 'cf-connecting-ip': '1.2.3.4' }))).toBe('1.2.3.4');
+		expect(tryConsumeRateLimit).toHaveBeenCalledWith(expect.anything(), 'test:1.2.3.4', 1024);
 	});
 
 	it('returns 400 when the client IP header is missing and rate limiting is enabled', async () => {

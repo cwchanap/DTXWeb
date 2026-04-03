@@ -1,10 +1,10 @@
 <script lang="ts">
 	import ChartList from '$lib/components/ChartList.svelte';
-	import { PUBLIC_ENABLE_BLOG_DOWNLOAD } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
 	import { locale, locales } from 'svelte-i18n';
 	import { _ } from 'svelte-i18n';
 
-	const enableBlogDownload = PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
+	const enableBlogDownload = env.PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',

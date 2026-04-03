@@ -14,6 +14,12 @@ const translateMock = vi.hoisted(
 			key
 );
 
+vi.mock('$env/dynamic/public', () => ({
+	env: {
+		PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
+	}
+}));
+
 vi.mock('svelte-i18n', () => ({
 	locale: localeMock,
 	locales: localesMock,

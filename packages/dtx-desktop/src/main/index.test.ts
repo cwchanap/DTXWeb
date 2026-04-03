@@ -632,14 +632,12 @@ describe('index.ts IPC handlers', () => {
 	// ── activate app event ───────────────────────────────────────────────────
 	describe('activate app event', () => {
 		it('creates a new window when no windows are open', () => {
-			mockCreateWindow.mockClear();
 			(mockBrowserWindow.getAllWindows as Mock).mockReturnValue([]);
 			appListeners['activate']();
 			expect(mockCreateWindow).toHaveBeenCalled();
 		});
 
 		it('does not create a window when windows already exist', () => {
-			mockCreateWindow.mockClear();
 			(mockBrowserWindow.getAllWindows as Mock).mockReturnValue([{}]);
 			appListeners['activate']();
 			expect(mockCreateWindow).not.toHaveBeenCalled();
@@ -780,6 +778,10 @@ describe('index.ts IPC handlers', () => {
 	describe('upload-file handler', () => {
 		beforeEach(() => {
 			vi.unstubAllEnvs();
+		});
+
+		afterEach(() => {
+			vi.unstubAllGlobals();
 		});
 
 		it('returns error when file does not exist', async () => {
@@ -975,7 +977,9 @@ describe('index.ts IPC handlers', () => {
 			await ipcHandlers['upload-file']({}, 'dir/kick.wav', '/songs/my-song', '42');
 
 			// The fileName sent should strip the leading "dir/" prefix
-			expect(global.fetch).toHaveBeenCalled();
+			expect(capturedFormData.length).toBeGreaterThan(0);
+			const uploadedFile = capturedFormData[0].get('file') as File;
+			expect(uploadedFile.name).toBe('kick.wav');
 		});
 	});
 });

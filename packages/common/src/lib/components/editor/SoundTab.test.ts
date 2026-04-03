@@ -25,7 +25,7 @@ const { mockStore, MockSoundChip, mockXAaudioContext, mockFileManager } = vi.hoi
 			this.id = id;
 			this.volume = volume;
 			this.position = position;
-			this.fileName = fileName;
+			this.fileName = (fileName || '').toLowerCase();
 			this.file = file;
 		}
 	}
@@ -59,7 +59,15 @@ const { mockStore, MockSoundChip, mockXAaudioContext, mockFileManager } = vi.hoi
 	const mockXAaudioContext = {
 		createBufferSource: vi.fn(() => ({ buffer: null, connect: vi.fn(), start: vi.fn() })),
 		createGain: vi.fn(() => ({ gain: { value: 1 }, connect: vi.fn() })),
-		decodeAudioData: vi.fn(() => Promise.resolve(new ArrayBuffer(0))),
+		decodeAudioData: vi.fn(() =>
+			Promise.resolve({
+				duration: 0,
+				numberOfChannels: 1,
+				sampleRate: 44100,
+				length: 0,
+				getChannelData: vi.fn(() => new Float32Array(0))
+			})
+		),
 		destination: {}
 	};
 
@@ -447,25 +455,28 @@ describe('SoundTab component', () => {
 	it('handles audio playback error gracefully (no throw)', async () => {
 		// Make audio.play() reject to trigger the catch block at line 142-143
 		const originalAudio = global.Audio;
-		global.Audio = vi.fn().mockImplementation(() => ({
-			play: vi.fn().mockRejectedValue(new Error('NotAllowedError')),
-			volume: 1
-		})) as unknown as typeof Audio;
-		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+		try {
+			global.Audio = vi.fn().mockImplementation(() => ({
+				play: vi.fn().mockRejectedValue(new Error('NotAllowedError')),
+				volume: 1
+			})) as unknown as typeof Audio;
+			global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 
-		const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
-		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
-		render(SoundTab);
-		await fireEvent.click(screen.getByText('kick.wav'));
-		// The error is swallowed — component should still be in the document
-		await waitFor(() => expect(global.Audio).toHaveBeenCalled());
-		global.Audio = originalAudio;
+			const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
+			const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(cb: (v: MockSoundChip[]) => void) => {
+					cb([chip]);
+					return () => {};
+				}
+			);
+			render(SoundTab);
+			await fireEvent.click(screen.getByText('kick.wav'));
+			// The error is swallowed — component should still be in the document
+			await waitFor(() => expect(global.Audio).toHaveBeenCalled());
+		} finally {
+			global.Audio = originalAudio;
+		}
 	});
 
 	it('assigns a file to a chip via file input change', async () => {

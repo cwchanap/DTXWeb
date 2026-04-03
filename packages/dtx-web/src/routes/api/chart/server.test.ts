@@ -20,13 +20,20 @@ vi.mock('$lib/server/logger', () => ({
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };
-const mockPlatform = { env: { DB: {}, DTXFILE_BUCKET: {} } };
+const mockR2List = vi.fn().mockResolvedValue({ objects: [] });
+const mockPlatform = {
+	env: {
+		DB: {},
+		DTXFILE_BUCKET: { list: mockR2List }
+	}
+};
 
 describe('GET /api/chart', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getDb).mockReturnValue({} as any);
 		vi.mocked(listSimfiles).mockResolvedValue({ data: [], count: 0 });
+		mockR2List.mockResolvedValue({ objects: [] });
 	});
 
 	it('returns 401 when unauthenticated and scope is not published', async () => {
@@ -49,6 +56,61 @@ describe('GET /api/chart', () => {
 		expect(response.status).toBe(200);
 		const data = await response.json();
 		expect(data).toEqual({ data: [], count: 0 });
+	});
+
+	it('enriches items with has_uploaded_files from R2', async () => {
+		const simfiles = [
+			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] },
+			{ id: 2, title: 'B', artist: '', bpm: 130, is_published: true, dtx_files: [] }
+		];
+		vi.mocked(listSimfiles).mockResolvedValue({ data: simfiles as any, count: 2 });
+		mockR2List
+			.mockResolvedValueOnce({ objects: [{ key: '1/chart.dtx', size: 100 }] })
+			.mockResolvedValueOnce({ objects: [] });
+
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=published'),
+			platform: mockPlatform as any,
+			locals: { user: null } as any
+		});
+		expect(response.status).toBe(200);
+		const result = await response.json();
+		expect(result.data[0].has_uploaded_files).toBe(true);
+		expect(result.data[1].has_uploaded_files).toBe(false);
+	});
+
+	it('defaults has_uploaded_files to false when R2 bucket is unavailable', async () => {
+		const simfiles = [
+			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] }
+		];
+		vi.mocked(listSimfiles).mockResolvedValue({ data: simfiles as any, count: 1 });
+		const noBucketPlatform = { env: { DB: {} } };
+
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=published'),
+			platform: noBucketPlatform as any,
+			locals: { user: null } as any
+		});
+		expect(response.status).toBe(200);
+		const result = await response.json();
+		expect(result.data[0].has_uploaded_files).toBe(false);
+	});
+
+	it('defaults has_uploaded_files to false when R2 list throws', async () => {
+		const simfiles = [
+			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] }
+		];
+		vi.mocked(listSimfiles).mockResolvedValue({ data: simfiles as any, count: 1 });
+		mockR2List.mockRejectedValue(new Error('R2 error'));
+
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=published'),
+			platform: mockPlatform as any,
+			locals: { user: null } as any
+		});
+		expect(response.status).toBe(200);
+		const result = await response.json();
+		expect(result.data[0].has_uploaded_files).toBe(false);
 	});
 
 	it('passes userId to listSimfiles when scope is mine', async () => {

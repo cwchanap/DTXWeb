@@ -95,7 +95,8 @@ export const GET = async ({
 			status: 200,
 			headers: {
 				'Content-Type': 'application/zip',
-				'Content-Disposition': `attachment; filename="chart-${canonicalId}.zip"`
+				'Content-Disposition': `attachment; filename="chart-${canonicalId}.zip"`,
+				'Cache-Control': 'private, no-store'
 			}
 		});
 	} catch (error) {

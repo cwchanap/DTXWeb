@@ -1,7 +1,30 @@
 import { json } from '@sveltejs/kit';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
+import type { SimfileWithDtxFiles } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
+
+const enrichWithUploadedFiles = async (
+	data: SimfileWithDtxFiles[],
+	bucket: import('@cloudflare/workers-types').R2Bucket | undefined
+): Promise<(SimfileWithDtxFiles & { has_uploaded_files: boolean })[]> => {
+	if (!bucket || data.length === 0) {
+		return data.map((item) => ({ ...item, has_uploaded_files: false }));
+	}
+
+	const results = await Promise.all(
+		data.map(async (item) => {
+			try {
+				const listed = await bucket.list({ prefix: `${item.id}/`, limit: 1 });
+				return { ...item, has_uploaded_files: listed.objects.length > 0 };
+			} catch (err) {
+				logger.warn(`R2 list failed for simfile ${item.id}:`, err);
+				return { ...item, has_uploaded_files: false };
+			}
+		})
+	);
+	return results;
+};
 
 /** GET /api/chart — List charts (paginated, filtered) */
 export const GET = async ({
@@ -48,7 +71,10 @@ export const GET = async ({
 			pageSize
 		});
 
-		return json({ data, count });
+		const bucket = platform?.env?.DTXFILE_BUCKET;
+		const enriched = await enrichWithUploadedFiles(data, bucket);
+
+		return json({ data: enriched, count });
 	} catch (error) {
 		logger.error('Error listing charts:', error);
 		return json({ error: 'Failed to list charts' }, { status: 500 });

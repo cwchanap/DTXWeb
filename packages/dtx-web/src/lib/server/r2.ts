@@ -7,11 +7,6 @@ export interface R2ObjectMeta {
 	uploaded: Date;
 }
 
-export const hasR2Objects = async (bucket: R2Bucket, prefix: string): Promise<boolean> => {
-	const listResult = await bucket.list({ prefix, limit: 1 });
-	return (listResult.objects ?? []).length > 0;
-};
-
 /**
  * Lists all R2 objects under a prefix using cursor-based pagination.
  * Throws if the pagination cursor is missing or repeating (broken R2 state).

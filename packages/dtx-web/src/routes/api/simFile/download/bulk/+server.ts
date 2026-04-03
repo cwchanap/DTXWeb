@@ -1,4 +1,4 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestEvent } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
@@ -72,15 +72,8 @@ const anonymizeIp = (ip: string): string => {
 	return 'redacted';
 };
 
-export const POST = async ({
-	request,
-	platform,
-	locals
-}: {
-	request: Request;
-	platform: App.Platform;
-	locals: App.Locals;
-}) => {
+export const POST = async (event: RequestEvent) => {
+	const { request, platform, locals } = event;
 	let payload: Record<string, unknown>;
 	try {
 		payload = await parseRequestBody(request);
@@ -105,9 +98,7 @@ export const POST = async ({
 		);
 	}
 
-	const requestUrl = new URL(
-		typeof request.url === 'string' ? request.url : 'http://localhost/api/simFile/download/bulk'
-	);
+	const requestUrl = new URL(request.url);
 	const validateOnly = requestUrl.searchParams.get('validate') === '1';
 
 	try {
@@ -146,15 +137,15 @@ export const POST = async ({
 			.map((result) => result.id);
 
 		if (unauthorizedIds.length > 0) {
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return json({ error: 'Unauthorized', ids: unauthorizedIds }, { status: 401 });
 		}
 
 		if (forbiddenIds.length > 0) {
-			return json({ error: 'Forbidden' }, { status: 403 });
+			return json({ error: 'Forbidden', ids: forbiddenIds }, { status: 403 });
 		}
 
 		if (missingIds.length > 0) {
-			return json({ error: 'Simfile not found' }, { status: 404 });
+			return json({ error: 'Simfile not found', ids: missingIds }, { status: 404 });
 		}
 
 		// List all objects per simfile for rate limit size estimation
@@ -193,7 +184,7 @@ export const POST = async ({
 
 			const { allowed } = await tryConsumeRateLimit(
 				kv,
-				ip,
+				`${platform?.env?.RATE_LIMIT_ENV ?? 'prod'}:${ip}`,
 				estimatedBytes,
 				undefined,
 				!validateOnly

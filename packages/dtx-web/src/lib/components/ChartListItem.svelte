@@ -6,7 +6,7 @@
 	import { formatLevelDisplay, buildPreviewUrl } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
 	import { Modal, Button } from '@dtx/ui-components/components';
-	import DownloadDropdown from './DownloadDropdown.svelte';
+	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 

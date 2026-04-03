@@ -13,12 +13,12 @@
 
 	let languageDropdownOpen = $state(false);
 
-	function handleClickOutside(event: Event) {
+	const handleClickOutside = (event: Event) => {
 		const target = event.target as Element;
 		if (!target.closest('.language-dropdown')) {
 			languageDropdownOpen = false;
 		}
-	}
+	};
 </script>
 
 <svelte:window on:click={handleClickOutside} />

@@ -23,6 +23,7 @@ declare global {
 				DTXFILE_BUCKET: R2Bucket;
 				DB: D1Database;
 				RATE_LIMIT: KVNamespace;
+				RATE_LIMIT_ENV?: string;
 			};
 		}
 	}

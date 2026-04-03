@@ -4,6 +4,18 @@
 	import { _ } from 'svelte-i18n';
 	import toastStore from '@/lib/toaster';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
+	import {
+		BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,
+		MAX_BULK_DOWNLOAD_CHARTS,
+		canBulkSelect,
+		changePage as getChangedPage,
+		handlePageSizeChange as getChangedPageSize,
+		isAbortError,
+		resetBulkSelection as createEmptySelection,
+		startBulkDownload,
+		supportsBulkDownloadStreaming as checkBulkDownloadStreaming
+	} from '$lib/components/ChartList.helpers';
+	import type { SaveFilePickerWindow } from '$lib/components/ChartList.helpers';
 	import ChartListItem from './ChartListItem.svelte';
 	import ChartListTableItem from './ChartListTableItem.svelte';
 	import IconX from '@lucide/svelte/icons/x';
@@ -21,21 +33,6 @@
 	import type { SimfileWithDtx } from '@dtx/common';
 
 	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
-	type SaveFilePickerHandle = {
-		createWritable: () => Promise<WritableStream<Uint8Array>>;
-	};
-	type SaveFilePickerWindow = Window & {
-		showSaveFilePicker?: (options?: {
-			suggestedName?: string;
-			types?: Array<{
-				description: string;
-				accept: Record<string, string[]>;
-			}>;
-		}) => Promise<SaveFilePickerHandle>;
-	};
-	const MAX_BULK_DOWNLOAD_CHARTS = 20;
-	const BULK_DOWNLOAD_UNSUPPORTED_MESSAGE =
-		'Bulk download requires a browser that supports direct file saving.';
 
 	let { pageSize = 12, isBlog = false, enableDownload = false }: Props = $props();
 
@@ -119,11 +116,12 @@
 	};
 
 	const changePage = (newPage: number) => {
-		if (newPage >= 1 && newPage <= totalPages) {
-			resetBulkSelection();
-			currentPage = newPage;
-			loadItems();
-		}
+		const nextPage = getChangedPage(newPage, totalPages);
+		if (!nextPage) return;
+
+		selectedIds = nextPage.selectedIds;
+		currentPage = nextPage.currentPage;
+		loadItems();
 	};
 
 	// Handle page changes from Skeleton UI Pagination
@@ -133,16 +131,17 @@
 
 	// Handle page size changes from Skeleton UI Pagination
 	function handlePageSizeChange(event: { pageSize: number }) {
-		resetBulkSelection();
-		pageSize = event.pageSize;
-		currentPage = 1; // Reset to first page when page size changes
+		const nextPageSize = getChangedPageSize(event.pageSize);
+		selectedIds = nextPageSize.selectedIds;
+		pageSize = nextPageSize.pageSize;
+		currentPage = nextPageSize.currentPage;
 		loadItems();
 	}
 
 	function handleSearchInput() {
 		clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => {
-			resetBulkSelection();
+			selectedIds = createEmptySelection();
 			currentPage = 1;
 			loadItems();
 		}, 500);
@@ -217,75 +216,7 @@
 
 	const clearBulkSelection = () => {
 		selectMode = false;
-		resetBulkSelection();
-	};
-
-	const resetBulkSelection = () => {
-		selectedIds = new Set();
-	};
-
-	const canBulkSelect = (item: ListedChart & { has_uploaded_files?: boolean }) =>
-		item.has_uploaded_files === true;
-
-	const getResponseErrorMessage = async (response: Response, fallback: string) => {
-		try {
-			const data = await response.json();
-			if (typeof data?.error === 'string') {
-				return data.error;
-			}
-		} catch {
-			// ignore parse error
-		}
-
-		return fallback;
-	};
-
-	const getBulkDownloadFilename = (response: Response) => {
-		const contentDisposition = response.headers.get('Content-Disposition');
-		const utf8FilenameMatch = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i);
-		if (utf8FilenameMatch?.[1]) {
-			return decodeURIComponent(utf8FilenameMatch[1]);
-		}
-
-		const filenameMatch = contentDisposition?.match(/filename="?([^";]+)"?/i);
-		if (filenameMatch?.[1]) {
-			return filenameMatch[1];
-		}
-
-		return 'drumery-charts.zip';
-	};
-
-	const streamToFile = async (response: Response, filename: string) => {
-		if (!response.body) {
-			throw new Error('No response body');
-		}
-
-		const saveFilePickerWindow = window as SaveFilePickerWindow;
-		if (typeof saveFilePickerWindow.showSaveFilePicker !== 'function') {
-			throw new Error(BULK_DOWNLOAD_UNSUPPORTED_MESSAGE);
-		}
-
-		const handle = await saveFilePickerWindow.showSaveFilePicker({
-			suggestedName: filename,
-			types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }]
-		});
-		const writable = await handle.createWritable();
-		await response.body.pipeTo(writable);
-	};
-
-	const submitBulkDownload = async (ids: number[]) => {
-		const response = await fetch('/api/simFile/download/bulk', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ ids })
-		});
-
-		if (!response.ok) {
-			throw new Error(await getResponseErrorMessage(response, 'Bulk download failed'));
-		}
-
-		const filename = getBulkDownloadFilename(response);
-		await streamToFile(response, filename);
+		selectedIds = createEmptySelection();
 	};
 
 	const handleBulkDownload = async () => {
@@ -307,48 +238,21 @@
 		}
 		bulkDownloading = true;
 		try {
-			const ids = [...selectedIds];
-
-			const response = await fetch('/api/simFile/download/bulk?validate=1', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ ids })
+			await startBulkDownload({
+				ids: [...selectedIds],
+				fetchFn: fetch,
+				saveFilePickerWindow: window as SaveFilePickerWindow
 			});
-			if (!response.ok) {
-				let errMsg = 'Bulk download failed';
-				try {
-					const data = await response.json();
-					if (typeof data?.error === 'string') errMsg = data.error;
-				} catch {
-					// ignore parse error
-				}
-				toastStore.error({ title: errMsg, duration: 3000 });
-				clearBulkSelection();
+		} catch (error) {
+			if (isAbortError(error)) {
 				return;
 			}
 
-			try {
-				const data = await response.json();
-				if (!data?.ok || data.fileCount === 0) {
-					throw new Error(
-						typeof data?.error === 'string'
-							? data.error
-							: 'No uploaded files found for the selected charts'
-					);
-				}
-
-				await submitBulkDownload(ids);
-			} catch (error) {
-				console.error('Failed to start bulk download:', error);
-				toastStore.error({
-					title: error instanceof Error ? error.message : 'Bulk download failed',
-					duration: 3000
-				});
-				clearBulkSelection();
-			}
-		} catch (error) {
-			console.error('Bulk download request failed:', error);
-			toastStore.error({ title: 'Bulk download failed', duration: 3000 });
+			console.error('Failed to start bulk download:', error);
+			toastStore.error({
+				title: error instanceof Error ? error.message : 'Bulk download failed',
+				duration: 3000
+			});
 			clearBulkSelection();
 		} finally {
 			bulkDownloading = false;
@@ -360,8 +264,7 @@
 	});
 
 	onMount(() => {
-		supportsBulkDownloadStreaming =
-			typeof (window as SaveFilePickerWindow).showSaveFilePicker === 'function';
+		supportsBulkDownloadStreaming = checkBulkDownloadStreaming(window as SaveFilePickerWindow);
 		loadItems();
 	});
 </script>
@@ -424,7 +327,7 @@
 							: 'border-purple-500/30 bg-slate-800/50 text-slate-300 hover:bg-purple-600/20 hover:text-purple-300'}"
 						onclick={() => {
 							selectMode = !selectMode;
-							resetBulkSelection();
+							selectedIds = createEmptySelection();
 						}}
 						aria-pressed={selectMode}
 					>

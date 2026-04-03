@@ -195,6 +195,12 @@ describe('SoundTab component', () => {
 		});
 	});
 
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		delete (URL as unknown as Record<string, unknown>).createObjectURL;
+	});
+
 	it('renders table headers', () => {
 		render(SoundTab);
 		expect(screen.getByText('Active')).toBeInTheDocument();
@@ -328,7 +334,7 @@ describe('SoundTab component', () => {
 
 	it('plays local audio file when filename button clicked', async () => {
 		const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
-		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock-url');
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
 		mockStore.currentSoundChip.subscribe.mockImplementation(
 			(cb: (v: MockSoundChip[]) => void) => {
@@ -368,7 +374,7 @@ describe('SoundTab component', () => {
 
 	it('plays remote audio when remote fileName button clicked (file in FileManager)', async () => {
 		const file = new File(['content'], 'snare.wav', { type: 'audio/wav' });
-		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock-url');
 		mockFileManager.generateKey.mockReturnValue('sim-1/snare.wav');
 		mockFileManager.getFile.mockReturnValue(file);
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
@@ -386,7 +392,7 @@ describe('SoundTab component', () => {
 
 	it('fetches and plays remote audio when not in FileManager but bucketUrl provided', async () => {
 		mockFileManager.getFile.mockReturnValue(undefined);
-		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock-url');
 
 		const fetchedFile = new File(['audio'], 'snare.wav', { type: 'audio/wav' });
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
@@ -460,7 +466,9 @@ describe('SoundTab component', () => {
 				play: vi.fn().mockRejectedValue(new Error('NotAllowedError')),
 				volume: 1
 			})) as unknown as typeof Audio;
-			global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+			(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(
+				() => 'blob:mock-url'
+			);
 
 			const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
 			const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);

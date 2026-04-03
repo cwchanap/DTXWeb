@@ -889,10 +889,13 @@ describe('index.ts IPC handlers', () => {
 			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
 			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio data'));
 
-			global.fetch = vi.fn().mockResolvedValue({
-				ok: true,
-				json: vi.fn().mockResolvedValue({ id: 99 })
-			}) as unknown as typeof fetch;
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					json: vi.fn().mockResolvedValue({ id: 99 })
+				}) as unknown as typeof fetch
+			);
 
 			const result = (await ipcHandlers['upload-file'](
 				{},
@@ -928,11 +931,14 @@ describe('index.ts IPC handlers', () => {
 			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
 			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
 
-			global.fetch = vi.fn().mockResolvedValue({
-				ok: false,
-				statusText: 'Bad Request',
-				text: vi.fn().mockResolvedValue('Invalid file')
-			}) as unknown as typeof fetch;
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					statusText: 'Bad Request',
+					text: vi.fn().mockResolvedValue('Invalid file')
+				}) as unknown as typeof fetch
+			);
 
 			const result = (await ipcHandlers['upload-file'](
 				{},
@@ -966,13 +972,16 @@ describe('index.ts IPC handlers', () => {
 			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
 
 			const capturedFormData: FormData[] = [];
-			global.fetch = vi.fn().mockImplementation((url: string, opts: RequestInit) => {
-				capturedFormData.push(opts.body as FormData);
-				return Promise.resolve({
-					ok: true,
-					json: vi.fn().mockResolvedValue({})
-				});
-			}) as unknown as typeof fetch;
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockImplementation((_url: string, opts: RequestInit) => {
+					capturedFormData.push(opts.body as FormData);
+					return Promise.resolve({
+						ok: true,
+						json: vi.fn().mockResolvedValue({})
+					});
+				}) as unknown as typeof fetch
+			);
 
 			await ipcHandlers['upload-file']({}, 'dir/kick.wav', '/songs/my-song', '42');
 

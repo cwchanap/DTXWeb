@@ -85,11 +85,13 @@ export const POST = async (event: RequestEvent) => {
 		return json({ error: 'ids must be a non-empty array' }, { status: 400 });
 	}
 
-	const ids = parseRequestedIds(payload.ids);
+	const rawIds = parseRequestedIds(payload.ids);
 
-	if (!ids) {
+	if (!rawIds) {
 		return json({ error: 'All ids must be positive integers' }, { status: 400 });
 	}
+
+	const ids = [...new Set(rawIds)];
 
 	if (ids.length > MAX_BULK_IDS) {
 		return json(
@@ -110,11 +112,10 @@ export const POST = async (event: RequestEvent) => {
 		}
 
 		const user = locals.user;
-		const requestedIds = [...new Set(ids)];
 
 		// Resolve which IDs are accessible: published OR owned by the authenticated user
 		const simfileResults = await Promise.all(
-			requestedIds.map(async (id) => {
+			ids.map(async (id) => {
 				const simfile = await getSimfileOwner(db, id);
 				if (!simfile) return { id, status: 'not_found' as const };
 				if (simfile.is_published === 1 || (user && simfile.user_id === user.id)) {
@@ -197,8 +198,16 @@ export const POST = async (event: RequestEvent) => {
 			}
 		}
 
+		const allSources = accessibleIds.flatMap((id, i) =>
+			createZipSources(objectsPerSimfile[i], `${id}/`, `chart-${id}`)
+		);
+
 		if (validateOnly) {
-			return json({ ok: true, fileCount: objectsPerSimfile.flat().length });
+			return json({ ok: true, fileCount: allSources.length });
+		}
+
+		if (allSources.length === 0) {
+			return json({ error: 'No files found for the requested charts' }, { status: 404 });
 		}
 
 		const requestId = request.headers.get('cf-ray') ?? request.headers.get('x-request-id');
@@ -206,14 +215,6 @@ export const POST = async (event: RequestEvent) => {
 			anonymizedIp: ip ? anonymizeIp(ip) : 'redacted',
 			...(requestId ? { requestId } : {})
 		});
-
-		const allSources = accessibleIds.flatMap((id, i) =>
-			createZipSources(objectsPerSimfile[i], `${id}/`, `chart-${id}`)
-		);
-
-		if (allSources.length === 0) {
-			return json({ error: 'No files found for the requested charts' }, { status: 404 });
-		}
 
 		return new Response(buildZipStream(bucket, allSources), {
 			status: 200,

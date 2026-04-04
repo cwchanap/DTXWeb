@@ -231,7 +231,10 @@ export const validateZipSources = async (bucket: R2Bucket, sources: ZipSource[])
 	}
 };
 
-async function* zipChunks(bucket: R2Bucket, sources: ZipSource[]): AsyncGenerator<Uint8Array> {
+const zipChunks = async function* (
+	bucket: R2Bucket,
+	sources: ZipSource[]
+): AsyncGenerator<Uint8Array> {
 	let offset = 0;
 	const centralDirectoryEntries: Array<{
 		pathBytes: Uint8Array;
@@ -331,7 +334,7 @@ async function* zipChunks(bucket: R2Bucket, sources: ZipSource[]): AsyncGenerato
 		centralDirectoryOffset
 	);
 	yield endOfCentralDirectory;
-}
+};
 
 export const buildZipStream = (
 	bucket: R2Bucket,

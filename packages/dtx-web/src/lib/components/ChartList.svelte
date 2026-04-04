@@ -201,7 +201,7 @@
 		});
 	};
 
-	const toggleSelect = (id: number) => {
+	const handleToggleSelect = (id: number) => {
 		const next = new Set(selectedIds);
 		if (next.has(id)) {
 			next.delete(id);
@@ -489,7 +489,7 @@
 								<input
 									type="checkbox"
 									checked={selectedIds.has(item.id)}
-									onchange={() => toggleSelect(item.id)}
+									onchange={() => handleToggleSelect(item.id)}
 									aria-label="Select {item.title}"
 									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
 								/>
@@ -518,7 +518,7 @@
 						<input
 							type="checkbox"
 							checked={selectedIds.has(item.id)}
-							onchange={() => toggleSelect(item.id)}
+							onchange={() => handleToggleSelect(item.id)}
 							aria-label="Select {item.title}"
 							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
 						/>

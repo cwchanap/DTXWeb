@@ -2,12 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import { authStore } from '../stores/authStore';
 
-vi.mock('@lucide/svelte', () => ({
-	Music: vi.fn(),
-	LogOut: vi.fn(),
-	User: vi.fn(),
-	RefreshCw: vi.fn()
-}));
+vi.mock('@lucide/svelte');
 
 vi.mock('../services/authService', () => ({
 	authService: {

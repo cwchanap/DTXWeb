@@ -2,12 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { settingsStore } from '../stores/settingsStore';
 
-vi.mock('@lucide/svelte', () => ({
-	Settings: vi.fn(),
-	Folder: vi.fn(),
-	Save: vi.fn(),
-	RotateCcw: vi.fn()
-}));
+vi.mock('@lucide/svelte');
 
 import SettingsComponent from './Settings.svelte';
 
@@ -69,15 +64,18 @@ describe('Settings', () => {
 
 	it('hides success message after 2 seconds', async () => {
 		vi.useFakeTimers();
-		render(SettingsComponent);
-		const resetBtn = screen.getByRole('button', { name: /Reset to Default/i });
-		await fireEvent.click(resetBtn);
-		expect(screen.getByText('Settings saved successfully!')).toBeInTheDocument();
-		vi.advanceTimersByTime(2001);
-		await waitFor(() => {
-			expect(screen.queryByText('Settings saved successfully!')).not.toBeInTheDocument();
-		});
-		vi.useRealTimers();
+		try {
+			render(SettingsComponent);
+			const resetBtn = screen.getByRole('button', { name: /Reset to Default/i });
+			await fireEvent.click(resetBtn);
+			expect(screen.getByText('Settings saved successfully!')).toBeInTheDocument();
+			vi.advanceTimersByTime(2001);
+			await waitFor(() => {
+				expect(screen.queryByText('Settings saved successfully!')).not.toBeInTheDocument();
+			});
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('calls ipcRenderer.invoke when Browse button is clicked', async () => {

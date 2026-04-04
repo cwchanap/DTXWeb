@@ -1,11 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
 
-vi.mock('@lucide/svelte', () => ({
-	Zap: vi.fn(),
-	Chrome: vi.fn(),
-	Server: vi.fn()
-}));
+vi.mock('@lucide/svelte');
 
 import Versions from './Versions.svelte';
 

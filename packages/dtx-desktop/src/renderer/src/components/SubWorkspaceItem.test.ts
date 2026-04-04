@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('@lucide/svelte', () => ({
-	FolderTree: vi.fn(),
-	Check: vi.fn()
-}));
+vi.mock('@lucide/svelte');
 
 vi.mock('../services/workspaceService', () => ({
 	workspaceService: {
@@ -71,6 +68,6 @@ describe('SubWorkspaceItem', () => {
 		const btn = screen.getByRole('button');
 		await fireEvent.click(btn);
 		// Should not throw - error handled internally
-		expect(console.error).toHaveBeenCalled();
+		await waitFor(() => expect(console.error).toHaveBeenCalled());
 	});
 });

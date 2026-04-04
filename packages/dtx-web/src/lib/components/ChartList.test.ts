@@ -425,7 +425,7 @@ describe('ChartList Rendering', () => {
 });
 
 import { Pagination } from '@skeletonlabs/skeleton-svelte';
-import ChartListTableItemModule from './ChartListTableItem.svelte';
+import ChartListTableItemModule from '$lib/components/ChartListTableItem.svelte';
 import toastStore from '@/lib/toaster';
 
 // Helper: get last Svelte 5 component call props (index 1 = props, fallback to index 0)

@@ -58,7 +58,7 @@ describe('GET /api/chart', () => {
 		expect(data).toEqual({ data: [], count: 0 });
 	});
 
-	it('enriches items with has_uploaded_files from R2', async () => {
+	it('enriches items with has_uploaded_files from R2 when check_uploaded=true', async () => {
 		const simfiles = [
 			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] },
 			{ id: 2, title: 'B', artist: '', bpm: 130, is_published: true, dtx_files: [] }
@@ -69,7 +69,7 @@ describe('GET /api/chart', () => {
 			.mockResolvedValueOnce({ objects: [] });
 
 		const response = await GET({
-			url: new URL('http://localhost/api/chart?scope=published'),
+			url: new URL('http://localhost/api/chart?scope=published&check_uploaded=true'),
 			platform: mockPlatform as any,
 			locals: { user: null } as any
 		});
@@ -79,7 +79,7 @@ describe('GET /api/chart', () => {
 		expect(result.data[1].has_uploaded_files).toBe(false);
 	});
 
-	it('defaults has_uploaded_files to false when R2 bucket is unavailable', async () => {
+	it('defaults has_uploaded_files to false when R2 bucket is unavailable and check_uploaded=true', async () => {
 		const simfiles = [
 			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] }
 		];
@@ -87,7 +87,7 @@ describe('GET /api/chart', () => {
 		const noBucketPlatform = { env: { DB: {} } };
 
 		const response = await GET({
-			url: new URL('http://localhost/api/chart?scope=published'),
+			url: new URL('http://localhost/api/chart?scope=published&check_uploaded=true'),
 			platform: noBucketPlatform as any,
 			locals: { user: null } as any
 		});
@@ -96,7 +96,7 @@ describe('GET /api/chart', () => {
 		expect(result.data[0].has_uploaded_files).toBe(false);
 	});
 
-	it('defaults has_uploaded_files to false when R2 list throws', async () => {
+	it('defaults has_uploaded_files to false when R2 list throws and check_uploaded=true', async () => {
 		const simfiles = [
 			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] }
 		];
@@ -104,13 +104,30 @@ describe('GET /api/chart', () => {
 		mockR2List.mockRejectedValue(new Error('R2 error'));
 
 		const response = await GET({
-			url: new URL('http://localhost/api/chart?scope=published'),
+			url: new URL('http://localhost/api/chart?scope=published&check_uploaded=true'),
 			platform: mockPlatform as any,
 			locals: { user: null } as any
 		});
 		expect(response.status).toBe(200);
 		const result = await response.json();
 		expect(result.data[0].has_uploaded_files).toBe(false);
+	});
+
+	it('skips R2 checks when check_uploaded is not set', async () => {
+		const simfiles = [
+			{ id: 1, title: 'A', artist: '', bpm: 120, is_published: true, dtx_files: [] }
+		];
+		vi.mocked(listSimfiles).mockResolvedValue({ data: simfiles as any, count: 1 });
+
+		const response = await GET({
+			url: new URL('http://localhost/api/chart?scope=published'),
+			platform: mockPlatform as any,
+			locals: { user: null } as any
+		});
+		expect(response.status).toBe(200);
+		expect(mockR2List).not.toHaveBeenCalled();
+		const result = await response.json();
+		expect(result.data[0].has_uploaded_files).toBeUndefined();
 	});
 
 	it('passes userId to listSimfiles when scope is mine', async () => {

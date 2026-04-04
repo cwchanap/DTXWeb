@@ -216,4 +216,172 @@ describe('UploadedAssetFiles', () => {
 			expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
 		});
 	});
+
+	it('shows "Replacing" status when user file matches a cloud file name', async () => {
+		// A user file whose name matches one of the mockAssetFiles (song.dtx)
+		const replacingFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				userFiles: [replacingFile]
+			})
+		});
+		await waitFor(() => {
+			// getMergedFiles merges user file with existing cloud file → "replacing" status
+			expect(screen.getByText('Replacing')).toBeInTheDocument();
+		});
+	});
+
+	it('shows "New" status for user file with no cloud counterpart', async () => {
+		const newFile = new File(['content'], 'brand-new.dtx', { type: 'text/plain' });
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				userFiles: [newFile]
+			})
+		});
+		await waitFor(() => {
+			expect(screen.getByText('New')).toBeInTheDocument();
+		});
+	});
+
+	it('shows bulk upload button when isDesktop, file is selected, and simfileId present', async () => {
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				userFiles: [dtxFile]
+			})
+		});
+		await waitFor(() => {
+			// Checkbox for the file should auto-select → shows bulk upload button
+			expect(screen.getByRole('button', { name: /Bulk Upload/i })).toBeInTheDocument();
+		});
+	});
+
+	it('calls uploadSelectedFiles when bulk upload button clicked (desktop, IPC success)', async () => {
+		const ipcInvoke = vi.fn().mockResolvedValue({ success: true });
+		// Set electron on the existing window object (don't replace the whole window)
+		Object.defineProperty(window, 'electron', {
+			value: { ipcRenderer: { invoke: ipcInvoke } },
+			writable: true,
+			configurable: true
+		});
+
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		const loadAssetFiles = vi.fn().mockResolvedValue([]);
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				songFolderPath: '/songs/sim-1',
+				userFiles: [dtxFile],
+				loadAssetFiles
+			})
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: /Bulk Upload/i })).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: /Bulk Upload/i }));
+
+		await waitFor(() => {
+			expect(ipcInvoke).toHaveBeenCalledWith(
+				'upload-file',
+				'song.dtx',
+				'/songs/sim-1',
+				'sim-1'
+			);
+		});
+
+		// Cleanup
+		Object.defineProperty(window, 'electron', {
+			value: undefined,
+			writable: true,
+			configurable: true
+		});
+	});
+
+	it('shows "Failed" status when IPC upload returns an error', async () => {
+		const ipcInvoke = vi.fn().mockResolvedValue({ success: false, error: 'Upload failed' });
+		Object.defineProperty(window, 'electron', {
+			value: { ipcRenderer: { invoke: ipcInvoke } },
+			writable: true,
+			configurable: true
+		});
+
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		const loadAssetFiles = vi.fn().mockResolvedValue([]);
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				songFolderPath: '/songs/sim-1',
+				userFiles: [dtxFile],
+				loadAssetFiles
+			})
+		});
+
+		await waitFor(() => screen.getByRole('button', { name: /Bulk Upload/i }));
+		await fireEvent.click(screen.getByRole('button', { name: /Bulk Upload/i }));
+
+		await waitFor(() => {
+			expect(screen.getByText('Failed')).toBeInTheDocument();
+		});
+
+		Object.defineProperty(window, 'electron', {
+			value: undefined,
+			writable: true,
+			configurable: true
+		});
+	});
+
+	it('shows "Failed" status when IPC renderer is not available (invokeIpc throws)', async () => {
+		// Ensure window.electron is undefined → invokeIpc throws "IPC Renderer is not available"
+		Object.defineProperty(window, 'electron', {
+			value: undefined,
+			writable: true,
+			configurable: true
+		});
+
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		const loadAssetFiles = vi.fn().mockResolvedValue([]);
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				songFolderPath: '/songs/sim-1',
+				userFiles: [dtxFile],
+				loadAssetFiles
+			})
+		});
+
+		await waitFor(() => screen.getByRole('button', { name: /Bulk Upload/i }));
+		await fireEvent.click(screen.getByRole('button', { name: /Bulk Upload/i }));
+
+		await waitFor(() => {
+			expect(screen.getByText('Failed')).toBeInTheDocument();
+		});
+	});
+
+	it('upload controls are not shown when isDesktop is false', async () => {
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: false,
+				userFiles: [dtxFile]
+			})
+		});
+
+		await waitFor(() => {
+			expect(screen.queryByRole('button', { name: /Bulk Upload/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+		});
+	});
 });

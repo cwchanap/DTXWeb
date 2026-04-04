@@ -1,6 +1,13 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
 import logger from '$lib/server/logger';
 
+const PREVIEW_FILENAMES = new Set(['preview.jpg', 'preview.mp3']);
+
+export const isPreviewKey = (key: string): boolean => {
+	const filename = key.slice(key.lastIndexOf('/') + 1);
+	return PREVIEW_FILENAMES.has(filename);
+};
+
 export interface R2ObjectMeta {
 	key: string;
 	size: number;

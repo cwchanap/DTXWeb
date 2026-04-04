@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$env/static/public', () => ({
 	PUBLIC_SIMFILE_BUCKET_URL: 'http://example.com'
@@ -44,7 +44,6 @@ vi.mock('@dtx/common', () => ({
 	UploadedAssetFiles: vi.fn()
 }));
 
-import { fireEvent, waitFor } from '@testing-library/svelte';
 import ChartDetailPage from './+page.svelte';
 import { ChartDetail } from '@dtx/common/components';
 import toastStore from '$lib/toaster';

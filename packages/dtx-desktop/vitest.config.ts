@@ -1,13 +1,23 @@
 import { defineConfig } from 'vitest/config';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 
 export default defineConfig({
+	plugins: [svelte({ hot: false, preprocess: vitePreprocess() })],
 	test: {
 		environment: 'jsdom',
 		globals: true,
 		setupFiles: ['./src/tests/setup.ts'],
 		// Exclude playwright tests and build outputs
 		exclude: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/e2e/**'],
+		server: {
+			deps: {
+				inline: [/^svelte/, /@testing-library\/svelte/],
+				external: ['svelte/server']
+			}
+		},
+		pool: 'forks',
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'html', 'lcov'],
@@ -51,7 +61,16 @@ export default defineConfig({
 				__dirname,
 				'../../packages/common/src/lib/server.ts'
 			),
-			'@dtx/common': path.resolve(__dirname, '../../packages/common/src/lib/index.ts')
-		}
+			'@dtx/common': path.resolve(__dirname, '../../packages/common/src/lib/index.ts'),
+			'@dtx/ui-components/components/Modal.svelte': path.resolve(
+				__dirname,
+				'../../__mocks__/@dtx/ui-components/Modal.svelte'
+			),
+			'@dtx/ui-components': path.resolve(
+				__dirname,
+				'../../packages/ui-components/src/lib/index.ts'
+			)
+		},
+		conditions: ['browser']
 	}
 });

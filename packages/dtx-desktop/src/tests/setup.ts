@@ -40,6 +40,13 @@ Object.defineProperty(window, 'electron', {
 			send: vi.fn(),
 			on: vi.fn(),
 			invoke: vi.fn()
+		},
+		process: {
+			versions: {
+				electron: '35.0.0',
+				chrome: '130.0.0',
+				node: '20.0.0'
+			}
 		}
 	}
 });

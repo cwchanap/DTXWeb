@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import JSZip from 'jszip';
-import { buildZipStream, createZipSources, fetchR2Entries } from './zipBuilder';
+import { buildZipStream, createZipSources, fetchR2Entries, validateZipSources } from './zipBuilder';
 import type { R2ObjectMeta } from './r2';
 
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
@@ -246,5 +246,51 @@ describe('buildZipStream', () => {
 		await expect(
 			readStream(buildZipStream(bucket, createZipSources(objects, '42/', '')))
 		).rejects.toThrow('Failed to fetch R2 object for ZIP source: 42/file.dtx');
+	});
+});
+
+describe('validateZipSources', () => {
+	it('resolves when all objects exist in R2', async () => {
+		const bucket = {
+			head: vi.fn(async () => ({ key: '42/file.dtx', size: 10 }))
+		} as unknown as R2Bucket;
+
+		const sources = [{ path: 'file.dtx', objectKey: '42/file.dtx', size: 10 }];
+
+		await expect(validateZipSources(bucket, sources)).resolves.toBeUndefined();
+	});
+
+	it('throws when an R2 object is missing', async () => {
+		const bucket = {
+			head: vi.fn(async () => null)
+		} as unknown as R2Bucket;
+
+		const sources = [{ path: 'file.dtx', objectKey: '42/file.dtx', size: 10 }];
+
+		await expect(validateZipSources(bucket, sources)).rejects.toThrow(
+			'Missing R2 object for ZIP source: 42/file.dtx'
+		);
+	});
+
+	it('checks all sources concurrently', async () => {
+		const keys = ['42/a.dtx', '42/b.dtx', '42/c.dtx'];
+		let maxConcurrent = 0;
+		let active = 0;
+
+		const bucket = {
+			head: vi.fn(async (key: string) => {
+				active += 1;
+				maxConcurrent = Math.max(maxConcurrent, active);
+				await wait(5);
+				active -= 1;
+				return { key, size: 10 };
+			})
+		} as unknown as R2Bucket;
+
+		const sources = keys.map((key) => ({ path: key.slice(4), objectKey: key, size: 10 }));
+		await validateZipSources(bucket, sources);
+
+		expect(bucket.head).toHaveBeenCalledTimes(3);
+		expect(maxConcurrent).toBe(3);
 	});
 });

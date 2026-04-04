@@ -2,7 +2,7 @@ import { json, type RequestEvent } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
-import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
+import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
 import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 const MAX_BULK_IDS = 20;
@@ -215,6 +215,8 @@ export const POST = async (event: RequestEvent) => {
 			anonymizedIp: ip ? anonymizeIp(ip) : 'redacted',
 			...(requestId ? { requestId } : {})
 		});
+
+		await validateZipSources(bucket, allSources);
 
 		return new Response(buildZipStream(bucket, allSources), {
 			status: 200,

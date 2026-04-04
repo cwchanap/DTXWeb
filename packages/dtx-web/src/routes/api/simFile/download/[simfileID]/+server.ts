@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import logger from '$lib/server/logger';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
-import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
+import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
 import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 
 export const GET = async ({
@@ -94,6 +94,8 @@ export const GET = async ({
 		if (sources.length === 0) {
 			return json({ error: 'No files found for this chart' }, { status: 404 });
 		}
+
+		await validateZipSources(bucket, sources);
 
 		return new Response(buildZipStream(bucket, sources), {
 			status: 200,

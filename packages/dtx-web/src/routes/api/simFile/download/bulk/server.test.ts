@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './+server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
-import { buildZipStream, createZipSources } from '$lib/server/zipBuilder';
+import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
 import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
 import logger from '$lib/server/logger';
 
@@ -11,7 +11,11 @@ vi.mock('$lib/server/logger', () => ({
 }));
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
-vi.mock('$lib/server/zipBuilder', () => ({ buildZipStream: vi.fn(), createZipSources: vi.fn() }));
+vi.mock('$lib/server/zipBuilder', () => ({
+	buildZipStream: vi.fn(),
+	createZipSources: vi.fn(),
+	validateZipSources: vi.fn()
+}));
 vi.mock('$lib/server/rateLimiter', async () => {
 	const actual =
 		await vi.importActual<typeof import('$lib/server/rateLimiter')>('$lib/server/rateLimiter');
@@ -52,6 +56,7 @@ describe('POST /api/simFile/download/bulk', () => {
 			allowed: true,
 			remainingBytes: 1073741824
 		});
+		vi.mocked(validateZipSources).mockResolvedValue(undefined);
 	});
 
 	it('returns 400 for invalid JSON', async () => {

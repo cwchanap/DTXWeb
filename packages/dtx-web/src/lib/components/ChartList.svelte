@@ -2,7 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
-	import toastStore from '@/lib/toaster';
+	import toastStore from '$lib/toaster';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
 	import {
 		BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,

@@ -149,14 +149,20 @@ export const POST = async (event: RequestEvent) => {
 			return json({ error: 'Simfile not found', ids: missingIds }, { status: 404 });
 		}
 
-		// List all objects per simfile for rate limit size estimation
+		// List all objects per simfile and filter through createZipSources
 		const objectsPerSimfile = await Promise.all(
 			accessibleIds.map((id) => listAllR2Objects(bucket, `${id}/`))
 		);
 
-		const estimatedBytes = objectsPerSimfile.flat().reduce((sum, obj) => sum + obj.size, 0);
-		const missingUploadIds = objectsPerSimfile
-			.map((objects, index) => (objects.length === 0 ? accessibleIds[index] : null))
+		const filteredSourcesPerSimfile = accessibleIds.map((id, i) =>
+			createZipSources(objectsPerSimfile[i], `${id}/`, `chart-${id}`)
+		);
+
+		const estimatedBytes = filteredSourcesPerSimfile
+			.flat()
+			.reduce((sum, src) => sum + src.size, 0);
+		const missingUploadIds = filteredSourcesPerSimfile
+			.map((sources, index) => (sources.length === 0 ? accessibleIds[index] : null))
 			.filter((id): id is number => id !== null);
 
 		if (missingUploadIds.length > 0) {
@@ -198,9 +204,7 @@ export const POST = async (event: RequestEvent) => {
 			}
 		}
 
-		const allSources = accessibleIds.flatMap((id, i) =>
-			createZipSources(objectsPerSimfile[i], `${id}/`, `chart-${id}`)
-		);
+		const allSources = filteredSourcesPerSimfile.flat();
 
 		if (validateOnly) {
 			return json({ ok: true, fileCount: allSources.length });

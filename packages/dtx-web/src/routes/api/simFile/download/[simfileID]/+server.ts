@@ -58,7 +58,14 @@ export const GET = async ({
 		}
 
 		const objects = await listAllR2Objects(bucket, `${canonicalId}/`);
-		const estimatedBytes = objects.reduce((sum, obj) => sum + obj.size, 0);
+
+		const sources = createZipSources(objects, `${canonicalId}/`, '');
+
+		if (sources.length === 0) {
+			return json({ error: 'No files found for this chart' }, { status: 404 });
+		}
+
+		const estimatedBytes = sources.reduce((sum, src) => sum + src.size, 0);
 
 		// Rate limiting — skipped in local dev when KV binding is absent
 		const kv = platform?.env?.RATE_LIMIT;
@@ -87,13 +94,7 @@ export const GET = async ({
 			}
 		}
 
-		logger.info(`Downloading ${objects.length} files for simfile: ${canonicalId}`);
-
-		const sources = createZipSources(objects, `${canonicalId}/`, '');
-
-		if (sources.length === 0) {
-			return json({ error: 'No files found for this chart' }, { status: 404 });
-		}
+		logger.info(`Downloading ${sources.length} files for simfile: ${canonicalId}`);
 
 		await validateZipSources(bucket, sources);
 

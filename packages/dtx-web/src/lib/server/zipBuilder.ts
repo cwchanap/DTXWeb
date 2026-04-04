@@ -231,118 +231,124 @@ export const validateZipSources = async (bucket: R2Bucket, sources: ZipSource[])
 	}
 };
 
+async function* zipChunks(bucket: R2Bucket, sources: ZipSource[]): AsyncGenerator<Uint8Array> {
+	let offset = 0;
+	const centralDirectoryEntries: Array<{
+		pathBytes: Uint8Array;
+		crc32: number;
+		size: number;
+		offset: number;
+	}> = [];
+
+	for (const source of sources) {
+		ensureZip32Range(source.size, `File size for ${source.path}`);
+
+		let r2obj;
+		try {
+			r2obj = await bucket.get(source.objectKey);
+		} catch (error) {
+			logger.warn(`Failed to fetch R2 object: ${source.objectKey}`, error);
+			throw new Error(`Failed to fetch R2 object for ZIP source: ${source.objectKey}`);
+		}
+
+		if (!r2obj) {
+			throw new Error(`Missing R2 object for ZIP source: ${source.objectKey}`);
+		}
+
+		const pathBytes = textEncoder.encode(source.path);
+		const localHeader = createLocalFileHeader(pathBytes);
+		ensureZip32Range(offset, `ZIP offset for ${source.path}`);
+		const localHeaderOffset = offset;
+		yield localHeader;
+		offset += localHeader.byteLength;
+
+		let crc32 = 0xffffffff;
+		let size = 0;
+
+		if (r2obj.body) {
+			const reader = r2obj.body.getReader();
+			let streamDone = false;
+			while (!streamDone) {
+				const { done, value } = await reader.read();
+				streamDone = done;
+				if (streamDone) {
+					break;
+				}
+
+				const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+				size += chunk.byteLength;
+				ensureZip32Range(size, `Streamed size for ${source.path}`);
+				crc32 = updateCrc32(crc32, chunk);
+				yield chunk;
+				offset += chunk.byteLength;
+			}
+		} else {
+			const chunk = new Uint8Array(await r2obj.arrayBuffer());
+			size = chunk.byteLength;
+			ensureZip32Range(size, `Buffered size for ${source.path}`);
+			crc32 = updateCrc32(crc32, chunk);
+			yield chunk;
+			offset += chunk.byteLength;
+		}
+
+		const finalizedCrc32 = (crc32 ^ 0xffffffff) >>> 0;
+		const descriptor = createDataDescriptor(finalizedCrc32, size);
+		yield descriptor;
+		offset += descriptor.byteLength;
+
+		centralDirectoryEntries.push({
+			pathBytes,
+			crc32: finalizedCrc32,
+			size,
+			offset: localHeaderOffset
+		});
+	}
+
+	ensureZip32Range(offset, 'Central directory offset');
+	const centralDirectoryOffset = offset;
+	for (const entry of centralDirectoryEntries) {
+		const record = createCentralDirectoryEntry(
+			entry.pathBytes,
+			entry.crc32,
+			entry.size,
+			entry.offset
+		);
+		yield record;
+		offset += record.byteLength;
+	}
+
+	const centralDirectorySize = offset - centralDirectoryOffset;
+	ensureZip32Range(centralDirectoryEntries.length, 'ZIP entry count');
+	ensureZip32Range(centralDirectorySize, 'Central directory size');
+	if (centralDirectoryEntries.length > ZIP_MAX_16BIT_VALUE) {
+		throw new Error(
+			`ZIP entry count ${centralDirectoryEntries.length} exceeds 16-bit field limit (${ZIP_MAX_16BIT_VALUE}); ZIP64 not supported`
+		);
+	}
+	const endOfCentralDirectory = createEndOfCentralDirectory(
+		centralDirectoryEntries.length,
+		centralDirectorySize,
+		centralDirectoryOffset
+	);
+	yield endOfCentralDirectory;
+}
+
 export const buildZipStream = (
 	bucket: R2Bucket,
 	sources: ZipSource[]
-): ReadableStream<Uint8Array> =>
-	new ReadableStream<Uint8Array>({
-		async start(controller) {
-			try {
-				let offset = 0;
-				const centralDirectoryEntries: Array<{
-					pathBytes: Uint8Array;
-					crc32: number;
-					size: number;
-					offset: number;
-				}> = [];
-
-				for (const source of sources) {
-					ensureZip32Range(source.size, `File size for ${source.path}`);
-
-					let r2obj;
-					try {
-						r2obj = await bucket.get(source.objectKey);
-					} catch (error) {
-						logger.warn(`Failed to fetch R2 object: ${source.objectKey}`, error);
-						throw new Error(
-							`Failed to fetch R2 object for ZIP source: ${source.objectKey}`
-						);
-					}
-
-					if (!r2obj) {
-						throw new Error(`Missing R2 object for ZIP source: ${source.objectKey}`);
-					}
-
-					const pathBytes = textEncoder.encode(source.path);
-					const localHeader = createLocalFileHeader(pathBytes);
-					ensureZip32Range(offset, `ZIP offset for ${source.path}`);
-					const localHeaderOffset = offset;
-					controller.enqueue(localHeader);
-					offset += localHeader.byteLength;
-
-					let crc32 = 0xffffffff;
-					let size = 0;
-
-					if (r2obj.body) {
-						const reader = r2obj.body.getReader();
-						let streamDone = false;
-						while (!streamDone) {
-							const { done, value } = await reader.read();
-							streamDone = done;
-							if (streamDone) {
-								break;
-							}
-
-							const chunk =
-								value instanceof Uint8Array ? value : new Uint8Array(value);
-							size += chunk.byteLength;
-							ensureZip32Range(size, `Streamed size for ${source.path}`);
-							crc32 = updateCrc32(crc32, chunk);
-							controller.enqueue(chunk);
-							offset += chunk.byteLength;
-						}
-					} else {
-						const chunk = new Uint8Array(await r2obj.arrayBuffer());
-						size = chunk.byteLength;
-						ensureZip32Range(size, `Buffered size for ${source.path}`);
-						crc32 = updateCrc32(crc32, chunk);
-						controller.enqueue(chunk);
-						offset += chunk.byteLength;
-					}
-
-					const finalizedCrc32 = (crc32 ^ 0xffffffff) >>> 0;
-					const descriptor = createDataDescriptor(finalizedCrc32, size);
-					controller.enqueue(descriptor);
-					offset += descriptor.byteLength;
-
-					centralDirectoryEntries.push({
-						pathBytes,
-						crc32: finalizedCrc32,
-						size,
-						offset: localHeaderOffset
-					});
-				}
-
-				ensureZip32Range(offset, 'Central directory offset');
-				const centralDirectoryOffset = offset;
-				for (const entry of centralDirectoryEntries) {
-					const record = createCentralDirectoryEntry(
-						entry.pathBytes,
-						entry.crc32,
-						entry.size,
-						entry.offset
-					);
-					controller.enqueue(record);
-					offset += record.byteLength;
-				}
-
-				const centralDirectorySize = offset - centralDirectoryOffset;
-				ensureZip32Range(centralDirectoryEntries.length, 'ZIP entry count');
-				ensureZip32Range(centralDirectorySize, 'Central directory size');
-				if (centralDirectoryEntries.length > ZIP_MAX_16BIT_VALUE) {
-					throw new Error(
-						`ZIP entry count ${centralDirectoryEntries.length} exceeds 16-bit field limit (${ZIP_MAX_16BIT_VALUE}); ZIP64 not supported`
-					);
-				}
-				const endOfCentralDirectory = createEndOfCentralDirectory(
-					centralDirectoryEntries.length,
-					centralDirectorySize,
-					centralDirectoryOffset
-				);
-				controller.enqueue(endOfCentralDirectory);
+): ReadableStream<Uint8Array> => {
+	const iterator = zipChunks(bucket, sources);
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			const { value, done } = await iterator.next();
+			if (done) {
 				controller.close();
-			} catch (error) {
-				controller.error(error);
+			} else {
+				controller.enqueue(value);
 			}
+		},
+		cancel() {
+			iterator.return(undefined);
 		}
 	});
+};

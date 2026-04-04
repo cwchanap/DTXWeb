@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import type { SimfileWithDtxFiles } from '$lib/server/db';
+import { isPreviewKey } from '$lib/server/r2';
 import { toSimfileWithDtx } from '@dtx/common';
 import logger from '$lib/server/logger';
 
@@ -24,8 +25,9 @@ const enrichWithUploadedFiles = async (
 			const idx = nextIndex++;
 			const item = data[idx];
 			try {
-				const listed = await bucket.list({ prefix: `${item.id}/`, limit: 1 });
-				results[idx] = { ...item, has_uploaded_files: listed.objects.length > 0 };
+				const listed = await bucket.list({ prefix: `${item.id}/` });
+				const hasNonPreview = listed.objects.some((obj) => !isPreviewKey(obj.key));
+				results[idx] = { ...item, has_uploaded_files: hasNonPreview };
 			} catch (err) {
 				logger.warn(`R2 list failed for simfile ${item.id}:`, err);
 				results[idx] = { ...item, has_uploaded_files: false };

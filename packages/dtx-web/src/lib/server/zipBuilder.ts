@@ -1,4 +1,5 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
+import { isPreviewKey } from '$lib/server/r2';
 import logger from '$lib/server/logger';
 import type { R2ObjectMeta } from '$lib/server/r2';
 
@@ -158,20 +159,22 @@ export const createZipSources = (
 	keyPrefix: string,
 	pathPrefix: string
 ): ZipSource[] =>
-	objects.flatMap((obj) => {
-		const path = toZipPath(obj.key, keyPrefix, pathPrefix);
-		if (!path) {
-			return [];
-		}
+	objects
+		.filter((obj) => !isPreviewKey(obj.key))
+		.flatMap((obj) => {
+			const path = toZipPath(obj.key, keyPrefix, pathPrefix);
+			if (!path) {
+				return [];
+			}
 
-		return [
-			{
-				path,
-				objectKey: obj.key,
-				size: obj.size
-			} satisfies ZipSource
-		];
-	});
+			return [
+				{
+					path,
+					objectKey: obj.key,
+					size: obj.size
+				} satisfies ZipSource
+			];
+		});
 
 /**
  * Fetches the body of each R2 object and returns ZipEntry records.

@@ -84,10 +84,12 @@ export const GET = async ({
 			pageSize
 		});
 
-		const bucket = platform?.env?.DTXFILE_BUCKET;
-		const enriched = await enrichWithUploadedFiles(data, bucket);
+		const shouldCheckUploaded = url.searchParams.get('check_uploaded') === 'true';
+		const resultData = shouldCheckUploaded
+			? await enrichWithUploadedFiles(data, platform?.env?.DTXFILE_BUCKET)
+			: data;
 
-		return json({ data: enriched, count });
+		return json({ data: resultData, count });
 	} catch (error) {
 		logger.error('Error listing charts:', error);
 		return json({ error: 'Failed to list charts' }, { status: 500 });

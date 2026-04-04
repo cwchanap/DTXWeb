@@ -307,7 +307,7 @@ describe('ChartList component bulk download behavior', () => {
 	});
 });
 
-const mockFetchSuccess = (data = [], count = 0) => {
+const mockFetchSuccess = (data: Record<string, unknown>[] = [], count = 0) => {
 	vi.stubGlobal(
 		'fetch',
 		vi.fn().mockResolvedValue({

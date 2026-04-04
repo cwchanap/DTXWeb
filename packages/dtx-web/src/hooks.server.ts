@@ -4,7 +4,11 @@ import { type Handle, redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import type { Database } from '@dtx/common';
 
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import {
+	PUBLIC_SUPABASE_URL,
+	PUBLIC_SUPABASE_ANON_KEY,
+	PUBLIC_ENABLE_BLOG_DOWNLOAD
+} from '$env/static/public';
 import { json, text } from '@sveltejs/kit';
 
 // Helper function to decode JWT payload without verification
@@ -169,10 +173,15 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 		requestMethod === 'GET' && /^\/api\/chart\/\d+$/.test(event.url.pathname);
 	const isPublicListFilesRoute =
 		requestMethod === 'GET' && /^\/api\/simFile\/listFiles\/\d+$/.test(event.url.pathname);
+	const downloadEnabled = PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
 	const isPublicDownloadRoute =
-		requestMethod === 'GET' && /^\/api\/simFile\/download\/\d+$/.test(event.url.pathname);
+		downloadEnabled &&
+		requestMethod === 'GET' &&
+		/^\/api\/simFile\/download\/\d+$/.test(event.url.pathname);
 	const isPublicBulkDownloadRoute =
-		requestMethod === 'POST' && event.url.pathname === '/api/simFile/download/bulk';
+		downloadEnabled &&
+		requestMethod === 'POST' &&
+		event.url.pathname === '/api/simFile/download/bulk';
 	const isPublicApiRoute =
 		isPublicChartListRoute ||
 		isPublicChartDetailRoute ||

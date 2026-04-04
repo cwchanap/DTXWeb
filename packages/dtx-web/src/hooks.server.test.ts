@@ -12,7 +12,8 @@ vi.mock('@supabase/supabase-js', () => ({
 
 vi.mock('$env/static/public', () => ({
 	PUBLIC_SUPABASE_URL: 'http://localhost:5173',
-	PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key'
+	PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
 }));
 
 let authGuard: typeof import('./hooks.server').authGuard;

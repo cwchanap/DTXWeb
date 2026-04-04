@@ -12,8 +12,13 @@ vi.mock('@supabase/supabase-js', () => ({
 
 vi.mock('$env/static/public', () => ({
 	PUBLIC_SUPABASE_URL: 'http://localhost:5173',
-	PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
-	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
+	PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key'
+}));
+
+vi.mock('$env/dynamic/public', () => ({
+	env: {
+		PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
+	}
 }));
 
 let authGuard: typeof import('./hooks.server').authGuard;
@@ -447,5 +452,119 @@ describe('hooks.server.ts - Bearer token authentication', () => {
 		expect(event.locals.user).toBeTruthy();
 		expect(event.locals.session).toBeTruthy();
 		expect(event.locals.session?.access_token).toBe(testToken);
+	});
+});
+
+describe('hooks.server.ts - Download feature flag (runtime env)', () => {
+	const createUnauthenticatedEvent = (url: string, method: string = 'GET') => {
+		const event = {
+			request: {
+				url,
+				method,
+				headers: new Headers()
+			} as Request,
+			url: new URL(url, 'http://localhost:5173'),
+			cookies: {
+				get: vi.fn(),
+				getAll: vi.fn(() => []),
+				set: vi.fn(),
+				delete: vi.fn(),
+				serialize: vi.fn()
+			},
+			locals: {
+				supabase: {
+					auth: {
+						getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+						getUser: vi.fn()
+					}
+				} as unknown as SupabaseClient
+			},
+			isSubRequest: false,
+			platform: {},
+			params: {},
+			route: { id: null }
+		} as any;
+
+		event.locals.safeGetSession = async () => {
+			return { session: null, user: null };
+		};
+
+		return event;
+	};
+
+	it('blocks unauthenticated download when flag is false', async () => {
+		const event = createUnauthenticatedEvent('http://localhost:5173/api/simFile/download/123');
+		const resolve = vi.fn().mockResolvedValue(new Response('OK', { status: 200 }));
+
+		const result = await authGuard({ event, resolve });
+
+		expect(result).toBeInstanceOf(Response);
+		expect(result.status).toBe(401);
+		expect(resolve).not.toHaveBeenCalled();
+	});
+
+	it('blocks unauthenticated bulk download when flag is false', async () => {
+		const event = createUnauthenticatedEvent(
+			'http://localhost:5173/api/simFile/download/bulk',
+			'POST'
+		);
+		const resolve = vi.fn().mockResolvedValue(new Response('OK', { status: 200 }));
+
+		const result = await authGuard({ event, resolve });
+
+		expect(result).toBeInstanceOf(Response);
+		expect(result.status).toBe(401);
+		expect(resolve).not.toHaveBeenCalled();
+	});
+
+	it('allows unauthenticated download when flag is true', async () => {
+		vi.doMock('$env/dynamic/public', () => ({
+			env: { PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' }
+		}));
+		// Re-import to pick up new mock
+		vi.resetModules();
+		const { authGuard: authGuardEnabled } = await import('./hooks.server');
+
+		const event = createUnauthenticatedEvent('http://localhost:5173/api/simFile/download/123');
+		const resolveResponse = new Response('OK', { status: 200 });
+		const resolve = vi.fn().mockResolvedValue(resolveResponse);
+
+		const result = await authGuardEnabled({ event, resolve });
+
+		expect(result).toBe(resolveResponse);
+		expect(resolve).toHaveBeenCalledTimes(1);
+
+		// Restore original mock
+		vi.doMock('$env/dynamic/public', () => ({
+			env: { PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' }
+		}));
+		vi.resetModules();
+		await import('./hooks.server');
+	});
+
+	it('allows unauthenticated bulk download when flag is true', async () => {
+		vi.doMock('$env/dynamic/public', () => ({
+			env: { PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' }
+		}));
+		vi.resetModules();
+		const { authGuard: authGuardEnabled } = await import('./hooks.server');
+
+		const event = createUnauthenticatedEvent(
+			'http://localhost:5173/api/simFile/download/bulk',
+			'POST'
+		);
+		const resolveResponse = new Response('OK', { status: 200 });
+		const resolve = vi.fn().mockResolvedValue(resolveResponse);
+
+		const result = await authGuardEnabled({ event, resolve });
+
+		expect(result).toBe(resolveResponse);
+		expect(resolve).toHaveBeenCalledTimes(1);
+
+		vi.doMock('$env/dynamic/public', () => ({
+			env: { PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' }
+		}));
+		vi.resetModules();
+		await import('./hooks.server');
 	});
 });

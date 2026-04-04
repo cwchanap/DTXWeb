@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Use the real testing library (override global setup mock)
 vi.mock('@testing-library/svelte', async () => await vi.importActual('@testing-library/svelte'));
@@ -45,6 +45,15 @@ const makeProps = (overrides = {}) => ({
 describe('UploadedAssetFiles', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		// Restore window.electron to undefined to prevent state leakage between tests
+		Object.defineProperty(window, 'electron', {
+			value: undefined,
+			writable: true,
+			configurable: true
+		});
 	});
 
 	it('renders without crashing when no simfileId provided', () => {
@@ -297,13 +306,6 @@ describe('UploadedAssetFiles', () => {
 				'sim-1'
 			);
 		});
-
-		// Cleanup
-		Object.defineProperty(window, 'electron', {
-			value: undefined,
-			writable: true,
-			configurable: true
-		});
 	});
 
 	it('shows "Failed" status when IPC upload returns an error', async () => {
@@ -331,12 +333,6 @@ describe('UploadedAssetFiles', () => {
 
 		await waitFor(() => {
 			expect(screen.getByText('Failed')).toBeInTheDocument();
-		});
-
-		Object.defineProperty(window, 'electron', {
-			value: undefined,
-			writable: true,
-			configurable: true
 		});
 	});
 

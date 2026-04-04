@@ -25,14 +25,17 @@ vi.mock('@dtx/common/game', () => ({
 	Preview: { key: 'PreviewScene' },
 	EventBus: { on: vi.fn(), off: vi.fn(), emit: vi.fn(), once: vi.fn() },
 	EventType: {
-		EDITOR_LOADED: 'EDITOR_LOADED',
-		EDITOR_READY: 'EDITOR_READY',
-		PREVIEW_START: 'PREVIEW_START',
-		PREVIEW_END: 'PREVIEW_END',
-		SCENE_READY: 'SCENE_READY',
-		NOTE_IMPORT: 'NOTE_IMPORT',
-		VALIDATION_ERROR: 'VALIDATION_ERROR',
-		STOP_PREVIEW: 'STOP_PREVIEW'
+		SCENE_READY: 'current-scene-ready',
+		EDITOR_LOADED: 'editor-loaded',
+		MEASURE_UPDATE: 'measure-update',
+		MEASURE_GOTO: 'measure-goto',
+		NOTE_IMPORT: 'note-import',
+		START_PREVIEW: 'start-preview',
+		RESUME_PREVIEW: 'resume-preview',
+		STOP_PREVIEW: 'stop-preview',
+		GRID_SPACING_UPDATE: 'grid-spacing-update',
+		CELL_HEIGHT_UPDATE: 'cell-height-update',
+		VALIDATION_ERROR: 'validation-error'
 	}
 }));
 
@@ -247,9 +250,10 @@ describe('Editor Page – EventBus callback handlers', () => {
 		render(EditorPage, { props: { data: defaultData } });
 
 		// Find the SCENE_READY callback registered by onMount
+		const { EventType } = await import('@dtx/common/game');
 		const sceneReadyCall = vi
 			.mocked(EventBus.on)
-			.mock.calls.find((call) => call[0] === 'SCENE_READY');
+			.mock.calls.find((call) => call[0] === EventType.SCENE_READY);
 		expect(sceneReadyCall).toBeDefined();
 
 		// Invoke the callback – exercises handleSceneReady body
@@ -258,12 +262,12 @@ describe('Editor Page – EventBus callback handlers', () => {
 	});
 
 	it('handleEditorLoaded sets isEditorReady via EDITOR_LOADED EventBus callback', async () => {
-		const { EventBus } = await import('@dtx/common/game');
+		const { EventBus, EventType } = await import('@dtx/common/game');
 		render(EditorPage, { props: { data: defaultData } });
 
 		const editorLoadedCall = vi
 			.mocked(EventBus.on)
-			.mock.calls.find((call) => call[0] === 'EDITOR_LOADED');
+			.mock.calls.find((call) => call[0] === EventType.EDITOR_LOADED);
 		expect(editorLoadedCall).toBeDefined();
 
 		const handleEditorLoaded = editorLoadedCall![1] as () => void;
@@ -271,12 +275,12 @@ describe('Editor Page – EventBus callback handlers', () => {
 	});
 
 	it('handleNoteImport clears isEditorReady via NOTE_IMPORT EventBus callback', async () => {
-		const { EventBus } = await import('@dtx/common/game');
+		const { EventBus, EventType } = await import('@dtx/common/game');
 		render(EditorPage, { props: { data: defaultData } });
 
 		const noteImportCall = vi
 			.mocked(EventBus.on)
-			.mock.calls.find((call) => call[0] === 'NOTE_IMPORT');
+			.mock.calls.find((call) => call[0] === EventType.NOTE_IMPORT);
 		expect(noteImportCall).toBeDefined();
 
 		const handleNoteImport = noteImportCall![1] as () => void;
@@ -284,12 +288,12 @@ describe('Editor Page – EventBus callback handlers', () => {
 	});
 
 	it('handleValidationError shows toast via VALIDATION_ERROR EventBus callback', async () => {
-		const { EventBus } = await import('@dtx/common/game');
+		const { EventBus, EventType } = await import('@dtx/common/game');
 		render(EditorPage, { props: { data: defaultData } });
 
 		const validationErrorCall = vi
 			.mocked(EventBus.on)
-			.mock.calls.find((call) => call[0] === 'VALIDATION_ERROR');
+			.mock.calls.find((call) => call[0] === EventType.VALIDATION_ERROR);
 		expect(validationErrorCall).toBeDefined();
 
 		const handleValidationError = validationErrorCall![1] as (msg: string) => void;
@@ -319,9 +323,11 @@ describe('Editor Page – onMount path variations', () => {
 			lastModified: Date.now()
 		});
 
-		const { container } = render(EditorPage, { props: { data: defaultData } });
-		expect(container).toBeTruthy();
-		// Should NOT call newFile when workspace with currentDTX exists
+		render(EditorPage, { props: { data: defaultData } });
+		// Workspace lookup ran
+		expect(workspaceService.getCurrentWorkspace).toHaveBeenCalled();
+		// Early return before TempChartStorage.load/newFile path
+		expect(TempChartStorage.load).not.toHaveBeenCalled();
 		expect(TempChartStorage.remove).not.toHaveBeenCalled();
 	});
 

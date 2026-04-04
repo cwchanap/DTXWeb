@@ -429,10 +429,22 @@ import ChartListTableItemModule from './ChartListTableItem.svelte';
 import toastStore from '@/lib/toaster';
 
 // Helper: get last Svelte 5 component call props (index 1 = props, fallback to index 0)
-function getLastTableItemProps(): Record<string, unknown> | undefined {
+function getLastTableItemProps<T = Record<string, unknown>>(): T | undefined {
 	const calls = vi.mocked(ChartListTableItemModule).mock.calls;
 	const last = calls[calls.length - 1];
-	return (last?.[1] ?? last?.[0]) as Record<string, unknown> | undefined;
+	return (last?.[1] ?? last?.[0]) as T | undefined;
+}
+
+// Helper: get the onFileDelete handler from ChartListTableItem props or throw if missing
+function getRequiredPropFromTableItem<T>(propName: string): T {
+	const props = getLastTableItemProps();
+	const value = props?.[propName];
+	if (value === undefined) {
+		throw new Error(
+			`Expected prop "${propName}" to be passed to ChartListTableItem, but it was not found. Mock calls: ${vi.mocked(ChartListTableItemModule).mock.calls.length}`
+		);
+	}
+	return value as T;
 }
 
 describe('ChartList – handlePageChange via Pagination prop', () => {
@@ -467,20 +479,15 @@ describe('ChartList – handlePageChange via Pagination prop', () => {
 			| Record<string, unknown>
 			| undefined;
 
-		const onPageChange = paginationProps?.onPageChange as
-			| ((e: { page: number }) => void)
-			| undefined;
+		expect(lastCall).toBeDefined();
+		const onPageChange = paginationProps?.onPageChange as (e: { page: number }) => void;
+		expect(typeof onPageChange).toBe('function');
 
-		if (onPageChange) {
-			vi.mocked(fetch).mockClear();
-			onPageChange({ page: 2 });
-			await waitFor(() => {
-				expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('page=2'));
-			});
-		} else {
-			// The prop exists somewhere in the call arguments
-			expect(lastCall).toBeDefined();
-		}
+		vi.mocked(fetch).mockClear();
+		onPageChange({ page: 2 });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('page=2'));
+		});
 	});
 });
 
@@ -530,32 +537,17 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
-		// Grab onFileDelete from ChartListTableItem mock props (Svelte 5: [anchor, props])
-		const tableItemCalls = vi.mocked(ChartListTableItemModule).mock.calls;
-		const tableItemProps = tableItemCalls[tableItemCalls.length - 1]?.[1] as
-			| Record<string, unknown>
-			| undefined;
-		const onFileDelete = tableItemProps?.onFileDelete as
-			| ((id: number) => Promise<void>)
-			| undefined;
-
-		if (onFileDelete) {
-			await onFileDelete(42);
-			await waitFor(() => {
-				expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/simFile/delete/42', {
-					method: 'DELETE'
-				});
-				expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith(
-					expect.objectContaining({ title: 'Chart deleted' })
-				);
+		const onFileDelete =
+			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
+		await onFileDelete(42);
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/simFile/delete/42', {
+				method: 'DELETE'
 			});
-		} else {
-			// Fallback: verify the prop was passed (index 0 = Svelte 4 style)
-			const altProps = tableItemCalls[tableItemCalls.length - 1]?.[0] as
-				| Record<string, unknown>
-				| undefined;
-			expect(altProps?.onFileDelete ?? tableItemProps).toBeDefined();
-		}
+			expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Chart deleted' })
+			);
+		});
 	});
 
 	it('handleFileDelete shows error toast when DELETE response is not ok', async () => {
@@ -578,28 +570,14 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
-		const tableItemCalls = vi.mocked(ChartListTableItemModule).mock.calls;
-		const tableItemProps = tableItemCalls[tableItemCalls.length - 1]?.[1] as
-			| Record<string, unknown>
-			| undefined;
-		const onFileDelete = tableItemProps?.onFileDelete as
-			| ((id: number) => Promise<void>)
-			| undefined;
-
-		if (onFileDelete) {
-			await onFileDelete(42);
-			await waitFor(() => {
-				expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
-					expect.objectContaining({ title: 'Failed to delete chart files' })
-				);
-			});
-		} else {
-			// Verify the prop exists in either call style
-			const altProps = tableItemCalls[tableItemCalls.length - 1]?.[0] as
-				| Record<string, unknown>
-				| undefined;
-			expect(altProps?.onFileDelete ?? tableItemProps).toBeDefined();
-		}
+		const onFileDelete =
+			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
+		await onFileDelete(42);
+		await waitFor(() => {
+			expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Failed to delete chart files' })
+			);
+		});
 	});
 
 	it('handleFileDelete shows partial deletion toast when partialDeletion is true', async () => {
@@ -625,29 +603,16 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
-		const tableItemCalls = vi.mocked(ChartListTableItemModule).mock.calls;
-		const tableItemProps = tableItemCalls[tableItemCalls.length - 1]?.[1] as
-			| Record<string, unknown>
-			| undefined;
-		const onFileDelete = tableItemProps?.onFileDelete as
-			| ((id: number) => Promise<void>)
-			| undefined;
-
-		if (onFileDelete) {
-			await onFileDelete(42);
-			await waitFor(() => {
-				expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
-					expect.objectContaining({
-						title: expect.stringContaining('some files may remain')
-					})
-				);
-			});
-		} else {
-			const altProps = tableItemCalls[tableItemCalls.length - 1]?.[0] as
-				| Record<string, unknown>
-				| undefined;
-			expect(altProps?.onFileDelete ?? tableItemProps).toBeDefined();
-		}
+		const onFileDelete =
+			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
+		await onFileDelete(42);
+		await waitFor(() => {
+			expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
+				expect.objectContaining({
+					title: expect.stringContaining('some files may remain')
+				})
+			);
+		});
 	});
 
 	it('handleFileDelete falls back to response.text() when json() throws (lines 138-139)', async () => {
@@ -671,27 +636,14 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
-		const tableItemCalls = vi.mocked(ChartListTableItemModule).mock.calls;
-		const tableItemProps = tableItemCalls[tableItemCalls.length - 1]?.[1] as
-			| Record<string, unknown>
-			| undefined;
-		const onFileDelete = tableItemProps?.onFileDelete as
-			| ((id: number) => Promise<void>)
-			| undefined;
-
-		if (onFileDelete) {
-			await onFileDelete(42);
-			await waitFor(() => {
-				expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
-					expect.objectContaining({ title: 'Failed to delete chart files' })
-				);
-			});
-		} else {
-			const altProps = tableItemCalls[tableItemCalls.length - 1]?.[0] as
-				| Record<string, unknown>
-				| undefined;
-			expect(altProps?.onFileDelete ?? tableItemProps).toBeDefined();
-		}
+		const onFileDelete =
+			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
+		await onFileDelete(42);
+		await waitFor(() => {
+			expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Failed to delete chart files' })
+			);
+		});
 	});
 
 	it('handleFileDelete shows error toast on fetch network failure', async () => {
@@ -710,27 +662,14 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
-		const tableItemCalls = vi.mocked(ChartListTableItemModule).mock.calls;
-		const tableItemProps = tableItemCalls[tableItemCalls.length - 1]?.[1] as
-			| Record<string, unknown>
-			| undefined;
-		const onFileDelete = tableItemProps?.onFileDelete as
-			| ((id: number) => Promise<void>)
-			| undefined;
-
-		if (onFileDelete) {
-			await onFileDelete(42);
-			await waitFor(() => {
-				expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
-					expect.objectContaining({ title: 'Failed to delete chart files' })
-				);
-			});
-		} else {
-			const altProps = tableItemCalls[tableItemCalls.length - 1]?.[0] as
-				| Record<string, unknown>
-				| undefined;
-			expect(altProps?.onFileDelete ?? tableItemProps).toBeDefined();
-		}
+		const onFileDelete =
+			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
+		await onFileDelete(42);
+		await waitFor(() => {
+			expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Failed to delete chart files' })
+			);
+		});
 	});
 });
 

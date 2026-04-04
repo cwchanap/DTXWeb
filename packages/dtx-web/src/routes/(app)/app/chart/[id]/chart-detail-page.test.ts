@@ -125,7 +125,7 @@ function getLastProps<T>(mockFn: ReturnType<typeof vi.fn>): T | undefined {
 	return (lastCall?.[1] ?? lastCall?.[0]) as T | undefined;
 }
 
-describe('handleUpdateSimfile via ChartDetail ononSave prop', () => {
+describe('handleUpdateSimfile via ChartDetail onSave prop', () => {
 	const mockSimfileResponse = { id: 123, title: 'Test Song', is_published: false };
 
 	afterEach(() => {
@@ -156,6 +156,10 @@ describe('handleUpdateSimfile via ChartDetail ononSave prop', () => {
 		});
 
 		const props = getLastProps<Record<string, unknown>>(vi.mocked(ChartDetail));
+		// NOTE: Svelte 5 compiles `on:onSave` event handlers into a `$$events` object on the
+		// component props. This is a Svelte internal implementation detail and may break in
+		// future Svelte versions. If tests fail here after a Svelte upgrade, check whether
+		// the events API has changed (e.g. different property name or pattern).
 		const events = props?.$$events as Record<
 			string,
 			(e: { detail: Record<string, unknown> }) => Promise<void>

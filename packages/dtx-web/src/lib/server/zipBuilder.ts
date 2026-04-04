@@ -219,6 +219,15 @@ export const fetchR2Entries = async (
 	return entries.filter((e): e is ZipEntry => e !== null);
 };
 
+export const validateZipSources = async (bucket: R2Bucket, sources: ZipSource[]): Promise<void> => {
+	const headResults = await Promise.all(sources.map((source) => bucket.head(source.objectKey)));
+	for (let i = 0; i < sources.length; i += 1) {
+		if (!headResults[i]) {
+			throw new Error(`Missing R2 object for ZIP source: ${sources[i].objectKey}`);
+		}
+	}
+};
+
 export const buildZipStream = (
 	bucket: R2Bucket,
 	sources: ZipSource[]

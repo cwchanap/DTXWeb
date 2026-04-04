@@ -336,6 +336,7 @@ describe('Editor Page – onMount path variations', () => {
 
 		render(EditorPage, { props: { data: defaultData } });
 
+		expect(TempChartStorage.load).toHaveBeenCalled();
 		// Should set difficulty to 'Imported' instead of creating a new file
 		expect(store.currentDifficulty.set).toHaveBeenCalledWith('Imported');
 	});
@@ -497,6 +498,7 @@ describe('Editor Page – confirmDiscardChanges and cancelDiscardChanges', () =>
 
 	it('confirmDiscardChanges calls TempChartStorage.remove and reloads via DiscardModal onConfirm', () => {
 		const reloadMock = vi.fn();
+		const originalLocation = window.location;
 		Object.defineProperty(window, 'location', {
 			value: { ...window.location, reload: reloadMock },
 			writable: true,
@@ -512,6 +514,12 @@ describe('Editor Page – confirmDiscardChanges and cancelDiscardChanges', () =>
 
 		expect(TempChartStorage.remove).toHaveBeenCalled();
 		expect(reloadMock).toHaveBeenCalled();
+
+		Object.defineProperty(window, 'location', {
+			value: originalLocation,
+			writable: true,
+			configurable: true
+		});
 	});
 });
 

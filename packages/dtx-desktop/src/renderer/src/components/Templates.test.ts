@@ -58,6 +58,10 @@ describe('Templates', () => {
 	beforeEach(() => {
 		mockTemplateState = { templates: [], isLoading: false, error: null };
 		vi.clearAllMocks();
+		const invokeMock = window.electron?.ipcRenderer?.invoke;
+		if (vi.isMockFunction(invokeMock)) {
+			invokeMock.mockReset();
+		}
 		// Re-mock setError and clearError since clearAllMocks resets implementations
 		vi.mocked(templateStore.setError).mockImplementation((error: string | null) => {
 			mockTemplateState = { ...mockTemplateState, error };
@@ -280,22 +284,30 @@ describe('Templates', () => {
 
 		it('calls removeTemplate when delete is confirmed', async () => {
 			setTemplates([makeTemplate({ id: 'del-1', name: 'To Delete' })]);
-			vi.spyOn(window, 'confirm').mockReturnValue(true);
-			render(Templates);
-			const buttons = screen.getAllByRole('button');
-			const deleteBtn = buttons.find((b) => b.title === 'Delete template');
-			await fireEvent.click(deleteBtn!);
-			expect(templateStore.removeTemplate).toHaveBeenCalledWith('del-1');
+			const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+			try {
+				render(Templates);
+				const buttons = screen.getAllByRole('button');
+				const deleteBtn = buttons.find((b) => b.title === 'Delete template');
+				await fireEvent.click(deleteBtn!);
+				expect(templateStore.removeTemplate).toHaveBeenCalledWith('del-1');
+			} finally {
+				confirmSpy.mockRestore();
+			}
 		});
 
 		it('does not call removeTemplate when delete is cancelled', async () => {
 			setTemplates([makeTemplate({ id: 'del-1', name: 'To Delete' })]);
-			vi.spyOn(window, 'confirm').mockReturnValue(false);
-			render(Templates);
-			const buttons = screen.getAllByRole('button');
-			const deleteBtn = buttons.find((b) => b.title === 'Delete template');
-			await fireEvent.click(deleteBtn!);
-			expect(templateStore.removeTemplate).not.toHaveBeenCalled();
+			const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+			try {
+				render(Templates);
+				const buttons = screen.getAllByRole('button');
+				const deleteBtn = buttons.find((b) => b.title === 'Delete template');
+				await fireEvent.click(deleteBtn!);
+				expect(templateStore.removeTemplate).not.toHaveBeenCalled();
+			} finally {
+				confirmSpy.mockRestore();
+			}
 		});
 	});
 });

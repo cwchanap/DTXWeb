@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import type { Template } from '../stores/templateStore';
 
 vi.mock('@lucide/svelte');
 
+type TemplateState = { templates: Template[]; isLoading: boolean; error: string | null };
+
 // Mock templateStore with full control
-const mockSubscribers: Array<
-	(state: { templates: unknown[]; isLoading: boolean; error: string | null }) => void
-> = [];
-let mockTemplateState = {
-	templates: [] as unknown[],
+const mockSubscribers: Array<(state: TemplateState) => void> = [];
+let mockTemplateState: TemplateState = {
+	templates: [],
 	isLoading: false,
-	error: null as string | null
+	error: null
 };
 
 vi.mock('../stores/templateStore', () => ({
@@ -40,7 +41,7 @@ vi.mock('../stores/templateStore', () => ({
 import Templates from './Templates.svelte';
 import { templateStore } from '../stores/templateStore';
 
-const makeTemplate = (overrides = {}) => ({
+const makeTemplate = (overrides: Partial<Template> = {}): Template => ({
 	id: 'template-1',
 	name: 'My Template',
 	folderPath: '/templates/my-template',
@@ -48,10 +49,10 @@ const makeTemplate = (overrides = {}) => ({
 	...overrides
 });
 
-function setTemplates(templates: unknown[]) {
+const setTemplates = (templates: Template[]): void => {
 	mockTemplateState = { ...mockTemplateState, templates };
 	mockSubscribers.forEach((cb) => cb(mockTemplateState));
-}
+};
 
 describe('Templates', () => {
 	beforeEach(() => {

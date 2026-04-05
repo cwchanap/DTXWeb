@@ -39,6 +39,11 @@ const makeNode = (overrides: Partial<TreeNode> = {}): TreeNode => ({
 describe('WorkspaceTree', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(workspaceService.collapseTreeNode).mockReset();
+		vi.mocked(workspaceService.expandTreeNode).mockReset();
+		vi.mocked(workspaceService.expandTreeNode).mockResolvedValue(undefined);
+		vi.mocked(workspaceService.selectSong).mockReset();
+		vi.mocked(linkingService.unlinkSimFileFromFolder).mockReset();
 	});
 
 	afterEach(() => {

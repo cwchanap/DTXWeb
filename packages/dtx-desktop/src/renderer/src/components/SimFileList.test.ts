@@ -34,6 +34,7 @@ describe('SimFileList', () => {
 		simFileStore.reset();
 		workspaceStore.reset();
 		vi.clearAllMocks();
+		vi.mocked(simFileService.refreshUserSimFiles).mockReset();
 	});
 
 	afterEach(() => {

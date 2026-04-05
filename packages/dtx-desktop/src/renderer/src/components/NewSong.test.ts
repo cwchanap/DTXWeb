@@ -10,6 +10,10 @@ describe('NewSong', () => {
 	beforeEach(() => {
 		workspaceStore.reset();
 		vi.clearAllMocks();
+		const invokeMock = window.electron?.ipcRenderer?.invoke;
+		if (vi.isMockFunction(invokeMock)) {
+			invokeMock.mockReset();
+		}
 	});
 
 	afterEach(() => {

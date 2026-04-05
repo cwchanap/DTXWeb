@@ -79,35 +79,19 @@ describe('Settings', () => {
 	});
 
 	it('calls ipcRenderer.invoke when Browse button is clicked', async () => {
-		const mockInvoke = vi.fn().mockResolvedValue({ canceled: true });
-		Object.defineProperty(window, 'electron', {
-			configurable: true,
-			writable: true,
-			value: {
-				ipcRenderer: { send: vi.fn(), on: vi.fn(), invoke: mockInvoke },
-				process: { versions: { electron: '35.0.0', chrome: '130.0.0', node: '20.0.0' } }
-			}
-		});
+		vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({ canceled: true });
 		render(SettingsComponent);
 		const browseBtn = screen.getByRole('button', { name: /Browse/i });
 		await fireEvent.click(browseBtn);
 		await waitFor(() => {
-			expect(mockInvoke).toHaveBeenCalledWith('select-folder');
+			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('select-folder');
 		});
 	});
 
 	it('updates export directory when folder is selected', async () => {
-		const mockInvoke = vi.fn().mockResolvedValue({
+		vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
 			canceled: false,
 			filePaths: ['/new/export/path']
-		});
-		Object.defineProperty(window, 'electron', {
-			configurable: true,
-			writable: true,
-			value: {
-				ipcRenderer: { send: vi.fn(), on: vi.fn(), invoke: mockInvoke },
-				process: { versions: { electron: '35.0.0', chrome: '130.0.0', node: '20.0.0' } }
-			}
 		});
 		render(SettingsComponent);
 		const browseBtn = screen.getByRole('button', { name: /Browse/i });

@@ -308,6 +308,9 @@ describe('POST /api/simFile/download/bulk', () => {
 		vi.mocked(listAllR2Objects)
 			.mockResolvedValueOnce([{ key: '1/file.dtx', size: 512, uploaded: new Date() }])
 			.mockResolvedValueOnce([]);
+		vi.mocked(createZipSources)
+			.mockReturnValueOnce([{ path: 'chart-1/file.dtx', objectKey: '1/file.dtx', size: 512 }])
+			.mockReturnValueOnce([]);
 
 		const res = await POST({
 			request: createRequest({ ids: [1, 2] }),

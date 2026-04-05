@@ -17,6 +17,10 @@ vi.mock('$lib/toaster', () => ({
 	default: mockToastStore
 }));
 
+vi.mock('@/lib/toaster', () => ({
+	default: mockToastStore
+}));
+
 vi.mock('./ChartListItem.svelte', async () => {
 	const { default: ModalStub } = await import('../../tests/stubs/ModalStub.svelte');
 	return { default: ModalStub };
@@ -26,6 +30,8 @@ vi.mock('./ChartListTableItem.svelte', async () => {
 	const { default: ModalStub } = await import('../../tests/stubs/ModalStub.svelte');
 	return { default: ModalStub };
 });
+
+vi.mock('$lib/components/ChartListTableItem.svelte', () => ({ default: vi.fn() }));
 
 vi.mock('@lucide/svelte/icons');
 

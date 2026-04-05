@@ -42,7 +42,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText('35.0.0')).toBeInTheDocument();
+		expect(screen.getByText(window.electron.process.versions.electron)).toBeInTheDocument();
 	});
 
 	it('displays chrome version when modal is open', async () => {
@@ -50,7 +50,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText('130.0.0')).toBeInTheDocument();
+		expect(screen.getByText(window.electron.process.versions.chrome)).toBeInTheDocument();
 	});
 
 	it('displays node version when modal is open', async () => {
@@ -58,7 +58,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText('20.0.0')).toBeInTheDocument();
+		expect(screen.getByText(window.electron.process.versions.node)).toBeInTheDocument();
 	});
 
 	it('displays version labels when modal is open', async () => {

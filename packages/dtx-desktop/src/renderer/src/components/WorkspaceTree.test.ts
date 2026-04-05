@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TreeNode } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
@@ -168,11 +168,15 @@ describe('WorkspaceTree', () => {
 	});
 
 	it('handles expand errors gracefully', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		vi.mocked(workspaceService.expandTreeNode).mockRejectedValue(new Error('IPC error'));
 		const nodes = [makeNode({ path: '/folder', hasChildren: true, isExpanded: false })];
 		render(WorkspaceTree, { props: { nodes } });
 		const btn = screen.getAllByRole('button')[0];
 		await fireEvent.click(btn);
-		expect(console.error).toHaveBeenCalled();
+		await waitFor(() => {
+			expect(consoleSpy).toHaveBeenCalled();
+		});
+		consoleSpy.mockRestore();
 	});
 });

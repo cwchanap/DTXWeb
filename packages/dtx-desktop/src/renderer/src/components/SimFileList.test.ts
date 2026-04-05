@@ -12,9 +12,7 @@ vi.mock('../services/simFileService', () => ({
 	}
 }));
 
-vi.mock('@skeletonlabs/skeleton-svelte', () => ({
-	Pagination: vi.fn()
-}));
+vi.mock('@skeletonlabs/skeleton-svelte');
 
 import SimFileList from './SimFileList.svelte';
 import { simFileService } from '../services/simFileService';

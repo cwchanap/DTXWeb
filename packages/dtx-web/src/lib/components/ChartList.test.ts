@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-const { toastStore } = vi.hoisted(() => ({
-	toastStore: {
-		error: vi.fn(),
-		success: vi.fn()
-	}
+const mockToastStore = vi.hoisted(() => ({
+	error: vi.fn(),
+	success: vi.fn()
 }));
 
 vi.mock('svelte-i18n');
@@ -16,7 +14,7 @@ vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 }));
 
 vi.mock('$lib/toaster', () => ({
-	default: toastStore
+	default: mockToastStore
 }));
 
 vi.mock('./ChartListItem.svelte', async () => {
@@ -270,7 +268,7 @@ describe('ChartList component bulk download behavior', () => {
 		await waitFor(() => expect(startBulkDownloadSpy).toHaveBeenCalled());
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(toastStore.error).not.toHaveBeenCalled();
+		expect(mockToastStore.error).not.toHaveBeenCalled();
 		expect(consoleErrorSpy).not.toHaveBeenCalled();
 		expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /download \(1\)/i })).toBeInTheDocument();
@@ -288,7 +286,7 @@ describe('ChartList component bulk download behavior', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /download \(1\)/i }));
 
 		await waitFor(() =>
-			expect(toastStore.error).toHaveBeenCalledWith({
+			expect(mockToastStore.error).toHaveBeenCalledWith({
 				title: 'Bulk download failed',
 				duration: 3000
 			})

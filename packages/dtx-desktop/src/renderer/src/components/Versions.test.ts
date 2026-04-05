@@ -6,23 +6,6 @@ vi.mock('@lucide/svelte');
 import Versions from './Versions.svelte';
 
 describe('Versions', () => {
-	beforeEach(() => {
-		Object.defineProperty(window, 'electron', {
-			configurable: true,
-			writable: true,
-			value: {
-				ipcRenderer: { send: vi.fn(), on: vi.fn(), invoke: vi.fn() },
-				process: {
-					versions: {
-						electron: '35.0.0',
-						chrome: '130.0.0',
-						node: '20.0.0'
-					}
-				}
-			}
-		});
-	});
-
 	afterEach(() => {
 		cleanup();
 	});

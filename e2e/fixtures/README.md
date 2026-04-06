@@ -21,20 +21,20 @@ This directory contains TypeScript-generated MIDI test fixtures for the Playwrig
 ### Generate Fixtures
 
 ```bash
-npm run fixtures:generate
+bun run fixtures:generate
 ```
 
 ### Verify Fixtures
 
 ```bash
-npm run fixtures:verify
+bun run fixtures:verify
 ```
 
 ### Run E2E Tests
 
 ```bash
-npm run e2e
-npm run e2e:ui  # Interactive UI mode
+bun run e2e
+bun run e2e:ui  # Interactive UI mode
 ```
 
 ## Technical Details

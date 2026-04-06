@@ -4,8 +4,8 @@ Export-only Svelte UI library that houses shadcn-svelte components shared across
 
 ## Develop
 
-- Start dev preview: `npm run dev -w=@dtx/ui-components`
-- Build package: `npm run build -w=@dtx/ui-components`
+- Start dev preview: `bun run dev --filter=@dtx/ui-components`
+- Build package: `bun run build --filter=@dtx/ui-components`
 
 ## Add shadcn-svelte Components
 
@@ -14,13 +14,13 @@ This package is preconfigured with `components.json` so the shadcn-svelte CLI wr
 1. Initialize once (writes theme to `src/app.css`):
 
 ```
-npx shadcn-svelte@latest init --cwd packages/ui-components
+bunx shadcn-svelte@latest init --cwd packages/ui-components
 ```
 
 2. Add components (example: Button):
 
 ```
-npx shadcn-svelte@latest add button --cwd packages/ui-components
+bunx shadcn-svelte@latest add button --cwd packages/ui-components
 ```
 
 3. Re-export from `src/lib/components/index.ts` so consumers can import:

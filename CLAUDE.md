@@ -173,7 +173,8 @@ Check `__mocks__/` folder before creating new mocks:
 - For unit tests, only write tests involving code logic
 - Never write trivial tests (like testing variable assignment, simple math)
 - **ALWAYS check the `__mocks__` folder** before creating new mocks for external libraries
-- Enhance global mocks rather than creating local ones when possible
+- Enhance global mocks rather than creating local ones when possible; use local mocks only for project-specific modules or one-off test-specific behavior
+- Use `Preview.test.ts` as the reference pattern for test structure (beforeEach/afterEach setup, vi.mock at the top)
 - Use workspace-specific test commands for individual packages
 
 ## Code Conventions
@@ -231,6 +232,7 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 
 ## Environment Setup
 
+- Node.js 22.x or later
 - Bun v1.3.9 (package manager and runtime)
 - Uses bun workspaces for monorepo management
 - Turborepo for build orchestration and caching
@@ -251,10 +253,3 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 - NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User
 - NEVER run development servers (`bun run dev`) or build commands (`bun run build`) unless the user explicitly instructs you to do so
 - ONLY build the shared package (`@dtx/common`) if you have made changes to files within that package
-
-# important-instruction-reminders
-
-Do what has been asked; nothing more, nothing less.
-NEVER create files unless they're absolutely necessary for achieving your goal.
-ALWAYS prefer editing an existing file to creating a new one.
-NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User.

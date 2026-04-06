@@ -122,10 +122,7 @@ describe('POST /api/simFile/download/bulk', () => {
 				'Content-Type': 'application/x-www-form-urlencoded',
 				'cf-connecting-ip': '1.2.3.4'
 			},
-			body: new URLSearchParams([
-				['ids', '1'],
-				['ids', '2']
-			])
+			body: 'ids=1&ids=2'
 		});
 
 		const res = await POST({

@@ -249,6 +249,133 @@ describe('ChartList helpers', () => {
 			selectedIds: new Set<number>()
 		});
 	});
+
+	it('throws when showBulkDownloadSaveFilePicker is called on an unsupported window', async () => {
+		await expect(chartListHelpers.showBulkDownloadSaveFilePicker({})).rejects.toThrow(
+			chartListHelpers.BULK_DOWNLOAD_UNSUPPORTED_MESSAGE
+		);
+	});
+
+	it('calls showSaveFilePicker with correct options including suggestedName', async () => {
+		const handle = { createWritable: vi.fn() };
+		const showSaveFilePicker = vi.fn().mockResolvedValue(handle);
+		const result = await chartListHelpers.showBulkDownloadSaveFilePicker(
+			{ showSaveFilePicker },
+			'my-archive.zip'
+		);
+		expect(result).toBe(handle);
+		expect(showSaveFilePicker).toHaveBeenCalledWith(
+			expect.objectContaining({ suggestedName: 'my-archive.zip' })
+		);
+	});
+
+	it('throws when streamToFile is called with a response with no body', async () => {
+		await expect(
+			chartListHelpers.streamToFile({ body: null } as Response, {} as WritableStream)
+		).rejects.toThrow('No response body');
+	});
+
+	it('submitBulkDownload streams the response to the target on success', async () => {
+		const writable = {} as WritableStream<Uint8Array>;
+		const pipeTo = vi.fn().mockResolvedValue(undefined);
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: true,
+			body: { pipeTo } as unknown as ReadableStream<Uint8Array>
+		} as Response);
+
+		await chartListHelpers.submitBulkDownload(fetchFn, [1, 2], writable);
+
+		expect(fetchFn).toHaveBeenCalledWith(
+			'/api/simFile/download/bulk',
+			expect.objectContaining({ method: 'POST' })
+		);
+		expect(pipeTo).toHaveBeenCalledWith(writable);
+	});
+
+	it('submitBulkDownload throws with server error message when response is not ok', async () => {
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: false,
+			json: vi.fn().mockResolvedValue({ error: 'Server overload' })
+		} as unknown as Response);
+
+		await expect(
+			chartListHelpers.submitBulkDownload(fetchFn, [1], {} as WritableStream)
+		).rejects.toThrow('Server overload');
+	});
+
+	it('submitBulkDownload uses fallback message when error response has no string error', async () => {
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: false,
+			json: vi.fn().mockResolvedValue({ error: 42 })
+		} as unknown as Response);
+
+		await expect(
+			chartListHelpers.submitBulkDownload(fetchFn, [1], {} as WritableStream)
+		).rejects.toThrow('Bulk download failed');
+	});
+
+	it('isAbortError returns false for null, undefined, numbers, and strings', () => {
+		expect(chartListHelpers.isAbortError(null)).toBe(false);
+		expect(chartListHelpers.isAbortError(undefined)).toBe(false);
+		expect(chartListHelpers.isAbortError(42)).toBe(false);
+		expect(chartListHelpers.isAbortError('AbortError')).toBe(false);
+	});
+
+	it('startBulkDownload throws when validation response is not ok', async () => {
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue({ createWritable: vi.fn() })
+		};
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: false,
+			json: vi.fn().mockResolvedValue({ error: 'Not authorized' })
+		} as unknown as Response);
+
+		await expect(
+			chartListHelpers.startBulkDownload({ ids: [1], fetchFn, saveFilePickerWindow })
+		).rejects.toThrow('Not authorized');
+	});
+
+	it('startBulkDownload throws when validation data reports ok=false', async () => {
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue({ createWritable: vi.fn() })
+		};
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: true,
+			json: vi.fn().mockResolvedValue({ ok: false, error: 'No files found' })
+		} as unknown as Response);
+
+		await expect(
+			chartListHelpers.startBulkDownload({ ids: [1], fetchFn, saveFilePickerWindow })
+		).rejects.toThrow('No files found');
+	});
+
+	it('startBulkDownload throws with default message when validation ok=false with no error string', async () => {
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue({ createWritable: vi.fn() })
+		};
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: true,
+			json: vi.fn().mockResolvedValue({ ok: false })
+		} as unknown as Response);
+
+		await expect(
+			chartListHelpers.startBulkDownload({ ids: [1], fetchFn, saveFilePickerWindow })
+		).rejects.toThrow('No uploaded files found for the selected charts');
+	});
+
+	it('startBulkDownload throws when fileCount is zero', async () => {
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue({ createWritable: vi.fn() })
+		};
+		const fetchFn = vi.fn().mockResolvedValue({
+			ok: true,
+			json: vi.fn().mockResolvedValue({ ok: true, fileCount: 0 })
+		} as unknown as Response);
+
+		await expect(
+			chartListHelpers.startBulkDownload({ ids: [1], fetchFn, saveFilePickerWindow })
+		).rejects.toThrow('No uploaded files found for the selected charts');
+	});
 });
 
 describe('ChartList component bulk download behavior', () => {

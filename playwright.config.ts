@@ -64,7 +64,7 @@ export default defineConfig({
 
 	/* Run your local dev server before starting the tests */
 	webServer: {
-		command: 'bun run dev --filter=dtx-web',
+		command: 'bun run --filter=dtx-web dev',
 		url: 'http://localhost:5173',
 		reuseExistingServer: !process.env.CI,
 		env: {

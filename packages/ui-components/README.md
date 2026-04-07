@@ -4,8 +4,8 @@ Export-only Svelte UI library that houses shadcn-svelte components shared across
 
 ## Develop
 
-- Start dev preview: `bun run dev --filter=@dtx/ui-components`
-- Build package: `bun run build --filter=@dtx/ui-components`
+- Start dev preview: `bun run --filter=@dtx/ui-components dev`
+- Build package: `bun run --filter=@dtx/ui-components build`
 
 ## Add shadcn-svelte Components
 

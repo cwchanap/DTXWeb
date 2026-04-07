@@ -58,7 +58,7 @@ describe('normalizePosition', () => {
 		expect(normalizePosition(step / 2, 24)).toBeCloseTo(step);
 	});
 
-	it('clamps floating point jitter to clean cell boundaries', () => {
+	it('rounds floating point jitter to clean cell boundaries', () => {
 		// Floating point representation of 3/16 may have precision noise
 		const threeOver16 = 3 / 16;
 		const slightlyOff = threeOver16 + 1e-10;

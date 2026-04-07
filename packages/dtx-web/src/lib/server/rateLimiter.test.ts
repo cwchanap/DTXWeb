@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { KVNamespace } from '@cloudflare/workers-types';
 import { getClientIp, tryConsumeRateLimit } from './rateLimiter';
 
@@ -51,6 +51,14 @@ describe('getClientIp', () => {
 });
 
 describe('tryConsumeRateLimit', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it('falls back to zero when KV contains an invalid value', async () => {
 		const kv = {
 			get: vi.fn().mockResolvedValueOnce('not-a-number').mockResolvedValueOnce(null),

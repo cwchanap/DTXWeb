@@ -49,7 +49,7 @@ describe('CloudSongAutocomplete – open state', () => {
 
 	it('renders the Close button', () => {
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
-		expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
 	});
 });
 

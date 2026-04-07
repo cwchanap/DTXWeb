@@ -4,6 +4,10 @@ import JSZip from 'jszip';
 import { buildZipStream, createZipSources, fetchR2Entries, validateZipSources } from './zipBuilder';
 import type { R2ObjectMeta } from './r2';
 
+vi.mock('$lib/server/logger', () => ({
+	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+}));
+
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_GENERAL_PURPOSE_UTF8_AND_DESCRIPTOR_FLAGS = 0x0808;
 
@@ -292,5 +296,117 @@ describe('validateZipSources', () => {
 
 		expect(bucket.head).toHaveBeenCalledTimes(3);
 		expect(maxConcurrent).toBe(3);
+	});
+});
+
+describe('createZipSources', () => {
+	const makeObj = (key: string, size = 100): R2ObjectMeta => ({
+		key,
+		size,
+		uploaded: new Date()
+	});
+
+	it('maps objects to ZipSource entries with path and objectKey', () => {
+		const objects = [makeObj('42/song.dtx', 1024), makeObj('42/hat.wav', 512)];
+		const sources = createZipSources(objects, '42/', 'chart-42');
+		expect(sources).toEqual([
+			{ path: 'chart-42/song.dtx', objectKey: '42/song.dtx', size: 1024 },
+			{ path: 'chart-42/hat.wav', objectKey: '42/hat.wav', size: 512 }
+		]);
+	});
+
+	it('filters out preview.jpg and preview.mp3 objects', () => {
+		const objects = [
+			makeObj('42/song.dtx'),
+			makeObj('42/preview.jpg'),
+			makeObj('42/preview.mp3'),
+			makeObj('42/cover.png')
+		];
+		const sources = createZipSources(objects, '42/', 'chart-42');
+		expect(sources.map((s) => s.objectKey)).toEqual(['42/song.dtx', '42/cover.png']);
+	});
+
+	it('skips objects with unsafe filenames (path traversal)', () => {
+		const objects = [
+			makeObj('42/safe.dtx'),
+			makeObj('42/../secret.txt'),
+			makeObj('42//double-slash.wav'),
+			makeObj('42/C:/evil.dtx')
+		];
+		const sources = createZipSources(objects, '42/', '');
+		expect(sources.map((s) => s.objectKey)).toEqual(['42/safe.dtx']);
+	});
+
+	it('produces paths without prefix when pathPrefix is empty string', () => {
+		const objects = [makeObj('42/song.dtx', 256)];
+		const sources = createZipSources(objects, '42/', '');
+		expect(sources).toEqual([{ path: 'song.dtx', objectKey: '42/song.dtx', size: 256 }]);
+	});
+
+	it('returns empty array when all objects are preview files', () => {
+		const objects = [makeObj('42/preview.jpg'), makeObj('42/preview.mp3')];
+		const sources = createZipSources(objects, '42/', 'chart-42');
+		expect(sources).toEqual([]);
+	});
+
+	it('returns empty array for empty input', () => {
+		expect(createZipSources([], '42/', 'chart-42')).toEqual([]);
+	});
+});
+
+describe('fetchR2Entries – additional cases', () => {
+	it('skips objects when bucket.get returns null (deleted between list and fetch)', async () => {
+		const bucket = {
+			get: vi.fn(async (key: string) => {
+				if (key === '42/deleted.wav') return null;
+				return { arrayBuffer: async () => new TextEncoder().encode('data').buffer };
+			})
+		} as unknown as R2Bucket;
+
+		const objects: R2ObjectMeta[] = [
+			{ key: '42/song.dtx', size: 10, uploaded: new Date() },
+			{ key: '42/deleted.wav', size: 10, uploaded: new Date() }
+		];
+
+		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
+		expect(entries).toHaveLength(1);
+		expect(entries[0].path).toBe('chart-42/song.dtx');
+	});
+
+	it('silently skips objects when bucket.get throws', async () => {
+		const bucket = {
+			get: vi.fn(async (key: string) => {
+				if (key === '42/broken.wav') throw new Error('R2 error');
+				return { arrayBuffer: async () => new TextEncoder().encode('ok').buffer };
+			})
+		} as unknown as R2Bucket;
+
+		const objects: R2ObjectMeta[] = [
+			{ key: '42/song.dtx', size: 10, uploaded: new Date() },
+			{ key: '42/broken.wav', size: 10, uploaded: new Date() }
+		];
+
+		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
+		expect(entries).toHaveLength(1);
+		expect(entries[0].path).toBe('chart-42/song.dtx');
+	});
+});
+
+describe('buildZipStream – arrayBuffer fallback', () => {
+	it('produces valid ZIP when r2obj.body is absent (uses arrayBuffer fallback)', async () => {
+		const content = 'fallback-body';
+		const encoded = new TextEncoder().encode(content);
+		const bucket = {
+			get: vi.fn(async () => ({
+				body: null,
+				arrayBuffer: async () => encoded.buffer
+			}))
+		} as unknown as R2Bucket;
+
+		const sources = [{ path: 'song.dtx', objectKey: '42/song.dtx', size: content.length }];
+		const zipBytes = await readStream(buildZipStream(bucket, sources));
+		const zip = await JSZip.loadAsync(zipBytes);
+
+		expect(await zip.file('song.dtx')?.async('string')).toBe(content);
 	});
 });

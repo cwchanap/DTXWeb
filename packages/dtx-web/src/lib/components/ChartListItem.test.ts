@@ -411,5 +411,29 @@ describe('ChartListItem Component Logic', () => {
 
 			expect(source).toContain('style="overflow: visible;"');
 		});
+
+		it('Modal uses portal action so fixed positioning is not trapped by card transforms', () => {
+			const modalSource = readFileSync(
+				path.resolve(
+					process.cwd(),
+					'../../packages/ui-components/src/lib/components/Modal.svelte'
+				),
+				'utf-8'
+			);
+
+			expect(modalSource).toContain('use:portal');
+			expect(modalSource).toContain('document.body.appendChild(node)');
+		});
+
+		it('card wrapper in ChartList does not have a standalone transform class', () => {
+			const source = readFileSync(
+				path.resolve(process.cwd(), 'src/lib/components/ChartList.svelte'),
+				'utf-8'
+			);
+
+			// The card grid wrapper should not have a bare "transform" class (which creates
+			// a CSS containing block that traps position:fixed children like the delete modal)
+			expect(source).not.toMatch(/class="[^"]*\btransform\b[^"]*hover:scale-105[^"]*"/);
+		});
 	});
 });

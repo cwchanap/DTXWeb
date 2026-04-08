@@ -1,6 +1,15 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return {
+			destroy() {
+				node.remove();
+			}
+		};
+	}
+
 	type ModalSize = 'sm' | 'md' | 'lg';
 	type ConfirmVariant = 'primary' | 'danger';
 
@@ -60,6 +69,7 @@
 
 {#if open}
 	<div
+		use:portal
 		class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black backdrop-blur-sm"
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}

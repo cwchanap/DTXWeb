@@ -511,7 +511,7 @@
 	<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 		{#each filteredItems as item (item.id)}
 			<div
-				class="relative z-0 transform transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-105"
+				class="relative z-0 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-105"
 			>
 				{#if selectMode && isBlog && enableDownload && canBulkSelect(item)}
 					<label class="absolute top-3 left-3 z-10 cursor-pointer">

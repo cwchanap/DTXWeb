@@ -2,6 +2,9 @@
 	import type { Snippet } from 'svelte';
 
 	function portal(node: HTMLElement) {
+		if (typeof document === 'undefined') {
+			return { destroy() {} };
+		}
 		document.body.appendChild(node);
 		return {
 			destroy() {

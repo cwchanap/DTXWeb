@@ -5,7 +5,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 vi.mock('svelte-i18n');
 vi.mock('@skeletonlabs/skeleton-svelte', async () => {
@@ -415,8 +418,8 @@ describe('ChartListItem Component Logic', () => {
 		it('Modal uses portal action so fixed positioning is not trapped by card transforms', () => {
 			const modalSource = readFileSync(
 				path.resolve(
-					process.cwd(),
-					'../../packages/ui-components/src/lib/components/Modal.svelte'
+					__dirname,
+					'../../../../ui-components/src/lib/components/Modal.svelte'
 				),
 				'utf-8'
 			);

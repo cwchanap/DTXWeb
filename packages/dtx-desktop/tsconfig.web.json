@@ -8,7 +8,12 @@
 		"../ui-components/src/lib/**/*.svelte",
 		"../ui-components/src/lib/**/*.ts"
 	],
-	"exclude": ["**/*.test.ts", "**/*.spec.ts"],
+	"exclude": [
+		"**/*.test.ts",
+		"**/*.spec.ts",
+		"../ui-components/src/lib/**/*.test.ts",
+		"../ui-components/src/lib/**/*.spec.ts"
+	],
 	"compilerOptions": {
 		"verbatimModuleSyntax": true,
 		"useDefineForClassFields": true,

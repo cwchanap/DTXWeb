@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import type { Snippet } from 'svelte';
 import Modal from './Modal.svelte';
+
+const noopSnippet = (() => null) as unknown as Snippet;
 
 describe('Modal', () => {
 	describe('visibility', () => {
@@ -9,7 +12,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -22,7 +25,7 @@ describe('Modal', () => {
 				props: {
 					open: false,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -36,7 +39,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -52,7 +55,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -66,7 +69,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -82,7 +85,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -99,7 +102,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {},
+					children: noopSnippet,
 					onConfirm: vi.fn()
 				}
 			});
@@ -113,7 +116,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {}
+					children: noopSnippet
 				}
 			});
 
@@ -128,7 +131,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {},
+					children: noopSnippet,
 					onConfirm
 				}
 			});
@@ -146,7 +149,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {},
+					children: noopSnippet,
 					onConfirm
 				}
 			});
@@ -162,7 +165,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'Test Modal',
-					children: () => {},
+					children: noopSnippet,
 					onConfirm: vi.fn(),
 					confirmText: 'Delete',
 					cancelText: 'Go back'
@@ -177,7 +180,7 @@ describe('Modal', () => {
 	describe('size prop', () => {
 		it('applies sm size class', () => {
 			render(Modal, {
-				props: { open: true, title: 'T', children: () => {}, size: 'sm' }
+				props: { open: true, title: 'T', children: noopSnippet, size: 'sm' }
 			});
 
 			const inner = screen.getByRole('dialog').querySelector('div');
@@ -186,7 +189,7 @@ describe('Modal', () => {
 
 		it('applies lg size class', () => {
 			render(Modal, {
-				props: { open: true, title: 'T', children: () => {}, size: 'lg' }
+				props: { open: true, title: 'T', children: noopSnippet, size: 'lg' }
 			});
 
 			const inner = screen.getByRole('dialog').querySelector('div');
@@ -200,7 +203,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'T',
-					children: () => {},
+					children: noopSnippet,
 					onConfirm: vi.fn(),
 					confirmVariant: 'danger'
 				}
@@ -215,7 +218,7 @@ describe('Modal', () => {
 				props: {
 					open: true,
 					title: 'T',
-					children: () => {},
+					children: noopSnippet,
 					onConfirm: vi.fn()
 				}
 			});

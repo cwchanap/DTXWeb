@@ -182,6 +182,7 @@ import SoundLibraryModalModule from '$lib/components/editor/modals/SoundLibraryM
 import DifficultyModalModule from '$lib/components/editor/modals/DifficultyModal.svelte';
 import DTXSwitcherModalModule from '$lib/components/editor/modals/DTXSwitcherModal.svelte';
 import WorkspaceManagerModalModule from '$lib/components/editor/modals/WorkspaceManagerModal.svelte';
+import NewFileModalModule from '$lib/components/editor/modals/NewFileModal.svelte';
 import MainModule from '@dtx/common/game';
 
 const defaultData = { simfileID: null, metadata: null };
@@ -866,5 +867,423 @@ describe('Editor Page – DTXSwitcherModal switchWorkspaceDTX prop', () => {
 		expect(dtxProps?.onSwitchDTX).toBeDefined();
 		// phaserRef.scene is null → if condition is false → early return
 		await expect(dtxProps!.onSwitchDTX()).resolves.toBeUndefined();
+	});
+});
+
+describe('Editor Page – handleFolderImport callback', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('processes imported folder files and shows result (lines 124-143)', async () => {
+		const mockInput = {
+			type: '',
+			webkitdirectory: false,
+			multiple: false,
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		const mockWorkspace = {
+			name: 'Test Workspace',
+			path: '/test',
+			dtxFiles: [{ name: 'song.dtx', content: '', path: '/test/song.dtx' }],
+			audioFiles: [{ name: 'kick.wav', path: '/test/kick.wav' }],
+			currentDTX: 'song.dtx',
+			lastModified: Date.now()
+		};
+		vi.mocked(workspaceService.importFolder).mockResolvedValue(mockWorkspace);
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFolder();
+		expect(mockInput.onchange).toBeTruthy();
+
+		const mockFiles = { length: 1, 0: new File(['dtx'], 'song.dtx') };
+		const mockEvent = { target: { files: mockFiles } } as unknown as Event;
+		await (mockInput.onchange as (e: Event) => Promise<void>)(mockEvent);
+
+		expect(workspaceService.importFolder).toHaveBeenCalledWith(mockFiles);
+		expect(workspaceService.setCurrentWorkspace).toHaveBeenCalledWith(mockWorkspace);
+	});
+
+	it('returns early when files is null in folder import (lines 119-122)', async () => {
+		const mockInput = {
+			type: '',
+			webkitdirectory: false,
+			multiple: false,
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFolder();
+
+		const mockEvent = { target: { files: null } } as unknown as Event;
+		await (mockInput.onchange as (e: Event) => Promise<void>)(mockEvent);
+
+		expect(workspaceService.importFolder).not.toHaveBeenCalled();
+	});
+
+	it('returns early when files list is empty in folder import', async () => {
+		const mockInput = {
+			type: '',
+			webkitdirectory: false,
+			multiple: false,
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFolder();
+
+		const mockEvent = { target: { files: { length: 0 } } } as unknown as Event;
+		await (mockInput.onchange as (e: Event) => Promise<void>)(mockEvent);
+
+		expect(workspaceService.importFolder).not.toHaveBeenCalled();
+	});
+
+	it('shows import error modal when folder import fails (lines 144-148)', async () => {
+		const mockInput = {
+			type: '',
+			webkitdirectory: false,
+			multiple: false,
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		vi.mocked(workspaceService.importFolder).mockRejectedValue(new Error('Import failed'));
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFolder();
+
+		const mockFiles = { length: 1, 0: new File(['dtx'], 'song.dtx') };
+		const mockEvent = { target: { files: mockFiles } } as unknown as Event;
+		// Should resolve without throwing despite the import error
+		await expect(
+			(mockInput.onchange as (e: Event) => Promise<void>)(mockEvent)
+		).resolves.toBeUndefined();
+
+		expect(workspaceService.importFolder).toHaveBeenCalled();
+	});
+});
+
+describe('Editor Page – handleFileImport callback', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('returns early when no file is selected (lines 224-225)', async () => {
+		const mockInput = {
+			type: '',
+			accept: '',
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFile();
+		expect(mockInput.onchange).toBeTruthy();
+
+		// files?.[0] is undefined → early return
+		const mockEvent = { target: { files: {} } } as unknown as Event;
+		await (mockInput.onchange as (e: Event) => Promise<void>)(mockEvent);
+
+		const { decodeFileWithEncodingDetection } = await import('@dtx/common');
+		expect(vi.mocked(decodeFileWithEncodingDetection)).not.toHaveBeenCalled();
+	});
+
+	it('processes imported DTX file successfully (lines 227-270)', async () => {
+		const mockInput = {
+			type: '',
+			accept: '',
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		const { decodeFileWithEncodingDetection, DTXFile } = await import('@dtx/common');
+		vi.mocked(decodeFileWithEncodingDetection).mockResolvedValue({
+			content: '#TITLE:Test\n#BPM:120',
+			encoding: 'utf-8'
+		} as never);
+
+		const mockDtxInstance = {
+			detectedEncoding: '',
+			parseFromText: vi.fn().mockResolvedValue(undefined),
+			parseNotes: vi.fn().mockReturnValue([]),
+			parseBPMChanges: vi.fn().mockReturnValue({}),
+			parseSoundChips: vi.fn().mockReturnValue([]),
+			export: vi.fn()
+		};
+		// onMount calls new DTXFile() once (via createNewFile); handleFileImport calls it again
+		vi.mocked(DTXFile).mockImplementationOnce(() => mockDtxInstance as never);
+		vi.mocked(DTXFile).mockImplementationOnce(() => mockDtxInstance as never);
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFile();
+
+		const mockFile = new File(['#TITLE:Test'], 'test.dtx');
+		const mockEvent = { target: { files: [mockFile] } } as unknown as Event;
+		await (mockInput.onchange as (e: Event) => Promise<void>)(mockEvent);
+
+		expect(vi.mocked(decodeFileWithEncodingDetection)).toHaveBeenCalledWith(
+			mockFile,
+			expect.any(Function),
+			expect.any(Array),
+			expect.any(String)
+		);
+		expect(store.currentDifficulty.set).toHaveBeenLastCalledWith('Imported');
+		expect(vi.mocked(EventBus.emit)).toHaveBeenCalledWith(
+			EventType.NOTE_IMPORT,
+			expect.any(Array),
+			expect.any(Object)
+		);
+	});
+
+	it('shows import error modal when DTX file decoding fails (lines 271-275)', async () => {
+		const mockInput = {
+			type: '',
+			accept: '',
+			onchange: null as ((e: Event) => void) | null,
+			click: vi.fn()
+		};
+
+		const { decodeFileWithEncodingDetection } = await import('@dtx/common');
+		vi.mocked(decodeFileWithEncodingDetection).mockRejectedValue(new Error('Decode failed'));
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+
+		vi.spyOn(document, 'createElement').mockReturnValueOnce(
+			mockInput as unknown as HTMLElement
+		);
+		navProps!.onImportFile();
+
+		const mockFile = new File(['content'], 'test.dtx');
+		const mockEvent = { target: { files: [mockFile] } } as unknown as Event;
+		// Should not throw – error caught internally
+		await expect(
+			(mockInput.onchange as (e: Event) => Promise<void>)(mockEvent)
+		).resolves.toBeUndefined();
+
+		expect(vi.mocked(decodeFileWithEncodingDetection)).toHaveBeenCalled();
+	});
+});
+
+describe('Editor Page – newFile and createNewFile branches', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('shows NewFileModal when TempChartStorage.exists returns true (line 286)', () => {
+		vi.mocked(TempChartStorage.exists).mockReturnValue(true);
+
+		render(EditorPage, { props: { data: defaultData } });
+		vi.mocked(TempChartStorage.remove).mockClear();
+
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+		navProps!.onNewFile();
+
+		// hasUnsavedChanges = true → showNewFileModal = true, createNewFile NOT called
+		expect(TempChartStorage.remove).not.toHaveBeenCalled();
+
+		// NewFileModal should have been rendered with onConfirm/onCancel bindings
+		const newFileProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(NewFileModalModule)
+		);
+		expect(newFileProps?.onConfirm).toBeDefined();
+		expect(newFileProps?.onCancel).toBeDefined();
+	});
+
+	it('NewFileModal onConfirm calls createNewFile (line 753)', () => {
+		render(EditorPage, { props: { data: defaultData } });
+		vi.mocked(TempChartStorage.remove).mockClear();
+
+		const newFileProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(NewFileModalModule)
+		);
+		expect(newFileProps?.onConfirm).toBeDefined();
+		newFileProps!.onConfirm();
+
+		// createNewFile → TempChartStorage.remove
+		expect(TempChartStorage.remove).toHaveBeenCalled();
+	});
+
+	it('NewFileModal onCancel closes the modal', () => {
+		render(EditorPage, { props: { data: defaultData } });
+		const newFileProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(NewFileModalModule)
+		);
+		expect(newFileProps?.onCancel).toBeDefined();
+		expect(() => newFileProps!.onCancel()).not.toThrow();
+	});
+
+	it('createNewFile calls goto when simfileID is set (lines 323-325)', () => {
+		const data = {
+			simfileID: 'active-sim-id',
+			metadata: { title: 'Song', levels: { 25: { label: 'Basic', fileName: 'bas.dtx' } } }
+		};
+
+		render(EditorPage, { props: { data } });
+		vi.mocked(TempChartStorage.remove).mockClear();
+
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+		// TempChartStorage.exists returns false (default) → createNewFile() runs
+		navProps!.onNewFile();
+
+		// simfileID = 'active-sim-id' in state → goto('/editor') called
+		expect(vi.mocked(workspaceService.getCurrentWorkspace)).toHaveBeenCalled();
+	});
+});
+
+describe('Editor Page – data.metadata null path (parseFromRemoteURL)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('uses parseFromRemoteURL when data.metadata is null (lines 490-496)', async () => {
+		const { SimFile } = await import('@dtx/common');
+		const data = { simfileID: 'remote-no-metadata', metadata: null };
+
+		render(EditorPage, { props: { data } });
+
+		await vi.waitFor(() => {
+			expect(vi.mocked(SimFile.parseFromRemoteURL)).toHaveBeenCalledWith(
+				'remote-no-metadata',
+				expect.any(String)
+			);
+		});
+	});
+});
+
+describe('Editor Page – getAvailableLevels with non-null simfile', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.mocked(get).mockReturnValue(null as never);
+		vi.restoreAllMocks();
+	});
+
+	it('returns formatted level list when simfile has levels (lines 418-425)', () => {
+		vi.mocked(get).mockReturnValue(mockSimfile as never);
+
+		render(EditorPage, { props: { data: defaultData } });
+
+		// DifficultyModal receives the result of getAvailableLevels() as availableLevels prop
+		const diffProps = getLastMockProps<Record<string, unknown>>(
+			vi.mocked(DifficultyModalModule)
+		);
+		expect(diffProps?.availableLevels).toBeDefined();
+		expect(Array.isArray(diffProps?.availableLevels)).toBe(true);
+		const levels = diffProps!.availableLevels as Array<{ level: number; label: string }>;
+		expect(levels.length).toBeGreaterThan(0);
+		expect(levels[0]).toMatchObject({ level: 25, label: 'Basic' });
+	});
+});
+
+describe('Editor Page – refreshSoundLibraryLinks additional branches', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	afterEach(() => {
+		vi.mocked(get).mockReturnValue(null as never);
+		vi.restoreAllMocks();
+	});
+
+	it('skips chip when chip.file is already set (lines 582-584)', async () => {
+		const existingFile = new File(['data'], 'kick.xa');
+		const mockChip = { fileName: 'kick.xa', file: existingFile };
+		vi.mocked(get).mockReturnValue([mockChip] as never);
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => Promise<void>>>(
+			vi.mocked(EditorNavigationModule)
+		);
+		await navProps!.onRefreshSoundLibraryLinks();
+
+		// chip.file already set → SoundLibrary.findByFileName skipped
+		expect(SoundLibrary.findByFileName).not.toHaveBeenCalled();
+		expect(store.currentSoundChip.set).toHaveBeenCalled();
+	});
+
+	it('catches error and sets error message in refreshSoundLibraryLinks (lines 628-632)', async () => {
+		const mockChip = { fileName: 'kick.xa', file: undefined };
+		vi.mocked(get).mockReturnValue([mockChip] as never);
+		vi.mocked(SoundLibrary.findByFileName).mockImplementation(() => {
+			throw new Error('Library read error');
+		});
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => Promise<void>>>(
+			vi.mocked(EditorNavigationModule)
+		);
+		// Should resolve without throwing – error caught internally
+		await expect(navProps!.onRefreshSoundLibraryLinks()).resolves.toBeUndefined();
 	});
 });

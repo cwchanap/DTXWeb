@@ -51,7 +51,7 @@ vi.mock('@dtx/ui-components', () => ({
 	ToggleGroup: vi.fn()
 }));
 
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import MainTab from './MainTab.svelte';
 
 describe('MainTab', () => {
@@ -163,5 +163,56 @@ describe('MainTab', () => {
 		const input = screen.getByLabelText('Number of Measures:');
 		await fireEvent.change(input);
 		expect(mockStore.measureCount.set).toHaveBeenCalled();
+	});
+
+	it('syncs dtxFile properties to store when dtxFile is non-null', async () => {
+		const mockDtxFile = {
+			title: 'Test Title',
+			artist: 'Test Artist',
+			comment: 'Test Comment',
+			bpm: 130,
+			level: 7
+		};
+
+		mockStore.currentDtxFile.subscribe.mockImplementation(
+			(cb: (v: typeof mockDtxFile | null) => void) => {
+				cb(mockDtxFile);
+				return () => {};
+			}
+		);
+
+		render(MainTab);
+
+		await waitFor(() => {
+			expect(mockStore.currentDtxFile.set).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Test Title', artist: 'Test Artist' })
+			);
+		});
+	});
+
+	it('updates dtxFile title property when title input changes', async () => {
+		const mockDtxFile = {
+			title: 'Original Title',
+			artist: 'Artist',
+			comment: '',
+			bpm: 120,
+			level: 0
+		};
+
+		mockStore.currentDtxFile.subscribe.mockImplementation(
+			(cb: (v: typeof mockDtxFile | null) => void) => {
+				cb(mockDtxFile);
+				return () => {};
+			}
+		);
+
+		render(MainTab);
+
+		const titleInput = screen.getByLabelText('Title:');
+		await fireEvent.input(titleInput, { target: { value: 'New Title' } });
+
+		await waitFor(() => {
+			expect(mockStore.currentDtxFile.set).toHaveBeenCalled();
+		});
 	});
 });

@@ -664,4 +664,45 @@ describe('SoundTab key binding', () => {
 		await fireEvent.change(inputs[1], { target: { value: '5' } });
 		expect(chip.position).toBe(5);
 	});
+
+	it('plays remote audio when chip.file is set as fallback (not in FileManager)', async () => {
+		const fallbackFile = new File(['audio'], 'snare.wav', { type: 'audio/wav' });
+		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock-url');
+		mockFileManager.getFile.mockReturnValue(undefined);
+
+		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
+		chip.file = fallbackFile;
+
+		mockStore.currentSoundChip.subscribe.mockImplementation(
+			(cb: (v: MockSoundChip[]) => void) => {
+				cb([chip]);
+				return () => {};
+			}
+		);
+
+		render(SoundTab, { props: { simfileID: 'sim-1', bucketUrl: 'https://cdn.example.com' } });
+		const fileBtn = screen.getByText('snare.wav');
+		await fireEvent.click(fileBtn);
+
+		expect(URL.createObjectURL).toHaveBeenCalledWith(fallbackFile);
+	});
+
+	it('shows warning toast when remote chip has no bucketUrl and file not loaded', async () => {
+		mockFileManager.getFile.mockReturnValue(undefined);
+		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
+		// No chip.file and no bucketUrl provided
+
+		mockStore.currentSoundChip.subscribe.mockImplementation(
+			(cb: (v: MockSoundChip[]) => void) => {
+				cb([chip]);
+				return () => {};
+			}
+		);
+
+		render(SoundTab, { props: { simfileID: 'sim-1' } });
+		await fireEvent.click(screen.getByText('snare.wav'));
+
+		expect(screen.getByRole('alert')).toBeInTheDocument();
+		expect(screen.getByRole('alert').textContent).toContain('not yet loaded from remote');
+	});
 });

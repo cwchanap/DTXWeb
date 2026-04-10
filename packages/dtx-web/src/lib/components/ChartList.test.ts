@@ -175,6 +175,78 @@ describe('ChartList helpers', () => {
 		expect(fetchFn).not.toHaveBeenCalled();
 	});
 
+	it('throws when validation response is not ok', async () => {
+		const handle = { createWritable: vi.fn() };
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue(handle)
+		};
+		const fetchFn = vi
+			.fn()
+			.mockResolvedValue(createJsonResponse({ error: 'Validation failed' }, 400));
+
+		await expect(
+			chartListHelpers.startBulkDownload({
+				ids: [mockListedChart.id],
+				fetchFn,
+				saveFilePickerWindow
+			})
+		).rejects.toThrow('Validation failed');
+
+		expect(handle.createWritable).not.toHaveBeenCalled();
+	});
+
+	it('throws when validation data has ok !== true', async () => {
+		const handle = { createWritable: vi.fn() };
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue(handle)
+		};
+		const fetchFn = vi
+			.fn()
+			.mockResolvedValue(createJsonResponse({ ok: false, error: 'No files found' }));
+
+		await expect(
+			chartListHelpers.startBulkDownload({
+				ids: [mockListedChart.id],
+				fetchFn,
+				saveFilePickerWindow
+			})
+		).rejects.toThrow('No files found');
+	});
+
+	it('throws with default message when validation data has no error string', async () => {
+		const handle = { createWritable: vi.fn() };
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue(handle)
+		};
+		const fetchFn = vi.fn().mockResolvedValue(createJsonResponse({ ok: true, fileCount: 0 }));
+
+		await expect(
+			chartListHelpers.startBulkDownload({
+				ids: [mockListedChart.id],
+				fetchFn,
+				saveFilePickerWindow
+			})
+		).rejects.toThrow('No uploaded files found for the selected charts');
+	});
+
+	it('throws when validation data fileCount is not a number', async () => {
+		const handle = { createWritable: vi.fn() };
+		const saveFilePickerWindow = {
+			showSaveFilePicker: vi.fn().mockResolvedValue(handle)
+		};
+		const fetchFn = vi
+			.fn()
+			.mockResolvedValue(createJsonResponse({ ok: true, fileCount: 'invalid' }));
+
+		await expect(
+			chartListHelpers.startBulkDownload({
+				ids: [mockListedChart.id],
+				fetchFn,
+				saveFilePickerWindow
+			})
+		).rejects.toThrow('No uploaded files found for the selected charts');
+	});
+
 	it('creates a writable from a file handle only when the response is streamed', async () => {
 		const writable = {} as WritableStream<Uint8Array>;
 		const handle = {
@@ -259,6 +331,54 @@ describe('ChartList component bulk download behavior', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
+	});
+
+	it('shows error toast when trying to select beyond MAX_BULK_DOWNLOAD_CHARTS items', async () => {
+		// Render with MAX items already in the data, select all, then try to select another
+		const maxCharts = Array.from(
+			{ length: chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS },
+			(_, i) => ({
+				...mockListedChart,
+				id: i + 1,
+				title: `Song ${i + 1}`,
+				display_id: `D${i + 1}`
+			})
+		);
+		const extraChart = {
+			...mockListedChart,
+			id: chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS + 1,
+			title: 'Extra Song',
+			display_id: 'EX'
+		};
+		const allCharts = [...maxCharts, extraChart];
+
+		vi.stubGlobal(
+			'fetch',
+			vi
+				.fn()
+				.mockResolvedValue(createJsonResponse({ data: allCharts, count: allCharts.length }))
+		);
+		Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: vi.fn() });
+
+		render(ChartList, { props: { isBlog: true, enableDownload: true } });
+		await fireEvent.click(await screen.findByRole('button', { name: 'Select' }));
+
+		// Select all MAX items
+		const checkboxes = await screen.findAllByRole('checkbox');
+		for (const checkbox of checkboxes.slice(0, chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS)) {
+			await fireEvent.click(checkbox);
+		}
+
+		// Try to select one more beyond the limit
+		await fireEvent.click(checkboxes[chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS]);
+
+		await waitFor(() => {
+			expect(mockToastStore.error).toHaveBeenCalledWith(
+				expect.objectContaining({
+					title: expect.stringContaining(`${chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS}`)
+				})
+			);
+		});
 	});
 
 	it('treats AbortError as a no-op and preserves the current selection', async () => {

@@ -667,7 +667,8 @@ describe('SoundTab key binding', () => {
 
 	it('plays remote audio when chip.file is set as fallback (not in FileManager)', async () => {
 		const fallbackFile = new File(['audio'], 'snare.wav', { type: 'audio/wav' });
-		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock-url');
+		const createObjectURLFn = vi.fn(() => 'blob:mock-url');
+		(URL as unknown as Record<string, unknown>).createObjectURL = createObjectURLFn;
 		mockFileManager.getFile.mockReturnValue(undefined);
 
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
@@ -684,7 +685,7 @@ describe('SoundTab key binding', () => {
 		const fileBtn = screen.getByText('snare.wav');
 		await fireEvent.click(fileBtn);
 
-		expect(URL.createObjectURL).toHaveBeenCalledWith(fallbackFile);
+		expect(createObjectURLFn).toHaveBeenCalledWith(fallbackFile);
 	});
 
 	it('shows warning toast when remote chip has no bucketUrl and file not loaded', async () => {

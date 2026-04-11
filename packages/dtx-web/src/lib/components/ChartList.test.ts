@@ -369,6 +369,14 @@ describe('ChartList component bulk download behavior', () => {
 			await fireEvent.click(checkbox);
 		}
 
+		// Exactly MAX should still be allowed — no error at the boundary
+		expect(mockToastStore.error).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole('button', {
+				name: new RegExp(`download \\(${chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS}\\)`, 'i')
+			})
+		).toBeInTheDocument();
+
 		// Try to select one more beyond the limit
 		await fireEvent.click(checkboxes[chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS]);
 

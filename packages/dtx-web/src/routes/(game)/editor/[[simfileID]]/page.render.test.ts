@@ -915,6 +915,8 @@ describe('Editor Page – handleFolderImport callback', () => {
 
 		expect(workspaceService.importFolder).toHaveBeenCalledWith(mockFiles);
 		expect(workspaceService.setCurrentWorkspace).toHaveBeenCalledWith(mockWorkspace);
+		// availableWorkspaces is refreshed after import
+		expect(workspaceService.getWorkspaces).toHaveBeenCalled();
 	});
 
 	it('returns early when files is null in folder import (lines 119-122)', async () => {
@@ -996,6 +998,8 @@ describe('Editor Page – handleFolderImport callback', () => {
 		).resolves.toBeUndefined();
 
 		expect(workspaceService.importFolder).toHaveBeenCalled();
+		// error path: workspace was never persisted
+		expect(workspaceService.setCurrentWorkspace).not.toHaveBeenCalled();
 	});
 });
 
@@ -1118,6 +1122,8 @@ describe('Editor Page – handleFileImport callback', () => {
 		).resolves.toBeUndefined();
 
 		expect(vi.mocked(decodeFileWithEncodingDetection)).toHaveBeenCalled();
+		// error path: difficulty was never set to 'Imported'
+		expect(store.currentDifficulty.set).not.toHaveBeenLastCalledWith('Imported');
 	});
 });
 
@@ -1172,7 +1178,10 @@ describe('Editor Page – newFile and createNewFile branches', () => {
 			vi.mocked(NewFileModalModule)
 		);
 		expect(newFileProps?.onCancel).toBeDefined();
-		expect(() => newFileProps!.onCancel()).not.toThrow();
+		vi.mocked(TempChartStorage.remove).mockClear();
+		newFileProps!.onCancel();
+		// cancel should not trigger createNewFile
+		expect(TempChartStorage.remove).not.toHaveBeenCalled();
 	});
 
 	it('createNewFile calls goto when simfileID is set (lines 323-325)', () => {
@@ -1283,7 +1292,10 @@ describe('Editor Page – refreshSoundLibraryLinks additional branches', () => {
 		const navProps = getLastMockProps<Record<string, () => Promise<void>>>(
 			vi.mocked(EditorNavigationModule)
 		);
+		vi.mocked(store.currentSoundChip.set).mockClear();
 		// Should resolve without throwing – error caught internally
 		await expect(navProps!.onRefreshSoundLibraryLinks()).resolves.toBeUndefined();
+		// error path: chip store should not have been updated by refreshSoundLibraryLinks
+		expect(store.currentSoundChip.set).not.toHaveBeenCalled();
 	});
 });

@@ -209,10 +209,13 @@ describe('MainTab', () => {
 		render(MainTab);
 
 		const titleInput = screen.getByLabelText('Title:');
+		mockStore.currentDtxFile.set.mockClear();
 		await fireEvent.input(titleInput, { target: { value: 'New Title' } });
 
 		await waitFor(() => {
-			expect(mockStore.currentDtxFile.set).toHaveBeenCalled();
+			expect(mockStore.currentDtxFile.set).toHaveBeenLastCalledWith(
+				expect.objectContaining({ title: 'New Title' })
+			);
 		});
 	});
 });

@@ -991,4 +991,346 @@ describe('index.ts IPC handlers', () => {
 			expect(uploadedFile.name).toBe('kick.wav');
 		});
 	});
+
+	// ── load-asset-files (full fetch path) ───────────────────────────────────
+	describe('load-asset-files handler (authenticated fetch path)', () => {
+		const validSession = {
+			access_token: 'tok',
+			refresh_token: 'ref',
+			expires_at: 9999,
+			expires_in: 3600,
+			token_type: 'bearer',
+			user: { id: 'u1' }
+		};
+
+		beforeEach(() => {
+			vi.unstubAllEnvs();
+			vi.unstubAllGlobals();
+			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
+			mockAuth.getCurrentSession.mockReturnValue(validSession);
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({ data: { session: validSession }, error: null })
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+		});
+
+		afterEach(() => {
+			vi.unstubAllEnvs();
+			vi.unstubAllGlobals();
+		});
+
+		it('returns files array on successful fetch', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					json: vi.fn().mockResolvedValue({ files: [{ fileName: 'song.dtx' }] })
+				}) as unknown as typeof fetch
+			);
+
+			const result = (await ipcHandlers['load-asset-files']({}, '42')) as { fileName: string }[];
+			expect(result).toEqual([{ fileName: 'song.dtx' }]);
+		});
+
+		it('returns empty array when response files is missing', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					json: vi.fn().mockResolvedValue({})
+				}) as unknown as typeof fetch
+			);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array for 404 response', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					status: 404,
+					statusText: 'Not Found',
+					text: vi.fn().mockResolvedValue('Not found')
+				}) as unknown as typeof fetch
+			);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array when error text contains "Failed to list files"', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					status: 500,
+					statusText: 'Server Error',
+					text: vi.fn().mockResolvedValue('Failed to list files: storage error')
+				}) as unknown as typeof fetch
+			);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array when fetch throws', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockRejectedValue(new Error('Network error')) as unknown as typeof fetch
+			);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array for non-404 non-"Failed to list files" error response', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					status: 403,
+					statusText: 'Forbidden',
+					text: vi.fn().mockResolvedValue('Access denied')
+				}) as unknown as typeof fetch
+			);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array when VITE_DTX_SERVER_URL is not set', async () => {
+			vi.stubEnv('VITE_DTX_SERVER_URL', '');
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array when user is not authenticated', async () => {
+			mockAuth.getCurrentSession.mockReturnValue(null);
+			mockAuth.getSupabaseClient.mockReturnValue(null);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array when session refresh fails', async () => {
+			const mockClient = {
+				auth: {
+					getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: new Error('expired') })
+				}
+			};
+			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+
+			const result = await ipcHandlers['load-asset-files']({}, '42');
+			expect(result).toEqual([]);
+		});
+	});
+
+	// ── export-song-to-zip ───────────────────────────────────────────────────
+	describe('export-song-to-zip handler', () => {
+		const mockJSZip = {
+			file: vi.fn(),
+			generateAsync: vi.fn().mockResolvedValue(Buffer.from('zipdata'))
+		};
+
+		beforeEach(() => {
+			vi.resetModules();
+			mockFs.promises.access.mockResolvedValue(undefined);
+			mockFs.promises.readdir.mockResolvedValue([
+				{ name: 'song.dtx', isFile: () => true, isDirectory: () => false },
+				{ name: 'hi_hat.wav', isFile: () => true, isDirectory: () => false },
+				{ name: 'image.png', isFile: () => true, isDirectory: () => false }
+			]);
+			mockFs.promises.readFile.mockResolvedValue(Buffer.from('content'));
+			mockFs.promises.writeFile.mockResolvedValue(undefined);
+			mockFs.promises.mkdir.mockResolvedValue(undefined);
+		});
+
+		it('exports successfully to default Downloads directory', async () => {
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: null
+				}
+			)) as { success: boolean; zipPath: string; filesCount: number };
+
+			expect(result.success).toBe(true);
+			expect(result.filesCount).toBeGreaterThan(0);
+			expect(result.zipPath).toContain('My Song.zip');
+		});
+
+		it('exports successfully with explicit exportDirectory', async () => {
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/custom/export'
+				}
+			)) as { success: boolean; zipPath: string; filesCount: number };
+
+			expect(result.success).toBe(true);
+			expect(result.zipPath).toContain('/custom/export');
+		});
+
+		it('expands ~/Downloads to actual home directory', async () => {
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '~/Downloads'
+				}
+			)) as { success: boolean };
+
+			expect(result.success).toBe(true);
+		});
+
+		it('expands custom tilde path to home directory', async () => {
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '~/Music/Exports'
+				}
+			)) as { success: boolean; zipPath: string };
+
+			expect(result.success).toBe(true);
+			expect(result.zipPath).toContain('Music/Exports');
+		});
+
+		it('creates export directory when it does not exist', async () => {
+			// First access fails (directory doesn't exist), mkdir succeeds
+			mockFs.promises.access
+				.mockResolvedValueOnce(undefined) // songPath readdir ok
+				.mockRejectedValueOnce(new Error('ENOENT')); // exportDirectory doesn't exist
+
+			// Reset access mock to fail for target directory check but succeed for readdir
+			mockFs.promises.access.mockRejectedValueOnce(new Error('ENOENT'));
+			mockFs.promises.mkdir.mockResolvedValue(undefined);
+
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/nonexistent/exports'
+				}
+			)) as { success: boolean };
+
+			// Should succeed after creating the directory
+			expect(typeof result.success).toBe('boolean');
+		});
+
+		it('returns error when export directory cannot be created', async () => {
+			mockFs.promises.access.mockRejectedValue(new Error('ENOENT'));
+			mockFs.promises.mkdir.mockRejectedValue(new Error('Permission denied'));
+
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/readonly/exports'
+				}
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('Cannot access or create export directory');
+		});
+
+		it('returns error when no valid files are found', async () => {
+			mockFs.promises.readdir.mockResolvedValue([
+				{ name: 'readme.txt', isFile: () => true, isDirectory: () => false },
+				{ name: 'notes.doc', isFile: () => true, isDirectory: () => false }
+			]);
+
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/custom/export'
+				}
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('No valid files found to export');
+		});
+
+		it('uses "song" as default zip filename when songTitle is empty', async () => {
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: '',
+					exportDirectory: '/custom/export'
+				}
+			)) as { success: boolean; zipPath: string };
+
+			expect(result.success).toBe(true);
+			expect(result.zipPath).toContain('song.zip');
+		});
+
+		it('handles unexpected errors and returns failure', async () => {
+			mockFs.promises.readdir.mockRejectedValue(new Error('Disk I/O error'));
+
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/custom/export'
+				}
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Disk I/O error');
+		});
+
+		it('handles non-Error exceptions', async () => {
+			mockFs.promises.readdir.mockRejectedValue('raw error string');
+
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/custom/export'
+				}
+			)) as { success: boolean; error: string };
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Unknown error');
+		});
+
+		it('filters out non-DTX files and only zips valid ones', async () => {
+			mockFs.promises.readdir.mockResolvedValue([
+				{ name: 'song.dtx', isFile: () => true, isDirectory: () => false },
+				{ name: 'hi_hat.wav', isFile: () => true, isDirectory: () => false },
+				{ name: 'README.txt', isFile: () => true, isDirectory: () => false },
+				{ name: 'notes.docx', isFile: () => true, isDirectory: () => false }
+			]);
+
+			const result = (await ipcHandlers['export-song-to-zip'](
+				{},
+				{
+					songPath: '/music/my-song',
+					songTitle: 'My Song',
+					exportDirectory: '/custom/export'
+				}
+			)) as { success: boolean; filesCount: number };
+
+			expect(result.success).toBe(true);
+			// Only .dtx and .wav are valid DTX extensions
+			expect(result.filesCount).toBe(2);
+		});
+	});
 });

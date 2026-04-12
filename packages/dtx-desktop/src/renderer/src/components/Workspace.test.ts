@@ -340,7 +340,9 @@ describe('Workspace – sub-workspaces section', () => {
 	it('shows "Change folder" button when workspace path is set', () => {
 		vi.mocked(workspaceStore).setState({ path: '/workspace/test', treeStructure: [] });
 		render(Workspace);
-		expect(screen.getByRole('button', { name: /change workspace folder/i })).toBeInTheDocument();
+		expect(
+			screen.getByRole('button', { name: /change workspace folder/i })
+		).toBeInTheDocument();
 	});
 });
 

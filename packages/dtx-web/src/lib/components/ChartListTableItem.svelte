@@ -6,6 +6,7 @@
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
 	import { goto } from '$app/navigation';
+	import toastStore from '$lib/toaster';
 
 	type ChartListTableItemData = Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'> & {
 		has_uploaded_files?: boolean;
@@ -32,9 +33,13 @@
 		onFileDelete(item.id);
 	}
 
-	function handleOpenInEditor() {
-		goto(`/editor/${item.id}`);
-	}
+	const handleOpenInEditor = async () => {
+		try {
+			await goto(`/editor/${item.id}`);
+		} catch {
+			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
+		}
+	};
 
 	function openModal() {
 		modalOpen = true;

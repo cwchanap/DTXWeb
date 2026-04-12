@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
+import path from 'path';
 
 // IPC handler registry — populated when the module is imported
 const ipcHandlers: Record<string, (...args: unknown[]) => unknown> = {};
@@ -1177,7 +1178,7 @@ describe('index.ts IPC handlers', () => {
 			)) as { success: boolean; zipPath: string; filesCount: number };
 
 			expect(result.success).toBe(true);
-			expect(result.zipPath).toContain('/custom/export');
+			expect(result.zipPath).toContain(path.join('custom', 'export'));
 		});
 
 		it('expands ~/Downloads to actual home directory', async () => {
@@ -1204,7 +1205,7 @@ describe('index.ts IPC handlers', () => {
 			)) as { success: boolean; zipPath: string };
 
 			expect(result.success).toBe(true);
-			expect(result.zipPath).toContain('Music/Exports');
+			expect(result.zipPath).toContain(path.join('Music', 'Exports'));
 		});
 
 		it('creates export directory when it does not exist', async () => {

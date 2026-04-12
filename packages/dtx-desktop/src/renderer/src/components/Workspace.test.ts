@@ -414,7 +414,7 @@ describe('Workspace – filterTreeNodes edge cases', () => {
 		expect(screen.queryByText(/no results found/i)).not.toBeInTheDocument();
 	});
 
-	it('auto-expands parent nodes with matching children', async () => {
+	it('includes parent nodes in results when a child name matches the search', async () => {
 		const childMatch = makeFullNode('ChildMatch', '/ws/Parent/ChildMatch');
 		const parent = makeFullNode('ParentFolder', '/ws/Parent', {
 			children: [childMatch],

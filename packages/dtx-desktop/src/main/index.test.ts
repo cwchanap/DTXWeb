@@ -1138,11 +1138,6 @@ describe('index.ts IPC handlers', () => {
 
 	// ── export-song-to-zip ───────────────────────────────────────────────────
 	describe('export-song-to-zip handler', () => {
-		const mockJSZip = {
-			file: vi.fn(),
-			generateAsync: vi.fn().mockResolvedValue(Buffer.from('zipdata'))
-		};
-
 		beforeEach(() => {
 			vi.resetModules();
 			mockFs.promises.access.mockResolvedValue(undefined);
@@ -1213,14 +1208,8 @@ describe('index.ts IPC handlers', () => {
 		});
 
 		it('creates export directory when it does not exist', async () => {
-			// First access fails (directory doesn't exist), mkdir succeeds
-			mockFs.promises.access
-				.mockResolvedValueOnce(undefined) // songPath readdir ok
-				.mockRejectedValueOnce(new Error('ENOENT')); // exportDirectory doesn't exist
-
-			// Reset access mock to fail for target directory check but succeed for readdir
+			// access rejects (directory doesn't exist), mkdir succeeds
 			mockFs.promises.access.mockRejectedValueOnce(new Error('ENOENT'));
-			mockFs.promises.mkdir.mockResolvedValue(undefined);
 
 			const result = (await ipcHandlers['export-song-to-zip'](
 				{},
@@ -1229,10 +1218,12 @@ describe('index.ts IPC handlers', () => {
 					songTitle: 'My Song',
 					exportDirectory: '/nonexistent/exports'
 				}
-			)) as { success: boolean };
+			)) as { success: boolean; zipPath: string };
 
-			// Should succeed after creating the directory
-			expect(typeof result.success).toBe('boolean');
+			expect(result.success).toBe(true);
+			expect(mockFs.promises.mkdir).toHaveBeenCalledWith('/nonexistent/exports', {
+				recursive: true
+			});
 		});
 
 		it('returns error when export directory cannot be created', async () => {
@@ -1335,7 +1326,7 @@ describe('index.ts IPC handlers', () => {
 			)) as { success: boolean; filesCount: number };
 
 			expect(result.success).toBe(true);
-			// Only .dtx and .wav are valid DTX extensions
+			// Only song.dtx and hi_hat.wav have valid extensions in this test's fixture
 			expect(result.filesCount).toBe(2);
 		});
 	});

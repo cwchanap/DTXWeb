@@ -7,6 +7,7 @@
 	import { EllipsisVertical } from '@lucide/svelte/icons';
 	import { Modal, Button } from '@dtx/ui-components/components';
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
+	import { goto } from '$app/navigation';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 
@@ -39,9 +40,31 @@
 		modalOpen = true;
 		popoverOpen = false;
 	};
+
+	const navigateToEditor = () => {
+		if (item.id !== undefined) goto(`/editor/${item.id}`);
+	};
+
+	const handleCardClick = (e: MouseEvent) => {
+		const target = e.target as Element;
+		if (!target.closest('a, button, input, label')) navigateToEditor();
+	};
+
+	const handleCardKeydown = (e: KeyboardEvent) => {
+		const target = e.target as Element;
+		if (e.key === 'Enter' && !target.closest('a, button, input, label')) navigateToEditor();
+	};
 </script>
 
-<div class="music-card group relative flex min-h-[280px] flex-col" style="overflow: visible;">
+<div
+	class="music-card group relative flex min-h-[280px] cursor-pointer flex-col"
+	style="overflow: visible;"
+	onclick={handleCardClick}
+	onkeydown={handleCardKeydown}
+	role="link"
+	tabindex="0"
+	aria-label="Open {item.title} in chart editor"
+>
 	<!-- Header with title and menu -->
 	<div class="p-6 pb-4">
 		<div class="mb-3 flex items-start justify-between">
@@ -78,6 +101,32 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="py-2">
+							{#if item.id !== undefined}
+								<Button
+									onclick={navigateToEditor}
+									variant="menuItem"
+									fullWidth
+									justify="start"
+									class="text-slate-300 hover:bg-purple-600/20 hover:text-purple-200"
+								>
+									{#snippet children()}
+										<svg
+											class="mr-3 h-4 w-4"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+											></path>
+										</svg>
+										Open in Editor
+									{/snippet}
+								</Button>
+							{/if}
 							{#if item.id !== undefined}
 								<a
 									href={`/app/chart/${item.id}`}

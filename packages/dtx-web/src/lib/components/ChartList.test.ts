@@ -34,9 +34,11 @@ vi.mock('./ChartListTableItem.svelte', async () => {
 vi.mock('$lib/components/ChartListTableItem.svelte', () => ({ default: vi.fn() }));
 
 vi.mock('@lucide/svelte/icons');
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 import ChartList from './ChartList.svelte';
 import * as chartListHelpers from './ChartList.helpers';
+import { goto } from '$app/navigation';
 
 const mockListedChart = {
 	id: 1,
@@ -815,5 +817,67 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		} else {
 			expect(props).toBeDefined();
 		}
+	});
+});
+
+describe('ChartList – table row navigation', () => {
+	beforeEach(() => {
+		vi.mocked(goto).mockClear();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	const navItem = {
+		id: 99,
+		title: 'Nav Test Chart',
+		artist: 'Nav Artist',
+		bpm: 130,
+		is_published: false,
+		display_id: 'NAV01',
+		dtx_files: [],
+		publish_date: null,
+		download_url: null,
+		video_preview_url: null
+	};
+
+	it('clicking a non-interactive area of a table row navigates to the chart editor', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ data: [navItem], count: 1 })
+			})
+		);
+
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => expect(screen.getByText(/Nav Test Chart/)).toBeInTheDocument());
+
+		const title = screen.getByText(/Nav Test Chart/);
+		await fireEvent.click(title);
+
+		expect(goto).toHaveBeenCalledWith('/editor/99');
+	});
+
+	it('pressing Enter on a table row navigates to the chart editor', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ data: [navItem], count: 1 })
+			})
+		);
+
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => expect(screen.getByText(/Nav Test Chart/)).toBeInTheDocument());
+
+		const row = screen.getByRole('link', { name: /open nav test chart in chart editor/i });
+		await fireEvent.keyDown(row, { key: 'Enter' });
+
+		expect(goto).toHaveBeenCalledWith('/editor/99');
 	});
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '$lib/toaster';
@@ -218,6 +219,16 @@
 		selectedIds = next;
 	};
 
+	const handleRowClick = (e: MouseEvent, id: number) => {
+		const target = e.target as Element;
+		if (!target.closest('a, button, input, label')) goto(`/editor/${id}`);
+	};
+
+	const handleRowKeydown = (e: KeyboardEvent, id: number) => {
+		const target = e.target as Element;
+		if (e.key === 'Enter' && !target.closest('a, button, input, label')) goto(`/editor/${id}`);
+	};
+
 	const clearBulkSelection = () => {
 		selectMode = false;
 		selectedIds = createEmptySelection();
@@ -400,7 +411,12 @@
 	<div class="space-y-4">
 		{#each filteredItems as item (item.id)}
 			<div
-				class="music-card group relative z-0 p-6 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-[1.02]"
+				class="music-card group relative z-0 cursor-pointer p-6 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-[1.02]"
+				onclick={(e) => handleRowClick(e, item.id)}
+				onkeydown={(e) => handleRowKeydown(e, item.id)}
+				role="link"
+				tabindex="0"
+				aria-label="Open {item.title} in chart editor"
 			>
 				<div class="flex items-start justify-between">
 					<div class="flex-1">

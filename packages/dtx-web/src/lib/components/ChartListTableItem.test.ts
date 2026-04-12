@@ -22,8 +22,10 @@ vi.mock('@dtx/ui-components', async () => {
 });
 
 vi.mock('$lib/toaster', () => ({ default: toastMock }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 import ChartListTableItem from './ChartListTableItem.svelte';
+import { goto } from '$app/navigation';
 
 const mockItem = {
 	id: 10,
@@ -145,6 +147,30 @@ describe('ChartListTableItem', () => {
 	it('renders action buttons in non-blog mode', () => {
 		render(ChartListTableItem, { props: defaultProps });
 		expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
+	});
+
+	describe('Navigation', () => {
+		beforeEach(() => {
+			vi.mocked(goto).mockClear();
+		});
+
+		it('renders "Open in Editor" button in non-blog mode', () => {
+			render(ChartListTableItem, { props: defaultProps });
+			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
+		});
+
+		it('clicking "Open in Editor" navigates to the chart editor', async () => {
+			render(ChartListTableItem, { props: defaultProps });
+			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			expect(goto).toHaveBeenCalledWith(`/editor/${mockItem.id}`);
+		});
+
+		it('"Open in Editor" is not rendered in blog mode', () => {
+			render(ChartListTableItem, { props: { ...defaultProps, isBlog: true } });
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
+		});
 	});
 
 	it('clicking Delete opens the confirmation modal', async () => {

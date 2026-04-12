@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TreeNode } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
@@ -17,7 +17,7 @@ vi.mock('@dtx/common', async (importOriginal) => {
 vi.mock('./CloudSongAutocomplete.svelte', () => ({ default: vi.fn() }));
 
 // Mutable state for workspaceStore mock
-let workspaceState = {
+const initialWorkspaceState = {
 	path: null as string | null,
 	currentSubWorkspace: null as string | null,
 	subWorkspaces: [] as string[],
@@ -29,6 +29,7 @@ let workspaceState = {
 	showNewSong: false,
 	showTemplates: false
 };
+let workspaceState = { ...initialWorkspaceState };
 const workspaceListeners: Array<(s: typeof workspaceState) => void> = [];
 
 vi.mock('../stores/workspaceStore', () => ({
@@ -113,6 +114,8 @@ const makeLinkedSimFile = () => ({
 
 describe('SongDetails', () => {
 	beforeEach(() => {
+		workspaceState = { ...initialWorkspaceState };
+		workspaceListeners.length = 0;
 		vi.clearAllMocks();
 		const invokeMock = window.electron?.ipcRenderer?.invoke;
 		if (vi.isMockFunction(invokeMock)) {
@@ -139,10 +142,12 @@ describe('SongDetails', () => {
 		it('invokes list-files IPC on mount with song path', async () => {
 			const song = makeNode('TestSong', '/my/songs/TestSong');
 			render(SongDetails, { props: { song } });
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'list-files',
-				'/my/songs/TestSong'
-			);
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'list-files',
+					'/my/songs/TestSong'
+				);
+			});
 		});
 
 		it('does not invoke list-files IPC when song has no path', () => {
@@ -173,28 +178,32 @@ describe('SongDetails', () => {
 			expect(container.firstChild).not.toBeNull();
 		});
 
-		it('invokes list-files IPC on mount for linked song', () => {
+		it('invokes list-files IPC on mount for linked song', async () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: makeLinkedSimFile(),
 				linkedSimFileId: '1'
 			});
 			render(SongDetails, { props: { song } });
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'list-files',
-				'/test/TestSong'
-			);
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'list-files',
+					'/test/TestSong'
+				);
+			});
 		});
 
-		it('invokes parse-dtx-files IPC when linked simfile is missing BPM', () => {
+		it('invokes parse-dtx-files IPC when linked simfile is missing BPM', async () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: { ...makeLinkedSimFile(), bpm: undefined as unknown as number },
 				linkedSimFileId: '1'
 			});
 			render(SongDetails, { props: { song } });
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'parse-dtx-files',
-				'/test/TestSong'
-			);
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'parse-dtx-files',
+					'/test/TestSong'
+				);
+			});
 		});
 	});
 
@@ -244,13 +253,9 @@ describe('SongDetails', () => {
 	});
 
 	describe('handleClose', () => {
-		it('calls workspaceStore.closeSongDetails when close is triggered', () => {
+		it('does not call closeSongDetails on initial render', () => {
 			const song = makeNode('TestSong');
-			// Directly test the close behavior via the function that SongDetails exposes
 			render(SongDetails, { props: { song } });
-			// workspaceStore.closeSongDetails is called when handleClose runs
-			// Since buttons are in snippets (mocked ChartDetail doesn't render them),
-			// we verify the store is properly set up for close functionality
 			expect(workspaceStore.closeSongDetails).not.toHaveBeenCalled();
 		});
 	});
@@ -299,7 +304,7 @@ describe('SongDetails', () => {
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
 		});
 
-		it('renders linked song where simfile has null bpm triggers parse', () => {
+		it('renders linked song where simfile has null bpm triggers parse', async () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: {
 					...makeLinkedSimFile(),
@@ -308,10 +313,12 @@ describe('SongDetails', () => {
 				linkedSimFileId: '1'
 			});
 			render(SongDetails, { props: { song } });
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'parse-dtx-files',
-				'/test/TestSong'
-			);
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'parse-dtx-files',
+					'/test/TestSong'
+				);
+			});
 		});
 	});
 
@@ -453,17 +460,13 @@ describe('SongDetails', () => {
 	});
 
 	describe('handleOpenEditor', () => {
-		it('calls editorMappingStore.setMappingWithMetadata when song has path and linkedSimFileId', async () => {
-			// We need to call handleOpenEditor – since the button is inside a snippet,
-			// we test the underlying logic by verifying IPC is set up correctly
+		it('does not call setMappingWithMetadata on initial render', () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFileId: '42',
 				songTitle: 'My Song'
 			});
 			render(SongDetails, { props: { song } });
-			// The editor mapping store should be configured when the song renders
-			// The actual navigation uses window.location.hash
-			expect(editorMappingStore.setMappingWithMetadata).not.toHaveBeenCalled(); // Not triggered yet
+			expect(editorMappingStore.setMappingWithMetadata).not.toHaveBeenCalled();
 		});
 	});
 });

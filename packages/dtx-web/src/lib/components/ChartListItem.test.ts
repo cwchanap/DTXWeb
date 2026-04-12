@@ -483,7 +483,9 @@ describe('ChartListItem Component Logic', () => {
 				'utf-8'
 			);
 
-			expect(source).toContain('style="overflow: visible;"');
+			// Verify overflow-visible is applied via Tailwind class, not inline style
+			expect(source).toMatch(/\boverflow-visible\b/);
+			expect(source).not.toMatch(/style="overflow:\s*visible/);
 		});
 
 		it('Modal uses portal action so fixed positioning is not trapped by card transforms', () => {

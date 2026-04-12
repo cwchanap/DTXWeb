@@ -41,24 +41,23 @@
 		popoverOpen = false;
 	};
 
-	const navigateToEditor = () => {
+	const handleOpenInEditor = () => {
 		if (item.id !== undefined) goto(`/editor/${item.id}`);
 	};
 
 	const handleCardClick = (e: MouseEvent) => {
 		const target = e.target as Element;
-		if (!target.closest('a, button, input, label')) navigateToEditor();
+		if (!target.closest('a, button, input, label')) handleOpenInEditor();
 	};
 
 	const handleCardKeydown = (e: KeyboardEvent) => {
 		const target = e.target as Element;
-		if (e.key === 'Enter' && !target.closest('a, button, input, label')) navigateToEditor();
+		if (e.key === 'Enter' && !target.closest('a, button, input, label')) handleOpenInEditor();
 	};
 </script>
 
 <div
-	class="music-card group relative flex min-h-[280px] cursor-pointer flex-col"
-	style="overflow: visible;"
+	class="music-card group relative flex min-h-[280px] cursor-pointer flex-col overflow-visible"
 	onclick={handleCardClick}
 	onkeydown={handleCardKeydown}
 	role="link"
@@ -103,7 +102,7 @@
 						<div class="py-2">
 							{#if item.id !== undefined}
 								<Button
-									onclick={navigateToEditor}
+									onclick={handleOpenInEditor}
 									variant="menuItem"
 									fullWidth
 									justify="start"

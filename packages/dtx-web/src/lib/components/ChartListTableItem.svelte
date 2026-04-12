@@ -32,6 +32,10 @@
 		onFileDelete(item.id);
 	}
 
+	function handleOpenInEditor() {
+		goto(`/editor/${item.id}`);
+	}
+
 	function openModal() {
 		modalOpen = true;
 		popoverOpen = false; // Close popover when modal opens
@@ -53,12 +57,7 @@
 		{/snippet}
 		{#snippet content()}
 			<div class="py-1">
-				<Button
-					onclick={() => goto(`/editor/${item.id}`)}
-					variant="menuItem"
-					fullWidth
-					justify="start"
-				>
+				<Button onclick={handleOpenInEditor} variant="menuItem" fullWidth justify="start">
 					{#snippet children()}Open in Editor{/snippet}
 				</Button>
 

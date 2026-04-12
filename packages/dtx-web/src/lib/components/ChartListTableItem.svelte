@@ -5,6 +5,7 @@
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
+	import { goto } from '$app/navigation';
 
 	type ChartListTableItemData = Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'> & {
 		has_uploaded_files?: boolean;
@@ -52,6 +53,15 @@
 		{/snippet}
 		{#snippet content()}
 			<div class="py-1">
+				<Button
+					onclick={() => goto(`/editor/${item.id}`)}
+					variant="menuItem"
+					fullWidth
+					justify="start"
+				>
+					{#snippet children()}Open in Editor{/snippet}
+				</Button>
+
 				<a
 					href={`/app/chart/${item.id}`}
 					class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"

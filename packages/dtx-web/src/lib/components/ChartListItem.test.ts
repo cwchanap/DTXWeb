@@ -24,6 +24,7 @@ vi.mock('@dtx/ui-components/components', async () => {
 	};
 });
 vi.mock('@lucide/svelte/icons');
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 // Track ImageAudio props to test URL construction
 let capturedImageAudioProps: { previewUrl?: string; soundPreviewUrl?: string | null } | null = null;
@@ -45,6 +46,7 @@ vi.mock('$lib/utils', () => ({
 }));
 
 import ChartListItem from './ChartListItem.svelte';
+import { goto } from '$app/navigation';
 
 // Test data
 const mockItem = {
@@ -391,6 +393,75 @@ describe('ChartListItem Component Logic', () => {
 
 			await fireEvent.click(screen.getByRole('button', { name: /unpublish/i }));
 			expect(togglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.is_published);
+		});
+	});
+
+	describe('Navigation', () => {
+		const navProps = {
+			item: mockItem,
+			isBlog: false,
+			togglePublishChart: vi.fn().mockResolvedValue(undefined),
+			simfileBucketUrl: 'https://cdn.example.com',
+			onFileDelete: vi.fn()
+		};
+
+		beforeEach(() => {
+			vi.mocked(goto).mockClear();
+		});
+
+		it('clicking non-interactive card area navigates to the editor', async () => {
+			render(ChartListItem, { props: navProps });
+			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
+			await fireEvent.click(card);
+			expect(goto).toHaveBeenCalledWith('/editor/1');
+		});
+
+		it('pressing Enter on the card navigates to the editor', async () => {
+			render(ChartListItem, { props: navProps });
+			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
+			await fireEvent.keyDown(card, { key: 'Enter' });
+			expect(goto).toHaveBeenCalledWith('/editor/1');
+		});
+
+		it('clicking the Actions button does not navigate', async () => {
+			render(ChartListItem, { props: navProps });
+			const actionsBtn = screen.getByRole('button', { name: 'Actions' });
+			await fireEvent.click(actionsBtn);
+			expect(goto).not.toHaveBeenCalled();
+		});
+
+		it('pressing Enter on the Actions button does not navigate', async () => {
+			render(ChartListItem, { props: navProps });
+			const actionsBtn = screen.getByRole('button', { name: 'Actions' });
+			await fireEvent.keyDown(actionsBtn, { key: 'Enter' });
+			expect(goto).not.toHaveBeenCalled();
+		});
+
+		it('clicking "Open in Editor" menu item navigates to the editor in non-blog mode', async () => {
+			render(ChartListItem, { props: navProps });
+			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			expect(goto).toHaveBeenCalledWith('/editor/1');
+		});
+
+		it('"Open in Editor" menu item is not shown in blog mode', () => {
+			render(ChartListItem, { props: { ...navProps, isBlog: true } });
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
+		});
+
+		it('clicking card with undefined item.id does not navigate', async () => {
+			render(ChartListItem, { props: { ...navProps, item: { ...mockItem, id: undefined } } });
+			const card = screen.getByRole('link', { name: /in chart editor/i });
+			await fireEvent.click(card);
+			expect(goto).not.toHaveBeenCalled();
+		});
+
+		it('clicking card in blog mode still navigates to the editor', async () => {
+			render(ChartListItem, { props: { ...navProps, isBlog: true } });
+			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
+			await fireEvent.click(card);
+			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 	});
 

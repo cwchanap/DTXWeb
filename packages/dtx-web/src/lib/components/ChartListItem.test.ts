@@ -24,6 +24,7 @@ vi.mock('@dtx/ui-components/components', async () => {
 	};
 });
 vi.mock('@lucide/svelte/icons');
+vi.mock('$lib/toaster', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 // Track ImageAudio props to test URL construction
@@ -457,11 +458,18 @@ describe('ChartListItem Component Logic', () => {
 			expect(goto).not.toHaveBeenCalled();
 		});
 
-		it('clicking card in blog mode still navigates to the editor', async () => {
+		it('pressing Space on the card navigates to the editor', async () => {
+			render(ChartListItem, { props: navProps });
+			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
+			await fireEvent.keyDown(card, { key: ' ' });
+			expect(goto).toHaveBeenCalledWith('/editor/1');
+		});
+
+		it('clicking card in blog mode does not navigate', async () => {
 			render(ChartListItem, { props: { ...navProps, isBlog: true } });
 			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
 			await fireEvent.click(card);
-			expect(goto).toHaveBeenCalledWith('/editor/1');
+			expect(goto).not.toHaveBeenCalled();
 		});
 	});
 

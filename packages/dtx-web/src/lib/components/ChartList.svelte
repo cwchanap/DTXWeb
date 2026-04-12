@@ -219,14 +219,30 @@
 		selectedIds = next;
 	};
 
-	const handleRowClick = (e: MouseEvent, id: number) => {
+	const handleRowClick = async (e: MouseEvent, id: number) => {
+		if (isBlog || selectMode) return;
 		const target = e.target as Element;
-		if (!target.closest('a, button, input, label')) goto(`/editor/${id}`);
+		if (!target.closest('a, button, input, label')) {
+			try {
+				await goto(`/editor/${id}`);
+			} catch {
+				toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
+			}
+		}
 	};
 
-	const handleRowKeydown = (e: KeyboardEvent, id: number) => {
+	const handleRowKeydown = async (e: KeyboardEvent, id: number) => {
+		if (isBlog || selectMode) return;
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		if (e.key === ' ') e.preventDefault();
 		const target = e.target as Element;
-		if (e.key === 'Enter' && !target.closest('a, button, input, label')) goto(`/editor/${id}`);
+		if (!target.closest('a, button, input, label')) {
+			try {
+				await goto(`/editor/${id}`);
+			} catch {
+				toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
+			}
+		}
 	};
 
 	const clearBulkSelection = () => {

@@ -880,4 +880,42 @@ describe('ChartList – table row navigation', () => {
 
 		expect(goto).toHaveBeenCalledWith('/editor/99');
 	});
+
+	it('pressing Space on a table row navigates to the chart editor', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ data: [navItem], count: 1 })
+			})
+		);
+
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => expect(screen.getByText(/Nav Test Chart/)).toBeInTheDocument());
+
+		const row = screen.getByRole('link', { name: /open nav test chart in chart editor/i });
+		await fireEvent.keyDown(row, { key: ' ' });
+
+		expect(goto).toHaveBeenCalledWith('/editor/99');
+	});
+
+	it('clicking a table row in blog mode does not navigate', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ data: [navItem], count: 1 })
+			})
+		);
+
+		render(ChartList, { props: { isBlog: true } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => expect(screen.getByText(/Nav Test Chart/)).toBeInTheDocument());
+
+		const title = screen.getByText(/Nav Test Chart/);
+		await fireEvent.click(title);
+
+		expect(goto).not.toHaveBeenCalled();
+	});
 });

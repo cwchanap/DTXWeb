@@ -8,6 +8,7 @@
 	import { Modal, Button } from '@dtx/ui-components/components';
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { goto } from '$app/navigation';
+	import toastStore from '$lib/toaster';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 
@@ -41,8 +42,13 @@
 		popoverOpen = false;
 	};
 
-	const handleOpenInEditor = () => {
-		if (item.id !== undefined) goto(`/editor/${item.id}`);
+	const handleOpenInEditor = async () => {
+		if (isBlog || item.id === undefined) return;
+		try {
+			await goto(`/editor/${item.id}`);
+		} catch {
+			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
+		}
 	};
 
 	const handleCardClick = (e: MouseEvent) => {
@@ -51,8 +57,10 @@
 	};
 
 	const handleCardKeydown = (e: KeyboardEvent) => {
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		if (e.key === ' ') e.preventDefault();
 		const target = e.target as Element;
-		if (e.key === 'Enter' && !target.closest('a, button, input, label')) handleOpenInEditor();
+		if (!target.closest('a, button, input, label')) handleOpenInEditor();
 	};
 </script>
 

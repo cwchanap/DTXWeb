@@ -37,7 +37,10 @@ vi.mock('../stores/workspaceStore', () => ({
 		subscribe: vi.fn((cb: (s: typeof workspaceState) => void) => {
 			cb(workspaceState);
 			workspaceListeners.push(cb);
-			return () => workspaceListeners.splice(workspaceListeners.indexOf(cb), 1);
+			return () => {
+				const index = workspaceListeners.indexOf(cb);
+				if (index >= 0) workspaceListeners.splice(index, 1);
+			};
 		}),
 		closeSongDetails: vi.fn(),
 		linkSimFileToFolder: vi.fn()

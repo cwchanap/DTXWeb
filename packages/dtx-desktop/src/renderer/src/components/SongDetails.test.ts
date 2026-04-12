@@ -60,10 +60,19 @@ vi.mock('../stores/editorMappingStore', () => ({
 
 vi.mock('../stores/authStore', () => ({
 	authStore: {
-		subscribe: vi.fn((cb: (s: { isAuthenticated: boolean; isLoading: boolean; user: null; error: null }) => void) => {
-			cb({ isAuthenticated: false, isLoading: false, user: null, error: null });
-			return () => {};
-		})
+		subscribe: vi.fn(
+			(
+				cb: (s: {
+					isAuthenticated: boolean;
+					isLoading: boolean;
+					user: null;
+					error: null;
+				}) => void
+			) => {
+				cb({ isAuthenticated: false, isLoading: false, user: null, error: null });
+				return () => {};
+			}
+		)
 	}
 }));
 
@@ -211,7 +220,10 @@ describe('SongDetails', () => {
 
 	describe('store interactions', () => {
 		it('renders without error when workspaceStore has treeStructure', () => {
-			workspaceState = { ...workspaceState, treeStructure: [makeNode('Folder', '/ws/Folder')] };
+			workspaceState = {
+				...workspaceState,
+				treeStructure: [makeNode('Folder', '/ws/Folder')]
+			};
 			const song = makeNode('TestSong');
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
 		});
@@ -310,7 +322,11 @@ describe('SongDetails', () => {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') return { files: [] };
 					if (channel === 'parse-dtx-files') {
-						return { bpm: 140, artist: 'Test Artist', levels: [{ label: 'BASIC', level: 30 }] };
+						return {
+							bpm: 140,
+							artist: 'Test Artist',
+							levels: [{ label: 'BASIC', level: 30 }]
+						};
 					}
 					return null;
 				});
@@ -364,8 +380,16 @@ describe('SongDetails', () => {
 					if (channel === 'list-files') {
 						return {
 							files: [
-								{ fileName: 'song.dtx', key: '/test/TestSong/song.dtx', lastModified: 1000 },
-								{ fileName: 'hi_hat.wav', key: '/test/TestSong/hi_hat.wav', lastModified: 2000 }
+								{
+									fileName: 'song.dtx',
+									key: '/test/TestSong/song.dtx',
+									lastModified: 1000
+								},
+								{
+									fileName: 'hi_hat.wav',
+									key: '/test/TestSong/hi_hat.wav',
+									lastModified: 2000
+								}
 							]
 						};
 					}
@@ -386,7 +410,11 @@ describe('SongDetails', () => {
 					if (channel === 'list-files') {
 						return {
 							files: [
-								{ fileName: 'song.dtx', key: '/test/TestSong/song.dtx', lastModified: 1000 }
+								{
+									fileName: 'song.dtx',
+									key: '/test/TestSong/song.dtx',
+									lastModified: 1000
+								}
 							]
 						};
 					}
@@ -407,7 +435,11 @@ describe('SongDetails', () => {
 					if (channel === 'list-files') {
 						return {
 							files: [
-								{ fileName: 'song.dtx', key: '/test/TestSong/song.dtx', lastModified: 1000 }
+								{
+									fileName: 'song.dtx',
+									key: '/test/TestSong/song.dtx',
+									lastModified: 1000
+								}
 							]
 						};
 					}

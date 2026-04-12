@@ -60,7 +60,10 @@ export default defineConfig({
 				__dirname,
 				'../../packages/common/src/lib/server.ts'
 			),
-			'@dtx/common/components': path.resolve(__dirname, '../../__mocks__/@dtx/common/components.ts'),
+			'@dtx/common/components': path.resolve(
+				__dirname,
+				'../../__mocks__/@dtx/common/components.ts'
+			),
 			'@dtx/common': path.resolve(__dirname, '../../packages/common/src/lib/index.ts'),
 			'@dtx/ui-components/components/Modal.svelte': path.resolve(
 				__dirname,

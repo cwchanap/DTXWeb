@@ -1010,7 +1010,9 @@ describe('index.ts IPC handlers', () => {
 			mockAuth.getCurrentSession.mockReturnValue(validSession);
 			const mockClient = {
 				auth: {
-					getSession: vi.fn().mockResolvedValue({ data: { session: validSession }, error: null })
+					getSession: vi
+						.fn()
+						.mockResolvedValue({ data: { session: validSession }, error: null })
 				}
 			};
 			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
@@ -1030,7 +1032,9 @@ describe('index.ts IPC handlers', () => {
 				}) as unknown as typeof fetch
 			);
 
-			const result = (await ipcHandlers['load-asset-files']({}, '42')) as { fileName: string }[];
+			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
+				fileName: string;
+			}[];
 			expect(result).toEqual([{ fileName: 'song.dtx' }]);
 		});
 
@@ -1120,7 +1124,9 @@ describe('index.ts IPC handlers', () => {
 		it('returns empty array when session refresh fails', async () => {
 			const mockClient = {
 				auth: {
-					getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: new Error('expired') })
+					getSession: vi
+						.fn()
+						.mockResolvedValue({ data: { session: null }, error: new Error('expired') })
 				}
 			};
 			mockAuth.getSupabaseClient.mockReturnValue(mockClient);

@@ -31,6 +31,8 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
+	const canOpenEditor = $derived(!isBlog && item.id !== undefined);
+
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
 			onFileDelete(item.id);
@@ -67,12 +69,15 @@
 </script>
 
 <div
-	class="music-card group relative flex min-h-[280px] cursor-pointer flex-col overflow-visible"
-	onclick={handleCardClick}
-	onkeydown={handleCardKeydown}
-	role="link"
-	tabindex="0"
-	aria-label="Open {item.title} in chart editor"
+	class="music-card group relative flex min-h-[280px] flex-col overflow-visible {canOpenEditor
+		? 'cursor-pointer'
+		: ''}"
+	role={canOpenEditor ? 'link' : 'presentation'}
+	tabindex="-1"
+	aria-label={canOpenEditor ? `Open ${item.title} in chart editor` : undefined}
+	data-can-navigate={canOpenEditor}
+	onclick={canOpenEditor ? handleCardClick : undefined}
+	onkeydown={canOpenEditor ? handleCardKeydown : undefined}
 >
 	<!-- Header with title and menu -->
 	<div class="p-6 pb-4">

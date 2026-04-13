@@ -453,8 +453,9 @@ describe('ChartListItem Component Logic', () => {
 
 		it('clicking card with undefined item.id does not navigate', async () => {
 			render(ChartListItem, { props: { ...navProps, item: { ...mockItem, id: undefined } } });
-			const card = screen.getByRole('link', { name: /in chart editor/i });
-			await fireEvent.click(card);
+			expect(
+				screen.queryByRole('link', { name: /in chart editor/i })
+			).not.toBeInTheDocument();
 			expect(goto).not.toHaveBeenCalled();
 		});
 
@@ -467,8 +468,9 @@ describe('ChartListItem Component Logic', () => {
 
 		it('clicking card in blog mode does not navigate', async () => {
 			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
-			await fireEvent.click(card);
+			expect(
+				screen.queryByRole('link', { name: /open test song 1 in chart editor/i })
+			).not.toBeInTheDocument();
 			expect(goto).not.toHaveBeenCalled();
 		});
 	});

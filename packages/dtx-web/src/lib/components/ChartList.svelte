@@ -426,13 +426,17 @@
 {:else if viewMode === 'table'}
 	<div class="space-y-4">
 		{#each filteredItems as item (item.id)}
+			{@const canNavigate = !isBlog && !selectMode}
 			<div
-				class="music-card group relative z-0 cursor-pointer p-6 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-[1.02]"
-				onclick={(e) => handleRowClick(e, item.id)}
-				onkeydown={(e) => handleRowKeydown(e, item.id)}
-				role="link"
-				tabindex="0"
-				aria-label="Open {item.title} in chart editor"
+				class="music-card group relative z-0 p-6 transition-all duration-300 focus-within:z-30 hover:z-30 {canNavigate
+					? 'cursor-pointer hover:scale-[1.02]'
+					: ''}"
+				role={canNavigate ? 'link' : 'presentation'}
+				tabindex="-1"
+				aria-label={canNavigate ? `Open ${item.title} in chart editor` : undefined}
+				data-can-navigate={canNavigate}
+				onclick={canNavigate ? (e) => handleRowClick(e, item.id) : undefined}
+				onkeydown={canNavigate ? (e) => handleRowKeydown(e, item.id) : undefined}
 			>
 				<div class="flex items-start justify-between">
 					<div class="flex-1">

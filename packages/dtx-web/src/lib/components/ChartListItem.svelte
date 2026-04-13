@@ -68,12 +68,13 @@
 	};
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="music-card group relative flex min-h-[280px] flex-col overflow-visible {canOpenEditor
 		? 'cursor-pointer'
 		: ''}"
 	role={canOpenEditor ? 'link' : 'presentation'}
-	tabindex="-1"
+	tabindex={canOpenEditor ? 0 : -1}
 	aria-label={canOpenEditor ? `Open ${item.title} in chart editor` : undefined}
 	data-can-navigate={canOpenEditor}
 	onclick={canOpenEditor ? handleCardClick : undefined}

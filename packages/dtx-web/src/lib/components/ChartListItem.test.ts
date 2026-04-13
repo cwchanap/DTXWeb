@@ -459,6 +459,20 @@ describe('ChartListItem Component Logic', () => {
 			expect(goto).not.toHaveBeenCalled();
 		});
 
+		it('card has tabindex="0" when navigation is enabled', () => {
+			render(ChartListItem, { props: navProps });
+			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
+			expect(card).toHaveAttribute('tabindex', '0');
+		});
+
+		it('card has tabindex="-1" when navigation is disabled (blog mode)', () => {
+			render(ChartListItem, { props: { ...navProps, isBlog: true } });
+			// In blog mode the card has role="presentation", so query by data attribute
+			const card = document.querySelector('[data-can-navigate="false"]');
+			expect(card).toBeTruthy();
+			expect(card).toHaveAttribute('tabindex', '-1');
+		});
+
 		it('pressing Space on the card navigates to the editor', async () => {
 			render(ChartListItem, { props: navProps });
 			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });

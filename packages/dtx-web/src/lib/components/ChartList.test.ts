@@ -1028,6 +1028,41 @@ describe('ChartList – table row navigation', () => {
 		expect(goto).toHaveBeenCalledWith('/editor/99');
 	});
 
+	it('table row has tabindex="0" when navigation is enabled', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ data: [navItem], count: 1 })
+			})
+		);
+
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => expect(screen.getByText(/Nav Test Chart/)).toBeInTheDocument());
+
+		const row = screen.getByRole('link', { name: /open nav test chart in chart editor/i });
+		expect(row).toHaveAttribute('tabindex', '0');
+	});
+
+	it('table row has tabindex="-1" when navigation is disabled (blog mode)', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: vi.fn().mockResolvedValue({ data: [navItem], count: 1 })
+			})
+		);
+
+		render(ChartList, { props: { isBlog: true } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await waitFor(() => expect(screen.getByText(/Nav Test Chart/)).toBeInTheDocument());
+
+		const row = document.querySelector('[data-can-navigate="false"]');
+		expect(row).toBeTruthy();
+		expect(row).toHaveAttribute('tabindex', '-1');
+	});
+
 	it('clicking a table row in blog mode does not navigate', async () => {
 		vi.stubGlobal(
 			'fetch',

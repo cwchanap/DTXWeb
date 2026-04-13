@@ -52,14 +52,16 @@
 	};
 
 	const handleCardClick = (e: MouseEvent) => {
-		const target = e.target as Element;
+		const target = e.target;
+		if (!(target instanceof Element)) return;
 		if (!target.closest('a, button, input, label')) handleOpenInEditor();
 	};
 
 	const handleCardKeydown = (e: KeyboardEvent) => {
 		if (e.key !== 'Enter' && e.key !== ' ') return;
 		if (e.key === ' ') e.preventDefault();
-		const target = e.target as Element;
+		const target = e.target;
+		if (!(target instanceof Element)) return;
 		if (!target.closest('a, button, input, label')) handleOpenInEditor();
 	};
 </script>

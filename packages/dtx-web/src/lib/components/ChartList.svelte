@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '$lib/toaster';
@@ -219,32 +218,6 @@
 		selectedIds = next;
 	};
 
-	const handleRowClick = async (e: MouseEvent, id: number) => {
-		if (isBlog || selectMode) return;
-		const target = e.target as Element;
-		if (!target.closest('a, button, input, label')) {
-			try {
-				await goto(`/editor/${id}`);
-			} catch {
-				toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
-			}
-		}
-	};
-
-	const handleRowKeydown = async (e: KeyboardEvent, id: number) => {
-		if (isBlog || selectMode) return;
-		if (e.key !== 'Enter' && e.key !== ' ') return;
-		if (e.key === ' ') e.preventDefault();
-		const target = e.target as Element;
-		if (!target.closest('a, button, input, label')) {
-			try {
-				await goto(`/editor/${id}`);
-			} catch {
-				toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
-			}
-		}
-	};
-
 	const clearBulkSelection = () => {
 		selectMode = false;
 		selectedIds = createEmptySelection();
@@ -426,18 +399,8 @@
 {:else if viewMode === 'table'}
 	<div class="space-y-4">
 		{#each filteredItems as item (item.id)}
-			{@const canNavigate = !isBlog && !selectMode}
-			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
-				class="music-card group relative z-0 p-6 transition-all duration-300 focus-within:z-30 hover:z-30 {canNavigate
-					? 'cursor-pointer hover:scale-[1.02]'
-					: ''}"
-				role={canNavigate ? 'link' : 'presentation'}
-				tabindex={canNavigate ? 0 : -1}
-				aria-label={canNavigate ? `Open ${item.title} in chart editor` : undefined}
-				data-can-navigate={canNavigate}
-				onclick={canNavigate ? (e) => handleRowClick(e, item.id) : undefined}
-				onkeydown={canNavigate ? (e) => handleRowKeydown(e, item.id) : undefined}
+				class="music-card group relative z-0 p-6 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-[1.02]"
 			>
 				<div class="flex items-start justify-between">
 					<div class="flex-1">

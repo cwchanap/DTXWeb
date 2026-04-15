@@ -52,34 +52,9 @@
 			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
 		}
 	};
-
-	const handleCardClick = (e: MouseEvent) => {
-		const target = e.target;
-		if (!(target instanceof Element)) return;
-		if (!target.closest('a, button, input, label')) handleOpenInEditor();
-	};
-
-	const handleCardKeydown = (e: KeyboardEvent) => {
-		if (e.key !== 'Enter' && e.key !== ' ') return;
-		if (e.key === ' ') e.preventDefault();
-		const target = e.target;
-		if (!(target instanceof Element)) return;
-		if (!target.closest('a, button, input, label')) handleOpenInEditor();
-	};
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div
-	class="music-card group relative flex min-h-[280px] flex-col overflow-visible {canOpenEditor
-		? 'cursor-pointer'
-		: ''}"
-	role={canOpenEditor ? 'link' : 'presentation'}
-	tabindex={canOpenEditor ? 0 : -1}
-	aria-label={canOpenEditor ? `Open ${item.title} in chart editor` : undefined}
-	data-can-navigate={canOpenEditor}
-	onclick={canOpenEditor ? handleCardClick : undefined}
-	onkeydown={canOpenEditor ? handleCardKeydown : undefined}
->
+<div class="music-card group relative flex min-h-[280px] flex-col overflow-visible">
 	<!-- Header with title and menu -->
 	<div class="p-6 pb-4">
 		<div class="mb-3 flex items-start justify-between">
@@ -116,7 +91,7 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="py-2">
-							{#if item.id !== undefined}
+							{#if canOpenEditor}
 								<Button
 									onclick={handleOpenInEditor}
 									variant="menuItem"

@@ -290,7 +290,7 @@
 		}
 	}
 
-	function createNewFile() {
+	function createNewFile(redirectOnRemote = true) {
 		const currentSimfileID = get(store.currentSimfileID);
 		const currentDifficulty = get(store.currentDifficulty);
 
@@ -320,7 +320,7 @@
 		}
 
 		// If we're currently in a remote chart, redirect to local workspace after cleanup
-		if (simfileID) {
+		if (redirectOnRemote && simfileID) {
 			goto('/editor');
 		}
 	}
@@ -552,7 +552,8 @@
 			EventBus.emit(EventType.NOTE_IMPORT, notes, bpmNotes);
 		} catch (error) {
 			console.error('Error loading simfile:', error);
-			newFile(); // Fallback to new file if loading fails
+			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
+			createNewFile(false); // Fallback to new file without redirecting away
 		}
 	});
 

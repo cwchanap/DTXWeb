@@ -410,34 +410,6 @@ describe('ChartListItem Component Logic', () => {
 			vi.mocked(goto).mockClear();
 		});
 
-		it('clicking non-interactive card area navigates to the editor', async () => {
-			render(ChartListItem, { props: navProps });
-			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
-			await fireEvent.click(card);
-			expect(goto).toHaveBeenCalledWith('/editor/1');
-		});
-
-		it('pressing Enter on the card navigates to the editor', async () => {
-			render(ChartListItem, { props: navProps });
-			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
-			await fireEvent.keyDown(card, { key: 'Enter' });
-			expect(goto).toHaveBeenCalledWith('/editor/1');
-		});
-
-		it('clicking the Actions button does not navigate', async () => {
-			render(ChartListItem, { props: navProps });
-			const actionsBtn = screen.getByRole('button', { name: 'Actions' });
-			await fireEvent.click(actionsBtn);
-			expect(goto).not.toHaveBeenCalled();
-		});
-
-		it('pressing Enter on the Actions button does not navigate', async () => {
-			render(ChartListItem, { props: navProps });
-			const actionsBtn = screen.getByRole('button', { name: 'Actions' });
-			await fireEvent.keyDown(actionsBtn, { key: 'Enter' });
-			expect(goto).not.toHaveBeenCalled();
-		});
-
 		it('clicking "Open in Editor" menu item navigates to the editor in non-blog mode', async () => {
 			render(ChartListItem, { props: navProps });
 			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
@@ -451,41 +423,11 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('clicking card with undefined item.id does not navigate', async () => {
+		it('"Open in Editor" menu item is not shown when item.id is undefined', () => {
 			render(ChartListItem, { props: { ...navProps, item: { ...mockItem, id: undefined } } });
 			expect(
-				screen.queryByRole('link', { name: /in chart editor/i })
+				screen.queryByRole('button', { name: 'Open in Editor' })
 			).not.toBeInTheDocument();
-			expect(goto).not.toHaveBeenCalled();
-		});
-
-		it('card has tabindex="0" when navigation is enabled', () => {
-			render(ChartListItem, { props: navProps });
-			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
-			expect(card).toHaveAttribute('tabindex', '0');
-		});
-
-		it('card has tabindex="-1" when navigation is disabled (blog mode)', () => {
-			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			// In blog mode the card has role="presentation", so query by data attribute
-			const card = document.querySelector('[data-can-navigate="false"]');
-			expect(card).toBeTruthy();
-			expect(card).toHaveAttribute('tabindex', '-1');
-		});
-
-		it('pressing Space on the card navigates to the editor', async () => {
-			render(ChartListItem, { props: navProps });
-			const card = screen.getByRole('link', { name: /open test song 1 in chart editor/i });
-			await fireEvent.keyDown(card, { key: ' ' });
-			expect(goto).toHaveBeenCalledWith('/editor/1');
-		});
-
-		it('clicking card in blog mode does not navigate', async () => {
-			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			expect(
-				screen.queryByRole('link', { name: /open test song 1 in chart editor/i })
-			).not.toBeInTheDocument();
-			expect(goto).not.toHaveBeenCalled();
 		});
 	});
 

@@ -553,8 +553,9 @@
 		} catch (error) {
 			console.error('Error loading simfile:', error);
 			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
-			createNewFile(false); // Fallback to new file without redirecting away
-			simfileID = ''; // Reset so UI components switch to local mode
+			// Route through newFile() to check for unsaved autosaved data before
+			// clearing anything (P1), and redirect to /editor to fix the URL (P2).
+			newFile();
 		}
 	});
 

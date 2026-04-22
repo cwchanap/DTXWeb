@@ -555,13 +555,12 @@
 			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
 			// When the remote chart fails to load, store.currentDifficulty may still
 			// be null. Use existsAny() to find drafts keyed by any difficulty, then
-			// route through the new-file flow to recover or redirect.
+			// clean them all up to avoid stale drafts resurfacing indefinitely.
 			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
 			if (hasAnyDraft) {
-				showNewFileModal = true;
-			} else {
-				createNewFile();
+				TempChartStorage.removeAllForSimfile(simfileID);
 			}
+			createNewFile();
 		}
 	});
 

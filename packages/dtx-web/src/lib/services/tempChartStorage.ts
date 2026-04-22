@@ -151,6 +151,33 @@ export class TempChartStorage {
 	}
 
 	/**
+	 * Remove all temporary chart data for a given simFileID, regardless of difficulty.
+	 * Scans localStorage and removes every matching key.
+	 */
+	static removeAllForSimfile(simFileID: string | null): void {
+		try {
+			if (!simFileID) {
+				this.remove(null, null);
+				return;
+			}
+
+			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
+			const keysToRemove: string[] = [];
+
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i);
+				if (key === prefix || key?.startsWith(prefix + '_')) {
+					keysToRemove.push(key);
+				}
+			}
+
+			keysToRemove.forEach((key) => localStorage.removeItem(key));
+		} catch (error) {
+			console.warn('Failed to remove temporary chart data for simfile:', error);
+		}
+	}
+
+	/**
 	 * Clear all temporary chart data (useful for cleanup)
 	 */
 	static clearAll(): void {

@@ -385,6 +385,33 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
+	it('includes check_uploaded=true when isBlog is false (non-blog page)', async () => {
+		render(ChartList, { props: { isBlog: false } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+				expect.stringContaining('check_uploaded=true')
+			);
+		});
+	});
+
+	it('does not include check_uploaded when isBlog is true and enableDownload is false', async () => {
+		render(ChartList, { props: { isBlog: true, enableDownload: false } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+				expect.not.stringContaining('check_uploaded')
+			);
+		});
+	});
+
+	it('includes check_uploaded=true when isBlog is true and enableDownload is true', async () => {
+		render(ChartList, { props: { isBlog: true, enableDownload: true } });
+		await waitFor(() => {
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+				expect.stringContaining('check_uploaded=true')
+			);
+		});
+	});
+
 	it('renders chart items in table view when data is returned', async () => {
 		mockFetchSuccess(
 			[

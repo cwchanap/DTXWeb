@@ -369,6 +369,65 @@ describe('TempChartStorage', () => {
 		});
 	});
 
+	describe('removeAllForSimfile', () => {
+		it('should remove all difficulty-specific drafts for a simFileID', () => {
+			mockLocalStorage.length = 4;
+			mockLocalStorage.key
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_master')
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_basic')
+				.mockReturnValueOnce('dtx_temp_chart_other-simfile_master')
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile');
+
+			TempChartStorage.removeAllForSimfile('test-simfile');
+
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_master'
+			);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_basic'
+			);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('dtx_temp_chart_test-simfile');
+			expect(mockLocalStorage.removeItem).not.toHaveBeenCalledWith(
+				'dtx_temp_chart_other-simfile_master'
+			);
+		});
+
+		it('should remove the default temp key when simFileID is null', () => {
+			TempChartStorage.removeAllForSimfile(null);
+
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('dtx_temp_chart_temp');
+		});
+
+		it('should handle localStorage errors gracefully', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
+
+			expect(() => {
+				TempChartStorage.removeAllForSimfile('test-simfile');
+			}).not.toThrow();
+		});
+
+		it('should skip null keys while iterating', () => {
+			mockLocalStorage.length = 3;
+			mockLocalStorage.key
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_master')
+				.mockReturnValueOnce(null)
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_basic');
+
+			TempChartStorage.removeAllForSimfile('test-simfile');
+
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_master'
+			);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_basic'
+			);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledTimes(2);
+		});
+	});
+
 	describe('clearAll', () => {
 		it('should clear all temporary chart data', () => {
 			// Mock localStorage with some keys

@@ -252,6 +252,123 @@ describe('TempChartStorage', () => {
 		});
 	});
 
+	describe('existsAny', () => {
+		it('should return true when data exists for simFileID with a difficulty suffix', () => {
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile_master');
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile_master') return validData;
+				return null;
+			});
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(true);
+		});
+
+		it('should return true when data exists for simFileID without difficulty', () => {
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile');
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile') return validData;
+				return null;
+			});
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(true);
+		});
+
+		it('should return false when no data exists for simFileID', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_other-simfile');
+			mockLocalStorage.getItem.mockReturnValue(null);
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(false);
+		});
+
+		it('should return false when all matching data is expired', () => {
+			const expiredData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000
+			});
+
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile_basic');
+			mockLocalStorage.getItem.mockReturnValue(expiredData);
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(false);
+		});
+
+		it('should return false when simFileID is null and no temp data exists', () => {
+			mockLocalStorage.length = 0;
+
+			const result = TempChartStorage.existsAny(null);
+
+			expect(result).toBe(false);
+		});
+
+		it('should return true when simFileID is null and temp data exists', () => {
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.getItem.mockReturnValue(validData);
+
+			const result = TempChartStorage.existsAny(null);
+
+			expect(result).toBe(true);
+		});
+
+		it('should skip invalid JSON entries', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile_broken');
+			mockLocalStorage.getItem.mockReturnValue('invalid json');
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(false);
+		});
+
+		it('should handle localStorage errors gracefully', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(false);
+		});
+	});
+
 	describe('clearAll', () => {
 		it('should clear all temporary chart data', () => {
 			// Mock localStorage with some keys

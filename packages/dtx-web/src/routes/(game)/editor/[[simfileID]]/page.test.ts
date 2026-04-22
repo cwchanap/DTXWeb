@@ -81,7 +81,8 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 		save: vi.fn(),
 		load: vi.fn(),
 		remove: vi.fn(),
-		exists: vi.fn().mockReturnValue(false)
+		exists: vi.fn().mockReturnValue(false),
+		existsAny: vi.fn().mockReturnValue(false)
 	}
 }));
 
@@ -381,66 +382,50 @@ describe('Editor Page Component Logic', () => {
 	});
 
 	describe('Error Handling', () => {
-		it('should route remote load failure through newFile guard', async () => {
+		it('should route remote load failure through existsAny guard', async () => {
 			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
 			const { goto } = await import('$app/navigation');
 
-			// Simulate the newFile() logic that runs when remote load fails
-			const currentSimfileID = 'failed-simfile-123';
-			const currentDifficulty = 'Master';
+			// Simulate the catch block logic when remote load fails.
+			// store.currentDifficulty is null at this point, so we use existsAny()
+			// to find drafts keyed by any difficulty.
+			const simfileID = 'failed-simfile-123';
 
 			// Case 1: No unsaved changes — should create new file and redirect
-			vi.mocked(TempChartStorage.exists).mockReturnValue(false);
+			vi.mocked(TempChartStorage.existsAny).mockReturnValue(false);
 
-			const createNewFile = (simfileId: string) => {
-				// Clears temp data and redirects
-				TempChartStorage.remove(simfileId, currentDifficulty);
+			const createNewFile = () => {
+				TempChartStorage.remove(simfileID, null);
 				goto('/editor');
 			};
 
-			const newFile = (simfileId: string) => {
-				if (TempChartStorage.exists(simfileId, currentDifficulty)) {
-					// Would show modal — tested below
-				} else {
-					createNewFile(simfileId);
-				}
-			};
+			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
+			if (hasAnyDraft) {
+				// Would show modal — tested below
+			} else {
+				createNewFile();
+			}
 
-			newFile(currentSimfileID);
-
-			expect(TempChartStorage.exists).toHaveBeenCalledWith(
-				currentSimfileID,
-				currentDifficulty
-			);
-			expect(TempChartStorage.remove).toHaveBeenCalledWith(
-				currentSimfileID,
-				currentDifficulty
-			);
+			expect(TempChartStorage.existsAny).toHaveBeenCalledWith(simfileID);
+			expect(TempChartStorage.remove).toHaveBeenCalledWith(simfileID, null);
 			expect(goto).toHaveBeenCalledWith('/editor');
 		});
 
 		it('should show confirmation modal when remote load fails with unsaved changes', async () => {
 			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
 
-			const currentSimfileID = 'failed-simfile-456';
-			const currentDifficulty = 'Basic';
+			const simfileID = 'failed-simfile-456';
 			let showNewFileModal = false;
 
-			// Case 2: Has unsaved changes — should show modal, NOT delete data
-			vi.mocked(TempChartStorage.exists).mockReturnValue(true);
+			// Case 2: Has unsaved changes (stored under any difficulty) — show modal
+			vi.mocked(TempChartStorage.existsAny).mockReturnValue(true);
 
-			const newFile = (simfileId: string) => {
-				if (TempChartStorage.exists(simfileId, currentDifficulty)) {
-					showNewFileModal = true;
-				}
-			};
+			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
+			if (hasAnyDraft) {
+				showNewFileModal = true;
+			}
 
-			newFile(currentSimfileID);
-
-			expect(TempChartStorage.exists).toHaveBeenCalledWith(
-				currentSimfileID,
-				currentDifficulty
-			);
+			expect(TempChartStorage.existsAny).toHaveBeenCalledWith(simfileID);
 			expect(showNewFileModal).toBe(true);
 			// TempChartStorage.remove should NOT have been called since the last clearAllMocks
 			expect(TempChartStorage.remove).not.toHaveBeenCalled();

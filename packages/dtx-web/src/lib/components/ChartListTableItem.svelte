@@ -29,6 +29,8 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
+	const canOpenEditor = $derived(!isBlog && item.has_uploaded_files === true);
+
 	function handleDeleteConfirm() {
 		onFileDelete(item.id);
 	}
@@ -62,9 +64,16 @@
 		{/snippet}
 		{#snippet content()}
 			<div class="py-1">
-				<Button onclick={handleOpenInEditor} variant="menuItem" fullWidth justify="start">
-					{#snippet children()}Open in Editor{/snippet}
-				</Button>
+				{#if canOpenEditor}
+					<Button
+						onclick={handleOpenInEditor}
+						variant="menuItem"
+						fullWidth
+						justify="start"
+					>
+						{#snippet children()}Open in Editor{/snippet}
+					</Button>
+				{/if}
 
 				<a
 					href={`/app/chart/${item.id}`}

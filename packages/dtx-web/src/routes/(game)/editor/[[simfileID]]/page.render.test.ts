@@ -102,7 +102,8 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 		save: vi.fn(),
 		load: vi.fn().mockReturnValue(null),
 		remove: vi.fn(),
-		exists: vi.fn().mockReturnValue(false)
+		exists: vi.fn().mockReturnValue(false),
+		existsAny: vi.fn().mockReturnValue(false)
 	}
 }));
 

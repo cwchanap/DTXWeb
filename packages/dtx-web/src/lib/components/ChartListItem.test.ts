@@ -429,6 +429,24 @@ describe('ChartListItem Component Logic', () => {
 				screen.queryByRole('button', { name: 'Open in Editor' })
 			).not.toBeInTheDocument();
 		});
+
+		it('"Open in Editor" menu item is not shown when has_uploaded_files is false', () => {
+			render(ChartListItem, {
+				props: { ...navProps, item: { ...mockItem, has_uploaded_files: false } }
+			});
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
+		});
+
+		it('"Open in Editor" menu item is not shown when has_uploaded_files is undefined', () => {
+			const item = { ...mockItem };
+			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+			render(ChartListItem, { props: { ...navProps, item } });
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
+		});
 	});
 
 	describe('Menu Layering Regression', () => {
@@ -449,9 +467,8 @@ describe('ChartListItem Component Logic', () => {
 				'utf-8'
 			);
 
-			// Verify overflow-visible is applied via Tailwind class, not inline style
-			expect(source).toMatch(/\boverflow-visible\b/);
-			expect(source).not.toMatch(/style="overflow:\s*visible/);
+			// Verify overflow: visible is applied via inline style to win over .music-card
+			expect(source).toMatch(/style="overflow:\s*visible/);
 		});
 
 		it('Modal uses portal action so fixed positioning is not trapped by card transforms', () => {

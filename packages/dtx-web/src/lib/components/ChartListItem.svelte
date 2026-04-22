@@ -31,7 +31,9 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
-	const canOpenEditor = $derived(!isBlog && item.id !== undefined);
+	const canOpenEditor = $derived(
+		!isBlog && item.id !== undefined && item.has_uploaded_files === true
+	);
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -54,7 +56,7 @@
 	};
 </script>
 
-<div class="music-card group relative flex min-h-[280px] flex-col overflow-visible">
+<div class="music-card group relative flex min-h-[280px] flex-col" style="overflow: visible">
 	<!-- Header with title and menu -->
 	<div class="p-6 pb-4">
 		<div class="mb-3 flex items-start justify-between">

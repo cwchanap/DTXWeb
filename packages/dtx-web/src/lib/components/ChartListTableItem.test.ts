@@ -171,6 +171,24 @@ describe('ChartListTableItem', () => {
 				screen.queryByRole('button', { name: 'Open in Editor' })
 			).not.toBeInTheDocument();
 		});
+
+		it('"Open in Editor" is not rendered when has_uploaded_files is false', () => {
+			render(ChartListTableItem, {
+				props: { ...defaultProps, item: { ...mockItem, has_uploaded_files: false } }
+			});
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
+		});
+
+		it('"Open in Editor" is not rendered when has_uploaded_files is undefined', () => {
+			const item = { ...mockItem };
+			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+			render(ChartListTableItem, { props: { ...defaultProps, item } });
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
+		});
 	});
 
 	it('clicking Delete opens the confirmation modal', async () => {

@@ -553,9 +553,15 @@
 		} catch (error) {
 			console.error('Error loading simfile:', error);
 			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
-			// Route through newFile() to check for unsaved autosaved data before
-			// clearing anything (P1), and redirect to /editor to fix the URL (P2).
-			newFile();
+			// When the remote chart fails to load, store.currentDifficulty may still
+			// be null. Use existsAny() to find drafts keyed by any difficulty, then
+			// route through the new-file flow to recover or redirect.
+			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
+			if (hasAnyDraft) {
+				showNewFileModal = true;
+			} else {
+				createNewFile();
+			}
 		}
 	});
 

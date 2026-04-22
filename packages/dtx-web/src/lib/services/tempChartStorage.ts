@@ -115,6 +115,42 @@ export class TempChartStorage {
 	}
 
 	/**
+	 * Check if any temporary data exists for a given simFileID, regardless of difficulty.
+	 * Scans localStorage keys matching the prefix pattern for this simFileID.
+	 */
+	static existsAny(simFileID: string | null): boolean {
+		try {
+			if (!simFileID) {
+				// Check the default temp key
+				return this.load(null, null) !== null;
+			}
+
+			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i);
+				if (key === prefix || key?.startsWith(prefix + '_')) {
+					// Verify the data isn't expired by attempting to load
+					const stored = localStorage.getItem(key);
+					if (stored) {
+						try {
+							const data: TempChartData = JSON.parse(stored);
+							if (Date.now() - data.timestamp <= this.MAX_AGE_MS) {
+								return true;
+							}
+						} catch {
+							// Invalid data, skip
+						}
+					}
+				}
+			}
+			return false;
+		} catch (error) {
+			console.warn('Failed to check for temporary chart data:', error);
+			return false;
+		}
+	}
+
+	/**
 	 * Clear all temporary chart data (useful for cleanup)
 	 */
 	static clearAll(): void {

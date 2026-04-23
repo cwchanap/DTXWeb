@@ -553,14 +553,16 @@
 		} catch (error) {
 			console.error('Error loading simfile:', error);
 			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
-			// When the remote chart fails to load, store.currentDifficulty may still
-			// be null. Use existsAny() to find drafts keyed by any difficulty, then
-			// clean them all up to avoid stale drafts resurfacing indefinitely.
+			// When the remote chart fails to load, check if the user has local
+			// drafts for this simfile. If so, show a confirmation modal so they can
+			// choose whether to discard their work — do NOT auto-delete on transient
+			// fetch/R2 errors.
 			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
 			if (hasAnyDraft) {
-				TempChartStorage.removeAllForSimfile(simfileID);
+				showNewFileModal = true;
+			} else {
+				createNewFile();
 			}
-			createNewFile();
 		}
 	});
 

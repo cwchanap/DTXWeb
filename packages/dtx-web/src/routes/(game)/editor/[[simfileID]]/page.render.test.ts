@@ -102,6 +102,7 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 		save: vi.fn(),
 		load: vi.fn().mockReturnValue(null),
 		remove: vi.fn(),
+		removeAllForSimfile: vi.fn(),
 		exists: vi.fn().mockReturnValue(false),
 		existsAny: vi.fn().mockReturnValue(false)
 	}
@@ -380,8 +381,9 @@ describe('Editor Page – onMount path variations', () => {
 
 		// Even when loading fails, component should not crash
 		await vi.waitFor(() => {
-			// TempChartStorage.remove is called by createNewFile (fallback)
-			expect(TempChartStorage.remove).toHaveBeenCalled();
+			// When remote load fails with simfileID set and currentDifficulty null,
+			// createNewFile uses removeAllForSimfile to clear all drafts
+			expect(TempChartStorage.removeAllForSimfile).toHaveBeenCalled();
 		});
 	});
 });

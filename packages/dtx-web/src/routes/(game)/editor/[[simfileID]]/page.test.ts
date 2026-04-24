@@ -81,6 +81,7 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 		save: vi.fn(),
 		load: vi.fn(),
 		remove: vi.fn(),
+		removeAllForSimfile: vi.fn(),
 		exists: vi.fn().mockReturnValue(false),
 		existsAny: vi.fn().mockReturnValue(false)
 	}
@@ -394,8 +395,10 @@ describe('Editor Page Component Logic', () => {
 			// Case 1: No unsaved changes — should create new file and redirect
 			vi.mocked(TempChartStorage.existsAny).mockReturnValue(false);
 
+			// When simfileID is set and difficulty is null, createNewFile uses
+			// removeAllForSimfile to clear ALL drafts for that simfile.
 			const createNewFile = () => {
-				TempChartStorage.remove(simfileID, null);
+				TempChartStorage.removeAllForSimfile(simfileID);
 				goto('/editor');
 			};
 
@@ -407,7 +410,7 @@ describe('Editor Page Component Logic', () => {
 			}
 
 			expect(TempChartStorage.existsAny).toHaveBeenCalledWith(simfileID);
-			expect(TempChartStorage.remove).toHaveBeenCalledWith(simfileID, null);
+			expect(TempChartStorage.removeAllForSimfile).toHaveBeenCalledWith(simfileID);
 			expect(goto).toHaveBeenCalledWith('/editor');
 		});
 
@@ -428,6 +431,31 @@ describe('Editor Page Component Logic', () => {
 			expect(TempChartStorage.existsAny).toHaveBeenCalledWith(simfileID);
 			expect(showNewFileModal).toBe(true);
 			// TempChartStorage.remove should NOT have been called since the last clearAllMocks
+			expect(TempChartStorage.remove).not.toHaveBeenCalled();
+		});
+
+		it('should clear all difficulty drafts when confirming discard on failed remote load', async () => {
+			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
+			const { goto } = await import('$app/navigation');
+
+			// Simulates the exact bug scenario:
+			// Remote load fails → existsAny finds drafts keyed like
+			// dtx_temp_chart_<id>_master → user confirms → createNewFile
+			// must use removeAllForSimfile because currentDifficulty is null.
+			const simfileID = 'failed-simfile-789';
+
+			// createNewFile logic when simfileID is set and difficulty is null
+			const currentDifficulty = null; // not yet loaded
+			if (simfileID && !currentDifficulty) {
+				TempChartStorage.removeAllForSimfile(simfileID);
+			} else {
+				TempChartStorage.remove(simfileID, currentDifficulty);
+			}
+			goto('/editor');
+
+			// removeAllForSimfile clears ALL difficulty-specific keys
+			expect(TempChartStorage.removeAllForSimfile).toHaveBeenCalledWith(simfileID);
+			// remove should NOT be called — it would miss suffixed keys
 			expect(TempChartStorage.remove).not.toHaveBeenCalled();
 		});
 

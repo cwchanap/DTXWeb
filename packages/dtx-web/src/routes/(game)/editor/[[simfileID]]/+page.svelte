@@ -294,8 +294,14 @@
 		const currentSimfileID = get(store.currentSimfileID);
 		const currentDifficulty = get(store.currentDifficulty);
 
-		// Clear temp data for current chart
-		TempChartStorage.remove(currentSimfileID, currentDifficulty);
+		// When on a remote chart that failed to load (currentDifficulty is null),
+		// clear ALL drafts for that simfile — difficulty-specific keys like
+		// dtx_temp_chart_<id>_master would survive a simple remove(id, null).
+		if (simfileID && !currentDifficulty) {
+			TempChartStorage.removeAllForSimfile(currentSimfileID);
+		} else {
+			TempChartStorage.remove(currentSimfileID, currentDifficulty);
+		}
 
 		// Create new DTX file
 		const newDtxFile = new DTXFile();

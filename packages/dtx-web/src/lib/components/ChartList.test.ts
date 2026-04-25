@@ -385,11 +385,11 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
-	it('does not include check_uploaded when isBlog is false and enableDownload is false', async () => {
+	it('includes check_uploaded=true when isBlog is false and enableDownload is false', async () => {
 		render(ChartList, { props: { isBlog: false, enableDownload: false } });
 		await waitFor(() => {
 			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.not.stringContaining('check_uploaded')
+				expect.stringContaining('check_uploaded=true')
 			);
 		});
 	});

@@ -768,7 +768,6 @@
 	onConfirm={createNewFile}
 	onCancel={() => {
 		showNewFileModal = false;
-		goto('/app/chart');
 	}}
 />
 

@@ -181,13 +181,11 @@ describe('ChartListTableItem', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('"Open in Editor" is not rendered when has_uploaded_files is undefined', () => {
+		it('"Open in Editor" is rendered when has_uploaded_files is undefined (falls back to true)', () => {
 			const item = { ...mockItem };
 			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
 			render(ChartListTableItem, { props: { ...defaultProps, item } });
-			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
-			).not.toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
 		});
 	});
 

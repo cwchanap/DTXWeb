@@ -98,7 +98,7 @@
 				params.set('search', searchFilter);
 			}
 
-			if (!isBlog || enableDownload) {
+			if (enableDownload) {
 				params.set('check_uploaded', 'true');
 			}
 

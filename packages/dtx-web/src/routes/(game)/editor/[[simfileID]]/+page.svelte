@@ -766,7 +766,10 @@
 <NewFileModal
 	bind:show={showNewFileModal}
 	onConfirm={createNewFile}
-	onCancel={() => (showNewFileModal = false)}
+	onCancel={() => {
+		showNewFileModal = false;
+		goto('/app/chart');
+	}}
 />
 
 <!-- Workspace Manager Modal -->

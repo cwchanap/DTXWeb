@@ -369,6 +369,128 @@ describe('TempChartStorage', () => {
 		});
 	});
 
+	describe('loadAny', () => {
+		it('should return the first available draft with difficulty for a simFileID', () => {
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile_master');
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile_master') return validData;
+				return null;
+			});
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).not.toBeNull();
+			expect(result?.difficulty).toBe('master');
+			expect(result?.notes).toEqual(mockNotes);
+			expect(result?.measureCount).toBe(4);
+		});
+
+		it('should return draft with null difficulty when key has no suffix', () => {
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile');
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile') return validData;
+				return null;
+			});
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).not.toBeNull();
+			expect(result?.difficulty).toBeNull();
+		});
+
+		it('should return null when no data exists for simFileID', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_other-simfile');
+			mockLocalStorage.getItem.mockReturnValue(null);
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).toBeNull();
+		});
+
+		it('should skip expired entries', () => {
+			const expiredData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000
+			});
+
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile_basic');
+			mockLocalStorage.getItem.mockReturnValue(expiredData);
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).toBeNull();
+		});
+
+		it('should return null for null simFileID when no temp data exists', () => {
+			mockLocalStorage.getItem.mockReturnValue(null);
+
+			const result = TempChartStorage.loadAny(null);
+
+			expect(result).toBeNull();
+		});
+
+		it('should return temp data for null simFileID when it exists', () => {
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.getItem.mockReturnValue(validData);
+
+			const result = TempChartStorage.loadAny(null);
+
+			expect(result).not.toBeNull();
+			expect(result?.difficulty).toBeNull();
+		});
+
+		it('should handle localStorage errors gracefully', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).toBeNull();
+		});
+
+		it('should skip invalid JSON entries', () => {
+			mockLocalStorage.length = 1;
+			mockLocalStorage.key.mockReturnValue('dtx_temp_chart_test-simfile_broken');
+			mockLocalStorage.getItem.mockReturnValue('invalid json');
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).toBeNull();
+		});
+	});
+
 	describe('removeAllForSimfile', () => {
 		it('should remove all difficulty-specific drafts for a simFileID', () => {
 			mockLocalStorage.length = 4;

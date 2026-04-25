@@ -151,7 +151,46 @@ export class TempChartStorage {
 	}
 
 	/**
-	 * Remove all temporary chart data for a given simFileID, regardless of difficulty.
+	 * Load the first available draft for a given simfileID, regardless of difficulty.
+	 * Returns the draft data and its difficulty key, or null if none found.
+	 */
+	static loadAny(
+		simFileID: string | null
+	): (TempChartData & { difficulty: string | null }) | null {
+		try {
+			if (!simFileID) {
+				const data = this.load(null, null);
+				return data ? { ...data, difficulty: null } : null;
+			}
+
+			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i);
+				if (key === prefix || key?.startsWith(prefix + '_')) {
+					const stored = localStorage.getItem(key);
+					if (stored) {
+						try {
+							const data: TempChartData = JSON.parse(stored);
+							if (Date.now() - data.timestamp <= this.MAX_AGE_MS) {
+								// Extract difficulty from the key
+								const suffix = key.slice(prefix.length + 1); // +1 for the underscore
+								return { ...data, difficulty: suffix || null };
+							}
+						} catch {
+							// Invalid data, skip
+						}
+					}
+				}
+			}
+			return null;
+		} catch (error) {
+			console.warn('Failed to load any temporary chart data:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Remove all temporary chart data for a given simfileID, regardless of difficulty.
 	 * Scans localStorage and removes every matching key.
 	 */
 	static removeAllForSimfile(simFileID: string | null): void {

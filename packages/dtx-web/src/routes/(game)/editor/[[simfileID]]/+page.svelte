@@ -331,6 +331,52 @@
 		}
 	}
 
+	/**
+	 * Restore a local draft for the current simfileID when the remote load failed.
+	 * Keeps the user on the current route so they can continue editing.
+	 */
+	function loadLocalDraft() {
+		const draft = TempChartStorage.loadAny(simfileID);
+		if (!draft) {
+			// No draft found — fall back to creating a new file
+			createNewFile();
+			return;
+		}
+
+		// Create a DTXFile and populate it from the draft metadata
+		const dtxFile = new DTXFile();
+		dtxFile.title = draft.metadata.title;
+		dtxFile.artist = draft.metadata.artist;
+		dtxFile.comment = draft.metadata.comment;
+		dtxFile.bpm = draft.metadata.bpm;
+
+		// Restore stores
+		store.currentDtxFile.set(dtxFile);
+		store.currentSimfileID.set(simfileID);
+		store.currentDifficulty.set(draft.difficulty);
+		store.currentSoundChip.set(
+			draft.metadata.soundChips.map((chip) => ({
+				label: chip.label,
+				id: chip.id,
+				volume: chip.volume,
+				position: chip.position,
+				fileName: chip.fileName,
+				filePath: chip.filePath,
+				fileHash: chip.fileHash
+			}))
+		);
+		store.measureCount.set(draft.measureCount);
+
+		// Emit notes to the editor scene
+		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
+			const editorScene = phaserRef.scene as Editor;
+			editorScene.setDirty(true);
+		}
+		EventBus.emit(EventType.NOTE_IMPORT, draft.notes, draft.bpmNotes);
+
+		toastStore.success({ title: 'Restored local draft', duration: 3000 });
+	}
+
 	function discardLocalChanges() {
 		// Show confirmation modal instead of native confirm dialog
 		showDiscardModal = true;
@@ -774,7 +820,7 @@
 	onCancel={() => {
 		showNewFileModal = false;
 		if (simfileID) {
-			goto('/editor');
+			loadLocalDraft();
 		}
 	}}
 />

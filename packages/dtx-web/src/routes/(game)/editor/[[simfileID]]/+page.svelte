@@ -559,6 +559,11 @@
 		} catch (error) {
 			console.error('Error loading simfile:', error);
 			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
+			// Reset currentDifficulty so that createNewFile() correctly uses
+			// removeAllForSimfile() instead of remove(id, staleDifficulty).
+			// Without this, a stale difficulty from a previous session would
+			// cause difficulty-suffixed drafts to survive the cleanup.
+			store.currentDifficulty.set(null);
 			// When the remote chart fails to load, check if the user has local
 			// drafts for this simfile. If so, show a confirmation modal so they can
 			// choose whether to discard their work — do NOT auto-delete on transient
@@ -768,6 +773,9 @@
 	onConfirm={createNewFile}
 	onCancel={() => {
 		showNewFileModal = false;
+		if (simfileID) {
+			goto('/editor');
+		}
 	}}
 />
 

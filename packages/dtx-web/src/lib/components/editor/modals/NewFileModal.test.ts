@@ -47,4 +47,13 @@ describe('NewFileModal', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 		expect(onCancel).toHaveBeenCalledOnce();
 	});
+
+	it('does not call onCancel after confirm', async () => {
+		const onConfirm = vi.fn();
+		const onCancel = vi.fn();
+		render(NewFileModal, { props: { show: true, onConfirm, onCancel } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Create New' }));
+		expect(onConfirm).toHaveBeenCalledOnce();
+		expect(onCancel).not.toHaveBeenCalled();
+	});
 });

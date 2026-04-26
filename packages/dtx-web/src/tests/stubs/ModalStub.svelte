@@ -14,12 +14,17 @@
 		confirmText?: string;
 		confirmVariant?: string;
 	}>();
+
+	function handleConfirm() {
+		onConfirm?.();
+		open = false;
+	}
 </script>
 
 {#if open}
 	<div role="dialog" aria-label={title}>
 		{@render children?.()}
-		<button onclick={onConfirm}>{confirmText}</button>
+		<button onclick={handleConfirm}>{confirmText}</button>
 		<button onclick={() => (open = false)}>Cancel</button>
 	</div>
 {/if}

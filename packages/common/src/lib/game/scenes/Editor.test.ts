@@ -1959,6 +1959,30 @@ describe('Editor Scene', () => {
 
 			restartSpy.mockRestore();
 		});
+
+		it('should use draftMeasureCount when it exceeds maxMeasure + 1', async () => {
+			editorScene.create();
+			editorScene['measureCount'] = 5;
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockResolvedValue(undefined);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			// Notes only go to measure 2, but draft had 50 measures (trailing empty)
+			const mockNotes = [{ laneID: '01', measure: 2, notes: [] }] as any;
+			await noteImportCallback?.(mockNotes, {}, 50);
+
+			// measureCount should be 50 (from draft), not 3 (maxMeasure + 1)
+			expect(editorScene['measureCount']).toBe(50);
+			expect(restartSpy).toHaveBeenCalledWith({ measureCount: 50 });
+
+			restartSpy.mockRestore();
+		});
 	});
 
 	describe('START_PREVIEW event handler', () => {

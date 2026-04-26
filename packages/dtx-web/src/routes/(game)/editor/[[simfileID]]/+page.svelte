@@ -353,6 +353,7 @@
 
 		// Restore stores
 		store.currentDtxFile.set(dtxFile);
+		store.currentSimfile.set(null); // Clear stale simfile — draft has no SimFile object
 		store.currentSimfileID.set(simfileID);
 		store.currentDifficulty.set(draft.difficulty);
 		store.currentSoundChip.set(

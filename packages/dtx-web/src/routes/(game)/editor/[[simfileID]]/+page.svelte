@@ -279,7 +279,14 @@
 		// Check if there's temp data that would be lost
 		const currentSimfileID = get(store.currentSimfileID);
 		const currentDifficulty = get(store.currentDifficulty);
-		const hasUnsavedChanges = TempChartStorage.exists(currentSimfileID, currentDifficulty);
+
+		// Use existsAny() on remote charts where currentDifficulty may be null
+		// (e.g. after a remote-load failure). A suffixed draft like
+		// dtx_temp_chart_<id>_master would be missed by exists(id, null).
+		const hasUnsavedChanges =
+			simfileID && !currentDifficulty
+				? TempChartStorage.existsAny(currentSimfileID)
+				: TempChartStorage.exists(currentSimfileID, currentDifficulty);
 
 		if (hasUnsavedChanges) {
 			// Show confirmation modal

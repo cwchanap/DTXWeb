@@ -10,9 +10,19 @@
 	let { show = $bindable(), onConfirm, onCancel }: Props = $props();
 
 	let wasOpen = show;
+	let confirmed = false;
+
+	function handleConfirm() {
+		confirmed = true;
+		onConfirm();
+	}
+
 	$effect(() => {
 		if (wasOpen && !show) {
-			onCancel?.();
+			if (!confirmed) {
+				onCancel?.();
+			}
+			confirmed = false;
 		}
 		wasOpen = show;
 	});
@@ -21,7 +31,7 @@
 <Modal
 	bind:open={show}
 	title="Create New File"
-	{onConfirm}
+	onConfirm={handleConfirm}
 	confirmText="Create New"
 	confirmVariant="danger"
 >

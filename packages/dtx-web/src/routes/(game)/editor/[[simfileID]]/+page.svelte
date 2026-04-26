@@ -349,6 +349,7 @@
 		dtxFile.artist = draft.metadata.artist;
 		dtxFile.comment = draft.metadata.comment;
 		dtxFile.bpm = draft.metadata.bpm;
+		dtxFile.level = draft.metadata.level;
 
 		// Restore stores
 		store.currentDtxFile.set(dtxFile);

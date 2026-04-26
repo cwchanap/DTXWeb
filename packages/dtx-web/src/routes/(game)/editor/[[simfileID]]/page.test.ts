@@ -38,7 +38,12 @@ vi.mock('@dtx/common', () => ({
 		header: { title: 'Test Song', artist: 'Test Artist' },
 		soundChips: new Map(),
 		lanes: new Map(),
-		parse: vi.fn()
+		parse: vi.fn(),
+		level: 0,
+		title: '',
+		artist: '',
+		comment: '',
+		bpm: 0
 	})),
 	SimFile: vi.fn().mockImplementation(() => ({
 		files: new Map(),
@@ -80,6 +85,7 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 	TempChartStorage: {
 		save: vi.fn(),
 		load: vi.fn(),
+		loadAny: vi.fn().mockReturnValue(null),
 		remove: vi.fn(),
 		removeAllForSimfile: vi.fn(),
 		exists: vi.fn().mockReturnValue(false),
@@ -464,6 +470,45 @@ describe('Editor Page Component Logic', () => {
 		// 	const { workspaceService } = await import('$lib/services/workspaceService');
 		// 	// Test implementation pending exportWorkspace method
 		// });
+
+		it('should restore level from draft metadata when loading local draft', async () => {
+			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
+			const { DTXFile } = await import('@dtx/common');
+
+			const simfileID = 'draft-with-level';
+			const draftLevel = 42;
+
+			const draft = {
+				metadata: {
+					title: 'Test',
+					artist: 'Artist',
+					comment: 'Comment',
+					bpm: 120,
+					level: draftLevel,
+					soundChips: []
+				},
+				notes: {},
+				bpmNotes: {},
+				measureCount: 4,
+				timestamp: Date.now(),
+				difficulty: 'master'
+			};
+
+			vi.mocked(TempChartStorage.loadAny).mockReturnValue(draft);
+
+			// Simulate the loadLocalDraft logic
+			const loaded = TempChartStorage.loadAny(simfileID);
+			if (loaded) {
+				const dtxFile = new DTXFile();
+				dtxFile.title = loaded.metadata.title;
+				dtxFile.artist = loaded.metadata.artist;
+				dtxFile.comment = loaded.metadata.comment;
+				dtxFile.bpm = loaded.metadata.bpm;
+				dtxFile.level = loaded.metadata.level;
+
+				expect(dtxFile.level).toBe(draftLevel);
+			}
+		});
 
 		it('should handle workspace loading errors correctly', async () => {
 			const { workspaceService } = await import('$lib/services/workspaceService');

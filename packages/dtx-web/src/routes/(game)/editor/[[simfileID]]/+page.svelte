@@ -68,6 +68,7 @@
 	let showRefreshResultModal = $state(false);
 	let showImportErrorModal = $state(false);
 	let showNewFileModal = $state(false);
+	let isNewFileRecovery = $state(false); // true when modal is from remote-load-failure recovery
 	let showWorkspaceSwitchModal = $state(false);
 	let showDTXSwitchModal = $state(false);
 	let showExportWorkspaceModal = $state(false);
@@ -289,7 +290,8 @@
 				: TempChartStorage.exists(currentSimfileID, currentDifficulty);
 
 		if (hasUnsavedChanges) {
-			// Show confirmation modal
+			// Show confirmation modal (normal new-file flow)
+			isNewFileRecovery = false;
 			showNewFileModal = true;
 		} else {
 			// No unsaved changes, proceed directly
@@ -381,7 +383,9 @@
 			const editorScene = phaserRef.scene as Editor;
 			editorScene.setDirty(true);
 		}
-		EventBus.emit(EventType.NOTE_IMPORT, draft.notes, draft.bpmNotes);
+		// Flatten lane-indexed notes record into a flat array for NOTE_IMPORT
+		const flatNotes = Object.values(draft.notes).flat();
+		EventBus.emit(EventType.NOTE_IMPORT, flatNotes, draft.bpmNotes, draft.measureCount);
 
 		toastStore.success({ title: 'Restored local draft', duration: 3000 });
 	}
@@ -625,6 +629,7 @@
 			// fetch/R2 errors.
 			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
 			if (hasAnyDraft) {
+				isNewFileRecovery = true;
 				showNewFileModal = true;
 			} else {
 				createNewFile();
@@ -828,7 +833,9 @@
 	onConfirm={createNewFile}
 	onCancel={() => {
 		showNewFileModal = false;
-		if (simfileID) {
+		// Only load draft in the remote-load-failure recovery flow.
+		// For normal "New File" cancellation, keep current state intact.
+		if (isNewFileRecovery && simfileID) {
 			loadLocalDraft();
 		}
 	}}

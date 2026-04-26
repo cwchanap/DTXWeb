@@ -338,7 +338,11 @@ export class Editor extends BaseGame {
 		EventBus.on(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
 		EventBus.on(
 			EventType.NOTE_IMPORT,
-			async (notes: LaneMeasureNote[], bpmNotes: Record<string, number>) => {
+			async (
+				notes: LaneMeasureNote[],
+				bpmNotes: Record<string, number>,
+				draftMeasureCount?: number
+			) => {
 				// Mark as not loaded at the start of import process
 				this.isLoaded = false;
 				this.notes = {};
@@ -351,9 +355,11 @@ export class Editor extends BaseGame {
 				});
 				this.parseMesaureLength();
 				const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
-				if (maxMeasure > this.measureCount) {
-					this.measureCount = maxMeasure + 1;
-				}
+				this.measureCount = Math.max(
+					this.measureCount,
+					maxMeasure + 1,
+					draftMeasureCount ?? 0
+				);
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;
 				this.syncNotesToStore();

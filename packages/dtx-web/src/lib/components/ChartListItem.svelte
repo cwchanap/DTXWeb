@@ -32,7 +32,9 @@
 	let modalOpen = $state(false);
 
 	const canOpenEditor = $derived(
-		!isBlog && item.id !== undefined && item.has_uploaded_files === true
+		!isBlog &&
+			item.id !== undefined &&
+			(item.has_uploaded_files === true || item.has_uploaded_files === undefined)
 	);
 
 	const handleDeleteConfirm = () => {

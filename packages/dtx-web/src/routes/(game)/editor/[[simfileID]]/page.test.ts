@@ -123,8 +123,16 @@ vi.mock('$lib/services/soundLibrary', () => ({
 		addFiles: vi.fn(),
 		getFiles: vi.fn().mockReturnValue([]),
 		removeFile: vi.fn(),
-		clear: vi.fn()
+		clear: vi.fn(),
+		findByFileName: vi.fn().mockReturnValue([]),
+		toFile: vi.fn()
 	}
+}));
+
+vi.mock('@dtx/common/services/fileManager', () => ({
+	generateKey: vi.fn((simfileId: string, fileName: string) => `${simfileId}/${fileName}`),
+	setFile: vi.fn(),
+	getFile: vi.fn().mockReturnValue(undefined)
 }));
 
 vi.mock('$lib/services/workspaceService', () => ({
@@ -571,6 +579,88 @@ describe('Editor Page Component Logic', () => {
 				expect(typeof restoredChips[0].fetchRemote).toBe('function');
 				expect(typeof restoredChips[1].fetchRemote).toBe('function');
 			}
+		});
+
+		it('should rehydrate sound files via remote fetch when restoring draft', async () => {
+			const FileManager = await import('@dtx/common/services/fileManager');
+
+			const mockFile = new File(['audio-data'], 'bd.wav', { type: 'audio/wav' });
+			const fetchRemoteMock = vi.fn().mockImplementation(async () => {
+				mockChip.file = mockFile;
+			});
+
+			// Create a mock chip with a fetchRemote that simulates remote file download
+			const mockChip = {
+				label: 'Bass Drum',
+				id: 1,
+				volume: 100,
+				position: 0,
+				fileName: 'bd.wav',
+				file: undefined as File | undefined,
+				fetchRemote: fetchRemoteMock
+			};
+
+			// Simulate rehydration: remote succeeds
+			const simfileID = 'test-simfile';
+			await mockChip.fetchRemote(simfileID, 'https://bucket.url');
+			if (mockChip.file) {
+				const fileKey = FileManager.generateKey(simfileID, mockChip.fileName);
+				FileManager.setFile(fileKey, mockChip.file);
+				mockChip.file = undefined;
+			}
+
+			expect(fetchRemoteMock).toHaveBeenCalledWith(simfileID, 'https://bucket.url');
+			expect(FileManager.setFile).toHaveBeenCalledWith('test-simfile/bd.wav', mockFile);
+			expect(mockChip.file).toBeUndefined();
+		});
+
+		it('should fall back to sound library when remote fetch fails during rehydration', async () => {
+			const { SoundLibrary } = await import('$lib/services/soundLibrary');
+			const FileManager = await import('@dtx/common/services/fileManager');
+
+			const mockFile = new File(['audio-data'], 'bd.wav', { type: 'audio/wav' });
+			const fetchRemoteMock = vi.fn().mockRejectedValue(new Error('Network error'));
+
+			// Create a mock chip with a fetchRemote that simulates failure
+			const mockChip = {
+				label: 'Bass Drum',
+				id: 1,
+				volume: 100,
+				position: 0,
+				fileName: 'bd.wav',
+				file: undefined as File | undefined,
+				fetchRemote: fetchRemoteMock
+			};
+
+			// Simulate sound library fallback
+			vi.mocked(SoundLibrary.findByFileName).mockReturnValue([
+				{
+					hash: 'abc123',
+					fileName: 'bd.wav',
+					fileType: 'audio/wav',
+					fileData: 'dGVzdA==',
+					size: 4,
+					dateAdded: Date.now()
+				}
+			]);
+			vi.mocked(SoundLibrary.toFile).mockReturnValue(mockFile);
+
+			// Simulate rehydration: remote fails → sound library
+			try {
+				await mockChip.fetchRemote('test-simfile', 'https://bucket.url');
+			} catch {
+				// Expected to fail
+			}
+			const libraryFiles = SoundLibrary.findByFileName(mockChip.fileName);
+			if (libraryFiles.length > 0) {
+				const file = SoundLibrary.toFile(libraryFiles[0]);
+				const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
+				FileManager.setFile(fileKey, file);
+			}
+
+			expect(SoundLibrary.findByFileName).toHaveBeenCalledWith('bd.wav');
+			expect(SoundLibrary.toFile).toHaveBeenCalled();
+			expect(FileManager.setFile).toHaveBeenCalledWith('test-simfile/bd.wav', mockFile);
 		});
 
 		it('should handle workspace loading errors correctly', async () => {

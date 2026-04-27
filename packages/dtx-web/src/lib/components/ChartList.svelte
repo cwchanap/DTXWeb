@@ -98,7 +98,13 @@
 				params.set('search', searchFilter);
 			}
 
-			params.set('check_uploaded', 'true');
+			// Only check uploaded files when the UI actually reads has_uploaded_files:
+			// - App page (isBlog=false): needs it for canOpenEditor
+			// - Blog with downloads (isBlog=true && enableDownload=true): needs it for DownloadDropdown/canBulkSelect
+			// - Blog without downloads (isBlog=true && enableDownload=false): never reads it — skip R2 calls
+			if (!isBlog || enableDownload) {
+				params.set('check_uploaded', 'true');
+			}
 
 			const response = await fetch(`/api/chart?${params}`);
 			if (!response.ok) {

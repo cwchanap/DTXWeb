@@ -344,8 +344,9 @@
 	/**
 	 * Restore a local draft for the current simfileID when the remote load failed.
 	 * Keeps the user on the current route so they can continue editing.
+	 * Rehydrates sound files by attempting remote fetch first, then falling back to sound library.
 	 */
-	function loadLocalDraft() {
+	async function loadLocalDraft() {
 		const draft = TempChartStorage.loadAny(simfileID);
 		if (!draft) {
 			// No draft found — fall back to creating a new file
@@ -366,13 +367,16 @@
 		store.currentSimfile.set(null); // Clear stale simfile — draft has no SimFile object
 		store.currentSimfileID.set(simfileID);
 		store.currentDifficulty.set(draft.difficulty);
-		store.currentSoundChip.set(
-			draft.metadata.soundChips.map(
-				(chip) =>
-					new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
-			)
-		);
 		store.measureCount.set(draft.measureCount);
+
+		// Create SoundChip instances and rehydrate their audio files
+		const soundChips = draft.metadata.soundChips.map(
+			(chip) => new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
+		);
+		store.currentSoundChip.set(soundChips);
+
+		// Rehydrate audio files so Preview can play them
+		await rehydrateSoundFiles(soundChips);
 
 		// Emit notes to the editor scene
 		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
@@ -384,6 +388,40 @@
 		EventBus.emit(EventType.NOTE_IMPORT, flatNotes, draft.bpmNotes, draft.measureCount);
 
 		toastStore.success({ title: 'Restored local draft', duration: 3000 });
+	}
+
+	/**
+	 * Rehydrate sound chip files after draft restore.
+	 * Tries remote fetch first (server may be back), then falls back to local sound library.
+	 * Populates FileManager so Preview.setupSoundsAsync() can find the files.
+	 */
+	async function rehydrateSoundFiles(soundChips: SoundChip[]) {
+		await Promise.all(
+			soundChips.map(async (soundChip) => {
+				if (!soundChip.fileName) return;
+
+				// Strategy 1: Try remote fetch (server may have recovered)
+				try {
+					await soundChip.fetchRemote(simfileID, PUBLIC_SIMFILE_BUCKET_URL);
+					if (soundChip.file) {
+						const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);
+						FileManager.setFile(fileKey, soundChip.file);
+						soundChip.file = undefined;
+						return;
+					}
+				} catch {
+					// Remote still unavailable — fall through to sound library
+				}
+
+				// Strategy 2: Look up in local sound library by filename
+				const libraryFiles = SoundLibrary.findByFileName(soundChip.fileName);
+				if (libraryFiles.length > 0) {
+					const file = SoundLibrary.toFile(libraryFiles[0]);
+					const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);
+					FileManager.setFile(fileKey, file);
+				}
+			})
+		);
 	}
 
 	function discardLocalChanges() {

@@ -49,6 +49,31 @@ vi.mock('@dtx/common', () => ({
 		files: new Map(),
 		loadFromDTXFile: vi.fn()
 	})),
+	SoundChip: vi.fn().mockImplementation(function (
+		this: {
+			label: string;
+			id: number;
+			volume: number;
+			position: number;
+			fileName: string;
+			file?: File;
+			fetchRemote: () => Promise<void>;
+		},
+		label: string,
+		id: number,
+		volume: number,
+		position: number,
+		fileName: string,
+		file?: File
+	) {
+		this.label = label;
+		this.id = id;
+		this.volume = volume;
+		this.position = position;
+		this.fileName = fileName.toLowerCase();
+		if (file) this.file = file;
+		this.fetchRemote = vi.fn();
+	}),
 	decodeFileWithEncodingDetection: vi.fn()
 }));
 
@@ -485,7 +510,24 @@ describe('Editor Page Component Logic', () => {
 					comment: 'Comment',
 					bpm: 120,
 					level: draftLevel,
-					soundChips: []
+					soundChips: [
+						{
+							label: 'Bass Drum',
+							id: 1,
+							volume: 100,
+							position: 0,
+							fileName: 'bd.wav',
+							filePath: '/audio/bd.wav',
+							fileHash: 'abc123'
+						},
+						{
+							label: 'Snare',
+							id: 2,
+							volume: 80,
+							position: 1,
+							fileName: 'snare.wav'
+						}
+					]
 				},
 				notes: {},
 				bpmNotes: {},
@@ -507,6 +549,27 @@ describe('Editor Page Component Logic', () => {
 				dtxFile.level = loaded.metadata.level;
 
 				expect(dtxFile.level).toBe(draftLevel);
+
+				// Verify SoundChip instances are created from draft data
+				const { SoundChip } = await import('@dtx/common');
+				const restoredChips = loaded.metadata.soundChips.map(
+					(chip) =>
+						new SoundChip(
+							chip.label,
+							chip.id,
+							chip.volume,
+							chip.position,
+							chip.fileName
+						)
+				);
+
+				expect(SoundChip).toHaveBeenCalledTimes(2);
+				expect(SoundChip).toHaveBeenCalledWith('Bass Drum', 1, 100, 0, 'bd.wav');
+				expect(SoundChip).toHaveBeenCalledWith('Snare', 2, 80, 1, 'snare.wav');
+
+				// Verify instances have the fetchRemote method (not plain objects)
+				expect(typeof restoredChips[0].fetchRemote).toBe('function');
+				expect(typeof restoredChips[1].fetchRemote).toBe('function');
 			}
 		});
 

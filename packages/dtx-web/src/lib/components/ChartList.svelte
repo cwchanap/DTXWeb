@@ -98,9 +98,7 @@
 				params.set('search', searchFilter);
 			}
 
-			if (enableDownload) {
-				params.set('check_uploaded', 'true');
-			}
+			params.set('check_uploaded', 'true');
 
 			const response = await fetch(`/api/chart?${params}`);
 			if (!response.ok) {

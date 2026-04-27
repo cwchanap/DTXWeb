@@ -385,11 +385,11 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
-	it('does not include check_uploaded when isBlog is false and enableDownload is false', async () => {
+	it('always includes check_uploaded=true regardless of enableDownload', async () => {
 		render(ChartList, { props: { isBlog: false, enableDownload: false } });
 		await waitFor(() => {
 			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.not.stringContaining('check_uploaded')
+				expect.stringContaining('check_uploaded=true')
 			);
 		});
 	});
@@ -403,11 +403,11 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
-	it('does not include check_uploaded when isBlog is true and enableDownload is false', async () => {
+	it('always includes check_uploaded=true even in blog mode without downloads', async () => {
 		render(ChartList, { props: { isBlog: true, enableDownload: false } });
 		await waitFor(() => {
 			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.not.stringContaining('check_uploaded')
+				expect.stringContaining('check_uploaded=true')
 			);
 		});
 	});

@@ -7,6 +7,7 @@
 	import {
 		DTXFile,
 		SimFile,
+		SoundChip,
 		decodeFileWithEncodingDetection,
 		type LaneMeasureNote
 	} from '@dtx/common';
@@ -366,15 +367,10 @@
 		store.currentSimfileID.set(simfileID);
 		store.currentDifficulty.set(draft.difficulty);
 		store.currentSoundChip.set(
-			draft.metadata.soundChips.map((chip) => ({
-				label: chip.label,
-				id: chip.id,
-				volume: chip.volume,
-				position: chip.position,
-				fileName: chip.fileName,
-				filePath: chip.filePath,
-				fileHash: chip.fileHash
-			}))
+			draft.metadata.soundChips.map(
+				(chip) =>
+					new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
+			)
 		);
 		store.measureCount.set(draft.measureCount);
 

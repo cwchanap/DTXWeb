@@ -187,7 +187,8 @@ export class WorkspaceService {
 						sf.fileData.length > 0 &&
 						!largeFileNames.includes(sf.fileName)
 				) // Exclude large files completely
-				.map((sf) => SoundLibrary.toFile(sf));
+				.map((sf) => SoundLibrary.toFile(sf))
+				.filter((file): file is File => file !== null);
 			allFiles.push(...libraryFiles);
 
 			// Add large files from session memory

@@ -193,9 +193,14 @@ export class SoundLibrary {
 	}
 
 	/**
-	 * Convert library file back to File object
+	 * Convert library file back to File object.
+	 * Returns null for entries with no file data (e.g. large in-memory-only files).
 	 */
-	static toFile(libraryFile: SoundLibraryFile): File {
+	static toFile(libraryFile: SoundLibraryFile): File | null {
+		if (!libraryFile.fileData) {
+			return null;
+		}
+
 		// Convert base64 back to binary
 		const binaryString = atob(libraryFile.fileData);
 		const bytes = new Uint8Array(binaryString.length);

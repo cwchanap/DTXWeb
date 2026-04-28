@@ -369,17 +369,15 @@
 		store.currentDifficulty.set(draft.difficulty);
 		store.measureCount.set(draft.measureCount);
 
-		// Create SoundChip instances and rehydrate their audio files
+		// Create SoundChip instances and set them in the store
 		const soundChips = draft.metadata.soundChips.map(
 			(chip) => new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
 		);
 		dtxFile.soundChips = soundChips;
 		store.currentSoundChip.set(soundChips);
 
-		// Rehydrate audio files so Preview can play them
-		await rehydrateSoundFiles(soundChips, draft.metadata.soundChips);
-
-		// Emit notes to the editor scene
+		// Emit notes to the editor scene FIRST so the user sees their chart
+		// immediately, without waiting for best-effort audio rehydration.
 		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
 			const editorScene = phaserRef.scene as Editor;
 			editorScene.setDirty(true);
@@ -389,6 +387,10 @@
 		EventBus.emit(EventType.NOTE_IMPORT, flatNotes, draft.bpmNotes, draft.measureCount);
 
 		toastStore.success({ title: 'Restored local draft', duration: 3000 });
+
+		// Rehydrate audio files in the background so Preview can play them.
+		// This is best-effort — don't block the editor on slow/unavailable R2.
+		rehydrateSoundFiles(soundChips, draft.metadata.soundChips);
 	}
 
 	/**
@@ -671,11 +673,22 @@
 		} catch (error) {
 			console.error('Error loading simfile:', error);
 			toastStore.error({ title: 'Failed to load chart', duration: 3000 });
-			// Reset currentDifficulty so that createNewFile() correctly uses
-			// removeAllForSimfile() instead of remove(id, staleDifficulty).
-			// Without this, a stale difficulty from a previous session would
-			// cause difficulty-suffixed drafts to survive the cleanup.
+
+			// Clear all editor stores so stale data from a previous chart
+			// (e.g. client-side navigation /editor/:id1 → /editor/:id2)
+			// doesn't leak behind the recovery modal.
+			store.currentDtxFile.set(null);
+			store.currentSimfile.set(null);
+			store.currentSoundChip.set([]);
 			store.currentDifficulty.set(null);
+
+			// Clear the editor scene so it doesn't render stale notes
+			if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
+				const editorScene = phaserRef.scene as Editor;
+				editorScene.setDirty(false);
+				EventBus.emit(EventType.NOTE_IMPORT, [], {});
+			}
+
 			// When the remote chart fails to load, check if the user has local
 			// drafts for this simfile. If so, show a confirmation modal so they can
 			// choose whether to discard their work — do NOT auto-delete on transient

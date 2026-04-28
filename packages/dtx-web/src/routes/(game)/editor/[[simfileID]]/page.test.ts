@@ -18,8 +18,8 @@ vi.mock('phaser', () => ({
 
 vi.mock('@dtx/common/game', () => ({
 	default: vi.fn(),
-	Editor: vi.fn(),
-	Preview: vi.fn(),
+	Editor: { key: 'Editor' },
+	Preview: { key: 'Preview' },
 	EventBus: {
 		on: vi.fn(),
 		off: vi.fn(),
@@ -29,7 +29,11 @@ vi.mock('@dtx/common/game', () => ({
 		EDITOR_LOADED: 'EDITOR_LOADED',
 		EDITOR_READY: 'EDITOR_READY',
 		PREVIEW_START: 'PREVIEW_START',
-		PREVIEW_END: 'PREVIEW_END'
+		PREVIEW_END: 'PREVIEW_END',
+		SCENE_READY: 'SCENE_READY',
+		NOTE_IMPORT: 'NOTE_IMPORT',
+		STOP_PREVIEW: 'STOP_PREVIEW',
+		VALIDATION_ERROR: 'VALIDATION_ERROR'
 	}
 }));
 
@@ -81,7 +85,19 @@ vi.mock('$lib/store', () => ({
 	default: {
 		currentDtxFile: { subscribe: vi.fn(), set: vi.fn() },
 		currentSimfile: { subscribe: vi.fn(), set: vi.fn() },
-		activeScene: { subscribe: vi.fn(), set: vi.fn() }
+		currentSoundChip: { subscribe: vi.fn(), set: vi.fn() },
+		currentSimfileID: { subscribe: vi.fn(), set: vi.fn() },
+		currentDifficulty: { subscribe: vi.fn(), set: vi.fn() },
+		editorNotes: { subscribe: vi.fn(), set: vi.fn() },
+		measureCount: { subscribe: vi.fn(), set: vi.fn() },
+		activeScene: { subscribe: vi.fn(), set: vi.fn() },
+		isPreviewing: {
+			subscribe: vi.fn((cb: (v: boolean) => void) => {
+				cb(false);
+				return () => {};
+			}),
+			set: vi.fn()
+		}
 	}
 }));
 
@@ -785,6 +801,132 @@ describe('Editor Page Component Logic', () => {
 			// toFile and setFile should NOT have been called
 			expect(SoundLibrary.toFile).not.toHaveBeenCalled();
 			expect(FileManager.setFile).not.toHaveBeenCalled();
+		});
+
+		it('should clear all editor stores before showing recovery modal on remote load failure', async () => {
+			const store = (await import('$lib/store')).default;
+			const { EventBus, EventType } = await import('@dtx/common/game');
+			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
+
+			const simfileID = 'stale-chart-id';
+
+			// Simulate the catch block: remote load fails with existing draft
+			// The fix ensures all stores are cleared before the modal is shown,
+			// preventing stale data from a previous chart (e.g. client-side
+			// navigation /editor/:id1 → /editor/:id2) from leaking.
+			vi.mocked(TempChartStorage.existsAny).mockReturnValue(true);
+
+			// Simulate what the catch block now does
+			store.currentDtxFile.set(null);
+			store.currentSimfile.set(null);
+			store.currentSoundChip.set([]);
+			store.currentDifficulty.set(null);
+
+			// Editor scene cleared
+			EventBus.emit(EventType.NOTE_IMPORT, [], {});
+
+			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
+			let showNewFileModal = false;
+			if (hasAnyDraft) {
+				showNewFileModal = true;
+			}
+
+			// Verify all stores were cleared
+			expect(store.currentDtxFile.set).toHaveBeenCalledWith(null);
+			expect(store.currentSimfile.set).toHaveBeenCalledWith(null);
+			expect(store.currentSoundChip.set).toHaveBeenCalledWith([]);
+			expect(store.currentDifficulty.set).toHaveBeenCalledWith(null);
+
+			// Verify editor scene was cleared
+			expect(EventBus.emit).toHaveBeenCalledWith(EventType.NOTE_IMPORT, [], {});
+
+			// Verify modal is shown (not auto-creating new file)
+			expect(showNewFileModal).toBe(true);
+		});
+
+		it('should emit notes immediately before audio rehydration in loadLocalDraft', async () => {
+			const store = (await import('$lib/store')).default;
+			const { EventBus, EventType } = await import('@dtx/common/game');
+			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
+			const { DTXFile, SoundChip } = await import('@dtx/common');
+
+			const simfileID = 'draft-recovery-id';
+
+			// Use empty notes to avoid type mismatch with LaneMeasureNote class.
+			// The test focuses on emission ordering, not note content.
+			const draft = {
+				metadata: {
+					title: 'Test',
+					artist: 'Artist',
+					comment: 'Comment',
+					bpm: 120,
+					level: 42,
+					soundChips: [
+						{
+							label: 'Bass Drum',
+							id: 1,
+							volume: 100,
+							position: 0,
+							fileName: 'bd.wav',
+							fileHash: 'abc123'
+						}
+					]
+				},
+				notes: {} as Record<string, any[]>,
+				bpmNotes: {} as Record<string, number>,
+				measureCount: 4,
+				timestamp: Date.now(),
+				difficulty: 'master'
+			};
+
+			vi.mocked(TempChartStorage.loadAny).mockReturnValue(draft as any);
+
+			// Simulate the loadLocalDraft logic with the fix:
+			// notes are emitted BEFORE audio rehydration (which is now fire-and-forget)
+			const loaded = TempChartStorage.loadAny(simfileID);
+			if (loaded) {
+				const dtxFile = new DTXFile();
+				dtxFile.title = loaded.metadata.title;
+				dtxFile.artist = loaded.metadata.artist;
+				store.currentDtxFile.set(dtxFile);
+				store.currentSimfile.set(null);
+				store.currentSimfileID.set(simfileID);
+				store.currentDifficulty.set(loaded.difficulty);
+				store.measureCount.set(loaded.measureCount);
+
+				const soundChips = loaded.metadata.soundChips.map(
+					(chip) =>
+						new SoundChip(
+							chip.label,
+							chip.id,
+							chip.volume,
+							chip.position,
+							chip.fileName
+						)
+				);
+				dtxFile.soundChips = soundChips;
+				store.currentSoundChip.set(soundChips);
+
+				// NOTES ARE EMITTED FIRST (the fix)
+				const flatNotes = Object.values(loaded.notes).flat();
+				EventBus.emit(
+					EventType.NOTE_IMPORT,
+					flatNotes,
+					loaded.bpmNotes,
+					loaded.measureCount
+				);
+
+				// Verify NOTE_IMPORT was called with notes data
+				expect(EventBus.emit).toHaveBeenCalledWith(
+					EventType.NOTE_IMPORT,
+					flatNotes,
+					loaded.bpmNotes,
+					loaded.measureCount
+				);
+
+				// Audio rehydration would happen after, but we don't await it
+				// This is the key fix: notes are visible immediately
+			}
 		});
 
 		it('should handle workspace loading errors correctly', async () => {

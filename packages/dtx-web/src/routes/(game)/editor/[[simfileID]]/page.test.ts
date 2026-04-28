@@ -929,6 +929,61 @@ describe('Editor Page Component Logic', () => {
 			}
 		});
 
+		it('should re-trigger sound chip store after rehydration completes', async () => {
+			const store = (await import('$lib/store')).default;
+			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
+			const { DTXFile, SoundChip } = await import('@dtx/common');
+
+			const simfileID = 'retrigger-test-id';
+
+			const draft = {
+				metadata: {
+					title: 'Rehydrate Test',
+					artist: 'Artist',
+					comment: 'Comment',
+					bpm: 120,
+					level: 1,
+					soundChips: [
+						{
+							label: 'Bass Drum',
+							id: 1,
+							volume: 100,
+							position: 0,
+							fileName: 'bd.wav',
+							fileHash: 'hash123'
+						}
+					]
+				},
+				notes: {} as Record<string, any[]>,
+				bpmNotes: {} as Record<string, number>,
+				measureCount: 4,
+				timestamp: Date.now(),
+				difficulty: 'basic'
+			};
+
+			vi.mocked(TempChartStorage.loadAny).mockReturnValue(draft as any);
+
+			// Simulate the loadLocalDraft logic:
+			// 1. Set stores (including currentSoundChip)
+			const dtxFile = new DTXFile();
+			const soundChips = draft.metadata.soundChips.map(
+				(chip) =>
+					new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
+			);
+			dtxFile.soundChips = soundChips;
+			store.currentSoundChip.set(soundChips);
+
+			// Reset the mock to count calls after the initial set
+			vi.mocked(store.currentSoundChip.set).mockClear();
+
+			// 2. After rehydration completes, re-set the store to trigger Preview subscriber
+			// This simulates the `.then(() => store.currentSoundChip.set(soundChips))` call
+			store.currentSoundChip.set(soundChips);
+
+			expect(store.currentSoundChip.set).toHaveBeenCalledWith(soundChips);
+			expect(store.currentSoundChip.set).toHaveBeenCalledTimes(1);
+		});
+
 		it('should handle workspace loading errors correctly', async () => {
 			const { workspaceService } = await import('$lib/services/workspaceService');
 

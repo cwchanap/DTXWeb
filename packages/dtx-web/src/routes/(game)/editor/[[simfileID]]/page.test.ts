@@ -578,6 +578,12 @@ describe('Editor Page Component Logic', () => {
 				// Verify instances have the fetchRemote method (not plain objects)
 				expect(typeof restoredChips[0].fetchRemote).toBe('function');
 				expect(typeof restoredChips[1].fetchRemote).toBe('function');
+
+				// Verify soundChips are assigned to the dtxFile so export includes them
+				dtxFile.soundChips = restoredChips;
+				expect(dtxFile.soundChips).toHaveLength(2);
+				expect(dtxFile.soundChips[0].fileName).toBe('bd.wav');
+				expect(dtxFile.soundChips[1].fileName).toBe('snare.wav');
 			}
 		});
 

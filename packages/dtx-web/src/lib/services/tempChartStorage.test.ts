@@ -323,6 +323,45 @@ describe('TempChartStorage', () => {
 			expect(result).toBe(false);
 		});
 
+		it('removes expired and invalid matching entries while scanning', () => {
+			const expiredData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000
+			});
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.length = 3;
+			mockLocalStorage.key
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_expired')
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_broken')
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_master');
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile_expired') return expiredData;
+				if (key === 'dtx_temp_chart_test-simfile_broken') return 'invalid json';
+				if (key === 'dtx_temp_chart_test-simfile_master') return validData;
+				return null;
+			});
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(true);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_expired'
+			);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_broken'
+			);
+		});
+
 		it('should return false when simFileID is null and no temp data exists', () => {
 			mockLocalStorage.length = 0;
 
@@ -442,6 +481,45 @@ describe('TempChartStorage', () => {
 			const result = TempChartStorage.loadAny('test-simfile');
 
 			expect(result).toBeNull();
+		});
+
+		it('removes expired and invalid matching entries while loading the newest draft', () => {
+			const expiredData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000
+			});
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 6,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			mockLocalStorage.length = 3;
+			mockLocalStorage.key
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_expired')
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_broken')
+				.mockReturnValueOnce('dtx_temp_chart_test-simfile_master');
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile_expired') return expiredData;
+				if (key === 'dtx_temp_chart_test-simfile_broken') return 'invalid json';
+				if (key === 'dtx_temp_chart_test-simfile_master') return validData;
+				return null;
+			});
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result?.difficulty).toBe('master');
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_expired'
+			);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_broken'
+			);
 		});
 
 		it('should return null for null simFileID when no temp data exists', () => {

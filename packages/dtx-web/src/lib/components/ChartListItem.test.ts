@@ -225,6 +225,12 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
 		});
 
+		it('renders the title as an editor link when uploaded files are available', () => {
+			render(ChartListItem, { props: renderProps });
+			const editorLink = screen.getByRole('link', { name: 'Test Song 1' });
+			expect(editorLink).toHaveAttribute('href', '/editor/1');
+		});
+
 		it('renders artist', () => {
 			render(ChartListItem, { props: renderProps });
 			expect(screen.getByText('Test Artist 1')).toBeInTheDocument();

@@ -72,21 +72,7 @@ export class TempChartStorage {
 		try {
 			const key = this.buildStorageKey(simFileID, difficulty);
 			const storageKey = this.STORAGE_KEY_PREFIX + key;
-
-			const stored = localStorage.getItem(storageKey);
-			if (!stored) {
-				return null;
-			}
-
-			const data: TempChartData = JSON.parse(stored);
-
-			// Check if data is too old
-			if (Date.now() - data.timestamp > this.MAX_AGE_MS) {
-				this.remove(simFileID, difficulty);
-				return null;
-			}
-
-			return data;
+			return this.readStoredData(storageKey, true);
 		} catch (error) {
 			console.warn('Failed to load temporary chart data:', error);
 			return null;
@@ -129,17 +115,9 @@ export class TempChartStorage {
 			for (let i = 0; i < localStorage.length; i++) {
 				const key = localStorage.key(i);
 				if (key === prefix || key?.startsWith(prefix + '_')) {
-					// Verify the data isn't expired by attempting to load
-					const stored = localStorage.getItem(key);
-					if (stored) {
-						try {
-							const data: TempChartData = JSON.parse(stored);
-							if (Date.now() - data.timestamp <= this.MAX_AGE_MS) {
-								return true;
-							}
-						} catch {
-							// Invalid data, skip
-						}
+					const data = this.readStoredData(key);
+					if (data) {
+						return true;
 					}
 				}
 			}
@@ -170,20 +148,11 @@ export class TempChartStorage {
 			for (let i = 0; i < localStorage.length; i++) {
 				const key = localStorage.key(i);
 				if (key === prefix || key?.startsWith(prefix + '_')) {
-					const stored = localStorage.getItem(key);
-					if (stored) {
-						try {
-							const data: TempChartData = JSON.parse(stored);
-							if (Date.now() - data.timestamp <= this.MAX_AGE_MS) {
-								if (!bestMatch || data.timestamp > bestMatch.timestamp) {
-									// Extract difficulty from the key
-									const suffix = key.slice(prefix.length + 1); // +1 for the underscore
-									bestMatch = { ...data, difficulty: suffix || null };
-								}
-							}
-						} catch {
-							// Invalid data, skip
-						}
+					const data = this.readStoredData(key);
+					if (data && (!bestMatch || data.timestamp > bestMatch.timestamp)) {
+						// Extract difficulty from the key
+						const suffix = key.slice(prefix.length + 1); // +1 for the underscore
+						bestMatch = { ...data, difficulty: suffix || null };
 					}
 				}
 			}
@@ -263,5 +232,28 @@ export class TempChartStorage {
 
 		// Format: "simFileID_difficulty" (e.g., "mysong_mas" or "mysong_ext")
 		return `${simFileID}_${difficulty}`;
+	}
+
+	private static readStoredData(storageKey: string, warnOnInvalid = false): TempChartData | null {
+		const stored = localStorage.getItem(storageKey);
+		if (!stored) {
+			return null;
+		}
+
+		try {
+			const data: TempChartData = JSON.parse(stored);
+			if (Date.now() - data.timestamp > this.MAX_AGE_MS) {
+				localStorage.removeItem(storageKey);
+				return null;
+			}
+
+			return data;
+		} catch (error) {
+			localStorage.removeItem(storageKey);
+			if (warnOnInvalid) {
+				console.warn('Failed to load temporary chart data:', error);
+			}
+			return null;
+		}
 	}
 }

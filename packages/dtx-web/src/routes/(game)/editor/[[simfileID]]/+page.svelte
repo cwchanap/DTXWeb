@@ -390,7 +390,11 @@
 
 		// Rehydrate audio files in the background so Preview can play them.
 		// This is best-effort — don't block the editor on slow/unavailable R2.
-		rehydrateSoundFiles(soundChips, draft.metadata.soundChips);
+		// After rehydration, re-set the sound chip store so Preview's subscriber
+		// re-runs setupSoundsAsync() against the now-populated FileManager.
+		rehydrateSoundFiles(soundChips, draft.metadata.soundChips).then(() => {
+			store.currentSoundChip.set(soundChips);
+		});
 	}
 
 	/**

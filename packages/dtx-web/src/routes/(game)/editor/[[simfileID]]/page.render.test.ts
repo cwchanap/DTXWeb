@@ -643,6 +643,25 @@ describe('Editor Page – refreshSoundLibraryLinks via onRefreshSoundLibraryLink
 		expect(SoundLibrary.findByFileName).toHaveBeenCalledWith('missing.xa');
 		expect(store.currentSoundChip.set).toHaveBeenCalled();
 	});
+
+	it('tracks notFound when SoundLibrary entry has no fileData (large in-memory file)', async () => {
+		const mockChip = { fileName: 'large.wav', file: undefined };
+		vi.mocked(get).mockReturnValue([mockChip] as never);
+		vi.mocked(SoundLibrary.findByFileName).mockReturnValue([
+			{ fileName: 'large.wav' }
+		] as never);
+		vi.mocked(SoundLibrary.toFile).mockReturnValue(null);
+
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => Promise<void>>>(
+			vi.mocked(EditorNavigationModule)
+		);
+		await navProps!.onRefreshSoundLibraryLinks();
+
+		// toFile returned null → chip not matched
+		expect(SoundLibrary.toFile).toHaveBeenCalled();
+		expect(store.currentSoundChip.set).toHaveBeenCalled();
+	});
 });
 
 describe('Editor Page – sound chip loading loop in onMount', () => {

@@ -125,6 +125,7 @@ vi.mock('$lib/services/soundLibrary', () => ({
 		removeFile: vi.fn(),
 		clear: vi.fn(),
 		findByFileName: vi.fn().mockReturnValue([]),
+		getByHash: vi.fn().mockReturnValue(null),
 		toFile: vi.fn()
 	}
 }));
@@ -651,22 +652,139 @@ describe('Editor Page Component Logic', () => {
 			]);
 			vi.mocked(SoundLibrary.toFile).mockReturnValue(mockFile);
 
-			// Simulate rehydration: remote fails → sound library
+			// Simulate rehydration: remote fails → sound library (no fileHash, falls back to filename)
 			try {
 				await mockChip.fetchRemote('test-simfile', 'https://bucket.url');
 			} catch {
 				// Expected to fail
 			}
 			const libraryFiles = SoundLibrary.findByFileName(mockChip.fileName);
-			if (libraryFiles.length > 0) {
-				const file = SoundLibrary.toFile(libraryFiles[0]);
-				const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
-				FileManager.setFile(fileKey, file);
+			const libraryFile = libraryFiles.length > 0 ? libraryFiles[0] : null;
+			if (libraryFile && libraryFile.fileData) {
+				const file = SoundLibrary.toFile(libraryFile);
+				if (file) {
+					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
+					FileManager.setFile(fileKey, file);
+				}
 			}
 
 			expect(SoundLibrary.findByFileName).toHaveBeenCalledWith('bd.wav');
 			expect(SoundLibrary.toFile).toHaveBeenCalled();
 			expect(FileManager.setFile).toHaveBeenCalledWith('test-simfile/bd.wav', mockFile);
+		});
+
+		it('should use fileHash for precise sound library lookup during rehydration', async () => {
+			const { SoundLibrary } = await import('$lib/services/soundLibrary');
+			const FileManager = await import('@dtx/common/services/fileManager');
+
+			const mockFile = new File(['audio-data'], 'snare.wav', { type: 'audio/wav' });
+			const fetchRemoteMock = vi.fn().mockRejectedValue(new Error('Network error'));
+
+			const mockChip = {
+				label: 'Snare',
+				id: 2,
+				volume: 80,
+				position: 1,
+				fileName: 'snare.wav',
+				file: undefined as File | undefined,
+				fetchRemote: fetchRemoteMock
+			};
+
+			const chipData = {
+				label: 'Snare',
+				id: 2,
+				volume: 80,
+				position: 1,
+				fileName: 'snare.wav',
+				fileHash: 'specific-hash-456'
+			};
+
+			const libraryEntry = {
+				hash: 'specific-hash-456',
+				fileName: 'snare.wav',
+				fileType: 'audio/wav',
+				fileData: 'dGVzdA==',
+				size: 4,
+				dateAdded: Date.now()
+			};
+
+			vi.mocked(SoundLibrary.getByHash).mockReturnValue(libraryEntry);
+			vi.mocked(SoundLibrary.toFile).mockReturnValue(mockFile);
+
+			// Simulate: remote fails → hash-based lookup
+			try {
+				await mockChip.fetchRemote('test-simfile', 'https://bucket.url');
+			} catch {
+				// Expected to fail
+			}
+
+			// Use fileHash for lookup (matching the new rehydrateSoundFiles logic)
+			let libraryFile: any = null;
+			if (chipData.fileHash) {
+				libraryFile = SoundLibrary.getByHash(chipData.fileHash);
+			}
+			if (libraryFile && libraryFile.fileData) {
+				const file = SoundLibrary.toFile(libraryFile);
+				if (file) {
+					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
+					FileManager.setFile(fileKey, file);
+				}
+			}
+
+			expect(SoundLibrary.getByHash).toHaveBeenCalledWith('specific-hash-456');
+			expect(SoundLibrary.toFile).toHaveBeenCalledWith(libraryEntry);
+			expect(FileManager.setFile).toHaveBeenCalledWith('test-simfile/snare.wav', mockFile);
+		});
+
+		it('should skip library entries with empty fileData during rehydration', async () => {
+			const { SoundLibrary } = await import('$lib/services/soundLibrary');
+			const FileManager = await import('@dtx/common/services/fileManager');
+
+			const fetchRemoteMock = vi.fn().mockRejectedValue(new Error('Network error'));
+
+			const mockChip = {
+				label: 'Bass Drum',
+				id: 1,
+				volume: 100,
+				position: 0,
+				fileName: 'large.wav',
+				file: undefined as File | undefined,
+				fetchRemote: fetchRemoteMock
+			};
+
+			// Simulate: library entry exists but has no fileData (large in-memory file)
+			vi.mocked(SoundLibrary.findByFileName).mockReturnValue([
+				{
+					hash: 'large-hash',
+					fileName: 'large.wav',
+					fileType: 'audio/wav',
+					fileData: '', // Empty — large file stored only in memory
+					size: 5 * 1024 * 1024,
+					dateAdded: Date.now()
+				}
+			]);
+
+			// Simulate rehydration: remote fails → library found but fileData is empty
+			try {
+				await mockChip.fetchRemote('test-simfile', 'https://bucket.url');
+			} catch {
+				// Expected to fail
+			}
+
+			const libraryFiles = SoundLibrary.findByFileName(mockChip.fileName);
+			const libraryFile = libraryFiles.length > 0 ? libraryFiles[0] : null;
+			if (libraryFile && libraryFile.fileData) {
+				// This block should NOT execute
+				const file = SoundLibrary.toFile(libraryFile);
+				if (file) {
+					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
+					FileManager.setFile(fileKey, file);
+				}
+			}
+
+			// toFile and setFile should NOT have been called
+			expect(SoundLibrary.toFile).not.toHaveBeenCalled();
+			expect(FileManager.setFile).not.toHaveBeenCalled();
 		});
 
 		it('should handle workspace loading errors correctly', async () => {

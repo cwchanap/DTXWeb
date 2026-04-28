@@ -28,7 +28,7 @@
 	import ExportWorkspaceModal from '$lib/components/editor/modals/ExportWorkspaceModal.svelte';
 	import DTXSwitcherModal from '$lib/components/editor/modals/DTXSwitcherModal.svelte';
 	import NewFileModal from '$lib/components/editor/modals/NewFileModal.svelte';
-	import { TempChartStorage } from '$lib/services/tempChartStorage';
+	import { TempChartStorage, type SoundChipData } from '$lib/services/tempChartStorage';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
 	import toastStore from '$lib/toaster';
 	import { workspaceService, type Workspace } from '$lib/services/workspaceService';
@@ -377,7 +377,7 @@
 		store.currentSoundChip.set(soundChips);
 
 		// Rehydrate audio files so Preview can play them
-		await rehydrateSoundFiles(soundChips);
+		await rehydrateSoundFiles(soundChips, draft.metadata.soundChips);
 
 		// Emit notes to the editor scene
 		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
@@ -394,11 +394,13 @@
 	/**
 	 * Rehydrate sound chip files after draft restore.
 	 * Tries remote fetch first (server may be back), then falls back to local sound library.
+	 * Uses fileHash from persisted chip data for precise library lookup when available.
+	 * Skips library entries with no file data (large in-memory files cannot be restored this way).
 	 * Populates FileManager so Preview.setupSoundsAsync() can find the files.
 	 */
-	async function rehydrateSoundFiles(soundChips: SoundChip[]) {
+	async function rehydrateSoundFiles(soundChips: SoundChip[], chipData: SoundChipData[]) {
 		await Promise.all(
-			soundChips.map(async (soundChip) => {
+			soundChips.map(async (soundChip, index) => {
 				if (!soundChip.fileName) return;
 
 				// Strategy 1: Try remote fetch (server may have recovered)
@@ -414,12 +416,28 @@
 					// Remote still unavailable — fall through to sound library
 				}
 
-				// Strategy 2: Look up in local sound library by filename
-				const libraryFiles = SoundLibrary.findByFileName(soundChip.fileName);
-				if (libraryFiles.length > 0) {
-					const file = SoundLibrary.toFile(libraryFiles[0]);
-					const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);
-					FileManager.setFile(fileKey, file);
+				// Strategy 2: Look up in local sound library
+				const chipMeta = chipData[index];
+				let libraryFile: import('$lib/services/soundLibrary').SoundLibraryFile | null =
+					null;
+
+				// Prefer hash-based lookup when the draft persisted a fileHash
+				if (chipMeta?.fileHash) {
+					libraryFile = SoundLibrary.getByHash(chipMeta.fileHash);
+				}
+
+				// Fall back to filename match if no hash or hash miss
+				if (!libraryFile) {
+					const byName = SoundLibrary.findByFileName(soundChip.fileName);
+					libraryFile = byName.length > 0 ? byName[0] : null;
+				}
+
+				if (libraryFile && libraryFile.fileData) {
+					const file = SoundLibrary.toFile(libraryFile);
+					if (file) {
+						const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);
+						FileManager.setFile(fileKey, file);
+					}
 				}
 			})
 		);
@@ -705,8 +723,12 @@
 						// Use the first match (most recent if multiple)
 						const libraryFile = libraryFiles[0];
 						const file = SoundLibrary.toFile(libraryFile);
-						chip.file = file;
-						matched++;
+						if (file) {
+							chip.file = file;
+							matched++;
+						} else {
+							notFound++;
+						}
 					} else {
 						notFound++;
 					}

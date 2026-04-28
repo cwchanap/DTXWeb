@@ -525,8 +525,24 @@ describe('SoundLibrary', () => {
 
 			const result = SoundLibrary.toFile(libraryFile);
 
-			expect(result.name).toBe('test.wav');
-			expect(result.type).toBe('audio/wav');
+			expect(result).not.toBeNull();
+			expect(result!.name).toBe('test.wav');
+			expect(result!.type).toBe('audio/wav');
+		});
+
+		it('should return null for entries with empty fileData (large in-memory files)', () => {
+			const libraryFile: SoundLibraryFile = {
+				hash: 'hash1',
+				fileName: 'large.wav',
+				fileType: 'audio/wav',
+				fileData: '', // Empty for large in-memory files
+				size: 5 * 1024 * 1024,
+				dateAdded: Date.now()
+			};
+
+			const result = SoundLibrary.toFile(libraryFile);
+
+			expect(result).toBeNull();
 		});
 	});
 

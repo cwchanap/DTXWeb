@@ -373,6 +373,7 @@
 		const soundChips = draft.metadata.soundChips.map(
 			(chip) => new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
 		);
+		dtxFile.soundChips = soundChips;
 		store.currentSoundChip.set(soundChips);
 
 		// Rehydrate audio files so Preview can play them

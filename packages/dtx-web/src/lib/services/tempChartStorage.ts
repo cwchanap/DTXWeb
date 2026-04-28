@@ -151,7 +151,8 @@ export class TempChartStorage {
 	}
 
 	/**
-	 * Load the first available draft for a given simfileID, regardless of difficulty.
+	 * Load the newest available draft for a given simfileID, regardless of difficulty.
+	 * Scans all matching entries and returns the one with the latest timestamp.
 	 * Returns the draft data and its difficulty key, or null if none found.
 	 */
 	static loadAny(
@@ -164,6 +165,8 @@ export class TempChartStorage {
 			}
 
 			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
+			let bestMatch: (TempChartData & { difficulty: string | null }) | null = null;
+
 			for (let i = 0; i < localStorage.length; i++) {
 				const key = localStorage.key(i);
 				if (key === prefix || key?.startsWith(prefix + '_')) {
@@ -172,9 +175,11 @@ export class TempChartStorage {
 						try {
 							const data: TempChartData = JSON.parse(stored);
 							if (Date.now() - data.timestamp <= this.MAX_AGE_MS) {
-								// Extract difficulty from the key
-								const suffix = key.slice(prefix.length + 1); // +1 for the underscore
-								return { ...data, difficulty: suffix || null };
+								if (!bestMatch || data.timestamp > bestMatch.timestamp) {
+									// Extract difficulty from the key
+									const suffix = key.slice(prefix.length + 1); // +1 for the underscore
+									bestMatch = { ...data, difficulty: suffix || null };
+								}
 							}
 						} catch {
 							// Invalid data, skip
@@ -182,7 +187,7 @@ export class TempChartStorage {
 					}
 				}
 			}
-			return null;
+			return bestMatch;
 		} catch (error) {
 			console.warn('Failed to load any temporary chart data:', error);
 			return null;

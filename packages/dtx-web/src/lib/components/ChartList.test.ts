@@ -534,9 +534,14 @@ describe('ChartList Rendering', () => {
 	it('skips check_uploaded when isBlog is true and enableDownload is false', async () => {
 		render(ChartList, { props: { isBlog: true, enableDownload: false } });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.not.stringContaining('check_uploaded=true')
-			);
+			expect(vi.mocked(fetch)).toHaveBeenCalled();
+			expect(
+				vi
+					.mocked(fetch)
+					.mock.calls.every(
+						([url]) => typeof url === 'string' && !url.includes('check_uploaded=true')
+					)
+			).toBe(true);
 		});
 	});
 
@@ -571,6 +576,35 @@ describe('ChartList Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 		await waitFor(() => {
 			expect(screen.getByText(/My Song/)).toBeInTheDocument();
+		});
+	});
+
+	it('renders an editor link on the table title when uploaded files are available', async () => {
+		mockFetchSuccess(
+			[
+				{
+					id: 1,
+					title: 'My Song',
+					artist: 'Artist',
+					bpm: 120,
+					is_published: true,
+					display_id: 1,
+					has_uploaded_files: true,
+					dtx_files: [],
+					publish_date: '2024-01-01',
+					download_url: null,
+					video_preview_url: null
+				}
+			],
+			1
+		);
+
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+
+		await waitFor(() => {
+			const editorLink = screen.getByRole('link', { name: '1. My Song' });
+			expect(editorLink).toHaveAttribute('href', '/editor/1');
 		});
 	});
 
@@ -691,7 +725,7 @@ describe('ChartList – handlePageChange via Pagination prop', () => {
 		// Svelte 5 calls Component(anchor, props) – check both index 0 and 1.
 		const paginationCalls = vi.mocked(Pagination).mock.calls;
 		const lastCall = paginationCalls[paginationCalls.length - 1];
-		const paginationProps = (lastCall?.[1] ?? lastCall?.[0]) as
+		const paginationProps = (lastCall?.[1] ?? lastCall?.[0]) as unknown as
 			| Record<string, unknown>
 			| undefined;
 

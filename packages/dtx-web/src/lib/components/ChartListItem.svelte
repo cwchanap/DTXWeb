@@ -72,7 +72,16 @@
 				<h2
 					class="text-xl leading-tight font-bold text-slate-100 transition-colors duration-200 group-hover:text-purple-300"
 				>
-					{item.title}
+					{#if canOpenEditor}
+						<a
+							href={`/editor/${item.id}`}
+							class="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"
+						>
+							{item.title}
+						</a>
+					{:else}
+						{item.title}
+					{/if}
 				</h2>
 			</div>
 			{#if !isBlog}

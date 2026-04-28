@@ -415,7 +415,16 @@
 							<h3
 								class="text-lg font-semibold text-slate-100 transition-colors group-hover:text-purple-300"
 							>
-								{item.display_id}. {item.title}
+								{#if !isBlog && item.has_uploaded_files === true}
+									<a
+										href={`/editor/${item.id}`}
+										class="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"
+									>
+										{item.display_id}. {item.title}
+									</a>
+								{:else}
+									{item.display_id}. {item.title}
+								{/if}
 							</h3>
 						</div>
 						<div class="flex flex-wrap items-center gap-6 text-sm">

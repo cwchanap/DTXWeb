@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-const { mockHighestDtx, mockSimfile } = vi.hoisted(() => {
+const { mockHighestDtx, mockSimfile, mockSoundChipInstances } = vi.hoisted(() => {
 	const mockHighestDtx = {
 		parseNotes: () => [],
 		parseBPMChanges: () => ({}),
@@ -16,7 +16,12 @@ const { mockHighestDtx, mockSimfile } = vi.hoisted(() => {
 		getHighestLevel: () => mockHighestDtx,
 		levels: { 25: { label: 'Basic', file: mockHighestDtx } }
 	};
-	return { mockHighestDtx, mockSimfile };
+	const mockSoundChipInstances: Array<{
+		fileName: string;
+		fetchRemote: ReturnType<typeof vi.fn>;
+		file: File | undefined;
+	}> = [];
+	return { mockHighestDtx, mockSimfile, mockSoundChipInstances };
 });
 
 vi.mock('@dtx/common/game', () => ({
@@ -41,6 +46,19 @@ vi.mock('@dtx/common/game', () => ({
 
 vi.mock('@dtx/common', () => ({
 	DTXFile: vi.fn().mockImplementation(() => ({})),
+	SoundChip: vi.fn().mockImplementation(function (
+		this: { fileName: string; fetchRemote: ReturnType<typeof vi.fn>; file: File | undefined },
+		_label: string,
+		_id: number,
+		_volume: number,
+		_position: number,
+		fileName: string
+	) {
+		this.fileName = fileName;
+		this.fetchRemote = vi.fn().mockResolvedValue(undefined);
+		this.file = undefined;
+		mockSoundChipInstances.push(this);
+	}),
 	SimFile: {
 		parseFromRemoteURLWithMetadata: vi.fn().mockResolvedValue(mockSimfile),
 		parseFromRemoteURL: vi.fn().mockResolvedValue(mockSimfile)
@@ -68,6 +86,7 @@ vi.mock('$lib/store', () => {
 			activeScene: ms(),
 			editorNotes: ms(),
 			isPreviewing: ms(false),
+			measureCount: ms(),
 			currentSoundChip: ms(),
 			currentSimfileID: ms(),
 			currentDifficulty: ms()
@@ -101,6 +120,7 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 	TempChartStorage: {
 		save: vi.fn(),
 		load: vi.fn().mockReturnValue(null),
+		loadAny: vi.fn().mockReturnValue(null),
 		remove: vi.fn(),
 		removeAllForSimfile: vi.fn(),
 		exists: vi.fn().mockReturnValue(false),
@@ -192,6 +212,7 @@ const defaultData = { simfileID: null, metadata: null };
 describe('Editor Page render', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -243,6 +264,7 @@ describe('Editor Page render', () => {
 describe('Editor Page – EventBus callback handlers', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -311,6 +333,7 @@ describe('Editor Page – EventBus callback handlers', () => {
 describe('Editor Page – onMount path variations', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -387,6 +410,133 @@ describe('Editor Page – onMount path variations', () => {
 			expect(TempChartStorage.removeAllForSimfile).toHaveBeenCalled();
 		});
 	});
+
+	it('shows the new file modal when remote loading fails and drafts exist', async () => {
+		const { SimFile } = await import('@dtx/common');
+		vi.mocked(SimFile.parseFromRemoteURLWithMetadata).mockRejectedValueOnce(
+			new Error('Network error')
+		);
+		vi.mocked(TempChartStorage.existsAny).mockReturnValue(true);
+
+		render(EditorPage, {
+			props: {
+				data: {
+					simfileID: 'recover-sim',
+					metadata: { title: 'Song', levels: {} }
+				}
+			}
+		});
+
+		await vi.waitFor(() => {
+			const newFileProps = getLastMockProps<Record<string, unknown>>(
+				vi.mocked(NewFileModalModule)
+			);
+			expect(newFileProps?.show).toBe(true);
+		});
+	});
+
+	it('clears all drafts when confirming the recovery modal after a remote load failure', async () => {
+		const { SimFile } = await import('@dtx/common');
+		vi.mocked(SimFile.parseFromRemoteURLWithMetadata).mockRejectedValueOnce(
+			new Error('Network error')
+		);
+		vi.mocked(TempChartStorage.existsAny).mockReturnValue(true);
+
+		render(EditorPage, {
+			props: {
+				data: {
+					simfileID: 'recover-sim',
+					metadata: { title: 'Song', levels: {} }
+				}
+			}
+		});
+
+		await vi.waitFor(() => {
+			const newFileProps = getLastMockProps<Record<string, unknown>>(
+				vi.mocked(NewFileModalModule)
+			);
+			expect(newFileProps?.show).toBe(true);
+		});
+
+		const newFileProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(NewFileModalModule)
+		);
+		expect(newFileProps?.onConfirm).toBeDefined();
+		newFileProps!.onConfirm();
+
+		expect(TempChartStorage.removeAllForSimfile).toHaveBeenCalled();
+	});
+
+	it('restores the newest draft when cancelling the recovery modal after a remote load failure', async () => {
+		const { SimFile } = await import('@dtx/common');
+		vi.mocked(SimFile.parseFromRemoteURLWithMetadata).mockRejectedValueOnce(
+			new Error('Network error')
+		);
+		vi.mocked(TempChartStorage.existsAny).mockReturnValue(true);
+		vi.mocked(TempChartStorage.loadAny).mockReturnValue({
+			notes: {},
+			bpmNotes: {},
+			measureCount: 4,
+			metadata: {
+				title: 'Recovered Song',
+				artist: 'Recovered Artist',
+				comment: '',
+				bpm: 180,
+				level: 8,
+				soundChips: [
+					{
+						label: 'BD',
+						id: 1,
+						volume: 100,
+						position: 0,
+						fileName: 'kick.xa'
+					}
+				]
+			},
+			timestamp: Date.now(),
+			difficulty: 'master'
+		} as never);
+
+		render(EditorPage, {
+			props: {
+				data: {
+					simfileID: 'recover-sim',
+					metadata: { title: 'Song', levels: {} }
+				}
+			}
+		});
+
+		await vi.waitFor(() => {
+			const newFileProps = getLastMockProps<Record<string, unknown>>(
+				vi.mocked(NewFileModalModule)
+			);
+			expect(newFileProps?.show).toBe(true);
+		});
+
+		const newFileProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(NewFileModalModule)
+		);
+		expect(newFileProps?.onCancel).toBeDefined();
+		newFileProps!.onCancel();
+
+		expect(TempChartStorage.loadAny).toHaveBeenCalledWith('recover-sim');
+		await vi.waitFor(() => {
+			expect(store.currentSoundChip.set).toHaveBeenCalledTimes(2);
+		});
+		expect(
+			vi
+				.mocked(store.currentSoundChip.set)
+				.mock.calls.some(
+					([soundChips]) => Array.isArray(soundChips) && soundChips.length === 1
+				)
+		).toBe(true);
+		expect(store.measureCount.set).toHaveBeenCalledWith(4);
+		expect(store.currentDifficulty.set).toHaveBeenCalledWith('master');
+		expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith({
+			title: 'Restored local draft',
+			duration: 3000
+		});
+	});
 });
 
 // Helper: get the props passed to a mocked Svelte 5 component (anchor, props) → index 1
@@ -399,6 +549,7 @@ function getLastMockProps<T>(mockFn: ReturnType<typeof vi.fn>): T | undefined {
 describe('Editor Page – functions via EditorNavigation props', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -486,6 +637,7 @@ describe('Editor Page – functions via EditorNavigation props', () => {
 describe('Editor Page – confirmDiscardChanges and cancelDiscardChanges', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -531,6 +683,7 @@ describe('Editor Page – confirmDiscardChanges and cancelDiscardChanges', () =>
 describe('Editor Page – SoundLibraryModal onImportResult callback', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -550,6 +703,7 @@ describe('Editor Page – SoundLibraryModal onImportResult callback', () => {
 describe('Editor Page – DifficultyModal switchToLevel', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -593,6 +747,7 @@ describe('Editor Page – DifficultyModal switchToLevel', () => {
 describe('Editor Page – refreshSoundLibraryLinks via onRefreshSoundLibraryLinks', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -668,6 +823,7 @@ describe('Editor Page – refreshSoundLibraryLinks via onRefreshSoundLibraryLink
 describe('Editor Page – sound chip loading loop in onMount', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {
@@ -727,6 +883,7 @@ describe('Editor Page – sound chip loading loop in onMount', () => {
 describe('Editor Page – importFile and importFolder via EditorNavigation props', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockSoundChipInstances.length = 0;
 	});
 
 	afterEach(() => {

@@ -29,7 +29,7 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
-	const canOpenEditor = $derived(!isBlog && item.has_uploaded_files === true);
+	const canOpenEditor = $derived(item.has_uploaded_files === true);
 
 	function handleDeleteConfirm() {
 		onFileDelete(item.id);

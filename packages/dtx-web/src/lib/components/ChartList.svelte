@@ -98,13 +98,7 @@
 				params.set('search', searchFilter);
 			}
 
-			// Only check uploaded files when the UI actually reads has_uploaded_files:
-			// - App page (isBlog=false): needs it for canOpenEditor
-			// - Blog with downloads (isBlog=true && enableDownload=true): needs it for DownloadDropdown/canBulkSelect
-			// - Blog without downloads (isBlog=true && enableDownload=false): never reads it — skip R2 calls
-			if (!isBlog || enableDownload) {
-				params.set('check_uploaded', 'true');
-			}
+			params.set('check_uploaded', 'true');
 
 			const response = await fetch(`/api/chart?${params}`);
 			if (!response.ok) {
@@ -415,7 +409,7 @@
 							<h3
 								class="text-lg font-semibold text-slate-100 transition-colors group-hover:text-purple-300"
 							>
-								{#if !isBlog && item.has_uploaded_files === true}
+								{#if item.has_uploaded_files === true}
 									<a
 										href={`/editor/${item.id}`}
 										class="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"

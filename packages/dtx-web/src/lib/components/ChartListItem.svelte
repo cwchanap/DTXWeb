@@ -31,9 +31,7 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
-	const canOpenEditor = $derived(
-		!isBlog && item.id !== undefined && item.has_uploaded_files === true
-	);
+	const canOpenEditor = $derived(item.id !== undefined && item.has_uploaded_files === true);
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -47,7 +45,7 @@
 	};
 
 	const handleOpenInEditor = async () => {
-		if (isBlog || item.id === undefined) return;
+		if (item.id === undefined) return;
 		try {
 			await goto(`/editor/${item.id}`);
 		} catch {

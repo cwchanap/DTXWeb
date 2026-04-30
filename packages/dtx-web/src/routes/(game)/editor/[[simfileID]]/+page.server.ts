@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import type { PageServerLoad } from './$types';
 
 interface SimFileMetadata {
@@ -79,14 +80,8 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 	// Get R2 bucket from platform
 	const bucket = platform?.env?.DTXFILE_BUCKET;
 
-	// Check if bucket is a ProxyStub (development) or real R2 bucket (production)
-	// ProxyStub toString() returns "[object R2Bucket]" in development
-	const bucketString = bucket?.toString() || '';
-	const isProxyStub = bucketString === '[object R2Bucket]';
-
-	if (!bucket || isProxyStub) {
-		// During development, R2 bucket is either missing or a ProxyStub
-		// Return null metadata to trigger client-side fetching
+	if (!bucket || dev) {
+		// In development, R2 bucket is unavailable — trigger client-side fetching
 		return {
 			simfileID,
 			metadata: null

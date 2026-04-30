@@ -59,6 +59,11 @@ bun run e2e:ui                  # Run e2e tests in interactive UI mode
 bun run fixtures:generate       # Generate MIDI test fixtures for e2e tests
 bun run fixtures:verify         # Verify e2e test fixtures are valid
 
+# Deployment (Cloudflare Workers)
+bun run deploy:web                       # Deploy web app to production
+bun run deploy:web:preprod               # Deploy web app to pre-prod (preprod D1 + R2)
+bun run deploy:web:preprod:prod-data     # Deploy web app to pre-prod with prod D1 + R2
+
 # Supabase type generation
 bun run gen-types              # Generate TypeScript types from Supabase schema
 
@@ -225,6 +230,18 @@ import { Button } from '@dtx/common/components';
 - **Worker**: Deployed to Cloudflare Workers
 - **Database**: Supabase PostgreSQL with real-time subscriptions
 - **Storage**: AWS S3 and Cloudflare R2 for game assets
+
+### Deployment Environments
+
+Three environments are configured in `packages/dtx-web/wrangler.jsonc`:
+
+| Command                                | Domain                      | D1 Database       | R2 Bucket             | Use Case                           |
+| -------------------------------------- | --------------------------- | ----------------- | --------------------- | ---------------------------------- |
+| `bun run deploy:web`                   | `dtx.hapadona.com`          | `dtx-web` (prod)  | `simfile-dtx` (prod)  | Production releases                |
+| `bun run deploy:web:preprod`           | `pre-prod.dtx.hapadona.com` | `dtx-web-preprod` | `simfile-dtx-preprod` | Testing with isolated data         |
+| `bun run deploy:web:preprod:prod-data` | `pre-prod.dtx.hapadona.com` | `dtx-web` (prod)  | `simfile-dtx` (prod)  | Testing new code against real data |
+
+All commands build first (`vite build`) then deploy via `wrangler deploy` with the appropriate `--env` flag. Web deploys are manual (no CI/CD pipeline).
 
 ### R2 Bucket Configuration
 

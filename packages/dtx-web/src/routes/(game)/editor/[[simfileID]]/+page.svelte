@@ -63,7 +63,7 @@
 	let simfileID = $state('');
 	let showDifficultyModal = $state(false);
 	let showDiscardModal = $state(false);
-	let showTips = $state(true);
+	let showTips = $state(false);
 	let showSoundLibraryModal = $state(false);
 	let showImportResultModal = $state(false);
 	let showRefreshResultModal = $state(false);

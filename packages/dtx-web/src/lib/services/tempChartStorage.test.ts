@@ -406,6 +406,53 @@ describe('TempChartStorage', () => {
 
 			expect(result).toBe(false);
 		});
+
+		it('should not skip keys when expired entries are removed mid-scan', () => {
+			// This test verifies the collect-then-iterate pattern:
+			// If we iterated by index while removing entries, removing an expired
+			// entry would shift later keys left and cause the next valid entry to
+			// be skipped. The fix collects all matching keys first, then iterates.
+			const expiredData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000
+			});
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			// Simulate real localStorage: keys shift after removal.
+			// After removing 'expired' at index 0, 'master' would shift to index 0,
+			// but index 1 (the old position) returns null. With the fix, both are
+			// collected upfront so the shift doesn't matter.
+			let keys = [
+				'dtx_temp_chart_test-simfile_expired',
+				'dtx_temp_chart_test-simfile_master'
+			];
+			mockLocalStorage.length = 2;
+			mockLocalStorage.key.mockImplementation((i: number) => keys[i] ?? null);
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile_expired') return expiredData;
+				if (key === 'dtx_temp_chart_test-simfile_master') return validData;
+				return null;
+			});
+			mockLocalStorage.removeItem.mockImplementation((key: string) => {
+				keys = keys.filter((k) => k !== key);
+			});
+
+			const result = TempChartStorage.existsAny('test-simfile');
+
+			expect(result).toBe(true);
+			expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(
+				'dtx_temp_chart_test-simfile_expired'
+			);
+		});
 	});
 
 	describe('loadAny', () => {
@@ -556,6 +603,46 @@ describe('TempChartStorage', () => {
 			const result = TempChartStorage.loadAny('test-simfile');
 
 			expect(result).toBeNull();
+		});
+
+		it('should not skip keys when expired entries are removed mid-scan', () => {
+			// Verifies the collect-then-iterate pattern prevents key-skipping
+			// when readStoredData removes expired/corrupt entries.
+			const expiredData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 4,
+				metadata: mockMetadata,
+				timestamp: Date.now() - 8 * 24 * 60 * 60 * 1000
+			});
+			const validData = JSON.stringify({
+				notes: mockNotes,
+				bpmNotes: mockBpmNotes,
+				measureCount: 6,
+				metadata: mockMetadata,
+				timestamp: Date.now()
+			});
+
+			let keys = [
+				'dtx_temp_chart_test-simfile_expired',
+				'dtx_temp_chart_test-simfile_master'
+			];
+			mockLocalStorage.length = 2;
+			mockLocalStorage.key.mockImplementation((i: number) => keys[i] ?? null);
+			mockLocalStorage.getItem.mockImplementation((key: string) => {
+				if (key === 'dtx_temp_chart_test-simfile_expired') return expiredData;
+				if (key === 'dtx_temp_chart_test-simfile_master') return validData;
+				return null;
+			});
+			mockLocalStorage.removeItem.mockImplementation((key: string) => {
+				keys = keys.filter((k) => k !== key);
+			});
+
+			const result = TempChartStorage.loadAny('test-simfile');
+
+			expect(result).not.toBeNull();
+			expect(result?.difficulty).toBe('master');
+			expect(result?.measureCount).toBe(6);
 		});
 
 		it('should skip invalid JSON entries', () => {

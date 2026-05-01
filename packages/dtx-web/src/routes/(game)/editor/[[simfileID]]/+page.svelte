@@ -382,8 +382,16 @@
 			const editorScene = phaserRef.scene as Editor;
 			editorScene.setDirty(true);
 		}
-		// Flatten lane-indexed notes record into a flat array for NOTE_IMPORT
-		const flatNotes = Object.values(draft.notes).flat();
+		// Flatten lane-indexed notes record into a flat array for NOTE_IMPORT.
+		// Draft notes come back from localStorage as plain JSON objects, so
+		// reconstruct them as LaneMeasureNote instances so class methods like
+		// toPattern() work correctly during export.
+		const flatNotes = Object.values(draft.notes)
+			.flat()
+			.map(
+				(note) =>
+					new LaneMeasureNote(note.measure, note.laneID, note.notes, note.measureLength)
+			);
 		EventBus.emit(EventType.NOTE_IMPORT, flatNotes, draft.bpmNotes, draft.measureCount);
 
 		toastStore.success({ title: 'Restored local draft', duration: 3000 });
@@ -392,8 +400,16 @@
 		// This is best-effort — don't block the editor on slow/unavailable R2.
 		// After rehydration, re-set the sound chip store so Preview's subscriber
 		// re-runs setupSoundsAsync() against the now-populated FileManager.
+		// Guard: only update if the user hasn't navigated to a different chart.
+		const recoveredSimfileID = simfileID;
+		const recoveredDifficulty = draft.difficulty;
 		rehydrateSoundFiles(soundChips, draft.metadata.soundChips).then(() => {
-			store.currentSoundChip.set(soundChips);
+			if (
+				get(store.currentSimfileID) === recoveredSimfileID &&
+				get(store.currentDifficulty) === recoveredDifficulty
+			) {
+				store.currentSoundChip.set(soundChips);
+			}
 		});
 	}
 

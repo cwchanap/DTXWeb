@@ -49,18 +49,17 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		expect(result.metadata).toBeNull();
 	});
 
-	it('returns null metadata when bucket is a ProxyStub', async () => {
-		const proxyStub = { toString: () => '[object R2Bucket]', get: vi.fn() };
+	it('throws 404 when bucket returns null for set.def', async () => {
+		const bucketReturningNull = {
+			get: vi.fn().mockResolvedValue(null)
+		};
 
-		const result = requirePageLoadResult(
-			await load({
+		await expect(
+			load({
 				params: { simfileID: 'sim-123' },
-				platform: { env: { DTXFILE_BUCKET: proxyStub } }
+				platform: { env: { DTXFILE_BUCKET: bucketReturningNull } }
 			} as any)
-		);
-
-		expect(result.simfileID).toBe('sim-123');
-		expect(result.metadata).toBeNull();
+		).rejects.toMatchObject({ status: 404 });
 	});
 
 	it('throws 404 when def file not found in R2', async () => {

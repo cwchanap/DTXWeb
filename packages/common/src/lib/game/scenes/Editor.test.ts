@@ -1983,6 +1983,55 @@ describe('Editor Scene', () => {
 
 			restartSpy.mockRestore();
 		});
+
+		it('should reset measureCount to draft value when recovering a smaller chart', async () => {
+			editorScene.create();
+			editorScene['measureCount'] = 50;
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockResolvedValue(undefined);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			// Previous chart had 50 measures, recovered draft has notes only at measure 2
+			// with a draftMeasureCount of 5
+			const mockNotes = [{ laneID: '01', measure: 2, notes: [] }] as any;
+			await noteImportCallback?.(mockNotes, {}, 5);
+
+			// measureCount should be 5 (from draft), not 50 (stale previous chart)
+			expect(editorScene['measureCount']).toBe(5);
+			expect(restartSpy).toHaveBeenCalledWith({ measureCount: 5 });
+
+			restartSpy.mockRestore();
+		});
+
+		it('should shrink measureCount when imported notes have fewer measures', async () => {
+			editorScene.create();
+			editorScene['measureCount'] = 50;
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockResolvedValue(undefined);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			// Import notes that only go to measure 2, no draftMeasureCount
+			const mockNotes = [{ laneID: '01', measure: 2, notes: [] }] as any;
+			await noteImportCallback?.(mockNotes, {});
+
+			// measureCount should shrink to 3 (maxMeasure + 1), not stay at 50
+			expect(editorScene['measureCount']).toBe(3);
+			expect(restartSpy).toHaveBeenCalledWith({ measureCount: 3 });
+
+			restartSpy.mockRestore();
+		});
 	});
 
 	describe('START_PREVIEW event handler', () => {

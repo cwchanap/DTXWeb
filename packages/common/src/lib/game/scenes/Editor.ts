@@ -355,11 +355,7 @@ export class Editor extends BaseGame {
 				});
 				this.parseMesaureLength();
 				const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
-				this.measureCount = Math.max(
-					this.measureCount,
-					maxMeasure + 1,
-					draftMeasureCount ?? 0
-				);
+				this.measureCount = Math.max(maxMeasure + 1, draftMeasureCount ?? 0);
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;
 				this.syncNotesToStore();

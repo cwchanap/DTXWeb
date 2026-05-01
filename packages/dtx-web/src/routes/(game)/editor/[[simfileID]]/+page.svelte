@@ -9,7 +9,7 @@
 		SimFile,
 		SoundChip,
 		decodeFileWithEncodingDetection,
-		type LaneMeasureNote
+		LaneMeasureNote
 	} from '@dtx/common';
 	import { get } from 'svelte/store';
 	import { EventType } from '@dtx/common/game';

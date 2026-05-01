@@ -1,5 +1,4 @@
 import { error } from '@sveltejs/kit';
-import { dev } from '$app/environment';
 import type { PageServerLoad } from './$types';
 
 interface SimFileMetadata {
@@ -80,8 +79,8 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 	// Get R2 bucket from platform
 	const bucket = platform?.env?.DTXFILE_BUCKET;
 
-	if (!bucket || dev) {
-		// In development, R2 bucket is unavailable — trigger client-side fetching
+	if (!bucket) {
+		// R2 bucket is unavailable — trigger client-side fetching
 		return {
 			simfileID,
 			metadata: null

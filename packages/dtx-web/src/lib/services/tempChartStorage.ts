@@ -112,13 +112,19 @@ export class TempChartStorage {
 			}
 
 			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
+			const matchingKeys: string[] = [];
+
 			for (let i = 0; i < localStorage.length; i++) {
 				const key = localStorage.key(i);
 				if (key === prefix || key?.startsWith(prefix + '_')) {
-					const data = this.readStoredData(key);
-					if (data) {
-						return true;
-					}
+					matchingKeys.push(key);
+				}
+			}
+
+			for (const key of matchingKeys) {
+				const data = this.readStoredData(key);
+				if (data) {
+					return true;
 				}
 			}
 			return false;
@@ -143,17 +149,23 @@ export class TempChartStorage {
 			}
 
 			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
-			let bestMatch: (TempChartData & { difficulty: string | null }) | null = null;
+			const matchingKeys: string[] = [];
 
 			for (let i = 0; i < localStorage.length; i++) {
 				const key = localStorage.key(i);
 				if (key === prefix || key?.startsWith(prefix + '_')) {
-					const data = this.readStoredData(key);
-					if (data && (!bestMatch || data.timestamp > bestMatch.timestamp)) {
-						// Extract difficulty from the key
-						const suffix = key.slice(prefix.length + 1); // +1 for the underscore
-						bestMatch = { ...data, difficulty: suffix || null };
-					}
+					matchingKeys.push(key);
+				}
+			}
+
+			let bestMatch: (TempChartData & { difficulty: string | null }) | null = null;
+
+			for (const key of matchingKeys) {
+				const data = this.readStoredData(key);
+				if (data && (!bestMatch || data.timestamp > bestMatch.timestamp)) {
+					// Extract difficulty from the key
+					const suffix = key.slice(prefix.length + 1); // +1 for the underscore
+					bestMatch = { ...data, difficulty: suffix || null };
 				}
 			}
 			return bestMatch;

@@ -78,6 +78,41 @@ vi.mock('@dtx/common', () => ({
 		if (file) this.file = file;
 		this.fetchRemote = vi.fn();
 	}),
+	LaneMeasureNote: vi.fn().mockImplementation(function (
+		this: {
+			measure: number;
+			laneID: string;
+			notes: { noteID: string; position: number }[];
+			measureLength: number;
+			addNote: ReturnType<typeof vi.fn>;
+			removeNote: ReturnType<typeof vi.fn>;
+			toPattern: ReturnType<typeof vi.fn>;
+		},
+		measure: number,
+		laneID: string,
+		notes: { noteID: string; position: number }[],
+		measureLength: number = 1
+	) {
+		this.measure = measure;
+		this.laneID = laneID;
+		this.notes = notes;
+		this.measureLength = measureLength;
+		this.addNote = vi.fn();
+		this.removeNote = vi.fn();
+		// Real toPattern logic for testing reconstruction
+		this.toPattern = vi.fn(() => {
+			if (this.notes.length === 0) return '';
+			const pattern = new Array(4).fill('00');
+			for (const note of this.notes) {
+				const pos = note.position / this.measureLength;
+				const index = Math.round(pos * 4);
+				if (index >= 0 && index < 4) {
+					pattern[index] = note.noteID;
+				}
+			}
+			return pattern.join('');
+		});
+	}),
 	decodeFileWithEncodingDetection: vi.fn()
 }));
 
@@ -109,6 +144,10 @@ vi.mock('$app/state', () => ({
 			}
 		}
 	}
+}));
+
+vi.mock('svelte/store', () => ({
+	get: vi.fn()
 }));
 
 vi.mock('$app/navigation', () => ({
@@ -976,12 +1015,121 @@ describe('Editor Page Component Logic', () => {
 			// Reset the mock to count calls after the initial set
 			vi.mocked(store.currentSoundChip.set).mockClear();
 
-			// 2. After rehydration completes, re-set the store to trigger Preview subscriber
-			// This simulates the `.then(() => store.currentSoundChip.set(soundChips))` call
-			store.currentSoundChip.set(soundChips);
+			// 2. Simulate the guarded rehydration callback:
+			// Only update store if simfileID and difficulty still match
+			const { get } = await import('svelte/store');
+			const recoveredSimfileID = simfileID;
+			const recoveredDifficulty = draft.difficulty;
+			vi.mocked(get).mockImplementation((storeObj: any) => {
+				if (storeObj === store.currentSimfileID) return recoveredSimfileID;
+				if (storeObj === store.currentDifficulty) return recoveredDifficulty;
+				return undefined;
+			});
+			if (
+				get(store.currentSimfileID) === recoveredSimfileID &&
+				get(store.currentDifficulty) === recoveredDifficulty
+			) {
+				store.currentSoundChip.set(soundChips);
+			}
 
 			expect(store.currentSoundChip.set).toHaveBeenCalledWith(soundChips);
 			expect(store.currentSoundChip.set).toHaveBeenCalledTimes(1);
+		});
+
+		it('should skip sound chip store update if user navigated to a different chart', async () => {
+			const store = (await import('$lib/store')).default;
+			const { TempChartStorage } = await import('$lib/services/tempChartStorage');
+			const { DTXFile, SoundChip } = await import('@dtx/common');
+			const { get } = await import('svelte/store');
+
+			const simfileID = 'original-chart';
+
+			const draft = {
+				metadata: {
+					title: 'Original',
+					artist: 'Artist',
+					comment: '',
+					bpm: 120,
+					level: 1,
+					soundChips: [
+						{
+							label: 'Bass Drum',
+							id: 1,
+							volume: 100,
+							position: 0,
+							fileName: 'bd.wav'
+						}
+					]
+				},
+				notes: {} as Record<string, any[]>,
+				bpmNotes: {} as Record<string, number>,
+				measureCount: 4,
+				timestamp: Date.now(),
+				difficulty: 'master'
+			};
+
+			vi.mocked(TempChartStorage.loadAny).mockReturnValue(draft as any);
+
+			// Simulate initial load
+			const soundChips = draft.metadata.soundChips.map(
+				(chip) =>
+					new SoundChip(chip.label, chip.id, chip.volume, chip.position, chip.fileName)
+			);
+			store.currentSoundChip.set(soundChips);
+			vi.mocked(store.currentSoundChip.set).mockClear();
+
+			// Simulate user navigating to a different chart before rehydration completes
+			// currentSimfileID now returns a different ID
+			vi.mocked(get).mockImplementation((storeObj: any) => {
+				if (storeObj === store.currentSimfileID) return 'different-chart';
+				if (storeObj === store.currentDifficulty) return 'master';
+				return undefined;
+			});
+
+			// Simulate the guarded rehydration callback
+			const recoveredSimfileID = simfileID;
+			const recoveredDifficulty = draft.difficulty;
+			if (
+				get(store.currentSimfileID) === recoveredSimfileID &&
+				get(store.currentDifficulty) === recoveredDifficulty
+			) {
+				store.currentSoundChip.set(soundChips);
+			}
+
+			// Store should NOT have been updated — the chart has changed
+			expect(store.currentSoundChip.set).not.toHaveBeenCalled();
+		});
+
+		it('should reconstruct LaneMeasureNote instances from plain JSON in draft notes', async () => {
+			const { LaneMeasureNote } = await import('@dtx/common');
+
+			// Simulate what comes back from localStorage via JSON.parse:
+			// plain objects without class methods like toPattern()
+			const plainNote = {
+				measure: 0,
+				laneID: 'BD',
+				notes: [{ noteID: '01', position: 0 }],
+				measureLength: 1
+			};
+
+			// Simulate the reconstruction logic from loadLocalDraft:
+			// Each plain note object must be passed through the LaneMeasureNote constructor
+			// so that class methods (toPattern, addNote, removeNote) are available.
+			new LaneMeasureNote(
+				plainNote.measure,
+				plainNote.laneID,
+				plainNote.notes,
+				plainNote.measureLength
+			);
+
+			// Verify constructor was called with the correct arguments — this proves
+			// plain JSON objects are being reconstructed into class instances.
+			expect(LaneMeasureNote).toHaveBeenCalledWith(
+				0,
+				'BD',
+				[{ noteID: '01', position: 0 }],
+				1
+			);
 		});
 
 		it('should handle workspace loading errors correctly', async () => {

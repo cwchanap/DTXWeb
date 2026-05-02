@@ -11,13 +11,11 @@
 		onImportFile: () => void;
 		onImportFolder: () => void;
 		onExportFile: () => void;
-		onShowDifficultyModal: () => void;
 		onShowDTXSwitcher: () => void;
 		onShowWorkspaceManager: () => void;
 		onShowSoundLibraryModal: () => void;
 		onRefreshSoundLibraryLinks: () => void;
 		onShowWorkspaceExporter: () => void;
-		onDiscardLocalChanges: () => void;
 	}
 
 	let {
@@ -29,38 +27,36 @@
 		onImportFile,
 		onImportFolder,
 		onExportFile,
-		onShowDifficultyModal,
 		onShowDTXSwitcher,
 		onShowWorkspaceManager,
 		onShowSoundLibraryModal,
 		onRefreshSoundLibraryLinks,
-		onShowWorkspaceExporter,
-		onDiscardLocalChanges
+		onShowWorkspaceExporter
 	}: Props = $props();
 </script>
 
 <div
 	class="relative row-span-1 flex flex-row items-center border-b-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm"
 >
-	<Popover
-		positioning={{ placement: 'bottom-start' }}
-		contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
-		classes="w-1/12 rounded-sm bg-slate-700/50 py-2 hover:bg-slate-600/50 text-slate-200"
-		triggerClasses="w-full"
-	>
-		{#snippet trigger()}
-			<span>File</span>
-		{/snippet}
-		{#snippet content()}
-			<div class="flex flex-col">
-				<button
-					class="px-4 py-2 text-left text-slate-200 {isPreviewing
-						? 'cursor-not-allowed text-slate-500'
-						: 'hover:bg-slate-700/50'}"
-					onclick={onNewFile}
-					disabled={isPreviewing}>New</button
-				>
-				{#if !simfileID}
+	{#if !simfileID}
+		<Popover
+			positioning={{ placement: 'bottom-start' }}
+			contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
+			classes="w-1/12 rounded-sm bg-slate-700/50 py-2 hover:bg-slate-600/50 text-slate-200"
+			triggerClasses="w-full"
+		>
+			{#snippet trigger()}
+				<span>File</span>
+			{/snippet}
+			{#snippet content()}
+				<div class="flex flex-col">
+					<button
+						class="px-4 py-2 text-left text-slate-200 {isPreviewing
+							? 'cursor-not-allowed text-slate-500'
+							: 'hover:bg-slate-700/50'}"
+						onclick={onNewFile}
+						disabled={isPreviewing}>New</button
+					>
 					<button
 						class="px-4 py-2 text-left text-slate-200 {isPreviewing
 							? 'cursor-not-allowed text-slate-500'
@@ -75,45 +71,35 @@
 						onclick={onImportFolder}
 						disabled={isPreviewing}>Import Folder</button
 					>
-				{/if}
-				{#if simfileID}
+					{#if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
+						<button
+							class="px-4 py-2 text-left text-slate-200 {isPreviewing
+								? 'cursor-not-allowed text-slate-500'
+								: 'hover:bg-slate-700/50'}"
+							onclick={onShowDTXSwitcher}
+							disabled={isPreviewing}>Switch DTX</button
+						>
+					{/if}
 					<button
 						class="px-4 py-2 text-left text-slate-200 {isPreviewing
 							? 'cursor-not-allowed text-slate-500'
 							: 'hover:bg-slate-700/50'}"
-						onclick={onShowDifficultyModal}
-						disabled={isPreviewing}>Switch file</button
+						onclick={onExportFile}
+						disabled={isPreviewing}>Export File</button
 					>
-				{:else if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
-					<button
-						class="px-4 py-2 text-left text-slate-200 {isPreviewing
-							? 'cursor-not-allowed text-slate-500'
-							: 'hover:bg-slate-700/50'}"
-						onclick={onShowDTXSwitcher}
-						disabled={isPreviewing}>Switch DTX</button
-					>
-				{/if}
-				<button
-					class="px-4 py-2 text-left text-slate-200 {isPreviewing
-						? 'cursor-not-allowed text-slate-500'
-						: 'hover:bg-slate-700/50'}"
-					onclick={onExportFile}
-					disabled={isPreviewing}>Export File</button
-				>
-				{#if !simfileID && availableWorkspaces.length > 0}
-					<button
-						class="px-4 py-2 text-left text-slate-200 {isPreviewing
-							? 'cursor-not-allowed text-slate-500'
-							: 'hover:bg-slate-700/50'}"
-						onclick={onShowWorkspaceExporter}
-						disabled={isPreviewing}>Export Workspace</button
-					>
-				{/if}
-			</div>
-		{/snippet}
-	</Popover>
+					{#if availableWorkspaces.length > 0}
+						<button
+							class="px-4 py-2 text-left text-slate-200 {isPreviewing
+								? 'cursor-not-allowed text-slate-500'
+								: 'hover:bg-slate-700/50'}"
+							onclick={onShowWorkspaceExporter}
+							disabled={isPreviewing}>Export Workspace</button
+						>
+					{/if}
+				</div>
+			{/snippet}
+		</Popover>
 
-	{#if !simfileID}
 		<!-- Only show Workspace menu for local files (no simfileID) -->
 		<Popover
 			positioning={{ placement: 'bottom-start' }}
@@ -154,32 +140,6 @@
 						disabled={isPreviewing}
 					>
 						Refresh Sound Library Links
-					</button>
-				</div>
-			{/snippet}
-		</Popover>
-	{:else}
-		<!-- Show Edit menu with only discard changes for remote files -->
-		<Popover
-			positioning={{ placement: 'bottom-start' }}
-			contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
-			classes="w-1/12 rounded-sm bg-slate-700/50 py-2 hover:bg-slate-600/50 text-slate-200"
-			triggerClasses="w-full"
-		>
-			{#snippet trigger()}
-				<span>Edit</span>
-			{/snippet}
-			{#snippet content()}
-				<div class="flex flex-col">
-					<button
-						class="px-4 py-2 text-left text-slate-200 {isPreviewing
-							? 'cursor-not-allowed text-slate-500'
-							: 'hover:bg-slate-700/50'}"
-						onclick={onDiscardLocalChanges}
-						title="Discard all local changes and reload from server"
-						disabled={isPreviewing}
-					>
-						Discard current Local changes
 					</button>
 				</div>
 			{/snippet}

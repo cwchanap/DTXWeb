@@ -22,7 +22,6 @@
 	import EditorNavigation from '$lib/components/editor/EditorNavigation.svelte';
 	import EditorTabs from '$lib/components/editor/EditorTabs.svelte';
 	import DifficultyModal from '$lib/components/editor/modals/DifficultyModal.svelte';
-	import DiscardModal from '$lib/components/editor/modals/DiscardModal.svelte';
 	import SoundLibraryModal from '$lib/components/editor/modals/SoundLibraryModal.svelte';
 	import WorkspaceManagerModal from '$lib/components/editor/modals/WorkspaceManagerModal.svelte';
 	import ExportWorkspaceModal from '$lib/components/editor/modals/ExportWorkspaceModal.svelte';
@@ -62,7 +61,6 @@
 	let isEditorReady = $state(false);
 	let simfileID = $state('');
 	let showDifficultyModal = $state(false);
-	let showDiscardModal = $state(false);
 	let showTips = $state(false);
 	let showSoundLibraryModal = $state(false);
 	let showImportResultModal = $state(false);
@@ -465,33 +463,6 @@
 		);
 	}
 
-	function discardLocalChanges() {
-		// Show confirmation modal instead of native confirm dialog
-		showDiscardModal = true;
-	}
-
-	function confirmDiscardChanges() {
-		const currentSimfileID = get(store.currentSimfileID);
-		const currentDifficulty = get(store.currentDifficulty);
-
-		// Remove the temporary data for current simfile and difficulty
-		TempChartStorage.remove(currentSimfileID, currentDifficulty);
-
-		// Get the editor scene and clear its dirty state
-		if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
-			const editorScene = phaserRef.scene as Editor;
-			editorScene.setDirty(false);
-		}
-
-		// Close modal and reload the page to restore the original state
-		showDiscardModal = false;
-		window.location.reload();
-	}
-
-	function cancelDiscardChanges() {
-		showDiscardModal = false;
-	}
-
 	async function switchToLevel(level: number) {
 		const simfile = get(store.currentSimfile);
 		if (!simfile || !simfile.levels[level]) {
@@ -833,13 +804,11 @@
 		onImportFile={importFile}
 		onImportFolder={importFolder}
 		onExportFile={exportFile}
-		onShowDifficultyModal={() => (showDifficultyModal = true)}
 		onShowDTXSwitcher={showDTXSwitcher}
 		onShowWorkspaceManager={showWorkspaceManager}
 		onShowSoundLibraryModal={() => (showSoundLibraryModal = true)}
 		onRefreshSoundLibraryLinks={refreshSoundLibraryLinks}
 		onShowWorkspaceExporter={showWorkspaceExporter}
-		onDiscardLocalChanges={discardLocalChanges}
 	/>
 
 	<!-- Main content area - change to flex column on small screens, row on larger screens -->
@@ -872,15 +841,6 @@
 	availableLevels={getAvailableLevels()}
 	onSwitchLevel={switchToLevel}
 	onClose={() => (showDifficultyModal = false)}
-/>
-
-<!-- Discard Changes Confirmation Modal -->
-<DiscardModal
-	show={showDiscardModal}
-	chartName={get(store.currentSimfileID) || 'current chart'}
-	difficultyText={get(store.currentDifficulty) ? ` (${get(store.currentDifficulty)})` : ''}
-	onConfirm={confirmDiscardChanges}
-	onCancel={cancelDiscardChanges}
 />
 
 <!-- Sound Library Management Modal -->

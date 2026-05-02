@@ -14,13 +14,11 @@ const callbacks = {
 	onImportFile: vi.fn(),
 	onImportFolder: vi.fn(),
 	onExportFile: vi.fn(),
-	onShowDifficultyModal: vi.fn(),
 	onShowDTXSwitcher: vi.fn(),
 	onShowWorkspaceManager: vi.fn(),
 	onShowSoundLibraryModal: vi.fn(),
 	onRefreshSoundLibraryLinks: vi.fn(),
-	onShowWorkspaceExporter: vi.fn(),
-	onDiscardLocalChanges: vi.fn()
+	onShowWorkspaceExporter: vi.fn()
 };
 
 const defaultProps = {
@@ -37,9 +35,14 @@ describe('EditorNavigation', () => {
 	});
 
 	describe('File menu rendering', () => {
-		it('renders the File trigger label', () => {
+		it('renders the File trigger label when simfileID is empty', () => {
 			render(EditorNavigation, { props: defaultProps });
 			expect(screen.getByText('File')).toBeInTheDocument();
+		});
+
+		it('does not render File menu when simfileID is set', () => {
+			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
+			expect(screen.queryByText('File')).not.toBeInTheDocument();
 		});
 
 		it('renders New button in File menu', () => {
@@ -56,21 +59,6 @@ describe('EditorNavigation', () => {
 			render(EditorNavigation, { props: defaultProps });
 			expect(screen.getByRole('button', { name: 'Import File' })).toBeInTheDocument();
 			expect(screen.getByRole('button', { name: 'Import Folder' })).toBeInTheDocument();
-		});
-
-		it('does not render Import File or Import Folder when simfileID is set', () => {
-			render(EditorNavigation, {
-				props: { ...defaultProps, simfileID: 'some-id' }
-			});
-			expect(screen.queryByRole('button', { name: 'Import File' })).not.toBeInTheDocument();
-			expect(screen.queryByRole('button', { name: 'Import Folder' })).not.toBeInTheDocument();
-		});
-
-		it('renders Switch file button when simfileID is set', () => {
-			render(EditorNavigation, {
-				props: { ...defaultProps, simfileID: 'some-id' }
-			});
-			expect(screen.getByRole('button', { name: 'Switch file' })).toBeInTheDocument();
 		});
 
 		it('renders Switch DTX button when no simfileID and workspace has multiple dtxFiles', () => {
@@ -107,18 +95,13 @@ describe('EditorNavigation', () => {
 		});
 	});
 
-	describe('Workspace/Edit menu rendering', () => {
+	describe('Workspace menu rendering', () => {
 		it('renders the Workspace trigger label when simfileID is empty', () => {
 			render(EditorNavigation, { props: defaultProps });
 			expect(screen.getByText('Workspace')).toBeInTheDocument();
 		});
 
-		it('renders the Edit trigger label when simfileID is set', () => {
-			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
-			expect(screen.getByText('Edit')).toBeInTheDocument();
-		});
-
-		it('does not render the Workspace menu when simfileID is set', () => {
+		it('does not render Workspace menu when simfileID is set', () => {
 			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
 			expect(screen.queryByText('Workspace')).not.toBeInTheDocument();
 		});
@@ -151,13 +134,6 @@ describe('EditorNavigation', () => {
 				screen.queryByRole('button', { name: 'Manage Workspace' })
 			).not.toBeInTheDocument();
 		});
-
-		it('renders Discard current Local changes in Edit menu when simfileID is set', () => {
-			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
-			expect(
-				screen.getByRole('button', { name: 'Discard current Local changes' })
-			).toBeInTheDocument();
-		});
 	});
 
 	describe('Callback invocations', () => {
@@ -189,15 +165,6 @@ describe('EditorNavigation', () => {
 			expect(onExportFile).toHaveBeenCalledOnce();
 		});
 
-		it('calls onShowDifficultyModal when Switch file button is clicked', async () => {
-			const onShowDifficultyModal = vi.fn();
-			render(EditorNavigation, {
-				props: { ...defaultProps, simfileID: 'some-id', onShowDifficultyModal }
-			});
-			await fireEvent.click(screen.getByRole('button', { name: 'Switch file' }));
-			expect(onShowDifficultyModal).toHaveBeenCalledOnce();
-		});
-
 		it('calls onShowDTXSwitcher when Switch DTX button is clicked', async () => {
 			const onShowDTXSwitcher = vi.fn();
 			const ws = makeWorkspace();
@@ -224,17 +191,6 @@ describe('EditorNavigation', () => {
 				screen.getByRole('button', { name: 'Refresh Sound Library Links' })
 			);
 			expect(onRefreshSoundLibraryLinks).toHaveBeenCalledOnce();
-		});
-
-		it('calls onDiscardLocalChanges when Discard current Local changes is clicked', async () => {
-			const onDiscardLocalChanges = vi.fn();
-			render(EditorNavigation, {
-				props: { ...defaultProps, simfileID: 'some-id', onDiscardLocalChanges }
-			});
-			await fireEvent.click(
-				screen.getByRole('button', { name: 'Discard current Local changes' })
-			);
-			expect(onDiscardLocalChanges).toHaveBeenCalledOnce();
 		});
 
 		it('calls onShowWorkspaceManager when Manage Workspace is clicked', async () => {

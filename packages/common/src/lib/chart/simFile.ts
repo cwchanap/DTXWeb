@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
 import { decodeFileWithEncodingDetection } from './encoding-utils';
+import { dedupedFetch } from '../utils/dedupedFetch';
 
 interface DtxLevel {
 	label: string;
@@ -52,7 +53,7 @@ export class SimFile {
 	 * In production dtx-web, prefer parseFromRemoteURLWithMetadata() with server-side metadata
 	 */
 	public static async parseFromRemoteURL(simfileID: string, bucketUrl: string) {
-		const response = await fetch(`${bucketUrl}/${simfileID}/set.def`);
+		const response = await dedupedFetch(`${bucketUrl}/${simfileID}/set.def`);
 		const file = new File([await response.blob()], 'set.def');
 		const simFile = new SimFile([file], bucketUrl);
 		simFile.isParseFromRemoteURL = true;
@@ -84,7 +85,7 @@ export class SimFile {
 			if (levelData) {
 				const { label, fileName } = levelData;
 				try {
-					const response = await fetch(`${bucketUrl}/${simfileID}/${fileName}`);
+					const response = await dedupedFetch(`${bucketUrl}/${simfileID}/${fileName}`);
 					if (!response.ok) {
 						return;
 					}
@@ -146,7 +147,7 @@ export class SimFile {
 				if (!this.isParseFromRemoteURL) {
 					file = this.files.find((f) => f.name === file_name);
 				} else {
-					const response = await fetch(
+					const response = await dedupedFetch(
 						`${this.bucketUrl}/${this.simFileID}/${file_name}`
 					);
 					if (!response.ok) {

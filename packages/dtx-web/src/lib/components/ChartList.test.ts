@@ -531,17 +531,12 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
-	it('skips check_uploaded when isBlog is true and enableDownload is false', async () => {
+	it('includes check_uploaded=true when isBlog is true and enableDownload is false', async () => {
 		render(ChartList, { props: { isBlog: true, enableDownload: false } });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalled();
-			expect(
-				vi
-					.mocked(fetch)
-					.mock.calls.every(
-						([url]) => typeof url === 'string' && !url.includes('check_uploaded=true')
-					)
-			).toBe(true);
+			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+				expect.stringContaining('check_uploaded=true')
+			);
 		});
 	});
 

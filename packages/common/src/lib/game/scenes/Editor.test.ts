@@ -2032,6 +2032,28 @@ describe('Editor Scene', () => {
 
 			restartSpy.mockRestore();
 		});
+
+		it('should preserve measureCount when importing empty notes without draftMeasureCount', async () => {
+			editorScene.create();
+			editorScene['measureCount'] = 10;
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockResolvedValue(undefined);
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			// Empty notes, no draftMeasureCount — should preserve current measure count
+			await noteImportCallback?.([], {});
+
+			expect(editorScene['measureCount']).toBe(10);
+			expect(restartSpy).toHaveBeenCalledWith({ measureCount: 10 });
+
+			restartSpy.mockRestore();
+		});
 	});
 
 	describe('START_PREVIEW event handler', () => {

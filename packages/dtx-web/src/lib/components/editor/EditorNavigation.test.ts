@@ -18,7 +18,8 @@ const callbacks = {
 	onShowWorkspaceManager: vi.fn(),
 	onShowSoundLibraryModal: vi.fn(),
 	onRefreshSoundLibraryLinks: vi.fn(),
-	onShowWorkspaceExporter: vi.fn()
+	onShowWorkspaceExporter: vi.fn(),
+	onShowDifficultyModal: vi.fn()
 };
 
 const defaultProps = {
@@ -43,6 +44,18 @@ describe('EditorNavigation', () => {
 		it('does not render File menu when simfileID is set', () => {
 			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
 			expect(screen.queryByText('File')).not.toBeInTheDocument();
+		});
+
+		it('renders Switch Difficulty button when simfileID is set', () => {
+			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
+			expect(screen.getByRole('button', { name: 'Switch Difficulty' })).toBeInTheDocument();
+		});
+
+		it('does not render Switch Difficulty button when simfileID is empty', () => {
+			render(EditorNavigation, { props: defaultProps });
+			expect(
+				screen.queryByRole('button', { name: 'Switch Difficulty' })
+			).not.toBeInTheDocument();
 		});
 
 		it('renders New button in File menu', () => {
@@ -104,6 +117,8 @@ describe('EditorNavigation', () => {
 		it('does not render Workspace menu when simfileID is set', () => {
 			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
 			expect(screen.queryByText('Workspace')).not.toBeInTheDocument();
+			// But Switch Difficulty button should be rendered for remote charts
+			expect(screen.getByRole('button', { name: 'Switch Difficulty' })).toBeInTheDocument();
 		});
 
 		it('renders Manage Sound files library in workspace menu', () => {
@@ -212,6 +227,15 @@ describe('EditorNavigation', () => {
 			await fireEvent.click(screen.getByRole('button', { name: 'Export Workspace' }));
 			expect(onShowWorkspaceExporter).toHaveBeenCalledOnce();
 		});
+
+		it('calls onShowDifficultyModal when Switch Difficulty is clicked', async () => {
+			const onShowDifficultyModal = vi.fn();
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', onShowDifficultyModal }
+			});
+			await fireEvent.click(screen.getByRole('button', { name: 'Switch Difficulty' }));
+			expect(onShowDifficultyModal).toHaveBeenCalledOnce();
+		});
 	});
 
 	describe('isPreviewing disabling', () => {
@@ -235,6 +259,13 @@ describe('EditorNavigation', () => {
 			expect(
 				screen.getByRole('button', { name: 'Manage Sound files library' })
 			).toBeDisabled();
+		});
+
+		it('disables Switch Difficulty button when isPreviewing is true and simfileID is set', () => {
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', isPreviewing: true }
+			});
+			expect(screen.getByRole('button', { name: 'Switch Difficulty' })).toBeDisabled();
 		});
 	});
 });

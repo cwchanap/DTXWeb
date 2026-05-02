@@ -16,6 +16,7 @@
 		onShowSoundLibraryModal: () => void;
 		onRefreshSoundLibraryLinks: () => void;
 		onShowWorkspaceExporter: () => void;
+		onShowDifficultyModal: () => void;
 	}
 
 	let {
@@ -31,7 +32,8 @@
 		onShowWorkspaceManager,
 		onShowSoundLibraryModal,
 		onRefreshSoundLibraryLinks,
-		onShowWorkspaceExporter
+		onShowWorkspaceExporter,
+		onShowDifficultyModal
 	}: Props = $props();
 </script>
 
@@ -145,5 +147,19 @@
 		</Popover>
 
 		<div class="h-8 border-l border-purple-500/30"></div>
+	</div>
+{:else}
+	<div
+		class="relative row-span-1 flex flex-row items-center border-b-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm"
+	>
+		<button
+			class="rounded-sm bg-slate-700/50 px-4 py-2 text-slate-200 hover:bg-slate-600/50 {isPreviewing
+				? 'cursor-not-allowed text-slate-500'
+				: ''}"
+			onclick={onShowDifficultyModal}
+			disabled={isPreviewing}
+		>
+			Switch Difficulty
+		</button>
 	</div>
 {/if}

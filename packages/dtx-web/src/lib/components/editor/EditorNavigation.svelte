@@ -35,10 +35,10 @@
 	}: Props = $props();
 </script>
 
-<div
-	class="relative row-span-1 flex flex-row items-center border-b-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm"
->
-	{#if !simfileID}
+{#if !simfileID}
+	<div
+		class="relative row-span-1 flex flex-row items-center border-b-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm"
+	>
 		<Popover
 			positioning={{ placement: 'bottom-start' }}
 			contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
@@ -100,7 +100,6 @@
 			{/snippet}
 		</Popover>
 
-		<!-- Only show Workspace menu for local files (no simfileID) -->
 		<Popover
 			positioning={{ placement: 'bottom-start' }}
 			contentBase="p-0 z-50 rounded-sm border border-purple-500/30 bg-slate-800/95 backdrop-blur-md shadow-lg"
@@ -144,7 +143,7 @@
 				</div>
 			{/snippet}
 		</Popover>
-	{/if}
 
-	<div class="h-8 border-l border-purple-500/30"></div>
-</div>
+		<div class="h-8 border-l border-purple-500/30"></div>
+	</div>
+{/if}

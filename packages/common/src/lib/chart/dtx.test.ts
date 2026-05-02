@@ -83,11 +83,15 @@ describe('SoundChip', () => {
 		});
 
 		it('should throw error when fetch fails', async () => {
-			global.fetch = vi.fn().mockResolvedValue({
+			const mockResponse = {
 				ok: false,
 				status: 404,
-				statusText: 'Not Found'
-			});
+				statusText: 'Not Found',
+				clone() {
+					return this;
+				}
+			};
+			global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
 			const soundChip = new SoundChip('kick', 1, 100, 0, 'kick.wav');
 
@@ -98,15 +102,19 @@ describe('SoundChip', () => {
 
 		it('should create file from successful fetch', async () => {
 			const mockBlob = new Blob(['audio content']);
-			global.fetch = vi.fn().mockResolvedValue({
+			const mockResponse = {
 				ok: true,
-				blob: () => Promise.resolve(mockBlob)
-			});
+				blob: () => Promise.resolve(mockBlob),
+				clone() {
+					return this;
+				}
+			};
+			global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
 			const soundChip = new SoundChip('kick', 1, 100, 0, 'kick.wav');
 			await soundChip.fetchRemote('simfile123', 'https://bucket.com');
 
-			expect(fetch).toHaveBeenCalledWith('https://bucket.com/simfile123/kick.wav');
+			expect(fetch).toHaveBeenCalledWith('https://bucket.com/simfile123/kick.wav', undefined);
 			expect(soundChip.file).toBeInstanceOf(File);
 			expect(soundChip.file?.name).toBe('kick.wav');
 		});

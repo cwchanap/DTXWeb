@@ -1,5 +1,6 @@
 import { LaneMeasureNote } from './note';
 import { decodeFileWithEncodingDetection, decodeFileWithSpecificEncoding } from './encoding-utils';
+import { dedupedFetch } from '../utils/dedupedFetch';
 
 interface MidiEvent {
 	deltaTime: number;
@@ -52,7 +53,7 @@ export class SoundChip {
 		}
 
 		const url = `${bucketUrl}/${simfileID}/${this.fileName}`;
-		const response = await fetch(url);
+		const response = await dedupedFetch(url);
 		if (!response.ok) {
 			throw new Error(
 				`Failed to fetch sound chip: ${this.fileName} (${response.status}: ${response.statusText})`

@@ -407,14 +407,30 @@ describe('SimFile', () => {
 			const mockBlob = new Blob(['#TITLE Remote Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);
 			vi.stubGlobal(
 				'fetch',
-				vi.fn().mockResolvedValue({ blob: () => Promise.resolve(mockBlob) })
+				vi.fn().mockResolvedValue({
+					blob: () => Promise.resolve(mockBlob),
+					clone() {
+						return this;
+					}
+				})
 			);
 			MockDTXFile.mockImplementation(createMockDTXFile);
 
 			const dtxBlob = new Blob(['dtx content']);
 			vi.mocked(global.fetch)
-				.mockResolvedValueOnce({ blob: () => Promise.resolve(mockBlob) } as any)
-				.mockResolvedValue({ ok: true, blob: () => Promise.resolve(dtxBlob) } as any);
+				.mockResolvedValueOnce({
+					blob: () => Promise.resolve(mockBlob),
+					clone() {
+						return this;
+					}
+				} as any)
+				.mockResolvedValue({
+					ok: true,
+					blob: () => Promise.resolve(dtxBlob),
+					clone() {
+						return this;
+					}
+				} as any);
 
 			const simFile = await SimFile.parseFromRemoteURL('sim-001', 'https://example.com');
 
@@ -428,7 +444,13 @@ describe('SimFile', () => {
 			const dtxBlob = new Blob(['dtx content']);
 			vi.stubGlobal(
 				'fetch',
-				vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(dtxBlob) })
+				vi.fn().mockResolvedValue({
+					ok: true,
+					blob: () => Promise.resolve(dtxBlob),
+					clone() {
+						return this;
+					}
+				})
 			);
 			MockDTXFile.mockImplementation(createMockDTXFile);
 
@@ -454,7 +476,16 @@ describe('SimFile', () => {
 		});
 
 		it('skips levels where fetch response is not ok', async () => {
-			vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, blob: vi.fn() }));
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					blob: vi.fn(),
+					clone() {
+						return this;
+					}
+				})
+			);
 			MockDTXFile.mockImplementation(createMockDTXFile);
 
 			const metadata = {
@@ -545,8 +576,19 @@ describe('SimFile', () => {
 				'fetch',
 				vi
 					.fn()
-					.mockResolvedValueOnce({ blob: () => Promise.resolve(defBlob) })
-					.mockResolvedValue({ ok: false, blob: vi.fn() })
+					.mockResolvedValueOnce({
+						blob: () => Promise.resolve(defBlob),
+						clone() {
+							return this;
+						}
+					})
+					.mockResolvedValue({
+						ok: false,
+						blob: vi.fn(),
+						clone() {
+							return this;
+						}
+					})
 			);
 			MockDTXFile.mockImplementation(createMockDTXFile);
 

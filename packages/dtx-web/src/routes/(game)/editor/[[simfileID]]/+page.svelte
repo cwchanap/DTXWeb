@@ -809,6 +809,7 @@
 		onShowSoundLibraryModal={() => (showSoundLibraryModal = true)}
 		onRefreshSoundLibraryLinks={refreshSoundLibraryLinks}
 		onShowWorkspaceExporter={showWorkspaceExporter}
+		onShowDifficultyModal={() => (showDifficultyModal = true)}
 	/>
 
 	<!-- Main content area - change to flex column on small screens, row on larger screens -->

@@ -432,7 +432,7 @@ describe('SoundLibrary', () => {
 				}
 			];
 			// Add a memory-only file
-			SoundLibrary.memoryFiles.set('hash-memory', {
+			(SoundLibrary as any).memoryFiles.set('hash-memory', {
 				hash: 'hash-memory',
 				fileName: 'large.wav',
 				fileType: 'audio/wav',
@@ -451,10 +451,29 @@ describe('SoundLibrary', () => {
 			expect(parsed).toHaveLength(0); // Only hash1 was in localStorage, now removed
 
 			// Memory file should still be in memory (not persisted)
-			expect(SoundLibrary.memoryFiles.has('hash-memory')).toBe(true);
+			expect((SoundLibrary as any).memoryFiles.has('hash-memory')).toBe(true);
 
 			// Cleanup
-			SoundLibrary.memoryFiles.delete('hash-memory');
+			(SoundLibrary as any).memoryFiles.delete('hash-memory');
+		});
+
+		it('should return true when removing a memory-only file', () => {
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			// Add a memory-only file
+			(SoundLibrary as any).memoryFiles.set('memory-hash', {
+				hash: 'memory-hash',
+				fileName: 'memory.wav',
+				fileType: 'audio/wav',
+				fileData: '',
+				size: 5 * 1024 * 1024,
+				dateAdded: Date.now()
+			});
+
+			const result = SoundLibrary.removeFile('memory-hash');
+
+			expect(result).toBe(true);
+			expect((SoundLibrary as any).memoryFiles.has('memory-hash')).toBe(false);
 		});
 	});
 

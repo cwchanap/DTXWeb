@@ -166,11 +166,10 @@ export class SoundLibrary {
 			localStorage.setItem(SoundLibrary.STORAGE_KEY, JSON.stringify(filteredFiles));
 
 			// Also remove from memory if present
+			const hadMemoryFile = SoundLibrary.memoryFiles.has(hash);
 			SoundLibrary.memoryFiles.delete(hash);
 
-			return (
-				storedFiles.length !== filteredFiles.length || SoundLibrary.memoryFiles.has(hash)
-			);
+			return storedFiles.length !== filteredFiles.length || hadMemoryFile;
 		} catch (error) {
 			console.error('Failed to remove file from sound library:', error);
 			return false;

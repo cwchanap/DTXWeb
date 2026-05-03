@@ -208,7 +208,6 @@ vi.mock('$lib/components/editor/EditorTips.svelte', () => ({}));
 vi.mock('$lib/components/editor/EditorNavigation.svelte', () => ({}));
 vi.mock('$lib/components/editor/EditorTabs.svelte', () => ({}));
 vi.mock('$lib/components/editor/modals/DifficultyModal.svelte', () => ({}));
-vi.mock('$lib/components/editor/modals/DiscardModal.svelte', () => ({}));
 vi.mock('$lib/components/editor/modals/SoundLibraryModal.svelte', () => ({}));
 vi.mock('$lib/components/editor/modals/WorkspaceManagerModal.svelte', () => ({}));
 vi.mock('$lib/components/editor/modals/DeleteWorkspaceModal.svelte', () => ({}));

@@ -1,4 +1,11 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+
+// vi.hoisted runs before vi.mock factories so the reference is valid
+const { envMock } = vi.hoisted(() => ({
+	envMock: { dev: false }
+}));
+
+vi.mock('$app/environment', () => envMock);
 
 vi.mock('@sveltejs/kit', () => ({
 	error: vi.fn((status: number, message: string) => {
@@ -19,6 +26,10 @@ const requirePageLoadResult = (result: Awaited<ReturnType<typeof load>>): Editor
 	}
 	return result;
 };
+
+beforeEach(() => {
+	envMock.dev = false;
+});
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -47,6 +58,24 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 
 		expect(result.simfileID).toBe('sim-123');
 		expect(result.metadata).toBeNull();
+	});
+
+	it('returns null metadata in dev mode even when bucket is available', async () => {
+		envMock.dev = true;
+		const bucket = {
+			get: vi.fn().mockResolvedValue(null)
+		};
+
+		const result = requirePageLoadResult(
+			await load({
+				params: { simfileID: 'sim-123' },
+				platform: { env: { DTXFILE_BUCKET: bucket } }
+			} as any)
+		);
+
+		expect(result.simfileID).toBe('sim-123');
+		expect(result.metadata).toBeNull();
+		expect(bucket.get).not.toHaveBeenCalled();
 	});
 
 	it('throws 404 when bucket returns null for set.def', async () => {

@@ -25,6 +25,7 @@ const callbacks = {
 const defaultProps = {
 	simfileID: '',
 	isPreviewing: false,
+	hasSimfile: false,
 	currentWorkspace: null,
 	availableWorkspaces: [],
 	...callbacks
@@ -42,13 +43,26 @@ describe('EditorNavigation', () => {
 		});
 
 		it('does not render File menu when simfileID is set', () => {
-			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', hasSimfile: true }
+			});
 			expect(screen.queryByText('File')).not.toBeInTheDocument();
 		});
 
-		it('renders Switch Difficulty button when simfileID is set', () => {
-			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
+		it('renders Switch Difficulty button when simfileID is set and hasSimfile is true', () => {
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', hasSimfile: true }
+			});
 			expect(screen.getByRole('button', { name: 'Switch Difficulty' })).toBeInTheDocument();
+		});
+
+		it('does not render Switch Difficulty button when hasSimfile is false (recovery flow)', () => {
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', hasSimfile: false }
+			});
+			expect(
+				screen.queryByRole('button', { name: 'Switch Difficulty' })
+			).not.toBeInTheDocument();
 		});
 
 		it('does not render Switch Difficulty button when simfileID is empty', () => {
@@ -115,9 +129,11 @@ describe('EditorNavigation', () => {
 		});
 
 		it('does not render Workspace menu when simfileID is set', () => {
-			render(EditorNavigation, { props: { ...defaultProps, simfileID: 'some-id' } });
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', hasSimfile: true }
+			});
 			expect(screen.queryByText('Workspace')).not.toBeInTheDocument();
-			// But Switch Difficulty button should be rendered for remote charts
+			// But Switch Difficulty button should be rendered for remote charts with simfile
 			expect(screen.getByRole('button', { name: 'Switch Difficulty' })).toBeInTheDocument();
 		});
 
@@ -231,7 +247,12 @@ describe('EditorNavigation', () => {
 		it('calls onShowDifficultyModal when Switch Difficulty is clicked', async () => {
 			const onShowDifficultyModal = vi.fn();
 			render(EditorNavigation, {
-				props: { ...defaultProps, simfileID: 'some-id', onShowDifficultyModal }
+				props: {
+					...defaultProps,
+					simfileID: 'some-id',
+					hasSimfile: true,
+					onShowDifficultyModal
+				}
 			});
 			await fireEvent.click(screen.getByRole('button', { name: 'Switch Difficulty' }));
 			expect(onShowDifficultyModal).toHaveBeenCalledOnce();
@@ -263,7 +284,12 @@ describe('EditorNavigation', () => {
 
 		it('disables Switch Difficulty button when isPreviewing is true and simfileID is set', () => {
 			render(EditorNavigation, {
-				props: { ...defaultProps, simfileID: 'some-id', isPreviewing: true }
+				props: {
+					...defaultProps,
+					simfileID: 'some-id',
+					hasSimfile: true,
+					isPreviewing: true
+				}
 			});
 			expect(screen.getByRole('button', { name: 'Switch Difficulty' })).toBeDisabled();
 		});

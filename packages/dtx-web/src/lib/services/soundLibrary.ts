@@ -158,10 +158,19 @@ export class SoundLibrary {
 	 */
 	static removeFile(hash: string): boolean {
 		try {
-			const library = SoundLibrary.getAll();
-			const filteredLibrary = library.filter((f) => f.hash !== hash);
-			localStorage.setItem(SoundLibrary.STORAGE_KEY, JSON.stringify(filteredLibrary));
-			return filteredLibrary.length < library.length;
+			// Only read localStorage entries to avoid persisting memory-only
+			// entries (which have fileData: '') back to localStorage.
+			const data = localStorage.getItem(SoundLibrary.STORAGE_KEY);
+			const storedFiles: SoundLibraryFile[] = data ? JSON.parse(data) : [];
+			const filteredFiles = storedFiles.filter((f) => f.hash !== hash);
+			localStorage.setItem(SoundLibrary.STORAGE_KEY, JSON.stringify(filteredFiles));
+
+			// Also remove from memory if present
+			SoundLibrary.memoryFiles.delete(hash);
+
+			return (
+				storedFiles.length !== filteredFiles.length || SoundLibrary.memoryFiles.has(hash)
+			);
 		} catch (error) {
 			console.error('Failed to remove file from sound library:', error);
 			return false;
@@ -201,16 +210,21 @@ export class SoundLibrary {
 			return null;
 		}
 
-		// Convert base64 back to binary
-		const binaryString = atob(libraryFile.fileData);
-		const bytes = new Uint8Array(binaryString.length);
-		for (let i = 0; i < binaryString.length; i++) {
-			bytes[i] = binaryString.charCodeAt(i);
-		}
+		try {
+			// Convert base64 back to binary
+			const binaryString = atob(libraryFile.fileData);
+			const bytes = new Uint8Array(binaryString.length);
+			for (let i = 0; i < binaryString.length; i++) {
+				bytes[i] = binaryString.charCodeAt(i);
+			}
 
-		return new File([bytes], libraryFile.fileName, {
-			type: libraryFile.fileType
-		});
+			return new File([bytes], libraryFile.fileName, {
+				type: libraryFile.fileType
+			});
+		} catch (error) {
+			console.error(`Failed to decode file data for ${libraryFile.fileName}:`, error);
+			return null;
+		}
 	}
 
 	/**

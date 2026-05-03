@@ -357,9 +357,10 @@ export class Editor extends BaseGame {
 				if (notes.length > 0) {
 					const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
 					const baseMeasureCount = maxMeasure + 1;
-					this.measureCount = Math.max(baseMeasureCount, draftMeasureCount ?? 0);
+					this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
 				} else {
-					this.measureCount = draftMeasureCount ?? this.measureCount;
+					// draftMeasureCount of 0 is invalid — treat as "not provided"
+					this.measureCount = draftMeasureCount || this.measureCount;
 				}
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;

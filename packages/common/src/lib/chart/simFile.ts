@@ -54,6 +54,11 @@ export class SimFile {
 	 */
 	public static async parseFromRemoteURL(simfileID: string, bucketUrl: string) {
 		const response = await dedupedFetch(`${bucketUrl}/${simfileID}/set.def`);
+		if (!response.ok) {
+			throw new Error(
+				`Failed to fetch set.def for ${simfileID}: ${response.status} ${response.statusText}`
+			);
+		}
 		const file = new File([await response.blob()], 'set.def');
 		const simFile = new SimFile([file], bucketUrl);
 		simFile.isParseFromRemoteURL = true;

@@ -59,6 +59,7 @@
 	let isPreviewing = $state(false);
 	let isTabsCollapsed = $state(false);
 	let isEditorReady = $state(false);
+	let hasSimfile = $state(false);
 	let simfileID = $state('');
 	let showDifficultyModal = $state(false);
 	let showTips = $state(false);
@@ -283,10 +284,18 @@
 		// Use existsAny() on remote charts where currentDifficulty may be null
 		// (e.g. after a remote-load failure). A suffixed draft like
 		// dtx_temp_chart_<id>_master would be missed by exists(id, null).
-		const hasUnsavedChanges =
-			simfileID && !currentDifficulty
-				? TempChartStorage.existsAny(currentSimfileID)
-				: TempChartStorage.exists(currentSimfileID, currentDifficulty);
+		// Wrap existsAny in try/catch — storage errors should default to showing
+		// the confirmation modal rather than silently proceeding.
+		let hasUnsavedChanges: boolean;
+		try {
+			hasUnsavedChanges =
+				simfileID && !currentDifficulty
+					? TempChartStorage.existsAny(currentSimfileID)
+					: TempChartStorage.exists(currentSimfileID, currentDifficulty);
+		} catch (storageError) {
+			console.error('Storage unavailable during unsaved-changes check:', storageError);
+			hasUnsavedChanges = true;
+		}
 
 		if (hasUnsavedChanges) {
 			// Show confirmation modal (normal new-file flow)
@@ -401,14 +410,18 @@
 		// Guard: only update if the user hasn't navigated to a different chart.
 		const recoveredSimfileID = simfileID;
 		const recoveredDifficulty = draft.difficulty;
-		rehydrateSoundFiles(soundChips, draft.metadata.soundChips).then(() => {
-			if (
-				get(store.currentSimfileID) === recoveredSimfileID &&
-				get(store.currentDifficulty) === recoveredDifficulty
-			) {
-				store.currentSoundChip.set(soundChips);
-			}
-		});
+		rehydrateSoundFiles(soundChips, draft.metadata.soundChips)
+			.then(() => {
+				if (
+					get(store.currentSimfileID) === recoveredSimfileID &&
+					get(store.currentDifficulty) === recoveredDifficulty
+				) {
+					store.currentSoundChip.set(soundChips);
+				}
+			})
+			.catch((error) => {
+				console.error('Failed to rehydrate sound files:', error);
+			});
 	}
 
 	/**
@@ -432,8 +445,13 @@
 						soundChip.file = undefined;
 						return;
 					}
-				} catch {
+				} catch (remoteError) {
 					// Remote still unavailable — fall through to sound library
+					console.debug(
+						'Remote fetch failed for sound chip rehydration:',
+						soundChip.fileName,
+						remoteError
+					);
 				}
 
 				// Strategy 2: Look up in local sound library
@@ -554,6 +572,9 @@
 		store.activeScene.set(Editor.key);
 		store.isPreviewing.subscribe((value) => {
 			isPreviewing = value;
+		});
+		store.currentSimfile.subscribe((value) => {
+			hasSimfile = !!value;
 		});
 		simfileID = data.simfileID || '';
 		store.currentSimfileID.set(simfileID || null);
@@ -683,8 +704,15 @@
 			// When the remote chart fails to load, check if the user has local
 			// drafts for this simfile. If so, show a confirmation modal so they can
 			// choose whether to discard their work — do NOT auto-delete on transient
-			// fetch/R2 errors.
-			const hasAnyDraft = TempChartStorage.existsAny(simfileID);
+			// fetch/R2 errors. On storage errors (Safari private mode, quota), default
+			// to showing the recovery modal rather than silently wiping data.
+			let hasAnyDraft = false;
+			try {
+				hasAnyDraft = TempChartStorage.existsAny(simfileID);
+			} catch (storageError) {
+				console.error('Storage unavailable during draft check:', storageError);
+				hasAnyDraft = true; // Assume drafts exist — safer than losing work
+			}
 			if (hasAnyDraft) {
 				isNewFileRecovery = true;
 				showNewFileModal = true;
@@ -798,6 +826,7 @@
 	<EditorNavigation
 		{simfileID}
 		{isPreviewing}
+		{hasSimfile}
 		{currentWorkspace}
 		{availableWorkspaces}
 		onNewFile={newFile}

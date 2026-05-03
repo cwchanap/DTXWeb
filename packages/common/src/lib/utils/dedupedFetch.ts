@@ -17,6 +17,9 @@ export function dedupedFetch(url: string, init?: RequestInit): Promise<Response>
 		return fetch(url, init);
 	}
 
+	// Cache key is method + URL only. Headers and body are intentionally ignored
+	// because this utility is used exclusively for idempotent GET/HEAD requests
+	// where the response depends only on the URL.
 	const key = `${method} ${url}`;
 	const existing = inflight.get(key);
 	if (existing) {

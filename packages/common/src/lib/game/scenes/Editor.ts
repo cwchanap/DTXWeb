@@ -354,9 +354,13 @@ export class Editor extends BaseGame {
 					this.notes[note.laneID].push(note);
 				});
 				this.parseMesaureLength();
-				const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
-				const baseMeasureCount = notes.length > 0 ? maxMeasure + 1 : this.measureCount;
-				this.measureCount = Math.max(baseMeasureCount, draftMeasureCount ?? 0);
+				if (notes.length > 0) {
+					const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
+					const baseMeasureCount = maxMeasure + 1;
+					this.measureCount = Math.max(baseMeasureCount, draftMeasureCount ?? 0);
+				} else {
+					this.measureCount = draftMeasureCount ?? this.measureCount;
+				}
 				store.measureCount.set(this.measureCount);
 				this.bpmNotes = bpmNotes;
 				this.syncNotesToStore();

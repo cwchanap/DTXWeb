@@ -419,6 +419,43 @@ describe('SoundLibrary', () => {
 
 			expect(result).toBe(false);
 		});
+
+		it('should not persist memory-only entries when removing a localStorage file', () => {
+			const storedFiles: SoundLibraryFile[] = [
+				{
+					hash: 'hash1',
+					fileName: 'test1.wav',
+					fileType: 'audio/wav',
+					fileData: 'base64data',
+					size: 1024,
+					dateAdded: Date.now()
+				}
+			];
+			// Add a memory-only file
+			SoundLibrary.memoryFiles.set('hash-memory', {
+				hash: 'hash-memory',
+				fileName: 'large.wav',
+				fileType: 'audio/wav',
+				fileData: '',
+				size: 5 * 1024 * 1024,
+				dateAdded: Date.now()
+			});
+
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify(storedFiles));
+
+			SoundLibrary.removeFile('hash1');
+
+			// setItem should only write localStorage entries, not memory ones
+			const savedData = mockLocalStorage.setItem.mock.calls[0][1];
+			const parsed = JSON.parse(savedData);
+			expect(parsed).toHaveLength(0); // Only hash1 was in localStorage, now removed
+
+			// Memory file should still be in memory (not persisted)
+			expect(SoundLibrary.memoryFiles.has('hash-memory')).toBe(true);
+
+			// Cleanup
+			SoundLibrary.memoryFiles.delete('hash-memory');
+		});
 	});
 
 	describe('getByHash', () => {
@@ -537,6 +574,21 @@ describe('SoundLibrary', () => {
 				fileType: 'audio/wav',
 				fileData: '', // Empty for large in-memory files
 				size: 5 * 1024 * 1024,
+				dateAdded: Date.now()
+			};
+
+			const result = SoundLibrary.toFile(libraryFile);
+
+			expect(result).toBeNull();
+		});
+
+		it('should return null for entries with invalid base64 data', () => {
+			const libraryFile: SoundLibraryFile = {
+				hash: 'hash1',
+				fileName: 'corrupt.wav',
+				fileType: 'audio/wav',
+				fileData: '!!!invalid-base64!!!',
+				size: 1024,
 				dateAdded: Date.now()
 			};
 

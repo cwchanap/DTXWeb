@@ -396,15 +396,13 @@ describe('TempChartStorage', () => {
 			expect(result).toBe(false);
 		});
 
-		it('should handle localStorage errors gracefully', () => {
+		it('should throw on localStorage errors so callers can handle storage failures', () => {
 			mockLocalStorage.length = 1;
 			mockLocalStorage.key.mockImplementation(() => {
 				throw new Error('Storage error');
 			});
 
-			const result = TempChartStorage.existsAny('test-simfile');
-
-			expect(result).toBe(false);
+			expect(() => TempChartStorage.existsAny('test-simfile')).toThrow('Storage error');
 		});
 
 		it('should not skip keys when expired entries are removed mid-scan', () => {
@@ -594,15 +592,13 @@ describe('TempChartStorage', () => {
 			expect(result?.difficulty).toBeNull();
 		});
 
-		it('should handle localStorage errors gracefully', () => {
+		it('should throw on localStorage errors so callers can handle storage failures', () => {
 			mockLocalStorage.length = 1;
 			mockLocalStorage.key.mockImplementation(() => {
 				throw new Error('Storage error');
 			});
 
-			const result = TempChartStorage.loadAny('test-simfile');
-
-			expect(result).toBeNull();
+			expect(() => TempChartStorage.loadAny('test-simfile')).toThrow('Storage error');
 		});
 
 		it('should not skip keys when expired entries are removed mid-scan', () => {

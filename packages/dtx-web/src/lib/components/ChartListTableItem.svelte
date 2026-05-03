@@ -38,7 +38,8 @@
 	const handleOpenInEditor = async () => {
 		try {
 			await goto(`/editor/${item.id}`);
-		} catch {
+		} catch (error) {
+			console.error('Failed to navigate to editor:', error);
 			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
 		}
 	};

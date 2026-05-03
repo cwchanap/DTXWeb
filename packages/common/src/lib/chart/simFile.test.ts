@@ -403,11 +403,31 @@ describe('SimFile', () => {
 			).rejects.toThrow('Network error');
 		});
 
+		it('should throw when set.def returns non-ok response', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					status: 404,
+					statusText: 'Not Found',
+					blob: () => Promise.resolve(new Blob(['not found'])),
+					clone() {
+						return this;
+					}
+				})
+			);
+
+			await expect(
+				SimFile.parseFromRemoteURL('sim-missing', 'https://example.com')
+			).rejects.toThrow('Failed to fetch set.def for sim-missing: 404 Not Found');
+		});
+
 		it('fetches set.def and creates a SimFile from remote URL', async () => {
 			const mockBlob = new Blob(['#TITLE Remote Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);
 			vi.stubGlobal(
 				'fetch',
 				vi.fn().mockResolvedValue({
+					ok: true,
 					blob: () => Promise.resolve(mockBlob),
 					clone() {
 						return this;
@@ -419,6 +439,7 @@ describe('SimFile', () => {
 			const dtxBlob = new Blob(['dtx content']);
 			vi.mocked(global.fetch)
 				.mockResolvedValueOnce({
+					ok: true,
 					blob: () => Promise.resolve(mockBlob),
 					clone() {
 						return this;
@@ -577,6 +598,7 @@ describe('SimFile', () => {
 				vi
 					.fn()
 					.mockResolvedValueOnce({
+						ok: true,
 						blob: () => Promise.resolve(defBlob),
 						clone() {
 							return this;

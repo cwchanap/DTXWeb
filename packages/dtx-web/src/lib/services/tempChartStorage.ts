@@ -129,8 +129,11 @@ export class TempChartStorage {
 			}
 			return false;
 		} catch (error) {
-			console.warn('Failed to check for temporary chart data:', error);
-			return false;
+			// Storage unavailable (Safari private mode, quota error, etc.).
+			// Re-throw so callers can distinguish "no drafts" from "storage broken"
+			// and avoid silently wiping data.
+			console.error('Storage error checking for temporary chart data:', error);
+			throw error;
 		}
 	}
 
@@ -170,8 +173,10 @@ export class TempChartStorage {
 			}
 			return bestMatch;
 		} catch (error) {
-			console.warn('Failed to load any temporary chart data:', error);
-			return null;
+			// Storage unavailable — re-throw so callers know storage is broken
+			// rather than assuming "no drafts found".
+			console.error('Storage error loading temporary chart data:', error);
+			throw error;
 		}
 	}
 

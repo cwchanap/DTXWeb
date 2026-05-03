@@ -39,7 +39,7 @@
 	}: Props = $props();
 </script>
 
-{#if !simfileID}
+{#if !(simfileID && hasSimfile)}
 	<div
 		class="relative row-span-1 flex flex-row items-center border-b-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm"
 	>

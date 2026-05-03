@@ -7,11 +7,12 @@
 
 	interface Props {
 		simfileID?: string;
+		hasSimfile?: boolean;
 		theme?: 'light' | 'dark';
 		bucketUrl?: string;
 	}
 
-	let { simfileID, theme = 'dark', bucketUrl }: Props = $props();
+	let { simfileID, hasSimfile = false, theme = 'dark', bucketUrl }: Props = $props();
 
 	// Theme-based classes
 	const themeClasses = {
@@ -195,7 +196,7 @@
 </script>
 
 <div class="flex flex-col space-y-2">
-	{#if !simfileID}
+	{#if !(simfileID && hasSimfile)}
 		<!-- Only show "New Sound" button for local charts -->
 		<button
 			class="music-btn-primary w-1/5"
@@ -302,7 +303,7 @@
 						</td>
 
 						<td class="border px-2 py-1 {classes.border}">
-							{#if simfileID}
+							{#if simfileID && hasSimfile}
 								<!-- For remote charts, show files based on fileName -->
 								{#if chip.fileName}
 									<button

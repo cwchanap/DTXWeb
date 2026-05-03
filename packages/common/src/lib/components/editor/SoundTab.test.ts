@@ -217,9 +217,14 @@ describe('SoundTab component', () => {
 		expect(screen.getByText('New Sound')).toBeInTheDocument();
 	});
 
-	it('hides New Sound button for remote charts (simfileID provided)', () => {
-		render(SoundTab, { props: { simfileID: 'sim-1' } });
+	it('hides New Sound button for remote charts (simfileID provided with hasSimfile true)', () => {
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		expect(screen.queryByText('New Sound')).not.toBeInTheDocument();
+	});
+
+	it('shows New Sound button when simfileID is set but hasSimfile is false (recovered draft)', () => {
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: false } });
+		expect(screen.getByText('New Sound')).toBeInTheDocument();
 	});
 
 	it('clicking New Sound adds a chip to the store', async () => {
@@ -356,7 +361,7 @@ describe('SoundTab component', () => {
 				return () => {};
 			}
 		);
-		render(SoundTab, { props: { simfileID: 'sim-1' } });
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		expect(screen.getByText('snare.wav')).toBeInTheDocument();
 	});
 
@@ -368,7 +373,7 @@ describe('SoundTab component', () => {
 				return () => {};
 			}
 		);
-		render(SoundTab, { props: { simfileID: 'sim-1' } });
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		expect(screen.getByText('No file assigned')).toBeInTheDocument();
 	});
 
@@ -384,7 +389,9 @@ describe('SoundTab component', () => {
 				return () => {};
 			}
 		);
-		render(SoundTab, { props: { simfileID: 'sim-1', bucketUrl: 'https://cdn.example.com' } });
+		render(SoundTab, {
+			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
+		});
 		const fileBtn = screen.getByText('snare.wav');
 		await fireEvent.click(fileBtn);
 		expect(URL.createObjectURL).toHaveBeenCalled();
@@ -405,7 +412,9 @@ describe('SoundTab component', () => {
 				return () => {};
 			}
 		);
-		render(SoundTab, { props: { simfileID: 'sim-1', bucketUrl: 'https://cdn.example.com' } });
+		render(SoundTab, {
+			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
+		});
 		await fireEvent.click(screen.getByText('snare.wav'));
 		await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
 		expect(mockFileManager.setFile).toHaveBeenCalled();
@@ -422,7 +431,9 @@ describe('SoundTab component', () => {
 				return () => {};
 			}
 		);
-		render(SoundTab, { props: { simfileID: 'sim-1', bucketUrl: 'https://cdn.example.com' } });
+		render(SoundTab, {
+			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
+		});
 		await fireEvent.click(screen.getByText('snare.wav'));
 		await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
 		expect(screen.getByRole('alert').textContent).toContain('Failed to load remote audio file');
@@ -438,7 +449,7 @@ describe('SoundTab component', () => {
 				return () => {};
 			}
 		);
-		render(SoundTab, { props: { simfileID: 'sim-1' } });
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		await fireEvent.click(screen.getByText('snare.wav'));
 		expect(screen.getByRole('alert')).toBeInTheDocument();
 	});

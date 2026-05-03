@@ -339,7 +339,8 @@
 			const editorScene = phaserRef.scene as Editor;
 			editorScene.setDirty(false);
 			// Clear the editor notes and reset the scene with proper empty data
-			EventBus.emit(EventType.NOTE_IMPORT, emptyNotes, emptyBpmNotes);
+			// Pass default measureCount (10) so new charts don't inherit stale measure counts
+			EventBus.emit(EventType.NOTE_IMPORT, emptyNotes, emptyBpmNotes, 10);
 		}
 
 		// If we're currently in a remote chart, redirect to local workspace after cleanup
@@ -850,6 +851,7 @@
 			{isPreviewing}
 			{isEditorReady}
 			{simfileID}
+			{hasSimfile}
 			bucketUrl={PUBLIC_SIMFILE_BUCKET_URL}
 			onTabChange={() => {}}
 			onToggleCollapsed={() => (isTabsCollapsed = !isTabsCollapsed)}

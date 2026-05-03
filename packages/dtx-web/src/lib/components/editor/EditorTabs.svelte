@@ -8,6 +8,7 @@
 		isPreviewing: boolean;
 		isEditorReady: boolean;
 		simfileID: string;
+		hasSimfile: boolean;
 		bucketUrl: string;
 		onTabChange: (tabIndex: number) => void;
 		onToggleCollapsed: () => void;
@@ -19,6 +20,7 @@
 		isPreviewing,
 		isEditorReady,
 		simfileID,
+		hasSimfile,
 		bucketUrl,
 		onTabChange,
 		onToggleCollapsed
@@ -93,7 +95,7 @@
 					{#if currentTab === 0}
 						<MainTab />
 					{:else if currentTab === 1}
-						<SoundTab {simfileID} theme="dark" {bucketUrl} />
+						<SoundTab {simfileID} {hasSimfile} theme="dark" {bucketUrl} />
 					{:else if currentTab === 2}
 						<PreviewTab {isEditorReady} />
 					{/if}

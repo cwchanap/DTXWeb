@@ -65,6 +65,15 @@ describe('EditorNavigation', () => {
 			).not.toBeInTheDocument();
 		});
 
+		it('shows local File/Workspace controls when simfileID is set but hasSimfile is false (recovered draft)', () => {
+			render(EditorNavigation, {
+				props: { ...defaultProps, simfileID: 'some-id', hasSimfile: false }
+			});
+			// After draft recovery on a remote route, local controls should be available
+			expect(screen.getByText('File')).toBeInTheDocument();
+			expect(screen.getByText('Workspace')).toBeInTheDocument();
+		});
+
 		it('does not render Switch Difficulty button when simfileID is empty', () => {
 			render(EditorNavigation, { props: defaultProps });
 			expect(

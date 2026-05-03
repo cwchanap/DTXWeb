@@ -11,6 +11,7 @@ const defaultProps = {
 	isPreviewing: false,
 	isEditorReady: true,
 	simfileID: '',
+	hasSimfile: false,
 	bucketUrl: 'https://cdn.example.com',
 	onTabChange: vi.fn(),
 	onToggleCollapsed: vi.fn()

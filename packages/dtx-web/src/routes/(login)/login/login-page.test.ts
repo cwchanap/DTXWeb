@@ -98,7 +98,7 @@ describe('Login Page', () => {
 
 	it('shows error message from form prop when present', async () => {
 		envMock.browser = true;
-		render(LoginPage, { props: { form: { error: 'Invalid credentials' } } });
+		render(LoginPage, { props: { form: { success: false, error: 'Invalid credentials' } } });
 
 		await waitFor(() => {
 			expect(screen.getByText('Invalid credentials')).toBeInTheDocument();

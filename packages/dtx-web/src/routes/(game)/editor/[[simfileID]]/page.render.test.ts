@@ -168,9 +168,6 @@ vi.mock('$lib/components/editor/EditorTabs.svelte', () => ({
 vi.mock('$lib/components/editor/modals/DifficultyModal.svelte', () => ({
 	default: vi.fn().mockReturnValue(null)
 }));
-vi.mock('$lib/components/editor/modals/DiscardModal.svelte', () => ({
-	default: vi.fn().mockReturnValue(null)
-}));
 vi.mock('$lib/components/editor/modals/SoundLibraryModal.svelte', () => ({
 	default: vi.fn().mockReturnValue(null)
 }));
@@ -199,7 +196,6 @@ import { get } from 'svelte/store';
 import { SoundLibrary } from '$lib/services/soundLibrary';
 import { EventBus, EventType } from '@dtx/common/game';
 import EditorNavigationModule from '$lib/components/editor/EditorNavigation.svelte';
-import DiscardModalModule from '$lib/components/editor/modals/DiscardModal.svelte';
 import SoundLibraryModalModule from '$lib/components/editor/modals/SoundLibraryModal.svelte';
 import DifficultyModalModule from '$lib/components/editor/modals/DifficultyModal.svelte';
 import DTXSwitcherModalModule from '$lib/components/editor/modals/DTXSwitcherModal.svelte';
@@ -583,15 +579,6 @@ describe('Editor Page – functions via EditorNavigation props', () => {
 		expect(() => navProps!.onShowWorkspaceExporter()).not.toThrow();
 	});
 
-	it('discardLocalChanges shows discard modal via onDiscardLocalChanges', () => {
-		render(EditorPage, { props: { data: defaultData } });
-		const navProps = getLastMockProps<Record<string, () => void>>(
-			vi.mocked(EditorNavigationModule)
-		);
-		expect(navProps?.onDiscardLocalChanges).toBeDefined();
-		expect(() => navProps!.onDiscardLocalChanges()).not.toThrow();
-	});
-
 	it('onShowDifficultyModal prop opens difficulty modal', () => {
 		render(EditorPage, { props: { data: defaultData } });
 		const navProps = getLastMockProps<Record<string, () => void>>(
@@ -631,52 +618,6 @@ describe('Editor Page – functions via EditorNavigation props', () => {
 		// newFile → TempChartStorage.exists returns false → createNewFile → TempChartStorage.remove
 		navProps!.onNewFile();
 		expect(TempChartStorage.remove).toHaveBeenCalled();
-	});
-});
-
-describe('Editor Page – confirmDiscardChanges and cancelDiscardChanges', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		mockSoundChipInstances.length = 0;
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
-
-	it('cancelDiscardChanges closes discard modal via DiscardModal onCancel', () => {
-		render(EditorPage, { props: { data: defaultData } });
-		const discardProps = getLastMockProps<Record<string, () => void>>(
-			vi.mocked(DiscardModalModule)
-		);
-		expect(discardProps?.onCancel).toBeDefined();
-		expect(() => discardProps!.onCancel()).not.toThrow();
-	});
-
-	it('confirmDiscardChanges calls TempChartStorage.remove and reloads via DiscardModal onConfirm', () => {
-		const reloadMock = vi.fn();
-		const originalLocation = window.location;
-		Object.defineProperty(window, 'location', {
-			value: { ...window.location, reload: reloadMock },
-			writable: true,
-			configurable: true
-		});
-
-		render(EditorPage, { props: { data: defaultData } });
-		const discardProps = getLastMockProps<Record<string, () => void>>(
-			vi.mocked(DiscardModalModule)
-		);
-		expect(discardProps?.onConfirm).toBeDefined();
-		discardProps!.onConfirm();
-
-		expect(TempChartStorage.remove).toHaveBeenCalled();
-		expect(reloadMock).toHaveBeenCalled();
-
-		Object.defineProperty(window, 'location', {
-			value: originalLocation,
-			writable: true,
-			configurable: true
-		});
 	});
 });
 

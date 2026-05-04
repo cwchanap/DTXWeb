@@ -107,8 +107,11 @@ export class TempChartStorage {
 	static existsAny(simFileID: string | null): boolean {
 		try {
 			if (!simFileID) {
-				// Check the default temp key
-				return this.load(null, null) !== null;
+				// Check the default temp key using readStoredData directly
+				// so storage errors propagate consistently (load() swallows them).
+				const key = this.buildStorageKey(null, null);
+				const storageKey = this.STORAGE_KEY_PREFIX + key;
+				return this.readStoredData(storageKey) !== null;
 			}
 
 			const prefix = this.STORAGE_KEY_PREFIX + simFileID;
@@ -147,7 +150,11 @@ export class TempChartStorage {
 	): (TempChartData & { difficulty: string | null }) | null {
 		try {
 			if (!simFileID) {
-				const data = this.load(null, null);
+				// Use readStoredData directly so storage errors propagate consistently
+				// (load() swallows exceptions, contradicting this method's re-throw contract).
+				const key = this.buildStorageKey(null, null);
+				const storageKey = this.STORAGE_KEY_PREFIX + key;
+				const data = this.readStoredData(storageKey);
 				return data ? { ...data, difficulty: null } : null;
 			}
 

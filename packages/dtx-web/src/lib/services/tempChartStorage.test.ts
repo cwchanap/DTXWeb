@@ -405,6 +405,14 @@ describe('TempChartStorage', () => {
 			expect(() => TempChartStorage.existsAny('test-simfile')).toThrow('Storage error');
 		});
 
+		it('should throw on localStorage errors for null simFileID (not swallow via load)', () => {
+			mockLocalStorage.getItem.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
+
+			expect(() => TempChartStorage.existsAny(null)).toThrow('Storage error');
+		});
+
 		it('should not skip keys when expired entries are removed mid-scan', () => {
 			// This test verifies the collect-then-iterate pattern:
 			// If we iterated by index while removing entries, removing an expired
@@ -599,6 +607,14 @@ describe('TempChartStorage', () => {
 			});
 
 			expect(() => TempChartStorage.loadAny('test-simfile')).toThrow('Storage error');
+		});
+
+		it('should throw on localStorage errors for null simFileID (not swallow via load)', () => {
+			mockLocalStorage.getItem.mockImplementation(() => {
+				throw new Error('Storage error');
+			});
+
+			expect(() => TempChartStorage.loadAny(null)).toThrow('Storage error');
 		});
 
 		it('should not skip keys when expired entries are removed mid-scan', () => {

@@ -695,11 +695,13 @@
 			store.currentSoundChip.set([]);
 			store.currentDifficulty.set(null);
 
-			// Clear the editor scene so it doesn't render stale notes
+			// Clear the editor scene so it doesn't render stale notes.
+			// Pass explicit baseline measureCount (10) so the scene fully resets
+			// instead of preserving a stale measureCount from a previous chart.
 			if (phaserRef.scene && phaserRef.scene.scene.key === Editor.key) {
 				const editorScene = phaserRef.scene as Editor;
 				editorScene.setDirty(false);
-				EventBus.emit(EventType.NOTE_IMPORT, [], {});
+				EventBus.emit(EventType.NOTE_IMPORT, [], {}, 10);
 			}
 
 			// When the remote chart fails to load, check if the user has local

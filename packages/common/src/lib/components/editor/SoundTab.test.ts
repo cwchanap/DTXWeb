@@ -692,7 +692,9 @@ describe('SoundTab key binding', () => {
 			}
 		);
 
-		render(SoundTab, { props: { simfileID: 'sim-1', bucketUrl: 'https://cdn.example.com' } });
+		render(SoundTab, {
+			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
+		});
 		const fileBtn = screen.getByText('snare.wav');
 		await fireEvent.click(fileBtn);
 
@@ -711,7 +713,7 @@ describe('SoundTab key binding', () => {
 			}
 		);
 
-		render(SoundTab, { props: { simfileID: 'sim-1' } });
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		await fireEvent.click(screen.getByText('snare.wav'));
 
 		expect(screen.getByRole('alert')).toBeInTheDocument();

@@ -21,12 +21,15 @@ export default defineConfig({
 			exclude: [
 				'**/node_modules/**',
 				'**/dist/**',
+				'**/build/**',
 				'**/.svelte-kit/**',
+				'**/tests/**',
 				'**/*.test.ts',
 				'**/*.spec.ts',
 				'**/vite.config.ts',
 				'**/vitest.config.ts',
-				'**/svelte.config.js'
+				'**/svelte.config.js',
+				'**/tailwind.config.ts'
 			],
 			include: ['src/**/*.{js,ts,svelte}'],
 			all: true

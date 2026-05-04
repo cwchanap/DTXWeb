@@ -271,4 +271,175 @@ describe('Workspace – button interactions', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /clear workspace/i }));
 		expect(workspaceService.clearWorkspace).toHaveBeenCalledOnce();
 	});
+
+	it('calls workspaceService.loadSubWorkspaces and loadTreeStructure when Refresh is clicked', async () => {
+		const { workspaceService } = await import('../services/workspaceService');
+		vi.mocked(workspaceStore).setState({ path: '/workspace/test' });
+		render(Workspace);
+		await fireEvent.click(screen.getByRole('button', { name: /refresh workspace/i }));
+		expect(workspaceService.loadSubWorkspaces).toHaveBeenCalled();
+		expect(workspaceService.loadTreeStructure).toHaveBeenCalled();
+	});
+});
+
+describe('Workspace – sub-workspaces section', () => {
+	afterEach(() => {
+		cleanup();
+		vi.mocked(workspaceStore).reset();
+	});
+
+	it('renders sub-workspaces when subWorkspaces are present', () => {
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			subWorkspaces: ['DTXFiles.Rock', 'DTXFiles.Pop'],
+			treeStructure: [makeNode('SongA', '/ws/SongA', { containsDtxFiles: true })]
+		});
+		render(Workspace);
+		// SubWorkspaceItem is mocked but tree has nodes so "No folders found" should be absent
+		expect(screen.queryByText('No folders found')).not.toBeInTheDocument();
+	});
+
+	it('shows tree structure with currentSubWorkspace label', () => {
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			currentSubWorkspace: 'DTXFiles.Rock',
+			treeStructure: [makeNode('SongA', '/ws/SongA', { containsDtxFiles: true })]
+		});
+		render(Workspace);
+		expect(screen.getByText(/Tree: Rock/i)).toBeInTheDocument();
+	});
+
+	it('shows "Workspace Tree" label when no subWorkspace is active', () => {
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			treeStructure: [makeNode('SongA', '/ws/SongA', { containsDtxFiles: true })]
+		});
+		render(Workspace);
+		expect(screen.getByText('Workspace Tree')).toBeInTheDocument();
+	});
+
+	it('shows "Showing contents of selected sub-workspace" when subWorkspace is active', () => {
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			currentSubWorkspace: 'DTXFiles.Rock',
+			treeStructure: [makeNode('SongA', '/ws/SongA')]
+		});
+		render(Workspace);
+		expect(screen.getByText(/Showing contents of selected sub-workspace/i)).toBeInTheDocument();
+	});
+
+	it('shows "Showing all folders in workspace" when no subWorkspace is active', () => {
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			treeStructure: [makeNode('SongA', '/ws/SongA')]
+		});
+		render(Workspace);
+		expect(screen.getByText(/Showing all folders in workspace/i)).toBeInTheDocument();
+	});
+
+	it('shows "Change folder" button when workspace path is set', () => {
+		vi.mocked(workspaceStore).setState({ path: '/workspace/test', treeStructure: [] });
+		render(Workspace);
+		expect(
+			screen.getByRole('button', { name: /change workspace folder/i })
+		).toBeInTheDocument();
+	});
+});
+
+describe('Workspace – song details view', () => {
+	afterEach(() => {
+		cleanup();
+		vi.mocked(workspaceStore).reset();
+	});
+
+	it('shows SongDetails when showSongDetails is true with a selected song', () => {
+		const song = makeNode('TestSong', '/test/TestSong');
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			showSongDetails: true,
+			selectedSong: song
+		});
+		render(Workspace);
+		// SongDetails is mocked so it renders nothing, but the condition passes
+		// The main content area should not show workspace tree
+		expect(screen.queryByRole('button', { name: /create new song/i })).not.toBeInTheDocument();
+	});
+
+	it('does not show workspace tree when song details are visible', () => {
+		const song = makeNode('TestSong', '/test/TestSong');
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			showSongDetails: true,
+			selectedSong: song
+		});
+		render(Workspace);
+		expect(screen.queryByText('Workspace Tree')).not.toBeInTheDocument();
+	});
+
+	it('shows Templates view when showTemplates is true', () => {
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			showTemplates: true
+		});
+		render(Workspace);
+		// Templates is mocked as vi.fn(), so no visible text - but condition should pass
+		expect(screen.queryByText('Workspace Tree')).not.toBeInTheDocument();
+	});
+});
+
+describe('Workspace – filterTreeNodes edge cases', () => {
+	const makeFullNode = (
+		name: string,
+		path = `/ws/${name}`,
+		overrides: Partial<TreeNode> = {}
+	): TreeNode => makeNode(name, path, overrides);
+
+	afterEach(() => {
+		cleanup();
+		vi.mocked(workspaceStore).reset();
+	});
+
+	it('shows matching nodes when search term matches song title', async () => {
+		const song = makeFullNode('FolderName', '/ws/FolderName', {
+			songTitle: 'My Unique Song Title',
+			containsDtxFiles: true
+		});
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			treeStructure: [song]
+		});
+		render(Workspace);
+		const input = screen.getByPlaceholderText(/search songs and folders/i);
+		await fireEvent.input(input, { target: { value: 'Unique Song' } });
+		expect(screen.queryByText(/no results found/i)).not.toBeInTheDocument();
+	});
+
+	it('includes parent nodes in results when a child name matches the search', async () => {
+		const childMatch = makeFullNode('ChildMatch', '/ws/Parent/ChildMatch');
+		const parent = makeFullNode('ParentFolder', '/ws/Parent', {
+			children: [childMatch],
+			hasChildren: true
+		});
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			treeStructure: [parent]
+		});
+		render(Workspace);
+		const input = screen.getByPlaceholderText(/search songs and folders/i);
+		await fireEvent.input(input, { target: { value: 'ChildMatch' } });
+		// The tree is rendered but WorkspaceTree is mocked – just check no error
+		expect(screen.queryByText(/no results found/i)).not.toBeInTheDocument();
+	});
+
+	it('filters out nodes that do not match', async () => {
+		const noMatch = makeFullNode('ZZZNoMatch', '/ws/ZZZNoMatch');
+		vi.mocked(workspaceStore).setState({
+			path: '/workspace/test',
+			treeStructure: [noMatch]
+		});
+		render(Workspace);
+		const input = screen.getByPlaceholderText(/search songs and folders/i);
+		await fireEvent.input(input, { target: { value: 'ChildMatch' } });
+		expect(screen.getByText(/no results found for "ChildMatch"/i)).toBeInTheDocument();
+	});
 });

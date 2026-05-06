@@ -18,7 +18,8 @@ vi.mock('../stores/workspaceStore', () => ({
 		setCurrentSubWorkspace: vi.fn(),
 		selectSong: vi.fn(),
 		closeSongDetails: vi.fn(),
-		clearWorkspace: vi.fn()
+		clearWorkspace: vi.fn(),
+		reset: vi.fn()
 	}
 }));
 
@@ -547,6 +548,59 @@ describe('WorkspaceService', () => {
 			workspaceService.closeSongDetails();
 
 			expect(workspaceStore.closeSongDetails).toHaveBeenCalled();
+		});
+	});
+
+	describe('switchToBookmark', () => {
+		it('resets, sets the path, and reloads sub-workspaces and tree in order', async () => {
+			const calls: string[] = [];
+			(workspaceStore.reset as any).mockImplementation(() => calls.push('reset'));
+			(workspaceStore.setPath as any).mockImplementation(() => calls.push('setPath'));
+
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
+				return vi.fn();
+			});
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'list-directories') {
+					calls.push('list-directories');
+					return Promise.resolve([]);
+				}
+				if (channel === 'load-tree-structure') {
+					calls.push('load-tree-structure');
+					return Promise.resolve([]);
+				}
+				return Promise.resolve([]);
+			});
+
+			await workspaceService.switchToBookmark({ path: '/bm/path', name: 'BM' });
+
+			expect(workspaceStore.reset).toHaveBeenCalledTimes(1);
+			expect(workspaceStore.setPath).toHaveBeenCalledWith('/bm/path');
+			expect(calls.indexOf('reset')).toBeLessThan(calls.indexOf('setPath'));
+			expect(calls.indexOf('setPath')).toBeLessThan(calls.indexOf('list-directories'));
+			expect(calls.indexOf('list-directories')).toBeLessThan(
+				calls.indexOf('load-tree-structure')
+			);
+		});
+
+		it('surfaces tree-load errors via setError without clearing the path', async () => {
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
+				return vi.fn();
+			});
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'list-directories') return Promise.resolve([]);
+				if (channel === 'load-tree-structure') {
+					return Promise.reject(new Error('boom'));
+				}
+				return Promise.resolve([]);
+			});
+
+			await workspaceService.switchToBookmark({ path: '/bm/path', name: 'BM' });
+
+			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
+			expect(workspaceStore.clearWorkspace).not.toHaveBeenCalled();
 		});
 	});
 });

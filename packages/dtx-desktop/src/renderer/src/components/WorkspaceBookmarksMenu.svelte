@@ -2,13 +2,32 @@
 	import { onMount } from 'svelte';
 	import { workspaceStore } from '../stores/workspaceStore';
 	import { bookmarkStore, basename, type WorkspaceBookmark } from '../stores/bookmarkStore';
-	import { ChevronDown } from '@lucide/svelte';
+	import { ChevronDown, Star, CheckCircle2 } from '@lucide/svelte';
 
 	let isOpen = $state(false);
 	let currentPath = $state<string | null>(null);
-	// bookmarks will be used in Tasks 7+
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let bookmarks = $state<WorkspaceBookmark[]>([]);
+	let addError = $state<string | null>(null);
+
+	const isCurrentBookmarked = $derived(
+		!!currentPath && bookmarks.some((b) => b.path === currentPath)
+	);
+	const currentBookmark = $derived(
+		currentPath ? (bookmarks.find((b) => b.path === currentPath) ?? null) : null
+	);
+
+	const handleBookmarkCurrent = () => {
+		if (!currentPath) return;
+		const result = bookmarkStore.add(currentPath);
+		if (result.ok) {
+			addError = null;
+			isOpen = false;
+		} else if (result.reason === 'cap-exceeded') {
+			addError = 'Maximum of 20 bookmarks reached';
+		} else {
+			addError = null;
+		}
+	};
 
 	const unsubWs = workspaceStore.subscribe((s) => {
 		currentPath = s.path;
@@ -69,6 +88,27 @@
 						{currentPath}
 					</div>
 				</div>
+			{/if}
+			{#if currentPath && !isCurrentBookmarked}
+				<button
+					type="button"
+					role="menuitem"
+					class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+					onclick={handleBookmarkCurrent}
+				>
+					<Star size={16} />
+					<span>Bookmark this folder</span>
+				</button>
+			{:else if currentBookmark}
+				<div
+					class="flex items-center gap-2 px-2 py-2 text-sm text-emerald-700 dark:text-emerald-300"
+				>
+					<CheckCircle2 size={16} />
+					<span>Bookmarked as {currentBookmark.name}</span>
+				</div>
+			{/if}
+			{#if addError}
+				<div class="px-2 py-1 text-xs text-red-600 dark:text-red-300">{addError}</div>
 			{/if}
 		</div>
 	{/if}

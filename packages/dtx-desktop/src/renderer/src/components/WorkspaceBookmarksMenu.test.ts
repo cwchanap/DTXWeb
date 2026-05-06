@@ -52,11 +52,13 @@ vi.mock('../services/workspaceService', () => ({
 
 import WorkspaceBookmarksMenu from './WorkspaceBookmarksMenu.svelte';
 import { workspaceStore } from '../stores/workspaceStore';
+import { bookmarkStore } from '../stores/bookmarkStore';
 
 describe('WorkspaceBookmarksMenu', () => {
 	beforeEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		(bookmarkStore as any).setValue([]);
 		(workspaceStore as any).setState({ path: '/foo/bar/MySongs' });
 	});
 
@@ -87,5 +89,49 @@ describe('WorkspaceBookmarksMenu', () => {
 		render(WorkspaceBookmarksMenu);
 		await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 		expect(screen.getByText('/foo/bar/MySongs')).toBeInTheDocument();
+	});
+
+	describe('Bookmark this folder action', () => {
+		it('shows "Bookmark this folder" when current path is not bookmarked', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			expect(
+				screen.getByRole('menuitem', { name: /bookmark this folder/i })
+			).toBeInTheDocument();
+		});
+
+		it('calls bookmarkStore.add and closes dropdown on click', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore.add as any).mockReturnValue({ ok: true });
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
+
+			expect(bookmarkStore.add).toHaveBeenCalledWith('/foo/bar/MySongs');
+			expect(screen.queryByRole('menu')).toBeNull();
+		});
+
+		it('shows "Bookmarked as <name>" indicator when current path is bookmarked', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ path: '/foo/bar/MySongs', name: 'My Faves' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			expect(screen.getByText(/bookmarked as my faves/i)).toBeInTheDocument();
+			expect(screen.queryByRole('menuitem', { name: /bookmark this folder/i })).toBeNull();
+		});
+
+		it('shows an error message when add returns cap-exceeded', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore.add as any).mockReturnValue({ ok: false, reason: 'cap-exceeded' });
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
+
+			expect(screen.getByText(/maximum of 20 bookmarks/i)).toBeInTheDocument();
+		});
 	});
 });

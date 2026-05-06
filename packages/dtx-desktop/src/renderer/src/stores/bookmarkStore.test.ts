@@ -47,4 +47,59 @@ describe('bookmarkStore', () => {
 			expect(get(store)).toEqual([]);
 		});
 	});
+
+	describe('add', () => {
+		it('appends a bookmark and returns ok', async () => {
+			const { bookmarkStore } = await import('./bookmarkStore');
+			const result = bookmarkStore.add('/foo/bar', 'My Folder');
+			expect(result).toEqual({ ok: true });
+			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar', name: 'My Folder' }]);
+		});
+
+		it('defaults name to basename of path when name omitted', async () => {
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.add('/foo/bar/MySongs');
+			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar/MySongs', name: 'MySongs' }]);
+		});
+
+		it('handles Windows-style paths in basename default', async () => {
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.add('C:\\Users\\jack\\Songs');
+			expect(get(bookmarkStore)).toEqual([{ path: 'C:\\Users\\jack\\Songs', name: 'Songs' }]);
+		});
+
+		it('returns duplicate and does not mutate when path already exists', async () => {
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.add('/foo', 'First');
+			const result = bookmarkStore.add('/foo', 'Second');
+			expect(result).toEqual({ ok: false, reason: 'duplicate' });
+			expect(get(bookmarkStore)).toEqual([{ path: '/foo', name: 'First' }]);
+		});
+
+		it('returns cap-exceeded and does not mutate when at 20 entries', async () => {
+			const stored = Array.from({ length: 20 }, (_, i) => ({
+				path: `/p${i}`,
+				name: `n${i}`
+			}));
+			// Use the test's localStorage mocking convention to seed the hydrated state.
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify(stored)
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			const result = bookmarkStore.add('/new', 'New');
+			expect(result).toEqual({ ok: false, reason: 'cap-exceeded' });
+			expect(get(bookmarkStore)).toEqual(stored);
+		});
+
+		it('persists to localStorage on successful add', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			vi.clearAllMocks();
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.add('/foo', 'Foo');
+			expect(window.localStorage.setItem).toHaveBeenCalledWith(
+				'workspace_bookmarks',
+				JSON.stringify([{ path: '/foo', name: 'Foo' }])
+			);
+		});
+	});
 });

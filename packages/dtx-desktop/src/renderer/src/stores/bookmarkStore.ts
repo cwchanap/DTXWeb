@@ -8,7 +8,6 @@ export interface WorkspaceBookmark {
 export type AddResult = { ok: true } | { ok: false; reason: 'duplicate' | 'cap-exceeded' };
 
 const STORAGE_KEY = 'workspace_bookmarks';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MAX_BOOKMARKS = 20;
 
 export function basename(p: string): string {
@@ -32,17 +31,32 @@ function hydrate(): WorkspaceBookmark[] {
 	}
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function persist(value: WorkspaceBookmark[]): void {
 	window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
 }
 
 function createBookmarkStore() {
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	const { subscribe, set, update } = writable<WorkspaceBookmark[]>(hydrate());
+	const { subscribe, update } = writable<WorkspaceBookmark[]>(hydrate());
 
 	return {
-		subscribe
+		subscribe,
+		add(path: string, name?: string): AddResult {
+			let result: AddResult = { ok: true };
+			update((current) => {
+				if (current.some((b) => b.path === path)) {
+					result = { ok: false, reason: 'duplicate' };
+					return current;
+				}
+				if (current.length >= MAX_BOOKMARKS) {
+					result = { ok: false, reason: 'cap-exceeded' };
+					return current;
+				}
+				const next = [...current, { path, name: name?.trim() || basename(path) }];
+				persist(next);
+				return next;
+			});
+			return result;
+		}
 	};
 }
 

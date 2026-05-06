@@ -2,6 +2,7 @@ import { workspaceStore, type TreeNode, type WorkspaceState } from '../stores/wo
 import { simFileStore, type SimFileState } from '../stores/simFileStore';
 import { linkingService } from './linkingService';
 import { linkageCacheService } from './linkageCacheService';
+import type { WorkspaceBookmark } from '../stores/bookmarkStore';
 
 export const workspaceService = {
 	/**
@@ -34,6 +35,17 @@ export const workspaceService = {
 		} finally {
 			workspaceStore.setLoading(false);
 		}
+	},
+
+	/**
+	 * Switches to a saved workspace bookmark: resets workspace state, sets the new path,
+	 * and reloads sub-workspaces and tree.
+	 */
+	switchToBookmark: async (bookmark: WorkspaceBookmark): Promise<void> => {
+		workspaceStore.reset();
+		workspaceStore.setPath(bookmark.path);
+		await workspaceService.loadSubWorkspaces();
+		await workspaceService.loadTreeStructure();
 	},
 
 	/**

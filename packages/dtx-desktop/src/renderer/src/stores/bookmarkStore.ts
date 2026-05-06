@@ -64,6 +64,18 @@ function createBookmarkStore() {
 				persist(next);
 				return next;
 			});
+		},
+		rename(path: string, newName: string): void {
+			update((current) => {
+				const idx = current.findIndex((b) => b.path === path);
+				if (idx === -1) return current;
+				const trimmed = newName.trim();
+				const finalName = trimmed === '' ? basename(path) : trimmed;
+				if (current[idx].name === finalName) return current;
+				const next = current.map((b, i) => (i === idx ? { ...b, name: finalName } : b));
+				persist(next);
+				return next;
+			});
 		}
 	};
 }

@@ -140,4 +140,54 @@ describe('bookmarkStore', () => {
 			);
 		});
 	});
+
+	describe('rename', () => {
+		it('updates the name for the matching path', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([{ path: '/a', name: 'Old' }])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.rename('/a', 'New');
+			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'New' }]);
+		});
+
+		it('trims surrounding whitespace from the new name', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([{ path: '/a', name: 'Old' }])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.rename('/a', '   spaced   ');
+			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'spaced' }]);
+		});
+
+		it('falls back to basename when new name is empty after trim', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([{ path: '/foo/bar/MySongs', name: 'Old' }])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.rename('/foo/bar/MySongs', '   ');
+			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar/MySongs', name: 'MySongs' }]);
+		});
+
+		it('is a no-op when path does not exist', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([{ path: '/a', name: 'A' }])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.rename('/missing', 'Whatever');
+			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'A' }]);
+		});
+
+		it('persists to localStorage on rename', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([{ path: '/a', name: 'Old' }])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.rename('/a', 'New');
+			expect(window.localStorage.setItem).toHaveBeenCalledWith(
+				'workspace_bookmarks',
+				JSON.stringify([{ path: '/a', name: 'New' }])
+			);
+		});
+	});
 });

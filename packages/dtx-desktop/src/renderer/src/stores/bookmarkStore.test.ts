@@ -102,4 +102,42 @@ describe('bookmarkStore', () => {
 			);
 		});
 	});
+
+	describe('remove', () => {
+		it('removes the matching path', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([
+					{ path: '/a', name: 'A' },
+					{ path: '/b', name: 'B' }
+				])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.remove('/a');
+			expect(get(bookmarkStore)).toEqual([{ path: '/b', name: 'B' }]);
+		});
+
+		it('is a no-op when path is not present', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([{ path: '/a', name: 'A' }])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.remove('/missing');
+			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'A' }]);
+		});
+
+		it('persists remaining entries to localStorage', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify([
+					{ path: '/a', name: 'A' },
+					{ path: '/b', name: 'B' }
+				])
+			);
+			const { bookmarkStore } = await import('./bookmarkStore');
+			bookmarkStore.remove('/a');
+			expect(window.localStorage.setItem).toHaveBeenCalledWith(
+				'workspace_bookmarks',
+				JSON.stringify([{ path: '/b', name: 'B' }])
+			);
+		});
+	});
 });

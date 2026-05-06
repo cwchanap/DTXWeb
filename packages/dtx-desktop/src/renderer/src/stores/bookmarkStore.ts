@@ -56,6 +56,14 @@ function createBookmarkStore() {
 				return next;
 			});
 			return result;
+		},
+		remove(path: string): void {
+			update((current) => {
+				if (!current.some((b) => b.path === path)) return current;
+				const next = current.filter((b) => b.path !== path);
+				persist(next);
+				return next;
+			});
 		}
 	};
 }

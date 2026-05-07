@@ -227,6 +227,75 @@ describe('WorkspaceBookmarksMenu', () => {
 		});
 	});
 
+	describe('Keyboard navigation', () => {
+		beforeEach(async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([
+				{ path: '/a', name: 'Alpha' },
+				{ path: '/b', name: 'Beta' }
+			]);
+		});
+
+		it('ArrowDown moves focus to the next menuitem', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			const items = screen.getAllByRole('menuitem');
+			items[0].focus();
+
+			await fireEvent.keyDown(window, { key: 'ArrowDown' });
+			expect(document.activeElement).toBe(items[1]);
+		});
+
+		it('ArrowUp from first menuitem wraps to last', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			const items = screen.getAllByRole('menuitem');
+			items[0].focus();
+
+			await fireEvent.keyDown(window, { key: 'ArrowUp' });
+			expect(document.activeElement).toBe(items[items.length - 1]);
+		});
+	});
+
+	describe('Focus return on close', () => {
+		it('returns focus to the trigger when Escape closes the dropdown', async () => {
+			render(WorkspaceBookmarksMenu);
+			const trigger = screen.getByRole('button', { name: /workspace menu/i });
+
+			await fireEvent.click(trigger);
+			// Some other element gets focus inside the dropdown
+			(document.activeElement as HTMLElement)?.blur();
+
+			await fireEvent.keyDown(window, { key: 'Escape' });
+
+			// queueMicrotask requires a flush; await a microtask
+			await Promise.resolve();
+			expect(document.activeElement).toBe(trigger);
+		});
+	});
+
+	describe('Click outside to close', () => {
+		it('closes the dropdown when clicking outside the menu', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			expect(screen.getByRole('menu')).toBeInTheDocument();
+
+			await fireEvent.mouseDown(document.body);
+			expect(screen.queryByRole('menu')).toBeNull();
+		});
+
+		it('does not close when clicking inside the menu', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			const menu = screen.getByRole('menu');
+
+			await fireEvent.mouseDown(menu);
+			expect(screen.getByRole('menu')).toBeInTheDocument();
+		});
+	});
+
 	describe('Inline rename', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');

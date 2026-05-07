@@ -3,7 +3,7 @@
 	import { workspaceStore } from '../stores/workspaceStore';
 	import { bookmarkStore, basename, type WorkspaceBookmark } from '../stores/bookmarkStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { ChevronDown, Star, CheckCircle2, Pencil, Trash2 } from '@lucide/svelte';
+	import { ChevronDown, Star, CheckCircle2, Pencil, Trash2, FolderOpen } from '@lucide/svelte';
 
 	let isOpen = $state(false);
 	let currentPath = $state<string | null>(null);
@@ -86,6 +86,11 @@
 
 	const handleRemove = (b: WorkspaceBookmark) => {
 		bookmarkStore.remove(b.path);
+	};
+
+	const handleBrowse = () => {
+		isOpen = false;
+		void workspaceService.selectWorkspace();
 	};
 
 	const handleEditKeydown = (event: KeyboardEvent) => {
@@ -231,6 +236,16 @@
 					{/each}
 				</ul>
 			{/if}
+			<div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
+			<button
+				type="button"
+				role="menuitem"
+				class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+				onclick={handleBrowse}
+			>
+				<FolderOpen size={16} />
+				<span>Browse for folder…</span>
+			</button>
 		</div>
 	{/if}
 </div>

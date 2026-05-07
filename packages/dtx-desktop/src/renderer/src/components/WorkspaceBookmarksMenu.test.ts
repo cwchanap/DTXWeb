@@ -189,4 +189,60 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(workspaceService.switchToBookmark).not.toHaveBeenCalled();
 		});
 	});
+
+	describe('Inline rename', () => {
+		beforeEach(async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+		});
+
+		it('clicking pencil swaps name for an input with current value', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			expect(input).toHaveValue('Alpha');
+		});
+
+		it('Enter saves the new name via bookmarkStore.rename', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'Renamed' } });
+			await fireEvent.keyDown(input, { key: 'Enter' });
+
+			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'Renamed');
+		});
+
+		it('Escape cancels the rename without calling rename', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'Discard' } });
+			await fireEvent.keyDown(input, { key: 'Escape' });
+
+			expect(bookmarkStore.rename).not.toHaveBeenCalled();
+			expect(screen.queryByRole('textbox', { name: /rename alpha/i })).toBeNull();
+		});
+
+		it('blur saves the current input value', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'BlurSaved' } });
+			await fireEvent.blur(input);
+
+			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'BlurSaved');
+		});
+	});
 });

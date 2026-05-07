@@ -3,7 +3,7 @@
 	import { workspaceStore } from '../stores/workspaceStore';
 	import { bookmarkStore, basename, type WorkspaceBookmark } from '../stores/bookmarkStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { ChevronDown, Star, CheckCircle2 } from '@lucide/svelte';
+	import { ChevronDown, Star, CheckCircle2, Pencil } from '@lucide/svelte';
 
 	let isOpen = $state(false);
 	let currentPath = $state<string | null>(null);
@@ -63,6 +63,36 @@
 	});
 
 	const triggerLabel = $derived(currentPath ? basename(currentPath) : 'No workspace');
+
+	let editingPath = $state<string | null>(null);
+	let editingValue = $state('');
+
+	const startEditing = (b: WorkspaceBookmark) => {
+		editingPath = b.path;
+		editingValue = b.name;
+	};
+
+	const commitEditing = () => {
+		if (editingPath === null) return;
+		const path = editingPath;
+		const value = editingValue;
+		editingPath = null;
+		bookmarkStore.rename(path, value);
+	};
+
+	const cancelEditing = () => {
+		editingPath = null;
+	};
+
+	const handleEditKeydown = (event: KeyboardEvent) => {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			commitEditing();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			cancelEditing();
+		}
+	};
 </script>
 
 <div class="relative inline-block">
@@ -134,7 +164,7 @@
 							data-testid={`bookmark-row-${bookmark.path}`}
 							data-active={isActive ? 'true' : 'false'}
 							tabindex="0"
-							class="flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+							class="group flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
 							class:cursor-default={isActive}
 							class:bg-slate-50={isActive}
 							class:dark:bg-slate-700={isActive}
@@ -147,9 +177,23 @@
 							}}
 						>
 							<div class="min-w-0 flex-1">
-								<div class="truncate text-slate-800 dark:text-slate-100">
-									{bookmark.name}
-								</div>
+								{#if editingPath === bookmark.path}
+									<!-- svelte-ignore a11y_autofocus -->
+									<input
+										type="text"
+										class="w-full rounded border border-slate-300 bg-white px-1 py-0.5 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+										aria-label={`Rename ${bookmark.name}`}
+										bind:value={editingValue}
+										onkeydown={handleEditKeydown}
+										onblur={commitEditing}
+										onclick={(e) => e.stopPropagation()}
+										autofocus
+									/>
+								{:else}
+									<div class="truncate text-slate-800 dark:text-slate-100">
+										{bookmark.name}
+									</div>
+								{/if}
 								<div
 									class="truncate font-mono text-xs text-slate-500 dark:text-slate-400"
 									title={bookmark.path}
@@ -157,6 +201,17 @@
 									{bookmark.path}
 								</div>
 							</div>
+							<button
+								type="button"
+								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-slate-200"
+								aria-label={`Rename ${bookmark.name}`}
+								onclick={(e) => {
+									e.stopPropagation();
+									startEditing(bookmark);
+								}}
+							>
+								<Pencil size={14} />
+							</button>
 						</li>
 					{/each}
 				</ul>

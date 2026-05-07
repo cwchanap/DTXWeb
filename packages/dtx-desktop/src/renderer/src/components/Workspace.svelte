@@ -23,6 +23,7 @@
 	import SimFileList from './SimFileList.svelte';
 	import Templates from './Templates.svelte';
 	import Settings from './Settings.svelte';
+	import WorkspaceBookmarksMenu from './WorkspaceBookmarksMenu.svelte';
 
 	let isLoading = $state(false);
 	let workspacePath = $state('');
@@ -300,25 +301,7 @@
 					{:else}
 						<!-- Workspace Content -->
 						<div class="mb-4">
-							<div class="mb-2 flex items-center">
-								<span
-									class="mr-2 text-sm font-medium text-slate-500 dark:text-slate-400"
-									>Current workspace:</span
-								>
-								<span
-									class="rounded bg-slate-100 px-2 py-1 font-mono text-sm dark:bg-slate-700"
-								>
-									{workspacePath}
-								</span>
-							</div>
-							<button
-								class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-								onclick={handleSelectWorkspace}
-								tabindex="0"
-								aria-label="Change workspace folder"
-							>
-								Change folder
-							</button>
+							<WorkspaceBookmarksMenu />
 						</div>
 
 						<!-- Search Filter -->

@@ -86,6 +86,30 @@ vi.mock('./SimFileList.svelte', () => ({ default: vi.fn() }));
 vi.mock('./Templates.svelte', () => ({ default: vi.fn() }));
 vi.mock('./Settings.svelte', () => ({ default: vi.fn() }));
 
+vi.mock('../stores/bookmarkStore', () => {
+	let value: Array<{ path: string; name: string }> = [];
+	const listeners: Array<(v: typeof value) => void> = [];
+	return {
+		bookmarkStore: {
+			subscribe: vi.fn((cb: (v: typeof value) => void) => {
+				cb(value);
+				listeners.push(cb);
+				return () => listeners.splice(listeners.indexOf(cb), 1);
+			}),
+			setValue: (next: typeof value) => {
+				value = next;
+				listeners.forEach((cb) => cb(value));
+			},
+			add: vi.fn(),
+			remove: vi.fn(),
+			rename: vi.fn()
+		},
+		basename: (p: string) => p.split('/').pop() ?? p
+	};
+});
+
+vi.mock('./WorkspaceBookmarksMenu.svelte', () => ({ default: vi.fn() }));
+
 import Workspace from './Workspace.svelte';
 import { workspaceStore } from '../stores/workspaceStore';
 
@@ -137,11 +161,6 @@ describe('Workspace – with workspace path', () => {
 	afterEach(() => {
 		cleanup();
 		vi.mocked(workspaceStore).reset();
-	});
-
-	it('shows workspace path when set', () => {
-		render(Workspace);
-		expect(screen.getByText('/workspace/test')).toBeInTheDocument();
 	});
 
 	it('shows New Song, Refresh and Clear buttons when workspace is set', () => {
@@ -337,12 +356,14 @@ describe('Workspace – sub-workspaces section', () => {
 		expect(screen.getByText(/Showing all folders in workspace/i)).toBeInTheDocument();
 	});
 
-	it('shows "Change folder" button when workspace path is set', () => {
-		vi.mocked(workspaceStore).setState({ path: '/workspace/test', treeStructure: [] });
+	it('renders WorkspaceBookmarksMenu in place of the legacy Change folder link when a path is set', async () => {
+		const WorkspaceBookmarksMenu = (await import('./WorkspaceBookmarksMenu.svelte')).default;
+
+		(workspaceStore as any).setState({ path: '/test/workspace' });
 		render(Workspace);
-		expect(
-			screen.getByRole('button', { name: /change workspace folder/i })
-		).toBeInTheDocument();
+
+		expect(screen.queryByRole('link', { name: /change folder/i })).toBeNull();
+		expect(WorkspaceBookmarksMenu).toHaveBeenCalled();
 	});
 });
 

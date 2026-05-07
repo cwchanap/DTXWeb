@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { workspaceStore } from '../stores/workspaceStore';
 	import { bookmarkStore, basename, type WorkspaceBookmark } from '../stores/bookmarkStore';
+	import { workspaceService } from '../services/workspaceService';
 	import { ChevronDown, Star, CheckCircle2 } from '@lucide/svelte';
 
 	let isOpen = $state(false);
@@ -15,6 +16,12 @@
 	const currentBookmark = $derived(
 		currentPath ? (bookmarks.find((b) => b.path === currentPath) ?? null) : null
 	);
+
+	const handleSwitchTo = (b: WorkspaceBookmark) => {
+		if (b.path === currentPath) return;
+		isOpen = false;
+		void workspaceService.switchToBookmark(b);
+	};
 
 	const handleBookmarkCurrent = () => {
 		if (!currentPath) return;
@@ -109,6 +116,50 @@
 			{/if}
 			{#if addError}
 				<div class="px-2 py-1 text-xs text-red-600 dark:text-red-300">{addError}</div>
+			{/if}
+			{#if bookmarks.length > 0}
+				<div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
+				<div class="px-2 pt-2 pb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+					Bookmarks
+				</div>
+				<ul class="max-h-72 overflow-auto">
+					{#each bookmarks as bookmark (bookmark.path)}
+						{@const isActive = bookmark.path === currentPath}
+						<li
+							role="menuitem"
+							aria-label={isActive
+								? `${bookmark.name} (current)`
+								: `Switch to ${bookmark.name}`}
+							aria-disabled={isActive}
+							data-testid={`bookmark-row-${bookmark.path}`}
+							data-active={isActive ? 'true' : 'false'}
+							tabindex="0"
+							class="flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+							class:cursor-default={isActive}
+							class:bg-slate-50={isActive}
+							class:dark:bg-slate-700={isActive}
+							onclick={() => handleSwitchTo(bookmark)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									handleSwitchTo(bookmark);
+								}
+							}}
+						>
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-slate-800 dark:text-slate-100">
+									{bookmark.name}
+								</div>
+								<div
+									class="truncate font-mono text-xs text-slate-500 dark:text-slate-400"
+									title={bookmark.path}
+								>
+									{bookmark.path}
+								</div>
+							</div>
+						</li>
+					{/each}
+				</ul>
 			{/if}
 		</div>
 	{/if}

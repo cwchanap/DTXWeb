@@ -134,4 +134,59 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(screen.getByText(/maximum of 20 bookmarks/i)).toBeInTheDocument();
 		});
 	});
+
+	describe('Bookmark list', () => {
+		it('renders no Bookmarks heading when list is empty', async () => {
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			expect(screen.queryByText(/^bookmarks$/i)).toBeNull();
+		});
+
+		it('renders each bookmark with name and path', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([
+				{ path: '/a', name: 'Alpha' },
+				{ path: '/b', name: 'Beta' }
+			]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			expect(screen.getByText('Alpha')).toBeInTheDocument();
+			expect(screen.getByText('/a')).toBeInTheDocument();
+			expect(screen.getByText('Beta')).toBeInTheDocument();
+			expect(screen.getByText('/b')).toBeInTheDocument();
+		});
+
+		it('clicking a non-active bookmark calls switchToBookmark and closes the dropdown', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to alpha/i }));
+
+			expect(workspaceService.switchToBookmark).toHaveBeenCalledWith({
+				path: '/a',
+				name: 'Alpha'
+			});
+			expect(screen.queryByRole('menu')).toBeNull();
+		});
+
+		it('marks the active bookmark and does not call switchToBookmark on click', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/foo/bar/MySongs', name: 'Active' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			const activeRow = screen.getByTestId('bookmark-row-/foo/bar/MySongs');
+			expect(activeRow).toHaveAttribute('data-active', 'true');
+
+			await fireEvent.click(activeRow);
+			expect(workspaceService.switchToBookmark).not.toHaveBeenCalled();
+		});
+	});
 });

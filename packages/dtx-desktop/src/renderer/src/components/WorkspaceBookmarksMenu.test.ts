@@ -215,6 +215,18 @@ describe('WorkspaceBookmarksMenu', () => {
 		});
 	});
 
+	describe('Browse for folder', () => {
+		it('clicking "Browse for folder…" calls selectWorkspace and closes the dropdown', async () => {
+			const { workspaceService } = await import('../services/workspaceService');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /browse for folder/i }));
+
+			expect(workspaceService.selectWorkspace).toHaveBeenCalledTimes(1);
+			expect(screen.queryByRole('menu')).toBeNull();
+		});
+	});
+
 	describe('Inline rename', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');

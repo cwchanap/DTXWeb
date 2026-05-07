@@ -3,7 +3,7 @@
 	import { workspaceStore } from '../stores/workspaceStore';
 	import { bookmarkStore, basename, type WorkspaceBookmark } from '../stores/bookmarkStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { ChevronDown, Star, CheckCircle2, Pencil } from '@lucide/svelte';
+	import { ChevronDown, Star, CheckCircle2, Pencil, Trash2 } from '@lucide/svelte';
 
 	let isOpen = $state(false);
 	let currentPath = $state<string | null>(null);
@@ -82,6 +82,10 @@
 
 	const cancelEditing = () => {
 		editingPath = null;
+	};
+
+	const handleRemove = (b: WorkspaceBookmark) => {
+		bookmarkStore.remove(b.path);
 	};
 
 	const handleEditKeydown = (event: KeyboardEvent) => {
@@ -211,6 +215,17 @@
 								}}
 							>
 								<Pencil size={14} />
+							</button>
+							<button
+								type="button"
+								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600 dark:hover:bg-slate-600 dark:hover:text-red-400"
+								aria-label={`Remove ${bookmark.name}`}
+								onclick={(e) => {
+									e.stopPropagation();
+									handleRemove(bookmark);
+								}}
+							>
+								<Trash2 size={14} />
 							</button>
 						</li>
 					{/each}

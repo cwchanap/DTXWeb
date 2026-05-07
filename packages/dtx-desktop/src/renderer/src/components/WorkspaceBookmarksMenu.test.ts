@@ -190,6 +190,31 @@ describe('WorkspaceBookmarksMenu', () => {
 		});
 	});
 
+	describe('Trash remove', () => {
+		it('clicking trash calls bookmarkStore.remove without confirmation', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /remove alpha/i }));
+
+			expect(bookmarkStore.remove).toHaveBeenCalledWith('/a');
+		});
+
+		it('clicking trash does not trigger switch on the row', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /remove alpha/i }));
+
+			expect(workspaceService.switchToBookmark).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('Inline rename', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');

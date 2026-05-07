@@ -9,6 +9,9 @@
 	let currentPath = $state<string | null>(null);
 	let bookmarks = $state<WorkspaceBookmark[]>([]);
 	let addError = $state<string | null>(null);
+	let triggerEl = $state<HTMLButtonElement | null>(null);
+	let menuEl = $state<HTMLDivElement | null>(null);
+	let rootEl = $state<HTMLDivElement | null>(null);
 
 	const isCurrentBookmarked = $derived(
 		!!currentPath && bookmarks.some((b) => b.path === currentPath)
@@ -17,9 +20,14 @@
 		currentPath ? (bookmarks.find((b) => b.path === currentPath) ?? null) : null
 	);
 
+	const closeDropdown = () => {
+		isOpen = false;
+		queueMicrotask(() => triggerEl?.focus());
+	};
+
 	const handleSwitchTo = (b: WorkspaceBookmark) => {
 		if (b.path === currentPath) return;
-		isOpen = false;
+		closeDropdown();
 		void workspaceService.switchToBookmark(b);
 	};
 
@@ -28,8 +36,11 @@
 		const result = bookmarkStore.add(currentPath);
 		if (result.ok) {
 			addError = null;
-			isOpen = false;
-		} else if (result.reason === 'cap-exceeded') {
+			closeDropdown();
+			return;
+		}
+		const failure = result as { ok: false; reason: 'duplicate' | 'cap-exceeded' };
+		if (failure.reason === 'cap-exceeded') {
 			addError = 'Maximum of 20 bookmarks reached';
 		} else {
 			addError = null;
@@ -49,14 +60,47 @@
 
 	const handleKeydown = (event: KeyboardEvent) => {
 		if (event.key === 'Escape' && isOpen) {
-			isOpen = false;
+			closeDropdown();
+			return;
+		}
+
+		if (!isOpen || !menuEl) return;
+
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			const items = Array.from(
+				menuEl.querySelectorAll<HTMLElement>(
+					'[role="menuitem"]:not([aria-disabled="true"])'
+				)
+			);
+			if (items.length === 0) return;
+
+			const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+			let nextIndex: number;
+			if (event.key === 'ArrowDown') {
+				nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % items.length;
+			} else {
+				nextIndex =
+					currentIndex === -1 || currentIndex === 0
+						? items.length - 1
+						: (currentIndex - 1 + items.length) % items.length;
+			}
+			items[nextIndex].focus();
+		}
+	};
+
+	const handleOutsideMousedown = (event: MouseEvent) => {
+		if (isOpen && rootEl && !rootEl.contains(event.target as Node)) {
+			closeDropdown();
 		}
 	};
 
 	onMount(() => {
 		window.addEventListener('keydown', handleKeydown);
+		document.addEventListener('mousedown', handleOutsideMousedown);
 		return () => {
 			window.removeEventListener('keydown', handleKeydown);
+			document.removeEventListener('mousedown', handleOutsideMousedown);
 			unsubWs();
 			unsubBm();
 		};
@@ -89,7 +133,7 @@
 	};
 
 	const handleBrowse = () => {
-		isOpen = false;
+		closeDropdown();
 		void workspaceService.selectWorkspace();
 	};
 
@@ -104,13 +148,14 @@
 	};
 </script>
 
-<div class="relative inline-block">
+<div class="relative inline-block" bind:this={rootEl}>
 	<button
 		type="button"
 		class="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
 		aria-label="Workspace menu"
 		aria-haspopup="menu"
 		aria-expanded={isOpen}
+		bind:this={triggerEl}
 		onclick={handleTriggerClick}
 	>
 		<span>{triggerLabel}</span>
@@ -120,6 +165,7 @@
 	{#if isOpen}
 		<div
 			role="menu"
+			bind:this={menuEl}
 			class="absolute left-0 z-20 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-800"
 		>
 			{#if currentPath}

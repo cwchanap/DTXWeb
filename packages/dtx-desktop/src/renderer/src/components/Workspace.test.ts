@@ -408,6 +408,57 @@ describe('Workspace – song details view', () => {
 	});
 });
 
+describe('Remove bookmark error action', () => {
+	beforeEach(async () => {
+		const { bookmarkStore } = await import('../stores/bookmarkStore');
+		const { workspaceService } = await import('../services/workspaceService');
+		(bookmarkStore as any).setValue([]);
+		vi.mocked(workspaceService.clearWorkspace).mockClear();
+		vi.mocked(bookmarkStore.remove).mockClear();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.mocked(workspaceStore).reset();
+	});
+
+	it('does not show the button when failure path is not in bookmarkStore', () => {
+		(workspaceStore as any).setState({
+			path: '/missing',
+			error: 'Failed to load tree structure'
+		});
+		render(Workspace);
+		expect(screen.queryByRole('button', { name: /remove bookmark/i })).toBeNull();
+	});
+
+	it('shows the button when failure path is in bookmarkStore', async () => {
+		const { bookmarkStore } = await import('../stores/bookmarkStore');
+		(bookmarkStore as any).setValue([{ path: '/missing', name: 'Missing' }]);
+		(workspaceStore as any).setState({
+			path: '/missing',
+			error: 'Failed to load tree structure'
+		});
+		render(Workspace);
+		expect(screen.getByRole('button', { name: /remove bookmark/i })).toBeInTheDocument();
+	});
+
+	it('clicking the button calls bookmarkStore.remove and workspaceService.clearWorkspace', async () => {
+		const { bookmarkStore } = await import('../stores/bookmarkStore');
+		const { workspaceService } = await import('../services/workspaceService');
+		(bookmarkStore as any).setValue([{ path: '/missing', name: 'Missing' }]);
+		(workspaceStore as any).setState({
+			path: '/missing',
+			error: 'Failed to load tree structure'
+		});
+
+		render(Workspace);
+		await fireEvent.click(screen.getByRole('button', { name: /remove bookmark/i }));
+
+		expect(bookmarkStore.remove).toHaveBeenCalledWith('/missing');
+		expect(workspaceService.clearWorkspace).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe('Workspace – filterTreeNodes edge cases', () => {
 	const makeFullNode = (
 		name: string,

@@ -294,6 +294,34 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.mouseDown(menu);
 			expect(screen.getByRole('menu')).toBeInTheDocument();
 		});
+
+		it('does not return focus to trigger on outside click', async () => {
+			render(WorkspaceBookmarksMenu);
+			const trigger = screen.getByRole('button', { name: /workspace menu/i });
+
+			await fireEvent.click(trigger);
+			expect(screen.getByRole('menu')).toBeInTheDocument();
+
+			await fireEvent.mouseDown(document.body);
+			await Promise.resolve();
+
+			expect(document.activeElement).not.toBe(trigger);
+		});
+
+		it('commits pending rename before closing on outside click', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'OutsideSaved' } });
+			await fireEvent.mouseDown(document.body);
+
+			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'OutsideSaved');
+		});
 	});
 
 	describe('Child action button keyboard handling', () => {

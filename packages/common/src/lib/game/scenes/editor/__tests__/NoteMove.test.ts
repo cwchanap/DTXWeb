@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NoteMove } from './NoteMove';
-import type { Editor } from '../Editor';
+import { NoteMove } from '../NoteMove';
+import type { Editor } from '../../Editor';
 // import type { MovedNoteData } from './NoteBuffer';
-import { LaneMeasureNote } from '../../../chart/note';
+import { LaneMeasureNote } from '../../../../chart/note';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 // Mock Editor with all necessary methods
 const createMockEditor = () => {

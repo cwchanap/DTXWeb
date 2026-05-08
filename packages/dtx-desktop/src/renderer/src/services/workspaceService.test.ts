@@ -566,6 +566,7 @@ describe('WorkspaceService', () => {
 				return vi.fn();
 			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists') return Promise.resolve(true);
 				if (channel === 'list-directories') {
 					calls.push('list-directories');
 					return Promise.resolve([]);
@@ -598,6 +599,7 @@ describe('WorkspaceService', () => {
 				return vi.fn();
 			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists') return Promise.resolve(true);
 				if (channel === 'list-directories') return Promise.resolve([]);
 				if (channel === 'load-tree-structure') {
 					return Promise.reject(new Error('boom'));
@@ -609,6 +611,21 @@ describe('WorkspaceService', () => {
 
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
 			expect(workspaceStore.clearWorkspace).not.toHaveBeenCalled();
+		});
+
+		it('sets an error and returns early when bookmark path does not exist', async () => {
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists') return Promise.resolve(false);
+				return Promise.resolve([]);
+			});
+
+			await workspaceService.switchToBookmark({ path: '/gone/path', name: 'Gone' });
+
+			expect(workspaceStore.setError).toHaveBeenCalledWith(
+				expect.stringContaining('/gone/path')
+			);
+			expect(workspaceStore.setPath).not.toHaveBeenCalled();
+			expect(workspaceStore.setTreeStructure).not.toHaveBeenCalled();
 		});
 	});
 });

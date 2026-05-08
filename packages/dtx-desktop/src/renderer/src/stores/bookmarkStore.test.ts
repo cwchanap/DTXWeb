@@ -92,8 +92,8 @@ describe('bookmarkStore', () => {
 		});
 
 		it('persists to localStorage on successful add', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			vi.clearAllMocks();
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			const { bookmarkStore } = await import('./bookmarkStore');
 			bookmarkStore.add('/foo', 'Foo');
 			expect(window.localStorage.setItem).toHaveBeenCalledWith(

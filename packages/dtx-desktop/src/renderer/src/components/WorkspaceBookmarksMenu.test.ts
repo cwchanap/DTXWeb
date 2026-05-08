@@ -324,7 +324,7 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'Renamed');
 		});
 
-		it('Escape cancels the rename without calling rename', async () => {
+		it('Escape cancels the rename without calling rename and keeps the menu open', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -336,6 +336,7 @@ describe('WorkspaceBookmarksMenu', () => {
 
 			expect(bookmarkStore.rename).not.toHaveBeenCalled();
 			expect(screen.queryByRole('textbox', { name: /rename alpha/i })).toBeNull();
+			expect(screen.getByRole('menu')).toBeInTheDocument();
 		});
 
 		it('blur saves the current input value', async () => {

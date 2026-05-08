@@ -552,7 +552,7 @@ describe('WorkspaceService', () => {
 	});
 
 	describe('switchToBookmark', () => {
-		it('resets, sets the path, and reloads sub-workspaces and tree in order', async () => {
+		it('validates path, then resets, sets the path, and reloads sub-workspaces and tree in order', async () => {
 			const calls: string[] = [];
 			(workspaceStore.reset as any).mockImplementation(() => calls.push('reset'));
 			(workspaceStore.setPath as any).mockImplementation(() => calls.push('setPath'));
@@ -566,7 +566,10 @@ describe('WorkspaceService', () => {
 				return vi.fn();
 			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.resolve(true);
+				if (channel === 'path-exists') {
+					calls.push('path-exists');
+					return Promise.resolve(true);
+				}
 				if (channel === 'list-directories') {
 					calls.push('list-directories');
 					return Promise.resolve([]);
@@ -582,6 +585,7 @@ describe('WorkspaceService', () => {
 
 			expect(workspaceStore.reset).toHaveBeenCalledTimes(1);
 			expect(workspaceStore.setPath).toHaveBeenCalledWith('/bm/path');
+			expect(calls.indexOf('path-exists')).toBeLessThan(calls.indexOf('reset'));
 			expect(calls.indexOf('reset')).toBeLessThan(calls.indexOf('setPath'));
 			expect(calls.indexOf('setPath')).toBeLessThan(calls.indexOf('list-directories'));
 			expect(calls.indexOf('list-directories')).toBeLessThan(
@@ -613,7 +617,7 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.clearWorkspace).not.toHaveBeenCalled();
 		});
 
-		it('sets an error and returns early when bookmark path does not exist', async () => {
+		it('sets an error and returns early when bookmark path does not exist without resetting workspace', async () => {
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
 				if (channel === 'path-exists') return Promise.resolve(false);
 				return Promise.resolve([]);
@@ -624,6 +628,7 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.setError).toHaveBeenCalledWith(
 				expect.stringContaining('/gone/path')
 			);
+			expect(workspaceStore.reset).not.toHaveBeenCalled();
 			expect(workspaceStore.setPath).not.toHaveBeenCalled();
 			expect(workspaceStore.setTreeStructure).not.toHaveBeenCalled();
 		});

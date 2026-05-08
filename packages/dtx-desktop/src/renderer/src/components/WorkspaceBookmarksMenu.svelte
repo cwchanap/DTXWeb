@@ -22,6 +22,7 @@
 
 	const closeDropdown = () => {
 		isOpen = false;
+		addError = null;
 		queueMicrotask(() => triggerEl?.focus());
 	};
 
@@ -140,9 +141,11 @@
 	const handleEditKeydown = (event: KeyboardEvent) => {
 		if (event.key === 'Enter') {
 			event.preventDefault();
+			event.stopPropagation();
 			commitEditing();
 		} else if (event.key === 'Escape') {
 			event.preventDefault();
+			event.stopPropagation();
 			cancelEditing();
 		}
 	};

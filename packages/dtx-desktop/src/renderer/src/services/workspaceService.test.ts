@@ -561,6 +561,10 @@ describe('WorkspaceService', () => {
 				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
 				return vi.fn();
 			});
+			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ userSimFiles: [] });
+				return vi.fn();
+			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
 				if (channel === 'list-directories') {
 					calls.push('list-directories');
@@ -587,6 +591,10 @@ describe('WorkspaceService', () => {
 		it('surfaces tree-load errors via setError without clearing the path', async () => {
 			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
 				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
+				return vi.fn();
+			});
+			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {

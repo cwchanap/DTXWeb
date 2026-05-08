@@ -9,14 +9,14 @@ import {
 	type MovedNoteData,
 	type PastedNoteData,
 	type CutNoteData
-} from './NoteBuffer';
-import { LaneMeasureNote } from '../../../chart/note';
-import { normalizePosition } from '../../../utils/position';
-import type { Editor } from '../Editor';
-import type { NoteMove } from './NoteMove';
+} from '../NoteBuffer';
+import { LaneMeasureNote } from '../../../../chart/note';
+import { normalizePosition } from '../../../../utils/position';
+import type { Editor } from '../../Editor';
+import type { NoteMove } from '../NoteMove';
 
 // Mock the normalizePosition utility
-vi.mock('../../../utils/position', () => ({
+vi.mock('../../../../utils/position', () => ({
 	normalizePosition: vi.fn((cellOffset: number) => cellOffset)
 }));
 

@@ -20,10 +20,15 @@
 		currentPath ? (bookmarks.find((b) => b.path === currentPath) ?? null) : null
 	);
 
-	const closeDropdown = () => {
+	const closeDropdown = (options?: { refocus?: boolean }) => {
+		if (editingPath !== null) {
+			commitEditing();
+		}
 		isOpen = false;
 		addError = null;
-		queueMicrotask(() => triggerEl?.focus());
+		if (options?.refocus !== false) {
+			queueMicrotask(() => triggerEl?.focus());
+		}
 	};
 
 	const handleSwitchTo = (b: WorkspaceBookmark) => {
@@ -92,7 +97,7 @@
 
 	const handleOutsideMousedown = (event: MouseEvent) => {
 		if (isOpen && rootEl && !rootEl.contains(event.target as Node)) {
-			closeDropdown();
+			closeDropdown({ refocus: false });
 		}
 	};
 
@@ -262,7 +267,7 @@
 							</div>
 							<button
 								type="button"
-								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-600 dark:hover:text-slate-200"
+								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-slate-700 focus-visible:opacity-100 dark:hover:bg-slate-600 dark:hover:text-slate-200"
 								aria-label={`Rename ${bookmark.name}`}
 								onclick={(e) => {
 									e.stopPropagation();
@@ -273,7 +278,7 @@
 							</button>
 							<button
 								type="button"
-								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600 dark:hover:bg-slate-600 dark:hover:text-red-400"
+								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600 focus-visible:opacity-100 dark:hover:bg-slate-600 dark:hover:text-red-400"
 								aria-label={`Remove ${bookmark.name}`}
 								onclick={(e) => {
 									e.stopPropagation();

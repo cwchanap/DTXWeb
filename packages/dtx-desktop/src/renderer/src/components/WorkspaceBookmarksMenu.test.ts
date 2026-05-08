@@ -296,6 +296,49 @@ describe('WorkspaceBookmarksMenu', () => {
 		});
 	});
 
+	describe('Child action button keyboard handling', () => {
+		beforeEach(async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+		});
+
+		it('pressing Enter on the Remove button does not trigger switchToBookmark', async () => {
+			const { workspaceService } = await import('../services/workspaceService');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			const removeBtn = screen.getByRole('button', { name: /remove alpha/i });
+			await fireEvent.keyDown(removeBtn, { key: 'Enter' });
+
+			expect(workspaceService.switchToBookmark).not.toHaveBeenCalled();
+		});
+
+		it('pressing Space on the Rename button does not trigger switchToBookmark', async () => {
+			const { workspaceService } = await import('../services/workspaceService');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			const renameBtn = screen.getByRole('button', { name: /rename alpha/i });
+			await fireEvent.keyDown(renameBtn, { key: ' ' });
+
+			expect(workspaceService.switchToBookmark).not.toHaveBeenCalled();
+		});
+
+		it('pressing Enter on the row itself does trigger switchToBookmark', async () => {
+			const { workspaceService } = await import('../services/workspaceService');
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			const row = screen.getByTestId('bookmark-row-/a');
+			await fireEvent.keyDown(row, { key: 'Enter' });
+
+			expect(workspaceService.switchToBookmark).toHaveBeenCalledWith({
+				path: '/a',
+				name: 'Alpha'
+			});
+		});
+	});
+
 	describe('Inline rename', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');

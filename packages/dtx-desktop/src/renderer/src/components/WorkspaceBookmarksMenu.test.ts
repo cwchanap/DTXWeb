@@ -45,7 +45,7 @@ vi.mock('../stores/bookmarkStore', () => {
 
 vi.mock('../services/workspaceService', () => ({
 	workspaceService: {
-		switchToBookmark: vi.fn(),
+		switchToBookmark: vi.fn().mockResolvedValue({ ok: true }),
 		selectWorkspace: vi.fn()
 	}
 }));
@@ -421,6 +421,64 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.blur(input);
 
 			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'BlurSaved');
+		});
+	});
+
+	describe('Stale bookmark error handling', () => {
+		it('shows scoped error with remove option when switchToBookmark returns failure', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/stale/path', name: 'Stale' }]);
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'Workspace path no longer exists: /stale/path',
+				path: '/stale/path'
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
+
+			// Menu re-opens to show the scoped error
+			expect(screen.getByText(/workspace path no longer exists/i)).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: /remove bookmark/i })).toBeInTheDocument();
+		});
+
+		it('removes the stale bookmark and clears the error when clicking remove', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/stale/path', name: 'Stale' }]);
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'Workspace path no longer exists: /stale/path',
+				path: '/stale/path'
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /remove bookmark/i }));
+
+			expect(bookmarkStore.remove).toHaveBeenCalledWith('/stale/path');
+			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
+		});
+
+		it('clears the scoped error when dropdown is closed and reopened', async () => {
+			const { workspaceService } = await import('../services/workspaceService');
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'Workspace path no longer exists: /stale/path',
+				path: '/stale/path'
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			// Dropdown is open; close it
+			await fireEvent.keyDown(window, { key: 'Escape' });
+			// Reopen
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
 		});
 	});
 });

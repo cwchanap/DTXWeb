@@ -24,7 +24,6 @@
 	import Templates from './Templates.svelte';
 	import Settings from './Settings.svelte';
 	import WorkspaceBookmarksMenu from './WorkspaceBookmarksMenu.svelte';
-	import { bookmarkStore } from '../stores/bookmarkStore';
 
 	let isLoading = $state(false);
 	let workspacePath = $state('');
@@ -69,22 +68,6 @@
 		showTemplates = state.showTemplates;
 	});
 
-	let bookmarks = $state<Array<{ path: string; name: string }>>([]);
-	const unsubBookmarks = bookmarkStore.subscribe((v) => {
-		bookmarks = v;
-	});
-
-	const isCurrentPathBookmarked = $derived(
-		!!workspacePath && bookmarks.some((b) => b.path === workspacePath)
-	);
-
-	const handleRemoveBookmark = () => {
-		if (!workspacePath) return;
-		bookmarkStore.remove(workspacePath);
-		workspaceService.clearWorkspace();
-	};
-
-	// Handle selecting a workspace
 	const handleSelectWorkspace = async () => {
 		await workspaceService.selectWorkspace();
 	};
@@ -150,7 +133,6 @@
 
 		return () => {
 			unsubscribe();
-			unsubBookmarks();
 		};
 	});
 </script>
@@ -297,16 +279,6 @@
 								>
 									Try Again
 								</button>
-								{#if isCurrentPathBookmarked}
-									<button
-										class="rounded bg-red-100 px-3 py-1 text-sm font-medium text-red-800 hover:bg-red-200 dark:bg-red-800/30 dark:text-red-200 dark:hover:bg-red-800/50"
-										onclick={handleRemoveBookmark}
-										tabindex="0"
-										aria-label="Remove bookmark"
-									>
-										Remove bookmark
-									</button>
-								{/if}
 							</div>
 						</div>
 					{:else if !workspacePath}
@@ -319,15 +291,18 @@
 							<p class="mb-6 text-center text-slate-600 dark:text-slate-400">
 								Select a root folder for your DTX files workspace
 							</p>
-							<button
-								class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2.5 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-								onclick={handleSelectWorkspace}
-								tabindex="0"
-								aria-label="Select workspace folder"
-							>
-								<Folder size={20} />
-								Select Folder
-							</button>
+							<div class="flex items-center gap-3">
+								<button
+									class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2.5 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+									onclick={handleSelectWorkspace}
+									tabindex="0"
+									aria-label="Select workspace folder"
+								>
+									<Folder size={20} />
+									Select Folder
+								</button>
+								<WorkspaceBookmarksMenu />
+							</div>
 						</div>
 					{:else}
 						<!-- Workspace Content -->

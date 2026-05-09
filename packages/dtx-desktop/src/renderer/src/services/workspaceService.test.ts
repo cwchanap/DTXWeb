@@ -617,20 +617,54 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.clearWorkspace).not.toHaveBeenCalled();
 		});
 
-		it('sets an error and returns early when bookmark path does not exist without resetting workspace', async () => {
+		it('returns an error result and does not reset workspace when bookmark path does not exist', async () => {
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
 				if (channel === 'path-exists') return Promise.resolve(false);
 				return Promise.resolve([]);
 			});
 
-			await workspaceService.switchToBookmark({ path: '/gone/path', name: 'Gone' });
+			const result = await workspaceService.switchToBookmark({
+				path: '/gone/path',
+				name: 'Gone'
+			});
 
-			expect(workspaceStore.setError).toHaveBeenCalledWith(
-				expect.stringContaining('/gone/path')
-			);
+			expect(result).toEqual({
+				ok: false,
+				error: expect.stringContaining('/gone/path'),
+				path: '/gone/path'
+			});
+			expect(workspaceStore.setError).not.toHaveBeenCalled();
 			expect(workspaceStore.reset).not.toHaveBeenCalled();
 			expect(workspaceStore.setPath).not.toHaveBeenCalled();
 			expect(workspaceStore.setTreeStructure).not.toHaveBeenCalled();
+		});
+
+		it('returns ok: true on successful bookmark switch', async () => {
+			const calls: string[] = [];
+			(workspaceStore.reset as any).mockImplementation(() => calls.push('reset'));
+			(workspaceStore.setPath as any).mockImplementation(() => calls.push('setPath'));
+
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
+				return vi.fn();
+			});
+			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ userSimFiles: [] });
+				return vi.fn();
+			});
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists') return Promise.resolve(true);
+				if (channel === 'list-directories') return Promise.resolve([]);
+				if (channel === 'load-tree-structure') return Promise.resolve([]);
+				return Promise.resolve([]);
+			});
+
+			const result = await workspaceService.switchToBookmark({
+				path: '/bm/path',
+				name: 'BM'
+			});
+
+			expect(result).toEqual({ ok: true });
 		});
 	});
 });

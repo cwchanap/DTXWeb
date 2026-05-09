@@ -9,6 +9,7 @@
 	let currentPath = $state<string | null>(null);
 	let bookmarks = $state<WorkspaceBookmark[]>([]);
 	let addError = $state<string | null>(null);
+	let bookmarkSwitchError = $state<{ message: string; path: string } | null>(null);
 	let triggerEl = $state<HTMLButtonElement | null>(null);
 	let menuEl = $state<HTMLDivElement | null>(null);
 	let rootEl = $state<HTMLDivElement | null>(null);
@@ -26,15 +27,21 @@
 		}
 		isOpen = false;
 		addError = null;
+		bookmarkSwitchError = null;
 		if (options?.refocus !== false) {
 			queueMicrotask(() => triggerEl?.focus());
 		}
 	};
 
-	const handleSwitchTo = (b: WorkspaceBookmark) => {
+	const handleSwitchTo = async (b: WorkspaceBookmark) => {
 		if (b.path === currentPath) return;
+		const result = await workspaceService.switchToBookmark(b);
+		if (!result.ok) {
+			bookmarkSwitchError = { message: result.error, path: result.path };
+			// Keep the menu open to show the error
+			return;
+		}
 		closeDropdown();
-		void workspaceService.switchToBookmark(b);
 	};
 
 	const handleBookmarkCurrent = () => {
@@ -209,6 +216,23 @@
 			{/if}
 			{#if addError}
 				<div class="px-2 py-1 text-xs text-red-600 dark:text-red-300">{addError}</div>
+			{/if}
+			{#if bookmarkSwitchError}
+				<div
+					class="mx-2 my-1 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300"
+				>
+					<p>{bookmarkSwitchError.message}</p>
+					<button
+						type="button"
+						class="mt-1 font-medium text-red-800 underline hover:text-red-900 dark:text-red-200 dark:hover:text-red-100"
+						onclick={() => {
+							bookmarkStore.remove(bookmarkSwitchError!.path);
+							bookmarkSwitchError = null;
+						}}
+					>
+						Remove bookmark
+					</button>
+				</div>
 			{/if}
 			{#if bookmarks.length > 0}
 				<div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>

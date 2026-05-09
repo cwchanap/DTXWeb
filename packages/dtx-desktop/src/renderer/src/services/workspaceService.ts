@@ -41,20 +41,24 @@ export const workspaceService = {
 	 * Switches to a saved workspace bookmark: resets workspace state, sets the new path,
 	 * and reloads sub-workspaces and tree.
 	 */
-	switchToBookmark: async (bookmark: WorkspaceBookmark): Promise<void> => {
+	switchToBookmark: async (
+		bookmark: WorkspaceBookmark
+	): Promise<{ ok: true } | { ok: false; error: string; path: string }> => {
 		// Validate the bookmark path still exists before resetting workspace state
 		const pathExists = await window.electron.ipcRenderer.invoke('path-exists', bookmark.path);
 		if (!pathExists) {
-			workspaceStore.setError(
-				`Workspace path no longer exists: ${bookmark.path}. It may have been moved or deleted.`
-			);
-			return;
+			return {
+				ok: false,
+				error: `Workspace path no longer exists: ${bookmark.path}. It may have been moved or deleted.`,
+				path: bookmark.path
+			};
 		}
 
 		workspaceStore.reset();
 		workspaceStore.setPath(bookmark.path);
 		await workspaceService.loadSubWorkspaces();
 		await workspaceService.loadTreeStructure();
+		return { ok: true };
 	},
 
 	/**

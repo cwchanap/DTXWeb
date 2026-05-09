@@ -463,7 +463,7 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
 		});
 
-		it('clears the scoped error when dropdown is closed and reopened', async () => {
+		it('clears the scoped error when dropdown is closed via Escape and reopened', async () => {
 			const { workspaceService } = await import('../services/workspaceService');
 			(workspaceService.switchToBookmark as any).mockResolvedValue({
 				ok: false,
@@ -477,6 +477,30 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.keyDown(window, { key: 'Escape' });
 			// Reopen
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
+		});
+
+		it('clears the scoped error when dropdown is closed via trigger click and reopened', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/stale/path', name: 'Stale' }]);
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'Workspace path no longer exists: /stale/path',
+				path: '/stale/path'
+			});
+
+			render(WorkspaceBookmarksMenu);
+			const trigger = screen.getByRole('button', { name: /workspace menu/i });
+			await fireEvent.click(trigger); // open
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
+			// Error is shown
+			expect(screen.getByText(/workspace path no longer exists/i)).toBeInTheDocument();
+			// Close by clicking trigger again
+			await fireEvent.click(trigger);
+			// Reopen — error should be gone
+			await fireEvent.click(trigger);
 
 			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
 		});

@@ -36,7 +36,7 @@
 	const handleSwitchTo = async (b: WorkspaceBookmark) => {
 		if (b.path === currentPath) return;
 		const result = await workspaceService.switchToBookmark(b);
-		if (!result.ok) {
+		if (result.ok === false) {
 			bookmarkSwitchError = { message: result.error, path: result.path };
 			// Keep the menu open to show the error
 			return;
@@ -68,7 +68,11 @@
 	});
 
 	const handleTriggerClick = () => {
-		isOpen = !isOpen;
+		if (isOpen) {
+			closeDropdown();
+		} else {
+			isOpen = true;
+		}
 	};
 
 	const handleKeydown = (event: KeyboardEvent) => {

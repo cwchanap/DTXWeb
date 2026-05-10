@@ -463,6 +463,45 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
 		});
 
+		it('shows error without remove option for non-path-specific failures', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/valid/path', name: 'Valid' }]);
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'A workspace switch is already in progress'
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to valid/i }));
+
+			expect(
+				screen.getByText(/a workspace switch is already in progress/i)
+			).toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: /remove bookmark/i })).toBeNull();
+		});
+
+		it('does not remove bookmark for load errors without path', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([{ path: '/valid/path', name: 'Valid' }]);
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'Failed to load workspace tree'
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to valid/i }));
+
+			// Error shown but no remove button
+			expect(screen.getByText(/failed to load workspace tree/i)).toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: /remove bookmark/i })).toBeNull();
+			// Bookmark should still be in the list
+			expect(screen.getByText('Valid')).toBeInTheDocument();
+		});
+
 		it('clears the scoped error when dropdown is closed via Escape and reopened', async () => {
 			const { workspaceService } = await import('../services/workspaceService');
 			(workspaceService.switchToBookmark as any).mockResolvedValue({

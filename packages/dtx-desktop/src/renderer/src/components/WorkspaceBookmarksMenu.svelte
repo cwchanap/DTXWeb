@@ -9,7 +9,7 @@
 	let currentPath = $state<string | null>(null);
 	let bookmarks = $state<WorkspaceBookmark[]>([]);
 	let addError = $state<string | null>(null);
-	let bookmarkSwitchError = $state<{ message: string; path: string } | null>(null);
+	let bookmarkSwitchError = $state<{ message: string; path?: string } | null>(null);
 	let triggerEl = $state<HTMLButtonElement | null>(null);
 	let menuEl = $state<HTMLDivElement | null>(null);
 	let rootEl = $state<HTMLDivElement | null>(null);
@@ -39,7 +39,7 @@
 		if (result.ok === false) {
 			bookmarkSwitchError = {
 				message: result.error,
-				path: 'path' in result ? result.path : b.path
+				...('path' in result && { path: result.path })
 			};
 			// Keep the menu open to show the error
 			return;
@@ -228,16 +228,18 @@
 					class="mx-2 my-1 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300"
 				>
 					<p>{bookmarkSwitchError.message}</p>
-					<button
-						type="button"
-						class="mt-1 font-medium text-red-800 underline hover:text-red-900 dark:text-red-200 dark:hover:text-red-100"
-						onclick={() => {
-							bookmarkStore.remove(bookmarkSwitchError!.path);
-							bookmarkSwitchError = null;
-						}}
-					>
-						Remove bookmark
-					</button>
+					{#if bookmarkSwitchError.path}
+						<button
+							type="button"
+							class="mt-1 font-medium text-red-800 underline hover:text-red-900 dark:text-red-200 dark:hover:text-red-100"
+							onclick={() => {
+								bookmarkStore.remove(bookmarkSwitchError.path!);
+								bookmarkSwitchError = null;
+							}}
+						>
+							Remove bookmark
+						</button>
+					{/if}
 				</div>
 			{/if}
 			{#if bookmarks.length > 0}

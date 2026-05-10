@@ -631,10 +631,14 @@ describe('WorkspaceService', () => {
 			});
 
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
+			const errArg = (workspaceStore.setError as any).mock.calls[0][0];
+			expect(typeof errArg).toBe('string');
+			expect((errArg as any).path).toBeUndefined();
 			expect(workspaceStore.clearWorkspace).not.toHaveBeenCalled();
 			expect(result.ok).toBe(false);
 			if (!result.ok) {
 				expect(result.error).toBe('Failed to load tree structure');
+				expect('path' in result).toBe(false);
 			}
 		});
 
@@ -763,6 +767,10 @@ describe('WorkspaceService', () => {
 				error: expect.stringContaining('Permission denied'),
 				path: '/locked/path'
 			});
+			if (!result.ok) {
+				expect(result.error).toContain('/locked/path');
+				expect(result.error).not.toContain('no longer exists');
+			}
 		});
 	});
 });

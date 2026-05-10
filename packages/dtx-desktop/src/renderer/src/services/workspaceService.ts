@@ -67,13 +67,13 @@ export const workspaceService = {
 				};
 			}
 			if (!pathResult.exists) {
-				const reason =
+				const message =
 					pathResult.error === 'permission-denied'
-						? 'Permission denied'
-						: 'It may have been moved or deleted';
+						? `Permission denied accessing workspace path: ${bookmark.path}`
+						: `Workspace path no longer exists: ${bookmark.path}. It may have been moved or deleted.`;
 				return {
 					ok: false,
-					error: `Workspace path no longer exists: ${bookmark.path}. ${reason}.`,
+					error: message,
 					path: bookmark.path
 				};
 			}

@@ -66,7 +66,7 @@ if (!gotTheLock) {
 				if (maybeErrno?.code === 'EACCES') {
 					return { exists: false, error: 'permission-denied' };
 				}
-				return { exists: false, error: 'not-found' };
+				return { exists: false, error: maybeErrno?.code ?? 'unknown' };
 			}
 		});
 

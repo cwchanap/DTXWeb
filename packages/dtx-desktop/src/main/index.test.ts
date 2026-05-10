@@ -159,6 +159,27 @@ describe('index.ts IPC handlers', () => {
 			expect(result.error).toBe('permission-denied');
 		});
 
+		it('returns { exists: false, error: <code> } for other errno codes', async () => {
+			const loopError = Object.assign(new Error('ELOOP'), { code: 'ELOOP' });
+			mockFs.promises.access.mockRejectedValue(loopError);
+			const result = (await ipcHandlers['path-exists']({}, '/loop/path')) as {
+				exists: boolean;
+				error: string;
+			};
+			expect(result.exists).toBe(false);
+			expect(result.error).toBe('ELOOP');
+		});
+
+		it('returns { exists: false, error: "unknown" } for non-errno errors', async () => {
+			mockFs.promises.access.mockRejectedValue(new Error('something unexpected'));
+			const result = (await ipcHandlers['path-exists']({}, '/unknown/path')) as {
+				exists: boolean;
+				error: string;
+			};
+			expect(result.exists).toBe(false);
+			expect(result.error).toBe('unknown');
+		});
+
 		it('joins multiple path parts', async () => {
 			mockFs.promises.access.mockResolvedValue(undefined);
 			await ipcHandlers['path-exists']({}, '/base', 'sub', 'file.dtx');

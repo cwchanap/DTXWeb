@@ -10,13 +10,13 @@ export type AddResult = { ok: true } | { ok: false; reason: 'duplicate' | 'cap-e
 const STORAGE_KEY = 'workspace_bookmarks';
 const MAX_BOOKMARKS = 20;
 
-export function basename(p: string): string {
+export const basename = (p: string): string => {
 	const trimmed = p.replace(/[/\\]+$/, '');
 	const parts = trimmed.split(/[/\\]/);
 	return parts[parts.length - 1] || trimmed;
-}
+};
 
-function hydrate(): WorkspaceBookmark[] {
+const hydrate = (): WorkspaceBookmark[] => {
 	try {
 		const raw = window.localStorage.getItem(STORAGE_KEY);
 		if (!raw) return [];
@@ -41,15 +41,15 @@ function hydrate(): WorkspaceBookmark[] {
 		console.warn('Failed to hydrate bookmarks from localStorage:', error);
 		return [];
 	}
-}
+};
 
-function persist(value: WorkspaceBookmark[]): void {
+const persist = (value: WorkspaceBookmark[]): void => {
 	try {
 		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
 	} catch (error) {
 		console.error('Failed to persist bookmarks to localStorage:', error);
 	}
-}
+};
 
 function createBookmarkStore() {
 	const { subscribe, update } = writable<WorkspaceBookmark[]>(hydrate());

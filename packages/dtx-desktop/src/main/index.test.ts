@@ -129,16 +129,34 @@ describe('index.ts IPC handlers', () => {
 
 	// ── path-exists ──────────────────────────────────────────────────────────
 	describe('path-exists handler', () => {
-		it('returns true when path is accessible', async () => {
+		it('returns { exists: true } when path is accessible', async () => {
 			mockFs.promises.access.mockResolvedValue(undefined);
-			const result = await ipcHandlers['path-exists']({}, '/some/path');
-			expect(result).toBe(true);
+			const result = (await ipcHandlers['path-exists']({}, '/some/path')) as {
+				exists: boolean;
+			};
+			expect(result.exists).toBe(true);
 		});
 
-		it('returns false when path is not accessible', async () => {
-			mockFs.promises.access.mockRejectedValue(new Error('ENOENT'));
-			const result = await ipcHandlers['path-exists']({}, '/missing/path');
-			expect(result).toBe(false);
+		it('returns { exists: false, error: "not-found" } for ENOENT', async () => {
+			const enoentError = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+			mockFs.promises.access.mockRejectedValue(enoentError);
+			const result = (await ipcHandlers['path-exists']({}, '/missing/path')) as {
+				exists: boolean;
+				error: string;
+			};
+			expect(result.exists).toBe(false);
+			expect(result.error).toBe('not-found');
+		});
+
+		it('returns { exists: false, error: "permission-denied" } for EACCES', async () => {
+			const eaccesError = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+			mockFs.promises.access.mockRejectedValue(eaccesError);
+			const result = (await ipcHandlers['path-exists']({}, '/locked/path')) as {
+				exists: boolean;
+				error: string;
+			};
+			expect(result.exists).toBe(false);
+			expect(result.error).toBe('permission-denied');
 		});
 
 		it('joins multiple path parts', async () => {

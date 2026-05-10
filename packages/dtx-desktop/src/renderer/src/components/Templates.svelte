@@ -61,11 +61,11 @@
 
 		try {
 			// Verify that the selected folder exists
-			const folderExists = await window.electron.ipcRenderer.invoke(
+			const folderResult = await window.electron.ipcRenderer.invoke(
 				'path-exists',
 				selectedTemplateFolder
 			);
-			if (!folderExists) {
+			if (!folderResult.exists) {
 				templateStore.setError('Selected folder does not exist');
 				return;
 			}

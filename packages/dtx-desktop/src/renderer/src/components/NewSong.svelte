@@ -56,7 +56,7 @@
 			}
 
 			try {
-				const folderExists = await window.electron.ipcRenderer.invoke(
+				const folderResult = await window.electron.ipcRenderer.invoke(
 					'path-exists',
 					selectedPath,
 					sanitizedFolderName
@@ -67,7 +67,7 @@
 					return; // Request has been superseded, ignore result
 				}
 
-				if (folderExists) {
+				if (folderResult.exists) {
 					folderExistsWarning = `A folder named "${sanitizedFolderName}" already exists`;
 				} else {
 					folderExistsWarning = '';
@@ -196,12 +196,12 @@
 		}
 
 		// Check if folder already exists
-		const folderExists = await window.electron.ipcRenderer.invoke(
+		const folderResult = await window.electron.ipcRenderer.invoke(
 			'path-exists',
 			selectedPath,
 			sanitizedFolderName
 		);
-		if (folderExists) {
+		if (folderResult.exists) {
 			error = `A folder named "${sanitizedFolderName}" already exists in the selected location`;
 			return;
 		}

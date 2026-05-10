@@ -37,7 +37,10 @@
 		if (b.path === currentPath) return;
 		const result = await workspaceService.switchToBookmark(b);
 		if (result.ok === false) {
-			bookmarkSwitchError = { message: result.error, path: result.path };
+			bookmarkSwitchError = {
+				message: result.error,
+				path: 'path' in result ? result.path : b.path
+			};
 			// Keep the menu open to show the error
 			return;
 		}
@@ -59,13 +62,6 @@
 			addError = null;
 		}
 	};
-
-	const unsubWs = workspaceStore.subscribe((s) => {
-		currentPath = s.path;
-	});
-	const unsubBm = bookmarkStore.subscribe((v) => {
-		bookmarks = v;
-	});
 
 	const handleTriggerClick = () => {
 		if (isOpen) {
@@ -113,13 +109,19 @@
 	};
 
 	onMount(() => {
+		const unsubWorkspace = workspaceStore.subscribe((s) => {
+			currentPath = s.path;
+		});
+		const unsubBookmarks = bookmarkStore.subscribe((v) => {
+			bookmarks = v;
+		});
 		window.addEventListener('keydown', handleKeydown);
 		document.addEventListener('mousedown', handleOutsideMousedown);
 		return () => {
 			window.removeEventListener('keydown', handleKeydown);
 			document.removeEventListener('mousedown', handleOutsideMousedown);
-			unsubWs();
-			unsubBm();
+			unsubWorkspace();
+			unsubBookmarks();
 		};
 	});
 

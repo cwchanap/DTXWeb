@@ -22,17 +22,33 @@ function hydrate(): WorkspaceBookmark[] {
 		if (!raw) return [];
 		const parsed = JSON.parse(raw);
 		if (!Array.isArray(parsed)) return [];
-		return parsed.filter(
-			(item): item is WorkspaceBookmark =>
-				item != null && typeof item.path === 'string' && typeof item.name === 'string'
-		);
-	} catch {
+		const seen = new Set<string>();
+		return parsed
+			.filter(
+				(item): item is WorkspaceBookmark =>
+					item != null &&
+					typeof item.path === 'string' &&
+					item.path !== '' &&
+					typeof item.name === 'string'
+			)
+			.filter((item) => {
+				if (seen.has(item.path)) return false;
+				seen.add(item.path);
+				return true;
+			})
+			.slice(0, MAX_BOOKMARKS);
+	} catch (error) {
+		console.warn('Failed to hydrate bookmarks from localStorage:', error);
 		return [];
 	}
 }
 
 function persist(value: WorkspaceBookmark[]): void {
-	window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+	try {
+		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+	} catch (error) {
+		console.error('Failed to persist bookmarks to localStorage:', error);
+	}
 }
 
 function createBookmarkStore() {

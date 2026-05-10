@@ -122,7 +122,10 @@ describe('NewSong', () => {
 	describe('song creation', () => {
 		it('invokes path-exists check before creating', async () => {
 			workspaceStore.setPath('/test/workspace');
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue(false);
+			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+				exists: false,
+				error: 'not-found'
+			});
 			render(NewSong);
 			await waitFor(() => screen.getByText('Full path:'));
 			const input = screen.getByLabelText(/Song Name/i);
@@ -141,7 +144,10 @@ describe('NewSong', () => {
 		it('shows error when folder already exists', async () => {
 			workspaceStore.setPath('/test/workspace');
 			// First call for the debounced check, second for the create-song check
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue(true);
+			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+				exists: true,
+				error: null
+			});
 			render(NewSong);
 			await waitFor(() => screen.getByText('Full path:'));
 			const input = screen.getByLabelText(/Song Name/i);
@@ -159,7 +165,8 @@ describe('NewSong', () => {
 			const closeSpy = vi.spyOn(workspaceStore, 'closeNewSongForm');
 			workspaceStore.setPath('/test/workspace');
 			vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.resolve(false);
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: false, error: 'not-found' });
 				if (channel === 'create-song') return Promise.resolve({ success: true });
 				if (channel === 'load-tree-structure') return Promise.resolve([]);
 				return Promise.resolve(undefined);
@@ -178,7 +185,8 @@ describe('NewSong', () => {
 		it('shows error message when create-song throws', async () => {
 			workspaceStore.setPath('/test/workspace');
 			vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.resolve(false);
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: false, error: 'not-found' });
 				if (channel === 'create-song') return Promise.reject(new Error('Disk full'));
 				return Promise.resolve(undefined);
 			});

@@ -46,10 +46,59 @@ describe('bookmarkStore', () => {
 			const { bookmarkStore: store } = await import('./bookmarkStore');
 			expect(get(store)).toEqual([]);
 		});
+
+		it('filters out entries with non-string or empty path', async () => {
+			const stored = [
+				{ path: '/a', name: 'A' },
+				{ path: 123, name: 'B' },
+				{ path: '', name: 'Empty' },
+				null,
+				undefined
+			];
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify(stored)
+			);
+
+			const { bookmarkStore: store } = await import('./bookmarkStore');
+			expect(get(store)).toEqual([{ path: '/a', name: 'A' }]);
+		});
+
+		it('deduplicates entries by path on hydration', async () => {
+			const stored = [
+				{ path: '/a', name: 'First A' },
+				{ path: '/b', name: 'B' },
+				{ path: '/a', name: 'Second A' }
+			];
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify(stored)
+			);
+
+			const { bookmarkStore: store } = await import('./bookmarkStore');
+			expect(get(store)).toEqual([
+				{ path: '/a', name: 'First A' },
+				{ path: '/b', name: 'B' }
+			]);
+		});
+
+		it('trims to MAX_BOOKMARKS on hydration', async () => {
+			const stored = Array.from({ length: 25 }, (_, i) => ({
+				path: `/p${i}`,
+				name: `n${i}`
+			}));
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
+				JSON.stringify(stored)
+			);
+
+			const { bookmarkStore: store } = await import('./bookmarkStore');
+			expect(get(store)).toHaveLength(20);
+			expect(get(store)[0]).toEqual({ path: '/p0', name: 'n0' });
+			expect(get(store)[19]).toEqual({ path: '/p19', name: 'n19' });
+		});
 	});
 
 	describe('add', () => {
 		it('appends a bookmark and returns ok', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			const { bookmarkStore } = await import('./bookmarkStore');
 			const result = bookmarkStore.add('/foo/bar', 'My Folder');
 			expect(result).toEqual({ ok: true });
@@ -57,18 +106,21 @@ describe('bookmarkStore', () => {
 		});
 
 		it('defaults name to basename of path when name omitted', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			const { bookmarkStore } = await import('./bookmarkStore');
 			bookmarkStore.add('/foo/bar/MySongs');
 			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar/MySongs', name: 'MySongs' }]);
 		});
 
 		it('handles Windows-style paths in basename default', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			const { bookmarkStore } = await import('./bookmarkStore');
 			bookmarkStore.add('C:\\Users\\jack\\Songs');
 			expect(get(bookmarkStore)).toEqual([{ path: 'C:\\Users\\jack\\Songs', name: 'Songs' }]);
 		});
 
 		it('returns duplicate and does not mutate when path already exists', async () => {
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			const { bookmarkStore } = await import('./bookmarkStore');
 			bookmarkStore.add('/foo', 'First');
 			const result = bookmarkStore.add('/foo', 'Second');
@@ -100,6 +152,18 @@ describe('bookmarkStore', () => {
 				'workspace_bookmarks',
 				JSON.stringify([{ path: '/foo', name: 'Foo' }])
 			);
+		});
+
+		it('does not throw when localStorage.setItem fails', async () => {
+			vi.clearAllMocks();
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mockImplementation(() => {
+				throw new DOMException('QuotaExceededError');
+			});
+			const { bookmarkStore } = await import('./bookmarkStore');
+			expect(() => bookmarkStore.add('/foo', 'Foo')).not.toThrow();
+			// The bookmark is still in the in-memory store even though persist failed
+			expect(get(bookmarkStore)).toEqual([{ path: '/foo', name: 'Foo' }]);
 		});
 	});
 

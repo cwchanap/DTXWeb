@@ -568,7 +568,7 @@ describe('WorkspaceService', () => {
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
 				if (channel === 'path-exists') {
 					calls.push('path-exists');
-					return Promise.resolve(true);
+					return Promise.resolve({ exists: true, error: null });
 				}
 				if (channel === 'list-directories') {
 					calls.push('list-directories');
@@ -581,8 +581,12 @@ describe('WorkspaceService', () => {
 				return Promise.resolve([]);
 			});
 
-			await workspaceService.switchToBookmark({ path: '/bm/path', name: 'BM' });
+			const result = await workspaceService.switchToBookmark({
+				path: '/bm/path',
+				name: 'BM'
+			});
 
+			expect(result).toEqual({ ok: true });
 			expect(workspaceStore.reset).toHaveBeenCalledTimes(1);
 			expect(workspaceStore.setPath).toHaveBeenCalledWith('/bm/path');
 			expect(calls.indexOf('path-exists')).toBeLessThan(calls.indexOf('reset'));
@@ -594,8 +598,17 @@ describe('WorkspaceService', () => {
 		});
 
 		it('surfaces tree-load errors via setError without clearing the path', async () => {
+			let capturedError: string | null = null;
+			(workspaceStore.setError as any).mockImplementation((err: string) => {
+				capturedError = err;
+			});
 			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
-				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
+				cb({
+					path: '/bm/path',
+					currentSubWorkspace: null,
+					subWorkspaces: [],
+					error: capturedError
+				});
 				return vi.fn();
 			});
 			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
@@ -603,7 +616,8 @@ describe('WorkspaceService', () => {
 				return vi.fn();
 			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.resolve(true);
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: true, error: null });
 				if (channel === 'list-directories') return Promise.resolve([]);
 				if (channel === 'load-tree-structure') {
 					return Promise.reject(new Error('boom'));
@@ -611,15 +625,23 @@ describe('WorkspaceService', () => {
 				return Promise.resolve([]);
 			});
 
-			await workspaceService.switchToBookmark({ path: '/bm/path', name: 'BM' });
+			const result = await workspaceService.switchToBookmark({
+				path: '/bm/path',
+				name: 'BM'
+			});
 
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
 			expect(workspaceStore.clearWorkspace).not.toHaveBeenCalled();
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error).toBe('Failed to load tree structure');
+			}
 		});
 
 		it('returns an error result and does not reset workspace when bookmark path does not exist', async () => {
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.resolve(false);
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: false, error: 'not-found' });
 				return Promise.resolve([]);
 			});
 
@@ -645,7 +667,7 @@ describe('WorkspaceService', () => {
 			(workspaceStore.setPath as any).mockImplementation(() => calls.push('setPath'));
 
 			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
-				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [] });
+				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [], error: null });
 				return vi.fn();
 			});
 			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
@@ -653,7 +675,8 @@ describe('WorkspaceService', () => {
 				return vi.fn();
 			});
 			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.resolve(true);
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: true, error: null });
 				if (channel === 'list-directories') return Promise.resolve([]);
 				if (channel === 'load-tree-structure') return Promise.resolve([]);
 				return Promise.resolve([]);
@@ -665,6 +688,81 @@ describe('WorkspaceService', () => {
 			});
 
 			expect(result).toEqual({ ok: true });
+		});
+
+		it('returns an error when concurrent switch is attempted', async () => {
+			// Start a slow switch
+			let resolvePathExists: (v: any) => void;
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [], error: null });
+				return vi.fn();
+			});
+			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ userSimFiles: [] });
+				return vi.fn();
+			});
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists') {
+					return new Promise((resolve) => {
+						resolvePathExists = resolve;
+					});
+				}
+				return Promise.resolve([]);
+			});
+
+			// Start first switch (will hang)
+			const first = workspaceService.switchToBookmark({ path: '/a', name: 'A' });
+
+			// Try second switch while first is in progress
+			const second = await workspaceService.switchToBookmark({ path: '/b', name: 'B' });
+
+			expect(second.ok).toBe(false);
+			if (!second.ok) {
+				expect(second.error).toBe('A workspace switch is already in progress');
+			}
+
+			// Let the first one complete
+			resolvePathExists!({ exists: false, error: 'not-found' });
+			const firstResult = await first;
+			expect(firstResult.ok).toBe(false);
+		});
+
+		it('returns an error when path-exists IPC throws', async () => {
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists') return Promise.reject(new Error('IPC disconnected'));
+				return Promise.resolve([]);
+			});
+
+			const result = await workspaceService.switchToBookmark({
+				path: '/bm/path',
+				name: 'BM'
+			});
+
+			expect(result).toEqual({
+				ok: false,
+				error: expect.stringContaining('Unable to verify workspace path'),
+				path: '/bm/path'
+			});
+			expect(workspaceStore.reset).not.toHaveBeenCalled();
+		});
+
+		it('returns permission-denied message when EACCES', async () => {
+			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: false, error: 'permission-denied' });
+				return Promise.resolve([]);
+			});
+
+			const result = await workspaceService.switchToBookmark({
+				path: '/locked/path',
+				name: 'Locked'
+			});
+
+			expect(result).toEqual({
+				ok: false,
+				error: expect.stringContaining('Permission denied'),
+				path: '/locked/path'
+			});
 		});
 	});
 });

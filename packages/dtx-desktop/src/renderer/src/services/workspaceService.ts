@@ -4,6 +4,8 @@ import { linkingService } from './linkingService';
 import { linkageCacheService } from './linkageCacheService';
 import type { WorkspaceBookmark } from '../stores/bookmarkStore';
 
+let switchInProgress = false;
+
 export const workspaceService = {
 	/**
 	 * Opens a folder selection dialog and sets the selected path as the workspace
@@ -43,22 +45,59 @@ export const workspaceService = {
 	 */
 	switchToBookmark: async (
 		bookmark: WorkspaceBookmark
-	): Promise<{ ok: true } | { ok: false; error: string; path: string }> => {
-		// Validate the bookmark path still exists before resetting workspace state
-		const pathExists = await window.electron.ipcRenderer.invoke('path-exists', bookmark.path);
-		if (!pathExists) {
-			return {
-				ok: false,
-				error: `Workspace path no longer exists: ${bookmark.path}. It may have been moved or deleted.`,
-				path: bookmark.path
-			};
+	): Promise<
+		{ ok: true } | { ok: false; error: string; path: string } | { ok: false; error: string }
+	> => {
+		// Guard against concurrent switches
+		if (switchInProgress) {
+			return { ok: false, error: 'A workspace switch is already in progress' };
 		}
+		switchInProgress = true;
 
-		workspaceStore.reset();
-		workspaceStore.setPath(bookmark.path);
-		await workspaceService.loadSubWorkspaces();
-		await workspaceService.loadTreeStructure();
-		return { ok: true };
+		try {
+			// Validate the bookmark path still exists before resetting workspace state
+			let pathResult: { exists: boolean; error: string | null };
+			try {
+				pathResult = await window.electron.ipcRenderer.invoke('path-exists', bookmark.path);
+			} catch {
+				return {
+					ok: false,
+					error: `Unable to verify workspace path: ${bookmark.path}`,
+					path: bookmark.path
+				};
+			}
+			if (!pathResult.exists) {
+				const reason =
+					pathResult.error === 'permission-denied'
+						? 'Permission denied'
+						: 'It may have been moved or deleted';
+				return {
+					ok: false,
+					error: `Workspace path no longer exists: ${bookmark.path}. ${reason}.`,
+					path: bookmark.path
+				};
+			}
+
+			workspaceStore.reset();
+			workspaceStore.setPath(bookmark.path);
+			await workspaceService.loadSubWorkspaces();
+			await workspaceService.loadTreeStructure();
+
+			// Check if any loader set an error during loading
+			let loadError: string | null = null;
+			const unsubscribe = workspaceStore.subscribe((s) => {
+				loadError = s.error;
+			});
+			unsubscribe();
+
+			if (loadError) {
+				return { ok: false, error: loadError };
+			}
+
+			return { ok: true };
+		} finally {
+			switchInProgress = false;
+		}
 	},
 
 	/**

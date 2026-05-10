@@ -220,7 +220,8 @@ describe('Templates', () => {
 				if (channel === 'select-folder') {
 					return Promise.resolve({ canceled: false, filePaths: ['/template/path'] });
 				}
-				if (channel === 'path-exists') return Promise.resolve(true);
+				if (channel === 'path-exists')
+					return Promise.resolve({ exists: true, error: null });
 				return Promise.resolve(undefined);
 			});
 			render(Templates);

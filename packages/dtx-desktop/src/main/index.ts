@@ -57,9 +57,16 @@ if (!gotTheLock) {
 					fullPath = path.join(basePath, ...pathParts);
 				}
 				await fs.promises.access(fullPath);
-				return true;
+				return { exists: true, error: null };
 			} catch (error) {
-				return false;
+				const maybeErrno = error as NodeJS.ErrnoException;
+				if (maybeErrno?.code === 'ENOENT') {
+					return { exists: false, error: 'not-found' };
+				}
+				if (maybeErrno?.code === 'EACCES') {
+					return { exists: false, error: 'permission-denied' };
+				}
+				return { exists: false, error: 'not-found' };
 			}
 		});
 

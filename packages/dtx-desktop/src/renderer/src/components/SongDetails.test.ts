@@ -62,21 +62,19 @@ vi.mock('../stores/editorMappingStore', () => ({
 	}
 }));
 
+let authState = {
+	isAuthenticated: false,
+	isLoading: false,
+	user: null as null,
+	error: null as null
+};
+
 vi.mock('../stores/authStore', () => ({
 	authStore: {
-		subscribe: vi.fn(
-			(
-				cb: (s: {
-					isAuthenticated: boolean;
-					isLoading: boolean;
-					user: null;
-					error: null;
-				}) => void
-			) => {
-				cb({ isAuthenticated: false, isLoading: false, user: null, error: null });
-				return () => {};
-			}
-		)
+		subscribe: vi.fn((cb: (s: typeof authState) => void) => {
+			cb(authState);
+			return () => {};
+		})
 	}
 }));
 
@@ -119,6 +117,7 @@ describe('SongDetails', () => {
 	beforeEach(() => {
 		workspaceState = { ...initialWorkspaceState };
 		workspaceListeners.length = 0;
+		authState = { isAuthenticated: false, isLoading: false, user: null, error: null };
 		vi.clearAllMocks();
 		const invokeMock = window.electron?.ipcRenderer?.invoke;
 		if (vi.isMockFunction(invokeMock)) {
@@ -470,6 +469,82 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			expect(editorMappingStore.setMappingWithMetadata).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('auto-populate display_id', () => {
+		it('invokes get-next-display-id for unlinked songs when authenticated', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return 42;
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong');
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'get-next-display-id'
+				);
+			});
+		});
+
+		it('does not invoke get-next-display-id for linked songs', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: makeLinkedSimFile(),
+				linkedSimFileId: '1'
+			});
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'list-files',
+					'/test/TestSong'
+				);
+			});
+			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
+				'get-next-display-id'
+			);
+		});
+
+		it('does not invoke get-next-display-id when not authenticated', async () => {
+			const song = makeNode('TestSong', '/test/TestSong');
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'list-files',
+					'/test/TestSong'
+				);
+			});
+			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
+				'get-next-display-id'
+			);
+		});
+
+		it('does not invoke get-next-display-id when song has no path', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const song = makeNode('TestSong', '');
+			render(SongDetails, { props: { song } });
+			// Wait a tick for any async effects
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
+				'get-next-display-id'
+			);
+		});
+
+		it('handles get-next-display-id IPC error gracefully', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') throw new Error('IPC error');
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong');
+			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
 		});
 	});
 });

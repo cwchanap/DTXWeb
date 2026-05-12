@@ -5,7 +5,8 @@ import {
 	getPreviewUrl,
 	getSoundPreviewUrl,
 	createSimfileRecord,
-	parseDtxFiles
+	parseDtxFiles,
+	getNextDisplayId
 } from './simfile-service';
 import { getSupabaseClient, ensureSupabaseAuth, getCurrentSession } from './auth';
 import { apiGet, apiPost } from './api-client';
@@ -288,6 +289,32 @@ describe('SimFile Service', () => {
 				throw new Error('Expected error result');
 			}
 			expect(result.error).toContain('Page fetch failed');
+		});
+	});
+
+	describe('getNextDisplayId', () => {
+		it('returns nextDisplayId from API', async () => {
+			(apiGet as Mock).mockResolvedValue({
+				success: true,
+				data: { nextDisplayId: 42 }
+			});
+
+			const result = await getNextDisplayId();
+
+			expect(result).toBe(42);
+			expect(apiGet).toHaveBeenCalledWith('/api/chart/next-display-id');
+		});
+
+		it('throws when authentication is not ready', async () => {
+			(ensureSupabaseAuth as Mock).mockResolvedValue(false);
+			await expect(getNextDisplayId()).rejects.toThrow(
+				'Authentication not available. Please log in first.'
+			);
+		});
+
+		it('throws when API call fails', async () => {
+			(apiGet as Mock).mockResolvedValue({ success: false, error: 'Server error' });
+			await expect(getNextDisplayId()).rejects.toThrow('Server error');
 		});
 	});
 

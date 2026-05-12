@@ -202,4 +202,20 @@ describe('SimFileService', () => {
 			expect(url).toBe('');
 		});
 	});
+
+	describe('getNextDisplayId', () => {
+		it('returns the next display_id from IPC', async () => {
+			mockInvoke.mockResolvedValue(7);
+
+			const result = await simFileService.getNextDisplayId();
+
+			expect(mockInvoke).toHaveBeenCalledWith('get-next-display-id');
+			expect(result).toBe(7);
+		});
+
+		it('propagates IPC errors', async () => {
+			mockInvoke.mockRejectedValue(new Error('IPC failure'));
+			await expect(simFileService.getNextDisplayId()).rejects.toThrow('IPC failure');
+		});
+	});
 });

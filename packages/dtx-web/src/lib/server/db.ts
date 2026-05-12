@@ -291,6 +291,15 @@ export const searchSimfiles = async (
 		.limit(limit);
 };
 
+export const getNextDisplayId = async (db: D1Database, userId: string): Promise<number> => {
+	const row = await db
+		.prepare('SELECT MAX(display_id) AS max_display_id FROM simfiles WHERE user_id = ?')
+		.bind(userId)
+		.first<{ max_display_id: number | null }>();
+	const current = row?.max_display_id ?? 0;
+	return current + 1;
+};
+
 export const createSimfile = async (db: D1Database, data: SimfileInsert): Promise<SimfileRow> => {
 	const now = new Date().toISOString();
 	const result = await db

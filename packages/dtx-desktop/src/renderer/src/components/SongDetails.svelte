@@ -9,6 +9,7 @@
 	import type { SimfileWithDtx, DtxFileRow } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
+	import { simFileService } from '../services/simFileService';
 
 	interface Props {
 		song: TreeNode;
@@ -704,6 +705,26 @@
 		downloadUrl = data.download_url || '';
 		videoPreviewUrl = data.video_preview_url || '';
 		isPublished = data.is_published || false;
+	});
+
+	// Auto-populate display_id for new (unlinked) charts with max(display_id) + 1
+	let autoPopulatedForPath = $state<string | null>(null);
+	$effect(() => {
+		const currentPath = song.path;
+		if (!currentPath || song.linkedSimFile || !$authStore.isAuthenticated) return;
+		if (autoPopulatedForPath === currentPath) return;
+
+		(async () => {
+			try {
+				const next = await simFileService.getNextDisplayId();
+				if (displayId === 0 && Number.isSafeInteger(next)) {
+					displayId = next;
+				}
+				autoPopulatedForPath = currentPath;
+			} catch (error) {
+				console.warn('Failed to fetch next display_id:', error);
+			}
+		})();
 	});
 </script>
 

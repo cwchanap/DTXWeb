@@ -139,6 +139,13 @@ class SimFileService {
 	}
 
 	/**
+	 * Fetches the next display_id (max + 1) for the current user via main process
+	 */
+	async getNextDisplayId(): Promise<number> {
+		return (await window.electron.ipcRenderer.invoke('get-next-display-id')) as number;
+	}
+
+	/**
 	 * Gets preview URL for a simFile via main process
 	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.jpg
 	 */

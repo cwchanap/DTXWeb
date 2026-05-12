@@ -16,7 +16,8 @@ import {
 	getSoundPreviewUrl,
 	createSimfileRecord,
 	CreateSimfileData,
-	parseDtxFiles
+	parseDtxFiles,
+	getNextDisplayId
 } from './simfile-service';
 import { loadTreeStructure, selectDirectory, readFile } from './filesystem';
 import { createWindow } from './window';
@@ -393,6 +394,11 @@ if (!gotTheLock) {
 		// Handle creating simfile record in database
 		ipcMain.handle('create-simfile-record', async (_event, simfileData: CreateSimfileData) => {
 			return await createSimfileRecord(simfileData);
+		});
+
+		// Handle fetching next display_id for the current user
+		ipcMain.handle('get-next-display-id', async () => {
+			return await getNextDisplayId();
 		});
 
 		// Handle searching cloud songs for autocomplete

@@ -11,6 +11,7 @@ import {
 	getSimfileOwner,
 	listSimfiles,
 	searchSimfiles,
+	getNextDisplayId,
 	createSimfile,
 	updateSimfile,
 	deleteSimfile,
@@ -573,6 +574,36 @@ describe('searchSimfiles', () => {
 // ---------------------------------------------------------------------------
 // createSimfile
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// getNextDisplayId
+// ---------------------------------------------------------------------------
+describe('getNextDisplayId', () => {
+	it('returns max + 1 when user has existing simfiles', async () => {
+		const db = createMockDb(() => createMockStmt({ max_display_id: 7 }));
+		const result = await getNextDisplayId(db as unknown as D1Database, 'user-1');
+		expect(result).toBe(8);
+	});
+
+	it('returns 1 when user has no simfiles', async () => {
+		const db = createMockDb(() => createMockStmt({ max_display_id: null }));
+		const result = await getNextDisplayId(db as unknown as D1Database, 'user-1');
+		expect(result).toBe(1);
+	});
+
+	it('returns 1 when row lookup returns null', async () => {
+		const db = createMockDb(() => createMockStmt(null));
+		const result = await getNextDisplayId(db as unknown as D1Database, 'user-1');
+		expect(result).toBe(1);
+	});
+
+	it('binds the userId to the query', async () => {
+		const stmt = createMockStmt({ max_display_id: 3 });
+		const db = createMockDb(() => stmt);
+		await getNextDisplayId(db as unknown as D1Database, 'user-42');
+		expect(stmt.bind).toHaveBeenCalledWith('user-42');
+	});
+});
+
 describe('createSimfile', () => {
 	it('creates and returns simfile row', async () => {
 		const db = createMockDb(() => createMockStmt(baseSimfileRow));

@@ -77,7 +77,7 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 	}
 }
 
-export async function getNextDisplayId(): Promise<number> {
+export const getNextDisplayId = async (): Promise<number> => {
 	const isAuthReady = await ensureSupabaseAuth();
 	if (!isAuthReady) {
 		throw new Error('Authentication not available. Please log in first.');
@@ -88,7 +88,7 @@ export async function getNextDisplayId(): Promise<number> {
 		throw new Error(result.error || 'Failed to fetch next display_id');
 	}
 	return result.data.nextDisplayId;
-}
+};
 
 export function getPreviewUrl(simfileId: number): string {
 	const bucketUrl = import.meta.env.PUBLIC_SIMFILE_BUCKET_URL;

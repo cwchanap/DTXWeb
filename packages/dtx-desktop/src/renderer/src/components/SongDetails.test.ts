@@ -546,5 +546,49 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong');
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
 		});
+
+		it('does not re-trigger get-next-display-id when switching back to a previously populated song', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return 42;
+					return { files: [] };
+				});
+			}
+			const songA = makeNode('SongA', '/test/SongA');
+			const { rerender } = render(SongDetails, { props: { song: songA } });
+
+			// Wait for songA's get-next-display-id to fire
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'get-next-display-id'
+				);
+			});
+			const callsAfterSongA = invokeMock?.mock.calls.filter(
+				(call: string[]) => call[0] === 'get-next-display-id'
+			).length;
+
+			// Switch to songB
+			const songB = makeNode('SongB', '/test/SongB');
+			rerender({ props: { song: songB } });
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'get-next-display-id'
+				);
+			});
+			const callsAfterSongB = invokeMock?.mock.calls.filter(
+				(call: string[]) => call[0] === 'get-next-display-id'
+			).length;
+			expect(callsAfterSongB).toBe(callsAfterSongA + 1);
+
+			// Switch back to songA — should NOT trigger another get-next-display-id
+			rerender({ props: { song: songA } });
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			const callsAfterBackToA = invokeMock?.mock.calls.filter(
+				(call: string[]) => call[0] === 'get-next-display-id'
+			).length;
+			expect(callsAfterBackToA).toBe(callsAfterSongB);
+		});
 	});
 });

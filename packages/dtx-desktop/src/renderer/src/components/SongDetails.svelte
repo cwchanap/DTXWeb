@@ -708,11 +708,12 @@
 	});
 
 	// Auto-populate display_id for new (unlinked) charts with max(display_id) + 1
-	let autoPopulatedForPath = $state<string | null>(null);
+	// Track all previously processed paths to avoid re-fetching when navigating back
+	let autoPopulatedForPaths = $state<Set<string>>(new Set());
 	$effect(() => {
 		const currentPath = song.path;
 		if (!currentPath || song.linkedSimFile || !$authStore.isAuthenticated) return;
-		if (autoPopulatedForPath === currentPath) return;
+		if (autoPopulatedForPaths.has(currentPath)) return;
 
 		(async () => {
 			try {
@@ -720,7 +721,7 @@
 				if (displayId === 0 && Number.isSafeInteger(next)) {
 					displayId = next;
 				}
-				autoPopulatedForPath = currentPath;
+				autoPopulatedForPaths = new Set([...autoPopulatedForPaths, currentPath]);
 			} catch (error) {
 				console.warn('Failed to fetch next display_id:', error);
 			}

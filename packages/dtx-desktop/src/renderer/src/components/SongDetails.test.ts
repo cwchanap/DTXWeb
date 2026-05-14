@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { TreeNode } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
@@ -81,6 +82,7 @@ vi.mock('../stores/authStore', () => ({
 import SongDetails from './SongDetails.svelte';
 import { workspaceStore } from '../stores/workspaceStore';
 import { editorMappingStore } from '../stores/editorMappingStore';
+import { ChartDetail } from '@dtx/common/components';
 
 const makeNode = (
 	name: string,
@@ -109,9 +111,38 @@ const makeLinkedSimFile = () => ({
 	publish_date: '2024-01-01',
 	display_id: 1,
 	download_url: '',
+	preview_url: '',
 	video_preview_url: '',
 	dtx_files: []
 });
+
+const getLastProps = <T>(mockFn: ReturnType<typeof vi.fn>): T | undefined => {
+	const calls = mockFn.mock.calls;
+	const lastCall = calls[calls.length - 1];
+	return (lastCall?.[1] ?? lastCall?.[0]) as T | undefined;
+};
+
+type ChartDetailTestProps = {
+	simfile?: { display_id?: number | null };
+	$$events?: {
+		onSave?: (event: { detail: Record<string, unknown> }) => Promise<void> | void;
+	};
+};
+
+type ElectronInvokeMock = ReturnType<typeof vi.fn>;
+declare global {
+	interface Window {
+		electron: { ipcRenderer: { invoke: ElectronInvokeMock } };
+	}
+}
+
+type ElectronTestWindow = typeof window & {
+	electron: { ipcRenderer: { invoke: ElectronInvokeMock } };
+};
+
+const getInvokeMock = () => (window as ElectronTestWindow).electron.ipcRenderer.invoke;
+const getNextDisplayIdCallCount = () =>
+	getInvokeMock().mock.calls.filter(([channel]) => channel === 'get-next-display-id').length;
 
 describe('SongDetails', () => {
 	beforeEach(() => {
@@ -119,7 +150,7 @@ describe('SongDetails', () => {
 		workspaceListeners.length = 0;
 		authState = { isAuthenticated: false, isLoading: false, user: null, error: null };
 		vi.clearAllMocks();
-		const invokeMock = window.electron?.ipcRenderer?.invoke;
+		const invokeMock = getInvokeMock();
 		if (vi.isMockFunction(invokeMock)) {
 			invokeMock.mockResolvedValue({ files: [] });
 		}
@@ -509,6 +540,23 @@ describe('SongDetails', () => {
 			);
 		});
 
+		it('preserves a linked non-zero display_id instead of auto-populating over it', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: { ...makeLinkedSimFile(), display_id: 7 },
+				linkedSimFileId: '1'
+			});
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+			});
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			expect(props?.simfile?.display_id).toBe(7);
+			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
+				'get-next-display-id'
+			);
+		});
+
 		it('does not invoke get-next-display-id when not authenticated', async () => {
 			const song = makeNode('TestSong', '/test/TestSong');
 			render(SongDetails, { props: { song } });
@@ -527,8 +575,7 @@ describe('SongDetails', () => {
 			authState = { ...authState, isAuthenticated: true };
 			const song = makeNode('TestSong', '');
 			render(SongDetails, { props: { song } });
-			// Wait a tick for any async effects
-			await new Promise((resolve) => setTimeout(resolve, 0));
+			await tick();
 			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
 				'get-next-display-id'
 			);
@@ -545,6 +592,95 @@ describe('SongDetails', () => {
 			}
 			const song = makeNode('TestSong', '/test/TestSong');
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
+		});
+
+		it('retries get-next-display-id for a failed path when the song is reopened', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			let getNextCalls = 0;
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') {
+						getNextCalls += 1;
+						if (getNextCalls === 1) throw new Error('IPC error');
+						return 43;
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong');
+			const { rerender } = render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(getNextCalls).toBe(1);
+			});
+
+			await rerender({ props: { song: makeNode('EmptySong', '') } });
+			await rerender({ props: { song } });
+			await waitFor(() => {
+				expect(getNextCalls).toBe(2);
+			});
+		});
+
+		it('sends null displayId when saving an auto-populated display_id', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return 42;
+					if (channel === 'parse-dtx-files') {
+						return { bpm: 120, artist: 'Artist', levels: [{ label: 'EXT', level: 9 }] };
+					}
+					if (channel === 'create-simfile-record') {
+						return {
+							success: true,
+							simfileId: '99',
+							data: {
+								id: 99,
+								title: 'TestSong',
+								artist: 'Artist',
+								bpm: 120,
+								display_id: 42,
+								is_published: false,
+								publish_date: '2024-01-01',
+								download_url: '',
+								preview_url: '',
+								video_preview_url: '',
+								dtx_files: []
+							}
+						};
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'get-next-display-id'
+				);
+			});
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: false,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'create-simfile-record',
+					expect.objectContaining({ displayId: null })
+				);
+			});
 		});
 
 		it('does not duplicate get-next-display-id calls when effect re-triggers during in-flight request', async () => {
@@ -572,19 +708,14 @@ describe('SongDetails', () => {
 					'get-next-display-id'
 				);
 			});
-			const callCountBefore = invokeMock?.mock.calls.filter(
-				(call: string[]) => call[0] === 'get-next-display-id'
-			).length;
+			const callCountBefore = getNextDisplayIdCallCount();
 
-			// Resolve the in-flight request
 			resolveIpc?.();
-			await new Promise((resolve) => setTimeout(resolve, 50));
+			await waitFor(() => {
+				expect(getNextDisplayIdCallCount()).toBe(callCountBefore);
+			});
 
-			const callCountAfter = invokeMock?.mock.calls.filter(
-				(call: string[]) => call[0] === 'get-next-display-id'
-			).length;
-			// Should be exactly 1 call — no duplicates
-			expect(callCountAfter).toBe(callCountBefore);
+			expect(getNextDisplayIdCallCount()).toBe(callCountBefore);
 		});
 
 		it('does not re-trigger get-next-display-id when switching back to a previously populated song', async () => {
@@ -605,30 +736,18 @@ describe('SongDetails', () => {
 					'get-next-display-id'
 				);
 			});
-			const callsAfterSongA = invokeMock?.mock.calls.filter(
-				(call: string[]) => call[0] === 'get-next-display-id'
-			).length;
+			const callsAfterSongA = getNextDisplayIdCallCount();
 
-			// Switch to songB
 			const songB = makeNode('SongB', '/test/SongB');
-			rerender({ props: { song: songB } });
+			await rerender({ props: { song: songB } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'get-next-display-id'
-				);
+				expect(getNextDisplayIdCallCount()).toBe(callsAfterSongA + 1);
 			});
-			const callsAfterSongB = invokeMock?.mock.calls.filter(
-				(call: string[]) => call[0] === 'get-next-display-id'
-			).length;
-			expect(callsAfterSongB).toBe(callsAfterSongA + 1);
+			const callsAfterSongB = getNextDisplayIdCallCount();
 
-			// Switch back to songA — should NOT trigger another get-next-display-id
-			rerender({ props: { song: songA } });
-			await new Promise((resolve) => setTimeout(resolve, 50));
-			const callsAfterBackToA = invokeMock?.mock.calls.filter(
-				(call: string[]) => call[0] === 'get-next-display-id'
-			).length;
-			expect(callsAfterBackToA).toBe(callsAfterSongB);
+			await rerender({ props: { song: songA } });
+			await tick();
+			expect(getNextDisplayIdCallCount()).toBe(callsAfterSongB);
 		});
 	});
 });

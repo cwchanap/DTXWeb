@@ -295,17 +295,26 @@ export const getNextDisplayId = async (db: D1Database, userId: string): Promise<
 	const row = await db
 		.prepare('SELECT MAX(display_id) AS max_display_id FROM simfiles WHERE user_id = ?')
 		.bind(userId)
-		.first<{ max_display_id: number | null }>();
-	const current = row?.max_display_id ?? 0;
+		.first<{ max_display_id: number | string | null }>();
+	const current = Number(row?.max_display_id ?? 0);
+	if (!Number.isFinite(current) || !Number.isSafeInteger(current)) {
+		throw new Error('Invalid max display_id');
+	}
 	return current + 1;
 };
 
 export const createSimfile = async (db: D1Database, data: SimfileInsert): Promise<SimfileRow> => {
 	const now = new Date().toISOString();
+	const displayId = data.display_id ?? null;
 	const result = await db
 		.prepare(
 			`INSERT INTO simfiles (title, artist, bpm, user_id, is_published, display_id, download_url, preview_url, video_preview_url, publish_date, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 SELECT ?, ?, ?, ?, ?,
+				CASE
+					WHEN ? IS NULL OR ? = 0 THEN COALESCE((SELECT MAX(display_id) FROM simfiles WHERE user_id = ?), 0) + 1
+					ELSE ?
+				END,
+				?, ?, ?, ?, ?, ?
 			 RETURNING *`
 		)
 		.bind(
@@ -314,7 +323,10 @@ export const createSimfile = async (db: D1Database, data: SimfileInsert): Promis
 			data.bpm,
 			data.user_id,
 			data.is_published ?? 0,
-			data.display_id ?? null,
+			displayId,
+			displayId,
+			data.user_id,
+			displayId,
 			data.download_url ?? null,
 			data.preview_url ?? null,
 			data.video_preview_url ?? null,

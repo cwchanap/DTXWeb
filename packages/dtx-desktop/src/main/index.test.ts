@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Mock } from 'vitest';
 import path from 'path';
 
@@ -96,6 +96,7 @@ const mockSimfileService = {
 	getSoundPreviewUrl: vi.fn(),
 	createSimfileRecord: vi.fn(),
 	parseDtxFiles: vi.fn(),
+	getNextDisplayId: vi.fn(),
 	CreateSimfileData: {}
 };
 
@@ -457,6 +458,15 @@ describe('index.ts IPC handlers', () => {
 			const result = await ipcHandlers['create-simfile-record']({}, data);
 			expect(mockSimfileService.createSimfileRecord).toHaveBeenCalledWith(data);
 			expect(result).toEqual({ id: 99 });
+		});
+	});
+
+	describe('get-next-display-id handler', () => {
+		it('delegates to getNextDisplayId', async () => {
+			mockSimfileService.getNextDisplayId.mockResolvedValue(42);
+			const result = await ipcHandlers['get-next-display-id']();
+			expect(mockSimfileService.getNextDisplayId).toHaveBeenCalled();
+			expect(result).toBe(42);
 		});
 	});
 

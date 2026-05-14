@@ -138,11 +138,12 @@ class SimFileService {
 		return this.fetchUserSimFiles();
 	}
 
-	/**
-	 * Fetches the next display_id (max + 1) for the current user via main process
-	 */
 	async getNextDisplayId(): Promise<number> {
-		return (await window.electron.ipcRenderer.invoke('get-next-display-id')) as number;
+		const result = await window.electron.ipcRenderer.invoke('get-next-display-id');
+		if (typeof result !== 'number' || !Number.isSafeInteger(result)) {
+			throw new Error('Invalid next display_id response');
+		}
+		return result;
 	}
 
 	/**

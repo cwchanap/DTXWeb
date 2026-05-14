@@ -715,13 +715,15 @@
 		if (!currentPath || song.linkedSimFile || !$authStore.isAuthenticated) return;
 		if (autoPopulatedForPaths.has(currentPath)) return;
 
+		// Mark path synchronously before async call to prevent duplicate IPC invocations
+		autoPopulatedForPaths = new Set([...autoPopulatedForPaths, currentPath]);
+
 		(async () => {
 			try {
 				const next = await simFileService.getNextDisplayId();
 				if (displayId === 0 && Number.isSafeInteger(next)) {
 					displayId = next;
 				}
-				autoPopulatedForPaths = new Set([...autoPopulatedForPaths, currentPath]);
 			} catch (error) {
 				console.warn('Failed to fetch next display_id:', error);
 			}

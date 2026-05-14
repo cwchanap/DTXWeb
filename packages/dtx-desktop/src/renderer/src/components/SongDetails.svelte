@@ -204,6 +204,10 @@
 	let uploadError = $state<string | null>(null);
 	let uploadSuccess = $state(false);
 	let uploadWarnings = $state<string[]>([]);
+	let displayIdAutoPopulateError = $state<string | null>(null);
+	let autoPopulatedDisplayId = $state<{ path: string; value: number } | null>(null);
+	const autoPopulatedForPaths = new Set<string>();
+	const autoPopulateInFlightPaths = new Set<string>();
 
 	// Reactive form values that mirror the ChartDetail component's state
 	let displayId = $state(0);
@@ -361,13 +365,20 @@
 		uploadWarnings = [];
 
 		try {
+			const submittedDisplayId = Number(displayId);
+			const displayIdForCreate =
+				submittedDisplayId === 0 ||
+				(autoPopulatedDisplayId?.path === song.path &&
+					autoPopulatedDisplayId.value === submittedDisplayId)
+					? null
+					: submittedDisplayId;
 			// Create plain object without any Svelte reactivity
 			const simfileData = JSON.parse(
 				JSON.stringify({
 					title: String(song.songTitle || song.name || ''),
 					artist: String(parsedLocalData.artist || ''),
 					bpm: Number(parsedLocalData.bpm || 0),
-					displayId: Number(displayId),
+					displayId: displayIdForCreate,
 					isPublished: Boolean(
 						event.detail.isPublished !== undefined
 							? event.detail.isPublished
@@ -427,6 +438,40 @@
 		} finally {
 			isUploading = false;
 		}
+	};
+
+	const populateNextDisplayId = async (currentPath: string) => {
+		if (autoPopulatedForPaths.has(currentPath) || autoPopulateInFlightPaths.has(currentPath)) {
+			return;
+		}
+
+		// Mark path synchronously before async call to prevent duplicate IPC invocations
+		autoPopulateInFlightPaths.add(currentPath);
+
+		try {
+			const next = await simFileService.getNextDisplayId();
+			if (!Number.isSafeInteger(next)) {
+				throw new Error('Invalid next display_id response');
+			}
+			if (displayId === 0) {
+				displayId = next;
+				autoPopulatedDisplayId = { path: currentPath, value: next };
+			}
+			autoPopulatedForPaths.add(currentPath);
+			displayIdAutoPopulateError = null;
+		} catch (error) {
+			console.warn('Failed to fetch next display_id:', error);
+			displayIdAutoPopulateError =
+				'Could not fetch the next display ID. You can enter it manually or retry.';
+		} finally {
+			autoPopulateInFlightPaths.delete(currentPath);
+		}
+	};
+
+	const handleRetryDisplayIdAutoPopulate = () => {
+		if (!song.path || song.linkedSimFile || !$authStore.isAuthenticated) return;
+		displayIdAutoPopulateError = null;
+		void populateNextDisplayId(song.path);
 	};
 
 	// Handle showing autocomplete popup
@@ -707,27 +752,10 @@
 		isPublished = data.is_published || false;
 	});
 
-	// Auto-populate display_id for new (unlinked) charts with max(display_id) + 1
-	// Track all previously processed paths to avoid re-fetching when navigating back
-	let autoPopulatedForPaths = $state<Set<string>>(new Set());
 	$effect(() => {
 		const currentPath = song.path;
 		if (!currentPath || song.linkedSimFile || !$authStore.isAuthenticated) return;
-		if (autoPopulatedForPaths.has(currentPath)) return;
-
-		// Mark path synchronously before async call to prevent duplicate IPC invocations
-		autoPopulatedForPaths = new Set([...autoPopulatedForPaths, currentPath]);
-
-		(async () => {
-			try {
-				const next = await simFileService.getNextDisplayId();
-				if (displayId === 0 && Number.isSafeInteger(next)) {
-					displayId = next;
-				}
-			} catch (error) {
-				console.warn('Failed to fetch next display_id:', error);
-			}
-		})();
+		void populateNextDisplayId(currentPath);
 	});
 </script>
 
@@ -1032,6 +1060,22 @@
 									<Search size={14} />
 									Link to Cloud
 								{/if}
+							</button>
+						</div>
+					</div>
+				{/if}
+
+				{#if displayIdAutoPopulateError && $authStore.isAuthenticated}
+					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+						<div class="flex items-center justify-between gap-2">
+							<span class="text-sm text-yellow-800 dark:text-yellow-200">
+								{displayIdAutoPopulateError}
+							</span>
+							<button
+								class="rounded bg-yellow-200 px-3 py-1 text-sm font-medium text-yellow-900 hover:bg-yellow-300 focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:outline-none dark:bg-yellow-800 dark:text-yellow-100 dark:hover:bg-yellow-700"
+								onclick={handleRetryDisplayIdAutoPopulate}
+							>
+								Retry
 							</button>
 						</div>
 					</div>

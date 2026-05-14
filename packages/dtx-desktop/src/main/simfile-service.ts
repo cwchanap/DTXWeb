@@ -213,7 +213,7 @@ export interface CreateSimfileData {
 	title: string;
 	artist: string;
 	bpm: number;
-	displayId: number;
+	displayId: number | null;
 	isPublished: boolean;
 	publishDate: string;
 	downloadUrl: string;

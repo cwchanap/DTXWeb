@@ -584,6 +584,19 @@ describe('getNextDisplayId', () => {
 		expect(result).toBe(8);
 	});
 
+	it('coerces string aggregate values from D1 before incrementing', async () => {
+		const db = createMockDb(() => createMockStmt({ max_display_id: '7' }));
+		const result = await getNextDisplayId(db as unknown as D1Database, 'user-1');
+		expect(result).toBe(8);
+	});
+
+	it('throws when max display_id cannot be coerced to a safe integer', async () => {
+		const db = createMockDb(() => createMockStmt({ max_display_id: 'not-a-number' }));
+		await expect(getNextDisplayId(db as unknown as D1Database, 'user-1')).rejects.toThrow(
+			'Invalid max display_id'
+		);
+	});
+
 	it('returns 1 when user has no simfiles', async () => {
 		const db = createMockDb(() => createMockStmt({ max_display_id: null }));
 		const result = await getNextDisplayId(db as unknown as D1Database, 'user-1');
@@ -612,6 +625,41 @@ describe('createSimfile', () => {
 			user_id: 'user-1'
 		});
 		expect(result).toEqual(baseSimfileRow);
+	});
+
+	it('allocates display_id inside the INSERT statement when display_id is null', async () => {
+		const stmt = createMockStmt({ ...baseSimfileRow, display_id: 8 });
+		const db = createMockDb(() => stmt);
+		await createSimfile(db as unknown as D1Database, {
+			bpm: 120,
+			user_id: 'user-1',
+			display_id: null
+		});
+
+		const sql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+		expect(sql).toContain(
+			'COALESCE((SELECT MAX(display_id) FROM simfiles WHERE user_id = ?), 0) + 1'
+		);
+		const bindArgs = stmt.bind.mock.calls[0];
+		expect(bindArgs[5]).toBeNull();
+		expect(bindArgs[6]).toBeNull();
+		expect(bindArgs[7]).toBe('user-1');
+		expect(bindArgs[8]).toBeNull();
+	});
+
+	it('passes explicit display_id through the INSERT statement for manual values', async () => {
+		const stmt = createMockStmt({ ...baseSimfileRow, display_id: 12 });
+		const db = createMockDb(() => stmt);
+		await createSimfile(db as unknown as D1Database, {
+			bpm: 120,
+			user_id: 'user-1',
+			display_id: 12
+		});
+
+		const bindArgs = stmt.bind.mock.calls[0];
+		expect(bindArgs[5]).toBe(12);
+		expect(bindArgs[6]).toBe(12);
+		expect(bindArgs[8]).toBe(12);
 	});
 
 	it('throws when insert returns null', async () => {

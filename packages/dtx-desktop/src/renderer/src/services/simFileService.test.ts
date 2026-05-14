@@ -217,5 +217,12 @@ describe('SimFileService', () => {
 			mockInvoke.mockRejectedValue(new Error('IPC failure'));
 			await expect(simFileService.getNextDisplayId()).rejects.toThrow('IPC failure');
 		});
+
+		it('rejects invalid IPC response shapes', async () => {
+			mockInvoke.mockResolvedValue(undefined);
+			await expect(simFileService.getNextDisplayId()).rejects.toThrow(
+				'Invalid next display_id response'
+			);
+		});
 	});
 });

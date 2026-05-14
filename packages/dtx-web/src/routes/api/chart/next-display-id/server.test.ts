@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './+server';
 import { getDb, getNextDisplayId } from '$lib/server/db';
 import type { D1Database } from '@cloudflare/workers-types';
+import logger from '$lib/server/logger';
 
 vi.mock('$lib/server/db');
 vi.mock('$lib/server/logger', () => ({
@@ -38,11 +39,16 @@ describe('GET /api/chart/next-display-id', () => {
 	});
 
 	it('returns 500 on unexpected error', async () => {
-		vi.mocked(getNextDisplayId).mockRejectedValue(new Error('DB error'));
+		const error = new Error('DB error');
+		vi.mocked(getNextDisplayId).mockRejectedValue(error);
 		const response = await GET({
 			platform: mockPlatform as App.Platform,
 			locals: { user: mockUser } as App.Locals
 		});
 		expect(response.status).toBe(500);
+		expect(logger.error).toHaveBeenCalledWith('Error fetching next display_id:', {
+			userId: 'user-1',
+			error
+		});
 	});
 });

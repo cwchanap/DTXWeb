@@ -547,6 +547,46 @@ describe('SongDetails', () => {
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
 		});
 
+		it('does not duplicate get-next-display-id calls when effect re-triggers during in-flight request', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			let resolveIpc: (() => void) | undefined;
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') {
+						// Hold the request open so we can observe duplicate calls
+						await new Promise<void>((resolve) => {
+							resolveIpc = resolve;
+						});
+						return 42;
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong');
+			render(SongDetails, { props: { song } });
+
+			// Wait for the first IPC call to start
+			await waitFor(() => {
+				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+					'get-next-display-id'
+				);
+			});
+			const callCountBefore = invokeMock?.mock.calls.filter(
+				(call: string[]) => call[0] === 'get-next-display-id'
+			).length;
+
+			// Resolve the in-flight request
+			resolveIpc?.();
+			await new Promise((resolve) => setTimeout(resolve, 50));
+
+			const callCountAfter = invokeMock?.mock.calls.filter(
+				(call: string[]) => call[0] === 'get-next-display-id'
+			).length;
+			// Should be exactly 1 call — no duplicates
+			expect(callCountAfter).toBe(callCountBefore);
+		});
+
 		it('does not re-trigger get-next-display-id when switching back to a previously populated song', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			const invokeMock = window.electron?.ipcRenderer?.invoke;

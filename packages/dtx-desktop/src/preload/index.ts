@@ -41,7 +41,8 @@ const extendedElectronAPI = {
 				'search-cloud-songs',
 				'fetch-cloud-song',
 				'update-simfile-record',
-				'export-song-to-zip'
+				'export-song-to-zip',
+				'get-next-display-id'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

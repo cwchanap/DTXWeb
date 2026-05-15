@@ -741,6 +741,17 @@
 		} satisfies Partial<SimfileWithDtx>;
 	});
 
+	// Reset auto-populate state when switching songs to prevent stale IDs
+	$effect(() => {
+		const currentPath = song.path;
+		// Access song.path to track changes, then reset auto-populate state
+		if (currentPath) {
+			displayId = 0;
+			autoPopulatedDisplayId = null;
+			displayIdAutoPopulateError = null;
+		}
+	});
+
 	// Initialize reactive form values from simfileData
 	$effect(() => {
 		const data = simfileData();

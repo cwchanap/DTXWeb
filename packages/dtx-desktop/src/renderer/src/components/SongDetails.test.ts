@@ -749,5 +749,35 @@ describe('SongDetails', () => {
 			await tick();
 			expect(getNextDisplayIdCallCount()).toBe(callsAfterSongB);
 		});
+
+		it('resets auto-populated displayId when switching between unlinked songs', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			let nextDisplayId = 42;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return nextDisplayId++;
+					return { files: [] };
+				});
+			}
+			const songA = makeNode('SongA', '/test/SongA');
+			const { rerender } = render(SongDetails, { props: { song: songA } });
+
+			// Wait for SongA to get display_id = 42
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
+
+			// Switch to SongB — displayId should reset and fetch a new value
+			const songB = makeNode('SongB', '/test/SongB');
+			await rerender({ props: { song: songB } });
+
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				// SongB should get display_id = 43, not the stale 42 from SongA
+				expect(props?.simfile?.display_id).toBe(43);
+			});
+		});
 	});
 });

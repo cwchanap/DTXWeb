@@ -206,7 +206,7 @@
 	let uploadWarnings = $state<string[]>([]);
 	let displayIdAutoPopulateError = $state<string | null>(null);
 	let autoPopulatedDisplayId = $state<{ path: string; value: number } | null>(null);
-	const autoPopulatedForPaths = new Set<string>();
+	const autoPopulatedForPaths = new Map<string, number>();
 	const autoPopulateInFlightPaths = new Set<string>();
 
 	// Reactive form values that mirror the ChartDetail component's state
@@ -441,7 +441,17 @@
 	};
 
 	const populateNextDisplayId = async (currentPath: string) => {
-		if (autoPopulatedForPaths.has(currentPath) || autoPopulateInFlightPaths.has(currentPath)) {
+		if (autoPopulateInFlightPaths.has(currentPath)) {
+			return;
+		}
+
+		// Restore cached value on revisit without re-fetching
+		const cachedId = autoPopulatedForPaths.get(currentPath);
+		if (cachedId !== undefined) {
+			if (displayId === 0) {
+				displayId = cachedId;
+				autoPopulatedDisplayId = { path: currentPath, value: cachedId };
+			}
 			return;
 		}
 
@@ -455,7 +465,7 @@
 			}
 			// Record that we fetched for this path even if user navigated away,
 			// to prevent duplicate calls if they navigate back
-			autoPopulatedForPaths.add(currentPath);
+			autoPopulatedForPaths.set(currentPath, next);
 			// Guard against stale responses: skip mutation if user switched songs
 			if (song.path !== currentPath) return;
 			if (displayId === 0) {

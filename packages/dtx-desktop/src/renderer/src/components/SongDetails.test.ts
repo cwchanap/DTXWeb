@@ -718,7 +718,7 @@ describe('SongDetails', () => {
 			expect(getNextDisplayIdCallCount()).toBe(callCountBefore);
 		});
 
-		it('does not re-trigger get-next-display-id when switching back to a previously populated song', async () => {
+		it('restores cached displayId and does not re-fetch when switching back to a previously populated song', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			const invokeMock = window.electron?.ipcRenderer?.invoke;
 			if (vi.isMockFunction(invokeMock)) {
@@ -730,11 +730,15 @@ describe('SongDetails', () => {
 			const songA = makeNode('SongA', '/test/SongA');
 			const { rerender } = render(SongDetails, { props: { song: songA } });
 
-			// Wait for songA's get-next-display-id to fire
+			// Wait for songA's get-next-display-id to fire and displayId to be set
 			await waitFor(() => {
 				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
 					'get-next-display-id'
 				);
+			});
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
 			});
 			const callsAfterSongA = getNextDisplayIdCallCount();
 
@@ -745,8 +749,12 @@ describe('SongDetails', () => {
 			});
 			const callsAfterSongB = getNextDisplayIdCallCount();
 
+			// Switch back to SongA — should restore cached ID without re-fetching
 			await rerender({ props: { song: songA } });
-			await tick();
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
 			expect(getNextDisplayIdCallCount()).toBe(callsAfterSongB);
 		});
 

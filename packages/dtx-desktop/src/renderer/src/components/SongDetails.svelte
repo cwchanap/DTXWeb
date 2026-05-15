@@ -453,11 +453,15 @@
 			if (!Number.isSafeInteger(next)) {
 				throw new Error('Invalid next display_id response');
 			}
+			// Record that we fetched for this path even if user navigated away,
+			// to prevent duplicate calls if they navigate back
+			autoPopulatedForPaths.add(currentPath);
+			// Guard against stale responses: skip mutation if user switched songs
+			if (song.path !== currentPath) return;
 			if (displayId === 0) {
 				displayId = next;
 				autoPopulatedDisplayId = { path: currentPath, value: next };
 			}
-			autoPopulatedForPaths.add(currentPath);
 			displayIdAutoPopulateError = null;
 		} catch (error) {
 			console.warn('Failed to fetch next display_id:', error);

@@ -779,5 +779,58 @@ describe('SongDetails', () => {
 				expect(props?.simfile?.display_id).toBe(43);
 			});
 		});
+
+		it('ignores stale get-next-display-id response when user switches songs before resolution', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			let resolveSongA: ((value: number) => void) | undefined;
+			let resolveSongB: ((value: number) => void) | undefined;
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') {
+						// Determine which request this is based on in-flight state
+						// SongA's request is created first; once we resolve SongA's, SongB's is next
+						if (resolveSongA === undefined) {
+							return new Promise<number>((resolve) => {
+								resolveSongA = resolve;
+							});
+						}
+						return new Promise<number>((resolve) => {
+							resolveSongB = resolve;
+						});
+					}
+					return { files: [] };
+				});
+			}
+
+			const songA = makeNode('SongA', '/test/SongA');
+			const { rerender } = render(SongDetails, { props: { song: songA } });
+
+			// Wait for SongA's get-next-display-id IPC to start
+			await waitFor(() => {
+				expect(resolveSongA).toBeDefined();
+			});
+
+			// Switch to SongB while SongA's request is still in-flight
+			const songB = makeNode('SongB', '/test/SongB');
+			await rerender({ props: { song: songB } });
+
+			// Wait for SongB's get-next-display-id IPC to start
+			await waitFor(() => {
+				expect(resolveSongB).toBeDefined();
+			});
+
+			// Resolve SongA's stale request with value 99 (should be ignored)
+			resolveSongA!(99);
+
+			// Resolve SongB's request with value 50 (should be applied)
+			resolveSongB!(50);
+
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				// SongB should get 50, not the stale 99 from SongA
+				expect(props?.simfile?.display_id).toBe(50);
+			});
+		});
 	});
 });

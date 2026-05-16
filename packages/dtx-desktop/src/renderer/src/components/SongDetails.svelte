@@ -475,6 +475,8 @@
 			displayIdAutoPopulateError = null;
 		} catch (error) {
 			console.warn('Failed to fetch next display_id:', error);
+			// Guard against stale rejections: skip error mutation if user switched songs
+			if (song.path !== currentPath) return;
 			displayIdAutoPopulateError =
 				'Could not fetch the next display ID. You can enter it manually or retry.';
 		} finally {

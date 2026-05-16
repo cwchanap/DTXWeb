@@ -316,6 +316,33 @@ describe('SimFile Service', () => {
 			(apiGet as Mock).mockResolvedValue({ success: false, error: 'Server error' });
 			await expect(getNextDisplayId()).rejects.toThrow('Server error');
 		});
+
+		it('throws when result.data is missing', async () => {
+			(apiGet as Mock).mockResolvedValue({ success: true, data: undefined });
+			await expect(getNextDisplayId()).rejects.toThrow(
+				'Invalid nextDisplayId in API response'
+			);
+		});
+
+		it('throws when nextDisplayId is not a finite number', async () => {
+			(apiGet as Mock).mockResolvedValue({
+				success: true,
+				data: { nextDisplayId: Infinity }
+			});
+			await expect(getNextDisplayId()).rejects.toThrow(
+				'Invalid nextDisplayId in API response'
+			);
+		});
+
+		it('throws when nextDisplayId is not a number', async () => {
+			(apiGet as Mock).mockResolvedValue({
+				success: true,
+				data: { nextDisplayId: 'not-a-number' }
+			});
+			await expect(getNextDisplayId()).rejects.toThrow(
+				'Invalid nextDisplayId in API response'
+			);
+		});
 	});
 
 	describe('preview url helpers', () => {

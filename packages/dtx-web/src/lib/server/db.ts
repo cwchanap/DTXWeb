@@ -300,7 +300,11 @@ export const getNextDisplayId = async (db: D1Database, userId: string): Promise<
 	if (!Number.isFinite(current) || !Number.isSafeInteger(current)) {
 		throw new Error('Invalid max display_id');
 	}
-	return current + 1;
+	const next = current + 1;
+	if (!Number.isFinite(next) || !Number.isSafeInteger(next)) {
+		throw new Error('Invalid next display_id');
+	}
+	return next;
 };
 
 export const createSimfile = async (db: D1Database, data: SimfileInsert): Promise<SimfileRow> => {

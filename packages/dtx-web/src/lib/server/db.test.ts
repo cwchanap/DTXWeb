@@ -615,6 +615,13 @@ describe('getNextDisplayId', () => {
 		await getNextDisplayId(db as unknown as D1Database, 'user-42');
 		expect(stmt.bind).toHaveBeenCalledWith('user-42');
 	});
+
+	it('throws when current + 1 overflows safe integer range', async () => {
+		const db = createMockDb(() => createMockStmt({ max_display_id: Number.MAX_SAFE_INTEGER }));
+		await expect(getNextDisplayId(db as unknown as D1Database, 'user-1')).rejects.toThrow(
+			'Invalid next display_id'
+		);
+	});
 });
 
 describe('createSimfile', () => {

@@ -87,6 +87,13 @@ export const getNextDisplayId = async (): Promise<number> => {
 	if (!result.success) {
 		throw new Error(result.error || 'Failed to fetch next display_id');
 	}
+	if (
+		!result.data ||
+		typeof result.data.nextDisplayId !== 'number' ||
+		!Number.isFinite(result.data.nextDisplayId)
+	) {
+		throw new Error('Invalid nextDisplayId in API response');
+	}
 	return result.data.nextDisplayId;
 };
 

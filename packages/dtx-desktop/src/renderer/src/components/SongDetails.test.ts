@@ -840,5 +840,58 @@ describe('SongDetails', () => {
 				expect(props?.simfile?.display_id).toBe(50);
 			});
 		});
+
+		it('does not show error banner when stale get-next-display-id request rejects after user switches songs', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			let rejectSongA: ((reason: unknown) => void) | undefined;
+			let resolveSongB: ((value: number) => void) | undefined;
+			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') {
+						if (rejectSongA === undefined) {
+							return new Promise<number>((_resolve, reject) => {
+								rejectSongA = reject;
+							});
+						}
+						return new Promise<number>((resolve) => {
+							resolveSongB = resolve;
+						});
+					}
+					return { files: [] };
+				});
+			}
+
+			const songA = makeNode('SongA', '/test/SongA');
+			const { rerender } = render(SongDetails, { props: { song: songA } });
+
+			// Wait for SongA's get-next-display-id IPC to start
+			await waitFor(() => {
+				expect(rejectSongA).toBeDefined();
+			});
+
+			// Switch to SongB while SongA's request is still in-flight
+			const songB = makeNode('SongB', '/test/SongB');
+			await rerender({ props: { song: songB } });
+
+			// Wait for SongB's get-next-display-id IPC to start
+			await waitFor(() => {
+				expect(resolveSongB).toBeDefined();
+			});
+
+			// Reject SongA's stale request (should NOT set error on SongB)
+			rejectSongA!(new Error('Network error'));
+
+			// Resolve SongB's request with value 50
+			resolveSongB!(50);
+
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(50);
+			});
+
+			// No error banner should be visible for SongB
+			expect(screen.queryByText(/Could not fetch the next display ID/)).toBeNull();
+		});
 	});
 });

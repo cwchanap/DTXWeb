@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, PUT } from './+server';
-import { getDb, getUserProfile, upsertUserProfile } from '$lib/server/db';
+import { getDb } from '$lib/server/db';
 import type { D1Database } from '@cloudflare/workers-types';
+import { getUserProfile, upsertUserProfile } from '@dtx/common/server';
 
-vi.mock('$lib/server/db');
+vi.mock('$lib/server/db', () => ({
+	getDb: vi.fn()
+}));
 vi.mock('@dtx/common/server', () => ({
-	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+	getUserProfile: vi.fn(),
+	upsertUserProfile: vi.fn()
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };

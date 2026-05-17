@@ -6,9 +6,10 @@ import {
 	listAllR2Objects,
 	buildZipStream,
 	createZipSources,
-	validateZipSources
+	validateZipSources,
+	getSimfileOwner
 } from '@dtx/common/server';
-import { getDb, getSimfileOwner } from '$lib/server/db';
+import { getDb } from '$lib/server/db';
 
 const MAX_BULK_IDS = 20;
 

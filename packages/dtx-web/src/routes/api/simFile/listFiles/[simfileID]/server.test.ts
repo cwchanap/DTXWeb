@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from './+server';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { Session } from '@supabase/supabase-js';
-import { getDb, getSimfileOwner } from '$lib/server/db';
-import { logger } from '@dtx/common/server';
+import { getDb } from '$lib/server/db';
+import { logger, getSimfileOwner } from '@dtx/common/server';
 
 // Mock logger
 vi.mock('@dtx/common/server', () => ({
@@ -11,10 +11,13 @@ vi.mock('@dtx/common/server', () => ({
 		error: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn()
-	}
+	},
+	getSimfileOwner: vi.fn()
 }));
 
-vi.mock('$lib/server/db');
+vi.mock('$lib/server/db', () => ({
+	getDb: vi.fn()
+}));
 
 // Create a mock Request object
 const createMockRequest = (headers?: Headers): Request => {

@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './+server';
-import { getDb, getNextDisplayId } from '$lib/server/db';
+import { getDb } from '$lib/server/db';
 import type { D1Database } from '@cloudflare/workers-types';
-import { logger } from '@dtx/common/server';
+import { logger, getNextDisplayId } from '@dtx/common/server';
 
-vi.mock('$lib/server/db');
+vi.mock('$lib/server/db', () => ({
+	getDb: vi.fn()
+}));
 vi.mock('@dtx/common/server', () => ({
-	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+	getNextDisplayId: vi.fn()
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };

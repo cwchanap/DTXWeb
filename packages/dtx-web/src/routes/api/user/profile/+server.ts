@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { getDb, getUserProfile, upsertUserProfile } from '$lib/server/db';
-import { logger } from '@dtx/common/server';
+import { getDb } from '$lib/server/db';
+import { logger, getUserProfile, upsertUserProfile } from '@dtx/common/server';
 
 /** GET /api/user/profile — Get current user's profile */
 export const GET = async ({ platform, locals }: { platform: App.Platform; locals: App.Locals }) => {

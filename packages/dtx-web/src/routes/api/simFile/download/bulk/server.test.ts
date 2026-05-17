@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './+server';
-import { getDb, getSimfileOwner } from '$lib/server/db';
+import { getDb } from '$lib/server/db';
 import {
 	getClientIp,
 	tryConsumeRateLimit,
@@ -8,7 +8,8 @@ import {
 	logger,
 	buildZipStream,
 	createZipSources,
-	validateZipSources
+	validateZipSources,
+	getSimfileOwner
 } from '@dtx/common/server';
 
 vi.mock('@dtx/common/server', async () => {
@@ -20,10 +21,11 @@ vi.mock('@dtx/common/server', async () => {
 		listAllR2Objects: vi.fn(),
 		buildZipStream: vi.fn(),
 		createZipSources: vi.fn(),
-		validateZipSources: vi.fn()
+		validateZipSources: vi.fn(),
+		getSimfileOwner: vi.fn()
 	};
 });
-vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
+vi.mock('$lib/server/db', () => ({ getDb: vi.fn() }));
 
 const createRequest = (body: unknown, headers?: Record<string, string>): Request =>
 	({

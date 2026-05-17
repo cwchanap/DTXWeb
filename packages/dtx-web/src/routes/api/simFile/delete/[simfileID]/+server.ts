@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { logger } from '@dtx/common/server';
-import { getDb, getSimfileOwner, deleteSimfile } from '$lib/server/db';
+import { logger, getSimfileOwner, deleteSimfile } from '@dtx/common/server';
+import { getDb } from '$lib/server/db';
 
 export const DELETE = async ({
 	params,

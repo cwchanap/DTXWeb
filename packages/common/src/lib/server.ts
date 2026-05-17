@@ -44,3 +44,28 @@ export {
 	type ZipEntry,
 	type ZipSource
 } from './server/zipBuilder';
+
+// Drizzle schema
+export { simfiles, dtxFiles, userProfiles } from './server/db/schema';
+
+// D1 queries + mock factory
+export {
+	createDrizzleDb,
+	createMockD1Database,
+	escapeLikePattern,
+	getSimfile,
+	getSimfileOwner,
+	listSimfiles,
+	searchSimfiles,
+	getNextDisplayId,
+	createSimfile,
+	updateSimfile,
+	deleteSimfile,
+	createDtxFiles,
+	getUserProfile,
+	upsertUserProfile,
+	updateUserProfile,
+	type ListSimfilesOptions,
+	type SearchSimfilesOptions,
+	type SearchSimfileResult
+} from './server/db';

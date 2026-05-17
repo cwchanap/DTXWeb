@@ -35,3 +35,12 @@ export { getClientIp, tryConsumeRateLimit, type RateLimitResult } from './server
 
 // R2 storage utilities
 export { isPreviewKey, listAllR2Objects, type R2ObjectMeta } from './server/r2';
+
+// ZIP streaming utilities
+export {
+	buildZipStream,
+	createZipSources,
+	validateZipSources,
+	type ZipEntry,
+	type ZipSource
+} from './server/zipBuilder';

@@ -1,7 +1,14 @@
 import { json, type RequestEvent } from '@sveltejs/kit';
-import { logger, getClientIp, tryConsumeRateLimit, listAllR2Objects } from '@dtx/common/server';
+import {
+	logger,
+	getClientIp,
+	tryConsumeRateLimit,
+	listAllR2Objects,
+	buildZipStream,
+	createZipSources,
+	validateZipSources
+} from '@dtx/common/server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
-import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
 
 const MAX_BULK_IDS = 20;
 

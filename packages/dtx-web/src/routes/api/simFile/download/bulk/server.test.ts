@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './+server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
-import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
-import { getClientIp, tryConsumeRateLimit, listAllR2Objects, logger } from '@dtx/common/server';
+import {
+	getClientIp,
+	tryConsumeRateLimit,
+	listAllR2Objects,
+	logger,
+	buildZipStream,
+	createZipSources,
+	validateZipSources
+} from '@dtx/common/server';
 
 vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
@@ -10,15 +17,13 @@ vi.mock('@dtx/common/server', async () => {
 		...actual,
 		logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 		tryConsumeRateLimit: vi.fn(),
-		listAllR2Objects: vi.fn()
+		listAllR2Objects: vi.fn(),
+		buildZipStream: vi.fn(),
+		createZipSources: vi.fn(),
+		validateZipSources: vi.fn()
 	};
 });
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
-vi.mock('$lib/server/zipBuilder', () => ({
-	buildZipStream: vi.fn(),
-	createZipSources: vi.fn(),
-	validateZipSources: vi.fn()
-}));
 
 const createRequest = (body: unknown, headers?: Record<string, string>): Request =>
 	({

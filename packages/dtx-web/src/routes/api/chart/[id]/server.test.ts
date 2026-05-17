@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET, PATCH } from './+server';
 import { getDb, getSimfile, getSimfileOwner, updateSimfile } from '$lib/server/db';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 vi.mock('$lib/server/db');
-vi.mock('$lib/server/logger', () => ({
-	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+vi.mock('@dtx/common/server', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };

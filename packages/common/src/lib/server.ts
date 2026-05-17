@@ -26,3 +26,6 @@ export type {
 	SimfileWithDtx
 } from './types/d1.types';
 export { toSimfileWithDtx } from './types/d1.types';
+
+// Shared logging utility
+export { default as logger } from './server/logger';

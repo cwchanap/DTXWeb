@@ -3,7 +3,7 @@ import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } fro
 import type { SimfileWithDtxFiles } from '$lib/server/db';
 import { isPreviewKey } from '$lib/server/r2';
 import { toSimfileWithDtx } from '@dtx/common';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 const MAX_CONCURRENT_R2_CHECKS = 4;
 

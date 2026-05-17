@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { getDb, getSimfile, getSimfileOwner, updateSimfile } from '$lib/server/db';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 /** GET /api/chart/[id] — Get chart detail */
 export const GET = async ({

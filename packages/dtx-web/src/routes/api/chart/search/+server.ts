@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { getDb, searchSimfiles } from '$lib/server/db';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 /** GET /api/chart/search — Search charts by title/artist */
 export const GET = async ({

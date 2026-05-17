@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, POST } from './+server';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import { toSimfileWithDtx } from '@dtx/common';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 vi.mock('$lib/server/db', () => ({
 	getDb: vi.fn(),
@@ -15,8 +15,8 @@ vi.mock('@dtx/common', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@dtx/common')>();
 	return { ...actual, toSimfileWithDtx: vi.fn() };
 });
-vi.mock('$lib/server/logger', () => ({
-	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+vi.mock('@dtx/common/server', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };

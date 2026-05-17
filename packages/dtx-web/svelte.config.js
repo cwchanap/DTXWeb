@@ -23,6 +23,7 @@ const config = {
 		alias: {
 			'@': './src',
 			'@dtx/common/components': '../common/src/lib/components.ts',
+			'@dtx/common/server': '../common/src/lib/server.ts',
 			'@dtx/common': '../common/src/lib'
 		},
 		csrf: {

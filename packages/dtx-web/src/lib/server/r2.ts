@@ -1,5 +1,5 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 const PREVIEW_FILENAMES = new Set(['preview.jpg', 'preview.mp3']);
 

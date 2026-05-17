@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { _sanitizeFilename, _purgeCacheForFile } from './+server';
 import { env } from '$env/dynamic/private';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 // Mock dependencies
 vi.mock('$env/dynamic/private', () => ({
@@ -11,8 +11,8 @@ vi.mock('$env/dynamic/private', () => ({
 	}
 }));
 
-vi.mock('$lib/server/logger', () => ({
-	default: {
+vi.mock('@dtx/common/server', () => ({
+	logger: {
 		warn: vi.fn(),
 		error: vi.fn(),
 		info: vi.fn()

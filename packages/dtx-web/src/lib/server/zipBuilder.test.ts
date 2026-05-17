@@ -4,8 +4,8 @@ import JSZip from 'jszip';
 import { buildZipStream, createZipSources, fetchR2Entries, validateZipSources } from './zipBuilder';
 import type { R2ObjectMeta } from './r2';
 
-vi.mock('$lib/server/logger', () => ({
-	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+vi.mock('@dtx/common/server', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;

@@ -4,10 +4,10 @@ import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
 import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
 import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
-vi.mock('$lib/server/logger', () => ({
-	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+vi.mock('@dtx/common/server', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
 vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));

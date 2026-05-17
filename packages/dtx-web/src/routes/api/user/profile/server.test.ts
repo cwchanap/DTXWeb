@@ -4,8 +4,8 @@ import { getDb, getUserProfile, upsertUserProfile } from '$lib/server/db';
 import type { D1Database } from '@cloudflare/workers-types';
 
 vi.mock('$lib/server/db');
-vi.mock('$lib/server/logger', () => ({
-	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+vi.mock('@dtx/common/server', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };

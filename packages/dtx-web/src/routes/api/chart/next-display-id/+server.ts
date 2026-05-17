@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { getDb, getNextDisplayId } from '$lib/server/db';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 export const GET = async ({ platform, locals }: { platform: App.Platform; locals: App.Locals }) => {
 	const user = locals.user;

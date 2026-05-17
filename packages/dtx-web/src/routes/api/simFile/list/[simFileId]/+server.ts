@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 // Validation schema for simFileId parameter
 const listSchema = z.object({

@@ -3,11 +3,11 @@ import { GET } from './+server';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { Session } from '@supabase/supabase-js';
 import { getDb, getSimfileOwner } from '$lib/server/db';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
 // Mock logger
-vi.mock('$lib/server/logger', () => ({
-	default: {
+vi.mock('@dtx/common/server', () => ({
+	logger: {
 		error: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn()

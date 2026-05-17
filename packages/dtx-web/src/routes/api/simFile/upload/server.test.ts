@@ -5,8 +5,8 @@ import type { Session } from '@supabase/supabase-js';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 
 // Mock logger
-vi.mock('$lib/server/logger', () => ({
-	default: {
+vi.mock('@dtx/common/server', () => ({
+	logger: {
 		error: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn()

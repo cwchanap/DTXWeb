@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from './+server';
-import logger from '$lib/server/logger';
+import { logger } from '@dtx/common/server';
 
-vi.mock('$lib/server/logger', () => ({
-	default: {
+vi.mock('@dtx/common/server', () => ({
+	logger: {
 		error: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn()

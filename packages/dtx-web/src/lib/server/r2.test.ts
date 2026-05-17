@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import { isPreviewKey, listAllR2Objects } from '$lib/server/r2';
 
-vi.mock('$lib/server/logger', () => ({
-	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+vi.mock('@dtx/common/server', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
 beforeEach(() => {

@@ -1,5 +1,5 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
-import { logger } from '@dtx/common/server';
+import logger from './logger';
 
 const RATE_LIMIT_BYTES = 1073741824; // 1 GiB per minute
 const KV_TTL_SECONDS = 120; // cover current and previous minute window

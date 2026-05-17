@@ -3,7 +3,7 @@ import { logger } from '@dtx/common/server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
 import { listAllR2Objects } from '$lib/server/r2';
 import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
-import { getClientIp, tryConsumeRateLimit } from '$lib/server/rateLimiter';
+import { getClientIp, tryConsumeRateLimit } from '@dtx/common/server';
 
 const MAX_BULK_IDS = 20;
 

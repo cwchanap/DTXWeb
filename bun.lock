@@ -31,9 +31,12 @@
       "name": "@dtx/common",
       "version": "0.0.1",
       "dependencies": {
+        "drizzle-orm": "^0.44.5",
         "jszip": "^3.10.1",
+        "winston": "^3.17.0",
       },
       "devDependencies": {
+        "@cloudflare/workers-types": "^4.20250620.0",
         "@sveltejs/adapter-auto": "^6.0.0",
         "@sveltejs/kit": "^2.16.0",
         "@sveltejs/package": "^2.0.0",

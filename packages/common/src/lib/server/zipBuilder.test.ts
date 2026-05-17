@@ -2,15 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import JSZip from 'jszip';
 import { buildZipStream, createZipSources, fetchR2Entries, validateZipSources } from './zipBuilder';
-import type { R2ObjectMeta } from '@dtx/common/server';
+import type { R2ObjectMeta } from './r2';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
-	return {
-		...actual,
-		logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
-	};
-});
+vi.mock('./logger', () => ({
+	default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+}));
 
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_GENERAL_PURPOSE_UTF8_AND_DESCRIPTOR_FLAGS = 0x0808;

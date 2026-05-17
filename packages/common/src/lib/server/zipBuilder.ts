@@ -1,5 +1,6 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
-import { isPreviewKey, logger, type R2ObjectMeta } from '@dtx/common/server';
+import { isPreviewKey, type R2ObjectMeta } from './r2';
+import logger from './logger';
 
 export interface ZipEntry {
 	path: string;

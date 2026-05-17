@@ -1,9 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { getDb, listSimfiles, createSimfile, createDtxFiles, deleteSimfile } from '$lib/server/db';
 import type { SimfileWithDtxFiles } from '$lib/server/db';
-import { isPreviewKey } from '$lib/server/r2';
 import { toSimfileWithDtx } from '@dtx/common';
-import { logger } from '@dtx/common/server';
+import { isPreviewKey, logger } from '@dtx/common/server';
 
 const MAX_CONCURRENT_R2_CHECKS = 4;
 

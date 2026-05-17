@@ -1,21 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './+server';
 import { getDb, getSimfileOwner } from '$lib/server/db';
-import { listAllR2Objects } from '$lib/server/r2';
 import { buildZipStream, createZipSources, validateZipSources } from '$lib/server/zipBuilder';
-import { getClientIp, tryConsumeRateLimit } from '@dtx/common/server';
-import { logger } from '@dtx/common/server';
+import { getClientIp, tryConsumeRateLimit, listAllR2Objects, logger } from '@dtx/common/server';
 
 vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return {
 		...actual,
 		logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
-		tryConsumeRateLimit: vi.fn()
+		tryConsumeRateLimit: vi.fn(),
+		listAllR2Objects: vi.fn()
 	};
 });
 vi.mock('$lib/server/db', () => ({ getDb: vi.fn(), getSimfileOwner: vi.fn() }));
-vi.mock('$lib/server/r2', () => ({ listAllR2Objects: vi.fn() }));
 vi.mock('$lib/server/zipBuilder', () => ({
 	buildZipStream: vi.fn(),
 	createZipSources: vi.fn(),

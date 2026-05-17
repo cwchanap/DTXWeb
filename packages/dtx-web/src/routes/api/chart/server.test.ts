@@ -15,9 +15,13 @@ vi.mock('@dtx/common', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@dtx/common')>();
 	return { ...actual, toSimfileWithDtx: vi.fn() };
 });
-vi.mock('@dtx/common/server', () => ({
-	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
-}));
+vi.mock('@dtx/common/server', async () => {
+	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+	return {
+		...actual,
+		logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
+	};
+});
 
 const mockUser = { id: 'user-1', email: 'test@example.com' };
 const mockR2List = vi.fn().mockResolvedValue({ objects: [] });

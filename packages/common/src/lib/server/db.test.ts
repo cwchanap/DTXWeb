@@ -427,6 +427,26 @@ describe('searchSimfiles', () => {
 		mockDrizzleDb.select.mockClear();
 	});
 
+	it('returns empty array when query is blank', async () => {
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: '',
+			userId: 'user-1'
+		});
+		expect(result).toEqual([]);
+		expect(mockDrizzleDb.select).not.toHaveBeenCalled();
+	});
+
+	it('returns empty array when query is only whitespace', async () => {
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: '   ',
+			userId: 'user-1'
+		});
+		expect(result).toEqual([]);
+		expect(mockDrizzleDb.select).not.toHaveBeenCalled();
+	});
+
 	it('returns matching rows', async () => {
 		const searchRow = {
 			id: 1,

@@ -241,6 +241,7 @@ export const searchSimfiles = async (
 	db: D1Database,
 	opts: SearchSimfilesOptions
 ): Promise<SearchSimfileResult[]> => {
+	if (!opts.query?.trim()) return [];
 	const orm = createDrizzleDb(db);
 	const pattern = `%${escapeLikePattern(opts.query)}%`;
 	const conditions: SQL[] = [

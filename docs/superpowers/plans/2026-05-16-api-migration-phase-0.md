@@ -14,7 +14,7 @@
 
 ## File Structure (end state)
 
-```
+```text
 packages/common/
 ├── package.json                                     ← add drizzle-orm + winston deps,
 │                                                       add @cloudflare/workers-types devDep
@@ -1037,7 +1037,7 @@ Run: `ls packages/dtx-web/src/lib/server/`
 
 Expected output (exactly):
 
-```
+```text
 db.test.ts
 db.ts
 ```
@@ -1050,7 +1050,7 @@ Run: `ls packages/common/src/lib/server/ && ls packages/common/src/lib/server/db
 
 Expected:
 
-```
+```text
 db.test.ts
 db.ts
 db/
@@ -1066,7 +1066,7 @@ zipBuilder.ts
 
 and
 
-```
+```text
 schema.ts
 ```
 

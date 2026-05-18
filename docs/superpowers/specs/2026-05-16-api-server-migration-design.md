@@ -59,7 +59,7 @@ Three deployment environments mirror `wrangler.jsonc`: prod (`dtx.hapadona.com`)
 
 ### Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Browser / Web SPA                Desktop (Electron)     Mobile (TBD)│
 │  dtx.hapadona.com                  VITE_DTX_SERVER_URL              │
@@ -100,7 +100,7 @@ Three deployment environments mirror `wrangler.jsonc`: prod (`dtx.hapadona.com`)
 
 ### Repo & module structure
 
-```
+```text
 packages/dtx-api/                          ← NEW
 ├── wrangler.jsonc                         (D1 + R2 + KV + custom domains)
 ├── package.json
@@ -128,7 +128,7 @@ packages/dtx-api/                          ← NEW
         └── cors.ts                        CORS middleware
 
 packages/common/                           ← EXTEND
-└── src/server/                            (new sub-export "@dtx/common/server")
+└── src/lib/server/                        (new sub-export "@dtx/common/server")
     ├── db/
     │   ├── schema.ts                      ← moved from dtx-web/src/lib/server/db/schema.ts
     │   └── queries.ts                     ← moved from dtx-web/src/lib/server/db.ts
@@ -293,7 +293,7 @@ type Mutation {
 
 **REST sidecar (same Worker):**
 
-```
+```text
 POST /downloads/bulk        # body: { ids: number[], validate?: 1 }; auth: bearer optional if blog-download enabled
 GET  /healthz               # liveness + bindings probe
 ```
@@ -322,7 +322,7 @@ GET  /healthz               # liveness + bindings probe
 
 Request lifecycle:
 
-```
+```text
 Request → CORS middleware → auth middleware → Yoga handler or REST handler
 ```
 
@@ -366,7 +366,7 @@ builder.queryField('nextDisplayId', (t) =>
 
 **Upload (single file, ≤50MB):**
 
-```
+```text
 client                                api Worker                     R2
   │  requestSimfileUploadUrl({…}) ───▶ verify owner, sanitize
   │                                    filename, build key, sign URL
@@ -395,7 +395,7 @@ client                                api Worker                     R2
 
 ### Web client migration
 
-```
+```text
 packages/dtx-web/src/lib/api/
 ├── client.ts          GraphQL client (graphql-request) — browser + server
 ├── token.ts           getAccessToken(): reads Supabase session
@@ -455,7 +455,7 @@ SSR calls become `platform.env.API.fetch(new Request('https://internal/graphql',
 
 **Root `package.json` scripts:**
 
-```
+```text
 deploy:api                        → bun --filter=dtx-api deploy:prod
 deploy:api:preprod                → bun --filter=dtx-api deploy:preprod
 deploy:api:preprod:prod-data      → bun --filter=dtx-api deploy:preprod:prod-data
@@ -473,7 +473,7 @@ deploy:api:preprod:prod-data      → bun --filter=dtx-api deploy:preprod:prod-d
 
 **Phase 0 — Extract shared server code (1 PR, no behaviour change)**
 
-- Move `dtx-web/src/lib/server/{db.ts,db/schema.ts,r2.ts,rateLimiter.ts,zipBuilder.ts,logger.ts}` into `@dtx/common/src/server/`.
+- Move `dtx-web/src/lib/server/{db.ts,db/schema.ts,r2.ts,rateLimiter.ts,zipBuilder.ts,logger.ts}` into `@dtx/common/src/lib/server/`.
 - Add `"./server"` to the package exports.
 - Replace imports in `dtx-web` with `@dtx/common/server`.
 - All existing tests must pass unchanged.

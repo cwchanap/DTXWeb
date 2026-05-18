@@ -69,3 +69,6 @@ export {
 	type SearchSimfilesOptions,
 	type SearchSimfileResult
 } from './server/db';
+
+// Workers-safe logger (use this from any code running in a Cloudflare Worker)
+export { workerLogger, type WorkerLogger } from './server/workerLogger';

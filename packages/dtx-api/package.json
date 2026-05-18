@@ -1,0 +1,33 @@
+{
+	"name": "dtx-api",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"build": "wrangler deploy --dry-run --outdir=dist",
+		"deploy:prod": "wrangler deploy",
+		"deploy:preprod": "wrangler deploy --env pre-prod",
+		"deploy:preprod:prod-data": "wrangler deploy --env pre-prod-prod-data",
+		"test": "vitest --run --passWithNoTests",
+		"test:watch": "vitest",
+		"check": "tsc --noEmit",
+		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
+	},
+	"dependencies": {
+		"@dtx/common": "*",
+		"@pothos/core": "^4.0.0",
+		"@pothos/plugin-errors": "^4.0.0",
+		"@pothos/plugin-scope-auth": "^4.0.0",
+		"@supabase/supabase-js": "^2.49.4",
+		"graphql": "^16.10.0",
+		"graphql-yoga": "^5.10.0"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20250620.0",
+		"@vitest/coverage-v8": "^3.0.0",
+		"typescript": "^5.8.3",
+		"vitest": "^3.1.4",
+		"wrangler": "^4.0.0"
+	}
+}

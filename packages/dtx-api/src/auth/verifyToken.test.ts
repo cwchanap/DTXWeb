@@ -55,10 +55,11 @@ describe('verifyToken', () => {
 	});
 
 	it('returns null when supabase.auth.getUser rejects', async () => {
-		getUser.mockResolvedValue({ data: { user: null }, error: { message: 'bad token' } });
+		getUser.mockRejectedValue(new Error('bad token'));
 		const token = makeJwt({ exp: 9999999999 });
-		const result = await verifyToken(reqWith({ authorization: `Bearer ${token}` }), env);
-		expect(result).toBeNull();
+		await expect(
+			verifyToken(reqWith({ authorization: `Bearer ${token}` }), env)
+		).resolves.toBeNull();
 	});
 
 	it('returns user + synthetic session when supabase accepts a valid token', async () => {

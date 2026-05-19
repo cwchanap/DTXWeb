@@ -865,7 +865,7 @@ describe('Editor Scene', () => {
 				.mockReturnValue(false);
 			const addNoteToEditorSpy = vi
 				.spyOn(editorScene['noteManager'], 'addNoteToEditor')
-				.mockImplementation(() => {});
+				.mockReturnValue(true);
 			const syncNotesToStoreSpy = vi
 				.spyOn(editorScene as any, 'syncNotesToStore')
 				.mockImplementation(() => {});
@@ -937,7 +937,7 @@ describe('Editor Scene', () => {
 				.mockReturnValue(false);
 			const addNoteToEditorSpy = vi
 				.spyOn(editorScene['noteManager'], 'addNoteToEditor')
-				.mockImplementation(() => {});
+				.mockReturnValue(true);
 			const syncNotesToStoreSpy = vi
 				.spyOn(editorScene as any, 'syncNotesToStore')
 				.mockImplementation(() => {});
@@ -1578,19 +1578,32 @@ describe('Editor Scene', () => {
 	});
 
 	describe('createNoteCursor', () => {
-		let mockCtx: Record<string, ReturnType<typeof vi.fn>>;
+		type MockCanvasContext = {
+			fillStyle: string | CanvasGradient | CanvasPattern;
+			strokeStyle: string | CanvasGradient | CanvasPattern;
+			lineWidth: number;
+			font: string;
+			textAlign: CanvasTextAlign;
+			textBaseline: CanvasTextBaseline;
+			fillRect: ReturnType<typeof vi.fn>;
+			strokeRect: ReturnType<typeof vi.fn>;
+			strokeText: ReturnType<typeof vi.fn>;
+			fillText: ReturnType<typeof vi.fn>;
+		};
+
+		let mockCtx: MockCanvasContext;
 		let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
 		let originalToDataURL: typeof HTMLCanvasElement.prototype.toDataURL;
 
 		beforeEach(() => {
 			// Set up a mock 2D canvas context for all createNoteCursor tests
 			mockCtx = {
-				fillStyle: '',
-				strokeStyle: '',
+				fillStyle: '#000',
+				strokeStyle: '#000',
 				lineWidth: 0,
 				font: '',
-				textAlign: '',
-				textBaseline: '',
+				textAlign: 'left',
+				textBaseline: 'alphabetic',
 				fillRect: vi.fn(),
 				strokeRect: vi.fn(),
 				strokeText: vi.fn(),

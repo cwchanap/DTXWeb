@@ -38,6 +38,7 @@ packages/dtx-api/                            ← NEW package
     ├── lib/
     │   ├── cors.ts
     │   └── cors.test.ts
+    ├── index.test.ts
     ├── rest/
     │   ├── healthz.ts
     │   └── healthz.test.ts
@@ -126,7 +127,7 @@ Create `packages/common/src/lib/server/workerLogger.ts`:
 type Meta = Record<string, unknown>;
 
 const format = (level: string, msg: string, meta?: Meta): string =>
-	JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(meta ?? {}) });
+	JSON.stringify({ ...(meta ?? {}), ts: new Date().toISOString(), level, msg });
 
 export const workerLogger = {
 	info: (msg: string, meta?: Meta) => console.log(format('info', msg, meta)),
@@ -1016,7 +1017,8 @@ export const builder = new SchemaBuilder<{
 });
 
 builder.queryType({});
-builder.mutationType({});
+// Intentionally omit builder.mutationType({}) in Phase 1.
+// GraphQL root types must expose at least one field, and no mutations exist yet.
 ```
 
 - [ ] **Step 3: Write `schema/healthz.ts`**
@@ -1242,7 +1244,7 @@ Expected: 0 errors.
 - [ ] **Step 3: Run the full test suite**
 
 Run: `bun run --filter=dtx-api test`
-Expected: all tests pass (verifyToken: 8, cors: 8, healthz: 2, schema: 4 = 22 tests).
+Expected: all tests pass.
 
 - [ ] **Step 4: Commit**
 
@@ -1592,7 +1594,7 @@ Run: `bun run --filter=@dtx/common test`
 Expected: all tests pass.
 
 Run: `bun run --filter=dtx-api test`
-Expected: all tests pass (22 tests across 4 files).
+Expected: all tests pass.
 
 Run: `bun run --filter=dtx-web test`
 Expected: pass (dtx-web is unaffected — verify nothing regressed).
@@ -1655,7 +1657,7 @@ Both calls should still succeed (the deploy from Task 10 is what we're verifying
 - All 11 tasks complete.
 - `git log --oneline -11` shows commits for: workerLogger, scaffold, Env, verifyToken, CORS, healthz, GraphQL, Worker entry, wrangler config, KV IDs + deploy, (optional) format.
 - `packages/dtx-api/` exists with the layout described in the design spec.
-- `bun run --filter=dtx-api test` reports 22 tests passing across 4 files.
+- `bun run --filter=dtx-api test` reports the full suite passing.
 - `bun run --filter=dtx-api check` passes.
 - `bun run --filter=@dtx/common test` and `bun run --filter=@dtx/common check` pass.
 - `bun run lint` passes.

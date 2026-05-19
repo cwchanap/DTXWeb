@@ -9,7 +9,7 @@ vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 	const { default: AccordionItemStub } =
 		await import('../../tests/stubs/AccordionItemStub.svelte');
 	// Attach Item as a property to match Accordion.Item usage
-	(AccordionStub as Record<string, unknown>).Item = AccordionItemStub;
+	(AccordionStub as unknown as Record<string, unknown>).Item = AccordionItemStub;
 	return { Accordion: AccordionStub };
 });
 

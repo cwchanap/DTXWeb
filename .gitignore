@@ -2,6 +2,7 @@
 node_modules
 /build
 /package
+packages/dtx-api/dist/
 .env
 .env.*
 !.env.example

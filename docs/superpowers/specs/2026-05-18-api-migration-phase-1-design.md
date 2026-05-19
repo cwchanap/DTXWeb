@@ -64,6 +64,7 @@ packages/dtx-api/
 ├── README.md                          one-paragraph orientation
 └── src/
     ├── index.ts                       Worker entry: CORS → router → /graphql | /healthz | 404
+    ├── index.test.ts                  Worker entrypoint routing + CORS coverage
     ├── context.ts                     GraphQL context type + createContext
     ├── env.ts                         Env type for typed bindings + vars
     ├── auth/
@@ -224,7 +225,8 @@ export const builder = new SchemaBuilder<{
 });
 
 builder.queryType({});
-builder.mutationType({});
+// Intentionally omit builder.mutationType({}) in Phase 1.
+// GraphQL root types must expose at least one field, and no mutations exist yet.
 ```
 
 ```ts
@@ -312,19 +314,21 @@ export type Env = {
 ```ts
 import type { Env } from '../env';
 
+declare const __BUILD_SHA__: string | undefined;
+
 export const healthz = (_request: Request, _env: Env): Response =>
 	new Response(
 		JSON.stringify({
 			ok: true,
 			service: 'dtx-api',
 			version: '0.0.1',
-			buildSha: (globalThis as { __BUILD_SHA__?: string }).__BUILD_SHA__ ?? 'dev'
+			buildSha: typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev'
 		}),
 		{ status: 200, headers: { 'content-type': 'application/json' } }
 	);
 ```
 
-Liveness only. Does not touch D1/R2/KV (decision rationale: avoid burning quota on probe traffic; uptime checks shouldn't false-positive on transient binding latency). `__BUILD_SHA__` is wired via `wrangler.jsonc` define at build time (Phase 1 plan: source from `git rev-parse --short HEAD` in the deploy script).
+Liveness only. Does not touch D1/R2/KV (decision rationale: avoid burning quota on probe traffic; uptime checks shouldn't false-positive on transient binding latency). `buildSha` reads `__BUILD_SHA__` when a build-time define is provided and otherwise falls back to `'dev'`; Phase 1 does not require the Wrangler/deploy-script wiring yet.
 
 ### Workers-native logger (`packages/common`)
 
@@ -333,7 +337,7 @@ Add a new file `packages/common/src/lib/server/workerLogger.ts`:
 ```ts
 type Meta = Record<string, unknown>;
 const format = (level: string, msg: string, meta?: Meta) =>
-	JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(meta ?? {}) });
+	JSON.stringify({ ...(meta ?? {}), ts: new Date().toISOString(), level, msg });
 
 export const workerLogger = {
 	info: (msg: string, meta?: Meta) => console.log(format('info', msg, meta)),
@@ -425,10 +429,11 @@ Plain vitest, mocked Supabase + D1/R2/KV stubs. Patterns mirror `packages/dtx-we
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `auth/verifyToken.test.ts` | Bearer present + valid → returns `{ user, session }`. `supabase.auth.getUser` rejects → returns null (Supabase is the authoritative validator). Mock case: `getUser` succeeds but JWT `exp` is in the past → `session.expires_in` clamped to 0 (parity with `hooks.server.ts`). Malformed JWT (undecodable payload) → null. Absent / non-bearer Authorization header → null. |
 | `lib/cors.test.ts`         | Preflight from allow-listed origin → 204 + ACAO + Vary + correct methods/headers. Preflight from foreign origin → 204 + no ACAO. Non-preflight response gets ACAO+Vary when Origin allow-listed. Absent Origin → no ACAO. `CORS_ALLOWED_ORIGINS` parsed correctly (trim, empty entries ignored).                                                                             |
-| `rest/healthz.test.ts`     | GET /healthz → 200 JSON with expected keys (`ok`, `service`, `version`). CORS headers attached when Origin present and allow-listed.                                                                                                                                                                                                                                         |
+| `rest/healthz.test.ts`     | Raw `healthz` handler returns 200 JSON with expected keys (`ok`, `service`, `version`, `buildSha`).                                                                                                                                                                                                                                                                          |
+| `index.test.ts`            | Worker entrypoint covers preflight short-circuiting, `GET /healthz`, non-GET `/healthz` → 405, `/graphql` dispatch through the exported Yoga instance, 404 handling, and route-level CORS wrapping.                                                                                                                                                                          |
 | `schema/schema.test.ts`    | `yoga.fetch('/graphql', POST { query: '{ healthz }' })` → 200 with `{ data: { healthz: 'ok' } }`. Introspection query returns a schema. `GRAPHIQL=false` → GET /graphql returns 405 or 400 (no playground). `GRAPHIQL=true` → GET returns the GraphiQL HTML.                                                                                                                 |
 
-Coverage target: 80%+ on the four module files. No fixtures needed beyond hand-crafted JWTs (lifted directly from `hooks.server.test.ts`).
+Coverage target: 80%+ across the Phase 1 `dtx-api` modules. No fixtures needed beyond hand-crafted JWTs (lifted directly from `hooks.server.test.ts`).
 
 ### Deployment & verification (pre-prod only)
 

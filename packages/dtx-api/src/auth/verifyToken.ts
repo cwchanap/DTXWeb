@@ -28,7 +28,14 @@ export const verifyToken = async (
 		auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
 	});
 
-	const { data, error } = await supabase.auth.getUser(token);
+	let authResult: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+	try {
+		authResult = await supabase.auth.getUser(token);
+	} catch {
+		return null;
+	}
+
+	const { data, error } = authResult;
 	if (error || !data.user) return null;
 
 	const payload = decodeJwtPayload(token);

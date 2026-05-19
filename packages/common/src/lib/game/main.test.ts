@@ -62,7 +62,7 @@ describe('main.svelte component', () => {
 
 		// Grab the SCENE_READY callback registered on EventBus.on
 		const sceneReadyCall = mockEventBus.on.mock.calls.find(
-			([event]: [string]) => event === 'current-scene-ready'
+			(call) => call[0] === 'current-scene-ready'
 		);
 		const [, sceneReadyCallback] = sceneReadyCall!;
 		const mockScene = { key: 'Editor' };

@@ -1,6 +1,12 @@
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+	resolve: {
+		alias: {
+			'@dtx/common/server': path.resolve(__dirname, '../common/src/lib/server.ts')
+		}
+	},
 	test: {
 		environment: 'node',
 		globals: false,
@@ -8,7 +14,7 @@ export default defineConfig({
 		coverage: {
 			provider: 'v8',
 			include: ['src/**/*.ts'],
-			exclude: ['**/*.test.ts', 'src/index.ts']
+			exclude: ['**/*.test.ts']
 		}
 	}
 });

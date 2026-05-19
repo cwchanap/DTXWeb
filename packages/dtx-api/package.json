@@ -9,7 +9,7 @@
 		"deploy:prod": "wrangler deploy",
 		"deploy:preprod": "wrangler deploy --env pre-prod",
 		"deploy:preprod:prod-data": "wrangler deploy --env pre-prod-prod-data",
-		"test": "vitest --run --passWithNoTests",
+		"test": "vitest --run",
 		"test:watch": "vitest",
 		"check": "tsc --noEmit",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings"

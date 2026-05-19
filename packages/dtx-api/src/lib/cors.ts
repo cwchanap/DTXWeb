@@ -23,6 +23,24 @@ const baseHeaders = (): Record<string, string> => ({
 	'Access-Control-Max-Age': '86400'
 });
 
+const appendVary = (headers: Headers, value: string): void => {
+	const existing = headers.get('Vary');
+	if (!existing) {
+		headers.set('Vary', value);
+		return;
+	}
+
+	const values = existing
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+	if (values.some((entry) => entry.toLowerCase() === value.toLowerCase())) {
+		return;
+	}
+
+	headers.set('Vary', [...values, value].join(', '));
+};
+
 export const handlePreflight = (request: Request, env: Env): Response | null => {
 	if (request.method !== 'OPTIONS') return null;
 
@@ -45,7 +63,7 @@ export const withCors = (response: Response, request: Request, env: Env): Respon
 
 	const headers = new Headers(response.headers);
 	headers.set('Access-Control-Allow-Origin', origin);
-	headers.set('Vary', 'Origin');
+	appendVary(headers, 'Origin');
 
 	return new Response(response.body, {
 		status: response.status,

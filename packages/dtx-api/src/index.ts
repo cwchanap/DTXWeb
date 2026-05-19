@@ -11,7 +11,18 @@ export default {
 		const url = new URL(request.url);
 
 		if (url.pathname === '/healthz') {
-			return withCors(healthz(request, env), request, env);
+			if (request.method === 'GET') {
+				return withCors(healthz(request, env), request, env);
+			}
+
+			return withCors(
+				new Response('Method Not Allowed', {
+					status: 405,
+					headers: { Allow: 'GET' }
+				}),
+				request,
+				env
+			);
 		}
 
 		if (url.pathname === '/graphql') {

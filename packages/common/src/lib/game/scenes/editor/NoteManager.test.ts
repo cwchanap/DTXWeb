@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NoteManager } from './NoteManager';
 import type { Editor } from '../Editor';
 import { LaneMeasureNote } from '../../../chart/note';
 import Phaser from 'phaser'; // Import to ensure global mock is available
+
+const createMockGraphics = (): Phaser.GameObjects.Graphics =>
+	new Phaser.GameObjects.Graphics({} as Phaser.Scene);
 
 // Mock Editor with all necessary methods
 const createMockEditor = () => {
@@ -1078,7 +1081,7 @@ describe('NoteManager', () => {
 		// Pointer at (110, 190) is inside bounds
 
 		it('should select note when pointer hits within note bounds', () => {
-			const graphics = new Phaser.GameObjects.Graphics();
+			const graphics = createMockGraphics();
 			graphics.name = 'note-0-0-0';
 			mockEditor.getPanelContainer().list.push(graphics);
 
@@ -1093,7 +1096,7 @@ describe('NoteManager', () => {
 		});
 
 		it('should start drag when pointer hits an already-selected note', () => {
-			const graphics = new Phaser.GameObjects.Graphics();
+			const graphics = createMockGraphics();
 			graphics.name = 'note-0-0-0';
 			mockEditor.getPanelContainer().list.push(graphics);
 
@@ -1111,7 +1114,7 @@ describe('NoteManager', () => {
 		});
 
 		it('should not select note when pointer misses note bounds', () => {
-			const graphics = new Phaser.GameObjects.Graphics();
+			const graphics = createMockGraphics();
 			graphics.name = 'note-0-0-0';
 			mockEditor.getPanelContainer().list.push(graphics);
 
@@ -1124,9 +1127,9 @@ describe('NoteManager', () => {
 
 		it('should return topmost note when multiple notes overlap', () => {
 			// Two notes at the same position (will both pass bounds check)
-			const graphics1 = new Phaser.GameObjects.Graphics();
+			const graphics1 = createMockGraphics();
 			graphics1.name = 'note-0-0-0';
-			const graphics2 = new Phaser.GameObjects.Graphics();
+			const graphics2 = createMockGraphics();
 			graphics2.name = 'note-0-0-0.005';
 			mockEditor.getPanelContainer().list.push(graphics1);
 			mockEditor.getPanelContainer().list.push(graphics2);
@@ -1134,8 +1137,8 @@ describe('NoteManager', () => {
 			// Stub findNearbyNotes so note-0-0-0.005 has a higher stackIndex (topmost)
 			const findNearbyNotesSpy = vi
 				.spyOn(noteManager as any, 'findNearbyNotes')
-				.mockImplementation((_measure: number, _laneIndex: number, cellOffset: number) =>
-					cellOffset === 0.005 ? ['note-0-0-0'] : []
+				.mockImplementation((...args) =>
+					(args[2] as number) === 0.005 ? ['note-0-0-0'] : []
 				);
 
 			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
@@ -1191,7 +1194,7 @@ describe('NoteManager', () => {
 			const rect = noteManager['selectionRectangle'];
 			Object.assign(rect, { width: 100, height: 20, x: 150, y: 190 });
 
-			const graphics = new Phaser.GameObjects.Graphics();
+			const graphics = createMockGraphics();
 			graphics.name = 'note-0-0-0';
 			mockEditor.getPanelContainer().list.push(graphics);
 
@@ -1216,7 +1219,7 @@ describe('NoteManager', () => {
 			const rect = noteManager['selectionRectangle'];
 			Object.assign(rect, { width: 100, height: 50, x: 150, y: 190 });
 
-			const graphics = new Phaser.GameObjects.Graphics();
+			const graphics = createMockGraphics();
 			graphics.name = noteKey;
 			mockEditor.getPanelContainer().list.push(graphics);
 
@@ -1232,7 +1235,7 @@ describe('NoteManager', () => {
 			const rect = noteManager['selectionRectangle'];
 			Object.assign(rect, { width: 50, height: 50, x: 500, y: 500 });
 
-			const graphics = new Phaser.GameObjects.Graphics();
+			const graphics = createMockGraphics();
 			graphics.name = 'note-0-0-0';
 			mockEditor.getPanelContainer().list.push(graphics);
 
@@ -1247,7 +1250,7 @@ describe('NoteManager', () => {
 			Object.assign(rect, { width: 100, height: 20, x: 150, y: 190 });
 
 			// Graphics object that has getBounds (returns bounds within selection)
-			const graphicsWithBounds = new Phaser.GameObjects.Graphics() as any;
+			const graphicsWithBounds = createMockGraphics() as any;
 			graphicsWithBounds.name = 'note-0-0-0';
 			graphicsWithBounds.getBounds = vi
 				.fn()

@@ -1,7 +1,7 @@
 type Meta = Record<string, unknown>;
 
 const format = (level: string, msg: string, meta?: Meta): string =>
-	JSON.stringify({ ts: new Date().toISOString(), level, msg, ...(meta ?? {}) });
+	JSON.stringify({ ...(meta ?? {}), ts: new Date().toISOString(), level, msg });
 
 export const workerLogger = {
 	info: (msg: string, meta?: Meta) => console.log(format('info', msg, meta)),

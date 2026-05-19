@@ -125,7 +125,7 @@ global.Image = vi.fn().mockImplementation(() => {
 	setTimeout(() => {
 		const loadHandler = img.onload;
 		if (typeof loadHandler === 'function') {
-			loadHandler(new Event('load'));
+			loadHandler.call(img, new Event('load'));
 		}
 	}, 0);
 

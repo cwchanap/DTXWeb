@@ -1,7 +1,10 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
+	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "dtx-api",
 	"main": "src/index.ts",
+	"alias": {
+		"@dtx/common/server": "../common/src/lib/server.ts"
+	},
 	"compatibility_date": "2025-01-01",
 	"compatibility_flags": ["nodejs_compat"],
 	"route": {

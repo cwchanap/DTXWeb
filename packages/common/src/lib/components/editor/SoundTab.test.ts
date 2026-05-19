@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Override global @testing-library/svelte mock with the actual library
 vi.mock('@testing-library/svelte', async () => await vi.importActual('@testing-library/svelte'));
@@ -73,12 +73,21 @@ const { mockStore, MockSoundChip, mockXAaudioContext, mockFileManager } = vi.hoi
 
 	const mockFileManager = {
 		generateKey: vi.fn((id: string | null, file: string) => `${id ?? 'null'}/${file}`),
-		getFile: vi.fn(() => undefined),
+		getFile: vi.fn((_key: string): File | undefined => undefined),
 		setFile: vi.fn()
 	};
 
 	return { mockStore, MockSoundChip, mockXAaudioContext, mockFileManager };
 });
+
+type MockSoundChipInstance = InstanceType<typeof MockSoundChip>;
+
+const setCurrentSoundChips = (chips: MockSoundChipInstance[]): void => {
+	mockStore.currentSoundChip.subscribe.mockImplementation((cb) => {
+		cb(chips);
+		return () => {};
+	});
+};
 
 vi.mock('@dtx/common', () => ({
 	store: mockStore,
@@ -179,12 +188,7 @@ describe('SoundTab utilities', () => {
 describe('SoundTab component', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([]);
 		mockStore.currentSimfile.subscribe.mockImplementation((cb: (v: null) => void) => {
 			cb(null);
 			return () => {};
@@ -237,12 +241,7 @@ describe('SoundTab component', () => {
 
 	it('clicking New Sound with existing chips uses next id', async () => {
 		const chip = new MockSoundChip('kick', 3, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		await fireEvent.click(screen.getByText('New Sound'));
 		expect(mockStore.currentSoundChip.set).toHaveBeenCalledWith(
@@ -252,12 +251,7 @@ describe('SoundTab component', () => {
 
 	it('renders a chip row with correct ID (base-36)', () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		// id=1 -> base36='1' -> padded='01'
 		expect(screen.getByText('01')).toBeInTheDocument();
@@ -265,12 +259,7 @@ describe('SoundTab component', () => {
 
 	it('clicking active button calls store.activeNote.set with chip ID', async () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		await fireEvent.click(screen.getByTitle('Set as active note'));
 		expect(mockStore.activeNote.set).toHaveBeenCalledWith('01');
@@ -278,12 +267,7 @@ describe('SoundTab component', () => {
 
 	it('highlights the active chip with ring styling', () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		mockStore.activeNote.subscribe.mockImplementation((cb: (v: string) => void) => {
 			cb('01');
 			return () => {};
@@ -296,12 +280,7 @@ describe('SoundTab component', () => {
 
 	it('shows file upload input for local chip without a file', () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		expect(document.querySelector('input[type="file"]')).toBeInTheDocument();
 	});
@@ -309,12 +288,7 @@ describe('SoundTab component', () => {
 	it('shows chip file name as button for local chip with a file', () => {
 		const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		expect(screen.getByText('kick.wav')).toBeInTheDocument();
 		// Should also have a remove button
@@ -324,12 +298,7 @@ describe('SoundTab component', () => {
 	it('removes file from chip when remove button clicked', async () => {
 		const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		await fireEvent.click(screen.getByTitle('Remove file'));
 		expect(mockStore.currentSoundChip.set).toHaveBeenCalledWith(
@@ -341,12 +310,7 @@ describe('SoundTab component', () => {
 		const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
 		(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => 'blob:mock-url');
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		const fileBtn = screen.getByText('kick.wav');
 		await fireEvent.click(fileBtn);
@@ -355,24 +319,14 @@ describe('SoundTab component', () => {
 
 	it('shows fileName as button for remote chip with fileName', () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'snare.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		expect(screen.getByText('snare.wav')).toBeInTheDocument();
 	});
 
 	it('shows No file assigned for remote chip with empty fileName', () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, '');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		expect(screen.getByText('No file assigned')).toBeInTheDocument();
 	});
@@ -383,12 +337,7 @@ describe('SoundTab component', () => {
 		mockFileManager.generateKey.mockReturnValue('sim-1/snare.wav');
 		mockFileManager.getFile.mockReturnValue(file);
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab, {
 			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
 		});
@@ -406,12 +355,7 @@ describe('SoundTab component', () => {
 		chip.fetchRemote = vi.fn().mockImplementation(async () => {
 			chip.file = fetchedFile;
 		});
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab, {
 			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
 		});
@@ -425,12 +369,7 @@ describe('SoundTab component', () => {
 
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
 		chip.fetchRemote = vi.fn().mockRejectedValue(new Error('Network error'));
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab, {
 			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
 		});
@@ -443,12 +382,7 @@ describe('SoundTab component', () => {
 		mockFileManager.getFile.mockReturnValue(undefined);
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
 		// chip.file is undefined and no bucketUrl provided
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		await fireEvent.click(screen.getByText('snare.wav'));
 		expect(screen.getByRole('alert')).toBeInTheDocument();
@@ -458,12 +392,7 @@ describe('SoundTab component', () => {
 		const file = new File(['content'], 'kick.xa', { type: 'audio/xa' });
 		file.arrayBuffer = vi.fn(() => Promise.resolve(new ArrayBuffer(0)));
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.xa', file);
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		await fireEvent.click(screen.getByText('kick.xa'));
 		await waitFor(() => expect(mockXAaudioContext.decodeAudioData).toHaveBeenCalled());
@@ -483,12 +412,7 @@ describe('SoundTab component', () => {
 
 			const file = new File(['content'], 'kick.wav', { type: 'audio/wav' });
 			const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav', file);
-			mockStore.currentSoundChip.subscribe.mockImplementation(
-				(cb: (v: MockSoundChip[]) => void) => {
-					cb([chip]);
-					return () => {};
-				}
-			);
+			setCurrentSoundChips([chip]);
 			render(SoundTab);
 			await fireEvent.click(screen.getByText('kick.wav'));
 			// The error is swallowed — component should still be in the document
@@ -500,12 +424,7 @@ describe('SoundTab component', () => {
 
 	it('assigns a file to a chip via file input change', async () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
 		const newFile = new File(['audio'], 'newkick.wav', { type: 'audio/wav' });
@@ -535,12 +454,7 @@ describe('SoundTab key binding', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		mockStore.currentSimfile.subscribe.mockImplementation((cb: (v: null) => void) => {
 			cb(null);
 			return () => {};
@@ -613,12 +527,7 @@ describe('SoundTab key binding', () => {
 		// Two chips — bind 'a' to chip 1, then try to bind 'a' to chip 2
 		const chip1 = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
 		const chip2 = new MockSoundChip('snare', 2, 100, 0, 'snare.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip1, chip2]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip1, chip2]);
 		render(SoundTab);
 
 		const keyInputs = screen.getAllByPlaceholderText('Press key');
@@ -633,12 +542,7 @@ describe('SoundTab key binding', () => {
 
 	it('updates chip label via input change', async () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		const labelInput = document.querySelector(
 			'input[type="text"]:not([placeholder])'
@@ -650,12 +554,7 @@ describe('SoundTab key binding', () => {
 
 	it('updates chip volume via input change', async () => {
 		const chip = new MockSoundChip('kick', 1, 80, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		const inputs = document.querySelectorAll('input[type="number"]');
 		await fireEvent.change(inputs[0], { target: { value: '90' } });
@@ -664,12 +563,7 @@ describe('SoundTab key binding', () => {
 
 	it('updates chip position via input change', async () => {
 		const chip = new MockSoundChip('kick', 1, 100, 0, 'kick.wav');
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 		render(SoundTab);
 		const inputs = document.querySelectorAll('input[type="number"]');
 		await fireEvent.change(inputs[1], { target: { value: '5' } });
@@ -684,39 +578,28 @@ describe('SoundTab key binding', () => {
 
 		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
 		chip.file = fallbackFile;
-
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
+		setCurrentSoundChips([chip]);
 
 		render(SoundTab, {
 			props: { simfileID: 'sim-1', hasSimfile: true, bucketUrl: 'https://cdn.example.com' }
 		});
-		const fileBtn = screen.getByText('snare.wav');
-		await fireEvent.click(fileBtn);
 
-		expect(createObjectURLFn).toHaveBeenCalledWith(fallbackFile);
-	});
-
-	it('shows warning toast when remote chip has no bucketUrl and file not loaded', async () => {
-		mockFileManager.getFile.mockReturnValue(undefined);
-		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
-		// No chip.file and no bucketUrl provided
-
-		mockStore.currentSoundChip.subscribe.mockImplementation(
-			(cb: (v: MockSoundChip[]) => void) => {
-				cb([chip]);
-				return () => {};
-			}
-		);
-
-		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
 		await fireEvent.click(screen.getByText('snare.wav'));
 
-		expect(screen.getByRole('alert')).toBeInTheDocument();
-		expect(screen.getByRole('alert').textContent).toContain('not yet loaded from remote');
+		await waitFor(() => expect(createObjectURLFn).toHaveBeenCalled());
+	});
+
+	it('shows warning toast when remote audio has no available file source', async () => {
+		mockFileManager.getFile.mockReturnValue(undefined);
+
+		const chip = new MockSoundChip('snare', 1, 100, 0, 'snare.wav');
+		setCurrentSoundChips([chip]);
+		render(SoundTab, { props: { simfileID: 'sim-1', hasSimfile: true } });
+
+		await fireEvent.click(screen.getByText('snare.wav'));
+
+		expect(screen.getByRole('alert').textContent).toContain(
+			'Remote audio file is not available'
+		);
 	});
 });

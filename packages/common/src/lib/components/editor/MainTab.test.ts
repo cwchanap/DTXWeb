@@ -3,6 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Use the real testing library (override global setup mock)
 vi.mock('@testing-library/svelte', async () => await vi.importActual('@testing-library/svelte'));
 
+type MockDtxFile = {
+	title: string;
+	artist: string;
+	comment: string;
+	bpm: number;
+	level: number;
+};
+
 const { mockEmit, mockStore } = vi.hoisted(() => {
 	const mockEmit = vi.fn();
 	const mockStore = {
@@ -21,7 +29,7 @@ const { mockEmit, mockStore } = vi.hoisted(() => {
 			set: vi.fn()
 		},
 		currentDtxFile: {
-			subscribe: vi.fn((cb: (v: null) => void) => {
+			subscribe: vi.fn((cb: (v: MockDtxFile | null) => void) => {
 				cb(null);
 				return () => {};
 			}),
@@ -65,10 +73,12 @@ describe('MainTab', () => {
 			cb(10);
 			return () => {};
 		});
-		mockStore.currentDtxFile.subscribe.mockImplementation((cb: (v: null) => void) => {
-			cb(null);
-			return () => {};
-		});
+		mockStore.currentDtxFile.subscribe.mockImplementation(
+			(cb: (v: MockDtxFile | null) => void) => {
+				cb(null);
+				return () => {};
+			}
+		);
 	});
 
 	it('renders Title input', () => {
@@ -166,7 +176,7 @@ describe('MainTab', () => {
 	});
 
 	it('syncs dtxFile properties to store when dtxFile is non-null', async () => {
-		const mockDtxFile = {
+		const mockDtxFile: MockDtxFile = {
 			title: 'Test Title',
 			artist: 'Test Artist',
 			comment: 'Test Comment',
@@ -191,7 +201,7 @@ describe('MainTab', () => {
 	});
 
 	it('updates dtxFile title property when title input changes', async () => {
-		const mockDtxFile = {
+		const mockDtxFile: MockDtxFile = {
 			title: 'Original Title',
 			artist: 'Artist',
 			comment: '',

@@ -664,15 +664,18 @@ describe('NoteBuffer', () => {
 				data: [
 					{
 						originalNoteKey: 'note-0-0-0',
-						newNoteKey: 'note-0-1-0',
-						laneIndex: 0,
-						measure: 0,
-						cellOffset: 0,
+						originalLaneIndex: 0,
+						originalMeasure: 0,
+						originalCellOffset: 0,
+						originalLaneId: '11',
 						noteId: '01',
-						measureLength: 1,
-						laneId: '11'
+						newNoteKey: 'note-0-1-0',
+						newLaneIndex: 0,
+						newMeasure: 1,
+						newCellOffset: 0,
+						newLaneId: '11'
 					}
-				] as MovedNoteData[]
+				]
 			};
 			const bufferWithoutNoteMove = new NoteBuffer();
 			bufferWithoutNoteMove['undoHistory'] = [moveAction];

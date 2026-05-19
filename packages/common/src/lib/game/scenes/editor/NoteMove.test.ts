@@ -5,6 +5,9 @@ import type { Editor } from '../Editor';
 import { LaneMeasureNote } from '../../../chart/note';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 
+const createMockGraphics = (): Phaser.GameObjects.Graphics =>
+	new Phaser.GameObjects.Graphics({} as Phaser.Scene);
+
 // Mock Editor with all necessary methods
 const createMockEditor = () => {
 	const mockNotes: Record<string, LaneMeasureNote[]> = {};
@@ -515,7 +518,7 @@ describe('NoteMove', () => {
 			const lane1Note = new LaneMeasureNote(1, 'lane1', lane1Notes);
 			mockEditor._setMockNotes({ lane1: [lane1Note] });
 
-			const mockGraphics = new Phaser.GameObjects.Graphics();
+			const mockGraphics = createMockGraphics();
 			// First call: return null so target position is NOT occupied (note can move)
 			// Subsequent calls: return mockGraphics so highlight branch is triggered
 			mockEditor.getPanelContainer.mockReturnValue({
@@ -552,7 +555,7 @@ describe('NoteMove', () => {
 			const lane2Note = new LaneMeasureNote(1, 'lane2', lane2Notes);
 			mockEditor._setMockNotes({ lane1: [lane1Note], lane2: [lane2Note] });
 
-			const mockGraphics = new Phaser.GameObjects.Graphics();
+			const mockGraphics = createMockGraphics();
 			// First call returns null (target position not occupied → note-0-1-0 is movable)
 			// Subsequent calls return mockGraphics (for highlighting moved + unmovable notes)
 			mockEditor.getPanelContainer.mockReturnValue({

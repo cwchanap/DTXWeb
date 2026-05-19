@@ -28,6 +28,20 @@ describe('workerLogger', () => {
 		});
 	});
 
+	it('does not let meta override reserved fields', () => {
+		const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		workerLogger.info('user signed in', {
+			level: 'error',
+			msg: 'overridden',
+			ts: 'not-a-timestamp'
+		});
+		const payload = JSON.parse(spy.mock.calls[0][0] as string);
+
+		expect(payload.level).toBe('info');
+		expect(payload.msg).toBe('user signed in');
+		expect(payload.ts).not.toBe('not-a-timestamp');
+	});
+
 	it('warn/error/debug route to their respective console methods', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -115,4 +115,18 @@ describe('withCors', () => {
 		expect(result.status).toBe(201);
 		expect(await result.text()).toBe('hi');
 	});
+
+	it('appends Origin to an existing Vary header', () => {
+		const env = makeEnv('https://pre-prod.dtx.hapadona.com');
+		const response = new Response('hi', { status: 200, headers: { Vary: 'Accept-Encoding' } });
+		const result = withCors(
+			response,
+			new Request('https://api.test/', {
+				headers: { Origin: 'https://pre-prod.dtx.hapadona.com' }
+			}),
+			env
+		);
+
+		expect(result.headers.get('Vary')).toBe('Accept-Encoding, Origin');
+	});
 });

@@ -599,7 +599,7 @@ describe('SoundTab key binding', () => {
 		await fireEvent.click(screen.getByText('snare.wav'));
 
 		expect(screen.getByRole('alert').textContent).toContain(
-			'Remote audio file is not available'
+			'Sound file "snare.wav" is not yet loaded from remote'
 		);
 	});
 });

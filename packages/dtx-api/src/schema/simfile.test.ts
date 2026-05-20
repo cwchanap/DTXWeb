@@ -182,3 +182,94 @@ describe('Query.nextDisplayId', () => {
 		expect(mockedNextDisplayId).toHaveBeenCalledWith(expect.anything(), 'u1');
 	});
 });
+
+const { listSimfiles, searchSimfiles } = await import('@dtx/common/server');
+const mockedList = vi.mocked(listSimfiles);
+const mockedSearch = vi.mocked(searchSimfiles);
+
+describe('Query.simfiles', () => {
+	beforeEach(() => {
+		mockedList.mockReset();
+	});
+
+	it('rejects MINE scope for anonymous (UNAUTHORIZED)', async () => {
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: MINE) { count data { id } } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('UNAUTHORIZED');
+	});
+
+	it('allows PUBLISHED scope anonymously', async () => {
+		mockedList.mockResolvedValue({ data: [publishedSimfile], count: 1 });
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 5) { count data { id title } } }'
+		});
+		expect(result.data?.simfiles).toEqual({
+			count: 1,
+			data: [{ id: '42', title: 'Song A' }]
+		});
+		expect(mockedList).toHaveBeenCalledWith(expect.anything(), {
+			userId: undefined,
+			publishedOnly: true,
+			search: undefined,
+			page: 1,
+			pageSize: 5
+		});
+	});
+
+	it('passes user id and search term for MINE scope', async () => {
+		mockedList.mockResolvedValue({ data: [], count: 0 });
+		await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: '{ simfiles(scope: MINE, search: "abc", page: 2, pageSize: 10) { count } }'
+		});
+		expect(mockedList).toHaveBeenCalledWith(expect.anything(), {
+			userId: 'u1',
+			publishedOnly: false,
+			search: 'abc',
+			page: 2,
+			pageSize: 10
+		});
+	});
+});
+
+describe('Query.simfileSearch', () => {
+	beforeEach(() => {
+		mockedSearch.mockReset();
+	});
+
+	it('rejects anonymous', async () => {
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfileSearch(query: "abc") { id title } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('forwards args to the search service', async () => {
+		mockedSearch.mockResolvedValue([
+			{ id: 7, title: 'X', artist: 'Y', bpm: 100, is_published: 1 }
+		]);
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: '{ simfileSearch(query: "abc", excludeIds: ["3","5"], limit: 4) { id title isPublished } }'
+		});
+		expect(mockedSearch).toHaveBeenCalledWith(expect.anything(), {
+			query: 'abc',
+			userId: 'u1',
+			excludeIds: [3, 5],
+			limit: 4
+		});
+		expect(result.data?.simfileSearch).toEqual([{ id: '7', title: 'X', isPublished: true }]);
+	});
+
+	it('coerces invalid excludeIds entries and skips them', async () => {
+		mockedSearch.mockResolvedValue([]);
+		await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: '{ simfileSearch(query: "abc", excludeIds: ["3", "not-a-number"]) { id } }'
+		});
+		expect(mockedSearch).toHaveBeenCalledWith(expect.anything(), {
+			query: 'abc',
+			userId: 'u1',
+			excludeIds: [3],
+			limit: 8
+		});
+	});
+});

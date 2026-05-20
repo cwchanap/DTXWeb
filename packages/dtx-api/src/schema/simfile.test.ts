@@ -287,3 +287,53 @@ describe('Query.simfileSearch', () => {
 		});
 	});
 });
+
+vi.mock('../services/r2Enrichment', () => ({
+	enrichFiles: vi.fn(),
+	enrichHasUploadedFiles: vi.fn(),
+	enrichHasUploadedFilesBatch: vi.fn()
+}));
+
+const { enrichFiles, enrichHasUploadedFiles } = await import('../services/r2Enrichment');
+const mockedFiles = vi.mocked(enrichFiles);
+const mockedHasUploaded = vi.mocked(enrichHasUploadedFiles);
+
+describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
+	beforeEach(() => {
+		mockedFiles.mockReset();
+		mockedHasUploaded.mockReset();
+	});
+
+	it('does not call enrichFiles when files is not selected', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		await runQuery(makeCtx(), { query: '{ simfile(id: "42") { id title } }' });
+		expect(mockedFiles).not.toHaveBeenCalled();
+	});
+
+	it('calls enrichFiles when files is selected', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedFiles.mockResolvedValue([
+			{ key: '42/a.dtx', size: 10, uploaded: '2026-05-19T00:00:00Z' }
+		]);
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { files { key size uploaded } } }'
+		});
+		expect(mockedFiles).toHaveBeenCalledWith(expect.anything(), 42);
+		expect(result.data?.simfile).toEqual({
+			files: [{ key: '42/a.dtx', size: 10, uploaded: '2026-05-19T00:00:00Z' }]
+		});
+	});
+
+	it('calls enrichHasUploadedFiles only when hasUploadedFiles is selected', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedHasUploaded.mockResolvedValue(true);
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { hasUploadedFiles } }'
+		});
+		expect(mockedHasUploaded).toHaveBeenCalledWith(expect.anything(), 42);
+		expect(result.data?.simfile).toEqual({ hasUploadedFiles: true });
+	});
+});

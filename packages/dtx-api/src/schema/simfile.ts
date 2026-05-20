@@ -7,6 +7,7 @@ import {
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
+import { enrichFiles, enrichHasUploadedFiles } from '../services/r2Enrichment';
 
 // --- enums ---
 
@@ -48,8 +49,14 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		publishDate: t.string({ resolve: (s) => s.publish_date }),
 		createdAt: t.string({ resolve: (s) => s.created_at }),
 		updatedAt: t.string({ resolve: (s) => s.updated_at }),
-		dtxFiles: t.field({ type: [DtxFile], resolve: (s) => s.dtx_files })
-		// Simfile.files + Simfile.hasUploadedFiles wired in Task 7.
+		dtxFiles: t.field({ type: [DtxFile], resolve: (s) => s.dtx_files }),
+		files: t.field({
+			type: [R2File],
+			resolve: (s, _args, ctx) => enrichFiles(ctx.r2, s.id)
+		}),
+		hasUploadedFiles: t.boolean({
+			resolve: (s, _args, ctx) => enrichHasUploadedFiles(ctx.r2, s.id)
+		})
 	})
 });
 
@@ -88,9 +95,6 @@ export const DeleteResultRef = builder
 			deleted: t.exposeBoolean('deleted')
 		})
 	});
-
-// Suppress unused-ref warnings for types used in later tasks.
-void R2File;
 
 // --- input types (registered now; consumers added in later tasks) ---
 

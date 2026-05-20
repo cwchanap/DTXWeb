@@ -15,7 +15,6 @@ const UserProfileRef = builder.objectRef<UserProfileRow>('UserProfile').implemen
 builder.queryField('me', (t) =>
 	t.field({
 		type: UserProfileRef,
-		nullable: true,
 		authScopes: { user: true },
 		resolve: async (_root, _args, ctx) => {
 			const profile = await getUserProfile(ctx.db, ctx.user!.id);

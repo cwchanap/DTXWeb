@@ -1,5 +1,11 @@
 import { GraphQLError } from 'graphql';
-import { getSimfile, getNextDisplayId, type SimfileWithDtxFiles } from '@dtx/common/server';
+import {
+	getSimfile,
+	getNextDisplayId,
+	listSimfiles,
+	searchSimfiles,
+	type SimfileWithDtxFiles
+} from '@dtx/common/server';
 import { builder } from './builder';
 
 // --- enums ---
@@ -33,7 +39,7 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		title: t.exposeString('title'),
 		artist: t.exposeString('artist'),
 		bpm: t.exposeFloat('bpm'),
-		userId: t.id({ resolve: (s) => s.user_id ?? '' }),
+		userId: t.id({ nullable: true, resolve: (s) => s.user_id ?? null }),
 		isPublished: t.boolean({ resolve: (s) => s.is_published }),
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
 		downloadUrl: t.string({ nullable: true, resolve: (s) => s.download_url }),
@@ -149,5 +155,58 @@ builder.queryField('nextDisplayId', (t) =>
 	t.int({
 		authScopes: { user: true },
 		resolve: async (_root, _args, ctx) => getNextDisplayId(ctx.db, ctx.user!.id)
+	})
+);
+
+// --- Query.simfiles ---
+
+builder.queryField('simfiles', (t) =>
+	t.field({
+		type: SimfileConnectionRef,
+		args: {
+			scope: t.arg({ type: SimfileScopeEnum, required: true }),
+			search: t.arg.string({ required: false }),
+			page: t.arg.int({ required: false, defaultValue: 1 }),
+			pageSize: t.arg.int({ required: false, defaultValue: 20 })
+		},
+		resolve: async (_root, args, ctx) => {
+			if (args.scope === 'MINE' && !ctx.user) {
+				throw new GraphQLError('Authentication required for scope MINE', {
+					extensions: { code: 'UNAUTHORIZED' }
+				});
+			}
+			return listSimfiles(ctx.db, {
+				userId: args.scope === 'MINE' ? ctx.user!.id : undefined,
+				publishedOnly: args.scope === 'PUBLISHED',
+				search: args.search ?? undefined,
+				page: args.page ?? 1,
+				pageSize: args.pageSize ?? 20
+			});
+		}
+	})
+);
+
+// --- Query.simfileSearch ---
+
+builder.queryField('simfileSearch', (t) =>
+	t.field({
+		type: [SimfileSearchResultRef],
+		args: {
+			query: t.arg.string({ required: true }),
+			excludeIds: t.arg.idList({ required: false }),
+			limit: t.arg.int({ required: false, defaultValue: 8 })
+		},
+		authScopes: { user: true },
+		resolve: async (_root, args, ctx) => {
+			const excludeIds = (args.excludeIds ?? [])
+				.map((id) => Number(id))
+				.filter((n) => Number.isSafeInteger(n) && n > 0);
+			return searchSimfiles(ctx.db, {
+				query: args.query,
+				userId: ctx.user!.id,
+				excludeIds,
+				limit: args.limit ?? 8
+			});
+		}
 	})
 );

@@ -4,10 +4,12 @@ import {
 	getNextDisplayId,
 	listSimfiles,
 	searchSimfiles,
+	toSimfileWithDtx,
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
 import { enrichFiles, enrichHasUploadedFiles } from '../services/r2Enrichment';
+import { createSimfileWithDtx } from '../services/createSimfile';
 
 // --- enums ---
 
@@ -211,6 +213,46 @@ builder.queryField('simfileSearch', (t) =>
 				excludeIds,
 				limit: args.limit ?? 8 // defaultValue may not narrow to non-null in this Pothos version
 			});
+		}
+	})
+);
+
+// --- Mutation.createSimfile ---
+
+builder.mutationField('createSimfile', (t) =>
+	t.field({
+		type: SimfileRef,
+		args: { input: t.arg({ type: CreateSimfileInput, required: true }) },
+		authScopes: { user: true },
+		resolve: async (_root, { input }, ctx) => {
+			if (!Number.isFinite(input.bpm)) {
+				throw new GraphQLError('Invalid bpm', { extensions: { code: 'BAD_USER_INPUT' } });
+			}
+			if (input.displayId != null && !Number.isSafeInteger(input.displayId)) {
+				throw new GraphQLError('Invalid displayId', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+			if (input.publishDate != null && Number.isNaN(Date.parse(input.publishDate))) {
+				throw new GraphQLError('Invalid publishDate', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+
+			const { simfile, dtxFiles } = await createSimfileWithDtx(ctx.db, {
+				userId: ctx.user!.id,
+				title: input.title ?? '',
+				artist: input.artist ?? '',
+				bpm: input.bpm,
+				isPublished: input.isPublished ?? false,
+				displayId: input.displayId ?? null,
+				downloadUrl: input.downloadUrl ?? null,
+				videoPreviewUrl: input.videoPreviewUrl ?? null,
+				publishDate: input.publishDate ?? undefined,
+				dtxFiles: (input.dtxFiles ?? []).map((f) => ({ label: f.label, level: f.level }))
+			});
+
+			return toSimfileWithDtx(simfile, dtxFiles);
 		}
 	})
 );

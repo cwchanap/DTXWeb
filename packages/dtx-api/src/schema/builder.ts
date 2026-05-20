@@ -36,15 +36,18 @@ const loadOwner = (ctx: Ctx, cacheKey: string): Promise<OwnerCacheEntry | null> 
 		return Promise.resolve(null);
 	}
 
-	const promise = getSimfileOwner(ctx.db, id).then((row): OwnerCacheEntry | null => {
-		const entry: OwnerCacheEntry | null = row
-			? { userId: row.user_id, isPublished: row.is_published === 1 }
-			: null;
-		// Populate the resolved cache so subsequent (non-concurrent) callers skip the DB.
-		ctx.ownerByIdCache.set(cacheKey, entry);
-		flights!.delete(cacheKey);
-		return entry;
-	});
+	const promise = getSimfileOwner(ctx.db, id)
+		.then((row): OwnerCacheEntry | null => {
+			const entry: OwnerCacheEntry | null = row
+				? { userId: row.user_id, isPublished: row.is_published === 1 }
+				: null;
+			// Populate the resolved cache so subsequent (non-concurrent) callers skip the DB.
+			ctx.ownerByIdCache.set(cacheKey, entry);
+			return entry;
+		})
+		.finally(() => {
+			flights!.delete(cacheKey);
+		});
 
 	flights.set(cacheKey, promise);
 	return promise;

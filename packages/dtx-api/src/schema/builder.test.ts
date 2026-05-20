@@ -157,4 +157,25 @@ describe('auth scopes', () => {
 		const result = await runQuery(baseCtx(), '{ probePublicOrOwner(id: "42") }');
 		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
 	});
+
+	it('owner scope: rejects with FORBIDDEN when DB lookup fails (transient)', async () => {
+		mockedGetOwner.mockRejectedValueOnce(new Error('D1 timeout'));
+		const result = await runQuery(
+			baseCtx({ user: { id: 'u1' } as Ctx['user'] }),
+			'{ probeOwner(id: "42") }'
+		);
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('owner scope: retries after a transient DB rejection in the same request', async () => {
+		mockedGetOwner
+			.mockRejectedValueOnce(new Error('D1 timeout'))
+			.mockResolvedValueOnce({ user_id: 'u1', is_published: 0 });
+		const ctx = baseCtx({ user: { id: 'u1' } as Ctx['user'] });
+		const first = await runQuery(ctx, '{ probeOwner(id: "42") }');
+		expect(first.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		const second = await runQuery(ctx, '{ probeOwner(id: "42") }');
+		expect(second.data?.probeOwner).toBe('ok');
+		expect(mockedGetOwner).toHaveBeenCalledTimes(2);
+	});
 });

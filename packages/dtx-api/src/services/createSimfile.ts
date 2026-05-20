@@ -9,6 +9,7 @@ export type CreateSimfileArgs = {
 	isPublished: boolean;
 	displayId: number | null;
 	downloadUrl: string | null;
+	previewUrl: string | null;
 	videoPreviewUrl: string | null;
 	publishDate?: string;
 	dtxFiles: { label: string; level: number }[];
@@ -31,6 +32,7 @@ export const createSimfileWithDtx = async (
 		is_published: args.isPublished ? 1 : 0,
 		display_id: args.displayId,
 		download_url: args.downloadUrl,
+		preview_url: args.previewUrl,
 		video_preview_url: args.videoPreviewUrl,
 		publish_date: args.publishDate
 	});

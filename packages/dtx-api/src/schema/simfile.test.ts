@@ -305,7 +305,7 @@ describe('Mutation.createSimfile', () => {
 		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
 	});
 
-	it('rejects non-finite bpm', async () => {
+	it('accepts bpm: 0 as a valid finite value', async () => {
 		mockedCreateService.mockResolvedValue({
 			simfile: {
 				id: 1,
@@ -325,12 +325,8 @@ describe('Mutation.createSimfile', () => {
 			dtxFiles: []
 		});
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
-			query:
-				// Float coerces NaN-like inputs; we explicitly pass a sentinel the resolver re-validates.
-				'mutation { createSimfile(input: { bpm: 0, title: "" }) { id } }'
+			query: 'mutation { createSimfile(input: { bpm: 0, title: "" }) { id } }'
 		});
-		// 0 is finite; this should pass through. Use Infinity-like check via the resolver path:
-		// We can't send Infinity in JSON, so just confirm 0 is accepted by the service mock.
 		expect(result.errors).toBeUndefined();
 	});
 

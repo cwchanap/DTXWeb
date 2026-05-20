@@ -30,6 +30,7 @@ const baseArgs = {
 	isPublished: false,
 	displayId: null,
 	downloadUrl: null,
+	previewUrl: null,
 	videoPreviewUrl: null,
 	dtxFiles: [] as { label: string; level: number }[]
 };

@@ -88,4 +88,4 @@ export const builder = new SchemaBuilder<{
 });
 
 builder.queryType({});
-// Mutation root is declared in schema/index.ts before mutation fields land (Task 4).
+// Mutation root is declared in schema/user.ts alongside the first mutation field (Task 4).

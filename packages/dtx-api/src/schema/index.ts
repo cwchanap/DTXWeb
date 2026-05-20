@@ -1,6 +1,10 @@
 import { createYoga } from 'graphql-yoga';
 import { builder } from './builder';
 import './healthz';
+import './user';
+// Phase 2: additional resolver modules import-registered as they land.
+// import './auth';
+// import './simfile';
 import { createContext } from '../context';
 import type { Env } from '../env';
 

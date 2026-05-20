@@ -74,6 +74,7 @@
         "@supabase/supabase-js": "^2.49.4",
         "graphql": "^16.10.0",
         "graphql-yoga": "^5.10.0",
+        "zod": "^3.25.67",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250620.0",

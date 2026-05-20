@@ -11,7 +11,9 @@ const makeEnv = (graphiql: 'true' | 'false' = 'true'): Env => ({
 	RATE_LIMIT_ENV: 'pre-prod',
 	GRAPHIQL: graphiql,
 	CORS_ALLOWED_ORIGINS: 'https://pre-prod.dtx.hapadona.com,http://localhost:5173',
-	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
+	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
+	PUBLIC_SIMFILE_BUCKET_URL: '',
+	SUPABASE_SERVICE_ROLE_KEY: ''
 });
 
 const ctx = {} as ExecutionContext;

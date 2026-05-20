@@ -230,6 +230,20 @@ describe('Query.simfiles', () => {
 			pageSize: 10
 		});
 	});
+
+	it('uses undefined userId when authed user requests PUBLISHED scope', async () => {
+		mockedList.mockResolvedValue({ data: [], count: 0 });
+		await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: '{ simfiles(scope: PUBLISHED) { count } }'
+		});
+		expect(mockedList).toHaveBeenCalledWith(expect.anything(), {
+			userId: undefined,
+			publishedOnly: true,
+			search: undefined,
+			page: 1,
+			pageSize: 20
+		});
+	});
 });
 
 describe('Query.simfileSearch', () => {

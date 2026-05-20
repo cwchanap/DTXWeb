@@ -179,8 +179,8 @@ builder.queryField('simfiles', (t) =>
 				userId: args.scope === 'MINE' ? ctx.user!.id : undefined,
 				publishedOnly: args.scope === 'PUBLISHED',
 				search: args.search ?? undefined,
-				page: args.page ?? 1,
-				pageSize: args.pageSize ?? 20
+				page: args.page ?? 1, // defaultValue may not narrow to non-null in this Pothos version
+				pageSize: args.pageSize ?? 20 // defaultValue may not narrow to non-null in this Pothos version
 			});
 		}
 	})
@@ -205,7 +205,7 @@ builder.queryField('simfileSearch', (t) =>
 				query: args.query,
 				userId: ctx.user!.id,
 				excludeIds,
-				limit: args.limit ?? 8
+				limit: args.limit ?? 8 // defaultValue may not narrow to non-null in this Pothos version
 			});
 		}
 	})

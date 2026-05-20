@@ -10,4 +10,12 @@ export type Env = {
 	GRAPHIQL: 'true' | 'false';
 	CORS_ALLOWED_ORIGINS: string;
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' | 'false';
+
+	// Phase 2 — var (committed to wrangler.jsonc)
+	PUBLIC_SIMFILE_BUCKET_URL: string;
+
+	// Phase 2 — secrets (set via `wrangler secret put` per env)
+	SUPABASE_SERVICE_ROLE_KEY: string;
+	CLOUDFLARE_ZONE_ID?: string;
+	CLOUDFLARE_API_TOKEN?: string;
 };

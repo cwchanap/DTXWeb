@@ -11,7 +11,9 @@ const makeEnv = (origins: string): Env => ({
 	RATE_LIMIT_ENV: 'pre-prod',
 	GRAPHIQL: 'true',
 	CORS_ALLOWED_ORIGINS: origins,
-	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
+	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
+	PUBLIC_SIMFILE_BUCKET_URL: '',
+	SUPABASE_SERVICE_ROLE_KEY: ''
 });
 
 describe('handlePreflight', () => {

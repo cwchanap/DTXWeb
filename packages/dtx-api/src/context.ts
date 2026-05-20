@@ -4,6 +4,11 @@ import { workerLogger, type WorkerLogger } from '@dtx/common/server';
 import { verifyToken } from './auth/verifyToken';
 import type { Env } from './env';
 
+export type OwnerCacheEntry = {
+	userId: string | null;
+	isPublished: boolean;
+};
+
 export type Ctx = {
 	user: User | null;
 	session: Session | null;
@@ -13,7 +18,7 @@ export type Ctx = {
 	kv: KVNamespace;
 	request: Request;
 	logger: WorkerLogger;
-	ownerByIdCache: Map<string, string | null>;
+	ownerByIdCache: Map<string, OwnerCacheEntry | null>;
 };
 
 export const createContext = async (request: Request, env: Env): Promise<Ctx> => {

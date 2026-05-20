@@ -115,6 +115,7 @@ export const CreateSimfileInput = builder.inputType('CreateSimfileInput', {
 		isPublished: t.boolean({ required: false }),
 		displayId: t.int({ required: false }),
 		downloadUrl: t.string({ required: false }),
+		previewUrl: t.string({ required: false }),
 		videoPreviewUrl: t.string({ required: false }),
 		publishDate: t.string({ required: false }),
 		dtxFiles: t.field({ type: [DtxFileInput], required: false })
@@ -228,11 +229,6 @@ builder.mutationField('createSimfile', (t) =>
 			if (!Number.isFinite(input.bpm)) {
 				throw new GraphQLError('Invalid bpm', { extensions: { code: 'BAD_USER_INPUT' } });
 			}
-			if (input.displayId != null && !Number.isSafeInteger(input.displayId)) {
-				throw new GraphQLError('Invalid displayId', {
-					extensions: { code: 'BAD_USER_INPUT' }
-				});
-			}
 			if (input.publishDate != null && Number.isNaN(Date.parse(input.publishDate))) {
 				throw new GraphQLError('Invalid publishDate', {
 					extensions: { code: 'BAD_USER_INPUT' }
@@ -247,6 +243,7 @@ builder.mutationField('createSimfile', (t) =>
 				isPublished: input.isPublished ?? false,
 				displayId: input.displayId ?? null,
 				downloadUrl: input.downloadUrl ?? null,
+				previewUrl: input.previewUrl ?? null,
 				videoPreviewUrl: input.videoPreviewUrl ?? null,
 				publishDate: input.publishDate ?? undefined,
 				dtxFiles: (input.dtxFiles ?? []).map((f) => ({ label: f.label, level: f.level }))

@@ -466,21 +466,9 @@ describe('Mutation.updateSimfile', () => {
 
 	it('updates a simfile and returns the full record', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
-		mockedUpdate.mockResolvedValue({
-			id: 42,
-			title: 'X',
-			artist: 'A',
-			bpm: 120,
-			user_id: 'u1',
-			is_published: 1 as const,
-			display_id: 1,
-			download_url: null,
-			preview_url: null,
-			video_preview_url: null,
-			publish_date: '2026-05-19T00:00:00Z',
-			created_at: '2026-05-19T00:00:00Z',
-			updated_at: '2026-05-19T01:00:00Z'
-		});
+		// Resolver discards updateSimfile's return value, so the shape doesn't matter;
+		// getSimfile is what populates the GraphQL response.
+		mockedUpdate.mockResolvedValue({} as Awaited<ReturnType<typeof updateSimfile>>);
 		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, title: 'X', is_published: true });
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {

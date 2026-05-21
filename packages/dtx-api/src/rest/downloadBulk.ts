@@ -56,6 +56,10 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 	const auth = await verifyToken(request, env);
 	const user = auth?.user ?? null;
 
+	if (!user && env.PUBLIC_ENABLE_BLOG_DOWNLOAD !== 'true') {
+		return jsonError(401, 'Unauthorized');
+	}
+
 	const access = await resolveAccessibleSimfiles(env.DB, unique, user);
 
 	if (access.unauthorized.length > 0) {

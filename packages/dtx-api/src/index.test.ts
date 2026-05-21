@@ -123,7 +123,7 @@ describe('worker fetch router', () => {
 
 describe('Phase 2 routes', () => {
 	it('GET /downloads/123 dispatches to downloadSimfile route', async () => {
-		const env = makeEnv();
+		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', { method: 'GET' }),
 			env,

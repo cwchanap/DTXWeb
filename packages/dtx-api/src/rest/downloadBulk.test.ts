@@ -106,6 +106,15 @@ describe('POST /downloads/bulk', () => {
 		expect(body).toEqual({ ok: true, fileCount: 1 });
 	});
 
+	it('401 when anonymous and PUBLIC_ENABLE_BLOG_DOWNLOAD is false', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(
+			jsonReq({ ids: [1] }),
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
+		);
+		expect(response.status).toBe(401);
+	});
+
 	it('200 streams ZIP for accessible ids', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1, 2] }), makeEnv());

@@ -27,6 +27,10 @@ export const routeDownloadSimfile = async (
 	const auth = await verifyToken(request, env);
 	const user = auth?.user ?? null;
 
+	if (!user && env.PUBLIC_ENABLE_BLOG_DOWNLOAD !== 'true') {
+		return jsonError(401, 'Unauthorized');
+	}
+
 	const access = await resolveAccessibleSimfiles(env.DB, [id], user);
 	if (access.missing.length > 0) return jsonError(404, 'Simfile not found');
 	if (access.unauthorized.length > 0) return jsonError(401, 'Unauthorized');

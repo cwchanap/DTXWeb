@@ -32,10 +32,12 @@ vi.mock('@dtx/common/server', async () => {
 
 vi.mock('../auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
 
-const { getSimfileOwner, tryConsumeRateLimit } = await import('@dtx/common/server');
+const { getSimfileOwner, tryConsumeRateLimit, listAllR2Objects } =
+	await import('@dtx/common/server');
 const { verifyToken } = await import('../auth/verifyToken');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedRate = vi.mocked(tryConsumeRateLimit);
+const mockedListAllR2Objects = vi.mocked(listAllR2Objects);
 const mockedVerify = vi.mocked(verifyToken);
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
@@ -63,6 +65,9 @@ const jsonReq = (body: unknown, search = '') =>
 beforeEach(() => {
 	mockedGetOwner.mockReset();
 	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
+	mockedListAllR2Objects
+		.mockReset()
+		.mockResolvedValue([{ key: '1/song.dtx', size: 100, uploaded: new Date() }]);
 	mockedVerify.mockReset().mockResolvedValue(null);
 });
 
@@ -121,6 +126,36 @@ describe('POST /downloads/bulk', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('application/zip');
 		expect(response.headers.get('content-disposition')).toContain('drumery-charts.zip');
+	});
+
+	it('reports accessible charts that have no downloadable files', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedListAllR2Objects.mockImplementation(async (_bucket, prefix) => {
+			return prefix === '2/' ? [] : [{ key: '1/song.dtx', size: 100, uploaded: new Date() }];
+		});
+		const response = await routeDownloadBulk(jsonReq({ ids: [1, 2] }), makeEnv());
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error: 'Some selected charts do not have uploaded files available.',
+			ids: [2]
+		});
+		expect(mockedRate).not.toHaveBeenCalled();
+	});
+
+	it('reports empty accessible charts during validate-only requests', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedListAllR2Objects.mockImplementation(async (_bucket, prefix) => {
+			return prefix === '2/' ? [] : [{ key: '1/song.dtx', size: 100, uploaded: new Date() }];
+		});
+		const response = await routeDownloadBulk(
+			jsonReq({ ids: [1, 2] }, '?validate=1'),
+			makeEnv()
+		);
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error: 'Some selected charts do not have uploaded files available.',
+			ids: [2]
+		});
 	});
 
 	it('429 on rate limit hit', async () => {

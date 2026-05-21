@@ -51,22 +51,35 @@ export type ZipStreamOptions = {
 	filename: string;
 };
 
+export type SimfileZipSources = {
+	simfileId: number;
+	sources: ZipSource[];
+};
+
 export const buildSimfileZipResponse = async (
 	bucket: R2Bucket,
 	simfileIds: number[],
 	opts: ZipStreamOptions
-): Promise<{ response: Response; sources: ZipSource[]; estimatedBytes: number }> => {
+): Promise<{
+	response: Response;
+	sources: ZipSource[];
+	sourcesBySimfile: SimfileZipSources[];
+	estimatedBytes: number;
+}> => {
 	const objectsPerSimfile = await Promise.all(
 		simfileIds.map((id) => listAllR2Objects(bucket, `${id}/`))
 	);
 
-	const sources: ZipSource[] = simfileIds.flatMap((id, i) =>
-		createZipSources(
+	const sourcesBySimfile = simfileIds.map((id, i) => ({
+		simfileId: id,
+		sources: createZipSources(
 			objectsPerSimfile[i],
 			`${id}/`,
 			simfileIds.length === 1 ? '' : `chart-${id}`
 		)
-	);
+	}));
+
+	const sources = sourcesBySimfile.flatMap(({ sources }) => sources);
 
 	const estimatedBytes = sources.reduce((sum, s) => sum + s.size, 0);
 
@@ -81,5 +94,5 @@ export const buildSimfileZipResponse = async (
 		}
 	});
 
-	return { response, sources, estimatedBytes };
+	return { response, sources, sourcesBySimfile, estimatedBytes };
 };

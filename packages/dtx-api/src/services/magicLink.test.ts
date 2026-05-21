@@ -59,6 +59,11 @@ describe('anonymizeIp', () => {
 	it('returns "redacted" for invalid input', () => {
 		expect(anonymizeIp('not-an-ip')).toBe('redacted');
 	});
+
+	it('returns "redacted" for compressed/empty-group IPv6', () => {
+		expect(anonymizeIp('2001:db8::1')).toBe('redacted');
+		expect(anonymizeIp('::::')).toBe('redacted');
+	});
 });
 
 describe('generateMagicLink', () => {

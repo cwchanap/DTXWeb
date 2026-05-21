@@ -512,6 +512,23 @@ const makeR2 = (objects: Array<{ key: string }> = []): R2Bucket => {
 	return { list: listMock, delete: deleteMock } as unknown as R2Bucket;
 };
 
+// Pages must be supplied in order; the last page should have truncated: false.
+type R2Page = { objects: Array<{ key: string }>; truncated: boolean; cursor?: string };
+const makeR2Pages = (pages: R2Page[]): R2Bucket => {
+	let i = 0;
+	const listMock = vi.fn(async () => pages[i++] ?? { objects: [], truncated: false });
+	const deleteMock = vi.fn(async () => {});
+	return { list: listMock, delete: deleteMock } as unknown as R2Bucket;
+};
+
+const makeR2ListFailure = (): R2Bucket => {
+	const listMock = vi.fn(async () => {
+		throw new Error('R2 list failure');
+	});
+	const deleteMock = vi.fn(async () => {});
+	return { list: listMock, delete: deleteMock } as unknown as R2Bucket;
+};
+
 const { deleteSimfile } = await import('@dtx/common/server');
 const mockedDelete = vi.mocked(deleteSimfile);
 
@@ -560,5 +577,44 @@ describe('Mutation.deleteSimfile', () => {
 			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+	});
+
+	it('walks multiple R2 pages via cursor before deleting the DB row', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const r2 = makeR2Pages([
+			{ objects: [{ key: '42/a.dtx' }], truncated: true, cursor: 'p2' },
+			{ objects: [{ key: '42/b.dtx' }], truncated: false }
+		]);
+		mockedDelete.mockResolvedValue(undefined as never);
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+
+		expect(result.data?.deleteSimfile).toEqual({ id: '42', deleted: true });
+		expect(r2.list).toHaveBeenCalledTimes(2);
+		expect(r2.delete).toHaveBeenCalledTimes(2);
+	});
+
+	it('throws INTERNAL when the stalled-cursor guard fires', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const r2 = makeR2Pages([{ objects: [{ key: '42/a.dtx' }], truncated: true }]);
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+		expect(mockedDelete).not.toHaveBeenCalled();
+	});
+
+	it('throws INTERNAL when R2 list() rejects', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const r2 = makeR2ListFailure();
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+		expect(mockedDelete).not.toHaveBeenCalled();
 	});
 });

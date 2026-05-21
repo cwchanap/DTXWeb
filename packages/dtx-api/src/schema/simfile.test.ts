@@ -159,12 +159,13 @@ describe('Query.simfile', () => {
 		expect(result.data?.simfile).toBeNull();
 	});
 
-	it('rejects non-integer id with BAD_USER_INPUT (scope rejects → FORBIDDEN)', async () => {
-		// loadOwner returns null for unsafe ids; publicOrOwner then denies.
+	it('rejects non-integer id with BAD_USER_INPUT', async () => {
+		// loadOwner returns null for unsafe ids; scope now passes through so
+		// the resolver can validate and throw BAD_USER_INPUT.
 		const result = await runQuery(makeCtx(), {
 			query: '{ simfile(id: "abc") { id } }'
 		});
-		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
 	});
 });
 

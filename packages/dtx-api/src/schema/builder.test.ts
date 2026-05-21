@@ -152,10 +152,23 @@ describe('auth scopes', () => {
 		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
 	});
 
-	it('publicOrOwner: rejects when simfile missing', async () => {
+	it('publicOrOwner: passes scope when simfile missing (resolver handles null)', async () => {
 		mockedGetOwner.mockResolvedValue(null);
 		const result = await runQuery(baseCtx(), '{ probePublicOrOwner(id: "42") }');
-		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		// Scope should pass — the resolver (not auth) determines the response for missing resources.
+		expect(result.data?.probePublicOrOwner).toBe('ok');
+		expect(result.errors).toBeUndefined();
+	});
+
+	it('owner scope: passes scope when simfile missing (resolver handles NOT_FOUND)', async () => {
+		mockedGetOwner.mockResolvedValue(null);
+		const result = await runQuery(
+			baseCtx({ user: { id: 'u1' } as Ctx['user'] }),
+			'{ probeOwner(id: "99") }'
+		);
+		// Scope should pass — the resolver returns NOT_FOUND for missing resources.
+		expect(result.data?.probeOwner).toBe('ok');
+		expect(result.errors).toBeUndefined();
 	});
 
 	it('owner scope: rejects with FORBIDDEN when DB lookup fails (transient)', async () => {

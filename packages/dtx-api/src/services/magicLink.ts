@@ -18,6 +18,9 @@ const getAdmin = (env: Env): SupabaseClient => {
 	return cached;
 };
 
+// KV has no CAS primitive, so this read-modify-write tolerates ±1 over the
+// limit if concurrent calls land between get and put — acceptable for a
+// low-volume per-user magic-link flow.
 const checkAndIncrement = async (kv: KVNamespace, userId: string): Promise<boolean> => {
 	const hour = Math.floor(Date.now() / 3_600_000);
 	const key = `magiclink:${userId}:${hour}`;
@@ -38,7 +41,7 @@ export const anonymizeIp = (ip: string | null): string => {
 	if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.x`;
 	if (ip.includes(':')) {
 		const parts = ip.split(':').slice(0, 4);
-		if (parts.length === 4 && parts.every((p) => /^[0-9a-fA-F]*$/.test(p))) {
+		if (parts.length === 4 && parts.every((p) => /^[0-9a-fA-F]+$/.test(p))) {
 			return `${parts.join(':')}:*`;
 		}
 	}

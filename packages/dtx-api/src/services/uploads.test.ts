@@ -101,7 +101,7 @@ describe('uploadSimfileFile', () => {
 		expect(response.status).toBe(200);
 		expect(bucket.put).toHaveBeenCalledWith(
 			'42/escape/song.dtx',
-			expect.any(ArrayBuffer),
+			expect.any(File),
 			expect.objectContaining({
 				httpMetadata: expect.objectContaining({
 					contentType: 'application/octet-stream',

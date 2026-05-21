@@ -77,9 +77,8 @@ export const uploadSimfileFile = async (
 
 	const sanitized = sanitizeFilename(file.name);
 	const key = `${simfileId}/${sanitized}`;
-	const arrayBuffer = await file.arrayBuffer();
 
-	const result = await bucket.put(key, arrayBuffer, {
+	const result = await bucket.put(key, file, {
 		httpMetadata: {
 			contentType: file.type || 'application/octet-stream',
 			cacheControl: 'public, max-age=31536000'

@@ -2,7 +2,8 @@
 node_modules
 /build
 /package
-packages/dtx-api/dist/
+packages/dtx-api/dist/*
+!packages/dtx-api/dist/schema.graphql
 .env
 .env.*
 !.env.example

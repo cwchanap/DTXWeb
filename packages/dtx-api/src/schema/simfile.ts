@@ -5,6 +5,7 @@ import {
 	listSimfiles,
 	searchSimfiles,
 	toSimfileWithDtx,
+	updateSimfile,
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
@@ -250,6 +251,67 @@ builder.mutationField('createSimfile', (t) =>
 			});
 
 			return toSimfileWithDtx(simfile, dtxFiles);
+		}
+	})
+);
+
+// --- Mutation.updateSimfile ---
+
+builder.mutationField('updateSimfile', (t) =>
+	t.field({
+		type: SimfileRef,
+		args: {
+			id: t.arg.id({ required: true }),
+			input: t.arg({ type: UpdateSimfileInput, required: true })
+		},
+		authScopes: (_root, args) => ({ owner: { simfileId: String(args.id) } }),
+		resolve: async (_root, { id, input }, ctx) => {
+			const numeric = Number(id);
+			if (!Number.isSafeInteger(numeric)) {
+				throw new GraphQLError('Invalid simfile id', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+
+			const updateData: Record<string, unknown> = {};
+			if (input.title != null) updateData.title = input.title;
+			if (input.artist != null) updateData.artist = input.artist;
+			if (input.bpm != null) {
+				if (!Number.isFinite(input.bpm)) {
+					throw new GraphQLError('Invalid bpm', {
+						extensions: { code: 'BAD_USER_INPUT' }
+					});
+				}
+				updateData.bpm = input.bpm;
+			}
+			if (input.isPublished != null) updateData.is_published = input.isPublished ? 1 : 0;
+			if (input.displayId != null) updateData.display_id = input.displayId;
+			if (input.downloadUrl != null) updateData.download_url = input.downloadUrl;
+			if (input.previewUrl != null) updateData.preview_url = input.previewUrl;
+			if (input.videoPreviewUrl != null) updateData.video_preview_url = input.videoPreviewUrl;
+			if (input.publishDate != null) {
+				if (Number.isNaN(Date.parse(input.publishDate))) {
+					throw new GraphQLError('Invalid publishDate', {
+						extensions: { code: 'BAD_USER_INPUT' }
+					});
+				}
+				updateData.publish_date = input.publishDate;
+			}
+
+			if (Object.keys(updateData).length === 0) {
+				throw new GraphQLError('No fields to update', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+
+			await updateSimfile(ctx.db, numeric, updateData);
+			const full = await getSimfile(ctx.db, numeric);
+			if (!full) {
+				throw new GraphQLError('Updated simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+			return full;
 		}
 	})
 );

@@ -437,3 +437,79 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(result.data?.simfile).toEqual({ hasUploadedFiles: true });
 	});
 });
+
+const { updateSimfile } = await import('@dtx/common/server');
+const mockedUpdate = vi.mocked(updateSimfile);
+
+describe('Mutation.updateSimfile', () => {
+	beforeEach(() => {
+		mockedUpdate.mockReset();
+		mockedGetOwner.mockReset();
+		mockedGetSimfile.mockReset();
+	});
+
+	it('rejects anonymous (FORBIDDEN via owner scope)', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const result = await runQuery(makeCtx(), {
+			query: 'mutation { updateSimfile(id: "42", input: { title: "X" }) { id } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('rejects non-owner with FORBIDDEN', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'someone-else', is_published: 0 });
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { updateSimfile(id: "42", input: { title: "X" }) { id } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('updates a simfile and returns the full record', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedUpdate.mockResolvedValue({
+			id: 42,
+			title: 'X',
+			artist: 'A',
+			bpm: 120,
+			user_id: 'u1',
+			is_published: 1 as const,
+			display_id: 1,
+			download_url: null,
+			preview_url: null,
+			video_preview_url: null,
+			publish_date: '2026-05-19T00:00:00Z',
+			created_at: '2026-05-19T00:00:00Z',
+			updated_at: '2026-05-19T01:00:00Z'
+		});
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, title: 'X', is_published: true });
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { updateSimfile(id: "42", input: { title: "X", isPublished: true }) { id title isPublished } }'
+		});
+		expect(mockedUpdate).toHaveBeenCalledWith(expect.anything(), 42, {
+			title: 'X',
+			is_published: 1
+		});
+		expect(result.data?.updateSimfile).toEqual({
+			id: '42',
+			title: 'X',
+			isPublished: true
+		});
+	});
+
+	it('rejects invalid publishDate with BAD_USER_INPUT', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { updateSimfile(id: "42", input: { publishDate: "not-a-date" }) { id } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+	});
+
+	it('rejects empty input with BAD_USER_INPUT', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { updateSimfile(id: "42", input: {}) { id } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+	});
+});

@@ -286,10 +286,11 @@ builder.mutationField('updateSimfile', (t) =>
 				updateData.bpm = input.bpm;
 			}
 			if (input.isPublished != null) updateData.is_published = input.isPublished ? 1 : 0;
-			if (input.displayId != null) updateData.display_id = input.displayId;
-			if (input.downloadUrl != null) updateData.download_url = input.downloadUrl;
-			if (input.previewUrl != null) updateData.preview_url = input.previewUrl;
-			if (input.videoPreviewUrl != null) updateData.video_preview_url = input.videoPreviewUrl;
+			if (input.displayId !== undefined) updateData.display_id = input.displayId;
+			if (input.downloadUrl !== undefined) updateData.download_url = input.downloadUrl;
+			if (input.previewUrl !== undefined) updateData.preview_url = input.previewUrl;
+			if (input.videoPreviewUrl !== undefined)
+				updateData.video_preview_url = input.videoPreviewUrl;
 			if (input.publishDate != null) {
 				if (Number.isNaN(Date.parse(input.publishDate))) {
 					throw new GraphQLError('Invalid publishDate', {

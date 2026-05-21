@@ -72,11 +72,21 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 		return jsonError(404, 'Simfile not found', { ids: access.missing });
 	}
 
-	const { response, sources } = await buildSimfileZipResponse(
+	const { response, sources, sourcesBySimfile, estimatedBytes } = await buildSimfileZipResponse(
 		env.DTXFILE_BUCKET,
 		access.accessible,
 		{ filename: 'drumery-charts.zip' }
 	);
+
+	const missingUploadIds = sourcesBySimfile
+		.filter(({ sources }) => sources.length === 0)
+		.map(({ simfileId }) => simfileId);
+
+	if (missingUploadIds.length > 0) {
+		return jsonError(400, 'Some selected charts do not have uploaded files available.', {
+			ids: missingUploadIds
+		});
+	}
 
 	if (validateOnly) {
 		return json({ ok: true, fileCount: sources.length });
@@ -91,7 +101,7 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 		const { allowed } = await tryConsumeRateLimit(
 			env.RATE_LIMIT_API,
 			`${env.RATE_LIMIT_ENV}:bulk:${ip}`,
-			sources.reduce((sum, s) => sum + s.size, 0)
+			estimatedBytes
 		);
 		if (!allowed) {
 			return jsonError(429, 'Rate limit exceeded. Please try again later.');

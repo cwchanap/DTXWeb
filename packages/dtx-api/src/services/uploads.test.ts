@@ -91,17 +91,18 @@ describe('uploadSimfileFile', () => {
 	it('puts the file with sanitized key and returns 200', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
 		const bucket = makeBucket();
+		const file = makeFile(2048, '../escape/song.dtx');
 		const response = await uploadSimfileFile(
 			makeEnv(),
 			{ id: 'u1' } as { id: string },
 			'42',
-			makeFile(2048, '../escape/song.dtx'),
+			file,
 			bucket
 		);
 		expect(response.status).toBe(200);
 		expect(bucket.put).toHaveBeenCalledWith(
 			'42/escape/song.dtx',
-			expect.any(File),
+			expect.any(ArrayBuffer),
 			expect.objectContaining({
 				httpMetadata: expect.objectContaining({
 					contentType: 'application/octet-stream',
@@ -109,6 +110,12 @@ describe('uploadSimfileFile', () => {
 				})
 			})
 		);
+		const [, body] = vi.mocked(bucket.put).mock.calls[0];
+		expect(body).toBeInstanceOf(ArrayBuffer);
+		if (!(body instanceof ArrayBuffer)) {
+			throw new Error('Expected R2 put body to be an ArrayBuffer');
+		}
+		expect(body.byteLength).toBe(file.size);
 	});
 });
 

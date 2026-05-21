@@ -23,10 +23,12 @@ vi.mock('@dtx/common/server', async () => {
 
 vi.mock('../auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
 
-const { getSimfileOwner, tryConsumeRateLimit } = await import('@dtx/common/server');
+const { getSimfileOwner, tryConsumeRateLimit, createZipSources } =
+	await import('@dtx/common/server');
 const { verifyToken } = await import('../auth/verifyToken');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedRate = vi.mocked(tryConsumeRateLimit);
+const mockedCreateZipSources = vi.mocked(createZipSources);
 const mockedVerify = vi.mocked(verifyToken);
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
@@ -53,6 +55,9 @@ const makeCtx = (): ExecutionContext =>
 beforeEach(() => {
 	mockedGetOwner.mockReset();
 	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
+	mockedCreateZipSources
+		.mockReset()
+		.mockReturnValue([{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }]);
 	mockedVerify.mockReset().mockResolvedValue(null);
 });
 
@@ -119,6 +124,21 @@ describe('GET /downloads/:id', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('application/zip');
 		expect(response.headers.get('content-disposition')).toContain('chart-42.zip');
+		expect(mockedRate).toHaveBeenCalledWith(expect.anything(), 'pre-prod:single:1.2.3.4', 100);
+	});
+
+	it('404 when accessible simfile has no downloadable files', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedCreateZipSources.mockReturnValueOnce([]);
+		const response = await routeDownloadSimfile(
+			req(),
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' }),
+			makeCtx(),
+			'42'
+		);
+		expect(response.status).toBe(404);
+		expect(await response.json()).toEqual({ error: 'No files found for this chart' });
+		expect(mockedRate).not.toHaveBeenCalled();
 	});
 
 	it('429 on rate limit hit', async () => {

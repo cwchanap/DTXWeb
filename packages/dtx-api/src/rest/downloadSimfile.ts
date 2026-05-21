@@ -36,20 +36,29 @@ export const routeDownloadSimfile = async (
 	if (access.unauthorized.length > 0) return jsonError(401, 'Unauthorized');
 	if (access.forbidden.length > 0) return jsonError(403, 'Forbidden');
 
+	const { response, sources, estimatedBytes } = await buildSimfileZipResponse(
+		env.DTXFILE_BUCKET,
+		[id],
+		{
+			filename: `chart-${id}.zip`
+		}
+	);
+
+	if (sources.length === 0) {
+		return jsonError(404, 'No files found for this chart');
+	}
+
 	const ip = getClientIp(request);
 	if (ip) {
 		const { allowed } = await tryConsumeRateLimit(
 			env.RATE_LIMIT_API,
 			`${env.RATE_LIMIT_ENV}:single:${ip}`,
-			0
+			estimatedBytes
 		);
 		if (!allowed) {
 			return jsonError(429, 'Rate limit exceeded. Please try again later.');
 		}
 	}
 
-	const { response } = await buildSimfileZipResponse(env.DTXFILE_BUCKET, [id], {
-		filename: `chart-${id}.zip`
-	});
 	return response;
 };

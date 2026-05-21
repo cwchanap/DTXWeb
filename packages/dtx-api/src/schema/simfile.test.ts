@@ -486,6 +486,53 @@ describe('Mutation.updateSimfile', () => {
 		});
 	});
 
+	it('preserves explicit nulls for nullable fields', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedUpdate.mockResolvedValue({} as Awaited<ReturnType<typeof updateSimfile>>);
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			display_id: null,
+			download_url: null,
+			preview_url: null,
+			video_preview_url: null
+		});
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: `mutation {
+				updateSimfile(
+					id: "42",
+					input: {
+						displayId: null,
+						downloadUrl: null,
+						previewUrl: null,
+						videoPreviewUrl: null
+					}
+				) {
+					id
+					displayId
+					downloadUrl
+					previewUrl
+					videoPreviewUrl
+				}
+			}`
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(mockedUpdate).toHaveBeenCalledWith(expect.anything(), 42, {
+			display_id: null,
+			download_url: null,
+			preview_url: null,
+			video_preview_url: null
+		});
+		expect(result.data?.updateSimfile).toEqual({
+			id: '42',
+			displayId: null,
+			downloadUrl: null,
+			previewUrl: null,
+			videoPreviewUrl: null
+		});
+	});
+
 	it('rejects invalid publishDate with BAD_USER_INPUT', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {

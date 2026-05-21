@@ -129,7 +129,8 @@ describe('Phase 2 routes', () => {
 			env,
 			makeExecutionCtx()
 		);
-		expect(response.status).not.toBe(404);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toBe('application/zip');
 	});
 
 	it('POST /downloads/bulk dispatches to downloadBulk route', async () => {

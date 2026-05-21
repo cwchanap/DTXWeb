@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createYoga } from 'graphql-yoga';
 import { workerLogger } from '@dtx/common/server';
+import type { R2Bucket } from '@cloudflare/workers-types';
 import type { Ctx } from '../context';
 import type { Env } from '../env';
 
@@ -499,5 +500,65 @@ describe('Mutation.updateSimfile', () => {
 			query: 'mutation { updateSimfile(id: "42", input: {}) { id } }'
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+	});
+});
+
+const makeR2 = (objects: Array<{ key: string }> = []): R2Bucket => {
+	const listMock = vi.fn(async () => ({
+		objects,
+		truncated: false
+	}));
+	const deleteMock = vi.fn(async () => {});
+	return { list: listMock, delete: deleteMock } as unknown as R2Bucket;
+};
+
+const { deleteSimfile } = await import('@dtx/common/server');
+const mockedDelete = vi.mocked(deleteSimfile);
+
+describe('Mutation.deleteSimfile', () => {
+	beforeEach(() => {
+		mockedDelete.mockReset();
+		mockedGetOwner.mockReset();
+	});
+
+	it('rejects anonymous (FORBIDDEN via owner scope)', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const result = await runQuery(makeCtx(), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('rejects non-owner with FORBIDDEN', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'someone-else', is_published: 0 });
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('lists + deletes R2 objects and the DB row', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const r2 = makeR2([{ key: '42/a.dtx' }, { key: '42/b.dtx' }]);
+		mockedDelete.mockResolvedValue(undefined as never);
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+
+		expect(result.data?.deleteSimfile).toEqual({ id: '42', deleted: true });
+		expect(r2.delete).toHaveBeenCalledTimes(2);
+		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 42);
+	});
+
+	it('NOT_FOUND when DB delete fails because simfile is missing', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const r2 = makeR2([]);
+		mockedDelete.mockRejectedValue(new Error('Simfile not found'));
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
 	});
 });

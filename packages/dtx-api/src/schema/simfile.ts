@@ -6,6 +6,7 @@ import {
 	searchSimfiles,
 	toSimfileWithDtx,
 	updateSimfile,
+	deleteSimfile,
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
@@ -312,6 +313,65 @@ builder.mutationField('updateSimfile', (t) =>
 				});
 			}
 			return full;
+		}
+	})
+);
+
+// --- Mutation.deleteSimfile ---
+
+builder.mutationField('deleteSimfile', (t) =>
+	t.field({
+		type: DeleteResultRef,
+		args: { id: t.arg.id({ required: true }) },
+		authScopes: (_root, args) => ({ owner: { simfileId: String(args.id) } }),
+		resolve: async (_root, { id }, ctx) => {
+			const numeric = Number(id);
+			if (!Number.isSafeInteger(numeric)) {
+				throw new GraphQLError('Invalid simfile id', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+
+			// Port of dtx-web's cursor-paginated R2 list+delete.
+			let cursor: string | undefined;
+			let truncated = true;
+			while (truncated) {
+				const listResult = await ctx.r2.list({
+					prefix: `${numeric}/`,
+					limit: 1000,
+					cursor
+				});
+				const objects = listResult.objects ?? [];
+				if (objects.length > 0) {
+					await Promise.allSettled(objects.map((obj) => ctx.r2.delete(obj.key)));
+				}
+				truncated = listResult.truncated === true;
+				if (truncated) {
+					const nextCursor = (listResult as { cursor?: string }).cursor;
+					if (!nextCursor || nextCursor === cursor) {
+						ctx.logger.error('R2 pagination stalled while deleting', {
+							simfileId: numeric
+						});
+						throw new GraphQLError('Failed to list all files for deletion', {
+							extensions: { code: 'INTERNAL' }
+						});
+					}
+					cursor = nextCursor;
+				}
+			}
+
+			try {
+				await deleteSimfile(ctx.db, numeric);
+			} catch (err) {
+				if (err instanceof Error && err.message.includes('not found')) {
+					throw new GraphQLError('Simfile not found', {
+						extensions: { code: 'NOT_FOUND' }
+					});
+				}
+				throw err;
+			}
+
+			return { id: String(numeric), deleted: true };
 		}
 	})
 );

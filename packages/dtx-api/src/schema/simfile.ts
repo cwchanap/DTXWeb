@@ -333,14 +333,37 @@ builder.mutationField('deleteSimfile', (t) =>
 			}
 
 			// Port of dtx-web's cursor-paginated R2 list+delete.
+			// Hard cap iterations so a misbehaving R2 (or test mock) can't loop us
+			// into the Worker CPU limit; 1000 pages × 1000 keys = 1M objects max.
+			const MAX_PAGES = 1000;
 			let cursor: string | undefined;
 			let truncated = true;
+			let pages = 0;
 			while (truncated) {
-				const listResult = await ctx.r2.list({
-					prefix: `${numeric}/`,
-					limit: 1000,
-					cursor
-				});
+				if (++pages > MAX_PAGES) {
+					ctx.logger.error('R2 pagination exceeded MAX_PAGES while deleting', {
+						simfileId: numeric
+					});
+					throw new GraphQLError('Failed to list all files for deletion', {
+						extensions: { code: 'INTERNAL' }
+					});
+				}
+				let listResult;
+				try {
+					listResult = await ctx.r2.list({
+						prefix: `${numeric}/`,
+						limit: 1000,
+						cursor
+					});
+				} catch (err) {
+					ctx.logger.error('R2 list failed while deleting', {
+						simfileId: numeric,
+						error: err instanceof Error ? err.message : String(err)
+					});
+					throw new GraphQLError('Failed to list files for deletion', {
+						extensions: { code: 'INTERNAL' }
+					});
+				}
 				const objects = listResult.objects ?? [];
 				if (objects.length > 0) {
 					await Promise.allSettled(objects.map((obj) => ctx.r2.delete(obj.key)));

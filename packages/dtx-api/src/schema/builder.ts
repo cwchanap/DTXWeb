@@ -75,11 +75,16 @@ export const builder = new SchemaBuilder<{
 			owner: async ({ simfileId }: ScopeArg) => {
 				if (!ctx.user) return false;
 				const entry = await loadOwner(ctx, simfileId);
-				return entry !== null && entry.userId === ctx.user.id;
+				// If the simfile doesn't exist, let the resolver return NOT_FOUND
+				// rather than blocking with FORBIDDEN.
+				if (!entry) return true;
+				return entry.userId === ctx.user.id;
 			},
 			publicOrOwner: async ({ simfileId }: ScopeArg) => {
 				const entry = await loadOwner(ctx, simfileId);
-				if (!entry) return false;
+				// If the simfile doesn't exist, let the resolver return null
+				// rather than blocking with FORBIDDEN.
+				if (!entry) return true;
 				if (entry.isPublished) return true;
 				return ctx.user != null && entry.userId === ctx.user.id;
 			}

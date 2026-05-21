@@ -1,0 +1,123 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { routeDownloadBulk } from './downloadBulk';
+import type { Env } from '../env';
+import type { R2Bucket, KVNamespace } from '@cloudflare/workers-types';
+
+vi.mock('@supabase/supabase-js', () => ({
+	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
+}));
+
+vi.mock('@dtx/common/server', async () => {
+	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+	return {
+		...actual,
+		getSimfileOwner: vi.fn(),
+		listAllR2Objects: vi.fn(async () => [
+			{ key: '1/song.dtx', size: 100, uploaded: new Date() }
+		]),
+		validateZipSources: vi.fn(async () => {}),
+		buildZipStream: vi.fn(() => new ReadableStream()),
+		createZipSources: vi.fn((objs) =>
+			(objs as Array<{ key: string; size: number }>).map((o) => ({
+				key: o.key,
+				size: o.size,
+				prefix: '',
+				name: o.key
+			}))
+		),
+		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),
+		getClientIp: vi.fn(() => '1.2.3.4')
+	};
+});
+
+vi.mock('../auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
+
+const { getSimfileOwner, tryConsumeRateLimit } = await import('@dtx/common/server');
+const { verifyToken } = await import('../auth/verifyToken');
+const mockedGetOwner = vi.mocked(getSimfileOwner);
+const mockedRate = vi.mocked(tryConsumeRateLimit);
+const mockedVerify = vi.mocked(verifyToken);
+
+const makeEnv = (overrides: Partial<Env> = {}): Env => ({
+	DB: {} as Env['DB'],
+	DTXFILE_BUCKET: {} as R2Bucket,
+	RATE_LIMIT_API: {} as KVNamespace,
+	SUPABASE_URL: '',
+	SUPABASE_ANON_KEY: '',
+	RATE_LIMIT_ENV: 'pre-prod',
+	GRAPHIQL: 'false',
+	CORS_ALLOWED_ORIGINS: '',
+	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true',
+	PUBLIC_SIMFILE_BUCKET_URL: '',
+	SUPABASE_SERVICE_ROLE_KEY: '',
+	...overrides
+});
+
+const jsonReq = (body: unknown, search = '') =>
+	new Request(`http://api/downloads/bulk${search}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+
+beforeEach(() => {
+	mockedGetOwner.mockReset();
+	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
+	mockedVerify.mockReset().mockResolvedValue(null);
+});
+
+describe('POST /downloads/bulk', () => {
+	it('400 on empty ids', async () => {
+		const response = await routeDownloadBulk(jsonReq({ ids: [] }), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
+	it('400 on non-positive integer id', async () => {
+		const response = await routeDownloadBulk(jsonReq({ ids: [-1] }), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
+	it('400 on more than 20 ids', async () => {
+		const ids = Array.from({ length: 21 }, (_, i) => i + 1);
+		const response = await routeDownloadBulk(jsonReq({ ids }), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
+	it('dedupes ids', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(jsonReq({ ids: [1, 1, 2] }), makeEnv());
+		expect(response.status).toBe(200);
+		expect(mockedGetOwner).toHaveBeenCalledTimes(2);
+	});
+
+	it('401 for anonymous when any id is unpublished', async () => {
+		mockedGetOwner.mockImplementation(async (_db, id) =>
+			id === 1 ? { user_id: 'u1', is_published: 1 } : { user_id: 'u1', is_published: 0 }
+		);
+		const response = await routeDownloadBulk(jsonReq({ ids: [1, 2] }), makeEnv());
+		expect(response.status).toBe(401);
+	});
+
+	it('returns validate=1 envelope without streaming', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(jsonReq({ ids: [1] }, '?validate=1'), makeEnv());
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { ok: boolean; fileCount: number };
+		expect(body).toEqual({ ok: true, fileCount: 1 });
+	});
+
+	it('200 streams ZIP for accessible ids', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(jsonReq({ ids: [1, 2] }), makeEnv());
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toBe('application/zip');
+		expect(response.headers.get('content-disposition')).toContain('drumery-charts.zip');
+	});
+
+	it('429 on rate limit hit', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
+		const response = await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());
+		expect(response.status).toBe(429);
+	});
+});

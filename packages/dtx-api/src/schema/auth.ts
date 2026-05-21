@@ -21,22 +21,7 @@ builder.mutationField('generateMagicLink', (t) =>
 				});
 			}
 			const ip = ctx.request.headers.get('cf-connecting-ip');
-			try {
-				return await generateMagicLink(
-					ctx.env,
-					ctx.kv,
-					ctx.logger,
-					{ id: ctx.user!.id, email },
-					ip
-				);
-			} catch (err) {
-				if (err instanceof GraphQLError) throw err;
-				const extensions =
-					err != null && typeof err === 'object' && 'extensions' in err
-						? (err as { extensions: Record<string, unknown> }).extensions
-						: { code: 'INTERNAL' };
-				throw new GraphQLError((err as Error).message ?? 'Internal error', { extensions });
-			}
+			return generateMagicLink(ctx.env, ctx.kv, ctx.logger, { id: ctx.user!.id, email }, ip);
 		}
 	})
 );

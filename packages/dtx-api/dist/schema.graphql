@@ -1,0 +1,113 @@
+input CreateSimfileInput {
+  artist: String
+  bpm: Float!
+  displayId: Int
+  downloadUrl: String
+  dtxFiles: [DtxFileInput!]
+  isPublished: Boolean
+  previewUrl: String
+  publishDate: String
+  title: String
+  videoPreviewUrl: String
+}
+
+type DeleteResult {
+  deleted: Boolean!
+  id: ID!
+}
+
+type DtxFile {
+  label: String!
+  level: Float!
+}
+
+input DtxFileInput {
+  label: String!
+  level: Float!
+}
+
+type MagicLinkResult {
+  magicLinkUrl: String!
+  success: Boolean!
+}
+
+type Mutation {
+  createSimfile(input: CreateSimfileInput!): Simfile!
+  deleteSimfile(id: ID!): DeleteResult!
+  generateMagicLink: MagicLinkResult!
+  updateSimfile(id: ID!, input: UpdateSimfileInput!): Simfile!
+  upsertUserProfile(input: UpsertUserProfileInput!): UserProfile!
+}
+
+type Query {
+  healthz: String!
+  me: UserProfile!
+  nextDisplayId: Int!
+  simfile(id: ID!): Simfile
+  simfileSearch(excludeIds: [ID!], limit: Int = 8, query: String!): [SimfileSearchResult!]!
+  simfiles(page: Int = 1, pageSize: Int = 20, scope: SimfileScope!, search: String): SimfileConnection!
+}
+
+type R2File {
+  key: String!
+  size: Int!
+  uploaded: String!
+}
+
+type Simfile {
+  artist: String!
+  bpm: Float!
+  createdAt: String!
+  displayId: Int
+  downloadUrl: String
+  dtxFiles: [DtxFile!]!
+  files: [R2File!]!
+  hasUploadedFiles: Boolean!
+  id: ID!
+  isPublished: Boolean!
+  previewUrl: String
+  publishDate: String!
+  title: String!
+  updatedAt: String!
+  userId: ID
+  videoPreviewUrl: String
+}
+
+type SimfileConnection {
+  count: Int!
+  data: [Simfile!]!
+}
+
+enum SimfileScope {
+  MINE
+  PUBLISHED
+}
+
+type SimfileSearchResult {
+  artist: String!
+  bpm: Float!
+  id: ID!
+  isPublished: Boolean!
+  title: String!
+}
+
+input UpdateSimfileInput {
+  artist: String
+  bpm: Float
+  displayId: Int
+  downloadUrl: String
+  isPublished: Boolean
+  previewUrl: String
+  publishDate: String
+  title: String
+  videoPreviewUrl: String
+}
+
+input UpsertUserProfileInput {
+  username: String!
+}
+
+type UserProfile {
+  userId: ID!
+  username: String!
+}

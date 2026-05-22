@@ -618,6 +618,7 @@ describe('Mutation.deleteSimfile', () => {
 	beforeEach(() => {
 		mockedDelete.mockReset();
 		mockedGetOwner.mockReset();
+		mockedGetSimfile.mockReset();
 	});
 
 	it('rejects anonymous (FORBIDDEN via owner scope)', async () => {
@@ -638,6 +639,7 @@ describe('Mutation.deleteSimfile', () => {
 
 	it('lists + deletes R2 objects and the DB row', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedGetSimfile.mockResolvedValue({ id: 42 } as never);
 		const r2 = makeR2([{ key: '42/a.dtx' }, { key: '42/b.dtx' }]);
 		mockedDelete.mockResolvedValue(undefined as never);
 
@@ -652,6 +654,8 @@ describe('Mutation.deleteSimfile', () => {
 
 	it('NOT_FOUND when DB delete fails because simfile is missing', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		// Simulate race condition: row existed for scope check, gone by resolver time.
+		mockedGetSimfile.mockResolvedValue(null as never);
 		const r2 = makeR2([]);
 		mockedDelete.mockRejectedValue(new Error('Simfile not found'));
 
@@ -659,10 +663,29 @@ describe('Mutation.deleteSimfile', () => {
 			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+		// R2 delete should never be called since the pre-check caught the missing row.
+		expect(r2.delete).not.toHaveBeenCalled();
+	});
+
+	it('does not delete orphaned R2 objects when simfile row is missing', async () => {
+		// The owner scope passes for non-existent simfiles (returns true so resolver
+		// can return NOT_FOUND). This test verifies that orphaned R2 objects are NOT
+		// deleted when the DB row is missing, even if the owner scope let us through.
+		mockedGetOwner.mockResolvedValue(null);
+		mockedGetSimfile.mockResolvedValue(null as never);
+		const r2 = makeR2([{ key: '42/orphaned.dtx' }]);
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+		expect(r2.list).not.toHaveBeenCalled();
+		expect(r2.delete).not.toHaveBeenCalled();
 	});
 
 	it('walks multiple R2 pages via cursor before deleting the DB row', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedGetSimfile.mockResolvedValue({ id: 42 } as never);
 		const r2 = makeR2Pages([
 			{ objects: [{ key: '42/a.dtx' }], truncated: true, cursor: 'p2' },
 			{ objects: [{ key: '42/b.dtx' }], truncated: false }
@@ -680,6 +703,7 @@ describe('Mutation.deleteSimfile', () => {
 
 	it('throws INTERNAL when the stalled-cursor guard fires', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedGetSimfile.mockResolvedValue({ id: 42 } as never);
 		const r2 = makeR2Pages([{ objects: [{ key: '42/a.dtx' }], truncated: true }]);
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
@@ -691,6 +715,7 @@ describe('Mutation.deleteSimfile', () => {
 
 	it('throws INTERNAL when R2 list() rejects', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedGetSimfile.mockResolvedValue({ id: 42 } as never);
 		const r2 = makeR2ListFailure();
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
@@ -702,6 +727,7 @@ describe('Mutation.deleteSimfile', () => {
 
 	it('throws INTERNAL when some R2 deletes fail', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedGetSimfile.mockResolvedValue({ id: 42 } as never);
 		const listMock = vi.fn(async () => ({
 			objects: [{ key: '42/a.dtx' }, { key: '42/b.dtx' }],
 			truncated: false

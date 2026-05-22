@@ -59,6 +59,10 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('file\x01\x02name.wav')).toBe('filename.wav');
 	});
 
+	it('removes DEL character (0x7f)', () => {
+		expect(sanitizeFilename('file\x7fname.wav')).toBe('filename.wav');
+	});
+
 	it('handles empty and invalid filenames', () => {
 		expect(sanitizeFilename('')).toMatch(/^file_\d+$/);
 		expect(sanitizeFilename('...')).toMatch(/^file_\d+$/);

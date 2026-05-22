@@ -85,11 +85,14 @@ export const buildSimfileZipResponse = async (
 
 	await validateZipSources(bucket, sources);
 
+	// Sanitize filename for Content-Disposition header to prevent injection.
+	const safeName = opts.filename.replace(/[\r\n"]/g, '').trim();
+	const fallbackName = safeName || `download_${Date.now()}.zip`;
 	const response = new Response(buildZipStream(bucket, sources), {
 		status: 200,
 		headers: {
 			'Content-Type': 'application/zip',
-			'Content-Disposition': `attachment; filename="${opts.filename}"`,
+			'Content-Disposition': `attachment; filename="${fallbackName}"`,
 			'Cache-Control': 'private, no-store'
 		}
 	});

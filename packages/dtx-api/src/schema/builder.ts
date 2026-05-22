@@ -93,4 +93,4 @@ export const builder = new SchemaBuilder<{
 });
 
 builder.queryType({});
-// Mutation root is declared in schema/user.ts alongside the first mutation field (Task 4).
+// Mutation root is declared in schema/user.ts; mutation fields are spread across schema/*.ts modules.

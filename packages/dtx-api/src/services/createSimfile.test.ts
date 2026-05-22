@@ -77,6 +77,10 @@ describe('createSimfileWithDtx', () => {
 			{ label: 'BSC', level: 5.5 },
 			{ label: 'ADV', level: 7.5 }
 		]);
+		expect(mockedCreateDtx).toHaveBeenCalledWith(expect.anything(), [
+			{ label: 'BSC', level: 5.5, simfile_id: 7 },
+			{ label: 'ADV', level: 7.5, simfile_id: 7 }
+		]);
 	});
 
 	it('rolls back the simfile row when createDtxFiles throws', async () => {
@@ -102,5 +106,6 @@ describe('createSimfileWithDtx', () => {
 				dtxFiles: [{ label: 'BSC', level: 5.5 }]
 			})
 		).rejects.toThrow('dtx insert failed');
+		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 7);
 	});
 });

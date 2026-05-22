@@ -53,8 +53,11 @@ export const createSimfileWithDtx = async (
 	} catch (err) {
 		try {
 			await deleteSimfile(db, simfile.id);
-		} catch {
-			// Rollback failed; original error wins. Both will surface via logs.
+		} catch (rollbackErr) {
+			// Attach rollback error as cause so both errors are visible during triage.
+			if (err instanceof Error) {
+				err.cause = rollbackErr;
+			}
 		}
 		throw err;
 	}

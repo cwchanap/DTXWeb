@@ -27,7 +27,14 @@ export const enrichHasUploadedFiles = async (
 	const prefix = `${simfileId}/`;
 	let cursor: string | undefined;
 	let truncated: boolean;
+	const MAX_PAGES = 1000;
+	let pages = 0;
 	do {
+		if (++pages > MAX_PAGES) {
+			throw new Error(
+				`R2 pagination exceeded MAX_PAGES in enrichHasUploadedFiles for simfile ${simfileId}`
+			);
+		}
 		const listed = await bucket.list({ prefix, cursor });
 		for (const obj of listed.objects) {
 			if (obj.key.length > prefix.length && !isPreviewKey(obj.key)) {
@@ -36,7 +43,13 @@ export const enrichHasUploadedFiles = async (
 		}
 		truncated = listed.truncated;
 		if (truncated) {
-			cursor = (listed as { cursor?: string }).cursor;
+			const nextCursor = (listed as { cursor?: string }).cursor;
+			if (!nextCursor || nextCursor === cursor) {
+				throw new Error(
+					`R2 pagination stalled in enrichHasUploadedFiles for simfile ${simfileId}`
+				);
+			}
+			cursor = nextCursor;
 		}
 	} while (truncated);
 	return false;

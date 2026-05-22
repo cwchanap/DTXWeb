@@ -90,4 +90,24 @@ describe('enrichHasUploadedFiles', () => {
 		]);
 		expect(await enrichHasUploadedFiles(bucket, 42)).toBe(false);
 	});
+
+	it('throws when R2 returns truncated without a cursor (stall guard)', async () => {
+		const listMock = vi.fn(async () => ({
+			objects: [{ key: '42/preview.jpg', size: 1, uploaded: new Date() }],
+			truncated: true,
+			cursor: undefined
+		}));
+		const bucket = { list: listMock } as unknown as R2Bucket;
+		await expect(enrichHasUploadedFiles(bucket, 42)).rejects.toThrow('R2 pagination stalled');
+	});
+
+	it('throws when R2 returns the same cursor twice (stall guard)', async () => {
+		const listMock = vi.fn(async () => ({
+			objects: [{ key: '42/preview.jpg', size: 1, uploaded: new Date() }],
+			truncated: true,
+			cursor: 'same-cursor'
+		}));
+		const bucket = { list: listMock } as unknown as R2Bucket;
+		await expect(enrichHasUploadedFiles(bucket, 42)).rejects.toThrow('R2 pagination stalled');
+	});
 });

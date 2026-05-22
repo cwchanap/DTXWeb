@@ -306,7 +306,16 @@ builder.mutationField('updateSimfile', (t) =>
 				});
 			}
 
-			await updateSimfile(ctx.db, numeric, updateData);
+			try {
+				await updateSimfile(ctx.db, numeric, updateData);
+			} catch (err) {
+				if (err instanceof Error && err.message.includes('not found')) {
+					throw new GraphQLError('Simfile not found', {
+						extensions: { code: 'NOT_FOUND' }
+					});
+				}
+				throw err;
+			}
 			const full = await getSimfile(ctx.db, numeric);
 			if (!full) {
 				throw new GraphQLError('Updated simfile not found', {

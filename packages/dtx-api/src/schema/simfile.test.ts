@@ -549,6 +549,16 @@ describe('Mutation.updateSimfile', () => {
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
 	});
+
+	it('NOT_FOUND when updateSimfile throws Simfile not found', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedUpdate.mockRejectedValue(new Error('Simfile not found'));
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { updateSimfile(id: "42", input: { title: "X" }) { id } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+	});
 });
 
 const makeR2 = (objects: Array<{ key: string }> = []): R2Bucket => {

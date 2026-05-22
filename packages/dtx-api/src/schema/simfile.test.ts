@@ -392,8 +392,7 @@ describe('Mutation.createSimfile', () => {
 
 vi.mock('../services/r2Enrichment', () => ({
 	enrichFiles: vi.fn(),
-	enrichHasUploadedFiles: vi.fn(),
-	enrichHasUploadedFilesBatch: vi.fn()
+	enrichHasUploadedFiles: vi.fn()
 }));
 
 const { enrichFiles, enrichHasUploadedFiles } = await import('../services/r2Enrichment');
@@ -468,8 +467,6 @@ describe('Mutation.updateSimfile', () => {
 
 	it('updates a simfile and returns the full record', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
-		// Resolver discards updateSimfile's return value, so the shape doesn't matter;
-		// getSimfile is what populates the GraphQL response.
 		mockedUpdate.mockResolvedValue({} as Awaited<ReturnType<typeof updateSimfile>>);
 		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, title: 'X', is_published: true });
 
@@ -558,6 +555,33 @@ describe('Mutation.updateSimfile', () => {
 			query: 'mutation { updateSimfile(id: "42", input: { title: "X" }) { id } }'
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+	});
+
+	it('falls back to updateSimfile return when getSimfile returns null (concurrent delete)', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const updatedRow = {
+			id: 42,
+			title: 'Updated',
+			artist: 'Artist',
+			bpm: 120,
+			is_published: 1,
+			display_id: null,
+			download_url: null,
+			preview_url: null,
+			video_preview_url: null,
+			publish_date: '2026-01-01',
+			created_at: '2026-01-01',
+			updated_at: '2026-01-01',
+			user_id: 'u1'
+		};
+		mockedUpdate.mockResolvedValue(updatedRow as Awaited<ReturnType<typeof updateSimfile>>);
+		mockedGetSimfile.mockResolvedValue(null);
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: 'mutation { updateSimfile(id: "42", input: { title: "Updated" }) { id title } }'
+		});
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.updateSimfile).toEqual({ id: '42', title: 'Updated' });
 	});
 });
 
@@ -668,6 +692,26 @@ describe('Mutation.deleteSimfile', () => {
 	it('throws INTERNAL when R2 list() rejects', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
 		const r2 = makeR2ListFailure();
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
+			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+		});
+		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+		expect(mockedDelete).not.toHaveBeenCalled();
+	});
+
+	it('throws INTERNAL when some R2 deletes fail', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const listMock = vi.fn(async () => ({
+			objects: [{ key: '42/a.dtx' }, { key: '42/b.dtx' }],
+			truncated: false
+		}));
+		let deleteCall = 0;
+		const deleteMock = vi.fn(async () => {
+			deleteCall++;
+			if (deleteCall === 2) throw new Error('R2 delete failed');
+		});
+		const r2 = { list: listMock, delete: deleteMock } as unknown as R2Bucket;
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
 			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'

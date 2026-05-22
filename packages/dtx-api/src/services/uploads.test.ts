@@ -102,7 +102,7 @@ describe('uploadSimfileFile', () => {
 		expect(response.status).toBe(200);
 		expect(bucket.put).toHaveBeenCalledWith(
 			'42/escape/song.dtx',
-			expect.any(ArrayBuffer),
+			expect.any(ReadableStream),
 			expect.objectContaining({
 				httpMetadata: expect.objectContaining({
 					contentType: 'application/octet-stream',
@@ -110,12 +110,6 @@ describe('uploadSimfileFile', () => {
 				})
 			})
 		);
-		const [, body] = vi.mocked(bucket.put).mock.calls[0];
-		expect(body).toBeInstanceOf(ArrayBuffer);
-		if (!(body instanceof ArrayBuffer)) {
-			throw new Error('Expected R2 put body to be an ArrayBuffer');
-		}
-		expect(body.byteLength).toBe(file.size);
 	});
 });
 

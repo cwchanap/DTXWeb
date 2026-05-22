@@ -307,7 +307,12 @@ builder.mutationField('updateSimfile', (t) =>
 			}
 
 			try {
-				await updateSimfile(ctx.db, numeric, updateData);
+				const updatedRow = await updateSimfile(ctx.db, numeric, updateData);
+				// Re-read to get the joined DTX files; fall back to the authoritative
+				// RETURNING * row if the simfile is concurrently deleted between
+				// update and read (avoids a false NOT_FOUND on a successful update).
+				const full = await getSimfile(ctx.db, numeric);
+				return full ?? toSimfileWithDtx(updatedRow, []);
 			} catch (err) {
 				if (err instanceof Error && err.message.includes('not found')) {
 					throw new GraphQLError('Simfile not found', {
@@ -316,13 +321,6 @@ builder.mutationField('updateSimfile', (t) =>
 				}
 				throw err;
 			}
-			const full = await getSimfile(ctx.db, numeric);
-			if (!full) {
-				throw new GraphQLError('Updated simfile not found', {
-					extensions: { code: 'NOT_FOUND' }
-				});
-			}
-			return full;
 		}
 	})
 );
@@ -376,7 +374,24 @@ builder.mutationField('deleteSimfile', (t) =>
 				}
 				const objects = listResult.objects ?? [];
 				if (objects.length > 0) {
-					await Promise.allSettled(objects.map((obj) => ctx.r2.delete(obj.key)));
+					const results = await Promise.allSettled(
+						objects.map((obj) => ctx.r2.delete(obj.key))
+					);
+					const failed = results
+						.map((r, i) => (r.status === 'rejected' ? objects[i]?.key : null))
+						.filter((k): k is string => k !== null);
+					if (failed.length > 0) {
+						ctx.logger.error(
+							'R2 delete failed for some objects while deleting simfile',
+							{
+								simfileId: numeric,
+								failedKeys: failed
+							}
+						);
+						throw new GraphQLError('Failed to delete some files', {
+							extensions: { code: 'INTERNAL' }
+						});
+					}
 				}
 				truncated = listResult.truncated === true;
 				if (truncated) {

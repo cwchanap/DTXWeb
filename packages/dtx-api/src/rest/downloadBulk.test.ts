@@ -19,10 +19,9 @@ vi.mock('@dtx/common/server', async () => {
 		buildZipStream: vi.fn(() => new ReadableStream()),
 		createZipSources: vi.fn((objs) =>
 			(objs as Array<{ key: string; size: number }>).map((o) => ({
-				key: o.key,
+				objectKey: o.key,
 				size: o.size,
-				prefix: '',
-				name: o.key
+				path: o.key
 			}))
 		),
 		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),

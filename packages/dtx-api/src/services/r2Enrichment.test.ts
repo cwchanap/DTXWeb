@@ -71,4 +71,23 @@ describe('enrichHasUploadedFiles', () => {
 		const bucket = makeBucket([[]]);
 		expect(await enrichHasUploadedFiles(bucket, 42)).toBe(false);
 	});
+
+	it('paginates and finds non-preview object on later page', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/preview.jpg', size: 1, uploaded: new Date() },
+				{ key: '42/preview.mp3', size: 1, uploaded: new Date() }
+			],
+			[{ key: '42/song.dtx', size: 100, uploaded: new Date() }]
+		]);
+		expect(await enrichHasUploadedFiles(bucket, 42)).toBe(true);
+	});
+
+	it('returns false when all pages contain only preview keys', async () => {
+		const bucket = makeBucket([
+			[{ key: '42/preview.jpg', size: 1, uploaded: new Date() }],
+			[{ key: '42/preview.mp3', size: 1, uploaded: new Date() }]
+		]);
+		expect(await enrichHasUploadedFiles(bucket, 42)).toBe(false);
+	});
 });

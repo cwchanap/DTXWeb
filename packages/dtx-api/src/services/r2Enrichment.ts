@@ -25,8 +25,19 @@ export const enrichHasUploadedFiles = async (
 	simfileId: number
 ): Promise<boolean> => {
 	const prefix = `${simfileId}/`;
-	const listed = await bucket.list({ prefix });
-	return listed.objects.some((obj) => obj.key.length > prefix.length && !isPreviewKey(obj.key));
+	let cursor: string | undefined;
+	let truncated: boolean;
+	do {
+		const listed = await bucket.list({ prefix, cursor });
+		for (const obj of listed.objects) {
+			if (obj.key.length > prefix.length && !isPreviewKey(obj.key)) {
+				return true;
+			}
+		}
+		truncated = listed.truncated;
+		cursor = listed.cursor;
+	} while (truncated);
+	return false;
 };
 
 const MAX_CONCURRENT_R2_CHECKS = 4;

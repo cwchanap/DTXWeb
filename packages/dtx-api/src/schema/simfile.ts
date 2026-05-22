@@ -340,6 +340,17 @@ builder.mutationField('deleteSimfile', (t) =>
 				});
 			}
 
+			// Verify the DB row exists before touching R2 objects.
+			// The owner scope intentionally passes for missing simfiles so the
+			// resolver can return NOT_FOUND, but we must not delete R2 objects
+			// until we know the row is present (and the user was authorized).
+			const existing = await getSimfile(ctx.db, numeric);
+			if (!existing) {
+				throw new GraphQLError('Simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+
 			// Port of dtx-web's cursor-paginated R2 list+delete.
 			// Hard cap iterations so a misbehaving R2 (or test mock) can't loop us
 			// into the Worker CPU limit; 1000 pages × 1000 keys = 1M objects max.

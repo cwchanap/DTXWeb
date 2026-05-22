@@ -15,7 +15,7 @@ vi.mock('@dtx/common/server', async () => {
 		listAllR2Objects: vi.fn(),
 		validateZipSources: vi.fn(async () => {}),
 		buildZipStream: vi.fn(() => new ReadableStream()),
-		createZipSources: vi.fn(() => [{ key: '42/a.dtx', size: 100, prefix: '', name: 'a.dtx' }]),
+		createZipSources: vi.fn(() => [{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }]),
 		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true })),
 		getClientIp: vi.fn(() => '1.2.3.4')
 	};

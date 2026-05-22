@@ -77,8 +77,12 @@ export const uploadSimfileFile = async (
 
 	const sanitized = sanitizeFilename(file.name);
 	const key = `${simfileId}/${sanitized}`;
-	const body = await file.arrayBuffer();
 
+	// Pass the file's ReadableStream directly to R2 to avoid buffering
+	// the entire file into memory (50 MB file would consume the Workers memory budget).
+	// DOM ReadableStream and Workers ReadableStream are structurally identical at runtime
+	// but have incompatible type definitions — cast to bridge the gap.
+	const body = file.stream() as unknown as Parameters<typeof bucket.put>[1];
 	const result = await bucket.put(key, body, {
 		httpMetadata: {
 			contentType: file.type || 'application/octet-stream',

@@ -20,13 +20,27 @@ describe('enrichFiles', () => {
 		const bucket = makeBucket([
 			[
 				{ key: '42/song.dtx', size: 1024, uploaded: new Date('2026-05-19T00:00:00Z') },
-				{ key: '42/preview.jpg', size: 256, uploaded: new Date('2026-05-19T00:00:00Z') }
+				{ key: '42/cover.png', size: 512, uploaded: new Date('2026-05-19T00:00:00Z') }
 			]
 		]);
 		const files = await enrichFiles(bucket, 42);
 		expect(files).toEqual([
 			{ key: '42/song.dtx', size: 1024, uploaded: '2026-05-19T00:00:00.000Z' },
-			{ key: '42/preview.jpg', size: 256, uploaded: '2026-05-19T00:00:00.000Z' }
+			{ key: '42/cover.png', size: 512, uploaded: '2026-05-19T00:00:00.000Z' }
+		]);
+	});
+
+	it('excludes preview files from results', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/song.dtx', size: 1024, uploaded: new Date('2026-05-19T00:00:00Z') },
+				{ key: '42/preview.jpg', size: 256, uploaded: new Date('2026-05-19T00:00:00Z') },
+				{ key: '42/preview.mp3', size: 128, uploaded: new Date('2026-05-19T00:00:00Z') }
+			]
+		]);
+		const files = await enrichFiles(bucket, 42);
+		expect(files).toEqual([
+			{ key: '42/song.dtx', size: 1024, uploaded: '2026-05-19T00:00:00.000Z' }
 		]);
 	});
 

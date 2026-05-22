@@ -11,7 +11,7 @@ export const enrichFiles = async (bucket: R2Bucket, simfileId: number): Promise<
 	const prefix = `${simfileId}/`;
 	const objects = await listAllR2Objects(bucket, prefix);
 	return objects
-		.filter((obj: R2ObjectMeta) => obj.key.length > prefix.length)
+		.filter((obj: R2ObjectMeta) => obj.key.length > prefix.length && !isPreviewKey(obj.key))
 		.map((obj: R2ObjectMeta) => ({
 			key: obj.key,
 			size: obj.size,
@@ -53,34 +53,4 @@ export const enrichHasUploadedFiles = async (
 		}
 	} while (truncated);
 	return false;
-};
-
-const MAX_CONCURRENT_R2_CHECKS = 4;
-
-export const enrichHasUploadedFilesBatch = async (
-	bucket: R2Bucket,
-	simfileIds: number[]
-): Promise<Map<number, boolean>> => {
-	const result = new Map<number, boolean>();
-	let nextIndex = 0;
-
-	const worker = async () => {
-		while (nextIndex < simfileIds.length) {
-			const idx = nextIndex++;
-			const id = simfileIds[idx];
-			try {
-				result.set(id, await enrichHasUploadedFiles(bucket, id));
-			} catch {
-				result.set(id, false);
-			}
-		}
-	};
-
-	await Promise.all(
-		Array.from({ length: Math.min(MAX_CONCURRENT_R2_CHECKS, simfileIds.length) }, () =>
-			worker()
-		)
-	);
-
-	return result;
 };

@@ -35,7 +35,9 @@ export const enrichHasUploadedFiles = async (
 			}
 		}
 		truncated = listed.truncated;
-		cursor = listed.cursor;
+		if (truncated) {
+			cursor = (listed as { cursor?: string }).cursor;
+		}
 	} while (truncated);
 	return false;
 };

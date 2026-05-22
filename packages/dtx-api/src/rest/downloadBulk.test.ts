@@ -71,6 +71,26 @@ beforeEach(() => {
 });
 
 describe('POST /downloads/bulk', () => {
+	it('400 on null body', async () => {
+		const response = await routeDownloadBulk(jsonReq(null), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
+	it('400 on non-object body (string)', async () => {
+		const response = await routeDownloadBulk(jsonReq('hello'), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
+	it('400 on non-object body (array)', async () => {
+		const response = await routeDownloadBulk(jsonReq([1, 2, 3]), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
+	it('400 on missing ids field', async () => {
+		const response = await routeDownloadBulk(jsonReq({}), makeEnv());
+		expect(response.status).toBe(400);
+	});
+
 	it('400 on empty ids', async () => {
 		const response = await routeDownloadBulk(jsonReq({ ids: [] }), makeEnv());
 		expect(response.status).toBe(400);

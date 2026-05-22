@@ -38,7 +38,11 @@ const parseIds = (raw: unknown): number[] | null => {
 export const routeDownloadBulk = async (request: Request, env: Env): Promise<Response> => {
 	let payload: { ids?: unknown };
 	try {
-		payload = (await request.json()) as { ids?: unknown };
+		const parsed = await request.json();
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			return jsonError(400, 'Invalid request body');
+		}
+		payload = parsed as { ids?: unknown };
 	} catch {
 		return jsonError(400, 'Invalid request body');
 	}

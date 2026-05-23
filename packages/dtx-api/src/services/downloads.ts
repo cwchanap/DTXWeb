@@ -62,6 +62,15 @@ export type CollectedZipSources = {
 	estimatedBytes: number;
 };
 
+export type CollectZipSourcesOptions = {
+	/**
+	 * When true and only one simfile is selected, omit the `chart-{id}/` prefix
+	 * so files sit at the ZIP root. The bulk endpoint should NOT set this — it
+	 * always nests under `chart-{id}/` for consistent layout regardless of count.
+	 */
+	flatSingle?: boolean;
+};
+
 /**
  * Phase 1: List R2 objects and collect ZIP sources.
  * This issues R2 list calls (one per simfile) but does NOT validate
@@ -70,7 +79,8 @@ export type CollectedZipSources = {
  */
 export const collectZipSources = async (
 	bucket: R2Bucket,
-	simfileIds: number[]
+	simfileIds: number[],
+	opts: CollectZipSourcesOptions = {}
 ): Promise<CollectedZipSources> => {
 	const objectsPerSimfile = await Promise.all(
 		simfileIds.map((id) => listAllR2Objects(bucket, `${id}/`))
@@ -81,7 +91,7 @@ export const collectZipSources = async (
 		sources: createZipSources(
 			objectsPerSimfile[i],
 			`${id}/`,
-			simfileIds.length === 1 ? '' : `chart-${id}`
+			opts.flatSingle && simfileIds.length === 1 ? '' : `chart-${id}`
 		)
 	}));
 

@@ -37,6 +37,7 @@ const baseCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	request: new Request('http://test'),
 	logger: workerLogger,
 	ownerByIdCache: new Map<string, OwnerCacheEntry | null>(),
+	hasUploadedFilesCache: new Map(),
 	...overrides
 });
 

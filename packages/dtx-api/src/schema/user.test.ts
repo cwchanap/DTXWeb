@@ -47,6 +47,7 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	request: new Request('http://test'),
 	logger: workerLogger,
 	ownerByIdCache: new Map(),
+	hasUploadedFilesCache: new Map(),
 	...overrides
 });
 

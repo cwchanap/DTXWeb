@@ -469,7 +469,10 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { hasUploadedFiles } } }'
 		});
 
-		expect(result.data?.simfiles.data).toEqual([
+		const simfilesResult = result.data?.simfiles as
+			| { data: Array<{ hasUploadedFiles: boolean }> }
+			| undefined;
+		expect(simfilesResult?.data).toEqual([
 			{ hasUploadedFiles: true },
 			{ hasUploadedFiles: false }
 		]);

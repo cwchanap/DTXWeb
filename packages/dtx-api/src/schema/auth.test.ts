@@ -64,6 +64,7 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	request: new Request('http://test', { headers: { 'cf-connecting-ip': '5.6.7.8' } }),
 	logger: workerLogger,
 	ownerByIdCache: new Map(),
+	hasUploadedFilesCache: new Map(),
 	...overrides
 });
 

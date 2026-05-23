@@ -40,7 +40,9 @@ export const routeDownloadSimfile = async (
 	if (access.unauthorized.length > 0) return jsonError(401, 'Unauthorized');
 	if (access.forbidden.length > 0) return jsonError(403, 'Forbidden');
 
-	const { sources, estimatedBytes } = await collectZipSources(env.DTXFILE_BUCKET, [id]);
+	const { sources, estimatedBytes } = await collectZipSources(env.DTXFILE_BUCKET, [id], {
+		flatSingle: true
+	});
 
 	if (sources.length === 0) {
 		return jsonError(404, 'No files found for this chart');

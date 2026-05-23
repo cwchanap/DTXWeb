@@ -167,6 +167,18 @@ describe('Phase 2 routes', () => {
 		expect(response.status).toBe(405);
 	});
 
+	it('400 on malformed /downloads/:id (non-numeric)', async () => {
+		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
+		const response = await worker.fetch(
+			new Request('http://api/downloads/abc', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { error: string };
+		expect(body.error).toBe('Invalid SimFile ID');
+	});
+
 	it('405 on GET /downloads/bulk', async () => {
 		const env = makeEnv();
 		const response = await worker.fetch(

@@ -252,11 +252,13 @@ builder.queryField('simfileSearch', (t) =>
 		},
 		authScopes: { user: true },
 		resolve: async (_root, args, ctx) => {
+			const trimmed = args.query.trim();
+			if (!trimmed) return [];
 			const excludeIds = (args.excludeIds ?? [])
 				.map((id) => Number(id))
 				.filter((n) => Number.isSafeInteger(n) && n > 0);
 			return searchSimfiles(ctx.db, {
-				query: args.query,
+				query: trimmed,
 				userId: ctx.user!.id,
 				excludeIds,
 				limit: args.limit ?? 8 // defaultValue may not narrow to non-null in this Pothos version
@@ -317,6 +319,21 @@ builder.mutationField('updateSimfile', (t) =>
 				throw new GraphQLError('Invalid simfile id', {
 					extensions: { code: 'BAD_USER_INPUT' }
 				});
+			}
+
+			// Defense-in-depth: re-verify the row exists and belongs to the
+			// authenticated user.  The owner scope intentionally passes for
+			// missing simfiles so the resolver can return NOT_FOUND, but that
+			// opens a theoretical TOCTOU window.  Re-reading the row here
+			// closes it.
+			const existing = await getSimfile(ctx.db, numeric);
+			if (!existing) {
+				throw new GraphQLError('Simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+			if (existing.user_id !== ctx.user!.id) {
+				throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
 			}
 
 			const updateData: Record<string, unknown> = {};
@@ -385,15 +402,19 @@ builder.mutationField('deleteSimfile', (t) =>
 				});
 			}
 
-			// Verify the DB row exists before touching R2 objects.
-			// The owner scope intentionally passes for missing simfiles so the
-			// resolver can return NOT_FOUND, but we must not delete R2 objects
-			// until we know the row is present (and the user was authorized).
+			// Verify the DB row exists AND belongs to the caller before
+			// touching R2 objects.  The owner scope intentionally passes for
+			// missing simfiles so the resolver can return NOT_FOUND, but that
+			// opens a theoretical TOCTOU window.  Re-reading here closes it
+			// and ensures we never act on a row the user doesn't own.
 			const existing = await getSimfile(ctx.db, numeric);
 			if (!existing) {
 				throw new GraphQLError('Simfile not found', {
 					extensions: { code: 'NOT_FOUND' }
 				});
+			}
+			if (existing.user_id !== ctx.user!.id) {
+				throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
 			}
 
 			// Port of dtx-web's cursor-paginated R2 list+delete.

@@ -6,7 +6,7 @@ import { routeUpload } from './rest/upload';
 import { handlePreflight, withCors } from './lib/cors';
 import type { Env } from './env';
 
-const downloadSimfilePattern = /^\/downloads\/(\d+)$/;
+const downloadSimfilePattern = /^\/downloads\/([^/]+)$/;
 
 const methodNotAllowed = (allow: string) =>
 	new Response('Method Not Allowed', { status: 405, headers: { Allow: allow } });

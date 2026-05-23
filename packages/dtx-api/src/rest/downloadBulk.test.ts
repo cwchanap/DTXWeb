@@ -39,6 +39,9 @@ const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedListAllR2Objects = vi.mocked(listAllR2Objects);
 const mockedVerify = vi.mocked(verifyToken);
 
+const { validateZipSources } = await import('@dtx/common/server');
+const mockedValidateZipSources = vi.mocked(validateZipSources);
+
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	DB: {} as Env['DB'],
 	DTXFILE_BUCKET: {} as R2Bucket,
@@ -80,6 +83,7 @@ beforeEach(() => {
 		.mockReset()
 		.mockResolvedValue([{ key: '1/song.dtx', size: 100, uploaded: new Date() }]);
 	mockedVerify.mockReset().mockResolvedValue(null);
+	mockedValidateZipSources.mockReset();
 });
 
 describe('POST /downloads/bulk', () => {
@@ -147,6 +151,8 @@ describe('POST /downloads/bulk', () => {
 			undefined,
 			false
 		);
+		// HEAD checks should NOT run for validate-only requests
+		expect(mockedValidateZipSources).not.toHaveBeenCalled();
 	});
 
 	it('429 on validate-only when rate limit exceeded', async () => {
@@ -200,6 +206,8 @@ describe('POST /downloads/bulk', () => {
 			ids: [2]
 		});
 		expect(mockedRate).not.toHaveBeenCalled();
+		// HEAD checks should NOT run when some charts have no files
+		expect(mockedValidateZipSources).not.toHaveBeenCalled();
 	});
 
 	it('reports empty accessible charts during validate-only requests', async () => {
@@ -223,6 +231,8 @@ describe('POST /downloads/bulk', () => {
 		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());
 		expect(response.status).toBe(429);
+		// HEAD checks should NOT run when rate limit blocks the download
+		expect(mockedValidateZipSources).not.toHaveBeenCalled();
 	});
 
 	it('consumes rate limit for non-validate requests', async () => {

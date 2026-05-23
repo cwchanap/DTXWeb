@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { enrichFiles, enrichHasUploadedFiles } from './r2Enrichment';
+import { enrichFiles, enrichHasUploadedFiles, batchEnrichHasUploadedFiles } from './r2Enrichment';
 import type { R2Bucket } from '@cloudflare/workers-types';
 
 const makeBucket = (
@@ -123,5 +123,48 @@ describe('enrichHasUploadedFiles', () => {
 		}));
 		const bucket = { list: listMock } as unknown as R2Bucket;
 		await expect(enrichHasUploadedFiles(bucket, 42)).rejects.toThrow('R2 pagination stalled');
+	});
+});
+
+describe('batchEnrichHasUploadedFiles', () => {
+	it('returns a Map with results for all simfile IDs', async () => {
+		const listMock = vi.fn(async (opts: { prefix: string }) => {
+			if (opts.prefix === '1/') {
+				return {
+					objects: [{ key: '1/song.dtx', size: 100, uploaded: new Date() }],
+					truncated: false
+				};
+			}
+			return { objects: [], truncated: false };
+		});
+		const bucket = { list: listMock } as unknown as R2Bucket;
+
+		const result = await batchEnrichHasUploadedFiles(bucket, [1, 2]);
+		expect(result).toBeInstanceOf(Map);
+		expect(result.get(1)).toBe(true);
+		expect(result.get(2)).toBe(false);
+	});
+
+	it('returns empty Map for empty input', async () => {
+		const bucket = {} as unknown as R2Bucket;
+		const result = await batchEnrichHasUploadedFiles(bucket, []);
+		expect(result.size).toBe(0);
+	});
+
+	it('sets false for simfiles whose R2 check throws', async () => {
+		const listMock = vi.fn(async (opts: { prefix: string }) => {
+			if (opts.prefix === '1/') {
+				throw new Error('R2 error');
+			}
+			return {
+				objects: [{ key: '2/song.dtx', size: 100, uploaded: new Date() }],
+				truncated: false
+			};
+		});
+		const bucket = { list: listMock } as unknown as R2Bucket;
+
+		const result = await batchEnrichHasUploadedFiles(bucket, [1, 2]);
+		expect(result.get(1)).toBe(false);
+		expect(result.get(2)).toBe(true);
 	});
 });

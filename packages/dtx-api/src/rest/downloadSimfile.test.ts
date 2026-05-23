@@ -31,6 +31,9 @@ const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedCreateZipSources = vi.mocked(createZipSources);
 const mockedVerify = vi.mocked(verifyToken);
 
+const { validateZipSources } = await import('@dtx/common/server');
+const mockedValidateZipSources = vi.mocked(validateZipSources);
+
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	DB: {} as Env['DB'],
 	DTXFILE_BUCKET: {
@@ -59,6 +62,7 @@ beforeEach(() => {
 		.mockReset()
 		.mockReturnValue([{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }]);
 	mockedVerify.mockReset().mockResolvedValue(null);
+	mockedValidateZipSources.mockReset();
 });
 
 const req = (headers: Record<string, string> = {}) =>
@@ -143,6 +147,8 @@ describe('GET /downloads/:id', () => {
 		expect(response.status).toBe(404);
 		expect(await response.json()).toEqual({ error: 'No files found for this chart' });
 		expect(mockedRate).not.toHaveBeenCalled();
+		// HEAD checks should NOT run when no files are found
+		expect(mockedValidateZipSources).not.toHaveBeenCalled();
 	});
 
 	it('429 on rate limit hit', async () => {
@@ -155,5 +161,7 @@ describe('GET /downloads/:id', () => {
 			'42'
 		);
 		expect(response.status).toBe(429);
+		// HEAD checks should NOT run when rate limit blocks the download
+		expect(mockedValidateZipSources).not.toHaveBeenCalled();
 	});
 });

@@ -55,6 +55,7 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	request: new Request('http://test'),
 	logger: workerLogger,
 	ownerByIdCache: new Map(),
+	hasUploadedFilesCache: new Map(),
 	...overrides
 });
 
@@ -392,17 +393,21 @@ describe('Mutation.createSimfile', () => {
 
 vi.mock('../services/r2Enrichment', () => ({
 	enrichFiles: vi.fn(),
-	enrichHasUploadedFiles: vi.fn()
+	enrichHasUploadedFiles: vi.fn(),
+	batchEnrichHasUploadedFiles: vi.fn(async () => new Map())
 }));
 
-const { enrichFiles, enrichHasUploadedFiles } = await import('../services/r2Enrichment');
+const { enrichFiles, enrichHasUploadedFiles, batchEnrichHasUploadedFiles } =
+	await import('../services/r2Enrichment');
 const mockedFiles = vi.mocked(enrichFiles);
 const mockedHasUploaded = vi.mocked(enrichHasUploadedFiles);
+const mockedBatchHasUploaded = vi.mocked(batchEnrichHasUploadedFiles);
 
 describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 	beforeEach(() => {
 		mockedFiles.mockReset();
 		mockedHasUploaded.mockReset();
+		mockedBatchHasUploaded.mockReset().mockResolvedValue(new Map());
 	});
 
 	it('does not call enrichFiles when files is not selected', async () => {
@@ -447,6 +452,31 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 		expect(result.errors).toBeUndefined();
 		expect(result.data?.simfile).toEqual({ hasUploadedFiles: false });
+	});
+
+	it('uses batch enrichment for hasUploadedFiles in list queries', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		const sim2 = { ...publishedSimfile, id: 2 };
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchHasUploaded.mockResolvedValue(
+			new Map([
+				[1, true],
+				[2, false]
+			])
+		);
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { hasUploadedFiles } } }'
+		});
+
+		expect(result.data?.simfiles.data).toEqual([
+			{ hasUploadedFiles: true },
+			{ hasUploadedFiles: false }
+		]);
+		// Batch enrichment should be called once with all simfile IDs
+		expect(mockedBatchHasUploaded).toHaveBeenCalledWith(expect.anything(), [1, 2]);
+		// Per-row enrichment should NOT be called (batch handled it)
+		expect(mockedHasUploaded).not.toHaveBeenCalled();
 	});
 });
 

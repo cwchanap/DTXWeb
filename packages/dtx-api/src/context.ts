@@ -19,6 +19,7 @@ export type Ctx = {
 	request: Request;
 	logger: WorkerLogger;
 	ownerByIdCache: Map<string, OwnerCacheEntry | null>;
+	hasUploadedFilesCache: Map<number, Promise<boolean>>;
 };
 
 export const createContext = async (request: Request, env: Env): Promise<Ctx> => {
@@ -32,6 +33,7 @@ export const createContext = async (request: Request, env: Env): Promise<Ctx> =>
 		kv: env.RATE_LIMIT_API,
 		request,
 		logger: workerLogger,
-		ownerByIdCache: new Map()
+		ownerByIdCache: new Map(),
+		hasUploadedFilesCache: new Map()
 	};
 };

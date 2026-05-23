@@ -1,6 +1,10 @@
 import { getClientIp, tryConsumeRateLimit } from '@dtx/common/server';
 import { verifyToken } from '../auth/verifyToken';
-import { resolveAccessibleSimfiles, buildSimfileZipResponse } from '../services/downloads';
+import {
+	resolveAccessibleSimfiles,
+	collectZipSources,
+	buildValidatedZipResponse
+} from '../services/downloads';
 import type { Env } from '../env';
 
 const MAX_BULK_IDS = 20;
@@ -90,10 +94,9 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 		return jsonError(404, 'Simfile not found', { ids: access.missing });
 	}
 
-	const { response, sources, sourcesBySimfile, estimatedBytes } = await buildSimfileZipResponse(
+	const { sources, sourcesBySimfile, estimatedBytes } = await collectZipSources(
 		env.DTXFILE_BUCKET,
-		access.accessible,
-		{ filename: 'drumery-charts.zip' }
+		access.accessible
 	);
 
 	const missingUploadIds = sourcesBySimfile
@@ -127,6 +130,10 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 	if (sources.length === 0) {
 		return jsonError(404, 'No files found for the requested charts');
 	}
+
+	const response = await buildValidatedZipResponse(env.DTXFILE_BUCKET, sources, {
+		filename: 'drumery-charts.zip'
+	});
 
 	return response;
 };

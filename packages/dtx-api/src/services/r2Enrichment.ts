@@ -7,6 +7,13 @@ export type R2FileEntry = {
 	uploaded: string;
 };
 
+/**
+ * Maximum number of concurrent R2 list calls when batch-enriching
+ * hasUploadedFiles for a list of simfiles. Matches the cap used in the
+ * dtx-web REST endpoint (MAX_CONCURRENT_R2_CHECKS = 4).
+ */
+const MAX_CONCURRENT_R2_LIST = 4;
+
 export const enrichFiles = async (bucket: R2Bucket, simfileId: number): Promise<R2FileEntry[]> => {
 	const prefix = `${simfileId}/`;
 	const objects = await listAllR2Objects(bucket, prefix);
@@ -53,4 +60,37 @@ export const enrichHasUploadedFiles = async (
 		}
 	} while (truncated);
 	return false;
+};
+
+/**
+ * Batch-enrich `hasUploadedFiles` for multiple simfiles with bounded
+ * concurrency. Returns a Map of simfileId → boolean.
+ *
+ * This should be used by GraphQL resolvers that resolve `hasUploadedFiles`
+ * for a list of simfiles, to avoid unbounded R2 list fan-out.
+ */
+export const batchEnrichHasUploadedFiles = async (
+	bucket: R2Bucket,
+	simfileIds: number[]
+): Promise<Map<number, boolean>> => {
+	const results = new Map<number, boolean>();
+	if (simfileIds.length === 0) return results;
+
+	let nextIndex = 0;
+	const worker = async () => {
+		while (nextIndex < simfileIds.length) {
+			const idx = nextIndex++;
+			const id = simfileIds[idx];
+			try {
+				results.set(id, await enrichHasUploadedFiles(bucket, id));
+			} catch {
+				results.set(id, false);
+			}
+		}
+	};
+
+	await Promise.all(
+		Array.from({ length: Math.min(MAX_CONCURRENT_R2_LIST, simfileIds.length) }, () => worker())
+	);
+	return results;
 };

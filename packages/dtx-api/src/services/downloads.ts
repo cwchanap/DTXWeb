@@ -56,16 +56,22 @@ export type SimfileZipSources = {
 	sources: ZipSource[];
 };
 
-export const buildSimfileZipResponse = async (
-	bucket: R2Bucket,
-	simfileIds: number[],
-	opts: ZipStreamOptions
-): Promise<{
-	response: Response;
+export type CollectedZipSources = {
 	sources: ZipSource[];
 	sourcesBySimfile: SimfileZipSources[];
 	estimatedBytes: number;
-}> => {
+};
+
+/**
+ * Phase 1: List R2 objects and collect ZIP sources.
+ * This issues R2 list calls (one per simfile) but does NOT validate
+ * individual objects with HEAD requests — callers can check rate limits,
+ * validation-only mode, etc. before committing to HEAD checks.
+ */
+export const collectZipSources = async (
+	bucket: R2Bucket,
+	simfileIds: number[]
+): Promise<CollectedZipSources> => {
 	const objectsPerSimfile = await Promise.all(
 		simfileIds.map((id) => listAllR2Objects(bucket, `${id}/`))
 	);
@@ -83,19 +89,49 @@ export const buildSimfileZipResponse = async (
 
 	const estimatedBytes = sources.reduce((sum, s) => sum + s.size, 0);
 
-	await validateZipSources(bucket, sources);
+	return { sources, sourcesBySimfile, estimatedBytes };
+};
 
-	// Sanitize filename for Content-Disposition header to prevent injection.
-	const safeName = opts.filename.replace(/[\r\n"]/g, '').trim();
-	const fallbackName = safeName || `download_${Date.now()}.zip`;
-	const response = new Response(buildZipStream(bucket, sources), {
-		status: 200,
-		headers: {
-			'Content-Type': 'application/zip',
-			'Content-Disposition': `attachment; filename="${fallbackName}"`,
-			'Cache-Control': 'private, no-store'
-		}
+/**
+ * Phase 2: Validate sources with HEAD checks and build the streaming Response.
+ * Only call this when the download is actually allowed — after rate limit
+ * checks, validation-only exits, etc.
+ */
+export const buildValidatedZipResponse = (
+	bucket: R2Bucket,
+	sources: ZipSource[],
+	opts: ZipStreamOptions
+): Promise<Response> => {
+	return validateZipSources(bucket, sources).then(() => {
+		// Sanitize filename for Content-Disposition header to prevent injection.
+		const safeName = opts.filename.replace(/[\r\n"]/g, '').trim();
+		const fallbackName = safeName || `download_${Date.now()}.zip`;
+		return new Response(buildZipStream(bucket, sources), {
+			status: 200,
+			headers: {
+				'Content-Type': 'application/zip',
+				'Content-Disposition': `attachment; filename="${fallbackName}"`,
+				'Cache-Control': 'private, no-store'
+			}
+		});
 	});
+};
 
-	return { response, sources, sourcesBySimfile, estimatedBytes };
+/**
+ * Convenience wrapper: collect + validate + respond in one call.
+ * Use this when you don't need cheap-exit checks between phases.
+ */
+export const buildSimfileZipResponse = async (
+	bucket: R2Bucket,
+	simfileIds: number[],
+	opts: ZipStreamOptions
+): Promise<{
+	response: Response;
+	sources: ZipSource[];
+	sourcesBySimfile: SimfileZipSources[];
+	estimatedBytes: number;
+}> => {
+	const collected = await collectZipSources(bucket, simfileIds);
+	const response = await buildValidatedZipResponse(bucket, collected.sources, opts);
+	return { response, ...collected };
 };

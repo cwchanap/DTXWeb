@@ -10,7 +10,11 @@ import {
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
-import { enrichFiles, enrichHasUploadedFiles } from '../services/r2Enrichment';
+import {
+	enrichFiles,
+	enrichHasUploadedFiles,
+	batchEnrichHasUploadedFiles
+} from '../services/r2Enrichment';
 import { createSimfileWithDtx } from '../services/createSimfile';
 
 // --- enums ---
@@ -60,11 +64,20 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		}),
 		hasUploadedFiles: t.boolean({
 			resolve: async (s, _args, ctx) => {
-				try {
-					return await enrichHasUploadedFiles(ctx.r2, s.id);
-				} catch {
-					return false;
+				// Check request-scoped cache first (populated by connection-level
+				// batch for list queries, or by a previous per-row call).
+				const cached = ctx.hasUploadedFilesCache.get(s.id);
+				if (cached) {
+					try {
+						return await cached;
+					} catch {
+						return false;
+					}
 				}
+				// Single simfile query or cache miss: resolve individually.
+				const promise = enrichHasUploadedFiles(ctx.r2, s.id).catch(() => false);
+				ctx.hasUploadedFilesCache.set(s.id, promise);
+				return promise;
 			}
 		})
 	})
@@ -74,7 +87,33 @@ export const SimfileConnectionRef = builder
 	.objectRef<{ data: SimfileWithDtxFiles[]; count: number }>('SimfileConnection')
 	.implement({
 		fields: (t) => ({
-			data: t.field({ type: [SimfileRef], resolve: (c) => c.data }),
+			data: t.field({
+				type: [SimfileRef],
+				resolve: async (c, _args, ctx) => {
+					// Pre-populate hasUploadedFilesCache with batched R2 lookups.
+					// Uses bounded concurrency (MAX_CONCURRENT_R2_LIST=4) to avoid
+					// unbounded R2 fan-out when resolving large pages. Per-row
+					// resolvers read from ctx.hasUploadedFilesCache.
+					//
+					// NOTE: This always fires the batch even when hasUploadedFiles
+					// is not selected. The trade-off is simpler code vs. a small
+					// overhead on list queries that don't select the field. If this
+					// becomes a problem, use GraphQL resolve info to conditionally batch.
+					if (c.data.length > 0) {
+						const batchPromise = batchEnrichHasUploadedFiles(
+							ctx.r2,
+							c.data.map((s) => s.id)
+						);
+						for (const s of c.data) {
+							ctx.hasUploadedFilesCache.set(
+								s.id,
+								batchPromise.then((map) => map.get(s.id) ?? false)
+							);
+						}
+					}
+					return c.data;
+				}
+			}),
 			count: t.exposeInt('count')
 		})
 	});

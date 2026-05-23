@@ -1,7 +1,11 @@
 import { getClientIp, tryConsumeRateLimit } from '@dtx/common/server';
 import type { ExecutionContext } from '@cloudflare/workers-types';
 import { verifyToken } from '../auth/verifyToken';
-import { resolveAccessibleSimfiles, buildSimfileZipResponse } from '../services/downloads';
+import {
+	resolveAccessibleSimfiles,
+	collectZipSources,
+	buildValidatedZipResponse
+} from '../services/downloads';
 import type { Env } from '../env';
 
 const jsonError = (status: number, message: string) =>
@@ -36,13 +40,7 @@ export const routeDownloadSimfile = async (
 	if (access.unauthorized.length > 0) return jsonError(401, 'Unauthorized');
 	if (access.forbidden.length > 0) return jsonError(403, 'Forbidden');
 
-	const { response, sources, estimatedBytes } = await buildSimfileZipResponse(
-		env.DTXFILE_BUCKET,
-		[id],
-		{
-			filename: `chart-${id}.zip`
-		}
-	);
+	const { sources, estimatedBytes } = await collectZipSources(env.DTXFILE_BUCKET, [id]);
 
 	if (sources.length === 0) {
 		return jsonError(404, 'No files found for this chart');
@@ -59,6 +57,10 @@ export const routeDownloadSimfile = async (
 			return jsonError(429, 'Rate limit exceeded. Please try again later.');
 		}
 	}
+
+	const response = await buildValidatedZipResponse(env.DTXFILE_BUCKET, sources, {
+		filename: `chart-${id}.zip`
+	});
 
 	return response;
 };

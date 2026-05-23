@@ -35,14 +35,28 @@ const parseIds = (raw: unknown): number[] | null => {
 	return out;
 };
 
+const parseRequestBody = async (request: Request): Promise<{ ids?: unknown }> => {
+	const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+
+	if (
+		contentType === 'application/x-www-form-urlencoded' ||
+		contentType === 'multipart/form-data'
+	) {
+		const formData = await request.formData();
+		return { ids: formData.getAll('ids') };
+	}
+
+	const body = await request.json();
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		throw new Error('Invalid request body');
+	}
+	return body as { ids?: unknown };
+};
+
 export const routeDownloadBulk = async (request: Request, env: Env): Promise<Response> => {
 	let payload: { ids?: unknown };
 	try {
-		const parsed = await request.json();
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-			return jsonError(400, 'Invalid request body');
-		}
-		payload = parsed as { ids?: unknown };
+		payload = await parseRequestBody(request);
 	} catch {
 		return jsonError(400, 'Invalid request body');
 	}
@@ -92,24 +106,26 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 		});
 	}
 
+	const ip = getClientIp(request);
+	if (ip) {
+		const { allowed } = await tryConsumeRateLimit(
+			env.RATE_LIMIT_API,
+			`${env.RATE_LIMIT_ENV}:downloads:${ip}`,
+			estimatedBytes,
+			undefined,
+			!validateOnly
+		);
+		if (!allowed) {
+			return jsonError(429, 'Rate limit exceeded. Please try again later.');
+		}
+	}
+
 	if (validateOnly) {
 		return json({ ok: true, fileCount: sources.length });
 	}
 
 	if (sources.length === 0) {
 		return jsonError(404, 'No files found for the requested charts');
-	}
-
-	const ip = getClientIp(request);
-	if (ip) {
-		const { allowed } = await tryConsumeRateLimit(
-			env.RATE_LIMIT_API,
-			`${env.RATE_LIMIT_ENV}:downloads:${ip}`,
-			estimatedBytes
-		);
-		if (!allowed) {
-			return jsonError(429, 'Rate limit exceeded. Please try again later.');
-		}
 	}
 
 	return response;

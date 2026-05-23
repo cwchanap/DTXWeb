@@ -360,10 +360,13 @@ builder.mutationField('deleteSimfile', (t) =>
 			// Port of dtx-web's cursor-paginated R2 list+delete.
 			// Hard cap iterations so a misbehaving R2 (or test mock) can't loop us
 			// into the Worker CPU limit; 1000 pages × 1000 keys = 1M objects max.
+			// Phase 1: collect all keys before deleting anything so a later list
+			// failure doesn't leave a partially-deleted prefix with a live DB row.
 			const MAX_PAGES = 1000;
 			let cursor: string | undefined;
 			let truncated = true;
 			let pages = 0;
+			const allKeys: string[] = [];
 			while (truncated) {
 				if (++pages > MAX_PAGES) {
 					ctx.logger.error('R2 pagination exceeded MAX_PAGES while deleting', {
@@ -390,25 +393,8 @@ builder.mutationField('deleteSimfile', (t) =>
 					});
 				}
 				const objects = listResult.objects ?? [];
-				if (objects.length > 0) {
-					const results = await Promise.allSettled(
-						objects.map((obj) => ctx.r2.delete(obj.key))
-					);
-					const failed = results
-						.map((r, i) => (r.status === 'rejected' ? objects[i]?.key : null))
-						.filter((k): k is string => k !== null);
-					if (failed.length > 0) {
-						ctx.logger.error(
-							'R2 delete failed for some objects while deleting simfile',
-							{
-								simfileId: numeric,
-								failedKeys: failed
-							}
-						);
-						throw new GraphQLError('Failed to delete some files', {
-							extensions: { code: 'INTERNAL' }
-						});
-					}
+				for (const obj of objects) {
+					allKeys.push(obj.key);
 				}
 				truncated = listResult.truncated === true;
 				if (truncated) {
@@ -422,6 +408,21 @@ builder.mutationField('deleteSimfile', (t) =>
 						});
 					}
 					cursor = nextCursor;
+				}
+			}
+
+			// Phase 2: delete collected keys. Log failures but always remove the
+			// DB row — a simfile with missing backing files is worse than a clean delete.
+			if (allKeys.length > 0) {
+				const results = await Promise.allSettled(allKeys.map((key) => ctx.r2.delete(key)));
+				const failed = results
+					.map((r, i) => (r.status === 'rejected' ? allKeys[i] : null))
+					.filter((k): k is string => k !== null);
+				if (failed.length > 0) {
+					ctx.logger.error('R2 delete failed for some objects while deleting simfile', {
+						simfileId: numeric,
+						failedKeys: failed
+					});
 				}
 			}
 

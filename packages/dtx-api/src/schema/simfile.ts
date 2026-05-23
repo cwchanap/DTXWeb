@@ -59,7 +59,13 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 			resolve: (s, _args, ctx) => enrichFiles(ctx.r2, s.id)
 		}),
 		hasUploadedFiles: t.boolean({
-			resolve: (s, _args, ctx) => enrichHasUploadedFiles(ctx.r2, s.id)
+			resolve: async (s, _args, ctx) => {
+				try {
+					return await enrichHasUploadedFiles(ctx.r2, s.id);
+				} catch {
+					return false;
+				}
+			}
 		})
 	})
 });

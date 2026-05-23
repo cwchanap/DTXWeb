@@ -11,6 +11,19 @@ const downloadSimfilePattern = /^\/downloads\/(\d+)$/;
 const methodNotAllowed = (allow: string) =>
 	new Response('Method Not Allowed', { status: 405, headers: { Allow: allow } });
 
+const internalError = new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+	status: 500,
+	headers: { 'content-type': 'application/json' }
+});
+
+const safeRoute = async (fn: () => Promise<Response>): Promise<Response> => {
+	try {
+		return await fn();
+	} catch {
+		return internalError;
+	}
+};
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const preflight = handlePreflight(request, env);
@@ -30,26 +43,23 @@ export default {
 		}
 
 		if (url.pathname === '/downloads/bulk') {
-			return request.method === 'POST'
-				? withCors(await routeDownloadBulk(request, env), request, env)
-				: withCors(methodNotAllowed('POST'), request, env);
+			if (request.method !== 'POST') return withCors(methodNotAllowed('POST'), request, env);
+			return withCors(await safeRoute(() => routeDownloadBulk(request, env)), request, env);
 		}
 
 		const downloadMatch = downloadSimfilePattern.exec(url.pathname);
 		if (downloadMatch) {
-			return request.method === 'GET'
-				? withCors(
-						await routeDownloadSimfile(request, env, ctx, downloadMatch[1]),
-						request,
-						env
-					)
-				: withCors(methodNotAllowed('GET'), request, env);
+			if (request.method !== 'GET') return withCors(methodNotAllowed('GET'), request, env);
+			return withCors(
+				await safeRoute(() => routeDownloadSimfile(request, env, ctx, downloadMatch[1])),
+				request,
+				env
+			);
 		}
 
 		if (url.pathname === '/upload') {
-			return request.method === 'POST'
-				? withCors(await routeUpload(request, env, ctx), request, env)
-				: withCors(methodNotAllowed('POST'), request, env);
+			if (request.method !== 'POST') return withCors(methodNotAllowed('POST'), request, env);
+			return withCors(await safeRoute(() => routeUpload(request, env, ctx)), request, env);
 		}
 
 		return withCors(new Response('Not Found', { status: 404 }), request, env);

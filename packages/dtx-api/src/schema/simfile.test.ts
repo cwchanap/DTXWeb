@@ -437,6 +437,17 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedHasUploaded).toHaveBeenCalledWith(expect.anything(), 42);
 		expect(result.data?.simfile).toEqual({ hasUploadedFiles: true });
 	});
+
+	it('returns false for hasUploadedFiles when R2 enrichment fails', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedHasUploaded.mockRejectedValue(new Error('R2 listing failed'));
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { hasUploadedFiles } }'
+		});
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({ hasUploadedFiles: false });
+	});
 });
 
 const { updateSimfile } = await import('@dtx/common/server');

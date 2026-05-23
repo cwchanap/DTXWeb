@@ -11,16 +11,17 @@ const downloadSimfilePattern = /^\/downloads\/(\d+)$/;
 const methodNotAllowed = (allow: string) =>
 	new Response('Method Not Allowed', { status: 405, headers: { Allow: allow } });
 
-const internalError = new Response(JSON.stringify({ error: 'Internal Server Error' }), {
-	status: 500,
-	headers: { 'content-type': 'application/json' }
-});
+const internalError = () =>
+	new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+		status: 500,
+		headers: { 'content-type': 'application/json' }
+	});
 
 const safeRoute = async (fn: () => Promise<Response>): Promise<Response> => {
 	try {
 		return await fn();
 	} catch {
-		return internalError;
+		return internalError();
 	}
 };
 

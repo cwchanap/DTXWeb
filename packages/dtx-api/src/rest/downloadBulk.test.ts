@@ -61,6 +61,18 @@ const jsonReq = (body: unknown, search = '') =>
 		body: JSON.stringify(body)
 	});
 
+const formReq = (ids: (string | number)[], search = '') => {
+	const params = new URLSearchParams();
+	for (const id of ids) {
+		params.append('ids', String(id));
+	}
+	return new Request(`http://api/downloads/bulk${search}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/x-www-form-urlencoded' },
+		body: params.toString()
+	});
+};
+
 beforeEach(() => {
 	mockedGetOwner.mockReset();
 	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
@@ -128,6 +140,35 @@ describe('POST /downloads/bulk', () => {
 		expect(response.status).toBe(200);
 		const body = (await response.json()) as { ok: boolean; fileCount: number };
 		expect(body).toEqual({ ok: true, fileCount: 1 });
+		expect(mockedRate).toHaveBeenCalledWith(
+			expect.anything(),
+			'pre-prod:downloads:1.2.3.4',
+			100,
+			undefined,
+			false
+		);
+	});
+
+	it('429 on validate-only when rate limit exceeded', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
+		const response = await routeDownloadBulk(jsonReq({ ids: [1] }, '?validate=1'), makeEnv());
+		expect(response.status).toBe(429);
+	});
+
+	it('accepts form-urlencoded body', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(formReq([1, 2]), makeEnv());
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toBe('application/zip');
+	});
+
+	it('accepts form-urlencoded body for validate-only', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(formReq([1], '?validate=1'), makeEnv());
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { ok: boolean; fileCount: number };
+		expect(body).toEqual({ ok: true, fileCount: 1 });
 	});
 
 	it('401 when anonymous and PUBLIC_ENABLE_BLOG_DOWNLOAD is false', async () => {
@@ -182,5 +223,17 @@ describe('POST /downloads/bulk', () => {
 		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());
 		expect(response.status).toBe(429);
+	});
+
+	it('consumes rate limit for non-validate requests', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());
+		expect(mockedRate).toHaveBeenCalledWith(
+			expect.anything(),
+			'pre-prod:downloads:1.2.3.4',
+			100,
+			undefined,
+			true
+		);
 	});
 });

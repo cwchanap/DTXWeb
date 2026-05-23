@@ -736,7 +736,7 @@ describe('Mutation.deleteSimfile', () => {
 		expect(mockedDelete).not.toHaveBeenCalled();
 	});
 
-	it('throws INTERNAL when some R2 deletes fail', async () => {
+	it('continues DB deletion after partial R2 delete failures', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
 		mockedGetSimfile.mockResolvedValue({ id: 42 } as never);
 		const listMock = vi.fn(async () => ({
@@ -749,11 +749,12 @@ describe('Mutation.deleteSimfile', () => {
 			if (deleteCall === 2) throw new Error('R2 delete failed');
 		});
 		const r2 = { list: listMock, delete: deleteMock } as unknown as R2Bucket;
+		mockedDelete.mockResolvedValue(undefined as never);
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
 			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
 		});
-		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
-		expect(mockedDelete).not.toHaveBeenCalled();
+		expect(result.data?.deleteSimfile).toEqual({ id: '42', deleted: true });
+		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 42);
 	});
 });

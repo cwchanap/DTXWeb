@@ -52,7 +52,7 @@ export const routeDownloadSimfile = async (
 	if (ip) {
 		const { allowed } = await tryConsumeRateLimit(
 			env.RATE_LIMIT_API,
-			`${env.RATE_LIMIT_ENV}:single:${ip}`,
+			`${env.RATE_LIMIT_ENV}:downloads:${ip}`,
 			estimatedBytes
 		);
 		if (!allowed) {

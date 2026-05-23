@@ -104,7 +104,7 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 	if (ip) {
 		const { allowed } = await tryConsumeRateLimit(
 			env.RATE_LIMIT_API,
-			`${env.RATE_LIMIT_ENV}:bulk:${ip}`,
+			`${env.RATE_LIMIT_ENV}:downloads:${ip}`,
 			estimatedBytes
 		);
 		if (!allowed) {

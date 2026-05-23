@@ -124,7 +124,11 @@ describe('GET /downloads/:id', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('application/zip');
 		expect(response.headers.get('content-disposition')).toContain('chart-42.zip');
-		expect(mockedRate).toHaveBeenCalledWith(expect.anything(), 'pre-prod:single:1.2.3.4', 100);
+		expect(mockedRate).toHaveBeenCalledWith(
+			expect.anything(),
+			'pre-prod:downloads:1.2.3.4',
+			100
+		);
 	});
 
 	it('404 when accessible simfile has no downloadable files', async () => {

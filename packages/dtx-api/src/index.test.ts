@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker from './index';
 import type { Env } from './env';
 
@@ -225,6 +225,7 @@ describe('Phase 2 routes', () => {
 		const { getSimfileOwner } = await import('@dtx/common/server');
 		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('R2 listing failed'));
 
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
 			PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true',
 			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
@@ -246,5 +247,8 @@ describe('Phase 2 routes', () => {
 		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
 		const body = (await response.json()) as { error: string };
 		expect(body.error).toBe('Internal Server Error');
+		expect(errorSpy).toHaveBeenCalledTimes(1);
+		expect(errorSpy.mock.calls[0][1]).instanceof(Error);
+		errorSpy.mockRestore();
 	});
 });

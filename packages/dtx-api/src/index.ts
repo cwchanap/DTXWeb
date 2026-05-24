@@ -20,7 +20,8 @@ const internalError = () =>
 const safeRoute = async (fn: () => Promise<Response>): Promise<Response> => {
 	try {
 		return await fn();
-	} catch {
+	} catch (err) {
+		console.error('Unhandled error in route handler:', err);
 		return internalError();
 	}
 };

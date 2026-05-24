@@ -164,4 +164,20 @@ describe('GET /downloads/:id', () => {
 		// HEAD checks should NOT run when rate limit blocks the download
 		expect(mockedValidateZipSources).not.toHaveBeenCalled();
 	});
+
+	it('400 when client IP is unavailable', async () => {
+		const { getClientIp } = await import('@dtx/common/server');
+		vi.mocked(getClientIp).mockReturnValueOnce(null);
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadSimfile(
+			req(),
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' }),
+			makeCtx(),
+			'42'
+		);
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error: 'Unable to determine client IP for rate limiting.'
+		});
+	});
 });

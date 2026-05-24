@@ -20,6 +20,7 @@ export type Ctx = {
 	logger: WorkerLogger;
 	ownerByIdCache: Map<string, OwnerCacheEntry | null>;
 	hasUploadedFilesCache: Map<number, Promise<boolean>>;
+	filesCache: Map<number, Promise<import('./services/r2Enrichment').R2FileEntry[]>>;
 };
 
 export const createContext = async (request: Request, env: Env): Promise<Ctx> => {
@@ -34,6 +35,7 @@ export const createContext = async (request: Request, env: Env): Promise<Ctx> =>
 		request,
 		logger: workerLogger,
 		ownerByIdCache: new Map(),
-		hasUploadedFilesCache: new Map()
+		hasUploadedFilesCache: new Map(),
+		filesCache: new Map()
 	};
 };

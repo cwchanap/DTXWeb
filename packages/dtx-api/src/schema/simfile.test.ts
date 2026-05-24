@@ -56,6 +56,7 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	logger: workerLogger,
 	ownerByIdCache: new Map(),
 	hasUploadedFilesCache: new Map(),
+	filesCache: new Map(),
 	...overrides
 });
 
@@ -415,20 +416,23 @@ describe('Mutation.createSimfile', () => {
 vi.mock('../services/r2Enrichment', () => ({
 	enrichFiles: vi.fn(),
 	enrichHasUploadedFiles: vi.fn(),
-	batchEnrichHasUploadedFiles: vi.fn(async () => new Map())
+	batchEnrichHasUploadedFiles: vi.fn(async () => new Map()),
+	batchEnrichFiles: vi.fn(async () => new Map())
 }));
 
-const { enrichFiles, enrichHasUploadedFiles, batchEnrichHasUploadedFiles } =
+const { enrichFiles, enrichHasUploadedFiles, batchEnrichHasUploadedFiles, batchEnrichFiles } =
 	await import('../services/r2Enrichment');
 const mockedFiles = vi.mocked(enrichFiles);
 const mockedHasUploaded = vi.mocked(enrichHasUploadedFiles);
 const mockedBatchHasUploaded = vi.mocked(batchEnrichHasUploadedFiles);
+const mockedBatchFiles = vi.mocked(batchEnrichFiles);
 
 describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 	beforeEach(() => {
 		mockedFiles.mockReset();
 		mockedHasUploaded.mockReset();
 		mockedBatchHasUploaded.mockReset().mockResolvedValue(new Map());
+		mockedBatchFiles.mockReset().mockResolvedValue(new Map());
 	});
 
 	it('does not call enrichFiles when files is not selected', async () => {
@@ -501,6 +505,34 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedBatchHasUploaded).toHaveBeenCalledWith(expect.anything(), [1, 2]);
 		// Per-row enrichment should NOT be called (batch handled it)
 		expect(mockedHasUploaded).not.toHaveBeenCalled();
+	});
+
+	it('uses batch enrichment for files in list queries', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		const sim2 = { ...publishedSimfile, id: 2 };
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchFiles.mockResolvedValue(
+			new Map<number, Array<{ key: string; size: number; uploaded: string }>>([
+				[1, [{ key: '1/a.dtx', size: 10, uploaded: '2026-05-19T00:00:00Z' }]],
+				[2, []]
+			])
+		);
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { files { key size uploaded } } } }'
+		});
+
+		const simfilesResult = result.data?.simfiles as
+			| { data: Array<{ files: Array<{ key: string; size: number; uploaded: string }> }> }
+			| undefined;
+		expect(simfilesResult?.data).toEqual([
+			{ files: [{ key: '1/a.dtx', size: 10, uploaded: '2026-05-19T00:00:00Z' }] },
+			{ files: [] }
+		]);
+		// Batch enrichment should be called once with all simfile IDs
+		expect(mockedBatchFiles).toHaveBeenCalledWith(expect.anything(), [1, 2]);
+		// Per-row enrichment should NOT be called (batch handled it)
+		expect(mockedFiles).not.toHaveBeenCalled();
 	});
 });
 

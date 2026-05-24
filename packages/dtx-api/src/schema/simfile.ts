@@ -13,7 +13,8 @@ import { builder } from './builder';
 import {
 	enrichFiles,
 	enrichHasUploadedFiles,
-	batchEnrichHasUploadedFiles
+	batchEnrichHasUploadedFiles,
+	batchEnrichFiles
 } from '../services/r2Enrichment';
 import { createSimfileWithDtx } from '../services/createSimfile';
 
@@ -60,7 +61,18 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		dtxFiles: t.field({ type: [DtxFile], resolve: (s) => s.dtx_files }),
 		files: t.field({
 			type: [R2File],
-			resolve: (s, _args, ctx) => enrichFiles(ctx.r2, s.id)
+			resolve: async (s, _args, ctx) => {
+				// Check request-scoped cache first (populated by connection-level
+				// batch for list queries, or by a previous per-row call).
+				const cached = ctx.filesCache.get(s.id);
+				if (cached) {
+					return cached;
+				}
+				// Single simfile query or cache miss: resolve individually.
+				const promise = enrichFiles(ctx.r2, s.id).catch(() => []);
+				ctx.filesCache.set(s.id, promise);
+				return promise;
+			}
 		}),
 		hasUploadedFiles: t.boolean({
 			resolve: async (s, _args, ctx) => {
@@ -108,6 +120,19 @@ export const SimfileConnectionRef = builder
 							ctx.hasUploadedFilesCache.set(
 								s.id,
 								batchPromise.then((map) => map.get(s.id) ?? false)
+							);
+						}
+
+						// Pre-populate filesCache with batched R2 lookups, same
+						// bounded-concurrency pattern as hasUploadedFiles above.
+						const filesBatchPromise = batchEnrichFiles(
+							ctx.r2,
+							c.data.map((s) => s.id)
+						);
+						for (const s of c.data) {
+							ctx.filesCache.set(
+								s.id,
+								filesBatchPromise.then((map) => map.get(s.id) ?? [])
 							);
 						}
 					}

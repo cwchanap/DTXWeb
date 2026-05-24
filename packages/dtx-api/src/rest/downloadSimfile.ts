@@ -49,15 +49,16 @@ export const routeDownloadSimfile = async (
 	}
 
 	const ip = getClientIp(request);
-	if (ip) {
-		const { allowed } = await tryConsumeRateLimit(
-			env.RATE_LIMIT_API,
-			`${env.RATE_LIMIT_ENV}:downloads:${ip}`,
-			estimatedBytes
-		);
-		if (!allowed) {
-			return jsonError(429, 'Rate limit exceeded. Please try again later.');
-		}
+	if (!ip) {
+		return jsonError(400, 'Unable to determine client IP for rate limiting.');
+	}
+	const { allowed } = await tryConsumeRateLimit(
+		env.RATE_LIMIT_API,
+		`${env.RATE_LIMIT_ENV}:downloads:${ip}`,
+		estimatedBytes
+	);
+	if (!allowed) {
+		return jsonError(429, 'Rate limit exceeded. Please try again later.');
 	}
 
 	const response = await buildValidatedZipResponse(env.DTXFILE_BUCKET, sources, {

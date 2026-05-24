@@ -87,6 +87,28 @@ describe('POST /upload', () => {
 		expect(ctx.waitUntil).toHaveBeenCalled();
 	});
 
+	it('URL-encodes R2 key segments for cache purge', async () => {
+		mockedVerify.mockResolvedValue({
+			user: { id: 'u1' },
+			session: {}
+		} as Awaited<ReturnType<typeof verifyToken>>);
+		mockedUpload.mockResolvedValue(
+			new Response(JSON.stringify({ file: { key: '42/my song file.dtx' } }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		const ctx = makeCtx();
+		await routeUpload(multipartReq(), makeEnv(), ctx);
+		expect(ctx.waitUntil).toHaveBeenCalled();
+		// purgeCacheForFile should be called with URL-encoded path
+		expect(mockedPurge).toHaveBeenCalledWith(
+			expect.anything(),
+			'https://files.example/42/my%20song%20file.dtx',
+			expect.anything()
+		);
+	});
+
 	it('400 when form is missing required parts', async () => {
 		mockedVerify.mockResolvedValue({
 			user: { id: 'u1' },

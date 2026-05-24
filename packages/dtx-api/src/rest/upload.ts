@@ -40,7 +40,10 @@ export const routeUpload = async (
 			const key = body.file?.key;
 			if (key && env.PUBLIC_SIMFILE_BUCKET_URL) {
 				const base = env.PUBLIC_SIMFILE_BUCKET_URL.replace(/\/$/, '');
-				const fileUrl = `${base}/${key}`;
+				// Encode each path segment so special characters (spaces, #, ?, non-ASCII)
+				// match the URL clients actually request from the public bucket.
+				const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+				const fileUrl = `${base}/${encodedKey}`;
 				ctx.waitUntil(
 					purgeCacheForFile(env, fileUrl, workerLogger).catch((err: unknown) => {
 						workerLogger.error('Unexpected error in cache purge', {

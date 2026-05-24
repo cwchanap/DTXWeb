@@ -103,7 +103,7 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 					return cached;
 				}
 				// Single simfile query or cache miss: resolve individually.
-				const promise = enrichFiles(ctx.r2, s.id).catch(() => []);
+				const promise = enrichFiles(ctx.r2, s.id);
 				ctx.filesCache.set(s.id, promise);
 				return promise;
 			}

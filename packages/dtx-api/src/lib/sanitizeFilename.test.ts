@@ -23,6 +23,13 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('../audio/song.wav')).toBe('audio/song.wav');
 	});
 
+	it('removes trailing parent-directory segments (foo/..)', () => {
+		expect(sanitizeFilename('foo/..')).toBe('foo');
+		expect(sanitizeFilename('audio/bar/..')).toBe('audio/bar');
+		expect(sanitizeFilename('foo\\..')).toBe('foo');
+		expect(sanitizeFilename('foo/bar/../..')).toBe('foo/bar');
+	});
+
 	it('removes path traversal sequences (..\\)', () => {
 		expect(sanitizeFilename('..\\secret.txt')).toBe('secret.txt');
 		expect(sanitizeFilename('audio\\..\\song.wav')).toBe('audio/song.wav');

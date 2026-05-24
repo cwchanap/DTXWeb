@@ -149,7 +149,7 @@ describe('Phase 2 routes', () => {
 	});
 
 	it('POST /downloads/bulk dispatches to downloadBulk route', async () => {
-		const env = makeEnv();
+		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
 		const response = await worker.fetch(
 			new Request('http://api/downloads/bulk', {
 				method: 'POST',

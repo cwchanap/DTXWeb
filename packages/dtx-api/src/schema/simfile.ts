@@ -1,4 +1,4 @@
-import { GraphQLError, type GraphQLResolveInfo, type FieldNode } from 'graphql';
+import { GraphQLError, type GraphQLResolveInfo, type SelectionNode } from 'graphql';
 import {
 	getSimfile,
 	getNextDisplayId,
@@ -22,17 +22,34 @@ import { createSimfileWithDtx } from '../services/createSimfile';
  * Checks whether a given field name appears in the selection set of the
  * current field's return type. Used to gate expensive batched R2 lookups
  * so they only fire when the client actually requests the field.
+ *
+ * Resolves fragment spreads and inline fragments recursively so that fields
+ * selected via fragments are detected. `__typename` is explicitly skipped
+ * to avoid false positives from auto-injected introspection fields.
  */
 const isFieldSelected = (info: GraphQLResolveInfo, fieldName: string): boolean => {
 	const fieldNodes = info.fieldNodes;
 	if (!fieldNodes.length) return false;
 	const selectionSet = fieldNodes[0].selectionSet;
 	if (!selectionSet) return false;
-	return selectionSet.selections.some(
-		(sel): sel is FieldNode =>
-			sel.kind === 'Field' &&
-			(sel.name.value === fieldName || sel.name.value === '__typename')
-	);
+
+	const checkSelections = (selections: readonly SelectionNode[]): boolean =>
+		selections.some((sel) => {
+			switch (sel.kind) {
+				case 'Field':
+					return sel.name.value === fieldName;
+				case 'FragmentSpread': {
+					const fragment = info.fragments[sel.name.value];
+					return fragment ? checkSelections(fragment.selectionSet.selections) : false;
+				}
+				case 'InlineFragment':
+					return checkSelections(sel.selectionSet.selections);
+				default:
+					return false;
+			}
+		});
+
+	return checkSelections(selectionSet.selections);
 };
 
 // --- enums ---

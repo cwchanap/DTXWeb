@@ -561,6 +561,34 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedBatchHasUploaded).toHaveBeenCalledWith(expect.anything(), [1]);
 		expect(mockedBatchFiles).not.toHaveBeenCalled();
 	});
+
+	it('does not trigger batch enrichment when __typename is in selection but files/hasUploadedFiles are not', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
+
+		await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 1) { data { id title __typename } count } }'
+		});
+
+		expect(mockedBatchHasUploaded).not.toHaveBeenCalled();
+		expect(mockedBatchFiles).not.toHaveBeenCalled();
+	});
+
+	it('resolves fields selected via fragment spread for batch enrichment', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
+		mockedBatchHasUploaded.mockResolvedValue(new Map([[1, true]]));
+
+		await runQuery(makeCtx(), {
+			query: `
+				fragment SimFields on Simfile { id hasUploadedFiles }
+				{ simfiles(scope: PUBLISHED, pageSize: 1) { data { ...SimFields } count } }
+			`
+		});
+
+		expect(mockedBatchHasUploaded).toHaveBeenCalledWith(expect.anything(), [1]);
+		expect(mockedBatchFiles).not.toHaveBeenCalled();
+	});
 });
 
 const { updateSimfile } = await import('@dtx/common/server');

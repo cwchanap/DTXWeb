@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { enrichFiles, enrichHasUploadedFiles, batchEnrichHasUploadedFiles } from './r2Enrichment';
+import {
+	enrichFiles,
+	enrichHasUploadedFiles,
+	batchEnrichHasUploadedFiles,
+	batchEnrichFiles
+} from './r2Enrichment';
 import type { R2Bucket } from '@cloudflare/workers-types';
 
 const makeBucket = (
@@ -153,7 +158,7 @@ describe('batchEnrichHasUploadedFiles', () => {
 		expect(result.size).toBe(0);
 	});
 
-	it('sets false for simfiles whose R2 check throws', async () => {
+	it('throws when R2 check fails for any simfile in the batch', async () => {
 		const listMock = vi.fn(async (opts: { prefix: string }) => {
 			if (opts.prefix === '1/') {
 				throw new Error('R2 error');
@@ -165,8 +170,51 @@ describe('batchEnrichHasUploadedFiles', () => {
 		});
 		const bucket = { list: listMock } as unknown as R2Bucket;
 
-		const result = await batchEnrichHasUploadedFiles(bucket, [1, 2]);
-		expect(result.get(1)).toBe(false);
-		expect(result.get(2)).toBe(true);
+		await expect(batchEnrichHasUploadedFiles(bucket, [1, 2])).rejects.toThrow('R2 error');
+	});
+});
+
+describe('batchEnrichFiles', () => {
+	it('returns a Map with file entries for all simfile IDs', async () => {
+		const listMock = vi.fn(async (opts: { prefix: string }) => {
+			if (opts.prefix === '1/') {
+				return {
+					objects: [
+						{ key: '1/song.dtx', size: 100, uploaded: new Date('2026-05-19T00:00:00Z') }
+					],
+					truncated: false
+				};
+			}
+			return { objects: [], truncated: false };
+		});
+		const bucket = { list: listMock } as unknown as R2Bucket;
+
+		const result = await batchEnrichFiles(bucket, [1, 2]);
+		expect(result).toBeInstanceOf(Map);
+		expect(result.get(1)).toEqual([
+			{ key: '1/song.dtx', size: 100, uploaded: '2026-05-19T00:00:00.000Z' }
+		]);
+		expect(result.get(2)).toEqual([]);
+	});
+
+	it('returns empty Map for empty input', async () => {
+		const bucket = {} as unknown as R2Bucket;
+		const result = await batchEnrichFiles(bucket, []);
+		expect(result.size).toBe(0);
+	});
+
+	it('throws when R2 check fails for any simfile in the batch', async () => {
+		const listMock = vi.fn(async (opts: { prefix: string }) => {
+			if (opts.prefix === '1/') {
+				throw new Error('R2 listing failed');
+			}
+			return {
+				objects: [{ key: '2/song.dtx', size: 100, uploaded: new Date() }],
+				truncated: false
+			};
+		});
+		const bucket = { list: listMock } as unknown as R2Bucket;
+
+		await expect(batchEnrichFiles(bucket, [1, 2])).rejects.toThrow('R2 listing failed');
 	});
 });

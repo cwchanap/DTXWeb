@@ -184,6 +184,9 @@ describe('POST /downloads/bulk', () => {
 			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
 		);
 		expect(response.status).toBe(401);
+		// Verify auth was checked before body parsing — owner lookup should
+		// never be reached when the early auth gate rejects.
+		expect(mockedGetOwner).not.toHaveBeenCalled();
 	});
 
 	it('200 streams ZIP for accessible ids', async () => {

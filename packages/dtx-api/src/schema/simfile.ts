@@ -521,19 +521,25 @@ builder.mutationField('deleteSimfile', (t) =>
 				}
 			}
 
-			// Phase 2: delete collected keys. Log failures but always remove the
-			// DB row — a simfile with missing backing files is worse than a clean delete.
-			if (allKeys.length > 0) {
-				const results = await Promise.allSettled(allKeys.map((key) => ctx.r2.delete(key)));
+			// Phase 2: delete collected keys in bounded chunks to avoid exhausting
+			// Worker memory or R2 subrequest concurrency. Log failures but always
+			// remove the DB row — a simfile with missing backing files is worse
+			// than a clean delete.
+			const DELETE_CHUNK_SIZE = 50;
+			const allFailures: string[] = [];
+			for (let i = 0; i < allKeys.length; i += DELETE_CHUNK_SIZE) {
+				const chunk = allKeys.slice(i, i + DELETE_CHUNK_SIZE);
+				const results = await Promise.allSettled(chunk.map((key) => ctx.r2.delete(key)));
 				const failed = results
-					.map((r, i) => (r.status === 'rejected' ? allKeys[i] : null))
+					.map((r, j) => (r.status === 'rejected' ? chunk[j] : null))
 					.filter((k): k is string => k !== null);
-				if (failed.length > 0) {
-					ctx.logger.error('R2 delete failed for some objects while deleting simfile', {
-						simfileId: numeric,
-						failedKeys: failed
-					});
-				}
+				allFailures.push(...failed);
+			}
+			if (allFailures.length > 0) {
+				ctx.logger.error('R2 delete failed for some objects while deleting simfile', {
+					simfileId: numeric,
+					failedKeys: allFailures
+				});
 			}
 
 			try {

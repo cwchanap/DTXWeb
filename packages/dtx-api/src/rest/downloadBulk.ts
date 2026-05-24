@@ -58,6 +58,17 @@ const parseRequestBody = async (request: Request): Promise<{ ids?: unknown }> =>
 };
 
 export const routeDownloadBulk = async (request: Request, env: Env): Promise<Response> => {
+	const blogDownloadEnabled = env.PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
+
+	// When public downloads are disabled, reject anonymous requests before
+	// parsing the body to avoid wasting CPU/memory on large payloads.
+	if (!blogDownloadEnabled) {
+		const earlyAuth = await verifyToken(request, env);
+		if (!earlyAuth?.user) {
+			return jsonError(401, 'Unauthorized');
+		}
+	}
+
 	let payload: { ids?: unknown };
 	try {
 		payload = await parseRequestBody(request);
@@ -78,7 +89,7 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 	const auth = await verifyToken(request, env);
 	const user = auth?.user ?? null;
 
-	if (!user && env.PUBLIC_ENABLE_BLOG_DOWNLOAD !== 'true') {
+	if (!user && !blogDownloadEnabled) {
 		return jsonError(401, 'Unauthorized');
 	}
 

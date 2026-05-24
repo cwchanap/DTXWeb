@@ -46,11 +46,7 @@ export const batchEnrichFiles = async (
 		while (nextIndex < simfileIds.length) {
 			const idx = nextIndex++;
 			const id = simfileIds[idx];
-			try {
-				results.set(id, await enrichFiles(bucket, id));
-			} catch {
-				results.set(id, []);
-			}
+			results.set(id, await enrichFiles(bucket, id));
 		}
 	};
 
@@ -114,11 +110,7 @@ export const batchEnrichHasUploadedFiles = async (
 		while (nextIndex < simfileIds.length) {
 			const idx = nextIndex++;
 			const id = simfileIds[idx];
-			try {
-				results.set(id, await enrichHasUploadedFiles(bucket, id));
-			} catch {
-				results.set(id, false);
-			}
+			results.set(id, await enrichHasUploadedFiles(bucket, id));
 		}
 	};
 

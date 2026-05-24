@@ -24,20 +24,19 @@ import { createSimfileWithDtx } from '../services/createSimfile';
  * so they only fire when the client actually requests the field.
  *
  * Resolves fragment spreads and inline fragments recursively so that fields
- * selected via fragments are detected. `__typename` is explicitly skipped
- * to avoid false positives from auto-injected introspection fields.
+ * selected via fragments are detected. Walks all fieldNodes (not just the
+ * first) to handle merged fragments correctly. `__typename` fields are
+ * skipped to avoid false positives from auto-injected introspection fields.
  */
 const isFieldSelected = (info: GraphQLResolveInfo, fieldName: string): boolean => {
 	const fieldNodes = info.fieldNodes;
 	if (!fieldNodes.length) return false;
-	const selectionSet = fieldNodes[0].selectionSet;
-	if (!selectionSet) return false;
 
 	const checkSelections = (selections: readonly SelectionNode[]): boolean =>
 		selections.some((sel) => {
 			switch (sel.kind) {
 				case 'Field':
-					return sel.name.value === fieldName;
+					return sel.name.value !== '__typename' && sel.name.value === fieldName;
 				case 'FragmentSpread': {
 					const fragment = info.fragments[sel.name.value];
 					return fragment ? checkSelections(fragment.selectionSet.selections) : false;
@@ -49,7 +48,11 @@ const isFieldSelected = (info: GraphQLResolveInfo, fieldName: string): boolean =
 			}
 		});
 
-	return checkSelections(selectionSet.selections);
+	return fieldNodes.some((node) => {
+		const selectionSet = node.selectionSet;
+		if (!selectionSet) return false;
+		return checkSelections(selectionSet.selections);
+	});
 };
 
 // --- enums ---

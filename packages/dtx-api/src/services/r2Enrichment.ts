@@ -42,7 +42,7 @@ export const batchEnrichFiles = async (
 	if (simfileIds.length === 0) return results;
 
 	let nextIndex = 0;
-	const worker = async () => {
+	const worker: () => Promise<void> = async () => {
 		while (nextIndex < simfileIds.length) {
 			const idx = nextIndex++;
 			const id = simfileIds[idx];
@@ -106,7 +106,7 @@ export const batchEnrichHasUploadedFiles = async (
 	if (simfileIds.length === 0) return results;
 
 	let nextIndex = 0;
-	const worker = async () => {
+	const worker: () => Promise<void> = async () => {
 		while (nextIndex < simfileIds.length) {
 			const idx = nextIndex++;
 			const id = simfileIds[idx];

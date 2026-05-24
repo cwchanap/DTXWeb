@@ -92,4 +92,32 @@ describe('collectZipSources', () => {
 			'chart-2'
 		);
 	});
+
+	it('limits concurrent R2 list calls', async () => {
+		// Use slow mocks to observe concurrency. Track max concurrent calls.
+		let inFlight = 0;
+		let maxInFlight = 0;
+		mockedListAll.mockImplementation(async () => {
+			inFlight++;
+			if (inFlight > maxInFlight) maxInFlight = inFlight;
+			// Yield to let other calls start
+			await new Promise((r) => setTimeout(r, 10));
+			inFlight--;
+			return [{ key: '1/a.dtx', size: 50, uploaded: new Date() }];
+		});
+		mockedCreateZipSources.mockReturnValue([{ objectKey: '1/a.dtx', size: 50, path: 'a.dtx' }]);
+
+		// 8 IDs but concurrency should be capped at 4
+		await collectZipSources({} as R2Bucket, [1, 2, 3, 4, 5, 6, 7, 8]);
+		expect(maxInFlight).toBeLessThanOrEqual(4);
+		expect(mockedListAll).toHaveBeenCalledTimes(8);
+	});
+
+	it('returns empty result for empty simfileIds', async () => {
+		const result = await collectZipSources({} as R2Bucket, []);
+		expect(result.sources).toEqual([]);
+		expect(result.sourcesBySimfile).toEqual([]);
+		expect(result.estimatedBytes).toBe(0);
+		expect(mockedListAll).not.toHaveBeenCalled();
+	});
 });

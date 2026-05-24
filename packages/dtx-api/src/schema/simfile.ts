@@ -248,7 +248,16 @@ builder.queryField('simfile', (t) =>
 					extensions: { code: 'BAD_USER_INPUT' }
 				});
 			}
-			return getSimfile(ctx.db, numeric);
+			const row = await getSimfile(ctx.db, numeric);
+			if (!row) return null;
+			// Defense-in-depth: re-verify visibility after fetch.  If the
+			// simfile was inserted between the publicOrOwner scope check and
+			// here (scope passed because the row was missing), enforce the
+			// same is_published / ownership rules on the actual row.
+			if (!row.is_published && row.user_id !== ctx.user?.id) {
+				return null;
+			}
+			return row;
 		}
 	})
 );

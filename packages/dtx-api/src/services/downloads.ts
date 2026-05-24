@@ -72,19 +72,42 @@ export type CollectZipSourcesOptions = {
 };
 
 /**
+ * Maximum number of concurrent R2 list calls when collecting ZIP sources.
+ * Keeps R2 fan-out bounded even if the caller passes many simfile IDs.
+ */
+const MAX_CONCURRENT_R2_LIST = 4;
+
+/**
  * Phase 1: List R2 objects and collect ZIP sources.
- * This issues R2 list calls (one per simfile) but does NOT validate
- * individual objects with HEAD requests — callers can check rate limits,
- * validation-only mode, etc. before committing to HEAD checks.
+ * This issues R2 list calls (one per simfile) with bounded concurrency
+ * but does NOT validate individual objects with HEAD requests — callers
+ * can check rate limits, validation-only mode, etc. before committing
+ * to HEAD checks.
  */
 export const collectZipSources = async (
 	bucket: R2Bucket,
 	simfileIds: number[],
 	opts: CollectZipSourcesOptions = {}
 ): Promise<CollectedZipSources> => {
-	const objectsPerSimfile = await Promise.all(
-		simfileIds.map((id) => listAllR2Objects(bucket, `${id}/`))
+	const objectsPerSimfile: Awaited<ReturnType<typeof listAllR2Objects>>[] = new Array(
+		simfileIds.length
 	);
+
+	if (simfileIds.length > 0) {
+		let nextIndex = 0;
+		const worker: () => Promise<void> = async () => {
+			while (nextIndex < simfileIds.length) {
+				const idx = nextIndex++;
+				objectsPerSimfile[idx] = await listAllR2Objects(bucket, `${simfileIds[idx]}/`);
+			}
+		};
+
+		await Promise.all(
+			Array.from({ length: Math.min(MAX_CONCURRENT_R2_LIST, simfileIds.length) }, () =>
+				worker()
+			)
+		);
+	}
 
 	const sourcesBySimfile = simfileIds.map((id, i) => ({
 		simfileId: id,

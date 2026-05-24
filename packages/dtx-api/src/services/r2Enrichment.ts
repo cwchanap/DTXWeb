@@ -27,6 +27,39 @@ export const enrichFiles = async (bucket: R2Bucket, simfileId: number): Promise<
 		}));
 };
 
+/**
+ * Batch-enrich `files` for multiple simfiles with bounded concurrency.
+ * Returns a Map of simfileId → R2FileEntry[].
+ *
+ * Mirrors batchEnrichHasUploadedFiles to avoid unbounded R2 fan-out
+ * when GraphQL resolves `files` for a list of simfiles.
+ */
+export const batchEnrichFiles = async (
+	bucket: R2Bucket,
+	simfileIds: number[]
+): Promise<Map<number, R2FileEntry[]>> => {
+	const results = new Map<number, R2FileEntry[]>();
+	if (simfileIds.length === 0) return results;
+
+	let nextIndex = 0;
+	const worker = async () => {
+		while (nextIndex < simfileIds.length) {
+			const idx = nextIndex++;
+			const id = simfileIds[idx];
+			try {
+				results.set(id, await enrichFiles(bucket, id));
+			} catch {
+				results.set(id, []);
+			}
+		}
+	};
+
+	await Promise.all(
+		Array.from({ length: Math.min(MAX_CONCURRENT_R2_LIST, simfileIds.length) }, () => worker())
+	);
+	return results;
+};
+
 export const enrichHasUploadedFiles = async (
 	bucket: R2Bucket,
 	simfileId: number

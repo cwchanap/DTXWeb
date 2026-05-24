@@ -123,6 +123,8 @@ describe('worker fetch router', () => {
 
 describe('Phase 2 routes', () => {
 	it('GET /downloads/123 dispatches to downloadSimfile route', async () => {
+		const { getClientIp } = await import('@dtx/common/server');
+		vi.mocked(getClientIp).mockReturnValueOnce('1.2.3.4');
 		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', { method: 'GET' }),
@@ -131,6 +133,19 @@ describe('Phase 2 routes', () => {
 		);
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('application/zip');
+	});
+
+	it('GET /downloads/123 returns 400 when client IP is unavailable', async () => {
+		// getClientIp is mocked to return null by default
+		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
+		const response = await worker.fetch(
+			new Request('http://api/downloads/123', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { error: string };
+		expect(body.error).toBe('Unable to determine client IP for rate limiting.');
 	});
 
 	it('POST /downloads/bulk dispatches to downloadBulk route', async () => {

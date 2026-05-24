@@ -246,4 +246,15 @@ describe('POST /downloads/bulk', () => {
 			true
 		);
 	});
+
+	it('400 when client IP is unavailable', async () => {
+		const { getClientIp } = await import('@dtx/common/server');
+		vi.mocked(getClientIp).mockReturnValueOnce(null);
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const response = await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error: 'Unable to determine client IP for rate limiting.'
+		});
+	});
 });

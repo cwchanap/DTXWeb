@@ -38,6 +38,7 @@ const baseCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	logger: workerLogger,
 	ownerByIdCache: new Map<string, OwnerCacheEntry | null>(),
 	hasUploadedFilesCache: new Map(),
+	filesCache: new Map(),
 	...overrides
 });
 

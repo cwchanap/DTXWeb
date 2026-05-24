@@ -30,7 +30,7 @@ describe('enrichFiles', () => {
 		]);
 	});
 
-	it('excludes preview files from results', async () => {
+	it('includes preview files in results for asset management', async () => {
 		const bucket = makeBucket([
 			[
 				{ key: '42/song.dtx', size: 1024, uploaded: new Date('2026-05-19T00:00:00Z') },
@@ -40,7 +40,9 @@ describe('enrichFiles', () => {
 		]);
 		const files = await enrichFiles(bucket, 42);
 		expect(files).toEqual([
-			{ key: '42/song.dtx', size: 1024, uploaded: '2026-05-19T00:00:00.000Z' }
+			{ key: '42/song.dtx', size: 1024, uploaded: '2026-05-19T00:00:00.000Z' },
+			{ key: '42/preview.jpg', size: 256, uploaded: '2026-05-19T00:00:00.000Z' },
+			{ key: '42/preview.mp3', size: 128, uploaded: '2026-05-19T00:00:00.000Z' }
 		]);
 	});
 

@@ -18,7 +18,7 @@ export const enrichFiles = async (bucket: R2Bucket, simfileId: number): Promise<
 	const prefix = `${simfileId}/`;
 	const objects = await listAllR2Objects(bucket, prefix);
 	return objects
-		.filter((obj: R2ObjectMeta) => obj.key.length > prefix.length && !isPreviewKey(obj.key))
+		.filter((obj: R2ObjectMeta) => obj.key.length > prefix.length)
 		.map((obj: R2ObjectMeta) => ({
 			key: obj.key,
 			size: obj.size,

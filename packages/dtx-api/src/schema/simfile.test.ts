@@ -533,6 +533,33 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedBatchFiles).toHaveBeenCalledWith(expect.anything(), [1, 2]);
 		// Per-row enrichment should NOT be called (batch handled it)
 		expect(mockedFiles).not.toHaveBeenCalled();
+		// hasUploadedFiles batch should NOT be called (field not selected)
+		expect(mockedBatchHasUploaded).not.toHaveBeenCalled();
+	});
+
+	it('does not call hasUploadedFiles batch when field is not selected', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
+
+		await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 1) { data { id title } count } }'
+		});
+
+		expect(mockedBatchHasUploaded).not.toHaveBeenCalled();
+		expect(mockedBatchFiles).not.toHaveBeenCalled();
+	});
+
+	it('does not call files batch when only hasUploadedFiles is selected', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
+		mockedBatchHasUploaded.mockResolvedValue(new Map([[1, true]]));
+
+		await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 1) { data { hasUploadedFiles } count } }'
+		});
+
+		expect(mockedBatchHasUploaded).toHaveBeenCalledWith(expect.anything(), [1]);
+		expect(mockedBatchFiles).not.toHaveBeenCalled();
 	});
 });
 

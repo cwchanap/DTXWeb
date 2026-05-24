@@ -1,4 +1,4 @@
-import { GraphQLError } from 'graphql';
+import { GraphQLError, type GraphQLResolveInfo, type FieldNode } from 'graphql';
 import {
 	getSimfile,
 	getNextDisplayId,
@@ -17,6 +17,23 @@ import {
 	batchEnrichFiles
 } from '../services/r2Enrichment';
 import { createSimfileWithDtx } from '../services/createSimfile';
+
+/**
+ * Checks whether a given field name appears in the selection set of the
+ * current field's return type. Used to gate expensive batched R2 lookups
+ * so they only fire when the client actually requests the field.
+ */
+const isFieldSelected = (info: GraphQLResolveInfo, fieldName: string): boolean => {
+	const fieldNodes = info.fieldNodes;
+	if (!fieldNodes.length) return false;
+	const selectionSet = fieldNodes[0].selectionSet;
+	if (!selectionSet) return false;
+	return selectionSet.selections.some(
+		(sel): sel is FieldNode =>
+			sel.kind === 'Field' &&
+			(sel.name.value === fieldName || sel.name.value === '__typename')
+	);
+};
 
 // --- enums ---
 
@@ -101,39 +118,30 @@ export const SimfileConnectionRef = builder
 		fields: (t) => ({
 			data: t.field({
 				type: [SimfileRef],
-				resolve: async (c, _args, ctx) => {
-					// Pre-populate hasUploadedFilesCache with batched R2 lookups.
-					// Uses bounded concurrency (MAX_CONCURRENT_R2_LIST=4) to avoid
-					// unbounded R2 fan-out when resolving large pages. Per-row
-					// resolvers read from ctx.hasUploadedFilesCache.
-					//
-					// NOTE: This always fires the batch even when hasUploadedFiles
-					// is not selected. The trade-off is simpler code vs. a small
-					// overhead on list queries that don't select the field. If this
-					// becomes a problem, use GraphQL resolve info to conditionally batch.
+				resolve: async (c, _args, ctx, info) => {
 					if (c.data.length > 0) {
-						const batchPromise = batchEnrichHasUploadedFiles(
-							ctx.r2,
-							c.data.map((s) => s.id)
-						);
-						for (const s of c.data) {
-							ctx.hasUploadedFilesCache.set(
-								s.id,
-								batchPromise.then((map) => map.get(s.id) ?? false)
-							);
+						const ids = c.data.map((s) => s.id);
+
+						// Only batch-enrich hasUploadedFiles when the client selected it.
+						if (isFieldSelected(info, 'hasUploadedFiles')) {
+							const batchPromise = batchEnrichHasUploadedFiles(ctx.r2, ids);
+							for (const s of c.data) {
+								ctx.hasUploadedFilesCache.set(
+									s.id,
+									batchPromise.then((map) => map.get(s.id) ?? false)
+								);
+							}
 						}
 
-						// Pre-populate filesCache with batched R2 lookups, same
-						// bounded-concurrency pattern as hasUploadedFiles above.
-						const filesBatchPromise = batchEnrichFiles(
-							ctx.r2,
-							c.data.map((s) => s.id)
-						);
-						for (const s of c.data) {
-							ctx.filesCache.set(
-								s.id,
-								filesBatchPromise.then((map) => map.get(s.id) ?? [])
-							);
+						// Only batch-enrich files when the client selected it.
+						if (isFieldSelected(info, 'files')) {
+							const filesBatchPromise = batchEnrichFiles(ctx.r2, ids);
+							for (const s of c.data) {
+								ctx.filesCache.set(
+									s.id,
+									filesBatchPromise.then((map) => map.get(s.id) ?? [])
+								);
+							}
 						}
 					}
 					return c.data;

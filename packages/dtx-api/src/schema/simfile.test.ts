@@ -479,6 +479,19 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(result.data?.simfile).toEqual({ hasUploadedFiles: false });
 	});
 
+	it('propagates R2 errors for files instead of returning empty array', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedFiles.mockRejectedValue(new Error('R2 listing failed'));
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { files { key size uploaded } } }'
+		});
+		// The files field should error (not silently return []) so the client
+		// can distinguish a transient R2 failure from a chart with no files.
+		expect(result.errors).toBeDefined();
+		expect(result.errors?.[0]?.message).toContain('R2 listing failed');
+	});
+
 	it('uses batch enrichment for hasUploadedFiles in list queries', async () => {
 		const sim1 = { ...publishedSimfile, id: 1 };
 		const sim2 = { ...publishedSimfile, id: 2 };

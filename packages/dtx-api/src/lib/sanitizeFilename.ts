@@ -9,6 +9,7 @@ export const sanitizeFilename = (filename: string): string => {
 		previousSanitized = sanitized;
 		sanitized = sanitized
 			.replace(/\.\.(?:\/|\\)/g, '')
+			.replace(/[/\\]\.\.$/, '')
 			.replace(/^[/\\]+/, '')
 			.replace(/[/\\]+$/, '');
 	} while (sanitized !== previousSanitized);

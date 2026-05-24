@@ -169,6 +169,41 @@ describe('Query.simfile', () => {
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
 	});
+
+	it('returns null when scope passes but fetched row is private and unowned (TOCTOU)', async () => {
+		// Simulate race: publicOrOwner scope saw null (simfile missing → passes),
+		// but by the time the resolver reads the full row, a private simfile
+		// owned by someone else exists.  The defense-in-depth check must
+		// return null instead of leaking the private data.
+		mockedGetOwner.mockResolvedValue(null);
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			is_published: false,
+			user_id: 'attacker'
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { id } }'
+		});
+		expect(result.data?.simfile).toBeNull();
+		expect(result.errors).toBeUndefined();
+	});
+
+	it('returns null when scope passes (missing) and fetched row is private, even for authed user', async () => {
+		// Same TOCTOU scenario but with an authenticated non-owner.
+		mockedGetOwner.mockResolvedValue(null);
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			is_published: false,
+			user_id: 'attacker'
+		});
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: '{ simfile(id: "42") { id } }'
+		});
+		expect(result.data?.simfile).toBeNull();
+		expect(result.errors).toBeUndefined();
+	});
 });
 
 describe('Query.nextDisplayId', () => {

@@ -62,9 +62,10 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 
 	// When public downloads are disabled, reject anonymous requests before
 	// parsing the body to avoid wasting CPU/memory on large payloads.
+	let auth: Awaited<ReturnType<typeof verifyToken>> | null = null;
 	if (!blogDownloadEnabled) {
-		const earlyAuth = await verifyToken(request, env);
-		if (!earlyAuth?.user) {
+		auth = await verifyToken(request, env);
+		if (!auth?.user) {
 			return jsonError(401, 'Unauthorized');
 		}
 	}
@@ -86,12 +87,13 @@ export const routeDownloadBulk = async (request: Request, env: Env): Promise<Res
 
 	const validateOnly = new URL(request.url).searchParams.get('validate') === '1';
 
-	const auth = await verifyToken(request, env);
-	const user = auth?.user ?? null;
-
-	if (!user && !blogDownloadEnabled) {
-		return jsonError(401, 'Unauthorized');
+	// Reuse the early auth result when available; only verify the token
+	// again when public downloads are enabled (anonymous access allowed,
+	// but a valid token grants access to the user's private charts too).
+	if (!auth) {
+		auth = await verifyToken(request, env);
 	}
+	const user = auth?.user ?? null;
 
 	const access = await resolveAccessibleSimfiles(env.DB, unique, user);
 

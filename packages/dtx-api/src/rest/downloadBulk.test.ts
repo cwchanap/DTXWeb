@@ -189,6 +189,21 @@ describe('POST /downloads/bulk', () => {
 		expect(mockedGetOwner).not.toHaveBeenCalled();
 	});
 
+	it('calls verifyToken only once when early auth succeeds (no blog download)', async () => {
+		const mockUser = { id: 'u1', email: 'a@b.com' };
+		mockedVerify.mockResolvedValue({ user: mockUser, session: {} as never });
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+
+		const response = await routeDownloadBulk(
+			jsonReq({ ids: [1] }, '?validate=1'),
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
+		);
+		expect(response.status).toBe(200);
+		// verifyToken should be called exactly once — the early auth result
+		// is reused rather than making a second round trip.
+		expect(mockedVerify).toHaveBeenCalledTimes(1);
+	});
+
 	it('200 streams ZIP for accessible ids', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1, 2] }), makeEnv());

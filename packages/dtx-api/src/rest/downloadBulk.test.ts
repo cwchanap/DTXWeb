@@ -190,8 +190,10 @@ describe('POST /downloads/bulk', () => {
 	});
 
 	it('calls verifyToken only once when early auth succeeds (no blog download)', async () => {
-		const mockUser = { id: 'u1', email: 'a@b.com' };
-		mockedVerify.mockResolvedValue({ user: mockUser, session: {} as never });
+		mockedVerify.mockResolvedValue({
+			user: { id: 'u1', email: 'a@b.com' },
+			session: {}
+		} as Awaited<ReturnType<typeof verifyToken>>);
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 
 		const response = await routeDownloadBulk(

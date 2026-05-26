@@ -8,8 +8,9 @@ import {
 	parseDtxFiles,
 	getNextDisplayId
 } from './simfile-service';
-import { getSupabaseClient, ensureSupabaseAuth, getCurrentSession } from './auth';
-import { apiGet, apiPost } from './api-client';
+import { getSupabaseClient, ensureSupabaseAuth } from './auth';
+import { listSimfiles, nextDisplayId, createSimfile } from './api-client';
+import { uploadFile } from './upload';
 import { DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
 
 // Mock dependencies
@@ -30,14 +31,20 @@ vi.mock('crypto', () => ({
 
 vi.mock('./auth', () => ({
 	ensureSupabaseAuth: vi.fn(),
-	getSupabaseClient: vi.fn(),
-	getCurrentSession: vi.fn()
+	getSupabaseClient: vi.fn()
 }));
 
 vi.mock('./api-client', () => ({
-	apiGet: vi.fn(),
-	apiPost: vi.fn(),
-	apiPatch: vi.fn()
+	listSimfiles: vi.fn(),
+	nextDisplayId: vi.fn(),
+	createSimfile: vi.fn(),
+	updateSimfile: vi.fn(),
+	deleteSimfile: vi.fn(),
+	simfileSearch: vi.fn()
+}));
+
+vi.mock('./upload', () => ({
+	uploadFile: vi.fn()
 }));
 
 // Use the global Supabase mock
@@ -116,8 +123,6 @@ vi.mock('@dtx/common/server', async (importOriginal) => {
 });
 
 describe('SimFile Service', () => {
-	const fetchMock: Mock = vi.fn();
-
 	// The global mock will be automatically used via vi.mock('@supabase/supabase-js')
 	// We just need to get a reference to it for our test setup
 	const mockSupabaseClient = {
@@ -141,8 +146,6 @@ describe('SimFile Service', () => {
 	beforeEach(() => {
 		// Reset and configure mocks for each test
 		vi.clearAllMocks();
-		fetchMock.mockReset();
-		vi.stubGlobal('fetch', fetchMock);
 
 		// Set up default successful responses
 		mockSupabaseClient.auth.getUser.mockResolvedValue({
@@ -162,25 +165,56 @@ describe('SimFile Service', () => {
 
 		(getSupabaseClient as Mock).mockReturnValue(mockSupabaseClient);
 		(ensureSupabaseAuth as Mock).mockResolvedValue(true);
-		(getCurrentSession as Mock).mockReturnValue({
-			access_token: 'mock-access-token',
-			user: { id: 'user-123' }
-		});
-		(apiGet as Mock).mockResolvedValue({ success: true, data: { data: [], count: 0 } });
-		(apiPost as Mock).mockResolvedValue({
+		(listSimfiles as Mock).mockResolvedValue({ success: true, data: { data: [], count: 0 } });
+		(nextDisplayId as Mock).mockResolvedValue({ success: true, data: 1 });
+		(createSimfile as Mock).mockResolvedValue({
 			success: true,
-			data: { id: 1, title: 'New Song', artist: 'New Artist', bpm: 150 }
+			data: {
+				createSimfile: {
+					id: '1',
+					title: 'New Song',
+					artist: 'New Artist',
+					bpm: 150,
+					displayId: null,
+					userId: 'user-123',
+					isPublished: false,
+					downloadUrl: null,
+					previewUrl: null,
+					videoPreviewUrl: null,
+					publishDate: new Date().toISOString(),
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					dtxFiles: []
+				}
+			}
 		});
-	});
-
-	afterEach(() => {
-		vi.unstubAllGlobals();
+		(uploadFile as Mock).mockResolvedValue({
+			success: true,
+			data: { file: { key: 'mock-key' } }
+		});
 	});
 
 	describe('fetchUserSimFiles', () => {
+		const makeGqlSimfile = (id: string, title: string) => ({
+			id,
+			title,
+			artist: 'Artist',
+			bpm: 120,
+			displayId: null,
+			userId: 'user-1',
+			isPublished: false,
+			downloadUrl: null,
+			previewUrl: null,
+			videoPreviewUrl: null,
+			publishDate: '2024-01-01T00:00:00Z',
+			createdAt: '2024-01-01T00:00:00Z',
+			updatedAt: '2024-01-01T00:00:00Z',
+			dtxFiles: []
+		});
+
 		it('should fetch user simfiles successfully with single page', async () => {
-			const mockSimfiles = [{ id: 'sim-1', title: 'Test Simfile' }];
-			(apiGet as Mock).mockResolvedValue({
+			const mockSimfiles = [makeGqlSimfile('1', 'Test Simfile')];
+			(listSimfiles as Mock).mockResolvedValue({
 				success: true,
 				data: { data: mockSimfiles, count: 1 }
 			});
@@ -191,22 +225,27 @@ describe('SimFile Service', () => {
 			if (!result.success) {
 				throw new Error('Expected success result');
 			}
-			expect(result.data).toEqual(mockSimfiles);
+			// Adapter converts camelCase to snake_case
+			expect(result.data[0].id).toBe(1);
+			expect(result.data[0].title).toBe('Test Simfile');
 			expect(result.fromCache).toBe(false);
-			expect(apiGet).toHaveBeenCalledWith('/api/chart?scope=mine&page=1&pageSize=100');
+			expect(listSimfiles).toHaveBeenCalledWith({
+				scope: 'MINE',
+				page: 1,
+				pageSize: 100
+			});
 		});
 
 		it('should fetch user simfiles with pagination for multiple pages', async () => {
-			const mockSimfiles = Array.from({ length: 150 }, (_, i) => ({
-				id: `sim-${i}`,
-				title: `Song ${i}`
-			}));
+			const makePage = (start: number, count: number) =>
+				Array.from({ length: count }, (_, i) =>
+					makeGqlSimfile(String(start + i), `Song ${start + i}`)
+				);
 
-			// First call returns 100 items and total count 150
-			const firstPageData = mockSimfiles.slice(0, 100);
-			const secondPageData = mockSimfiles.slice(100);
+			const firstPageData = makePage(0, 100);
+			const secondPageData = makePage(100, 50);
 
-			(apiGet as Mock)
+			(listSimfiles as Mock)
 				.mockResolvedValueOnce({
 					success: true,
 					data: { data: firstPageData, count: 150 }
@@ -224,9 +263,17 @@ describe('SimFile Service', () => {
 			}
 			expect(result.data).toHaveLength(150);
 			expect(result.fromCache).toBe(false);
-			expect(apiGet).toHaveBeenCalledTimes(2);
-			expect(apiGet).toHaveBeenNthCalledWith(1, '/api/chart?scope=mine&page=1&pageSize=100');
-			expect(apiGet).toHaveBeenNthCalledWith(2, '/api/chart?scope=mine&page=2&pageSize=100');
+			expect(listSimfiles).toHaveBeenCalledTimes(2);
+			expect(listSimfiles).toHaveBeenNthCalledWith(1, {
+				scope: 'MINE',
+				page: 1,
+				pageSize: 100
+			});
+			expect(listSimfiles).toHaveBeenNthCalledWith(2, {
+				scope: 'MINE',
+				page: 2,
+				pageSize: 100
+			});
 		});
 
 		it('should return an error if authentication is not ready', async () => {
@@ -242,7 +289,10 @@ describe('SimFile Service', () => {
 		});
 
 		it('should return an error if user is not authenticated', async () => {
-			(apiGet as Mock).mockResolvedValue({ success: false, error: 'User not authenticated' });
+			(listSimfiles as Mock).mockResolvedValue({
+				success: false,
+				error: 'User not authenticated'
+			});
 			const result = await fetchUserSimFiles();
 			expect(result.success).toBe(false);
 			if (result.success) {
@@ -254,7 +304,7 @@ describe('SimFile Service', () => {
 		});
 
 		it('should return an error if fetching fails', async () => {
-			(apiGet as Mock).mockResolvedValue({ success: false, error: 'Fetch failed' });
+			(listSimfiles as Mock).mockResolvedValue({ success: false, error: 'Fetch failed' });
 			const result = await fetchUserSimFiles();
 			expect(result.success).toBe(false);
 			if (result.success) {
@@ -266,13 +316,12 @@ describe('SimFile Service', () => {
 		});
 
 		it('should handle pagination error on subsequent pages', async () => {
-			const mockSimfiles = Array.from({ length: 100 }, (_, i) => ({
-				id: `sim-${i}`,
-				title: `Song ${i}`
-			}));
+			const mockSimfiles = Array.from({ length: 100 }, (_, i) =>
+				makeGqlSimfile(String(i), `Song ${i}`)
+			);
 
 			// First call succeeds, second call fails
-			(apiGet as Mock)
+			(listSimfiles as Mock)
 				.mockResolvedValueOnce({
 					success: true,
 					data: { data: mockSimfiles, count: 150 }
@@ -294,15 +343,15 @@ describe('SimFile Service', () => {
 
 	describe('getNextDisplayId', () => {
 		it('returns nextDisplayId from API', async () => {
-			(apiGet as Mock).mockResolvedValue({
+			(nextDisplayId as Mock).mockResolvedValue({
 				success: true,
-				data: { nextDisplayId: 42 }
+				data: 42
 			});
 
 			const result = await getNextDisplayId();
 
 			expect(result).toBe(42);
-			expect(apiGet).toHaveBeenCalledWith('/api/chart/next-display-id');
+			expect(nextDisplayId).toHaveBeenCalled();
 		});
 
 		it('throws when authentication is not ready', async () => {
@@ -313,21 +362,21 @@ describe('SimFile Service', () => {
 		});
 
 		it('throws when API call fails', async () => {
-			(apiGet as Mock).mockResolvedValue({ success: false, error: 'Server error' });
+			(nextDisplayId as Mock).mockResolvedValue({ success: false, error: 'Server error' });
 			await expect(getNextDisplayId()).rejects.toThrow('Server error');
 		});
 
 		it('throws when result.data is missing', async () => {
-			(apiGet as Mock).mockResolvedValue({ success: true, data: undefined });
+			(nextDisplayId as Mock).mockResolvedValue({ success: true, data: undefined });
 			await expect(getNextDisplayId()).rejects.toThrow(
 				'Invalid nextDisplayId in API response'
 			);
 		});
 
 		it('throws when nextDisplayId is not a finite number', async () => {
-			(apiGet as Mock).mockResolvedValue({
+			(nextDisplayId as Mock).mockResolvedValue({
 				success: true,
-				data: { nextDisplayId: Infinity }
+				data: Infinity
 			});
 			await expect(getNextDisplayId()).rejects.toThrow(
 				'Invalid nextDisplayId in API response'
@@ -335,9 +384,9 @@ describe('SimFile Service', () => {
 		});
 
 		it('throws when nextDisplayId is not a number', async () => {
-			(apiGet as Mock).mockResolvedValue({
+			(nextDisplayId as Mock).mockResolvedValue({
 				success: true,
-				data: { nextDisplayId: 'not-a-number' }
+				data: 'not-a-number'
 			});
 			await expect(getNextDisplayId()).rejects.toThrow(
 				'Invalid nextDisplayId in API response'
@@ -409,15 +458,7 @@ describe('SimFile Service', () => {
 			songPath: '/path/to/song'
 		};
 
-		afterEach(() => {
-			// Clean up environment variable after each test
-			delete process.env.VITE_DTX_SERVER_URL;
-		});
-
 		beforeEach(() => {
-			// Set required environment variable for API calls
-			process.env.VITE_DTX_SERVER_URL = 'http://test-server.com';
-
 			mockSupabaseClient.auth.getUser.mockResolvedValue({
 				data: { user: { id: 'user-123' } },
 				error: null
@@ -431,88 +472,38 @@ describe('SimFile Service', () => {
 		});
 
 		it('should create a simfile record successfully with previews', async () => {
-			// Mock fetch for R2 upload API calls
-			fetchMock.mockResolvedValue({ ok: true });
+			const result = await createSimfileRecord(simfileData);
 
-			try {
-				const result = await createSimfileRecord(simfileData);
+			expect(result.success).toBe(true);
+			expect(result.simfileId).toBe('1');
+			expect(createSimfile).toHaveBeenCalledWith(
+				expect.objectContaining({
+					title: 'New Song',
+					artist: 'New Artist',
+					bpm: 150
+				})
+			);
 
-				expect(result.success).toBe(true);
-				expect(result.simfileId).toBe('1');
-				expect(apiPost).toHaveBeenCalledWith('/api/chart', expect.any(Object));
-
-				// Verify fetch was called twice (once for image, once for audio)
-				expect(fetchMock).toHaveBeenCalledTimes(2);
-
-				// Verify that the fetch calls include proper headers
-				fetchMock.mock.calls.forEach((call) => {
-					const options = call[1] ?? {};
-					const headers = (options as RequestInit).headers as Record<string, string>;
-					expect(headers).toBeDefined();
-					// Verify authentication header is included (note: case matters for header names)
-					expect(headers['Authorization']).toBe('Bearer mock-access-token');
-					// Verify desktop app identifiers for CSRF protection
-					expect(headers['User-Agent']).toBe('DTXDesktopApp');
-					expect(headers['X-Requested-With']).toBe('DTXDesktopApp');
-					expect((options as RequestInit).body).toBeInstanceOf(FormData);
-				});
-			} finally {
-				fetchMock.mockReset();
-			}
+			// Verify uploadFile was called twice (once for image, once for audio)
+			expect(uploadFile).toHaveBeenCalledTimes(2);
 		});
 
 		it('should handle errors during file reading gracefully and still succeed', async () => {
-			// Mock fetch for R2 upload API calls
-			fetchMock.mockResolvedValue({ ok: true });
-
-			try {
-				(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
-				const result = await createSimfileRecord(simfileData);
-				expect(result.success).toBe(true); // Continues without previews
-				// No fetch calls for uploads since file reading failed
-				expect(fetchMock).not.toHaveBeenCalled();
-			} finally {
-				fetchMock.mockReset();
-			}
+			(fs.promises.readdir as Mock).mockRejectedValue(new Error('Read error'));
+			const result = await createSimfileRecord(simfileData);
+			expect(result.success).toBe(true); // Continues without previews
+			// No upload calls since file reading failed
+			expect(uploadFile).not.toHaveBeenCalled();
 		});
 
 		it('should return an error if simfile insertion fails', async () => {
-			(apiPost as Mock).mockResolvedValue({ success: false, error: 'Insert failed' });
+			(createSimfile as Mock).mockResolvedValue({ success: false, error: 'Insert failed' });
 			const result = await createSimfileRecord(simfileData);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Insert failed');
 		});
 
-		it('should handle missing authentication gracefully and skip uploads', async () => {
-			// Mock getCurrentSession to return null (no session)
-			(getCurrentSession as Mock).mockReturnValue(null);
-
-			const result = await createSimfileRecord(simfileData);
-
-			expect(result.success).toBe(true);
-			expect(result.simfileId).toBe('1');
-
-			// Verify fetch was NOT called since there's no session
-			expect(fetchMock).not.toHaveBeenCalled();
-		});
-
-		it('should skip uploads when session refresh fails', async () => {
-			fetchMock.mockResolvedValue({ ok: true });
-			mockSupabaseClient.auth.getSession.mockResolvedValue({
-				data: { session: null },
-				error: new Error('Session expired')
-			});
-
-			const result = await createSimfileRecord(simfileData);
-
-			expect(result.success).toBe(true);
-			expect(fetchMock).not.toHaveBeenCalled();
-		});
-
-		it('should create simfile successfully without preview files and no server URL', async () => {
-			// Remove VITE_DTX_SERVER_URL to simulate offline/misconfigured environment
-			delete process.env.VITE_DTX_SERVER_URL;
-
+		it('should create simfile successfully without preview files', async () => {
 			// Mock readdir to return no preview files
 			(fs.promises.readdir as Mock).mockResolvedValue([
 				{ name: 'song.dtx', isFile: () => true }
@@ -523,19 +514,19 @@ describe('SimFile Service', () => {
 			expect(result.success).toBe(true);
 			expect(result.simfileId).toBe('1');
 
-			// Verify fetch was NOT called since there are no preview files
-			expect(fetchMock).not.toHaveBeenCalled();
+			// Verify uploadFile was NOT called since there are no preview files
+			expect(uploadFile).not.toHaveBeenCalled();
 		});
 
-		it('should return error when preview files exist but server URL is invalid', async () => {
-			vi.stubEnv('VITE_DTX_SERVER_URL', 'invalid-url');
-
-			// beforeEach already mocks readdir to return preview.jpg and preview.mp3
+		it('should return warnings when preview upload fails', async () => {
+			(uploadFile as Mock).mockResolvedValue({ success: false, error: 'Upload failed' });
 
 			const result = await createSimfileRecord(simfileData);
 
-			expect(result.success).toBe(false);
-			expect(result.error).toContain('valid absolute URL');
+			expect(result.success).toBe(true);
+			expect(result.simfileId).toBe('1');
+			expect(result.warnings).toBeDefined();
+			expect(result.warnings).toHaveLength(2);
 		});
 	});
 

@@ -1,8 +1,43 @@
 import { type SimfileWithDtx, DTXFile, decodeFileWithEncodingDetection } from '@dtx/common/server';
-import { ensureSupabaseAuth, getSupabaseClient, getCurrentSession } from './auth';
-import { apiGet, apiPost } from './api-client';
+import { ensureSupabaseAuth, getSupabaseClient } from './auth';
+import { listSimfiles, nextDisplayId, createSimfile } from './api-client';
+import { uploadFile } from './upload';
+import { SimfileScope, type CreateSimfileInput } from './graphql/generated/graphql';
 import fs from 'fs';
 import path from 'path';
+
+/** Adapt a GraphQL Simfile (camelCase) to the desktop-facing SimfileWithDtx (snake_case) */
+const toSimfileWithDtx = (s: {
+	id: string;
+	displayId: number | null;
+	title: string;
+	artist: string;
+	bpm: number;
+	userId: string | null;
+	isPublished: boolean;
+	downloadUrl: string | null;
+	previewUrl: string | null;
+	videoPreviewUrl: string | null;
+	publishDate: string;
+	createdAt: string;
+	updatedAt: string;
+	dtxFiles: { level: number; label: string }[];
+}): SimfileWithDtx => ({
+	id: Number(s.id),
+	display_id: s.displayId,
+	title: s.title,
+	artist: s.artist,
+	bpm: s.bpm,
+	user_id: s.userId ?? undefined,
+	is_published: s.isPublished,
+	download_url: s.downloadUrl,
+	preview_url: s.previewUrl,
+	video_preview_url: s.videoPreviewUrl,
+	publish_date: s.publishDate,
+	created_at: s.createdAt,
+	updated_at: s.updatedAt,
+	dtx_files: s.dtxFiles
+});
 
 // SimFile service functions - using discriminated union type
 export type SimFileServiceResult =
@@ -34,31 +69,28 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		let totalCount = 0;
 
 		// Fetch first page to get total count
-		const firstPageResult = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
-			`/api/chart?scope=mine&page=${page}&pageSize=${pageSize}`
-		);
+		const firstPageResult = await listSimfiles({ scope: SimfileScope.Mine, page, pageSize });
 
 		if (!firstPageResult.success) {
-			throw new Error(firstPageResult.error || 'Failed to fetch simFiles');
+			throw new Error(firstPageResult.error);
 		}
 
-		allData = firstPageResult.data.data || [];
-		totalCount = firstPageResult.data.count || 0;
+		const { data: page1Data, count } = firstPageResult.data;
+		allData = (page1Data || []).map(toSimfileWithDtx);
+		totalCount = count || 0;
 
 		// Calculate total pages needed
 		const totalPages = Math.ceil(totalCount / pageSize);
 
 		// Fetch remaining pages if needed
 		for (page = 2; page <= totalPages; page++) {
-			const pageResult = await apiGet<{ data: SimfileWithDtx[]; count: number }>(
-				`/api/chart?scope=mine&page=${page}&pageSize=${pageSize}`
-			);
+			const pageResult = await listSimfiles({ scope: SimfileScope.Mine, page, pageSize });
 
 			if (!pageResult.success) {
-				throw new Error(pageResult.error || 'Failed to fetch simFiles');
+				throw new Error(pageResult.error);
 			}
 
-			allData = allData.concat(pageResult.data.data || []);
+			allData = allData.concat((pageResult.data.data || []).map(toSimfileWithDtx));
 		}
 
 		return {
@@ -83,18 +115,14 @@ export const getNextDisplayId = async (): Promise<number> => {
 		throw new Error('Authentication not available. Please log in first.');
 	}
 
-	const result = await apiGet<{ nextDisplayId: number }>('/api/chart/next-display-id');
+	const result = await nextDisplayId();
 	if (!result.success) {
-		throw new Error(result.error || 'Failed to fetch next display_id');
+		throw new Error(result.error);
 	}
-	if (
-		!result.data ||
-		typeof result.data.nextDisplayId !== 'number' ||
-		!Number.isFinite(result.data.nextDisplayId)
-	) {
+	if (typeof result.data !== 'number' || !Number.isFinite(result.data)) {
 		throw new Error('Invalid nextDisplayId in API response');
 	}
-	return result.data.nextDisplayId;
+	return result.data;
 };
 
 export function getPreviewUrl(simfileId: number): string {
@@ -129,91 +157,26 @@ interface UploadPreviewFileResult {
  * @param simfileId - Simfile ID
  * @param filename - Filename (e.g., 'preview.jpg', 'preview.mp3')
  * @param contentType - MIME type (e.g., 'image/jpeg', 'audio/mpeg')
- * @param apiBaseUrl - Base URL for API
  * @returns Result object with success status and path or error
  */
 async function uploadPreviewFile(
 	buffer: Buffer,
 	simfileId: number,
 	filename: string,
-	contentType: string,
-	apiBaseUrl: string
+	contentType: string
 ): Promise<UploadPreviewFileResult> {
-	try {
-		// Get current session for authentication
-		const session = getCurrentSession();
-		const supabaseClient = getSupabaseClient();
-		if (!session || !supabaseClient) {
-			const error = 'No valid session for file upload';
-			console.error(error);
-			return { success: false, error };
-		}
+	const form = new FormData();
+	const fileBytes = new Uint8Array(buffer.byteLength);
+	fileBytes.set(buffer);
+	form.append('file', new Blob([fileBytes], { type: contentType }), filename);
+	form.append('simFileId', String(simfileId));
 
-		const {
-			data: { session: refreshedSession },
-			error: sessionError
-		} = await supabaseClient.auth.getSession();
-		if (sessionError || !refreshedSession?.access_token) {
-			const error = 'Failed to get valid session for file upload';
-			console.error(error, sessionError);
-			return { success: false, error };
-		}
-
-		// Create FormData for the upload payload
-		const form = new FormData();
-		const fileBytes = new Uint8Array(buffer.byteLength);
-		fileBytes.set(buffer);
-		form.append('file', new Blob([fileBytes], { type: contentType }), filename);
-		form.append('simFileId', String(simfileId));
-
-		// Set up timeout using AbortController
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-		try {
-			const response = await fetch(`${apiBaseUrl}/api/simFile/upload`, {
-				method: 'POST',
-				headers: {
-					// Add authentication header with access token
-					Authorization: `Bearer ${refreshedSession.access_token}`,
-					// Add desktop app identifiers to pass CSRF checks
-					'User-Agent': 'DTXDesktopApp',
-					'X-Requested-With': 'DTXDesktopApp'
-				},
-				body: form,
-				signal: controller.signal
-			});
-
-			if (!response.ok) {
-				let responseBody = '';
-				try {
-					responseBody = await response.text();
-				} catch {
-					// ignore body read failure
-				}
-				const error = `Failed to upload ${filename}: HTTP ${response.status}${responseBody ? ` - ${responseBody}` : ''}`;
-				console.error(error);
-				return { success: false, error };
-			}
-
-			return { success: true, path: `${simfileId}/${filename}` };
-		} finally {
-			clearTimeout(timeoutId);
-		}
-	} catch (error) {
-		let errorMessage: string;
-		if (error instanceof Error) {
-			if (error.name === 'AbortError') {
-				errorMessage = `Upload timeout for ${filename}`;
-			} else {
-				errorMessage = `Upload error for ${filename}: ${error.message}`;
-			}
-		} else {
-			errorMessage = `Upload error for ${filename}: ${String(error)}`;
-		}
-		console.error(errorMessage);
-		return { success: false, error: errorMessage };
+	const uploadResult = await uploadFile(form);
+	if (!uploadResult.success) {
+		console.error(`Failed to upload ${filename}:`, uploadResult.error);
+		return { success: false, error: uploadResult.error };
 	}
+	return { success: true, path: `${simfileId}/${filename}` };
 }
 
 export interface CreateSimfileData {
@@ -296,42 +259,26 @@ export async function createSimfileRecord(
 			}
 		}
 
-		const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL;
-
-		// Validate apiBaseUrl only if preview files need to be uploaded
-		if (
-			(previewBuffer || soundPreviewBuffer) &&
-			(!apiBaseUrl || !apiBaseUrl.startsWith('http'))
-		) {
-			throw new Error(
-				'VITE_DTX_SERVER_URL must be set to a valid absolute URL when preview files are present'
-			);
-		}
-
 		// Create simfile via web API (also creates dtx_files)
-		const apiResult = await apiPost<{
-			id: number;
-			title: string;
-			artist: string;
-			bpm: number;
-			[key: string]: unknown;
-		}>('/api/chart', {
+		const input: CreateSimfileInput = {
 			title: simfileData.title,
 			artist: simfileData.artist,
 			bpm: simfileData.bpm,
 			displayId: simfileData.displayId,
-			isPublished: simfileData.isPublished,
+			isPublished: simfileData.isPublished ?? null,
 			publishDate: simfileData.publishDate,
 			downloadUrl: simfileData.downloadUrl,
 			videoPreviewUrl: simfileData.videoPreviewUrl,
-			levels: simfileData.levels
-		});
+			dtxFiles: simfileData.levels?.map((l) => ({ label: l.label, level: l.level })) ?? null
+		};
+		const apiResult = await createSimfile(input);
 
 		if (!apiResult.success) {
-			throw new Error(apiResult.error || 'Failed to create simfile');
+			throw new Error(apiResult.error);
 		}
 
-		const simfileId = apiResult.data.id;
+		const simfile = apiResult.data.createSimfile;
+		const simfileId = Number(simfile.id);
 
 		// Upload preview files to R2 via API using the helper function
 		const uploadErrors: string[] = [];
@@ -341,8 +288,7 @@ export async function createSimfileRecord(
 				previewBuffer,
 				simfileId,
 				'preview.jpg',
-				'image/jpeg',
-				apiBaseUrl
+				'image/jpeg'
 			);
 			if (!result.success && result.error) {
 				uploadErrors.push(`Preview image: ${result.error}`);
@@ -354,8 +300,7 @@ export async function createSimfileRecord(
 				soundPreviewBuffer,
 				simfileId,
 				'preview.mp3',
-				'audio/mpeg',
-				apiBaseUrl
+				'audio/mpeg'
 			);
 			if (!result.success && result.error) {
 				uploadErrors.push(`Sound preview: ${result.error}`);
@@ -365,7 +310,7 @@ export async function createSimfileRecord(
 		const result: CreateSimfileResult = {
 			success: true,
 			simfileId: String(simfileId),
-			data: apiResult.data
+			data: simfile
 		};
 
 		// Include warnings if preview uploads failed

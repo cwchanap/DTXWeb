@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { Loader } from '@lucide/svelte';
+	import { generateMagicLink } from '$lib/api';
 
 	let redirectToDesktop = $state(false);
 	let isRedirecting = $state(false);
@@ -27,19 +28,7 @@
 
 		try {
 			// Generate magic link for desktop authentication
-			const response = await fetch('/api/auth/generate-magic-link', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.error || 'Failed to generate magic link');
-			}
-
-			const { magicLinkUrl } = await response.json();
+			const { magicLinkUrl } = await generateMagicLink();
 
 			if (!magicLinkUrl) {
 				throw new Error('No magic link received');

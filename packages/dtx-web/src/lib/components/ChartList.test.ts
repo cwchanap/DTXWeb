@@ -6,6 +6,18 @@ const mockToastStore = vi.hoisted(() => ({
 	success: vi.fn()
 }));
 
+const mockApi = vi.hoisted(() => ({
+	listSimfiles: vi.fn().mockResolvedValue({ data: [], count: 0 }),
+	updateSimfile: vi.fn().mockResolvedValue({ id: 1 }),
+	deleteSimfile: vi.fn().mockResolvedValue({ id: 1, deleted: true })
+}));
+
+vi.mock('$lib/api', () => ({
+	listSimfiles: mockApi.listSimfiles,
+	updateSimfile: mockApi.updateSimfile,
+	deleteSimfile: mockApi.deleteSimfile
+}));
+
 vi.mock('svelte-i18n');
 
 vi.mock('@skeletonlabs/skeleton-svelte', () => ({
@@ -71,10 +83,7 @@ const createDownloadResponse = (pipeTo = vi.fn().mockResolvedValue(undefined)): 
 	}) as Response;
 
 const renderChartListWithSelection = async () => {
-	const fetchMock = vi
-		.fn()
-		.mockResolvedValue(createJsonResponse({ data: [mockListedChart], count: 1 }));
-	vi.stubGlobal('fetch', fetchMock);
+	mockApi.listSimfiles.mockResolvedValue({ data: [mockListedChart], count: 1 });
 	Object.defineProperty(window, 'showSaveFilePicker', {
 		configurable: true,
 		value: vi.fn()
@@ -94,7 +103,7 @@ const renderChartListWithSelection = async () => {
 	await fireEvent.click(checkbox);
 	await screen.findByRole('button', { name: /download \(1\)/i });
 
-	return { checkbox, fetchMock };
+	return { checkbox };
 };
 
 describe('ChartList helpers', () => {
@@ -351,12 +360,7 @@ describe('ChartList component bulk download behavior', () => {
 		};
 		const allCharts = [...maxCharts, extraChart];
 
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValue(createJsonResponse({ data: allCharts, count: allCharts.length }))
-		);
+		mockApi.listSimfiles.mockResolvedValue({ data: allCharts, count: allCharts.length });
 		Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: vi.fn() });
 
 		render(ChartList, { props: { isBlog: true, enableDownload: true } });
@@ -394,13 +398,13 @@ describe('ChartList component bulk download behavior', () => {
 			.spyOn(chartListHelpers, 'startBulkDownload')
 			.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'));
 
-		const { fetchMock, checkbox } = await renderChartListWithSelection();
+		const { checkbox } = await renderChartListWithSelection();
 
 		await fireEvent.click(screen.getByRole('button', { name: /download \(1\)/i }));
 
 		await waitFor(() => expect(startBulkDownloadSpy).toHaveBeenCalled());
 
-		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(mockApi.listSimfiles).toHaveBeenCalledTimes(1);
 		expect(mockToastStore.error).not.toHaveBeenCalled();
 		expect(consoleErrorSpy).not.toHaveBeenCalled();
 		expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
@@ -439,13 +443,7 @@ describe('ChartList component bulk download behavior', () => {
 });
 
 const mockFetchSuccess = (data: Record<string, unknown>[] = [], count = 0) => {
-	vi.stubGlobal(
-		'fetch',
-		vi.fn().mockResolvedValue({
-			ok: true,
-			json: vi.fn().mockResolvedValue({ data, count })
-		})
-	);
+	mockApi.listSimfiles.mockResolvedValue({ data, count });
 };
 
 describe('ChartList Rendering', () => {
@@ -463,10 +461,10 @@ describe('ChartList Rendering', () => {
 		expect(screen.getByRole('textbox')).toBeInTheDocument();
 	});
 
-	it('calls fetch to load items on mount', async () => {
+	it('calls listSimfiles to load items on mount', async () => {
 		render(ChartList);
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('/api/chart?'));
+			expect(mockApi.listSimfiles).toHaveBeenCalled();
 		});
 	});
 
@@ -500,8 +498,8 @@ describe('ChartList Rendering', () => {
 	it('uses blog scope when isBlog prop is true', async () => {
 		render(ChartList, { props: { isBlog: true } });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.stringContaining('scope=published')
+			expect(mockApi.listSimfiles).toHaveBeenCalledWith(
+				expect.objectContaining({ scope: 'published' })
 			);
 		});
 	});
@@ -509,42 +507,8 @@ describe('ChartList Rendering', () => {
 	it('uses mine scope when isBlog is false', async () => {
 		render(ChartList, { props: { isBlog: false } });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('scope=mine'));
-		});
-	});
-
-	it('includes check_uploaded=true when isBlog is false (app page)', async () => {
-		render(ChartList, { props: { isBlog: false, enableDownload: false } });
-		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.stringContaining('check_uploaded=true')
-			);
-		});
-	});
-
-	it('includes check_uploaded=true when isBlog is false and enableDownload is true', async () => {
-		render(ChartList, { props: { isBlog: false, enableDownload: true } });
-		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.stringContaining('check_uploaded=true')
-			);
-		});
-	});
-
-	it('includes check_uploaded=true when isBlog is true and enableDownload is false', async () => {
-		render(ChartList, { props: { isBlog: true, enableDownload: false } });
-		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.stringContaining('check_uploaded=true')
-			);
-		});
-	});
-
-	it('includes check_uploaded=true when isBlog is true and enableDownload is true', async () => {
-		render(ChartList, { props: { isBlog: true, enableDownload: true } });
-		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-				expect.stringContaining('check_uploaded=true')
+			expect(mockApi.listSimfiles).toHaveBeenCalledWith(
+				expect.objectContaining({ scope: 'mine' })
 			);
 		});
 	});
@@ -604,36 +568,19 @@ describe('ChartList Rendering', () => {
 	});
 
 	it('shows loading state while fetching', async () => {
-		let resolveFetch!: (value: unknown) => void;
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockReturnValue(
-				new Promise((resolve) => {
-					resolveFetch = resolve;
-				})
-			)
+		let resolveList!: (value: { data: unknown[]; count: number }) => void;
+		mockApi.listSimfiles.mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveList = resolve;
+			})
 		);
 		render(ChartList);
 		expect(screen.getByText('Loading charts...')).toBeInTheDocument();
-		resolveFetch({ ok: true, json: async () => ({ data: [], count: 0 }) });
+		resolveList({ data: [], count: 0 });
 	});
 
-	it('handles fetch error gracefully', async () => {
-		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-		render(ChartList);
-		await waitFor(() => {
-			expect(screen.queryByText('Loading charts...')).not.toBeInTheDocument();
-		});
-	});
-
-	it('handles non-ok fetch response gracefully', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: false,
-				text: vi.fn().mockResolvedValue('Internal Server Error')
-			})
-		);
+	it('handles listSimfiles error gracefully', async () => {
+		mockApi.listSimfiles.mockRejectedValueOnce(new Error('Network error'));
 		render(ChartList);
 		await waitFor(() => {
 			expect(screen.queryByText('Loading charts...')).not.toBeInTheDocument();
@@ -647,15 +594,17 @@ describe('ChartList Rendering', () => {
 		await fireEvent.input(input, { target: { value: 'test' } });
 		vi.advanceTimersByTime(600);
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+			expect(mockApi.listSimfiles).toHaveBeenCalledTimes(2);
 		});
 		vi.useRealTimers();
 	});
 
-	it('passes pageSize prop correctly to fetch', async () => {
+	it('passes pageSize prop correctly to listSimfiles', async () => {
 		render(ChartList, { props: { pageSize: 6 } });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('pageSize=6'));
+			expect(mockApi.listSimfiles).toHaveBeenCalledWith(
+				expect.objectContaining({ pageSize: 6 })
+			);
 		});
 	});
 
@@ -664,7 +613,9 @@ describe('ChartList Rendering', () => {
 		const select = screen.getByRole('combobox');
 		await fireEvent.change(select, { target: { value: '24' } });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('pageSize=24'));
+			expect(mockApi.listSimfiles).toHaveBeenCalledWith(
+				expect.objectContaining({ pageSize: 24 })
+			);
 		});
 	});
 });
@@ -698,15 +649,9 @@ describe('ChartList – handlePageChange via Pagination prop', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('handlePageChange calls fetch with updated page when onPageChange fires', async () => {
+	it('handlePageChange calls listSimfiles with updated page when onPageChange fires', async () => {
 		// Return enough items that totalPages > 1 (count=25, pageSize=12 → 3 pages)
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: true,
-				json: vi.fn().mockResolvedValue({ data: [], count: 25 })
-			})
-		);
+		mockApi.listSimfiles.mockResolvedValue({ data: [], count: 25 });
 
 		render(ChartList);
 
@@ -728,10 +673,10 @@ describe('ChartList – handlePageChange via Pagination prop', () => {
 		const onPageChange = paginationProps?.onPageChange as (e: { page: number }) => void;
 		expect(typeof onPageChange).toBe('function');
 
-		vi.mocked(fetch).mockClear();
+		mockApi.listSimfiles.mockClear();
 		onPageChange({ page: 2 });
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('page=2'));
+			expect(mockApi.listSimfiles).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
 		});
 	});
 });
@@ -755,27 +700,11 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		video_preview_url: null
 	};
 
-	it('handleFileDelete calls DELETE api and shows success toast on clean deletion', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				// loadItems on mount
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				// DELETE call
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ partialDeletion: false })
-				})
-				// loadItems after delete
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [], count: 0 })
-				})
-		);
+	it('handleFileDelete calls deleteSimfile and shows success toast on clean deletion', async () => {
+		mockApi.listSimfiles
+			.mockResolvedValueOnce({ data: [item], count: 1 })
+			.mockResolvedValueOnce({ data: [], count: 0 });
+		mockApi.deleteSimfile.mockResolvedValueOnce({ id: 42, deleted: true });
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
@@ -786,30 +715,16 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
 		await onFileDelete(42);
 		await waitFor(() => {
-			expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/simFile/delete/42', {
-				method: 'DELETE'
-			});
+			expect(mockApi.deleteSimfile).toHaveBeenCalledWith('42');
 			expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith(
 				expect.objectContaining({ title: 'Chart deleted' })
 			);
 		});
 	});
 
-	it('handleFileDelete shows error toast when DELETE response is not ok', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				.mockResolvedValueOnce({
-					ok: false,
-					json: vi.fn().mockResolvedValue({ error: 'Server error' }),
-					text: vi.fn().mockResolvedValue('Server error')
-				})
-		);
+	it('handleFileDelete shows error toast when deleteSimfile throws', async () => {
+		mockApi.listSimfiles.mockResolvedValueOnce({ data: [item], count: 1 });
+		mockApi.deleteSimfile.mockRejectedValueOnce(new Error('delete failed: 500'));
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
@@ -825,83 +740,9 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		});
 	});
 
-	it('handleFileDelete shows partial deletion toast when partialDeletion is true', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ partialDeletion: true })
-				})
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [], count: 0 })
-				})
-		);
-
-		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
-		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
-
-		const onFileDelete =
-			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
-		await onFileDelete(42);
-		await waitFor(() => {
-			expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
-				expect.objectContaining({
-					title: expect.stringContaining('some files may remain')
-				})
-			);
-		});
-	});
-
-	it('handleFileDelete falls back to response.text() when json() throws (lines 138-139)', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				.mockResolvedValueOnce({
-					ok: false,
-					// json() throws → inner catch runs response.text()
-					json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
-					text: vi.fn().mockResolvedValue('plain error text')
-				})
-		);
-
-		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
-		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
-
-		const onFileDelete =
-			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
-		await onFileDelete(42);
-		await waitFor(() => {
-			expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
-				expect.objectContaining({ title: 'Failed to delete chart files' })
-			);
-		});
-	});
-
-	it('handleFileDelete shows error toast on fetch network failure', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				.mockRejectedValueOnce(new Error('Network failure'))
-		);
+	it('handleFileDelete shows error toast on network failure', async () => {
+		mockApi.listSimfiles.mockResolvedValueOnce({ data: [item], count: 1 });
+		mockApi.deleteSimfile.mockRejectedValueOnce(new Error('Network failure'));
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
@@ -937,19 +778,9 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		video_preview_url: null
 	};
 
-	it('togglePublishChart PATCHes api and shows success toast when publish succeeds', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				// initial loadItems
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				// PATCH call
-				.mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({}) })
-		);
+	it('togglePublishChart calls updateSimfile and shows success toast when publish succeeds', async () => {
+		mockApi.listSimfiles.mockResolvedValueOnce({ data: [item], count: 1 });
+		mockApi.updateSimfile.mockResolvedValueOnce({ ...item, is_published: false });
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
@@ -963,10 +794,7 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		if (togglePublishChart) {
 			await togglePublishChart(10, true);
 			await waitFor(() => {
-				expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-					'/api/chart/10',
-					expect.objectContaining({ method: 'PATCH' })
-				);
+				expect(mockApi.updateSimfile).toHaveBeenCalledWith('10', { isPublished: false });
 				expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith(
 					expect.objectContaining({ title: 'Chart unpublished' })
 				);
@@ -976,17 +804,9 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		}
 	});
 
-	it('togglePublishChart shows error toast when PATCH fails', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ data: [item], count: 1 })
-				})
-				.mockResolvedValueOnce({ ok: false })
-		);
+	it('togglePublishChart shows error toast when updateSimfile throws', async () => {
+		mockApi.listSimfiles.mockResolvedValueOnce({ data: [item], count: 1 });
+		mockApi.updateSimfile.mockRejectedValueOnce(new Error('update failed: 500'));
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));

@@ -27,6 +27,10 @@
 		"delete_confirmation": "このチャートを削除してもよろしいですか？この操作は元に戻すことができません。",
 		"download_simfile": "シミュレーターファイルをダウンロード"
 	},
+	"chart_actions": {
+		"download": "ダウンロード",
+		"downloading": "ダウンロード中..."
+	},
 	"toast": {
 		"error_title": "エラー",
 		"cannot_delete_chart_invalid_id": "チャートを削除できません: 無効なチャートID"

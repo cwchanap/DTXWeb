@@ -27,6 +27,10 @@
 		"delete_confirmation": "Are you sure you want to delete this chart? This action cannot be undone.",
 		"download_simfile": "Download Simfile"
 	},
+	"chart_actions": {
+		"download": "Download",
+		"downloading": "Downloading..."
+	},
 	"toast": {
 		"error_title": "Error",
 		"cannot_delete_chart_invalid_id": "Cannot delete chart: invalid chart ID"

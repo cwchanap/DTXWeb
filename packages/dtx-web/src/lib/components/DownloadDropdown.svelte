@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { Download, ExternalLink } from '@lucide/svelte/icons';
+	import { downloadSimfile } from '$lib/api';
+	import { _ } from 'svelte-i18n';
 
 	let {
 		simfileId,
@@ -31,20 +33,50 @@
 			? 'inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50'
 			: 'inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-600 opacity-50'
 	);
+
+	let isDownloading = $state(false);
+	let downloadError = $state<string | null>(null);
+
+	const handleDownload = async (e: Event) => {
+		e.preventDefault();
+		if (isDownloading) return;
+		isDownloading = true;
+		downloadError = null;
+		try {
+			await downloadSimfile(String(simfileId));
+		} catch (err) {
+			downloadError = err instanceof Error ? err.message : 'Download failed';
+		} finally {
+			isDownloading = false;
+		}
+	};
 </script>
 
 <div class={containerClass}>
 	{#if showUploadedDownload}
-		<a
-			href="/api/simFile/download/{simfileId}"
-			download="chart-{simfileId}.zip"
+		<button
+			type="button"
+			onclick={handleDownload}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					handleDownload(e);
+				}
+			}}
+			aria-label={$_('chart_actions.download')}
+			tabindex="0"
+			disabled={isDownloading}
 			class={downloadClass}
-			aria-label="Download chart"
 			title="Download chart"
 		>
 			<Download size="16" />
-			{#if !compact}Download{/if}
-		</a>
+			{#if !compact}{isDownloading
+					? $_('chart_actions.downloading')
+					: $_('chart_actions.download')}{/if}
+		</button>
+		{#if downloadError}
+			<p class="text-sm text-red-500" role="alert">{downloadError}</p>
+		{/if}
 	{/if}
 	{#if externalUrl}
 		<a

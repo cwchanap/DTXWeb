@@ -1,0 +1,13 @@
+query Me {
+	me {
+		userId
+		username
+	}
+}
+
+mutation UpsertUserProfile($input: UpsertUserProfileInput!) {
+	upsertUserProfile(input: $input) {
+		userId
+		username
+	}
+}

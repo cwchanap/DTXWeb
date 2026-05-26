@@ -84,11 +84,19 @@ const mockAuth = {
 vi.mock('./auth', () => mockAuth);
 
 const mockApiClient = {
-	apiGet: vi.fn(),
-	apiPatch: vi.fn()
+	getSimfile: vi.fn(),
+	getSimfileWithFiles: vi.fn(),
+	updateSimfile: vi.fn(),
+	simfileSearch: vi.fn()
 };
 
 vi.mock('./api-client', () => mockApiClient);
+
+const mockUpload = {
+	uploadFile: vi.fn()
+};
+
+vi.mock('./upload', () => mockUpload);
 
 const mockSimfileService = {
 	fetchUserSimFiles: vi.fn(),
@@ -472,21 +480,32 @@ describe('index.ts IPC handlers', () => {
 
 	// ── search-cloud-songs ───────────────────────────────────────────────────
 	describe('search-cloud-songs handler', () => {
-		it('returns results from apiGet on success', async () => {
-			mockApiClient.apiGet.mockResolvedValue({
+		it('returns mapped results from simfileSearch on success', async () => {
+			mockApiClient.simfileSearch.mockResolvedValue({
 				success: true,
-				data: { data: [{ id: 1, title: 'Hit Song' }] }
+				data: {
+					simfileSearch: [
+						{
+							id: '1',
+							title: 'Hit Song',
+							artist: 'Artist',
+							bpm: 140,
+							isPublished: true
+						}
+					]
+				}
 			});
 			const result = (await ipcHandlers['search-cloud-songs'](
 				{},
 				{ query: 'hit', limit: 5, excludeLinkedSongIds: [] }
-			)) as { success: boolean; data: unknown[] };
+			)) as { success: boolean; data: { id: string; is_published: boolean }[] };
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
+			expect(result.data[0].is_published).toBe(true);
 		});
 
-		it('returns failure when apiGet fails', async () => {
-			mockApiClient.apiGet.mockResolvedValue({
+		it('returns failure when simfileSearch fails', async () => {
+			mockApiClient.simfileSearch.mockResolvedValue({
 				success: false,
 				error: 'Network error'
 			});
@@ -498,18 +517,36 @@ describe('index.ts IPC handlers', () => {
 			expect(result.error).toBe('Network error');
 		});
 
-		it('includes excludeLinkedSongIds in query params', async () => {
-			mockApiClient.apiGet.mockResolvedValue({ success: true, data: { data: [] } });
+		it('passes excludeLinkedSongIds as excludeIds to simfileSearch', async () => {
+			mockApiClient.simfileSearch.mockResolvedValue({
+				success: true,
+				data: { simfileSearch: [] }
+			});
 			await ipcHandlers['search-cloud-songs'](
 				{},
-				{ query: 'song', limit: 8, excludeLinkedSongIds: [1, 2] }
+				{ query: 'song', limit: 8, excludeLinkedSongIds: ['1', '2'] }
 			);
-			const callUrl = (mockApiClient.apiGet as Mock).mock.calls[0][0] as string;
-			expect(callUrl).toContain('exclude=1%2C2');
+			expect(mockApiClient.simfileSearch).toHaveBeenCalledWith(
+				expect.objectContaining({ excludeIds: ['1', '2'] })
+			);
+		});
+
+		it('omits excludeIds when excludeLinkedSongIds is empty', async () => {
+			mockApiClient.simfileSearch.mockResolvedValue({
+				success: true,
+				data: { simfileSearch: [] }
+			});
+			await ipcHandlers['search-cloud-songs'](
+				{},
+				{ query: 'song', limit: 8, excludeLinkedSongIds: [] }
+			);
+			expect(mockApiClient.simfileSearch).toHaveBeenCalledWith(
+				expect.objectContaining({ excludeIds: undefined })
+			);
 		});
 
 		it('handles thrown errors in search-cloud-songs', async () => {
-			mockApiClient.apiGet.mockRejectedValue(new Error('Fetch failed'));
+			mockApiClient.simfileSearch.mockRejectedValue(new Error('Fetch failed'));
 			const result = (await ipcHandlers['search-cloud-songs'](
 				{},
 				{ query: 'song', limit: 8, excludeLinkedSongIds: [] }
@@ -521,21 +558,40 @@ describe('index.ts IPC handlers', () => {
 
 	// ── fetch-cloud-song ─────────────────────────────────────────────────────
 	describe('fetch-cloud-song handler', () => {
-		it('returns cloud song data on success', async () => {
-			mockApiClient.apiGet.mockResolvedValue({
+		const gqlSimfile = {
+			id: '5',
+			title: 'Song',
+			artist: 'Artist',
+			bpm: 130,
+			userId: 'u1',
+			isPublished: true,
+			displayId: 42,
+			downloadUrl: null,
+			previewUrl: null,
+			videoPreviewUrl: null,
+			publishDate: '2024-01-01',
+			createdAt: '2024-01-01T00:00:00Z',
+			updatedAt: '2024-01-01T00:00:00Z',
+			dtxFiles: [{ level: 5, label: 'DTX' }]
+		};
+
+		it('returns mapped snake_case cloud song data on success', async () => {
+			mockApiClient.getSimfile.mockResolvedValue({
 				success: true,
-				data: { id: 5, title: 'Song' }
+				data: { simfile: gqlSimfile }
 			});
 			const result = (await ipcHandlers['fetch-cloud-song']({}, { cloudSongId: 5 })) as {
 				success: boolean;
-				cloudSongData: unknown;
+				cloudSongData: { id: number; is_published: boolean; dtx_files: unknown[] };
 			};
 			expect(result.success).toBe(true);
-			expect(result.cloudSongData).toEqual({ id: 5, title: 'Song' });
+			expect(result.cloudSongData.id).toBe(5);
+			expect(result.cloudSongData.is_published).toBe(true);
+			expect(result.cloudSongData.dtx_files).toHaveLength(1);
 		});
 
-		it('returns failure when apiGet returns no data', async () => {
-			mockApiClient.apiGet.mockResolvedValue({ success: true, data: null });
+		it('returns failure when simfile is null', async () => {
+			mockApiClient.getSimfile.mockResolvedValue({ success: true, data: { simfile: null } });
 			const result = (await ipcHandlers['fetch-cloud-song']({}, { cloudSongId: 5 })) as {
 				success: boolean;
 				error: string;
@@ -544,17 +600,18 @@ describe('index.ts IPC handlers', () => {
 			expect(result.error).toBe('Cloud song not found');
 		});
 
-		it('returns failure when apiGet itself fails', async () => {
-			mockApiClient.apiGet.mockResolvedValue({ success: false, error: 'Not found' });
+		it('returns failure when getSimfile itself fails', async () => {
+			mockApiClient.getSimfile.mockResolvedValue({ success: false, error: 'Not found' });
 			const result = (await ipcHandlers['fetch-cloud-song']({}, { cloudSongId: 5 })) as {
 				success: boolean;
 				error: string;
 			};
 			expect(result.success).toBe(false);
+			expect(result.error).toBe('Not found');
 		});
 
 		it('handles thrown errors in fetch-cloud-song', async () => {
-			mockApiClient.apiGet.mockRejectedValue(new Error('Connection refused'));
+			mockApiClient.getSimfile.mockRejectedValue(new Error('Connection refused'));
 			const result = (await ipcHandlers['fetch-cloud-song']({}, { cloudSongId: 5 })) as {
 				success: boolean;
 				error: string;
@@ -566,17 +623,39 @@ describe('index.ts IPC handlers', () => {
 
 	// ── update-simfile-record ────────────────────────────────────────────────
 	describe('update-simfile-record handler', () => {
-		it('returns success on successful patch', async () => {
-			mockApiClient.apiPatch.mockResolvedValue({ success: true, data: { updated: true } });
+		const gqlUpdatedSimfile = {
+			id: '3',
+			title: 'New Title',
+			artist: 'Artist',
+			bpm: 130,
+			userId: 'u1',
+			isPublished: false,
+			displayId: 10,
+			downloadUrl: null,
+			previewUrl: null,
+			videoPreviewUrl: null,
+			publishDate: '2024-01-01',
+			createdAt: '2024-01-01T00:00:00Z',
+			updatedAt: '2024-02-01T00:00:00Z',
+			dtxFiles: []
+		};
+
+		it('returns mapped snake_case data on successful update', async () => {
+			mockApiClient.updateSimfile.mockResolvedValue({
+				success: true,
+				data: { updateSimfile: gqlUpdatedSimfile }
+			});
 			const result = (await ipcHandlers['update-simfile-record'](
 				{},
 				{ simfileId: 3, updateData: { title: 'New Title' } }
-			)) as { success: boolean };
+			)) as { success: boolean; data: { id: number; is_published: boolean } };
 			expect(result.success).toBe(true);
+			expect(result.data.id).toBe(3);
+			expect(result.data.is_published).toBe(false);
 		});
 
-		it('returns failure when patch fails', async () => {
-			mockApiClient.apiPatch.mockResolvedValue({ success: false, error: 'Forbidden' });
+		it('returns failure when updateSimfile fails', async () => {
+			mockApiClient.updateSimfile.mockResolvedValue({ success: false, error: 'Forbidden' });
 			const result = (await ipcHandlers['update-simfile-record'](
 				{},
 				{ simfileId: 3, updateData: {} }
@@ -586,7 +665,7 @@ describe('index.ts IPC handlers', () => {
 		});
 
 		it('handles thrown errors in update-simfile-record', async () => {
-			mockApiClient.apiPatch.mockRejectedValue(new Error('Timeout'));
+			mockApiClient.updateSimfile.mockRejectedValue(new Error('Timeout'));
 			const result = (await ipcHandlers['update-simfile-record'](
 				{},
 				{ simfileId: 3, updateData: {} }
@@ -827,11 +906,7 @@ describe('index.ts IPC handlers', () => {
 	// ── upload-file handler ──────────────────────────────────────────────────
 	describe('upload-file handler', () => {
 		beforeEach(() => {
-			vi.unstubAllEnvs();
-		});
-
-		afterEach(() => {
-			vi.unstubAllGlobals();
+			vi.clearAllMocks();
 		});
 
 		it('returns error when file does not exist', async () => {
@@ -848,104 +923,10 @@ describe('index.ts IPC handlers', () => {
 			expect(result.error).toContain('File not found');
 		});
 
-		it('returns error when user is not authenticated', async () => {
+		it('uploads file successfully via uploadFile', async () => {
 			mockFs.promises.access.mockResolvedValue(undefined);
-			mockAuth.getCurrentSession.mockReturnValue(null);
-			mockAuth.getSupabaseClient.mockReturnValue(null);
-
-			const result = (await ipcHandlers['upload-file'](
-				{},
-				'kick.wav',
-				'/songs/my-song',
-				'42'
-			)) as { success: boolean; error: string };
-
-			expect(result.success).toBe(false);
-			expect(result.error).toContain('not authenticated');
-		});
-
-		it('returns error when session refresh fails', async () => {
-			mockFs.promises.access.mockResolvedValue(undefined);
-			mockAuth.getCurrentSession.mockReturnValue({ access_token: 'tok' });
-			const mockClient = {
-				auth: {
-					getSession: vi.fn().mockResolvedValue({
-						data: { session: null },
-						error: new Error('session expired')
-					})
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
-
-			const result = (await ipcHandlers['upload-file'](
-				{},
-				'kick.wav',
-				'/songs/my-song',
-				'42'
-			)) as { success: boolean; error: string };
-
-			expect(result.success).toBe(false);
-			expect(result.error).toContain('Failed to get valid session');
-		});
-
-		it('returns error when VITE_DTX_SERVER_URL is not set', async () => {
-			vi.stubEnv('VITE_DTX_SERVER_URL', '');
-			mockFs.promises.access.mockResolvedValue(undefined);
-			const session = {
-				access_token: 'tok',
-				refresh_token: 'ref',
-				expires_at: 9999,
-				expires_in: 3600,
-				token_type: 'bearer',
-				user: { id: 'u1' }
-			};
-			mockAuth.getCurrentSession.mockReturnValue(session);
-			const mockClient = {
-				auth: {
-					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
-			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
-
-			const result = (await ipcHandlers['upload-file'](
-				{},
-				'kick.wav',
-				'/songs/my-song',
-				'42'
-			)) as { success: boolean; error: string };
-
-			expect(result.success).toBe(false);
-			expect(result.error).toContain('VITE_DTX_SERVER_URL');
-		});
-
-		it('uploads file successfully', async () => {
-			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
-			mockFs.promises.access.mockResolvedValue(undefined);
-			const session = {
-				access_token: 'tok',
-				refresh_token: 'ref',
-				expires_at: 9999,
-				expires_in: 3600,
-				token_type: 'bearer',
-				user: { id: 'u1' }
-			};
-			mockAuth.getCurrentSession.mockReturnValue(session);
-			const mockClient = {
-				auth: {
-					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
 			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio data'));
-
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ id: 99 })
-				}) as unknown as typeof fetch
-			);
+			mockUpload.uploadFile.mockResolvedValue({ success: true, data: { id: 99 } });
 
 			const result = (await ipcHandlers['upload-file'](
 				{},
@@ -955,40 +936,13 @@ describe('index.ts IPC handlers', () => {
 			)) as { success: boolean; data: unknown };
 
 			expect(result.success).toBe(true);
-			expect(global.fetch).toHaveBeenCalledWith(
-				expect.stringContaining('/api/simFile/upload'),
-				expect.objectContaining({ method: 'POST' })
-			);
+			expect(mockUpload.uploadFile).toHaveBeenCalled();
 		});
 
-		it('returns error when upload response is not ok', async () => {
-			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
+		it('returns error when uploadFile returns failure', async () => {
 			mockFs.promises.access.mockResolvedValue(undefined);
-			const session = {
-				access_token: 'tok',
-				refresh_token: 'ref',
-				expires_at: 9999,
-				expires_in: 3600,
-				token_type: 'bearer',
-				user: { id: 'u1' }
-			};
-			mockAuth.getCurrentSession.mockReturnValue(session);
-			const mockClient = {
-				auth: {
-					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
 			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
-
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					statusText: 'Bad Request',
-					text: vi.fn().mockResolvedValue('Invalid file')
-				}) as unknown as typeof fetch
-			);
+			mockUpload.uploadFile.mockResolvedValue({ success: false, error: 'HTTP 413' });
 
 			const result = (await ipcHandlers['upload-file'](
 				{},
@@ -1002,184 +956,79 @@ describe('index.ts IPC handlers', () => {
 		});
 
 		it('strips leading directory from nested fileName', async () => {
-			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
 			mockFs.promises.access.mockResolvedValue(undefined);
-			const session = {
-				access_token: 'tok',
-				refresh_token: 'ref',
-				expires_at: 9999,
-				expires_in: 3600,
-				token_type: 'bearer',
-				user: { id: 'u1' }
-			};
-			mockAuth.getCurrentSession.mockReturnValue(session);
-			const mockClient = {
-				auth: {
-					getSession: vi.fn().mockResolvedValue({ data: { session }, error: null })
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
 			mockFs.promises.readFile.mockResolvedValue(Buffer.from('audio'));
 
 			const capturedFormData: FormData[] = [];
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockImplementation((_url: string, opts: RequestInit) => {
-					capturedFormData.push(opts.body as FormData);
-					return Promise.resolve({
-						ok: true,
-						json: vi.fn().mockResolvedValue({})
-					});
-				}) as unknown as typeof fetch
-			);
+			mockUpload.uploadFile.mockImplementation((fd: FormData) => {
+				capturedFormData.push(fd);
+				return Promise.resolve({ success: true, data: {} });
+			});
 
 			await ipcHandlers['upload-file']({}, 'dir/kick.wav', '/songs/my-song', '42');
 
-			// The fileName sent should strip the leading "dir/" prefix
 			expect(capturedFormData.length).toBeGreaterThan(0);
 			const uploadedFile = capturedFormData[0].get('file') as File;
 			expect(uploadedFile.name).toBe('kick.wav');
 		});
 	});
 
-	// ── load-asset-files (full fetch path) ───────────────────────────────────
-	describe('load-asset-files handler (authenticated fetch path)', () => {
-		const validSession = {
-			access_token: 'tok',
-			refresh_token: 'ref',
-			expires_at: 9999,
-			expires_in: 3600,
-			token_type: 'bearer',
-			user: { id: 'u1' }
-		};
-
-		beforeEach(() => {
-			vi.unstubAllEnvs();
-			vi.unstubAllGlobals();
-			vi.stubEnv('VITE_DTX_SERVER_URL', 'http://localhost:5173');
-			mockAuth.getCurrentSession.mockReturnValue(validSession);
-			const mockClient = {
-				auth: {
-					getSession: vi
-						.fn()
-						.mockResolvedValue({ data: { session: validSession }, error: null })
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
-		});
-
-		afterEach(() => {
-			vi.unstubAllEnvs();
-			vi.unstubAllGlobals();
-		});
-
-		it('returns files array on successful fetch', async () => {
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					json: vi.fn().mockResolvedValue({ files: [{ fileName: 'song.dtx' }] })
-				}) as unknown as typeof fetch
-			);
+	// ── load-asset-files (GraphQL path) ─────────────────────────────────────
+	describe('load-asset-files handler (GraphQL path)', () => {
+		it('returns files array on successful getSimfileWithFiles', async () => {
+			mockApiClient.getSimfileWithFiles.mockResolvedValue({
+				success: true,
+				data: { files: [{ key: 'song.dtx', size: 1024, uploaded: '2024-01-01' }] }
+			});
 
 			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
-				fileName: string;
+				key: string;
 			}[];
-			expect(result).toEqual([{ fileName: 'song.dtx' }]);
+			expect(result).toEqual([{ key: 'song.dtx', size: 1024, uploaded: '2024-01-01' }]);
 		});
 
-		it('returns empty array when response files is missing', async () => {
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					json: vi.fn().mockResolvedValue({})
-				}) as unknown as typeof fetch
-			);
+		it('returns empty array when files is null/undefined', async () => {
+			mockApiClient.getSimfileWithFiles.mockResolvedValue({
+				success: true,
+				data: null
+			});
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
 			expect(result).toEqual([]);
 		});
 
-		it('returns empty array for 404 response', async () => {
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 404,
-					statusText: 'Not Found',
-					text: vi.fn().mockResolvedValue('Not found')
-				}) as unknown as typeof fetch
-			);
+		it('returns empty array for NOT_FOUND error', async () => {
+			mockApiClient.getSimfileWithFiles.mockResolvedValue({
+				success: false,
+				error: 'NOT_FOUND: simfile not found'
+			});
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
 			expect(result).toEqual([]);
 		});
 
-		it('returns empty array when error text contains "Failed to list files"', async () => {
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 500,
-					statusText: 'Server Error',
-					text: vi.fn().mockResolvedValue('Failed to list files: storage error')
-				}) as unknown as typeof fetch
-			);
+		it('returns empty array when error contains "Failed to list files"', async () => {
+			mockApiClient.getSimfileWithFiles.mockResolvedValue({
+				success: false,
+				error: 'Failed to list files: storage error'
+			});
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
 			expect(result).toEqual([]);
 		});
 
-		it('returns empty array when fetch throws', async () => {
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockRejectedValue(new Error('Network error')) as unknown as typeof fetch
-			);
+		it('returns empty array when getSimfileWithFiles throws', async () => {
+			mockApiClient.getSimfileWithFiles.mockRejectedValue(new Error('Network error'));
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
 			expect(result).toEqual([]);
 		});
 
-		it('returns empty array for non-404 non-"Failed to list files" error response', async () => {
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 403,
-					statusText: 'Forbidden',
-					text: vi.fn().mockResolvedValue('Access denied')
-				}) as unknown as typeof fetch
-			);
-
-			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
-		});
-
-		it('returns empty array when VITE_DTX_SERVER_URL is not set', async () => {
-			vi.stubEnv('VITE_DTX_SERVER_URL', '');
-
-			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
-		});
-
-		it('returns empty array when user is not authenticated', async () => {
-			mockAuth.getCurrentSession.mockReturnValue(null);
-			mockAuth.getSupabaseClient.mockReturnValue(null);
-
-			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
-		});
-
-		it('returns empty array when session refresh fails', async () => {
-			const mockClient = {
-				auth: {
-					getSession: vi
-						.fn()
-						.mockResolvedValue({ data: { session: null }, error: new Error('expired') })
-				}
-			};
-			mockAuth.getSupabaseClient.mockReturnValue(mockClient);
+		it('returns empty array for other API errors', async () => {
+			mockApiClient.getSimfileWithFiles.mockResolvedValue({
+				success: false,
+				error: 'INTERNAL_SERVER_ERROR: something went wrong'
+			});
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
 			expect(result).toEqual([]);

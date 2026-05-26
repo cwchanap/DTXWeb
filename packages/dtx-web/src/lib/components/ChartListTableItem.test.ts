@@ -23,6 +23,11 @@ vi.mock('@dtx/ui-components', async () => {
 
 vi.mock('$lib/toaster', () => ({ default: toastMock }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$lib/api', () => ({
+	downloadSimfile: vi.fn().mockResolvedValue(undefined),
+	bulkDownloadBaseUrl: vi.fn(() => '/api/simFile/download/bulk'),
+	bulkDownloadHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' })
+}));
 
 import ChartListTableItem from './ChartListTableItem.svelte';
 import { goto } from '$app/navigation';
@@ -61,9 +66,8 @@ describe('ChartListTableItem', () => {
 				item: { ...mockItem, download_url: 'https://dl.example.com' }
 			}
 		});
-		const r2Link = screen.getByRole('link', { name: /download chart/i });
-		expect(r2Link).toBeInTheDocument();
-		expect(r2Link).toHaveAttribute('href', `/api/simFile/download/${mockItem.id}`);
+		const r2Button = screen.getByRole('button', { name: 'chart_actions.download' });
+		expect(r2Button).toBeInTheDocument();
 		const externalLink = screen.getByRole('link', { name: /external download link/i });
 		expect(externalLink).toHaveAttribute('href', 'https://dl.example.com');
 	});
@@ -81,7 +85,9 @@ describe('ChartListTableItem', () => {
 				})()
 			}
 		});
-		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole('button', { name: 'chart_actions.download' })
+		).not.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
 	});
 
@@ -94,7 +100,7 @@ describe('ChartListTableItem', () => {
 				item: { ...mockItem, download_url: null }
 			}
 		});
-		expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'chart_actions.download' })).toBeInTheDocument();
 	});
 
 	it('hides the R2 download link in blog mode when download_url is null and uploads are unavailable', () => {
@@ -106,7 +112,9 @@ describe('ChartListTableItem', () => {
 				item: { ...mockItem, download_url: null, has_uploaded_files: false }
 			}
 		});
-		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole('button', { name: 'chart_actions.download' })
+		).not.toBeInTheDocument();
 		expect(screen.getByTitle('No external link available')).toBeInTheDocument();
 	});
 
@@ -123,7 +131,9 @@ describe('ChartListTableItem', () => {
 				}
 			}
 		});
-		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole('button', { name: 'chart_actions.download' })
+		).not.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
 	});
 
@@ -137,7 +147,9 @@ describe('ChartListTableItem', () => {
 			}
 		});
 
-		expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole('button', { name: 'chart_actions.download' })
+		).not.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
 			'href',
 			'https://dl.example.com'

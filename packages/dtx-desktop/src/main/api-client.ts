@@ -142,15 +142,17 @@ export const generateMagicLink = () =>
 	runGraphQL<GenerateMagicLinkMutation, Record<string, never>>(GenerateMagicLinkDocument, {});
 
 // TEMPORARY shims removed in Tasks 25-26
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const apiGet = <T = unknown>(path: string): Promise<ApiResult<T>> => {
+export const apiGet = <T = unknown>(_path: string): Promise<ApiResult<T>> => {
+	void _path;
 	throw new Error('apiGet is being migrated; see Task 25/26');
 };
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const apiPost = <T = unknown>(path: string, body: unknown): Promise<ApiResult<T>> => {
+export const apiPost = <T = unknown>(_path: string, _body: unknown): Promise<ApiResult<T>> => {
+	void _path;
+	void _body;
 	throw new Error('apiPost is being migrated; see Task 25/26');
 };
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const apiPatch = <T = unknown>(path: string, body: unknown): Promise<ApiResult<T>> => {
+export const apiPatch = <T = unknown>(_path: string, _body: unknown): Promise<ApiResult<T>> => {
+	void _path;
+	void _body;
 	throw new Error('apiPatch is being migrated; see Task 25/26');
 };

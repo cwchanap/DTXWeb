@@ -1,0 +1,84 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const { mockEnv } = vi.hoisted(() => {
+	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'false', PUBLIC_DTX_API_URL: 'https://api.test' };
+	return { mockEnv };
+});
+
+vi.mock('$env/dynamic/public', () => ({ env: mockEnv }));
+vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('../token', () => ({
+	getAccessTokenOrNull: vi.fn().mockResolvedValue('test-token')
+}));
+
+import { bulkDownloadBaseUrl, parseContentDispositionFilename, downloadSimfile } from './download';
+
+beforeEach(() => {
+	mockEnv.PUBLIC_USE_GRAPHQL_API = 'false';
+});
+
+describe('bulkDownloadBaseUrl', () => {
+	it('returns dtx-web local URL when flag OFF', () => {
+		expect(bulkDownloadBaseUrl()).toBe('/api/simFile/download/bulk');
+	});
+	it('returns dtx-api URL when flag ON', () => {
+		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+		expect(bulkDownloadBaseUrl()).toBe('https://api.test/downloads/bulk');
+	});
+});
+
+describe('parseContentDispositionFilename', () => {
+	it('extracts quoted filename', () => {
+		expect(parseContentDispositionFilename('attachment; filename="chart-7.zip"')).toBe(
+			'chart-7.zip'
+		);
+	});
+	it('extracts unquoted filename', () => {
+		expect(parseContentDispositionFilename('attachment; filename=chart-7.zip')).toBe(
+			'chart-7.zip'
+		);
+	});
+	it('returns null for missing header', () => {
+		expect(parseContentDispositionFilename(null)).toBeNull();
+		expect(parseContentDispositionFilename('attachment')).toBeNull();
+	});
+});
+
+describe('downloadSimfile (REST path)', () => {
+	it('fetches /api/simFile/download/${id} and triggers browser download', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response('zip-bytes', {
+				headers: { 'content-disposition': 'attachment; filename="chart-3.zip"' }
+			})
+		);
+		const triggerSpy = vi.fn();
+		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
+		expect(fetchMock).toHaveBeenCalledWith('/api/simFile/download/3', expect.any(Object));
+		expect(triggerSpy).toHaveBeenCalledOnce();
+		const [_blob, filename] = triggerSpy.mock.calls[0];
+		expect(filename).toBe('chart-3.zip');
+	});
+
+	it('does not include Authorization header when flag OFF', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
+		const triggerSpy = vi.fn();
+		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
+		const init = fetchMock.mock.calls[0][1] as RequestInit;
+		expect((init.headers as Record<string, string>)?.Authorization).toBeUndefined();
+	});
+});
+
+describe('downloadSimfile (GraphQL path)', () => {
+	beforeEach(() => {
+		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+	});
+
+	it('hits dtx-api URL with bearer header when token available', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
+		const triggerSpy = vi.fn();
+		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
+		expect(fetchMock).toHaveBeenCalledWith('https://api.test/downloads/3', expect.any(Object));
+		const init = fetchMock.mock.calls[0][1] as RequestInit;
+		expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
+	});
+});

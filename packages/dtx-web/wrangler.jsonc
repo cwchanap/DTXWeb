@@ -24,7 +24,9 @@
 		}
 	],
 	"vars": {
-		"RATE_LIMIT_ENV": "prod"
+		"RATE_LIMIT_ENV": "prod",
+		"PUBLIC_USE_GRAPHQL_API": "false",
+		"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com"
 	},
 	"d1_databases": [
 		{
@@ -59,8 +61,13 @@
 				}
 			],
 			"vars": {
-				"RATE_LIMIT_ENV": "pre-prod"
+				"RATE_LIMIT_ENV": "pre-prod",
+				"PUBLIC_USE_GRAPHQL_API": "false",
+				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
+			"services": [
+				{ "binding": "API", "service": "dtx-api", "environment": "pre-prod" }
+			],
 			"d1_databases": [
 				{
 					"binding": "DB",
@@ -88,8 +95,13 @@
 				}
 			],
 			"vars": {
-				"RATE_LIMIT_ENV": "pre-prod-prod-data"
+				"RATE_LIMIT_ENV": "pre-prod-prod-data",
+				"PUBLIC_USE_GRAPHQL_API": "false",
+				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
+			"services": [
+				{ "binding": "API", "service": "dtx-api", "environment": "pre-prod" }
+			],
 			"d1_databases": [
 				{
 					"binding": "DB",

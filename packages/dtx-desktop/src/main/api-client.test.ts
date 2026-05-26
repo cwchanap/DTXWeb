@@ -1,247 +1,81 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ClientError } from 'graphql-request';
 
-const mockGetSession = vi.fn();
-const mockGetSupabaseClient = vi.fn();
-
-vi.mock('./auth', () => ({
-	getSupabaseClient: mockGetSupabaseClient
+const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
+vi.mock('./graphql/client', () => ({
+	getGraphQLClient: vi.fn().mockResolvedValue({ request: requestMock })
 }));
 
-// Helper to import with fresh module state
-const importApiClient = () => import('./api-client');
+import {
+	listSimfiles,
+	getSimfile,
+	createSimfile,
+	updateSimfile,
+	deleteSimfile,
+	nextDisplayId,
+	simfileSearch,
+	getSimfileWithFiles
+} from './api-client';
+
+beforeEach(() => {
+	requestMock.mockReset();
+});
 
 describe('api-client', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		vi.resetModules();
-
-		// Default: authenticated client with valid session
-		mockGetSupabaseClient.mockReturnValue({
-			auth: {
-				getSession: mockGetSession
-			}
-		});
-		mockGetSession.mockResolvedValue({
-			data: { session: { access_token: 'test-token' } },
-			error: null
-		});
+	it('listSimfiles returns { success: true, data } on happy path', async () => {
+		requestMock.mockResolvedValue({ simfiles: { count: 0, data: [] } });
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r).toEqual({ success: true, data: { count: 0, data: [] } });
 	});
 
-	afterEach(() => {
-		vi.unstubAllGlobals();
+	it('listSimfiles returns { success: false, error } on GraphQL error', async () => {
+		const err = new ClientError(
+			{
+				errors: [{ message: 'oops', extensions: { code: 'INTERNAL' } }],
+				data: null,
+				status: 200,
+				headers: new Headers()
+			} as unknown as Parameters<typeof ClientError>[0],
+			{ query: '' } as Parameters<typeof ClientError>[1]
+		);
+		requestMock.mockRejectedValue(err);
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r.success).toBe(false);
+		if (!r.success) expect(r.error).toContain('INTERNAL');
 	});
 
-	describe('apiGet', () => {
-		it('returns success with data on 200 response', async () => {
-			const { apiGet } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					headers: new Headers({ 'Content-Type': 'application/json' }),
-					json: async () => ({ id: 1 })
-				})
-			);
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: true, data: { id: 1 } });
-		});
-
-		it('returns success with undefined data on 204 response', async () => {
-			const { apiGet } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					status: 204,
-					headers: new Headers()
-				})
-			);
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: true, data: undefined });
-		});
-
-		it('returns error when response is not ok', async () => {
-			const { apiGet } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 404,
-					statusText: 'Not Found',
-					json: async () => ({ error: 'Chart not found' })
-				})
-			);
-			const result = await apiGet('/api/chart/999');
-			expect(result).toEqual({ success: false, error: 'Chart not found' });
-		});
-
-		it('falls back to HTTP status when error response has no error field', async () => {
-			const { apiGet } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 500,
-					statusText: 'Internal Server Error',
-					json: async () => ({})
-				})
-			);
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: false, error: 'HTTP 500' });
-		});
-
-		it('returns error when fetch throws', async () => {
-			const { apiGet } = await importApiClient();
-			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: false, error: 'Network error' });
-		});
-
-		it('returns error when supabase client is null', async () => {
-			mockGetSupabaseClient.mockReturnValue(null);
-			const { apiGet } = await importApiClient();
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: false, error: 'User not authenticated' });
-		});
-
-		it('returns error when session fetch fails', async () => {
-			mockGetSession.mockResolvedValue({
-				data: { session: null },
-				error: new Error('Session error')
-			});
-			const { apiGet } = await importApiClient();
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: false, error: 'Failed to get valid session' });
-		});
-
-		it('includes auth headers and user agent', async () => {
-			const { apiGet } = await importApiClient();
-			const mockFetch = vi.fn().mockResolvedValue({
-				ok: true,
-				headers: new Headers({ 'Content-Type': 'application/json' }),
-				json: async () => ({})
-			});
-			vi.stubGlobal('fetch', mockFetch);
-			await apiGet('/api/chart');
-			const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-			const headers = init.headers as Record<string, string>;
-			expect(headers['Authorization']).toBe('Bearer test-token');
-			expect(headers['User-Agent']).toBe('DTXDesktopApp');
-			expect(headers['X-Requested-With']).toBe('DTXDesktopApp');
-			expect(init.signal).toBeDefined();
-		});
-
-		it('returns a timeout error when fetch is aborted', async () => {
-			const { apiGet } = await importApiClient();
-			const abortError = new Error('The operation was aborted.');
-			abortError.name = 'AbortError';
-			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
-			const result = await apiGet('/api/chart');
-			expect(result).toEqual({ success: false, error: 'Request timed out after 30000ms' });
-		});
+	it('updateSimfile passes id + input as variables', async () => {
+		requestMock.mockResolvedValue({ updateSimfile: { id: '7', title: 'x' } });
+		await updateSimfile('7', { title: 'x' });
+		const [, vars] = requestMock.mock.calls[0];
+		expect(vars).toEqual({ id: '7', input: { title: 'x' } });
 	});
 
-	describe('apiPost', () => {
-		it('returns success with data on 200 response', async () => {
-			const { apiPost } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					headers: new Headers({ 'Content-Type': 'application/json' }),
-					json: async () => ({ id: 2 })
-				})
-			);
-			const result = await apiPost('/api/chart', { title: 'New Song' });
-			expect(result).toEqual({ success: true, data: { id: 2 } });
-		});
-
-		it('sends JSON body with POST method', async () => {
-			const { apiPost } = await importApiClient();
-			const mockFetch = vi.fn().mockResolvedValue({
-				ok: true,
-				headers: new Headers({ 'Content-Type': 'application/json' }),
-				json: async () => ({})
-			});
-			vi.stubGlobal('fetch', mockFetch);
-			await apiPost('/api/chart', { title: 'Test' });
-			const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-			expect(init.method).toBe('POST');
-			expect(init.body).toBe(JSON.stringify({ title: 'Test' }));
-		});
-
-		it('returns error on non-ok response', async () => {
-			const { apiPost } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 400,
-					statusText: 'Bad Request',
-					json: async () => ({ error: 'Invalid data' })
-				})
-			);
-			const result = await apiPost('/api/chart', {});
-			expect(result).toEqual({ success: false, error: 'Invalid data' });
-		});
-
-		it('returns error when fetch throws', async () => {
-			const { apiPost } = await importApiClient();
-			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Timeout')));
-			const result = await apiPost('/api/chart', {});
-			expect(result).toEqual({ success: false, error: 'Timeout' });
-		});
+	it('deleteSimfile returns shaped data', async () => {
+		requestMock.mockResolvedValue({ deleteSimfile: { id: '3', deleted: true } });
+		const r = await deleteSimfile('3');
+		expect(r).toEqual({ success: true, data: { id: '3', deleted: true } });
 	});
 
-	describe('apiPatch', () => {
-		it('returns success with data on 200 response', async () => {
-			const { apiPatch } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: true,
-					headers: new Headers({ 'Content-Type': 'application/json' }),
-					json: async () => ({ id: 1, title: 'Updated' })
-				})
-			);
-			const result = await apiPatch('/api/chart/1', { title: 'Updated' });
-			expect(result).toEqual({ success: true, data: { id: 1, title: 'Updated' } });
-		});
+	it('nextDisplayId returns the integer', async () => {
+		requestMock.mockResolvedValue({ nextDisplayId: 42 });
+		const r = await nextDisplayId();
+		expect(r).toEqual({ success: true, data: 42 });
+	});
 
-		it('sends JSON body with PATCH method', async () => {
-			const { apiPatch } = await importApiClient();
-			const mockFetch = vi.fn().mockResolvedValue({
-				ok: true,
-				headers: new Headers({ 'Content-Type': 'application/json' }),
-				json: async () => ({})
-			});
-			vi.stubGlobal('fetch', mockFetch);
-			await apiPatch('/api/chart/1', { title: 'Test' });
-			const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-			expect(init.method).toBe('PATCH');
-			expect(init.body).toBe(JSON.stringify({ title: 'Test' }));
-		});
+	it('simfileSearch passes args', async () => {
+		requestMock.mockResolvedValue({ simfileSearch: [] });
+		await simfileSearch({ query: 'q', limit: 5 });
+		const [, vars] = requestMock.mock.calls[0];
+		expect(vars).toEqual({ query: 'q', limit: 5, excludeIds: undefined });
+	});
 
-		it('returns error on non-ok response', async () => {
-			const { apiPatch } = await importApiClient();
-			vi.stubGlobal(
-				'fetch',
-				vi.fn().mockResolvedValue({
-					ok: false,
-					status: 403,
-					statusText: 'Forbidden',
-					json: async () => ({ error: 'Forbidden' })
-				})
-			);
-			const result = await apiPatch('/api/chart/1', {});
-			expect(result).toEqual({ success: false, error: 'Forbidden' });
+	it('getSimfileWithFiles selects files', async () => {
+		requestMock.mockResolvedValue({
+			simfile: { id: '1', files: [{ key: 'a', size: 1, uploaded: 't' }] }
 		});
-
-		it('returns error when fetch throws', async () => {
-			const { apiPatch } = await importApiClient();
-			vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Connection refused')));
-			const result = await apiPatch('/api/chart/1', {});
-			expect(result).toEqual({ success: false, error: 'Connection refused' });
-		});
+		const r = await getSimfileWithFiles('1');
+		expect(r.success).toBe(true);
+		if (r.success && r.data) expect(r.data.files).toHaveLength(1);
 	});
 });

@@ -3,3 +3,5 @@ static/
 out/
 dist/
 **/*.svelte.d.ts
+packages/dtx-web/src/lib/api/generated/
+packages/dtx-desktop/src/main/graphql/generated/

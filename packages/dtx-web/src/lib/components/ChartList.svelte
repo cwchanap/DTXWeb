@@ -3,6 +3,7 @@
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '$lib/toaster';
+	import { listSimfiles, updateSimfile, deleteSimfile, type ScopeString } from '$lib/api';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
 	import {
 		BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,
@@ -58,15 +59,7 @@
 
 	const togglePublishChart = async (id: number, published: boolean) => {
 		try {
-			const response = await fetch(`/api/chart/${id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ is_published: !published })
-			});
-
-			if (!response.ok) {
-				throw new Error('Failed to update');
-			}
+			await updateSimfile(String(id), { isPublished: !published });
 
 			// Update local state
 			items = items.map((item) =>
@@ -88,26 +81,14 @@
 	const loadItems = async () => {
 		loading = true;
 		try {
-			const params = new URLSearchParams({
-				page: String(currentPage),
-				pageSize: String(pageSize),
-				scope: isBlog ? 'published' : 'mine'
+			const scopeStr: ScopeString = isBlog ? 'published' : 'mine';
+			const result = await listSimfiles({
+				scope: scopeStr,
+				search: searchFilter.trim() || undefined,
+				page: currentPage,
+				pageSize
 			});
-
-			if (searchFilter.trim()) {
-				params.set('search', searchFilter);
-			}
-
-			params.set('check_uploaded', 'true');
-
-			const response = await fetch(`/api/chart?${params}`);
-			if (!response.ok) {
-				console.error('Failed to load items:', await response.text());
-				return;
-			}
-
-			const result = await response.json();
-			items = result.data || [];
+			items = (result.data || []) as ListedChart[];
 			totalCount = result.count || 0;
 			totalPages = Math.ceil(totalCount / pageSize);
 		} catch (error) {
@@ -152,36 +133,7 @@
 	const handleFileDelete = async (id: number) => {
 		// API call handles complete deletion (R2 bucket files + database records)
 		try {
-			const response = await fetch(`/api/simFile/delete/${id}`, {
-				method: 'DELETE'
-			});
-			if (!response.ok) {
-				// Safely parse error response, handling non-JSON responses
-				let errorData: unknown;
-				try {
-					errorData = await response.json();
-				} catch {
-					errorData = await response.text();
-				}
-				console.error('Failed to delete R2 files:', errorData);
-				toastStore.error({
-					title: 'Failed to delete chart files',
-					duration: 3000
-				});
-				return; // Abort if R2 deletion fails
-			}
-
-			// Check if some R2 files failed to delete (partial deletion)
-			const deleteResult = await response.json();
-			if (deleteResult.partialDeletion) {
-				console.warn('Partial deletion: some R2 files could not be removed', deleteResult);
-				await loadItems();
-				toastStore.error({
-					title: 'Chart deleted from library, but some files may remain in storage. Please contact support.',
-					duration: 6000
-				});
-				return;
-			}
+			await deleteSimfile(String(id));
 		} catch (error) {
 			console.error('Failed to delete R2 files:', error);
 			toastStore.error({

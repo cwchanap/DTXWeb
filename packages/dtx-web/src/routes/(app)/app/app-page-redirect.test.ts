@@ -20,6 +20,11 @@ vi.mock('$app/stores', () => ({
 
 vi.mock('@lucide/svelte');
 
+vi.mock('$lib/api', () => ({
+	generateMagicLink: vi.fn()
+}));
+
+import { generateMagicLink } from '$lib/api';
 import AppPage from './+page.svelte';
 
 describe('App Home Page – desktop redirect flow', () => {
@@ -47,13 +52,10 @@ describe('App Home Page – desktop redirect flow', () => {
 	});
 
 	it('shows redirecting spinner when redirect=desktop is in URL and fetch succeeds', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: true,
-				json: vi.fn().mockResolvedValue({ magicLinkUrl: 'https://example.com/magic' })
-			})
-		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic',
+			success: true
+		});
 
 		render(AppPage);
 
@@ -63,14 +65,8 @@ describe('App Home Page – desktop redirect flow', () => {
 		});
 	});
 
-	it('shows error state when fetch response is not ok', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: false,
-				json: vi.fn().mockResolvedValue({ error: 'Unauthorized' })
-			})
-		);
+	it('shows error state when generateMagicLink throws', async () => {
+		vi.mocked(generateMagicLink).mockRejectedValue(new Error('magic-link failed: 401'));
 
 		render(AppPage);
 
@@ -79,8 +75,8 @@ describe('App Home Page – desktop redirect flow', () => {
 		});
 	});
 
-	it('shows error state when fetch throws', async () => {
-		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+	it('shows error state when generateMagicLink throws network error', async () => {
+		vi.mocked(generateMagicLink).mockRejectedValue(new Error('Network error'));
 
 		render(AppPage);
 
@@ -90,13 +86,10 @@ describe('App Home Page – desktop redirect flow', () => {
 	});
 
 	it('shows error when magicLinkUrl is missing from response', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: true,
-				json: vi.fn().mockResolvedValue({ magicLinkUrl: null })
-			})
-		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: null as unknown as string,
+			success: false
+		});
 
 		render(AppPage);
 

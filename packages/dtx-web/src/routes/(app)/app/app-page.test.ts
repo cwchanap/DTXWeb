@@ -19,6 +19,10 @@ vi.mock('$app/stores', () => ({
 
 vi.mock('@lucide/svelte');
 
+vi.mock('$lib/api', () => ({
+	generateMagicLink: vi.fn()
+}));
+
 import AppPage from './+page.svelte';
 
 describe('App Home Page', () => {

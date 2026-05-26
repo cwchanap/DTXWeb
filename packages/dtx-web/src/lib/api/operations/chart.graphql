@@ -1,0 +1,58 @@
+fragment SimfileFull on Simfile {
+	id
+	displayId
+	title
+	artist
+	bpm
+	userId
+	isPublished
+	downloadUrl
+	previewUrl
+	videoPreviewUrl
+	publishDate
+	createdAt
+	updatedAt
+	dtxFiles {
+		level
+		label
+	}
+}
+
+fragment SimfileWithFiles on Simfile {
+	...SimfileFull
+	files {
+		key
+		size
+		uploaded
+	}
+	hasUploadedFiles
+}
+
+query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize: Int) {
+	simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
+		count
+		data {
+			...SimfileFull
+			hasUploadedFiles
+		}
+	}
+}
+
+query GetSimfile($id: ID!) {
+	simfile(id: $id) {
+		...SimfileWithFiles
+	}
+}
+
+mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
+	updateSimfile(id: $id, input: $input) {
+		...SimfileFull
+	}
+}
+
+mutation DeleteSimfile($id: ID!) {
+	deleteSimfile(id: $id) {
+		id
+		deleted
+	}
+}

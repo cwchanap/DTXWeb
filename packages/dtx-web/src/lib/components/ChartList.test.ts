@@ -15,7 +15,9 @@ const mockApi = vi.hoisted(() => ({
 vi.mock('$lib/api', () => ({
 	listSimfiles: mockApi.listSimfiles,
 	updateSimfile: mockApi.updateSimfile,
-	deleteSimfile: mockApi.deleteSimfile
+	deleteSimfile: mockApi.deleteSimfile,
+	bulkDownloadBaseUrl: () => '/api/simFile/download/bulk',
+	bulkDownloadHeaders: async () => ({ 'Content-Type': 'application/json' })
 }));
 
 vi.mock('svelte-i18n');

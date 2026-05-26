@@ -2,14 +2,9 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { SimFile, VALID_DTX_FILE_EXTENSIONS } from '@dtx/common/server';
-import {
-	validateSession,
-	getCurrentSession,
-	logoutSession,
-	handleProtocolUrl,
-	getSupabaseClient
-} from './auth';
-import { apiGet, apiPatch } from './api-client';
+import { validateSession, getCurrentSession, logoutSession, handleProtocolUrl } from './auth';
+import { getSimfile, getSimfileWithFiles, updateSimfile, simfileSearch } from './api-client';
+import { uploadFile } from './upload';
 import {
 	fetchUserSimFiles,
 	getPreviewUrl,
@@ -325,65 +320,18 @@ if (!gotTheLock) {
 				if (!simfileId || simfileId === '' || simfileId === '0') {
 					return [];
 				}
-
-				const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
-				if (!apiBaseUrl) {
-					throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
-				}
-
-				// Get the current session to extract JWT token
-				const session = getCurrentSession();
-				const supabaseClient = getSupabaseClient();
-
-				if (!session || !supabaseClient) {
-					throw new Error('User not authenticated');
-				}
-
-				// Get fresh session to ensure token is valid
-				const {
-					data: { session: currentSession },
-					error: sessionError
-				} = await supabaseClient.auth.getSession();
-
-				if (sessionError || !currentSession) {
-					throw new Error('Failed to get valid session');
-				}
-
-				const url = `${apiBaseUrl}/api/simFile/listFiles/${simfileId}`;
-
-				// Create session cookies that SvelteKit expects
-				const sessionCookies = [
-					`sb-${import.meta.env.VITE_SUPABASE_PROJECT_ID}-auth-token=${JSON.stringify({
-						access_token: currentSession.access_token,
-						refresh_token: currentSession.refresh_token,
-						expires_at: currentSession.expires_at,
-						expires_in: currentSession.expires_in,
-						token_type: currentSession.token_type,
-						user: currentSession.user
-					})}; Path=/; HttpOnly; SameSite=Lax`
-				];
-
-				const response = await fetch(url, {
-					headers: {
-						Cookie: sessionCookies.join('; '),
-						'Content-Type': 'application/json'
-					}
-				});
-
-				if (!response.ok) {
-					const errorText = await response.text();
-					console.error('API Error Response:', errorText);
-
-					// For specific API errors, return empty array instead of throwing
-					if (response.status === 404 || errorText.includes('Failed to list files')) {
+				const result = await getSimfileWithFiles(String(simfileId));
+				if (!result.success) {
+					console.error('API Error:', result.error);
+					if (
+						result.error.includes('NOT_FOUND') ||
+						result.error.includes('Failed to list files')
+					) {
 						return [];
 					}
-
-					throw new Error(`Error fetching files: ${response.statusText} - ${errorText}`);
+					throw new Error(`Error fetching files: ${result.error}`);
 				}
-
-				const data = await response.json();
-				return data.files || [];
+				return result.data?.files ?? [];
 			} catch (error) {
 				console.error('Error loading asset files:', error);
 				// Return empty array instead of throwing to prevent UI crashes
@@ -405,18 +353,28 @@ if (!gotTheLock) {
 			'search-cloud-songs',
 			async (_event, { query, limit = 8, excludeLinkedSongIds = [] }) => {
 				try {
-					const params = new URLSearchParams({ q: query, limit: String(limit) });
-					if (excludeLinkedSongIds.length > 0) {
-						params.set('exclude', excludeLinkedSongIds.join(','));
-					}
-
-					const result = await apiGet<{ data: unknown[] }>(`/api/chart/search?${params}`);
+					const result = await simfileSearch({
+						query,
+						limit,
+						excludeIds:
+							excludeLinkedSongIds.length > 0
+								? excludeLinkedSongIds.map(String)
+								: undefined
+					});
 
 					if (!result.success) {
 						return { success: false, error: result.error };
 					}
 
-					return { success: true, data: result.data?.data || [] };
+					// Map camelCase GraphQL response to snake_case shape the renderer expects
+					const data = result.data.simfileSearch.map((s) => ({
+						id: s.id,
+						title: s.title,
+						artist: s.artist,
+						bpm: s.bpm,
+						is_published: s.isPublished
+					}));
+					return { success: true, data };
 				} catch (error) {
 					console.error('Error searching cloud songs:', error);
 					return {
@@ -430,19 +388,42 @@ if (!gotTheLock) {
 		// Handle fetching cloud song data without file caching
 		ipcMain.handle('fetch-cloud-song', async (_event, { cloudSongId }) => {
 			try {
-				const result = await apiGet<unknown>(`/api/chart/${cloudSongId}`);
+				const result = await getSimfile(String(cloudSongId));
 
 				if (!result.success) {
 					return { success: false, error: result.error };
 				}
 
-				if (!result.data) {
+				if (!result.data.simfile) {
 					return { success: false, error: 'Cloud song not found' };
 				}
 
+				const s = result.data.simfile;
+				// Map camelCase GraphQL response to snake_case SimfileWithDtx shape the renderer expects
+				const cloudSongData = {
+					id: Number(s.id),
+					title: s.title,
+					artist: s.artist,
+					bpm: s.bpm,
+					user_id: s.userId ?? undefined,
+					is_published: s.isPublished,
+					display_id: s.displayId,
+					download_url: s.downloadUrl,
+					preview_url: s.previewUrl,
+					video_preview_url: s.videoPreviewUrl,
+					publish_date: s.publishDate,
+					created_at: s.createdAt,
+					updated_at: s.updatedAt,
+					dtx_files: s.dtxFiles.map((f, index) => ({
+						level: f.level,
+						label: f.label,
+						id: index + 1
+					}))
+				};
+
 				return {
 					success: true,
-					cloudSongData: result.data
+					cloudSongData
 				};
 			} catch (error) {
 				console.error('Error fetching cloud song data:', error);
@@ -456,13 +437,36 @@ if (!gotTheLock) {
 		// Handle updating simfile record in database
 		ipcMain.handle('update-simfile-record', async (_event, { simfileId, updateData }) => {
 			try {
-				const result = await apiPatch<unknown>(`/api/chart/${simfileId}`, updateData);
+				const result = await updateSimfile(String(simfileId), updateData);
 
 				if (!result.success) {
 					return { success: false, error: result.error };
 				}
 
-				return { success: true, data: result.data };
+				const s = result.data.updateSimfile;
+				// Map camelCase GraphQL response to snake_case SimfileWithDtx shape the renderer expects
+				const data = {
+					id: Number(s.id),
+					title: s.title,
+					artist: s.artist,
+					bpm: s.bpm,
+					user_id: s.userId ?? undefined,
+					is_published: s.isPublished,
+					display_id: s.displayId,
+					download_url: s.downloadUrl,
+					preview_url: s.previewUrl,
+					video_preview_url: s.videoPreviewUrl,
+					publish_date: s.publishDate,
+					created_at: s.createdAt,
+					updated_at: s.updatedAt,
+					dtx_files: s.dtxFiles.map((f, index) => ({
+						level: f.level,
+						label: f.label,
+						id: index + 1
+					}))
+				};
+
+				return { success: true, data };
 			} catch (error) {
 				console.error('Error updating simfile:', error);
 				return {
@@ -562,91 +566,25 @@ if (!gotTheLock) {
 			'upload-file',
 			async (_event, fileName: string, songFolderPath: string, simfileId: string) => {
 				try {
-					// Construct the full file path
 					const filePath = path.join(songFolderPath, fileName);
-
-					// Check if file exists
 					try {
 						await fs.promises.access(filePath);
-					} catch (error) {
+					} catch {
 						throw new Error(`File not found: ${filePath}`);
 					}
-
-					// Get the current session to extract JWT token
-					const session = getCurrentSession();
-					const supabaseClient = getSupabaseClient();
-
-					if (!session || !supabaseClient) {
-						throw new Error('User not authenticated');
-					}
-
-					// Get fresh session to ensure token is valid
-					const {
-						data: { session: currentSession },
-						error: sessionError
-					} = await supabaseClient.auth.getSession();
-
-					if (sessionError || !currentSession) {
-						throw new Error('Failed to get valid session');
-					}
-
-					// Read the file from local filesystem
 					const fileBuffer = await fs.promises.readFile(filePath);
-
-					// Create a File object from the buffer (Node.js compatible)
-
-					// Remove the first level directory name if present
 					let fileNameWithoutDir = fileName;
 					if (fileName.includes('/')) {
 						fileNameWithoutDir = fileName.split('/').slice(1).join('/');
 					}
-
-					// Create form data for the API
 					const formData = new FormData();
 					formData.append('file', new File([fileBuffer], fileNameWithoutDir));
 					formData.append('simFileId', simfileId);
-
-					// Use DTX Server URL for uploads (now that upload API is migrated to SvelteKit)
-					const apiBaseUrl = import.meta.env.VITE_DTX_SERVER_URL || '';
-					if (!apiBaseUrl) {
-						throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
+					const result = await uploadFile(formData);
+					if (!result.success) {
+						throw new Error(`Upload failed: ${result.error}`);
 					}
-
-					const url = `${apiBaseUrl}/api/simFile/upload`;
-
-					// Create session cookies that SvelteKit expects (same as load-asset-files)
-					const sessionCookies = [
-						`sb-${import.meta.env.VITE_SUPABASE_PROJECT_ID}-auth-token=${JSON.stringify(
-							{
-								access_token: currentSession.access_token,
-								refresh_token: currentSession.refresh_token,
-								expires_at: currentSession.expires_at,
-								expires_in: currentSession.expires_in,
-								token_type: currentSession.token_type,
-								user: currentSession.user
-							}
-						)}; Path=/; HttpOnly; SameSite=Lax`
-					];
-
-					// Send the request
-					const response = await fetch(url, {
-						method: 'POST',
-						body: formData,
-						headers: {
-							Cookie: sessionCookies.join('; '),
-							'User-Agent': 'DTXDesktopApp/1.0',
-							'X-Requested-With': 'DTXDesktopApp'
-						}
-					});
-
-					if (!response.ok) {
-						const errorText = await response.text();
-						console.error('Upload Error Response:', errorText);
-						throw new Error(`Upload failed: ${response.statusText} - ${errorText}`);
-					}
-
-					const result = await response.json();
-					return { success: true, data: result };
+					return { success: true, data: result.data };
 				} catch (error) {
 					console.error('Error uploading file:', error);
 					return {

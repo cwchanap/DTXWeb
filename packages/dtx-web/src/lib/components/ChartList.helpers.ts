@@ -1,3 +1,5 @@
+import { bulkDownloadBaseUrl, bulkDownloadHeaders } from '$lib/api';
+
 export type SaveFilePickerHandle = {
 	createWritable: () => Promise<WritableStream<Uint8Array>>;
 };
@@ -22,9 +24,9 @@ export const MAX_BULK_DOWNLOAD_CHARTS = 20;
 export const BULK_DOWNLOAD_UNSUPPORTED_MESSAGE =
 	'Bulk download requires a browser that supports direct file saving.';
 
-const createBulkDownloadRequestInit = (ids: number[]): RequestInit => ({
+const createBulkDownloadRequestInit = async (ids: number[]): Promise<RequestInit> => ({
 	method: 'POST',
-	headers: { 'Content-Type': 'application/json' },
+	headers: await bulkDownloadHeaders(),
 	body: JSON.stringify({ ids })
 });
 
@@ -116,15 +118,10 @@ export const submitBulkDownload = async (
 	ids: number[],
 	target: BulkDownloadTarget
 ) => {
-	const response = await fetchFn(
-		'/api/simFile/download/bulk',
-		createBulkDownloadRequestInit(ids)
-	);
-
+	const response = await fetchFn(bulkDownloadBaseUrl(), await createBulkDownloadRequestInit(ids));
 	if (!response.ok) {
 		throw new Error(await getResponseErrorMessage(response, 'Bulk download failed'));
 	}
-
 	await streamToFile(response, target);
 };
 
@@ -139,8 +136,8 @@ export const startBulkDownload = async ({
 }) => {
 	const target = await showBulkDownloadSaveFilePicker(saveFilePickerWindow);
 	const validationResponse = await fetchFn(
-		'/api/simFile/download/bulk?validate=1',
-		createBulkDownloadRequestInit(ids)
+		`${bulkDownloadBaseUrl()}?validate=1`,
+		await createBulkDownloadRequestInit(ids)
 	);
 
 	if (!validationResponse.ok) {

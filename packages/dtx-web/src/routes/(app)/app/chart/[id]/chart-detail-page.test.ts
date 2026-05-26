@@ -5,6 +5,10 @@ vi.mock('$env/static/public', () => ({
 	PUBLIC_SIMFILE_BUCKET_URL: 'http://example.com'
 }));
 
+vi.mock('$env/dynamic/public', () => ({
+	env: {}
+}));
+
 vi.mock('$app/environment', () => ({
 	browser: false
 }));
@@ -44,27 +48,32 @@ vi.mock('@dtx/common', () => ({
 	UploadedAssetFiles: vi.fn()
 }));
 
+const mockGetSimfile = vi.hoisted(() => vi.fn());
+const mockUpdateSimfile = vi.hoisted(() => vi.fn());
+
+vi.mock('$lib/api', () => ({
+	getSimfile: mockGetSimfile,
+	updateSimfile: mockUpdateSimfile
+}));
+
 import ChartDetailPage from './+page.svelte';
 import { ChartDetail } from '@dtx/common/components';
 import toastStore from '$lib/toaster';
 
+const mockSimfileResponse = { id: 123, title: 'Test Song', is_published: false };
+
 describe('Chart Detail Page', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: false,
-				json: vi.fn().mockResolvedValue({ error: 'Not found' })
-			})
-		);
+		mockGetSimfile.mockRejectedValue(new Error('Not found'));
 	});
 
 	afterEach(() => {
-		vi.unstubAllGlobals();
+		vi.clearAllMocks();
 	});
 
 	it('renders loading state initially', () => {
+		mockGetSimfile.mockReturnValue(new Promise(() => {}));
 		render(ChartDetailPage);
 		expect(screen.getByText('Loading...')).toBeInTheDocument();
 	});
@@ -81,14 +90,8 @@ describe('Chart Detail Page', () => {
 		});
 	});
 
-	it('shows error when fetch response has no error field', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: false,
-				json: vi.fn().mockResolvedValue({})
-			})
-		);
+	it('shows error when getSimfile rejects with generic error', async () => {
+		mockGetSimfile.mockRejectedValue(new Error('Failed to load chart'));
 		render(ChartDetailPage);
 		await vi.waitFor(() => {
 			expect(screen.getByText(/Error: Failed to load chart/i)).toBeInTheDocument();
@@ -96,13 +99,7 @@ describe('Chart Detail Page', () => {
 	});
 
 	it('shows simfile data after successful fetch', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: true,
-				json: vi.fn().mockResolvedValue({ id: '123', title: 'Test Song' })
-			})
-		);
+		mockGetSimfile.mockResolvedValue(mockSimfileResponse);
 		render(ChartDetailPage);
 		await vi.waitFor(() => {
 			expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -125,27 +122,13 @@ function getLastProps<T>(mockFn: ReturnType<typeof vi.fn>): T | undefined {
 }
 
 describe('handleUpdateSimfile via ChartDetail onSave prop', () => {
-	const mockSimfileResponse = { id: 123, title: 'Test Song', is_published: false };
-
 	afterEach(() => {
-		vi.unstubAllGlobals();
 		vi.clearAllMocks();
 	});
 
-	it('calls PATCH and shows success toast when update succeeds', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue(mockSimfileResponse)
-				})
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue({})
-				})
-		);
+	it('calls updateSimfile and shows success toast when update succeeds', async () => {
+		mockGetSimfile.mockResolvedValue(mockSimfileResponse);
+		mockUpdateSimfile.mockResolvedValue({ ...mockSimfileResponse, is_published: true });
 
 		render(ChartDetailPage);
 
@@ -176,25 +159,24 @@ describe('handleUpdateSimfile via ChartDetail onSave prop', () => {
 			}
 		});
 
+		expect(mockUpdateSimfile).toHaveBeenCalledWith(
+			'123',
+			expect.objectContaining({
+				downloadUrl: 'http://download.com',
+				videoPreviewUrl: 'http://video.com',
+				publishDate: '2024-01-01',
+				isPublished: true,
+				displayId: 1
+			})
+		);
 		expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith(
 			expect.objectContaining({ title: 'Simfile updated successfully' })
 		);
 	});
 
-	it('shows error toast when PATCH request fails', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi
-				.fn()
-				.mockResolvedValueOnce({
-					ok: true,
-					json: vi.fn().mockResolvedValue(mockSimfileResponse)
-				})
-				.mockResolvedValueOnce({
-					ok: false,
-					json: vi.fn().mockResolvedValue({})
-				})
-		);
+	it('shows error toast when updateSimfile rejects', async () => {
+		mockGetSimfile.mockResolvedValue(mockSimfileResponse);
+		mockUpdateSimfile.mockRejectedValue(new Error('update failed: 500'));
 
 		render(ChartDetailPage);
 

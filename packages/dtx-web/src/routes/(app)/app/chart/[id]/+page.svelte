@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import type { SimfileWithDtxFiles } from '@dtx/common';
 	import { goto } from '$app/navigation';
 	import type { SimFile, DTXFile } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { loadAssetFiles } from '@dtx/common/services/assetFileService';
+	import { getSimfile, updateSimfile, type LegacySimfile } from '$lib/api';
 
-	let simfile: SimfileWithDtxFiles | null = $state(null);
+	let simfile: LegacySimfile | null = $state(null);
 	let loading = $state(true);
 	let error: string | null = $state(null);
 	let updatedHighestDtx = $state<DTXFile | null>(null);
@@ -23,12 +23,7 @@
 
 	const loadSimfileDetails = async (id: string) => {
 		try {
-			const response = await fetch(`/api/chart/${id}`);
-			if (!response.ok) {
-				const err = await response.json();
-				throw new Error(err.error || 'Failed to load chart');
-			}
-			simfile = await response.json();
+			simfile = await getSimfile(id);
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : 'Failed to load chart';
 		} finally {
@@ -48,30 +43,23 @@
 		videoPreviewUrl: string
 	) => {
 		const { id } = $page.params;
-		let updateFields: Record<string, unknown> = {
-			download_url: downloadUrl,
-			video_preview_url: videoPreviewUrl,
-			publish_date: publishDate,
-			is_published: isPublished,
-			display_id: displayId ? Number(displayId) : null
+		const updateFields = {
+			downloadUrl,
+			videoPreviewUrl,
+			publishDate,
+			isPublished,
+			displayId: displayId ? Number(displayId) : null,
+			...(updatedSimfile && updatedHighestDtx
+				? {
+						bpm: updatedHighestDtx.bpm,
+						artist: updatedHighestDtx.artist,
+						title: updatedSimfile.title
+					}
+				: {})
 		};
 
-		if (updatedSimfile && updatedHighestDtx) {
-			updateFields.bpm = updatedHighestDtx.bpm;
-			updateFields.artist = updatedHighestDtx.artist;
-			updateFields.title = updatedSimfile.title;
-		}
-
 		try {
-			const response = await fetch(`/api/chart/${id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(updateFields)
-			});
-
-			if (!response.ok) {
-				throw new Error('Failed to update');
-			}
+			simfile = await updateSimfile(String(id), updateFields);
 
 			toastStore.success({
 				title: 'Simfile updated successfully',
@@ -96,7 +84,7 @@
 		<p class="text-red-500">Error: {error}</p>
 	{:else if simfile}
 		<ChartDetail
-			{simfile}
+			simfile={simfile as import('@dtx/common').SimfileWithDtxFiles}
 			on:onSave={(e) =>
 				handleUpdateSimfile(
 					e.detail.displayId,

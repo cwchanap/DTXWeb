@@ -26,6 +26,11 @@ vi.mock('@dtx/ui-components/components', async () => {
 vi.mock('@lucide/svelte/icons');
 vi.mock('$lib/toaster', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$lib/api', () => ({
+	downloadSimfile: vi.fn().mockResolvedValue(undefined),
+	bulkDownloadBaseUrl: vi.fn(() => '/api/simFile/download/bulk'),
+	bulkDownloadHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' })
+}));
 
 // Track ImageAudio props to test URL construction
 let capturedImageAudioProps: { previewUrl?: string; soundPreviewUrl?: string | null } | null = null;
@@ -177,7 +182,9 @@ describe('ChartListItem Component Logic', () => {
 		it('renders the uploaded chart download link when uploaded files are available in blog mode', () => {
 			render(ChartListItem, { props: { ...baseProps, item: mockItem } });
 
-			expect(screen.getByRole('link', { name: /download chart/i })).toBeInTheDocument();
+			expect(
+				screen.getByRole('button', { name: 'chart_actions.download' })
+			).toBeInTheDocument();
 			expect(
 				screen.getByRole('link', { name: /external download link/i })
 			).toBeInTheDocument();
@@ -186,7 +193,9 @@ describe('ChartListItem Component Logic', () => {
 		it('omits the uploaded chart download link when no external URL exists and uploads are unavailable', () => {
 			render(ChartListItem, { props: { ...baseProps, item: mockItemNoPreview } });
 
-			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.download' })
+			).not.toBeInTheDocument();
 			expect(screen.getByTitle('No external link available')).toBeInTheDocument();
 		});
 
@@ -198,7 +207,9 @@ describe('ChartListItem Component Logic', () => {
 				}
 			});
 
-			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.download' })
+			).not.toBeInTheDocument();
 			expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
 				'href',
 				mockItem.download_url
@@ -260,12 +271,8 @@ describe('ChartListItem Component Logic', () => {
 					item: { ...renderProps.item, download_url: 'https://example.com/download1' }
 				}
 			});
-			const downloadLink = screen.getByRole('link', { name: /download chart/i });
-			expect(downloadLink).toBeInTheDocument();
-			expect(downloadLink).toHaveAttribute(
-				'href',
-				`/api/simFile/download/${renderProps.item.id}`
-			);
+			const downloadButton = screen.getByRole('button', { name: 'chart_actions.download' });
+			expect(downloadButton).toBeInTheDocument();
 		});
 
 		it('hides R2 download link in blog mode when upload availability is omitted', () => {
@@ -281,7 +288,9 @@ describe('ChartListItem Component Logic', () => {
 					})()
 				}
 			});
-			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.download' })
+			).not.toBeInTheDocument();
 			expect(
 				screen.getByRole('link', { name: /external download link/i })
 			).toBeInTheDocument();
@@ -296,7 +305,9 @@ describe('ChartListItem Component Logic', () => {
 					item: { ...mockItem, has_uploaded_files: false }
 				}
 			});
-			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.download' })
+			).not.toBeInTheDocument();
 		});
 
 		it('shows external link in blog mode when download_url is set and downloads are disabled', () => {
@@ -329,7 +340,7 @@ describe('ChartListItem Component Logic', () => {
 					item: { ...mockItem, download_url: null }
 				}
 			});
-			const downloadLink = screen.getByRole('link', { name: /download chart/i });
+			const downloadLink = screen.getByRole('button', { name: 'chart_actions.download' });
 			expect(downloadLink).toBeInTheDocument();
 		});
 
@@ -342,7 +353,9 @@ describe('ChartListItem Component Logic', () => {
 					item: { ...mockItemNoPreview, download_url: null, has_uploaded_files: false }
 				}
 			});
-			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.download' })
+			).not.toBeInTheDocument();
 			expect(screen.getByTitle('No external link available')).toBeInTheDocument();
 		});
 
@@ -359,7 +372,9 @@ describe('ChartListItem Component Logic', () => {
 					}
 				}
 			});
-			expect(screen.queryByRole('link', { name: /download chart/i })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.download' })
+			).not.toBeInTheDocument();
 			expect(
 				screen.queryByRole('link', { name: /external download link/i })
 			).not.toBeInTheDocument();

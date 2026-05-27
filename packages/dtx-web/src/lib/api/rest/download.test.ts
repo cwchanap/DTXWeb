@@ -42,6 +42,18 @@ describe('parseContentDispositionFilename', () => {
 		expect(parseContentDispositionFilename(null)).toBeNull();
 		expect(parseContentDispositionFilename('attachment')).toBeNull();
 	});
+	it('URL-decodes RFC5987 filename* values', () => {
+		expect(
+			parseContentDispositionFilename(
+				"attachment; filename*=UTF-8''%E3%83%86%E3%82%B9%E3%83%88.zip"
+			)
+		).toBe('テスト.zip');
+	});
+	it('falls back to raw value when RFC5987 decoding fails', () => {
+		expect(parseContentDispositionFilename("attachment; filename*=UTF-8''%E0%A4%A.zip")).toBe(
+			'%E0%A4%A.zip'
+		);
+	});
 });
 
 describe('downloadSimfile (REST path)', () => {

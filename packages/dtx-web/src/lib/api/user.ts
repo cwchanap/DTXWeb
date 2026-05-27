@@ -14,10 +14,27 @@ const adapt = (g: { userId: string; username: string }): LegacyUserProfile => ({
 	username: g.username
 });
 
+const readErrorBody = async (res: Response): Promise<string> => {
+	try {
+		const text = await res.text();
+		try {
+			const json = JSON.parse(text);
+			return json.message ?? json.error ?? text.slice(0, 200);
+		} catch {
+			return text.slice(0, 200);
+		}
+	} catch {
+		return '';
+	}
+};
+
 export const getMe = async (ctx?: ClientCtx): Promise<LegacyUserProfile> => {
 	if (!useGraphQL()) {
 		const res = await fetchFn(ctx)('/api/user/profile', { method: 'GET' });
-		if (!res.ok) throw new Error(`me failed: ${res.status}`);
+		if (!res.ok) {
+			const body = await readErrorBody(res);
+			throw new Error(`me failed: ${res.status}${body ? ` – ${body}` : ''}`);
+		}
 		const body = (await res.json()) as { data: LegacyUserProfile };
 		return body.data;
 	}
@@ -36,7 +53,10 @@ export const upsertUserProfile = async (
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(input)
 		});
-		if (!res.ok) throw new Error(`upsert failed: ${res.status}`);
+		if (!res.ok) {
+			const body = await readErrorBody(res);
+			throw new Error(`upsert failed: ${res.status}${body ? ` – ${body}` : ''}`);
+		}
 		const body = (await res.json()) as { data: LegacyUserProfile };
 		return body.data;
 	}

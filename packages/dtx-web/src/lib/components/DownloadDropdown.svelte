@@ -50,6 +50,13 @@
 			isDownloading = false;
 		}
 	};
+
+	const handleKeyDown = (e: KeyboardEvent) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			handleDownload(e);
+		}
+	};
 </script>
 
 <div class={containerClass}>
@@ -57,12 +64,7 @@
 		<button
 			type="button"
 			onclick={handleDownload}
-			onkeydown={(e) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					handleDownload(e);
-				}
-			}}
+			onkeydown={handleKeyDown}
 			aria-label={$_('chart_actions.download')}
 			tabindex="0"
 			disabled={isDownloading}

@@ -4,6 +4,7 @@ import path from 'path';
 import { SimFile, VALID_DTX_FILE_EXTENSIONS } from '@dtx/common/server';
 import { validateSession, getCurrentSession, logoutSession, handleProtocolUrl } from './auth';
 import { getSimfile, getSimfileWithFiles, updateSimfile, simfileSearch } from './api-client';
+import { toRendererSimfile } from './simfile-mapper';
 import { uploadFile } from './upload';
 import {
 	fetchUserSimFiles,
@@ -398,28 +399,7 @@ if (!gotTheLock) {
 					return { success: false, error: 'Cloud song not found' };
 				}
 
-				const s = result.data.simfile;
-				// Map camelCase GraphQL response to snake_case SimfileWithDtx shape the renderer expects
-				const cloudSongData = {
-					id: Number(s.id),
-					title: s.title,
-					artist: s.artist,
-					bpm: s.bpm,
-					user_id: s.userId ?? undefined,
-					is_published: s.isPublished,
-					display_id: s.displayId,
-					download_url: s.downloadUrl,
-					preview_url: s.previewUrl,
-					video_preview_url: s.videoPreviewUrl,
-					publish_date: s.publishDate,
-					created_at: s.createdAt,
-					updated_at: s.updatedAt,
-					dtx_files: s.dtxFiles.map((f, index) => ({
-						level: f.level,
-						label: f.label,
-						id: index + 1
-					}))
-				};
+				const cloudSongData = toRendererSimfile(result.data.simfile);
 
 				return {
 					success: true,
@@ -443,28 +423,7 @@ if (!gotTheLock) {
 					return { success: false, error: result.error };
 				}
 
-				const s = result.data.updateSimfile;
-				// Map camelCase GraphQL response to snake_case SimfileWithDtx shape the renderer expects
-				const data = {
-					id: Number(s.id),
-					title: s.title,
-					artist: s.artist,
-					bpm: s.bpm,
-					user_id: s.userId ?? undefined,
-					is_published: s.isPublished,
-					display_id: s.displayId,
-					download_url: s.downloadUrl,
-					preview_url: s.previewUrl,
-					video_preview_url: s.videoPreviewUrl,
-					publish_date: s.publishDate,
-					created_at: s.createdAt,
-					updated_at: s.updatedAt,
-					dtx_files: s.dtxFiles.map((f, index) => ({
-						level: f.level,
-						label: f.label,
-						id: index + 1
-					}))
-				};
+				const data = toRendererSimfile(result.data.updateSimfile);
 
 				return { success: true, data };
 			} catch (error) {

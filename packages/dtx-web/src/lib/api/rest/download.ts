@@ -12,9 +12,19 @@ export const bulkDownloadBaseUrl = () =>
 
 export const parseContentDispositionFilename = (header: string | null): string | null => {
 	if (!header) return null;
+	const isEncoded = /filename\*=/i.test(header);
 	const match = /filename\*?=(?:UTF-8'')?(?:"([^"]+)"|([^;]+))/i.exec(header);
 	if (!match) return null;
-	return (match[1] ?? match[2] ?? '').trim() || null;
+	const raw = (match[1] ?? match[2] ?? '').trim();
+	if (!raw) return null;
+	if (isEncoded) {
+		try {
+			return decodeURIComponent(raw);
+		} catch {
+			return raw;
+		}
+	}
+	return raw;
 };
 
 const defaultTriggerBrowserDownload = (blob: Blob, filename: string) => {

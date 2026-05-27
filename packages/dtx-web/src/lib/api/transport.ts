@@ -33,6 +33,12 @@ export const makeServiceBindingClient = (
 		// Cast needed: @cloudflare/workers-types Request has extra required fields
 		// not present on the DOM Request; at runtime CF accepts DOM Request objects.
 		const res = await binding.fetch(req as unknown as Parameters<Fetcher['fetch']>[0]);
+		if (!res.ok) {
+			const body = await res.text();
+			throw new Error(
+				`GraphQL request failed: ${res.status} ${res.statusText}: ${body.slice(0, 200)}`
+			);
+		}
 		const json = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
 		if (json.errors && json.errors.length > 0) {
 			throw new Error(json.errors[0].message);

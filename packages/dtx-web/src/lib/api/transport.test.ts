@@ -63,4 +63,19 @@ describe('makeServiceBindingClient', () => {
 		>;
 		await expect(client.request(doc, {})).rejects.toThrow('boom');
 	});
+
+	it('throws descriptive error on non-OK HTTP response', async () => {
+		binding.fetch.mockResolvedValue(
+			new Response('Internal Server Error', {
+				status: 500,
+				statusText: 'Internal Server Error'
+			})
+		);
+		const client = makeServiceBindingClient(binding as unknown as Fetcher);
+		const doc = { kind: 'Document', definitions: [] } as unknown as TypedDocumentNode<
+			unknown,
+			Record<string, never>
+		>;
+		await expect(client.request(doc, {})).rejects.toThrow('GraphQL request failed: 500');
+	});
 });

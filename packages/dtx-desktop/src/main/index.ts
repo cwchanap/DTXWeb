@@ -332,7 +332,14 @@ if (!gotTheLock) {
 					}
 					throw new Error(`Error fetching files: ${result.error}`);
 				}
-				return result.data?.files ?? [];
+				return (result.data?.files ?? []).map(
+					(file: { key: string; size: number; uploaded: string }) => ({
+						fileName: file.key.split('/').pop() ?? file.key,
+						size: file.size,
+						lastModified: file.uploaded,
+						key: file.key
+					})
+				);
 			} catch (error) {
 				console.error('Error loading asset files:', error);
 				// Return empty array instead of throwing to prevent UI crashes

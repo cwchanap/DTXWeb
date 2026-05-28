@@ -37,8 +37,7 @@
 	let isDownloading = $state(false);
 	let downloadError = $state<string | null>(null);
 
-	const handleDownload = async (e: Event) => {
-		e.preventDefault();
+	const handleDownload = async () => {
 		if (isDownloading) return;
 		isDownloading = true;
 		downloadError = null;
@@ -50,13 +49,6 @@
 			isDownloading = false;
 		}
 	};
-
-	const handleKeyDown = (e: KeyboardEvent) => {
-		if (e.key === 'Enter' || e.key === ' ') {
-			e.preventDefault();
-			handleDownload(e);
-		}
-	};
 </script>
 
 <div class={containerClass}>
@@ -64,9 +56,7 @@
 		<button
 			type="button"
 			onclick={handleDownload}
-			onkeydown={handleKeyDown}
 			aria-label={$_('chart_actions.download')}
-			tabindex="0"
 			disabled={isDownloading}
 			class={downloadClass}
 			title="Download chart"

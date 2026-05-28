@@ -862,10 +862,15 @@ describe('Mutation.deleteSimfile', () => {
 		mockedDelete.mockResolvedValue(undefined as never);
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
-			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+			query: 'mutation { deleteSimfile(id: "42") { id deleted partialDeletion message } }'
 		});
 
-		expect(result.data?.deleteSimfile).toEqual({ id: '42', deleted: true });
+		expect(result.data?.deleteSimfile).toEqual({
+			id: '42',
+			deleted: true,
+			partialDeletion: null,
+			message: null
+		});
 		expect(r2.delete).toHaveBeenCalledTimes(2);
 		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 42);
 	});
@@ -911,10 +916,15 @@ describe('Mutation.deleteSimfile', () => {
 		mockedDelete.mockResolvedValue(undefined as never);
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
-			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+			query: 'mutation { deleteSimfile(id: "42") { id deleted partialDeletion message } }'
 		});
 
-		expect(result.data?.deleteSimfile).toEqual({ id: '42', deleted: true });
+		expect(result.data?.deleteSimfile).toEqual({
+			id: '42',
+			deleted: true,
+			partialDeletion: null,
+			message: null
+		});
 		expect(r2.list).toHaveBeenCalledTimes(2);
 		expect(r2.delete).toHaveBeenCalledTimes(2);
 	});
@@ -959,9 +969,14 @@ describe('Mutation.deleteSimfile', () => {
 		mockedDelete.mockResolvedValue(undefined as never);
 
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'], r2 }), {
-			query: 'mutation { deleteSimfile(id: "42") { id deleted } }'
+			query: 'mutation { deleteSimfile(id: "42") { id deleted partialDeletion message } }'
 		});
-		expect(result.data?.deleteSimfile).toEqual({ id: '42', deleted: true });
+		expect(result.data?.deleteSimfile).toEqual({
+			id: '42',
+			deleted: true,
+			partialDeletion: true,
+			message: '1 file(s) could not be deleted from storage'
+		});
 		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 42);
 	});
 

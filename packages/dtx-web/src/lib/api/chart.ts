@@ -51,24 +51,28 @@ const adaptSimfile = (s: {
 	dtxFiles?: { level: number; label: string }[];
 	files?: { key: string; size: number; uploaded: string }[];
 	hasUploadedFiles?: boolean;
-}): LegacySimfile => ({
-	id: Number(s.id),
-	display_id: s.displayId ?? null,
-	title: s.title,
-	artist: s.artist,
-	bpm: s.bpm,
-	user_id: s.userId ?? null,
-	is_published: s.isPublished,
-	download_url: s.downloadUrl ?? null,
-	preview_url: s.previewUrl ?? null,
-	video_preview_url: s.videoPreviewUrl ?? null,
-	publish_date: s.publishDate ?? '',
-	created_at: s.createdAt ?? '',
-	updated_at: s.updatedAt ?? '',
-	dtx_files: s.dtxFiles ?? [],
-	files: s.files,
-	has_uploaded_files: s.hasUploadedFiles
-});
+}): LegacySimfile => {
+	const numId = Number(s.id);
+	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${s.id}`);
+	return {
+		id: numId,
+		display_id: s.displayId ?? null,
+		title: s.title,
+		artist: s.artist,
+		bpm: s.bpm,
+		user_id: s.userId ?? null,
+		is_published: s.isPublished,
+		download_url: s.downloadUrl ?? null,
+		preview_url: s.previewUrl ?? null,
+		video_preview_url: s.videoPreviewUrl ?? null,
+		publish_date: s.publishDate ?? '',
+		created_at: s.createdAt ?? '',
+		updated_at: s.updatedAt ?? '',
+		dtx_files: s.dtxFiles ?? [],
+		files: s.files,
+		has_uploaded_files: s.hasUploadedFiles
+	};
+};
 
 const fetchFn = (ctx?: ClientCtx): typeof fetch => ctx?.fetch ?? fetch;
 
@@ -151,8 +155,10 @@ export const deleteSimfile = async (id: string, ctx?: ClientCtx): Promise<Delete
 			partialDeletion?: boolean;
 			message?: string;
 		};
+		const numId = Number(id);
+		if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${id}`);
 		return {
-			id: Number(id),
+			id: numId,
 			deleted: true,
 			partialDeletion: body.partialDeletion,
 			message: body.message
@@ -160,5 +166,12 @@ export const deleteSimfile = async (id: string, ctx?: ClientCtx): Promise<Delete
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(DeleteSimfileDocument, { id });
-	return { id: Number(result.deleteSimfile.id), deleted: result.deleteSimfile.deleted };
+	const numId = Number(result.deleteSimfile.id);
+	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${result.deleteSimfile.id}`);
+	return {
+		id: numId,
+		deleted: result.deleteSimfile.deleted,
+		partialDeletion: result.deleteSimfile.partialDeletion ?? undefined,
+		message: result.deleteSimfile.message ?? undefined
+	};
 };

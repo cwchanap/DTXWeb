@@ -296,11 +296,17 @@
 		// For linked songs, fetch actual cloud files via IPC
 		try {
 			const result = await window.electron.ipcRenderer.invoke('load-asset-files', simfileId);
-			// Always return an array, even if result is null/undefined
+			if (result && typeof result === 'object' && 'success' in result) {
+				if (!result.success) {
+					console.error('Error loading cloud asset files:', result.error);
+					return [];
+				}
+				return result.data ?? [];
+			}
+			// Fallback for unexpected shapes
 			return Array.isArray(result) ? result : [];
 		} catch (error) {
 			console.error('Error loading cloud asset files:', error);
-			// Return empty array to allow UI to function normally
 			return [];
 		}
 	};

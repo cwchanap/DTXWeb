@@ -442,19 +442,19 @@ describe('index.ts IPC handlers', () => {
 
 	// ── load-asset-files ─────────────────────────────────────────────────────
 	describe('load-asset-files handler', () => {
-		it('returns empty array for empty simfileId', async () => {
+		it('returns { success: true, data: [] } for empty simfileId', async () => {
 			const result = await ipcHandlers['load-asset-files']({}, '');
-			expect(result).toEqual([]);
+			expect(result).toEqual({ success: true, data: [] });
 		});
 
-		it('returns empty array for simfileId "0"', async () => {
+		it('returns { success: true, data: [] } for simfileId "0"', async () => {
 			const result = await ipcHandlers['load-asset-files']({}, '0');
-			expect(result).toEqual([]);
+			expect(result).toEqual({ success: true, data: [] });
 		});
 
-		it('returns empty array for null/undefined simfileId', async () => {
+		it('returns { success: true, data: [] } for null/undefined simfileId', async () => {
 			const result = await ipcHandlers['load-asset-files']({}, null);
-			expect(result).toEqual([]);
+			expect(result).toEqual({ success: true, data: [] });
 		});
 	});
 
@@ -578,7 +578,7 @@ describe('index.ts IPC handlers', () => {
 		it('returns mapped snake_case cloud song data on success', async () => {
 			mockApiClient.getSimfile.mockResolvedValue({
 				success: true,
-				data: { simfile: gqlSimfile }
+				data: gqlSimfile
 			});
 			const result = (await ipcHandlers['fetch-cloud-song']({}, { cloudSongId: 5 })) as {
 				success: boolean;
@@ -590,14 +590,18 @@ describe('index.ts IPC handlers', () => {
 			expect(result.cloudSongData.dtx_files).toHaveLength(1);
 		});
 
-		it('returns failure when simfile is null', async () => {
-			mockApiClient.getSimfile.mockResolvedValue({ success: true, data: { simfile: null } });
+		it('returns failure when simfile is null (NOT_FOUND from API)', async () => {
+			mockApiClient.getSimfile.mockResolvedValue({
+				success: false,
+				error: 'Simfile not found',
+				code: 'NOT_FOUND'
+			});
 			const result = (await ipcHandlers['fetch-cloud-song']({}, { cloudSongId: 5 })) as {
 				success: boolean;
 				error: string;
 			};
 			expect(result.success).toBe(false);
-			expect(result.error).toBe('Cloud song not found');
+			expect(result.error).toBe('Simfile not found');
 		});
 
 		it('returns failure when getSimfile itself fails', async () => {
@@ -1005,21 +1009,27 @@ describe('index.ts IPC handlers', () => {
 
 	// ── load-asset-files (GraphQL path) ─────────────────────────────────────
 	describe('load-asset-files handler (GraphQL path)', () => {
-		it('returns files array on successful getSimfileWithFiles', async () => {
+		it('returns { success: true, data } on successful getSimfileWithFiles', async () => {
 			mockApiClient.getSimfileWithFiles.mockResolvedValue({
 				success: true,
 				data: { files: [{ key: 'song.dtx', size: 1024, uploaded: '2024-01-01' }] }
 			});
 
 			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
-				fileName: string;
-				size: number;
-				lastModified: string;
-				key: string;
-			}[];
-			expect(result).toEqual([
-				{ fileName: 'song.dtx', size: 1024, lastModified: '2024-01-01', key: 'song.dtx' }
-			]);
+				success: boolean;
+				data: { fileName: string; size: number; lastModified: string; key: string }[];
+			};
+			expect(result).toEqual({
+				success: true,
+				data: [
+					{
+						fileName: 'song.dtx',
+						size: 1024,
+						lastModified: '2024-01-01',
+						key: 'song.dtx'
+					}
+				]
+			});
 		});
 
 		it('extracts fileName from nested key path', async () => {
@@ -1035,10 +1045,11 @@ describe('index.ts IPC handlers', () => {
 			});
 
 			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
-				fileName: string;
-				key: string;
-			}[];
-			expect(result).toEqual([
+				success: boolean;
+				data: { fileName: string; key: string }[];
+			};
+			expect(result.success).toBe(true);
+			expect(result.data).toEqual([
 				{
 					fileName: 'song.dtx',
 					size: 2048,
@@ -1060,51 +1071,55 @@ describe('index.ts IPC handlers', () => {
 			]);
 		});
 
-		it('returns empty array when files is null/undefined', async () => {
-			mockApiClient.getSimfileWithFiles.mockResolvedValue({
-				success: true,
-				data: null
-			});
-
-			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
+		it('returns { success: true, data: [] } for empty simfileId', async () => {
+			const result = await ipcHandlers['load-asset-files']({}, '');
+			expect(result).toEqual({ success: true, data: [] });
 		});
 
-		it('returns empty array for NOT_FOUND error', async () => {
+		it('returns { success: true, data: [] } for NOT_FOUND error', async () => {
 			mockApiClient.getSimfileWithFiles.mockResolvedValue({
 				success: false,
-				error: 'NOT_FOUND: simfile not found'
+				error: 'NOT_FOUND: simfile not found',
+				code: 'NOT_FOUND'
 			});
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
+			expect(result).toEqual({ success: true, data: [] });
 		});
 
-		it('returns empty array when error contains "Failed to list files"', async () => {
+		it('returns { success: true, data: [] } when error contains "Failed to list files"', async () => {
 			mockApiClient.getSimfileWithFiles.mockResolvedValue({
 				success: false,
 				error: 'Failed to list files: storage error'
 			});
 
 			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
+			expect(result).toEqual({ success: true, data: [] });
 		});
 
-		it('returns empty array when getSimfileWithFiles throws', async () => {
+		it('returns { success: false, error } when getSimfileWithFiles throws', async () => {
 			mockApiClient.getSimfileWithFiles.mockRejectedValue(new Error('Network error'));
 
-			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
+			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
+				success: boolean;
+				error: string;
+			};
+			expect(result.success).toBe(false);
+			expect(result.error).toBe('Network error');
 		});
 
-		it('returns empty array for other API errors', async () => {
+		it('returns { success: false, error } for other API errors', async () => {
 			mockApiClient.getSimfileWithFiles.mockResolvedValue({
 				success: false,
 				error: 'INTERNAL_SERVER_ERROR: something went wrong'
 			});
 
-			const result = await ipcHandlers['load-asset-files']({}, '42');
-			expect(result).toEqual([]);
+			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
+				success: boolean;
+				error: string;
+			};
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('INTERNAL_SERVER_ERROR');
 		});
 	});
 

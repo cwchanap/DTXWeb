@@ -28,7 +28,7 @@ describe('api-client', () => {
 		expect(r).toEqual({ success: true, data: { count: 0, data: [] } });
 	});
 
-	it('listSimfiles returns { success: false, error } on GraphQL error', async () => {
+	it('listSimfiles returns { success: false, error, code } on GraphQL error', async () => {
 		const err = new ClientError(
 			{
 				errors: [{ message: 'oops', extensions: { code: 'INTERNAL' } }],
@@ -41,7 +41,10 @@ describe('api-client', () => {
 		requestMock.mockRejectedValue(err);
 		const r = await listSimfiles({ scope: 'MINE' });
 		expect(r.success).toBe(false);
-		if (!r.success) expect(r.error).toContain('INTERNAL');
+		if (!r.success) {
+			expect(r.error).toContain('INTERNAL');
+			expect(r.code).toBe('INTERNAL');
+		}
 	});
 
 	it('updateSimfile passes id + input as variables', async () => {
@@ -51,10 +54,31 @@ describe('api-client', () => {
 		expect(vars).toEqual({ id: '7', input: { title: 'x' } });
 	});
 
-	it('deleteSimfile returns shaped data', async () => {
+	it('deleteSimfile returns shaped data with partialDeletion fields', async () => {
 		requestMock.mockResolvedValue({ deleteSimfile: { id: '3', deleted: true } });
 		const r = await deleteSimfile('3');
 		expect(r).toEqual({ success: true, data: { id: '3', deleted: true } });
+	});
+
+	it('deleteSimfile includes partialDeletion when present', async () => {
+		requestMock.mockResolvedValue({
+			deleteSimfile: {
+				id: '3',
+				deleted: true,
+				partialDeletion: true,
+				message: '1 file(s) could not be deleted from storage'
+			}
+		});
+		const r = await deleteSimfile('3');
+		expect(r).toEqual({
+			success: true,
+			data: {
+				id: '3',
+				deleted: true,
+				partialDeletion: true,
+				message: '1 file(s) could not be deleted from storage'
+			}
+		});
 	});
 
 	it('nextDisplayId returns the integer', async () => {
@@ -77,5 +101,36 @@ describe('api-client', () => {
 		const r = await getSimfileWithFiles('1');
 		expect(r.success).toBe(true);
 		if (r.success && r.data) expect(r.data.files).toHaveLength(1);
+	});
+
+	it('getSimfile returns NOT_FOUND when simfile is null', async () => {
+		requestMock.mockResolvedValue({ simfile: null });
+		const r = await getSimfile('999');
+		expect(r).toEqual({ success: false, error: 'Simfile not found', code: 'NOT_FOUND' });
+	});
+
+	it('getSimfileWithFiles returns NOT_FOUND when simfile is null', async () => {
+		requestMock.mockResolvedValue({ simfile: null });
+		const r = await getSimfileWithFiles('999');
+		expect(r).toEqual({ success: false, error: 'Simfile not found', code: 'NOT_FOUND' });
+	});
+
+	it('error result includes code from GraphQL extensions', async () => {
+		const err = new ClientError(
+			{
+				errors: [{ message: 'forbidden', extensions: { code: 'FORBIDDEN' } }],
+				data: null,
+				status: 200,
+				headers: new Headers()
+			} as unknown as Parameters<typeof ClientError>[0],
+			{ query: '' } as Parameters<typeof ClientError>[1]
+		);
+		requestMock.mockRejectedValue(err);
+		const r = await getSimfile('1');
+		expect(r.success).toBe(false);
+		if (!r.success) {
+			expect(r.code).toBe('FORBIDDEN');
+			expect(r.error).toContain('FORBIDDEN');
+		}
 	});
 });

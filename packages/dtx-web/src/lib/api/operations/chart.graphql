@@ -54,5 +54,7 @@ mutation DeleteSimfile($id: ID!) {
 	deleteSimfile(id: $id) {
 		id
 		deleted
+		partialDeletion
+		message
 	}
 }

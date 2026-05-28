@@ -22,22 +22,26 @@ const toSimfileWithDtx = (s: {
 	createdAt: string;
 	updatedAt: string;
 	dtxFiles: { level: number; label: string }[];
-}): SimfileWithDtx => ({
-	id: Number(s.id),
-	display_id: s.displayId,
-	title: s.title,
-	artist: s.artist,
-	bpm: s.bpm,
-	user_id: s.userId ?? undefined,
-	is_published: s.isPublished,
-	download_url: s.downloadUrl,
-	preview_url: s.previewUrl,
-	video_preview_url: s.videoPreviewUrl,
-	publish_date: s.publishDate,
-	created_at: s.createdAt,
-	updated_at: s.updatedAt,
-	dtx_files: s.dtxFiles
-});
+}): SimfileWithDtx => {
+	const numId = Number(s.id);
+	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${s.id}`);
+	return {
+		id: numId,
+		display_id: s.displayId,
+		title: s.title,
+		artist: s.artist,
+		bpm: s.bpm,
+		user_id: s.userId ?? undefined,
+		is_published: s.isPublished,
+		download_url: s.downloadUrl,
+		preview_url: s.previewUrl,
+		video_preview_url: s.videoPreviewUrl,
+		publish_date: s.publishDate,
+		created_at: s.createdAt,
+		updated_at: s.updatedAt,
+		dtx_files: s.dtxFiles
+	};
+};
 
 // SimFile service functions - using discriminated union type
 export type SimFileServiceResult =
@@ -54,6 +58,7 @@ export type SimFileServiceResult =
 	  };
 
 export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
+	let allData: SimfileWithDtx[] = [];
 	try {
 		// Ensure auth is initialized
 		const isAuthReady = await ensureSupabaseAuth();
@@ -64,7 +69,6 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		// Fetch simfiles from web API with pagination
 		// API limits pageSize to 100, so we need to paginate
 		const pageSize = 100;
-		let allData: SimfileWithDtx[] = [];
 		let page = 1;
 		let totalCount = 0;
 
@@ -103,7 +107,7 @@ export async function fetchUserSimFiles(): Promise<SimFileServiceResult> {
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: [],
+			data: allData,
 			fromCache: false
 		};
 	}
@@ -333,6 +337,7 @@ export interface DtxParseResult {
 	bpm: number | undefined;
 	artist: string | undefined;
 	levels: { label: string; level: number }[];
+	parseFailures?: number;
 }
 
 // Parse DTX files to extract metadata
@@ -411,6 +416,7 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 		let parsedBpm: number | undefined;
 		let parsedArtist: string | undefined;
 		const parsedLevels: { label: string; level: number }[] = [];
+		let parseFailures = 0;
 
 		// Parse each DTX file
 		for (const fileName of dtxFiles) {
@@ -471,13 +477,15 @@ export async function parseDtxFiles(folderPath: string): Promise<DtxParseResult>
 				}
 			} catch (error) {
 				console.warn(`Failed to parse DTX file ${fileName}:`, error);
+				parseFailures++;
 			}
 		}
 
 		const result = {
 			bpm: parsedBpm,
 			artist: parsedArtist,
-			levels: parsedLevels
+			levels: parsedLevels,
+			parseFailures: parseFailures > 0 ? parseFailures : undefined
 		};
 
 		return result;

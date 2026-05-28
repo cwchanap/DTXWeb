@@ -15,23 +15,27 @@ type GraphqlSimfile = {
 	dtxFiles: Array<{ level: number; label: string }>;
 };
 
-export const toRendererSimfile = (s: GraphqlSimfile) => ({
-	id: Number(s.id),
-	title: s.title,
-	artist: s.artist,
-	bpm: s.bpm,
-	user_id: s.userId ?? undefined,
-	is_published: s.isPublished,
-	display_id: s.displayId,
-	download_url: s.downloadUrl,
-	preview_url: s.previewUrl,
-	video_preview_url: s.videoPreviewUrl,
-	publish_date: s.publishDate,
-	created_at: s.createdAt,
-	updated_at: s.updatedAt,
-	dtx_files: s.dtxFiles.map((f, index) => ({
-		level: f.level,
-		label: f.label,
-		id: index + 1
-	}))
-});
+export const toRendererSimfile = (s: GraphqlSimfile) => {
+	const numId = Number(s.id);
+	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${s.id}`);
+	return {
+		id: numId,
+		title: s.title,
+		artist: s.artist,
+		bpm: s.bpm,
+		user_id: s.userId ?? undefined,
+		is_published: s.isPublished,
+		display_id: s.displayId,
+		download_url: s.downloadUrl,
+		preview_url: s.previewUrl,
+		video_preview_url: s.videoPreviewUrl,
+		publish_date: s.publishDate,
+		created_at: s.createdAt,
+		updated_at: s.updatedAt,
+		dtx_files: (s.dtxFiles ?? []).map((f, index) => ({
+			level: f.level,
+			label: f.label,
+			id: index + 1
+		}))
+	};
+};

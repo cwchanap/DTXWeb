@@ -53,8 +53,7 @@ describe('App Home Page – desktop redirect flow', () => {
 
 	it('shows redirecting spinner when redirect=desktop is in URL and fetch succeeds', async () => {
 		vi.mocked(generateMagicLink).mockResolvedValue({
-			magicLinkUrl: 'https://example.com/magic',
-			success: true
+			magicLinkUrl: 'https://example.com/magic'
 		});
 
 		render(AppPage);
@@ -87,8 +86,7 @@ describe('App Home Page – desktop redirect flow', () => {
 
 	it('shows error when magicLinkUrl is missing from response', async () => {
 		vi.mocked(generateMagicLink).mockResolvedValue({
-			magicLinkUrl: null as unknown as string,
-			success: false
+			magicLinkUrl: null as unknown as string
 		});
 
 		render(AppPage);

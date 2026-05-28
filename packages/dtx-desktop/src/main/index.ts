@@ -315,24 +315,24 @@ if (!gotTheLock) {
 		});
 
 		// Handle loading asset files from API
+		// Returns a discriminated result so the renderer can distinguish errors from empty results.
 		ipcMain.handle('load-asset-files', async (_event, simfileId: string) => {
+			// Return empty array for empty or invalid simfileId
+			if (!simfileId || simfileId === '' || simfileId === '0') {
+				return { success: true as const, data: [] };
+			}
 			try {
-				// Return empty array for empty or invalid simfileId
-				if (!simfileId || simfileId === '' || simfileId === '0') {
-					return [];
-				}
 				const result = await getSimfileWithFiles(String(simfileId));
 				if (!result.success) {
-					console.error('API Error:', result.error);
 					if (
-						result.error.includes('NOT_FOUND') ||
+						result.code === 'NOT_FOUND' ||
 						result.error.includes('Failed to list files')
 					) {
-						return [];
+						return { success: true as const, data: [] };
 					}
-					throw new Error(`Error fetching files: ${result.error}`);
+					return { success: false as const, error: result.error };
 				}
-				return (result.data?.files ?? []).map(
+				const data = (result.data.files ?? []).map(
 					(file: { key: string; size: number; uploaded: string }) => ({
 						fileName: file.key.startsWith(`${simfileId}/`)
 							? file.key.slice(simfileId.length + 1)
@@ -342,10 +342,13 @@ if (!gotTheLock) {
 						key: file.key
 					})
 				);
+				return { success: true as const, data };
 			} catch (error) {
 				console.error('Error loading asset files:', error);
-				// Return empty array instead of throwing to prevent UI crashes
-				return [];
+				return {
+					success: false as const,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
 			}
 		});
 
@@ -404,11 +407,7 @@ if (!gotTheLock) {
 					return { success: false, error: result.error };
 				}
 
-				if (!result.data.simfile) {
-					return { success: false, error: 'Cloud song not found' };
-				}
-
-				const cloudSongData = toRendererSimfile(result.data.simfile);
+				const cloudSongData = toRendererSimfile(result.data);
 
 				return {
 					success: true,

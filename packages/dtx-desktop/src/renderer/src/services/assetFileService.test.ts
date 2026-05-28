@@ -21,9 +21,10 @@ describe('assetFileService', () => {
 					key: 'sim1/chart.dtx'
 				}
 			];
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue(
-				mockFiles
-			);
+			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+				success: true,
+				data: mockFiles
+			});
 
 			await loadAssetFiles('sim1');
 
@@ -33,7 +34,7 @@ describe('assetFileService', () => {
 			);
 		});
 
-		it('returns array of asset files from IPC', async () => {
+		it('returns success result with data from IPC', async () => {
 			const mockFiles = [
 				{
 					fileName: 'chart.dtx',
@@ -48,15 +49,33 @@ describe('assetFileService', () => {
 					key: 'sim1/preview.mp3'
 				}
 			];
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue(
-				mockFiles
-			);
+			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+				success: true,
+				data: mockFiles
+			});
 
 			const result = await loadAssetFiles('sim1');
 
-			expect(result).toHaveLength(2);
-			expect(result[0].fileName).toBe('chart.dtx');
-			expect(result[1].fileName).toBe('preview.mp3');
+			expect(result.success).toBe(true);
+			if (result.success) {
+				expect(result.data).toHaveLength(2);
+				expect(result.data[0].fileName).toBe('chart.dtx');
+				expect(result.data[1].fileName).toBe('preview.mp3');
+			}
+		});
+
+		it('returns error result when IPC returns failure', async () => {
+			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+				success: false,
+				error: 'Network error'
+			});
+
+			const result = await loadAssetFiles('sim1');
+
+			expect(result.success).toBe(false);
+			if (!result.success) {
+				expect(result.error).toBe('Network error');
+			}
 		});
 
 		it('propagates IPC errors', async () => {
@@ -67,11 +86,17 @@ describe('assetFileService', () => {
 			await expect(loadAssetFiles('sim1')).rejects.toThrow('IPC communication error');
 		});
 
-		it('returns empty array when no files exist', async () => {
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+		it('returns success with empty data when no files exist', async () => {
+			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+				success: true,
+				data: []
+			});
 
 			const result = await loadAssetFiles('sim1');
-			expect(result).toHaveLength(0);
+			expect(result.success).toBe(true);
+			if (result.success) {
+				expect(result.data).toHaveLength(0);
+			}
 		});
 	});
 });

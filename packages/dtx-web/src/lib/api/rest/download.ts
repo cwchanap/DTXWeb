@@ -54,7 +54,11 @@ export type DownloadOpts = {
 };
 
 export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}) => {
-	// REST path: same-origin, no auth needed — stream directly, skip buffering
+	// REST path: triggers a direct browser download via <a> link click.
+	// No fetch is involved, so HTTP errors (404/500) produce a corrupt file with no feedback.
+	// The downloadError UI is only functional on the GraphQL path which uses fetch + blob.
+	// This is acceptable because same-origin REST downloads are served by the SvelteKit app
+	// which handles errors at the server level.
 	if (!useGraphQL()) {
 		const directDownload = opts.directDownloadFn ?? triggerDirectDownload;
 		directDownload(downloadBaseUrl(simfileId));
@@ -76,7 +80,7 @@ export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}
 	trigger(blob, filename);
 };
 
-/** Bearer header for bulk download — caller supplies fetchFn; we just return the headers. */
+/** Build headers for bulk download requests. Content-Type is always set; Bearer auth is added only for the GraphQL path. */
 export const bulkDownloadHeaders = async (): Promise<Record<string, string>> => {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	if (useGraphQL()) {

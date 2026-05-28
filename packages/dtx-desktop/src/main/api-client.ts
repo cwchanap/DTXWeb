@@ -30,14 +30,16 @@ import {
 	type GenerateMagicLinkMutation
 } from './graphql/generated/graphql';
 
-export type ApiResult<T> = { success: true; data: T } | { success: false; error: string };
+export type ApiResult<T> =
+	| { success: true; data: T }
+	| { success: false; error: string; code?: string };
 
-const extractError = (err: unknown): string => {
+const extractError = (err: unknown): { error: string; code?: string } => {
 	if (err instanceof ClientError) {
 		const first = err.response.errors?.[0];
 		const code = first?.extensions?.code as string | undefined;
 		const msg = first?.message ?? `HTTP ${err.response.status}`;
-		return code ? `${code}: ${msg}` : msg;
+		return code ? { error: `${code}: ${msg}`, code } : { error: msg, code };
 	}
 	if (
 		typeof err === 'object' &&
@@ -45,9 +47,9 @@ const extractError = (err: unknown): string => {
 		'name' in err &&
 		(err as { name: string }).name === 'AbortError'
 	) {
-		return 'Request timed out after 30000ms';
+		return { error: 'Request timed out after 30000ms' };
 	}
-	return err instanceof Error ? err.message : 'Unknown error';
+	return { error: err instanceof Error ? err.message : 'Unknown error' };
 };
 
 const runGraphQL = async <T, V extends object>(
@@ -56,11 +58,14 @@ const runGraphQL = async <T, V extends object>(
 ): Promise<ApiResult<T>> => {
 	try {
 		const client = await getGraphQLClient();
+		// Cast needed: getGraphQLClient returns a graphql-request client whose request()
+		// signature doesn't match TypedDocumentNode; the cast is safe because codegen
+		// generates matching types for each operation.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const data = (await (client as any).request(doc, vars)) as T;
 		return { success: true, data };
 	} catch (err) {
-		return { success: false, error: extractError(err) };
+		return { success: false, ...extractError(err) };
 	}
 };
 
@@ -76,17 +81,28 @@ export const listSimfiles = async (vars: {
 	return { success: true, data: r.data.simfiles };
 };
 
-export const getSimfile = (id: string) =>
-	runGraphQL<GetSimfileQuery, { id: string }>(GetSimfileDocument, { id });
+export const getSimfile = async (
+	id: string
+): Promise<ApiResult<NonNullable<GetSimfileQuery['simfile']>>> => {
+	const r = await runGraphQL<GetSimfileQuery, { id: string }>(GetSimfileDocument, { id });
+	if (!r.success) return r;
+	if (!r.data.simfile) {
+		return { success: false, error: 'Simfile not found', code: 'NOT_FOUND' };
+	}
+	return { success: true, data: r.data.simfile };
+};
 
 export const getSimfileWithFiles = async (
 	id: string
-): Promise<ApiResult<GetSimfileWithFilesQuery['simfile']>> => {
+): Promise<ApiResult<NonNullable<GetSimfileWithFilesQuery['simfile']>>> => {
 	const r = await runGraphQL<GetSimfileWithFilesQuery, { id: string }>(
 		GetSimfileWithFilesDocument,
 		{ id }
 	);
 	if (!r.success) return r;
+	if (!r.data.simfile) {
+		return { success: false, error: 'Simfile not found', code: 'NOT_FOUND' };
+	}
 	return { success: true, data: r.data.simfile };
 };
 
@@ -106,12 +122,22 @@ export const updateSimfile = (id: string, input: UpdateSimfileInput) =>
 
 export const deleteSimfile = async (
 	id: string
-): Promise<ApiResult<{ id: string; deleted: boolean }>> => {
+): Promise<
+	ApiResult<{ id: string; deleted: boolean; partialDeletion?: boolean; message?: string }>
+> => {
 	const r = await runGraphQL<DeleteSimfileMutation, { id: string }>(DeleteSimfileDocument, {
 		id
 	});
 	if (!r.success) return r;
-	return { success: true, data: r.data.deleteSimfile };
+	const { partialDeletion, message, ...rest } = r.data.deleteSimfile;
+	return {
+		success: true,
+		data: {
+			...rest,
+			partialDeletion: partialDeletion ?? undefined,
+			message: message ?? undefined
+		}
+	};
 };
 
 export const nextDisplayId = async (): Promise<ApiResult<number>> => {

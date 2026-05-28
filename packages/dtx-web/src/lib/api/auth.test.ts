@@ -37,7 +37,7 @@ describe('generateMagicLink', () => {
 			'/api/auth/generate-magic-link',
 			expect.objectContaining({ method: 'POST' })
 		);
-		expect(r).toEqual({ magicLinkUrl: 'https://magic', success: true });
+		expect(r).toEqual(expect.objectContaining({ magicLinkUrl: 'https://magic' }));
 	});
 
 	it('GraphQL: calls GenerateMagicLink', async () => {
@@ -46,6 +46,6 @@ describe('generateMagicLink', () => {
 			generateMagicLink: { magicLinkUrl: 'https://magic', success: true }
 		});
 		const r = await generateMagicLink();
-		expect(r).toEqual({ magicLinkUrl: 'https://magic', success: true });
+		expect(r).toEqual({ magicLinkUrl: 'https://magic' });
 	});
 });

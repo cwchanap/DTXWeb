@@ -1,7 +1,7 @@
 import { GenerateMagicLinkDocument } from './generated/graphql';
 import { getClient, useGraphQL, type ClientCtx } from './client';
 
-export type MagicLinkResult = { magicLinkUrl: string; success: boolean };
+export type MagicLinkResult = { magicLinkUrl: string };
 
 const fetchFn = (ctx?: ClientCtx): typeof fetch => ctx?.fetch ?? fetch;
 
@@ -13,8 +13,5 @@ export const generateMagicLink = async (ctx?: ClientCtx): Promise<MagicLinkResul
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(GenerateMagicLinkDocument, {});
-	return {
-		magicLinkUrl: result.generateMagicLink.magicLinkUrl,
-		success: result.generateMagicLink.success
-	};
+	return { magicLinkUrl: result.generateMagicLink.magicLinkUrl };
 };

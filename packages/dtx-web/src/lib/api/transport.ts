@@ -6,6 +6,9 @@ import { env } from '$env/dynamic/public';
 
 const graphqlEndpoint = () => {
 	const base = (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
+	if (!base) {
+		throw new Error('PUBLIC_DTX_API_URL is not configured — set it in .env');
+	}
 	return `${base}/graphql`;
 };
 

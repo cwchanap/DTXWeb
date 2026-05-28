@@ -190,11 +190,18 @@ export const SimfileSearchResultRef = builder
 	});
 
 export const DeleteResultRef = builder
-	.objectRef<{ id: string; deleted: boolean }>('DeleteResult')
+	.objectRef<{
+		id: string;
+		deleted: boolean;
+		partialDeletion?: boolean;
+		message?: string;
+	}>('DeleteResult')
 	.implement({
 		fields: (t) => ({
 			id: t.exposeID('id'),
-			deleted: t.exposeBoolean('deleted')
+			deleted: t.exposeBoolean('deleted'),
+			partialDeletion: t.exposeBoolean('partialDeletion', { nullable: true }),
+			message: t.exposeString('message', { nullable: true })
 		})
 	});
 
@@ -565,7 +572,15 @@ builder.mutationField('deleteSimfile', (t) =>
 				throw err;
 			}
 
-			return { id: String(numeric), deleted: true };
+			return {
+				id: String(numeric),
+				deleted: true,
+				partialDeletion: allFailures.length > 0 ? true : undefined,
+				message:
+					allFailures.length > 0
+						? `${allFailures.length} file(s) could not be deleted from storage`
+						: undefined
+			};
 		}
 	})
 );

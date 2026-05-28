@@ -1012,9 +1012,45 @@ describe('index.ts IPC handlers', () => {
 			});
 
 			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
+				fileName: string;
+				size: number;
+				lastModified: string;
 				key: string;
 			}[];
-			expect(result).toEqual([{ key: 'song.dtx', size: 1024, uploaded: '2024-01-01' }]);
+			expect(result).toEqual([
+				{ fileName: 'song.dtx', size: 1024, lastModified: '2024-01-01', key: 'song.dtx' }
+			]);
+		});
+
+		it('extracts fileName from nested key path', async () => {
+			mockApiClient.getSimfileWithFiles.mockResolvedValue({
+				success: true,
+				data: {
+					files: [
+						{ key: 'uploads/42/song.dtx', size: 2048, uploaded: '2024-06-15' },
+						{ key: 'nested/path/audio.wav', size: 512, uploaded: '2024-07-20' }
+					]
+				}
+			});
+
+			const result = (await ipcHandlers['load-asset-files']({}, '42')) as {
+				fileName: string;
+				key: string;
+			}[];
+			expect(result).toEqual([
+				{
+					fileName: 'song.dtx',
+					size: 2048,
+					lastModified: '2024-06-15',
+					key: 'uploads/42/song.dtx'
+				},
+				{
+					fileName: 'audio.wav',
+					size: 512,
+					lastModified: '2024-07-20',
+					key: 'nested/path/audio.wav'
+				}
+			]);
 		});
 
 		it('returns empty array when files is null/undefined', async () => {

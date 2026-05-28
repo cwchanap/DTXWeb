@@ -95,7 +95,7 @@
 			"vars": {
 				"RATE_LIMIT_ENV": "pre-prod-prod-data",
 				"PUBLIC_USE_GRAPHQL_API": "false",
-				"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com"
+				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
 			"services": [{ "binding": "API", "service": "dtx-api-pre-prod-prod-data" }],
 			"d1_databases": [

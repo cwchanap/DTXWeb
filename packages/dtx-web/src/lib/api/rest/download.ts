@@ -38,19 +38,35 @@ const defaultTriggerBrowserDownload = (blob: Blob, filename: string) => {
 	URL.revokeObjectURL(url);
 };
 
+const triggerDirectDownload = (url: string) => {
+	const a = document.createElement('a');
+	a.href = url;
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+};
+
 export type DownloadOpts = {
 	fetchFn?: typeof fetch;
 	triggerBrowserDownload?: (blob: Blob, filename: string) => void;
+	/** Override the direct-download mechanism (for testing). */
+	directDownloadFn?: (url: string) => void;
 };
 
 export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}) => {
+	// REST path: same-origin, no auth needed — stream directly, skip buffering
+	if (!useGraphQL()) {
+		const directDownload = opts.directDownloadFn ?? triggerDirectDownload;
+		directDownload(downloadBaseUrl(simfileId));
+		return;
+	}
+
+	// GraphQL path: needs auth header, must fetch + blob
 	const fetchFn = opts.fetchFn ?? fetch;
 	const trigger = opts.triggerBrowserDownload ?? defaultTriggerBrowserDownload;
 	const headers: Record<string, string> = {};
-	if (useGraphQL()) {
-		const token = await getAccessTokenOrNull();
-		if (token) headers.Authorization = `Bearer ${token}`;
-	}
+	const token = await getAccessTokenOrNull();
+	if (token) headers.Authorization = `Bearer ${token}`;
 	const res = await fetchFn(downloadBaseUrl(simfileId), { headers });
 	if (!res.ok) throw new Error(`Download failed: ${res.status}`);
 	const blob = await res.blob();

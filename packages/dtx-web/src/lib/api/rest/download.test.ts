@@ -57,26 +57,24 @@ describe('parseContentDispositionFilename', () => {
 });
 
 describe('downloadSimfile (REST path)', () => {
-	it('fetches /api/simFile/download/${id} and triggers browser download', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			new Response('zip-bytes', {
-				headers: { 'content-disposition': 'attachment; filename="chart-3.zip"' }
-			})
-		);
-		const triggerSpy = vi.fn();
-		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
-		expect(fetchMock).toHaveBeenCalledWith('/api/simFile/download/3', expect.any(Object));
-		expect(triggerSpy).toHaveBeenCalledOnce();
-		const [_blob, filename] = triggerSpy.mock.calls[0];
-		expect(filename).toBe('chart-3.zip');
+	it('triggers direct download without buffering', async () => {
+		const fetchMock = vi.fn();
+		const directDownloadSpy = vi.fn();
+		await downloadSimfile('3', {
+			fetchFn: fetchMock,
+			directDownloadFn: directDownloadSpy
+		});
+		expect(directDownloadSpy).toHaveBeenCalledWith('/api/simFile/download/3');
+		// fetch should NOT be called for REST path
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it('does not include Authorization header when flag OFF', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
+	it('does not call fetchFn for REST path', async () => {
+		const fetchMock = vi.fn();
 		const triggerSpy = vi.fn();
 		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
-		const init = fetchMock.mock.calls[0][1] as RequestInit;
-		expect((init.headers as Record<string, string>)?.Authorization).toBeUndefined();
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(triggerSpy).not.toHaveBeenCalled();
 	});
 });
 

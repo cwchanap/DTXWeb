@@ -35,7 +35,7 @@ afterEach(() => {
 describe('getMe', () => {
 	it('REST: GET /api/user/profile', async () => {
 		restFetch.mockResolvedValue(
-			new Response(JSON.stringify({ data: { user_id: 'u1', username: 'alice' } }))
+			new Response(JSON.stringify({ user_id: 'u1', username: 'alice' }))
 		);
 		const r = await getMe();
 		expect(restFetch).toHaveBeenCalledWith('/api/user/profile', expect.any(Object));
@@ -60,7 +60,7 @@ describe('getMe', () => {
 describe('upsertUserProfile', () => {
 	it('REST: PUT /api/user/profile', async () => {
 		restFetch.mockResolvedValue(
-			new Response(JSON.stringify({ data: { user_id: 'u1', username: 'bob' } }))
+			new Response(JSON.stringify({ user_id: 'u1', username: 'bob' }))
 		);
 		const r = await upsertUserProfile({ username: 'bob' });
 		expect(restFetch).toHaveBeenCalledWith(

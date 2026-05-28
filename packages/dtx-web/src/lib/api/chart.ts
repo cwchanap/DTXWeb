@@ -84,7 +84,7 @@ export const listSimfiles = async (
 	ctx?: ClientCtx
 ): Promise<SimfileListResult> => {
 	if (!useGraphQL()) {
-		const qs = new URLSearchParams({ scope: params.scope });
+		const qs = new URLSearchParams({ scope: params.scope, check_uploaded: 'true' });
 		if (params.search) qs.set('search', params.search);
 		if (params.page) qs.set('page', String(params.page));
 		if (params.pageSize) qs.set('pageSize', String(params.pageSize));
@@ -109,8 +109,7 @@ export const getSimfile = async (id: string, ctx?: ClientCtx): Promise<LegacySim
 	if (!useGraphQL()) {
 		const res = await fetchFn(ctx)(`/api/chart/${id}`, { method: 'GET' });
 		if (!res.ok) throw new Error(`get failed: ${res.status}`);
-		const body = (await res.json()) as { data: LegacySimfile };
-		return body.data;
+		return (await res.json()) as LegacySimfile;
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(GetSimfileDocument, { id });
@@ -130,8 +129,7 @@ export const updateSimfile = async (
 			body: JSON.stringify(input)
 		});
 		if (!res.ok) throw new Error(`update failed: ${res.status}`);
-		const body = (await res.json()) as { data: LegacySimfile };
-		return body.data;
+		return (await res.json()) as LegacySimfile;
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(UpdateSimfileDocument, { id, input });

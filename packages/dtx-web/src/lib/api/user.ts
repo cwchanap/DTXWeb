@@ -35,8 +35,8 @@ export const getMe = async (ctx?: ClientCtx): Promise<LegacyUserProfile> => {
 			const body = await readErrorBody(res);
 			throw new Error(`me failed: ${res.status}${body ? ` – ${body}` : ''}`);
 		}
-		const body = (await res.json()) as { data: LegacyUserProfile };
-		return body.data;
+		const body = (await res.json()) as LegacyUserProfile;
+		return body;
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(MeDocument, {});
@@ -57,8 +57,8 @@ export const upsertUserProfile = async (
 			const body = await readErrorBody(res);
 			throw new Error(`upsert failed: ${res.status}${body ? ` – ${body}` : ''}`);
 		}
-		const body = (await res.json()) as { data: LegacyUserProfile };
-		return body.data;
+		const body = (await res.json()) as LegacyUserProfile;
+		return body;
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(UpsertUserProfileDocument, { input });

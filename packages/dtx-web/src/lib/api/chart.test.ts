@@ -43,6 +43,7 @@ describe('listSimfiles (REST path)', () => {
 		expect(url).toContain('search=foo');
 		expect(url).toContain('page=2');
 		expect(url).toContain('pageSize=10');
+		expect(url).toContain('check_uploaded=true');
 		expect(result).toEqual({ data: [{ id: 1, title: 't' }], count: 1 });
 	});
 });
@@ -100,7 +101,7 @@ describe('listSimfiles (GraphQL path)', () => {
 
 describe('getSimfile', () => {
 	it('REST: GET /api/chart/${id}', async () => {
-		restFetch.mockResolvedValue(new Response(JSON.stringify({ data: { id: 7, title: 't' } })));
+		restFetch.mockResolvedValue(new Response(JSON.stringify({ id: 7, title: 't' })));
 		const result = await getSimfile('7');
 		expect(restFetch).toHaveBeenCalledWith('/api/chart/7', expect.any(Object));
 		expect(result.id).toBe(7);
@@ -118,9 +119,7 @@ describe('getSimfile', () => {
 
 describe('updateSimfile', () => {
 	it('REST: PATCH /api/chart/${id} with body', async () => {
-		restFetch.mockResolvedValue(
-			new Response(JSON.stringify({ data: { id: 9, title: 'new' } }))
-		);
+		restFetch.mockResolvedValue(new Response(JSON.stringify({ id: 9, title: 'new' })));
 		const result = await updateSimfile('9', { title: 'new' });
 		expect(restFetch).toHaveBeenCalledWith(
 			'/api/chart/9',

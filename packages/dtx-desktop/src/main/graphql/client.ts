@@ -4,8 +4,9 @@ import { getSupabaseClient } from '../auth';
 const API_REQUEST_TIMEOUT_MS = 30000;
 
 const getApiBaseUrl = (): string => {
-	const url = import.meta.env.VITE_DTX_SERVER_URL;
-	if (!url) throw new Error('VITE_DTX_SERVER_URL environment variable is not set');
+	const url = import.meta.env.VITE_DTX_API_URL || import.meta.env.VITE_DTX_SERVER_URL;
+	if (!url)
+		throw new Error('VITE_DTX_API_URL or VITE_DTX_SERVER_URL environment variable is not set');
 	return url.replace(/\/$/, '');
 };
 

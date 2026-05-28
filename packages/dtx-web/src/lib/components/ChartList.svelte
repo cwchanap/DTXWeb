@@ -3,7 +3,13 @@
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '$lib/toaster';
-	import { listSimfiles, updateSimfile, deleteSimfile, type ScopeString } from '$lib/api';
+	import {
+		listSimfiles,
+		updateSimfile,
+		deleteSimfile,
+		type ScopeString,
+		type DeleteResult
+	} from '$lib/api';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
 	import {
 		BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,
@@ -132,8 +138,9 @@
 
 	const handleFileDelete = async (id: number) => {
 		// API call handles complete deletion (R2 bucket files + database records)
+		let result: DeleteResult;
 		try {
-			await deleteSimfile(String(id));
+			result = await deleteSimfile(String(id));
 		} catch (error) {
 			console.error('Failed to delete R2 files:', error);
 			toastStore.error({
@@ -145,10 +152,17 @@
 
 		// filteredItems is derived reactively from items via $effect, so no manual update needed
 		await loadItems();
-		toastStore.success({
-			title: 'Chart deleted',
-			duration: 3000
-		});
+		if (result.partialDeletion) {
+			toastStore.warning({
+				title: 'Chart deleted — some files may remain in storage',
+				duration: 5000
+			});
+		} else {
+			toastStore.success({
+				title: 'Chart deleted',
+				duration: 3000
+			});
+		}
 	};
 
 	const handleToggleSelect = (id: number) => {

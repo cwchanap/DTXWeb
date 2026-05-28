@@ -137,14 +137,42 @@ describe('updateSimfile', () => {
 });
 
 describe('deleteSimfile', () => {
-	it('REST: DELETE /api/simFile/delete/${id}', async () => {
-		restFetch.mockResolvedValue(new Response(null, { status: 204 }));
+	it('REST: DELETE /api/simFile/delete/${id} returns partialDeletion when present', async () => {
+		restFetch.mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					message: 'Some files failed to delete (1/3)',
+					deleted: 2,
+					failed: 1,
+					total: 3,
+					partialDeletion: true
+				})
+			)
+		);
 		const result = await deleteSimfile('3');
 		expect(restFetch).toHaveBeenCalledWith(
 			'/api/simFile/delete/3',
 			expect.objectContaining({ method: 'DELETE' })
 		);
 		expect(result.deleted).toBe(true);
+		expect(result.partialDeletion).toBe(true);
+	});
+
+	it('REST: returns no partialDeletion on clean delete', async () => {
+		restFetch.mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					message: 'Files deleted successfully',
+					deleted: 3,
+					failed: 0,
+					total: 3,
+					partialDeletion: false
+				})
+			)
+		);
+		const result = await deleteSimfile('3');
+		expect(result.deleted).toBe(true);
+		expect(result.partialDeletion).toBe(false);
 	});
 
 	it('GraphQL: calls DeleteSimfile', async () => {

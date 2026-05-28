@@ -654,6 +654,36 @@ describe('index.ts IPC handlers', () => {
 			expect(result.data.is_published).toBe(false);
 		});
 
+		it('converts snake_case keys to camelCase before calling updateSimfile', async () => {
+			mockApiClient.updateSimfile.mockResolvedValue({
+				success: true,
+				data: { updateSimfile: gqlUpdatedSimfile }
+			});
+			await ipcHandlers['update-simfile-record'](
+				{},
+				{
+					simfileId: 3,
+					updateData: {
+						display_id: 10,
+						publish_date: '2024-01-01',
+						is_published: true,
+						download_url: 'https://example.com',
+						video_preview_url: 'https://vid.example.com'
+					}
+				}
+			);
+			expect(mockApiClient.updateSimfile).toHaveBeenCalledWith(
+				'3',
+				expect.objectContaining({
+					displayId: 10,
+					publishDate: '2024-01-01',
+					isPublished: true,
+					downloadUrl: 'https://example.com',
+					videoPreviewUrl: 'https://vid.example.com'
+				})
+			);
+		});
+
 		it('returns failure when updateSimfile fails', async () => {
 			mockApiClient.updateSimfile.mockResolvedValue({ success: false, error: 'Forbidden' });
 			const result = (await ipcHandlers['update-simfile-record'](

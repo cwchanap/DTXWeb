@@ -136,14 +136,27 @@ export const updateSimfile = async (
 	return adaptSimfile(result.updateSimfile);
 };
 
-export const deleteSimfile = async (
-	id: string,
-	ctx?: ClientCtx
-): Promise<{ id: number; deleted: boolean }> => {
+export type DeleteResult = {
+	id: number;
+	deleted: boolean;
+	partialDeletion?: boolean;
+	message?: string;
+};
+
+export const deleteSimfile = async (id: string, ctx?: ClientCtx): Promise<DeleteResult> => {
 	if (!useGraphQL()) {
 		const res = await fetchFn(ctx)(`/api/simFile/delete/${id}`, { method: 'DELETE' });
 		if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-		return { id: Number(id), deleted: true };
+		const body = (await res.json()) as {
+			partialDeletion?: boolean;
+			message?: string;
+		};
+		return {
+			id: Number(id),
+			deleted: true,
+			partialDeletion: body.partialDeletion,
+			message: body.message
+		};
 	}
 	const client = await getClient(ctx);
 	const result = await client.request(DeleteSimfileDocument, { id });

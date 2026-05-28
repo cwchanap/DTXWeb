@@ -334,7 +334,9 @@ if (!gotTheLock) {
 				}
 				return (result.data?.files ?? []).map(
 					(file: { key: string; size: number; uploaded: string }) => ({
-						fileName: file.key.split('/').pop() ?? file.key,
+						fileName: file.key.startsWith(`${simfileId}/`)
+							? file.key.slice(simfileId.length + 1)
+							: file.key,
 						size: file.size,
 						lastModified: file.uploaded,
 						key: file.key

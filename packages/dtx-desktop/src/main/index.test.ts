@@ -1027,8 +1027,9 @@ describe('index.ts IPC handlers', () => {
 				success: true,
 				data: {
 					files: [
-						{ key: 'uploads/42/song.dtx', size: 2048, uploaded: '2024-06-15' },
-						{ key: 'nested/path/audio.wav', size: 512, uploaded: '2024-07-20' }
+						{ key: '42/song.dtx', size: 2048, uploaded: '2024-06-15' },
+						{ key: '42/samples/audio.wav', size: 512, uploaded: '2024-07-20' },
+						{ key: 'other/path/file.dtx', size: 128, uploaded: '2024-08-01' }
 					]
 				}
 			});
@@ -1042,13 +1043,19 @@ describe('index.ts IPC handlers', () => {
 					fileName: 'song.dtx',
 					size: 2048,
 					lastModified: '2024-06-15',
-					key: 'uploads/42/song.dtx'
+					key: '42/song.dtx'
 				},
 				{
-					fileName: 'audio.wav',
+					fileName: 'samples/audio.wav',
 					size: 512,
 					lastModified: '2024-07-20',
-					key: 'nested/path/audio.wav'
+					key: '42/samples/audio.wav'
+				},
+				{
+					fileName: 'other/path/file.dtx',
+					size: 128,
+					lastModified: '2024-08-01',
+					key: 'other/path/file.dtx'
 				}
 			]);
 		});

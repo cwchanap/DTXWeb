@@ -484,6 +484,15 @@ describe('SimFile Service', () => {
 				})
 			);
 
+			// Verify the returned data is in renderer shape (numeric id, snake_case)
+			expect(result.data).toBeDefined();
+			const data = result.data as Record<string, unknown>;
+			expect(typeof data.id).toBe('number');
+			expect(data.id).toBe(1);
+			expect(data).toHaveProperty('is_published');
+			expect(data).toHaveProperty('display_id');
+			expect(data).toHaveProperty('video_preview_url');
+
 			// Verify uploadFile was called twice (once for image, once for audio)
 			expect(uploadFile).toHaveBeenCalledTimes(2);
 		});

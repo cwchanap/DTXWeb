@@ -414,10 +414,26 @@ if (!gotTheLock) {
 			}
 		});
 
+		// Map renderer snake_case keys to GraphQL camelCase keys
+		const snakeToCamelMap: Record<string, string> = {
+			display_id: 'displayId',
+			publish_date: 'publishDate',
+			is_published: 'isPublished',
+			download_url: 'downloadUrl',
+			video_preview_url: 'videoPreviewUrl',
+			preview_url: 'previewUrl'
+		};
+
 		// Handle updating simfile record in database
 		ipcMain.handle('update-simfile-record', async (_event, { simfileId, updateData }) => {
 			try {
-				const result = await updateSimfile(String(simfileId), updateData);
+				// Convert snake_case keys from renderer to camelCase for GraphQL
+				const converted: Record<string, unknown> = {};
+				for (const [key, value] of Object.entries(updateData as Record<string, unknown>)) {
+					const camelKey = snakeToCamelMap[key] ?? key;
+					converted[camelKey] = value;
+				}
+				const result = await updateSimfile(String(simfileId), converted);
 
 				if (!result.success) {
 					return { success: false, error: result.error };

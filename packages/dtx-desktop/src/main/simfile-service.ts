@@ -310,7 +310,7 @@ export async function createSimfileRecord(
 		const result: CreateSimfileResult = {
 			success: true,
 			simfileId: String(simfileId),
-			data: simfile
+			data: toSimfileWithDtx(simfile)
 		};
 
 		// Include warnings if preview uploads failed

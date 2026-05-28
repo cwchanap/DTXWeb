@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockToastStore = vi.hoisted(() => ({
 	error: vi.fn(),
-	success: vi.fn()
+	success: vi.fn(),
+	warning: vi.fn()
 }));
 
 const mockApi = vi.hoisted(() => ({
@@ -706,7 +707,11 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		mockApi.listSimfiles
 			.mockResolvedValueOnce({ data: [item], count: 1 })
 			.mockResolvedValueOnce({ data: [], count: 0 });
-		mockApi.deleteSimfile.mockResolvedValueOnce({ id: 42, deleted: true });
+		mockApi.deleteSimfile.mockResolvedValueOnce({
+			id: 42,
+			deleted: true,
+			partialDeletion: false
+		});
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
@@ -720,6 +725,34 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 			expect(mockApi.deleteSimfile).toHaveBeenCalledWith('42');
 			expect(vi.mocked(toastStore.success)).toHaveBeenCalledWith(
 				expect.objectContaining({ title: 'Chart deleted' })
+			);
+		});
+	});
+
+	it('handleFileDelete shows warning toast on partial deletion', async () => {
+		mockApi.listSimfiles
+			.mockResolvedValueOnce({ data: [item], count: 1 })
+			.mockResolvedValueOnce({ data: [], count: 0 });
+		mockApi.deleteSimfile.mockResolvedValueOnce({
+			id: 42,
+			deleted: true,
+			partialDeletion: true
+		});
+
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+
+		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
+
+		const onFileDelete =
+			getRequiredPropFromTableItem<(id: number) => Promise<void>>('onFileDelete');
+		await onFileDelete(42);
+		await waitFor(() => {
+			expect(mockApi.deleteSimfile).toHaveBeenCalledWith('42');
+			expect(vi.mocked(toastStore.warning)).toHaveBeenCalledWith(
+				expect.objectContaining({
+					title: 'Chart deleted — some files may remain in storage'
+				})
 			);
 		});
 	});

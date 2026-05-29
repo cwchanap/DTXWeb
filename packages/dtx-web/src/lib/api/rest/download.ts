@@ -2,7 +2,13 @@ import { env } from '$env/dynamic/public';
 import { useGraphQL } from '../client';
 import { getAccessTokenOrNull } from '../token';
 
-const apiBase = () => (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
+const apiBase = () => {
+	const base = (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
+	if (!base) {
+		throw new Error('PUBLIC_DTX_API_URL is not configured — set it in .env');
+	}
+	return base;
+};
 
 export const downloadBaseUrl = (simfileId: string) =>
 	useGraphQL() ? `${apiBase()}/downloads/${simfileId}` : `/api/simFile/download/${simfileId}`;

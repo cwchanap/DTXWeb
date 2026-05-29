@@ -64,6 +64,20 @@ describe('App Home Page – desktop redirect flow', () => {
 		});
 	});
 
+	it('calls generateMagicLink and sets window.location.href on success', async () => {
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(generateMagicLink).toHaveBeenCalledOnce();
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
 	it('shows error state when generateMagicLink throws', async () => {
 		vi.mocked(generateMagicLink).mockRejectedValue(new Error('magic-link failed: 401'));
 

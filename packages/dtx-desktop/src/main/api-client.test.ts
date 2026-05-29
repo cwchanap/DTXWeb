@@ -14,7 +14,10 @@ import {
 	deleteSimfile,
 	nextDisplayId,
 	simfileSearch,
-	getSimfileWithFiles
+	getSimfileWithFiles,
+	me,
+	upsertUserProfile,
+	generateMagicLink
 } from './api-client';
 
 beforeEach(() => {
@@ -132,5 +135,93 @@ describe('api-client', () => {
 			expect(r.code).toBe('FORBIDDEN');
 			expect(r.error).toContain('FORBIDDEN');
 		}
+	});
+
+	it('returns timeout error on AbortError', async () => {
+		const err = new Error('aborted');
+		err.name = 'AbortError';
+		requestMock.mockRejectedValue(err);
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r).toEqual({ success: false, error: 'Request timed out after 30000ms' });
+	});
+
+	it('returns error message without code when ClientError has no extensions code', async () => {
+		const err = new ClientError(
+			{
+				errors: [{ message: 'something broke' }],
+				data: null,
+				status: 200,
+				headers: new Headers()
+			} as unknown as Parameters<typeof ClientError>[0],
+			{ query: '' } as Parameters<typeof ClientError>[1]
+		);
+		requestMock.mockRejectedValue(err);
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r.success).toBe(false);
+		if (!r.success) {
+			expect(r.error).toBe('something broke');
+			expect(r.code).toBeUndefined();
+		}
+	});
+
+	it('falls back to HTTP status when ClientError has empty errors array', async () => {
+		const err = new ClientError(
+			{
+				errors: [],
+				data: null,
+				status: 500,
+				headers: new Headers()
+			} as unknown as Parameters<typeof ClientError>[0],
+			{ query: '' } as Parameters<typeof ClientError>[1]
+		);
+		requestMock.mockRejectedValue(err);
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r.success).toBe(false);
+		if (!r.success) {
+			expect(r.error).toBe('HTTP 500');
+		}
+	});
+
+	it('returns generic Error message for non-ClientError errors', async () => {
+		requestMock.mockRejectedValue(new Error('network failure'));
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r).toEqual({ success: false, error: 'network failure' });
+	});
+
+	it('returns Unknown error for non-Error objects', async () => {
+		requestMock.mockRejectedValue('a string');
+		const r = await listSimfiles({ scope: 'MINE' });
+		expect(r).toEqual({ success: false, error: 'Unknown error' });
+	});
+
+	it('createSimfile passes input and returns data', async () => {
+		requestMock.mockResolvedValue({ createSimfile: { id: '10', title: 'new' } });
+		const r = await createSimfile({ title: 'new' });
+		expect(r).toEqual({ success: true, data: { createSimfile: { id: '10', title: 'new' } } });
+		const [, vars] = requestMock.mock.calls[0];
+		expect(vars).toEqual({ input: { title: 'new' } });
+	});
+
+	it('me returns user data', async () => {
+		requestMock.mockResolvedValue({ me: { id: 'u1', email: 'a@b.c' } });
+		const r = await me();
+		expect(r).toEqual({ success: true, data: { me: { id: 'u1', email: 'a@b.c' } } });
+	});
+
+	it('upsertUserProfile passes input and returns data', async () => {
+		requestMock.mockResolvedValue({ upsertUserProfile: { id: 'u1', displayName: 'x' } });
+		const r = await upsertUserProfile({ displayName: 'x' });
+		expect(r).toEqual({
+			success: true,
+			data: { upsertUserProfile: { id: 'u1', displayName: 'x' } }
+		});
+		const [, vars] = requestMock.mock.calls[0];
+		expect(vars).toEqual({ input: { displayName: 'x' } });
+	});
+
+	it('generateMagicLink returns mutation data', async () => {
+		requestMock.mockResolvedValue({ generateMagicLink: { url: 'https://magic' } });
+		const r = await generateMagicLink();
+		expect(r).toEqual({ success: true, data: { generateMagicLink: { url: 'https://magic' } } });
 	});
 });

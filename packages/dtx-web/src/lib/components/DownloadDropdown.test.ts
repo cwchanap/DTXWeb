@@ -58,4 +58,17 @@ describe('DownloadDropdown', () => {
 		resolveDownload!();
 		await downloadPromise;
 	});
+
+	it('displays error message when download fails', async () => {
+		const { downloadSimfile } = await import('$lib/api');
+		vi.mocked(downloadSimfile).mockRejectedValueOnce(new Error('Network error'));
+
+		const { getByRole, findByRole } = render(DownloadDropdown, {
+			props: { simfileId: 7, externalUrl: null, hasUploadedFiles: true }
+		});
+		await fireEvent.click(getByRole('button', { name: 'chart_actions.download' }));
+
+		const alert = await findByRole('alert');
+		expect(alert).toHaveTextContent('Network error');
+	});
 });

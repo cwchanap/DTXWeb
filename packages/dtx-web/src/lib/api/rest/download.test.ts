@@ -13,6 +13,7 @@ vi.mock('../token', () => ({
 
 import {
 	bulkDownloadBaseUrl,
+	bulkDownloadHeaders,
 	downloadBaseUrl,
 	parseContentDispositionFilename,
 	downloadSimfile
@@ -112,5 +113,54 @@ describe('downloadSimfile (GraphQL path)', () => {
 		expect(fetchMock).toHaveBeenCalledWith('https://api.test/downloads/3', expect.any(Object));
 		const init = fetchMock.mock.calls[0][1] as RequestInit;
 		expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
+	});
+
+	it('throws on non-ok response', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('fail', { status: 500 }));
+		await expect(downloadSimfile('3', { fetchFn: fetchMock })).rejects.toThrow(
+			'Download failed: 500'
+		);
+	});
+
+	it('omits Authorization header when token is null', async () => {
+		const { getAccessTokenOrNull } = await import('../token');
+		vi.mocked(getAccessTokenOrNull).mockResolvedValueOnce(null);
+		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
+		const triggerSpy = vi.fn();
+		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
+		const init = fetchMock.mock.calls[0][1] as RequestInit;
+		expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+	});
+
+	it('uses chart-{simfileId}.zip fallback when content-disposition is null', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('blob-data'));
+		const triggerSpy = vi.fn();
+		await downloadSimfile('42', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
+		const [, filename] = triggerSpy.mock.calls[0];
+		expect(filename).toBe('chart-42.zip');
+	});
+});
+
+describe('bulkDownloadHeaders', () => {
+	it('returns Content-Type only when not GraphQL mode', async () => {
+		const headers = await bulkDownloadHeaders();
+		expect(headers).toEqual({ 'Content-Type': 'application/json' });
+	});
+
+	it('returns Content-Type and Authorization when GraphQL mode with token', async () => {
+		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+		const headers = await bulkDownloadHeaders();
+		expect(headers).toEqual({
+			'Content-Type': 'application/json',
+			Authorization: 'Bearer test-token'
+		});
+	});
+
+	it('returns Content-Type only when GraphQL mode without token', async () => {
+		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+		const { getAccessTokenOrNull } = await import('../token');
+		vi.mocked(getAccessTokenOrNull).mockResolvedValueOnce(null);
+		const headers = await bulkDownloadHeaders();
+		expect(headers).toEqual({ 'Content-Type': 'application/json' });
 	});
 });

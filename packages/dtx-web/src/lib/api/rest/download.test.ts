@@ -11,10 +11,16 @@ vi.mock('../token', () => ({
 	getAccessTokenOrNull: vi.fn().mockResolvedValue('test-token')
 }));
 
-import { bulkDownloadBaseUrl, parseContentDispositionFilename, downloadSimfile } from './download';
+import {
+	bulkDownloadBaseUrl,
+	downloadBaseUrl,
+	parseContentDispositionFilename,
+	downloadSimfile
+} from './download';
 
 beforeEach(() => {
 	mockEnv.PUBLIC_USE_GRAPHQL_API = 'false';
+	mockEnv.PUBLIC_DTX_API_URL = 'https://api.test';
 });
 
 describe('bulkDownloadBaseUrl', () => {
@@ -24,6 +30,22 @@ describe('bulkDownloadBaseUrl', () => {
 	it('returns dtx-api URL when flag ON', () => {
 		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
 		expect(bulkDownloadBaseUrl()).toBe('https://api.test/downloads/bulk');
+	});
+	it('throws when GraphQL mode ON and PUBLIC_DTX_API_URL is empty', () => {
+		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+		mockEnv.PUBLIC_DTX_API_URL = '';
+		expect(() => bulkDownloadBaseUrl()).toThrow('PUBLIC_DTX_API_URL is not configured');
+	});
+});
+
+describe('downloadBaseUrl', () => {
+	it('returns relative REST URL when flag OFF', () => {
+		expect(downloadBaseUrl('7')).toBe('/api/simFile/download/7');
+	});
+	it('throws when GraphQL mode ON and PUBLIC_DTX_API_URL is empty', () => {
+		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+		mockEnv.PUBLIC_DTX_API_URL = '';
+		expect(() => downloadBaseUrl('7')).toThrow('PUBLIC_DTX_API_URL is not configured');
 	});
 });
 

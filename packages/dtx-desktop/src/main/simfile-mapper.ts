@@ -1,3 +1,5 @@
+import type { SimfileWithDtx } from '@dtx/common';
+
 type GraphqlSimfile = {
 	id: string;
 	title: string;
@@ -15,7 +17,7 @@ type GraphqlSimfile = {
 	dtxFiles: Array<{ level: number; label: string }>;
 };
 
-export const toRendererSimfile = (s: GraphqlSimfile) => {
+export const toRendererSimfile = (s: GraphqlSimfile): SimfileWithDtx => {
 	const numId = Number(s.id);
 	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${s.id}`);
 	return {

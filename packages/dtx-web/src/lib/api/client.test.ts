@@ -64,8 +64,23 @@ describe('getClient', () => {
 	});
 
 	it('returns service-binding client when SSR with platform.env.API', async () => {
-		// Simulate SSR environment
-		vi.mocked(makeBrowserClient).mockReturnValueOnce({ type: 'browser', token: null } as never);
+		// Must reset modules and re-import so getClient sees browser=false
+		vi.resetModules();
+		vi.doMock('$app/environment', () => ({ browser: false }));
+		vi.doMock('$env/dynamic/public', () => ({ env: mockEnv }));
+		vi.doMock('./token', () => ({ getAccessTokenOrNull: mockGetAccessToken }));
+		vi.doMock('./transport', () => ({
+			makeBrowserClient: vi.fn((token) => ({ type: 'browser', token })),
+			makeServiceBindingClient: vi.fn((binding, token) => ({
+				type: 'service-binding',
+				binding,
+				token
+			}))
+		}));
+
+		const { getClient: ssrGetClient } = await import('./client');
+		const { makeServiceBindingClient: ssrMakeServiceBinding } = await import('./transport');
+
 		const mockBinding = { fetch: vi.fn() };
 		const ctx = {
 			platform: {
@@ -74,13 +89,12 @@ describe('getClient', () => {
 			accessToken: 'ssr-token'
 		};
 
-		// Temporarily mock browser as false
-		vi.doMock('$app/environment', () => ({ browser: false }));
-		// Since we can't easily re-mock browser at runtime, test the SSR path
-		// by calling with platform context (browser mock is true by default)
-		// so the SSR branch won't be taken. Instead, verify the browser path works.
-		const client = await getClient(ctx);
-		// In browser mode, it uses browser client
-		expect(makeBrowserClient).toHaveBeenCalledWith('ssr-token');
+		const client = await ssrGetClient(ctx);
+		expect(ssrMakeServiceBinding).toHaveBeenCalledWith(mockBinding, 'ssr-token');
+		expect(client).toEqual({
+			type: 'service-binding',
+			binding: mockBinding,
+			token: 'ssr-token'
+		});
 	});
 });

@@ -55,6 +55,16 @@ describe('getMe', () => {
 		const r = await getMe();
 		expect(r).toEqual({ user_id: 'u1', username: 'alice' });
 	});
+
+	it('REST: includes plain text body in error when not OK', async () => {
+		restFetch.mockResolvedValue(new Response('Some plain text error', { status: 500 }));
+		await expect(getMe()).rejects.toThrow('me failed: 500 – Some plain text error');
+	});
+
+	it('REST: omits body separator when empty body', async () => {
+		restFetch.mockResolvedValue(new Response('', { status: 500 }));
+		await expect(getMe()).rejects.toThrow('me failed: 500');
+	});
 });
 
 describe('upsertUserProfile', () => {
@@ -84,5 +94,17 @@ describe('upsertUserProfile', () => {
 		await expect(upsertUserProfile({ username: 'bob' })).rejects.toThrow(
 			'upsert failed: 409 – username taken'
 		);
+	});
+
+	it('REST: includes plain text body in error when not OK', async () => {
+		restFetch.mockResolvedValue(new Response('Some plain text error', { status: 500 }));
+		await expect(upsertUserProfile({ username: 'bob' })).rejects.toThrow(
+			'upsert failed: 500 – Some plain text error'
+		);
+	});
+
+	it('REST: omits body separator when empty body', async () => {
+		restFetch.mockResolvedValue(new Response('', { status: 500 }));
+		await expect(upsertUserProfile({ username: 'bob' })).rejects.toThrow('upsert failed: 500');
 	});
 });

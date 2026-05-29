@@ -78,4 +78,34 @@ describe('makeServiceBindingClient', () => {
 		>;
 		await expect(client.request(doc, {})).rejects.toThrow('GraphQL request failed: 500');
 	});
+
+	it('does not set authorization header when no token is provided', async () => {
+		binding.fetch.mockResolvedValue(
+			new Response(JSON.stringify({ data: { ok: true } }), {
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		const client = makeServiceBindingClient(binding as unknown as Fetcher);
+		const doc = { kind: 'Document', definitions: [] } as unknown as TypedDocumentNode<
+			{ ok: boolean },
+			Record<string, never>
+		>;
+		await client.request(doc, {});
+		const req = binding.fetch.mock.calls[0][0] as Request;
+		expect(req.headers.get('authorization')).toBeNull();
+	});
+
+	it('throws when response has no data and no errors', async () => {
+		binding.fetch.mockResolvedValue(
+			new Response(JSON.stringify({}), {
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		const client = makeServiceBindingClient(binding as unknown as Fetcher);
+		const doc = { kind: 'Document', definitions: [] } as unknown as TypedDocumentNode<
+			unknown,
+			Record<string, never>
+		>;
+		await expect(client.request(doc, {})).rejects.toThrow('GraphQL response missing data');
+	});
 });

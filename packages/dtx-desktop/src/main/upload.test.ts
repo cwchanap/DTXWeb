@@ -51,4 +51,44 @@ describe('uploadFile', () => {
 		expect(r.success).toBe(false);
 		if (!r.success) expect(r.error).toBe('boom');
 	});
+
+	it('returns timeout error on AbortError', async () => {
+		const abortErr = new DOMException('The operation was aborted.', 'AbortError');
+		fetchSpy.mockRejectedValue(abortErr);
+		const r = await uploadFile(new FormData());
+		expect(r.success).toBe(false);
+		if (!r.success) expect(r.error).toBe('Request timed out after 30000ms');
+	});
+
+	it('falls back to statusText when non-ok response body is not JSON', async () => {
+		fetchSpy.mockResolvedValue(
+			new Response('not json', { status: 502, statusText: 'Bad Gateway' })
+		);
+		const r = await uploadFile(new FormData());
+		expect(r.success).toBe(false);
+		if (!r.success) expect(r.error).toBe('Bad Gateway');
+	});
+
+	it('returns error message from a generic Error', async () => {
+		fetchSpy.mockRejectedValue(new Error('network down'));
+		const r = await uploadFile(new FormData());
+		expect(r.success).toBe(false);
+		if (!r.success) expect(r.error).toBe('network down');
+	});
+
+	it('returns Unknown error when a non-Error is thrown', async () => {
+		fetchSpy.mockRejectedValue('something broke');
+		const r = await uploadFile(new FormData());
+		expect(r.success).toBe(false);
+		if (!r.success) expect(r.error).toBe('Unknown error');
+	});
+
+	it('falls back to HTTP status when JSON body has no error field', async () => {
+		fetchSpy.mockResolvedValue(
+			new Response(JSON.stringify({ message: 'forbidden' }), { status: 403 })
+		);
+		const r = await uploadFile(new FormData());
+		expect(r.success).toBe(false);
+		if (!r.success) expect(r.error).toBe('HTTP 403');
+	});
 });

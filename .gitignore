@@ -19,6 +19,11 @@ static/skin/
 /blob-report/
 /playwright/.cache/
 
+# Local Miniflare state + Playwright auth output (e2e)
+.wrangler/state
+packages/*/.wrangler/state
+e2e/.auth
+
 # Coverage reports
 coverage/
 **/coverage/

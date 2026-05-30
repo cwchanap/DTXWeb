@@ -32,37 +32,37 @@ Phase 4 ships test/CI code and documentation only. It does **not** change the ap
 - Any change to `packages/dtx-api` business logic or `verifyToken.ts` — Phase 4 depends on the deployed verification behavior as-is.
 - Production deploy of `dtx-api`, production web flag flip, or a desktop GitHub release (all Phase 5).
 - Deleting `packages/dtx-web/src/routes/api/*` or removing `dtx-web` bindings (Phase 6).
-- Expanding e2e beyond the four critical journeys — the parent spec keeps the e2e suite deliberately minimal.
+- Expanding e2e beyond the journeys the web UI can drive in headless Chromium — the parent spec keeps the e2e suite deliberately minimal, and create/upload/bulk stay on unit tests + the runbook.
 - Changing `packages/dtx-web` app code, `packages/dtx-desktop`, or `packages/common`. Delta fixes uncovered during the live runbook are explicitly allowed but land as a **follow-up PR**, not as part of the gate scaffolding. (The harness may add a root-level dev dependency or test-config wiring — e.g. a Supabase client for `global.setup` — if one is required; that is gate scaffolding, not app code.)
 
 ## Design
 
 ### Architecture overview — the hermetic dual-path harness
 
-The same four journey specs run in two **independent legs** selected by a CI matrix (`use_graphql: [false, true]`). Parity is proven by the _same assertions_ passing in both legs; the legs do not share data with each other.
+The same journey specs run in two **independent legs** selected by a CI matrix (`use_graphql: [false, true]`). Parity is proven by the _same assertions_ passing in both legs; the legs do not share data with each other. **Every flag-sensitive data call in the web app is client-side** (`ChartList`/detail pages fetch in `onMount`, not in SSR `load()`), so in each leg exactly **one** backend serves the data and gets seeded — no cross-server shared persistence is required.
 
 ```text
 LEG A — flag OFF (REST path)
 ┌──────────────────────────────────────────────────────┐
 │ Playwright (chromium) on localhost                     │
-│   browser → dtx-web (localhost:5173)                   │
+│   browser → dtx-web (localhost:5173, vite dev)         │
 │     PUBLIC_USE_GRAPHQL_API=false                       │
 │     client call-sites → dtx-web /api/*                 │
-│     blog SSR + /api/* → platform.env.DB / R2 / KV      │ ← local Miniflare
+│     → platformProxy: platform.env.DB / R2 / KV          │ ← local Miniflare (seeded)
 │   auth: Supabase session cookie (test project)         │
 └──────────────────────────────────────────────────────┘
 
 LEG B — flag ON (GraphQL path)
 ┌──────────────────────────────────────────────────────┐
 │ Playwright (chromium) on localhost                     │
-│   browser → dtx-web (localhost:5173)                   │
+│   browser → dtx-web (localhost:5173, vite dev)         │
 │     PUBLIC_USE_GRAPHQL_API=true                        │
 │     PUBLIC_DTX_API_URL=http://localhost:8787           │
-│     client call-sites → dtx-api /graphql, /upload,     │
-│                         /downloads/:id, /downloads/bulk │
-│     blog SSR still → dtx-web platform.env.DB           │
-│   ┌ dtx-web (5173) ┐  shared --persist-to .e2e-state    │
-│   └ dtx-api (8787) ┘  → ONE local D1 + R2              │ ← local Miniflare
+│     client call-sites → dtx-api /graphql,              │
+│                         /downloads/:id                  │
+│   dtx-api (localhost:8787, wrangler dev)               │
+│     → DB / R2 / KV bindings                             │ ← local Miniflare (seeded)
+│   dtx-web needs NO real bindings here (mock D1 unused) │
 │   auth: Supabase bearer (test project)                 │
 │         → dtx-api verifyToken → getUser(test Supabase) │
 └──────────────────────────────────────────────────────┘
@@ -70,24 +70,23 @@ LEG B — flag ON (GraphQL path)
 
 Principles:
 
-- **Two independent legs, not one shared dataset.** Each matrix leg is a fresh CI job with its own Miniflare instance, its own persistence directory, and its own per-leg seed. Parity = identical observable outcomes, not shared bytes. This keeps the legs isolated and parallelizable.
-- **One shared local D1/R2 _within_ Leg B.** In the flag-ON leg, `dtx-web`'s blog SSR reads `dtx-web`'s D1 directly (the SSR read is not migrated until Phase 6), while the client's anonymous download hits `dtx-api`'s R2. Both must observe the same seeded chart, so `dtx-web` and `dtx-api` run their Miniflare against a **shared `--persist-to` directory** in Leg B. Leg A only needs `dtx-web`'s bindings.
-- **Real Supabase control plane, local data plane.** The dedicated test Supabase project issues and validates tokens for both paths (cookie for `dtx-web`, bearer for `dtx-api`). All _application_ data (charts, files, user profiles) lives in local Miniflare D1/R2 — never in Supabase, never in pre-prod.
+- **Two independent legs, one backend each.** Each matrix leg is a fresh CI job that seeds the single backend it exercises: Leg A seeds `dtx-web`'s local Miniflare D1/R2 (served via `platformProxy`); Leg B seeds `dtx-api`'s local Miniflare D1/R2 (served via `wrangler dev`). Parity = identical observable outcomes across legs, not shared bytes. No shared `--persist-to` is needed because `dtx-web` performs no server-side D1/R2 read in the journeys (in Leg B its mock D1 is never hit).
+- **Real Supabase control plane, local data plane.** The dedicated test Supabase project issues and validates tokens for both paths (cookie for `dtx-web`, bearer for `dtx-api`). All _application_ data (charts, files) lives in local Miniflare D1/R2 — never in Supabase, never in pre-prod.
 - **Flag toggling via public env vars at dev-server launch.** An `E2E_USE_GRAPHQL` switch read by `playwright.config.ts` selects the `dtx-web` webServer env (`PUBLIC_USE_GRAPHQL_API`, plus `PUBLIC_DTX_API_URL` when ON) and decides whether to also boot the `dtx-api` webServer.
 - **`dtx-web` bindings in dev — confirmed by a live spike.** Plain `vite dev` returns a **mock D1** (`getDb` falls back to `createMockD1Database()` because `platform` is `undefined`), so the existing dev server has no real bindings. Enabling `@sveltejs/adapter-cloudflare` (v7) `platformProxy` in `svelte.config.js` surfaces **real local Miniflare** `platform.env.DB`/`DTXFILE_BUCKET`/`RATE_LIMIT` under `vite dev` (verified: a published-list probe then produced a genuine `D1_ERROR: no such table` against an empty local DB, not mock data). So `platformProxy` is the chosen mechanism — fast `vite dev` with real bindings, no `wrangler dev` build step for `dtx-web`. The one bookkeeping detail the spike surfaced: getPlatformProxy and `wrangler d1 execute --persist-to` must be pointed at the **same resolved persist directory**, and **migrations must be applied before the dev server starts** (Miniflare caches the DB connection, so a mid-session `wrangler d1 execute` is not observed). The plan's first task pins the exact persist path and the migrate-then-start ordering.
 
-### The four critical-journey specs
+### The critical-journey specs
 
-A Playwright `global.setup` project signs the test user in once (`supabase.auth.signInWithPassword` against the test project) and saves `storageState` — the Supabase session, which carries both the cookie (consumed by `dtx-web` SSR via `@supabase/ssr`) and the `access_token` (read by `lib/api/token.ts` for the bearer path). Authenticated specs reuse that `storageState`; a single browser login therefore covers both the REST cookie path and the GraphQL bearer path.
+The web UI supports a subset of the parent spec's four journeys: **create and `.dtx` upload have no web UI** (they are desktop-only — `lib/api` exposes only `listSimfiles`/`getSimfile`/`updateSimfile`/`deleteSimfile`/`downloadSimfile`), and **bulk download** only renders when `window.showSaveFilePicker` exists, which headless Chromium lacks. The two journeys below cover every flag-sensitive web call-site that the browser can actually drive; create/upload/bulk stay covered by the Phase 3 dual-path unit tests + the desktop runbook.
 
-A seed step (authenticated API calls against the running local stack) creates one published, uploaded chart for the anonymous journeys. The lifecycle journey self-seeds (create → … → delete).
+A Playwright `global.setup` project signs the test user in once via the real `/login` form (`supabase.auth.signInWithPassword` server action) and saves `storageState` — the `@supabase/ssr` session cookies, which serve both the SSR cookie path (`dtx-web` `hooks.server.ts`) and the bearer path (`lib/api/token.ts` reads the session for the `Authorization` header). A single login covers both flag states.
 
-| #   | Journey                                                                       | Auth      | Flag-sensitive call-sites exercised                                               |
-| --- | ----------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------- |
-| 1   | Chart lifecycle: create a chart → see it in `/app` list → edit title → delete | logged in | `createSimfile`, `listSimfiles(MINE)`, `updateSimfile`, `deleteSimfile`           |
-| 2   | Upload a `.dtx` to a chart → file appears in the chart's files list           | logged in | upload (`/upload` multipart), `getSimfile { files }`                              |
-| 3   | Anonymous blog browse → open a published chart → single download              | anonymous | `listSimfiles(PUBLISHED)` SSR, `getSimfile`, `downloadSimfile` (`/downloads/:id`) |
-| 4   | Select two charts → bulk ZIP download                                         | anonymous | `bulkDownload` (`/downloads/bulk`)                                                |
+Seeding is done **before the dev server starts** (Miniflare caches its DB connection, so mid-session writes are not observed) via `wrangler d1 execute` + `wrangler r2 object put` against the leg's persist dir. Two charts are seeded: **chart A** owned by the test user (`user_id = TEST_USER_ID`, hardcoded after one-time provisioning) for the lifecycle journey, and **chart B** published with a real R2 object under `<id>/` (so `has_uploaded_files = true`) for the download journey. Keeping them separate means the lifecycle journey's delete never removes chart B (Playwright runs specs in parallel).
+
+| #   | Journey                                                                                                   | Auth      | Flag-sensitive call-sites exercised                                                           |
+| --- | --------------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| 1   | Authenticated lifecycle: `/app/chart` list shows seeded chart A → open detail → edit/save → back → delete | logged in | `listSimfiles(MINE)`, `getSimfile`, `updateSimfile`, `deleteSimfile`                          |
+| 2   | Anonymous browse + single download: `/blog` list shows chart B → click Download → file downloads          | anonymous | `listSimfiles(PUBLISHED)`, `downloadSimfile` (`/api/simFile/download/:id` ↔ `/downloads/:id`) |
 
 Each journey asserts only on visible UI, URL, and downloaded-file outcomes, so the _same_ assertions hold whether the bytes came from REST or GraphQL — that is the parity proof. The existing eight unauthenticated tool/UI specs remain unchanged and continue to run in both legs (cheap, and they confirm the client-only paths are flag-agnostic).
 
@@ -107,6 +106,7 @@ export const TEST_SUPABASE_URL = 'https://<drumery-e2e>.supabase.co';
 export const TEST_SUPABASE_ANON_KEY = '<anon-key>'; // public by design
 export const TEST_USER_EMAIL = 'e2e@drumery.test';
 export const TEST_USER_PASSWORD = '<throwaway-password>';
+export const TEST_USER_ID = '<supabase-uuid>'; // read once after provisioning; seeds chart A's user_id
 ```
 
 `playwright.config.ts` injects these into the `dtx-web` webServer env (`PUBLIC_SUPABASE_URL`/`PUBLIC_SUPABASE_ANON_KEY`) and, on the flag-ON leg, into the `dtx-api` webServer env (`SUPABASE_URL`/`SUPABASE_ANON_KEY`); `global.setup` reads the user creds directly. The test user is created once out-of-band (documented in the runbook), not on every run. Only test-instance values ever get hardcoded — prod/pre-prod credentials never do.
@@ -123,8 +123,8 @@ env:
     E2E_USE_GRAPHQL: ${{ matrix.use_graphql }}
 ```
 
-- `playwright.config.ts` reads `E2E_USE_GRAPHQL`. It sets the `dtx-web` webServer env (`PUBLIC_USE_GRAPHQL_API`, the test Supabase URL/anon-key from `e2e/test-config.ts`, and `PUBLIC_DTX_API_URL=http://localhost:8787` when ON), and — when ON — declares a **second `webServer`** that boots `dtx-api` via `wrangler dev` with a shared `--persist-to` directory and the same test Supabase env.
-- D1 migrations (`packages/dtx-web/d1-migrations/`) are applied to the resolved local persist directory **before** the dev server starts in both legs (the spike showed Miniflare caches the connection, so migrate-then-start is mandatory); the data seed then runs in `global.setup`.
+- `playwright.config.ts` reads `E2E_USE_GRAPHQL`. It sets the `dtx-web` webServer env (`PUBLIC_USE_GRAPHQL_API`, the test Supabase URL/anon-key from `e2e/test-config.ts`, and `PUBLIC_DTX_API_URL=http://localhost:8787` when ON), and — when ON — declares a **second `webServer`** that boots `dtx-api` via `wrangler dev` with the test Supabase env. Each leg seeds only the backend it exercises (Leg A → `dtx-web`'s Miniflare; Leg B → `dtx-api`'s Miniflare); no shared persist dir.
+- D1 migrations + the two-chart seed are applied to the leg's persist directory **before** the dev server starts (the spike showed Miniflare caches the connection, so migrate/seed-then-start is mandatory). A Playwright `globalSetup`/script handles migrate+seed; `global.setup` then performs the login and saves `storageState`.
 - Both legs must be green for the job to pass. This realizes the parent spec's "run twice" transition gate, and — because nothing is secret-gated — it runs identically on same-repo and fork PRs.
 
 ### Cutover runbook (committed markdown, executed by a human)
@@ -133,7 +133,7 @@ env:
 
 1. **One-time setup:** create the test Supabase project (auto-confirm signups); create the e2e test user; paste the project URL, anon key, and test-user creds into `e2e/test-config.ts`. No CI secrets to add.
 2. **Flag-ON on pre-prod:** deploy `dtx-web` to pre-prod with `PUBLIC_USE_GRAPHQL_API` overridden to `true` (CLI var override or dashboard). The committed config stays `false`.
-3. **Manual smoke** of every web call-site against `api.pre-prod.dtx.hapadona.com`: login, list, edit, delete, single + bulk download, magic link. DevTools Network confirms requests hit `api.pre-prod`.
+3. **Manual smoke** of every web call-site against `api.pre-prod.dtx.hapadona.com` — including the ones the CI gate can't drive in headless Chromium: login, list (mine + published), open detail, edit/save, delete, **single download**, **bulk download** (real `showSaveFilePicker`), and the **magic-link** desktop handoff. DevTools Network confirms requests hit `api.pre-prod`.
 4. **Worker-log parity capture:** `wrangler tail` on both `dtx-web` (pre-prod) and `dtx-api-pre-prod` during the smoke; save logs for delta comparison against a flag-OFF baseline run.
 5. **Delta-triage:** record any response/behavior delta. Fixes land in `dtx-web` or `dtx-api` as a **follow-up PR** (allowed in Phase 4), each with a regression assertion added to the relevant journey spec or Phase 3 unit test.
 6. **Flip back** to `false` to leave pre-prod in steady state.
@@ -146,34 +146,35 @@ The gate proves parity at the **observable-outcome** layer (rendered UI, navigat
 
 ### Risks & mitigations
 
-| Risk                                                                                 | Mitigation                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Persist-path mismatch / migrate-after-start so the dev server reads an empty DB      | **Resolved approach (from the live spike):** `platformProxy` does surface real bindings; the gate must point getPlatformProxy and `wrangler` at the same persist dir and migrate **before** server start. The plan's first task pins the exact path + ordering with a round-trip read-back assertion; fallback is `wrangler dev` on the built `dtx-web` worker. |
-| Shared `--persist-to` race between `dtx-web` and `dtx-api` in Leg B                  | Apply migrations + seed before either server accepts traffic; Playwright `webServer.url` health-gates startup ordering; seed is idempotent.                                                                                                                                                                                                                     |
-| Cross-leg test/data bleed                                                            | Each matrix leg is a fresh CI job with its own Miniflare + persist dir + per-leg seed. No cross-leg shared state.                                                                                                                                                                                                                                               |
-| Real Supabase dependency makes the gate flaky if Supabase is unavailable             | Accepted and bounded: only token issuance/validation touches Supabase. Documented; existing `retries: 2` (on CI) absorbs transient failures.                                                                                                                                                                                                                    |
-| Access-token expiry mid-suite                                                        | `global.setup` signs in fresh per run; suites are short; access-token TTL far exceeds suite runtime.                                                                                                                                                                                                                                                            |
-| Hardcoded test creds leak or get reused                                              | Only an isolated throwaway Supabase test project is hardcoded; the anon key is public by design and the project holds no real data. Never hardcode prod/pre-prod creds. Benefit: the full gate runs on every PR (incl. forks) with no secret wiring.                                                                                                            |
-| Bulk-download rate limit (`RATE_LIMIT` / `RATE_LIMIT_API` KV) trips during the suite | Local KV is empty per leg; the suite seeds/selects only two charts — well within limits.                                                                                                                                                                                                                                                                        |
-| Doubling CI time (two legs)                                                          | Legs run in parallel via the matrix; the flag-OFF leg is the existing cost, the flag-ON leg adds a `wrangler dev` boot. Acceptable for a pre-cutover gate.                                                                                                                                                                                                      |
+| Risk                                                                               | Mitigation                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Persist-path mismatch / migrate-after-start so the dev server reads an empty DB    | **Resolved approach (from the live spike):** `platformProxy` does surface real bindings; the gate must point getPlatformProxy and `wrangler` at the same persist dir and migrate **before** server start. The plan's first task pins the exact path + ordering with a round-trip read-back assertion; fallback is `wrangler dev` on the built `dtx-web` worker. |
+| Seed not visible because applied after server start                                | Migrate + seed run **before** the leg's dev server boots (Miniflare caches its connection); the migrate/seed script exits 0 before Playwright launches the webServer. No shared persist to coordinate.                                                                                                                                                          |
+| Web journeys that don't exist in headless Chromium (bulk download, upload, create) | Bulk needs `window.showSaveFilePicker` (absent in headless Chromium); upload/create have no web UI. Excluded from the CI gate by design; covered by Phase 3 dual-path unit tests (`ChartList.helpers`, `lib/api`) + the desktop runbook's manual bulk/upload smoke.                                                                                             |
+| Cross-leg test/data bleed                                                          | Each matrix leg is a fresh CI job with its own Miniflare + persist dir + per-leg seed. No cross-leg shared state.                                                                                                                                                                                                                                               |
+| Real Supabase dependency makes the gate flaky if Supabase is unavailable           | Accepted and bounded: only token issuance/validation touches Supabase. Documented; existing `retries: 2` (on CI) absorbs transient failures.                                                                                                                                                                                                                    |
+| Access-token expiry mid-suite                                                      | `global.setup` signs in fresh per run; suites are short; access-token TTL far exceeds suite runtime.                                                                                                                                                                                                                                                            |
+| Hardcoded test creds leak or get reused                                            | Only an isolated throwaway Supabase test project is hardcoded; the anon key is public by design and the project holds no real data. Never hardcode prod/pre-prod creds. Benefit: the full gate runs on every PR (incl. forks) with no secret wiring.                                                                                                            |
+| Download rate limit (`RATE_LIMIT` / `RATE_LIMIT_API` KV) trips during the suite    | Local KV is empty per leg; the suite seeds two charts and performs a single download — well within limits.                                                                                                                                                                                                                                                      |
+| Doubling CI time (two legs)                                                        | Legs run in parallel via the matrix; the flag-OFF leg is the existing cost, the flag-ON leg adds a `wrangler dev` boot. Acceptable for a pre-cutover gate.                                                                                                                                                                                                      |
 
 ### Decisions log (pinned by this spec)
 
 1. **Phase 4 delivers both the automated dual-path parity gate and the live cutover runbook.** (Scope chosen over runbook-only / gate-only / decompose.)
 2. **The parity gate uses a hermetic local stack:** local Miniflare D1/R2, real Supabase only for token issuance/validation. No offline-JWT path is introduced.
-3. **A dedicated test Supabase project** backs e2e auth — isolated from prod and pre-prod identities. Its credentials are **hardcoded in a committed `e2e/test-config.ts`** (anon key is public; throwaway project), so the gate needs no CI secrets and runs on every PR including forks.
-   3a. **`dtx-web` gets real dev bindings via adapter-cloudflare `platformProxy`** (confirmed by a live spike), not `wrangler dev`; migrations are applied to the shared persist dir before server start.
-4. **Two independent CI legs** (`use_graphql: [false, true]`) prove parity via identical assertions, rather than sharing one dataset across flag states.
-5. **`dtx-web` and `dtx-api` share one `--persist-to` dir within the flag-ON leg** so blog SSR (dtx-web D1) and anonymous download (dtx-api R2) see the same seed.
+3. **A dedicated test Supabase project** backs e2e auth — isolated from prod and pre-prod identities. Its credentials (incl. the test user's UUID) are **hardcoded in a committed `e2e/test-config.ts`** (anon key is public; throwaway project), so the gate needs no CI secrets and runs on every PR including forks.
+   3a. **`dtx-web` gets real dev bindings via adapter-cloudflare `platformProxy`** (confirmed by a live spike), not `wrangler dev`; migrations + seed are applied to the persist dir before server start.
+4. **Two independent CI legs** (`use_graphql: [false, true]`) prove parity via identical assertions; each leg seeds only the **one** backend it exercises — no shared persist (the web app does all flag-sensitive data calls client-side).
+5. **Two journeys, not four** — authenticated lifecycle + anonymous single download. Create/upload have no web UI and bulk needs `window.showSaveFilePicker` (absent in headless Chromium); all three stay covered by Phase 3 unit tests + the desktop runbook.
 6. **No change to `packages/dtx-api`** (including `verifyToken.ts`) and **no change to deployed flag values.** Delta fixes from the runbook land as a separate follow-up PR.
-7. **The four journeys match the parent spec exactly** — lifecycle, presigned/multipart upload, anonymous single download, bulk download — kept deliberately minimal.
+7. **Seeding is pre-start via `wrangler d1 execute` + `wrangler r2 object put`** with a fixed `TEST_USER_ID`, not via API calls (web has no create/upload endpoint, and mid-session writes aren't observed by Miniflare).
 8. **The runbook is authored here but executed by a human operator** (Cloudflare dashboard + interactive login + observation are out of an agent's reach).
 
 ### Open questions deferred to implementation
 
-- The exact resolved persist directory shared by getPlatformProxy and `wrangler` (the spike showed they can diverge), and whether Leg B shares state cleanest via both servers on `wrangler dev --persist-to` or `dtx-web` on `platformProxy` + `dtx-api` on `wrangler dev` pointed at the same dir; decided by the plan's first task with a read-back assertion.
-- Exact local port for `dtx-api` (`8787` assumed) and the `--persist-to` path; finalized in `playwright.config.ts`.
-- Whether the seed runs entirely in `global.setup` via API calls or partly via `wrangler d1 execute` for the published-chart fixture; default: API calls so the seed is path-honest, with a direct R2/D1 write only if an API-only seed proves circular.
+- The exact resolved persist directory getPlatformProxy uses for `dtx-web` (the spike showed it ignored a `persist.path` override and used `.wrangler/state`), and the matching `wrangler d1 execute --persist-to`/`wrangler r2 object put` path for the seed — pinned by the plan's first task with a read-back assertion.
+- Exact local port for `dtx-api` (`8787` assumed) and its `--persist-to` path; finalized in `playwright.config.ts`.
+- Exact selectors for the `ChartDetail` edit form (from `@dtx/common/components`) used by the lifecycle journey's edit step — read during that task; the journey's TDD loop (write → run → adjust selectors → green) finalizes them.
 - Whether to model the two legs as a GitHub matrix (assumed) or as two Playwright `projects` with separate webServers in one job; default: matrix for isolation + parallelism.
 
 ### What Phase 5 will need (handoff)
@@ -184,8 +185,8 @@ The gate proves parity at the **observable-outcome** layer (rendered UI, navigat
 
 ## Done criteria
 
-- `e2e/` contains four journey specs (chart lifecycle, `.dtx` upload, single download, bulk download) plus a `global.setup` that logs in the test user and seeds one published+uploaded chart; all pass locally with both `E2E_USE_GRAPHQL=false` and `=true`.
-- `playwright.config.ts` reads `E2E_USE_GRAPHQL`, sets the flag + `PUBLIC_DTX_API_URL` on the `dtx-web` webServer, and boots a `dtx-api` `wrangler dev` webServer with a shared `--persist-to` on the flag-ON leg; D1 migrations are applied before the suites in both legs.
+- `e2e/` contains two journey specs (authenticated lifecycle, anonymous single download) plus a `global.setup` (login + `storageState`) and a pre-start migrate+seed script; all pass locally with both `E2E_USE_GRAPHQL=false` and `=true`.
+- `playwright.config.ts` reads `E2E_USE_GRAPHQL`, sets the flag + `PUBLIC_DTX_API_URL` on the `dtx-web` webServer, and boots a `dtx-api` `wrangler dev` webServer on the flag-ON leg; each leg migrates + seeds its own backend before server start (no shared `--persist-to`).
 - `.github/workflows/e2e-test.yml` runs the `use_graphql: [false, true]` matrix; both legs must be green for the job to pass; no CI secrets are required (test creds live in `e2e/test-config.ts`).
 - `e2e/test-config.ts` holds the hardcoded test-Supabase URL/anon-key + test-user creds; the dedicated test Supabase project + test user are documented in the runbook.
 - `docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md` is committed and complete (no TBDs).

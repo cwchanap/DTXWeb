@@ -17,12 +17,12 @@ export const TEST_USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? 'REPLACE_ME_P
 /** Supabase auth UUID of TEST_USER_EMAIL. Read once after provisioning (runbook). */
 export const TEST_USER_ID = process.env.E2E_USER_ID ?? 'REPLACE_ME_UUID';
 
-/** True when all auth-related env vars are set to non-placeholder values. */
+/** True when the resolved credentials are non-placeholder values (env vars or committed defaults). */
 export const isAuthConfigured =
-	process.env.E2E_USER_PASSWORD !== undefined &&
-	process.env.E2E_USER_PASSWORD !== '' &&
-	process.env.E2E_USER_ID !== undefined &&
-	process.env.E2E_USER_ID !== '';
+	TEST_USER_PASSWORD !== 'REPLACE_ME_PASSWORD' &&
+	TEST_USER_PASSWORD !== '' &&
+	TEST_USER_ID !== 'REPLACE_ME_UUID' &&
+	TEST_USER_ID !== '';
 
 /** Fixed seed chart ids (see plan's test-data table). */
 export const CHART_A_ID = 1001; // owned by test user, unpublished — lifecycle journey

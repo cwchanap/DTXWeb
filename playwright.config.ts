@@ -90,7 +90,7 @@ export default defineConfig({
 						name: 'chromium-auth',
 						use: { ...devices['Desktop Chrome'] },
 						testMatch: /auth-lifecycle\.spec\.ts/,
-						dependencies: ['setup'] as const
+						dependencies: ['setup']
 					}
 				]
 			: [])

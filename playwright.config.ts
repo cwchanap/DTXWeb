@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
-import { TEST_SUPABASE_URL, TEST_SUPABASE_ANON_KEY, DTX_API_LOCAL_PORT } from './e2e/test-config';
+import {
+	TEST_SUPABASE_URL,
+	TEST_SUPABASE_ANON_KEY,
+	DTX_API_LOCAL_PORT,
+	isAuthConfigured
+} from './e2e/test-config';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const useGraphQL = process.env.E2E_USE_GRAPHQL === 'true';
@@ -69,21 +74,26 @@ export default defineConfig({
 	reporter: 'html',
 	use: { baseURL, trace: 'on-first-retry' },
 	projects: [
-		{ name: 'setup', testMatch: /global\.setup\.ts/ },
+		// Non-auth specs always run — they have no setup dependency.
 		{
-			// Existing 8 specs + the anonymous download journey. NO setup dependency,
-			// so they run without the test Supabase creds (stay green before provisioning).
 			name: 'chromium',
 			use: { ...devices['Desktop Chrome'] },
 			testIgnore: [/global\.setup\.ts/, /auth-lifecycle\.spec\.ts/]
 		},
-		{
-			// Authenticated journey only — depends on the login setup (needs real creds).
-			name: 'chromium-auth',
-			use: { ...devices['Desktop Chrome'] },
-			testMatch: /auth-lifecycle\.spec\.ts/,
-			dependencies: ['setup']
-		}
+		// Auth-dependent projects are included only when credentials are configured.
+		// Without E2E_USER_PASSWORD + E2E_USER_ID in the environment, these are
+		// omitted so CI stays green until a test Supabase project is provisioned.
+		...(isAuthConfigured
+			? [
+					{ name: 'setup', testMatch: /global\.setup\.ts/ },
+					{
+						name: 'chromium-auth',
+						use: { ...devices['Desktop Chrome'] },
+						testMatch: /auth-lifecycle\.spec\.ts/,
+						dependencies: ['setup'] as const
+					}
+				]
+			: [])
 	],
 	webServer: webServers
 });

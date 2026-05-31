@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { TEST_USER_ID, CHART_B_ID } from '../test-config';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const repoRoot = join(here, '..', '..');
+const repoRoot = join(here, '..', '..', '..');
 
 const useGraphQL = process.env.E2E_USE_GRAPHQL === 'true';
 const pkg = useGraphQL ? 'dtx-api' : 'dtx-web';

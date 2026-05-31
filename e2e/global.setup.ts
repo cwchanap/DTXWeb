@@ -1,4 +1,6 @@
 import { test as setup, expect } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { TEST_USER_EMAIL, TEST_USER_PASSWORD } from './test-config';
 
 const authFile = 'e2e/.auth/user.json';
@@ -15,5 +17,6 @@ setup('authenticate test user', async ({ page }) => {
 	await page.waitForURL('**/app');
 	await expect(page).toHaveURL(/\/app(\?|$)/);
 
+	mkdirSync(dirname(authFile), { recursive: true });
 	await page.context().storageState({ path: authFile });
 });

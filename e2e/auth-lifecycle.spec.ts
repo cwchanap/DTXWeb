@@ -4,9 +4,10 @@ import { CHART_A_ID, CHART_A_TITLE } from './test-config';
 test.use({ storageState: 'e2e/.auth/user.json' });
 
 test.describe('authenticated chart lifecycle (dual-path)', () => {
-	// NOTE: this test DELETES chart A as its terminal action. The seed runs once per leg (not
-	// per test), so a Playwright retry would find chart A already gone. Keep delete last and,
-	// if cross-retry flakiness appears, add `test.describe.configure({ retries: 0 })` here.
+	// This test DELETES chart A as its terminal action. The seed runs once per leg (not
+	// per test), so a Playwright retry would find chart A already gone. Disable retries
+	// to avoid retry-only failures.
+	test.describe.configure({ retries: 0 });
 	//
 	// NOTE: the Actions menu uses Skeleton's <Popover>, which renders its content in a body
 	// portal and only while open. Both seeded charts (1001 + 1002) are owned by the test user,

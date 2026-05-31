@@ -41,7 +41,7 @@ an agent.
    confirmation (Auth → Providers → Email → "Confirm email" off) or enable
    auto-confirm so the test user can sign in headlessly.
 2. Create the test user (Auth → Users → Add user): email `e2e@drumery.test`,
-   a throwaway password.
+   a throwaway password (minimum 6 characters to satisfy Supabase's default requirement).
 3. Copy the user's UUID, the project URL, and the anon key (Settings → API).
 4. Paste all four into `e2e/test-config.ts` (`TEST_SUPABASE_URL`,
    `TEST_SUPABASE_ANON_KEY`, `TEST_USER_EMAIL` / `TEST_USER_PASSWORD`,

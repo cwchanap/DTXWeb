@@ -920,7 +920,3 @@ rm -rf packages/dtx-web/.wrangler/state packages/dtx-api/.wrangler/state e2e/.au
 - [ ] Runbook §0 records which dtx-web binding mechanism won (platformProxy vs wrangler dev).
 - [ ] No app-code changes beyond the gated `svelte.config.js` edit; no deployed flag change.
 - [ ] Existing unit/component suites + `bun run lint` pass.
-
-```
-
-```

@@ -9,8 +9,8 @@
 // When auth env vars are missing, the setup + chromium-auth projects are
 // excluded so non-auth tests still pass.
 
-export const TEST_SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? 'https://REPLACE-ME.supabase.co';
-export const TEST_SUPABASE_ANON_KEY = process.env.E2E_SUPABASE_ANON_KEY ?? 'REPLACE_ME_ANON_KEY'; // public by design
+export const TEST_SUPABASE_URL = process.env.E2E_SUPABASE_URL || 'https://REPLACE-ME.supabase.co';
+export const TEST_SUPABASE_ANON_KEY = process.env.E2E_SUPABASE_ANON_KEY || 'REPLACE_ME_ANON_KEY'; // public by design
 export const TEST_USER_EMAIL = process.env.E2E_USER_EMAIL ?? 'e2e@drumery.test';
 export const TEST_USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? 'REPLACE_ME_PASSWORD';
 

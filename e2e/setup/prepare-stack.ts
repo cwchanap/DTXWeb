@@ -27,8 +27,9 @@ const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
 // is the same one the worker binds as DB in that package.
 const D1_NAME = 'dtx-web';
 
-const wrangler = (args: string[]) =>
+const wrangler = (args: string[]): void => {
 	execFileSync('bunx', ['wrangler', ...args], { cwd: pkgDir, stdio: 'inherit' });
+};
 
 // 1. Fresh state, then apply schema (migration CREATE INDEX lacks IF NOT EXISTS,
 //    so we wipe + re-migrate for a deterministic seed).

@@ -82,6 +82,29 @@ an agent.
   4), each with a regression assertion added to the relevant journey spec or a
   Phase 3 `lib/api/*.test.ts`.
 
+### Acceptable deltas (defer to follow-up PR if desired)
+
+- Header differences (e.g., `x-request-id`, `via`, `cf-cache-status`) added by
+  the GraphQL proxy layer.
+- Minor cosmetic UI text changes that do not break functionality.
+- Request URL path differences (e.g., `/api/simfiles/…` vs `/graphql`) as long
+  as the response payload is equivalent.
+- Timing differences where both legs return the same data.
+
+### Blocking deltas (must fix before proceeding)
+
+- Changed HTTP status codes (e.g., 200 → 4xx/5xx) on equivalent requests.
+- Missing data fields in responses (e.g., chart title, user ID, file metadata).
+- Broken UI flows (e.g., login fails, chart list empty, download errors).
+- Auth/session handling differences that cause logout or permission errors.
+
+### Triage checklist
+
+- [ ] Every delta logged with OFF response and ON response side by side.
+- [ ] Each delta classified acceptable or blocking using the criteria above.
+- [ ] All blocking deltas have a follow-up PR with a regression test.
+- [ ] Zero blocking deltas remain before moving to §5.
+
 ## 5. Restore steady state
 
 - Re-deploy pre-prod WITHOUT the override so `PUBLIC_USE_GRAPHQL_API` returns to

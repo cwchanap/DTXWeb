@@ -22,7 +22,9 @@ export const isAuthConfigured =
 	TEST_USER_PASSWORD !== 'REPLACE_ME_PASSWORD' &&
 	TEST_USER_PASSWORD !== '' &&
 	TEST_USER_ID !== 'REPLACE_ME_UUID' &&
-	TEST_USER_ID !== '';
+	TEST_USER_ID !== '' &&
+	TEST_SUPABASE_URL !== 'https://REPLACE-ME.supabase.co' &&
+	TEST_SUPABASE_ANON_KEY !== 'REPLACE_ME_ANON_KEY';
 
 /** Fixed seed chart ids (see plan's test-data table). */
 export const CHART_A_ID = 1001; // owned by test user, unpublished — lifecycle journey

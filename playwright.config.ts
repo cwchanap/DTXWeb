@@ -31,7 +31,7 @@ const webServers = [
 			? 'bun run --filter=dtx-web dev'
 			: 'bun run e2e/setup/prepare-stack.ts && E2E_PLATFORM_PROXY=1 bun run --filter=dtx-web dev',
 		url: 'http://localhost:5173',
-		reuseExistingServer: !process.env.CI,
+		reuseExistingServer: false,
 		timeout: 180_000,
 		env: {
 			...process.env,
@@ -57,7 +57,7 @@ const webServers = [
 						' --var CORS_ALLOWED_ORIGINS:http://localhost:5173' +
 						' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:true',
 					url: `${apiURL}/graphql?query=%7B__typename%7D`,
-					reuseExistingServer: !process.env.CI,
+					reuseExistingServer: false,
 					timeout: 180_000,
 					env: { ...process.env, E2E_USE_GRAPHQL: 'true' }
 				}

@@ -39,8 +39,8 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		// updateSimfile — fill the download link field and save.
 		// ChartDetail.svelte:200-206: <input id="download_link" ...>
 		await page.locator('#download_link').fill('https://example.com/e2e-edit');
-		// ChartDetail.svelte:244-247: <button ...>{saveButtonText}</button>
-		// saveButtonText defaults to 'Update' (ChartDetail.svelte:23).
+		// ChartDetail.svelte:235-247: <button ...>{saveButtonText}</button>
+		// saveButtonText defaults to 'Update' (ChartDetail.svelte:44).
 		await page.getByRole('button', { name: 'Update' }).click();
 		// routes/(app)/app/chart/[id]/+page.svelte:64-67:
 		// toastStore.success({ title: 'Simfile updated successfully', ... })
@@ -58,7 +58,7 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		// ChartListItem.svelte:323-364 + Modal.svelte:73-83:
 		// <div role="dialog" aria-modal="true" ...> wraps the confirmation UI.
 		const dialog = page.getByRole('dialog');
-		// Modal.svelte:119-122: <button type="button">{confirmText}</button>
+		// Modal.svelte:119-125: <button type="button">{confirmText}</button>
 		// ChartListItem.svelte:328: confirmText="Delete"
 		await dialog.getByRole('button', { name: /delete/i }).click();
 

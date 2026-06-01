@@ -6,6 +6,17 @@ import {
 	isAuthConfigured
 } from './e2e/test-config';
 
+// CI guard: fail loudly when auth secrets are not provisioned. Without this,
+// Playwright exits 0 with zero auth-test coverage — the parity gate is then
+// unenforced on both matrix legs, invisibly.
+if (process.env.CI && !isAuthConfigured) {
+	throw new Error(
+		'CI requires auth e2e secrets (E2E_USER_PASSWORD, E2E_USER_ID, ' +
+			'E2E_SUPABASE_URL, E2E_SUPABASE_ANON_KEY, E2E_USER_EMAIL) ' +
+			'to be set. The authenticated lifecycle test is the core of the parity gate.'
+	);
+}
+
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const useGraphQL = process.env.E2E_USE_GRAPHQL === 'true';
 const apiURL = `http://localhost:${DTX_API_LOCAL_PORT}`;
@@ -22,9 +33,8 @@ const webSupabaseEnv = {
 // CORS. A conditional spread (rather than `.push`) keeps both entries in one array literal so
 // their differing `env` shapes don't trip the array's element-type inference.
 //
-// NOTE: `--var KEY:VALUE` values below are concatenated unquoted into the shell command.
-// The test Supabase URL + anon key are shell-safe (no spaces/metacharacters); keep them that
-// way when filling real creds, or quote them.
+// NOTE: `--var KEY:VALUE` values are quoted to prevent shell-expansion issues.
+// Keep them quoted when filling real creds.
 const webServers = [
 	{
 		command: useGraphQL
@@ -52,10 +62,10 @@ const webServers = [
 						'cd packages/dtx-api && bunx wrangler dev --port ' +
 						DTX_API_LOCAL_PORT +
 						' --persist-to .wrangler/state' +
-						` --var SUPABASE_URL:${TEST_SUPABASE_URL}` +
-						` --var SUPABASE_ANON_KEY:${TEST_SUPABASE_ANON_KEY}` +
-						' --var CORS_ALLOWED_ORIGINS:http://localhost:5173' +
-						' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:true',
+						` --var SUPABASE_URL:"${TEST_SUPABASE_URL}"` +
+						` --var SUPABASE_ANON_KEY:"${TEST_SUPABASE_ANON_KEY}"` +
+						' --var CORS_ALLOWED_ORIGINS:"http://localhost:5173"' +
+						' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"',
 					url: `${apiURL}/graphql?query=%7B__typename%7D`,
 					reuseExistingServer: false,
 					timeout: 180_000,

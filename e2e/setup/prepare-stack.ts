@@ -4,7 +4,7 @@
 //
 // Leg selection: E2E_USE_GRAPHQL === 'true' → seed dtx-api; else → seed dtx-web.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,20 @@ const pkgDir = join(repoRoot, 'packages', pkg);
 const persist = '.wrangler/state';
 const absPersist = join(pkgDir, persist);
 const migration = join(repoRoot, 'packages/dtx-web/d1-migrations/0001_initial_schema.sql');
+const seedFile = join(here, 'seed.sql');
 const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
+
+// Pre-check: all required files must exist before we start, otherwise failures
+// surface as opaque Playwright "webServer timed out after 180s" errors.
+for (const [label, path] of [
+	['D1 migration', migration],
+	['seed SQL', seedFile],
+	['R2 fixture (test-sample.dtx)', fixture]
+] as const) {
+	if (!existsSync(path)) {
+		throw new Error(`[prepare-stack] missing ${label} at ${path}`);
+	}
+}
 
 // The D1 database NAME is "dtx-web" in BOTH packages' wrangler.jsonc (dtx-web and
 // dtx-api share database_name "dtx-web"), so it is correct regardless of the leg's
@@ -27,28 +40,62 @@ const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
 // is the same one the worker binds as DB in that package.
 const D1_NAME = 'dtx-web';
 
-const wrangler = (args: string[]): void => {
-	execFileSync('bunx', ['wrangler', ...args], { cwd: pkgDir, stdio: 'inherit' });
+const wrangler = (label: string, args: string[]): void => {
+	try {
+		console.log(`[prepare-stack] ${label}...`);
+		execFileSync('bunx', ['wrangler', ...args], { cwd: pkgDir, stdio: 'inherit' });
+	} catch (err) {
+		throw new Error(`[prepare-stack] ${label} failed: ${err}`);
+	}
 };
+
+// Validate TEST_USER_ID is a real UUID before seeding — a placeholder would
+// create garbage ownership rows silently.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (!UUID_RE.test(TEST_USER_ID)) {
+	throw new Error(
+		`[prepare-stack] TEST_USER_ID ("${TEST_USER_ID}") is not a valid UUID. ` +
+			'Set E2E_USER_ID in your environment.'
+	);
+}
 
 // 1. Fresh state, then apply schema (migration CREATE INDEX lacks IF NOT EXISTS,
 //    so we wipe + re-migrate for a deterministic seed).
 rmSync(absPersist, { recursive: true, force: true });
-wrangler(['d1', 'execute', D1_NAME, '--local', '--persist-to', persist, '--file', migration]);
+wrangler('apply D1 migration', [
+	'd1',
+	'execute',
+	D1_NAME,
+	'--local',
+	'--persist-to',
+	persist,
+	'--file',
+	migration
+]);
 
 // 2. Seed rows (idempotent: the seed deletes ids 1001/1002 first).
-const seedSql = readFileSync(join(here, 'seed.sql'), 'utf8').replaceAll(
-	'__TEST_USER_ID__',
-	TEST_USER_ID
-);
+const seedSql = readFileSync(seedFile, 'utf8').replaceAll('__TEST_USER_ID__', TEST_USER_ID);
 const tmpSeedDir = mkdtempSync(join(tmpdir(), 'e2e-seed-'));
 const tmpSeed = join(tmpSeedDir, 'seed.sql');
-writeFileSync(tmpSeed, seedSql);
-wrangler(['d1', 'execute', D1_NAME, '--local', '--persist-to', persist, '--file', tmpSeed]);
-rmSync(tmpSeedDir, { recursive: true, force: true });
+try {
+	writeFileSync(tmpSeed, seedSql);
+	wrangler('seed D1 rows', [
+		'd1',
+		'execute',
+		D1_NAME,
+		'--local',
+		'--persist-to',
+		persist,
+		'--file',
+		tmpSeed
+	]);
+} finally {
+	// Always clean up the temp file containing the UUID to avoid leaking on failure.
+	rmSync(tmpSeedDir, { recursive: true, force: true });
+}
 
 // 3. Put the R2 object so chart B reports has_uploaded_files=true and download has content.
-wrangler([
+wrangler('put R2 object', [
 	'r2',
 	'object',
 	'put',

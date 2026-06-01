@@ -13,8 +13,15 @@ setup('authenticate test user', async ({ page }) => {
 	await page.locator('#password').fill(TEST_USER_PASSWORD);
 	await page.getByRole('button', { name: 'Login' }).click();
 
-	// Successful login redirects to /app.
-	await page.waitForURL('**/app');
+	// Race navigation against a visible login-error so failures read as
+	// "login failed: <error text>" instead of a generic navigation timeout.
+	const loginError = page.locator('[data-error], .error, [role="alert"]').first();
+	await Promise.race([
+		page.waitForURL('**/app'),
+		loginError.waitFor({ state: 'visible', timeout: 15_000 }).then(async () => {
+			throw new Error(`Login failed: ${(await loginError.textContent()) || 'unknown error'}`);
+		})
+	]);
 	await expect(page).toHaveURL(/\/app(\?|$)/);
 
 	mkdirSync(dirname(authFile), { recursive: true });

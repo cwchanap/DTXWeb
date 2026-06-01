@@ -31,9 +31,10 @@ an agent.
   request header, not auth; the journey stays anonymous. It is intentionally NOT
   applied to the cross-origin `dtx-api` (`:8787`) requests (would trip a CORS
   preflight that does not allow `x-forwarded-for`).
-- **CI secrets removed:** the workflow no longer uses a `Production` environment or
-  `PUBLIC_SUPABASE_*` secrets — the test creds live in `e2e/test-config.ts`, so the
-  full matrix runs on forks too.
+- **CI secret provisioning:** the workflow reads `E2E_*` secrets from GitHub
+  repository settings. `e2e/test-config.ts` consumes them via `process.env`
+  with placeholder fallbacks. A CI guard in `playwright.config.ts` throws
+  when secrets are missing, so the parity gate never silently skips auth tests.
 
 ## 1. One-time test-Supabase setup
 
@@ -43,9 +44,12 @@ an agent.
 2. Create the test user (Auth → Users → Add user): email `e2e@drumery.test`,
    a throwaway password (minimum 6 characters to satisfy Supabase's default requirement).
 3. Copy the user's UUID, the project URL, and the anon key (Settings → API).
-4. Paste all four into `e2e/test-config.ts` (`TEST_SUPABASE_URL`,
-   `TEST_SUPABASE_ANON_KEY`, `TEST_USER_EMAIL` / `TEST_USER_PASSWORD`,
-   `TEST_USER_ID`) and commit. No GitHub secrets are needed.
+4. Set all five as GitHub repository secrets (`E2E_SUPABASE_URL`,
+   `E2E_SUPABASE_ANON_KEY`, `E2E_USER_EMAIL`, `E2E_USER_PASSWORD`,
+   `E2E_USER_ID`). The anon key is public by design (it ships in client
+   bundles); the password and user ID must NEVER be committed to git.
+   `e2e/test-config.ts` reads these from `process.env`, so CI injects them
+   via `secrets.*` in `.github/workflows/e2e-test.yml`.
 5. Run both legs locally to confirm green:
     - `E2E_USE_GRAPHQL=false bunx playwright test`
     - `E2E_USE_GRAPHQL=true bunx playwright test`

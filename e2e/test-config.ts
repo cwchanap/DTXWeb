@@ -11,7 +11,7 @@
 // excluded so non-auth tests still pass.
 
 export const TEST_SUPABASE_URL: string =
-	process.env.E2E_SUPABASE_URL || 'https://REPLACE-ME.supabase.co';
+	process.env.E2E_SUPABASE_URL || 'https://REPLACE_ME.supabase.co';
 export const TEST_SUPABASE_ANON_KEY: string =
 	process.env.E2E_SUPABASE_ANON_KEY || 'REPLACE_ME_ANON_KEY'; // public by design — ships in client bundles
 export const TEST_USER_EMAIL: string = process.env.E2E_USER_EMAIL || 'REPLACE_ME_EMAIL';

@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { TEST_USER_ID, CHART_B_ID } from '../test-config';
+import { TEST_USER_ID, CHART_B_ID, isAuthConfigured } from '../test-config';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = join(here, '..', '..');
@@ -49,12 +49,17 @@ const wrangler = (label: string, args: string[]): void => {
 	}
 };
 
-// Validate TEST_USER_ID is a real UUID before seeding — a placeholder would
-// create garbage ownership rows silently.
+// When auth env vars are not configured, use a deterministic dummy UUID so
+// non-auth e2e specs can still run (the webServer command always executes
+// prepare-stack before Vite starts, regardless of project filters).
+const DUMMY_USER_ID = '00000000-0000-0000-0000-000000000000';
+const ownerId = isAuthConfigured ? TEST_USER_ID : DUMMY_USER_ID;
+
+// Validate ownerId is a real UUID — a placeholder would create garbage rows.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-if (!UUID_RE.test(TEST_USER_ID)) {
+if (!UUID_RE.test(ownerId)) {
 	throw new Error(
-		`[prepare-stack] TEST_USER_ID ("${TEST_USER_ID}") is not a valid UUID. ` +
+		`[prepare-stack] ownerId ("${ownerId}") is not a valid UUID. ` +
 			'Set E2E_USER_ID in your environment.'
 	);
 }
@@ -74,7 +79,7 @@ wrangler('apply D1 migration', [
 ]);
 
 // 2. Seed rows (idempotent: the seed deletes ids 1001/1002 first).
-const seedSql = readFileSync(seedFile, 'utf8').replaceAll('__TEST_USER_ID__', TEST_USER_ID);
+const seedSql = readFileSync(seedFile, 'utf8').replaceAll('__TEST_USER_ID__', ownerId);
 const tmpSeedDir = mkdtempSync(join(tmpdir(), 'e2e-seed-'));
 const tmpSeed = join(tmpSeedDir, 'seed.sql');
 try {

@@ -183,22 +183,22 @@ The dedicated test Supabase project + user are provisioned out-of-band (Task 9 r
 // and the test user guards an isolated project with no real data.
 // NEVER put prod/pre-prod credentials here.
 
-export const TEST_SUPABASE_URL = 'https://REPLACE-ME.supabase.co';
-export const TEST_SUPABASE_ANON_KEY = 'REPLACE_ME_ANON_KEY'; // public by design
-export const TEST_USER_EMAIL = 'e2e@drumery.test';
-export const TEST_USER_PASSWORD = 'REPLACE_ME_PASSWORD';
+export const TEST_SUPABASE_URL: string = 'https://REPLACE-ME.supabase.co';
+export const TEST_SUPABASE_ANON_KEY: string = 'REPLACE_ME_ANON_KEY'; // public by design
+export const TEST_USER_EMAIL: string = 'e2e@drumery.test';
+export const TEST_USER_PASSWORD: string = 'REPLACE_ME_PASSWORD';
 
 /** Supabase auth UUID of TEST_USER_EMAIL. Read once after provisioning (runbook). */
-export const TEST_USER_ID = 'REPLACE_ME_UUID';
+export const TEST_USER_ID: string = 'REPLACE_ME_UUID';
 
 /** Fixed seed chart ids (see plan's test-data table). */
-export const CHART_A_ID = 1001; // owned by test user, unpublished — lifecycle journey
-export const CHART_B_ID = 1002; // published, has R2 file — download journey
-export const CHART_A_TITLE = 'E2E Lifecycle Chart';
-export const CHART_B_TITLE = 'E2E Download Chart';
+export const CHART_A_ID: number = 1001; // owned by test user, unpublished — lifecycle journey
+export const CHART_B_ID: number = 1002; // published, has R2 file — download journey
+export const CHART_A_TITLE: string = 'E2E Lifecycle Chart';
+export const CHART_B_TITLE: string = 'E2E Download Chart';
 
 /** dtx-api local port for the flag-ON leg. */
-export const DTX_API_LOCAL_PORT = 8787;
+export const DTX_API_LOCAL_PORT: number = 8787;
 ```
 
 - [ ] **Step 2: Verify the file imports and exposes the expected exports**
@@ -278,8 +278,9 @@ const persist = '.wrangler/state';
 const migration = join(repoRoot, 'packages/dtx-web/d1-migrations/0001_initial_schema.sql');
 const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
 
-const wrangler = (args: string[]) =>
+const wrangler = (args: string[]): void => {
 	execFileSync('bunx', ['wrangler', ...args], { cwd: pkgDir, stdio: 'inherit' });
+};
 
 // 1. Apply schema (IF NOT EXISTS in the migration makes this safe to re-run).
 wrangler(['d1', 'execute', 'dtx-web', '--local', '--persist-to', persist, '--file', migration]);

@@ -31,6 +31,10 @@ const createUser = async (): Promise<void> => {
 		return;
 	}
 
+	if (response.status === 409) {
+		return;
+	}
+
 	const body = await response.text();
 	throw new Error(`[create-local-supabase-user] failed (${response.status}): ${body}`);
 };

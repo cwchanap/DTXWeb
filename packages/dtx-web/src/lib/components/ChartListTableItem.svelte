@@ -56,12 +56,12 @@
 		onOpenChange={(details) => (popoverOpen = details.open)}
 		zIndex="120"
 		positioning={{ placement: 'bottom-start' }}
+		triggerAriaLabel="Actions"
+		triggerClasses="inline-flex h-9 w-9 items-center justify-center rounded p-1 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2"
 		contentBase="w-48 p-0 rounded-sm border border-gray-300 bg-white shadow-lg"
 	>
 		{#snippet trigger()}
-			<Button variant="ghost" size="icon" padding="1">
-				{#snippet children()}<EllipsisVertical />{/snippet}
-			</Button>
+			<EllipsisVertical />
 		{/snippet}
 		{#snippet content()}
 			<div class="py-1">

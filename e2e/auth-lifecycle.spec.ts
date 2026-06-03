@@ -28,7 +28,7 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		await expect(card).toBeVisible();
 
 		// getSimfile — open the detail page via the card Actions → Edit menu item.
-		// ChartListItem.svelte:95-99: <button aria-label="Actions"> (EllipsisVertical icon)
+		// ChartListItem.svelte:88-96: Popover triggerAriaLabel="Actions" (EllipsisVertical icon)
 		await card.getByRole('button', { name: 'Actions' }).click();
 		// ChartListItem.svelte:131-150: <a href="/app/chart/${item.id}" role="menuitem">Edit</a>
 		await page.getByRole('menuitem', { name: 'Edit' }).click();
@@ -50,7 +50,7 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		await page.goto('/app/chart');
 		await page.waitForSelector('html[data-e2e-hydrated="true"]');
 		const cardAgain = page.locator('.music-card', { hasText: CHART_A_TITLE });
-		// ChartListItem.svelte:95-99: <button aria-label="Actions">
+		// ChartListItem.svelte:88-96: Popover triggerAriaLabel="Actions"
 		await cardAgain.getByRole('button', { name: 'Actions' }).click();
 		// ChartListItem.svelte:185-209: <Button variant="menuItem" ...>Delete</Button>
 		// variant="menuItem" renders as a plain <button>; text is "Delete".

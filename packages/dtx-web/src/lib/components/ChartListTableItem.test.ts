@@ -158,6 +158,7 @@ describe('ChartListTableItem', () => {
 
 	it('renders action buttons in non-blog mode', () => {
 		render(ChartListTableItem, { props: defaultProps });
+		expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
 	});
 

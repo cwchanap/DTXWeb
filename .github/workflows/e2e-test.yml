@@ -38,11 +38,18 @@ jobs:
           grep -q '^API_URL=' supabase-status.env
           grep -q '^ANON_KEY=' supabase-status.env
           grep -q '^SERVICE_ROLE_KEY=' supabase-status.env
-          {
-            sed -n 's/^API_URL=/E2E_SUPABASE_URL=/p' supabase-status.env
-            sed -n 's/^ANON_KEY=/E2E_SUPABASE_ANON_KEY=/p' supabase-status.env
-            sed -n 's/^SERVICE_ROLE_KEY=/E2E_SUPABASE_SERVICE_ROLE_KEY=/p' supabase-status.env
-          } >> "$GITHUB_ENV"
+          write_env() {
+            local source_name="$1"
+            local target_name="$2"
+            local value
+            value="$(grep "^${source_name}=" supabase-status.env | cut -d= -f2-)"
+            value="${value%\"}"
+            value="${value#\"}"
+            printf '%s=%s\n' "$target_name" "$value" >> "$GITHUB_ENV"
+          }
+          write_env API_URL E2E_SUPABASE_URL
+          write_env ANON_KEY E2E_SUPABASE_ANON_KEY
+          write_env SERVICE_ROLE_KEY E2E_SUPABASE_SERVICE_ROLE_KEY
       - name: Create local Supabase test user
         run: bun run e2e/setup/create-local-supabase-user.ts
       - name: Install Playwright Browsers

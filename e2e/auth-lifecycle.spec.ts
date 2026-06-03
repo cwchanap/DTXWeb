@@ -60,7 +60,7 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		const dialog = page.getByRole('dialog');
 		// Modal.svelte:119-125: <button type="button">{confirmText}</button>
 		// ChartListItem.svelte:328: confirmText="Delete"
-		await dialog.getByRole('button', { name: /delete/i }).click();
+		await dialog.getByRole('button', { name: 'Delete' }).first().click();
 
 		// ChartList.svelte:162-165: toastStore.success({ title: 'Chart deleted', ... })
 		await expect(page.getByText('Chart deleted')).toBeVisible();

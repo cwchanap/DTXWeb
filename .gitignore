@@ -22,6 +22,7 @@ static/skin/
 # Local Miniflare state + Playwright auth output (e2e)
 .wrangler/state
 packages/*/.wrangler/state
+packages/dtx-api/.wrangler/
 e2e/.auth
 
 # Coverage reports

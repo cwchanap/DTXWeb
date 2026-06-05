@@ -4,6 +4,7 @@ import {
 	enrichHasUploadedFiles,
 	batchEnrichHasUploadedFiles,
 	batchEnrichFiles,
+	batchDiscoverCatalogFiles,
 	discoverCatalogFiles
 } from './r2Enrichment';
 import type { R2Bucket } from '@cloudflare/workers-types';
@@ -217,6 +218,39 @@ describe('batchEnrichFiles', () => {
 		const bucket = { list: listMock } as unknown as R2Bucket;
 
 		await expect(batchEnrichFiles(bucket, [1, 2])).rejects.toThrow('R2 listing failed');
+	});
+});
+
+describe('batchDiscoverCatalogFiles', () => {
+	it('returns a Map with catalog discovery for all simfiles', async () => {
+		const listMock = vi.fn(async (opts: { prefix: string }) => {
+			if (opts.prefix === '1/') {
+				return {
+					objects: [{ key: '1/song.dtx', size: 100, uploaded: new Date() }],
+					truncated: false
+				};
+			}
+			return {
+				objects: [{ key: '2/preview.mp3', size: 50, uploaded: new Date() }],
+				truncated: false
+			};
+		});
+		const bucket = { list: listMock } as unknown as R2Bucket;
+
+		const result = await batchDiscoverCatalogFiles(bucket, [
+			{ simfileId: 1, dtxFiles: [], publicBaseUrl: 'https://bucket.example' },
+			{ simfileId: 2, dtxFiles: [], publicBaseUrl: 'https://bucket.example' }
+		]);
+
+		expect(result).toBeInstanceOf(Map);
+		expect(result.get(1)).toBeDefined();
+		expect(result.get(2)).toBeDefined();
+	});
+
+	it('returns empty Map for empty input', async () => {
+		const bucket = {} as unknown as R2Bucket;
+		const result = await batchDiscoverCatalogFiles(bucket, []);
+		expect(result.size).toBe(0);
 	});
 });
 

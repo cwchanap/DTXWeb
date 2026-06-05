@@ -15,6 +15,7 @@ import {
 	enrichHasUploadedFiles,
 	batchEnrichHasUploadedFiles,
 	batchEnrichFiles,
+	batchDiscoverCatalogFiles,
 	discoverCatalogFiles
 } from '../services/r2Enrichment';
 import type { CatalogChartFile, CatalogFileDiscovery } from '../services/r2Enrichment';
@@ -55,6 +56,57 @@ const isFieldSelected = (info: GraphQLResolveInfo, fieldName: string): boolean =
 		const selectionSet = node.selectionSet;
 		if (!selectionSet) return false;
 		return checkSelections(selectionSet.selections);
+	});
+};
+
+const isNestedFieldSelected = (
+	info: GraphQLResolveInfo,
+	parentFieldName: string,
+	childFieldNames: string[]
+): boolean => {
+	const childFields = new Set(childFieldNames);
+
+	const checkChildSelections = (selections: readonly SelectionNode[]): boolean =>
+		selections.some((sel) => {
+			switch (sel.kind) {
+				case 'Field':
+					return sel.name.value !== '__typename' && childFields.has(sel.name.value);
+				case 'FragmentSpread': {
+					const fragment = info.fragments[sel.name.value];
+					return fragment ? checkChildSelections(fragment.selectionSet.selections) : false;
+				}
+				case 'InlineFragment':
+					return checkChildSelections(sel.selectionSet.selections);
+				default:
+					return false;
+			}
+		});
+
+	const checkParentSelections = (selections: readonly SelectionNode[]): boolean =>
+		selections.some((sel) => {
+			switch (sel.kind) {
+				case 'Field':
+					if (sel.name.value === '__typename' || sel.name.value !== parentFieldName) {
+						return false;
+					}
+					return sel.selectionSet
+						? checkChildSelections(sel.selectionSet.selections)
+						: false;
+				case 'FragmentSpread': {
+					const fragment = info.fragments[sel.name.value];
+					return fragment ? checkParentSelections(fragment.selectionSet.selections) : false;
+				}
+				case 'InlineFragment':
+					return checkParentSelections(sel.selectionSet.selections);
+				default:
+					return false;
+			}
+		});
+
+	return info.fieldNodes.some((node) => {
+		const selectionSet = node.selectionSet;
+		if (!selectionSet) return false;
+		return checkParentSelections(selectionSet.selections);
 	});
 };
 
@@ -238,6 +290,40 @@ export const SimfileConnectionRef = builder
 								ctx.filesCache.set(
 									s.id,
 									filesBatchPromise.then((map) => map.get(s.id) ?? [])
+								);
+							}
+						}
+
+						const shouldBatchCatalogFiles =
+							isFieldSelected(info, 'previewUrl') ||
+							isFieldSelected(info, 'downloadUrl') ||
+							isNestedFieldSelected(info, 'dtxFiles', [
+								'fileUrl',
+								'fileSizeBytes',
+								'fileEncoding'
+							]);
+
+						if (shouldBatchCatalogFiles) {
+							const catalogBatchPromise = batchDiscoverCatalogFiles(
+								ctx.r2,
+								c.data.map((s) => ({
+									simfileId: s.id,
+									dtxFiles: s.dtx_files,
+									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+								}))
+							);
+							const cache = ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
+							for (const s of c.data) {
+								cache.set(
+									s.id,
+									catalogBatchPromise.then(
+										(map) =>
+											map.get(s.id) ?? {
+												previewUrl: null,
+												downloadUrl: null,
+												charts: []
+											}
+									)
 								);
 							}
 						}

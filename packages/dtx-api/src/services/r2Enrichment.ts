@@ -97,10 +97,16 @@ const readSetDefFilesByLabel = async (
 ): Promise<Map<string, string>> => {
 	if (!setDefKey) return new Map();
 
-	const object = await bucket.get(setDefKey);
-	if (!object) return new Map();
-
-	return parseSetDefFilesByLabel(await object.text(), prefix);
+	try {
+		const object = await bucket.get(setDefKey);
+		if (!object) return new Map();
+		return parseSetDefFilesByLabel(await object.text(), prefix);
+	} catch {
+		// Transient R2 errors or unexpected body issues: fall through
+		// to the deterministic sorted-key fallback instead of failing
+		// the entire catalog discovery.
+		return new Map();
+	}
 };
 
 export const discoverCatalogFiles = async (

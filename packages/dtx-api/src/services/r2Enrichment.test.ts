@@ -3,7 +3,8 @@ import {
 	enrichFiles,
 	enrichHasUploadedFiles,
 	batchEnrichHasUploadedFiles,
-	batchEnrichFiles
+	batchEnrichFiles,
+	discoverCatalogFiles
 } from './r2Enrichment';
 import type { R2Bucket } from '@cloudflare/workers-types';
 
@@ -216,5 +217,242 @@ describe('batchEnrichFiles', () => {
 		const bucket = { list: listMock } as unknown as R2Bucket;
 
 		await expect(batchEnrichFiles(bucket, [1, 2])).rejects.toThrow('R2 listing failed');
+	});
+});
+
+describe('discoverCatalogFiles', () => {
+	it('encodes each R2 key path segment against the public bucket URL', async () => {
+		const bucket = makeBucket([
+			[
+				{
+					key: '42/charts with space/basic#chart.dtx',
+					size: 1234,
+					uploaded: new Date()
+				}
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [{ label: 'Basic', level: 1 }],
+			publicBaseUrl: 'https://cdn.example.test/simfiles/'
+		});
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl:
+					'https://cdn.example.test/simfiles/42/charts%20with%20space/basic%23chart.dtx',
+				fileSizeBytes: 1234,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('selects preview.mp3 for previewUrl case-insensitively', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/assets/PREVIEW.MP3', size: 100, uploaded: new Date() },
+				{ key: '42/song.dtx', size: 200, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [{ label: 'Basic', level: 1 }],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/assets/PREVIEW.MP3');
+	});
+
+	it('selects non-preview ogg before mp3, wav, and flac for downloadUrl', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/preview.mp3', size: 10, uploaded: new Date() },
+				{ key: '42/full.wav', size: 20, uploaded: new Date() },
+				{ key: '42/full.mp3', size: 30, uploaded: new Date() },
+				{ key: '42/full.flac', size: 40, uploaded: new Date() },
+				{ key: '42/full.ogg', size: 50, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [],
+			publicBaseUrl: 'https://cdn.example.test/'
+		});
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.ogg');
+	});
+
+	it('excludes preview.mp3 case-insensitively from downloadUrl', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/PREVIEW.MP3', size: 10, uploaded: new Date() },
+				{ key: '42/full.wav', size: 20, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/PREVIEW.MP3');
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.wav');
+	});
+
+	it('matches dtx rows by sorted fallback when set.def is unavailable', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/z-advanced.dtx', size: 500, uploaded: new Date() },
+				{ key: '42/a-basic.dtx', size: 300, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [
+				{ label: 'Advanced', level: 5 },
+				{ label: 'Basic', level: 1 }
+			],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/z-advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/a-basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('parses set.def and matches labels to filenames when available', async () => {
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/sub/advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				text: async () =>
+					'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE sub/advanced.dtx\n'
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [
+				{ label: 'Advanced', level: 5 },
+				{ label: 'Basic', level: 1 }
+			],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(bucket.get).toHaveBeenCalledWith('42/set.def');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/sub/advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('parses set.def with case-insensitive filename discovery', async () => {
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/SET.DEF', size: 90, uploaded: new Date() },
+					{ key: '42/a-advanced.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/z-basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				text: async () =>
+					'#L1LABEL BASIC\n#L1FILE z-basic.dtx\n#L2LABEL ADVANCED\n#L2FILE a-advanced.dtx\n'
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [
+				{ label: 'Advanced', level: 5 },
+				{ label: 'Basic', level: 1 }
+			],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(bucket.get).toHaveBeenCalledWith('42/SET.DEF');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/a-advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/z-basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('returns an unmatched chart entry when a required dtx object is missing', async () => {
+		const bucket = makeBucket([[{ key: '42/basic.dtx', size: 300, uploaded: new Date() }]]);
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [
+				{ label: 'Basic', level: 1 },
+				{ label: 'Advanced', level: 5 }
+			],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
 	});
 });

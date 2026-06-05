@@ -7,12 +7,182 @@ export type R2FileEntry = {
 	uploaded: string;
 };
 
+export type CatalogDtxFileInput = {
+	label: string;
+	level: number;
+};
+
+export type CatalogChartFile = CatalogDtxFileInput & {
+	fileUrl: string | null;
+	fileSizeBytes: number | null;
+	fileEncoding: 'SHIFT_JIS';
+};
+
+export type CatalogFileDiscovery = {
+	previewUrl: string | null;
+	downloadUrl: string | null;
+	charts: CatalogChartFile[];
+};
+
+export type CatalogDiscoveryOptions = {
+	simfileId: number;
+	dtxFiles: CatalogDtxFileInput[];
+	publicBaseUrl: string;
+};
+
 /**
  * Maximum number of concurrent R2 list calls when batch-enriching
  * hasUploadedFiles for a list of simfiles. Matches the cap used in the
  * dtx-web REST endpoint (MAX_CONCURRENT_R2_CHECKS = 4).
  */
 const MAX_CONCURRENT_R2_LIST = 4;
+const DOWNLOAD_EXTENSION_PRIORITY = ['.ogg', '.mp3', '.wav', '.flac'] as const;
+
+const toPublicUrl = (publicBaseUrl: string, key: string): string => {
+	const baseUrl = publicBaseUrl.replace(/\/+$/, '');
+	return `${baseUrl}/${key.split('/').map(encodeURIComponent).join('/')}`;
+};
+
+const getFileName = (key: string): string => key.split('/').at(-1) ?? '';
+
+const isPreviewMp3Key = (key: string): boolean => getFileName(key).toLowerCase() === 'preview.mp3';
+
+const getExtension = (key: string): string => {
+	const fileName = getFileName(key);
+	const dotIndex = fileName.lastIndexOf('.');
+	return dotIndex === -1 ? '' : fileName.slice(dotIndex).toLowerCase();
+};
+
+const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
+
+const resolveSetDefFileKey = (prefix: string, fileName: string): string => {
+	const normalizedFileName = normalizeSetDefValue(fileName);
+	return normalizedFileName.startsWith(prefix)
+		? normalizedFileName
+		: `${prefix}${normalizedFileName}`;
+};
+
+const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string, string> => {
+	const entries = new Map<string, { label?: string; file?: string }>();
+	for (const line of setDefText.split(/\r?\n/)) {
+		const labelMatch = line.match(/^#L(\d+)LABEL\s+(.+)$/i);
+		if (labelMatch) {
+			const entry = entries.get(labelMatch[1]) ?? {};
+			entry.label = labelMatch[2].trim();
+			entries.set(labelMatch[1], entry);
+			continue;
+		}
+
+		const fileMatch = line.match(/^#L(\d+)FILE\s+(.+)$/i);
+		if (fileMatch) {
+			const entry = entries.get(fileMatch[1]) ?? {};
+			entry.file = resolveSetDefFileKey(prefix, fileMatch[2]);
+			entries.set(fileMatch[1], entry);
+		}
+	}
+
+	const filesByLabel = new Map<string, string>();
+	for (const entry of entries.values()) {
+		if (entry.label && entry.file) {
+			filesByLabel.set(entry.label.toLowerCase(), entry.file);
+		}
+	}
+	return filesByLabel;
+};
+
+const readSetDefFilesByLabel = async (
+	bucket: R2Bucket,
+	setDefKey: string | undefined,
+	prefix: string
+): Promise<Map<string, string>> => {
+	if (!setDefKey) return new Map();
+
+	const object = await bucket.get(setDefKey);
+	if (!object) return new Map();
+
+	return parseSetDefFilesByLabel(await object.text(), prefix);
+};
+
+export const discoverCatalogFiles = async (
+	bucket: R2Bucket,
+	{ simfileId, dtxFiles, publicBaseUrl }: CatalogDiscoveryOptions
+): Promise<CatalogFileDiscovery> => {
+	const prefix = `${simfileId}/`;
+	const objects = (await listAllR2Objects(bucket, prefix)).filter(
+		(obj: R2ObjectMeta) => obj.key.length > prefix.length
+	);
+	const objectsByKey = new Map(objects.map((obj: R2ObjectMeta) => [obj.key, obj]));
+
+	const previewObject = objects
+		.slice()
+		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => a.key.localeCompare(b.key))
+		.find((obj: R2ObjectMeta) => isPreviewMp3Key(obj.key));
+	const previewUrl = previewObject ? toPublicUrl(publicBaseUrl, previewObject.key) : null;
+
+	const downloadObject = objects
+		.filter((obj: R2ObjectMeta) => !isPreviewMp3Key(obj.key))
+		.map((obj: R2ObjectMeta) => ({
+			object: obj,
+			priority: DOWNLOAD_EXTENSION_PRIORITY.indexOf(
+				getExtension(obj.key) as (typeof DOWNLOAD_EXTENSION_PRIORITY)[number]
+			)
+		}))
+		.filter(({ priority }) => priority !== -1)
+		.sort(
+			(a, b) => a.priority - b.priority || a.object.key.localeCompare(b.object.key)
+		)[0]?.object;
+	const downloadUrl = downloadObject ? toPublicUrl(publicBaseUrl, downloadObject.key) : null;
+
+	const dtxObjects = objects
+		.filter((obj: R2ObjectMeta) => obj.key.toLowerCase().endsWith('.dtx'))
+		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => a.key.localeCompare(b.key));
+	const dtxObjectKeys = dtxObjects.map((obj: R2ObjectMeta) => obj.key);
+	const usedDtxKeys = new Set<string>();
+
+	const setDefKey = objects.find(
+		(obj: R2ObjectMeta) => getFileName(obj.key).toLowerCase() === 'set.def'
+	)?.key;
+	const filesByLabel = await readSetDefFilesByLabel(bucket, setDefKey, prefix);
+
+	const matchedKeysByRowIndex = new Map<number, string>();
+	for (const [index, file] of dtxFiles.entries()) {
+		const setDefKeyForFile = filesByLabel.get(file.label.toLowerCase());
+		if (setDefKeyForFile && objectsByKey.has(setDefKeyForFile)) {
+			matchedKeysByRowIndex.set(index, setDefKeyForFile);
+			usedDtxKeys.add(setDefKeyForFile);
+		}
+	}
+
+	const fallbackRows = dtxFiles
+		.map((file, index) => ({ file, index }))
+		.filter(({ index }) => !matchedKeysByRowIndex.has(index))
+		.sort(
+			(a, b) =>
+				a.file.level - b.file.level ||
+				a.file.label.localeCompare(b.file.label) ||
+				a.index - b.index
+		);
+	const fallbackKeys = dtxObjectKeys.filter((key) => !usedDtxKeys.has(key));
+	for (const [fallbackIndex, row] of fallbackRows.entries()) {
+		const key = fallbackKeys[fallbackIndex];
+		if (key) {
+			matchedKeysByRowIndex.set(row.index, key);
+		}
+	}
+
+	const charts = dtxFiles.map((file, index): CatalogChartFile => {
+		const key = matchedKeysByRowIndex.get(index);
+		const object = key ? objectsByKey.get(key) : undefined;
+		return {
+			...file,
+			fileUrl: object ? toPublicUrl(publicBaseUrl, object.key) : null,
+			fileSizeBytes: object ? object.size : null,
+			fileEncoding: 'SHIFT_JIS'
+		};
+	});
+
+	return { previewUrl, downloadUrl, charts };
+};
 
 export const enrichFiles = async (bucket: R2Bucket, simfileId: number): Promise<R2FileEntry[]> => {
 	const prefix = `${simfileId}/`;

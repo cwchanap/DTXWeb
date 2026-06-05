@@ -958,6 +958,115 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
+	it('does not batch catalog discovery for list URL selections when database URLs exist', async () => {
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			preview_url: 'https://db.example/1-preview.mp3',
+			download_url: 'https://db.example/1-download.zip'
+		};
+		const sim2 = {
+			...publishedSimfile,
+			id: 2,
+			preview_url: 'https://db.example/2-preview.mp3',
+			download_url: 'https://db.example/2-download.zip'
+		};
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+
+		const result = await runQuery(makeCtx(), {
+			query:
+				'{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{
+					id: '1',
+					previewUrl: 'https://db.example/1-preview.mp3',
+					downloadUrl: 'https://db.example/1-download.zip'
+				},
+				{
+					id: '2',
+					previewUrl: 'https://db.example/2-preview.mp3',
+					downloadUrl: 'https://db.example/2-download.zip'
+				}
+			]
+		});
+		expect(mockedBatchCatalog).not.toHaveBeenCalled();
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('uses batch catalog discovery for list previewUrl selections when any database value is missing', async () => {
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			preview_url: 'https://db.example/1-preview.mp3'
+		};
+		const sim2 = { ...publishedSimfile, id: 2, preview_url: null };
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[1, { previewUrl: null, downloadUrl: null, charts: [] }],
+				[2, { previewUrl: 'https://bucket.example/2/preview.mp3', downloadUrl: null, charts: [] }]
+			])
+		);
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+			}),
+			{
+				query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{ id: '1', previewUrl: 'https://db.example/1-preview.mp3' },
+				{ id: '2', previewUrl: 'https://bucket.example/2/preview.mp3' }
+			]
+		});
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('uses batch catalog discovery for list downloadUrl selections when any database value is missing', async () => {
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			download_url: 'https://db.example/1-download.zip'
+		};
+		const sim2 = { ...publishedSimfile, id: 2, download_url: null };
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[1, { previewUrl: null, downloadUrl: null, charts: [] }],
+				[2, { previewUrl: null, downloadUrl: 'https://bucket.example/2/song.ogg', charts: [] }]
+			])
+		);
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+			}),
+			{
+				query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id downloadUrl } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{ id: '1', downloadUrl: 'https://db.example/1-download.zip' },
+				{ id: '2', downloadUrl: 'https://bucket.example/2/song.ogg' }
+			]
+		});
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
 	it('uses batch catalog discovery for nested DTX metadata selected via fragments', async () => {
 		const sim1 = {
 			...publishedSimfile,

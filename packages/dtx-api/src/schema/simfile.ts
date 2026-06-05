@@ -294,14 +294,19 @@ export const SimfileConnectionRef = builder
 							}
 						}
 
+						const needsPreviewDiscovery =
+							isFieldSelected(info, 'previewUrl') &&
+							c.data.some((s) => s.preview_url == null);
+						const needsDownloadDiscovery =
+							isFieldSelected(info, 'downloadUrl') &&
+							c.data.some((s) => s.download_url == null);
+						const needsDtxDiscovery = isNestedFieldSelected(info, 'dtxFiles', [
+							'fileUrl',
+							'fileSizeBytes',
+							'fileEncoding'
+						]);
 						const shouldBatchCatalogFiles =
-							isFieldSelected(info, 'previewUrl') ||
-							isFieldSelected(info, 'downloadUrl') ||
-							isNestedFieldSelected(info, 'dtxFiles', [
-								'fileUrl',
-								'fileSizeBytes',
-								'fileEncoding'
-							]);
+							needsPreviewDiscovery || needsDownloadDiscovery || needsDtxDiscovery;
 
 						if (shouldBatchCatalogFiles) {
 							const catalogBatchPromise = batchDiscoverCatalogFiles(

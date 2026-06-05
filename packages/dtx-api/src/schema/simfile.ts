@@ -14,9 +14,12 @@ import {
 	enrichFiles,
 	enrichHasUploadedFiles,
 	batchEnrichHasUploadedFiles,
-	batchEnrichFiles
+	batchEnrichFiles,
+	discoverCatalogFiles
 } from '../services/r2Enrichment';
+import type { CatalogChartFile, CatalogFileDiscovery } from '../services/r2Enrichment';
 import { createSimfileWithDtx } from '../services/createSimfile';
+import type { Ctx } from '../context';
 
 /**
  * Checks whether a given field name appears in the selection set of the
@@ -61,12 +64,73 @@ export const SimfileScopeEnum = builder.enumType('SimfileScope', {
 	values: ['MINE', 'PUBLISHED'] as const
 });
 
+export const FileEncodingEnum = builder.enumType('FileEncoding', {
+	values: ['SHIFT_JIS', 'UTF_8'] as const
+});
+
 // --- object types ---
 
-const DtxFile = builder.objectRef<{ level: number; label: string }>('DtxFile').implement({
+type DtxFileParent = {
+	level: number;
+	label: string;
+	simfile: SimfileWithDtxFiles;
+};
+
+const getCatalogDiscovery = (
+	ctx: Ctx,
+	simfile: SimfileWithDtxFiles
+): Promise<CatalogFileDiscovery> => {
+	const cache = ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
+	const cached = cache.get(simfile.id);
+	if (cached) return cached;
+
+	const promise = discoverCatalogFiles(ctx.r2, {
+		simfileId: simfile.id,
+		dtxFiles: simfile.dtx_files,
+		publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+	});
+	cache.set(simfile.id, promise);
+	return promise;
+};
+
+const findCatalogChart = async (
+	ctx: Ctx,
+	parent: DtxFileParent
+): Promise<CatalogChartFile | undefined> => {
+	const discovery = await getCatalogDiscovery(ctx, parent.simfile);
+	return discovery.charts.find(
+		(chart) => chart.label === parent.label && chart.level === parent.level
+	);
+};
+
+const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
 		level: t.exposeFloat('level'),
-		label: t.exposeString('label')
+		label: t.exposeString('label'),
+		fileUrl: t.string({
+			resolve: async (file, _args, ctx) => {
+				const chart = await findCatalogChart(ctx, file);
+				if (!chart?.fileUrl) {
+					throw new GraphQLError('DTX chart file not found in R2', {
+						extensions: { code: 'INTERNAL' }
+					});
+				}
+				return chart.fileUrl;
+			}
+		}),
+		fileSizeBytes: t.int({
+			resolve: async (file, _args, ctx) => {
+				const chart = await findCatalogChart(ctx, file);
+				return chart?.fileSizeBytes ?? 0;
+			}
+		}),
+		fileEncoding: t.field({
+			type: FileEncodingEnum,
+			resolve: async (file, _args, ctx) => {
+				const chart = await findCatalogChart(ctx, file);
+				return chart?.fileEncoding ?? 'SHIFT_JIS';
+			}
+		})
 	})
 });
 
@@ -89,8 +153,16 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		userId: t.id({ nullable: true, resolve: (s) => s.user_id ?? null }),
 		isPublished: t.boolean({ resolve: (s) => s.is_published }),
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
-		downloadUrl: t.string({ nullable: true, resolve: (s) => s.download_url }),
-		previewUrl: t.string({ nullable: true, resolve: (s) => s.preview_url }),
+		downloadUrl: t.string({
+			nullable: true,
+			resolve: async (s, _args, ctx) =>
+				s.download_url ?? (await getCatalogDiscovery(ctx, s)).downloadUrl
+		}),
+		previewUrl: t.string({
+			nullable: true,
+			resolve: async (s, _args, ctx) =>
+				s.preview_url ?? (await getCatalogDiscovery(ctx, s)).previewUrl
+		}),
 		videoPreviewUrl: t.string({ nullable: true, resolve: (s) => s.video_preview_url }),
 		publishDate: t.string({ resolve: (s) => s.publish_date }),
 		createdAt: t.string({ resolve: (s) => s.created_at }),
@@ -98,7 +170,10 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		genre: t.string({ nullable: true, resolve: () => null }),
 		tags: t.stringList({ resolve: () => [] }),
 		durationSeconds: t.int({ nullable: true, resolve: () => null }),
-		dtxFiles: t.field({ type: [DtxFile], resolve: (s) => s.dtx_files }),
+		dtxFiles: t.field({
+			type: [DtxFile],
+			resolve: (s) => s.dtx_files.map((file) => ({ ...file, simfile: s }))
+		}),
 		files: t.field({
 			type: [R2File],
 			resolve: async (s, _args, ctx) => {

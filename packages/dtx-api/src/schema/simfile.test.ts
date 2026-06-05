@@ -57,6 +57,7 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	ownerByIdCache: new Map(),
 	hasUploadedFilesCache: new Map(),
 	filesCache: new Map(),
+	catalogFilesCache: new Map(),
 	...overrides
 });
 
@@ -488,18 +489,33 @@ describe('Mutation.createSimfile', () => {
 });
 
 vi.mock('../services/r2Enrichment', () => ({
+	discoverCatalogFiles: vi.fn(),
 	enrichFiles: vi.fn(),
 	enrichHasUploadedFiles: vi.fn(),
 	batchEnrichHasUploadedFiles: vi.fn(async () => new Map()),
 	batchEnrichFiles: vi.fn(async () => new Map())
 }));
 
-const { enrichFiles, enrichHasUploadedFiles, batchEnrichHasUploadedFiles, batchEnrichFiles } =
-	await import('../services/r2Enrichment');
+const {
+	discoverCatalogFiles,
+	enrichFiles,
+	enrichHasUploadedFiles,
+	batchEnrichHasUploadedFiles,
+	batchEnrichFiles
+} = await import('../services/r2Enrichment');
+const mockedDiscoverCatalogFiles = vi.mocked(discoverCatalogFiles);
 const mockedFiles = vi.mocked(enrichFiles);
 const mockedHasUploaded = vi.mocked(enrichHasUploadedFiles);
 const mockedBatchHasUploaded = vi.mocked(batchEnrichHasUploadedFiles);
 const mockedBatchFiles = vi.mocked(batchEnrichFiles);
+
+beforeEach(() => {
+	mockedDiscoverCatalogFiles.mockReset().mockResolvedValue({
+		previewUrl: null,
+		downloadUrl: null,
+		charts: []
+	});
+});
 
 describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 	beforeEach(() => {
@@ -507,6 +523,157 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedHasUploaded.mockReset();
 		mockedBatchHasUploaded.mockReset().mockResolvedValue(new Map());
 		mockedBatchFiles.mockReset().mockResolvedValue(new Map());
+	});
+
+	it('resolves catalog DTX file metadata from discovered R2 files', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			dtx_files: [
+				{ label: 'ADV', level: 5.25 },
+				{ label: 'EXT', level: 8.75 }
+			]
+		});
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: null,
+			charts: [
+				{
+					label: 'EXT',
+					level: 8.75,
+					fileUrl: 'https://cdn.example/42/ext.dtx',
+					fileSizeBytes: 2345,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'ADV',
+					level: 5.25,
+					fileUrl: 'https://cdn.example/42/adv.dtx',
+					fileSizeBytes: 1234,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]
+		});
+
+		const result = await runQuery(
+			makeCtx({ env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://cdn.example' } }),
+			{
+				query:
+					'{ simfile(id: "42") { dtxFiles { label level fileUrl fileSizeBytes fileEncoding } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			dtxFiles: [
+				{
+					label: 'ADV',
+					level: 5.25,
+					fileUrl: 'https://cdn.example/42/adv.dtx',
+					fileSizeBytes: 1234,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'EXT',
+					level: 8.75,
+					fileUrl: 'https://cdn.example/42/ext.dtx',
+					fileSizeBytes: 2345,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]
+		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledWith(expect.anything(), {
+			simfileId: 42,
+			dtxFiles: [
+				{ label: 'ADV', level: 5.25 },
+				{ label: 'EXT', level: 8.75 }
+			],
+			publicBaseUrl: 'https://cdn.example'
+		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
+	});
+
+	it('falls back to discovered previewUrl when database preview_url is null', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, preview_url: null });
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: 'https://cdn.example/42/preview.mp3',
+			downloadUrl: null,
+			charts: []
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { previewUrl } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			previewUrl: 'https://cdn.example/42/preview.mp3'
+		});
+	});
+
+	it('falls back to discovered downloadUrl when database download_url is null', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, download_url: null });
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: 'https://cdn.example/42/song.ogg',
+			charts: []
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { downloadUrl } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			downloadUrl: 'https://cdn.example/42/song.ogg'
+		});
+	});
+
+	it('prefers database previewUrl and downloadUrl over discovered values', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			preview_url: 'https://db.example/preview.mp3',
+			download_url: 'https://db.example/download.zip'
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { previewUrl downloadUrl } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			previewUrl: 'https://db.example/preview.mp3',
+			downloadUrl: 'https://db.example/download.zip'
+		});
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('returns an INTERNAL field error when a selected DTX chart fileUrl is missing', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: null,
+			charts: [
+				{
+					label: 'BSC',
+					level: 7.5,
+					fileUrl: null,
+					fileSizeBytes: null,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { dtxFiles { label fileUrl } } }'
+		});
+
+		expect(result.errors?.[0]?.message).toBe('DTX chart file not found in R2');
+		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
 	});
 
 	it('does not call enrichFiles when files is not selected', async () => {

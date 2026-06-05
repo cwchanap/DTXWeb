@@ -339,6 +339,31 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.wav');
 	});
 
+	it('skips fetching set.def when no dtx chart rows need matching', async () => {
+		const getMock = vi.fn(async () => ({ text: async () => '' }));
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/preview.mp3', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: getMock
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		// previewUrl/downloadUrl still resolve from the listing, but set.def
+		// must not be fetched because no chart rows need label-to-file matching.
+		expect(getMock).not.toHaveBeenCalled();
+		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/preview.mp3');
+		expect(discovery.charts).toEqual([]);
+	});
+
 	it('matches dtx rows by sorted fallback when set.def is unavailable', async () => {
 		const bucket = makeBucket([
 			[

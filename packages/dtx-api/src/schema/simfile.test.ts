@@ -278,8 +278,7 @@ describe('Query.simfiles', () => {
 		mockedList.mockResolvedValue({ data: [publishedSimfile], count: 1 });
 
 		const result = await runQuery(makeCtx(), {
-			query:
-				'{ simfiles(scope: PUBLISHED) { count data { id genre tags durationSeconds } } }'
+			query: '{ simfiles(scope: PUBLISHED) { count data { id genre tags durationSeconds } } }'
 		});
 
 		expect(result.errors).toBeUndefined();
@@ -563,8 +562,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		const result = await runQuery(
 			makeCtx({ env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://cdn.example' } }),
 			{
-				query:
-					'{ simfile(id: "42") { dtxFiles { label level fileUrl fileSizeBytes fileEncoding } } }'
+				query: '{ simfile(id: "42") { dtxFiles { label level fileUrl fileSizeBytes fileEncoding } } }'
 			}
 		);
 
@@ -675,6 +673,56 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 
 		const result = await runQuery(makeCtx(), {
 			query: '{ simfile(id: "42") { dtxFiles { label fileUrl } } }'
+		});
+
+		expect(result.errors?.[0]?.message).toBe('DTX chart file not found in R2');
+		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+	});
+
+	it('returns INTERNAL for fileSizeBytes when the DTX chart file is missing', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: null,
+			charts: [
+				{
+					label: 'BSC',
+					level: 7.5,
+					fileUrl: null,
+					fileSizeBytes: null,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { dtxFiles { label fileSizeBytes } } }'
+		});
+
+		expect(result.errors?.[0]?.message).toBe('DTX chart file not found in R2');
+		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+	});
+
+	it('returns INTERNAL for fileEncoding when the DTX chart file is missing', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: null,
+			charts: [
+				{
+					label: 'BSC',
+					level: 7.5,
+					fileUrl: null,
+					fileSizeBytes: null,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { dtxFiles { label fileEncoding } } }'
 		});
 
 		expect(result.errors?.[0]?.message).toBe('DTX chart file not found in R2');
@@ -850,8 +898,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
 			}),
 			{
-				query:
-					'{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id dtxFiles { label fileUrl } } } }'
+				query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id dtxFiles { label fileUrl } } } }'
 			}
 		);
 
@@ -934,8 +981,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
 			}),
 			{
-				query:
-					'{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
+				query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
 			}
 		);
 
@@ -974,8 +1020,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
 
 		const result = await runQuery(makeCtx(), {
-			query:
-				'{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
 		});
 
 		expect(result.errors).toBeUndefined();
@@ -1008,7 +1053,14 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedBatchCatalog.mockResolvedValue(
 			new Map([
 				[1, { previewUrl: null, downloadUrl: null, charts: [] }],
-				[2, { previewUrl: 'https://bucket.example/2/preview.mp3', downloadUrl: null, charts: [] }]
+				[
+					2,
+					{
+						previewUrl: 'https://bucket.example/2/preview.mp3',
+						downloadUrl: null,
+						charts: []
+					}
+				]
 			])
 		);
 
@@ -1043,7 +1095,14 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedBatchCatalog.mockResolvedValue(
 			new Map([
 				[1, { previewUrl: null, downloadUrl: null, charts: [] }],
-				[2, { previewUrl: null, downloadUrl: 'https://bucket.example/2/song.ogg', charts: [] }]
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: 'https://bucket.example/2/song.ogg',
+						charts: []
+					}
+				]
 			])
 		);
 
@@ -1085,7 +1144,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 							{
 								label: 'BSC',
 								level: 3,
-								fileUrl: null,
+								fileUrl: 'https://cdn.example/1/bsc.dtx',
 								fileSizeBytes: 1234,
 								fileEncoding: 'SHIFT_JIS'
 							}

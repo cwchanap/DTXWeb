@@ -73,7 +73,9 @@ const isNestedFieldSelected = (
 					return sel.name.value !== '__typename' && childFields.has(sel.name.value);
 				case 'FragmentSpread': {
 					const fragment = info.fragments[sel.name.value];
-					return fragment ? checkChildSelections(fragment.selectionSet.selections) : false;
+					return fragment
+						? checkChildSelections(fragment.selectionSet.selections)
+						: false;
 				}
 				case 'InlineFragment':
 					return checkChildSelections(sel.selectionSet.selections);
@@ -94,7 +96,9 @@ const isNestedFieldSelected = (
 						: false;
 				case 'FragmentSpread': {
 					const fragment = info.fragments[sel.name.value];
-					return fragment ? checkParentSelections(fragment.selectionSet.selections) : false;
+					return fragment
+						? checkParentSelections(fragment.selectionSet.selections)
+						: false;
 				}
 				case 'InlineFragment':
 					return checkParentSelections(sel.selectionSet.selections);
@@ -155,33 +159,42 @@ const findCatalogChart = async (
 	);
 };
 
+/**
+ * Returns the catalog chart for the given DTX row, or throws an INTERNAL
+ * GraphQLError if the backing R2 object is missing. All three DTX file
+ * fields (fileUrl, fileSizeBytes, fileEncoding) describe the same R2
+ * object, so they must fail consistently — returning a fallback value
+ * (0 / SHIFT_JIS) for a missing file would mislead clients.
+ */
+const requireCatalogChart = async (
+	ctx: Ctx,
+	parent: DtxFileParent
+): Promise<Omit<CatalogChartFile, 'fileUrl' | 'fileSizeBytes'> & { fileUrl: string; fileSizeBytes: number }> => {
+	const chart = await findCatalogChart(ctx, parent);
+	if (!chart?.fileUrl) {
+		throw new GraphQLError('DTX chart file not found in R2', {
+			extensions: { code: 'INTERNAL' }
+		});
+	}
+	// fileUrl is non-null here, and fileSizeBytes is always set alongside
+	// fileUrl in discoverCatalogFiles (both derive from the same R2 object).
+	return { ...chart, fileUrl: chart.fileUrl, fileSizeBytes: chart.fileSizeBytes ?? 0 };
+};
+
 const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
 		level: t.exposeFloat('level'),
 		label: t.exposeString('label'),
 		fileUrl: t.string({
-			resolve: async (file, _args, ctx) => {
-				const chart = await findCatalogChart(ctx, file);
-				if (!chart?.fileUrl) {
-					throw new GraphQLError('DTX chart file not found in R2', {
-						extensions: { code: 'INTERNAL' }
-					});
-				}
-				return chart.fileUrl;
-			}
+			resolve: async (file, _args, ctx) => (await requireCatalogChart(ctx, file)).fileUrl
 		}),
 		fileSizeBytes: t.int({
-			resolve: async (file, _args, ctx) => {
-				const chart = await findCatalogChart(ctx, file);
-				return chart?.fileSizeBytes ?? 0;
-			}
+			resolve: async (file, _args, ctx) =>
+				(await requireCatalogChart(ctx, file)).fileSizeBytes
 		}),
 		fileEncoding: t.field({
 			type: FileEncodingEnum,
-			resolve: async (file, _args, ctx) => {
-				const chart = await findCatalogChart(ctx, file);
-				return chart?.fileEncoding ?? 'SHIFT_JIS';
-			}
+			resolve: async (file, _args, ctx) => (await requireCatalogChart(ctx, file)).fileEncoding
 		})
 	})
 });
@@ -317,7 +330,8 @@ export const SimfileConnectionRef = builder
 									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
 								}))
 							);
-							const cache = ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
+							const cache =
+								ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
 							for (const s of c.data) {
 								cache.set(
 									s.id,

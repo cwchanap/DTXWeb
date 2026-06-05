@@ -489,4 +489,79 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('falls back to sorted pairing when set.def read throws a transient R2 error', async () => {
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a-basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b-advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => {
+				throw new Error('R2 transient error');
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [
+				{ label: 'Advanced', level: 5 },
+				{ label: 'Basic', level: 1 }
+			],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(bucket.get).toHaveBeenCalledWith('42/set.def');
+		// Should fall through to sorted-key fallback instead of throwing
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/b-advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/a-basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('falls back to sorted pairing when set.def object.text() throws', async () => {
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				text: async () => {
+					throw new Error('body read error');
+				}
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(bucket, {
+			simfileId: 42,
+			dtxFiles: [{ label: 'Basic', level: 1 }],
+			publicBaseUrl: 'https://cdn.example.test'
+		});
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

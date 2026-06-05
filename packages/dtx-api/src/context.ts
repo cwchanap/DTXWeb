@@ -3,6 +3,7 @@ import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-type
 import { workerLogger, type WorkerLogger } from '@dtx/common/server';
 import { verifyToken } from './auth/verifyToken';
 import type { Env } from './env';
+import type { CatalogFileDiscovery, R2FileEntry } from './services/r2Enrichment';
 
 export type OwnerCacheEntry = {
 	userId: string | null;
@@ -20,7 +21,8 @@ export type Ctx = {
 	logger: WorkerLogger;
 	ownerByIdCache: Map<string, OwnerCacheEntry | null>;
 	hasUploadedFilesCache: Map<number, Promise<boolean>>;
-	filesCache: Map<number, Promise<import('./services/r2Enrichment').R2FileEntry[]>>;
+	filesCache: Map<number, Promise<R2FileEntry[]>>;
+	catalogFilesCache?: Map<number, Promise<CatalogFileDiscovery>>;
 };
 
 export const createContext = async (request: Request, env: Env): Promise<Ctx> => {
@@ -36,6 +38,7 @@ export const createContext = async (request: Request, env: Env): Promise<Ctx> =>
 		logger: workerLogger,
 		ownerByIdCache: new Map(),
 		hasUploadedFilesCache: new Map(),
-		filesCache: new Map()
+		filesCache: new Map(),
+		catalogFilesCache: new Map()
 	};
 };

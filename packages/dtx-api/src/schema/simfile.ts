@@ -95,6 +95,9 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		publishDate: t.string({ resolve: (s) => s.publish_date }),
 		createdAt: t.string({ resolve: (s) => s.created_at }),
 		updatedAt: t.string({ resolve: (s) => s.updated_at }),
+		genre: t.string({ nullable: true, resolve: () => null }),
+		tags: t.stringList({ resolve: () => [] }),
+		durationSeconds: t.int({ nullable: true, resolve: () => null }),
 		dtxFiles: t.field({ type: [DtxFile], resolve: (s) => s.dtx_files }),
 		files: t.field({
 			type: [R2File],

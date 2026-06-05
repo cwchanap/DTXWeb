@@ -127,6 +127,23 @@ describe('Query.simfile', () => {
 		});
 	});
 
+	it('exposes compatibility metadata defaults on a published simfile', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { id genre tags durationSeconds } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			id: '42',
+			genre: null,
+			tags: [],
+			durationSeconds: null
+		});
+	});
+
 	it('FORBIDDEN for anonymous unpublished', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
 		const result = await runQuery(makeCtx(), {
@@ -253,6 +270,28 @@ describe('Query.simfiles', () => {
 			search: undefined,
 			page: 1,
 			pageSize: 5
+		});
+	});
+
+	it('exposes compatibility metadata defaults in published list results', async () => {
+		mockedList.mockResolvedValue({ data: [publishedSimfile], count: 1 });
+
+		const result = await runQuery(makeCtx(), {
+			query:
+				'{ simfiles(scope: PUBLISHED) { count data { id genre tags durationSeconds } } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			count: 1,
+			data: [
+				{
+					id: '42',
+					genre: null,
+					tags: [],
+					durationSeconds: null
+				}
+			]
 		});
 	});
 

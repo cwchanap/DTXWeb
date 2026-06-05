@@ -493,7 +493,8 @@ vi.mock('../services/r2Enrichment', () => ({
 	enrichFiles: vi.fn(),
 	enrichHasUploadedFiles: vi.fn(),
 	batchEnrichHasUploadedFiles: vi.fn(async () => new Map()),
-	batchEnrichFiles: vi.fn(async () => new Map())
+	batchEnrichFiles: vi.fn(async () => new Map()),
+	batchDiscoverCatalogFiles: vi.fn(async () => new Map())
 }));
 
 const {
@@ -501,13 +502,15 @@ const {
 	enrichFiles,
 	enrichHasUploadedFiles,
 	batchEnrichHasUploadedFiles,
-	batchEnrichFiles
+	batchEnrichFiles,
+	batchDiscoverCatalogFiles
 } = await import('../services/r2Enrichment');
 const mockedDiscoverCatalogFiles = vi.mocked(discoverCatalogFiles);
 const mockedFiles = vi.mocked(enrichFiles);
 const mockedHasUploaded = vi.mocked(enrichHasUploadedFiles);
 const mockedBatchHasUploaded = vi.mocked(batchEnrichHasUploadedFiles);
 const mockedBatchFiles = vi.mocked(batchEnrichFiles);
+const mockedBatchCatalog = vi.mocked(batchDiscoverCatalogFiles);
 
 beforeEach(() => {
 	mockedDiscoverCatalogFiles.mockReset().mockResolvedValue({
@@ -515,6 +518,7 @@ beforeEach(() => {
 		downloadUrl: null,
 		charts: []
 	});
+	mockedBatchCatalog.mockReset().mockResolvedValue(new Map());
 });
 
 describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
@@ -523,6 +527,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedHasUploaded.mockReset();
 		mockedBatchHasUploaded.mockReset().mockResolvedValue(new Map());
 		mockedBatchFiles.mockReset().mockResolvedValue(new Map());
+		mockedBatchCatalog.mockReset().mockResolvedValue(new Map());
 	});
 
 	it('resolves catalog DTX file metadata from discovered R2 files', async () => {
@@ -789,6 +794,232 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedFiles).not.toHaveBeenCalled();
 		// hasUploadedFiles batch should NOT be called (field not selected)
 		expect(mockedBatchHasUploaded).not.toHaveBeenCalled();
+	});
+
+	it('uses batch catalog discovery for DTX file URLs in list queries', async () => {
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			dtx_files: [{ label: 'BSC', level: 3 }]
+		};
+		const sim2 = {
+			...publishedSimfile,
+			id: 2,
+			dtx_files: [{ label: 'EXT', level: 8 }]
+		};
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					1,
+					{
+						previewUrl: null,
+						downloadUrl: null,
+						charts: [
+							{
+								label: 'BSC',
+								level: 3,
+								fileUrl: 'https://bucket.example/1/basic.dtx',
+								fileSizeBytes: 100,
+								fileEncoding: 'SHIFT_JIS'
+							}
+						]
+					}
+				],
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: null,
+						charts: [
+							{
+								label: 'EXT',
+								level: 8,
+								fileUrl: 'https://bucket.example/2/extreme.dtx',
+								fileSizeBytes: 200,
+								fileEncoding: 'SHIFT_JIS'
+							}
+						]
+					}
+				]
+			])
+		);
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+			}),
+			{
+				query:
+					'{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id dtxFiles { label fileUrl } } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{
+					id: '1',
+					dtxFiles: [{ label: 'BSC', fileUrl: 'https://bucket.example/1/basic.dtx' }]
+				},
+				{
+					id: '2',
+					dtxFiles: [{ label: 'EXT', fileUrl: 'https://bucket.example/2/extreme.dtx' }]
+				}
+			]
+		});
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 1,
+				dtxFiles: [{ label: 'BSC', level: 3 }],
+				publicBaseUrl: 'https://bucket.example'
+			},
+			{
+				simfileId: 2,
+				dtxFiles: [{ label: 'EXT', level: 8 }],
+				publicBaseUrl: 'https://bucket.example'
+			}
+		]);
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('does not call catalog discovery for simple list metadata selections', async () => {
+		const sim1 = { ...publishedSimfile, id: 1 };
+		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
+
+		await runQuery(makeCtx(), {
+			query: '{ simfiles(scope: PUBLISHED, pageSize: 1) { data { id title } } }'
+		});
+
+		expect(mockedBatchCatalog).not.toHaveBeenCalled();
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('uses batch catalog discovery for list previewUrl and downloadUrl selections', async () => {
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			preview_url: 'https://db.example/preview.mp3'
+		};
+		const sim2 = {
+			...publishedSimfile,
+			id: 2,
+			download_url: 'https://db.example/download.zip'
+		};
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					1,
+					{
+						previewUrl: 'https://bucket.example/1/preview.mp3',
+						downloadUrl: null,
+						charts: []
+					}
+				],
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: 'https://bucket.example/2/song.ogg',
+						charts: []
+					}
+				]
+			])
+		);
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+			}),
+			{
+				query:
+					'{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{
+					id: '1',
+					previewUrl: 'https://db.example/preview.mp3',
+					downloadUrl: 'https://ext.example/a'
+				},
+				{
+					id: '2',
+					previewUrl: null,
+					downloadUrl: 'https://db.example/download.zip'
+				}
+			]
+		});
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('uses batch catalog discovery for nested DTX metadata selected via fragments', async () => {
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			dtx_files: [{ label: 'BSC', level: 3 }]
+		};
+		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					1,
+					{
+						previewUrl: null,
+						downloadUrl: null,
+						charts: [
+							{
+								label: 'BSC',
+								level: 3,
+								fileUrl: null,
+								fileSizeBytes: 1234,
+								fileEncoding: 'SHIFT_JIS'
+							}
+						]
+					}
+				]
+			])
+		);
+
+		const result = await runQuery(makeCtx(), {
+			query: `
+				fragment DtxMetadata on DtxFile { fileSizeBytes fileEncoding }
+				{
+					simfiles(scope: PUBLISHED, pageSize: 1) {
+						data {
+							id
+							dtxFiles {
+								label
+								...DtxMetadata
+							}
+						}
+					}
+				}
+			`
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{
+					id: '1',
+					dtxFiles: [
+						{
+							label: 'BSC',
+							fileSizeBytes: 1234,
+							fileEncoding: 'SHIFT_JIS'
+						}
+					]
+				}
+			]
+		});
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
 	it('does not call hasUploadedFiles batch when field is not selected', async () => {

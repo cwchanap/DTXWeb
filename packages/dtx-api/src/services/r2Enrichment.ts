@@ -184,6 +184,27 @@ export const discoverCatalogFiles = async (
 	return { previewUrl, downloadUrl, charts };
 };
 
+export const batchDiscoverCatalogFiles = async (
+	bucket: R2Bucket,
+	options: CatalogDiscoveryOptions[]
+): Promise<Map<number, CatalogFileDiscovery>> => {
+	const results = new Map<number, CatalogFileDiscovery>();
+	if (options.length === 0) return results;
+
+	let nextIndex = 0;
+	const worker: () => Promise<void> = async () => {
+		while (nextIndex < options.length) {
+			const option = options[nextIndex++];
+			results.set(option.simfileId, await discoverCatalogFiles(bucket, option));
+		}
+	};
+
+	await Promise.all(
+		Array.from({ length: Math.min(MAX_CONCURRENT_R2_LIST, options.length) }, () => worker())
+	);
+	return results;
+};
+
 export const enrichFiles = async (bucket: R2Bucket, simfileId: number): Promise<R2FileEntry[]> => {
 	const prefix = `${simfileId}/`;
 	const objects = await listAllR2Objects(bucket, prefix);

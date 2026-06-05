@@ -307,24 +307,29 @@ export const SimfileConnectionRef = builder
 							}
 						}
 
-						const needsPreviewDiscovery =
-							isFieldSelected(info, 'previewUrl') &&
-							c.data.some((s) => s.preview_url == null);
-						const needsDownloadDiscovery =
-							isFieldSelected(info, 'downloadUrl') &&
-							c.data.some((s) => s.download_url == null);
-						const needsDtxDiscovery = isNestedFieldSelected(info, 'dtxFiles', [
+						const previewSelected = isFieldSelected(info, 'previewUrl');
+						const downloadSelected = isFieldSelected(info, 'downloadUrl');
+						const dtxSelected = isNestedFieldSelected(info, 'dtxFiles', [
 							'fileUrl',
 							'fileSizeBytes',
 							'fileEncoding'
 						]);
-						const shouldBatchCatalogFiles =
-							needsPreviewDiscovery || needsDownloadDiscovery || needsDtxDiscovery;
 
-						if (shouldBatchCatalogFiles) {
+						// Per-sim filter: only sims that actually need R2 discovery are passed
+						// to the batch. Sims with both DB URLs set and no dtx file fields
+						// selected skip discovery entirely — their cache entry is pre-resolved
+						// with the existing DB values so consumers see a uniform cache API.
+						const simsNeedingDiscovery = c.data.filter((s) => {
+							if (previewSelected && s.preview_url == null) return true;
+							if (downloadSelected && s.download_url == null) return true;
+							if (dtxSelected) return true;
+							return false;
+						});
+
+						if (simsNeedingDiscovery.length > 0) {
 							const catalogBatchPromise = batchDiscoverCatalogFiles(
 								ctx.r2,
-								c.data.map((s) => ({
+								simsNeedingDiscovery.map((s) => ({
 									simfileId: s.id,
 									dtxFiles: s.dtx_files,
 									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
@@ -332,7 +337,7 @@ export const SimfileConnectionRef = builder
 							);
 							const cache =
 								ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
-							for (const s of c.data) {
+							for (const s of simsNeedingDiscovery) {
 								cache.set(
 									s.id,
 									catalogBatchPromise.then(
@@ -343,6 +348,20 @@ export const SimfileConnectionRef = builder
 												charts: []
 											}
 									)
+								);
+							}
+							// Populate cache for sims that did not need discovery so consumers
+							// always find an entry. previewUrl/downloadUrl come from the DB;
+							// charts is empty because dtx file fields were not selected.
+							for (const s of c.data) {
+								if (simsNeedingDiscovery.includes(s)) continue;
+								cache.set(
+									s.id,
+									Promise.resolve({
+										previewUrl: s.preview_url,
+										downloadUrl: s.download_url,
+										charts: []
+									})
 								);
 							}
 						}

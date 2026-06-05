@@ -174,9 +174,7 @@ Keep existing GraphQL error codes where they already exist:
 
 For optional file fields, return `null` when no object exists.
 
-For required `DtxFile.fileUrl`, raise a GraphQL field-level error when the chart
-object cannot be found. The error code should be `INTERNAL` because a published
-chart with a missing DTX file is a server-side data inconsistency.
+For required `DtxFile` fields (`fileUrl`, `fileSizeBytes`, and `fileEncoding`), raise a GraphQL field-level error when the chart object cannot be found. All three fields describe the same R2 object, so they must fail consistently — returning a fallback value (e.g., `0` / `SHIFT_JIS`) for a missing file would mislead clients. The error code should be `INTERNAL` because a published chart with a missing DTX file is a server-side data inconsistency.
 
 ## Compatibility Tradeoffs
 

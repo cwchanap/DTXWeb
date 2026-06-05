@@ -955,16 +955,11 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			download_url: 'https://db.example/download.zip'
 		};
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		// sim1 has both DB URLs set (preview_url from override, download_url from
+		// publishedSimfile default), so it is filtered out. Only sim2 needs
+		// discovery because its preview_url is null (publishedSimfile default).
 		mockedBatchCatalog.mockResolvedValue(
 			new Map([
-				[
-					1,
-					{
-						previewUrl: 'https://bucket.example/1/preview.mp3',
-						downloadUrl: null,
-						charts: []
-					}
-				],
 				[
 					2,
 					{
@@ -1001,6 +996,13 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 2,
+				dtxFiles: sim2.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			}
+		]);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1050,9 +1052,9 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		};
 		const sim2 = { ...publishedSimfile, id: 2, preview_url: null };
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		// Only sim2 needs discovery — sim1 has a DB preview_url so it is filtered out.
 		mockedBatchCatalog.mockResolvedValue(
 			new Map([
-				[1, { previewUrl: null, downloadUrl: null, charts: [] }],
 				[
 					2,
 					{
@@ -1081,6 +1083,13 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 2,
+				dtxFiles: sim2.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			}
+		]);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1092,9 +1101,9 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		};
 		const sim2 = { ...publishedSimfile, id: 2, download_url: null };
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		// Only sim2 needs discovery — sim1 has a DB download_url so it is filtered out.
 		mockedBatchCatalog.mockResolvedValue(
 			new Map([
-				[1, { previewUrl: null, downloadUrl: null, charts: [] }],
 				[
 					2,
 					{
@@ -1123,6 +1132,13 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 2,
+				dtxFiles: sim2.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			}
+		]);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 

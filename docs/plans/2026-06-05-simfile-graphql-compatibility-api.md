@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Add Failing Schema Tests For Metadata Defaults
+## Task 1: Add Failing Schema Tests For Metadata Defaults
 
 **Files:**
 
@@ -550,7 +550,7 @@ Add tests:
 
 - Selecting `dtxFiles { fileUrl }` in `simfiles` calls `batchDiscoverCatalogFiles` once and does not call per-row `discoverCatalogFiles`.
 - Selecting only `id title` does not call catalog discovery.
-- Selecting `previewUrl` or `downloadUrl` triggers batch discovery only when DB values are absent is hard to know before resolving; for simplicity, prefill when either selected.
+- Selecting `previewUrl` or `downloadUrl` triggers catalog prefill/batch discovery only when the corresponding DB value is absent (`null`/empty). The decision logic must still check the existing DB `preview_url`/`download_url` before initiating an R2 listing load, so sims whose DB URL is already populated are skipped (cache pre-populated with their existing URL) and only sims with missing DB URLs are passed to `batchDiscoverCatalogFiles`.
 
 Example query:
 

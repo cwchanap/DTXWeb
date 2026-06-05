@@ -148,7 +148,12 @@ export const discoverCatalogFiles = async (
 	const setDefKey = objects.find(
 		(obj: R2ObjectMeta) => getFileName(obj.key).toLowerCase() === 'set.def'
 	)?.key;
-	const filesByLabel = await readSetDefFilesByLabel(bucket, setDefKey, prefix);
+	// Skip fetching set.def when no chart rows need matching — preview/download-only
+	// requests never read filesByLabel, so we avoid an unnecessary R2 GET.
+	const filesByLabel =
+		dtxFiles.length > 0
+			? await readSetDefFilesByLabel(bucket, setDefKey, prefix)
+			: new Map<string, string>();
 
 	const matchedKeysByRowIndex = new Map<number, string>();
 	for (const [index, file] of dtxFiles.entries()) {

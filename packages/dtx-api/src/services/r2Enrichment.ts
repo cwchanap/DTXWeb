@@ -40,6 +40,7 @@ export type CatalogChartFile = CatalogChartFilePresent | CatalogChartFileMissing
 
 export type CatalogFileDiscovery = {
 	previewUrl: string | null;
+	downloadUrl: string | null;
 	charts: CatalogChartFile[];
 	/**
 	 * False when the caller passed an empty `dtxFiles` array (URL-only
@@ -167,6 +168,22 @@ export const discoverCatalogFiles = async (
 		objects.find((obj: R2ObjectMeta) => isPreviewMp3Key(obj.key));
 	const previewUrl = previewObject ? toPublicUrl(publicBaseUrl, previewObject.key) : null;
 
+	const audioExts = ['.ogg', '.mp3', '.wav', '.flac'];
+	const isAudio = (key: string): boolean => {
+		const lower = key.toLowerCase();
+		return audioExts.some((ext) => lower.endsWith(ext)) && !isPreviewMp3Key(key);
+	};
+	const audioObjects = objects
+		.filter((obj: R2ObjectMeta) => isAudio(obj.key))
+		.sort((a, b) => {
+			const aExt = audioExts.findIndex((ext) => a.key.toLowerCase().endsWith(ext));
+			const bExt = audioExts.findIndex((ext) => b.key.toLowerCase().endsWith(ext));
+			if (aExt !== bExt) return aExt - bExt;
+			return a.key.localeCompare(b.key);
+		});
+	const downloadObject = audioObjects[0];
+	const downloadUrl = downloadObject ? toPublicUrl(publicBaseUrl, downloadObject.key) : null;
+
 	const dtxObjects = objects
 		.filter((obj: R2ObjectMeta) => obj.key.toLowerCase().endsWith('.dtx'))
 		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => a.key.localeCompare(b.key));
@@ -232,7 +249,7 @@ export const discoverCatalogFiles = async (
 		};
 	});
 
-	return { previewUrl, charts, chartsPopulated: dtxFiles.length > 0 };
+	return { previewUrl, downloadUrl, charts, chartsPopulated: dtxFiles.length > 0 };
 };
 
 export const batchDiscoverCatalogFiles = async (

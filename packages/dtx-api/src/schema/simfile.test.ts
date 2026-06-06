@@ -514,6 +514,7 @@ const mockedBatchCatalog = vi.mocked(batchDiscoverCatalogFiles);
 beforeEach(() => {
 	mockedDiscoverCatalogFiles.mockReset().mockResolvedValue({
 		previewUrl: null,
+		downloadUrl: null,
 		charts: [],
 		chartsPopulated: true
 	});
@@ -540,6 +541,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
+			downloadUrl: null,
 			charts: [
 				{
 					label: 'EXT',
@@ -605,6 +607,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, preview_url: null });
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: 'https://cdn.example/42/preview.mp3',
+			downloadUrl: null,
 			charts: [],
 			chartsPopulated: true
 		});
@@ -619,39 +622,49 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 	});
 
-	it('returns null downloadUrl when database download_url is null without consulting R2', async () => {
-		// downloadUrl is DB-only — the R2 listing cannot reliably identify
-		// "the main audio" because DTX simfiles contain many `#WAV` chip
-		// samples (kick.ogg, snare.wav, ...) which would otherwise be
-		// picked as the download URL. Actual file download is served by
-		// the /downloads/:id REST endpoint (ZIP stream), not by this field.
+	it('falls back to discovered downloadUrl when database download_url is null', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, download_url: null });
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: 'https://cdn.example/42/music.ogg',
+			charts: [],
+			chartsPopulated: true
+		});
 
 		const result = await runQuery(makeCtx(), {
 			query: '{ simfile(id: "42") { downloadUrl } }'
 		});
 
 		expect(result.errors).toBeUndefined();
-		expect(result.data?.simfile).toEqual({ downloadUrl: null });
-		// discovery should never run for the downloadUrl-only query
-		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+		expect(result.data?.simfile).toEqual({
+			downloadUrl: 'https://cdn.example/42/music.ogg'
+		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
 	});
 
-	it('treats whitespace-only database download_url as null without consulting R2', async () => {
+	it('falls back to discovered downloadUrl when database download_url is whitespace-only', async () => {
 		// Mirrors the previewUrl behavior: empty / whitespace DB strings
 		// must be coerced to null so the GraphQL field renders as null
-		// rather than the raw '' to clients.
+		// rather than the raw '' to clients, then the catalog fallback runs.
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, download_url: '   ' });
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: 'https://cdn.example/42/music.ogg',
+			charts: [],
+			chartsPopulated: true
+		});
 
 		const result = await runQuery(makeCtx(), {
 			query: '{ simfile(id: "42") { downloadUrl } }'
 		});
 
 		expect(result.errors).toBeUndefined();
-		expect(result.data?.simfile).toEqual({ downloadUrl: null });
-		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+		expect(result.data?.simfile).toEqual({
+			downloadUrl: 'https://cdn.example/42/music.ogg'
+		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
 	});
 
 	it('falls back to discovered previewUrl when database preview_url is an empty string', async () => {
@@ -662,6 +675,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, preview_url: '' });
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: 'https://cdn.example/42/preview.mp3',
+			downloadUrl: null,
 			charts: [],
 			chartsPopulated: true
 		});
@@ -702,6 +716,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
+			downloadUrl: null,
 			charts: [
 				{
 					label: 'BSC',
@@ -727,6 +742,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
+			downloadUrl: null,
 			charts: [
 				{
 					label: 'BSC',
@@ -752,6 +768,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
+			downloadUrl: null,
 			charts: [
 				{
 					label: 'BSC',
@@ -777,6 +794,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
+			downloadUrl: null,
 			charts: [
 				{
 					label: 'BSC',
@@ -939,6 +957,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					1,
 					{
 						previewUrl: null,
+						downloadUrl: null,
 						charts: [
 							{
 								label: 'BSC',
@@ -955,6 +974,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					2,
 					{
 						previewUrl: null,
+						downloadUrl: null,
 						charts: [
 							{
 								label: 'EXT',
@@ -1039,13 +1059,14 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		// sim1 has both DB URLs set (preview_url from override, download_url from
 		// publishedSimfile default), so it is filtered out. Only sim2 needs
 		// discovery because its preview_url is null (publishedSimfile default).
-		// downloadUrl is DB-only so it never drives the discovery filter.
+		// sim2's download_url is also set, so downloadUrl does not drive discovery.
 		mockedBatchCatalog.mockResolvedValue(
 			new Map([
 				[
 					2,
 					{
 						previewUrl: null,
+						downloadUrl: null,
 						charts: [],
 						chartsPopulated: false
 					}
@@ -1178,6 +1199,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					2,
 					{
 						previewUrl: 'https://bucket.example/2/preview.mp3',
+						downloadUrl: null,
 						charts: [],
 						chartsPopulated: false
 					}
@@ -1216,15 +1238,36 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
-	it('returns null downloadUrl for list rows whose DB value is null or blank', async () => {
-		// downloadUrl is DB-only — when a row's download_url is null/blank
-		// the field renders as null in the GraphQL response without
-		// triggering R2 discovery. Only sim1 (whitespace) and sim2 (null)
-		// are covered; sim3 has a real DB value.
+	it('triggers batch catalog discovery for list rows whose download_url is null or blank', async () => {
+		// When downloadUrl is selected and the DB value is null/blank, the
+		// resolver falls back to R2 discovery. sim1 (whitespace) and sim2 (null)
+		// are passed to the batch; sim3 has a real DB value and is skipped.
 		const sim1 = { ...publishedSimfile, id: 1, download_url: '   ' };
 		const sim2 = { ...publishedSimfile, id: 2, download_url: null };
 		const sim3 = { ...publishedSimfile, id: 3, download_url: 'https://db.example/3.zip' };
 		mockedList.mockResolvedValue({ data: [sim1, sim2, sim3], count: 3 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					1,
+					{
+						previewUrl: null,
+						downloadUrl: 'https://bucket.example/1/music.ogg',
+						charts: [],
+						chartsPopulated: false
+					}
+				],
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: null,
+						charts: [],
+						chartsPopulated: false
+					}
+				]
+			])
+		);
 
 		const result = await runQuery(makeCtx(), {
 			query: '{ simfiles(scope: PUBLISHED, pageSize: 3) { data { id downloadUrl } } }'
@@ -1233,27 +1276,41 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(result.errors).toBeUndefined();
 		expect(result.data?.simfiles).toEqual({
 			data: [
-				{ id: '1', downloadUrl: null },
+				{ id: '1', downloadUrl: 'https://bucket.example/1/music.ogg' },
 				{ id: '2', downloadUrl: null },
 				{ id: '3', downloadUrl: 'https://db.example/3.zip' }
 			]
 		});
-		expect(mockedBatchCatalog).not.toHaveBeenCalled();
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 1,
+					dtxFiles: [],
+					publicBaseUrl: ''
+				},
+				{
+					simfileId: 2,
+					dtxFiles: [],
+					publicBaseUrl: ''
+				}
+			],
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
 	it('routes sims with blank DB preview_url through batch catalog discovery in list queries', async () => {
 		// Empty / whitespace-only DB preview_url must be treated like NULL in
 		// the prefetch filter so the sims are included in the discovery batch
-		// and the resolver falls back to the discovered value. downloadUrl is
-		// DB-only and does not influence discovery triggering — sim2 has
-		// preview_url set so it is fully resolved from the DB.
+		// and the resolver falls back to the discovered value.
 		const sim1 = { ...publishedSimfile, id: 1, preview_url: '' };
 		const sim2 = {
 			...publishedSimfile,
 			id: 2,
 			preview_url: 'https://db.example/2-preview.mp3',
-			download_url: '   '
+			download_url: 'https://db.example/2-download.zip'
 		};
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
 		mockedBatchCatalog.mockResolvedValue(
@@ -1262,6 +1319,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					1,
 					{
 						previewUrl: 'https://bucket.example/1/preview.mp3',
+						downloadUrl: null,
 						charts: [],
 						chartsPopulated: false
 					}
@@ -1290,14 +1348,12 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 				{
 					id: '2',
 					previewUrl: 'https://db.example/2-preview.mp3',
-					// sim2's whitespace download_url is not a discovery driver
-					// anymore — it just coerces to null in the resolver.
-					downloadUrl: null
+					downloadUrl: 'https://db.example/2-download.zip'
 				}
 			]
 		});
-		// Only sim1 needed discovery (blank preview_url). sim2's blank
-		// download_url does not drive the prefetch filter anymore.
+		// Only sim1 needed discovery (blank preview_url). sim2 has both DB
+		// URLs set, so it is skipped.
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
 		expect(mockedBatchCatalog).toHaveBeenCalledWith(
 			expect.anything(),
@@ -1326,6 +1382,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					1,
 					{
 						previewUrl: null,
+						downloadUrl: null,
 						charts: [
 							{
 								label: 'BSC',
@@ -1438,14 +1495,13 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		// resolvers would hit the partial entry and return stale null/empty
 		// values instead of triggering R2 discovery.
 		//
-		// Setup (downloadUrl is DB-only, so it no longer drives the prefetch filter):
-		// - List selects only downloadUrl. With the new contract neither sim
-		//   triggers discovery in the list path — sim1 has DB download_url set,
-		//   and downloadUrl is no longer a discovery driver. The list path does
-		//   not even enter the discovery block, so no cache entries are written.
+		// Setup:
+		// - List selects downloadUrl. sim1 has DB download_url set, so it is
+		//   skipped. sim2 has null download_url, so it triggers batch discovery.
+		//   No cache entry is written for sim1.
 		// - Detail selects previewUrl for sim1. sim1's preview_url is null on
 		//   the DB row, so the resolver must trigger single-sim discovery and
-		//   return the R2 URL — not the stale DB value.
+		//   return the R2 URL — not a stale partial cache entry.
 		const sim1 = {
 			...publishedSimfile,
 			id: 1,
@@ -1456,16 +1512,26 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue(sim1);
-		// Batch discovery is not called for a downloadUrl-only list — provide
-		// a default empty Map so the list resolver completes cleanly if it
-		// were ever called (it should not be).
-		mockedBatchCatalog.mockResolvedValue(new Map());
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: 'https://bucket.example/2/music.ogg',
+						charts: [],
+						chartsPopulated: false
+					}
+				]
+			])
+		);
 		// This discovery result is what the detail path's single-sim call
 		// should produce for sim1. If a poisoned partial cache entry from
 		// the list path leaks, the detail path skips discovery and returns
 		// the stale DB value instead of this R2 URL.
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: 'https://bucket.example/1/preview.mp3',
+			downloadUrl: null,
 			charts: [],
 			chartsPopulated: true
 		});
@@ -1486,15 +1552,26 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(result.data?.list).toEqual({
 			data: [
 				{ id: '1', downloadUrl: 'https://db.example/1-download.zip' },
-				{ id: '2', downloadUrl: null }
+				{ id: '2', downloadUrl: 'https://bucket.example/2/music.ogg' }
 			]
 		});
 		expect(result.data?.detail).toEqual({
 			id: '1',
 			previewUrl: 'https://bucket.example/1/preview.mp3'
 		});
-		// Batch discovery is not triggered: downloadUrl is DB-only.
-		expect(mockedBatchCatalog).not.toHaveBeenCalled();
+		// Batch discovery is triggered for sim2 (null download_url), not sim1.
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 2,
+					dtxFiles: [],
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		// Single-sim discovery must fire for sim1 from the detail path — it must
 		// NOT have been served by a stale partial cache entry from the list path.
 		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);

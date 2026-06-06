@@ -254,8 +254,14 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
 		downloadUrl: t.string({
 			nullable: true,
-			resolve: async (s, _args, ctx) =>
-				nonBlank(s.download_url) ?? (await getCatalogDiscovery(ctx, s)).downloadUrl
+			// DB-only: the canonical download URL is whatever the author sets
+			// (external link or hosted full audio). The R2 listing cannot
+			// identify "the main audio" reliably because DTX simfiles contain
+			// many `#WAV` chip samples (kick.ogg, snare.wav, ...) which would
+			// otherwise be picked as the download URL. Actual file download is
+			// served by the /downloads/:id REST endpoint (ZIP stream), not by
+			// this field.
+			resolve: (s) => nonBlank(s.download_url) ?? null
 		}),
 		previewUrl: t.string({
 			nullable: true,
@@ -342,7 +348,6 @@ export const SimfileConnectionRef = builder
 						}
 
 						const previewSelected = isFieldSelected(info, 'previewUrl');
-						const downloadSelected = isFieldSelected(info, 'downloadUrl');
 						const dtxSelected = isNestedFieldSelected(info, 'dtxFiles', [
 							'fileUrl',
 							'fileSizeBytes',
@@ -354,28 +359,30 @@ export const SimfileConnectionRef = builder
 						// non-blank DB values, and whose dtx file fields were not selected,
 						// skip discovery entirely — their resolvers short-circuit at
 						// nonBlank(...) before ever consulting the cache.
+						// Note: downloadUrl is DB-only (no R2 fallback) and is therefore
+						// intentionally excluded from this filter — selecting downloadUrl
+						// alone never triggers discovery.
 						const simsNeedingDiscovery = c.data.filter((s) => {
 							if (previewSelected && nonBlank(s.preview_url) == null) return true;
-							if (downloadSelected && nonBlank(s.download_url) == null) return true;
 							if (dtxSelected) return true;
 							return false;
 						});
 
-					if (simsNeedingDiscovery.length > 0) {
-						const catalogBatchPromise = batchDiscoverCatalogFiles(
-							ctx.r2,
-							simsNeedingDiscovery.map((s) => ({
-								simfileId: s.id,
-								// When the client didn't select any dtxFiles fields,
-								// pass an empty array so discoverCatalogFiles skips
-								// the SET.DEF fetch and chart matching. The result is
-								// cached with chartsPopulated: false; chart resolvers
-								// detect this and re-discover on demand.
-								dtxFiles: dtxSelected ? s.dtx_files : [],
-								publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-							})),
-							ctx.logger
-						);
+						if (simsNeedingDiscovery.length > 0) {
+							const catalogBatchPromise = batchDiscoverCatalogFiles(
+								ctx.r2,
+								simsNeedingDiscovery.map((s) => ({
+									simfileId: s.id,
+									// When the client didn't select any dtxFiles fields,
+									// pass an empty array so discoverCatalogFiles skips
+									// the SET.DEF fetch and chart matching. The result is
+									// cached with chartsPopulated: false; chart resolvers
+									// detect this and re-discover on demand.
+									dtxFiles: dtxSelected ? s.dtx_files : [],
+									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+								})),
+								ctx.logger
+							);
 							const cache =
 								ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
 							for (const s of simsNeedingDiscovery) {
@@ -385,7 +392,6 @@ export const SimfileConnectionRef = builder
 										(map) =>
 											map.get(s.id) ?? {
 												previewUrl: null,
-												downloadUrl: null,
 												charts: []
 											}
 									)

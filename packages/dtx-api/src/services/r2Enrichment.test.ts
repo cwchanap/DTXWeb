@@ -788,8 +788,7 @@ describe('discoverCatalogFiles', () => {
 				]
 			]),
 			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer('#L1LABEL BASIC\n#L1FILE basic.dtx\n')
+				arrayBuffer: async () => encodeToBuffer('#L1LABEL BASIC\n#L1FILE basic.dtx\n')
 			}))
 		} as unknown as R2Bucket;
 
@@ -879,8 +878,7 @@ describe('discoverCatalogFiles', () => {
 				]
 			]),
 			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer('#L1LABEL BASIC\n#L1FILE BASIC.DTX\n')
+				arrayBuffer: async () => encodeToBuffer('#L1LABEL BASIC\n#L1FILE BASIC.DTX\n')
 			}))
 		} as unknown as R2Bucket;
 

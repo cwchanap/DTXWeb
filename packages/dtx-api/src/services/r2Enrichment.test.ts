@@ -383,6 +383,57 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/song.mp3');
 	});
 
+	it('prefers top-level full audio over a nested sample with the same extension for downloadUrl', async () => {
+		// DTX simfiles ship individual drum sample chips under assets/
+		// (e.g. 42/assets/kick.ogg). When a top-level full-audio file
+		// (e.g. 42/song.ogg) exists alongside a nested sample, the
+		// downloadUrl must point at the full-audio file — not the sample
+		// chip. Lexicographic sort alone would return the nested asset
+		// first because '42/assets/kick.ogg' sorts before '42/song.ogg'.
+		const bucket = makeBucket([
+			[
+				{ key: '42/assets/kick.ogg', size: 10, uploaded: new Date() },
+				{ key: '42/assets/snare.ogg', size: 10, uploaded: new Date() },
+				{ key: '42/song.ogg', size: 5000, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/song.ogg');
+	});
+
+	it('falls back to a nested sample when no top-level audio exists for downloadUrl', async () => {
+		// Backward compat: legacy uploads that only have nested audio
+		// still resolve to that key rather than null.
+		const bucket = makeBucket([
+			[
+				{ key: '42/assets/kick.ogg', size: 10, uploaded: new Date() },
+				{ key: '42/song.dtx', size: 200, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/assets/kick.ogg');
+	});
+
 	it('returns null downloadUrl when no suitable audio object exists', async () => {
 		const bucket = makeBucket([
 			[

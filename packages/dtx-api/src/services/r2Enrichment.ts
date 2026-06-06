@@ -1,6 +1,7 @@
 import {
 	listAllR2Objects,
 	isPreviewKey,
+	decodeArrayBufferWithBomDetection,
 	type R2ObjectMeta,
 	type WorkerLogger
 } from '@dtx/common/server';
@@ -120,7 +121,14 @@ const readSetDefFilesByLabel = async (
 	try {
 		const object = await bucket.get(setDefKey);
 		if (!object) return new Map();
-		return parseSetDefFilesByLabel(await object.text(), prefix);
+		// Decode with BOM detection: set.def files in this app are routinely
+		// written as UTF-16LE with BOM (see packages/dtx-desktop/src/main/index.ts)
+		// or UTF-8 with BOM. The default R2 text() path decodes as UTF-8 and
+		// would either garble UTF-16LE content or leave a BOM on the first
+		// directive, causing the regex match to miss and silently fall back to
+		// sorted-key pairing.
+		const setDefText = decodeArrayBufferWithBomDetection(await object.arrayBuffer());
+		return parseSetDefFilesByLabel(setDefText, prefix);
 	} catch (err) {
 		// Transient R2 errors or unexpected body issues: fall through
 		// to the deterministic sorted-key fallback instead of failing

@@ -82,3 +82,36 @@ export async function decodeFileWithSpecificEncoding(
 	const decoder = new TextDecoder(encoding);
 	return decoder.decode(arrayBuffer);
 }
+
+/**
+ * Detects BOM (UTF-16LE or UTF-8) in an ArrayBuffer and decodes accordingly,
+ * stripping the BOM character from the result.
+ *
+ * Used for raw byte sources (e.g. `R2Object.arrayBuffer()`) where the default
+ * `text()` path always decodes as UTF-8 and would either garble UTF-16LE
+ * content or leave a BOM character on the first directive. set.def files in
+ * this app are routinely written as UTF-16LE with BOM
+ * (see `packages/dtx-desktop/src/main/index.ts`).
+ *
+ * @param buffer - Raw bytes (typically from `R2Object.arrayBuffer()`)
+ * @returns Decoded string with BOM character stripped if present
+ */
+export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
+	const uint8 = new Uint8Array(buffer);
+	let text: string;
+	if (uint8[0] === 0xff && uint8[1] === 0xfe) {
+		// UTF-16LE BOM
+		text = new TextDecoder('utf-16le').decode(buffer);
+	} else if (uint8[0] === 0xef && uint8[1] === 0xbb && uint8[2] === 0xbf) {
+		// UTF-8 BOM
+		text = new TextDecoder('utf-8').decode(buffer);
+	} else {
+		// Default to UTF-8 (matches Workers' default text() behavior)
+		text = new TextDecoder('utf-8').decode(buffer);
+	}
+	// Strip BOM character if it survived decoding
+	if (text.charCodeAt(0) === 0xfeff) {
+		text = text.slice(1);
+	}
+	return text;
+}

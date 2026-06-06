@@ -17,6 +17,23 @@ const silentLogger: WorkerLogger = {
 	debug: vi.fn()
 };
 
+const encodeToBuffer = (text: string): ArrayBuffer => new TextEncoder().encode(text).buffer;
+
+const encodeUtf8WithBom = (text: string): ArrayBuffer => {
+	const bytes = new TextEncoder().encode(text);
+	return new Uint8Array([0xef, 0xbb, 0xbf, ...bytes]).buffer;
+};
+
+const encodeUtf16LeWithBom = (text: string): ArrayBuffer => {
+	const utf16Bytes = new Uint8Array(text.length * 2);
+	for (let i = 0; i < text.length; i++) {
+		const codeUnit = text.charCodeAt(i);
+		utf16Bytes[i * 2] = codeUnit & 0xff;
+		utf16Bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+	}
+	return new Uint8Array([0xff, 0xfe, ...utf16Bytes]).buffer;
+};
+
 const makeBucket = (
 	objectsPerCall: Array<Array<{ key: string; size: number; uploaded: Date }>>
 ): R2Bucket => {
@@ -368,7 +385,7 @@ describe('discoverCatalogFiles', () => {
 	});
 
 	it('skips fetching set.def when no dtx chart rows need matching', async () => {
-		const getMock = vi.fn(async () => ({ text: async () => '' }));
+		const getMock = vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer('') }));
 		const bucket = {
 			...makeBucket([
 				[
@@ -444,10 +461,12 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/sub/advanced.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				text: async () =>
+		get: vi.fn(async () => ({
+			arrayBuffer: async () =>
+				encodeToBuffer(
 					'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE sub/advanced.dtx\n'
-			}))
+				)
+		}))
 		} as unknown as R2Bucket;
 
 		const discovery = await discoverCatalogFiles(
@@ -491,10 +510,12 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/z-basic.dtx', size: 300, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				text: async () =>
+		get: vi.fn(async () => ({
+			arrayBuffer: async () =>
+				encodeToBuffer(
 					'#L1LABEL BASIC\n#L1FILE z-basic.dtx\n#L2LABEL ADVANCED\n#L2FILE a-advanced.dtx\n'
-			}))
+				)
+		}))
 		} as unknown as R2Bucket;
 
 		const discovery = await discoverCatalogFiles(
@@ -620,7 +641,7 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
-	it('falls back to sorted pairing when set.def object.text() throws', async () => {
+	it('falls back to sorted pairing when set.def body read throws', async () => {
 		const logger = {
 			info: vi.fn(),
 			warn: vi.fn(),
@@ -635,7 +656,7 @@ describe('discoverCatalogFiles', () => {
 				]
 			]),
 			get: vi.fn(async () => ({
-				text: async () => {
+				arrayBuffer: async () => {
 					throw new Error('body read error');
 				}
 			}))
@@ -660,6 +681,112 @@ describe('discoverCatalogFiles', () => {
 				label: 'Basic',
 				level: 1,
 				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('parses set.def encoded with UTF-8 BOM (strips BOM before regex match)', async () => {
+		// Without BOM stripping, the first directive would start with \uFEFF
+		// and the label regex `^#L(\d+)LABEL\s+(.+)$` would silently miss it,
+		// causing row 1 to fall back to sorted-key pairing.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeUtf8WithBom(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE advanced.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('parses set.def encoded with UTF-16LE BOM (matches desktop export format)', async () => {
+		// The desktop app writes set.def with UTF-16LE BOM
+		// (see packages/dtx-desktop/src/main/index.ts). Without BOM-aware
+		// decoding, every ASCII byte interleaves with 0x00 and the regex
+		// matches nothing, silently falling back to sorted-key pairing.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/z-basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/a-advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeUtf16LeWithBom(
+						'#L1LABEL BASIC\n#L1FILE z-basic.dtx\n#L2LABEL ADVANCED\n#L2FILE a-advanced.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Advanced', level: 5 },
+					{ label: 'Basic', level: 1 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		// Labels intentionally assigned in reverse key-sort order so the test
+		// fails if BOM detection is broken (sorted fallback would pair
+		// Advanced→z-basic and Basic→a-advanced).
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/a-advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/z-basic.dtx',
 				fileSizeBytes: 300,
 				fileEncoding: 'SHIFT_JIS'
 			}

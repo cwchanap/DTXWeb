@@ -42,6 +42,14 @@ export type CatalogFileDiscovery = {
 	previewUrl: string | null;
 	downloadUrl: string | null;
 	charts: CatalogChartFile[];
+	/**
+	 * False when the caller passed an empty `dtxFiles` array (URL-only
+	 * discovery), meaning `charts` is empty because chart matching was
+	 * intentionally skipped — not because no .dtx files exist in R2.
+	 * Chart resolvers check this flag to detect stale URL-only cache
+	 * entries and trigger a full re-discovery on demand.
+	 */
+	chartsPopulated: boolean;
 };
 
 export type CatalogDiscoveryOptions = {
@@ -239,7 +247,7 @@ export const discoverCatalogFiles = async (
 		};
 	});
 
-	return { previewUrl, downloadUrl, charts };
+	return { previewUrl, downloadUrl, charts, chartsPopulated: dtxFiles.length > 0 };
 };
 
 export const batchDiscoverCatalogFiles = async (

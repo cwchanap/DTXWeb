@@ -133,6 +133,11 @@ export const FileEncodingEnum = builder.enumType('FileEncoding', {
 type DtxFileParent = {
 	level: number;
 	label: string;
+	/** Row index within simfile.dtx_files. Carried so the resolver can
+	 * look up the chart by position rather than by (label, level),
+	 * which is not unique — duplicate dtx_files rows with the same
+	 * label+level would otherwise all resolve to the first chart. */
+	index: number;
 	simfile: SimfileWithDtxFiles;
 };
 
@@ -181,13 +186,14 @@ const findCatalogChart = async (
 		// detail (chart fields) share the same request-scoped cache.
 		ctx.catalogFilesCache?.delete(parent.simfile.id);
 		const fullDiscovery = await getCatalogDiscovery(ctx, parent.simfile);
-		return fullDiscovery.charts.find(
-			(chart) => chart.label === parent.label && chart.level === parent.level
-		);
+		return fullDiscovery.charts[parent.index];
 	}
-	return discovery.charts.find(
-		(chart) => chart.label === parent.label && chart.level === parent.level
-	);
+	// Resolve by row index, not by (label, level) search. The charts
+	// array is built positionally (dtxFiles.map((file, index) => ...)),
+	// so charts[index] is the exact match for this dtx_files row.
+	// A .find() by label+level would return the first chart for every
+	// duplicate row, exposing the wrong R2 object for the second row.
+	return discovery.charts[parent.index];
 };
 
 /**
@@ -273,7 +279,8 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		durationSeconds: t.int({ nullable: true, resolve: () => null }),
 		dtxFiles: t.field({
 			type: [DtxFile],
-			resolve: (s) => s.dtx_files.map((file) => ({ ...file, simfile: s }))
+			resolve: (s) =>
+				s.dtx_files.map((file, index) => ({ ...file, index, simfile: s }))
 		}),
 		files: t.field({
 			type: [R2File],

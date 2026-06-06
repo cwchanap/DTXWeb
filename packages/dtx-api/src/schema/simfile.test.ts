@@ -542,19 +542,21 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
 			downloadUrl: null,
+			// charts are positional: charts[index] corresponds to
+			// dtx_files[index]. Order must match the dtx_files array.
 			charts: [
-				{
-					label: 'EXT',
-					level: 8.75,
-					fileUrl: 'https://cdn.example/42/ext.dtx',
-					fileSizeBytes: 2345,
-					fileEncoding: 'SHIFT_JIS'
-				},
 				{
 					label: 'ADV',
 					level: 5.25,
 					fileUrl: 'https://cdn.example/42/adv.dtx',
 					fileSizeBytes: 1234,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'EXT',
+					level: 8.75,
+					fileUrl: 'https://cdn.example/42/ext.dtx',
+					fileSizeBytes: 2345,
 					fileEncoding: 'SHIFT_JIS'
 				}
 			],
@@ -600,6 +602,68 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			expect.anything()
 		);
 		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
+	});
+
+	it('resolves duplicate label+level rows by row index, not by label search', async () => {
+		// The DB schema has no UNIQUE constraint on (simfile_id, label, level),
+		// so two dtx_files rows can share the same label+level. The resolver
+		// must resolve each row positionally (charts[index]) rather than
+		// searching by label+level, which would return the first chart for
+		// both rows and expose the wrong R2 object for the second.
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			dtx_files: [
+				{ label: 'BSC', level: 3 },
+				{ label: 'BSC', level: 3 }
+			]
+		});
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: null,
+			charts: [
+				{
+					label: 'BSC',
+					level: 3,
+					fileUrl: 'https://cdn.example/42/chart-a.dtx',
+					fileSizeBytes: 100,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'BSC',
+					level: 3,
+					fileUrl: 'https://cdn.example/42/chart-b.dtx',
+					fileSizeBytes: 200,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			],
+			chartsPopulated: true
+		});
+
+		const result = await runQuery(
+			makeCtx({ env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://cdn.example' } }),
+			{
+				query: '{ simfile(id: "42") { dtxFiles { label level fileUrl fileSizeBytes } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			dtxFiles: [
+				{
+					label: 'BSC',
+					level: 3,
+					fileUrl: 'https://cdn.example/42/chart-a.dtx',
+					fileSizeBytes: 100
+				},
+				{
+					label: 'BSC',
+					level: 3,
+					fileUrl: 'https://cdn.example/42/chart-b.dtx',
+					fileSizeBytes: 200
+				}
+			]
+		});
 	});
 
 	it('falls back to discovered previewUrl when database preview_url is null', async () => {

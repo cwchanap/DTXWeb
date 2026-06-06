@@ -76,14 +76,7 @@ const isPreviewMp3Key = (key: string): boolean => getFileName(key).toLowerCase()
 
 const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
 
-const resolveSetDefFileKey = (prefix: string, fileName: string): string => {
-	const normalizedFileName = normalizeSetDefValue(fileName);
-	return normalizedFileName.startsWith(prefix)
-		? normalizedFileName
-		: `${prefix}${normalizedFileName}`;
-};
-
-const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string, string[]> => {
+const parseSetDefFilesByLabel = (setDefText: string): Map<string, string[]> => {
 	const entries = new Map<string, { label?: string; file?: string }>();
 	// Match the separator accepted by the editor loader at
 	// packages/dtx-web/src/routes/(game)/editor/[[simfileID]]/+page.server.ts
@@ -98,7 +91,16 @@ const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string
 		if (kind.toUpperCase() === 'LABEL') {
 			entry.label = value.trim();
 		} else {
-			entry.file = resolveSetDefFileKey(prefix, value);
+			// Store the raw normalized filename only. Path resolution is
+			// deferred to the caller (discoverCatalogFiles), which has
+			// access to the R2 object map and can try the set.def's
+			// directory first with a simfile-root fallback. This matches
+			// the DTX convention — confirmed by the desktop parser at
+			// packages/dtx-desktop/src/main/simfile-service.ts which reads
+			// set.def and .dtx files from the SAME folder — that #LxFILE
+			// references are relative to the set.def's directory, not the
+			// simfile root.
+			entry.file = normalizeSetDefValue(value);
 		}
 		entries.set(level, entry);
 	}
@@ -128,7 +130,6 @@ const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string
 const readSetDefFilesByLabel = async (
 	bucket: R2Bucket,
 	setDefKey: string | undefined,
-	prefix: string,
 	logger: WorkerLogger
 ): Promise<Map<string, string[]>> => {
 	if (!setDefKey) return new Map();
@@ -143,7 +144,7 @@ const readSetDefFilesByLabel = async (
 		// directive, causing the regex match to miss and silently fall back to
 		// sorted-key pairing.
 		const setDefText = decodeArrayBufferWithBomDetection(await object.arrayBuffer());
-		return parseSetDefFilesByLabel(setDefText, prefix);
+		return parseSetDefFilesByLabel(setDefText);
 	} catch (err) {
 		// Transient R2 errors or unexpected body issues: fall through
 		// to the deterministic sorted-key fallback instead of failing
@@ -247,8 +248,17 @@ export const discoverCatalogFiles = async (
 	// requests never read filesByLabel, so we avoid an unnecessary R2 GET.
 	const filesByLabel =
 		dtxFiles.length > 0
-			? await readSetDefFilesByLabel(bucket, setDefKey, prefix, logger)
+			? await readSetDefFilesByLabel(bucket, setDefKey, logger)
 			: new Map<string, string[]>();
+	// Derive the directory that contains the selected set.def so relative
+	// #LxFILE references resolve against it (e.g. 42/song/basic.dtx when
+	// set.def is 42/song/set.def) instead of always the simfile root.
+	// Uploads preserve directory structure, so sibling chart files live
+	// next to the set.def. Falls back to the simfile root when set.def is
+	// at the top level or not found.
+	const setDefBaseDir = setDefKey
+		? setDefKey.slice(0, setDefKey.lastIndexOf('/') + 1) || prefix
+		: prefix;
 
 	const matchedKeysByRowIndex = new Map<number, string>();
 	// Rows with an explicit set.def label→file mapping are "claimed" by
@@ -263,20 +273,33 @@ export const discoverCatalogFiles = async (
 		// last-inserted entry. Files are accumulated in L-slot order (see
 		// parseSetDefFilesByLabel), so the first matching row gets the first
 		// slot's file, the second row gets the second, etc.
-		const setDefKeyForFile = filesByLabel.get(file.label.toLowerCase())?.shift();
-		if (setDefKeyForFile) {
+		const setDefFile = filesByLabel.get(file.label.toLowerCase())?.shift();
+		if (setDefFile) {
 			rowsClaimedBySetDef.add(index);
+			// Resolve relative #LxFILE references: absolute paths (already
+			// include the simfile id) are kept as-is; relative names are
+			// resolved against the set.def's directory first, then the
+			// simfile root prefix as a fallback for legacy flat uploads
+			// where chart files live at the root despite a nested set.def.
 			// Exact match first; fall back to a case-insensitive lookup so
 			// that SET.DEF references like BASIC.DTX still resolve when the
-			// R2 key is basic.dtx. Without this fallback the row is marked
+			// R2 key is basic.dtx. Without these fallbacks the row is marked
 			// as claimed-but-missing, which surfaces as an INTERNAL error
 			// via requireCatalogChart even though the chart object exists.
-			const exactObject = objectsByKey.get(setDefKeyForFile);
-			const matchedObject =
-				exactObject ?? objectsByKeyLower.get(setDefKeyForFile.toLowerCase());
-			if (matchedObject) {
-				matchedKeysByRowIndex.set(index, matchedObject.key);
-				usedDtxKeys.add(matchedObject.key);
+			const candidates = setDefFile.startsWith(prefix)
+				? [setDefFile]
+				: setDefBaseDir === prefix
+					? [`${prefix}${setDefFile}`]
+					: [`${setDefBaseDir}${setDefFile}`, `${prefix}${setDefFile}`];
+			for (const candidateKey of candidates) {
+				const exactObject = objectsByKey.get(candidateKey);
+				const matchedObject =
+					exactObject ?? objectsByKeyLower.get(candidateKey.toLowerCase());
+				if (matchedObject) {
+					matchedKeysByRowIndex.set(index, matchedObject.key);
+					usedDtxKeys.add(matchedObject.key);
+					break;
+				}
 			}
 		}
 	}

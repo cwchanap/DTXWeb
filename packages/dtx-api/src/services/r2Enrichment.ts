@@ -83,7 +83,7 @@ const resolveSetDefFileKey = (prefix: string, fileName: string): string => {
 		: `${prefix}${normalizedFileName}`;
 };
 
-const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string, string> => {
+const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string, string[]> => {
 	const entries = new Map<string, { label?: string; file?: string }>();
 	// Match the separator accepted by the editor loader at
 	// packages/dtx-web/src/routes/(game)/editor/[[simfileID]]/+page.server.ts
@@ -103,10 +103,23 @@ const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string
 		entries.set(level, entry);
 	}
 
-	const filesByLabel = new Map<string, string>();
+	// A single label can legitimately appear on multiple L-slots (e.g. two
+	// charts both labelled "BASIC"). Collecting an array per label — rather
+	// than a single value keyed by label alone — preserves every distinct
+	// file so the consumer can assign one file per matching DB row instead
+	// of overwriting earlier entries and silently collapsing two rows onto
+	// the same R2 object. The `entries` map is keyed by L-slot and iterated
+	// in insertion order (L1 before L2 …), so the array stays in slot order.
+	const filesByLabel = new Map<string, string[]>();
 	for (const entry of entries.values()) {
 		if (entry.label && entry.file) {
-			filesByLabel.set(entry.label.toLowerCase(), entry.file);
+			const key = entry.label.toLowerCase();
+			const list = filesByLabel.get(key);
+			if (list) {
+				list.push(entry.file);
+			} else {
+				filesByLabel.set(key, [entry.file]);
+			}
 		}
 	}
 	return filesByLabel;
@@ -117,7 +130,7 @@ const readSetDefFilesByLabel = async (
 	setDefKey: string | undefined,
 	prefix: string,
 	logger: WorkerLogger
-): Promise<Map<string, string>> => {
+): Promise<Map<string, string[]>> => {
 	if (!setDefKey) return new Map();
 
 	try {
@@ -235,7 +248,7 @@ export const discoverCatalogFiles = async (
 	const filesByLabel =
 		dtxFiles.length > 0
 			? await readSetDefFilesByLabel(bucket, setDefKey, prefix, logger)
-			: new Map<string, string>();
+			: new Map<string, string[]>();
 
 	const matchedKeysByRowIndex = new Map<number, string>();
 	// Rows with an explicit set.def label→file mapping are "claimed" by
@@ -245,7 +258,12 @@ export const discoverCatalogFiles = async (
 	// serve the wrong chart instead of the correct missing-chart null.
 	const rowsClaimedBySetDef = new Set<number>();
 	for (const [index, file] of dtxFiles.entries()) {
-		const setDefKeyForFile = filesByLabel.get(file.label.toLowerCase());
+		// Consume one SET.def file per matching row so that duplicate labels
+		// each claim a distinct R2 object instead of all collapsing onto the
+		// last-inserted entry. Files are accumulated in L-slot order (see
+		// parseSetDefFilesByLabel), so the first matching row gets the first
+		// slot's file, the second row gets the second, etc.
+		const setDefKeyForFile = filesByLabel.get(file.label.toLowerCase())?.shift();
 		if (setDefKeyForFile) {
 			rowsClaimedBySetDef.add(index);
 			// Exact match first; fall back to a case-insensitive lookup so

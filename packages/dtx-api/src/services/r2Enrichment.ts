@@ -1,4 +1,9 @@
-import { listAllR2Objects, isPreviewKey, type R2ObjectMeta } from '@dtx/common/server';
+import {
+	listAllR2Objects,
+	isPreviewKey,
+	type R2ObjectMeta,
+	type WorkerLogger
+} from '@dtx/common/server';
 import type { R2Bucket } from '@cloudflare/workers-types';
 
 export type R2FileEntry = {
@@ -12,11 +17,25 @@ export type CatalogDtxFileInput = {
 	level: number;
 };
 
-export type CatalogChartFile = CatalogDtxFileInput & {
-	fileUrl: string | null;
-	fileSizeBytes: number | null;
+/**
+ * Catalog chart file with the fileUrl/fileSizeBytes coupling invariant
+ * expressed in the type: both fields are either set (R2 object present)
+ * or null (R2 object missing). fileEncoding is always set because the
+ * parser treats absence as SHIFT_JIS.
+ */
+export type CatalogChartFilePresent = CatalogDtxFileInput & {
+	fileUrl: string;
+	fileSizeBytes: number;
 	fileEncoding: 'SHIFT_JIS';
 };
+
+export type CatalogChartFileMissing = CatalogDtxFileInput & {
+	fileUrl: null;
+	fileSizeBytes: null;
+	fileEncoding: 'SHIFT_JIS';
+};
+
+export type CatalogChartFile = CatalogChartFilePresent | CatalogChartFileMissing;
 
 export type CatalogFileDiscovery = {
 	previewUrl: string | null;
@@ -93,7 +112,8 @@ const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string
 const readSetDefFilesByLabel = async (
 	bucket: R2Bucket,
 	setDefKey: string | undefined,
-	prefix: string
+	prefix: string,
+	logger: WorkerLogger
 ): Promise<Map<string, string>> => {
 	if (!setDefKey) return new Map();
 
@@ -101,17 +121,23 @@ const readSetDefFilesByLabel = async (
 		const object = await bucket.get(setDefKey);
 		if (!object) return new Map();
 		return parseSetDefFilesByLabel(await object.text(), prefix);
-	} catch {
+	} catch (err) {
 		// Transient R2 errors or unexpected body issues: fall through
 		// to the deterministic sorted-key fallback instead of failing
-		// the entire catalog discovery.
+		// the entire catalog discovery. Logged (not rethrown) because
+		// the fallback is the intended graceful-degradation path.
+		logger.warn('set.def read failed; falling back to sorted-key matching', {
+			setDefKey,
+			error: err instanceof Error ? err.message : String(err)
+		});
 		return new Map();
 	}
 };
 
 export const discoverCatalogFiles = async (
 	bucket: R2Bucket,
-	{ simfileId, dtxFiles, publicBaseUrl }: CatalogDiscoveryOptions
+	{ simfileId, dtxFiles, publicBaseUrl }: CatalogDiscoveryOptions,
+	logger: WorkerLogger
 ): Promise<CatalogFileDiscovery> => {
 	const prefix = `${simfileId}/`;
 	const objects = (await listAllR2Objects(bucket, prefix)).filter(
@@ -152,7 +178,7 @@ export const discoverCatalogFiles = async (
 	// requests never read filesByLabel, so we avoid an unnecessary R2 GET.
 	const filesByLabel =
 		dtxFiles.length > 0
-			? await readSetDefFilesByLabel(bucket, setDefKey, prefix)
+			? await readSetDefFilesByLabel(bucket, setDefKey, prefix, logger)
 			: new Map<string, string>();
 
 	const matchedKeysByRowIndex = new Map<number, string>();
@@ -184,10 +210,13 @@ export const discoverCatalogFiles = async (
 	const charts = dtxFiles.map((file, index): CatalogChartFile => {
 		const key = matchedKeysByRowIndex.get(index);
 		const object = key ? objectsByKey.get(key) : undefined;
+		if (!object) {
+			return { ...file, fileUrl: null, fileSizeBytes: null, fileEncoding: 'SHIFT_JIS' };
+		}
 		return {
 			...file,
-			fileUrl: object ? toPublicUrl(publicBaseUrl, object.key) : null,
-			fileSizeBytes: object ? object.size : null,
+			fileUrl: toPublicUrl(publicBaseUrl, object.key),
+			fileSizeBytes: object.size,
 			fileEncoding: 'SHIFT_JIS'
 		};
 	});
@@ -197,7 +226,8 @@ export const discoverCatalogFiles = async (
 
 export const batchDiscoverCatalogFiles = async (
 	bucket: R2Bucket,
-	options: CatalogDiscoveryOptions[]
+	options: CatalogDiscoveryOptions[],
+	logger: WorkerLogger
 ): Promise<Map<number, CatalogFileDiscovery>> => {
 	const results = new Map<number, CatalogFileDiscovery>();
 	if (options.length === 0) return results;
@@ -206,7 +236,7 @@ export const batchDiscoverCatalogFiles = async (
 	const worker: () => Promise<void> = async () => {
 		while (nextIndex < options.length) {
 			const option = options[nextIndex++];
-			results.set(option.simfileId, await discoverCatalogFiles(bucket, option));
+			results.set(option.simfileId, await discoverCatalogFiles(bucket, option, logger));
 		}
 	};
 

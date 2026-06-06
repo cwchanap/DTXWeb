@@ -18,7 +18,11 @@ import {
 	batchDiscoverCatalogFiles,
 	discoverCatalogFiles
 } from '../services/r2Enrichment';
-import type { CatalogChartFile, CatalogFileDiscovery } from '../services/r2Enrichment';
+import type {
+	CatalogChartFile,
+	CatalogChartFilePresent,
+	CatalogFileDiscovery
+} from '../services/r2Enrichment';
 import { createSimfileWithDtx } from '../services/createSimfile';
 import type { Ctx } from '../context';
 
@@ -151,11 +155,15 @@ const getCatalogDiscovery = (
 	const cached = cache.get(simfile.id);
 	if (cached) return cached;
 
-	const promise = discoverCatalogFiles(ctx.r2, {
-		simfileId: simfile.id,
-		dtxFiles: simfile.dtx_files,
-		publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-	});
+	const promise = discoverCatalogFiles(
+		ctx.r2,
+		{
+			simfileId: simfile.id,
+			dtxFiles: simfile.dtx_files,
+			publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+		},
+		ctx.logger
+	);
 	cache.set(simfile.id, promise);
 	return promise;
 };
@@ -172,24 +180,27 @@ const findCatalogChart = async (
 
 /**
  * Returns the catalog chart for the given DTX row, or throws an INTERNAL
- * GraphQLError if the backing R2 object is missing. All three DTX file
- * fields (fileUrl, fileSizeBytes, fileEncoding) describe the same R2
- * object, so they must fail consistently — returning a fallback value
- * (0 / SHIFT_JIS) for a missing file would mislead clients.
+ * GraphQLError if the backing R2 object is missing. The discriminated-
+ * union return type (CatalogChartFilePresent) guarantees fileUrl and
+ * fileSizeBytes are both present, so callers get non-null values without
+ * defensive fallbacks.
  */
 const requireCatalogChart = async (
 	ctx: Ctx,
 	parent: DtxFileParent
-): Promise<Omit<CatalogChartFile, 'fileUrl' | 'fileSizeBytes'> & { fileUrl: string; fileSizeBytes: number }> => {
+): Promise<CatalogChartFilePresent> => {
 	const chart = await findCatalogChart(ctx, parent);
-	if (!chart?.fileUrl) {
+	if (!chart || chart.fileUrl === null) {
+		ctx.logger.error('DTX chart file missing in R2', {
+			simfileId: parent.simfile.id,
+			label: parent.label,
+			level: parent.level
+		});
 		throw new GraphQLError('DTX chart file not found in R2', {
 			extensions: { code: 'INTERNAL' }
 		});
 	}
-	// fileUrl is non-null here, and fileSizeBytes is always set alongside
-	// fileUrl in discoverCatalogFiles (both derive from the same R2 object).
-	return { ...chart, fileUrl: chart.fileUrl, fileSizeBytes: chart.fileSizeBytes ?? 0 };
+	return chart;
 };
 
 const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
@@ -331,50 +342,51 @@ export const SimfileConnectionRef = builder
 						// non-blank DB values, and whose dtx file fields were not selected,
 						// skip discovery entirely — their resolvers short-circuit at
 						// nonBlank(...) before ever consulting the cache.
-					const simsNeedingDiscovery = c.data.filter((s) => {
-						if (previewSelected && nonBlank(s.preview_url) == null) return true;
-						if (downloadSelected && nonBlank(s.download_url) == null) return true;
-						if (dtxSelected) return true;
-						return false;
-					});
+						const simsNeedingDiscovery = c.data.filter((s) => {
+							if (previewSelected && nonBlank(s.preview_url) == null) return true;
+							if (downloadSelected && nonBlank(s.download_url) == null) return true;
+							if (dtxSelected) return true;
+							return false;
+						});
 
-					if (simsNeedingDiscovery.length > 0) {
-						const catalogBatchPromise = batchDiscoverCatalogFiles(
-							ctx.r2,
-							simsNeedingDiscovery.map((s) => ({
-								simfileId: s.id,
-								dtxFiles: s.dtx_files,
-								publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-							}))
-						);
-						const cache =
-							ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
-						for (const s of simsNeedingDiscovery) {
-							cache.set(
-								s.id,
-								catalogBatchPromise.then(
-									(map) =>
-										map.get(s.id) ?? {
-											previewUrl: null,
-											downloadUrl: null,
-											charts: []
-										}
-								)
+						if (simsNeedingDiscovery.length > 0) {
+							const catalogBatchPromise = batchDiscoverCatalogFiles(
+								ctx.r2,
+								simsNeedingDiscovery.map((s) => ({
+									simfileId: s.id,
+									dtxFiles: s.dtx_files,
+									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+								})),
+								ctx.logger
 							);
+							const cache =
+								ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
+							for (const s of simsNeedingDiscovery) {
+								cache.set(
+									s.id,
+									catalogBatchPromise.then(
+										(map) =>
+											map.get(s.id) ?? {
+												previewUrl: null,
+												downloadUrl: null,
+												charts: []
+											}
+									)
+								);
+							}
+							// Intentionally do NOT populate cache entries for sims that
+							// skipped discovery. Writing partial entries (DB URLs only,
+							// charts: []) would poison the request-scoped cache: if the
+							// same simfile is reached via another resolver path in this
+							// document that selects a catalog field the list path did not
+							// (e.g. an aliased `simfile(id)` query alongside the list), the
+							// field resolver would short-circuit on the partial entry and
+							// return a stale null/empty value instead of discovering R2.
+							// A cache miss in getCatalogDiscovery correctly falls through
+							// to single-sim discovery, and resolvers for skipped sims
+							// short-circuit at nonBlank(...) before ever consulting the
+							// cache, so leaving them uncached has no cost in normal flow.
 						}
-						// Intentionally do NOT populate cache entries for sims that
-						// skipped discovery. Writing partial entries (DB URLs only,
-						// charts: []) would poison the request-scoped cache: if the
-						// same simfile is reached via another resolver path in this
-						// document that selects a catalog field the list path did not
-						// (e.g. an aliased `simfile(id)` query alongside the list), the
-						// field resolver would short-circuit on the partial entry and
-						// return a stale null/empty value instead of discovering R2.
-						// A cache miss in getCatalogDiscovery correctly falls through
-						// to single-sim discovery, and resolvers for skipped sims
-						// short-circuit at nonBlank(...) before ever consulting the
-						// cache, so leaving them uncached has no cost in normal flow.
-					}
 					}
 					return c.data;
 				}

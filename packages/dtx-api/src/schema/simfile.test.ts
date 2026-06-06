@@ -585,14 +585,18 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 				}
 			]
 		});
-		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledWith(expect.anything(), {
-			simfileId: 42,
-			dtxFiles: [
-				{ label: 'ADV', level: 5.25 },
-				{ label: 'EXT', level: 8.75 }
-			],
-			publicBaseUrl: 'https://cdn.example'
-		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledWith(
+			expect.anything(),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'ADV', level: 5.25 },
+					{ label: 'EXT', level: 8.75 }
+				],
+				publicBaseUrl: 'https://cdn.example'
+			},
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
 	});
 
@@ -770,6 +774,40 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 
 		expect(result.errors?.[0]?.message).toBe('DTX chart file not found in R2');
 		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+	});
+
+	it('logs to ctx.logger.error before throwing when a DTX chart file is missing', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(publishedSimfile);
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: null,
+			charts: [
+				{
+					label: 'BSC',
+					level: 7.5,
+					fileUrl: null,
+					fileSizeBytes: null,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]
+		});
+
+		const logger = {
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			debug: vi.fn()
+		};
+		await runQuery(makeCtx({ logger }), {
+			query: '{ simfile(id: "42") { dtxFiles { label fileUrl } } }'
+		});
+
+		expect(logger.error).toHaveBeenCalledWith('DTX chart file missing in R2', {
+			simfileId: 42,
+			label: 'BSC',
+			level: 7.5
+		});
 	});
 
 	it('does not call enrichFiles when files is not selected', async () => {
@@ -959,18 +997,22 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
-		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
-			{
-				simfileId: 1,
-				dtxFiles: [{ label: 'BSC', level: 3 }],
-				publicBaseUrl: 'https://bucket.example'
-			},
-			{
-				simfileId: 2,
-				dtxFiles: [{ label: 'EXT', level: 8 }],
-				publicBaseUrl: 'https://bucket.example'
-			}
-		]);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 1,
+					dtxFiles: [{ label: 'BSC', level: 3 }],
+					publicBaseUrl: 'https://bucket.example'
+				},
+				{
+					simfileId: 2,
+					dtxFiles: [{ label: 'EXT', level: 8 }],
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1039,13 +1081,17 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
-		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
-			{
-				simfileId: 2,
-				dtxFiles: sim2.dtx_files,
-				publicBaseUrl: 'https://bucket.example'
-			}
-		]);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 2,
+					dtxFiles: sim2.dtx_files,
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1126,13 +1172,17 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
-		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
-			{
-				simfileId: 2,
-				dtxFiles: sim2.dtx_files,
-				publicBaseUrl: 'https://bucket.example'
-			}
-		]);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 2,
+					dtxFiles: sim2.dtx_files,
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1175,13 +1225,17 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
-		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
-			{
-				simfileId: 2,
-				dtxFiles: sim2.dtx_files,
-				publicBaseUrl: 'https://bucket.example'
-			}
-		]);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 2,
+					dtxFiles: sim2.dtx_files,
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1238,18 +1292,22 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			]
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
-		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
-			{
-				simfileId: 1,
-				dtxFiles: sim1.dtx_files,
-				publicBaseUrl: 'https://bucket.example'
-			},
-			{
-				simfileId: 2,
-				dtxFiles: sim2.dtx_files,
-				publicBaseUrl: 'https://bucket.example'
-			}
-		]);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 1,
+					dtxFiles: sim1.dtx_files,
+					publicBaseUrl: 'https://bucket.example'
+				},
+				{
+					simfileId: 2,
+					dtxFiles: sim2.dtx_files,
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
@@ -1441,21 +1499,29 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 		// Batch discovery fires only for sim2 (sim1 was skipped in the list path).
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
-		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
-			{
-				simfileId: 2,
-				dtxFiles: sim2.dtx_files,
-				publicBaseUrl: 'https://bucket.example'
-			}
-		]);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(
+			expect.anything(),
+			[
+				{
+					simfileId: 2,
+					dtxFiles: sim2.dtx_files,
+					publicBaseUrl: 'https://bucket.example'
+				}
+			],
+			expect.anything()
+		);
 		// Single-sim discovery must fire for sim1 from the detail path — it must
 		// NOT have been served by a stale partial cache entry from the list path.
 		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
-		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledWith(expect.anything(), {
-			simfileId: 1,
-			dtxFiles: sim1.dtx_files,
-			publicBaseUrl: 'https://bucket.example'
-		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledWith(
+			expect.anything(),
+			{
+				simfileId: 1,
+				dtxFiles: sim1.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			},
+			expect.anything()
+		);
 	});
 });
 

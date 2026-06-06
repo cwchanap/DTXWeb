@@ -8,6 +8,14 @@ import {
 	discoverCatalogFiles
 } from './r2Enrichment';
 import type { R2Bucket } from '@cloudflare/workers-types';
+import type { WorkerLogger } from '@dtx/common/server';
+
+const silentLogger: WorkerLogger = {
+	info: vi.fn(),
+	warn: vi.fn(),
+	error: vi.fn(),
+	debug: vi.fn()
+};
 
 const makeBucket = (
 	objectsPerCall: Array<Array<{ key: string; size: number; uploaded: Date }>>
@@ -237,10 +245,14 @@ describe('batchDiscoverCatalogFiles', () => {
 		});
 		const bucket = { list: listMock } as unknown as R2Bucket;
 
-		const result = await batchDiscoverCatalogFiles(bucket, [
-			{ simfileId: 1, dtxFiles: [], publicBaseUrl: 'https://bucket.example' },
-			{ simfileId: 2, dtxFiles: [], publicBaseUrl: 'https://bucket.example' }
-		]);
+		const result = await batchDiscoverCatalogFiles(
+			bucket,
+			[
+				{ simfileId: 1, dtxFiles: [], publicBaseUrl: 'https://bucket.example' },
+				{ simfileId: 2, dtxFiles: [], publicBaseUrl: 'https://bucket.example' }
+			],
+			silentLogger
+		);
 
 		expect(result).toBeInstanceOf(Map);
 		expect(result.get(1)).toBeDefined();
@@ -249,7 +261,7 @@ describe('batchDiscoverCatalogFiles', () => {
 
 	it('returns empty Map for empty input', async () => {
 		const bucket = {} as unknown as R2Bucket;
-		const result = await batchDiscoverCatalogFiles(bucket, []);
+		const result = await batchDiscoverCatalogFiles(bucket, [], silentLogger);
 		expect(result.size).toBe(0);
 	});
 });
@@ -266,11 +278,15 @@ describe('discoverCatalogFiles', () => {
 			]
 		]);
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [{ label: 'Basic', level: 1 }],
-			publicBaseUrl: 'https://cdn.example.test/simfiles/'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test/simfiles/'
+			},
+			silentLogger
+		);
 
 		expect(discovery.charts).toEqual([
 			{
@@ -292,11 +308,15 @@ describe('discoverCatalogFiles', () => {
 			]
 		]);
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [{ label: 'Basic', level: 1 }],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/assets/PREVIEW.MP3');
 	});
@@ -312,11 +332,15 @@ describe('discoverCatalogFiles', () => {
 			]
 		]);
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [],
-			publicBaseUrl: 'https://cdn.example.test/'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test/'
+			},
+			silentLogger
+		);
 
 		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.ogg');
 	});
@@ -329,11 +353,15 @@ describe('discoverCatalogFiles', () => {
 			]
 		]);
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/PREVIEW.MP3');
 		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.wav');
@@ -351,11 +379,15 @@ describe('discoverCatalogFiles', () => {
 			get: getMock
 		} as unknown as R2Bucket;
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		// previewUrl/downloadUrl still resolve from the listing, but set.def
 		// must not be fetched because no chart rows need label-to-file matching.
@@ -372,14 +404,18 @@ describe('discoverCatalogFiles', () => {
 			]
 		]);
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [
-				{ label: 'Advanced', level: 5 },
-				{ label: 'Basic', level: 1 }
-			],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Advanced', level: 5 },
+					{ label: 'Basic', level: 1 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		expect(discovery.charts).toEqual([
 			{
@@ -414,14 +450,18 @@ describe('discoverCatalogFiles', () => {
 			}))
 		} as unknown as R2Bucket;
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [
-				{ label: 'Advanced', level: 5 },
-				{ label: 'Basic', level: 1 }
-			],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Advanced', level: 5 },
+					{ label: 'Basic', level: 1 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		expect(bucket.get).toHaveBeenCalledWith('42/set.def');
 		expect(discovery.charts).toEqual([
@@ -457,14 +497,18 @@ describe('discoverCatalogFiles', () => {
 			}))
 		} as unknown as R2Bucket;
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [
-				{ label: 'Advanced', level: 5 },
-				{ label: 'Basic', level: 1 }
-			],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Advanced', level: 5 },
+					{ label: 'Basic', level: 1 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		expect(bucket.get).toHaveBeenCalledWith('42/SET.DEF');
 		expect(discovery.charts).toEqual([
@@ -488,14 +532,18 @@ describe('discoverCatalogFiles', () => {
 	it('returns an unmatched chart entry when a required dtx object is missing', async () => {
 		const bucket = makeBucket([[{ key: '42/basic.dtx', size: 300, uploaded: new Date() }]]);
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [
-				{ label: 'Basic', level: 1 },
-				{ label: 'Advanced', level: 5 }
-			],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
 
 		expect(discovery.charts).toEqual([
 			{
@@ -516,6 +564,12 @@ describe('discoverCatalogFiles', () => {
 	});
 
 	it('falls back to sorted pairing when set.def read throws a transient R2 error', async () => {
+		const logger = {
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			debug: vi.fn()
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -529,16 +583,24 @@ describe('discoverCatalogFiles', () => {
 			})
 		} as unknown as R2Bucket;
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [
-				{ label: 'Advanced', level: 5 },
-				{ label: 'Basic', level: 1 }
-			],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Advanced', level: 5 },
+					{ label: 'Basic', level: 1 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			logger
+		);
 
 		expect(bucket.get).toHaveBeenCalledWith('42/set.def');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'set.def read failed; falling back to sorted-key matching',
+			expect.objectContaining({ setDefKey: '42/set.def', error: 'R2 transient error' })
+		);
 		// Should fall through to sorted-key fallback instead of throwing
 		expect(discovery.charts).toEqual([
 			{
@@ -559,6 +621,12 @@ describe('discoverCatalogFiles', () => {
 	});
 
 	it('falls back to sorted pairing when set.def object.text() throws', async () => {
+		const logger = {
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			debug: vi.fn()
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -573,12 +641,20 @@ describe('discoverCatalogFiles', () => {
 			}))
 		} as unknown as R2Bucket;
 
-		const discovery = await discoverCatalogFiles(bucket, {
-			simfileId: 42,
-			dtxFiles: [{ label: 'Basic', level: 1 }],
-			publicBaseUrl: 'https://cdn.example.test'
-		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			logger
+		);
 
+		expect(logger.warn).toHaveBeenCalledWith(
+			'set.def read failed; falling back to sorted-key matching',
+			expect.objectContaining({ setDefKey: '42/set.def', error: 'body read error' })
+		);
 		expect(discovery.charts).toEqual([
 			{
 				label: 'Basic',

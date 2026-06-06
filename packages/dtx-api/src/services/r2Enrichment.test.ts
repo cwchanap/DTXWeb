@@ -315,6 +315,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('selects preview.mp3 for previewUrl case-insensitively', async () => {
@@ -411,6 +412,39 @@ describe('discoverCatalogFiles', () => {
 		expect(getMock).not.toHaveBeenCalled();
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/preview.mp3');
 		expect(discovery.charts).toEqual([]);
+		expect(discovery.chartsPopulated).toBe(false);
+	});
+
+	it('skips fetching set.def for URL-only discovery even with .dtx files in R2', async () => {
+		// Simulates the list-page scenario: the caller passes dtxFiles: []
+		// because the client only selected previewUrl/downloadUrl, but R2
+		// contains set.def and .dtx files. SET.DEF must not be fetched.
+		const getMock = vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer('') }));
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/preview.mp3', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: getMock
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(getMock).not.toHaveBeenCalled();
+		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/preview.mp3');
+		expect(discovery.charts).toEqual([]);
+		expect(discovery.chartsPopulated).toBe(false);
 	});
 
 	it('matches dtx rows by sorted fallback when set.def is unavailable', async () => {
@@ -450,6 +484,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('parses set.def and matches labels to filenames when available', async () => {
@@ -499,6 +534,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('parses set.def with case-insensitive filename discovery', async () => {
@@ -548,6 +584,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('parses set.def using colon separator (matches editor loader)', async () => {
@@ -601,6 +638,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('returns an unmatched chart entry when a required dtx object is missing', async () => {
@@ -635,6 +673,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('does not remap set.def-referenced rows via fallback when the object is missing', async () => {
@@ -687,6 +726,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('falls back to sorted pairing when set.def read throws a transient R2 error', async () => {
@@ -744,6 +784,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('falls back to sorted pairing when set.def body read throws', async () => {
@@ -790,6 +831,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('parses set.def encoded with UTF-8 BOM (strips BOM before regex match)', async () => {
@@ -841,6 +883,7 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 
 	it('parses set.def encoded with UTF-16LE BOM (matches desktop export format)', async () => {
@@ -896,5 +939,6 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+		expect(discovery.chartsPopulated).toBe(true);
 	});
 });

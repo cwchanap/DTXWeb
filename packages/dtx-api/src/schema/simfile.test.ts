@@ -515,7 +515,8 @@ beforeEach(() => {
 	mockedDiscoverCatalogFiles.mockReset().mockResolvedValue({
 		previewUrl: null,
 		downloadUrl: null,
-		charts: []
+		charts: [],
+		chartsPopulated: true
 	});
 	mockedBatchCatalog.mockReset().mockResolvedValue(new Map());
 });
@@ -556,7 +557,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					fileSizeBytes: 1234,
 					fileEncoding: 'SHIFT_JIS'
 				}
-			]
+			],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(
@@ -606,7 +608,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: 'https://cdn.example/42/preview.mp3',
 			downloadUrl: null,
-			charts: []
+			charts: [],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -625,7 +628,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
 			downloadUrl: 'https://cdn.example/42/song.ogg',
-			charts: []
+			charts: [],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -647,7 +651,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: 'https://cdn.example/42/preview.mp3',
 			downloadUrl: null,
-			charts: []
+			charts: [],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -667,7 +672,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: null,
 			downloadUrl: 'https://cdn.example/42/song.ogg',
-			charts: []
+			charts: [],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -715,7 +721,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					fileSizeBytes: null,
 					fileEncoding: 'SHIFT_JIS'
 				}
-			]
+			],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -740,7 +747,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					fileSizeBytes: null,
 					fileEncoding: 'SHIFT_JIS'
 				}
-			]
+			],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -765,7 +773,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					fileSizeBytes: null,
 					fileEncoding: 'SHIFT_JIS'
 				}
-			]
+			],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(makeCtx(), {
@@ -790,7 +799,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					fileSizeBytes: null,
 					fileEncoding: 'SHIFT_JIS'
 				}
-			]
+			],
+			chartsPopulated: true
 		});
 
 		const logger = {
@@ -952,7 +962,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 								fileSizeBytes: 100,
 								fileEncoding: 'SHIFT_JIS'
 							}
-						]
+						],
+						chartsPopulated: true
 					}
 				],
 				[
@@ -968,7 +979,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 								fileSizeBytes: 200,
 								fileEncoding: 'SHIFT_JIS'
 							}
-						]
+						],
+						chartsPopulated: true
 					}
 				]
 			])
@@ -1050,7 +1062,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					{
 						previewUrl: null,
 						downloadUrl: 'https://bucket.example/2/song.ogg',
-						charts: []
+						charts: [],
+						chartsPopulated: false
 					}
 				]
 			])
@@ -1086,7 +1099,9 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			[
 				{
 					simfileId: 2,
-					dtxFiles: sim2.dtx_files,
+					// dtxFiles is [] because the query didn't select any dtxFiles
+					// fields — avoids an unnecessary SET.DEF fetch per simfile.
+					dtxFiles: [],
 					publicBaseUrl: 'https://bucket.example'
 				}
 			],
@@ -1149,7 +1164,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					{
 						previewUrl: 'https://bucket.example/2/preview.mp3',
 						downloadUrl: null,
-						charts: []
+						charts: [],
+						chartsPopulated: false
 					}
 				]
 			])
@@ -1177,7 +1193,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			[
 				{
 					simfileId: 2,
-					dtxFiles: sim2.dtx_files,
+					dtxFiles: [],
 					publicBaseUrl: 'https://bucket.example'
 				}
 			],
@@ -1202,7 +1218,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					{
 						previewUrl: null,
 						downloadUrl: 'https://bucket.example/2/song.ogg',
-						charts: []
+						charts: [],
+						chartsPopulated: false
 					}
 				]
 			])
@@ -1230,7 +1247,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			[
 				{
 					simfileId: 2,
-					dtxFiles: sim2.dtx_files,
+					dtxFiles: [],
 					publicBaseUrl: 'https://bucket.example'
 				}
 			],
@@ -1253,7 +1270,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					{
 						previewUrl: 'https://bucket.example/1/preview.mp3',
 						downloadUrl: null,
-						charts: []
+						charts: [],
+						chartsPopulated: false
 					}
 				],
 				[
@@ -1261,7 +1279,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					{
 						previewUrl: null,
 						downloadUrl: 'https://bucket.example/2/song.ogg',
-						charts: []
+						charts: [],
+						chartsPopulated: false
 					}
 				]
 			])
@@ -1297,12 +1316,12 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			[
 				{
 					simfileId: 1,
-					dtxFiles: sim1.dtx_files,
+					dtxFiles: [],
 					publicBaseUrl: 'https://bucket.example'
 				},
 				{
 					simfileId: 2,
-					dtxFiles: sim2.dtx_files,
+					dtxFiles: [],
 					publicBaseUrl: 'https://bucket.example'
 				}
 			],
@@ -1333,7 +1352,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 								fileSizeBytes: 1234,
 								fileEncoding: 'SHIFT_JIS'
 							}
-						]
+						],
+						chartsPopulated: true
 					}
 				]
 			])
@@ -1463,7 +1483,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 					{
 						previewUrl: null,
 						downloadUrl: 'https://bucket.example/2/song.ogg',
-						charts: []
+						charts: [],
+						chartsPopulated: false
 					}
 				]
 			])
@@ -1471,7 +1492,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedDiscoverCatalogFiles.mockResolvedValue({
 			previewUrl: 'https://bucket.example/1/preview.mp3',
 			downloadUrl: null,
-			charts: []
+			charts: [],
+			chartsPopulated: true
 		});
 
 		const result = await runQuery(
@@ -1504,7 +1526,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			[
 				{
 					simfileId: 2,
-					dtxFiles: sim2.dtx_files,
+					dtxFiles: [],
 					publicBaseUrl: 'https://bucket.example'
 				}
 			],

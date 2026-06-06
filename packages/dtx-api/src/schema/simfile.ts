@@ -173,6 +173,18 @@ const findCatalogChart = async (
 	parent: DtxFileParent
 ): Promise<CatalogChartFile | undefined> => {
 	const discovery = await getCatalogDiscovery(ctx, parent.simfile);
+	if (!discovery.chartsPopulated) {
+		// The cache entry was populated by a URL-only batch (no chart
+		// fields were selected at batch time). Invalidate and re-discover
+		// with the full dtx_files so chart matching runs. This handles
+		// the aliased-query scenario where a list (URL-only) and a
+		// detail (chart fields) share the same request-scoped cache.
+		ctx.catalogFilesCache?.delete(parent.simfile.id);
+		const fullDiscovery = await getCatalogDiscovery(ctx, parent.simfile);
+		return fullDiscovery.charts.find(
+			(chart) => chart.label === parent.label && chart.level === parent.level
+		);
+	}
 	return discovery.charts.find(
 		(chart) => chart.label === parent.label && chart.level === parent.level
 	);
@@ -349,16 +361,21 @@ export const SimfileConnectionRef = builder
 							return false;
 						});
 
-						if (simsNeedingDiscovery.length > 0) {
-							const catalogBatchPromise = batchDiscoverCatalogFiles(
-								ctx.r2,
-								simsNeedingDiscovery.map((s) => ({
-									simfileId: s.id,
-									dtxFiles: s.dtx_files,
-									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-								})),
-								ctx.logger
-							);
+					if (simsNeedingDiscovery.length > 0) {
+						const catalogBatchPromise = batchDiscoverCatalogFiles(
+							ctx.r2,
+							simsNeedingDiscovery.map((s) => ({
+								simfileId: s.id,
+								// When the client didn't select any dtxFiles fields,
+								// pass an empty array so discoverCatalogFiles skips
+								// the SET.DEF fetch and chart matching. The result is
+								// cached with chartsPopulated: false; chart resolvers
+								// detect this and re-discover on demand.
+								dtxFiles: dtxSelected ? s.dtx_files : [],
+								publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+							})),
+							ctx.logger
+						);
 							const cache =
 								ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
 							for (const s of simsNeedingDiscovery) {

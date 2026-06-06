@@ -132,6 +132,17 @@ type DtxFileParent = {
 	simfile: SimfileWithDtxFiles;
 };
 
+/**
+ * Returns the value if it is a non-empty, non-whitespace string; otherwise
+ * null. The DB can store `''` for preview_url/download_url because the
+ * ChartDetail form submits empty inputs as empty strings, and the update
+ * resolver passes those through verbatim. Treat such values the same as
+ * NULL so the catalog-fallback path runs and clients don't receive a
+ * blank URL.
+ */
+const nonBlank = (value: string | null | undefined): string | null =>
+	value != null && value.trim() !== '' ? value : null;
+
 const getCatalogDiscovery = (
 	ctx: Ctx,
 	simfile: SimfileWithDtxFiles
@@ -221,12 +232,12 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		downloadUrl: t.string({
 			nullable: true,
 			resolve: async (s, _args, ctx) =>
-				s.download_url ?? (await getCatalogDiscovery(ctx, s)).downloadUrl
+				nonBlank(s.download_url) ?? (await getCatalogDiscovery(ctx, s)).downloadUrl
 		}),
 		previewUrl: t.string({
 			nullable: true,
 			resolve: async (s, _args, ctx) =>
-				s.preview_url ?? (await getCatalogDiscovery(ctx, s)).previewUrl
+				nonBlank(s.preview_url) ?? (await getCatalogDiscovery(ctx, s)).previewUrl
 		}),
 		videoPreviewUrl: t.string({ nullable: true, resolve: (s) => s.video_preview_url }),
 		publishDate: t.string({ resolve: (s) => s.publish_date }),
@@ -319,12 +330,12 @@ export const SimfileConnectionRef = builder
 						// to the batch. Sims with both DB URLs set and no dtx file fields
 						// selected skip discovery entirely — their cache entry is pre-resolved
 						// with the existing DB values so consumers see a uniform cache API.
-						const simsNeedingDiscovery = c.data.filter((s) => {
-							if (previewSelected && s.preview_url == null) return true;
-							if (downloadSelected && s.download_url == null) return true;
-							if (dtxSelected) return true;
-							return false;
-						});
+					const simsNeedingDiscovery = c.data.filter((s) => {
+						if (previewSelected && nonBlank(s.preview_url) == null) return true;
+						if (downloadSelected && nonBlank(s.download_url) == null) return true;
+						if (dtxSelected) return true;
+						return false;
+					});
 
 						if (simsNeedingDiscovery.length > 0) {
 							const catalogBatchPromise = batchDiscoverCatalogFiles(

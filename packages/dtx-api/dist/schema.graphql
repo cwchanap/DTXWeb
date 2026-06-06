@@ -19,6 +19,9 @@ type DeleteResult {
 }
 
 type DtxFile {
+  fileEncoding: FileEncoding!
+  fileSizeBytes: Int!
+  fileUrl: String!
   label: String!
   level: Float!
 }
@@ -26,6 +29,11 @@ type DtxFile {
 input DtxFileInput {
   label: String!
   level: Float!
+}
+
+enum FileEncoding {
+  SHIFT_JIS
+  UTF_8
 }
 
 type MagicLinkResult {
@@ -63,12 +71,15 @@ type Simfile {
   displayId: Int
   downloadUrl: String
   dtxFiles: [DtxFile!]!
+  durationSeconds: Int
   files: [R2File!]!
+  genre: String
   hasUploadedFiles: Boolean!
   id: ID!
   isPublished: Boolean!
   previewUrl: String
   publishDate: String!
+  tags: [String!]!
   title: String!
   updatedAt: String!
   userId: ID

@@ -279,8 +279,7 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		durationSeconds: t.int({ nullable: true, resolve: () => null }),
 		dtxFiles: t.field({
 			type: [DtxFile],
-			resolve: (s) =>
-				s.dtx_files.map((file, index) => ({ ...file, index, simfile: s }))
+			resolve: (s) => s.dtx_files.map((file, index) => ({ ...file, index, simfile: s }))
 		}),
 		files: t.field({
 			type: [R2File],

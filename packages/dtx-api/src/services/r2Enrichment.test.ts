@@ -865,6 +865,47 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.chartsPopulated).toBe(true);
 	});
 
+	it('matches SET.DEF FILE references case-insensitively against R2 keys', async () => {
+		// SET.DEF says BASIC.DTX (uppercase) but R2 stores basic.dtx (lowercase).
+		// This is common with uploads from case-insensitive filesystems
+		// (Windows, default macOS). Without the case-insensitive fallback
+		// the chart would be marked as claimed-by-SET.DEF but missing,
+		// raising an INTERNAL error even though the object exists.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer('#L1LABEL BASIC\n#L1FILE BASIC.DTX\n')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+		expect(discovery.chartsPopulated).toBe(true);
+	});
+
 	it('parses set.def using colon separator (matches editor loader)', async () => {
 		// The editor loader at packages/dtx-web/.../editor/+page.server.ts
 		// accepts both `#L1LABEL BASIC` and `#L1LABEL: BASIC`. Catalog

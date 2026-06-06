@@ -154,6 +154,16 @@ export const discoverCatalogFiles = async (
 		(obj: R2ObjectMeta) => obj.key.length > prefix.length
 	);
 	const objectsByKey = new Map(objects.map((obj: R2ObjectMeta) => [obj.key, obj]));
+	// Case-insensitive fallback map: SET.DEF file references may use a
+	// different case than the actual R2 object key (e.g. SET.DEF says
+	// BASIC.DTX while R2 stores 42/basic.dtx). Uploads from case-
+	// insensitive filesystems (Windows, default macOS) routinely produce
+	// this mismatch. The desktop parseDtxFiles path lowercases both sides
+	// of the comparison; we mirror that here as a fallback after exact
+	// match to avoid marking valid charts as missing.
+	const objectsByKeyLower = new Map(
+		objects.map((obj: R2ObjectMeta) => [obj.key.toLowerCase(), obj])
+	);
 
 	// Preview selection: prefer the canonical top-level key
 	// `{simfileId}/preview.mp3` (case-insensitive) over any nested
@@ -238,9 +248,17 @@ export const discoverCatalogFiles = async (
 		const setDefKeyForFile = filesByLabel.get(file.label.toLowerCase());
 		if (setDefKeyForFile) {
 			rowsClaimedBySetDef.add(index);
-			if (objectsByKey.has(setDefKeyForFile)) {
-				matchedKeysByRowIndex.set(index, setDefKeyForFile);
-				usedDtxKeys.add(setDefKeyForFile);
+			// Exact match first; fall back to a case-insensitive lookup so
+			// that SET.DEF references like BASIC.DTX still resolve when the
+			// R2 key is basic.dtx. Without this fallback the row is marked
+			// as claimed-but-missing, which surfaces as an INTERNAL error
+			// via requireCatalogChart even though the chart object exists.
+			const exactObject = objectsByKey.get(setDefKeyForFile);
+			const matchedObject =
+				exactObject ?? objectsByKeyLower.get(setDefKeyForFile.toLowerCase());
+			if (matchedObject) {
+				matchedKeysByRowIndex.set(index, matchedObject.key);
+				usedDtxKeys.add(matchedObject.key);
 			}
 		}
 	}

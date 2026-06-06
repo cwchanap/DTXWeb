@@ -190,17 +190,26 @@ export const discoverCatalogFiles = async (
 			: new Map<string, string>();
 
 	const matchedKeysByRowIndex = new Map<number, string>();
+	// Rows with an explicit set.def label→file mapping are "claimed" by
+	// set.def regardless of whether the referenced R2 object exists. This
+	// prevents the sorted-key fallback from assigning an unrelated .dtx
+	// key to a chart whose intended file is missing — which would silently
+	// serve the wrong chart instead of the correct missing-chart null.
+	const rowsClaimedBySetDef = new Set<number>();
 	for (const [index, file] of dtxFiles.entries()) {
 		const setDefKeyForFile = filesByLabel.get(file.label.toLowerCase());
-		if (setDefKeyForFile && objectsByKey.has(setDefKeyForFile)) {
-			matchedKeysByRowIndex.set(index, setDefKeyForFile);
-			usedDtxKeys.add(setDefKeyForFile);
+		if (setDefKeyForFile) {
+			rowsClaimedBySetDef.add(index);
+			if (objectsByKey.has(setDefKeyForFile)) {
+				matchedKeysByRowIndex.set(index, setDefKeyForFile);
+				usedDtxKeys.add(setDefKeyForFile);
+			}
 		}
 	}
 
 	const fallbackRows = dtxFiles
 		.map((file, index) => ({ file, index }))
-		.filter(({ index }) => !matchedKeysByRowIndex.has(index))
+		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
 		.sort(
 			(a, b) =>
 				a.file.level - b.file.level ||

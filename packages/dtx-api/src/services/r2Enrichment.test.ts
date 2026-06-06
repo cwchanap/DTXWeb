@@ -584,6 +584,58 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('does not remap set.def-referenced rows via fallback when the object is missing', async () => {
+		// set.def maps ADVANCED → advanced.dtx, but advanced.dtx is absent
+		// from R2. The sorted-key fallback must NOT assign another .dtx
+		// key (other.dtx) to the Advanced row — it should return null so
+		// the client sees the chart as unavailable.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/other.dtx', size: 999, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE advanced.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('falls back to sorted pairing when set.def read throws a transient R2 error', async () => {
 		const logger = {
 			info: vi.fn(),

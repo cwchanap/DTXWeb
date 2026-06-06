@@ -190,9 +190,18 @@ export const discoverCatalogFiles = async (
 	const dtxObjectKeys = dtxObjects.map((obj: R2ObjectMeta) => obj.key);
 	const usedDtxKeys = new Set<string>();
 
-	const setDefKey = objects.find(
-		(obj: R2ObjectMeta) => getFileName(obj.key).toLowerCase() === 'set.def'
-	)?.key;
+	// Prefer the canonical top-level key `{simfileId}/set.def`
+	// (case-insensitive) over any nested `set.def` (e.g.
+	// `42/assets/set.def`). DTX simfiles routinely ship packaged
+	// sample chips and other assets under `assets/`, and basename-only
+	// matching would pick the nested copy first because
+	// `42/assets/set.def` sorts before `42/set.def` — causing chart
+	// labels to be read from the wrong/empty SET.DEF and `fileUrl`
+	// pairing to fall back to incorrect sorted-key matching.
+	const canonicalSetDefKey = `${prefix}set.def`.toLowerCase();
+	const setDefKey =
+		objects.find((obj: R2ObjectMeta) => obj.key.toLowerCase() === canonicalSetDefKey)?.key ??
+		objects.find((obj: R2ObjectMeta) => getFileName(obj.key).toLowerCase() === 'set.def')?.key;
 	// Skip fetching set.def when no chart rows need matching — preview-only
 	// requests never read filesByLabel, so we avoid an unnecessary R2 GET.
 	const filesByLabel =

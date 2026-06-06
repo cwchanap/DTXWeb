@@ -632,6 +632,111 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.chartsPopulated).toBe(true);
 	});
 
+	it('prefers the canonical top-level set.def over a nested asset with the same basename', async () => {
+		// DTX simfiles routinely ship packaged assets under `assets/`.
+		// When both `42/set.def` and `42/assets/set.def` exist, R2 lists
+		// them in lexicographic order (`assets/` < `set.def`), so
+		// basename-only matching would pick the nested (possibly empty
+		// or wrong) copy first. The canonical top-level key must win.
+		const bucket = {
+			...makeBucket([
+				[
+					// nested copy intentionally placed first in array to
+					// match R2's lexicographic ordering and prove that
+					// basename-first find() would return it.
+					{ key: '42/assets/set.def', size: 10, uploaded: new Date() },
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => {
+				// Only the canonical top-level key has real content;
+				// the nested copy is empty (simulating a stray asset).
+				if (key === '42/set.def') {
+					return {
+						arrayBuffer: async () =>
+							encodeToBuffer(
+								'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE advanced.dtx\n'
+							)
+					};
+				}
+				return { arrayBuffer: async () => encodeToBuffer('') };
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(bucket.get).toHaveBeenCalledWith('42/set.def');
+		expect(bucket.get).not.toHaveBeenCalledWith('42/assets/set.def');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+		expect(discovery.chartsPopulated).toBe(true);
+	});
+
+	it('falls back to a nested set.def when the canonical top-level key is missing', async () => {
+		// Backward compat: legacy uploads that only have a nested
+		// set.def still resolve to that key.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/assets/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer('#L1LABEL BASIC\n#L1FILE basic.dtx\n')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(bucket.get).toHaveBeenCalledWith('42/assets/set.def');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('parses set.def with case-insensitive filename discovery', async () => {
 		const bucket = {
 			...makeBucket([

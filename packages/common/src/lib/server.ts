@@ -6,7 +6,8 @@ export { SimFile } from './chart/simFile';
 export { LaneMeasureNote } from './chart/note';
 export {
 	decodeFileWithEncodingDetection,
-	decodeFileWithSpecificEncoding
+	decodeFileWithSpecificEncoding,
+	decodeArrayBufferWithBomDetection
 } from './chart/encoding-utils';
 
 // Export constants (server-safe)

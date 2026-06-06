@@ -1,10 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	decodeFileWithEncodingDetection,
 	decodeFileWithEncodingDetectionLegacy,
 	decodeFileWithSpecificEncoding,
+	decodeArrayBufferWithBomDetection,
 	type ContentValidationCallback
 } from './encoding-utils';
+
+// Preserve real TextDecoder before mock replacement so BOM detection tests
+// (which exercise real decoding behavior) can opt-in to the runtime impl.
+const RealTextDecoder = globalThis.TextDecoder;
 
 // Mock TextDecoder
 const mockTextDecoder = vi.fn();
@@ -462,6 +467,58 @@ describe('encoding-utils', () => {
 			expect(midiCallback('MThd\x00\x00\x00\x06')).toBe(true);
 			expect(midiCallback('MTrk\x00\x00\x00\x20')).toBe(true);
 			expect(midiCallback('Not a MIDI file')).toBe(false);
+		});
+	});
+
+	describe('decodeArrayBufferWithBomDetection', () => {
+		// These tests exercise the real runtime TextDecoder behavior, so restore
+		// the global mock to the platform implementation for this block.
+		const originalDecoder = global.TextDecoder;
+		beforeEach(() => {
+			global.TextDecoder = RealTextDecoder;
+		});
+		afterEach(() => {
+			global.TextDecoder = originalDecoder;
+		});
+
+		it('decodes UTF-8 without BOM as UTF-8', () => {
+			const text = '#L1LABEL BASIC\n#L1FILE basic.dtx\n';
+			const buffer = new TextEncoder().encode(text).buffer;
+			expect(decodeArrayBufferWithBomDetection(buffer)).toBe(text);
+		});
+
+		it('decodes UTF-8 BOM and strips the BOM character', () => {
+			const text = '#TITLE UTF8 BOM\n#L1LABEL BASIC\n';
+			const bytes = new TextEncoder().encode(text);
+			const buffer = new Uint8Array([0xef, 0xbb, 0xbf, ...bytes]).buffer;
+			// Without BOM stripping, the first directive would start with \uFEFF
+			// and fail to match `^#L` regex parsing.
+			const decoded = decodeArrayBufferWithBomDetection(buffer);
+			expect(decoded).toBe(text);
+			expect(decoded.charCodeAt(0)).not.toBe(0xfeff);
+		});
+
+		it('decodes UTF-16LE BOM and strips the BOM character', () => {
+			const text = '#TITLE UTF16LE BOM\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				const codeUnit = text.charCodeAt(i);
+				utf16Bytes[i * 2] = codeUnit & 0xff;
+				utf16Bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+			}
+			const buffer = new Uint8Array([0xff, 0xfe, ...utf16Bytes]).buffer;
+			const decoded = decodeArrayBufferWithBomDetection(buffer);
+			expect(decoded).toBe(text);
+			expect(decoded.charCodeAt(0)).not.toBe(0xfeff);
+		});
+
+		it('returns empty string for empty buffer', () => {
+			expect(decodeArrayBufferWithBomDetection(new ArrayBuffer(0))).toBe('');
+		});
+
+		it('handles single-byte buffer without throwing (no BOM match)', () => {
+			const buffer = new Uint8Array([0x41]).buffer; // "A"
+			expect(decodeArrayBufferWithBomDetection(buffer)).toBe('A');
 		});
 	});
 });

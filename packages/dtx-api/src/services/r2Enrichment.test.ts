@@ -339,14 +339,19 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/assets/PREVIEW.MP3');
 	});
 
-	it('selects non-preview ogg before mp3, wav, and flac for downloadUrl', async () => {
+	it('prefers the canonical top-level preview.mp3 over a nested asset with the same basename', async () => {
+		// DTX simfiles routinely ship packaged `#WAV` samples under
+		// `assets/` (e.g. 42/assets/preview.mp3). The public preview
+		// contract is the canonical top-level key {simfileId}/preview.mp3,
+		// so when both exist the top-level key must win — selecting by
+		// basename alone plus alphabetic sort would return the nested
+		// asset first because '42/assets/preview.mp3' sorts before
+		// '42/preview.mp3'.
 		const bucket = makeBucket([
 			[
-				{ key: '42/preview.mp3', size: 10, uploaded: new Date() },
-				{ key: '42/full.wav', size: 20, uploaded: new Date() },
-				{ key: '42/full.mp3', size: 30, uploaded: new Date() },
-				{ key: '42/full.flac', size: 40, uploaded: new Date() },
-				{ key: '42/full.ogg', size: 50, uploaded: new Date() }
+				{ key: '42/assets/preview.mp3', size: 10, uploaded: new Date() },
+				{ key: '42/preview.mp3', size: 100, uploaded: new Date() },
+				{ key: '42/song.dtx', size: 200, uploaded: new Date() }
 			]
 		]);
 
@@ -355,19 +360,45 @@ describe('discoverCatalogFiles', () => {
 			{
 				simfileId: 42,
 				dtxFiles: [],
-				publicBaseUrl: 'https://cdn.example.test/'
+				publicBaseUrl: 'https://cdn.example.test'
 			},
 			silentLogger
 		);
 
-		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.ogg');
+		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/preview.mp3');
 	});
 
-	it('excludes preview.mp3 case-insensitively from downloadUrl', async () => {
+	it('falls back to a nested preview.mp3 when the canonical top-level key is missing', async () => {
+		// Backward compat: existing simfiles that only have a nested
+		// preview.mp3 (e.g. legacy uploads under assets/) still resolve
+		// to that key.
 		const bucket = makeBucket([
 			[
-				{ key: '42/PREVIEW.MP3', size: 10, uploaded: new Date() },
-				{ key: '42/full.wav', size: 20, uploaded: new Date() }
+				{ key: '42/assets/preview.mp3', size: 100, uploaded: new Date() },
+				{ key: '42/song.dtx', size: 200, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/assets/preview.mp3');
+	});
+
+	it('matches the canonical preview.mp3 case-insensitively', async () => {
+		//Uploader and desktop export may write PREVIEW.MP3 or preview.mp3;
+		//both must be treated as canonical.
+		const bucket = makeBucket([
+			[
+				{ key: '42/PREVIEW.MP3', size: 100, uploaded: new Date() },
+				{ key: '42/assets/preview.mp3', size: 10, uploaded: new Date() }
 			]
 		]);
 
@@ -382,7 +413,6 @@ describe('discoverCatalogFiles', () => {
 		);
 
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/PREVIEW.MP3');
-		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/full.wav');
 	});
 
 	it('skips fetching set.def when no dtx chart rows need matching', async () => {
@@ -407,7 +437,7 @@ describe('discoverCatalogFiles', () => {
 			silentLogger
 		);
 
-		// previewUrl/downloadUrl still resolve from the listing, but set.def
+		// previewUrl still resolves from the listing, but set.def
 		// must not be fetched because no chart rows need label-to-file matching.
 		expect(getMock).not.toHaveBeenCalled();
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/preview.mp3');
@@ -417,7 +447,7 @@ describe('discoverCatalogFiles', () => {
 
 	it('skips fetching set.def for URL-only discovery even with .dtx files in R2', async () => {
 		// Simulates the list-page scenario: the caller passes dtxFiles: []
-		// because the client only selected previewUrl/downloadUrl, but R2
+		// because the client only selected previewUrl, but R2
 		// contains set.def and .dtx files. SET.DEF must not be fetched.
 		const getMock = vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer('') }));
 		const bucket = {
@@ -496,12 +526,12 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/sub/advanced.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-		get: vi.fn(async () => ({
-			arrayBuffer: async () =>
-				encodeToBuffer(
-					'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE sub/advanced.dtx\n'
-				)
-		}))
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE sub/advanced.dtx\n'
+					)
+			}))
 		} as unknown as R2Bucket;
 
 		const discovery = await discoverCatalogFiles(
@@ -546,12 +576,12 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/z-basic.dtx', size: 300, uploaded: new Date() }
 				]
 			]),
-		get: vi.fn(async () => ({
-			arrayBuffer: async () =>
-				encodeToBuffer(
-					'#L1LABEL BASIC\n#L1FILE z-basic.dtx\n#L2LABEL ADVANCED\n#L2FILE a-advanced.dtx\n'
-				)
-		}))
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE z-basic.dtx\n#L2LABEL ADVANCED\n#L2FILE a-advanced.dtx\n'
+					)
+			}))
 		} as unknown as R2Bucket;
 
 		const discovery = await discoverCatalogFiles(
@@ -601,12 +631,12 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/a-advanced.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-		get: vi.fn(async () => ({
-			arrayBuffer: async () =>
-				encodeToBuffer(
-					'#L1LABEL: BASIC\n#L1FILE: z-basic.dtx\n#L2LABEL:ADVANCED\n#L2FILE :a-advanced.dtx\n'
-				)
-		}))
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL: BASIC\n#L1FILE: z-basic.dtx\n#L2LABEL:ADVANCED\n#L2FILE :a-advanced.dtx\n'
+					)
+			}))
 		} as unknown as R2Bucket;
 
 		const discovery = await discoverCatalogFiles(

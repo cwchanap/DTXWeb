@@ -40,7 +40,6 @@ export type CatalogChartFile = CatalogChartFilePresent | CatalogChartFileMissing
 
 export type CatalogFileDiscovery = {
 	previewUrl: string | null;
-	downloadUrl: string | null;
 	charts: CatalogChartFile[];
 	/**
 	 * False when the caller passed an empty `dtxFiles` array (URL-only
@@ -64,7 +63,6 @@ export type CatalogDiscoveryOptions = {
  * dtx-web REST endpoint (MAX_CONCURRENT_R2_CHECKS = 4).
  */
 const MAX_CONCURRENT_R2_LIST = 4;
-const DOWNLOAD_EXTENSION_PRIORITY = ['.ogg', '.mp3', '.wav', '.flac'] as const;
 
 const toPublicUrl = (publicBaseUrl: string, key: string): string => {
 	const baseUrl = publicBaseUrl.replace(/\/+$/, '');
@@ -74,12 +72,6 @@ const toPublicUrl = (publicBaseUrl: string, key: string): string => {
 const getFileName = (key: string): string => key.split('/').at(-1) ?? '';
 
 const isPreviewMp3Key = (key: string): boolean => getFileName(key).toLowerCase() === 'preview.mp3';
-
-const getExtension = (key: string): string => {
-	const fileName = getFileName(key);
-	const dotIndex = fileName.lastIndexOf('.');
-	return dotIndex === -1 ? '' : fileName.slice(dotIndex).toLowerCase();
-};
 
 const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
 
@@ -162,25 +154,18 @@ export const discoverCatalogFiles = async (
 	);
 	const objectsByKey = new Map(objects.map((obj: R2ObjectMeta) => [obj.key, obj]));
 
-	const previewObject = objects
-		.slice()
-		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => a.key.localeCompare(b.key))
-		.find((obj: R2ObjectMeta) => isPreviewMp3Key(obj.key));
+	// Preview selection: prefer the canonical top-level key
+	// `{simfileId}/preview.mp3` (case-insensitive) over any nested
+	// `preview.mp3` (e.g. `42/assets/preview.mp3`). DTX simfiles routinely
+	// ship packaged sample chips under `assets/` and the public preview
+	// contract is the top-level path — selecting by basename alone plus
+	// alphabetic sort would return the nested asset first because
+	// `42/assets/preview.mp3` sorts before `42/preview.mp3`.
+	const canonicalPreviewKey = `${prefix}preview.mp3`.toLowerCase();
+	const previewObject =
+		objects.find((obj: R2ObjectMeta) => obj.key.toLowerCase() === canonicalPreviewKey) ??
+		objects.find((obj: R2ObjectMeta) => isPreviewMp3Key(obj.key));
 	const previewUrl = previewObject ? toPublicUrl(publicBaseUrl, previewObject.key) : null;
-
-	const downloadObject = objects
-		.filter((obj: R2ObjectMeta) => !isPreviewMp3Key(obj.key))
-		.map((obj: R2ObjectMeta) => ({
-			object: obj,
-			priority: DOWNLOAD_EXTENSION_PRIORITY.indexOf(
-				getExtension(obj.key) as (typeof DOWNLOAD_EXTENSION_PRIORITY)[number]
-			)
-		}))
-		.filter(({ priority }) => priority !== -1)
-		.sort(
-			(a, b) => a.priority - b.priority || a.object.key.localeCompare(b.object.key)
-		)[0]?.object;
-	const downloadUrl = downloadObject ? toPublicUrl(publicBaseUrl, downloadObject.key) : null;
 
 	const dtxObjects = objects
 		.filter((obj: R2ObjectMeta) => obj.key.toLowerCase().endsWith('.dtx'))
@@ -191,7 +176,7 @@ export const discoverCatalogFiles = async (
 	const setDefKey = objects.find(
 		(obj: R2ObjectMeta) => getFileName(obj.key).toLowerCase() === 'set.def'
 	)?.key;
-	// Skip fetching set.def when no chart rows need matching — preview/download-only
+	// Skip fetching set.def when no chart rows need matching — preview-only
 	// requests never read filesByLabel, so we avoid an unnecessary R2 GET.
 	const filesByLabel =
 		dtxFiles.length > 0
@@ -247,7 +232,7 @@ export const discoverCatalogFiles = async (
 		};
 	});
 
-	return { previewUrl, downloadUrl, charts, chartsPopulated: dtxFiles.length > 0 };
+	return { previewUrl, charts, chartsPopulated: dtxFiles.length > 0 };
 };
 
 export const batchDiscoverCatalogFiles = async (

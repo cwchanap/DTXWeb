@@ -814,6 +814,152 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('resolves relative #LxFILE references against the nested set.def directory', async () => {
+		// Uploads preserve directory structure, so when the canonical
+		// top-level set.def is absent and discovery falls back to a nested
+		// copy (e.g. 42/song/set.def), sibling chart files live next to it
+		// (e.g. 42/song/basic.dtx). Relative references must resolve against
+		// the set.def's directory — not the simfile root — otherwise the
+		// chart is marked claimed-but-missing and the fileUrl resolver
+		// throws an INTERNAL error even though the object exists in R2.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/song/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/song/advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE advanced.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(bucket.get).toHaveBeenCalledWith('42/song/set.def');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/song/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/song/advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('resolves deeply nested relative set.def references with sub-paths', async () => {
+		// set.def at 42/song/set.def references a chart in a deeper
+		// sub-folder via a relative path (sub/normal.dtx). The reference
+		// is relative to the set.def's own directory, so it should resolve
+		// to 42/song/sub/normal.dtx — not 42/sub/normal.dtx.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/song/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/song/sub/normal.dtx', size: 400, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL NORMAL\n#L2FILE sub/normal.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Normal', level: 3 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/song/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Normal',
+				level: 3,
+				fileUrl: 'https://cdn.example.test/42/song/sub/normal.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('falls back to the simfile root for legacy flat uploads with a nested set.def', async () => {
+		// Backward compat: legacy uploads where chart files were flattened
+		// to the root (42/basic.dtx) despite a nested set.def
+		// (42/assets/set.def). The root-prefix fallback ensures these
+		// legacy uploads still resolve after the baseDir fix.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/assets/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () => encodeToBuffer('#L1LABEL BASIC\n#L1FILE basic.dtx\n')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('parses set.def with case-insensitive filename discovery', async () => {
 		const bucket = {
 			...makeBucket([

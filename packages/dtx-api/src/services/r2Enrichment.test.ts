@@ -550,6 +550,59 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('parses set.def using colon separator (matches editor loader)', async () => {
+		// The editor loader at packages/dtx-web/.../editor/+page.server.ts
+		// accepts both `#L1LABEL BASIC` and `#L1LABEL: BASIC`. Catalog
+		// discovery must accept the same forms; otherwise filesByLabel
+		// stays empty and falls back to sorted-key matching, which can
+		// pair the wrong chart when key order differs from level order.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/z-basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/a-advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+		get: vi.fn(async () => ({
+			arrayBuffer: async () =>
+				encodeToBuffer(
+					'#L1LABEL: BASIC\n#L1FILE: z-basic.dtx\n#L2LABEL:ADVANCED\n#L2FILE :a-advanced.dtx\n'
+				)
+		}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Advanced', level: 5 },
+					{ label: 'Basic', level: 1 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/a-advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/z-basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('returns an unmatched chart entry when a required dtx object is missing', async () => {
 		const bucket = makeBucket([[{ key: '42/basic.dtx', size: 300, uploaded: new Date() }]]);
 

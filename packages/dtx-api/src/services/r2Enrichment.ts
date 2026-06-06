@@ -173,12 +173,25 @@ export const discoverCatalogFiles = async (
 		const lower = key.toLowerCase();
 		return audioExts.some((ext) => lower.endsWith(ext)) && !isPreviewMp3Key(key);
 	};
+	// A top-level audio file lives directly under the simfile prefix
+	// (e.g. 42/song.ogg) rather than in a subdirectory (e.g.
+	// 42/assets/kick.ogg). DTX simfiles ship individual drum sample
+	// chips under assets/, which are not full-audio files. When
+	// selecting a downloadUrl fallback we must prefer the top-level
+	// full-audio candidate over nested samples, otherwise lexicographic
+	// sort would return the sample chip first because
+	// '42/assets/...' sorts before '42/song.ogg' — mirroring the
+	// canonical-vs-nested preference used for preview.mp3 and set.def.
+	const isTopLevelKey = (key: string): boolean => !key.slice(prefix.length).includes('/');
 	const audioObjects = objects
 		.filter((obj: R2ObjectMeta) => isAudio(obj.key))
 		.sort((a, b) => {
 			const aExt = audioExts.findIndex((ext) => a.key.toLowerCase().endsWith(ext));
 			const bExt = audioExts.findIndex((ext) => b.key.toLowerCase().endsWith(ext));
 			if (aExt !== bExt) return aExt - bExt;
+			const aTop = isTopLevelKey(a.key);
+			const bTop = isTopLevelKey(b.key);
+			if (aTop !== bTop) return aTop ? -1 : 1;
 			return a.key.localeCompare(b.key);
 		});
 	const downloadObject = audioObjects[0];

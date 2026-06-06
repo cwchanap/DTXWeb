@@ -84,21 +84,22 @@ const resolveSetDefFileKey = (prefix: string, fileName: string): string => {
 
 const parseSetDefFilesByLabel = (setDefText: string, prefix: string): Map<string, string> => {
 	const entries = new Map<string, { label?: string; file?: string }>();
+	// Match the separator accepted by the editor loader at
+	// packages/dtx-web/src/routes/(game)/editor/[[simfileID]]/+page.server.ts
+	// so set.def files written with the colon form (#L1LABEL: BASIC) are
+	// parsed the same way here as they are in the editor.
+	const levelLinePattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+)(.+)$/i;
 	for (const line of setDefText.split(/\r?\n/)) {
-		const labelMatch = line.match(/^#L(\d+)LABEL\s+(.+)$/i);
-		if (labelMatch) {
-			const entry = entries.get(labelMatch[1]) ?? {};
-			entry.label = labelMatch[2].trim();
-			entries.set(labelMatch[1], entry);
-			continue;
+		const match = line.match(levelLinePattern);
+		if (!match) continue;
+		const [, level, kind, value] = match;
+		const entry = entries.get(level) ?? {};
+		if (kind.toUpperCase() === 'LABEL') {
+			entry.label = value.trim();
+		} else {
+			entry.file = resolveSetDefFileKey(prefix, value);
 		}
-
-		const fileMatch = line.match(/^#L(\d+)FILE\s+(.+)$/i);
-		if (fileMatch) {
-			const entry = entries.get(fileMatch[1]) ?? {};
-			entry.file = resolveSetDefFileKey(prefix, fileMatch[2]);
-			entries.set(fileMatch[1], entry);
-		}
+		entries.set(level, entry);
 	}
 
 	const filesByLabel = new Map<string, string>();

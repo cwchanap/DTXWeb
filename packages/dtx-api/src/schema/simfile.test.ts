@@ -634,6 +634,49 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 	});
 
+	it('falls back to discovered previewUrl when database preview_url is an empty string', async () => {
+		// ChartDetail form submits empty inputs as '' which the update resolver
+		// stores verbatim. Blank strings must be treated like NULL so the
+		// catalog fallback runs instead of returning '' to clients.
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, preview_url: '' });
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: 'https://cdn.example/42/preview.mp3',
+			downloadUrl: null,
+			charts: []
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { previewUrl } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			previewUrl: 'https://cdn.example/42/preview.mp3'
+		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
+	});
+
+	it('falls back to discovered downloadUrl when database download_url is whitespace-only', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, download_url: '   ' });
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: null,
+			downloadUrl: 'https://cdn.example/42/song.ogg',
+			charts: []
+		});
+
+		const result = await runQuery(makeCtx(), {
+			query: '{ simfile(id: "42") { downloadUrl } }'
+		});
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			downloadUrl: 'https://cdn.example/42/song.ogg'
+		});
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
+	});
+
 	it('prefers database previewUrl and downloadUrl over discovered values', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue({
@@ -1133,6 +1176,74 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
 		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 2,
+				dtxFiles: sim2.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			}
+		]);
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('routes sims with blank DB URLs through batch catalog discovery in list queries', async () => {
+		// Empty / whitespace-only DB URLs must be treated like NULL in the
+		// prefetch filter so the sims are included in the discovery batch
+		// and the resolver falls back to the discovered value.
+		const sim1 = { ...publishedSimfile, id: 1, preview_url: '' };
+		const sim2 = { ...publishedSimfile, id: 2, download_url: '   ' };
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					1,
+					{
+						previewUrl: 'https://bucket.example/1/preview.mp3',
+						downloadUrl: null,
+						charts: []
+					}
+				],
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: 'https://bucket.example/2/song.ogg',
+						charts: []
+					}
+				]
+			])
+		);
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+			}),
+			{
+				query: '{ simfiles(scope: PUBLISHED, pageSize: 2) { data { id previewUrl downloadUrl } } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfiles).toEqual({
+			data: [
+				{
+					id: '1',
+					previewUrl: 'https://bucket.example/1/preview.mp3',
+					downloadUrl: 'https://ext.example/a'
+				},
+				{
+					id: '2',
+					previewUrl: null,
+					downloadUrl: 'https://bucket.example/2/song.ogg'
+				}
+			]
+		});
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 1,
+				dtxFiles: sim1.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			},
 			{
 				simfileId: 2,
 				dtxFiles: sim2.dtx_files,

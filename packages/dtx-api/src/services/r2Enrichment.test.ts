@@ -1260,4 +1260,121 @@ describe('discoverCatalogFiles', () => {
 		]);
 		expect(discovery.chartsPopulated).toBe(true);
 	});
+
+	it('preserves duplicate set.def labels matching distinct DB rows to distinct files', async () => {
+		// SET.def legitimately uses the same label "BASIC" on two L-slots
+		// pointing at different files. Without per-label accumulation the
+		// second entry overwrites the first and both DB rows resolve to the
+		// same R2 object (orphaning the other file). Each row must claim a
+		// distinct file.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/basic2.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 50 },
+					{ label: 'Basic', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 50,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 70,
+				fileUrl: 'https://cdn.example.test/42/basic2.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+		expect(discovery.chartsPopulated).toBe(true);
+	});
+
+	it('falls extra duplicate-label rows through to sorted-key fallback when SET.def entries are exhausted', async () => {
+		// Three DB rows share label "BASIC" but SET.def only defines two
+		// L-slots for that label. The third row has no remaining SET.def
+		// entry to consume and must fall through to the sorted-key fallback.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/basic2.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/basic3.dtx', size: 700, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 50 },
+					{ label: 'Basic', level: 60 },
+					{ label: 'Basic', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		// Rows 0 and 1 are claimed by SET.def (basic.dtx, basic2.dtx).
+		// Row 2 is not claimed by SET.def — it falls through to sorted-key
+		// fallback and gets the only remaining unused key: basic3.dtx.
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 50,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/basic2.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 70,
+				fileUrl: 'https://cdn.example.test/42/basic3.dtx',
+				fileSizeBytes: 700,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

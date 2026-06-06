@@ -254,14 +254,10 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
 		downloadUrl: t.string({
 			nullable: true,
-			// DB-only: the canonical download URL is whatever the author sets
-			// (external link or hosted full audio). The R2 listing cannot
-			// identify "the main audio" reliably because DTX simfiles contain
-			// many `#WAV` chip samples (kick.ogg, snare.wav, ...) which would
-			// otherwise be picked as the download URL. Actual file download is
-			// served by the /downloads/:id REST endpoint (ZIP stream), not by
-			// this field.
-			resolve: (s) => nonBlank(s.download_url) ?? null
+			// Return the DB download_url if set; otherwise discover a likely
+			// full-audio object under the simfile's R2 prefix.
+			resolve: async (s, _args, ctx) =>
+				nonBlank(s.download_url) ?? (await getCatalogDiscovery(ctx, s)).downloadUrl
 		}),
 		previewUrl: t.string({
 			nullable: true,
@@ -348,6 +344,7 @@ export const SimfileConnectionRef = builder
 						}
 
 						const previewSelected = isFieldSelected(info, 'previewUrl');
+						const downloadSelected = isFieldSelected(info, 'downloadUrl');
 						const dtxSelected = isNestedFieldSelected(info, 'dtxFiles', [
 							'fileUrl',
 							'fileSizeBytes',
@@ -356,14 +353,11 @@ export const SimfileConnectionRef = builder
 
 						// Per-sim filter: only sims that actually need R2 discovery are passed
 						// to the batch. Sims whose selected catalog-backed fields all have
-						// non-blank DB values, and whose dtx file fields were not selected,
-						// skip discovery entirely — their resolvers short-circuit at
-						// nonBlank(...) before ever consulting the cache.
-						// Note: downloadUrl is DB-only (no R2 fallback) and is therefore
-						// intentionally excluded from this filter — selecting downloadUrl
-						// alone never triggers discovery.
+						// non-blank DB values skip discovery entirely — their resolvers
+						// short-circuit at nonBlank(...) before ever consulting the cache.
 						const simsNeedingDiscovery = c.data.filter((s) => {
 							if (previewSelected && nonBlank(s.preview_url) == null) return true;
+							if (downloadSelected && nonBlank(s.download_url) == null) return true;
 							if (dtxSelected) return true;
 							return false;
 						});
@@ -392,7 +386,9 @@ export const SimfileConnectionRef = builder
 										(map) =>
 											map.get(s.id) ?? {
 												previewUrl: null,
-												charts: []
+												downloadUrl: null,
+												charts: [],
+												chartsPopulated: false
 											}
 									)
 								);

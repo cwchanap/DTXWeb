@@ -339,6 +339,71 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.previewUrl).toBe('https://cdn.example.test/42/assets/PREVIEW.MP3');
 	});
 
+	it('selects non-preview .ogg before .mp3, .wav, and .flac for downloadUrl', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/song.mp3', size: 200, uploaded: new Date() },
+				{ key: '42/music.ogg', size: 150, uploaded: new Date() },
+				{ key: '42/song.wav', size: 300, uploaded: new Date() },
+				{ key: '42/song.flac', size: 400, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/music.ogg');
+	});
+
+	it('ignores preview.mp3 when selecting full audio for downloadUrl', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/preview.mp3', size: 100, uploaded: new Date() },
+				{ key: '42/song.mp3', size: 200, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/song.mp3');
+	});
+
+	it('returns null downloadUrl when no suitable audio object exists', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/song.dtx', size: 200, uploaded: new Date() },
+				{ key: '42/preview.mp3', size: 100, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBeNull();
+	});
+
 	it('prefers the canonical top-level preview.mp3 over a nested asset with the same basename', async () => {
 		// DTX simfiles routinely ship packaged `#WAV` samples under
 		// `assets/` (e.g. 42/assets/preview.mp3). The public preview

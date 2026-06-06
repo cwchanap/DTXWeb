@@ -327,9 +327,10 @@ export const SimfileConnectionRef = builder
 						]);
 
 						// Per-sim filter: only sims that actually need R2 discovery are passed
-						// to the batch. Sims with both DB URLs set and no dtx file fields
-						// selected skip discovery entirely — their cache entry is pre-resolved
-						// with the existing DB values so consumers see a uniform cache API.
+						// to the batch. Sims whose selected catalog-backed fields all have
+						// non-blank DB values, and whose dtx file fields were not selected,
+						// skip discovery entirely — their resolvers short-circuit at
+						// nonBlank(...) before ever consulting the cache.
 					const simsNeedingDiscovery = c.data.filter((s) => {
 						if (previewSelected && nonBlank(s.preview_url) == null) return true;
 						if (downloadSelected && nonBlank(s.download_url) == null) return true;
@@ -337,45 +338,43 @@ export const SimfileConnectionRef = builder
 						return false;
 					});
 
-						if (simsNeedingDiscovery.length > 0) {
-							const catalogBatchPromise = batchDiscoverCatalogFiles(
-								ctx.r2,
-								simsNeedingDiscovery.map((s) => ({
-									simfileId: s.id,
-									dtxFiles: s.dtx_files,
-									publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-								}))
+					if (simsNeedingDiscovery.length > 0) {
+						const catalogBatchPromise = batchDiscoverCatalogFiles(
+							ctx.r2,
+							simsNeedingDiscovery.map((s) => ({
+								simfileId: s.id,
+								dtxFiles: s.dtx_files,
+								publicBaseUrl: ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+							}))
+						);
+						const cache =
+							ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
+						for (const s of simsNeedingDiscovery) {
+							cache.set(
+								s.id,
+								catalogBatchPromise.then(
+									(map) =>
+										map.get(s.id) ?? {
+											previewUrl: null,
+											downloadUrl: null,
+											charts: []
+										}
+								)
 							);
-							const cache =
-								ctx.catalogFilesCache ?? (ctx.catalogFilesCache = new Map());
-							for (const s of simsNeedingDiscovery) {
-								cache.set(
-									s.id,
-									catalogBatchPromise.then(
-										(map) =>
-											map.get(s.id) ?? {
-												previewUrl: null,
-												downloadUrl: null,
-												charts: []
-											}
-									)
-								);
-							}
-							// Populate cache for sims that did not need discovery so consumers
-							// always find an entry. previewUrl/downloadUrl come from the DB;
-							// charts is empty because dtx file fields were not selected.
-							for (const s of c.data) {
-								if (simsNeedingDiscovery.includes(s)) continue;
-								cache.set(
-									s.id,
-									Promise.resolve({
-										previewUrl: s.preview_url,
-										downloadUrl: s.download_url,
-										charts: []
-									})
-								);
-							}
 						}
+						// Intentionally do NOT populate cache entries for sims that
+						// skipped discovery. Writing partial entries (DB URLs only,
+						// charts: []) would poison the request-scoped cache: if the
+						// same simfile is reached via another resolver path in this
+						// document that selects a catalog field the list path did not
+						// (e.g. an aliased `simfile(id)` query alongside the list), the
+						// field resolver would short-circuit on the partial entry and
+						// return a stale null/empty value instead of discovering R2.
+						// A cache miss in getCatalogDiscovery correctly falls through
+						// to single-sim discovery, and resolvers for skipped sims
+						// short-circuit at nonBlank(...) before ever consulting the
+						// cache, so leaving them uncached has no cost in normal flow.
+					}
 					}
 					return c.data;
 				}

@@ -1369,6 +1369,94 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedBatchHasUploaded).toHaveBeenCalledWith(expect.anything(), [1]);
 		expect(mockedBatchFiles).not.toHaveBeenCalled();
 	});
+
+	it('does not poison catalog cache for sims skipped by list when same simfile is queried via another path', async () => {
+		// Regression: previously the list resolver wrote a partial cache entry
+		// (DB URLs only, charts: []) for every sim that did not need discovery.
+		// If the same simfile was also resolved via `simfile(id)` in the same
+		// GraphQL document with a different field selection, its preview/download
+		// resolvers would hit the partial entry and return stale null/empty
+		// values instead of triggering R2 discovery.
+		//
+		// Setup:
+		// - sim1 has download_url set, preview_url null. In the list (which only
+		//   selects downloadUrl) it does NOT need discovery — it would be skipped
+		//   and previously got a partial cache entry with previewUrl: null.
+		// - sim2 has download_url null. In the list it DOES need discovery — this
+		//   is what triggers entry into the block that used to write partial cache
+		//   entries for the skipped sims.
+		// - The aliased `simfile(id: "1")` query selects previewUrl. Without the
+		//   fix, the resolver hits the poisoned entry and returns null. With the
+		//   fix, it falls through to single-sim discovery and returns the R2 URL.
+		const sim1 = {
+			...publishedSimfile,
+			id: 1,
+			download_url: 'https://db.example/1-download.zip',
+			preview_url: null
+		};
+		const sim2 = { ...publishedSimfile, id: 2, download_url: null };
+		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue(sim1);
+		mockedBatchCatalog.mockResolvedValue(
+			new Map([
+				[
+					2,
+					{
+						previewUrl: null,
+						downloadUrl: 'https://bucket.example/2/song.ogg',
+						charts: []
+					}
+				]
+			])
+		);
+		mockedDiscoverCatalogFiles.mockResolvedValue({
+			previewUrl: 'https://bucket.example/1/preview.mp3',
+			downloadUrl: null,
+			charts: []
+		});
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+			}),
+			{
+				query: `{
+					list: simfiles(scope: PUBLISHED, pageSize: 2) { data { id downloadUrl } }
+					detail: simfile(id: "1") { id previewUrl }
+				}`
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.list).toEqual({
+			data: [
+				{ id: '1', downloadUrl: 'https://db.example/1-download.zip' },
+				{ id: '2', downloadUrl: 'https://bucket.example/2/song.ogg' }
+			]
+		});
+		expect(result.data?.detail).toEqual({
+			id: '1',
+			previewUrl: 'https://bucket.example/1/preview.mp3'
+		});
+		// Batch discovery fires only for sim2 (sim1 was skipped in the list path).
+		expect(mockedBatchCatalog).toHaveBeenCalledTimes(1);
+		expect(mockedBatchCatalog).toHaveBeenCalledWith(expect.anything(), [
+			{
+				simfileId: 2,
+				dtxFiles: sim2.dtx_files,
+				publicBaseUrl: 'https://bucket.example'
+			}
+		]);
+		// Single-sim discovery must fire for sim1 from the detail path — it must
+		// NOT have been served by a stale partial cache entry from the list path.
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledTimes(1);
+		expect(mockedDiscoverCatalogFiles).toHaveBeenCalledWith(expect.anything(), {
+			simfileId: 1,
+			dtxFiles: sim1.dtx_files,
+			publicBaseUrl: 'https://bucket.example'
+		});
+	});
 });
 
 const { updateSimfile } = await import('@dtx/common/server');

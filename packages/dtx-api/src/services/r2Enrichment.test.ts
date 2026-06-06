@@ -411,6 +411,33 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/song.ogg');
 	});
 
+	it('prefers a top-level .mp3 backing track over nested .ogg/.wav sample chips for downloadUrl', async () => {
+		// Extension priority (.ogg < .mp3 < .wav) must not override the
+		// top-level preference. A top-level .mp3 is the full backing
+		// track; nested .ogg/.wav files under assets/ are individual drum
+		// sample chips. Checking extension first would return the nested
+		// .ogg chip; the top-level check must win.
+		const bucket = makeBucket([
+			[
+				{ key: '42/assets/kick.ogg', size: 10, uploaded: new Date() },
+				{ key: '42/assets/snare.wav', size: 10, uploaded: new Date() },
+				{ key: '42/song.mp3', size: 5000, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/song.mp3');
+	});
+
 	it('falls back to a nested sample when no top-level audio exists for downloadUrl', async () => {
 		// Backward compat: legacy uploads that only have nested audio
 		// still resolve to that key rather than null.

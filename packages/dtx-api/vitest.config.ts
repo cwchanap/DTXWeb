@@ -13,8 +13,10 @@ export default defineConfig({
 		include: ['src/**/*.test.ts'],
 		coverage: {
 			provider: 'v8',
+			reporter: ['text', 'json', 'html', 'lcov'],
 			include: ['src/**/*.ts'],
-			exclude: ['**/*.test.ts']
+			exclude: ['**/*.test.ts'],
+			all: true
 		}
 	}
 });

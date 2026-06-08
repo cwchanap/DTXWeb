@@ -17,7 +17,7 @@ vi.mock('$lib/api', () => ({
 	listSimfiles: mockApi.listSimfiles,
 	updateSimfile: mockApi.updateSimfile,
 	deleteSimfile: mockApi.deleteSimfile,
-	bulkDownloadBaseUrl: () => '/api/simFile/download/bulk',
+	bulkDownloadBaseUrl: () => '/downloads/bulk',
 	bulkDownloadHeaders: async () => ({ 'Content-Type': 'application/json' })
 }));
 
@@ -162,8 +162,8 @@ describe('ChartList helpers', () => {
 
 		expect(callOrder).toEqual([
 			'picker',
-			'/api/simFile/download/bulk?validate=1',
-			'/api/simFile/download/bulk',
+			'/downloads/bulk?validate=1',
+			'/downloads/bulk',
 			'createWritable',
 			'pipeTo'
 		]);

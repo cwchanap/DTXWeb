@@ -3,10 +3,12 @@ import { healthz } from './rest/healthz';
 import { routeDownloadSimfile } from './rest/downloadSimfile';
 import { routeDownloadBulk } from './rest/downloadBulk';
 import { routeUpload } from './rest/upload';
+import { routeSetDef } from './rest/setDef';
 import { handlePreflight, withCors } from './lib/cors';
 import type { Env } from './env';
 
 const downloadSimfilePattern = /^\/downloads\/([^/]+)$/;
+const setDefPattern = /^\/simfiles\/([^/]+)\/set\.def$/;
 
 const methodNotAllowed = (allow: string) =>
 	new Response('Method Not Allowed', { status: 405, headers: { Allow: allow } });
@@ -62,6 +64,16 @@ export default {
 		if (url.pathname === '/upload') {
 			if (request.method !== 'POST') return withCors(methodNotAllowed('POST'), request, env);
 			return withCors(await safeRoute(() => routeUpload(request, env, ctx)), request, env);
+		}
+
+		const setDefMatch = setDefPattern.exec(url.pathname);
+		if (setDefMatch) {
+			if (request.method !== 'GET') return withCors(methodNotAllowed('GET'), request, env);
+			return withCors(
+				await safeRoute(() => routeSetDef(request, env, setDefMatch[1])),
+				request,
+				env
+			);
 		}
 
 		return withCors(new Response('Not Found', { status: 404 }), request, env);

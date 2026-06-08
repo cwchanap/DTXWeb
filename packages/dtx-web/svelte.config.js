@@ -15,11 +15,7 @@ const config = {
 		// If your environment is not supported or you settled on a specific environment, switch out the adapter.
 		// See https://kit.svelte.dev/docs/adapters for more information about adapters.
 		adapter: adapter({
-			fallback: 'plaintext',
-			// e2e-only: surface real local Miniflare bindings (DB/R2/KV) under `vite dev`.
-			// Inert in normal dev and in production builds (env var unset) — keeps the
-			// existing mock-D1 dev behavior for everyone else.
-			...(process.env.E2E_PLATFORM_PROXY === '1' ? { platformProxy: {} } : {})
+			fallback: 'plaintext'
 		}),
 		env: {
 			dir: workspaceRoot

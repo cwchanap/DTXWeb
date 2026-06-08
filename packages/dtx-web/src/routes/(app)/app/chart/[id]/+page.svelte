@@ -6,7 +6,6 @@
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import { loadAssetFiles } from '@dtx/common/services/assetFileService';
 	import { getSimfile, updateSimfile, type LegacySimfile } from '$lib/api';
 
 	let simfile: LegacySimfile | null = $state(null);
@@ -29,6 +28,19 @@
 		} finally {
 			loading = false;
 		}
+	};
+
+	// Phase 6: asset files come from the GraphQL getSimfile() result (simfile.files),
+	// not a separate REST fetch. Adapt {key,size,uploaded} -> the component shape.
+	const loadAssetFiles = async (simfileId: string) => {
+		if (!simfileId) throw new Error('SimfileId is required');
+		const files = simfile?.files ?? [];
+		return files.map((f) => ({
+			key: f.key,
+			size: f.size,
+			lastModified: f.uploaded,
+			fileName: f.key.split('/').pop() ?? f.key
+		}));
 	};
 
 	const handleGoBack = () => {

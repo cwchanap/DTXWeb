@@ -39,10 +39,6 @@ vi.mock('@dtx/common/components', () => ({
 	UploadedAssetFiles: vi.fn()
 }));
 
-vi.mock('@dtx/common/services/assetFileService', () => ({
-	loadAssetFiles: vi.fn().mockResolvedValue([])
-}));
-
 vi.mock('@dtx/common', () => ({
 	ChartDetail: vi.fn(),
 	UploadedAssetFiles: vi.fn()

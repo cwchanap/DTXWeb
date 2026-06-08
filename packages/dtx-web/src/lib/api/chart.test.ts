@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockEnv, requestMock } = vi.hoisted(() => {
-	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'false', PUBLIC_DTX_API_URL: 'https://api.test' };
+	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'true', PUBLIC_DTX_API_URL: 'https://api.test' };
 	const requestMock = vi.fn();
 	return { mockEnv, requestMock };
 });
@@ -20,39 +20,11 @@ vi.mock('./transport', () => ({
 
 import { listSimfiles, getSimfile, updateSimfile, deleteSimfile } from './chart';
 
-const restFetch = vi.fn();
 beforeEach(() => {
-	mockEnv.PUBLIC_USE_GRAPHQL_API = 'false';
 	requestMock.mockReset();
-	restFetch.mockReset();
-	(globalThis as { fetch?: typeof fetch }).fetch = restFetch as unknown as typeof fetch;
-});
-
-describe('listSimfiles (REST path)', () => {
-	it('hits /api/chart with query params and returns { data, count }', async () => {
-		restFetch.mockResolvedValue(
-			new Response(JSON.stringify({ data: [{ id: 1, title: 't' }], count: 1 }))
-		);
-		const result = await listSimfiles({ scope: 'mine', search: 'foo', page: 2, pageSize: 10 });
-		expect(restFetch).toHaveBeenCalledWith(
-			expect.stringContaining('/api/chart?'),
-			expect.any(Object)
-		);
-		const url = restFetch.mock.calls[0][0] as string;
-		expect(url).toContain('scope=mine');
-		expect(url).toContain('search=foo');
-		expect(url).toContain('page=2');
-		expect(url).toContain('pageSize=10');
-		expect(url).toContain('check_uploaded=true');
-		expect(result).toEqual({ data: [{ id: 1, title: 't' }], count: 1 });
-	});
 });
 
 describe('listSimfiles (GraphQL path)', () => {
-	beforeEach(() => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
-	});
-
 	it('calls ListSimfiles and adapts to { data, count }', async () => {
 		requestMock.mockResolvedValue({
 			simfiles: {
@@ -100,15 +72,7 @@ describe('listSimfiles (GraphQL path)', () => {
 });
 
 describe('getSimfile', () => {
-	it('REST: GET /api/chart/${id}', async () => {
-		restFetch.mockResolvedValue(new Response(JSON.stringify({ id: 7, title: 't' })));
-		const result = await getSimfile('7');
-		expect(restFetch).toHaveBeenCalledWith('/api/chart/7', expect.any(Object));
-		expect(result.id).toBe(7);
-	});
-
 	it('GraphQL: calls GetSimfile and unwraps', async () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
 		requestMock.mockResolvedValue({
 			simfile: { id: '7', title: 't', files: [], hasUploadedFiles: false }
 		});
@@ -118,18 +82,7 @@ describe('getSimfile', () => {
 });
 
 describe('updateSimfile', () => {
-	it('REST: PATCH /api/chart/${id} with body', async () => {
-		restFetch.mockResolvedValue(new Response(JSON.stringify({ id: 9, title: 'new' })));
-		const result = await updateSimfile('9', { title: 'new' });
-		expect(restFetch).toHaveBeenCalledWith(
-			'/api/chart/9',
-			expect.objectContaining({ method: 'PATCH' })
-		);
-		expect(result.title).toBe('new');
-	});
-
 	it('GraphQL: calls UpdateSimfile mutation', async () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
 		requestMock.mockResolvedValue({ updateSimfile: { id: '9', title: 'new' } });
 		const result = await updateSimfile('9', { title: 'new' });
 		expect(result.title).toBe('new');
@@ -137,46 +90,7 @@ describe('updateSimfile', () => {
 });
 
 describe('deleteSimfile', () => {
-	it('REST: DELETE /api/simFile/delete/${id} returns partialDeletion when present', async () => {
-		restFetch.mockResolvedValue(
-			new Response(
-				JSON.stringify({
-					message: 'Some files failed to delete (1/3)',
-					deleted: 2,
-					failed: 1,
-					total: 3,
-					partialDeletion: true
-				})
-			)
-		);
-		const result = await deleteSimfile('3');
-		expect(restFetch).toHaveBeenCalledWith(
-			'/api/simFile/delete/3',
-			expect.objectContaining({ method: 'DELETE' })
-		);
-		expect(result.deleted).toBe(true);
-		expect(result.partialDeletion).toBe(true);
-	});
-
-	it('REST: returns no partialDeletion on clean delete', async () => {
-		restFetch.mockResolvedValue(
-			new Response(
-				JSON.stringify({
-					message: 'Files deleted successfully',
-					deleted: 3,
-					failed: 0,
-					total: 3,
-					partialDeletion: false
-				})
-			)
-		);
-		const result = await deleteSimfile('3');
-		expect(result.deleted).toBe(true);
-		expect(result.partialDeletion).toBe(false);
-	});
-
 	it('GraphQL: calls DeleteSimfile', async () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
 		requestMock.mockResolvedValue({ deleteSimfile: { id: '3', deleted: true } });
 		const result = await deleteSimfile('3');
 		expect(result.deleted).toBe(true);

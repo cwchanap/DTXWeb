@@ -6,7 +6,7 @@ import {
 	SimfileScope,
 	type UpdateSimfileInput
 } from './generated/graphql';
-import { getClient, useGraphQL, type ClientCtx } from './client';
+import { getClient, type ClientCtx } from './client';
 
 export type ScopeString = 'mine' | 'published';
 
@@ -74,8 +74,6 @@ const adaptSimfile = (s: {
 	};
 };
 
-const fetchFn = (ctx?: ClientCtx): typeof fetch => ctx?.fetch ?? fetch;
-
 export type ListParams = {
 	scope: ScopeString;
 	search?: string;
@@ -87,15 +85,6 @@ export const listSimfiles = async (
 	params: ListParams,
 	ctx?: ClientCtx
 ): Promise<SimfileListResult> => {
-	if (!useGraphQL()) {
-		const qs = new URLSearchParams({ scope: params.scope, check_uploaded: 'true' });
-		if (params.search) qs.set('search', params.search);
-		if (params.page) qs.set('page', String(params.page));
-		if (params.pageSize) qs.set('pageSize', String(params.pageSize));
-		const res = await fetchFn(ctx)(`/api/chart?${qs}`, { method: 'GET' });
-		if (!res.ok) throw new Error(`list failed: ${res.status}`);
-		return (await res.json()) as SimfileListResult;
-	}
 	const client = await getClient(ctx);
 	const result = await client.request(ListSimfilesDocument, {
 		scope: scopeToEnum(params.scope),
@@ -110,11 +99,6 @@ export const listSimfiles = async (
 };
 
 export const getSimfile = async (id: string, ctx?: ClientCtx): Promise<LegacySimfile> => {
-	if (!useGraphQL()) {
-		const res = await fetchFn(ctx)(`/api/chart/${id}`, { method: 'GET' });
-		if (!res.ok) throw new Error(`get failed: ${res.status}`);
-		return (await res.json()) as LegacySimfile;
-	}
 	const client = await getClient(ctx);
 	const result = await client.request(GetSimfileDocument, { id });
 	if (!result.simfile) throw new Error('Simfile not found');
@@ -126,15 +110,6 @@ export const updateSimfile = async (
 	input: UpdateSimfileInput,
 	ctx?: ClientCtx
 ): Promise<LegacySimfile> => {
-	if (!useGraphQL()) {
-		const res = await fetchFn(ctx)(`/api/chart/${id}`, {
-			method: 'PATCH',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(input)
-		});
-		if (!res.ok) throw new Error(`update failed: ${res.status}`);
-		return (await res.json()) as LegacySimfile;
-	}
 	const client = await getClient(ctx);
 	const result = await client.request(UpdateSimfileDocument, { id, input });
 	return adaptSimfile(result.updateSimfile);
@@ -148,22 +123,6 @@ export type DeleteResult = {
 };
 
 export const deleteSimfile = async (id: string, ctx?: ClientCtx): Promise<DeleteResult> => {
-	if (!useGraphQL()) {
-		const res = await fetchFn(ctx)(`/api/simFile/delete/${id}`, { method: 'DELETE' });
-		if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-		const body = (await res.json()) as {
-			partialDeletion?: boolean;
-			message?: string;
-		};
-		const numId = Number(id);
-		if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${id}`);
-		return {
-			id: numId,
-			deleted: true,
-			partialDeletion: body.partialDeletion,
-			message: body.message
-		};
-	}
 	const client = await getClient(ctx);
 	const result = await client.request(DeleteSimfileDocument, { id });
 	const numId = Number(result.deleteSimfile.id);

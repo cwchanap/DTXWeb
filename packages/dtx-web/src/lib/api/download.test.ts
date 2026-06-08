@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockEnv } = vi.hoisted(() => {
-	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'false', PUBLIC_DTX_API_URL: 'https://api.test' };
+	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'true', PUBLIC_DTX_API_URL: 'https://api.test' };
 	return { mockEnv };
 });
 
 vi.mock('$env/dynamic/public', () => ({ env: mockEnv }));
 vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('../token', () => ({
+vi.mock('./token', () => ({
 	getAccessTokenOrNull: vi.fn().mockResolvedValue('test-token')
 }));
 
@@ -20,33 +20,27 @@ import {
 } from './download';
 
 beforeEach(() => {
-	mockEnv.PUBLIC_USE_GRAPHQL_API = 'false';
+	mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
 	mockEnv.PUBLIC_DTX_API_URL = 'https://api.test';
 });
 
-describe('bulkDownloadBaseUrl', () => {
-	it('returns dtx-web local URL when flag OFF', () => {
-		expect(bulkDownloadBaseUrl()).toBe('/api/simFile/download/bulk');
+describe('downloadBaseUrl', () => {
+	it('returns the dtx-api URL', () => {
+		expect(downloadBaseUrl('7')).toBe('https://api.test/downloads/7');
 	});
-	it('returns dtx-api URL when flag ON', () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
-		expect(bulkDownloadBaseUrl()).toBe('https://api.test/downloads/bulk');
-	});
-	it('throws when GraphQL mode ON and PUBLIC_DTX_API_URL is empty', () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+	it('throws when PUBLIC_DTX_API_URL is empty', () => {
 		mockEnv.PUBLIC_DTX_API_URL = '';
-		expect(() => bulkDownloadBaseUrl()).toThrow('PUBLIC_DTX_API_URL is not configured');
+		expect(() => downloadBaseUrl('7')).toThrow('PUBLIC_DTX_API_URL is not configured');
 	});
 });
 
-describe('downloadBaseUrl', () => {
-	it('returns relative REST URL when flag OFF', () => {
-		expect(downloadBaseUrl('7')).toBe('/api/simFile/download/7');
+describe('bulkDownloadBaseUrl', () => {
+	it('returns the dtx-api bulk URL', () => {
+		expect(bulkDownloadBaseUrl()).toBe('https://api.test/downloads/bulk');
 	});
-	it('throws when GraphQL mode ON and PUBLIC_DTX_API_URL is empty', () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+	it('throws when PUBLIC_DTX_API_URL is empty', () => {
 		mockEnv.PUBLIC_DTX_API_URL = '';
-		expect(() => downloadBaseUrl('7')).toThrow('PUBLIC_DTX_API_URL is not configured');
+		expect(() => bulkDownloadBaseUrl()).toThrow('PUBLIC_DTX_API_URL is not configured');
 	});
 });
 
@@ -79,34 +73,8 @@ describe('parseContentDispositionFilename', () => {
 	});
 });
 
-describe('downloadSimfile (REST path)', () => {
-	it('triggers direct download without buffering', async () => {
-		const fetchMock = vi.fn();
-		const directDownloadSpy = vi.fn();
-		await downloadSimfile('3', {
-			fetchFn: fetchMock,
-			directDownloadFn: directDownloadSpy
-		});
-		expect(directDownloadSpy).toHaveBeenCalledWith('/api/simFile/download/3');
-		// fetch should NOT be called for REST path
-		expect(fetchMock).not.toHaveBeenCalled();
-	});
-
-	it('does not call fetchFn for REST path', async () => {
-		const fetchMock = vi.fn();
-		const triggerSpy = vi.fn();
-		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
-		expect(fetchMock).not.toHaveBeenCalled();
-		expect(triggerSpy).not.toHaveBeenCalled();
-	});
-});
-
-describe('downloadSimfile (GraphQL path)', () => {
-	beforeEach(() => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
-	});
-
-	it('hits dtx-api URL with bearer header when token available', async () => {
+describe('downloadSimfile', () => {
+	it('hits the dtx-api URL with a bearer header when token available', async () => {
 		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
 		const triggerSpy = vi.fn();
 		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
@@ -123,7 +91,7 @@ describe('downloadSimfile (GraphQL path)', () => {
 	});
 
 	it('omits Authorization header when token is null', async () => {
-		const { getAccessTokenOrNull } = await import('../token');
+		const { getAccessTokenOrNull } = await import('./token');
 		vi.mocked(getAccessTokenOrNull).mockResolvedValueOnce(null);
 		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
 		const triggerSpy = vi.fn();
@@ -142,13 +110,7 @@ describe('downloadSimfile (GraphQL path)', () => {
 });
 
 describe('bulkDownloadHeaders', () => {
-	it('returns Content-Type only when not GraphQL mode', async () => {
-		const headers = await bulkDownloadHeaders();
-		expect(headers).toEqual({ 'Content-Type': 'application/json' });
-	});
-
-	it('returns Content-Type and Authorization when GraphQL mode with token', async () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
+	it('returns Content-Type and Authorization when token available', async () => {
 		const headers = await bulkDownloadHeaders();
 		expect(headers).toEqual({
 			'Content-Type': 'application/json',
@@ -156,9 +118,8 @@ describe('bulkDownloadHeaders', () => {
 		});
 	});
 
-	it('returns Content-Type only when GraphQL mode without token', async () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
-		const { getAccessTokenOrNull } = await import('../token');
+	it('returns Content-Type only when no token', async () => {
+		const { getAccessTokenOrNull } = await import('./token');
 		vi.mocked(getAccessTokenOrNull).mockResolvedValueOnce(null);
 		const headers = await bulkDownloadHeaders();
 		expect(headers).toEqual({ 'Content-Type': 'application/json' });

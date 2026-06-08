@@ -1,6 +1,5 @@
 import { env } from '$env/dynamic/public';
-import { useGraphQL } from '../client';
-import { getAccessTokenOrNull } from '../token';
+import { getAccessTokenOrNull } from './token';
 
 const apiBase = () => {
 	const base = (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
@@ -10,11 +9,9 @@ const apiBase = () => {
 	return base;
 };
 
-export const downloadBaseUrl = (simfileId: string) =>
-	useGraphQL() ? `${apiBase()}/downloads/${simfileId}` : `/api/simFile/download/${simfileId}`;
+export const downloadBaseUrl = (simfileId: string) => `${apiBase()}/downloads/${simfileId}`;
 
-export const bulkDownloadBaseUrl = () =>
-	useGraphQL() ? `${apiBase()}/downloads/bulk` : '/api/simFile/download/bulk';
+export const bulkDownloadBaseUrl = () => `${apiBase()}/downloads/bulk`;
 
 export const parseContentDispositionFilename = (header: string | null): string | null => {
 	if (!header) return null;
@@ -44,34 +41,12 @@ const defaultTriggerBrowserDownload = (blob: Blob, filename: string) => {
 	URL.revokeObjectURL(url);
 };
 
-const triggerDirectDownload = (url: string) => {
-	const a = document.createElement('a');
-	a.href = url;
-	document.body.appendChild(a);
-	a.click();
-	a.remove();
-};
-
 export type DownloadOpts = {
 	fetchFn?: typeof fetch;
 	triggerBrowserDownload?: (blob: Blob, filename: string) => void;
-	/** Override the direct-download mechanism (for testing). */
-	directDownloadFn?: (url: string) => void;
 };
 
 export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}) => {
-	// REST path: triggers a direct browser download via <a> link click.
-	// No fetch is involved, so HTTP errors (404/500) produce a corrupt file with no feedback.
-	// The downloadError UI is only functional on the GraphQL path which uses fetch + blob.
-	// This is acceptable because same-origin REST downloads are served by the SvelteKit app
-	// which handles errors at the server level.
-	if (!useGraphQL()) {
-		const directDownload = opts.directDownloadFn ?? triggerDirectDownload;
-		directDownload(downloadBaseUrl(simfileId));
-		return;
-	}
-
-	// GraphQL path: needs auth header, must fetch + blob
 	const fetchFn = opts.fetchFn ?? fetch;
 	const trigger = opts.triggerBrowserDownload ?? defaultTriggerBrowserDownload;
 	const headers: Record<string, string> = {};
@@ -86,12 +61,10 @@ export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}
 	trigger(blob, filename);
 };
 
-/** Build headers for bulk download requests. Content-Type is always set; Bearer auth is added only for the GraphQL path. */
+/** Build headers for bulk download requests against dtx-api (Content-Type + Bearer). */
 export const bulkDownloadHeaders = async (): Promise<Record<string, string>> => {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-	if (useGraphQL()) {
-		const token = await getAccessTokenOrNull();
-		if (token) headers.Authorization = `Bearer ${token}`;
-	}
+	const token = await getAccessTokenOrNull();
+	if (token) headers.Authorization = `Bearer ${token}`;
 	return headers;
 };

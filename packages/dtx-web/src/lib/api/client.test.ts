@@ -18,7 +18,7 @@ vi.mock('./transport', () => ({
 	}))
 }));
 
-import { getClient, useGraphQL } from './client';
+import { getClient } from './client';
 import { makeBrowserClient, makeServiceBindingClient } from './transport';
 
 beforeEach(() => {
@@ -26,18 +26,6 @@ beforeEach(() => {
 	vi.mocked(makeServiceBindingClient).mockClear();
 	mockGetAccessToken.mockClear();
 	mockGetAccessToken.mockResolvedValue('token-from-supabase');
-});
-
-describe('useGraphQL', () => {
-	it('returns true when PUBLIC_USE_GRAPHQL_API is "true"', () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = 'true';
-		expect(useGraphQL()).toBe(true);
-	});
-
-	it('returns false when PUBLIC_USE_GRAPHQL_API is undefined', () => {
-		mockEnv.PUBLIC_USE_GRAPHQL_API = undefined as unknown as string;
-		expect(useGraphQL()).toBe(false);
-	});
 });
 
 describe('getClient', () => {

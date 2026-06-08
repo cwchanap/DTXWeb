@@ -1,6 +1,5 @@
 export const PREVIEW_BUCKET_NAME = 'simfile-previews';
 export const SOUND_PREVIEW_BUCKET_NAME = 'simfile-sound-previews';
-export const DTXFILE_BUCKET_NAME = 'simfile-dtx';
 
 // Preview files are logically separated by type within the DTX bucket:
 // - Image previews: {simfileId}/preview.jpg

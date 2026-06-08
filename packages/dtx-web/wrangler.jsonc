@@ -11,31 +11,10 @@
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
 	},
-	"r2_buckets": [
-		{
-			"binding": "DTXFILE_BUCKET",
-			"bucket_name": "simfile-dtx"
-		}
-	],
-	"kv_namespaces": [
-		{
-			"binding": "RATE_LIMIT",
-			"id": "63599182f2d44b3abb6556ce270075cc"
-		}
-	],
 	"vars": {
-		"RATE_LIMIT_ENV": "prod",
 		"PUBLIC_USE_GRAPHQL_API": "true",
 		"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com"
 	},
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "dtx-web",
-			"database_id": "19376000-d389-4e0e-a5a8-00d9e31a9ffb",
-			"migrations_dir": "d1-migrations"
-		}
-	],
 	"keep_vars": true,
 	"observability": {
 		"logs": {
@@ -48,64 +27,22 @@
 				"pattern": "pre-prod.dtx.hapadona.com",
 				"custom_domain": true
 			},
-			"r2_buckets": [
-				{
-					"binding": "DTXFILE_BUCKET",
-					"bucket_name": "simfile-dtx-preprod"
-				}
-			],
-			"kv_namespaces": [
-				{
-					"binding": "RATE_LIMIT",
-					"id": "47c55a7f9ec0479480c5932090e2f5cc"
-				}
-			],
 			"vars": {
-				"RATE_LIMIT_ENV": "pre-prod",
 				"PUBLIC_USE_GRAPHQL_API": "true",
 				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
-			"services": [{ "binding": "API", "service": "dtx-api-pre-prod" }],
-			"d1_databases": [
-				{
-					"binding": "DB",
-					"database_name": "dtx-web-preprod",
-					"database_id": "6fedd126-9dcf-419f-bc2e-eaf8c23d9510",
-					"migrations_dir": "d1-migrations"
-				}
-			]
+			"services": [{ "binding": "API", "service": "dtx-api-pre-prod" }]
 		},
 		"pre-prod-prod-data": {
 			"route": {
 				"pattern": "pre-prod.dtx.hapadona.com",
 				"custom_domain": true
 			},
-			"r2_buckets": [
-				{
-					"binding": "DTXFILE_BUCKET",
-					"bucket_name": "simfile-dtx"
-				}
-			],
-			"kv_namespaces": [
-				{
-					"binding": "RATE_LIMIT",
-					"id": "47c55a7f9ec0479480c5932090e2f5cc"
-				}
-			],
 			"vars": {
-				"RATE_LIMIT_ENV": "pre-prod-prod-data",
 				"PUBLIC_USE_GRAPHQL_API": "true",
 				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
-			"services": [{ "binding": "API", "service": "dtx-api-pre-prod-prod-data" }],
-			"d1_databases": [
-				{
-					"binding": "DB",
-					"database_name": "dtx-web",
-					"database_id": "19376000-d389-4e0e-a5a8-00d9e31a9ffb",
-					"migrations_dir": "d1-migrations"
-				}
-			]
+			"services": [{ "binding": "API", "service": "dtx-api-pre-prod-prod-data" }]
 		}
 	}
 }

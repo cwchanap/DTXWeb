@@ -18,7 +18,7 @@ const pkg = useGraphQL ? 'dtx-api' : 'dtx-web';
 const pkgDir = join(repoRoot, 'packages', pkg);
 const persist = '.wrangler/state';
 const absPersist = join(pkgDir, persist);
-const migration = join(repoRoot, 'packages/dtx-web/d1-migrations/0001_initial_schema.sql');
+const migration = join(repoRoot, 'packages/dtx-api/d1-migrations/0001_initial_schema.sql');
 const seedFile = join(here, 'seed.sql');
 const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
 

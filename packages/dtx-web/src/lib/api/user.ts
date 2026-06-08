@@ -3,41 +3,16 @@ import {
 	UpsertUserProfileDocument,
 	type UpsertUserProfileInput
 } from './generated/graphql';
-import { getClient, useGraphQL, type ClientCtx } from './client';
+import { getClient, type ClientCtx } from './client';
 
 export type LegacyUserProfile = { user_id: string; username: string };
-
-const fetchFn = (ctx?: ClientCtx): typeof fetch => ctx?.fetch ?? fetch;
 
 const adapt = (g: { userId: string; username: string }): LegacyUserProfile => ({
 	user_id: g.userId,
 	username: g.username
 });
 
-const readErrorBody = async (res: Response): Promise<string> => {
-	try {
-		const text = await res.text();
-		try {
-			const json = JSON.parse(text);
-			return json.message ?? json.error ?? text.slice(0, 200);
-		} catch {
-			return text.slice(0, 200);
-		}
-	} catch {
-		return '';
-	}
-};
-
 export const getMe = async (ctx?: ClientCtx): Promise<LegacyUserProfile> => {
-	if (!useGraphQL()) {
-		const res = await fetchFn(ctx)('/api/user/profile', { method: 'GET' });
-		if (!res.ok) {
-			const body = await readErrorBody(res);
-			throw new Error(`me failed: ${res.status}${body ? ` – ${body}` : ''}`);
-		}
-		const body = (await res.json()) as LegacyUserProfile;
-		return body;
-	}
 	const client = await getClient(ctx);
 	const result = await client.request(MeDocument, {});
 	return adapt(result.me);
@@ -47,19 +22,6 @@ export const upsertUserProfile = async (
 	input: UpsertUserProfileInput,
 	ctx?: ClientCtx
 ): Promise<LegacyUserProfile> => {
-	if (!useGraphQL()) {
-		const res = await fetchFn(ctx)('/api/user/profile', {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(input)
-		});
-		if (!res.ok) {
-			const body = await readErrorBody(res);
-			throw new Error(`upsert failed: ${res.status}${body ? ` – ${body}` : ''}`);
-		}
-		const body = (await res.json()) as LegacyUserProfile;
-		return body;
-	}
 	const client = await getClient(ctx);
 	const result = await client.request(UpsertUserProfileDocument, { input });
 	return adapt(result.upsertUserProfile);

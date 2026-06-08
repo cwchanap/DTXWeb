@@ -25,7 +25,7 @@ vi.mock('$lib/toaster', () => ({ default: toastMock }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api', () => ({
 	downloadSimfile: vi.fn().mockResolvedValue(undefined),
-	bulkDownloadBaseUrl: vi.fn(() => '/api/simFile/download/bulk'),
+	bulkDownloadBaseUrl: vi.fn(() => '/downloads/bulk'),
 	bulkDownloadHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' })
 }));
 

@@ -1,8 +1,6 @@
 // e2e/setup/prepare-stack.ts
-// Migrate + seed the local Miniflare backend for the current leg, BEFORE the
-// dev server starts. Run by the Playwright webServer command.
-//
-// Leg selection: E2E_USE_GRAPHQL === 'true' → seed dtx-api; else → seed dtx-web.
+// Migrate + seed the local Miniflare backend (dtx-api), BEFORE the dev server
+// starts. Run by the Playwright webServer command.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,8 +11,7 @@ import { TEST_USER_ID, CHART_B_ID, isAuthConfigured } from '../test-config';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = join(here, '..', '..');
 
-const useGraphQL = process.env.E2E_USE_GRAPHQL === 'true';
-const pkg = useGraphQL ? 'dtx-api' : 'dtx-web';
+const pkg = 'dtx-api';
 const pkgDir = join(repoRoot, 'packages', pkg);
 const persist = '.wrangler/state';
 const absPersist = join(pkgDir, persist);

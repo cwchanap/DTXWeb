@@ -7,18 +7,17 @@ import {
 } from './e2e/test-config';
 
 // CI guard: fail loudly when auth secrets are not provisioned. Without this,
-// Playwright exits 0 with zero auth-test coverage — the parity gate is then
-// unenforced on both matrix legs, invisibly.
+// Playwright exits 0 with zero auth-test coverage — the gate is then
+// unenforced, invisibly.
 if (process.env.CI && !isAuthConfigured) {
 	throw new Error(
 		'CI requires auth e2e secrets (E2E_USER_PASSWORD, E2E_USER_ID, ' +
 			'E2E_SUPABASE_URL, E2E_SUPABASE_ANON_KEY, E2E_USER_EMAIL) ' +
-			'to be set. The authenticated lifecycle test is the core of the parity gate.'
+			'to be set. The authenticated lifecycle test is the core of the gate.'
 	);
 }
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
-const useGraphQL = process.env.E2E_USE_GRAPHQL === 'true';
 const apiURL = `http://localhost:${DTX_API_LOCAL_PORT}`;
 
 // Shared Supabase env for the dtx-web dev server (cookie auth + client bearer).
@@ -28,51 +27,39 @@ const webSupabaseEnv = {
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' // render the blog Download button
 };
 
-// dtx-web webServer: migrate+seed (OFF leg only) then start vite dev with platformProxy.
-// The flag-ON leg also boots dtx-api (seeded) via wrangler dev with test Supabase + local
-// CORS. A conditional spread (rather than `.push`) keeps both entries in one array literal so
-// their differing `env` shapes don't trip the array's element-type inference.
-//
-// NOTE: `--var KEY:VALUE` values are quoted to prevent shell-expansion issues.
-// Keep them quoted when filling real creds.
+// dtx-web serves with the GraphQL flag ON; dtx-api is seeded + booted as the
+// single backend. No REST proxy leg remains after Phase 6.
 const webServers = [
 	{
-		command: useGraphQL
-			? 'bun run --filter=dtx-web dev'
-			: 'bun run e2e/setup/prepare-stack.ts && E2E_PLATFORM_PROXY=1 bun run --filter=dtx-web dev',
+		command: 'bun run --filter=dtx-web dev',
 		url: 'http://localhost:5173',
 		reuseExistingServer: false,
 		timeout: 180_000,
 		env: {
 			...process.env,
 			VITE_E2E: 'true',
-			E2E_PLATFORM_PROXY: useGraphQL ? '' : '1',
-			PUBLIC_USE_GRAPHQL_API: useGraphQL ? 'true' : 'false',
+			PUBLIC_USE_GRAPHQL_API: 'true',
 			PUBLIC_DTX_API_URL: apiURL,
 			PUBLIC_SIMFILE_BUCKET_URL: process.env.PUBLIC_SIMFILE_BUCKET_URL ?? baseURL,
 			VITE_DTX_SERVER_URL: process.env.VITE_DTX_SERVER_URL ?? baseURL,
 			...webSupabaseEnv
 		}
 	},
-	...(useGraphQL
-		? [
-				{
-					command:
-						'bun run e2e/setup/prepare-stack.ts && ' +
-						'cd packages/dtx-api && bunx wrangler dev --port ' +
-						DTX_API_LOCAL_PORT +
-						' --persist-to .wrangler/state' +
-						` --var SUPABASE_URL:"${TEST_SUPABASE_URL}"` +
-						` --var SUPABASE_ANON_KEY:"${TEST_SUPABASE_ANON_KEY}"` +
-						' --var CORS_ALLOWED_ORIGINS:"http://localhost:5173"' +
-						' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"',
-					url: `${apiURL}/graphql?query=%7B__typename%7D`,
-					reuseExistingServer: false,
-					timeout: 180_000,
-					env: { ...process.env, E2E_USE_GRAPHQL: 'true' }
-				}
-			]
-		: [])
+	{
+		command:
+			'bun run e2e/setup/prepare-stack.ts && ' +
+			'cd packages/dtx-api && bunx wrangler dev --port ' +
+			DTX_API_LOCAL_PORT +
+			' --persist-to .wrangler/state' +
+			` --var SUPABASE_URL:"${TEST_SUPABASE_URL}"` +
+			` --var SUPABASE_ANON_KEY:"${TEST_SUPABASE_ANON_KEY}"` +
+			' --var CORS_ALLOWED_ORIGINS:"http://localhost:5173"' +
+			' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"',
+		url: `${apiURL}/graphql?query=%7B__typename%7D`,
+		reuseExistingServer: false,
+		timeout: 180_000,
+		env: { ...process.env }
+	}
 ];
 
 export default defineConfig({
@@ -91,8 +78,6 @@ export default defineConfig({
 			testIgnore: [/global\.setup\.ts/, /auth-lifecycle\.spec\.ts/]
 		},
 		// Auth-dependent projects are included only when credentials are configured.
-		// Without E2E_USER_PASSWORD + E2E_USER_ID in the environment, these are
-		// omitted so CI stays green until a test Supabase project is provisioned.
 		...(isAuthConfigured
 			? [
 					{ name: 'setup', testMatch: /global\.setup\.ts/ },

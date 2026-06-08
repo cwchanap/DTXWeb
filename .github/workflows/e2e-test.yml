@@ -9,12 +9,7 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        use_graphql: [false, true]
     env:
-      E2E_USE_GRAPHQL: ${{ matrix.use_graphql }}
       E2E_USER_EMAIL: e2e@drumery.test
       E2E_USER_PASSWORD: e2e-password
       E2E_USER_ID: 00000000-0000-0000-0000-000000000001
@@ -54,11 +49,11 @@ jobs:
         run: bun run e2e/setup/create-local-supabase-user.ts
       - name: Install Playwright Browsers
         run: bunx playwright install --with-deps
-      - name: Run Playwright tests (flag=${{ matrix.use_graphql }})
+      - name: Run Playwright tests
         run: bunx playwright test
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report-graphql-${{ matrix.use_graphql }}
+          name: playwright-report
           path: playwright-report/
           retention-days: 30

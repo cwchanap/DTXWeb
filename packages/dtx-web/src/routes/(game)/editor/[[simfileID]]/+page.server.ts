@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { env } from '$env/dynamic/public';
 import type { PageServerLoad } from './$types';
 
 interface SimFileMetadata {
@@ -66,7 +67,7 @@ async function parseDefFileContent(content: string): Promise<SimFileMetadata> {
 	return { title, levels };
 }
 
-export const load: PageServerLoad = async ({ params, platform }) => {
+export const load: PageServerLoad = async ({ params, fetch }) => {
 	const { simfileID } = params;
 
 	// If no simfileID, return empty metadata (local file mode)
@@ -77,11 +78,10 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 		};
 	}
 
-	// Get R2 bucket from platform
-	const bucket = platform?.env?.DTXFILE_BUCKET;
+	const apiBase = (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
 
-	if (!bucket || dev) {
-		// In development, R2 bucket is unavailable — trigger client-side fetching
+	// No API base configured, or local dev — defer to client-side fetching.
+	if (!apiBase || dev) {
 		return {
 			simfileID,
 			metadata: null
@@ -89,14 +89,16 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 	}
 
 	try {
-		// Fetch set.def file from R2
-		const defObject = await bucket.get(`${simfileID}/set.def`);
-		if (!defObject) {
+		// Fetch set.def from dtx-api (public passthrough to R2)
+		const res = await fetch(`${apiBase}/simfiles/${simfileID}/set.def`);
+		if (res.status === 404) {
 			throw error(404, `SimFile ${simfileID} not found`);
 		}
+		if (!res.ok) {
+			throw error(res.status, `Failed to load simfile metadata: ${res.status}`);
+		}
 
-		// Convert R2Object to File and detect encoding with BOM support
-		const arrayBuffer = await defObject.arrayBuffer();
+		const arrayBuffer = await res.arrayBuffer();
 
 		// Detect BOM and decode accordingly
 		let textContent: string;

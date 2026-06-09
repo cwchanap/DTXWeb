@@ -20,7 +20,7 @@ declare global {
 		// interface PageState {}
 		interface Platform {
 			env?: {
-				API: Fetcher;
+				API?: Fetcher;
 			};
 		}
 	}

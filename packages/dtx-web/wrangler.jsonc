@@ -12,7 +12,6 @@
 		"directory": ".svelte-kit/cloudflare"
 	},
 	"vars": {
-		"PUBLIC_USE_GRAPHQL_API": "true",
 		"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com"
 	},
 	"keep_vars": true,
@@ -28,7 +27,6 @@
 				"custom_domain": true
 			},
 			"vars": {
-				"PUBLIC_USE_GRAPHQL_API": "true",
 				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
 			"services": [{ "binding": "API", "service": "dtx-api-pre-prod" }]
@@ -39,7 +37,6 @@
 				"custom_domain": true
 			},
 			"vars": {
-				"PUBLIC_USE_GRAPHQL_API": "true",
 				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
 			},
 			"services": [{ "binding": "API", "service": "dtx-api-pre-prod-prod-data" }]

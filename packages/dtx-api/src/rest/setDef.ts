@@ -16,7 +16,7 @@ export const routeSetDef = async (request: Request, env: Env, rawId: string): Pr
 		return textError(404, `SimFile ${rawId} not found`);
 	}
 
-	return new Response(object.body, {
+	return new Response(await object.arrayBuffer(), {
 		headers: { 'content-type': 'application/octet-stream' }
 	});
 };

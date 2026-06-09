@@ -19,11 +19,11 @@ const internalError = () =>
 		headers: { 'content-type': 'application/json' }
 	});
 
-const safeRoute = async (fn: () => Promise<Response>): Promise<Response> => {
+const safeRoute = async (fn: () => Promise<Response>, path: string): Promise<Response> => {
 	try {
 		return await fn();
 	} catch (err) {
-		console.error('Unhandled error in route handler:', err);
+		console.error(`Unhandled error in route handler [${path}]:`, err);
 		return internalError();
 	}
 };
@@ -48,14 +48,21 @@ export default {
 
 		if (url.pathname === '/downloads/bulk') {
 			if (request.method !== 'POST') return withCors(methodNotAllowed('POST'), request, env);
-			return withCors(await safeRoute(() => routeDownloadBulk(request, env)), request, env);
+			return withCors(
+				await safeRoute(() => routeDownloadBulk(request, env), url.pathname),
+				request,
+				env
+			);
 		}
 
 		const downloadMatch = downloadSimfilePattern.exec(url.pathname);
 		if (downloadMatch) {
 			if (request.method !== 'GET') return withCors(methodNotAllowed('GET'), request, env);
 			return withCors(
-				await safeRoute(() => routeDownloadSimfile(request, env, ctx, downloadMatch[1])),
+				await safeRoute(
+					() => routeDownloadSimfile(request, env, ctx, downloadMatch[1]),
+					url.pathname
+				),
 				request,
 				env
 			);
@@ -63,14 +70,18 @@ export default {
 
 		if (url.pathname === '/upload') {
 			if (request.method !== 'POST') return withCors(methodNotAllowed('POST'), request, env);
-			return withCors(await safeRoute(() => routeUpload(request, env, ctx)), request, env);
+			return withCors(
+				await safeRoute(() => routeUpload(request, env, ctx), url.pathname),
+				request,
+				env
+			);
 		}
 
 		const setDefMatch = setDefPattern.exec(url.pathname);
 		if (setDefMatch) {
 			if (request.method !== 'GET') return withCors(methodNotAllowed('GET'), request, env);
 			return withCors(
-				await safeRoute(() => routeSetDef(request, env, setDefMatch[1])),
+				await safeRoute(() => routeSetDef(request, env, setDefMatch[1]), url.pathname),
 				request,
 				env
 			);

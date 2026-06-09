@@ -57,14 +57,12 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		expect(result.metadata).toBeNull();
 	});
 
-	it('returns null metadata when PUBLIC_DTX_API_URL is not configured', async () => {
+	it('throws 500 when PUBLIC_DTX_API_URL is not configured in production', async () => {
 		publicEnvMock.env.PUBLIC_DTX_API_URL = '';
 		const fetchSpy = vi.fn();
-		const result = requirePageLoadResult(
-			await callLoad('123', fetchSpy as unknown as typeof fetch)
-		);
-		expect(result.simfileID).toBe('123');
-		expect(result.metadata).toBeNull();
+		await expect(callLoad('123', fetchSpy as unknown as typeof fetch)).rejects.toMatchObject({
+			status: 500
+		});
 		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 

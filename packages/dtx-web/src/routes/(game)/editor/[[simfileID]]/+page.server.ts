@@ -80,12 +80,17 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 
 	const apiBase = (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
 
-	// No API base configured, or local dev — defer to client-side fetching.
-	if (!apiBase || dev) {
+	// Local dev — defer to client-side fetching.
+	if (dev) {
 		return {
 			simfileID,
 			metadata: null
 		};
+	}
+
+	// Production without API URL configured — misconfiguration, fail loudly.
+	if (!apiBase) {
+		throw error(500, 'DTX API URL not configured');
 	}
 
 	try {

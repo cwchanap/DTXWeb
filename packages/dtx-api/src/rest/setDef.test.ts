@@ -38,10 +38,11 @@ describe('routeSetDef', () => {
 	it('streams the object body when present', async () => {
 		const body = new TextEncoder().encode('#TITLE Test\n');
 		const get = vi.fn().mockResolvedValue({
-			body: new Response(body).body
+			arrayBuffer: vi.fn().mockResolvedValue(body.buffer)
 		});
 		const res = await routeSetDef(req(), makeEnv(get), '1002');
 		expect(res.status).toBe(200);
+		expect(res.headers.get('content-type')).toBe('application/octet-stream');
 		expect(await res.text()).toContain('#TITLE Test');
 	});
 });

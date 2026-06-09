@@ -4,7 +4,8 @@ import {
 	UpdateSimfileDocument,
 	DeleteSimfileDocument,
 	SimfileScope,
-	type UpdateSimfileInput
+	type UpdateSimfileInput,
+	type SimfileWithFilesFragment
 } from './generated/graphql';
 import { getClient, type ClientCtx } from './client';
 
@@ -34,24 +35,17 @@ export type SimfileListResult = { data: LegacySimfile[]; count: number };
 const scopeToEnum = (scope: ScopeString): SimfileScope =>
 	scope === 'mine' ? SimfileScope.Mine : SimfileScope.Published;
 
-const adaptSimfile = (s: {
-	id: string;
-	displayId?: number | null;
-	title: string;
-	artist: string;
-	bpm: number;
-	userId?: string | null;
-	isPublished: boolean;
-	downloadUrl?: string | null;
-	previewUrl?: string | null;
-	videoPreviewUrl?: string | null;
-	publishDate?: string;
-	createdAt?: string;
-	updatedAt?: string;
-	dtxFiles?: { level: number; label: string }[];
-	files?: { key: string; size: number; uploaded: string }[];
-	hasUploadedFiles?: boolean;
-}): LegacySimfile => {
+/**
+ * Input type for adaptSimfile, derived from the generated GraphQL fragment.
+ * `files` and `hasUploadedFiles` are optional because only `getSimfile` returns
+ * `SimfileWithFilesFragment`; `listSimfiles` and `updateSimfile` omit them.
+ */
+type AdaptSimfileInput = Omit<SimfileWithFilesFragment, 'files' | 'hasUploadedFiles'> & {
+	files?: SimfileWithFilesFragment['files'];
+	hasUploadedFiles?: SimfileWithFilesFragment['hasUploadedFiles'];
+};
+
+const adaptSimfile = (s: AdaptSimfileInput): LegacySimfile => {
 	const numId = Number(s.id);
 	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${s.id}`);
 	return {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockEnv, mockBrowser, mockGetAccessToken } = vi.hoisted(() => ({
-	mockEnv: { PUBLIC_USE_GRAPHQL_API: 'true', PUBLIC_DTX_API_URL: 'https://api.test' },
+	mockEnv: { PUBLIC_DTX_API_URL: 'https://api.test' },
 	mockBrowser: true,
 	mockGetAccessToken: vi.fn().mockResolvedValue('token-from-supabase')
 }));

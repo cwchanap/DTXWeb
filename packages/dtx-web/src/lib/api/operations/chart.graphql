@@ -46,7 +46,7 @@ query GetSimfile($id: ID!) {
 
 mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
 	updateSimfile(id: $id, input: $input) {
-		...SimfileFull
+		...SimfileWithFiles
 	}
 }
 

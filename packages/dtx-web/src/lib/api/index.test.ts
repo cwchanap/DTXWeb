@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('$env/dynamic/public', () => ({
-	env: { PUBLIC_USE_GRAPHQL_API: 'true', PUBLIC_DTX_API_URL: 'https://api.test' }
+	env: { PUBLIC_DTX_API_URL: 'https://api.test' }
 }));
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('./token', () => ({ getAccessTokenOrNull: vi.fn().mockResolvedValue(null) }));

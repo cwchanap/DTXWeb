@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockEnv, requestMock } = vi.hoisted(() => {
-	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'true', PUBLIC_DTX_API_URL: 'https://api.test' };
+	const mockEnv = { PUBLIC_DTX_API_URL: 'https://api.test' };
 	const requestMock = vi.fn();
 	return { mockEnv, requestMock };
 });
@@ -82,10 +82,20 @@ describe('getSimfile', () => {
 });
 
 describe('updateSimfile', () => {
-	it('GraphQL: calls UpdateSimfile mutation', async () => {
-		requestMock.mockResolvedValue({ updateSimfile: { id: '9', title: 'new' } });
+	it('GraphQL: calls UpdateSimfile mutation and returns files + hasUploadedFiles', async () => {
+		requestMock.mockResolvedValue({
+			updateSimfile: {
+				id: '9',
+				title: 'new',
+				files: [{ key: 'charts/test.zip', size: 1024, uploaded: '2025-01-01' }],
+				hasUploadedFiles: true
+			}
+		});
 		const result = await updateSimfile('9', { title: 'new' });
 		expect(result.title).toBe('new');
+		expect(result.files).toHaveLength(1);
+		expect(result.files?.[0]?.key).toBe('charts/test.zip');
+		expect(result.has_uploaded_files).toBe(true);
 	});
 });
 

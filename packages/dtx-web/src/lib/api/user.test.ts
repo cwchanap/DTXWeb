@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockEnv, requestMock } = vi.hoisted(() => {
-	const mockEnv = { PUBLIC_USE_GRAPHQL_API: 'true', PUBLIC_DTX_API_URL: 'https://api.test' };
+	const mockEnv = { PUBLIC_DTX_API_URL: 'https://api.test' };
 	const requestMock = vi.fn();
 	return { mockEnv, requestMock };
 });

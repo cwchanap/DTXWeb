@@ -34,9 +34,39 @@ vi.mock('$lib/toaster', () => ({
 	default: { error: vi.fn(), success: vi.fn() }
 }));
 
+const capturedLoadAssetFiles = vi.hoisted(() => vi.fn());
+
 vi.mock('@dtx/common/components', () => ({
-	ChartDetail: vi.fn(),
-	UploadedAssetFiles: vi.fn()
+	ChartDetail: vi.fn((...args: unknown[]) => {
+		const props = (args.length > 1 ? args[1] : args[0]) as Record<string, unknown> | undefined;
+		if (props) {
+			const snippets = Object.entries(props).filter(
+				([k, v]) => !k.startsWith('$$') && typeof v === 'function'
+			);
+			for (const [, snippet] of snippets) {
+				try {
+					const anchor = document.createComment('');
+					document.body.appendChild(anchor);
+					(snippet as (anchor: Node, ...rest: (() => unknown)[]) => void)(
+						anchor,
+						() => {}
+					);
+				} catch {
+					// snippet rendering may fail in test env
+				}
+			}
+		}
+		return {};
+	}),
+	UploadedAssetFiles: vi.fn((...args: unknown[]) => {
+		const props = (args.length > 1 ? args[1] : args[0]) as Record<string, unknown> | undefined;
+		if (props?.loadAssetFiles) {
+			capturedLoadAssetFiles.mockImplementation(
+				props.loadAssetFiles as ReturnType<typeof vi.fn>
+			);
+		}
+		return {};
+	})
 }));
 
 vi.mock('@dtx/common', () => ({
@@ -52,8 +82,14 @@ vi.mock('$lib/api', () => ({
 	updateSimfile: mockUpdateSimfile
 }));
 
+vi.mock('$lib/api/download', () => ({
+	downloadSimfile: vi.fn(),
+	bulkDownloadBaseUrl: vi.fn(),
+	bulkDownloadHeaders: vi.fn()
+}));
+
 import ChartDetailPage from './+page.svelte';
-import { ChartDetail } from '@dtx/common/components';
+import { ChartDetail, UploadedAssetFiles } from '@dtx/common/components';
 import toastStore from '$lib/toaster';
 
 const mockSimfileResponse = { id: 123, title: 'Test Song', is_published: false };
@@ -201,5 +237,72 @@ describe('handleUpdateSimfile via ChartDetail onSave prop', () => {
 		expect(vi.mocked(toastStore.error)).toHaveBeenCalledWith(
 			expect.objectContaining({ title: 'Error updating simfile' })
 		);
+	});
+});
+
+describe('loadAssetFiles via ChartDetail snippet', () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('maps simfile files to component shape', async () => {
+		const simfileWithFiles = {
+			...mockSimfileResponse,
+			files: [
+				{ key: '123/audio.wav', size: 1024, uploaded: '2024-01-01T00:00:00Z' },
+				{ key: '123/chart.dtx', size: 512, uploaded: '2024-01-02T00:00:00Z' }
+			]
+		};
+		mockGetSimfile.mockResolvedValue(simfileWithFiles);
+
+		render(ChartDetailPage);
+
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+
+		expect(capturedLoadAssetFiles).toBeDefined();
+		const result = await capturedLoadAssetFiles('123');
+		expect(result).toEqual([
+			{
+				key: '123/audio.wav',
+				size: 1024,
+				lastModified: '2024-01-01T00:00:00Z',
+				fileName: 'audio.wav'
+			},
+			{
+				key: '123/chart.dtx',
+				size: 512,
+				lastModified: '2024-01-02T00:00:00Z',
+				fileName: 'chart.dtx'
+			}
+		]);
+	});
+
+	it('throws when simfileId is empty', async () => {
+		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, files: [] });
+
+		render(ChartDetailPage);
+
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+
+		expect(capturedLoadAssetFiles).toBeDefined();
+		await expect(capturedLoadAssetFiles('')).rejects.toThrow('SimfileId is required');
+	});
+
+	it('returns empty array when simfile has no files', async () => {
+		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, files: undefined });
+
+		render(ChartDetailPage);
+
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+
+		expect(capturedLoadAssetFiles).toBeDefined();
+		const result = await capturedLoadAssetFiles('123');
+		expect(result).toEqual([]);
 	});
 });

@@ -251,4 +251,39 @@ describe('Phase 2 routes', () => {
 		expect(errorSpy.mock.calls[0][1]).instanceof(Error);
 		errorSpy.mockRestore();
 	});
+
+	it('GET /simfiles/:id/set.def dispatches to setDef route', async () => {
+		const env = makeEnv({
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue(null)
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/simfiles/1002/set.def', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(404);
+	});
+
+	it('405 on non-GET /simfiles/:id/set.def', async () => {
+		const env = makeEnv();
+		const response = await worker.fetch(
+			new Request('http://api/simfiles/1002/set.def', { method: 'POST' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(405);
+		expect(response.headers.get('Allow')).toBe('GET');
+	});
+
+	it('400 on non-numeric id for /simfiles/:id/set.def', async () => {
+		const env = makeEnv();
+		const response = await worker.fetch(
+			new Request('http://api/simfiles/abc/set.def', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(400);
+	});
 });

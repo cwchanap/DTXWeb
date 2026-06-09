@@ -135,6 +135,14 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		});
 	});
 
+	it('throws error status when dtx-api returns non-404 error', async () => {
+		const fetchSpy = vi.fn().mockResolvedValue({ status: 503, ok: false } as Response);
+		await expect(callLoad('123', fetchSpy as unknown as typeof fetch)).rejects.toMatchObject({
+			status: 503
+		});
+		expect(fetchSpy).toHaveBeenCalledWith('https://api.test/simfiles/123/set.def');
+	});
+
 	it('parses title with colon separator', async () => {
 		const defContent = '#TITLE:Colon Title\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
 		const buffer = new TextEncoder().encode(defContent).buffer;

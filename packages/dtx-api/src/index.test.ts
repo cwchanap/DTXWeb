@@ -352,12 +352,12 @@ describe('Phase 2 routes', () => {
 	});
 
 	it('CORS-wraps 500 when setDef handler throws', async () => {
-		const { getSimfileOwner } = await import('@dtx/common/server');
-		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('DB error'));
-
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
-			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
+			CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockRejectedValueOnce(new Error('R2 read failed'))
+			} as unknown as Env['DTXFILE_BUCKET']
 		});
 		const response = await worker.fetch(
 			new Request('http://api/simfiles/1002/set.def', {

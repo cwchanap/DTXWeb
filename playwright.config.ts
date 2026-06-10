@@ -27,8 +27,8 @@ const webSupabaseEnv = {
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' // render the blog Download button
 };
 
-// dtx-web serves with the GraphQL flag ON; dtx-api is seeded + booted as the
-// single backend. No REST proxy leg remains after Phase 6.
+// dtx-web serves with dtx-api as the single backend; dtx-api is seeded +
+// booted for e2e. No REST proxy leg remains after Phase 6.
 const webServers = [
 	{
 		command: 'bun run --filter=dtx-web dev',
@@ -38,7 +38,6 @@ const webServers = [
 		env: {
 			...process.env,
 			VITE_E2E: 'true',
-			PUBLIC_USE_GRAPHQL_API: 'true',
 			PUBLIC_DTX_API_URL: apiURL,
 			PUBLIC_SIMFILE_BUCKET_URL: process.env.PUBLIC_SIMFILE_BUCKET_URL ?? baseURL,
 			VITE_DTX_SERVER_URL: process.env.VITE_DTX_SERVER_URL ?? baseURL,

@@ -39,7 +39,7 @@
 			key: f.key,
 			size: f.size,
 			lastModified: f.uploaded,
-			fileName: f.key.split('/').pop() ?? f.key
+			fileName: f.key.startsWith(`${simfileId}/`) ? f.key.slice(simfileId.length + 1) : f.key
 		}));
 	};
 

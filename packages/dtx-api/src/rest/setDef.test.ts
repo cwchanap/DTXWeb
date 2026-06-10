@@ -35,7 +35,7 @@ describe('routeSetDef', () => {
 		expect(get).toHaveBeenCalledWith('1002/set.def');
 	});
 
-	it('streams the object body when present', async () => {
+	it('returns the object body when present', async () => {
 		const body = new TextEncoder().encode('#TITLE Test\n');
 		const get = vi.fn().mockResolvedValue({
 			arrayBuffer: vi.fn().mockResolvedValue(body.buffer)

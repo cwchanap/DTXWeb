@@ -18,19 +18,17 @@ const makeEnv = (get: ReturnType<typeof vi.fn>): Env =>
 		SUPABASE_SERVICE_ROLE_KEY: ''
 	}) as Env;
 
-const req = () => new Request('https://api.test/simfiles/1002/set.def');
-
 describe('routeSetDef', () => {
 	it('rejects a non-numeric id with 400', async () => {
 		const get = vi.fn();
-		const res = await routeSetDef(req(), makeEnv(get), 'abc');
+		const res = await routeSetDef(makeEnv(get), 'abc');
 		expect(res.status).toBe(400);
 		expect(get).not.toHaveBeenCalled();
 	});
 
 	it('returns 404 when the object is missing', async () => {
 		const get = vi.fn().mockResolvedValue(null);
-		const res = await routeSetDef(req(), makeEnv(get), '1002');
+		const res = await routeSetDef(makeEnv(get), '1002');
 		expect(res.status).toBe(404);
 		expect(get).toHaveBeenCalledWith('1002/set.def');
 	});
@@ -40,7 +38,7 @@ describe('routeSetDef', () => {
 		const get = vi.fn().mockResolvedValue({
 			arrayBuffer: vi.fn().mockResolvedValue(body.buffer)
 		});
-		const res = await routeSetDef(req(), makeEnv(get), '1002');
+		const res = await routeSetDef(makeEnv(get), '1002');
 		expect(res.status).toBe(200);
 		expect(res.headers.get('content-type')).toBe('application/octet-stream');
 		expect(await res.text()).toContain('#TITLE Test');

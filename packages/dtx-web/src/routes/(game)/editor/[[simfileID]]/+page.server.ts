@@ -108,7 +108,9 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		// Detect BOM and decode accordingly
 		let textContent: string;
 		const uint8 = new Uint8Array(arrayBuffer);
-		if (uint8[0] === 0xff && uint8[1] === 0xfe) {
+		if (uint8.length === 0) {
+			textContent = '';
+		} else if (uint8[0] === 0xff && uint8[1] === 0xfe) {
 			// UTF-16LE BOM
 			textContent = new TextDecoder('utf-16le').decode(arrayBuffer);
 			// Remove BOM if present

@@ -22,6 +22,13 @@ vi.mock('@dtx/common/server', async () => {
 
 vi.mock('./auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
 
+vi.mock('./services/uploads', () => ({
+	uploadSimfileFile: vi.fn(
+		async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
+	),
+	purgeCacheForFile: vi.fn(async () => true)
+}));
+
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	DB: {} as Env['DB'],
 	DTXFILE_BUCKET: {} as Env['DTXFILE_BUCKET'],
@@ -285,5 +292,100 @@ describe('Phase 2 routes', () => {
 			makeExecutionCtx()
 		);
 		expect(response.status).toBe(400);
+	});
+
+	it('CORS-wraps 500 when downloadSimfile handler throws', async () => {
+		const { getSimfileOwner } = await import('@dtx/common/server');
+		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('R2 error'));
+
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const env = makeEnv({
+			PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true',
+			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
+		});
+		const { getClientIp } = await import('@dtx/common/server');
+		vi.mocked(getClientIp).mockReturnValueOnce('1.2.3.4');
+		const response = await worker.fetch(
+			new Request('http://api/downloads/123', {
+				method: 'GET',
+				headers: { Origin: 'http://localhost:5173' }
+			}),
+			env,
+			makeExecutionCtx()
+		);
+
+		expect(response.status).toBe(500);
+		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
+		errorSpy.mockRestore();
+	});
+
+	it('CORS-wraps 500 when upload handler throws unexpectedly', async () => {
+		const { verifyToken } = await import('./auth/verifyToken');
+		vi.mocked(verifyToken).mockResolvedValueOnce({
+			user: { id: 'u1', email: 't@t.com' } as never,
+			session: {} as never
+		});
+
+		const { uploadSimfileFile } = await import('./services/uploads');
+		vi.mocked(uploadSimfileFile).mockRejectedValueOnce(new Error('R2 write failed'));
+
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const env = makeEnv({
+			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
+		});
+		const formData = new FormData();
+		formData.append('file', new File(['content'], 'test.dtx'));
+		formData.append('simFileId', '1');
+		const response = await worker.fetch(
+			new Request('http://api/upload', {
+				method: 'POST',
+				headers: { Origin: 'http://localhost:5173' },
+				body: formData
+			}),
+			env,
+			makeExecutionCtx()
+		);
+
+		expect(response.status).toBe(500);
+		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
+		errorSpy.mockRestore();
+	});
+
+	it('CORS-wraps 500 when setDef handler throws', async () => {
+		const { getSimfileOwner } = await import('@dtx/common/server');
+		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('DB error'));
+
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const env = makeEnv({
+			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
+		});
+		const response = await worker.fetch(
+			new Request('http://api/simfiles/1002/set.def', {
+				method: 'GET',
+				headers: { Origin: 'http://localhost:5173' }
+			}),
+			env,
+			makeExecutionCtx()
+		);
+
+		expect(response.status).toBe(500);
+		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
+		errorSpy.mockRestore();
+	});
+
+	it('405 on non-POST /upload', async () => {
+		const env = makeEnv({
+			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
+		});
+		const response = await worker.fetch(
+			new Request('http://api/upload', {
+				method: 'GET',
+				headers: { Origin: 'http://localhost:5173' }
+			}),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(405);
+		expect(response.headers.get('Allow')).toBe('POST');
 	});
 });

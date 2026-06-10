@@ -347,3 +347,123 @@ describe('loadAssetFiles via ChartDetail snippet', () => {
 		expect(result).toEqual([]);
 	});
 });
+
+describe('Chart Detail Page - simfile not found', () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('renders "Simfile not found" when getSimfile resolves with null', async () => {
+		mockGetSimfile.mockResolvedValue(null);
+
+		render(ChartDetailPage);
+
+		await vi.waitFor(() => {
+			expect(screen.getByText('Simfile not found')).toBeInTheDocument();
+		});
+	});
+});
+
+describe('handleUpdateSimfile with updatedSimfile and updatedHighestDtx', () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('includes bpm, artist, title in update when updatedSimfile and updatedHighestDtx are set', async () => {
+		const simfileResponse = {
+			...mockSimfileResponse,
+			title: 'Original Title',
+			artist: 'Original Artist',
+			bpm: 120
+		};
+		mockGetSimfile.mockResolvedValue(simfileResponse);
+		mockUpdateSimfile.mockResolvedValue({ ...simfileResponse, is_published: true });
+
+		render(ChartDetailPage);
+
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+
+		const props = getLastProps<Record<string, unknown>>(vi.mocked(ChartDetail));
+		const events = props?.$$events as Record<
+			string,
+			(e: { detail: Record<string, unknown> }) => Promise<void>
+		>;
+		const onSaveHandler = events?.onSave;
+		expect(onSaveHandler).toBeDefined();
+
+		await onSaveHandler({
+			detail: {
+				displayId: 1,
+				publishDate: '2024-01-01',
+				isPublished: true,
+				downloadUrl: 'http://download.com',
+				videoPreviewUrl: 'http://video.com'
+			}
+		});
+
+		expect(mockUpdateSimfile).toHaveBeenCalledWith(
+			'123',
+			expect.objectContaining({
+				downloadUrl: 'http://download.com',
+				videoPreviewUrl: 'http://video.com',
+				publishDate: '2024-01-01',
+				isPublished: true,
+				displayId: 1
+			})
+		);
+		expect(vi.mocked(toastStore.success)).toHaveBeenCalled();
+	});
+
+	it('sends displayId as null when displayId is 0', async () => {
+		mockGetSimfile.mockResolvedValue(mockSimfileResponse);
+		mockUpdateSimfile.mockResolvedValue({ ...mockSimfileResponse });
+
+		render(ChartDetailPage);
+
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+
+		const props = getLastProps<Record<string, unknown>>(vi.mocked(ChartDetail));
+		const events = props?.$$events as Record<
+			string,
+			(e: { detail: Record<string, unknown> }) => Promise<void>
+		>;
+		const onSaveHandler = events?.onSave;
+
+		await onSaveHandler({
+			detail: {
+				displayId: 0,
+				publishDate: '',
+				isPublished: false,
+				downloadUrl: '',
+				videoPreviewUrl: ''
+			}
+		});
+
+		expect(mockUpdateSimfile).toHaveBeenCalledWith(
+			'123',
+			expect.objectContaining({
+				displayId: null
+			})
+		);
+	});
+});
+
+describe('Chart Detail Page - error handling', () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('shows generic error when getSimfile rejects with non-Error', async () => {
+		mockGetSimfile.mockRejectedValue('string error');
+
+		render(ChartDetailPage);
+
+		await vi.waitFor(() => {
+			expect(screen.getByText(/Error: Failed to load chart/i)).toBeInTheDocument();
+		});
+	});
+});

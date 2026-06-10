@@ -16,4 +16,28 @@ describe('api barrel re-exports', () => {
 		expect(mod.bulkDownloadBaseUrl).toBeDefined();
 		expect(mod.bulkDownloadHeaders).toBeDefined();
 	});
+
+	it('exports chart functions from ./chart', async () => {
+		const mod = await import('./index');
+		expect(mod.listSimfiles).toBeDefined();
+		expect(mod.getSimfile).toBeDefined();
+		expect(mod.updateSimfile).toBeDefined();
+		expect(mod.deleteSimfile).toBeDefined();
+	});
+
+	it('exports user functions from ./user', async () => {
+		const mod = await import('./index');
+		expect(mod.getMe).toBeDefined();
+		expect(mod.upsertUserProfile).toBeDefined();
+	});
+
+	it('exports auth functions from ./auth', async () => {
+		const mod = await import('./index');
+		expect(mod.generateMagicLink).toBeDefined();
+	});
+
+	it('exports client functions from ./client', async () => {
+		const mod = await import('./index');
+		expect(mod.getClient).toBeDefined();
+	});
 });

@@ -81,7 +81,7 @@ export default {
 		if (setDefMatch) {
 			if (request.method !== 'GET') return withCors(methodNotAllowed('GET'), request, env);
 			return withCors(
-				await safeRoute(() => routeSetDef(request, env, setDefMatch[1]), url.pathname),
+				await safeRoute(() => routeSetDef(env, setDefMatch[1]), url.pathname),
 				request,
 				env
 			);

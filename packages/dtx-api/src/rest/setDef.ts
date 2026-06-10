@@ -6,7 +6,7 @@ const textError = (status: number, message: string) => new Response(message, { s
  * Public passthrough for a simfile's set.def file, read from R2.
  * Unauthenticated by design — matches the editor's prior direct R2 read.
  */
-export const routeSetDef = async (request: Request, env: Env, rawId: string): Promise<Response> => {
+export const routeSetDef = async (env: Env, rawId: string): Promise<Response> => {
 	if (!/^\d+$/.test(rawId)) {
 		return textError(400, 'Invalid SimFile ID');
 	}

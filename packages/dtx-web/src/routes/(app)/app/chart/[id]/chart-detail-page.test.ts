@@ -279,6 +279,47 @@ describe('loadAssetFiles via ChartDetail snippet', () => {
 		]);
 	});
 
+	it('preserves nested directory paths in fileName', async () => {
+		const simfileWithNestedFiles = {
+			...mockSimfileResponse,
+			files: [
+				{ key: '456/sound/snare.wav', size: 2048, uploaded: '2024-02-01T00:00:00Z' },
+				{ key: '456/music/snare.wav', size: 4096, uploaded: '2024-02-02T00:00:00Z' },
+				{ key: '456/chart.dtx', size: 256, uploaded: '2024-02-03T00:00:00Z' }
+			]
+		};
+		mockGetSimfile.mockResolvedValue(simfileWithNestedFiles);
+
+		render(ChartDetailPage);
+
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+
+		expect(capturedLoadAssetFiles).toBeDefined();
+		const result = await capturedLoadAssetFiles('456');
+		expect(result).toEqual([
+			{
+				key: '456/sound/snare.wav',
+				size: 2048,
+				lastModified: '2024-02-01T00:00:00Z',
+				fileName: 'sound/snare.wav'
+			},
+			{
+				key: '456/music/snare.wav',
+				size: 4096,
+				lastModified: '2024-02-02T00:00:00Z',
+				fileName: 'music/snare.wav'
+			},
+			{
+				key: '456/chart.dtx',
+				size: 256,
+				lastModified: '2024-02-03T00:00:00Z',
+				fileName: 'chart.dtx'
+			}
+		]);
+	});
+
 	it('throws when simfileId is empty', async () => {
 		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, files: [] });
 

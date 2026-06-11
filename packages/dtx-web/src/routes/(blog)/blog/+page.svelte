@@ -2,13 +2,14 @@
 	import ChartList from '$lib/components/ChartList.svelte';
 	import { locale, locales } from 'svelte-i18n';
 	import { _ } from 'svelte-i18n';
+	import { PUBLIC_ENABLE_BLOG_DOWNLOAD } from '$env/static/public';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
 		jp: '日本語'
 	};
 
-	const enableBlogDownload = import.meta.env.PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
+	const enableBlogDownload = PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
 	let languageDropdownOpen = $state(false);
 
 	const handleClickOutside = (event: Event) => {

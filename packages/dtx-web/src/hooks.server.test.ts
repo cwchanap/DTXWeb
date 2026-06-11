@@ -14,7 +14,7 @@ const makeEvent = (overrides: Partial<RequestEvent> = {}): RequestEvent => {
 			safeGetSession,
 			session: null,
 			user: null,
-			...((overrides?.locals as Record<string, unknown>) ?? {})
+			...((overrides?.locals as unknown as Record<string, unknown>) ?? {})
 		},
 		url,
 		request: new Request(url.toString()),

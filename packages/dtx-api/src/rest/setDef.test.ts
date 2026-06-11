@@ -41,6 +41,7 @@ describe('routeSetDef', () => {
 		const res = await routeSetDef(makeEnv(get), '1002');
 		expect(res.status).toBe(200);
 		expect(res.headers.get('content-type')).toBe('application/octet-stream');
+		expect(res.headers.get('cache-control')).toBe('public, max-age=300');
 		expect(await res.text()).toContain('#TITLE Test');
 	});
 });

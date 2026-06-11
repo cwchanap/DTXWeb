@@ -31,10 +31,9 @@ for (const [label, path] of [
 	}
 }
 
-// The D1 database NAME is "dtx-web" in BOTH packages' wrangler.jsonc (dtx-web and
-// dtx-api share database_name "dtx-web"), so it is correct regardless of the leg's
-// pkgDir. The local Miniflare sqlite resolved by `wrangler d1 execute <name> --local`
-// is the same one the worker binds as DB in that package.
+// The D1 database NAME is "dtx-web" in dtx-api's wrangler.jsonc. The local Miniflare
+// sqlite resolved by `wrangler d1 execute <name> --local` is the same one the worker
+// binds as DB in that package.
 const D1_NAME = 'dtx-web';
 
 const wrangler = (label: string, args: string[]): void => {

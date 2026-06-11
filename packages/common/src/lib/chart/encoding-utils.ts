@@ -98,6 +98,7 @@ export async function decodeFileWithSpecificEncoding(
  */
 export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 	const uint8 = new Uint8Array(buffer);
+	if (uint8.length === 0) return '';
 	let text: string;
 	if (uint8[0] === 0xff && uint8[1] === 0xfe) {
 		// UTF-16LE BOM

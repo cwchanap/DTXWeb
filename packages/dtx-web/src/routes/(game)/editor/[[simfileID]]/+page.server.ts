@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/public';
+import { decodeArrayBufferWithBomDetection } from '@dtx/common/server';
 import type { PageServerLoad } from './$types';
 
 interface SimFileMetadata {
@@ -104,29 +105,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		}
 
 		const arrayBuffer = await res.arrayBuffer();
-
-		// Detect BOM and decode accordingly
-		let textContent: string;
-		const uint8 = new Uint8Array(arrayBuffer);
-		if (uint8.length === 0) {
-			textContent = '';
-		} else if (uint8[0] === 0xff && uint8[1] === 0xfe) {
-			// UTF-16LE BOM
-			textContent = new TextDecoder('utf-16le').decode(arrayBuffer);
-			// Remove BOM if present
-			if (textContent.charCodeAt(0) === 0xfeff) {
-				textContent = textContent.slice(1);
-			}
-		} else if (uint8[0] === 0xef && uint8[1] === 0xbb && uint8[2] === 0xbf) {
-			// UTF-8 BOM
-			textContent = new TextDecoder('utf-8').decode(arrayBuffer);
-			if (textContent.charCodeAt(0) === 0xfeff) {
-				textContent = textContent.slice(1);
-			}
-		} else {
-			// Default to UTF-8
-			textContent = new TextDecoder('utf-8').decode(arrayBuffer);
-		}
+		const textContent = decodeArrayBufferWithBomDetection(arrayBuffer);
 
 		// Parse the def file content
 		const metadata = await parseDefFileContent(textContent);

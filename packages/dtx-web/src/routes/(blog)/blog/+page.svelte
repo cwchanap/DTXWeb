@@ -8,6 +8,7 @@
 		jp: '日本語'
 	};
 
+	const enableBlogDownload = import.meta.env.PUBLIC_ENABLE_BLOG_DOWNLOAD === 'true';
 	let languageDropdownOpen = $state(false);
 
 	const handleClickOutside = (event: Event) => {
@@ -99,7 +100,7 @@
 			>
 				{$_('blog.latest_simfiles')}
 			</h2>
-			<ChartList isBlog={true} />
+			<ChartList isBlog={true} enableDownload={enableBlogDownload} />
 		</section>
 	</main>
 </div>

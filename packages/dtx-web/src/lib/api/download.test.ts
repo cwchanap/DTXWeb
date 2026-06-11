@@ -17,6 +17,9 @@ import {
 	parseContentDispositionFilename,
 	downloadSimfile
 } from './download';
+import { getAccessTokenOrNull } from './token';
+
+const mockedGetAccessTokenOrNull = vi.mocked(getAccessTokenOrNull);
 
 beforeEach(() => {
 	mockEnv.PUBLIC_DTX_API_URL = 'https://api.test';
@@ -89,8 +92,7 @@ describe('downloadSimfile', () => {
 	});
 
 	it('omits Authorization header when token is null', async () => {
-		const { getAccessTokenOrNull } = await import('./token');
-		vi.mocked(getAccessTokenOrNull).mockResolvedValueOnce(null);
+		mockedGetAccessTokenOrNull.mockResolvedValueOnce(null);
 		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
 		const triggerSpy = vi.fn();
 		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
@@ -117,8 +119,7 @@ describe('bulkDownloadHeaders', () => {
 	});
 
 	it('returns Content-Type only when no token', async () => {
-		const { getAccessTokenOrNull } = await import('./token');
-		vi.mocked(getAccessTokenOrNull).mockResolvedValueOnce(null);
+		mockedGetAccessTokenOrNull.mockResolvedValueOnce(null);
 		const headers = await bulkDownloadHeaders();
 		expect(headers).toEqual({ 'Content-Type': 'application/json' });
 	});

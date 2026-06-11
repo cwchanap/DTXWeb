@@ -37,8 +37,9 @@ const scopeToEnum = (scope: ScopeString): SimfileScope =>
 
 /**
  * Input type for adaptSimfile, derived from the generated GraphQL fragment.
- * `files` and `hasUploadedFiles` are optional because only `getSimfile` returns
- * `SimfileWithFilesFragment`; `listSimfiles` and `updateSimfile` omit them.
+ * Both `getSimfile` and `updateSimfile` return the full `SimfileWithFilesFragment`
+ * (so `files` and `hasUploadedFiles` are present), while `listSimfiles` returns
+ * a partial fragment without `files` (but includes `hasUploadedFiles`).
  */
 type AdaptSimfileInput = Omit<SimfileWithFilesFragment, 'files' | 'hasUploadedFiles'> & {
 	files?: SimfileWithFilesFragment['files'];

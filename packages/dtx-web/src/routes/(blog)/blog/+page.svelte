@@ -1,7 +1,6 @@
 <script lang="ts">
 	import ChartList from '$lib/components/ChartList.svelte';
-	import { locale, locales } from 'svelte-i18n';
-	import { _ } from 'svelte-i18n';
+	import { locale, locales, _ } from 'svelte-i18n';
 	import { PUBLIC_ENABLE_BLOG_DOWNLOAD } from '$env/static/public';
 
 	const localeMap: Record<string, string> = {

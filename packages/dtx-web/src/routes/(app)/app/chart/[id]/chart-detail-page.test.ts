@@ -359,12 +359,12 @@ describe('Chart Detail Page - simfile not found', () => {
 	});
 });
 
-describe('handleUpdateSimfile with updatedSimfile and updatedHighestDtx', () => {
+describe('handleUpdateSimfile basic update flow', () => {
 	afterEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it('includes bpm, artist, title in update when updatedSimfile and updatedHighestDtx are set', async () => {
+	it('sends basic update fields when updatedSimfile and updatedHighestDtx are not set', async () => {
 		const simfileResponse = {
 			...mockSimfileResponse,
 			title: 'Original Title',

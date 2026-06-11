@@ -79,6 +79,11 @@ describe('getSimfile', () => {
 		const result = await getSimfile('7');
 		expect(result.id).toBe(7);
 	});
+
+	it('throws "Simfile not found" when result.simfile is null', async () => {
+		requestMock.mockResolvedValue({ simfile: null });
+		await expect(getSimfile('999')).rejects.toThrow('Simfile not found');
+	});
 });
 
 describe('updateSimfile', () => {
@@ -104,5 +109,24 @@ describe('deleteSimfile', () => {
 		requestMock.mockResolvedValue({ deleteSimfile: { id: '3', deleted: true } });
 		const result = await deleteSimfile('3');
 		expect(result.deleted).toBe(true);
+	});
+
+	it('maps partialDeletion and message from response', async () => {
+		requestMock.mockResolvedValue({
+			deleteSimfile: {
+				id: '3',
+				deleted: true,
+				partialDeletion: true,
+				message: 'Some files could not be deleted'
+			}
+		});
+		const result = await deleteSimfile('3');
+		expect(result.partialDeletion).toBe(true);
+		expect(result.message).toBe('Some files could not be deleted');
+	});
+
+	it('throws for non-numeric id', async () => {
+		requestMock.mockResolvedValue({ deleteSimfile: { id: 'abc', deleted: false } });
+		await expect(deleteSimfile('abc')).rejects.toThrow('Invalid simfile id: abc');
 	});
 });

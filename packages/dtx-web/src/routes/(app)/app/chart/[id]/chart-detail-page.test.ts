@@ -69,11 +69,6 @@ vi.mock('@dtx/common/components', () => ({
 	})
 }));
 
-vi.mock('@dtx/common', () => ({
-	ChartDetail: vi.fn(),
-	UploadedAssetFiles: vi.fn()
-}));
-
 const mockGetSimfile = vi.hoisted(() => vi.fn());
 const mockUpdateSimfile = vi.hoisted(() => vi.fn());
 

@@ -17,6 +17,9 @@ export const routeSetDef = async (env: Env, rawId: string): Promise<Response> =>
 	}
 
 	return new Response(await object.arrayBuffer(), {
-		headers: { 'content-type': 'application/octet-stream' }
+		headers: {
+			'content-type': 'application/octet-stream',
+			'cache-control': 'public, max-age=300'
+		}
 	});
 };

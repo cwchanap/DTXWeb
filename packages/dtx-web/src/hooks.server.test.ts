@@ -33,11 +33,23 @@ describe('authGuard', () => {
 		vi.restoreAllMocks();
 	});
 
+	const expectRedirect = async (promise: Promise<Response>, location: string, status = 303) => {
+		try {
+			await promise;
+			expect.unreachable('Expected redirect to be thrown');
+		} catch (err: unknown) {
+			// SvelteKit redirect throws a Redirect object
+			expect(err).toBeDefined();
+			expect((err as { status?: number }).status).toBe(status);
+			expect((err as { location?: string }).location).toBe(location);
+		}
+	};
+
 	it('redirects unauthenticated user from /app to /login', async () => {
 		const event = makeEvent({ url: new URL('https://example.com/app') });
 		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
 
-		await expect(authGuard({ event, resolve })).rejects.toThrow();
+		await expectRedirect(authGuard({ event, resolve }), '/login');
 		expect(resolve).not.toHaveBeenCalled();
 	});
 
@@ -45,14 +57,7 @@ describe('authGuard', () => {
 		const event = makeEvent({ url: new URL('https://example.com/app?redirect=desktop') });
 		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
 
-		try {
-			await authGuard({ event, resolve });
-		} catch (err: unknown) {
-			// SvelteKit redirect throws a Redirect object
-			expect(err).toBeDefined();
-			expect((err as { status?: number }).status).toBe(303);
-			expect((err as { location?: string }).location).toBe('/login?redirect=desktop');
-		}
+		await expectRedirect(authGuard({ event, resolve }), '/login?redirect=desktop');
 		expect(resolve).not.toHaveBeenCalled();
 	});
 
@@ -64,13 +69,7 @@ describe('authGuard', () => {
 			.fn()
 			.mockResolvedValue({ session: mockSession, user: mockUser });
 
-		try {
-			await authGuard({ event, resolve });
-		} catch (err: unknown) {
-			expect(err).toBeDefined();
-			expect((err as { status?: number }).status).toBe(303);
-			expect((err as { location?: string }).location).toBe('/app');
-		}
+		await expectRedirect(authGuard({ event, resolve }), '/app');
 		expect(resolve).not.toHaveBeenCalled();
 	});
 
@@ -82,13 +81,7 @@ describe('authGuard', () => {
 			.fn()
 			.mockResolvedValue({ session: mockSession, user: mockUser });
 
-		try {
-			await authGuard({ event, resolve });
-		} catch (err: unknown) {
-			expect(err).toBeDefined();
-			expect((err as { status?: number }).status).toBe(303);
-			expect((err as { location?: string }).location).toBe('/app?redirect=desktop');
-		}
+		await expectRedirect(authGuard({ event, resolve }), '/app?redirect=desktop');
 		expect(resolve).not.toHaveBeenCalled();
 	});
 

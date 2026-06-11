@@ -12,7 +12,8 @@
 		"directory": ".svelte-kit/cloudflare"
 	},
 	"vars": {
-		"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com"
+		"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com",
+		"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false"
 	},
 	"keep_vars": true,
 	"observability": {
@@ -27,7 +28,8 @@
 				"custom_domain": true
 			},
 			"vars": {
-				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
+				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com",
+				"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false"
 			},
 			"services": [{ "binding": "API", "service": "dtx-api-pre-prod" }]
 		},
@@ -37,7 +39,8 @@
 				"custom_domain": true
 			},
 			"vars": {
-				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com"
+				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com",
+				"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false"
 			},
 			"services": [{ "binding": "API", "service": "dtx-api-pre-prod-prod-data" }]
 		}

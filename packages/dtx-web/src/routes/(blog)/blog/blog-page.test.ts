@@ -29,8 +29,8 @@ vi.mock('$lib/components/ChartList.svelte', () => ({
 	default: vi.fn()
 }));
 
-vi.mock('$env/static/public', () => ({
-	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false'
+vi.mock('$env/dynamic/public', () => ({
+	env: { PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' }
 }));
 
 import BlogPage from './+page.svelte';

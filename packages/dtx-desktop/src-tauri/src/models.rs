@@ -1,0 +1,117 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DialogResult {
+    pub canceled: bool,
+    #[serde(rename = "filePaths")]
+    pub file_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PathExistsResult {
+    pub exists: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ReadFileResult {
+    Error { error: String, content: String },
+    Text {
+        error: Option<String>,
+        content: String,
+        #[serde(rename = "isText")]
+        is_text: bool,
+    },
+    Binary {
+        error: Option<String>,
+        content: Vec<u8>,
+        #[serde(rename = "isText")]
+        is_text: bool,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TreeNode {
+    pub name: String,
+    pub path: String,
+    #[serde(rename = "isExpanded")]
+    pub is_expanded: bool,
+    #[serde(rename = "isLoading")]
+    pub is_loading: bool,
+    pub children: Vec<TreeNode>,
+    #[serde(rename = "hasChildren")]
+    pub has_children: bool,
+    #[serde(rename = "containsDtxFiles")]
+    pub contains_dtx_files: bool,
+    #[serde(rename = "songTitle")]
+    pub song_title: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    #[serde(rename = "type")]
+    pub entry_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ListedFile {
+    #[serde(rename = "fileName")]
+    pub file_name: String,
+    pub size: u64,
+    #[serde(rename = "lastModified")]
+    pub last_modified: String,
+    pub key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ApiResult<T> {
+    Ok { success: bool, data: T },
+    Err {
+        success: bool,
+        error: String,
+        code: Option<String>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SuccessResult {
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_file_text_serializes_renderer_shape() {
+        let result = ReadFileResult::Text {
+            error: None,
+            content: "#TITLE: Song".to_string(),
+            is_text: true,
+        };
+
+        let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["error"], serde_json::Value::Null);
+        assert_eq!(json["content"], "#TITLE: Song");
+        assert_eq!(json["isText"], true);
+    }
+
+    #[test]
+    fn api_error_serializes_success_false() {
+        let result: ApiResult<Vec<String>> = ApiResult::Err {
+            success: false,
+            error: "User not authenticated".to_string(),
+            code: Some("UNAUTHORIZED".to_string()),
+        };
+
+        let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["success"], false);
+        assert_eq!(json["error"], "User not authenticated");
+        assert_eq!(json["code"], "UNAUTHORIZED");
+    }
+}

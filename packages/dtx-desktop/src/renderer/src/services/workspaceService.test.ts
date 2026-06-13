@@ -4,6 +4,18 @@ import { workspaceStore } from '../stores/workspaceStore';
 import { simFileStore } from '../stores/simFileStore';
 import { linkingService } from './linkingService';
 import { linkageCacheService } from './linkageCacheService';
+import { desktopHost } from './desktopHost';
+
+vi.mock('./desktopHost', () => ({
+	desktopHost: {
+		selectFolder: vi.fn(),
+		pathExists: vi.fn(),
+		listDirectories: vi.fn(),
+		loadTreeStructure: vi.fn()
+	}
+}));
+
+const host = vi.mocked(desktopHost);
 
 // Mock the workspaceStore
 vi.mock('../stores/workspaceStore', () => ({
@@ -46,35 +58,30 @@ describe('WorkspaceService', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 
-		// Mock window.electron.ipcRenderer.invoke
-		(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-			if (channel === 'load-tree-structure') {
-				// Mock tree structure with song title
-				return Promise.resolve([
-					{
-						name: 'TestSong',
-						path: '/test/path/TestSong',
-						isExpanded: false,
-						isLoading: false,
-						children: [],
-						hasChildren: false,
-						containsDtxFiles: true,
-						songTitle: 'Test Song Title'
-					},
-					{
-						name: 'AnotherSong',
-						path: '/test/path/AnotherSong',
-						isExpanded: false,
-						isLoading: false,
-						children: [],
-						hasChildren: false,
-						containsDtxFiles: true,
-						songTitle: null // No SET.def file
-					}
-				]);
+		host.listDirectories.mockResolvedValue([]);
+		// Mock tree structure with song title
+		host.loadTreeStructure.mockResolvedValue([
+			{
+				name: 'TestSong',
+				path: '/test/path/TestSong',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: 'Test Song Title'
+			},
+			{
+				name: 'AnotherSong',
+				path: '/test/path/AnotherSong',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: null // No SET.def file
 			}
-			return Promise.resolve([]);
-		});
+		]);
 	});
 
 	afterEach(() => {
@@ -95,11 +102,8 @@ describe('WorkspaceService', () => {
 
 			await workspaceService.loadTreeStructure();
 
-			// Verify that the IPC call was made
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'load-tree-structure',
-				'/test/workspace'
-			);
+			// Verify that the host call was made
+			expect(host.loadTreeStructure).toHaveBeenCalledWith('/test/workspace');
 
 			// Verify that setTreeStructure was called with the mocked data
 			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([
@@ -139,9 +143,8 @@ describe('WorkspaceService', () => {
 
 			await workspaceService.loadTreeStructure();
 
-			// Verify that the IPC call was made with the sub-workspace path
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'load-tree-structure',
+			// Verify that the host call was made with the sub-workspace path
+			expect(host.loadTreeStructure).toHaveBeenCalledWith(
 				'/test/workspace',
 				'DTXFiles.TestSubWorkspace'
 			);
@@ -169,8 +172,8 @@ describe('WorkspaceService', () => {
 				return vi.fn(); // unsubscribe function
 			});
 
-			// Mock IPC to throw an error
-			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('Test error'));
+			// Mock host to throw an error
+			host.loadTreeStructure.mockRejectedValue(new Error('Test error'));
 
 			await workspaceService.loadTreeStructure();
 
@@ -180,12 +183,9 @@ describe('WorkspaceService', () => {
 	});
 	describe('selectWorkspace', () => {
 		it('should select a workspace and update path and loading state when a path is chosen', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'select-folder') {
-					return Promise.resolve({ canceled: false, filePaths: ['/new/workspace'] });
-				}
-				return Promise.resolve([]);
-			});
+			host.selectFolder.mockResolvedValue({ canceled: false, filePaths: ['/new/workspace'] });
+			host.loadTreeStructure.mockResolvedValue([]);
+			host.listDirectories.mockResolvedValue([]);
 			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
 				callback({ path: '/new/workspace', currentSubWorkspace: null });
 				return vi.fn();
@@ -199,9 +199,7 @@ describe('WorkspaceService', () => {
 		});
 
 		it('should return early when dialog is canceled', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockImplementation(() =>
-				Promise.resolve({ canceled: true, filePaths: [] })
-			);
+			host.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
 
 			await workspaceService.selectWorkspace();
 
@@ -210,7 +208,7 @@ describe('WorkspaceService', () => {
 		});
 
 		it('should handle errors during folder selection', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('IPC error'));
+			host.selectFolder.mockRejectedValue(new Error('IPC error'));
 
 			await workspaceService.selectWorkspace();
 
@@ -227,9 +225,11 @@ describe('WorkspaceService', () => {
 				callback({ path: '/test/workspace' });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockImplementation(() =>
-				Promise.resolve(['DTXFiles.Songs', 'OtherFolder', 'DTXFiles.More'])
-			);
+			host.listDirectories.mockResolvedValue([
+				'DTXFiles.Songs',
+				'OtherFolder',
+				'DTXFiles.More'
+			]);
 
 			await workspaceService.loadSubWorkspaces();
 
@@ -248,7 +248,7 @@ describe('WorkspaceService', () => {
 			await workspaceService.loadSubWorkspaces();
 
 			expect(workspaceStore.setSubWorkspaces).toHaveBeenCalledWith([]);
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalled();
+			expect(host.listDirectories).not.toHaveBeenCalled();
 		});
 
 		it('should handle errors during sub-workspace loading', async () => {
@@ -256,7 +256,7 @@ describe('WorkspaceService', () => {
 				callback({ path: '/test/workspace' });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('list error'));
+			host.listDirectories.mockRejectedValue(new Error('list error'));
 
 			await workspaceService.loadSubWorkspaces();
 
@@ -376,7 +376,7 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.updateTreeNode).toHaveBeenCalledWith('/test/node', {
 				isExpanded: true
 			});
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalled();
+			expect(host.loadTreeStructure).not.toHaveBeenCalled();
 		});
 
 		it('should load children when node has no children', async () => {
@@ -391,7 +391,7 @@ describe('WorkspaceService', () => {
 				callback({ treeStructure: [existingNode] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockResolvedValue(mockChildren);
+			host.loadTreeStructure.mockResolvedValue(mockChildren);
 			(linkageCacheService.getLinkage as any).mockReturnValue(null);
 			(simFileStore.subscribe as any).mockImplementation((callback: any) => {
 				callback({ userSimFiles: [] });
@@ -420,7 +420,7 @@ describe('WorkspaceService', () => {
 				callback({ treeStructure: [existingNode] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockResolvedValue([mockChild]);
+			host.loadTreeStructure.mockResolvedValue([mockChild]);
 			(linkageCacheService.getLinkage as any).mockReturnValue(mockLinkage);
 			(simFileStore.subscribe as any).mockImplementation((callback: any) => {
 				callback({ userSimFiles: [] });
@@ -456,7 +456,7 @@ describe('WorkspaceService', () => {
 				callback({ treeStructure: [existingNode] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('load error'));
+			host.loadTreeStructure.mockRejectedValue(new Error('load error'));
 
 			await workspaceService.expandTreeNode('/test/node');
 
@@ -565,19 +565,16 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') {
-					calls.push('path-exists');
-					return Promise.resolve({ exists: true, error: null });
-				}
-				if (channel === 'list-directories') {
-					calls.push('list-directories');
-					return Promise.resolve([]);
-				}
-				if (channel === 'load-tree-structure') {
-					calls.push('load-tree-structure');
-					return Promise.resolve([]);
-				}
+			host.pathExists.mockImplementation(() => {
+				calls.push('path-exists');
+				return Promise.resolve({ exists: true, error: null });
+			});
+			host.listDirectories.mockImplementation(() => {
+				calls.push('list-directories');
+				return Promise.resolve([]);
+			});
+			host.loadTreeStructure.mockImplementation(() => {
+				calls.push('load-tree-structure');
 				return Promise.resolve([]);
 			});
 
@@ -615,15 +612,9 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: true, error: null });
-				if (channel === 'list-directories') return Promise.resolve([]);
-				if (channel === 'load-tree-structure') {
-					return Promise.reject(new Error('boom'));
-				}
-				return Promise.resolve([]);
-			});
+			host.pathExists.mockResolvedValue({ exists: true, error: null });
+			host.listDirectories.mockResolvedValue([]);
+			host.loadTreeStructure.mockRejectedValue(new Error('boom'));
 
 			const result = await workspaceService.switchToBookmark({
 				path: '/bm/path',
@@ -643,11 +634,7 @@ describe('WorkspaceService', () => {
 		});
 
 		it('returns an error result and does not reset workspace when bookmark path does not exist', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: false, error: 'not-found' });
-				return Promise.resolve([]);
-			});
+			host.pathExists.mockResolvedValue({ exists: false, error: 'not-found' });
 
 			const result = await workspaceService.switchToBookmark({
 				path: '/gone/path',
@@ -678,13 +665,9 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: true, error: null });
-				if (channel === 'list-directories') return Promise.resolve([]);
-				if (channel === 'load-tree-structure') return Promise.resolve([]);
-				return Promise.resolve([]);
-			});
+			host.pathExists.mockResolvedValue({ exists: true, error: null });
+			host.listDirectories.mockResolvedValue([]);
+			host.loadTreeStructure.mockResolvedValue([]);
 
 			const result = await workspaceService.switchToBookmark({
 				path: '/bm/path',
@@ -705,13 +688,10 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') {
-					return new Promise((resolve) => {
-						resolvePathExists = resolve;
-					});
-				}
-				return Promise.resolve([]);
+			host.pathExists.mockImplementation(() => {
+				return new Promise((resolve) => {
+					resolvePathExists = resolve;
+				});
 			});
 
 			// Start first switch (will hang)
@@ -732,10 +712,7 @@ describe('WorkspaceService', () => {
 		});
 
 		it('returns an error when path-exists IPC throws', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists') return Promise.reject(new Error('IPC disconnected'));
-				return Promise.resolve([]);
-			});
+			host.pathExists.mockRejectedValue(new Error('IPC disconnected'));
 
 			const result = await workspaceService.switchToBookmark({
 				path: '/bm/path',
@@ -751,11 +728,7 @@ describe('WorkspaceService', () => {
 		});
 
 		it('returns permission-denied message when EACCES', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockImplementation((channel: string) => {
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: false, error: 'permission-denied' });
-				return Promise.resolve([]);
-			});
+			host.pathExists.mockResolvedValue({ exists: false, error: 'permission-denied' });
 
 			const result = await workspaceService.switchToBookmark({
 				path: '/locked/path',

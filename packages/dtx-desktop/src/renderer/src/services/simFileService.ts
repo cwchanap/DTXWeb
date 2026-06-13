@@ -1,4 +1,5 @@
 import type { SimfileWithDtx } from '@dtx/common';
+import { desktopHost } from './desktopHost';
 
 const CACHE_KEY = 'simfiles_cache';
 const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp';
@@ -40,10 +41,8 @@ class SimFileService {
 				};
 			}
 
-			// Call main process to fetch simFiles
-			const result = (await window.electron.ipcRenderer.invoke(
-				'fetch-user-simfiles'
-			)) as MainProcessSimFileResult;
+			// Call host process to fetch simFiles
+			const result = await desktopHost.fetchUserSimfiles<MainProcessSimFileResult>();
 
 			if (result.success === false) {
 				return {
@@ -139,7 +138,7 @@ class SimFileService {
 	}
 
 	async getNextDisplayId(): Promise<number> {
-		const result = await window.electron.ipcRenderer.invoke('get-next-display-id');
+		const result = await desktopHost.getNextDisplayId();
 		if (typeof result !== 'number' || !Number.isSafeInteger(result)) {
 			throw new Error('Invalid next display_id response');
 		}
@@ -152,7 +151,7 @@ class SimFileService {
 	 */
 	async getPreviewUrl(simfileId: number): Promise<string> {
 		try {
-			return await window.electron.ipcRenderer.invoke('get-preview-url', simfileId);
+			return await desktopHost.getPreviewUrl(simfileId);
 		} catch (error) {
 			console.error('Failed to get preview URL for simfile', simfileId, error);
 			return '';
@@ -165,7 +164,7 @@ class SimFileService {
 	 */
 	async getSoundPreviewUrl(simfileId: number): Promise<string> {
 		try {
-			return await window.electron.ipcRenderer.invoke('get-sound-preview-url', simfileId);
+			return await desktopHost.getSoundPreviewUrl(simfileId);
 		} catch (error) {
 			console.error('Failed to get sound preview URL for simfile', simfileId, error);
 			return '';

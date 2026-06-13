@@ -1,6 +1,7 @@
 /**
  * Service for loading asset files in dtx-desktop
  */
+import { desktopHost } from './desktopHost';
 
 export interface AssetFile {
 	fileName: string;
@@ -23,5 +24,5 @@ export async function loadAssetFiles(simfileId: string): Promise<AssetFilesResul
 		throw new Error('SimfileId is required');
 	}
 
-	return await window.electron.ipcRenderer.invoke('load-asset-files', simfileId);
+	return await desktopHost.loadAssetFiles(simfileId);
 }

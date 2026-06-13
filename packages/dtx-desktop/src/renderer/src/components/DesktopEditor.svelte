@@ -9,6 +9,7 @@
 	import { store } from '@dtx/common';
 	import { DTXFile, LaneMeasureNote, SimFile, SoundChip, setFileProvider } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
+	import { desktopHost } from '../services/desktopHost';
 	import { editorMappingStore } from '../stores/editorMappingStore';
 
 	// Local type definitions
@@ -43,6 +44,8 @@
 		folderPath: string;
 	}
 
+	type DesktopFileContent = string | ArrayBuffer | Uint8Array;
+
 	interface Props {
 		simFileId?: string;
 	}
@@ -68,6 +71,32 @@
 	let collapseThreshold = 50; // Width below which sidebar collapses
 	const keyboardResizeStep = 20;
 	let validationError = $state<string | null>(null); // Track validation errors
+
+	const toArrayBuffer = (content: ArrayBuffer | Uint8Array): ArrayBuffer => {
+		if (content instanceof ArrayBuffer) {
+			return content;
+		}
+
+		const copy = new Uint8Array(content.byteLength);
+		copy.set(content);
+		return copy.buffer;
+	};
+
+	const toBlobPart = (content: DesktopFileContent): string | ArrayBuffer => {
+		if (typeof content === 'string') {
+			return content;
+		}
+
+		return toArrayBuffer(content);
+	};
+
+	const toUtf8String = (content: DesktopFileContent): string => {
+		if (typeof content === 'string') {
+			return content;
+		}
+
+		return Buffer.from(toArrayBuffer(content)).toString('utf8');
+	};
 
 	// Helper function to create DTXFile from ChartMetadata
 	const createDTXFileFromMetadata = (metadata: ChartMetadata): DTXFile => {
@@ -342,23 +371,22 @@
 
 		try {
 			// Read SET.def directly from folder path
-			const setDefResult = await window.electron.ipcRenderer.invoke(
-				'read-file',
-				`${folderPath}/SET.def`,
-				folderPath
-			);
+			const setDefResult = await desktopHost.readFile(`${folderPath}/SET.def`, folderPath);
 			if (!setDefResult.error) {
-				const blob = new Blob([setDefResult.content], { type: 'text/plain' });
+				const blob = new Blob([toBlobPart(setDefResult.content)], {
+					type: 'text/plain'
+				});
 				setDefFile = new File([blob], 'SET.def');
 			} else {
 				// Try lowercase
-				const setDefLowerResult = await window.electron.ipcRenderer.invoke(
-					'read-file',
+				const setDefLowerResult = await desktopHost.readFile(
 					`${folderPath}/set.def`,
 					folderPath
 				);
 				if (!setDefLowerResult.error) {
-					const blob = new Blob([setDefLowerResult.content], { type: 'text/plain' });
+					const blob = new Blob([toBlobPart(setDefLowerResult.content)], {
+						type: 'text/plain'
+					});
 					setDefFile = new File([blob], 'set.def');
 				}
 			}
@@ -381,18 +409,17 @@
 		try {
 			const dtxFiles = ['ext.dtx', 'mas.dtx', 'bas.dtx', 'adv.dtx', 'nov.dtx'];
 			for (const dtxFileName of dtxFiles) {
-				const dtxResult = await window.electron.ipcRenderer.invoke(
-					'read-file',
+				const dtxResult = await desktopHost.readFile(
 					`${folderPath}/${dtxFileName}`,
 					folderPath
 				);
 				if (!dtxResult.error) {
 					// Use the pre-decoded content directly since main process already handled encoding
 					if (dtxResult.isText) {
-						dtxFile = new DTXFile(dtxResult.content);
+						dtxFile = new DTXFile(toUtf8String(dtxResult.content));
 					} else {
 						// Convert Buffer to string for DTX files
-						dtxFile = new DTXFile(Buffer.from(dtxResult.content).toString('utf8'));
+						dtxFile = new DTXFile(toUtf8String(dtxResult.content));
 					}
 					await dtxFile.parse();
 					soundChips = dtxFile.parseSoundChips();
@@ -450,10 +477,10 @@
 		try {
 			// List all DTX files in the folder using existing list-files IPC channel
 			const dtxExtensions = ['.dtx'];
-			const folderContents = await window.electron.ipcRenderer.invoke(
-				'list-files',
-				folderPath
-			);
+			const folderContents = await desktopHost.listFiles<{
+				files: Array<{ fileName: string }>;
+				error?: string;
+			}>(folderPath);
 
 			if (folderContents.error) {
 				console.warn('Could not list directory contents:', folderContents.error);
@@ -510,14 +537,13 @@
 			let bpmNotes: Record<string, number> = {};
 			let soundChips: SoundChip[] = [];
 
-			const dtxResult = await window.electron.ipcRenderer.invoke(
-				'read-file',
+			const dtxResult = await desktopHost.readFile(
 				`${folderPath}/${dtxFileName}`,
 				folderPath
 			);
 
 			if (!dtxResult.error) {
-				dtxFile = new DTXFile(dtxResult.content as string);
+				dtxFile = new DTXFile(toUtf8String(dtxResult.content));
 				await dtxFile.parse();
 				soundChips = dtxFile.parseSoundChips();
 				notes = dtxFile.parseNotes();

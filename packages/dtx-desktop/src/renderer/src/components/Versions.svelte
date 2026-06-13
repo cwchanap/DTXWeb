@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Zap, Chrome, Server } from '@lucide/svelte';
-	const versions = window.electron.process.versions;
+	import { desktopHost } from '../services/desktopHost';
+
+	const versions = desktopHost.getVersions();
 </script>
 
 <div class="grid gap-3 md:grid-cols-3">

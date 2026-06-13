@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { Zap, Chrome, Server, Info } from '@lucide/svelte';
 	import Modal from '@dtx/ui-components/components/Modal.svelte';
+	import { desktopHost } from '../services/desktopHost';
 
-	const versions = window.electron.process.versions;
+	const versions = desktopHost.getVersions();
 
 	// Modal state
 	let openState = $state(false);

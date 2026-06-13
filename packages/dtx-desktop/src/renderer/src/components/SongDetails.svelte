@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import { simFileService } from '../services/simFileService';
+	import { desktopHost } from '../services/desktopHost';
 
 	interface Props {
 		song: TreeNode;
@@ -60,6 +61,21 @@
 		filesCount?: number;
 		error?: string;
 	};
+
+	type AssetFile = {
+		fileName: string;
+		size: number;
+		lastModified: string;
+		key: string;
+	};
+
+	type LoadAssetFilesResult =
+		| {
+				success: boolean;
+				data?: AssetFile[];
+				error?: string;
+		  }
+		| AssetFile[];
 
 	let { song }: Props = $props();
 
@@ -123,10 +139,7 @@
 		fileLoadError = null;
 
 		try {
-			const result: ListFilesResponse = await window.electron.ipcRenderer.invoke(
-				'list-files',
-				song.path
-			);
+			const result = await desktopHost.listFiles<ListFilesResponse>(song.path);
 
 			if (result.error) {
 				throw new Error(result.error);
@@ -140,8 +153,7 @@
 					.map(async (fileInfo: ListedFile) => {
 						try {
 							// Read file content as buffer
-							const response = await window.electron.ipcRenderer.invoke(
-								'read-file',
+							const response = await desktopHost.readFile(
 								fileInfo.key,
 								song.path // Pass the song directory as workspace root
 							);
@@ -287,7 +299,7 @@
 	});
 
 	// Custom asset file loader for desktop
-	const loadAssetFilesForDesktop = async (simfileId: string) => {
+	const loadAssetFilesForDesktop = async (simfileId: string): Promise<AssetFile[]> => {
 		// For unlinked songs (no simfileId), return empty array - we only show local files
 		if (!simfileId || simfileId === '' || simfileId === '0') {
 			return [];
@@ -295,7 +307,7 @@
 
 		// For linked songs, fetch actual cloud files via IPC
 		try {
-			const result = await window.electron.ipcRenderer.invoke('load-asset-files', simfileId);
+			const result = await desktopHost.loadAssetFiles<LoadAssetFilesResult>(simfileId);
 			if (result && typeof result === 'object' && 'success' in result) {
 				if (!result.success) {
 					console.error('Error loading cloud asset files:', result.error);
@@ -404,11 +416,8 @@
 				})
 			);
 
-			// Call IPC to create simfile record
-			const result: CreateSimfileResult = await window.electron.ipcRenderer.invoke(
-				'create-simfile-record',
-				simfileData
-			);
+			// Create the cloud simfile record through the desktop host.
+			const result = await desktopHost.createSimfileRecord<CreateSimfileResult>(simfileData);
 
 			if (result.success && result.data && isSimfileWithDtx(result.data)) {
 				uploadSuccess = true;
@@ -523,12 +532,9 @@
 			linkingSuccess = false;
 
 			try {
-				const result: FetchCloudSongResult = await window.electron.ipcRenderer.invoke(
-					'fetch-cloud-song',
-					{
-						cloudSongId: selectedSong.id
-					}
-				);
+				const result = await desktopHost.fetchCloudSong<FetchCloudSongResult>({
+					cloudSongId: selectedSong.id
+				});
 
 				if (
 					result.success &&
@@ -597,14 +603,11 @@
 				updateData.title = song.songTitle || song.name;
 			}
 
-			// Call IPC to update simfile record
-			const result: UpdateSimfileResult = await window.electron.ipcRenderer.invoke(
-				'update-simfile-record',
-				{
-					simfileId: song.linkedSimFileId,
-					updateData
-				}
-			);
+			// Update the linked simfile record through the desktop host.
+			const result = await desktopHost.updateSimfileRecord<UpdateSimfileResult>({
+				simfileId: song.linkedSimFileId,
+				updateData
+			});
 
 			if (result.success && song.linkedSimFile) {
 				updateSuccess = true;
@@ -652,14 +655,11 @@
 
 		try {
 			const zipFileName = song.name || 'song';
-			const result: ExportSongResult = await window.electron.ipcRenderer.invoke(
-				'export-song-to-zip',
-				{
-					songPath: song.path,
-					songTitle: zipFileName,
-					exportDirectory: currentSettings.exportDirectory
-				}
-			);
+			const result = await desktopHost.exportSongToZip<ExportSongResult>({
+				songPath: song.path,
+				songTitle: zipFileName,
+				exportDirectory: currentSettings.exportDirectory
+			});
 
 			if (result.success) {
 				exportSuccess = true;
@@ -705,11 +705,11 @@
 			// Use async function inside effect
 			(async () => {
 				try {
-					// Use IPC to parse DTX files in the main process
-					const result = await window.electron?.ipcRenderer?.invoke(
-						'parse-dtx-files',
-						song.path
-					);
+					const result = await desktopHost.parseDtxFiles<{
+						bpm?: number;
+						artist?: string;
+						levels?: { label: string; level: number }[];
+					} | null>(song.path);
 
 					if (result) {
 						parsedLocalData = {

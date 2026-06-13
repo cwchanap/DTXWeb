@@ -3,20 +3,22 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/sv
 
 vi.mock('@lucide/svelte');
 
-import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
+const mockDesktopHost = vi.hoisted(() => ({
+	searchCloudSongs: vi.fn()
+}));
 
-const mockIpcInvoke = vi.fn();
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
+import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	vi.stubGlobal('electron', {
-		ipcRenderer: { invoke: mockIpcInvoke }
-	});
 });
 
 afterEach(() => {
 	cleanup();
-	vi.unstubAllGlobals();
 });
 
 const defaultSongs = [
@@ -91,25 +93,24 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'A' } });
 		vi.advanceTimersByTime(400);
-		expect(mockIpcInvoke).not.toHaveBeenCalled();
+		expect(mockDesktopHost.searchCloudSongs).not.toHaveBeenCalled();
 	});
 
-	it('searches via IPC after debounce when query has 2+ characters', async () => {
-		mockIpcInvoke.mockResolvedValue({ success: true, data: defaultSongs });
+	it('searches via desktopHost after debounce when query has 2+ characters', async () => {
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: defaultSongs });
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'So' } });
 		vi.advanceTimersByTime(350);
 		await waitFor(() =>
-			expect(mockIpcInvoke).toHaveBeenCalledWith(
-				'search-cloud-songs',
-				expect.objectContaining({ query: 'So' })
+			expect(mockDesktopHost.searchCloudSongs).toHaveBeenCalledWith(
+				expect.objectContaining({ query: 'So', limit: 20 })
 			)
 		);
 	});
 
 	it('displays song results after successful search', async () => {
-		mockIpcInvoke.mockResolvedValue({ success: true, data: defaultSongs });
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: defaultSongs });
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'Song' } });
@@ -121,7 +122,7 @@ describe('CloudSongAutocomplete – search behavior', () => {
 	});
 
 	it('shows "No songs found" when search returns empty results', async () => {
-		mockIpcInvoke.mockResolvedValue({ success: true, data: [] });
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: [] });
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'zz' } });
@@ -131,8 +132,11 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		});
 	});
 
-	it('shows "No songs found" when IPC returns failure', async () => {
-		mockIpcInvoke.mockResolvedValue({ success: false, error: 'Search failed' });
+	it('shows "No songs found" when desktopHost returns failure', async () => {
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({
+			success: false,
+			error: 'Search failed'
+		});
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'er' } });
@@ -142,8 +146,8 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		});
 	});
 
-	it('shows "No songs found" when IPC throws an error', async () => {
-		mockIpcInvoke.mockRejectedValue(new Error('IPC error'));
+	it('shows "No songs found" when desktopHost throws an error', async () => {
+		mockDesktopHost.searchCloudSongs.mockRejectedValue(new Error('Host error'));
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'er' } });
@@ -154,7 +158,7 @@ describe('CloudSongAutocomplete – search behavior', () => {
 	});
 
 	it('filters out excluded linked song IDs from results', async () => {
-		mockIpcInvoke.mockResolvedValue({ success: true, data: defaultSongs });
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: defaultSongs });
 		render(CloudSongAutocomplete, {
 			props: { isOpen: true, excludeLinkedSongIds: ['1'] }
 		});
@@ -175,7 +179,7 @@ describe('CloudSongAutocomplete – search behavior', () => {
 	});
 
 	it('clears results when clear button is clicked', async () => {
-		mockIpcInvoke.mockResolvedValue({ success: true, data: defaultSongs });
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: defaultSongs });
 		render(CloudSongAutocomplete, { props: { isOpen: true } });
 		const input = screen.getByPlaceholderText(/search by song title or artist/i);
 		await fireEvent.input(input, { target: { value: 'Song' } });
@@ -191,7 +195,10 @@ describe('CloudSongAutocomplete – search behavior', () => {
 describe('CloudSongAutocomplete – keyboard navigation', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
-		mockIpcInvoke.mockResolvedValue({ success: true, data: defaultSongs });
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({
+			success: true,
+			data: defaultSongs
+		});
 	});
 
 	afterEach(() => {

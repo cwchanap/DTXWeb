@@ -59,7 +59,7 @@ Create or modify these files during the migration:
 - Modify: `packages/dtx-desktop/package.json`
 - Modify: `bun.lock`
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Create `packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts`:
 
@@ -144,13 +144,13 @@ describe('desktopHost', () => {
 });
 ```
 
-- [ ] **Step 2: Run the failing test**
+- [x] **Step 2: Run the failing test**
 
 Run: `bun run --filter=dtx-desktop test -- desktopHost.test.ts`
 
 Expected: FAIL because `src/renderer/src/services/desktopHost.ts` does not exist.
 
-- [ ] **Step 3: Implement the adapter**
+- [x] **Step 3: Implement the adapter**
 
 Install the Tauri JS API that the adapter imports:
 
@@ -398,7 +398,7 @@ interface Window {
 }
 ```
 
-- [ ] **Step 4: Update test setup for listener removal**
+- [x] **Step 4: Update test setup for listener removal**
 
 Modify the Electron mock in `packages/dtx-desktop/src/tests/setup.ts`:
 
@@ -431,13 +431,13 @@ Object.defineProperty(window, 'electron', {
 });
 ```
 
-- [ ] **Step 5: Run adapter tests**
+- [x] **Step 5: Run adapter tests**
 
 Run: `bun run --filter=dtx-desktop test -- desktopHost.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add bun.lock packages/dtx-desktop/package.json packages/dtx-desktop/src/renderer/src/services/desktopHost.ts packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts packages/dtx-desktop/src/renderer/src/env.d.ts packages/dtx-desktop/src/tests/setup.ts

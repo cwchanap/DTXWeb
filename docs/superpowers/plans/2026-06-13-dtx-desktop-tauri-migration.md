@@ -1740,7 +1740,7 @@ git commit -m "feat(desktop): port filesystem commands to tauri"
 - Create: `packages/dtx-desktop/src-tauri/src/songs.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Write song command tests**
+- [x] **Step 1: Write song command tests**
 
 Create tests in `songs.rs`:
 
@@ -1806,13 +1806,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml songs::tests`
 
 Expected: FAIL because `songs.rs` and command helpers are missing.
 
-- [ ] **Step 3: Implement songs module**
+- [x] **Step 3: Implement songs module**
 
 Create `packages/dtx-desktop/src-tauri/src/songs.rs` with these public command signatures:
 
@@ -1997,7 +1997,7 @@ pub async fn parse_dtx_files(folder_path: String) -> Result<serde_json::Value> {
 }
 ```
 
-- [ ] **Step 4: Register song commands**
+- [x] **Step 4: Register song commands**
 
 Modify `lib.rs`:
 
@@ -2020,7 +2020,7 @@ mod songs;
 ])
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -2031,7 +2031,7 @@ bun run --filter=dtx-desktop test -- NewSong.test.ts Templates.test.ts SongDetai
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/dtx-desktop/src-tauri/src/songs.rs packages/dtx-desktop/src-tauri/src/lib.rs

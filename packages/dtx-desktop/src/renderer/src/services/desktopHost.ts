@@ -11,6 +11,13 @@ export type DesktopHostVersions = {
 	node?: string | null;
 };
 
+export type ElectronDataMigrationResult = {
+	migrated: boolean;
+	importedKeys: string[];
+	warnings: string[];
+	localStorage?: Record<string, unknown>;
+};
+
 export type DesktopHostRuntime = {
 	kind: DesktopHostKind;
 	invoke: <T = unknown>(command: string, ...args: unknown[]) => Promise<T>;
@@ -342,6 +349,15 @@ export const desktopHost = {
 		if (runtime.kind === 'tauri') {
 			await runtime.invoke('drain_pending_auth_events');
 		}
+	},
+
+	migrateElectronData: async (): Promise<ElectronDataMigrationResult> => {
+		const runtime = getRuntime();
+		if (runtime.kind === 'tauri') {
+			return await runtime.invoke<ElectronDataMigrationResult>('migrate_electron_data');
+		}
+
+		return { migrated: false, importedKeys: [], warnings: [], localStorage: {} };
 	},
 
 	fetchUserSimfiles: async <T = unknown>(): Promise<T> =>

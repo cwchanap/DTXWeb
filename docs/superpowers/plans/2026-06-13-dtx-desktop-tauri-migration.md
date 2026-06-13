@@ -3061,7 +3061,7 @@ Expected: PASS. If failures mention old kebab-case Electron channels such as `se
 
 - [x] **Step 3: Run Svelte check**
 
-Run: `bun run --filter=dtx-desktop check`
+Run: `bun run --filter=dtx-desktop typecheck`
 
 Expected: PASS.
 
@@ -3086,11 +3086,12 @@ git commit -m "test(desktop): align renderer tests with tauri host adapter"
 - Delete: `packages/dtx-desktop/tsconfig.node.json`
 - Delete or archive through git removal: `packages/dtx-desktop/codegen.ts`
 - Modify: `packages/dtx-desktop/package.json`
+- Modify: `packages/dtx-desktop/README.md`
 - Modify: `packages/dtx-desktop/tsconfig.json`
 - Modify: `packages/dtx-desktop/vitest.config.ts`
 - Modify: `turbo.json`
 
-- [ ] **Step 1: Remove Electron-only files**
+- [x] **Step 1: Remove Electron-only files**
 
 Run:
 
@@ -3101,7 +3102,7 @@ git rm packages/dtx-desktop/electron.vite.config.ts packages/dtx-desktop/electro
 
 Expected: files are staged for deletion.
 
-- [ ] **Step 2: Remove Electron dependencies and metadata**
+- [x] **Step 2: Remove Electron dependencies and metadata**
 
 Modify `packages/dtx-desktop/package.json`:
 
@@ -3162,7 +3163,7 @@ Modify `packages/dtx-desktop/package.json`:
 
 Preserve any dependency already used by renderer code. Remove `graphql`, `graphql-request`, and GraphQL codegen packages only after `rg -n "graphql-request|generated/graphql|@graphql-codegen" packages/dtx-desktop` returns no source references outside deleted files.
 
-- [ ] **Step 3: Update tsconfig root**
+- [x] **Step 3: Update tsconfig root**
 
 Modify `packages/dtx-desktop/tsconfig.json`:
 
@@ -3173,7 +3174,7 @@ Modify `packages/dtx-desktop/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 4: Update Vitest excludes**
+- [x] **Step 4: Update Vitest excludes**
 
 Modify `packages/dtx-desktop/vitest.config.ts` coverage excludes:
 
@@ -3192,7 +3193,7 @@ exclude: [
 ];
 ```
 
-- [ ] **Step 5: Update Turbo outputs**
+- [x] **Step 5: Update Turbo outputs**
 
 Modify `turbo.json` build outputs:
 
@@ -3200,13 +3201,13 @@ Modify `turbo.json` build outputs:
 "outputs": ["dist/**", ".svelte-kit/**", "build/**", "out/**", "src-tauri/target/**"]
 ```
 
-- [ ] **Step 6: Install dependency changes**
+- [x] **Step 6: Install dependency changes**
 
 Run: `bun install`
 
 Expected: `bun.lock` removes Electron packages and keeps Tauri packages.
 
-- [ ] **Step 7: Verify no Electron source remains**
+- [x] **Step 7: Verify no Electron source remains**
 
 Run:
 
@@ -3216,20 +3217,20 @@ rg -n "electron|electron-vite|electron-builder|electron-updater|@electron-toolki
 
 Expected: no matches except historical text in docs outside `packages/dtx-desktop`.
 
-- [ ] **Step 8: Run checks**
+- [x] **Step 8: Run checks**
 
 Run:
 
 ```bash
 bun run --filter=dtx-desktop test
-bun run --filter=dtx-desktop check
+bun run --filter=dtx-desktop typecheck
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 cargo check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 ```
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add bun.lock turbo.json packages/dtx-desktop
@@ -3250,7 +3251,7 @@ Run:
 
 ```bash
 bun run --filter=dtx-desktop test
-bun run --filter=dtx-desktop check
+bun run --filter=dtx-desktop typecheck
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 cargo check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 ```
@@ -3270,7 +3271,7 @@ Use this command on a Windows machine or Windows CI runner:
 ```bash
 bun install
 bun run --filter=dtx-desktop test
-bun run --filter=dtx-desktop check
+bun run --filter=dtx-desktop typecheck
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 cargo check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 bun run --filter=dtx-desktop build:win

@@ -34,13 +34,13 @@ pub struct MigrationResult {
 }
 
 #[tauri::command]
-pub async fn migrate_electron_data(app: AppHandle) -> Result<MigrationResult> {
+pub async fn migrate_legacy_data(app: AppHandle) -> Result<MigrationResult> {
     let app_data = app.path().app_data_dir()?;
-    let electron_data = default_electron_data_dir();
-    migrate_from_paths(&electron_data, &app_data).await
+    let legacy_data = default_legacy_data_dir();
+    migrate_from_paths(&legacy_data, &app_data).await
 }
 
-pub async fn migrate_from_paths(electron_dir: &Path, tauri_dir: &Path) -> Result<MigrationResult> {
+pub async fn migrate_from_paths(legacy_dir: &Path, tauri_dir: &Path) -> Result<MigrationResult> {
     fs::create_dir_all(tauri_dir).await?;
     let marker = tauri_dir.join(MIGRATION_MARKER);
     if marker.exists() {
@@ -52,7 +52,7 @@ pub async fn migrate_from_paths(electron_dir: &Path, tauri_dir: &Path) -> Result
         });
     }
 
-    let source = electron_dir.join(LOCAL_STORAGE_FILE);
+    let source = legacy_dir.join(LOCAL_STORAGE_FILE);
     let mut imported_keys = Vec::new();
     let mut warnings = Vec::new();
     let mut local_storage = Map::new();
@@ -73,13 +73,13 @@ pub async fn migrate_from_paths(electron_dir: &Path, tauri_dir: &Path) -> Result
                 .await?;
             }
             Ok(_) => warnings.push(format!(
-                "Electron storage at {} is not an object",
+                "Legacy desktop storage at {} is not an object",
                 source.display()
             )),
             Err(error) => warnings.push(format!("Failed to parse {}: {}", source.display(), error)),
         },
         Err(_) => warnings.push(format!(
-            "Electron storage not found at {}",
+            "Legacy desktop storage not found at {}",
             source.display()
         )),
     }
@@ -102,7 +102,7 @@ pub async fn migrate_from_paths(electron_dir: &Path, tauri_dir: &Path) -> Result
     })
 }
 
-fn default_electron_data_dir() -> PathBuf {
+fn default_legacy_data_dir() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         std::env::var("HOME")
@@ -134,10 +134,10 @@ mod tests {
 
     #[tokio::test]
     async fn migrates_known_local_storage_keys_once() {
-        let electron = tempdir().expect("electron");
+        let legacy = tempdir().expect("legacy");
         let tauri = tempdir().expect("tauri");
         fs::write(
-            electron.path().join("local-storage.json"),
+            legacy.path().join("local-storage.json"),
             serde_json::json!({
                 "workspace_path": "\"/songs\"",
                 "workspace_bookmarks": "[{\"name\":\"Songs\",\"path\":\"/songs\"}]",
@@ -151,7 +151,7 @@ mod tests {
         .await
         .expect("write");
 
-        let result = migrate_from_paths(electron.path(), tauri.path())
+        let result = migrate_from_paths(legacy.path(), tauri.path())
             .await
             .expect("migrate");
 
@@ -170,7 +170,7 @@ mod tests {
         assert!(result.local_storage.get("ignored_key").is_none());
         assert!(tauri.path().join("migration-v1.json").exists());
 
-        let second = migrate_from_paths(electron.path(), tauri.path())
+        let second = migrate_from_paths(legacy.path(), tauri.path())
             .await
             .expect("second migrate");
         assert_eq!(second.migrated, false);
@@ -179,11 +179,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_electron_storage_records_warning_and_marker() {
-        let electron = tempdir().expect("electron");
+    async fn missing_legacy_storage_records_warning_and_marker() {
+        let legacy = tempdir().expect("legacy");
         let tauri = tempdir().expect("tauri");
 
-        let result = migrate_from_paths(electron.path(), tauri.path())
+        let result = migrate_from_paths(legacy.path(), tauri.path())
             .await
             .expect("migrate");
 

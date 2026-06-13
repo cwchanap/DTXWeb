@@ -75,7 +75,7 @@ pub fn run() {
             api::get_preview_url,
             api::get_sound_preview_url,
             api::upload_file,
-            migration::migrate_electron_data,
+            migration::migrate_legacy_data,
             filesystem::select_folder,
             filesystem::path_exists,
             filesystem::list_directories,

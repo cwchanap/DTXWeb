@@ -4,7 +4,7 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": ["dist/**", ".svelte-kit/**", "build/**", "out/**"]
+			"outputs": ["dist/**", ".svelte-kit/**", "build/**", "out/**", "src-tauri/target/**"]
 		},
 		"test": {
 			"dependsOn": ["^build"],

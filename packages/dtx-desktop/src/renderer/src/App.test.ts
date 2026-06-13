@@ -5,7 +5,7 @@ const mockDesktopHost = vi.hoisted(() => ({
 	onMagicLinkResult: vi.fn(),
 	onAuthCallback: vi.fn(),
 	drainPendingAuthEvents: vi.fn(),
-	migrateElectronData: vi.fn()
+	migrateLegacyData: vi.fn()
 }));
 
 const mockAuthService = vi.hoisted(() => ({
@@ -70,7 +70,7 @@ describe('App lifecycle', () => {
 		window.location.hash = '';
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
 		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
-		mockDesktopHost.migrateElectronData.mockResolvedValue({
+		mockDesktopHost.migrateLegacyData.mockResolvedValue({
 			migrated: false,
 			importedKeys: [],
 			warnings: [],
@@ -107,7 +107,7 @@ describe('App lifecycle', () => {
 		expect(magicLinkUnlisten).toHaveBeenCalledOnce();
 		expect(authCallbackUnlisten).toHaveBeenCalledOnce();
 		expect(mockDesktopHost.drainPendingAuthEvents).not.toHaveBeenCalled();
-		expect(mockDesktopHost.migrateElectronData).not.toHaveBeenCalled();
+		expect(mockDesktopHost.migrateLegacyData).not.toHaveBeenCalled();
 		expect(mockAuthService.restoreSession).not.toHaveBeenCalled();
 	});
 
@@ -120,15 +120,15 @@ describe('App lifecycle', () => {
 		await waitFor(() => {
 			expect(mockDesktopHost.drainPendingAuthEvents).toHaveBeenCalledOnce();
 		});
-		expect(mockDesktopHost.migrateElectronData).toHaveBeenCalledOnce();
+		expect(mockDesktopHost.migrateLegacyData).toHaveBeenCalledOnce();
 		expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
 		expect(mockDesktopHost.onAuthCallback.mock.invocationCallOrder[0]).toBeLessThan(
 			mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]
 		);
 		expect(mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]).toBeLessThan(
-			mockDesktopHost.migrateElectronData.mock.invocationCallOrder[0]
+			mockDesktopHost.migrateLegacyData.mock.invocationCallOrder[0]
 		);
-		expect(mockDesktopHost.migrateElectronData.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(mockDesktopHost.migrateLegacyData.mock.invocationCallOrder[0]).toBeLessThan(
 			mockAuthService.restoreSession.mock.invocationCallOrder[0]
 		);
 	});
@@ -136,7 +136,7 @@ describe('App lifecycle', () => {
 	it('applies migrated localStorage keys without overwriting existing keys', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
-		mockDesktopHost.migrateElectronData.mockResolvedValue({
+		mockDesktopHost.migrateLegacyData.mockResolvedValue({
 			migrated: true,
 			importedKeys: ['auth_access_token', 'app_settings'],
 			warnings: [],

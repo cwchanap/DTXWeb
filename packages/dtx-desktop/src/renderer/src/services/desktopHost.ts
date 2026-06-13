@@ -1,17 +1,12 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen as tauriListen } from '@tauri-apps/api/event';
 
-export type DesktopHostKind = 'electron' | 'tauri';
-
 export type DesktopHostVersions = {
 	app: string | null;
 	tauri: string | null;
-	electron: string | null;
-	chrome?: string | null;
-	node?: string | null;
 };
 
-export type ElectronDataMigrationResult = {
+export type LegacyDataMigrationResult = {
 	migrated: boolean;
 	importedKeys: string[];
 	warnings: string[];
@@ -19,7 +14,7 @@ export type ElectronDataMigrationResult = {
 };
 
 export type DesktopHostRuntime = {
-	kind: DesktopHostKind;
+	kind: 'tauri';
 	invoke: <T = unknown>(command: string, ...args: unknown[]) => Promise<T>;
 	send: (command: string, ...args: unknown[]) => void | Promise<void>;
 	listen: <T = unknown>(event: string, callback: (payload: T) => void) => Promise<() => void>;
@@ -59,22 +54,11 @@ type OpenFolderResult = {
 	error?: string;
 };
 
-type DirectoryListingResult = {
-	files: Array<{
-		name: string;
-		path: string;
-		type: 'file' | 'directory';
-	}>;
-	error: string | null;
-};
-
 type HostUnlisten = () => void;
 
 let runtimeForTests: DesktopHostRuntime | null = null;
 
 const tauriListeners = new Map<string, Set<HostUnlisten>>();
-
-const hasTauriRuntime = (): boolean => typeof window !== 'undefined' && '__TAURI__' in window;
 
 const getBrowserPlatform = (): string => {
 	if (typeof navigator === 'undefined') return 'unknown';
@@ -139,111 +123,40 @@ const createTauriRuntime = (): DesktopHostRuntime => ({
 	getEnvironment: () => ({}),
 	getVersions: () => ({
 		app: null,
-		tauri: null,
-		electron: null
+		tauri: '2'
 	})
-});
-
-const getElectron = () => {
-	if (typeof window === 'undefined' || !window.electron) {
-		throw new Error('Electron host runtime is unavailable');
-	}
-
-	return window.electron;
-};
-
-const createElectronRuntime = (): DesktopHostRuntime => ({
-	kind: 'electron',
-	invoke: async <T = unknown>(command: string, ...args: unknown[]): Promise<T> => {
-		const electron = getElectron();
-		return await electron.ipcRenderer.invoke(command, ...args);
-	},
-	send: (command: string, ...args: unknown[]): void => {
-		const electron = getElectron();
-		electron.ipcRenderer.send(command, ...args);
-	},
-	listen: async <T = unknown>(
-		event: string,
-		callback: (payload: T) => void
-	): Promise<HostUnlisten> => {
-		const electron = getElectron();
-		const listener = (_event: unknown, payload: T) => callback(payload);
-		const removeFromOn = electron.ipcRenderer.on(event, listener);
-
-		return () => {
-			if (typeof removeFromOn === 'function') {
-				removeFromOn();
-				return;
-			}
-
-			electron.ipcRenderer.removeListener(event, listener);
-		};
-	},
-	removeAllListeners: (event?: string): void => {
-		const electron = getElectron();
-		const removeAllListeners = electron.ipcRenderer.removeAllListeners as (
-			event?: string
-		) => void;
-		removeAllListeners(event);
-	},
-	getPlatform: (): string => getElectron().process?.platform ?? getBrowserPlatform(),
-	getEnvironment: (): Record<string, string | undefined> => getElectron().process?.env ?? {},
-	getVersions: (): DesktopHostVersions => {
-		const versions = getElectron().process?.versions ?? {};
-
-		return {
-			app: versions.app ?? null,
-			tauri: null,
-			electron: versions.electron ?? null,
-			chrome: versions.chrome ?? null,
-			node: versions.node ?? null
-		};
-	}
 });
 
 const getRuntime = (): DesktopHostRuntime => {
 	if (runtimeForTests) return runtimeForTests;
-	return hasTauriRuntime() ? createTauriRuntime() : createElectronRuntime();
+	return createTauriRuntime();
 };
 
 const invokeHost = async <T>(
 	tauriCommand: string,
-	electronChannel: string,
-	tauriArgs?: Record<string, unknown>,
-	electronArgs: unknown[] = []
+	tauriArgs?: Record<string, unknown>
 ): Promise<T> => {
 	const runtime = getRuntime();
 
-	if (runtime.kind === 'tauri') {
-		if (tauriArgs === undefined) {
-			return await runtime.invoke<T>(tauriCommand);
-		}
-
-		return await runtime.invoke<T>(tauriCommand, tauriArgs);
+	if (tauriArgs === undefined) {
+		return await runtime.invoke<T>(tauriCommand);
 	}
 
-	return await runtime.invoke<T>(electronChannel, ...electronArgs);
+	return await runtime.invoke<T>(tauriCommand, tauriArgs);
 };
 
 const sendHost = async (
 	tauriCommand: string,
-	electronChannel: string,
-	tauriArgs?: Record<string, unknown>,
-	electronArgs: unknown[] = []
+	tauriArgs?: Record<string, unknown>
 ): Promise<void> => {
 	const runtime = getRuntime();
 
-	if (runtime.kind === 'tauri') {
-		if (tauriArgs === undefined) {
-			await runtime.send(tauriCommand);
-			return;
-		}
-
-		await runtime.send(tauriCommand, tauriArgs);
+	if (tauriArgs === undefined) {
+		await runtime.send(tauriCommand);
 		return;
 	}
 
-	await runtime.send(electronChannel, ...electronArgs);
+	await runtime.send(tauriCommand, tauriArgs);
 };
 
 const normalizeTauriReadFileResult = (result: HostReadFileResult): ReadFileResult => {
@@ -264,167 +177,112 @@ export const setDesktopHostRuntimeForTests = (runtime: DesktopHostRuntime | null
 
 export const desktopHost = {
 	selectFolder: async (): Promise<SelectFolderResult> =>
-		await invokeHost<SelectFolderResult>('select_folder', 'select-folder'),
+		await invokeHost<SelectFolderResult>('select_folder'),
 
 	pathExists: async (basePath: string, ...pathParts: string[]): Promise<PathExistsResult> =>
-		await invokeHost<PathExistsResult>('path_exists', 'path-exists', { basePath, pathParts }, [
-			basePath,
-			...pathParts
-		]),
+		await invokeHost<PathExistsResult>('path_exists', { basePath, pathParts }),
 
 	openExternalUrl: async (url: string): Promise<void> =>
-		await sendHost('open_external_url', 'open-external-url', { url }, [url]),
+		await sendHost('open_external_url', { url }),
 
 	openFolder: async (folderPath: string): Promise<OpenFolderResult> =>
-		await invokeHost<OpenFolderResult>(
-			'open_folder',
-			'open-folder-in-explorer',
-			{ folderPath },
-			[folderPath]
-		),
+		await invokeHost<OpenFolderResult>('open_folder', { folderPath }),
 
-	listDirectories: async (dirPath: string): Promise<string[]> => {
-		const runtime = getRuntime();
-
-		if (runtime.kind === 'tauri') {
-			return await runtime.invoke<string[]>('list_directories', { dirPath });
-		}
-
-		const result = await runtime.invoke<DirectoryListingResult>('list-directory', dirPath);
-		if (result.error) {
-			throw new Error(result.error);
-		}
-
-		return result.files
-			.filter((entry) => entry.type === 'directory')
-			.map((entry) => entry.name);
-	},
+	listDirectories: async (dirPath: string): Promise<string[]> =>
+		await invokeHost<string[]>('list_directories', { dirPath }),
 
 	listDirectory: async <T = unknown>(dirPath: string): Promise<T> =>
-		await invokeHost<T>('list_directory', 'list-directory', { dirPath }, [dirPath]),
+		await invokeHost<T>('list_directory', { dirPath }),
 
 	loadTreeStructure: async <T = unknown>(basePath: string, ...pathParts: string[]): Promise<T> =>
-		await invokeHost<T>('load_tree_structure', 'load-tree-structure', { basePath, pathParts }, [
-			basePath,
-			...pathParts
-		]),
+		await invokeHost<T>('load_tree_structure', { basePath, pathParts }),
 
 	listFiles: async <T = unknown>(dirPath: string): Promise<T> =>
-		await invokeHost<T>('list_files', 'list-files', { dirPath }, [dirPath]),
+		await invokeHost<T>('list_files', { dirPath }),
 
 	readFile: async (
 		filePath: string,
 		workspaceRoot: string | null = null
 	): Promise<ReadFileResult> => {
 		const runtime = getRuntime();
-
-		if (runtime.kind === 'tauri') {
-			const result = await runtime.invoke<HostReadFileResult>('read_file', {
-				filePath,
-				workspaceRoot
-			});
-			return normalizeTauriReadFileResult(result);
-		}
-
-		return await runtime.invoke<ReadFileResult>('read-file', filePath, workspaceRoot);
+		const result = await runtime.invoke<HostReadFileResult>('read_file', {
+			filePath,
+			workspaceRoot
+		});
+		return normalizeTauriReadFileResult(result);
 	},
 
 	getSkinAsset: async <T = unknown>(assetPath: string): Promise<T> =>
-		await invokeHost<T>('get_skin_asset', 'get-skin-asset', { assetPath }, [assetPath]),
+		await invokeHost<T>('get_skin_asset', { assetPath }),
 
 	parseDtxFiles: async <T = unknown>(folderPath: string): Promise<T> =>
-		await invokeHost<T>('parse_dtx_files', 'parse-dtx-files', { folderPath }, [folderPath]),
+		await invokeHost<T>('parse_dtx_files', { folderPath }),
 
 	validateSession: async <T = unknown>(sessionData: unknown): Promise<T> =>
-		await invokeHost<T>('validate_session', 'validate-session', { sessionData }, [sessionData]),
+		await invokeHost<T>('validate_session', { sessionData }),
 
 	getCurrentSession: async <T = unknown>(): Promise<T> =>
-		await invokeHost<T>('get_current_session', 'get-current-session'),
+		await invokeHost<T>('get_current_session'),
 
-	logoutSession: async <T = unknown>(): Promise<T> =>
-		await invokeHost<T>('logout_session', 'logout-session'),
+	logoutSession: async <T = unknown>(): Promise<T> => await invokeHost<T>('logout_session'),
 
-	drainPendingAuthEvents: async (): Promise<void> => {
-		const runtime = getRuntime();
-		if (runtime.kind === 'tauri') {
-			await runtime.invoke('drain_pending_auth_events');
-		}
-	},
+	drainPendingAuthEvents: async (): Promise<void> =>
+		await invokeHost<void>('drain_pending_auth_events'),
 
-	migrateElectronData: async (): Promise<ElectronDataMigrationResult> => {
-		const runtime = getRuntime();
-		if (runtime.kind === 'tauri') {
-			return await runtime.invoke<ElectronDataMigrationResult>('migrate_electron_data');
-		}
-
-		return { migrated: false, importedKeys: [], warnings: [], localStorage: {} };
-	},
+	migrateLegacyData: async (): Promise<LegacyDataMigrationResult> =>
+		await invokeHost<LegacyDataMigrationResult>('migrate_legacy_data'),
 
 	fetchUserSimfiles: async <T = unknown>(): Promise<T> =>
-		await invokeHost<T>('fetch_user_simfiles', 'fetch-user-simfiles'),
+		await invokeHost<T>('fetch_user_simfiles'),
 
 	getPreviewUrl: async (simfileId: number): Promise<string> =>
-		await invokeHost<string>('get_preview_url', 'get-preview-url', { simfileId }, [simfileId]),
+		await invokeHost<string>('get_preview_url', { simfileId }),
 
 	getSoundPreviewUrl: async (simfileId: number): Promise<string> =>
-		await invokeHost<string>('get_sound_preview_url', 'get-sound-preview-url', { simfileId }, [
-			simfileId
-		]),
+		await invokeHost<string>('get_sound_preview_url', { simfileId }),
 
 	loadAssetFiles: async <T = unknown>(simfileId: string): Promise<T> =>
-		await invokeHost<T>('load_asset_files', 'load-asset-files', { simfileId }, [simfileId]),
+		await invokeHost<T>('load_asset_files', { simfileId }),
 
 	createSong: async <T = unknown>(options: unknown): Promise<T> =>
-		await invokeHost<T>('create_song', 'create-song', { options }, [options]),
+		await invokeHost<T>('create_song', { options }),
 
 	createSimfileRecord: async <T = unknown>(simfileData: unknown): Promise<T> =>
-		await invokeHost<T>('create_simfile_record', 'create-simfile-record', { simfileData }, [
-			simfileData
-		]),
+		await invokeHost<T>('create_simfile_record', { simfileData }),
 
-	getNextDisplayId: async (): Promise<number> =>
-		await invokeHost<number>('get_next_display_id', 'get-next-display-id'),
+	getNextDisplayId: async (): Promise<number> => await invokeHost<number>('get_next_display_id'),
 
 	searchCloudSongs: async <T = unknown>(params: {
 		query: string;
 		limit?: number;
 		excludeLinkedSongIds?: Array<string | number>;
-	}): Promise<T> =>
-		await invokeHost<T>('search_cloud_songs', 'search-cloud-songs', params, [params]),
+	}): Promise<T> => await invokeHost<T>('search_cloud_songs', params),
 
 	fetchCloudSong: async <T = unknown>(
 		params: { cloudSongId: string | number } | string | number
 	): Promise<T> => {
 		const payload = typeof params === 'object' ? params : { cloudSongId: params };
-		return await invokeHost<T>('fetch_cloud_song', 'fetch-cloud-song', payload, [payload]);
+		return await invokeHost<T>('fetch_cloud_song', payload);
 	},
 
 	updateSimfileRecord: async <T = unknown>(params: {
 		simfileId: string | number;
 		updateData: Record<string, unknown>;
-	}): Promise<T> =>
-		await invokeHost<T>('update_simfile_record', 'update-simfile-record', params, [params]),
+	}): Promise<T> => await invokeHost<T>('update_simfile_record', params),
 
 	exportSongToZip: async <T = unknown>(params: {
 		songPath: string;
 		songTitle?: string;
 		exportDirectory?: string;
-	}): Promise<T> =>
-		await invokeHost<T>('export_song_to_zip', 'export-song-to-zip', params, [params]),
+	}): Promise<T> => await invokeHost<T>('export_song_to_zip', params),
 
 	uploadFile: async <T = unknown>(
 		fileName: string,
 		songFolderPath: string,
 		simfileId: string
-	): Promise<T> =>
-		await invokeHost<T>('upload_file', 'upload-file', { fileName, songFolderPath, simfileId }, [
-			fileName,
-			songFolderPath,
-			simfileId
-		]),
+	): Promise<T> => await invokeHost<T>('upload_file', { fileName, songFolderPath, simfileId }),
 
-	checkForUpdate: async <T = unknown>(): Promise<T> =>
-		await invokeHost<T>('check_for_update', 'check-for-update'),
+	checkForUpdate: async <T = unknown>(): Promise<T> => await invokeHost<T>('check_for_update'),
 
 	getPlatform: (): string => getRuntime().getPlatform(),
 

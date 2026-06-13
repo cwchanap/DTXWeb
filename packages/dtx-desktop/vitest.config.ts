@@ -9,7 +9,7 @@ export default defineConfig({
 		globals: true,
 		setupFiles: ['./src/tests/setup.ts'],
 		// Exclude playwright tests and build outputs
-		exclude: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/e2e/**'],
+		exclude: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/src-tauri/**', '**/e2e/**'],
 		server: {
 			deps: {
 				inline: [/^svelte/, /@testing-library\/svelte/],
@@ -25,17 +25,14 @@ export default defineConfig({
 				'**/dist/**',
 				'**/out/**',
 				'**/build/**',
+				'**/src-tauri/**',
 				'**/tests/**',
 				'**/test/**',
 				'**/*.test.ts',
 				'**/*.spec.ts',
 				'**/vite.config.ts',
 				'**/vitest.config.ts',
-				'**/electron.vite.config.ts',
-				'**/electron-builder.yml',
-				'**/dev-app-update.yml',
-				'**/e2e/**',
-				'**/preload/**'
+				'**/e2e/**'
 			],
 			include: ['src/**/*.{js,ts,svelte}'],
 			all: true

@@ -1081,7 +1081,7 @@ mod tests {
     }
 
     #[test]
-    fn home_dir_from_env_uses_electron_os_homedir_style_fallbacks() {
+    fn home_dir_from_env_uses_os_homedir_style_fallbacks() {
         assert_eq!(
             home_dir_from_env(
                 HomeDirPlatform::Posix,

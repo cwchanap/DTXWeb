@@ -2697,7 +2697,7 @@ git commit -m "feat(desktop): port cloud api commands to tauri"
 - Modify: `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/App.svelte`
 
-- [ ] **Step 1: Write migration tests**
+- [x] **Step 1: Write migration tests**
 
 Create tests in `migration.rs`:
 
@@ -2733,13 +2733,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml migration::tests`
 
 Expected: FAIL because `migration.rs` does not exist.
 
-- [ ] **Step 3: Implement migration module**
+- [x] **Step 3: Implement migration module**
 
 Create `packages/dtx-desktop/src-tauri/src/migration.rs`:
 
@@ -2848,7 +2848,7 @@ fn default_electron_data_dir() -> std::path::PathBuf {
 }
 ```
 
-- [ ] **Step 4: Register migration command**
+- [x] **Step 4: Register migration command**
 
 Modify `lib.rs`:
 
@@ -2862,7 +2862,7 @@ mod migration;
 
 Keep all previous commands in the same handler list.
 
-- [ ] **Step 5: Add adapter and startup call**
+- [x] **Step 5: Add adapter and startup call**
 
 Modify `desktopHost.ts`:
 
@@ -2883,7 +2883,7 @@ try {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -2894,7 +2894,7 @@ bun run --filter=dtx-desktop test -- App.test.ts desktopHost.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/dtx-desktop/src-tauri/src/migration.rs packages/dtx-desktop/src-tauri/src/lib.rs packages/dtx-desktop/src/renderer/src/services/desktopHost.ts packages/dtx-desktop/src/renderer/src/App.svelte

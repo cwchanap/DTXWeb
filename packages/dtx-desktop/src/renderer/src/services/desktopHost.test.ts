@@ -87,6 +87,38 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenCalledWith('check-for-update');
 	});
 
+	it('maps migrateElectronData to the Tauri command', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			migrated: true,
+			importedKeys: ['workspace_path'],
+			warnings: [],
+			localStorage: { workspace_path: '"/songs"' }
+		});
+
+		await expect(desktopHost.migrateElectronData()).resolves.toEqual({
+			migrated: true,
+			importedKeys: ['workspace_path'],
+			warnings: [],
+			localStorage: { workspace_path: '"/songs"' }
+		});
+
+		expect(runtime.invoke).toHaveBeenCalledWith('migrate_electron_data');
+	});
+
+	it('does not call Electron for migrateElectronData', async () => {
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+
+		await expect(desktopHost.migrateElectronData()).resolves.toEqual({
+			migrated: false,
+			importedKeys: [],
+			warnings: [],
+			localStorage: {}
+		});
+
+		expect(runtime.invoke).not.toHaveBeenCalled();
+	});
+
 	it('maps multi-part pathExists arguments for Tauri', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
 

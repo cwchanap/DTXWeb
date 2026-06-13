@@ -32,6 +32,13 @@
 		refreshToken: string;
 	};
 
+	type ElectronDataMigrationResult = {
+		migrated: boolean;
+		importedKeys: string[];
+		warnings: string[];
+		localStorage?: Record<string, unknown>;
+	};
+
 	// Routing state
 	let currentRoute = $state('workspace');
 	let routeParams = $state<{ simFileId?: string }>({});
@@ -45,6 +52,37 @@
 		}
 
 		hostUnlisteners.push(unlisten);
+	};
+
+	const localStorageValue = (value: unknown): string => {
+		if (typeof value === 'string') {
+			return value;
+		}
+
+		return JSON.stringify(value);
+	};
+
+	const applyImportedLocalStorage = (result: ElectronDataMigrationResult): void => {
+		const imported = result.localStorage ?? {};
+		for (const [key, value] of Object.entries(imported)) {
+			if (localStorage.getItem(key) !== null) {
+				continue;
+			}
+
+			localStorage.setItem(key, localStorageValue(value));
+		}
+	};
+
+	const runElectronDataMigration = async (): Promise<void> => {
+		try {
+			const result = await desktopHost.migrateElectronData();
+			applyImportedLocalStorage(result);
+			for (const warning of result.warnings) {
+				console.warn('Electron data migration warning:', warning);
+			}
+		} catch (error) {
+			console.warn('Electron data migration did not complete:', error);
+		}
 	};
 
 	// Function to handle route changes
@@ -95,6 +133,9 @@
 
 		if (destroyed) return;
 		await desktopHost.drainPendingAuthEvents();
+
+		if (destroyed) return;
+		await runElectronDataMigration();
 
 		// Try to restore session
 		if (destroyed) return;

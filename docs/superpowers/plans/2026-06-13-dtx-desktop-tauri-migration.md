@@ -2048,7 +2048,7 @@ git commit -m "feat(desktop): port local song commands to tauri"
 - Modify: `packages/dtx-desktop/src-tauri/src/lib.rs`
 - Modify: `packages/dtx-desktop/src-tauri/tauri.conf.json`
 
-- [ ] **Step 1: Write auth parsing tests**
+- [x] **Step 1: Write auth parsing tests**
 
 Create tests in `auth.rs`:
 
@@ -2084,13 +2084,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml auth::tests`
 
 Expected: FAIL because `auth.rs` is missing.
 
-- [ ] **Step 3: Implement auth state and commands**
+- [x] **Step 3: Implement auth state and commands**
 
 Create `packages/dtx-desktop/src-tauri/src/auth.rs`:
 
@@ -2206,7 +2206,7 @@ async fn verify_magic_link(_app: &AppHandle, magic_link: &str) -> MagicLinkResul
 
 The first implementation may return a controlled failure from `verify_magic_link`. The next API/auth task replaces it with a real Supabase OTP call before Electron is removed.
 
-- [ ] **Step 4: Wire deep-link and single-instance plugins**
+- [x] **Step 4: Wire deep-link and single-instance plugins**
 
 Modify `lib.rs`:
 
@@ -2273,7 +2273,7 @@ pub fn run() {
 
 Keep all previously registered filesystem and song commands in the same `generate_handler!` list.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -2284,7 +2284,7 @@ bun run --filter=dtx-desktop test -- authService.test.ts App.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/dtx-desktop/src-tauri/src/auth.rs packages/dtx-desktop/src-tauri/src/lib.rs packages/dtx-desktop/src-tauri/tauri.conf.json

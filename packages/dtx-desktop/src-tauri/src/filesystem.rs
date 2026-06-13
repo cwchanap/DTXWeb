@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_opener::OpenerExt;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use tokio::fs;
 
 const TEXT_FILE_SIZE_LIMIT: u64 = 1024 * 1024;
 const AUDIO_FILE_SIZE_LIMIT: u64 = 10 * 1024 * 1024;
-const PLACEHOLDER_LAST_MODIFIED: &str = "1970-01-01T00:00:00.000Z";
 
 const ALLOWED_EXTENSIONS: &[&str] = &["dtx", "def", "xa", "ogg", "wav", "mp3"];
 const AUDIO_EXTENSIONS: &[&str] = &["xa", "ogg", "wav", "mp3"];
@@ -74,8 +75,23 @@ pub async fn list_directories(dir_path: String) -> Result<Vec<String>> {
 
 #[tauri::command]
 pub async fn list_directory(dir_path: String) -> Result<serde_json::Value> {
+    match list_directory_entries(&dir_path).await {
+        Ok(files) => Ok(json!({ "files": files, "error": null })),
+        Err(error) => Ok(list_error_value(error)),
+    }
+}
+
+#[tauri::command]
+pub async fn list_files(dir_path: String) -> Result<serde_json::Value> {
+    match list_file_entries(&dir_path).await {
+        Ok(files) => Ok(json!({ "files": files, "error": null })),
+        Err(error) => Ok(list_error_value(error)),
+    }
+}
+
+async fn list_directory_entries(dir_path: &str) -> Result<Vec<FileEntry>> {
     let mut files = Vec::new();
-    let mut entries = fs::read_dir(&dir_path).await?;
+    let mut entries = fs::read_dir(dir_path).await?;
 
     while let Some(entry) = entries.next_entry().await? {
         let file_type = entry.file_type().await?;
@@ -91,13 +107,12 @@ pub async fn list_directory(dir_path: String) -> Result<serde_json::Value> {
     }
 
     files.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(json!({ "files": files, "error": null }))
+    Ok(files)
 }
 
-#[tauri::command]
-pub async fn list_files(dir_path: String) -> Result<serde_json::Value> {
+async fn list_file_entries(dir_path: &str) -> Result<Vec<ListedFile>> {
     let mut files = Vec::new();
-    let mut entries = fs::read_dir(&dir_path).await?;
+    let mut entries = fs::read_dir(dir_path).await?;
 
     while let Some(entry) = entries.next_entry().await? {
         if !entry.file_type().await?.is_file() {
@@ -109,13 +124,13 @@ pub async fn list_files(dir_path: String) -> Result<serde_json::Value> {
         files.push(ListedFile {
             file_name: file_name_to_string(entry.file_name()),
             size: metadata.len(),
-            last_modified: PLACEHOLDER_LAST_MODIFIED.to_string(),
+            last_modified: format_modified_time(&metadata)?,
             key: file_path.to_string_lossy().into_owned(),
         });
     }
 
     files.sort_by(|a, b| a.file_name.cmp(&b.file_name));
-    Ok(json!({ "files": files }))
+    Ok(files)
 }
 
 #[tauri::command]
@@ -488,6 +503,16 @@ fn path_access_error(error: &std::io::Error) -> String {
     }
 }
 
+fn list_error_value(error: DesktopError) -> serde_json::Value {
+    json!({ "files": [], "error": error.to_string() })
+}
+
+fn format_modified_time(metadata: &std::fs::Metadata) -> Result<String> {
+    OffsetDateTime::from(metadata.modified()?)
+        .format(&Rfc3339)
+        .map_err(|error| DesktopError::Message(error.to_string()))
+}
+
 fn file_path_to_string(file_path: FilePath) -> Result<String> {
     let path = file_path
         .into_path()
@@ -531,6 +556,53 @@ mod tests {
             serde_json::to_value(result).expect("json")["error"],
             "File type not allowed"
         );
+    }
+
+    #[tokio::test]
+    async fn list_directory_returns_error_envelope_for_missing_directory() {
+        let root = tempdir().expect("tempdir");
+        let missing = root.path().join("missing");
+
+        let result = list_directory(missing.to_string_lossy().into_owned())
+            .await
+            .expect("envelope");
+
+        assert_eq!(result["files"], serde_json::json!([]));
+        assert!(result["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn list_files_returns_error_envelope_for_missing_directory() {
+        let root = tempdir().expect("tempdir");
+        let missing = root.path().join("missing");
+
+        let result = list_files(missing.to_string_lossy().into_owned())
+            .await
+            .expect("envelope");
+
+        assert_eq!(result["files"], serde_json::json!([]));
+        assert!(result["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn list_files_returns_real_iso_last_modified() {
+        let root = tempdir().expect("tempdir");
+        let file = root.path().join("main.dtx");
+        fs::write(&file, "#TITLE: Chart").await.expect("write");
+
+        let result = list_files(root.path().to_string_lossy().into_owned())
+            .await
+            .expect("listing");
+
+        let files = result["files"].as_array().expect("files");
+        assert_eq!(files.len(), 1);
+        let last_modified = files[0]["lastModified"].as_str().expect("lastModified");
+        assert_ne!(last_modified, "1970-01-01T00:00:00.000Z");
+        assert_iso_utc_timestamp(last_modified);
     }
 
     #[tokio::test]
@@ -592,6 +664,46 @@ mod tests {
                 content: actual,
             } => assert_eq!(actual, content),
             other => panic!("expected decoded text, got {other:?}"),
+        }
+    }
+
+    fn assert_iso_utc_timestamp(value: &str) {
+        assert!(value.ends_with('Z'), "timestamp should end with Z: {value}");
+        let value = value.strip_suffix('Z').expect("Z suffix");
+        let (date, time) = value.split_once('T').expect("date-time separator");
+        let date_parts = date.split('-').collect::<Vec<_>>();
+        assert_eq!(date_parts.len(), 3, "date parts: {date}");
+        assert_eq!(date_parts[0].len(), 4, "year: {date}");
+        assert_eq!(date_parts[1].len(), 2, "month: {date}");
+        assert_eq!(date_parts[2].len(), 2, "day: {date}");
+        assert!(date_parts
+            .iter()
+            .all(|part| part.chars().all(|character| character.is_ascii_digit())));
+
+        let time_parts = time.split(':').collect::<Vec<_>>();
+        assert_eq!(time_parts.len(), 3, "time parts: {time}");
+        assert_eq!(time_parts[0].len(), 2, "hour: {time}");
+        assert_eq!(time_parts[1].len(), 2, "minute: {time}");
+        assert!(time_parts[0]
+            .chars()
+            .all(|character| character.is_ascii_digit()));
+        assert!(time_parts[1]
+            .chars()
+            .all(|character| character.is_ascii_digit()));
+
+        let (seconds, fraction) = time_parts[2]
+            .split_once('.')
+            .map_or((time_parts[2], None), |(seconds, fraction)| {
+                (seconds, Some(fraction))
+            });
+        assert_eq!(seconds.len(), 2, "seconds: {time}");
+        assert!(seconds.chars().all(|character| character.is_ascii_digit()));
+        if let Some(fraction) = fraction {
+            assert!(
+                !fraction.is_empty()
+                    && fraction.chars().all(|character| character.is_ascii_digit()),
+                "fraction: {time}"
+            );
         }
     }
 }

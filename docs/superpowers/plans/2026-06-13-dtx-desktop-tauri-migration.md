@@ -2303,7 +2303,7 @@ git commit -m "feat(desktop): wire tauri auth deep links"
 - Remove after parity: `packages/dtx-desktop/src/main/graphql/generated/graphql.ts`
 - Keep until cleanup: `packages/dtx-desktop/src/main/graphql/operations/*.graphql`
 
-- [ ] **Step 1: Write API mapping tests**
+- [x] **Step 1: Write API mapping tests**
 
 Create tests in `api.rs`:
 
@@ -2365,13 +2365,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml api::tests`
 
 Expected: FAIL because `api.rs` and helpers are missing.
 
-- [ ] **Step 3: Implement API module**
+- [x] **Step 3: Implement API module**
 
 Create `packages/dtx-desktop/src-tauri/src/api.rs`:
 
@@ -2538,7 +2538,7 @@ pub async fn upload_bytes(base_url: &str, token: &str, file_name: &str, bytes: V
 }
 ```
 
-- [ ] **Step 4: Add session accessors and real magic-link request**
+- [x] **Step 4: Add session accessors and real magic-link request**
 
 Modify `auth.rs`:
 
@@ -2645,7 +2645,7 @@ async fn verify_magic_link(app: &AppHandle, magic_link: &str) -> MagicLinkResult
 }
 ```
 
-- [ ] **Step 5: Register API commands**
+- [x] **Step 5: Register API commands**
 
 Modify `lib.rs`:
 
@@ -2668,7 +2668,7 @@ mod api;
 
 Keep all previous commands in the same handler list.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -2679,7 +2679,7 @@ bun run --filter=dtx-desktop test -- simFileService.test.ts assetFileService.tes
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/dtx-desktop/src-tauri/src/api.rs packages/dtx-desktop/src-tauri/src/auth.rs packages/dtx-desktop/src-tauri/src/lib.rs

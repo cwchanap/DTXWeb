@@ -2,10 +2,13 @@ use crate::error::{DesktopError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
+
+const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthState {
@@ -18,7 +21,7 @@ impl AuthState {
         self.current_session.lock().await.clone()
     }
 
-    async fn set_current_session(&self, session: Option<serde_json::Value>) {
+    pub async fn set_current_session(&self, session: Option<serde_json::Value>) {
         *self.current_session.lock().await = session;
     }
 
@@ -156,14 +159,27 @@ fn non_empty_token(token: Option<String>) -> Option<String> {
 
 #[tauri::command]
 pub async fn validate_session(app: AppHandle, session_data: SessionData) -> Result<bool> {
-    let Some(session) = session_value_from_data(session_data) else {
-        return Ok(false);
+    let supabase_url = match std::env::var("PUBLIC_SUPABASE_URL") {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    let anon_key = match std::env::var("PUBLIC_SUPABASE_ANON_KEY") {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    let client = match auth_client() {
+        Ok(client) => client,
+        Err(_) => return Ok(false),
     };
 
-    app.state::<AuthState>()
-        .set_current_session(Some(session))
-        .await;
-    Ok(true)
+    Ok(validate_session_with_client(
+        client,
+        &app.state::<AuthState>(),
+        &supabase_url,
+        &anon_key,
+        session_data,
+    )
+    .await)
 }
 
 #[tauri::command]
@@ -187,7 +203,7 @@ pub async fn open_external_url(app: AppHandle, url: String) -> Result<()> {
 }
 
 pub async fn handle_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
-    if let Some(event) = auth_event_from_url(raw_url).await {
+    if let Some(event) = auth_event_from_url_with_state(&app.state::<AuthState>(), raw_url).await {
         emit_auth_event(app, &event)?;
     }
 
@@ -209,7 +225,9 @@ pub async fn drain_pending_auth_events(app: AppHandle) -> Result<usize> {
     let mut count = 0;
 
     for raw_url in urls {
-        if let Some(event) = auth_event_from_url(&raw_url).await {
+        if let Some(event) =
+            auth_event_from_url_with_state(&app.state::<AuthState>(), &raw_url).await
+        {
             emit_auth_event(&app, &event)?;
             count += 1;
         }
@@ -218,11 +236,19 @@ pub async fn drain_pending_auth_events(app: AppHandle) -> Result<usize> {
     Ok(count)
 }
 
+#[cfg(test)]
 async fn auth_event_from_url(raw_url: &str) -> Option<AuthEvent> {
+    let state = AuthState::default();
+    auth_event_from_url_with_state(&state, raw_url).await
+}
+
+async fn auth_event_from_url_with_state(state: &AuthState, raw_url: &str) -> Option<AuthEvent> {
     let callback = parse_auth_callback(raw_url)?;
 
-    if callback.magic_link.is_some() {
-        return Some(AuthEvent::MagicLinkResult(verify_magic_link().await));
+    if let Some(magic_link) = callback.magic_link {
+        return Some(AuthEvent::MagicLinkResult(
+            verify_magic_link(state, &magic_link).await,
+        ));
     }
 
     let access_token = non_empty_token(callback.access_token)?;
@@ -251,13 +277,333 @@ fn ensure_allowed_external_url(raw_url: &str) -> Result<()> {
     ))
 }
 
-async fn verify_magic_link() -> MagicLinkResult {
-    MagicLinkResult {
-        success: false,
-        error: Some("Magic link verification is not configured".to_string()),
-        session: None,
-        user: None,
+fn auth_client() -> std::result::Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
+        .build()
+}
+
+fn supabase_auth_url(supabase_url: &str, path: &str) -> String {
+    format!(
+        "{}/auth/v1/{}",
+        supabase_url.trim().trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
+}
+
+fn auth_error_from_response_body(body: &serde_json::Value, fallback: &str) -> String {
+    body.get("error_description")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| body.get("message").and_then(serde_json::Value::as_str))
+        .or_else(|| body.get("msg").and_then(serde_json::Value::as_str))
+        .or_else(|| body.get("error").and_then(serde_json::Value::as_str))
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn magic_link_result_from_verify_response(response: serde_json::Value) -> Result<MagicLinkResult> {
+    let mut session = response
+        .get("session")
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| {
+            json!({
+                "access_token": response.get("access_token").cloned().unwrap_or(serde_json::Value::Null),
+                "refresh_token": response.get("refresh_token").cloned().unwrap_or(serde_json::Value::Null),
+            })
+        });
+
+    let access_token = non_empty_token(
+        session
+            .get("access_token")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    );
+    let refresh_token = non_empty_token(
+        session
+            .get("refresh_token")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    );
+
+    let (Some(access_token), Some(refresh_token)) = (access_token, refresh_token) else {
+        return Ok(MagicLinkResult {
+            success: false,
+            error: Some("No session created from magic link".to_string()),
+            session: None,
+            user: response.get("user").cloned(),
+        });
+    };
+
+    session["access_token"] = json!(access_token);
+    session["refresh_token"] = json!(refresh_token);
+
+    let user = response
+        .get("user")
+        .cloned()
+        .or_else(|| session.get("user").cloned());
+    if let Some(user) = &user {
+        if session.get("user").is_none() {
+            session["user"] = user.clone();
+        }
     }
+
+    Ok(MagicLinkResult {
+        success: true,
+        error: None,
+        session: Some(session),
+        user,
+    })
+}
+
+async fn verify_magic_link_with_client(
+    client: reqwest::Client,
+    state: &AuthState,
+    supabase_url: &str,
+    anon_key: &str,
+    magic_link: &str,
+) -> MagicLinkResult {
+    let parsed = match Url::parse(magic_link) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some("Invalid magic link".to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+    let token_hash = parsed
+        .query_pairs()
+        .find(|(key, _)| key == "token_hash")
+        .or_else(|| parsed.query_pairs().find(|(key, _)| key == "token"))
+        .map(|(_, value)| value.into_owned());
+    let Some(token_hash) = non_empty_token(token_hash) else {
+        return MagicLinkResult {
+            success: false,
+            error: Some("No token found in magic link".to_string()),
+            session: None,
+            user: None,
+        };
+    };
+
+    let response = client
+        .post(supabase_auth_url(supabase_url, "verify"))
+        .header("apikey", anon_key)
+        .bearer_auth(anon_key)
+        .json(&json!({
+            "token_hash": token_hash,
+            "type": "magiclink",
+        }))
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(response) => response,
+        Err(_) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some("Failed to verify magic link".to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+
+    let status = response.status();
+    let body = match response.json::<serde_json::Value>().await {
+        Ok(body) => body,
+        Err(_) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some("Failed to verify magic link".to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+
+    if !status.is_success() {
+        return MagicLinkResult {
+            success: false,
+            error: Some(auth_error_from_response_body(
+                &body,
+                "Failed to verify magic link",
+            )),
+            session: None,
+            user: body.get("user").cloned(),
+        };
+    }
+
+    let result = match magic_link_result_from_verify_response(body) {
+        Ok(result) => result,
+        Err(error) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some(error.to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+
+    if result.success {
+        state.set_current_session(result.session.clone()).await;
+    }
+
+    result
+}
+
+async fn validate_session_with_client(
+    client: reqwest::Client,
+    state: &AuthState,
+    supabase_url: &str,
+    anon_key: &str,
+    session_data: SessionData,
+) -> bool {
+    let Some(mut session) = session_value_from_data(session_data) else {
+        state.set_current_session(None).await;
+        return false;
+    };
+    let Some(access_token) = session
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        state.set_current_session(None).await;
+        return false;
+    };
+    let refresh_token = session
+        .get("refresh_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+
+    let response = client
+        .get(supabase_auth_url(supabase_url, "user"))
+        .header("apikey", anon_key)
+        .bearer_auth(access_token)
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(response) => response,
+        Err(_) => {
+            state.set_current_session(None).await;
+            return false;
+        }
+    };
+
+    if !response.status().is_success() {
+        return refresh_session_with_client(&client, state, supabase_url, anon_key, refresh_token)
+            .await;
+    }
+
+    let user = match response.json::<serde_json::Value>().await {
+        Ok(user) if user.get("id").and_then(serde_json::Value::as_str).is_some() => user,
+        _ => {
+            state.set_current_session(None).await;
+            return false;
+        }
+    };
+
+    session["user"] = user;
+    state.set_current_session(Some(session)).await;
+    true
+}
+
+async fn refresh_session_with_client(
+    client: &reqwest::Client,
+    state: &AuthState,
+    supabase_url: &str,
+    anon_key: &str,
+    refresh_token: Option<String>,
+) -> bool {
+    let Some(refresh_token) = non_empty_token(refresh_token) else {
+        state.set_current_session(None).await;
+        return false;
+    };
+
+    let response = client
+        .post(format!(
+            "{}?grant_type=refresh_token",
+            supabase_auth_url(supabase_url, "token")
+        ))
+        .header("apikey", anon_key)
+        .bearer_auth(anon_key)
+        .json(&json!({ "refresh_token": refresh_token }))
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(response) => response,
+        Err(_) => {
+            state.set_current_session(None).await;
+            return false;
+        }
+    };
+
+    if !response.status().is_success() {
+        state.set_current_session(None).await;
+        return false;
+    }
+
+    let body = match response.json::<serde_json::Value>().await {
+        Ok(body) => body,
+        Err(_) => {
+            state.set_current_session(None).await;
+            return false;
+        }
+    };
+
+    let result = match magic_link_result_from_verify_response(body) {
+        Ok(result) if result.success => result,
+        _ => {
+            state.set_current_session(None).await;
+            return false;
+        }
+    };
+
+    state.set_current_session(result.session).await;
+    true
+}
+
+async fn verify_magic_link(state: &AuthState, magic_link: &str) -> MagicLinkResult {
+    let supabase_url = match std::env::var("PUBLIC_SUPABASE_URL") {
+        Ok(value) => value,
+        Err(_) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some("Magic link verification is not configured".to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+    let anon_key = match std::env::var("PUBLIC_SUPABASE_ANON_KEY") {
+        Ok(value) => value,
+        Err(_) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some("Magic link verification is not configured".to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+    let client = match auth_client() {
+        Ok(client) => client,
+        Err(_) => {
+            return MagicLinkResult {
+                success: false,
+                error: Some("Failed to verify magic link".to_string()),
+                session: None,
+                user: None,
+            };
+        }
+    };
+
+    verify_magic_link_with_client(client, state, &supabase_url, &anon_key, magic_link).await
 }
 
 #[cfg(test)]
@@ -342,6 +688,240 @@ mod tests {
             auth_event_from_url("dtx://auth-callback?access_token=tok&refresh_token=%20").await;
 
         assert!(event.is_none());
+    }
+
+    #[test]
+    fn builds_session_from_top_level_verify_response_tokens() {
+        let response = serde_json::json!({
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "user": { "id": "user-1" }
+        });
+
+        let result = magic_link_result_from_verify_response(response).expect("magic link result");
+
+        assert!(result.success);
+        assert_eq!(
+            result.session.as_ref().expect("session")["access_token"],
+            "access"
+        );
+        assert_eq!(
+            result.session.as_ref().expect("session")["refresh_token"],
+            "refresh"
+        );
+        assert_eq!(result.user.as_ref().expect("user")["id"], "user-1");
+    }
+
+    #[test]
+    fn builds_session_from_nested_verify_response_session() {
+        let response = serde_json::json!({
+            "session": {
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "user": { "id": "user-1" }
+            },
+            "user": { "id": "user-1" }
+        });
+
+        let result = magic_link_result_from_verify_response(response).expect("magic link result");
+
+        assert!(result.success);
+        assert_eq!(
+            result.session.as_ref().expect("session")["access_token"],
+            "access"
+        );
+        assert_eq!(result.user.as_ref().expect("user")["id"], "user-1");
+    }
+
+    #[tokio::test]
+    async fn verify_magic_link_posts_token_hash_and_stores_session() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/auth/v1/verify"))
+            .and(wiremock::matchers::header("apikey", "anon"))
+            .and(wiremock::matchers::header("authorization", "Bearer anon"))
+            .and(wiremock::matchers::body_json(serde_json::json!({
+                "token_hash": "hash-1",
+                "type": "magiclink"
+            })))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                    "user": { "id": "user-1" }
+                })),
+            )
+            .mount(&server)
+            .await;
+        let state = AuthState::default();
+
+        let result = verify_magic_link_with_client(
+            reqwest::Client::new(),
+            &state,
+            &server.uri(),
+            "anon",
+            "https://example.com/auth?token_hash=hash-1",
+        )
+        .await;
+
+        assert!(result.success);
+        assert_eq!(
+            state.current_session().await.expect("stored session")["access_token"],
+            "access"
+        );
+    }
+
+    #[tokio::test]
+    async fn verify_magic_link_failure_is_sanitized_and_does_not_store_session() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/auth/v1/verify"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "error_description": "Token has expired"
+                })),
+            )
+            .mount(&server)
+            .await;
+        let state = AuthState::default();
+
+        let result = verify_magic_link_with_client(
+            reqwest::Client::new(),
+            &state,
+            &server.uri(),
+            "anon",
+            "https://example.com/auth?token_hash=secret-token",
+        )
+        .await;
+
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("Token has expired"));
+        assert!(!result.error.unwrap_or_default().contains("secret-token"));
+        assert!(state.current_session().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn validate_session_rejects_invalid_supabase_user_response() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/auth/v1/user"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                    "message": "invalid token"
+                })),
+            )
+            .mount(&server)
+            .await;
+        let state = AuthState::default();
+        let session_data = SessionData {
+            access_token: Some("stale-access".to_string()),
+            refresh_token: Some("refresh".to_string()),
+            user: None,
+        };
+
+        let is_valid = validate_session_with_client(
+            reqwest::Client::new(),
+            &state,
+            &server.uri(),
+            "anon",
+            session_data,
+        )
+        .await;
+
+        assert!(!is_valid);
+        assert!(state.current_session().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn validate_session_stores_user_from_supabase_user_response() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/auth/v1/user"))
+            .and(wiremock::matchers::header("apikey", "anon"))
+            .and(wiremock::matchers::header("authorization", "Bearer access"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id": "user-1",
+                    "email": "user@example.com"
+                })),
+            )
+            .mount(&server)
+            .await;
+        let state = AuthState::default();
+        let session_data = SessionData {
+            access_token: Some("access".to_string()),
+            refresh_token: Some("refresh".to_string()),
+            user: None,
+        };
+
+        let is_valid = validate_session_with_client(
+            reqwest::Client::new(),
+            &state,
+            &server.uri(),
+            "anon",
+            session_data,
+        )
+        .await;
+
+        assert!(is_valid);
+        let session = state.current_session().await.expect("stored session");
+        assert_eq!(session["access_token"], "access");
+        assert_eq!(session["user"]["id"], "user-1");
+    }
+
+    #[tokio::test]
+    async fn validate_session_refreshes_expired_access_token() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/auth/v1/user"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                    "message": "expired token"
+                })),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/auth/v1/token"))
+            .and(wiremock::matchers::query_param(
+                "grant_type",
+                "refresh_token",
+            ))
+            .and(wiremock::matchers::header("apikey", "anon"))
+            .and(wiremock::matchers::header("authorization", "Bearer anon"))
+            .and(wiremock::matchers::body_json(serde_json::json!({
+                "refresh_token": "refresh-old"
+            })))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "access-new",
+                    "refresh_token": "refresh-new",
+                    "user": { "id": "user-1", "email": "user@example.com" }
+                })),
+            )
+            .mount(&server)
+            .await;
+        let state = AuthState::default();
+        let session_data = SessionData {
+            access_token: Some("access-old".to_string()),
+            refresh_token: Some("refresh-old".to_string()),
+            user: None,
+        };
+
+        let is_valid = validate_session_with_client(
+            reqwest::Client::new(),
+            &state,
+            &server.uri(),
+            "anon",
+            session_data,
+        )
+        .await;
+
+        assert!(is_valid);
+        let session = state.current_session().await.expect("stored session");
+        assert_eq!(session["access_token"], "access-new");
+        assert_eq!(session["refresh_token"], "refresh-new");
+        assert_eq!(session["user"]["id"], "user-1");
     }
 
     #[test]

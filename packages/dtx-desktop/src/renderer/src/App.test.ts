@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, waitFor } from '@testing-library/svelte';
 
 const mockDesktopHost = vi.hoisted(() => ({
 	onMagicLinkResult: vi.fn(),
-	onAuthCallback: vi.fn()
+	onAuthCallback: vi.fn(),
+	drainPendingAuthEvents: vi.fn()
 }));
 
 const mockAuthService = vi.hoisted(() => ({
@@ -67,6 +68,7 @@ describe('App lifecycle', () => {
 		workspaceStore.reset();
 		window.location.hash = '';
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
+		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -96,6 +98,25 @@ describe('App lifecycle', () => {
 
 		expect(magicLinkUnlisten).toHaveBeenCalledOnce();
 		expect(authCallbackUnlisten).toHaveBeenCalledOnce();
+		expect(mockDesktopHost.drainPendingAuthEvents).not.toHaveBeenCalled();
 		expect(mockAuthService.restoreSession).not.toHaveBeenCalled();
+	});
+
+	it('drains pending auth events after host listeners are registered', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockDesktopHost.drainPendingAuthEvents).toHaveBeenCalledOnce();
+		});
+		expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		expect(mockDesktopHost.onAuthCallback.mock.invocationCallOrder[0]).toBeLessThan(
+			mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]
+		);
+		expect(mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]).toBeLessThan(
+			mockAuthService.restoreSession.mock.invocationCallOrder[0]
+		);
 	});
 });

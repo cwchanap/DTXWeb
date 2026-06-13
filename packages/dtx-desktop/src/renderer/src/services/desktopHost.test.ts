@@ -225,6 +225,17 @@ describe('desktopHost', () => {
 		expect(runtime.removeAllListeners).toHaveBeenCalledWith('auth-callback');
 	});
 
+	it('drains pending auth events through Tauri only', async () => {
+		await desktopHost.drainPendingAuthEvents();
+		expect(runtime.invoke).toHaveBeenCalledWith('drain_pending_auth_events');
+
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+
+		await desktopHost.drainPendingAuthEvents();
+		expect(runtime.invoke).not.toHaveBeenCalled();
+	});
+
 	it('returns environment values from the active runtime', () => {
 		expect(desktopHost.getEnvironment()).toEqual({ HOME: '/Users/Test' });
 		expect(runtime.getEnvironment).toHaveBeenCalled();

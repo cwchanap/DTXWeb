@@ -11,7 +11,8 @@ const extendedElectronAPI = {
 	...electronAPI,
 	process: {
 		env: process.env,
-		platform: process.platform
+		platform: process.platform,
+		versions: process.versions
 	},
 	ipcRenderer: {
 		...electronAPI.ipcRenderer,
@@ -42,7 +43,8 @@ const extendedElectronAPI = {
 				'fetch-cloud-song',
 				'update-simfile-record',
 				'export-song-to-zip',
-				'get-next-display-id'
+				'get-next-display-id',
+				'check-for-update'
 			];
 			if (validChannels.includes(channel)) {
 				return ipcRenderer.invoke(channel, ...args);

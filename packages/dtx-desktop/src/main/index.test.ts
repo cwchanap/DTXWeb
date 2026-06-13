@@ -34,6 +34,7 @@ const mockApp = {
 		}
 	}),
 	quit: vi.fn(),
+	isPackaged: false,
 	on: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
 		appListeners[event] = handler;
 	}),
@@ -61,6 +62,14 @@ vi.mock('electron', () => ({
 			ipcHandlers[event] = handler;
 		})
 	}
+}));
+
+const mockAutoUpdater = {
+	checkForUpdates: vi.fn()
+};
+
+vi.mock('electron-updater', () => ({
+	autoUpdater: mockAutoUpdater
 }));
 
 vi.mock('fs', () => ({ default: mockFs }));
@@ -133,6 +142,24 @@ describe('index.ts IPC handlers', () => {
 		it('calls shell.openExternal with the provided URL', () => {
 			ipcListeners['open-external-url']({}, 'https://example.com');
 			expect(mockShell.openExternal).toHaveBeenCalledWith('https://example.com');
+		});
+	});
+
+	// ── check-for-update ─────────────────────────────────────────────────────
+	describe('check-for-update handler', () => {
+		it('returns a non-crashing skipped result for unpackaged builds', async () => {
+			expect(ipcHandlers['check-for-update']).toBeTypeOf('function');
+
+			const result = await ipcHandlers['check-for-update']({});
+
+			expect(result).toEqual({
+				success: true,
+				updateAvailable: false,
+				updateInfo: null,
+				skipped: true,
+				reason: 'not-packaged'
+			});
+			expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled();
 		});
 	});
 

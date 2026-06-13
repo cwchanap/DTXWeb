@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import fs from 'fs';
 import path from 'path';
 import { SimFile, VALID_DTX_FILE_EXTENSIONS } from '@dtx/common/server';
@@ -37,6 +38,35 @@ if (!gotTheLock) {
 		// Handle external URL opening request from renderer
 		ipcMain.on('open-external-url', (_event, url) => {
 			shell.openExternal(url);
+		});
+
+		ipcMain.handle('check-for-update', async () => {
+			if (!app.isPackaged) {
+				return {
+					success: true,
+					updateAvailable: false,
+					updateInfo: null,
+					skipped: true,
+					reason: 'not-packaged'
+				};
+			}
+
+			try {
+				const result = await autoUpdater.checkForUpdates();
+				return {
+					success: true,
+					updateAvailable: Boolean(result?.updateInfo),
+					updateInfo: result?.updateInfo ?? null
+				};
+			} catch (error) {
+				console.error('Error checking for updates:', error);
+				return {
+					success: false,
+					updateAvailable: false,
+					updateInfo: null,
+					error: error instanceof Error ? error.message : 'Unknown error'
+				};
+			}
 		});
 
 		// Handle folder selection dialog (new song creation and templates)

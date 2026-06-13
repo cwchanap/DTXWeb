@@ -39,6 +39,24 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenCalledWith('select-folder');
 	});
 
+	it('maps checkForUpdate to the Tauri command', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ success: true, updateInfo: null });
+
+		await desktopHost.checkForUpdate();
+
+		expect(runtime.invoke).toHaveBeenCalledWith('check_for_update');
+	});
+
+	it('maps checkForUpdate to the Electron channel while Electron is the runtime', async () => {
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+		vi.mocked(runtime.invoke).mockResolvedValue({ success: true, updateInfo: null });
+
+		await desktopHost.checkForUpdate();
+
+		expect(runtime.invoke).toHaveBeenCalledWith('check-for-update');
+	});
+
 	it('maps readFile to the host command with workspaceRoot', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({
 			error: null,

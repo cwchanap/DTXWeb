@@ -32,7 +32,7 @@
 		refreshToken: string;
 	};
 
-	type ElectronDataMigrationResult = {
+	type LegacyDataMigrationResult = {
 		migrated: boolean;
 		importedKeys: string[];
 		warnings: string[];
@@ -62,7 +62,7 @@
 		return JSON.stringify(value);
 	};
 
-	const applyImportedLocalStorage = (result: ElectronDataMigrationResult): void => {
+	const applyImportedLocalStorage = (result: LegacyDataMigrationResult): void => {
 		const imported = result.localStorage ?? {};
 		for (const [key, value] of Object.entries(imported)) {
 			if (localStorage.getItem(key) !== null) {
@@ -73,15 +73,15 @@
 		}
 	};
 
-	const runElectronDataMigration = async (): Promise<void> => {
+	const runLegacyDataMigration = async (): Promise<void> => {
 		try {
-			const result = await desktopHost.migrateElectronData();
+			const result = await desktopHost.migrateLegacyData();
 			applyImportedLocalStorage(result);
 			for (const warning of result.warnings) {
-				console.warn('Electron data migration warning:', warning);
+				console.warn('Legacy desktop data migration warning:', warning);
 			}
 		} catch (error) {
-			console.warn('Electron data migration did not complete:', error);
+			console.warn('Legacy desktop data migration did not complete:', error);
 		}
 	};
 
@@ -135,7 +135,7 @@
 		await desktopHost.drainPendingAuthEvents();
 
 		if (destroyed) return;
-		await runElectronDataMigration();
+		await runLegacyDataMigration();
 
 		// Try to restore session
 		if (destroyed) return;

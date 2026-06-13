@@ -1,8 +1,7 @@
 /**
  * Desktop File Provider Implementation
  *
- * Uses Electron IPC to load files from the user's filesystem
- * This implementation loads files via the main process
+ * Uses the desktop host to load files from the user's filesystem.
  */
 
 import type { IFileProvider } from '@dtx/common';

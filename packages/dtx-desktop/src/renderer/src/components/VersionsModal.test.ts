@@ -4,18 +4,14 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 vi.mock('@lucide/svelte');
 
 const mockVersions = vi.hoisted(() => ({
-	electron: '35.0.0',
-	chrome: '130.0.0',
-	node: '20.0.0'
+	app: '1.0.0',
+	tauri: '2'
 }));
 
 const mockDesktopHost = vi.hoisted(() => ({
 	getVersions: vi.fn(() => ({
-		app: null,
-		tauri: null,
-		electron: mockVersions.electron,
-		chrome: mockVersions.chrome,
-		node: mockVersions.node
+		app: mockVersions.app,
+		tauri: mockVersions.tauri
 	}))
 }));
 
@@ -57,28 +53,20 @@ describe('VersionsModal', () => {
 		expect(screen.getByText('Application Information')).toBeInTheDocument();
 	});
 
-	it('displays electron version when modal is open', async () => {
+	it('displays application version when modal is open', async () => {
 		render(VersionsModal);
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(mockVersions.electron)).toBeInTheDocument();
+		expect(screen.getByText(mockVersions.app)).toBeInTheDocument();
 	});
 
-	it('displays chrome version when modal is open', async () => {
+	it('displays Tauri version when modal is open', async () => {
 		render(VersionsModal);
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(mockVersions.chrome)).toBeInTheDocument();
-	});
-
-	it('displays node version when modal is open', async () => {
-		render(VersionsModal);
-		await fireEvent.click(
-			screen.getByRole('button', { name: /Show application information/i })
-		);
-		expect(screen.getByText(mockVersions.node)).toBeInTheDocument();
+		expect(screen.getByText(mockVersions.tauri)).toBeInTheDocument();
 	});
 
 	it('displays version labels when modal is open', async () => {
@@ -86,9 +74,8 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText('Electron')).toBeInTheDocument();
-		expect(screen.getByText('Chromium')).toBeInTheDocument();
-		expect(screen.getByText('Node.js')).toBeInTheDocument();
+		expect(screen.getByText('Application')).toBeInTheDocument();
+		expect(screen.getByText('Tauri')).toBeInTheDocument();
 	});
 
 	it('closes modal when Close button is clicked', async () => {

@@ -1,8 +1,6 @@
 /// <reference types="svelte" />
 /// <reference types="vite/client" />
 
-import type { ElectronAPI } from '@electron-toolkit/preload';
-
 declare global {
 	interface ImportMetaEnv {
 		readonly VITE_DTX_SERVER_URL: string;
@@ -15,7 +13,6 @@ declare global {
 
 	interface Window {
 		__TAURI__?: unknown;
-		electron: ElectronAPI;
 	}
 }
 

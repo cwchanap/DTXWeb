@@ -1,6 +1,6 @@
 # dtx-desktop
 
-An Electron application with Svelte and TypeScript
+Drumery desktop app built with Svelte, TypeScript, and Tauri.
 
 ## Recommended IDE Setup
 

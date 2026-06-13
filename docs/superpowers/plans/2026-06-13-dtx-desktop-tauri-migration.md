@@ -1097,8 +1097,10 @@ git commit -m "feat(desktop): add tauri scaffold"
 - Create: `packages/dtx-desktop/src-tauri/src/error.rs`
 - Create: `packages/dtx-desktop/src-tauri/src/models.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/lib.rs`
+- Modify: `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts`
+- Modify: `packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts`
 
-- [ ] **Step 1: Add model serialization tests**
+- [x] **Step 1: Add model serialization tests**
 
 Create a unit test module in `models.rs` with:
 
@@ -1112,7 +1114,6 @@ mod tests {
         let result = ReadFileResult::Text {
             error: None,
             content: "#TITLE: Song".to_string(),
-            is_text: true,
         };
 
         let json = serde_json::to_value(result).expect("serializes");
@@ -1137,13 +1138,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml models::tests`
 
 Expected: FAIL because `models.rs` does not exist or types are missing.
 
-- [ ] **Step 3: Implement shared types**
+- [x] **Step 3: Implement shared types**
 
 Create `packages/dtx-desktop/src-tauri/src/models.rs`:
 
@@ -1163,22 +1164,69 @@ pub struct PathExistsResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ReadFileResult {
     Error { error: String, content: String },
     Text {
         error: Option<String>,
         content: String,
-        #[serde(rename = "isText")]
-        is_text: bool,
     },
     Binary {
         error: Option<String>,
         content: Vec<u8>,
-        #[serde(rename = "isText")]
-        is_text: bool,
     },
+}
+
+impl Serialize for ReadFileResult {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Error { error, content } => {
+                #[derive(Serialize)]
+                struct ErrorResult<'a> {
+                    error: &'a str,
+                    content: &'a str,
+                }
+
+                ErrorResult { error, content }.serialize(serializer)
+            }
+            Self::Text { error, content } => {
+                #[derive(Serialize)]
+                struct TextResult<'a> {
+                    error: &'a Option<String>,
+                    content: &'a str,
+                    #[serde(rename = "isText")]
+                    is_text: bool,
+                }
+
+                TextResult {
+                    error,
+                    content,
+                    is_text: true,
+                }
+                .serialize(serializer)
+            }
+            Self::Binary { error, content } => {
+                #[derive(Serialize)]
+                struct BinaryResult<'a> {
+                    error: &'a Option<String>,
+                    content: &'a [u8],
+                    #[serde(rename = "isText")]
+                    is_text: bool,
+                }
+
+                BinaryResult {
+                    error,
+                    content,
+                    is_text: false,
+                }
+                .serialize(serializer)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1223,6 +1271,7 @@ pub enum ApiResult<T> {
     Err {
         success: bool,
         error: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
 }
@@ -1230,6 +1279,7 @@ pub enum ApiResult<T> {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SuccessResult {
     pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 ```
@@ -1259,7 +1309,7 @@ pub enum DesktopError {
 }
 
 impl Serialize for DesktopError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -1279,24 +1329,36 @@ mod models;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");
 }
 ```
 
-- [ ] **Step 4: Run Rust tests**
+- [x] **Step 4: Normalize Tauri read-file binary payloads in the renderer adapter**
+
+Modify `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts` so the host-only
+Tauri read-file response accepts `number[]` for binary `content` and converts it to
+`Uint8Array` before returning to renderer feature code. Add adapter tests that prove
+Tauri `readFile` normalizes `{ error: null, content: [1, 2, 3], isText: false }` to
+`Uint8Array` while preserving Electron binary payloads unchanged.
+
+- [x] **Step 5: Run Rust and adapter tests**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml models::tests`
 
+Also run: `bun run --filter=dtx-desktop test -- desktopHost.test.ts`
+
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add packages/dtx-desktop/src-tauri/src/error.rs packages/dtx-desktop/src-tauri/src/models.rs packages/dtx-desktop/src-tauri/src/lib.rs
+git add packages/dtx-desktop/src-tauri/src/error.rs packages/dtx-desktop/src-tauri/src/models.rs packages/dtx-desktop/src-tauri/src/lib.rs packages/dtx-desktop/src/renderer/src/services/desktopHost.ts packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts
 git commit -m "feat(desktop): add tauri backend shared models"
 ```
 

@@ -597,7 +597,7 @@ git commit -m "refactor(desktop): route services through host adapter"
 - Modify if needed: `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts`
 - Modify related tests.
 
-- [ ] **Step 1: Update component tests to mock `desktopHost`**
+- [x] **Step 1: Update component tests to mock `desktopHost`**
 
 For component tests with IPC assertions, mock the adapter:
 
@@ -632,7 +632,7 @@ vi.mock('../services/desktopHost', () => ({
 }));
 ```
 
-- [ ] **Step 2: Run component tests to verify failures are tied to direct Electron use**
+- [x] **Step 2: Run component tests to verify failures are tied to direct Electron use**
 
 Run:
 
@@ -642,7 +642,7 @@ bun run --filter=dtx-desktop test -- NewSong.test.ts SongDetails.test.ts Templat
 
 Expected: FAIL in tests that still assert `window.electron.ipcRenderer` calls.
 
-- [ ] **Step 3: Replace component and scene calls**
+- [x] **Step 3: Replace component and scene calls**
 
 Use these concrete replacements:
 
@@ -742,7 +742,7 @@ import { desktopHost } from '../services/desktopHost';
 const versions = desktopHost.getVersions();
 ```
 
-- [ ] **Step 4: Run focused component tests**
+- [x] **Step 4: Run focused component tests**
 
 Run:
 
@@ -752,17 +752,17 @@ bun run --filter=dtx-desktop test -- NewSong.test.ts SongDetails.test.ts Templat
 
 Expected: PASS.
 
-- [ ] **Step 5: Verify no renderer feature code calls `window.electron`**
+- [x] **Step 5: Verify no renderer feature code calls `window.electron`**
 
 Run:
 
 ```bash
-rg -n "window\\.electron|ipcRenderer" packages/dtx-desktop/src/renderer/src --glob '!services/desktopHost.ts' --glob '!services/desktopHost.test.ts' --glob '!**/*.test.ts'
+rg -n "window\\.electron|ipcRenderer" packages/dtx-desktop/src/renderer/src --glob '!**/services/desktopHost.ts' --glob '!**/services/desktopHost.test.ts' --glob '!**/*.test.ts'
 ```
 
 Expected: no renderer feature-code matches outside the `desktopHost` Electron compatibility boundary. Test files may still contain compatibility mocks only where the test subject requires them.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/dtx-desktop/src/renderer/src

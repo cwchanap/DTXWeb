@@ -589,9 +589,12 @@ git commit -m "refactor(desktop): route services through host adapter"
 - Modify: `packages/dtx-desktop/src/renderer/src/components/SongDetails.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/Templates.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/Settings.svelte`
+- Modify: `packages/dtx-desktop/src/renderer/src/components/DesktopEditor.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/Versions.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/VersionsModal.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/scenes/DesktopPreview.ts`
+- Modify: `packages/dtx-desktop/src/renderer/src/stores/settingsStore.ts`
+- Modify if needed: `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts`
 - Modify related tests.
 
 - [ ] **Step 1: Update component tests to mock `desktopHost`**
@@ -617,6 +620,11 @@ vi.mock('../services/desktopHost', () => ({
 		uploadFile: vi.fn(),
 		getVersions: vi.fn(() => ({ app: '1.0.0', tauri: '2', electron: null })),
 		getPlatform: vi.fn(() => 'darwin'),
+		getEnvironment: vi.fn(() => ({
+			HOME: '/Users/Test',
+			USERPROFILE: 'C:\\Users\\Test',
+			USERNAME: 'Test'
+		})),
 		onMagicLinkResult: vi.fn(),
 		onAuthCallback: vi.fn(),
 		removeAllListeners: vi.fn()
@@ -629,7 +637,7 @@ vi.mock('../services/desktopHost', () => ({
 Run:
 
 ```bash
-bun run --filter=dtx-desktop test -- App.test.ts NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
+bun run --filter=dtx-desktop test -- App.test.ts NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts settingsStore.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
 ```
 
 Expected: FAIL in tests that still assert `window.electron.ipcRenderer` calls.
@@ -672,7 +680,11 @@ const drumChipsResult = await desktopHost.getSkinAsset('default/Graphics/7_chips
 // CloudSongAutocomplete.svelte
 import { desktopHost } from '../services/desktopHost';
 
-const result = await desktopHost.searchCloudSongs(query, 8, excludeLinkedSongIds.map(String));
+const result = await desktopHost.searchCloudSongs({
+	query: searchQuery.trim(),
+	limit: 20,
+	excludeLinkedSongIds
+});
 ```
 
 ```ts
@@ -695,11 +707,33 @@ import { desktopHost } from '../services/desktopHost';
 
 const result = await desktopHost.listFiles(song.path);
 const response = await desktopHost.readFile(filePath, song.path);
-const cloud = await desktopHost.fetchCloudSong(cloudSongId);
-const updated = await desktopHost.updateSimfileRecord(simfileId, updateData);
+const cloud = await desktopHost.fetchCloudSong({ cloudSongId });
+const updated = await desktopHost.updateSimfileRecord({ simfileId, updateData });
 const exported = await desktopHost.exportSongToZip({ songPath, songTitle, exportDirectory });
 const uploaded = await desktopHost.uploadFile(fileName, song.path, simfileId);
 ```
+
+```ts
+// DesktopEditor.svelte
+import { desktopHost } from '../services/desktopHost';
+
+const setDefResult = await desktopHost.readFile(`${folderPath}/SET.def`, folderPath);
+const folderContents = await desktopHost.listFiles(folderPath);
+```
+
+```ts
+// settingsStore.ts
+import { desktopHost } from '../services/desktopHost';
+
+const platform = desktopHost.getPlatform();
+const env = desktopHost.getEnvironment?.() ?? {};
+```
+
+If `settingsStore.ts` needs environment access to preserve existing default Downloads path behavior, add a small synchronous `desktopHost.getEnvironment()` adapter method:
+
+- Electron: return `window.electron.process?.env ?? {}`.
+- Tauri: return `{}` until Task 4/5 can wire a real Rust/path command.
+- Preserve a useful Tauri fallback such as `~/Downloads`, which current export code already expands.
 
 ```ts
 // Versions.svelte and VersionsModal.svelte
@@ -713,7 +747,7 @@ const versions = desktopHost.getVersions();
 Run:
 
 ```bash
-bun run --filter=dtx-desktop test -- App.test.ts NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
+bun run --filter=dtx-desktop test -- App.test.ts NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts settingsStore.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
 ```
 
 Expected: PASS.
@@ -723,10 +757,10 @@ Expected: PASS.
 Run:
 
 ```bash
-rg -n "window\\.electron|ipcRenderer" packages/dtx-desktop/src/renderer/src
+rg -n "window\\.electron|ipcRenderer" packages/dtx-desktop/src/renderer/src --glob '!services/desktopHost.ts' --glob '!services/desktopHost.test.ts' --glob '!**/*.test.ts'
 ```
 
-Expected: only test compatibility helpers remain, or no matches.
+Expected: no renderer feature-code matches outside the `desktopHost` Electron compatibility boundary. Test files may still contain compatibility mocks only where the test subject requires them.
 
 - [ ] **Step 6: Commit**
 

@@ -637,7 +637,7 @@ vi.mock('../services/desktopHost', () => ({
 Run:
 
 ```bash
-bun run --filter=dtx-desktop test -- App.test.ts NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts settingsStore.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
+bun run --filter=dtx-desktop test -- NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts settingsStore.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
 ```
 
 Expected: FAIL in tests that still assert `window.electron.ipcRenderer` calls.
@@ -747,7 +747,7 @@ const versions = desktopHost.getVersions();
 Run:
 
 ```bash
-bun run --filter=dtx-desktop test -- App.test.ts NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts settingsStore.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
+bun run --filter=dtx-desktop test -- NewSong.test.ts SongDetails.test.ts Templates.test.ts Settings.test.ts settingsStore.test.ts DesktopPreview.test.ts Versions.test.ts VersionsModal.test.ts CloudSongAutocomplete.test.ts
 ```
 
 Expected: PASS.

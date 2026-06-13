@@ -782,10 +782,12 @@ git commit -m "refactor(desktop): remove renderer electron ipc calls"
 - Create: `packages/dtx-desktop/src-tauri/capabilities/main.json`
 - Create: `packages/dtx-desktop/src-tauri/src/main.rs`
 - Create: `packages/dtx-desktop/src-tauri/src/lib.rs`
+- Create generated scaffold artifacts: `packages/dtx-desktop/src-tauri/Cargo.lock`, `packages/dtx-desktop/src-tauri/gen/schemas/*.json`, `packages/dtx-desktop/src-tauri/icons/icon.png`
 - Modify: `packages/dtx-desktop/package.json`
 - Modify: `packages/dtx-desktop/tsconfig.web.json`
+- Modify: `.gitignore`
 
-- [ ] **Step 1: Add Tauri packages**
+- [x] **Step 1: Add Tauri packages**
 
 Run:
 
@@ -796,7 +798,7 @@ bun add --filter=dtx-desktop -d @tauri-apps/cli@^2
 
 Expected: `packages/dtx-desktop/package.json` and `bun.lock` gain Tauri JS dependencies.
 
-- [ ] **Step 2: Create Vite config**
+- [x] **Step 2: Create Vite config**
 
 Create `packages/dtx-desktop/vite.config.ts`:
 
@@ -839,7 +841,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 3: Update package scripts without deleting Electron scripts yet**
+- [x] **Step 3: Update package scripts without deleting Electron scripts yet**
 
 Modify `packages/dtx-desktop/package.json` scripts:
 
@@ -865,7 +867,7 @@ Modify `packages/dtx-desktop/package.json` scripts:
 
 Keep `codegen` and `lint:codegen` until the Rust API task removes the TypeScript GraphQL client.
 
-- [ ] **Step 4: Update web tsconfig**
+- [x] **Step 4: Update web tsconfig**
 
 Modify `packages/dtx-desktop/tsconfig.web.json`:
 
@@ -906,7 +908,7 @@ Modify `packages/dtx-desktop/tsconfig.web.json`:
 }
 ```
 
-- [ ] **Step 5: Create Rust crate files**
+- [x] **Step 5: Create Rust crate files**
 
 Create `packages/dtx-desktop/src-tauri/Cargo.toml`:
 
@@ -934,7 +936,7 @@ tauri-build = { version = "2", features = [] }
 async-recursion = "1"
 base64 = "0.22"
 encoding_rs = "0.8"
-reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
@@ -976,15 +978,17 @@ Create minimal `packages/dtx-desktop/src-tauri/src/lib.rs`:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");
 }
 ```
 
-- [ ] **Step 6: Create Tauri config**
+- [x] **Step 6: Create Tauri config**
 
 Create `packages/dtx-desktop/src-tauri/tauri.conf.json`:
 
@@ -1052,9 +1056,10 @@ Create `packages/dtx-desktop/src-tauri/capabilities/main.json`:
 	"description": "Main window desktop capability",
 	"windows": ["main"],
 	"permissions": [
-		"core:default",
 		"core:event:default",
 		"core:path:default",
+		"core:window:default",
+		"core:app:default",
 		"core:resources:default",
 		"dialog:default",
 		"opener:default",
@@ -1065,7 +1070,7 @@ Create `packages/dtx-desktop/src-tauri/capabilities/main.json`:
 }
 ```
 
-- [ ] **Step 7: Run static verification**
+- [x] **Step 7: Run static verification**
 
 Run:
 
@@ -1076,7 +1081,7 @@ bun run --filter=dtx-desktop test -- desktopHost.test.ts
 
 Expected: `cargo check` compiles the minimal crate; adapter tests still pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add bun.lock packages/dtx-desktop/package.json packages/dtx-desktop/vite.config.ts packages/dtx-desktop/tsconfig.web.json packages/dtx-desktop/src-tauri

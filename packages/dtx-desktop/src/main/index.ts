@@ -55,7 +55,7 @@ if (!gotTheLock) {
 				const result = await autoUpdater.checkForUpdates();
 				return {
 					success: true,
-					updateAvailable: Boolean(result?.updateInfo),
+					updateAvailable: result?.isUpdateAvailable ?? false,
 					updateInfo: result?.updateInfo ?? null
 				};
 			} catch (error) {

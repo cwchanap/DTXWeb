@@ -135,6 +135,7 @@ await import('./index');
 describe('index.ts IPC handlers', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockApp.isPackaged = false;
 	});
 
 	// ── open-external-url ────────────────────────────────────────────────────
@@ -160,6 +161,55 @@ describe('index.ts IPC handlers', () => {
 				reason: 'not-packaged'
 			});
 			expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled();
+		});
+
+		it('reports an available update from packaged builds', async () => {
+			mockApp.isPackaged = true;
+			const updateInfo = { version: '1.2.0' };
+			mockAutoUpdater.checkForUpdates.mockResolvedValue({
+				isUpdateAvailable: true,
+				updateInfo
+			});
+
+			const result = await ipcHandlers['check-for-update']({});
+
+			expect(result).toEqual({
+				success: true,
+				updateAvailable: true,
+				updateInfo
+			});
+			expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+		});
+
+		it('reports no update when electron-updater returns updateInfo without availability', async () => {
+			mockApp.isPackaged = true;
+			const updateInfo = { version: '1.0.0' };
+			mockAutoUpdater.checkForUpdates.mockResolvedValue({
+				isUpdateAvailable: false,
+				updateInfo
+			});
+
+			const result = await ipcHandlers['check-for-update']({});
+
+			expect(result).toEqual({
+				success: true,
+				updateAvailable: false,
+				updateInfo
+			});
+		});
+
+		it('returns failure details when electron-updater rejects', async () => {
+			mockApp.isPackaged = true;
+			mockAutoUpdater.checkForUpdates.mockRejectedValue(new Error('update feed missing'));
+
+			const result = await ipcHandlers['check-for-update']({});
+
+			expect(result).toEqual({
+				success: false,
+				updateAvailable: false,
+				updateInfo: null,
+				error: 'update feed missing'
+			});
 		});
 	});
 

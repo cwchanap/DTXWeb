@@ -74,4 +74,13 @@ describe('preload bridge', () => {
 		});
 		expect(mockPreload.ipcInvoke).toHaveBeenCalledWith('check-for-update');
 	});
+
+	it('rejects unauthorized invoke channels', () => {
+		const electron = mockPreload.exposed.electron as ExposedElectron;
+
+		expect(() => electron.ipcRenderer.invoke('not-allowed')).toThrow(
+			'Unauthorized IPC channel: not-allowed'
+		);
+		expect(mockPreload.ipcInvoke).not.toHaveBeenCalled();
+	});
 });

@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { desktopHost, setDesktopHostRuntimeForTests, type DesktopHostRuntime } from './desktopHost';
+
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: vi.fn()
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+	listen: vi.fn()
+}));
 
 const makeRuntime = (kind: DesktopHostRuntime['kind'] = 'tauri'): DesktopHostRuntime => ({
 	kind,
@@ -19,6 +28,12 @@ describe('desktopHost', () => {
 		setDesktopHostRuntimeForTests(runtime);
 	});
 
+	afterEach(() => {
+		setDesktopHostRuntimeForTests(null);
+		vi.restoreAllMocks();
+		delete window.__TAURI__;
+	});
+
 	it('maps selectFolder to the Tauri command', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ canceled: false, filePaths: ['/songs'] });
 
@@ -34,7 +49,10 @@ describe('desktopHost', () => {
 		setDesktopHostRuntimeForTests(runtime);
 		vi.mocked(runtime.invoke).mockResolvedValue({ canceled: true, filePaths: [] });
 
-		await desktopHost.selectFolder();
+		await expect(desktopHost.selectFolder()).resolves.toEqual({
+			canceled: true,
+			filePaths: []
+		});
 
 		expect(runtime.invoke).toHaveBeenCalledWith('select-folder');
 	});
@@ -42,7 +60,10 @@ describe('desktopHost', () => {
 	it('maps checkForUpdate to the Tauri command', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ success: true, updateInfo: null });
 
-		await desktopHost.checkForUpdate();
+		await expect(desktopHost.checkForUpdate()).resolves.toEqual({
+			success: true,
+			updateInfo: null
+		});
 
 		expect(runtime.invoke).toHaveBeenCalledWith('check_for_update');
 	});
@@ -50,11 +71,67 @@ describe('desktopHost', () => {
 	it('maps checkForUpdate to the Electron channel while Electron is the runtime', async () => {
 		runtime = makeRuntime('electron');
 		setDesktopHostRuntimeForTests(runtime);
-		vi.mocked(runtime.invoke).mockResolvedValue({ success: true, updateInfo: null });
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			success: true,
+			updateAvailable: false,
+			updateInfo: null
+		});
 
-		await desktopHost.checkForUpdate();
+		await expect(desktopHost.checkForUpdate()).resolves.toEqual({
+			success: true,
+			updateAvailable: false,
+			updateInfo: null
+		});
 
 		expect(runtime.invoke).toHaveBeenCalledWith('check-for-update');
+	});
+
+	it('maps multi-part pathExists arguments for Tauri', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
+
+		await expect(desktopHost.pathExists('/songs', 'DTXFiles.foo')).resolves.toEqual({
+			exists: true,
+			error: null
+		});
+		expect(runtime.invoke).toHaveBeenCalledWith('path_exists', {
+			basePath: '/songs',
+			pathParts: ['DTXFiles.foo']
+		});
+	});
+
+	it('maps multi-part pathExists arguments for Electron', async () => {
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+		vi.mocked(runtime.invoke).mockResolvedValue({ exists: false, error: 'not-found' });
+
+		await expect(desktopHost.pathExists('/songs', 'DTXFiles.foo')).resolves.toEqual({
+			exists: false,
+			error: 'not-found'
+		});
+		expect(runtime.invoke).toHaveBeenCalledWith('path-exists', '/songs', 'DTXFiles.foo');
+	});
+
+	it('reshapes Electron listDirectories responses into directory names', async () => {
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			files: [
+				{ name: 'DTXFiles.A', path: '/songs/DTXFiles.A', type: 'directory' },
+				{ name: 'notes.dtx', path: '/songs/notes.dtx', type: 'file' }
+			],
+			error: null
+		});
+
+		await expect(desktopHost.listDirectories('/songs')).resolves.toEqual(['DTXFiles.A']);
+		expect(runtime.invoke).toHaveBeenCalledWith('list-directory', '/songs');
+	});
+
+	it('throws Electron listDirectories errors', async () => {
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+		vi.mocked(runtime.invoke).mockResolvedValue({ files: [], error: 'permission denied' });
+
+		await expect(desktopHost.listDirectories('/songs')).rejects.toThrow('permission denied');
 	});
 
 	it('maps readFile to the host command with workspaceRoot', async () => {
@@ -92,5 +169,52 @@ describe('desktopHost', () => {
 
 		stop();
 		expect(unlisten).toHaveBeenCalledTimes(1);
+	});
+
+	it('registers auth-callback listeners', async () => {
+		const unlisten = vi.fn();
+		vi.mocked(runtime.listen).mockResolvedValue(unlisten);
+		const callback = vi.fn();
+
+		const stop = await desktopHost.onAuthCallback(callback);
+
+		expect(runtime.listen).toHaveBeenCalledWith('auth-callback', callback);
+		stop();
+		expect(unlisten).toHaveBeenCalledTimes(1);
+	});
+
+	it('removes host listeners by event name', () => {
+		desktopHost.removeAllListeners('auth-callback');
+
+		expect(runtime.removeAllListeners).toHaveBeenCalledWith('auth-callback');
+	});
+
+	it('uses Tauri runtime when the global Tauri marker is present', async () => {
+		setDesktopHostRuntimeForTests(null);
+		Object.defineProperty(window, '__TAURI__', {
+			configurable: true,
+			value: {}
+		});
+		vi.mocked(tauriInvoke).mockResolvedValue({ canceled: false, filePaths: ['/songs'] });
+
+		await expect(desktopHost.selectFolder()).resolves.toEqual({
+			canceled: false,
+			filePaths: ['/songs']
+		});
+		expect(tauriInvoke).toHaveBeenCalledWith('select_folder');
+	});
+
+	it('uses Electron runtime when the Tauri marker is absent', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+			canceled: false,
+			filePaths: ['/songs']
+		});
+
+		await expect(desktopHost.selectFolder()).resolves.toEqual({
+			canceled: false,
+			filePaths: ['/songs']
+		});
+		expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('select-folder');
 	});
 });

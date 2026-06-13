@@ -16,10 +16,7 @@ fn spawn_deep_link_handler(app: &AppHandle, raw_url: String) {
 }
 
 fn queue_deep_link_handler(app: &AppHandle, raw_url: String) {
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let _ = crate::auth::queue_deep_link(&handle, &raw_url).await;
-    });
+    let _ = crate::auth::queue_deep_link(app, &raw_url);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

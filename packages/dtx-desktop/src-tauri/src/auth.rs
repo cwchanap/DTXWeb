@@ -1,16 +1,16 @@
 use crate::error::{DesktopError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthState {
-    current_session: Arc<Mutex<Option<serde_json::Value>>>,
-    pending_events: Arc<Mutex<Vec<AuthEvent>>>,
+    current_session: Arc<AsyncMutex<Option<serde_json::Value>>>,
+    pending_urls: Arc<StdMutex<Vec<String>>>,
 }
 
 impl AuthState {
@@ -22,12 +22,19 @@ impl AuthState {
         *self.current_session.lock().await = session;
     }
 
-    async fn push_pending_event(&self, event: AuthEvent) {
-        self.pending_events.lock().await.push(event);
+    fn push_pending_url(&self, raw_url: String) {
+        self.pending_urls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(raw_url);
     }
 
-    async fn drain_pending_events(&self) -> Vec<AuthEvent> {
-        self.pending_events.lock().await.drain(..).collect()
+    fn drain_pending_urls(&self) -> Vec<String> {
+        self.pending_urls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drain(..)
+            .collect()
     }
 }
 
@@ -187,9 +194,10 @@ pub async fn handle_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn queue_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
-    if let Some(event) = auth_event_from_url(raw_url).await {
-        app.state::<AuthState>().push_pending_event(event).await;
+pub fn queue_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
+    if parse_auth_callback(raw_url).is_some() {
+        app.state::<AuthState>()
+            .push_pending_url(raw_url.to_string());
     }
 
     Ok(())
@@ -197,11 +205,14 @@ pub async fn queue_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
 
 #[tauri::command]
 pub async fn drain_pending_auth_events(app: AppHandle) -> Result<usize> {
-    let events = app.state::<AuthState>().drain_pending_events().await;
-    let count = events.len();
+    let urls = app.state::<AuthState>().drain_pending_urls();
+    let mut count = 0;
 
-    for event in events {
-        emit_auth_event(&app, &event)?;
+    for raw_url in urls {
+        if let Some(event) = auth_event_from_url(&raw_url).await {
+            emit_auth_event(&app, &event)?;
+            count += 1;
+        }
     }
 
     Ok(count)
@@ -339,5 +350,18 @@ mod tests {
         assert!(ensure_allowed_external_url("http://localhost:5173/login").is_ok());
         assert!(ensure_allowed_external_url("file:///etc/passwd").is_err());
         assert!(ensure_allowed_external_url("dtx://auth-callback").is_err());
+    }
+
+    #[test]
+    fn pending_urls_are_queued_and_drained_synchronously() {
+        let state = AuthState::default();
+
+        state.push_pending_url("dtx://auth-callback?access_token=a&refresh_token=b".to_string());
+
+        assert_eq!(
+            state.drain_pending_urls(),
+            vec!["dtx://auth-callback?access_token=a&refresh_token=b".to_string()]
+        );
+        assert!(state.drain_pending_urls().is_empty());
     }
 }

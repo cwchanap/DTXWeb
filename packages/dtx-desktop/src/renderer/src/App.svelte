@@ -93,6 +93,9 @@
 		);
 		registerHostUnlistener(unlistenAuthCallback);
 
+		if (destroyed) return;
+		await desktopHost.drainPendingAuthEvents();
+
 		// Try to restore session
 		if (destroyed) return;
 		await authService.restoreSession();

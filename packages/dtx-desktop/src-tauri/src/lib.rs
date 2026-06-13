@@ -15,6 +15,13 @@ fn spawn_deep_link_handler(app: &AppHandle, raw_url: String) {
     });
 }
 
+fn queue_deep_link_handler(app: &AppHandle, raw_url: String) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = crate::auth::queue_deep_link(&handle, &raw_url).await;
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default().manage(AuthState::default());
@@ -40,7 +47,7 @@ pub fn run() {
             let handle = app.handle().clone();
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 for url in urls {
-                    spawn_deep_link_handler(&handle, url.to_string());
+                    queue_deep_link_handler(&handle, url.to_string());
                 }
             }
 
@@ -57,6 +64,7 @@ pub fn run() {
             auth::validate_session,
             auth::get_current_session,
             auth::logout_session,
+            auth::drain_pending_auth_events,
             filesystem::select_folder,
             filesystem::path_exists,
             filesystem::list_directories,

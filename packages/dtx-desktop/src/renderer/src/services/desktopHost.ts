@@ -337,6 +337,13 @@ export const desktopHost = {
 	logoutSession: async <T = unknown>(): Promise<T> =>
 		await invokeHost<T>('logout_session', 'logout-session'),
 
+	drainPendingAuthEvents: async (): Promise<void> => {
+		const runtime = getRuntime();
+		if (runtime.kind === 'tauri') {
+			await runtime.invoke('drain_pending_auth_events');
+		}
+	},
+
 	fetchUserSimfiles: async <T = unknown>(): Promise<T> =>
 		await invokeHost<T>('fetch_user_simfiles', 'fetch-user-simfiles'),
 

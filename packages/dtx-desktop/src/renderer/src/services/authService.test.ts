@@ -65,6 +65,8 @@ describe('AuthService', () => {
 	beforeEach(() => {
 		// Clear all mocks before each test
 		vi.clearAllMocks();
+		host.openExternalUrl.mockReset();
+		host.logoutSession.mockReset();
 
 		// Reset localStorage mock
 		(window.localStorage.getItem as any).mockReturnValue(null);

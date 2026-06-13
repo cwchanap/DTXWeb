@@ -315,13 +315,13 @@ async fn read_set_def_title(file_path: &Path) -> Option<String> {
 fn parse_title(content: &str) -> Option<String> {
     for line in content.lines() {
         let trimmed = line.trim_start();
-        if let Some((_, title)) = trimmed.split_once(':') {
-            if trimmed[..trimmed.find(':')?].eq_ignore_ascii_case("#TITLE") {
-                let title = title.trim();
-                if !title.is_empty() {
-                    return Some(title.to_string());
-                }
-            }
+        let Some(title) = directive_value(trimmed, "#TITLE") else {
+            continue;
+        };
+
+        let title = title.trim();
+        if !title.is_empty() {
+            return Some(title.to_string());
         }
     }
 
@@ -372,16 +372,84 @@ fn validate_text_content(content: &str, extension: &str) -> bool {
     }
 
     if extension == "def" {
-        return content.contains("#TITLE:")
-            || content.contains("#ARTIST:")
-            || content.contains("#BPM:")
-            || content.contains('[');
+        return content
+            .lines()
+            .any(|line| is_set_def_directive_line(line) || line.trim_start().starts_with('['));
     }
 
     content.contains("#TITLE:")
         || content.contains("#ARTIST:")
         || content.contains("#BPM:")
         || content.contains("#WAV")
+}
+
+fn is_set_def_directive_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if directive_value(trimmed, "#TITLE").is_some()
+        || directive_value(trimmed, "#ARTIST").is_some()
+        || directive_value(trimmed, "#BPM").is_some()
+    {
+        return true;
+    }
+
+    is_level_directive_line(trimmed)
+}
+
+fn is_level_directive_line(line: &str) -> bool {
+    let uppercase = line.to_ascii_uppercase();
+    let Some(after_level_prefix) = uppercase.strip_prefix("#L") else {
+        return false;
+    };
+
+    let digit_count = after_level_prefix
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .count();
+    if digit_count == 0 {
+        return false;
+    }
+
+    let after_level_number = &after_level_prefix[digit_count..];
+    if let Some(rest) = after_level_number.strip_prefix("LABEL") {
+        return is_directive_boundary(rest);
+    }
+    if let Some(rest) = after_level_number.strip_prefix("FILE") {
+        return is_directive_boundary(rest);
+    }
+
+    false
+}
+
+fn directive_value<'a>(line: &'a str, directive: &str) -> Option<&'a str> {
+    if line.len() < directive.len() {
+        return None;
+    }
+
+    let prefix = line.get(..directive.len())?;
+    let rest = line.get(directive.len()..)?;
+    if !prefix.eq_ignore_ascii_case(directive) {
+        return None;
+    }
+
+    if let Some(rest) = rest.strip_prefix(':') {
+        return Some(rest);
+    }
+
+    let first_character = rest.chars().next()?;
+    if first_character.is_whitespace() {
+        return Some(&rest[first_character.len_utf8()..]);
+    }
+
+    None
+}
+
+fn is_directive_boundary(rest: &str) -> bool {
+    rest.is_empty()
+        || rest.starts_with(':')
+        || rest
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_whitespace())
 }
 
 fn has_acceptable_null_ratio(content: &str) -> bool {
@@ -466,7 +534,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_tree_includes_dtx_folder_with_set_def_title() {
+    async fn load_tree_includes_dtx_folder_with_set_def_colon_title() {
         let root = tempdir().expect("tempdir");
         let song = root.path().join("DTXFiles.Test");
         fs::create_dir(&song).await.expect("mkdir");
@@ -483,5 +551,47 @@ mod tests {
         assert_eq!(nodes[0].name, "DTXFiles.Test");
         assert!(nodes[0].contains_dtx_files);
         assert_eq!(nodes[0].song_title.as_deref(), Some("Song Title"));
+    }
+
+    #[tokio::test]
+    async fn load_tree_includes_dtx_folder_with_set_def_whitespace_title() {
+        let root = tempdir().expect("tempdir");
+        let song = root.path().join("DTXFiles.Test");
+        fs::create_dir(&song).await.expect("mkdir");
+        fs::write(song.join("main.dtx"), "#TITLE: Chart")
+            .await
+            .expect("dtx");
+        fs::write(song.join("SET.def"), "#TITLE Song Title")
+            .await
+            .expect("def");
+
+        let nodes = load_tree_structure_path(root.path()).await.expect("tree");
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].name, "DTXFiles.Test");
+        assert!(nodes[0].contains_dtx_files);
+        assert_eq!(nodes[0].song_title.as_deref(), Some("Song Title"));
+    }
+
+    #[tokio::test]
+    async fn read_file_decodes_utf16le_set_def_with_level_directives() {
+        let root = tempdir().expect("tempdir");
+        let file = root.path().join("SET.def");
+        let content = "#L1LABEL Basic\n#L1FILE main.dtx\n";
+        let bytes = content
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect::<Vec<u8>>();
+        fs::write(&file, bytes).await.expect("write");
+
+        let result = read_file_path(&file, Some(root.path())).await;
+
+        match result {
+            ReadFileResult::Text {
+                error: None,
+                content: actual,
+            } => assert_eq!(actual, content),
+            other => panic!("expected decoded text, got {other:?}"),
+        }
     }
 }

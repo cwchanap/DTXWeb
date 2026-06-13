@@ -2912,7 +2912,7 @@ git commit -m "feat(desktop): import electron local data on first run"
 - Modify: `packages/dtx-desktop/src-tauri/tauri.conf.json`
 - Modify: `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts`
 
-- [ ] **Step 1: Write updater result tests**
+- [x] **Step 1: Write updater result tests**
 
 Create tests in `updater.rs`:
 
@@ -2932,13 +2932,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml updater::tests`
 
 Expected: FAIL because `updater.rs` does not exist.
 
-- [ ] **Step 3: Implement updater module**
+- [x] **Step 3: Implement updater module**
 
 Create `packages/dtx-desktop/src-tauri/src/updater.rs`:
 
@@ -2974,7 +2974,7 @@ pub fn unavailable_update_result(error: &str) -> serde_json::Value {
 }
 ```
 
-- [ ] **Step 4: Register updater plugin and command**
+- [x] **Step 4: Register updater plugin and command**
 
 Modify `lib.rs`:
 
@@ -3001,7 +3001,7 @@ Modify `tauri.conf.json` updater block:
 
 The empty values intentionally make update checks non-blocking until release signing is configured.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -3012,7 +3012,7 @@ bun run --filter=dtx-desktop test -- desktopHost.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/dtx-desktop/src-tauri/src/updater.rs packages/dtx-desktop/src-tauri/src/lib.rs packages/dtx-desktop/src-tauri/tauri.conf.json packages/dtx-desktop/src/renderer/src/services/desktopHost.ts

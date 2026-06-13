@@ -10,6 +10,7 @@ import { simFileStore } from '../stores/simFileStore';
 import { workspaceStore, type WorkspaceState, type TreeNode } from '../stores/workspaceStore';
 import { linkageCacheService } from './linkageCacheService';
 import type { Session } from '@supabase/supabase-js';
+import { desktopHost } from './desktopHost';
 
 // Get server URL from environment variable or fallback to default
 const DEFAULT_SERVER_URL = 'http://localhost:5173';
@@ -77,8 +78,8 @@ export const authService = {
 		try {
 			authStore.setLoading(true);
 
-			// Use Electron's ipcRenderer to send a request to the main process
-			await window.electron.ipcRenderer.send('open-external-url', WEB_APP_LOGIN_URL);
+			// Ask host process to open the web login page
+			await desktopHost.openExternalUrl(WEB_APP_LOGIN_URL);
 		} catch (error) {
 			console.error('Login failed:', error);
 			authStore.setError('Failed to open login page');
@@ -194,8 +195,8 @@ export const authService = {
 	 */
 	logout: async (): Promise<void> => {
 		try {
-			// Clear session in main process
-			await window.electron.ipcRenderer.invoke('logout-session');
+			// Clear session in host process
+			await desktopHost.logoutSession();
 
 			// Clear local session data
 			clearStoredSessionData();

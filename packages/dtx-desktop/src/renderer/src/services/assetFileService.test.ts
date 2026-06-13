@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadAssetFiles } from './assetFileService';
+import { desktopHost } from './desktopHost';
+
+vi.mock('./desktopHost', () => ({
+	desktopHost: {
+		loadAssetFiles: vi.fn()
+	}
+}));
+
+const host = vi.mocked(desktopHost);
 
 describe('assetFileService', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockReset();
 	});
 
 	describe('loadAssetFiles', () => {
@@ -12,7 +20,7 @@ describe('assetFileService', () => {
 			await expect(loadAssetFiles('')).rejects.toThrow('SimfileId is required');
 		});
 
-		it('calls IPC with load-asset-files and simfileId', async () => {
+		it('calls host with simfileId', async () => {
 			const mockFiles = [
 				{
 					fileName: 'chart.dtx',
@@ -21,17 +29,14 @@ describe('assetFileService', () => {
 					key: 'sim1/chart.dtx'
 				}
 			];
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.loadAssetFiles.mockResolvedValue({
 				success: true,
 				data: mockFiles
 			});
 
 			await loadAssetFiles('sim1');
 
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'load-asset-files',
-				'sim1'
-			);
+			expect(host.loadAssetFiles).toHaveBeenCalledWith('sim1');
 		});
 
 		it('returns success result with data from IPC', async () => {
@@ -49,7 +54,7 @@ describe('assetFileService', () => {
 					key: 'sim1/preview.mp3'
 				}
 			];
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.loadAssetFiles.mockResolvedValue({
 				success: true,
 				data: mockFiles
 			});
@@ -65,7 +70,7 @@ describe('assetFileService', () => {
 		});
 
 		it('returns error result when IPC returns failure', async () => {
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.loadAssetFiles.mockResolvedValue({
 				success: false,
 				error: 'Network error'
 			});
@@ -78,16 +83,14 @@ describe('assetFileService', () => {
 			}
 		});
 
-		it('propagates IPC errors', async () => {
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
-				new Error('IPC communication error')
-			);
+		it('propagates host errors', async () => {
+			host.loadAssetFiles.mockRejectedValue(new Error('IPC communication error'));
 
 			await expect(loadAssetFiles('sim1')).rejects.toThrow('IPC communication error');
 		});
 
 		it('returns success with empty data when no files exist', async () => {
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.loadAssetFiles.mockResolvedValue({
 				success: true,
 				data: []
 			});

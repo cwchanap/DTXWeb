@@ -1,12 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DesktopFileProvider } from './desktopFileProvider';
+import { desktopHost } from './desktopHost';
+
+vi.mock('./desktopHost', () => ({
+	desktopHost: {
+		readFile: vi.fn()
+	}
+}));
+
+const host = vi.mocked(desktopHost);
 
 describe('DesktopFileProvider', () => {
 	let provider: DesktopFileProvider;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockReset();
 		provider = new DesktopFileProvider();
 	});
 
@@ -63,41 +71,33 @@ describe('DesktopFileProvider', () => {
 			expect(file).toBeUndefined();
 		});
 
-		it('calls IPC with correct file path for simfile-specific files', async () => {
+		it('calls host with correct file path for simfile-specific files', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: 'file content'
 			});
 
 			await provider.getFile('sim1', 'test.dtx');
 
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'read-file',
-				'/workspace/sim1/test.dtx',
-				'/workspace'
-			);
+			expect(host.readFile).toHaveBeenCalledWith('/workspace/sim1/test.dtx', '/workspace');
 		});
 
-		it('calls IPC with workspace root path for local files (null simfileId)', async () => {
+		it('calls host with workspace root path for local files (null simfileId)', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: 'file content'
 			});
 
 			await provider.getFile(null, 'test.dtx');
 
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'read-file',
-				'/workspace/test.dtx',
-				'/workspace'
-			);
+			expect(host.readFile).toHaveBeenCalledWith('/workspace/test.dtx', '/workspace');
 		});
 
-		it('returns undefined when IPC returns error', async () => {
+		it('returns undefined when host returns error', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: 'File not found',
 				content: ''
 			});
@@ -108,7 +108,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File object on success', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: 'dtx content'
 			});
@@ -120,7 +120,7 @@ describe('DesktopFileProvider', () => {
 
 		it('caches files after first fetch', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: 'dtx content'
 			});
@@ -128,14 +128,12 @@ describe('DesktopFileProvider', () => {
 			await provider.getFile('sim1', 'chart.dtx');
 			await provider.getFile('sim1', 'chart.dtx');
 
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledTimes(1);
+			expect(host.readFile).toHaveBeenCalledTimes(1);
 		});
 
-		it('returns undefined when IPC throws an error', async () => {
+		it('returns undefined when host throws an error', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
-				new Error('IPC error')
-			);
+			host.readFile.mockRejectedValue(new Error('IPC error'));
 
 			const file = await provider.getFile('sim1', 'test.dtx');
 			expect(file).toBeUndefined();
@@ -143,7 +141,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File for audio files with binary content', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: new Uint8Array([1, 2, 3])
 			});
@@ -155,7 +153,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File for ogg audio files', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: new Uint8Array([1, 2, 3])
 			});
@@ -167,7 +165,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File for xa audio files', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: new Uint8Array([1, 2, 3])
 			});
@@ -179,7 +177,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File for mp3 audio files', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: new Uint8Array([1, 2, 3])
 			});
@@ -191,7 +189,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File for def files', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: new Uint8Array([1, 2, 3])
 			});
@@ -203,7 +201,7 @@ describe('DesktopFileProvider', () => {
 
 		it('returns File for unknown extensions', async () => {
 			provider.setWorkspaceRoot('/workspace');
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+			host.readFile.mockResolvedValue({
 				error: null,
 				content: new Uint8Array([1, 2, 3])
 			});

@@ -3,6 +3,7 @@ import { simFileStore, type SimFileState } from '../stores/simFileStore';
 import { linkingService } from './linkingService';
 import { linkageCacheService } from './linkageCacheService';
 import type { WorkspaceBookmark } from '../stores/bookmarkStore';
+import { desktopHost } from './desktopHost';
 
 let switchInProgress = false;
 
@@ -14,9 +15,9 @@ export const workspaceService = {
 		try {
 			workspaceStore.setLoading(true);
 
-			// Use Electron's ipcRenderer to open folder selection dialog
+			// Use host adapter to open folder selection dialog
 			console.log('Invoking select-folder dialog');
-			const result = await window.electron.ipcRenderer.invoke('select-folder');
+			const result = await desktopHost.selectFolder();
 			console.log('Dialog result:', result);
 
 			if (result.canceled) {
@@ -58,7 +59,7 @@ export const workspaceService = {
 			// Validate the bookmark path still exists before resetting workspace state
 			let pathResult: { exists: boolean; error: string | null };
 			try {
-				pathResult = await window.electron.ipcRenderer.invoke('path-exists', bookmark.path);
+				pathResult = await desktopHost.pathExists(bookmark.path);
 			} catch {
 				return {
 					ok: false,
@@ -117,11 +118,8 @@ export const workspaceService = {
 				return;
 			}
 
-			// Use Electron's ipcRenderer to get folders in the workspace
-			const folders = await window.electron.ipcRenderer.invoke(
-				'list-directories',
-				currentPath
-			);
+			// Use host adapter to get folders in the workspace
+			const folders = await desktopHost.listDirectories(currentPath);
 
 			// Filter only sub-workspaces (folders with DTXFiles. prefix)
 			const subWorkspaces = folders.filter((folder: string) =>
@@ -156,8 +154,7 @@ export const workspaceService = {
 
 			if (currentSubWorkspace) {
 				// If a sub-workspace is selected, show its contents
-				const treeData = await window.electron.ipcRenderer.invoke(
-					'load-tree-structure',
+				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(
 					currentPath,
 					currentSubWorkspace
 				);
@@ -167,10 +164,7 @@ export const workspaceService = {
 				workspaceService.triggerAutoLinking();
 			} else {
 				// If no sub-workspace is selected, show all folders in the workspace
-				const treeData = await window.electron.ipcRenderer.invoke(
-					'load-tree-structure',
-					currentPath
-				);
+				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(currentPath);
 				workspaceStore.setTreeStructure(treeData);
 
 				// Trigger auto-linking after tree structure is loaded
@@ -273,10 +267,7 @@ export const workspaceService = {
 			// Set loading state for the node
 			workspaceStore.updateTreeNode(nodePath, { isLoading: true });
 
-			const children = await window.electron.ipcRenderer.invoke(
-				'load-tree-structure',
-				nodePath
-			);
+			const children = await desktopHost.loadTreeStructure<TreeNode[]>(nodePath);
 
 			// Apply cached linkage to newly loaded children
 			const enrichedChildren = children.map((child: TreeNode) => {

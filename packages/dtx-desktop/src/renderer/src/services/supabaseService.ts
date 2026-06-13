@@ -1,6 +1,8 @@
 // Session management service for renderer process
 // All Supabase operations are handled in the main process
 
+import { desktopHost } from './desktopHost';
+
 type StoredSession = {
 	access_token: string;
 	refresh_token: string;
@@ -65,8 +67,8 @@ export const validateSession = async (): Promise<boolean> => {
 			return false;
 		}
 
-		// Ask main process to validate the session
-		const isValid = await window.electron.ipcRenderer.invoke('validate-session', sessionData);
+		// Ask host process to validate the session
+		const isValid = await desktopHost.validateSession<boolean>(sessionData);
 		return isValid;
 	} catch (error) {
 		console.error('Failed to validate session:', error);
@@ -77,7 +79,7 @@ export const validateSession = async (): Promise<boolean> => {
 // Function to get current session from main process
 export const getCurrentSession = async (): Promise<unknown> => {
 	try {
-		const session = await window.electron.ipcRenderer.invoke('get-current-session');
+		const session = await desktopHost.getCurrentSession();
 		return session;
 	} catch (error) {
 		console.error('Failed to get current session:', error);

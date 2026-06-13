@@ -1,16 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { simFileService } from './simFileService';
+import { desktopHost } from './desktopHost';
 
-// Mock the electron API
-const mockInvoke = vi.fn();
-global.window = {
-	...global.window,
-	electron: {
-		ipcRenderer: {
-			invoke: mockInvoke
-		}
+vi.mock('./desktopHost', () => ({
+	desktopHost: {
+		fetchUserSimfiles: vi.fn(),
+		getPreviewUrl: vi.fn(),
+		getSoundPreviewUrl: vi.fn(),
+		getNextDisplayId: vi.fn()
 	}
-} as any;
+}));
+
+const host = vi.mocked(desktopHost);
 
 // Mock localStorage
 const localStorageMock = {
@@ -43,7 +44,7 @@ describe('SimFileService', () => {
 				}
 			];
 
-			mockInvoke.mockResolvedValue({
+			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
 				data: mockData,
 				fromCache: false
@@ -51,7 +52,7 @@ describe('SimFileService', () => {
 
 			const result = await simFileService.fetchUserSimFiles();
 
-			expect(mockInvoke).toHaveBeenCalledWith('fetch-user-simfiles');
+			expect(host.fetchUserSimfiles).toHaveBeenCalledWith();
 			expect(result.data).toEqual(mockData);
 			expect(result.fromCache).toBe(false);
 			expect(result.error).toBeUndefined();
@@ -67,13 +68,13 @@ describe('SimFileService', () => {
 
 			const result = await simFileService.fetchUserSimFiles();
 
-			expect(mockInvoke).not.toHaveBeenCalled();
+			expect(host.fetchUserSimfiles).not.toHaveBeenCalled();
 			expect(result.data).toEqual(cachedData);
 			expect(result.fromCache).toBe(true);
 		});
 
 		it('should handle errors from main process', async () => {
-			mockInvoke.mockResolvedValue({
+			host.fetchUserSimfiles.mockResolvedValue({
 				success: false,
 				data: [],
 				fromCache: false,
@@ -91,7 +92,7 @@ describe('SimFileService', () => {
 				.mockReturnValueOnce('NOT_VALID_JSON')
 				.mockReturnValueOnce(Date.now().toString());
 
-			mockInvoke.mockResolvedValue({
+			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
 				data: [],
 				fromCache: false
@@ -114,7 +115,7 @@ describe('SimFileService', () => {
 
 		it('should refresh user simFiles by clearing cache and fetching new data', async () => {
 			const mockData = [{ id: '1', title: 'Refreshed Song' }];
-			mockInvoke.mockResolvedValue({
+			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
 				data: mockData,
 				fromCache: false
@@ -132,11 +133,11 @@ describe('SimFileService', () => {
 				.mockReturnValueOnce(JSON.stringify([{ id: '1' }]))
 				.mockReturnValueOnce(expiredTimestamp);
 
-			mockInvoke.mockResolvedValue({ success: true, data: [], fromCache: false });
+			host.fetchUserSimfiles.mockResolvedValue({ success: true, data: [], fromCache: false });
 
 			await simFileService.fetchUserSimFiles();
 
-			expect(mockInvoke).toHaveBeenCalledWith('fetch-user-simfiles');
+			expect(host.fetchUserSimfiles).toHaveBeenCalledWith();
 		});
 
 		it('should handle setCachedData localStorage errors gracefully', async () => {
@@ -144,7 +145,7 @@ describe('SimFileService', () => {
 			localStorageMock.setItem.mockImplementation(() => {
 				throw new Error('Storage full');
 			});
-			mockInvoke.mockResolvedValue({
+			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
 				data: [{ id: '1', title: 'Test' }],
 				fromCache: false
@@ -155,7 +156,7 @@ describe('SimFileService', () => {
 
 		it('should return error result when IPC throws', async () => {
 			localStorageMock.getItem.mockReturnValue(null);
-			mockInvoke.mockRejectedValue(new Error('IPC failure'));
+			host.fetchUserSimfiles.mockRejectedValue(new Error('IPC failure'));
 
 			const result = await simFileService.fetchUserSimFiles();
 
@@ -167,16 +168,16 @@ describe('SimFileService', () => {
 
 	describe('getPreviewUrl', () => {
 		it('should return preview URL from IPC', async () => {
-			mockInvoke.mockResolvedValue('https://cdn.example.com/1/preview.jpg');
+			host.getPreviewUrl.mockResolvedValue('https://cdn.example.com/1/preview.jpg');
 
 			const url = await simFileService.getPreviewUrl(1);
 
-			expect(mockInvoke).toHaveBeenCalledWith('get-preview-url', 1);
+			expect(host.getPreviewUrl).toHaveBeenCalledWith(1);
 			expect(url).toBe('https://cdn.example.com/1/preview.jpg');
 		});
 
 		it('should return empty string on IPC error', async () => {
-			mockInvoke.mockRejectedValue(new Error('network error'));
+			host.getPreviewUrl.mockRejectedValue(new Error('network error'));
 
 			const url = await simFileService.getPreviewUrl(42);
 
@@ -186,16 +187,16 @@ describe('SimFileService', () => {
 
 	describe('getSoundPreviewUrl', () => {
 		it('should return sound preview URL from IPC', async () => {
-			mockInvoke.mockResolvedValue('https://cdn.example.com/1/preview.mp3');
+			host.getSoundPreviewUrl.mockResolvedValue('https://cdn.example.com/1/preview.mp3');
 
 			const url = await simFileService.getSoundPreviewUrl(1);
 
-			expect(mockInvoke).toHaveBeenCalledWith('get-sound-preview-url', 1);
+			expect(host.getSoundPreviewUrl).toHaveBeenCalledWith(1);
 			expect(url).toBe('https://cdn.example.com/1/preview.mp3');
 		});
 
 		it('should return empty string on IPC error', async () => {
-			mockInvoke.mockRejectedValue(new Error('network error'));
+			host.getSoundPreviewUrl.mockRejectedValue(new Error('network error'));
 
 			const url = await simFileService.getSoundPreviewUrl(99);
 
@@ -205,21 +206,21 @@ describe('SimFileService', () => {
 
 	describe('getNextDisplayId', () => {
 		it('returns the next display_id from IPC', async () => {
-			mockInvoke.mockResolvedValue(7);
+			host.getNextDisplayId.mockResolvedValue(7);
 
 			const result = await simFileService.getNextDisplayId();
 
-			expect(mockInvoke).toHaveBeenCalledWith('get-next-display-id');
+			expect(host.getNextDisplayId).toHaveBeenCalledWith();
 			expect(result).toBe(7);
 		});
 
 		it('propagates IPC errors', async () => {
-			mockInvoke.mockRejectedValue(new Error('IPC failure'));
+			host.getNextDisplayId.mockRejectedValue(new Error('IPC failure'));
 			await expect(simFileService.getNextDisplayId()).rejects.toThrow('IPC failure');
 		});
 
 		it('rejects invalid IPC response shapes', async () => {
-			mockInvoke.mockResolvedValue(undefined);
+			host.getNextDisplayId.mockResolvedValue(undefined);
 			await expect(simFileService.getNextDisplayId()).rejects.toThrow(
 				'Invalid next display_id response'
 			);

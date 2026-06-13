@@ -8,6 +8,16 @@ import {
 	validateSession
 } from './supabaseService';
 import { workspaceStore } from '../stores/workspaceStore';
+import { desktopHost } from './desktopHost';
+
+vi.mock('./desktopHost', () => ({
+	desktopHost: {
+		openExternalUrl: vi.fn(),
+		logoutSession: vi.fn()
+	}
+}));
+
+const host = vi.mocked(desktopHost);
 
 // Mock the authStore
 vi.mock('../stores/authStore', () => ({
@@ -61,10 +71,6 @@ describe('AuthService', () => {
 		(window.localStorage.setItem as any).mockClear();
 		(window.localStorage.removeItem as any).mockClear();
 
-		// Reset electron IPC mock
-		(window.electron.ipcRenderer.send as any).mockClear();
-		(window.electron.ipcRenderer.invoke as any).mockClear();
-
 		// Reset console mocks
 		(console.error as any).mockClear();
 
@@ -73,23 +79,22 @@ describe('AuthService', () => {
 	});
 
 	describe('login', () => {
-		it('should set loading state and send IPC message to open login URL', async () => {
+		it('should set loading state and open login URL through desktop host', async () => {
 			// Act
 			await authService.login();
 
 			// Assert
 			expect(authStore.setLoading).toHaveBeenCalledWith(true);
-			expect(window.electron.ipcRenderer.send).toHaveBeenCalledWith(
-				'open-external-url',
+			expect(host.openExternalUrl).toHaveBeenCalledWith(
 				'http://localhost:5173/login?redirect=desktop'
 			);
 			expect(authStore.setLoading).toHaveBeenCalledWith(false);
 		});
 
-		it('should handle IPC send errors gracefully', async () => {
+		it('should handle host open errors gracefully', async () => {
 			// Arrange
 			const error = new Error('IPC failed');
-			(window.electron.ipcRenderer.send as any).mockRejectedValue(error);
+			host.openExternalUrl.mockRejectedValue(error);
 
 			// Act
 			await authService.login();
@@ -106,8 +111,7 @@ describe('AuthService', () => {
 			await authService.login();
 
 			// Assert
-			expect(window.electron.ipcRenderer.send).toHaveBeenCalledWith(
-				'open-external-url',
+			expect(host.openExternalUrl).toHaveBeenCalledWith(
 				'http://localhost:5173/login?redirect=desktop'
 			);
 		});
@@ -398,19 +402,19 @@ describe('AuthService', () => {
 	describe('logout', () => {
 		it('should clear session and call store logout', async () => {
 			// Arrange
-			(window.electron.ipcRenderer.invoke as any).mockResolvedValue(true);
+			host.logoutSession.mockResolvedValue(true);
 
 			// Act
 			await authService.logout();
 
 			// Assert
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('logout-session');
+			expect(host.logoutSession).toHaveBeenCalledWith();
 			expect(clearStoredSessionData).toHaveBeenCalled();
 			expect(authStore.logout).toHaveBeenCalled();
 		});
 
-		it('should still clear local state when IPC invoke throws', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockRejectedValue(new Error('IPC error'));
+		it('should still clear local state when host logout throws', async () => {
+			host.logoutSession.mockRejectedValue(new Error('IPC error'));
 
 			await authService.logout();
 
@@ -419,7 +423,7 @@ describe('AuthService', () => {
 		});
 
 		it('should clear linkages from tree nodes when treeStructure is non-empty', async () => {
-			(window.electron.ipcRenderer.invoke as any).mockResolvedValue(true);
+			host.logoutSession.mockResolvedValue(true);
 
 			const treeNode = {
 				name: 'song-folder',

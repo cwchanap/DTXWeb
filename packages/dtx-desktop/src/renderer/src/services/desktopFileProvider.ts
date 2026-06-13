@@ -6,6 +6,7 @@
  */
 
 import type { IFileProvider } from '@dtx/common';
+import { desktopHost } from './desktopHost';
 
 export class DesktopFileProvider implements IFileProvider {
 	private fileCache = new Map<string, File>();
@@ -52,19 +53,19 @@ export class DesktopFileProvider implements IFileProvider {
 				filePath = `${this._workspaceRoot}/${fileName}`;
 			}
 
-			// Use IPC to read file from main process
-			const result = await window.electron.ipcRenderer.invoke(
-				'read-file',
-				filePath,
-				this._workspaceRoot
-			);
+			// Ask host process to read the local file
+			const result = await desktopHost.readFile(filePath, this._workspaceRoot);
 
 			if (result.error) {
 				return undefined;
 			}
 
 			// Convert file content to File object
-			const blob = new Blob([result.content], { type: this.getFileType(fileName) });
+			const content =
+				result.content instanceof Uint8Array
+					? this.copyToArrayBuffer(result.content)
+					: result.content;
+			const blob = new Blob([content], { type: this.getFileType(fileName) });
 			const file = new File([blob], fileName);
 
 			// Cache the file
@@ -137,6 +138,12 @@ export class DesktopFileProvider implements IFileProvider {
 
 	private generateKey(simfileId: string | null, fileName: string): string {
 		return `${simfileId || 'local'}:${fileName}`;
+	}
+
+	private copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+		const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+		new Uint8Array(arrayBuffer).set(bytes);
+		return arrayBuffer;
 	}
 
 	private getFileType(fileName: string): string {

@@ -6,6 +6,16 @@ import {
 	validateSession,
 	getCurrentSession
 } from './supabaseService';
+import { desktopHost } from './desktopHost';
+
+vi.mock('./desktopHost', () => ({
+	desktopHost: {
+		validateSession: vi.fn(),
+		getCurrentSession: vi.fn()
+	}
+}));
+
+const host = vi.mocked(desktopHost);
 
 const localStorageMock = {
 	getItem: vi.fn(),
@@ -149,7 +159,7 @@ describe('supabaseService', () => {
 			expect(result).toBe(false);
 		});
 
-		it('should invoke validate-session IPC and return true when valid', async () => {
+		it('should validate session through desktop host and return true when valid', async () => {
 			const userData = { id: 'user-1' };
 			localStorageMock.getItem.mockImplementation((key: string) => {
 				if (key === 'auth_access_token') return 'acc123';
@@ -157,20 +167,17 @@ describe('supabaseService', () => {
 				if (key === 'auth_user_data') return JSON.stringify(userData);
 				return null;
 			});
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue(
-				true
-			);
+			host.validateSession.mockResolvedValue(true);
 
 			const result = await validateSession();
 
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'validate-session',
+			expect(host.validateSession).toHaveBeenCalledWith(
 				expect.objectContaining({ accessToken: 'acc123', refreshToken: 'ref456' })
 			);
 			expect(result).toBe(true);
 		});
 
-		it('should return false when IPC invoke throws', async () => {
+		it('should return false when host validation throws', async () => {
 			const userData = { id: 'user-1' };
 			localStorageMock.getItem.mockImplementation((key: string) => {
 				if (key === 'auth_access_token') return 'acc123';
@@ -178,9 +185,7 @@ describe('supabaseService', () => {
 				if (key === 'auth_user_data') return JSON.stringify(userData);
 				return null;
 			});
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
-				new Error('IPC error')
-			);
+			host.validateSession.mockRejectedValue(new Error('IPC error'));
 
 			const result = await validateSession();
 
@@ -189,22 +194,18 @@ describe('supabaseService', () => {
 	});
 
 	describe('getCurrentSession', () => {
-		it('should invoke get-current-session and return the session', async () => {
+		it('should get current session through desktop host', async () => {
 			const mockSession = { access_token: 'tok', user: { id: 'u1' } };
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockResolvedValue(
-				mockSession
-			);
+			host.getCurrentSession.mockResolvedValue(mockSession);
 
 			const result = await getCurrentSession();
 
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('get-current-session');
+			expect(host.getCurrentSession).toHaveBeenCalledWith();
 			expect(result).toEqual(mockSession);
 		});
 
-		it('should return null when IPC invoke throws', async () => {
-			(window.electron.ipcRenderer.invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
-				new Error('IPC error')
-			);
+		it('should return null when host getCurrentSession throws', async () => {
+			host.getCurrentSession.mockRejectedValue(new Error('IPC error'));
 
 			const result = await getCurrentSession();
 

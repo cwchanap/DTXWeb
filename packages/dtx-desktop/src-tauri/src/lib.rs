@@ -5,6 +5,7 @@ mod filesystem;
 mod migration;
 mod models;
 mod songs;
+mod updater;
 
 use auth::AuthState;
 use tauri::AppHandle;
@@ -86,7 +87,8 @@ pub fn run() {
             songs::create_song,
             songs::export_song_to_zip,
             songs::get_skin_asset,
-            songs::parse_dtx_files
+            songs::parse_dtx_files,
+            updater::check_for_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");

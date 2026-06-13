@@ -16,7 +16,10 @@ pub struct PathExistsResult {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ReadFileResult {
-    Error { error: String, content: String },
+    Error {
+        error: String,
+        content: String,
+    },
     Text {
         error: Option<String>,
         content: String,
@@ -116,7 +119,10 @@ pub struct ListedFile {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ApiResult<T> {
-    Ok { success: bool, data: T },
+    Ok {
+        success: bool,
+        data: T,
+    },
     Err {
         success: bool,
         error: String,

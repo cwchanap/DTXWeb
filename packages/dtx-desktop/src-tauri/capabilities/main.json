@@ -1,0 +1,18 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "main-capability",
+	"description": "Main window desktop capability",
+	"windows": ["main"],
+	"permissions": [
+		"core:path:default",
+		"core:event:default",
+		"core:window:default",
+		"core:app:default",
+		"core:resources:default",
+		"dialog:default",
+		"opener:default",
+		"deep-link:default",
+		"updater:default",
+		"process:default"
+	]
+}

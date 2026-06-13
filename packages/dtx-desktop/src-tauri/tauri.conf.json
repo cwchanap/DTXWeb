@@ -1,0 +1,52 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "Drumery",
+	"version": "1.0.0",
+	"identifier": "com.hapadona.drumery",
+	"build": {
+		"beforeDevCommand": "bun run dev:renderer",
+		"beforeBuildCommand": "bun run build:renderer",
+		"devUrl": "http://localhost:5174",
+		"frontendDist": "../dist"
+	},
+	"app": {
+		"windows": [
+			{
+				"label": "main",
+				"title": "Drumery",
+				"width": 900,
+				"height": 670,
+				"resizable": true
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["dmg", "nsis"],
+		"createUpdaterArtifacts": true,
+		"resources": ["../static/skin"],
+		"macOS": {
+			"minimumSystemVersion": "10.13",
+			"entitlements": "../build/entitlements.mac.plist"
+		},
+		"windows": {
+			"webviewInstallMode": {
+				"type": "downloadBootstrapper"
+			}
+		}
+	},
+	"plugins": {
+		"deep-link": {
+			"desktop": {
+				"schemes": ["dtx"]
+			}
+		},
+		"updater": {
+			"pubkey": "",
+			"endpoints": []
+		}
+	}
+}

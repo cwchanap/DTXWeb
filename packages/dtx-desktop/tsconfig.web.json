@@ -1,10 +1,8 @@
 {
-	"extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
 	"include": [
 		"src/renderer/src/env.d.ts",
 		"src/renderer/src/**/*",
 		"src/renderer/src/**/*.svelte",
-		"src/preload/*.d.ts",
 		"../ui-components/src/lib/**/*.svelte",
 		"../ui-components/src/lib/**/*.ts"
 	],
@@ -15,17 +13,22 @@
 		"../ui-components/src/lib/**/*.spec.ts"
 	],
 	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
 		"verbatimModuleSyntax": true,
 		"useDefineForClassFields": true,
 		"strict": false,
 		"allowJs": true,
 		"checkJs": true,
 		"composite": true,
+		"skipLibCheck": true,
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
-		"moduleResolution": "bundler",
 		"baseUrl": ".",
 		"paths": {
+			"@/*": ["src/renderer/src/*"],
 			"@dtx/ui-components/*": ["../ui-components/src/lib/*"]
-		}
+		},
+		"types": ["vite/client"]
 	}
 }

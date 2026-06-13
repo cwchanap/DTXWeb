@@ -27,10 +27,19 @@ type SelectFolderResult = {
 	filePaths: string[];
 };
 
+type ReadFileContent = string | ArrayBuffer | Uint8Array;
+type TauriReadFileContent = ReadFileContent | number[];
+
 type ReadFileResult = {
 	error: string | null;
-	content: string | ArrayBuffer | Uint8Array;
-	isText: boolean;
+	content: ReadFileContent;
+	isText?: boolean;
+};
+
+type HostReadFileResult = {
+	error: string | null;
+	content: TauriReadFileContent;
+	isText?: boolean;
 };
 
 type PathExistsResult = {
@@ -230,6 +239,18 @@ const sendHost = async (
 	await runtime.send(electronChannel, ...electronArgs);
 };
 
+const normalizeTauriReadFileResult = (result: HostReadFileResult): ReadFileResult => {
+	if (result.error !== null || result.isText !== false || !Array.isArray(result.content)) {
+		return result as ReadFileResult;
+	}
+
+	return {
+		error: null,
+		content: new Uint8Array(result.content),
+		isText: false
+	};
+};
+
 export const setDesktopHostRuntimeForTests = (runtime: DesktopHostRuntime | null): void => {
 	runtimeForTests = runtime;
 };
@@ -287,11 +308,19 @@ export const desktopHost = {
 	readFile: async (
 		filePath: string,
 		workspaceRoot: string | null = null
-	): Promise<ReadFileResult> =>
-		await invokeHost<ReadFileResult>('read_file', 'read-file', { filePath, workspaceRoot }, [
-			filePath,
-			workspaceRoot
-		]),
+	): Promise<ReadFileResult> => {
+		const runtime = getRuntime();
+
+		if (runtime.kind === 'tauri') {
+			const result = await runtime.invoke<HostReadFileResult>('read_file', {
+				filePath,
+				workspaceRoot
+			});
+			return normalizeTauriReadFileResult(result);
+		}
+
+		return await runtime.invoke<ReadFileResult>('read-file', filePath, workspaceRoot);
+	},
 
 	getSkinAsset: async <T = unknown>(assetPath: string): Promise<T> =>
 		await invokeHost<T>('get_skin_asset', 'get-skin-asset', { assetPath }, [assetPath]),

@@ -3029,7 +3029,7 @@ git commit -m "feat(desktop): add tauri updater check command"
 - Modify: `packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts`
 - Modify: `packages/dtx-desktop/src/tests/setup.ts`
 
-- [ ] **Step 1: Update adapter tests for Tauri command names**
+- [x] **Step 1: Update adapter tests for Tauri command names**
 
 Ensure every method in `desktopHost.test.ts` expects snake_case Tauri command names:
 
@@ -3049,7 +3049,7 @@ expect(runtime.invoke).toHaveBeenCalledWith('upload_file', {
 });
 ```
 
-- [ ] **Step 2: Run adapter and all renderer tests**
+- [x] **Step 2: Run adapter and all renderer tests**
 
 Run:
 
@@ -3059,13 +3059,13 @@ bun run --filter=dtx-desktop test
 
 Expected: PASS. If failures mention old kebab-case Electron channels such as `select-folder`, update the test to assert the typed method behavior instead of raw channel names.
 
-- [ ] **Step 3: Run Svelte check**
+- [x] **Step 3: Run Svelte check**
 
 Run: `bun run --filter=dtx-desktop check`
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/dtx-desktop/src/renderer/src/services/desktopHost.ts packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts packages/dtx-desktop/src/tests/setup.ts packages/dtx-desktop/src/renderer/src/**/*.test.ts

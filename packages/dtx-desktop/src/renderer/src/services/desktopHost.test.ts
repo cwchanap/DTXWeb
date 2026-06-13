@@ -119,6 +119,175 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).not.toHaveBeenCalled();
 	});
 
+	it('maps renderer methods to Tauri snake_case commands', async () => {
+		const expectTauriInvoke = async (
+			returnValue: unknown,
+			call: () => Promise<unknown>,
+			command: string,
+			args?: Record<string, unknown>
+		) => {
+			vi.mocked(runtime.invoke).mockResolvedValueOnce(returnValue);
+
+			await call();
+
+			if (args === undefined) {
+				expect(runtime.invoke).toHaveBeenLastCalledWith(command);
+				return;
+			}
+
+			expect(runtime.invoke).toHaveBeenLastCalledWith(command, args);
+		};
+
+		await expectTauriInvoke(
+			{ success: true },
+			() => desktopHost.openFolder('/songs'),
+			'open_folder',
+			{
+				folderPath: '/songs'
+			}
+		);
+		await expectTauriInvoke(
+			[],
+			() => desktopHost.listDirectories('/songs'),
+			'list_directories',
+			{
+				dirPath: '/songs'
+			}
+		);
+		await expectTauriInvoke({}, () => desktopHost.listDirectory('/songs'), 'list_directory', {
+			dirPath: '/songs'
+		});
+		await expectTauriInvoke(
+			{},
+			() => desktopHost.loadTreeStructure('/songs', 'DTXFiles.A'),
+			'load_tree_structure',
+			{
+				basePath: '/songs',
+				pathParts: ['DTXFiles.A']
+			}
+		);
+		await expectTauriInvoke({}, () => desktopHost.listFiles('/songs/A'), 'list_files', {
+			dirPath: '/songs/A'
+		});
+		await expectTauriInvoke(
+			{},
+			() => desktopHost.getSkinAsset('default/Graphics/7_pads.png'),
+			'get_skin_asset',
+			{
+				assetPath: 'default/Graphics/7_pads.png'
+			}
+		);
+		await expectTauriInvoke(
+			{},
+			() => desktopHost.parseDtxFiles('/songs/A'),
+			'parse_dtx_files',
+			{
+				folderPath: '/songs/A'
+			}
+		);
+		await expectTauriInvoke(
+			true,
+			() => desktopHost.validateSession({ accessToken: 'a', refreshToken: 'r' }),
+			'validate_session',
+			{
+				sessionData: { accessToken: 'a', refreshToken: 'r' }
+			}
+		);
+		await expectTauriInvoke({}, () => desktopHost.getCurrentSession(), 'get_current_session');
+		await expectTauriInvoke(true, () => desktopHost.logoutSession(), 'logout_session');
+		await expectTauriInvoke([], () => desktopHost.fetchUserSimfiles(), 'fetch_user_simfiles');
+		await expectTauriInvoke(
+			'https://files/42/preview.jpg',
+			() => desktopHost.getPreviewUrl(42),
+			'get_preview_url',
+			{
+				simfileId: 42
+			}
+		);
+		await expectTauriInvoke(
+			'https://files/42/preview.mp3',
+			() => desktopHost.getSoundPreviewUrl(42),
+			'get_sound_preview_url',
+			{
+				simfileId: 42
+			}
+		);
+		await expectTauriInvoke([], () => desktopHost.loadAssetFiles('42'), 'load_asset_files', {
+			simfileId: '42'
+		});
+		await expectTauriInvoke(
+			{ success: true },
+			() => desktopHost.createSong({ selectedPath: '/songs' }),
+			'create_song',
+			{
+				options: { selectedPath: '/songs' }
+			}
+		);
+		await expectTauriInvoke(
+			{ success: true },
+			() => desktopHost.createSimfileRecord({ title: 'Song' }),
+			'create_simfile_record',
+			{
+				simfileData: { title: 'Song' }
+			}
+		);
+		await expectTauriInvoke(43, () => desktopHost.getNextDisplayId(), 'get_next_display_id');
+		await expectTauriInvoke(
+			{ success: true, data: [] },
+			() =>
+				desktopHost.searchCloudSongs({
+					query: 'song',
+					limit: 20,
+					excludeLinkedSongIds: ['42']
+				}),
+			'search_cloud_songs',
+			{
+				query: 'song',
+				limit: 20,
+				excludeLinkedSongIds: ['42']
+			}
+		);
+		await expectTauriInvoke(
+			{ success: true },
+			() => desktopHost.fetchCloudSong({ cloudSongId: '42' }),
+			'fetch_cloud_song',
+			{
+				cloudSongId: '42'
+			}
+		);
+		await expectTauriInvoke(
+			{ success: true },
+			() =>
+				desktopHost.updateSimfileRecord({
+					simfileId: '42',
+					updateData: { title: 'New' }
+				}),
+			'update_simfile_record',
+			{
+				simfileId: '42',
+				updateData: { title: 'New' }
+			}
+		);
+		await expectTauriInvoke(
+			{ success: true },
+			() => desktopHost.exportSongToZip({ songPath: '/songs/A' }),
+			'export_song_to_zip',
+			{
+				songPath: '/songs/A'
+			}
+		);
+		await expectTauriInvoke(
+			{ success: true },
+			() => desktopHost.uploadFile('main.dtx', '/songs/A', '42'),
+			'upload_file',
+			{
+				fileName: 'main.dtx',
+				songFolderPath: '/songs/A',
+				simfileId: '42'
+			}
+		);
+	});
+
 	it('maps multi-part pathExists arguments for Tauri', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
 

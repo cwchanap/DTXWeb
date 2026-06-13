@@ -36,6 +36,16 @@
 	let currentRoute = $state('workspace');
 	let routeParams = $state<{ simFileId?: string }>({});
 	const hostUnlisteners: Array<() => void> = [];
+	let destroyed = false;
+
+	const registerHostUnlistener = (unlisten: () => void) => {
+		if (destroyed) {
+			unlisten();
+			return;
+		}
+
+		hostUnlisteners.push(unlisten);
+	};
 
 	// Function to handle route changes
 	function handleRouteChange() {
@@ -62,6 +72,7 @@
 
 	// Try to restore the session on app start
 	onMount(async () => {
+		destroyed = false;
 		// Set up routing
 		handleRouteChange();
 		window.addEventListener('hashchange', handleRouteChange);
@@ -72,7 +83,7 @@
 				await authService.handleMagicLinkResult(result);
 			}
 		);
-		hostUnlisteners.push(unlistenMagicLinkResult);
+		registerHostUnlistener(unlistenMagicLinkResult);
 
 		// Set up the legacy protocol handler callback
 		const unlistenAuthCallback = await desktopHost.onAuthCallback<AuthCallbackTokens>(
@@ -80,9 +91,10 @@
 				await authService.handleAuthCallback(tokens);
 			}
 		);
-		hostUnlisteners.push(unlistenAuthCallback);
+		registerHostUnlistener(unlistenAuthCallback);
 
 		// Try to restore session
+		if (destroyed) return;
 		await authService.restoreSession();
 	});
 
@@ -148,6 +160,7 @@
 
 	// Clean up listeners when component is destroyed
 	onDestroy(() => {
+		destroyed = true;
 		for (const unlisten of hostUnlisteners.splice(0)) {
 			unlisten();
 		}

@@ -31,6 +31,7 @@
 		"@electron-toolkit/utils": "^4.0.0",
 		"@lucide/svelte": "^0.511.0",
 		"@supabase/supabase-js": "^2.49.8",
+		"@tauri-apps/api": "^2",
 		"dayjs": "^1.11.13",
 		"electron-updater": "^6.6.2",
 		"graphql": "^16.10.0",

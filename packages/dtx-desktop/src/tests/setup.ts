@@ -39,9 +39,17 @@ Object.defineProperty(window, 'electron', {
 		ipcRenderer: {
 			send: vi.fn(),
 			on: vi.fn(),
-			invoke: vi.fn()
+			invoke: vi.fn(),
+			removeListener: vi.fn(),
+			removeAllListeners: vi.fn()
 		},
 		process: {
+			platform: 'darwin',
+			env: {
+				HOME: '/Users/Test',
+				USERPROFILE: 'C:\\Users\\Test',
+				USERNAME: 'Test'
+			},
 			versions: {
 				electron: '35.0.0',
 				chrome: '130.0.0',

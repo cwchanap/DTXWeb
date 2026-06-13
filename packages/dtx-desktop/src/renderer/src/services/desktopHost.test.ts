@@ -153,6 +153,41 @@ describe('desktopHost', () => {
 		});
 	});
 
+	it('normalizes Tauri readFile binary arrays into Uint8Array content', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			error: null,
+			content: [1, 2, 3],
+			isText: false
+		});
+
+		const result = await desktopHost.readFile('/songs/snare.wav', '/songs');
+
+		expect(result.error).toBeNull();
+		expect(result.isText).toBe(false);
+		expect(result.content).toBeInstanceOf(Uint8Array);
+		expect([...result.content]).toEqual([1, 2, 3]);
+		expect(runtime.invoke).toHaveBeenCalledWith('read_file', {
+			filePath: '/songs/snare.wav',
+			workspaceRoot: '/songs'
+		});
+	});
+
+	it('preserves Electron readFile binary content', async () => {
+		runtime = makeRuntime('electron');
+		setDesktopHostRuntimeForTests(runtime);
+		const content = new Uint8Array([1, 2, 3]);
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			error: null,
+			content,
+			isText: false
+		});
+
+		const result = await desktopHost.readFile('/songs/snare.wav', '/songs');
+
+		expect(result.content).toBe(content);
+		expect(runtime.invoke).toHaveBeenCalledWith('read-file', '/songs/snare.wav', '/songs');
+	});
+
 	it('uses send for external URLs', async () => {
 		await desktopHost.openExternalUrl('https://example.com/login');
 		expect(runtime.send).toHaveBeenCalledWith('open_external_url', {

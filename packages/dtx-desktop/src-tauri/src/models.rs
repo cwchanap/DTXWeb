@@ -13,22 +13,69 @@ pub struct PathExistsResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ReadFileResult {
     Error { error: String, content: String },
     Text {
         error: Option<String>,
         content: String,
-        #[serde(rename = "isText")]
-        is_text: bool,
     },
     Binary {
         error: Option<String>,
         content: Vec<u8>,
-        #[serde(rename = "isText")]
-        is_text: bool,
     },
+}
+
+impl Serialize for ReadFileResult {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Error { error, content } => {
+                #[derive(Serialize)]
+                struct ErrorResult<'a> {
+                    error: &'a str,
+                    content: &'a str,
+                }
+
+                ErrorResult { error, content }.serialize(serializer)
+            }
+            Self::Text { error, content } => {
+                #[derive(Serialize)]
+                struct TextResult<'a> {
+                    error: &'a Option<String>,
+                    content: &'a str,
+                    #[serde(rename = "isText")]
+                    is_text: bool,
+                }
+
+                TextResult {
+                    error,
+                    content,
+                    is_text: true,
+                }
+                .serialize(serializer)
+            }
+            Self::Binary { error, content } => {
+                #[derive(Serialize)]
+                struct BinaryResult<'a> {
+                    error: &'a Option<String>,
+                    content: &'a [u8],
+                    #[serde(rename = "isText")]
+                    is_text: bool,
+                }
+
+                BinaryResult {
+                    error,
+                    content,
+                    is_text: false,
+                }
+                .serialize(serializer)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -73,6 +120,7 @@ pub enum ApiResult<T> {
     Err {
         success: bool,
         error: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
 }
@@ -80,6 +128,7 @@ pub enum ApiResult<T> {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SuccessResult {
     pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -92,13 +141,25 @@ mod tests {
         let result = ReadFileResult::Text {
             error: None,
             content: "#TITLE: Song".to_string(),
-            is_text: true,
         };
 
         let json = serde_json::to_value(result).expect("serializes");
         assert_eq!(json["error"], serde_json::Value::Null);
         assert_eq!(json["content"], "#TITLE: Song");
         assert_eq!(json["isText"], true);
+    }
+
+    #[test]
+    fn read_file_binary_serializes_renderer_shape() {
+        let result = ReadFileResult::Binary {
+            error: None,
+            content: vec![1, 2, 3],
+        };
+
+        let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["error"], serde_json::Value::Null);
+        assert_eq!(json["content"], serde_json::json!([1, 2, 3]));
+        assert_eq!(json["isText"], false);
     }
 
     #[test]
@@ -113,5 +174,31 @@ mod tests {
         assert_eq!(json["success"], false);
         assert_eq!(json["error"], "User not authenticated");
         assert_eq!(json["code"], "UNAUTHORIZED");
+    }
+
+    #[test]
+    fn api_error_omits_absent_code() {
+        let result: ApiResult<Vec<String>> = ApiResult::Err {
+            success: false,
+            error: "User not authenticated".to_string(),
+            code: None,
+        };
+
+        let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["success"], false);
+        assert_eq!(json["error"], "User not authenticated");
+        assert_eq!(json.get("code"), None);
+    }
+
+    #[test]
+    fn success_result_omits_absent_error() {
+        let result = SuccessResult {
+            success: true,
+            error: None,
+        };
+
+        let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["success"], true);
+        assert_eq!(json.get("error"), None);
     }
 }

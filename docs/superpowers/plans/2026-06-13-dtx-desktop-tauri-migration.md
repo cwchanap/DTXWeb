@@ -1370,8 +1370,10 @@ git commit -m "feat(desktop): add tauri backend shared models"
 
 - Create: `packages/dtx-desktop/src-tauri/src/filesystem.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/lib.rs`
+- Modify: `packages/dtx-desktop/src-tauri/Cargo.toml`
+- Modify: `packages/dtx-desktop/src-tauri/Cargo.lock`
 
-- [ ] **Step 1: Write filesystem tests**
+- [x] **Step 1: Write filesystem tests**
 
 Create tests in `filesystem.rs`:
 
@@ -1425,13 +1427,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml filesystem::tests`
 
 Expected: FAIL because `filesystem.rs` and helper functions are missing.
 
-- [ ] **Step 3: Implement filesystem helpers and commands**
+- [x] **Step 3: Implement filesystem helpers and commands**
 
 Create `packages/dtx-desktop/src-tauri/src/filesystem.rs`:
 
@@ -1672,7 +1674,16 @@ pub async fn open_folder(app: AppHandle, folder_path: String) -> Result<SuccessR
 }
 ```
 
-- [ ] **Step 4: Register filesystem commands**
+Final implementation notes from review:
+
+- Keep Task 5 `ReadFileResult` variants without caller-provided `is_text`; serialization derives `isText` from the variant.
+- SET.def title parsing accepts both `#TITLE: Song Title` and generated `#TITLE Song Title` forms.
+- `.def` validation accepts generated SET.def directives including `#TITLE`, `#ARTIST`, `#BPM`, `#L<n>LABEL`, and `#L<n>FILE`.
+- `list_directory` and `list_files` preserve Electron-style `{ files: [], error }` envelopes on listing errors.
+- `list_files` returns real RFC3339 UTC `lastModified` values from filesystem metadata using a direct `time` dependency.
+- Existing deep-link, dialog, opener, process, and updater plugin initialization stays registered in `lib.rs`.
+
+- [x] **Step 4: Register filesystem commands**
 
 Modify `lib.rs`:
 
@@ -1700,21 +1711,23 @@ pub fn run() {
 }
 ```
 
-- [ ] **Step 5: Run Rust filesystem tests and adapter tests**
+- [x] **Step 5: Run Rust filesystem tests and adapter tests**
 
 Run:
 
 ```bash
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml filesystem::tests
-bun run --filter=dtx-desktop test -- workspaceService.test.ts desktopFileProvider.test.ts
+cargo check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
+rustfmt --edition 2021 --check packages/dtx-desktop/src-tauri/src/filesystem.rs
+bun run --filter=dtx-desktop test -- workspaceService.test.ts desktopFileProvider.test.ts desktopHost.test.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add packages/dtx-desktop/src-tauri/src/filesystem.rs packages/dtx-desktop/src-tauri/src/lib.rs
+git add packages/dtx-desktop/src-tauri/src/filesystem.rs packages/dtx-desktop/src-tauri/src/lib.rs packages/dtx-desktop/src-tauri/Cargo.toml packages/dtx-desktop/src-tauri/Cargo.lock
 git commit -m "feat(desktop): port filesystem commands to tauri"
 ```
 

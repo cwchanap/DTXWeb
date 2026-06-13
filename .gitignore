@@ -24,6 +24,7 @@ static/skin/
 packages/*/.wrangler/state
 packages/dtx-api/.wrangler/
 e2e/.auth
+packages/dtx-desktop/src-tauri/target/
 
 # Coverage reports
 coverage/

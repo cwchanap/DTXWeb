@@ -1,6 +1,7 @@
 mod error;
 mod filesystem;
 mod models;
+mod songs;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,7 +19,11 @@ pub fn run() {
             filesystem::list_files,
             filesystem::read_file,
             filesystem::load_tree_structure,
-            filesystem::open_folder
+            filesystem::open_folder,
+            songs::create_song,
+            songs::export_song_to_zip,
+            songs::get_skin_asset,
+            songs::parse_dtx_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");

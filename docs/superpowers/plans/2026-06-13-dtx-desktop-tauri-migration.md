@@ -458,7 +458,7 @@ git commit -m "feat(desktop): add typed host adapter"
 - Modify: `packages/dtx-desktop/src/renderer/src/services/desktopFileProvider.ts`
 - Modify tests beside each service.
 
-- [ ] **Step 1: Update service tests to mock `desktopHost`**
+- [x] **Step 1: Update service tests to mock `desktopHost`**
 
 At the top of each affected service test, replace raw `window.electron` setup with this pattern:
 
@@ -495,13 +495,13 @@ import { desktopHost } from './desktopHost';
 const host = vi.mocked(desktopHost);
 ```
 
-- [ ] **Step 2: Run one service test to verify it fails**
+- [x] **Step 2: Run one service test to verify it fails**
 
 Run: `bun run --filter=dtx-desktop test -- workspaceService.test.ts`
 
 Expected: FAIL because service implementation still calls `window.electron`.
 
-- [ ] **Step 3: Replace direct service calls**
+- [x] **Step 3: Replace direct service calls**
 
 Use these replacements:
 
@@ -560,7 +560,7 @@ const children = await desktopHost.loadTreeStructure(nodePath);
 
 Keep the existing service-level error messages unchanged unless a test already expects a better message.
 
-- [ ] **Step 4: Run focused service tests**
+- [x] **Step 4: Run focused service tests**
 
 Run:
 
@@ -570,7 +570,7 @@ bun run --filter=dtx-desktop test -- assetFileService.test.ts supabaseService.te
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/dtx-desktop/src/renderer/src/services packages/dtx-desktop/src/renderer/src/stores/settingsStore.test.ts

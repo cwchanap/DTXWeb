@@ -6,10 +6,10 @@ use encoding_rs::{Encoding, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{ErrorKind, Write};
+use std::io::{copy, ErrorKind};
 use std::path::{Component, Path, PathBuf};
 use tauri::{path::BaseDirectory, AppHandle, Manager};
-use tokio::fs;
+use tokio::{fs, task};
 use zip::write::SimpleFileOptions;
 
 const VALID_DTX_FILE_EXTENSIONS: &[&str] = &[
@@ -18,6 +18,12 @@ const VALID_DTX_FILE_EXTENSIONS: &[&str] = &[
 ];
 const SET_DEF_DECODING_PRIORITY: [&Encoding; 4] = [UTF_8, SHIFT_JIS, UTF_16LE, UTF_16BE];
 const DTX_DECODING_PRIORITY: [&Encoding; 4] = [SHIFT_JIS, UTF_8, UTF_16LE, UTF_16BE];
+
+#[derive(Debug, Clone, Copy)]
+enum HomeDirPlatform {
+    Posix,
+    Windows,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +75,8 @@ pub async fn create_song(options: CreateSongOptions) -> Result<CreateSongResult>
 }
 
 pub async fn create_song_folder(options: CreateSongOptions) -> Result<CreateSongResult> {
+    validate_safe_file_name(&options.sanitized_folder_name, "song folder name")?;
+
     let song_folder_path =
         PathBuf::from(&options.selected_path).join(&options.sanitized_folder_name);
 
@@ -200,10 +208,10 @@ pub async fn parse_dtx_folder(folder_path: &Path) -> Result<DtxParseResult> {
             parsed_artist = metadata.artist;
         }
 
-        if metadata.level.is_some() || label_from_set_def.is_some() {
+        if let Some(level) = metadata.level.filter(|level| *level != 0.0) {
             levels.push(DtxLevel {
                 label: label_from_set_def.unwrap_or_else(|| fallback_level_label(&file_name)),
-                level: metadata.level.unwrap_or(0.0),
+                level,
             });
         }
     }
@@ -330,6 +338,7 @@ async fn export_song_folder_to_zip_inner(
     export_directory: &Path,
 ) -> Result<ExportSongResult> {
     ensure_export_directory(export_directory).await?;
+    validate_safe_file_name(song_title, "zip file name")?;
 
     let valid_files = valid_export_files(song_path).await?;
     if valid_files.is_empty() {
@@ -339,23 +348,32 @@ async fn export_song_folder_to_zip_inner(
     }
 
     let zip_path = export_directory.join(format!("{song_title}.zip"));
-    let file = std::fs::File::create(&zip_path)?;
-    let mut zip = zip::ZipWriter::new(file);
-
-    for (file_name, file_path) in &valid_files {
-        zip.start_file(file_name, SimpleFileOptions::default())?;
-        let content = std::fs::read(file_path)?;
-        zip.write_all(&content)?;
-    }
-
-    zip.finish()?;
+    let zip_path_for_archive = zip_path.clone();
+    let files_count = valid_files.len();
+    task::spawn_blocking(move || write_zip_archive(zip_path_for_archive, valid_files))
+        .await
+        .map_err(|error| DesktopError::Message(error.to_string()))??;
 
     Ok(ExportSongResult {
         success: true,
         zip_path: Some(zip_path.to_string_lossy().into_owned()),
-        files_count: Some(valid_files.len()),
+        files_count: Some(files_count),
         error: None,
     })
+}
+
+fn write_zip_archive(zip_path: PathBuf, valid_files: Vec<(String, PathBuf)>) -> Result<()> {
+    let file = std::fs::File::create(&zip_path)?;
+    let mut zip = zip::ZipWriter::new(file);
+
+    for (file_name, file_path) in valid_files {
+        zip.start_file(file_name, SimpleFileOptions::default())?;
+        let mut source = std::fs::File::open(file_path)?;
+        copy(&mut source, &mut zip)?;
+    }
+
+    zip.finish()?;
+    Ok(())
 }
 
 async fn ensure_export_directory(export_directory: &Path) -> Result<()> {
@@ -423,7 +441,134 @@ fn resolve_export_directory(export_directory: Option<&str>) -> PathBuf {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    let home = std::env::var_os("HOME").map(|value| value.to_string_lossy().into_owned());
+    let userprofile =
+        std::env::var_os("USERPROFILE").map(|value| value.to_string_lossy().into_owned());
+    let homedrive = std::env::var_os("HOMEDRIVE").map(|value| value.to_string_lossy().into_owned());
+    let homepath = std::env::var_os("HOMEPATH").map(|value| value.to_string_lossy().into_owned());
+
+    home_dir_from_env(
+        current_home_dir_platform(),
+        home.as_deref(),
+        userprofile.as_deref(),
+        homedrive.as_deref(),
+        homepath.as_deref(),
+    )
+}
+
+fn current_home_dir_platform() -> HomeDirPlatform {
+    if cfg!(windows) {
+        HomeDirPlatform::Windows
+    } else {
+        HomeDirPlatform::Posix
+    }
+}
+
+fn home_dir_from_env(
+    platform: HomeDirPlatform,
+    home: Option<&str>,
+    userprofile: Option<&str>,
+    homedrive: Option<&str>,
+    homepath: Option<&str>,
+) -> Option<PathBuf> {
+    match platform {
+        HomeDirPlatform::Posix => non_empty_path(home)
+            .or_else(|| windows_home_dir_fallback(userprofile, homedrive, homepath)),
+        HomeDirPlatform::Windows => windows_home_dir_fallback(userprofile, homedrive, homepath)
+            .or_else(|| non_empty_path(home)),
+    }
+}
+
+fn windows_home_dir_fallback(
+    userprofile: Option<&str>,
+    homedrive: Option<&str>,
+    homepath: Option<&str>,
+) -> Option<PathBuf> {
+    non_empty_path(userprofile).or_else(|| {
+        match (non_empty_value(homedrive), non_empty_value(homepath)) {
+            (Some(drive), Some(path)) => Some(PathBuf::from(format!("{drive}{path}"))),
+            _ => None,
+        }
+    })
+}
+
+fn non_empty_path(value: Option<&str>) -> Option<PathBuf> {
+    non_empty_value(value).map(PathBuf::from)
+}
+
+fn non_empty_value(value: Option<&str>) -> Option<&str> {
+    value.and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    })
+}
+
+fn validate_safe_file_name(file_name: &str, description: &str) -> Result<()> {
+    if is_safe_file_name(file_name) {
+        return Ok(());
+    }
+
+    Err(DesktopError::Message(format!("Invalid {description}")))
+}
+
+fn is_safe_file_name(file_name: &str) -> bool {
+    if file_name.is_empty() || Path::new(file_name).is_absolute() {
+        return false;
+    }
+
+    if file_name.contains('/') || file_name.contains('\\') {
+        return false;
+    }
+
+    let Some(first_character) = file_name.chars().next() else {
+        return false;
+    };
+    let Some(last_character) = file_name.chars().last() else {
+        return false;
+    };
+    if matches!(first_character, '.' | ' ') || matches!(last_character, '.' | ' ') {
+        return false;
+    }
+
+    if file_name.chars().any(|character| {
+        character.is_control()
+            || matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            )
+    }) {
+        return false;
+    }
+
+    let mut components = Path::new(file_name).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return false;
+    }
+
+    !is_reserved_windows_file_name(file_name)
+}
+
+fn is_reserved_windows_file_name(file_name: &str) -> bool {
+    let stem = file_name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || is_reserved_windows_numbered_name(&stem, "COM")
+        || is_reserved_windows_numbered_name(&stem, "LPT")
+}
+
+fn is_reserved_windows_numbered_name(stem: &str, prefix: &str) -> bool {
+    let Some(number) = stem.strip_prefix(prefix) else {
+        return false;
+    };
+
+    number.len() == 1 && matches!(number, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
 }
 
 fn skin_asset_candidates(app: &AppHandle, asset_path: &str) -> Vec<PathBuf> {
@@ -772,6 +917,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_song_rejects_unsafe_folder_name_component() {
+        let root = tempdir().expect("tempdir");
+        let options = CreateSongOptions {
+            selected_path: root.path().to_string_lossy().into_owned(),
+            sanitized_folder_name: "bad/name".to_string(),
+            sanitized_song_name: "Song Title".to_string(),
+            template_folder_path: None,
+        };
+
+        let error = create_song_folder(options)
+            .await
+            .expect_err("unsafe folder name should reject");
+
+        assert!(error.to_string().contains("Invalid song folder name"));
+        assert!(!root.path().join("bad").exists());
+    }
+
+    #[tokio::test]
     async fn export_zip_filters_invalid_files() {
         let root = tempdir().expect("tempdir");
         let song = root.path().join("Song");
@@ -845,6 +1008,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn export_zip_rejects_unsafe_song_title_without_writing_outside_export_directory() {
+        let root = tempdir().expect("tempdir");
+        let song = root.path().join("Song");
+        let export = root.path().join("Export");
+        fs::create_dir_all(&song).await.expect("song");
+        fs::create_dir_all(&export).await.expect("export");
+        fs::write(song.join("main.dtx"), "#TITLE: Song")
+            .await
+            .expect("dtx");
+
+        let result = export_song_folder_to_zip(&song, "../escape", &export)
+            .await
+            .expect("export envelope");
+
+        assert!(!result.success);
+        assert!(result
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("Invalid zip file name")));
+        assert!(!root.path().join("escape.zip").exists());
+    }
+
+    #[tokio::test]
     async fn parse_dtx_files_returns_metadata_and_set_def_labels() {
         let root = tempdir().expect("tempdir");
         fs::write(
@@ -868,6 +1054,108 @@ mod tests {
         assert_eq!(result.levels[0].label, "BASIC");
         assert_eq!(result.levels[0].level, 7.0);
         assert_eq!(result.parse_failures, None);
+    }
+
+    #[tokio::test]
+    async fn parse_dtx_files_does_not_emit_set_def_label_without_dlevel() {
+        let root = tempdir().expect("tempdir");
+        fs::write(
+            root.path().join("SET.def"),
+            "#L1LABEL BASIC\n#L1FILE main.dtx\n",
+        )
+        .await
+        .expect("SET.def");
+        fs::write(
+            root.path().join("main.dtx"),
+            "#ARTIST: Test Artist\n#BPM: 142.5\n",
+        )
+        .await
+        .expect("main.dtx");
+
+        let result = parse_dtx_folder(root.path()).await.expect("parse result");
+
+        assert_eq!(result.artist.as_deref(), Some("Test Artist"));
+        assert_eq!(result.bpm, Some(142.5));
+        assert!(result.levels.is_empty());
+        assert_eq!(result.parse_failures, None);
+    }
+
+    #[test]
+    fn home_dir_from_env_uses_electron_os_homedir_style_fallbacks() {
+        assert_eq!(
+            home_dir_from_env(
+                HomeDirPlatform::Posix,
+                Some("/home/dtx"),
+                Some("C:\\Users\\DTX"),
+                None,
+                None,
+            )
+            .as_deref(),
+            Some(Path::new("/home/dtx"))
+        );
+        assert_eq!(
+            home_dir_from_env(
+                HomeDirPlatform::Windows,
+                Some("/home/dtx"),
+                Some("C:\\Users\\DTX"),
+                Some("D:"),
+                Some("\\Fallback"),
+            )
+            .as_deref(),
+            Some(Path::new("C:\\Users\\DTX"))
+        );
+        assert_eq!(
+            home_dir_from_env(
+                HomeDirPlatform::Windows,
+                Some("/home/dtx"),
+                None,
+                Some("C:"),
+                Some("\\Users\\DTX"),
+            )
+            .as_deref(),
+            Some(Path::new("C:\\Users\\DTX"))
+        );
+        assert_eq!(
+            home_dir_from_env(
+                HomeDirPlatform::Windows,
+                Some("/home/dtx"),
+                None,
+                Some("C:"),
+                None
+            )
+            .as_deref(),
+            Some(Path::new("/home/dtx"))
+        );
+        assert_eq!(
+            home_dir_from_env(HomeDirPlatform::Windows, None, None, Some("C:"), None),
+            None
+        );
+    }
+
+    #[test]
+    fn safe_file_name_validation_rejects_path_components_and_invalid_names() {
+        for name in [
+            "",
+            ".",
+            "..",
+            "bad/name",
+            "bad\\name",
+            " bad",
+            "bad ",
+            ".bad",
+            "bad.",
+            "bad:name",
+            "bad\nname",
+            "CON",
+            "COM1",
+        ] {
+            assert!(
+                validate_safe_file_name(name, "song folder name").is_err(),
+                "{name:?} should reject"
+            );
+        }
+
+        assert!(validate_safe_file_name("DTXFiles.Song", "song folder name").is_ok());
     }
 
     fn assert_zip_entries(zip_path: &str, expected: &[&str]) {

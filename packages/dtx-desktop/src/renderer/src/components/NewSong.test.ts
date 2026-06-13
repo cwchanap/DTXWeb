@@ -4,16 +4,27 @@ import { workspaceStore } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
 
+const mockDesktopHost = vi.hoisted(() => ({
+	pathExists: vi.fn(),
+	createSong: vi.fn(),
+	loadTreeStructure: vi.fn(),
+	selectFolder: vi.fn()
+}));
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 import NewSong from './NewSong.svelte';
 
 describe('NewSong', () => {
 	beforeEach(() => {
 		workspaceStore.reset();
 		vi.clearAllMocks();
-		const invokeMock = window.electron?.ipcRenderer?.invoke;
-		if (vi.isMockFunction(invokeMock)) {
-			invokeMock.mockReset();
-		}
+		mockDesktopHost.pathExists.mockResolvedValue({ exists: false, error: 'not-found' });
+		mockDesktopHost.createSong.mockResolvedValue({ success: true });
+		mockDesktopHost.loadTreeStructure.mockResolvedValue([]);
+		mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
 	});
 
 	afterEach(() => {
@@ -122,7 +133,7 @@ describe('NewSong', () => {
 	describe('song creation', () => {
 		it('invokes path-exists check before creating', async () => {
 			workspaceStore.setPath('/test/workspace');
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+			mockDesktopHost.pathExists.mockResolvedValue({
 				exists: false,
 				error: 'not-found'
 			});
@@ -133,8 +144,7 @@ describe('NewSong', () => {
 			const form = screen.getByRole('button', { name: /Create Song/i }).closest('form');
 			await fireEvent.submit(form!);
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'path-exists',
+				expect(mockDesktopHost.pathExists).toHaveBeenCalledWith(
 					'/test/workspace',
 					'Test Song'
 				);
@@ -144,7 +154,7 @@ describe('NewSong', () => {
 		it('shows error when folder already exists', async () => {
 			workspaceStore.setPath('/test/workspace');
 			// First call for the debounced check, second for the create-song check
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+			mockDesktopHost.pathExists.mockResolvedValue({
 				exists: true,
 				error: null
 			});
@@ -164,13 +174,9 @@ describe('NewSong', () => {
 		it('creates song and closes form on success', async () => {
 			const closeSpy = vi.spyOn(workspaceStore, 'closeNewSongForm');
 			workspaceStore.setPath('/test/workspace');
-			vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation((channel: string) => {
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: false, error: 'not-found' });
-				if (channel === 'create-song') return Promise.resolve({ success: true });
-				if (channel === 'load-tree-structure') return Promise.resolve([]);
-				return Promise.resolve(undefined);
-			});
+			mockDesktopHost.pathExists.mockResolvedValue({ exists: false, error: 'not-found' });
+			mockDesktopHost.createSong.mockResolvedValue({ success: true });
+			mockDesktopHost.loadTreeStructure.mockResolvedValue([]);
 			render(NewSong);
 			await waitFor(() => screen.getByText('Full path:'));
 			const input = screen.getByLabelText(/Song Name/i);
@@ -184,12 +190,8 @@ describe('NewSong', () => {
 
 		it('shows error message when create-song throws', async () => {
 			workspaceStore.setPath('/test/workspace');
-			vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation((channel: string) => {
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: false, error: 'not-found' });
-				if (channel === 'create-song') return Promise.reject(new Error('Disk full'));
-				return Promise.resolve(undefined);
-			});
+			mockDesktopHost.pathExists.mockResolvedValue({ exists: false, error: 'not-found' });
+			mockDesktopHost.createSong.mockRejectedValue(new Error('Disk full'));
 			render(NewSong);
 			await waitFor(() => screen.getByText('Full path:'));
 			const input = screen.getByLabelText(/Song Name/i);
@@ -203,18 +205,18 @@ describe('NewSong', () => {
 	});
 
 	describe('folder selection', () => {
-		it('calls ipcRenderer to select folder when Choose different folder button is clicked', async () => {
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({ canceled: true });
+		it('calls desktopHost to select folder when Choose different folder button is clicked', async () => {
+			mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
 			render(NewSong);
 			const chooseFolderBtn = screen.getByRole('button', {
 				name: /Choose different folder/i
 			});
 			await fireEvent.click(chooseFolderBtn);
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('select-folder');
+			expect(mockDesktopHost.selectFolder).toHaveBeenCalled();
 		});
 
 		it('updates selected path when folder is selected', async () => {
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+			mockDesktopHost.selectFolder.mockResolvedValue({
 				canceled: false,
 				filePaths: ['/new/path']
 			});

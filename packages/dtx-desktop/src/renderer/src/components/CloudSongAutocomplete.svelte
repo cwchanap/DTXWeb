@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Search, X, Music, User, Link } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { desktopHost } from '../services/desktopHost';
 
 	interface Props {
 		isOpen: boolean;
@@ -57,7 +58,11 @@
 
 		isLoading = true;
 		try {
-			const result = await window.electron.ipcRenderer.invoke('search-cloud-songs', {
+			const result = await desktopHost.searchCloudSongs<{
+				success: boolean;
+				data?: CloudSong[];
+				error?: string;
+			}>({
 				query: searchQuery.trim(),
 				limit: 20, // Increase limit to account for filtering
 				excludeLinkedSongIds

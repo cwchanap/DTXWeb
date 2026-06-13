@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { templateStore, type Template } from '../stores/templateStore';
 	import { Plus, Trash2, FolderOpen, Edit2, Save, X, FileText } from '@lucide/svelte';
+	import { desktopHost } from '../services/desktopHost';
 
 	let templates = $state<Template[]>([]);
 	let isLoading = $state(false);
@@ -32,7 +33,7 @@
 
 	const handleSelectTemplateFolder = async () => {
 		try {
-			const result = await window.electron.ipcRenderer.invoke('select-folder');
+			const result = await desktopHost.selectFolder();
 			if (!result.canceled && result.filePaths.length > 0) {
 				selectedTemplateFolder = result.filePaths[0];
 			}
@@ -61,10 +62,7 @@
 
 		try {
 			// Verify that the selected folder exists
-			const folderResult = await window.electron.ipcRenderer.invoke(
-				'path-exists',
-				selectedTemplateFolder
-			);
+			const folderResult = await desktopHost.pathExists(selectedTemplateFolder);
 			if (!folderResult.exists) {
 				templateStore.setError('Selected folder does not exist');
 				return;
@@ -132,7 +130,7 @@
 
 	const handleOpenTemplateFolder = async (folderPath: string) => {
 		try {
-			await window.electron.ipcRenderer.invoke('open-folder-in-explorer', folderPath);
+			await desktopHost.openFolder(folderPath);
 		} catch (err) {
 			console.error('Failed to open folder:', err);
 			templateStore.setError('Failed to open folder');

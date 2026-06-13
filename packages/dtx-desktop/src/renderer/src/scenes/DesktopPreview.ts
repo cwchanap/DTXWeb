@@ -1,4 +1,5 @@
 import { Preview, AssetName } from '@dtx/common/game';
+import { desktopHost } from '../services/desktopHost';
 
 type SkinAssetResult = {
 	success: boolean;
@@ -28,22 +29,10 @@ export class DesktopPreview extends Preview {
 
 	private async loadDesktopAssets() {
 		try {
-			const invokeSkinAsset = (assetPath: string) =>
-				(
-					window as typeof window & {
-						electron: {
-							ipcRenderer: {
-								invoke: (
-									channel: string,
-									...args: unknown[]
-								) => Promise<SkinAssetResult>;
-							};
-						};
-					}
-				).electron.ipcRenderer.invoke('get-skin-asset', assetPath);
-
 			// Load lane icons spritesheet
-			const laneIconsResult = await invokeSkinAsset('default/Graphics/7_pads.png');
+			const laneIconsResult = await desktopHost.getSkinAsset<SkinAssetResult>(
+				'default/Graphics/7_pads.png'
+			);
 
 			if (laneIconsResult.success) {
 				await this.createTextureFromDataUrl(AssetName.LANE_ICONS, laneIconsResult.dataUrl, {
@@ -55,7 +44,9 @@ export class DesktopPreview extends Preview {
 			}
 
 			// Load drum chips image
-			const drumChipsResult = await invokeSkinAsset('default/Graphics/7_chips_drums.png');
+			const drumChipsResult = await desktopHost.getSkinAsset<SkinAssetResult>(
+				'default/Graphics/7_chips_drums.png'
+			);
 
 			if (drumChipsResult.success) {
 				await this.createTextureFromDataUrl(AssetName.DRUM_CHIPS, drumChipsResult.dataUrl);

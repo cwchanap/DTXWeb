@@ -3,6 +3,20 @@ import { render, screen, cleanup } from '@testing-library/svelte';
 
 vi.mock('@lucide/svelte');
 
+const mockDesktopHost = vi.hoisted(() => ({
+	getVersions: vi.fn(() => ({
+		app: null,
+		tauri: null,
+		electron: '35.0.0',
+		chrome: '130.0.0',
+		node: '20.0.0'
+	}))
+}));
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 import Versions from './Versions.svelte';
 
 describe('Versions', () => {

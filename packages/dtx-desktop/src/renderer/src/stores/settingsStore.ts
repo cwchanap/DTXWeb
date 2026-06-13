@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { desktopHost } from '../services/desktopHost';
 
 interface Settings {
 	exportDirectory: string;
@@ -7,20 +8,20 @@ interface Settings {
 // Get OS-specific default Downloads directory
 const getDefaultDownloadsPath = (): string => {
 	// Get the actual Downloads path from the OS
-	const os = navigator.platform.toLowerCase();
-	const userHome =
-		window.electron.process?.env?.HOME || window.electron.process?.env?.USERPROFILE;
+	const os = desktopHost.getPlatform().toLowerCase();
+	const environment = desktopHost.getEnvironment();
+	const unixHome = environment.HOME;
+	const windowsHome = environment.USERPROFILE || environment.HOME;
 
 	if (os.includes('win')) {
 		// Windows: C:\Users\[username]\Downloads
-		const username = window.electron.process?.env?.USERNAME || 'User';
-		return `C:\\Users\\${username}\\Downloads`;
+		return windowsHome ? `${windowsHome}\\Downloads` : '~/Downloads';
 	} else if (os.includes('mac')) {
 		// macOS: /Users/[username]/Downloads
-		return userHome ? `${userHome}/Downloads` : '/Users/Downloads';
+		return unixHome ? `${unixHome}/Downloads` : '~/Downloads';
 	} else {
 		// Linux/Unix: /home/[username]/Downloads
-		return userHome ? `${userHome}/Downloads` : '/home/Downloads';
+		return unixHome ? `${unixHome}/Downloads` : '~/Downloads';
 	}
 };
 

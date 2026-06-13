@@ -3,6 +3,26 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@lucide/svelte');
 
+const mockVersions = vi.hoisted(() => ({
+	electron: '35.0.0',
+	chrome: '130.0.0',
+	node: '20.0.0'
+}));
+
+const mockDesktopHost = vi.hoisted(() => ({
+	getVersions: vi.fn(() => ({
+		app: null,
+		tauri: null,
+		electron: mockVersions.electron,
+		chrome: mockVersions.chrome,
+		node: mockVersions.node
+	}))
+}));
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 import VersionsModal from './VersionsModal.svelte';
 
 describe('VersionsModal', () => {
@@ -42,7 +62,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(window.electron.process.versions.electron)).toBeInTheDocument();
+		expect(screen.getByText(mockVersions.electron)).toBeInTheDocument();
 	});
 
 	it('displays chrome version when modal is open', async () => {
@@ -50,7 +70,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(window.electron.process.versions.chrome)).toBeInTheDocument();
+		expect(screen.getByText(mockVersions.chrome)).toBeInTheDocument();
 	});
 
 	it('displays node version when modal is open', async () => {
@@ -58,7 +78,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(window.electron.process.versions.node)).toBeInTheDocument();
+		expect(screen.getByText(mockVersions.node)).toBeInTheDocument();
 	});
 
 	it('displays version labels when modal is open', async () => {

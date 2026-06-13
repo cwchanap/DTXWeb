@@ -17,6 +17,7 @@ const makeRuntime = (kind: DesktopHostRuntime['kind'] = 'tauri'): DesktopHostRun
 	listen: vi.fn(),
 	removeAllListeners: vi.fn(),
 	getPlatform: vi.fn(() => 'darwin'),
+	getEnvironment: vi.fn(() => ({ HOME: '/Users/Test' })),
 	getVersions: vi.fn(() => ({ app: '1.0.0', tauri: null, electron: '35.0.0' }))
 });
 
@@ -189,6 +190,11 @@ describe('desktopHost', () => {
 		expect(runtime.removeAllListeners).toHaveBeenCalledWith('auth-callback');
 	});
 
+	it('returns environment values from the active runtime', () => {
+		expect(desktopHost.getEnvironment()).toEqual({ HOME: '/Users/Test' });
+		expect(runtime.getEnvironment).toHaveBeenCalled();
+	});
+
 	it('uses Tauri runtime when the global Tauri marker is present', async () => {
 		setDesktopHostRuntimeForTests(null);
 		Object.defineProperty(window, '__TAURI__', {
@@ -204,6 +210,16 @@ describe('desktopHost', () => {
 		expect(tauriInvoke).toHaveBeenCalledWith('select_folder');
 	});
 
+	it('returns an empty environment for the Tauri runtime', () => {
+		setDesktopHostRuntimeForTests(null);
+		Object.defineProperty(window, '__TAURI__', {
+			configurable: true,
+			value: {}
+		});
+
+		expect(desktopHost.getEnvironment()).toEqual({});
+	});
+
 	it('uses Electron runtime when the Tauri marker is absent', async () => {
 		setDesktopHostRuntimeForTests(null);
 		vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
@@ -216,5 +232,11 @@ describe('desktopHost', () => {
 			filePaths: ['/songs']
 		});
 		expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('select-folder');
+	});
+
+	it('returns Electron process environment when the Electron runtime is active', () => {
+		setDesktopHostRuntimeForTests(null);
+
+		expect(desktopHost.getEnvironment()).toBe(window.electron.process.env);
 	});
 });

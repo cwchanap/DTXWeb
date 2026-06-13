@@ -17,6 +17,37 @@ vi.mock('@dtx/common', async (importOriginal) => {
 
 vi.mock('./CloudSongAutocomplete.svelte', () => ({ default: vi.fn() }));
 
+const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
+	const hostInvoke = vi.fn();
+	return {
+		mockHostInvoke: hostInvoke,
+		mockDesktopHost: {
+			listFiles: vi.fn((dirPath: string) => hostInvoke('list-files', dirPath)),
+			readFile: vi.fn((filePath: string, workspaceRoot: string | null = null) =>
+				hostInvoke('read-file', filePath, workspaceRoot)
+			),
+			loadAssetFiles: vi.fn((simfileId: string) => hostInvoke('load-asset-files', simfileId)),
+			createSimfileRecord: vi.fn((simfileData: unknown) =>
+				hostInvoke('create-simfile-record', simfileData)
+			),
+			getNextDisplayId: vi.fn(() => hostInvoke('get-next-display-id')),
+			fetchCloudSong: vi.fn((params: unknown) => hostInvoke('fetch-cloud-song', params)),
+			updateSimfileRecord: vi.fn((params: unknown) =>
+				hostInvoke('update-simfile-record', params)
+			),
+			exportSongToZip: vi.fn((params: unknown) => hostInvoke('export-song-to-zip', params)),
+			parseDtxFiles: vi.fn((folderPath: string) => hostInvoke('parse-dtx-files', folderPath)),
+			uploadFile: vi.fn((fileName: string, songFolderPath: string, simfileId: string) =>
+				hostInvoke('upload-file', fileName, songFolderPath, simfileId)
+			)
+		}
+	};
+});
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 // Mutable state for workspaceStore mock
 const initialWorkspaceState = {
 	path: null as string | null,
@@ -129,20 +160,8 @@ type ChartDetailTestProps = {
 	};
 };
 
-type ElectronInvokeMock = ReturnType<typeof vi.fn>;
-declare global {
-	interface Window {
-		electron: { ipcRenderer: { invoke: ElectronInvokeMock } };
-	}
-}
-
-type ElectronTestWindow = typeof window & {
-	electron: { ipcRenderer: { invoke: ElectronInvokeMock } };
-};
-
-const getInvokeMock = () => (window as ElectronTestWindow).electron.ipcRenderer.invoke;
 const getNextDisplayIdCallCount = () =>
-	getInvokeMock().mock.calls.filter(([channel]) => channel === 'get-next-display-id').length;
+	mockHostInvoke.mock.calls.filter(([channel]) => channel === 'get-next-display-id').length;
 
 describe('SongDetails', () => {
 	beforeEach(() => {
@@ -150,10 +169,7 @@ describe('SongDetails', () => {
 		workspaceListeners.length = 0;
 		authState = { isAuthenticated: false, isLoading: false, user: null, error: null };
 		vi.clearAllMocks();
-		const invokeMock = getInvokeMock();
-		if (vi.isMockFunction(invokeMock)) {
-			invokeMock.mockResolvedValue({ files: [] });
-		}
+		mockHostInvoke.mockResolvedValue({ files: [] });
 	});
 
 	afterEach(() => {
@@ -176,20 +192,14 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/my/songs/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'list-files',
-					'/my/songs/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/my/songs/TestSong');
 			});
 		});
 
 		it('does not invoke list-files IPC when song has no path', () => {
 			const song = makeNode('TestSong', '');
 			render(SongDetails, { props: { song } });
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
-				'list-files',
-				expect.anything()
-			);
+			expect(mockHostInvoke).not.toHaveBeenCalledWith('list-files', expect.anything());
 		});
 	});
 
@@ -218,10 +228,7 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'list-files',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
 			});
 		});
 
@@ -232,17 +239,14 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'parse-dtx-files',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('parse-dtx-files', '/test/TestSong');
 			});
 		});
 	});
 
 	describe('IPC error handling', () => {
 		it('handles list-files IPC error gracefully', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockRejectedValueOnce(new Error('IPC error'));
 			}
@@ -251,7 +255,7 @@ describe('SongDetails', () => {
 		});
 
 		it('handles list-files returning error field', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockResolvedValueOnce({ files: [], error: 'Directory not found' });
 			}
@@ -347,17 +351,14 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'parse-dtx-files',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('parse-dtx-files', '/test/TestSong');
 			});
 		});
 	});
 
 	describe('parse-dtx-files IPC response handling', () => {
 		it('handles successful parse-dtx-files response', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') return { files: [] };
@@ -380,7 +381,7 @@ describe('SongDetails', () => {
 		});
 
 		it('handles null parse-dtx-files response', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') return { files: [] };
@@ -396,7 +397,7 @@ describe('SongDetails', () => {
 		});
 
 		it('handles parse-dtx-files IPC error', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') return { files: [] };
@@ -414,7 +415,7 @@ describe('SongDetails', () => {
 
 	describe('list-files file loading', () => {
 		it('loads and processes file list from IPC', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') {
@@ -444,7 +445,7 @@ describe('SongDetails', () => {
 		});
 
 		it('handles read-file errors during file loading', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') {
@@ -469,7 +470,7 @@ describe('SongDetails', () => {
 		});
 
 		it('handles read-file throwing during file loading', async () => {
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'list-files') {
@@ -506,7 +507,7 @@ describe('SongDetails', () => {
 	describe('auto-populate display_id', () => {
 		it('invokes get-next-display-id for unlinked songs when authenticated', async () => {
 			authState = { ...authState, isAuthenticated: true };
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') return 42;
@@ -516,9 +517,7 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'get-next-display-id'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('get-next-display-id');
 			});
 		});
 
@@ -530,14 +529,9 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'list-files',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
 			});
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
-				'get-next-display-id'
-			);
+			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
 
 		it('preserves a linked non-zero display_id instead of auto-populating over it', async () => {
@@ -552,23 +546,16 @@ describe('SongDetails', () => {
 			});
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
 			expect(props?.simfile?.display_id).toBe(7);
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
-				'get-next-display-id'
-			);
+			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
 
 		it('does not invoke get-next-display-id when not authenticated', async () => {
 			const song = makeNode('TestSong', '/test/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'list-files',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
 			});
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
-				'get-next-display-id'
-			);
+			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
 
 		it('does not invoke get-next-display-id when song has no path', async () => {
@@ -576,14 +563,12 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '');
 			render(SongDetails, { props: { song } });
 			await tick();
-			expect(window.electron.ipcRenderer.invoke).not.toHaveBeenCalledWith(
-				'get-next-display-id'
-			);
+			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
 
 		it('handles get-next-display-id IPC error gracefully', async () => {
 			authState = { ...authState, isAuthenticated: true };
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') throw new Error('IPC error');
@@ -597,7 +582,7 @@ describe('SongDetails', () => {
 		it('retries get-next-display-id for a failed path when the song is reopened', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			let getNextCalls = 0;
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') {
@@ -623,7 +608,7 @@ describe('SongDetails', () => {
 
 		it('sends null displayId when saving an auto-populated display_id', async () => {
 			authState = { ...authState, isAuthenticated: true };
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') return 42;
@@ -655,9 +640,7 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'get-next-display-id'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('get-next-display-id');
 			});
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -676,7 +659,7 @@ describe('SongDetails', () => {
 			});
 
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
+				expect(mockHostInvoke).toHaveBeenCalledWith(
 					'create-simfile-record',
 					expect.objectContaining({ displayId: null })
 				);
@@ -686,7 +669,7 @@ describe('SongDetails', () => {
 		it('does not duplicate get-next-display-id calls when effect re-triggers during in-flight request', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			let resolveIpc: (() => void) | undefined;
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') {
@@ -704,9 +687,7 @@ describe('SongDetails', () => {
 
 			// Wait for the first IPC call to start
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'get-next-display-id'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('get-next-display-id');
 			});
 			const callCountBefore = getNextDisplayIdCallCount();
 
@@ -720,7 +701,7 @@ describe('SongDetails', () => {
 
 		it('restores cached displayId and does not re-fetch when switching back to a previously populated song', async () => {
 			authState = { ...authState, isAuthenticated: true };
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') return 42;
@@ -732,9 +713,7 @@ describe('SongDetails', () => {
 
 			// Wait for songA's get-next-display-id to fire and displayId to be set
 			await waitFor(() => {
-				expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-					'get-next-display-id'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('get-next-display-id');
 			});
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -760,7 +739,7 @@ describe('SongDetails', () => {
 
 		it('resets auto-populated displayId when switching between unlinked songs', async () => {
 			authState = { ...authState, isAuthenticated: true };
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			let nextDisplayId = 42;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
@@ -792,7 +771,7 @@ describe('SongDetails', () => {
 			authState = { ...authState, isAuthenticated: true };
 			let resolveSongA: ((value: number) => void) | undefined;
 			let resolveSongB: ((value: number) => void) | undefined;
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') {
@@ -845,7 +824,7 @@ describe('SongDetails', () => {
 			authState = { ...authState, isAuthenticated: true };
 			let rejectSongA: ((reason: unknown) => void) | undefined;
 			let resolveSongB: ((value: number) => void) | undefined;
-			const invokeMock = window.electron?.ipcRenderer?.invoke;
+			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
 					if (channel === 'get-next-display-id') {

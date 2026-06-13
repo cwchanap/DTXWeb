@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { workspaceStore } from '../stores/workspaceStore';
+	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { templateStore, type Template } from '../stores/templateStore';
 	import { Folder, ArrowLeft, Music, FileText, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { desktopHost } from '../services/desktopHost';
 
 	let songName = $state('');
 	let folderName = $state('');
@@ -56,8 +57,7 @@
 			}
 
 			try {
-				const folderResult = await window.electron.ipcRenderer.invoke(
-					'path-exists',
+				const folderResult = await desktopHost.pathExists(
 					selectedPath,
 					sanitizedFolderName
 				);
@@ -196,11 +196,7 @@
 		}
 
 		// Check if folder already exists
-		const folderResult = await window.electron.ipcRenderer.invoke(
-			'path-exists',
-			selectedPath,
-			sanitizedFolderName
-		);
+		const folderResult = await desktopHost.pathExists(selectedPath, sanitizedFolderName);
 		if (folderResult.exists) {
 			error = `A folder named "${sanitizedFolderName}" already exists in the selected location`;
 			return;
@@ -211,7 +207,7 @@
 
 		try {
 			// Create the song using the consolidated IPC call
-			const result = await window.electron.ipcRenderer.invoke('create-song', {
+			const result = await desktopHost.createSong({
 				selectedPath,
 				sanitizedFolderName,
 				sanitizedSongName,
@@ -222,8 +218,7 @@
 
 			// Refresh workspace tree to show new folder
 			if (workspaceState.path) {
-				const updatedTree = await window.electron.ipcRenderer.invoke(
-					'load-tree-structure',
+				const updatedTree = await desktopHost.loadTreeStructure<TreeNode[]>(
 					workspaceState.path
 				);
 				workspaceStore.setTreeStructure(updatedTree);
@@ -241,7 +236,7 @@
 
 	async function selectCustomPath() {
 		try {
-			const result = await window.electron.ipcRenderer.invoke('select-folder');
+			const result = await desktopHost.selectFolder();
 			if (result && !result.canceled && result.filePaths.length > 0) {
 				const newPath = result.filePaths[0];
 				selectedPath = newPath;

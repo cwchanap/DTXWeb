@@ -21,6 +21,14 @@ vi.mock('@dtx/common/game', () => {
 	};
 });
 
+const mockDesktopHost = vi.hoisted(() => ({
+	getSkinAsset: vi.fn()
+}));
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 import { DesktopPreview } from './DesktopPreview';
 
 // Helper to create a mock Image that triggers onload on src assignment
@@ -72,18 +80,12 @@ const createErrorImage = (error: unknown = new Error('load failed')) => {
 
 describe('DesktopPreview', () => {
 	let scene: DesktopPreview;
-	let mockInvoke: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-
-		mockInvoke = vi.fn();
-
-		// Mock window.electron
-		Object.defineProperty(window, 'electron', {
-			value: { ipcRenderer: { invoke: mockInvoke } },
-			writable: true,
-			configurable: true
+		mockDesktopHost.getSkinAsset.mockResolvedValue({
+			success: true,
+			dataUrl: 'data:image/png;base64,abc'
 		});
 
 		// Default Image mock: triggers onload
@@ -107,20 +109,15 @@ describe('DesktopPreview', () => {
 	});
 
 	it('create() invokes get-skin-asset for lane icons and drum chips', async () => {
-		mockInvoke.mockResolvedValue({ success: true, dataUrl: 'data:image/png;base64,abc' });
-
 		await scene.create();
 
-		expect(mockInvoke).toHaveBeenCalledWith('get-skin-asset', 'default/Graphics/7_pads.png');
-		expect(mockInvoke).toHaveBeenCalledWith(
-			'get-skin-asset',
+		expect(mockDesktopHost.getSkinAsset).toHaveBeenCalledWith('default/Graphics/7_pads.png');
+		expect(mockDesktopHost.getSkinAsset).toHaveBeenCalledWith(
 			'default/Graphics/7_chips_drums.png'
 		);
 	});
 
 	it('create() adds spritesheet texture when lane icons load successfully', async () => {
-		mockInvoke.mockResolvedValue({ success: true, dataUrl: 'data:image/png;base64,abc' });
-
 		await scene.create();
 
 		expect(
@@ -133,8 +130,6 @@ describe('DesktopPreview', () => {
 	});
 
 	it('create() adds image texture when drum chips load successfully', async () => {
-		mockInvoke.mockResolvedValue({ success: true, dataUrl: 'data:image/png;base64,abc' });
-
 		await scene.create();
 
 		expect(
@@ -144,7 +139,7 @@ describe('DesktopPreview', () => {
 	});
 
 	it('create() logs warning but does not throw when lane icons fail to load (success:false)', async () => {
-		mockInvoke
+		mockDesktopHost.getSkinAsset
 			.mockResolvedValueOnce({ success: false, error: 'Not found' })
 			.mockResolvedValueOnce({ success: false, error: 'Not found' });
 
@@ -152,17 +147,17 @@ describe('DesktopPreview', () => {
 	});
 
 	it('create() logs warning but does not throw when drum chips fail to load (success:false)', async () => {
-		mockInvoke
+		mockDesktopHost.getSkinAsset
 			.mockResolvedValueOnce({ success: true, dataUrl: 'data:image/png;base64,abc' })
 			.mockResolvedValueOnce({ success: false, error: 'Not found' });
 
 		await expect(scene.create()).resolves.toBeUndefined();
 	});
 
-	it('create() throws when IPC invoke rejects', async () => {
-		mockInvoke.mockRejectedValue(new Error('IPC error'));
+	it('create() throws when desktopHost rejects', async () => {
+		mockDesktopHost.getSkinAsset.mockRejectedValue(new Error('Host error'));
 
-		await expect(scene.create()).rejects.toThrow('IPC error');
+		await expect(scene.create()).rejects.toThrow('Host error');
 	});
 
 	it('createTextureFromDataUrl rejects when Image fails to load', async () => {
@@ -171,7 +166,7 @@ describe('DesktopPreview', () => {
 			() => createErrorImage(new Error('img error')) as unknown as HTMLImageElement
 		);
 
-		mockInvoke
+		mockDesktopHost.getSkinAsset
 			.mockResolvedValueOnce({ success: true, dataUrl: 'data:image/png;base64,abc' })
 			.mockResolvedValueOnce({ success: false, error: 'skip' });
 

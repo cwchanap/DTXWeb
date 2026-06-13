@@ -1,23 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-// Save the original window.electron set by setup.ts so it can be restored after each test
-const originalElectron = window.electron;
+const mockDesktopHost = vi.hoisted(() => ({
+	getPlatform: vi.fn(() => 'linux'),
+	getEnvironment: vi.fn(() => ({
+		HOME: '/home/testuser',
+		USERPROFILE: 'C:\\Users\\TestUser',
+		USERNAME: 'TestUser'
+	}))
+}));
 
-const mockElectron = {
-	ipcRenderer: {
-		send: vi.fn(),
-		on: vi.fn(),
-		invoke: vi.fn()
-	},
-	process: {
-		env: {
-			HOME: '/home/testuser',
-			USERPROFILE: 'C:\\Users\\TestUser',
-			USERNAME: 'TestUser'
-		}
-	}
-};
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
 
 // Pin navigator.platform to Linux so getDefaultDownloadsPath() always takes
 // the Linux branch during this test file, regardless of the host OS.
@@ -26,37 +21,23 @@ Object.defineProperty(window.navigator, 'platform', {
 	configurable: true
 });
 
-// Set window.electron (with process.env) before the top-level import so
-// getDefaultDownloadsPath() resolves correctly during store creation.
-window.electron = mockElectron;
-
 const { settingsStore } = await import('./settingsStore');
 
 describe('settingsStore', () => {
 	beforeEach(() => {
-		// Re-apply the mock (with fresh spy instances) before every test
-		window.electron = {
-			ipcRenderer: {
-				send: vi.fn(),
-				on: vi.fn(),
-				invoke: vi.fn()
-			},
-			process: {
-				env: {
-					HOME: '/home/testuser',
-					USERPROFILE: 'C:\\Users\\TestUser',
-					USERNAME: 'TestUser'
-				}
-			}
-		};
 		vi.clearAllMocks();
+		mockDesktopHost.getPlatform.mockReturnValue('linux');
+		mockDesktopHost.getEnvironment.mockReturnValue({
+			HOME: '/home/testuser',
+			USERPROFILE: 'C:\\Users\\TestUser',
+			USERNAME: 'TestUser'
+		});
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		settingsStore.reset();
 	});
 
 	afterEach(() => {
-		// Restore original window.electron to avoid leaking state to other test files
-		window.electron = originalElectron;
+		vi.clearAllMocks();
 	});
 
 	it('should initialize with a default export directory', () => {
@@ -193,10 +174,7 @@ describe('settingsStore', () => {
 		});
 
 		it('should return Windows download path when platform is Win32', async () => {
-			Object.defineProperty(window.navigator, 'platform', {
-				value: 'Win32',
-				configurable: true
-			});
+			mockDesktopHost.getPlatform.mockReturnValue('win32');
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
 			vi.resetModules();
@@ -205,36 +183,18 @@ describe('settingsStore', () => {
 			const state = get(freshStore);
 			expect(state.exportDirectory).toContain('C:\\Users');
 			expect(state.exportDirectory).toContain('Downloads');
-
-			// Restore platform
-			Object.defineProperty(window.navigator, 'platform', {
-				value: 'Linux x86_64',
-				configurable: true
-			});
 		});
 
 		it('should return macOS fallback path when platform is Mac and HOME is not set', async () => {
-			Object.defineProperty(window.navigator, 'platform', {
-				value: 'MacIntel',
-				configurable: true
-			});
-			window.electron = {
-				...window.electron,
-				process: { env: {} }
-			};
+			mockDesktopHost.getPlatform.mockReturnValue('darwin');
+			mockDesktopHost.getEnvironment.mockReturnValue({});
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
 			vi.resetModules();
 			const { settingsStore: freshStore } = await import('./settingsStore');
 
 			const state = get(freshStore);
-			expect(state.exportDirectory).toBe('/Users/Downloads');
-
-			// Restore
-			Object.defineProperty(window.navigator, 'platform', {
-				value: 'Linux x86_64',
-				configurable: true
-			});
+			expect(state.exportDirectory).toBe('~/Downloads');
 		});
 	});
 

@@ -4,12 +4,33 @@ import { settingsStore } from '../stores/settingsStore';
 
 vi.mock('@lucide/svelte');
 
+const mockDesktopHost = vi.hoisted(() => ({
+	selectFolder: vi.fn(),
+	getPlatform: vi.fn(() => 'darwin'),
+	getEnvironment: vi.fn(() => ({
+		HOME: '/Users/Test',
+		USERPROFILE: 'C:\\Users\\Test',
+		USERNAME: 'Test'
+	}))
+}));
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 import SettingsComponent from './Settings.svelte';
 
 describe('Settings', () => {
 	beforeEach(() => {
 		settingsStore.reset();
 		vi.clearAllMocks();
+		mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
+		mockDesktopHost.getPlatform.mockReturnValue('darwin');
+		mockDesktopHost.getEnvironment.mockReturnValue({
+			HOME: '/Users/Test',
+			USERPROFILE: 'C:\\Users\\Test',
+			USERNAME: 'Test'
+		});
 	});
 
 	afterEach(() => {
@@ -78,18 +99,18 @@ describe('Settings', () => {
 		}
 	});
 
-	it('calls ipcRenderer.invoke when Browse button is clicked', async () => {
-		vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({ canceled: true });
+	it('calls desktopHost.selectFolder when Browse button is clicked', async () => {
+		mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
 		render(SettingsComponent);
 		const browseBtn = screen.getByRole('button', { name: /Browse/i });
 		await fireEvent.click(browseBtn);
 		await waitFor(() => {
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('select-folder');
+			expect(mockDesktopHost.selectFolder).toHaveBeenCalled();
 		});
 	});
 
 	it('updates export directory when folder is selected', async () => {
-		vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+		mockDesktopHost.selectFolder.mockResolvedValue({
 			canceled: false,
 			filePaths: ['/new/export/path']
 		});

@@ -2,6 +2,7 @@
 	import { Settings as SettingsIcon, Folder, Save, RotateCcw } from '@lucide/svelte';
 	import { settingsStore, type Settings } from '../stores/settingsStore';
 	import { onMount } from 'svelte';
+	import { desktopHost } from '../services/desktopHost';
 
 	let settings = $state<Settings>();
 	let isSelectingDirectory = $state(false);
@@ -18,7 +19,7 @@
 
 		isSelectingDirectory = true;
 		try {
-			const result = await window.electron.ipcRenderer.invoke('select-folder');
+			const result = await desktopHost.selectFolder();
 			if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
 				const newDirectory = result.filePaths[0];
 				settings = { ...settings, exportDirectory: newDirectory };

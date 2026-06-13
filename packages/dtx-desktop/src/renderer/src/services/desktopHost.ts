@@ -18,6 +18,7 @@ export type DesktopHostRuntime = {
 	listen: <T = unknown>(event: string, callback: (payload: T) => void) => Promise<() => void>;
 	removeAllListeners: (event?: string) => void | Promise<void>;
 	getPlatform: () => string;
+	getEnvironment: () => Record<string, string | undefined>;
 	getVersions: () => DesktopHostVersions;
 };
 
@@ -119,6 +120,7 @@ const createTauriRuntime = (): DesktopHostRuntime => ({
 		}
 	},
 	getPlatform: getBrowserPlatform,
+	getEnvironment: () => ({}),
 	getVersions: () => ({
 		app: null,
 		tauri: null,
@@ -169,6 +171,7 @@ const createElectronRuntime = (): DesktopHostRuntime => ({
 		removeAllListeners(event);
 	},
 	getPlatform: (): string => getElectron().process?.platform ?? getBrowserPlatform(),
+	getEnvironment: (): Record<string, string | undefined> => getElectron().process?.env ?? {},
 	getVersions: (): DesktopHostVersions => {
 		const versions = getElectron().process?.versions ?? {};
 
@@ -372,6 +375,8 @@ export const desktopHost = {
 		await invokeHost<T>('check_for_update', 'check-for-update'),
 
 	getPlatform: (): string => getRuntime().getPlatform(),
+
+	getEnvironment: (): Record<string, string | undefined> => getRuntime().getEnvironment(),
 
 	getVersions: (): DesktopHostVersions => getRuntime().getVersions(),
 

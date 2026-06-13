@@ -11,12 +11,31 @@
 	import { simFileStore } from './stores/simFileStore';
 	import { workspaceStore, type WorkspaceState } from './stores/workspaceStore';
 	import { linkingService } from './services/linkingService';
+	import { desktopHost } from './services/desktopHost';
 	import { onMount, onDestroy } from 'svelte';
+	import type { Session } from '@supabase/supabase-js';
 	import type { SimfileWithDtx } from '@dtx/common';
+
+	type MagicLinkResult = {
+		success: boolean;
+		error?: string;
+		session?: Session | null;
+		user: {
+			id: string;
+			email: string | null;
+			user_metadata?: { name?: string };
+		};
+	};
+
+	type AuthCallbackTokens = {
+		accessToken: string;
+		refreshToken: string;
+	};
 
 	// Routing state
 	let currentRoute = $state('workspace');
 	let routeParams = $state<{ simFileId?: string }>({});
+	const hostUnlisteners: Array<() => void> = [];
 
 	// Function to handle route changes
 	function handleRouteChange() {
@@ -48,14 +67,20 @@
 		window.addEventListener('hashchange', handleRouteChange);
 
 		// Set up the magic link result handler (new approach)
-		window.electron.ipcRenderer.on('magic-link-result', async (_event, result) => {
-			await authService.handleMagicLinkResult(result);
-		});
+		const unlistenMagicLinkResult = await desktopHost.onMagicLinkResult<MagicLinkResult>(
+			async (result) => {
+				await authService.handleMagicLinkResult(result);
+			}
+		);
+		hostUnlisteners.push(unlistenMagicLinkResult);
 
 		// Set up the legacy protocol handler callback
-		window.electron.ipcRenderer.on('auth-callback', async (_event, tokens) => {
-			await authService.handleAuthCallback(tokens);
-		});
+		const unlistenAuthCallback = await desktopHost.onAuthCallback<AuthCallbackTokens>(
+			async (tokens) => {
+				await authService.handleAuthCallback(tokens);
+			}
+		);
+		hostUnlisteners.push(unlistenAuthCallback);
 
 		// Try to restore session
 		await authService.restoreSession();
@@ -123,8 +148,9 @@
 
 	// Clean up listeners when component is destroyed
 	onDestroy(() => {
-		window.electron.ipcRenderer.removeAllListeners('auth-callback');
-		window.electron.ipcRenderer.removeAllListeners('magic-link-result');
+		for (const unlisten of hostUnlisteners.splice(0)) {
+			unlisten();
+		}
 		window.removeEventListener('hashchange', handleRouteChange);
 	});
 </script>

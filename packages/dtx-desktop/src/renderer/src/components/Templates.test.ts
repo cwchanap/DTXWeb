@@ -4,6 +4,16 @@ import type { Template } from '../stores/templateStore';
 
 vi.mock('@lucide/svelte');
 
+const mockDesktopHost = vi.hoisted(() => ({
+	selectFolder: vi.fn(),
+	pathExists: vi.fn(),
+	openFolder: vi.fn()
+}));
+
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: mockDesktopHost
+}));
+
 type TemplateState = { templates: Template[]; isLoading: boolean; error: string | null };
 
 // Mock templateStore with full control
@@ -58,10 +68,9 @@ describe('Templates', () => {
 	beforeEach(() => {
 		mockTemplateState = { templates: [], isLoading: false, error: null };
 		vi.clearAllMocks();
-		const invokeMock = window.electron?.ipcRenderer?.invoke;
-		if (vi.isMockFunction(invokeMock)) {
-			invokeMock.mockReset();
-		}
+		mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
+		mockDesktopHost.pathExists.mockResolvedValue({ exists: true, error: null });
+		mockDesktopHost.openFolder.mockResolvedValue({ success: true });
 		// Re-mock setError and clearError since clearAllMocks resets implementations
 		vi.mocked(templateStore.setError).mockImplementation((error: string | null) => {
 			mockTemplateState = { ...mockTemplateState, error };
@@ -194,16 +203,16 @@ describe('Templates', () => {
 			expect(templateStore.setError).toHaveBeenCalledWith('Please select a template folder');
 		});
 
-		it('calls ipcRenderer to select folder when Browse is clicked', async () => {
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({ canceled: true });
+		it('calls desktopHost to select folder when Browse is clicked', async () => {
+			mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
 			render(Templates);
 			await fireEvent.click(screen.getByRole('button', { name: /Create new template/i }));
 			await fireEvent.click(screen.getByRole('button', { name: /Browse/i }));
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('select-folder');
+			expect(mockDesktopHost.selectFolder).toHaveBeenCalled();
 		});
 
 		it('updates folder path when folder is selected via Browse', async () => {
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+			mockDesktopHost.selectFolder.mockResolvedValue({
 				canceled: false,
 				filePaths: ['/selected/template/folder']
 			});
@@ -216,14 +225,11 @@ describe('Templates', () => {
 		});
 
 		it('calls templateStore.addTemplate on successful save', async () => {
-			vi.mocked(window.electron.ipcRenderer.invoke).mockImplementation((channel) => {
-				if (channel === 'select-folder') {
-					return Promise.resolve({ canceled: false, filePaths: ['/template/path'] });
-				}
-				if (channel === 'path-exists')
-					return Promise.resolve({ exists: true, error: null });
-				return Promise.resolve(undefined);
+			mockDesktopHost.selectFolder.mockResolvedValue({
+				canceled: false,
+				filePaths: ['/template/path']
 			});
+			mockDesktopHost.pathExists.mockResolvedValue({ exists: true, error: null });
 			render(Templates);
 			await fireEvent.click(screen.getByRole('button', { name: /Create new template/i }));
 			const nameInput = screen.getByLabelText(/Template Name/i);
@@ -241,7 +247,7 @@ describe('Templates', () => {
 
 		it('shows duplicate name error when template name already exists', async () => {
 			setTemplates([makeTemplate({ id: '1', name: 'Existing Template' })]);
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue({
+			mockDesktopHost.selectFolder.mockResolvedValue({
 				canceled: false,
 				filePaths: ['/template/path']
 			});
@@ -261,17 +267,14 @@ describe('Templates', () => {
 	});
 
 	describe('template actions', () => {
-		it('calls open-folder-in-explorer when open folder button is clicked', async () => {
+		it('calls desktopHost.openFolder when open folder button is clicked', async () => {
 			setTemplates([makeTemplate({ folderPath: '/my/folder' })]);
-			vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValue(undefined);
+			mockDesktopHost.openFolder.mockResolvedValue({ success: true });
 			render(Templates);
 			const buttons = screen.getAllByRole('button');
 			const openBtn = buttons.find((b) => b.title === 'Open folder');
 			await fireEvent.click(openBtn!);
-			expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith(
-				'open-folder-in-explorer',
-				'/my/folder'
-			);
+			expect(mockDesktopHost.openFolder).toHaveBeenCalledWith('/my/folder');
 		});
 
 		it('enters edit mode when edit button is clicked', async () => {

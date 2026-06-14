@@ -14,7 +14,9 @@ use tauri_plugin_deep_link::DeepLinkExt;
 fn spawn_deep_link_handler(app: &AppHandle, raw_url: String) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = crate::auth::handle_deep_link(&handle, &raw_url).await;
+        if let Err(error) = crate::auth::handle_deep_link(&handle, &raw_url).await {
+            eprintln!("Failed to handle deep link {raw_url}: {error}");
+        }
     });
 }
 

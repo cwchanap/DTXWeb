@@ -156,6 +156,22 @@ mod tests {
     }
 
     #[test]
+    fn read_file_error_serializes_without_is_text() {
+        // The Error variant intentionally omits the isText field that Text and
+        // Binary include. This documents that structural difference so the
+        // renderer can rely on it (e.g. treating a missing isText as an error).
+        let result = ReadFileResult::Error {
+            error: "File type not allowed".to_string(),
+            content: String::new(),
+        };
+
+        let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["error"], "File type not allowed");
+        assert_eq!(json["content"], "");
+        assert!(json.get("isText").is_none());
+    }
+
+    #[test]
     fn read_file_binary_serializes_renderer_shape() {
         let result = ReadFileResult::Binary {
             error: None,

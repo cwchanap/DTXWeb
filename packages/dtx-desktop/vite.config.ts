@@ -5,6 +5,8 @@ import wasm from 'vite-plugin-wasm';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+// package.json is "type": "module", so __dirname is not defined natively.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export default defineConfig({

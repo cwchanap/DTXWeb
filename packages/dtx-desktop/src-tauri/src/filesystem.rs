@@ -215,10 +215,14 @@ async fn read_file_path_inner(
     let canonical_file_path = fs::canonicalize(file_path).await?;
     let allowed_root = match workspace_root {
         Some(root) => fs::canonicalize(root).await?,
-        None => canonical_file_path
-            .parent()
-            .ok_or_else(|| DesktopError::Message("Invalid file path".to_string()))?
-            .to_path_buf(),
+        // A missing workspace root must not fall back to the file's own parent:
+        // every canonical path starts_with its own parent, so that would make
+        // the containment check below meaningless and allow reading any file.
+        None => {
+            return Err(DesktopError::Message(
+                "A workspace root is required to read files".to_string(),
+            ));
+        }
     };
 
     if !canonical_file_path.starts_with(&allowed_root) {
@@ -542,6 +546,23 @@ mod tests {
         let result = read_file_path(&file, Some(root.path())).await;
 
         assert!(matches!(result, ReadFileResult::Error { .. }));
+    }
+
+    #[tokio::test]
+    async fn read_file_rejects_missing_workspace_root() {
+        let root = tempdir().expect("tempdir");
+        let file = root.path().join("song.dtx");
+        fs::write(&file, "#TITLE: Song").await.expect("write");
+
+        // A missing workspace root must be rejected rather than falling back to
+        // the file's own parent, which would bypass the containment check.
+        let result = read_file_path(&file, None).await;
+
+        assert!(matches!(result, ReadFileResult::Error { .. }));
+        assert_eq!(
+            serde_json::to_value(result).expect("json")["error"],
+            "A workspace root is required to read files"
+        );
     }
 
     #[tokio::test]

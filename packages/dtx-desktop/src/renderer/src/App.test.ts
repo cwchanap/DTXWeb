@@ -164,4 +164,28 @@ describe('App lifecycle', () => {
 			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
 		).toBeLessThan(mockAuthService.restoreSession.mock.invocationCallOrder[0]);
 	});
+
+	it('still restores the session when a bootstrap call fails', async () => {
+		// A failing host registration must not abort onMount before restoreSession runs.
+		mockDesktopHost.onMagicLinkResult.mockRejectedValue(new Error('IPC unavailable'));
+		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+	});
+
+	it('still restores the session when draining pending auth events fails', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
+		mockDesktopHost.drainPendingAuthEvents.mockRejectedValue(new Error('IPC unavailable'));
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+	});
 });

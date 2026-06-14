@@ -116,23 +116,35 @@
 		window.addEventListener('hashchange', handleRouteChange);
 
 		// Set up the magic link result handler (new approach)
-		const unlistenMagicLinkResult = await desktopHost.onMagicLinkResult<MagicLinkResult>(
-			async (result) => {
-				await authService.handleMagicLinkResult(result);
-			}
-		);
-		registerHostUnlistener(unlistenMagicLinkResult);
+		try {
+			const unlistenMagicLinkResult = await desktopHost.onMagicLinkResult<MagicLinkResult>(
+				async (result) => {
+					await authService.handleMagicLinkResult(result);
+				}
+			);
+			registerHostUnlistener(unlistenMagicLinkResult);
+		} catch (error) {
+			console.error('Failed to register magic link result handler:', error);
+		}
 
 		// Set up the legacy protocol handler callback
-		const unlistenAuthCallback = await desktopHost.onAuthCallback<AuthCallbackTokens>(
-			async (tokens) => {
-				await authService.handleAuthCallback(tokens);
-			}
-		);
-		registerHostUnlistener(unlistenAuthCallback);
+		try {
+			const unlistenAuthCallback = await desktopHost.onAuthCallback<AuthCallbackTokens>(
+				async (tokens) => {
+					await authService.handleAuthCallback(tokens);
+				}
+			);
+			registerHostUnlistener(unlistenAuthCallback);
+		} catch (error) {
+			console.error('Failed to register auth callback handler:', error);
+		}
 
 		if (destroyed) return;
-		await desktopHost.drainPendingAuthEvents();
+		try {
+			await desktopHost.drainPendingAuthEvents();
+		} catch (error) {
+			console.error('Failed to drain pending auth events:', error);
+		}
 
 		if (destroyed) return;
 		await runLegacyDataMigration();

@@ -82,6 +82,8 @@
 		return copy.buffer;
 	};
 
+	const utf8Decoder = new TextDecoder();
+
 	const toBlobPart = (content: DesktopFileContent): string | ArrayBuffer => {
 		if (typeof content === 'string') {
 			return content;
@@ -95,7 +97,9 @@
 			return content;
 		}
 
-		return Buffer.from(toArrayBuffer(content)).toString('utf8');
+		// TextDecoder is the browser-native API; Buffer is a Node.js global and is
+		// not available in the Tauri webview renderer.
+		return utf8Decoder.decode(toArrayBuffer(content));
 	};
 
 	// Helper function to create DTXFile from ChartMetadata

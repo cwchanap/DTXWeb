@@ -17,6 +17,12 @@ vi.mock('$app/stores', () => ({
 	}
 }));
 
+vi.mock('$env/dynamic/public', () => ({
+	env: {
+		PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL: ''
+	}
+}));
+
 vi.mock('@lucide/svelte');
 
 vi.mock('$lib/api', () => ({

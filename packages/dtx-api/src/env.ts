@@ -18,4 +18,5 @@ export type Env = {
 	SUPABASE_SERVICE_ROLE_KEY: string;
 	CLOUDFLARE_ZONE_ID?: string;
 	CLOUDFLARE_API_TOKEN?: string;
+	MAGIC_LINK_HOURLY_LIMIT?: string;
 };

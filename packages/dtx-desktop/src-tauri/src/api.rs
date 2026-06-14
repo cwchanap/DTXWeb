@@ -36,7 +36,18 @@ query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize
   simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
     count
     data {
-      ...SimfileFull
+      id
+      displayId
+      title
+      artist
+      bpm
+      userId
+      isPublished
+      publishDate
+      dtxFiles {
+        level
+        label
+      }
     }
   }
 }
@@ -567,7 +578,7 @@ pub async fn fetch_user_simfiles(app: AppHandle) -> Result<Value> {
     loop {
         let result = graphql_result(
             &app,
-            &graphql_document(LIST_SIMFILES_QUERY),
+            LIST_SIMFILES_QUERY,
             json!({ "scope": "MINE", "page": page, "pageSize": page_size }),
         )
         .await;
@@ -927,6 +938,15 @@ mod tests {
         assert_eq!(mapped["updated_at"], "2024-01-03");
         assert_eq!(mapped["dtx_files"][0]["id"], 1);
         assert_eq!(mapped["dtx_files"][0]["label"], "EXT");
+    }
+
+    #[test]
+    fn list_simfiles_query_does_not_request_catalog_urls() {
+        assert!(!LIST_SIMFILES_QUERY.contains("...SimfileFull"));
+        assert!(!LIST_SIMFILES_QUERY.contains("downloadUrl"));
+        assert!(!LIST_SIMFILES_QUERY.contains("previewUrl"));
+        assert!(!LIST_SIMFILES_QUERY.contains("videoPreviewUrl"));
+        assert!(LIST_SIMFILES_QUERY.contains("dtxFiles"));
     }
 
     #[test]

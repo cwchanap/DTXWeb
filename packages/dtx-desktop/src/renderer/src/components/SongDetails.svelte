@@ -995,6 +995,7 @@
 							userFiles={localFiles}
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
+							uploadFile={desktopHost.uploadFile}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
 							disableUploads={!$authStore.isAuthenticated}
@@ -1285,6 +1286,7 @@
 							userFiles={localFiles}
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
+							uploadFile={desktopHost.uploadFile}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
 							disableUploads={!$authStore.isAuthenticated}

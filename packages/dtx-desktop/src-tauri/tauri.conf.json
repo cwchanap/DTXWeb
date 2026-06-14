@@ -26,6 +26,7 @@
 	"bundle": {
 		"active": true,
 		"targets": ["dmg", "nsis"],
+		"icon": ["icons/icon.png"],
 		"createUpdaterArtifacts": true,
 		"resources": ["../static/skin"],
 		"macOS": {

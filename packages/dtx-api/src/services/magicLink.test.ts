@@ -119,6 +119,36 @@ describe('generateMagicLink', () => {
 		expect(__generateLink).not.toHaveBeenCalled();
 	});
 
+	it('uses configured hourly limit when provided', async () => {
+		__generateLink.mockResolvedValue({
+			data: { properties: { action_link: 'https://example.com/magic' } },
+			error: null
+		});
+		const env = { ...makeEnv(), MAGIC_LINK_HOURLY_LIMIT: '1000' };
+		const hour = Math.floor(Date.now() / 3_600_000);
+		const kv = makeKv({ [`magiclink:u1:${hour}`]: '5' });
+
+		await expect(
+			generateMagicLink(env, kv, workerLogger, { id: 'u1', email: 'a@b.com' }, null)
+		).resolves.toEqual({ magicLinkUrl: 'https://example.com/magic' });
+
+		expect(__generateLink).toHaveBeenCalledOnce();
+		expect(kv.put).toHaveBeenCalledWith(`magiclink:u1:${hour}`, '6', {
+			expirationTtl: 3600
+		});
+	});
+
+	it('falls back to the default hourly limit when configuration is invalid', async () => {
+		const env = { ...makeEnv(), MAGIC_LINK_HOURLY_LIMIT: 'not-a-number' };
+		const hour = Math.floor(Date.now() / 3_600_000);
+		const kv = makeKv({ [`magiclink:u1:${hour}`]: '5' });
+
+		await expect(
+			generateMagicLink(env, kv, workerLogger, { id: 'u1', email: 'a@b.com' }, null)
+		).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED' } });
+		expect(__generateLink).not.toHaveBeenCalled();
+	});
+
 	it('throws INTERNAL when Supabase admin returns an error', async () => {
 		__generateLink.mockResolvedValue({ data: null, error: { message: 'boom' } });
 		const env = makeEnv();

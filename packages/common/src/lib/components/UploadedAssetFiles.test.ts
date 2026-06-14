@@ -308,6 +308,39 @@ describe('UploadedAssetFiles', () => {
 		});
 	});
 
+	it('uses injected uploadFile handler for desktop bulk uploads when Electron IPC is unavailable', async () => {
+		Object.defineProperty(window, 'electron', {
+			value: undefined,
+			writable: true,
+			configurable: true
+		});
+		const uploadFile = vi.fn().mockResolvedValue({ success: true });
+
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		const loadAssetFiles = vi.fn().mockResolvedValue([]);
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				songFolderPath: '/songs/sim-1',
+				userFiles: [dtxFile],
+				loadAssetFiles,
+				uploadFile
+			})
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: /Bulk Upload/i })).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: /Bulk Upload/i }));
+
+		await waitFor(() => {
+			expect(uploadFile).toHaveBeenCalledWith('song.dtx', '/songs/sim-1', 'sim-1');
+			expect(screen.getByText('Uploaded')).toBeInTheDocument();
+		});
+	});
+
 	it('shows "Failed" status when IPC upload returns an error', async () => {
 		const ipcInvoke = vi.fn().mockResolvedValue({ success: false, error: 'Upload failed' });
 		Object.defineProperty(window, 'electron', {

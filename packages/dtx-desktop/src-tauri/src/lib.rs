@@ -99,6 +99,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use png::ColorType;
     use std::io::Cursor;
 
     #[test]
@@ -113,11 +114,36 @@ mod tests {
             .next_frame(&mut pixels)
             .expect("app icon should have a readable frame");
 
-        assert!(frame.width > 0, "app icon width should be non-zero");
-        assert!(frame.height > 0, "app icon height should be non-zero");
+        assert!(
+            frame.width >= 512,
+            "app icon should be high-resolution enough for desktop packaging"
+        );
+        assert!(
+            frame.height >= 512,
+            "app icon should be high-resolution enough for desktop packaging"
+        );
         assert!(
             frame.buffer_size() > 0,
             "app icon should decode to non-empty pixel data"
         );
+
+        assert_eq!(
+            reader.info().color_type,
+            ColorType::Rgba,
+            "app icon should include an alpha channel"
+        );
+
+        let corners = [
+            3,
+            ((frame.width as usize - 1) * 4) + 3,
+            (((frame.height as usize - 1) * frame.width as usize) * 4) + 3,
+            (((frame.height as usize * frame.width as usize) - 1) * 4) + 3,
+        ];
+        for alpha_index in corners {
+            assert_eq!(
+                pixels[alpha_index], 0,
+                "app icon corners should be transparent"
+            );
+        }
     }
 }

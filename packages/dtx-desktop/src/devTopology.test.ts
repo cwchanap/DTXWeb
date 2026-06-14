@@ -27,11 +27,24 @@ type PackageJson = {
 };
 
 type TurboConfig = {
-	tasks: Record<string, unknown>;
+	tasks: Record<string, { env?: string[] }>;
 };
 
 type WranglerConfig = {
-	env?: Record<string, { vars?: Record<string, string> }>;
+	env?: Record<
+		string,
+		{
+			d1_databases?: Array<Record<string, unknown>>;
+			r2_buckets?: Array<Record<string, unknown>>;
+			vars?: Record<string, string>;
+		}
+	>;
+};
+
+type TauriConfig = {
+	bundle?: {
+		icon?: string[];
+	};
 };
 
 describe('desktop local dev topology', () => {
@@ -50,18 +63,38 @@ describe('desktop local dev topology', () => {
 			'turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web @dtx/common#dev'
 		);
 		expect(apiPackage.scripts['dev:local']).toBe(
-			'wrangler dev --env pre-prod --env-file ../../.env --port 8787'
+			'wrangler dev --env pre-prod --env-file ../../.env --var MAGIC_LINK_HOURLY_LIMIT:1000 --port 8787'
 		);
+		expect(desktopPackage.scripts.dev).toBe('bun --env-file ../../.env tauri dev');
 		expect(webPackage.scripts['dev:local-api']).toBe(
 			'PUBLIC_DTX_API_URL=http://localhost:8787 PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL=http://127.0.0.1:47931/auth-callback vite dev --port 5173'
 		);
 		expect(desktopPackage.scripts['dev:local-web']).toBe(
-			'VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 tauri dev'
+			'VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev'
 		);
 		expect(turboConfig.tasks).toHaveProperty('dtx-api#dev:local');
 		expect(turboConfig.tasks).toHaveProperty('dtx-web#dev:local-api');
 		expect(apiWrangler.env?.['pre-prod']?.vars?.CORS_ALLOWED_ORIGINS).toContain(
 			'http://localhost:5173'
 		);
+		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
+			binding: 'DB',
+			database_name: 'dtx-web-preprod',
+			remote: true
+		});
+		expect(apiWrangler.env?.['pre-prod']?.r2_buckets?.[0]).toMatchObject({
+			binding: 'DTXFILE_BUCKET',
+			bucket_name: 'simfile-dtx-preprod',
+			remote: true
+		});
+		expect(turboConfig.tasks['dtx-desktop#dev:local-web']?.env).toEqual(
+			expect.arrayContaining(['PUBLIC_SUPABASE_URL', 'PUBLIC_SUPABASE_ANON_KEY'])
+		);
+	});
+
+	it('bundles the generated Drumery desktop app icon', () => {
+		const tauriConfig = readJson<TauriConfig>('packages/dtx-desktop/src-tauri/tauri.conf.json');
+
+		expect(tauriConfig.bundle?.icon).toEqual(['icons/icon.png']);
 	});
 });

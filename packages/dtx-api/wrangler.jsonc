@@ -55,7 +55,8 @@
 			"r2_buckets": [
 				{
 					"binding": "DTXFILE_BUCKET",
-					"bucket_name": "simfile-dtx-preprod"
+					"bucket_name": "simfile-dtx-preprod",
+					"remote": true
 				}
 			],
 			"kv_namespaces": [
@@ -69,7 +70,8 @@
 					"binding": "DB",
 					"database_name": "dtx-web-preprod",
 					"database_id": "6fedd126-9dcf-419f-bc2e-eaf8c23d9510",
-					"migrations_dir": "d1-migrations"
+					"migrations_dir": "d1-migrations",
+					"remote": true
 				}
 			],
 			"vars": {

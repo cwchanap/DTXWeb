@@ -71,6 +71,11 @@ describe('App Home Page – desktop redirect flow', () => {
 		await vi.waitFor(() => {
 			expect(screen.getByText('Redirecting to desktop app...')).toBeInTheDocument();
 		});
+		expect(
+			screen.getByText(
+				'Keep this tab open while Drumery prepares a secure sign-in link for the desktop app.'
+			)
+		).toBeInTheDocument();
 	});
 
 	it('calls generateMagicLink and sets window.location.href on success', async () => {
@@ -111,6 +116,9 @@ describe('App Home Page – desktop redirect flow', () => {
 		await vi.waitFor(() => {
 			expect(screen.getByText('Redirection Failed')).toBeInTheDocument();
 		});
+		expect(
+			screen.getByText('Please try signing in again from the Drumery desktop app.')
+		).toBeInTheDocument();
 	});
 
 	it('shows error state when generateMagicLink throws network error', async () => {

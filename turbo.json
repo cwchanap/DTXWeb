@@ -35,11 +35,13 @@
 		},
 		"dtx-desktop#dev": {
 			"cache": false,
-			"persistent": true
+			"persistent": true,
+			"env": ["PUBLIC_SUPABASE_URL", "PUBLIC_SUPABASE_ANON_KEY"]
 		},
 		"dtx-desktop#dev:local-web": {
 			"cache": false,
-			"persistent": true
+			"persistent": true,
+			"env": ["PUBLIC_SUPABASE_URL", "PUBLIC_SUPABASE_ANON_KEY"]
 		},
 		"@dtx/common#dev": {
 			"cache": false,

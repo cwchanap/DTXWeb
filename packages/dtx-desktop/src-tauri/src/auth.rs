@@ -13,6 +13,124 @@ use url::Url;
 
 const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
 const LOCAL_AUTH_CALLBACK_PATH: &str = "/auth-callback";
+const LOCAL_AUTH_CALLBACK_SUCCESS_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Return to Drumery</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101417;
+      color: #f3f6f4;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(21, 25, 29, 0.95), rgba(13, 16, 18, 1)),
+        #101417;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 64px;
+      padding: 0 28px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(16, 20, 23, 0.82);
+      backdrop-filter: blur(12px);
+    }
+
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: #f4d35e;
+      color: #101417;
+      font-weight: 800;
+    }
+
+    .brand {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    main {
+      width: min(720px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 92px 0;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: rgba(52, 211, 153, 0.12);
+      color: #b7f7dc;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #34d399;
+    }
+
+    h1 {
+      margin: 22px 0 14px;
+      font-size: clamp(34px, 6vw, 56px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    p {
+      max-width: 620px;
+      margin: 0;
+      color: #c9d2ce;
+      font-size: 18px;
+      line-height: 1.65;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header>
+      <div class="mark">D</div>
+      <div class="brand">Drumery</div>
+    </header>
+    <main>
+      <div class="status"><span class="dot"></span>Signed in</div>
+      <h1>Return to Drumery</h1>
+      <p>Your desktop session has been updated. You can close this browser tab and continue in the Drumery desktop app.</p>
+    </main>
+  </div>
+</body>
+</html>
+"##;
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthState {
@@ -255,6 +373,10 @@ fn local_auth_callback_port() -> Option<u16> {
         .filter(|port| *port > 0)
 }
 
+fn local_auth_callback_success_html() -> &'static str {
+    LOCAL_AUTH_CALLBACK_SUCCESS_HTML
+}
+
 async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()> {
     let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
 
@@ -280,24 +402,42 @@ async fn handle_local_auth_callback_connection(
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
     else {
-        write_local_auth_callback_response(&mut stream, 400, "Bad Request").await?;
+        write_local_auth_callback_text_response(&mut stream, 400, "Bad Request").await?;
         return Ok(());
     };
 
     let raw_url = format!("http://127.0.0.1:{port}{target}");
     if parse_auth_callback(&raw_url).is_none() {
-        write_local_auth_callback_response(&mut stream, 404, "Not Found").await?;
+        write_local_auth_callback_text_response(&mut stream, 404, "Not Found").await?;
         return Ok(());
     }
 
     handle_deep_link(&app, &raw_url).await?;
-    write_local_auth_callback_response(&mut stream, 200, "You can return to Drumery.").await?;
+    write_local_auth_callback_html_response(&mut stream, 200, local_auth_callback_success_html())
+        .await?;
     Ok(())
+}
+
+async fn write_local_auth_callback_text_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &str,
+) -> Result<()> {
+    write_local_auth_callback_response(stream, status, "text/plain; charset=utf-8", body).await
+}
+
+async fn write_local_auth_callback_html_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &str,
+) -> Result<()> {
+    write_local_auth_callback_response(stream, status, "text/html; charset=utf-8", body).await
 }
 
 async fn write_local_auth_callback_response(
     stream: &mut TcpStream,
     status: u16,
+    content_type: &str,
     body: &str,
 ) -> Result<()> {
     let status_text = match status {
@@ -307,8 +447,8 @@ async fn write_local_auth_callback_response(
         _ => "Internal Server Error",
     };
     let response = format!(
-        "HTTP/1.1 {status} {status_text}\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
+        "HTTP/1.1 {status} {status_text}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.as_bytes().len()
     );
     stream.write_all(response.as_bytes()).await?;
     stream.shutdown().await?;
@@ -1054,5 +1194,17 @@ mod tests {
             vec!["dtx://auth-callback?access_token=a&refresh_token=b".to_string()]
         );
         assert!(state.drain_pending_urls().is_empty());
+    }
+
+    #[test]
+    fn local_auth_callback_success_page_uses_app_layout_copy() {
+        let body = local_auth_callback_success_html();
+
+        assert!(body.contains("<!doctype html>"));
+        assert!(body.contains("Return to Drumery"));
+        assert!(body.contains("Your desktop session has been updated."));
+        assert!(body
+            .contains("You can close this browser tab and continue in the Drumery desktop app."));
+        assert!(body.contains("app-shell"));
     }
 }

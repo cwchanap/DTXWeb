@@ -9,6 +9,7 @@
 		userFiles = [],
 		simfileBucketUrl,
 		loadAssetFiles,
+		uploadFile,
 		isDesktop = false,
 		songFolderPath = '',
 		disableUploads = false
@@ -19,6 +20,11 @@
 		loadAssetFiles: (
 			simfileId: string
 		) => Promise<{ fileName: string; size: number; lastModified: string; key: string }[]>;
+		uploadFile?: (
+			fileName: string,
+			songFolderPath: string,
+			simfileId: string
+		) => Promise<{ success: boolean; error?: string }>;
 		isDesktop?: boolean;
 		songFolderPath?: string; // Song folder path for desktop uploads
 		disableUploads?: boolean; // Disable upload functionality
@@ -169,8 +175,10 @@
 				throw new Error('Simfile ID is required for uploads');
 			}
 
-			// Use IPC to upload the file - main process will construct full path
-			const result = await invokeIpc('upload-file', fileName, songFolderPath, simfileId);
+			// Host process will construct the full path from the selected file name.
+			const result = uploadFile
+				? await uploadFile(fileName, songFolderPath, simfileId)
+				: await invokeIpc('upload-file', fileName, songFolderPath, simfileId);
 
 			if (!result || !result.success) {
 				throw new Error(result?.error || 'Upload failed');

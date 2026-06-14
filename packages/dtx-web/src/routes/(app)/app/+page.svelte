@@ -68,31 +68,34 @@
 </script>
 
 {#if isRedirecting}
-	<div class="flex h-screen w-full flex-col items-center justify-center">
-		<Loader size={48} class="text-primary mb-6 animate-spin" />
-		<h2 class="text-2xl font-semibold">Redirecting to desktop app...</h2>
-		<p class="text-muted-foreground mt-2">
-			You'll be returned to the desktop application shortly.
-		</p>
-		{#if redirectAttempted}
-			<div class="mt-8 max-w-md rounded p-4 text-center">
-				<p class="text-sm text-slate-600">
-					If you're not automatically redirected, your browser may be blocking the
-					redirect or the desktop app is not properly registered to handle the protocol.
+	<section class="flex min-h-[calc(100vh-10rem)] w-full items-center justify-center px-4">
+		<div class="w-full max-w-2xl text-center">
+			<Loader size={48} class="mx-auto mb-6 animate-spin text-cyan-300" />
+			<h2 class="text-2xl font-semibold text-white">Redirecting to desktop app...</h2>
+			<p class="mx-auto mt-3 max-w-lg text-slate-300">
+				Keep this tab open while Drumery prepares a secure sign-in link for the desktop app.
+			</p>
+			{#if redirectAttempted}
+				<p class="mx-auto mt-8 max-w-md text-sm text-slate-400">
+					If the desktop app does not open automatically, your browser may be blocking the
+					redirect or the desktop app may not be registered to handle Drumery sign-in
+					links.
 				</p>
-			</div>
-		{/if}
-	</div>
+			{/if}
+		</div>
+	</section>
 {:else if redirectError}
-	<div class="flex h-screen w-full flex-col items-center justify-center">
-		<div class="max-w-md rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-			<h2 class="mb-2 text-xl font-semibold text-red-700">Redirection Failed</h2>
-			<p class="text-red-600">{redirectError}</p>
-			<p class="mt-4 text-sm text-gray-700">
-				Please try logging in again from the desktop app.
+	<section class="flex min-h-[calc(100vh-10rem)] w-full items-center justify-center px-4">
+		<div
+			class="w-full max-w-lg rounded-lg border border-red-400/30 bg-red-950/30 p-6 text-center shadow-xl shadow-red-950/20"
+		>
+			<h2 class="mb-3 text-xl font-semibold text-red-200">Redirection Failed</h2>
+			<p class="text-red-100">{redirectError}</p>
+			<p class="mt-4 text-sm text-slate-300">
+				Please try signing in again from the Drumery desktop app.
 			</p>
 		</div>
-	</div>
+	</section>
 {:else}
 	<div class="container mx-auto p-6">
 		<h1 class="mb-6 text-3xl font-bold">Welcome to Drumery</h1>

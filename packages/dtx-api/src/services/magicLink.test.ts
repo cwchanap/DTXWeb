@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { workerLogger } from '@dtx/common/server';
 import { generateMagicLink, anonymizeIp } from './magicLink';
 import type { Env } from '../env';
@@ -43,8 +43,18 @@ const makeKv = (initial: Record<string, string> = {}): KVNamespace => {
 	} as unknown as KVNamespace;
 };
 
+// Freeze time so the hour bucket computed in the test matches the one computed
+// inside generateMagicLink. Without this, tests can flake at hour boundaries.
+const FROZEN_TIME = new Date('2025-01-15T12:30:00.000Z');
+
 beforeEach(() => {
 	__generateLink.mockReset();
+	vi.useFakeTimers();
+	vi.setSystemTime(FROZEN_TIME);
+});
+
+afterEach(() => {
+	vi.useRealTimers();
 });
 
 describe('anonymizeIp', () => {

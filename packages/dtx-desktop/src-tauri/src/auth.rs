@@ -1,7 +1,7 @@
 use crate::error::{DesktopError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -12,6 +12,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 
 const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
+const LOCAL_AUTH_READ_TIMEOUT_MS: u64 = 10_000;
 const LOCAL_AUTH_CALLBACK_PATH: &str = "/auth-callback";
 const LOCAL_AUTH_CALLBACK_SUCCESS_HTML: &str = r##"<!doctype html>
 <html lang="en">
@@ -378,10 +379,27 @@ fn local_auth_callback_success_html() -> &'static str {
 }
 
 async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()> {
-    let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
+    let v4_listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
+
+    // Also bind IPv6 loopback so callbacks work when the OS resolves
+    // "localhost" to ::1. Non-fatal if it fails (e.g. port conflict on
+    // dual-stack systems).
+    let v6_listener = match TcpListener::bind(SocketAddr::from((Ipv6Addr::LOCALHOST, port))).await {
+        Ok(listener) => Some(listener),
+        Err(error) => {
+            eprintln!("IPv6 loopback auth callback server not started (non-fatal): {error}");
+            None
+        }
+    };
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, _) = match &v6_listener {
+            Some(v6) => tokio::select! {
+                result = v4_listener.accept() => result?,
+                result = v6.accept() => result?,
+            },
+            None => v4_listener.accept().await?,
+        };
         let handle = app.clone();
         tauri::async_runtime::spawn(async move {
             let _ = handle_local_auth_callback_connection(handle, stream, port).await;
@@ -395,7 +413,12 @@ async fn handle_local_auth_callback_connection(
     port: u16,
 ) -> Result<()> {
     let mut buffer = [0_u8; 4096];
-    let bytes_read = stream.read(&mut buffer).await?;
+    let bytes_read = tokio::time::timeout(
+        Duration::from_millis(LOCAL_AUTH_READ_TIMEOUT_MS),
+        stream.read(&mut buffer),
+    )
+    .await
+    .map_err(|_| DesktopError::Message("Auth callback connection read timed out".to_string()))??;
     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
     let Some(target) = request
         .lines()

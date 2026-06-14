@@ -14,7 +14,8 @@
 	const buildDesktopAuthCallbackUrl = (magicLinkUrl: string) => {
 		const configuredCallbackUrl = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
 		const callbackUrl = configuredCallbackUrl || 'dtx://auth-callback';
-		return `${callbackUrl}?magic_link=${encodeURIComponent(magicLinkUrl)}`;
+		const separator = callbackUrl.includes('?') ? '&' : '?';
+		return `${callbackUrl}${separator}magic_link=${encodeURIComponent(magicLinkUrl)}`;
 	};
 
 	onMount(() => {

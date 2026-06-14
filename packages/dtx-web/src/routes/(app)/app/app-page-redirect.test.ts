@@ -108,6 +108,22 @@ describe('App Home Page – desktop redirect flow', () => {
 		});
 	});
 
+	it('appends magic_link with & when callback URL already has query parameters', async () => {
+		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL =
+			'http://127.0.0.1:47931/auth-callback?source=web';
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:47931/auth-callback?source=web&magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(generateMagicLink).toHaveBeenCalledOnce();
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
 	it('shows error state when generateMagicLink throws', async () => {
 		vi.mocked(generateMagicLink).mockRejectedValue(new Error('magic-link failed: 401'));
 

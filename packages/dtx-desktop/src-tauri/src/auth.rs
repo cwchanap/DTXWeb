@@ -1,14 +1,18 @@
 use crate::error::{DesktopError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 
 const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
+const LOCAL_AUTH_CALLBACK_PATH: &str = "/auth-callback";
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthState {
@@ -106,7 +110,7 @@ impl AuthEvent {
 
 pub fn parse_auth_callback(raw_url: &str) -> Option<AuthCallback> {
     let url = Url::parse(raw_url).ok()?;
-    if url.scheme() != "dtx" || url.host_str() != Some("auth-callback") {
+    if !is_auth_callback_url(&url) {
         return None;
     }
 
@@ -128,6 +132,18 @@ pub fn parse_auth_callback(raw_url: &str) -> Option<AuthCallback> {
         access_token,
         refresh_token,
     })
+}
+
+fn is_auth_callback_url(url: &Url) -> bool {
+    if url.scheme() == "dtx" {
+        return url.host_str() == Some("auth-callback");
+    }
+
+    if url.scheme() != "http" || url.path() != LOCAL_AUTH_CALLBACK_PATH {
+        return false;
+    }
+
+    matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
 }
 
 fn session_value_from_data(session_data: SessionData) -> Option<serde_json::Value> {
@@ -216,6 +232,86 @@ pub fn queue_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
             .push_pending_url(raw_url.to_string());
     }
 
+    Ok(())
+}
+
+pub fn spawn_local_auth_callback_server(app: &AppHandle) {
+    let Some(port) = local_auth_callback_port() else {
+        return;
+    };
+
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = run_local_auth_callback_server(handle, port).await {
+            eprintln!("Local desktop auth callback server failed: {error}");
+        }
+    });
+}
+
+fn local_auth_callback_port() -> Option<u16> {
+    std::env::var("DTX_DESKTOP_AUTH_CALLBACK_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+}
+
+async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()> {
+    let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = handle_local_auth_callback_connection(handle, stream, port).await;
+        });
+    }
+}
+
+async fn handle_local_auth_callback_connection(
+    app: AppHandle,
+    mut stream: TcpStream,
+    port: u16,
+) -> Result<()> {
+    let mut buffer = [0_u8; 4096];
+    let bytes_read = stream.read(&mut buffer).await?;
+    let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+    let Some(target) = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+    else {
+        write_local_auth_callback_response(&mut stream, 400, "Bad Request").await?;
+        return Ok(());
+    };
+
+    let raw_url = format!("http://127.0.0.1:{port}{target}");
+    if parse_auth_callback(&raw_url).is_none() {
+        write_local_auth_callback_response(&mut stream, 404, "Not Found").await?;
+        return Ok(());
+    }
+
+    handle_deep_link(&app, &raw_url).await?;
+    write_local_auth_callback_response(&mut stream, 200, "You can return to Drumery.").await?;
+    Ok(())
+}
+
+async fn write_local_auth_callback_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &str,
+) -> Result<()> {
+    let status_text = match status {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        _ => "Internal Server Error",
+    };
+    let response = format!(
+        "HTTP/1.1 {status} {status_text}\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(response.as_bytes()).await?;
+    stream.shutdown().await?;
     Ok(())
 }
 
@@ -615,6 +711,21 @@ mod tests {
         let parsed =
             parse_auth_callback("dtx://auth-callback?magic_link=https%3A%2F%2Fexample.com%2Fmagic")
                 .expect("parsed");
+
+        assert_eq!(
+            parsed.magic_link.as_deref(),
+            Some("https://example.com/magic")
+        );
+        assert_eq!(parsed.access_token, None);
+        assert_eq!(parsed.refresh_token, None);
+    }
+
+    #[test]
+    fn extracts_magic_link_from_localhost_auth_callback() {
+        let parsed = parse_auth_callback(
+            "http://127.0.0.1:47931/auth-callback?magic_link=https%3A%2F%2Fexample.com%2Fmagic",
+        )
+        .expect("parsed");
 
         assert_eq!(
             parsed.magic_link.as_deref(),

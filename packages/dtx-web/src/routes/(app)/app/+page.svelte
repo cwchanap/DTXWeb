@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
+	import { env } from '$env/dynamic/public';
 	import { onMount } from 'svelte';
 	import { Loader } from '@lucide/svelte';
 	import { generateMagicLink } from '$lib/api';
@@ -9,6 +10,12 @@
 	let isRedirecting = $state(false);
 	let redirectError = $state('');
 	let redirectAttempted = $state(false);
+
+	const buildDesktopAuthCallbackUrl = (magicLinkUrl: string) => {
+		const configuredCallbackUrl = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
+		const callbackUrl = configuredCallbackUrl || 'dtx://auth-callback';
+		return `${callbackUrl}?magic_link=${encodeURIComponent(magicLinkUrl)}`;
+	};
 
 	onMount(() => {
 		if (browser) {
@@ -37,7 +44,7 @@
 			console.log('Generated magic link for desktop authentication');
 
 			// Redirect to desktop app with magic link
-			const redirectUrl = `dtx://auth-callback?magic_link=${encodeURIComponent(magicLinkUrl)}`;
+			const redirectUrl = buildDesktopAuthCallbackUrl(magicLinkUrl);
 
 			// Try to redirect
 			redirectAttempted = true;

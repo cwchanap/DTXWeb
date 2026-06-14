@@ -29,6 +29,10 @@
 			"cache": false,
 			"persistent": true
 		},
+		"dtx-desktop#dev:local-web": {
+			"cache": false,
+			"persistent": true
+		},
 		"@dtx/common#dev": {
 			"cache": false,
 			"persistent": true

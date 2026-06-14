@@ -15,7 +15,11 @@ import { desktopHost } from './desktopHost';
 // Get server URL from environment variable or fallback to default
 const DEFAULT_SERVER_URL = 'http://localhost:5173';
 const SERVER_URL = import.meta.env.VITE_DTX_SERVER_URL || DEFAULT_SERVER_URL;
-const WEB_APP_LOGIN_URL = `${SERVER_URL}/login?redirect=desktop`;
+
+export const getDesktopLoginUrl = (serverUrl = SERVER_URL): string => {
+	const normalizedServerUrl = serverUrl.replace(/\/+$/, '');
+	return `${normalizedServerUrl}/login?redirect=desktop`;
+};
 
 type StoredUserData = {
 	id: string;
@@ -79,7 +83,7 @@ export const authService = {
 			authStore.setLoading(true);
 
 			// Ask host process to open the web login page
-			await desktopHost.openExternalUrl(WEB_APP_LOGIN_URL);
+			await desktopHost.openExternalUrl(getDesktopLoginUrl());
 		} catch (error) {
 			console.error('Login failed:', error);
 			authStore.setError('Failed to open login page');

@@ -51,11 +51,14 @@ pub fn run() {
                 }
             }
 
+            let deep_link_handle = handle.clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
-                    spawn_deep_link_handler(&handle, url.to_string());
+                    spawn_deep_link_handler(&deep_link_handle, url.to_string());
                 }
             });
+
+            auth::spawn_local_auth_callback_server(&handle);
 
             Ok(())
         })

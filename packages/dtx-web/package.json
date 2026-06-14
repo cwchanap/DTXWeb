@@ -4,7 +4,7 @@
 	"private": true,
 	"scripts": {
 		"dev": "vite dev --port 5173",
-		"dev:local-api": "PUBLIC_DTX_API_URL=http://localhost:8787 vite dev --port 5173",
+		"dev:local-api": "PUBLIC_DTX_API_URL=http://localhost:8787 PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL=http://127.0.0.1:47931/auth-callback vite dev --port 5173",
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

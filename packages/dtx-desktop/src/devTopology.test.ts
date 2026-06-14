@@ -53,10 +53,10 @@ describe('desktop local dev topology', () => {
 			'wrangler dev --env pre-prod --env-file ../../.env --port 8787'
 		);
 		expect(webPackage.scripts['dev:local-api']).toBe(
-			'PUBLIC_DTX_API_URL=http://localhost:8787 vite dev --port 5173'
+			'PUBLIC_DTX_API_URL=http://localhost:8787 PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL=http://127.0.0.1:47931/auth-callback vite dev --port 5173'
 		);
 		expect(desktopPackage.scripts['dev:local-web']).toBe(
-			'VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 tauri dev'
+			'VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 tauri dev'
 		);
 		expect(turboConfig.tasks).toHaveProperty('dtx-api#dev:local');
 		expect(turboConfig.tasks).toHaveProperty('dtx-web#dev:local-api');

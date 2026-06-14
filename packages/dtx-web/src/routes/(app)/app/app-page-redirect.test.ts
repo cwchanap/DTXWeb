@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
+const publicEnvMock = vi.hoisted(() => ({
+	env: {
+		PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL: ''
+	}
+}));
+
 // Test the browser-side redirect logic with browser: true
 vi.mock('$app/environment', () => ({
 	browser: true
 }));
+
+vi.mock('$env/dynamic/public', () => publicEnvMock);
 
 vi.mock('$app/stores', () => ({
 	page: {
@@ -33,6 +41,7 @@ describe('App Home Page – desktop redirect flow', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
+		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL = '';
 		Object.defineProperty(window, 'location', {
 			value: { href: '' },
 			writable: true,
@@ -72,6 +81,22 @@ describe('App Home Page – desktop redirect flow', () => {
 		render(AppPage);
 
 		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(generateMagicLink).toHaveBeenCalledOnce();
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('uses the configured desktop auth callback URL when provided', async () => {
+		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL =
+			'http://127.0.0.1:47931/auth-callback';
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:47931/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
 		await vi.waitFor(() => {
 			expect(generateMagicLink).toHaveBeenCalledOnce();
 			expect(window.location.href).toBe(expectedHref);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { authService } from './authService';
+import { authService, getDesktopLoginUrl } from './authService';
 import { authStore } from '../stores/authStore';
 import {
 	storeSessionData,
@@ -81,6 +81,18 @@ describe('AuthService', () => {
 	});
 
 	describe('login', () => {
+		it('builds the desktop login URL from a local web server URL', () => {
+			expect(getDesktopLoginUrl('http://localhost:5173')).toBe(
+				'http://localhost:5173/login?redirect=desktop'
+			);
+		});
+
+		it('builds the desktop login URL from a production server URL without duplicating slashes', () => {
+			expect(getDesktopLoginUrl('https://dtx.hapadona.com/')).toBe(
+				'https://dtx.hapadona.com/login?redirect=desktop'
+			);
+		});
+
 		it('should set loading state and open login URL through desktop host', async () => {
 			// Act
 			await authService.login();

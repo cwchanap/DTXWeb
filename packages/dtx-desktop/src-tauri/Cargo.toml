@@ -42,5 +42,6 @@ url = "2"
 zip = "2"
 
 [dev-dependencies]
+png = "0.18"
 tempfile = "3"
 wiremock = "0.6"

@@ -989,6 +989,7 @@ dependencies = [
  "async-recursion",
  "base64 0.22.1",
  "encoding_rs",
+ "png 0.18.1",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

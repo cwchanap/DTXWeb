@@ -93,3 +93,28 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    #[test]
+    fn app_icon_decodes_to_non_empty_rgba_pixels() {
+        let decoder = png::Decoder::new(Cursor::new(include_bytes!("../icons/icon.png")));
+        let mut reader = decoder.read_info().expect("app icon should decode");
+        let output_size = reader
+            .output_buffer_size()
+            .expect("app icon output buffer size should be known");
+        let mut pixels = vec![0; output_size];
+        let frame = reader
+            .next_frame(&mut pixels)
+            .expect("app icon should have a readable frame");
+
+        assert!(frame.width > 0, "app icon width should be non-zero");
+        assert!(frame.height > 0, "app icon height should be non-zero");
+        assert!(
+            frame.buffer_size() > 0,
+            "app icon should decode to non-empty pixel data"
+        );
+    }
+}

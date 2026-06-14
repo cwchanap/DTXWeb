@@ -49,7 +49,9 @@ describe('desktop local dev topology', () => {
 		expect(rootPackage.scripts['dev:all']).toBe(
 			'turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web @dtx/common#dev'
 		);
-		expect(apiPackage.scripts['dev:local']).toBe('wrangler dev --env pre-prod --port 8787');
+		expect(apiPackage.scripts['dev:local']).toBe(
+			'wrangler dev --env pre-prod --env-file ../../.env --port 8787'
+		);
 		expect(webPackage.scripts['dev:local-api']).toBe(
 			'PUBLIC_DTX_API_URL=http://localhost:8787 vite dev --port 5173'
 		);

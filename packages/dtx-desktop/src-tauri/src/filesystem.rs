@@ -59,9 +59,13 @@ pub async fn path_exists(base_path: String, path_parts: Vec<String>) -> PathExis
 }
 
 #[tauri::command]
-pub async fn list_directories(dir_path: String) -> Result<Vec<String>> {
+pub async fn list_directories(
+    dir_path: String,
+    workspace_root: Option<String>,
+) -> Result<Vec<String>> {
+    let canonical = canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await?;
     let mut directories = Vec::new();
-    let mut entries = fs::read_dir(dir_path).await?;
+    let mut entries = fs::read_dir(&canonical).await?;
 
     while let Some(entry) = entries.next_entry().await? {
         if entry.file_type().await?.is_dir() {
@@ -74,22 +78,57 @@ pub async fn list_directories(dir_path: String) -> Result<Vec<String>> {
 }
 
 #[tauri::command]
-pub async fn list_directory(dir_path: String) -> Result<serde_json::Value> {
-    match list_directory_entries(&dir_path).await {
+pub async fn list_directory(
+    dir_path: String,
+    workspace_root: Option<String>,
+) -> Result<serde_json::Value> {
+    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await {
+        Ok(path) => path,
+        Err(error) => return Ok(list_error_value(error)),
+    };
+    match list_directory_entries(&canonical).await {
         Ok(files) => Ok(json!({ "files": files, "error": null })),
         Err(error) => Ok(list_error_value(error)),
     }
 }
 
 #[tauri::command]
-pub async fn list_files(dir_path: String) -> Result<serde_json::Value> {
-    match list_file_entries(&dir_path).await {
+pub async fn list_files(
+    dir_path: String,
+    workspace_root: Option<String>,
+) -> Result<serde_json::Value> {
+    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await {
+        Ok(path) => path,
+        Err(error) => return Ok(list_error_value(error)),
+    };
+    match list_file_entries(&canonical).await {
         Ok(files) => Ok(json!({ "files": files, "error": null })),
         Err(error) => Ok(list_error_value(error)),
     }
 }
 
-async fn list_directory_entries(dir_path: &str) -> Result<Vec<FileEntry>> {
+/// Canonicalizes `target_path` and confirms it lives inside `workspace_root`.
+/// A missing workspace root is rejected outright: every canonical path
+/// starts_with its own parent, so falling back to the target's parent would
+/// make the containment check meaningless (mirrors `read_file_path_inner`).
+async fn canonicalize_within_workspace(
+    target_path: &str,
+    workspace_root: Option<&str>,
+) -> Result<PathBuf> {
+    let root = workspace_root.ok_or_else(|| {
+        DesktopError::Message("A workspace root is required".to_string())
+    })?;
+    let canonical_root = fs::canonicalize(root).await?;
+    let canonical_target = fs::canonicalize(target_path).await?;
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err(DesktopError::Message(
+            "Path is outside the workspace".to_string(),
+        ));
+    }
+    Ok(canonical_target)
+}
+
+async fn list_directory_entries(dir_path: &Path) -> Result<Vec<FileEntry>> {
     let mut files = Vec::new();
     let mut entries = fs::read_dir(dir_path).await?;
 
@@ -110,7 +149,7 @@ async fn list_directory_entries(dir_path: &str) -> Result<Vec<FileEntry>> {
     Ok(files)
 }
 
-async fn list_file_entries(dir_path: &str) -> Result<Vec<ListedFile>> {
+async fn list_file_entries(dir_path: &Path) -> Result<Vec<ListedFile>> {
     let mut files = Vec::new();
     let mut entries = fs::read_dir(dir_path).await?;
 
@@ -584,9 +623,12 @@ mod tests {
         let root = tempdir().expect("tempdir");
         let missing = root.path().join("missing");
 
-        let result = list_directory(missing.to_string_lossy().into_owned())
-            .await
-            .expect("envelope");
+        let result = list_directory(
+            missing.to_string_lossy().into_owned(),
+            Some(root.path().to_string_lossy().into_owned()),
+        )
+        .await
+        .expect("envelope");
 
         assert_eq!(result["files"], serde_json::json!([]));
         assert!(result["error"]
@@ -599,9 +641,12 @@ mod tests {
         let root = tempdir().expect("tempdir");
         let missing = root.path().join("missing");
 
-        let result = list_files(missing.to_string_lossy().into_owned())
-            .await
-            .expect("envelope");
+        let result = list_files(
+            missing.to_string_lossy().into_owned(),
+            Some(root.path().to_string_lossy().into_owned()),
+        )
+        .await
+        .expect("envelope");
 
         assert_eq!(result["files"], serde_json::json!([]));
         assert!(result["error"]
@@ -610,14 +655,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_directories_rejects_missing_workspace_root() {
+        let root = tempdir().expect("tempdir");
+
+        let result = list_directories(root.path().to_string_lossy().into_owned(), None).await;
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("error")
+            .to_string()
+            .contains("A workspace root is required"));
+    }
+
+    #[tokio::test]
+    async fn list_directories_rejects_path_outside_workspace() {
+        let root = tempdir().expect("root");
+        let outside = tempdir().expect("outside");
+
+        let result = list_directories(
+            outside.path().to_string_lossy().into_owned(),
+            Some(root.path().to_string_lossy().into_owned()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(result
+            .expect_err("error")
+            .to_string()
+            .contains("outside the workspace"));
+    }
+
+    #[tokio::test]
+    async fn list_files_rejects_path_outside_workspace() {
+        let root = tempdir().expect("root");
+        let outside = tempdir().expect("outside");
+        fs::write(outside.path().join("leak.txt"), "secret")
+            .await
+            .expect("write");
+
+        let result = list_files(
+            outside.path().to_string_lossy().into_owned(),
+            Some(root.path().to_string_lossy().into_owned()),
+        )
+        .await
+        .expect("envelope");
+
+        assert_eq!(result["files"], serde_json::json!([]));
+        assert!(result["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("outside the workspace")));
+    }
+
+    #[tokio::test]
     async fn list_files_returns_real_iso_last_modified() {
         let root = tempdir().expect("tempdir");
         let file = root.path().join("main.dtx");
         fs::write(&file, "#TITLE: Chart").await.expect("write");
 
-        let result = list_files(root.path().to_string_lossy().into_owned())
-            .await
-            .expect("listing");
+        let result = list_files(
+            root.path().to_string_lossy().into_owned(),
+            Some(root.path().to_string_lossy().into_owned()),
+        )
+        .await
+        .expect("listing");
 
         let files = result["files"].as_array().expect("files");
         assert_eq!(files.len(), 1);

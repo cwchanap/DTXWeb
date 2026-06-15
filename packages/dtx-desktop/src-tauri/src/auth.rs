@@ -189,28 +189,17 @@ pub struct MagicLinkResult {
 #[derive(Debug, PartialEq, Eq)]
 pub struct AuthCallback {
     pub magic_link: Option<String>,
-    pub access_token: Option<String>,
-    pub refresh_token: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AuthCallbackTokens {
-    access_token: String,
-    refresh_token: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum AuthEvent {
     MagicLinkResult(MagicLinkResult),
-    AuthCallback(AuthCallbackTokens),
 }
 
 impl AuthEvent {
     fn name(&self) -> &'static str {
         match self {
             AuthEvent::MagicLinkResult(_) => "magic-link-result",
-            AuthEvent::AuthCallback(_) => "auth-callback",
         }
     }
 
@@ -219,10 +208,6 @@ impl AuthEvent {
             AuthEvent::MagicLinkResult(result) => {
                 serde_json::to_value(result).unwrap_or_else(|_| json!({ "success": false }))
             }
-            AuthEvent::AuthCallback(tokens) => json!({
-                "accessToken": tokens.access_token,
-                "refreshToken": tokens.refresh_token,
-            }),
         }
     }
 }
@@ -234,23 +219,14 @@ pub fn parse_auth_callback(raw_url: &str) -> Option<AuthCallback> {
     }
 
     let mut magic_link = None;
-    let mut access_token = None;
-    let mut refresh_token = None;
 
     for (key, value) in url.query_pairs() {
-        match key.as_ref() {
-            "magic_link" => magic_link = Some(value.into_owned()),
-            "access_token" => access_token = Some(value.into_owned()),
-            "refresh_token" => refresh_token = Some(value.into_owned()),
-            _ => {}
+        if key == "magic_link" {
+            magic_link = Some(value.into_owned());
         }
     }
 
-    Some(AuthCallback {
-        magic_link,
-        access_token,
-        refresh_token,
-    })
+    Some(AuthCallback { magic_link })
 }
 
 fn is_auth_callback_url(url: &Url) -> bool {
@@ -294,13 +270,13 @@ fn non_empty_token(token: Option<String>) -> Option<String> {
 
 #[tauri::command]
 pub async fn validate_session(app: AppHandle, session_data: SessionData) -> Result<bool> {
-    let supabase_url = match std::env::var("PUBLIC_SUPABASE_URL") {
-        Ok(value) => value,
-        Err(_) => return Ok(false),
+    let supabase_url = match config_env!("PUBLIC_SUPABASE_URL") {
+        Some(value) => value,
+        None => return Ok(false),
     };
-    let anon_key = match std::env::var("PUBLIC_SUPABASE_ANON_KEY") {
-        Ok(value) => value,
-        Err(_) => return Ok(false),
+    let anon_key = match config_env!("PUBLIC_SUPABASE_ANON_KEY") {
+        Some(value) => value,
+        None => return Ok(false),
     };
     let client = match auth_client() {
         Ok(client) => client,
@@ -412,19 +388,12 @@ async fn handle_local_auth_callback_connection(
     mut stream: TcpStream,
     port: u16,
 ) -> Result<()> {
-    let mut buffer = [0_u8; 4096];
-    let bytes_read = tokio::time::timeout(
-        Duration::from_millis(LOCAL_AUTH_READ_TIMEOUT_MS),
-        stream.read(&mut buffer),
-    )
-    .await
-    .map_err(|_| DesktopError::Message("Auth callback connection read timed out".to_string()))??;
-    let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-    let Some(target) = request
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-    else {
+    let Some(request_line) = read_auth_request_line(&mut stream).await? else {
+        write_local_auth_callback_text_response(&mut stream, 400, "Bad Request").await?;
+        return Ok(());
+    };
+
+    let Some(target) = request_line.split_whitespace().nth(1) else {
         write_local_auth_callback_text_response(&mut stream, 400, "Bad Request").await?;
         return Ok(());
     };
@@ -439,6 +408,53 @@ async fn handle_local_auth_callback_connection(
     write_local_auth_callback_html_response(&mut stream, 200, local_auth_callback_success_html())
         .await?;
     Ok(())
+}
+
+/// Maximum number of bytes read from a single local auth callback request.
+const MAX_AUTH_REQUEST_BYTES: usize = 64 * 1024;
+
+/// Reads the HTTP request line from a local auth callback connection.
+///
+/// The callback's `magic_link` payload travels in the request-line query
+/// string, which can exceed a single fixed-size read for long URLs, so we
+/// accumulate until the end of the first line (or the peer closes) instead of
+/// relying on one 4 KB read. The total is capped to guard against unbounded
+/// reads from a misbehaving or malicious caller.
+async fn read_auth_request_line(stream: &mut TcpStream) -> Result<Option<String>> {
+    let mut buf: Vec<u8> = Vec::new();
+    let outcome: std::result::Result<(), DesktopError> = tokio::time::timeout(
+        Duration::from_millis(LOCAL_AUTH_READ_TIMEOUT_MS),
+        async {
+            loop {
+                if buf.len() > MAX_AUTH_REQUEST_BYTES {
+                    return Err(DesktopError::Message(
+                        "Auth callback request exceeded maximum size".to_string(),
+                    ));
+                }
+                let mut chunk = [0_u8; 1024];
+                match stream.read(&mut chunk).await {
+                    Ok(0) => return Ok(()),
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.contains(&b'\n') {
+                            return Ok(());
+                        }
+                    }
+                    Err(error) => return Err(DesktopError::Message(error.to_string())),
+                }
+            }
+        },
+    )
+    .await
+    .map_err(|_| DesktopError::Message("Auth callback connection read timed out".to_string()))?;
+
+    outcome?;
+
+    if buf.is_empty() {
+        return Ok(None);
+    }
+    let request = String::from_utf8_lossy(&buf);
+    Ok(request.lines().next().map(str::to_string))
 }
 
 async fn write_local_auth_callback_text_response(
@@ -503,20 +519,10 @@ async fn auth_event_from_url(raw_url: &str) -> Option<AuthEvent> {
 
 async fn auth_event_from_url_with_state(state: &AuthState, raw_url: &str) -> Option<AuthEvent> {
     let callback = parse_auth_callback(raw_url)?;
-
-    if let Some(magic_link) = callback.magic_link {
-        return Some(AuthEvent::MagicLinkResult(
-            verify_magic_link(state, &magic_link).await,
-        ));
-    }
-
-    let access_token = non_empty_token(callback.access_token)?;
-    let refresh_token = non_empty_token(callback.refresh_token)?;
-
-    Some(AuthEvent::AuthCallback(AuthCallbackTokens {
-        access_token,
-        refresh_token,
-    }))
+    let magic_link = callback.magic_link?;
+    Some(AuthEvent::MagicLinkResult(
+        verify_magic_link(state, &magic_link).await,
+    ))
 }
 
 fn emit_auth_event(app: &AppHandle, event: &AuthEvent) -> Result<()> {
@@ -828,9 +834,9 @@ async fn refresh_session_with_client(
 }
 
 async fn verify_magic_link(state: &AuthState, magic_link: &str) -> MagicLinkResult {
-    let supabase_url = match std::env::var("PUBLIC_SUPABASE_URL") {
-        Ok(value) => value,
-        Err(_) => {
+    let supabase_url = match config_env!("PUBLIC_SUPABASE_URL") {
+        Some(value) => value,
+        None => {
             return MagicLinkResult {
                 success: false,
                 error: Some("Magic link verification is not configured".to_string()),
@@ -839,9 +845,9 @@ async fn verify_magic_link(state: &AuthState, magic_link: &str) -> MagicLinkResu
             };
         }
     };
-    let anon_key = match std::env::var("PUBLIC_SUPABASE_ANON_KEY") {
-        Ok(value) => value,
-        Err(_) => {
+    let anon_key = match config_env!("PUBLIC_SUPABASE_ANON_KEY") {
+        Some(value) => value,
+        None => {
             return MagicLinkResult {
                 success: false,
                 error: Some("Magic link verification is not configured".to_string()),
@@ -879,8 +885,6 @@ mod tests {
             parsed.magic_link.as_deref(),
             Some("https://example.com/magic")
         );
-        assert_eq!(parsed.access_token, None);
-        assert_eq!(parsed.refresh_token, None);
     }
 
     #[test]
@@ -894,17 +898,6 @@ mod tests {
             parsed.magic_link.as_deref(),
             Some("https://example.com/magic")
         );
-        assert_eq!(parsed.access_token, None);
-        assert_eq!(parsed.refresh_token, None);
-    }
-
-    #[test]
-    fn extracts_legacy_tokens_from_dtx_auth_callback() {
-        let parsed = parse_auth_callback("dtx://auth-callback?access_token=a&refresh_token=b")
-            .expect("parsed");
-
-        assert_eq!(parsed.access_token.as_deref(), Some("a"));
-        assert_eq!(parsed.refresh_token.as_deref(), Some("b"));
     }
 
     #[test]
@@ -945,9 +938,7 @@ mod tests {
         .await
         .expect("event");
 
-        let AuthEvent::MagicLinkResult(result) = event else {
-            panic!("expected magic-link event");
-        };
+        let AuthEvent::MagicLinkResult(result) = event;
 
         assert!(!result.success);
         assert_eq!(
@@ -957,11 +948,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ignores_empty_legacy_tokens() {
+    async fn callback_without_magic_link_produces_no_event() {
+        // Legacy token-only callbacks are intentionally ignored: only the
+        // magic_link flow is supported, and raw tokens must never be accepted
+        // from a deep link without server-side verification.
         let event =
-            auth_event_from_url("dtx://auth-callback?access_token=tok&refresh_token=%20").await;
+            auth_event_from_url("dtx://auth-callback?access_token=tok&refresh_token=b").await;
 
         assert!(event.is_none());
+    }
+
+    #[tokio::test]
+    async fn read_auth_request_line_handles_request_lines_longer_than_4kb() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+
+        // An ~8 KB magic_link query value that would overflow a single 4 KB read.
+        let long_value = "x".repeat(8 * 1024);
+        let request = format!("GET /auth-callback?magic_link={long_value} HTTP/1.1\r\n\r\n");
+        let request_bytes = request.into_bytes();
+
+        let writer = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+            stream.write_all(&request_bytes).await.expect("write");
+            stream
+        });
+
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let line = read_auth_request_line(&mut stream)
+            .await
+            .expect("read")
+            .expect("request line");
+
+        let _ = writer.await;
+        assert!(line.starts_with("GET /auth-callback?magic_link="));
+        assert!(line.contains(&"x".repeat(8 * 1024)));
+        assert!(line.len() > 4096);
     }
 
     #[test]

@@ -1,9 +1,18 @@
 <script lang="ts">
 	import { Zap, Server, Info } from '@lucide/svelte';
 	import Modal from '@dtx/ui-components/components/Modal.svelte';
-	import { desktopHost } from '../services/desktopHost';
+	import { onMount } from 'svelte';
+	import { desktopHost, type DesktopHostVersions } from '../services/desktopHost';
 
-	const versions = desktopHost.getVersions();
+	let versions = $state<DesktopHostVersions>({ app: null, tauri: null });
+
+	onMount(async () => {
+		try {
+			versions = await desktopHost.getVersions();
+		} catch {
+			// keep default nulls on failure
+		}
+	});
 
 	// Modal state
 	let openState = $state(false);
@@ -41,7 +50,7 @@
 						</div>
 						<div>
 							<p class="text-xs text-slate-500 dark:text-slate-400">Application</p>
-							<p class="font-medium">{versions.app}</p>
+							<p class="font-medium">{versions.app ?? '—'}</p>
 						</div>
 					</div>
 				</div>
@@ -57,7 +66,7 @@
 						</div>
 						<div>
 							<p class="text-xs text-slate-500 dark:text-slate-400">Tauri</p>
-							<p class="font-medium">{versions.tauri}</p>
+							<p class="font-medium">{versions.tauri ?? '—'}</p>
 						</div>
 					</div>
 				</div>

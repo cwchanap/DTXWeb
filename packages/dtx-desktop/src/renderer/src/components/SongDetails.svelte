@@ -412,7 +412,10 @@
 							}))
 						: [],
 					// Pass the song path so main process can find and read preview files
-					songPath: String(song.path || '')
+					songPath: String(song.path || ''),
+					// Pass the workspace root so the main process can confine preview
+					// reads to the workspace (prevents path-traversal exfiltration)
+					workspaceRoot: String($workspaceStore?.path ?? '')
 				})
 			);
 

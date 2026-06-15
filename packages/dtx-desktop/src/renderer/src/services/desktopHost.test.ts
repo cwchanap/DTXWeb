@@ -10,6 +10,11 @@ vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn()
 }));
 
+vi.mock('@tauri-apps/api/app', () => ({
+	getVersion: vi.fn(),
+	getTauriVersion: vi.fn()
+}));
+
 const makeRuntime = (): DesktopHostRuntime => ({
 	kind: 'tauri',
 	invoke: vi.fn(),
@@ -18,7 +23,7 @@ const makeRuntime = (): DesktopHostRuntime => ({
 	removeAllListeners: vi.fn(),
 	getPlatform: vi.fn(() => 'darwin'),
 	getEnvironment: vi.fn(() => ({ HOME: '/Users/Test' })),
-	getVersions: vi.fn(() => ({ app: '1.0.0', tauri: '2' }))
+	getVersions: vi.fn(async () => ({ app: '1.0.0', tauri: '2' }))
 });
 
 describe('desktopHost', () => {
@@ -103,10 +108,11 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			[],
-			() => desktopHost.listDirectories('/songs'),
+			() => desktopHost.listDirectories('/songs', '/songs'),
 			'list_directories',
 			{
-				dirPath: '/songs'
+				dirPath: '/songs',
+				workspaceRoot: '/songs'
 			}
 		);
 		await expectTauriInvoke({}, () => desktopHost.listDirectory('/songs'), 'list_directory', {
@@ -312,22 +318,10 @@ describe('desktopHost', () => {
 		expect(unlisten).toHaveBeenCalledTimes(1);
 	});
 
-	it('registers auth-callback listeners', async () => {
-		const unlisten = vi.fn();
-		vi.mocked(runtime.listen).mockResolvedValue(unlisten);
-		const callback = vi.fn();
-
-		const stop = await desktopHost.onAuthCallback(callback);
-
-		expect(runtime.listen).toHaveBeenCalledWith('auth-callback', callback);
-		stop();
-		expect(unlisten).toHaveBeenCalledTimes(1);
-	});
-
 	it('removes host listeners by event name', () => {
-		desktopHost.removeAllListeners('auth-callback');
+		desktopHost.removeAllListeners('magic-link-result');
 
-		expect(runtime.removeAllListeners).toHaveBeenCalledWith('auth-callback');
+		expect(runtime.removeAllListeners).toHaveBeenCalledWith('magic-link-result');
 	});
 
 	it('drains pending auth events through Tauri only', async () => {

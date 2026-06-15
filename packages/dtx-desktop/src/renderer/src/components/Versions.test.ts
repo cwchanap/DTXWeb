@@ -4,7 +4,7 @@ import { render, screen, cleanup } from '@testing-library/svelte';
 vi.mock('@lucide/svelte');
 
 const mockDesktopHost = vi.hoisted(() => ({
-	getVersions: vi.fn(() => ({
+	getVersions: vi.fn(async () => ({
 		app: '1.0.0',
 		tauri: '2'
 	}))
@@ -21,14 +21,14 @@ describe('Versions', () => {
 		cleanup();
 	});
 
-	it('displays application version', () => {
+	it('displays application version', async () => {
 		render(Versions);
-		expect(screen.getByText('1.0.0')).toBeInTheDocument();
+		expect(await screen.findByText('1.0.0')).toBeInTheDocument();
 	});
 
-	it('displays Tauri version', () => {
+	it('displays Tauri version', async () => {
 		render(Versions);
-		expect(screen.getByText('2')).toBeInTheDocument();
+		expect(await screen.findByText('2')).toBeInTheDocument();
 	});
 
 	it('displays version labels', () => {

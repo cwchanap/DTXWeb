@@ -3,14 +3,12 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 
 const mockDesktopHost = vi.hoisted(() => ({
 	onMagicLinkResult: vi.fn(),
-	onAuthCallback: vi.fn(),
 	drainPendingAuthEvents: vi.fn(),
 	migrateLegacyData: vi.fn()
 }));
 
 const mockAuthService = vi.hoisted(() => ({
 	handleMagicLinkResult: vi.fn(),
-	handleAuthCallback: vi.fn(),
 	restoreSession: vi.fn()
 }));
 
@@ -85,12 +83,9 @@ describe('App lifecycle', () => {
 
 	it('cleans up listener registrations that resolve after unmount', async () => {
 		const magicLinkUnlisten = vi.fn();
-		const authCallbackUnlisten = vi.fn();
 		const magicLinkRegistration = createDeferred<() => void>();
-		const authCallbackRegistration = createDeferred<() => void>();
 
 		mockDesktopHost.onMagicLinkResult.mockReturnValue(magicLinkRegistration.promise);
-		mockDesktopHost.onAuthCallback.mockReturnValue(authCallbackRegistration.promise);
 
 		const { unmount } = render(App);
 
@@ -99,13 +94,8 @@ describe('App lifecycle', () => {
 
 		magicLinkRegistration.resolve(magicLinkUnlisten);
 		await flushPromises();
-		expect(mockDesktopHost.onAuthCallback).toHaveBeenCalled();
-
-		authCallbackRegistration.resolve(authCallbackUnlisten);
-		await flushPromises();
 
 		expect(magicLinkUnlisten).toHaveBeenCalledOnce();
-		expect(authCallbackUnlisten).toHaveBeenCalledOnce();
 		expect(mockDesktopHost.drainPendingAuthEvents).not.toHaveBeenCalled();
 		expect(mockDesktopHost.migrateLegacyData).not.toHaveBeenCalled();
 		expect(mockAuthService.restoreSession).not.toHaveBeenCalled();
@@ -113,7 +103,6 @@ describe('App lifecycle', () => {
 
 	it('drains pending auth events and migrates data before restoring the session', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
 
 		render(App);
 
@@ -122,7 +111,7 @@ describe('App lifecycle', () => {
 		});
 		expect(mockDesktopHost.migrateLegacyData).toHaveBeenCalledOnce();
 		expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
-		expect(mockDesktopHost.onAuthCallback.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(mockDesktopHost.onMagicLinkResult.mock.invocationCallOrder[0]).toBeLessThan(
 			mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]
 		);
 		expect(mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]).toBeLessThan(
@@ -135,7 +124,6 @@ describe('App lifecycle', () => {
 
 	it('applies migrated localStorage keys without overwriting existing keys', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
 		mockDesktopHost.migrateLegacyData.mockResolvedValue({
 			migrated: true,
 			importedKeys: ['auth_access_token', 'app_settings'],
@@ -168,7 +156,6 @@ describe('App lifecycle', () => {
 	it('still restores the session when a bootstrap call fails', async () => {
 		// A failing host registration must not abort onMount before restoreSession runs.
 		mockDesktopHost.onMagicLinkResult.mockRejectedValue(new Error('IPC unavailable'));
-		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
 
 		render(App);
 
@@ -179,7 +166,6 @@ describe('App lifecycle', () => {
 
 	it('still restores the session when draining pending auth events fails', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.onAuthCallback.mockResolvedValue(vi.fn());
 		mockDesktopHost.drainPendingAuthEvents.mockRejectedValue(new Error('IPC unavailable'));
 
 		render(App);

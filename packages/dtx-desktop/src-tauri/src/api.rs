@@ -136,22 +136,17 @@ pub fn api_base_url_from_values(api_url: Option<&str>, server_url: Option<&str>)
 
 fn api_base_url_from_env() -> Result<String> {
     api_base_url_from_values(
-        std::env::var("VITE_DTX_API_URL").ok().as_deref(),
-        std::env::var("VITE_DTX_SERVER_URL").ok().as_deref(),
+        config_env!("VITE_DTX_API_URL").as_deref(),
+        config_env!("VITE_DTX_SERVER_URL").as_deref(),
     )
 }
 
 fn bucket_base_url_from_env() -> Result<String> {
-    let url = std::env::var("PUBLIC_SIMFILE_BUCKET_URL").map_err(|_| {
+    let url = config_env!("PUBLIC_SIMFILE_BUCKET_URL").ok_or_else(|| {
         DesktopError::Message(
             "PUBLIC_SIMFILE_BUCKET_URL environment variable is not set".to_string(),
         )
     })?;
-    if url.trim().is_empty() {
-        return Err(DesktopError::Message(
-            "PUBLIC_SIMFILE_BUCKET_URL environment variable is not set".to_string(),
-        ));
-    }
     Ok(url.trim().trim_end_matches('/').to_string())
 }
 
@@ -541,12 +536,16 @@ async fn upload_preview_if_present(
     base_url: &str,
     token: &str,
     song_path: &str,
+    workspace_root: &str,
     simfile_id: &str,
     file_name: &str,
     content_type: &str,
 ) -> Option<String> {
-    let path = Path::new(song_path).join(file_name);
-    let bytes = fs::read(path).await.ok()?;
+    let bytes = match read_preview_within_workspace(song_path, workspace_root, file_name).await {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return None,
+        Err(error) => return Some(error),
+    };
     let result = upload_bytes_to_api(
         base_url,
         token,
@@ -566,6 +565,34 @@ async fn upload_preview_if_present(
                 .unwrap_or("Unknown error")
                 .to_string(),
         )
+    }
+}
+
+/// Reads a preview file from `song_path/file_name` only after confirming
+/// `song_path` is contained within `workspace_root`. Returns:
+/// - `Ok(Some(bytes))` when the file exists and is within the workspace,
+/// - `Ok(None)` when the file is absent (no preview to upload, not an error),
+/// - `Err(message)` when containment fails or the workspace root is missing.
+async fn read_preview_within_workspace(
+    song_path: &str,
+    workspace_root: &str,
+    file_name: &str,
+) -> std::result::Result<Option<Vec<u8>>, String> {
+    if workspace_root.trim().is_empty() {
+        return Err("A workspace root is required to upload previews".to_string());
+    }
+    let canonical_root = fs::canonicalize(workspace_root)
+        .await
+        .map_err(|_| format!("Workspace root not found: {workspace_root}"))?;
+    let canonical_song = fs::canonicalize(song_path)
+        .await
+        .map_err(|_| format!("Song folder not found: {song_path}"))?;
+    if !canonical_song.starts_with(&canonical_root) {
+        return Err("Song folder is outside the workspace".to_string());
+    }
+    match fs::read(canonical_song.join(file_name)).await {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(_) => Ok(None),
     }
 }
 
@@ -751,30 +778,38 @@ pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Resul
     let simfile_id = number_id(&simfile["id"])?.to_string();
     let mut warnings = Vec::new();
 
+    let workspace_root = simfile_data
+        .get("workspaceRoot")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if let Some(song_path) = simfile_data.get("songPath").and_then(Value::as_str) {
-        if let Some(error) = upload_preview_if_present(
-            &base_url,
-            &token,
-            song_path,
-            &simfile_id,
-            "preview.jpg",
-            "image/jpeg",
-        )
-        .await
-        {
-            warnings.push(format!("Preview image: {error}"));
-        }
-        if let Some(error) = upload_preview_if_present(
-            &base_url,
-            &token,
-            song_path,
-            &simfile_id,
-            "preview.mp3",
-            "audio/mpeg",
-        )
-        .await
-        {
-            warnings.push(format!("Sound preview: {error}"));
+        if !song_path.is_empty() {
+            if let Some(error) = upload_preview_if_present(
+                &base_url,
+                &token,
+                song_path,
+                workspace_root,
+                &simfile_id,
+                "preview.jpg",
+                "image/jpeg",
+            )
+            .await
+            {
+                warnings.push(format!("Preview image: {error}"));
+            }
+            if let Some(error) = upload_preview_if_present(
+                &base_url,
+                &token,
+                song_path,
+                workspace_root,
+                &simfile_id,
+                "preview.mp3",
+                "audio/mpeg",
+            )
+            .await
+            {
+                warnings.push(format!("Sound preview: {error}"));
+            }
         }
     }
 
@@ -1093,5 +1128,55 @@ mod tests {
 
         assert_eq!(result["success"], false);
         assert_eq!(result["error"], "File path is outside song folder");
+    }
+
+    #[tokio::test]
+    async fn read_preview_rejects_song_folder_outside_workspace() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let outside = tempfile::tempdir().expect("outside");
+        fs::write(outside.path().join("preview.jpg"), b"img").expect("preview");
+
+        let result =
+            read_preview_within_workspace(outside.path().to_str().unwrap(), workspace.path().to_str().unwrap(), "preview.jpg")
+                .await;
+
+        assert!(matches!(result, Err(ref e) if e.contains("outside the workspace")));
+    }
+
+    #[tokio::test]
+    async fn read_preview_rejects_missing_workspace_root() {
+        let song = tempfile::tempdir().expect("song");
+
+        let result =
+            read_preview_within_workspace(song.path().to_str().unwrap(), "", "preview.jpg").await;
+
+        assert!(matches!(result, Err(ref e) if e.contains("workspace root is required")));
+    }
+
+    #[tokio::test]
+    async fn read_preview_returns_none_when_file_absent() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let song = workspace.path().join("song");
+        fs::create_dir(&song).expect("song dir");
+
+        let result =
+            read_preview_within_workspace(song.to_str().unwrap(), workspace.path().to_str().unwrap(), "preview.jpg")
+                .await;
+
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[tokio::test]
+    async fn read_preview_reads_file_inside_workspace() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let song = workspace.path().join("song");
+        fs::create_dir(&song).expect("song dir");
+        fs::write(song.join("preview.jpg"), b"img").expect("preview");
+
+        let result =
+            read_preview_within_workspace(song.to_str().unwrap(), workspace.path().to_str().unwrap(), "preview.jpg")
+                .await;
+
+        assert!(matches!(result, Ok(Some(ref bytes)) if bytes == b"img"));
     }
 }

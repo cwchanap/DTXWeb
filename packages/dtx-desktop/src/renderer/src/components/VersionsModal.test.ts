@@ -9,7 +9,7 @@ const mockVersions = vi.hoisted(() => ({
 }));
 
 const mockDesktopHost = vi.hoisted(() => ({
-	getVersions: vi.fn(() => ({
+	getVersions: vi.fn(async () => ({
 		app: mockVersions.app,
 		tauri: mockVersions.tauri
 	}))
@@ -58,7 +58,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(mockVersions.app)).toBeInTheDocument();
+		expect(await screen.findByText(mockVersions.app)).toBeInTheDocument();
 	});
 
 	it('displays Tauri version when modal is open', async () => {
@@ -66,7 +66,7 @@ describe('VersionsModal', () => {
 		await fireEvent.click(
 			screen.getByRole('button', { name: /Show application information/i })
 		);
-		expect(screen.getByText(mockVersions.tauri)).toBeInTheDocument();
+		expect(await screen.findByText(mockVersions.tauri)).toBeInTheDocument();
 	});
 
 	it('displays version labels when modal is open', async () => {

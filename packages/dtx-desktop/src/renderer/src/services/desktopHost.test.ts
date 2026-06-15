@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { listen as tauriListen } from '@tauri-apps/api/event';
+import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
 import { desktopHost, setDesktopHostRuntimeForTests, type DesktopHostRuntime } from './desktopHost';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -371,5 +373,144 @@ describe('desktopHost', () => {
 			filePaths: ['/songs']
 		});
 		expect(tauriInvoke).toHaveBeenCalledWith('select_folder');
+	});
+
+	it('passes args through Tauri invoke when the command has arguments', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(tauriInvoke).mockResolvedValue({ success: true, error: undefined });
+
+		await desktopHost.openFolder('/songs');
+		expect(tauriInvoke).toHaveBeenCalledWith('open_folder', { folderPath: '/songs' });
+	});
+
+	it('routes send calls through tauriInvoke for fire-and-forget commands', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(tauriInvoke).mockResolvedValue(undefined);
+
+		await desktopHost.openExternalUrl('https://example.com');
+		expect(tauriInvoke).toHaveBeenCalledWith('open_external_url', {
+			url: 'https://example.com'
+		});
+	});
+
+	it('wraps tauri listen callbacks and tracks unlisten registration', async () => {
+		setDesktopHostRuntimeForTests(null);
+		const tauriUnlisten = vi.fn();
+		let capturedCallback: ((event: { payload: unknown }) => void) | null = null;
+		vi.mocked(tauriListen).mockImplementation(async (_event, cb) => {
+			capturedCallback = cb;
+			return tauriUnlisten;
+		});
+
+		const userCallback = vi.fn();
+		const stop = await desktopHost.onMagicLinkResult(userCallback);
+
+		expect(tauriListen).toHaveBeenCalledWith('magic-link-result', expect.any(Function));
+
+		// Verify the payload is unwrapped before reaching the user callback
+		capturedCallback!({ payload: { success: true } });
+		expect(userCallback).toHaveBeenCalledWith({ success: true });
+
+		// Calling stop should invoke the underlying tauri unlisten
+		stop();
+		expect(tauriUnlisten).toHaveBeenCalledTimes(1);
+	});
+
+	it('removes all tracked listeners for a specific event via removeAllListeners', async () => {
+		setDesktopHostRuntimeForTests(null);
+		const tauriUnlisten = vi.fn();
+		vi.mocked(tauriListen).mockResolvedValue(tauriUnlisten);
+
+		await desktopHost.onMagicLinkResult(vi.fn());
+		await desktopHost.onMagicLinkResult(vi.fn());
+
+		desktopHost.removeAllListeners('magic-link-result');
+
+		// Both registrations should have been cleaned up
+		expect(tauriUnlisten).toHaveBeenCalledTimes(2);
+	});
+
+	it('removes all tracked listeners across every event when no event name is given', async () => {
+		setDesktopHostRuntimeForTests(null);
+		const tauriUnlisten = vi.fn();
+		vi.mocked(tauriListen).mockResolvedValue(tauriUnlisten);
+
+		await desktopHost.onMagicLinkResult(vi.fn());
+
+		desktopHost.removeAllListeners();
+		expect(tauriUnlisten).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not throw when removeAllListeners targets an event with no listeners', () => {
+		setDesktopHostRuntimeForTests(null);
+		expect(() => desktopHost.removeAllListeners('nonexistent-event')).not.toThrow();
+	});
+
+	it('resolves app and tauri versions from the Tauri runtime', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(getVersion).mockResolvedValue('2.1.0');
+		vi.mocked(getTauriVersion).mockResolvedValue('2.4.1');
+
+		await expect(desktopHost.getVersions()).resolves.toEqual({
+			app: '2.1.0',
+			tauri: '2.4.1'
+		});
+	});
+
+	it('falls back to null versions when Tauri version APIs reject', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(getVersion).mockRejectedValue(new Error('unavailable'));
+		vi.mocked(getTauriVersion).mockRejectedValue(new Error('unavailable'));
+
+		await expect(desktopHost.getVersions()).resolves.toEqual({
+			app: null,
+			tauri: null
+		});
+	});
+
+	it('detects darwin platform from navigator', () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+
+		expect(desktopHost.getPlatform()).toBe('darwin');
+	});
+
+	it('detects win32 platform from navigator', () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32');
+
+		expect(desktopHost.getPlatform()).toBe('win32');
+	});
+
+	it('detects linux platform from navigator', () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Linux x86_64');
+
+		expect(desktopHost.getPlatform()).toBe('linux');
+	});
+
+	it('returns the raw platform string when no known platform matches', () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.spyOn(navigator, 'platform', 'get').mockReturnValue('SunOS');
+
+		expect(desktopHost.getPlatform()).toBe('sunos');
+	});
+
+	it('returns unknown when navigator is undefined', () => {
+		setDesktopHostRuntimeForTests(null);
+		const originalNavigator = globalThis.navigator;
+		Object.defineProperty(globalThis, 'navigator', {
+			value: undefined,
+			configurable: true,
+			writable: true
+		});
+
+		expect(desktopHost.getPlatform()).toBe('unknown');
+
+		Object.defineProperty(globalThis, 'navigator', {
+			value: originalNavigator,
+			configurable: true,
+			writable: true
+		});
 	});
 });

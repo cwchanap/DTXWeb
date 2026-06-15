@@ -174,4 +174,90 @@ describe('App lifecycle', () => {
 			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
 		});
 	});
+
+	it('logs warnings from legacy data migration', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.migrateLegacyData.mockResolvedValue({
+			migrated: true,
+			importedKeys: [],
+			warnings: ['Missing preview image', 'Stale cache entry'],
+			localStorage: {}
+		});
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+		expect(console.warn).toHaveBeenCalledWith(
+			'Legacy desktop data migration warning:',
+			'Missing preview image'
+		);
+		expect(console.warn).toHaveBeenCalledWith(
+			'Legacy desktop data migration warning:',
+			'Stale cache entry'
+		);
+	});
+
+	it('JSON-stringifies non-string localStorage values during migration', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.migrateLegacyData.mockResolvedValue({
+			migrated: true,
+			importedKeys: ['app_settings'],
+			warnings: [],
+			localStorage: { app_settings: { exportDirectory: '/exports' } }
+		});
+		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+
+		expect(window.localStorage.setItem).toHaveBeenCalledWith(
+			'app_settings',
+			'{"exportDirectory":"/exports"}'
+		);
+	});
+
+	it('fetches simfile data and triggers auto-linking when user becomes authenticated', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		const { simFileService } = await import('./services/simFileService');
+		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
+			data: [],
+			error: null,
+			fromCache: false
+		});
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+
+		authStore.setUser({ id: '1', email: 'test@test.com' });
+
+		await waitFor(() => {
+			expect(simFileService.fetchUserSimFiles).toHaveBeenCalled();
+		});
+	});
+
+	it('sets simfile store error when fetchUserSimFiles rejects', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		const { simFileService } = await import('./services/simFileService');
+		vi.mocked(simFileService.fetchUserSimFiles).mockRejectedValue(new Error('Network error'));
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+
+		authStore.setUser({ id: '1', email: 'test@test.com' });
+
+		await waitFor(() => {
+			expect(simFileService.fetchUserSimFiles).toHaveBeenCalled();
+		});
+	});
 });

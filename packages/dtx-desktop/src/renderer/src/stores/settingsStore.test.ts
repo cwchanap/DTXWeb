@@ -196,6 +196,30 @@ describe('settingsStore', () => {
 			const state = get(freshStore);
 			expect(state.exportDirectory).toBe('~/Downloads');
 		});
+
+		it('should return fallback when platform is Windows and neither USERPROFILE nor HOME is set', async () => {
+			mockDesktopHost.getPlatform.mockReturnValue('win32');
+			mockDesktopHost.getEnvironment.mockReturnValue({});
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			const state = get(freshStore);
+			expect(state.exportDirectory).toBe('~/Downloads');
+		});
+
+		it('should return fallback when platform is Linux and HOME is not set', async () => {
+			mockDesktopHost.getPlatform.mockReturnValue('linux');
+			mockDesktopHost.getEnvironment.mockReturnValue({});
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			const state = get(freshStore);
+			expect(state.exportDirectory).toBe('~/Downloads');
+		});
 	});
 
 	describe('saveSettings error handling', () => {

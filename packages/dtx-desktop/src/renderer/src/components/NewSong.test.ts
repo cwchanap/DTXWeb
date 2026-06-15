@@ -229,6 +229,18 @@ describe('NewSong', () => {
 				expect(screen.getByText(/\/new\/path/)).toBeInTheDocument();
 			});
 		});
+
+		it('shows error message when selectFolder rejects', async () => {
+			mockDesktopHost.selectFolder.mockRejectedValue(new Error('IPC error'));
+			render(NewSong);
+			const chooseFolderBtn = screen.getByRole('button', {
+				name: /Choose different folder/i
+			});
+			await fireEvent.click(chooseFolderBtn);
+			await waitFor(() => {
+				expect(screen.getByText('Failed to select folder')).toBeInTheDocument();
+			});
+		});
 	});
 
 	describe('template selection', () => {

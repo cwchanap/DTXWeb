@@ -118,8 +118,9 @@ export const workspaceService = {
 				return;
 			}
 
-			// Use host adapter to get folders in the workspace
-			const folders = await desktopHost.listDirectories(currentPath);
+			// Use host adapter to get folders in the workspace. Pass the workspace
+			// root so the main process can enforce path containment.
+			const folders = await desktopHost.listDirectories(currentPath, currentPath);
 
 			// Filter only sub-workspaces (folders with DTXFiles. prefix)
 			const subWorkspaces = folders.filter((folder: string) =>

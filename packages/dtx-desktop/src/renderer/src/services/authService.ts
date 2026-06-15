@@ -124,38 +124,6 @@ export const authService = {
 	},
 
 	/**
-	 * Processes login callback with auth tokens (legacy support)
-	 */
-	handleAuthCallback: async (tokens: {
-		accessToken: string;
-		refreshToken: string;
-	}): Promise<void> => {
-		try {
-			if (!tokens.accessToken || !tokens.refreshToken) {
-				throw new Error('No tokens provided');
-			}
-
-			// In a real app, you would validate the token here
-			// For this example, we'll parse a simple token that contains user info
-			const userData = JSON.parse(atob(tokens.accessToken.split('.')[1])) as User;
-
-			// Store tokens locally
-			const sessionData = {
-				access_token: tokens.accessToken,
-				refresh_token: tokens.refreshToken,
-				user: userData
-			};
-			storeSessionData(sessionData);
-
-			// Update auth store
-			authStore.setUser(userData);
-		} catch (error) {
-			console.error('Failed to process auth callback:', error);
-			authStore.setError('Authentication failed');
-		}
-	},
-
-	/**
 	 * Attempts to restore auth session from storage
 	 */
 	restoreSession: async (): Promise<boolean> => {

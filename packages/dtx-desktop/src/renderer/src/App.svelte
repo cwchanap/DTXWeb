@@ -27,11 +27,6 @@
 		};
 	};
 
-	type AuthCallbackTokens = {
-		accessToken: string;
-		refreshToken: string;
-	};
-
 	type LegacyDataMigrationResult = {
 		migrated: boolean;
 		importedKeys: string[];
@@ -125,18 +120,6 @@
 			registerHostUnlistener(unlistenMagicLinkResult);
 		} catch (error) {
 			console.error('Failed to register magic link result handler:', error);
-		}
-
-		// Set up the legacy protocol handler callback
-		try {
-			const unlistenAuthCallback = await desktopHost.onAuthCallback<AuthCallbackTokens>(
-				async (tokens) => {
-					await authService.handleAuthCallback(tokens);
-				}
-			);
-			registerHostUnlistener(unlistenAuthCallback);
-		} catch (error) {
-			console.error('Failed to register auth callback handler:', error);
 		}
 
 		if (destroyed) return;

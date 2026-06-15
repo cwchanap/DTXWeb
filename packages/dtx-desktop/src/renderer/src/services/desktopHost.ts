@@ -1,5 +1,6 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen as tauriListen } from '@tauri-apps/api/event';
+import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
 
 export type DesktopHostVersions = {
 	app: string | null;
@@ -21,7 +22,7 @@ export type DesktopHostRuntime = {
 	removeAllListeners: (event?: string) => void | Promise<void>;
 	getPlatform: () => string;
 	getEnvironment: () => Record<string, string | undefined>;
-	getVersions: () => DesktopHostVersions;
+	getVersions: () => Promise<DesktopHostVersions>;
 };
 
 type SelectFolderResult = {
@@ -121,9 +122,9 @@ const createTauriRuntime = (): DesktopHostRuntime => ({
 	},
 	getPlatform: getBrowserPlatform,
 	getEnvironment: () => ({}),
-	getVersions: () => ({
-		app: null,
-		tauri: '2'
+	getVersions: async () => ({
+		app: await getVersion().catch(() => null),
+		tauri: await getTauriVersion().catch(() => null)
 	})
 });
 
@@ -188,8 +189,11 @@ export const desktopHost = {
 	openFolder: async (folderPath: string): Promise<OpenFolderResult> =>
 		await invokeHost<OpenFolderResult>('open_folder', { folderPath }),
 
-	listDirectories: async (dirPath: string): Promise<string[]> =>
-		await invokeHost<string[]>('list_directories', { dirPath }),
+	listDirectories: async (
+		dirPath: string,
+		workspaceRoot: string | null = null
+	): Promise<string[]> =>
+		await invokeHost<string[]>('list_directories', { dirPath, workspaceRoot }),
 
 	listDirectory: async <T = unknown>(dirPath: string): Promise<T> =>
 		await invokeHost<T>('list_directory', { dirPath }),
@@ -288,13 +292,10 @@ export const desktopHost = {
 
 	getEnvironment: (): Record<string, string | undefined> => getRuntime().getEnvironment(),
 
-	getVersions: (): DesktopHostVersions => getRuntime().getVersions(),
+	getVersions: (): Promise<DesktopHostVersions> => getRuntime().getVersions(),
 
 	onMagicLinkResult: async <T = unknown>(callback: (result: T) => void): Promise<HostUnlisten> =>
 		await getRuntime().listen<T>('magic-link-result', callback),
-
-	onAuthCallback: async <T = unknown>(callback: (tokens: T) => void): Promise<HostUnlisten> =>
-		await getRuntime().listen<T>('auth-callback', callback),
 
 	removeAllListeners: (event?: string): void | Promise<void> =>
 		getRuntime().removeAllListeners(event)

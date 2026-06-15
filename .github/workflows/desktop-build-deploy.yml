@@ -10,14 +10,22 @@ on:
       - 'v*'
   workflow_dispatch: # Allows manual triggering
 
+# Notes:
+# - Tauri cannot cross-compile installers the way electron-builder+wine did,
+#   so Windows now builds on windows-latest and macOS on macos-latest.
+# - macOS currently targets aarch64 (Apple Silicon) only. To also ship Intel
+#   macs, add a second mac job with `--target x86_64-apple-darwin` (or build
+#   universal-apple-darwin once you confirm native deps support it), then add
+#   a `darwin-x86_64` entry to latest.json in the deploy job.
+# - The packaged app reads PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY /
+#   VITE_DTX_API_URL via std::env::var at runtime. These must be available to
+#   the deployed binary; verify how they are injected for the packaged build.
+
 jobs:
   build-windows:
-    name: Windows Electron Build
+    name: Windows Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
-    runs-on: ubuntu-latest
-    container:
-      image: electronuserland/builder:wine
-      options: --user 1001
+    runs-on: windows-latest
     environment: Electron
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
@@ -34,31 +42,48 @@ jobs:
         with:
           bun-version: '1.3.9'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: packages/dtx-desktop/src-tauri
+
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Electron App for Windows
-        run: |
-          bun run --filter=@dtx/common build
-          bun run --filter=dtx-desktop build:win
+      - name: Build Shared Package
+        run: bun run --filter=@dtx/common build
+
+      - name: Build Tauri App for Windows
+        run: bun run --filter=dtx-desktop tauri build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Organize Artifacts
+        shell: bash
         run: |
           mkdir -p dist/artifacts
-          cp packages/dtx-desktop/dist/*.exe dist/artifacts/
-          cp packages/dtx-desktop/dist/latest.yml dist/artifacts/latest.yml
+          BUNDLE_DIR="packages/dtx-desktop/src-tauri/target/release/bundle"
+          # NSIS installer (for first-time download)
+          cp "$BUNDLE_DIR/nsis/"*-setup.exe dist/artifacts/ 2>/dev/null || true
+          # Updater bundle + signature (consumed by the Tauri updater)
+          cp "$BUNDLE_DIR/nsis/"*-setup.nsis.zip dist/artifacts/ 2>/dev/null || true
+          cp "$BUNDLE_DIR/nsis/"*-setup.nsis.zip.sig dist/artifacts/ 2>/dev/null || true
+          ls -la dist/artifacts/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: electron-app-win
+          name: tauri-app-win
           path: dist/artifacts/
           retention-days: 5
 
   build-mac:
-    name: macOS Electron Build
+    name: macOS Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: macos-latest
     environment: Electron
@@ -77,27 +102,43 @@ jobs:
         with:
           bun-version: '1.3.9'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: packages/dtx-desktop/src-tauri
+
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Electron App for macOS
-        run: |
-          bun run --filter=@dtx/common build
-          bun run --filter=dtx-desktop build:mac
+      - name: Build Shared Package
+        run: bun run --filter=@dtx/common build
+
+      - name: Build Tauri App for macOS
+        run: bun run --filter=dtx-desktop tauri build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Organize Artifacts
+        shell: bash
         run: |
           mkdir -p dist/artifacts
-          cp packages/dtx-desktop/dist/*.dmg dist/artifacts/ 2>/dev/null || true
-          cp packages/dtx-desktop/dist/*.zip dist/artifacts/ 2>/dev/null || true
-          cp packages/dtx-desktop/dist/latest-mac.yml dist/artifacts/latest-mac.yml 2>/dev/null || true
+          BUNDLE_DIR="packages/dtx-desktop/src-tauri/target/release/bundle"
+          # DMG installer (for first-time download)
+          cp "$BUNDLE_DIR/dmg/"*.dmg dist/artifacts/ 2>/dev/null || true
+          # Updater bundle + signature (consumed by the Tauri updater)
+          cp "$BUNDLE_DIR/macos/"*.app.tar.gz dist/artifacts/ 2>/dev/null || true
+          cp "$BUNDLE_DIR/macos/"*.app.tar.gz.sig dist/artifacts/ 2>/dev/null || true
+          ls -la dist/artifacts/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: electron-app-mac
+          name: tauri-app-mac
           path: dist/artifacts/
           retention-days: 5
 
@@ -114,13 +155,13 @@ jobs:
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: electron-app-win
+          name: tauri-app-win
           path: dist/artifacts/win
 
       - name: Download macOS Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: electron-app-mac
+          name: tauri-app-mac
           path: dist/artifacts/mac
 
       - name: Set Release Version
@@ -131,54 +172,68 @@ jobs:
           else
             VERSION=$(date +'%Y%m%d%H%M%S')
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - name: Prepare Deployment Files
+        shell: bash
         run: |
-          TAG_VERSION=${{ env.VERSION }}
-
-          # Organize all artifacts into a single directory
+          set -euo pipefail
           mkdir -p dist/artifacts/all
           cp dist/artifacts/win/* dist/artifacts/all/ 2>/dev/null || true
           cp dist/artifacts/mac/* dist/artifacts/all/ 2>/dev/null || true
 
-          WIN_FILE_PATH=$(find dist/artifacts/all -maxdepth 1 -type f -name 'dtx-desktop-*-setup.exe' -print -quit)
-          if [[ -z "$WIN_FILE_PATH" ]]; then
-            echo "Missing Windows installer artifact in dist/artifacts/all" >&2
+          R2_URL="${{ vars.R2_PUBLIC_URL }}"
+
+          # Locate the Tauri updater bundles (not the .sig sidecars) and their
+          # signature files. The .nsis.zip / .app.tar.gz are what the updater
+          # downloads; the matching .sig holds the minisign signature string.
+          WIN_BUNDLE=$(find dist/artifacts/all -maxdepth 1 -type f -name '*.nsis.zip' -print -quit)
+          MAC_BUNDLE=$(find dist/artifacts/all -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)
+
+          if [[ -z "$WIN_BUNDLE" || -z "$MAC_BUNDLE" ]]; then
+            echo "Missing Tauri updater bundle (expected .nsis.zip and .app.tar.gz)" >&2
+            ls -la dist/artifacts/all/
             exit 1
           fi
-          WIN_FILE=$(basename "$WIN_FILE_PATH")
 
-          MAC_FILE_PATH=$(find dist/artifacts/all -maxdepth 1 -type f -name 'dtx-desktop-*.dmg' -print -quit)
-          if [[ -z "$MAC_FILE_PATH" ]]; then
-            echo "Missing macOS DMG artifact in dist/artifacts/all" >&2
+          WIN_SIG_FILE="${WIN_BUNDLE}.sig"
+          MAC_SIG_FILE="${MAC_BUNDLE}.sig"
+          if [[ ! -f "$WIN_SIG_FILE" || ! -f "$MAC_SIG_FILE" ]]; then
+            echo "Missing signature file (was TAURI_SIGNING_PRIVATE_KEY set at build time?)" >&2
             exit 1
           fi
-          MAC_FILE=$(basename "$MAC_FILE_PATH")
 
-          # Create a latest.json file for auto-updates using the staged artifact names
-          cat > dist/artifacts/all/latest.json << EOF
-          {
-            "version": "$TAG_VERSION",
-            "notes": "Release version $TAG_VERSION",
-            "platforms": {
-              "win64": {
-                "file": "$WIN_FILE",
-                "url": "${{ vars.R2_PUBLIC_URL }}/$WIN_FILE"
-              },
-              "darwin": {
-                "file": "$MAC_FILE",
-                "url": "${{ vars.R2_PUBLIC_URL }}/$MAC_FILE"
+          WIN_FILE=$(basename "$WIN_BUNDLE")
+          MAC_FILE=$(basename "$MAC_BUNDLE")
+          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # Build the Tauri updater manifest. jq --rawfile embeds each .sig's
+          # full minisign block as a properly-escaped JSON string.
+          jq -n \
+            --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg notes "Release $VERSION" \
+            --rawfile win_sig "$WIN_SIG_FILE" \
+            --arg win_url "${R2_URL}/${WIN_FILE}" \
+            --rawfile mac_sig "$MAC_SIG_FILE" \
+            --arg mac_url "${R2_URL}/${MAC_FILE}" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": { signature: $win_sig, url: $win_url },
+                "darwin-aarch64": { signature: $mac_sig, url: $mac_url }
               }
-            }
-          }
-          EOF
+            }' \
+            > dist/artifacts/all/latest.json
 
-          # List all deployment files
+          echo "--- latest.json ---"
+          cat dist/artifacts/all/latest.json
+          echo "--- files ---"
           ls -la dist/artifacts/all/
-        shell: bash
 
       - name: Setup Bun for Wrangler
         uses: oven-sh/setup-bun@v2
@@ -190,30 +245,22 @@ jobs:
 
       - name: Deploy to Cloudflare R2 using Wrangler
         run: |
-          # Create temporary wrangler.toml file
-          cat > wrangler.toml << EOF
-          name = "drumery-desktop"
-
-          [[r2_buckets]]
-          binding = "MY_BUCKET"
-          bucket_name = "${{ vars.R2_BUCKET }}"
-          EOF
-
-          # Upload each file with appropriate content-type and cache-control
           for file in dist/artifacts/all/*; do
             filename=$(basename "$file")
             content_type="application/octet-stream"
-            
+
             if [[ $filename == *.exe ]]; then
               content_type="application/vnd.microsoft.portable-executable"
             elif [[ $filename == *.dmg ]]; then
               content_type="application/x-apple-diskimage"
-            elif [[ $filename == *.zip ]]; then
-              content_type="application/zip"
-            elif [[ $filename == *.yml ]] || [[ $filename == *.json ]]; then
+            elif [[ $filename == *.sig ]]; then
+              content_type="text/plain"
+            elif [[ $filename == *.json ]]; then
               content_type="application/json"
+            elif [[ $filename == *.zip ]] || [[ $filename == *.gz ]]; then
+              content_type="application/gzip"
             fi
-            
+
             echo "Uploading $filename with content-type: $content_type"
             wrangler r2 object put "${{ vars.R2_BUCKET }}/$filename" --file="$file" \
               --content-type="$content_type" --remote

@@ -873,4 +873,251 @@ describe('SongDetails', () => {
 			expect(screen.queryByText(/Could not fetch the next display ID/)).toBeNull();
 		});
 	});
+
+	describe('handleUpdateSimfile', () => {
+		it('invokes update-simfile-record when saving a linked song', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'update-simfile-record') {
+						return {
+							success: true,
+							data: { title: 'Updated Song' }
+						};
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: makeLinkedSimFile(),
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+
+			await waitFor(() => {
+				expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 5,
+					publishDate: '2024-06-15',
+					isPublished: true,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith('update-simfile-record', {
+					simfileId: '42',
+					updateData: expect.objectContaining({ display_id: 5 })
+				});
+			});
+		});
+
+		it('handles update-simfile-record failure gracefully', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'update-simfile-record') {
+						return { success: false, error: 'Database error' };
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: makeLinkedSimFile(),
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+
+			await waitFor(() => {
+				expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 5,
+					publishDate: '2024-06-15',
+					isPublished: false,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith('update-simfile-record', {
+					simfileId: '42',
+					updateData: expect.any(Object)
+				});
+			});
+		});
+	});
+
+	describe('loadAssetFilesForDesktop', () => {
+		it('includes workspaceRoot when uploading a new song', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			workspaceState = { ...workspaceState, path: '/test/workspace' };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return 42;
+					if (channel === 'parse-dtx-files') {
+						return { bpm: 120, artist: 'Artist', levels: [{ label: 'EXT', level: 9 }] };
+					}
+					if (channel === 'create-simfile-record') {
+						return {
+							success: true,
+							simfileId: '99',
+							data: {
+								id: 99,
+								title: 'TestSong',
+								artist: 'Artist',
+								bpm: 120,
+								display_id: 42,
+								is_published: false,
+								publish_date: '2024-01-01',
+								download_url: '',
+								preview_url: '',
+								video_preview_url: '',
+								dtx_files: []
+							}
+						};
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith('get-next-display-id');
+			});
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: false,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'create-simfile-record',
+					expect.objectContaining({ workspaceRoot: '/test/workspace' })
+				);
+			});
+		});
+
+		it('uploads and publishes when triggerSave(true) is invoked', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return 42;
+					if (channel === 'parse-dtx-files') {
+						return { bpm: 120, artist: 'Artist', levels: [] };
+					}
+					if (channel === 'create-simfile-record') {
+						return {
+							success: true,
+							simfileId: '100',
+							data: {
+								id: 100,
+								title: 'TestSong',
+								artist: 'Artist',
+								bpm: 120,
+								display_id: 42,
+								is_published: true,
+								publish_date: '2024-01-01',
+								download_url: '',
+								preview_url: '',
+								video_preview_url: '',
+								dtx_files: []
+							}
+						};
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: true,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'create-simfile-record',
+					expect.objectContaining({ isPublished: true })
+				);
+			});
+		});
+
+		it('handles create-simfile-record failure with error message', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'get-next-display-id') return 42;
+					if (channel === 'create-simfile-record') {
+						return { success: false, error: 'Network timeout' };
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 0,
+					publishDate: '2024-01-01',
+					isPublished: false,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'create-simfile-record',
+					expect.any(Object)
+				);
+			});
+		});
+	});
 });

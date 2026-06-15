@@ -36,4 +36,10 @@ describe('Versions', () => {
 		expect(screen.getByText('Application')).toBeInTheDocument();
 		expect(screen.getByText('Tauri')).toBeInTheDocument();
 	});
+
+	it('keeps null versions when getVersions rejects', async () => {
+		mockDesktopHost.getVersions.mockRejectedValue(new Error('IPC unavailable'));
+		render(Versions);
+		expect((await screen.findAllByText('—')).length).toBe(2);
+	});
 });

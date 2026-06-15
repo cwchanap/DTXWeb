@@ -87,4 +87,13 @@ describe('VersionsModal', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /Close/i }));
 		expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
 	});
+
+	it('keeps null versions when getVersions rejects', async () => {
+		mockDesktopHost.getVersions.mockRejectedValue(new Error('IPC unavailable'));
+		render(VersionsModal);
+		await fireEvent.click(
+			screen.getByRole('button', { name: /Show application information/i })
+		);
+		expect(await screen.findAllByText('—')).toHaveLength(2);
+	});
 });

@@ -17,9 +17,14 @@ on:
 #   macs, add a second mac job with `--target x86_64-apple-darwin` (or build
 #   universal-apple-darwin once you confirm native deps support it), then add
 #   a `darwin-x86_64` entry to latest.json in the deploy job.
-# - The packaged app reads PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY /
-#   VITE_DTX_API_URL via std::env::var at runtime. These must be available to
-#   the deployed binary; verify how they are injected for the packaged build.
+# - The packaged app bakes public config into the binary at BUILD time via the
+#   config_env! macro (option_env! first, std::env::var fallback). The packaged
+#   binary does NOT load .env files, so every public config value used by the
+#   Rust backend (PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, VITE_DTX_API_URL,
+#   PUBLIC_SIMFILE_BUCKET_URL) MUST be present in this CI environment for
+#   option_env! to capture it during `tauri build`. VITE_DTX_SERVER_URL is also
+#   required by the Vite renderer (authService login redirect) and is inlined at
+#   frontend build time.
 
 jobs:
   build-windows:
@@ -30,8 +35,9 @@ jobs:
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+      VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
-      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
+      PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
 
     steps:
       - name: Checkout Repository
@@ -90,8 +96,9 @@ jobs:
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+      VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
-      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
+      PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
 
     steps:
       - name: Checkout Repository

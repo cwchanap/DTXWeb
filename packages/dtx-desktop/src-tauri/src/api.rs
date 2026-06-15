@@ -123,10 +123,9 @@ impl ApiResultValue {
     }
 }
 
-pub fn api_base_url_from_values(api_url: Option<&str>, server_url: Option<&str>) -> Result<String> {
+pub fn api_base_url_from_values(api_url: Option<&str>) -> Result<String> {
     let url = api_url
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| server_url.filter(|value| !value.trim().is_empty()))
         .ok_or_else(|| {
             DesktopError::Message("VITE_DTX_API_URL environment variable is not set".to_string())
         })?;
@@ -135,10 +134,7 @@ pub fn api_base_url_from_values(api_url: Option<&str>, server_url: Option<&str>)
 }
 
 fn api_base_url_from_env() -> Result<String> {
-    api_base_url_from_values(
-        config_env!("VITE_DTX_API_URL").as_deref(),
-        config_env!("VITE_DTX_SERVER_URL").as_deref(),
-    )
+    api_base_url_from_values(config_env!("VITE_DTX_API_URL").as_deref())
 }
 
 fn bucket_base_url_from_env() -> Result<String> {
@@ -939,22 +935,18 @@ mod tests {
     }
 
     #[test]
-    fn api_base_url_prefers_api_url_and_trims_trailing_slash() {
-        let base = api_base_url_from_values(
-            Some(" https://api.example.com/ "),
-            Some("https://server.example.com/"),
-        )
-        .expect("base url");
+    fn api_base_url_trims_whitespace_and_trailing_slash() {
+        let base =
+            api_base_url_from_values(Some(" https://api.example.com/ ")).expect("base url");
 
         assert_eq!(base, "https://api.example.com");
     }
 
     #[test]
-    fn api_base_url_falls_back_to_server_url() {
-        let base = api_base_url_from_values(Some(""), Some("https://server.example.com/"))
-            .expect("base url");
+    fn api_base_url_rejects_empty_value() {
+        let result = api_base_url_from_values(Some(""));
 
-        assert_eq!(base, "https://server.example.com");
+        assert!(result.is_err());
     }
 
     #[test]

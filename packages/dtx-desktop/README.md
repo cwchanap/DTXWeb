@@ -28,7 +28,7 @@ $ bun run build:win
 
 # For macOS
 $ bun run build:mac
-
-# For Linux
-$ bun run build:linux
 ```
+
+> Note: `tauri build` only bundles for the host OS you build on. To produce a
+> Linux build, run `bun run tauri build` on Linux directly (no wrapper script).

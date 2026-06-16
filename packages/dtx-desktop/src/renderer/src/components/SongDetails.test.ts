@@ -22,7 +22,9 @@ const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
 	return {
 		mockHostInvoke: hostInvoke,
 		mockDesktopHost: {
-			listFiles: vi.fn((dirPath: string) => hostInvoke('list-files', dirPath)),
+			listFiles: vi.fn((dirPath: string, workspaceRoot: string | null = null) =>
+				hostInvoke('list-files', dirPath, workspaceRoot)
+			),
 			readFile: vi.fn((filePath: string, workspaceRoot: string | null = null) =>
 				hostInvoke('read-file', filePath, workspaceRoot)
 			),
@@ -192,7 +194,11 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/my/songs/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/my/songs/TestSong');
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'list-files',
+					'/my/songs/TestSong',
+					'/my/songs/TestSong'
+				);
 			});
 		});
 
@@ -228,7 +234,11 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'list-files',
+					'/test/TestSong',
+					'/test/TestSong'
+				);
 			});
 		});
 
@@ -529,7 +539,11 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'list-files',
+					'/test/TestSong',
+					'/test/TestSong'
+				);
 			});
 			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
@@ -553,7 +567,11 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'list-files',
+					'/test/TestSong',
+					'/test/TestSong'
+				);
 			});
 			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});

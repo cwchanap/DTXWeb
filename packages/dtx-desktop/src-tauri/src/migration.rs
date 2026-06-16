@@ -1,3 +1,18 @@
+//! One-shot migration of legacy Electron desktop data into this Tauri app's
+//! data directory.
+//!
+//! Legacy Electron builds persisted localStorage (workspace path, bookmarks,
+//! auth tokens, caches, etc.) under a platform-specific `dtx-desktop` dir as
+//! `local-storage.json`. This module imports the known keys exactly once: a
+//! `migration-v1.json` marker is written after the first run, and its presence
+//! short-circuits all subsequent attempts, so the migration is idempotent and
+//! safe across restarts. The imported payload is returned to the renderer,
+//! which hydrates its own localStorage; the raw import is also dumped to
+//! `imported-local-storage.json` for debugging.
+//!
+//! Malformed/missing legacy storage is not fatal: the marker is still written
+//! and the failure is recorded as a warning rather than an error result.
+
 use crate::error::Result;
 use serde::Serialize;
 use serde_json::{json, Map, Value};

@@ -33,7 +33,7 @@ describe('SimFileService', () => {
 	});
 
 	describe('fetchUserSimFiles', () => {
-		it('should fetch user simFiles from main process', async () => {
+		it('should fetch user simFiles from the Rust backend', async () => {
 			const mockData = [
 				{
 					id: '1',
@@ -73,7 +73,7 @@ describe('SimFileService', () => {
 			expect(result.fromCache).toBe(true);
 		});
 
-		it('should handle errors from main process', async () => {
+		it('should handle errors from the Rust backend', async () => {
 			host.fetchUserSimfiles.mockResolvedValue({
 				success: false,
 				data: [],

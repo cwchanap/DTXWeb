@@ -195,14 +195,18 @@ export const desktopHost = {
 	): Promise<string[]> =>
 		await invokeHost<string[]>('list_directories', { dirPath, workspaceRoot }),
 
-	listDirectory: async <T = unknown>(dirPath: string): Promise<T> =>
-		await invokeHost<T>('list_directory', { dirPath }),
+	listDirectory: async <T = unknown>(
+		dirPath: string,
+		workspaceRoot: string | null = null
+	): Promise<T> => await invokeHost<T>('list_directory', { dirPath, workspaceRoot }),
 
 	loadTreeStructure: async <T = unknown>(basePath: string, ...pathParts: string[]): Promise<T> =>
 		await invokeHost<T>('load_tree_structure', { basePath, pathParts }),
 
-	listFiles: async <T = unknown>(dirPath: string): Promise<T> =>
-		await invokeHost<T>('list_files', { dirPath }),
+	listFiles: async <T = unknown>(
+		dirPath: string,
+		workspaceRoot: string | null = null
+	): Promise<T> => await invokeHost<T>('list_files', { dirPath, workspaceRoot }),
 
 	readFile: async (
 		filePath: string,

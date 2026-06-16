@@ -151,15 +151,15 @@ describe('supabaseService', () => {
 	});
 
 	describe('validateSession', () => {
-		it('should return false when no session data is stored', async () => {
+		it('should return invalid when no session data is stored', async () => {
 			localStorageMock.getItem.mockReturnValue(null);
 
 			const result = await validateSession();
 
-			expect(result).toBe(false);
+			expect(result).toBe('invalid');
 		});
 
-		it('should validate session through desktop host and return true when valid', async () => {
+		it('should validate session through desktop host and return valid when valid', async () => {
 			const userData = { id: 'user-1' };
 			localStorageMock.getItem.mockImplementation((key: string) => {
 				if (key === 'auth_access_token') return 'acc123';
@@ -167,17 +167,32 @@ describe('supabaseService', () => {
 				if (key === 'auth_user_data') return JSON.stringify(userData);
 				return null;
 			});
-			host.validateSession.mockResolvedValue(true);
+			host.validateSession.mockResolvedValue({ status: 'valid' });
 
 			const result = await validateSession();
 
 			expect(host.validateSession).toHaveBeenCalledWith(
 				expect.objectContaining({ accessToken: 'acc123', refreshToken: 'ref456' })
 			);
-			expect(result).toBe(true);
+			expect(result).toBe('valid');
 		});
 
-		it('should return false when host validation throws', async () => {
+		it('should return not-configured when the host reports Supabase is not configured', async () => {
+			const userData = { id: 'user-1' };
+			localStorageMock.getItem.mockImplementation((key: string) => {
+				if (key === 'auth_access_token') return 'acc123';
+				if (key === 'auth_refresh_token') return 'ref456';
+				if (key === 'auth_user_data') return JSON.stringify(userData);
+				return null;
+			});
+			host.validateSession.mockResolvedValue({ status: 'not-configured' });
+
+			const result = await validateSession();
+
+			expect(result).toBe('not-configured');
+		});
+
+		it('should return invalid when host validation throws', async () => {
 			const userData = { id: 'user-1' };
 			localStorageMock.getItem.mockImplementation((key: string) => {
 				if (key === 'auth_access_token') return 'acc123';
@@ -189,7 +204,7 @@ describe('supabaseService', () => {
 
 			const result = await validateSession();
 
-			expect(result).toBe(false);
+			expect(result).toBe('invalid');
 		});
 	});
 

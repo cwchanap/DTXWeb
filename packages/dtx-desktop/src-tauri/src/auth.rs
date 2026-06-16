@@ -268,29 +268,58 @@ fn non_empty_token(token: Option<String>) -> Option<String> {
     })
 }
 
+/// Outcome of `validate_session`. Serialized to `"valid"`, `"invalid"`, or
+/// `"not-configured"` for the renderer.
+///
+/// `NotConfigured` is distinct from `Invalid` so the renderer can tell a
+/// misconfigured build (missing Supabase env) apart from a genuinely rejected
+/// session. Without that distinction the renderer would wipe a potentially-good
+/// stored session on every startup of a misconfigured build, then fail to log
+/// back in — an inconsistent, confusing state (see `verify_magic_link`, which
+/// surfaces the same condition as an explicit error).
+#[derive(Debug, Serialize, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionValidationStatus {
+    Valid,
+    Invalid,
+    NotConfigured,
+}
+
 #[tauri::command]
-pub async fn validate_session(app: AppHandle, session_data: SessionData) -> Result<bool> {
+pub async fn validate_session(
+    app: AppHandle,
+    session_data: SessionData,
+) -> Result<SessionValidationStatus> {
     let supabase_url = match config_env!("PUBLIC_SUPABASE_URL") {
         Some(value) => value,
-        None => return Ok(false),
+        None => return Ok(SessionValidationStatus::NotConfigured),
     };
     let anon_key = match config_env!("PUBLIC_SUPABASE_ANON_KEY") {
         Some(value) => value,
-        None => return Ok(false),
+        None => return Ok(SessionValidationStatus::NotConfigured),
     };
     let client = match auth_client() {
         Ok(client) => client,
-        Err(_) => return Ok(false),
+        // A client-construction failure is not a config problem; preserve the
+        // historical "treat as invalid" behavior rather than masking it as
+        // not-configured.
+        Err(_) => return Ok(SessionValidationStatus::Invalid),
     };
 
-    Ok(validate_session_with_client(
+    let is_valid = validate_session_with_client(
         client,
         &app.state::<AuthState>(),
         &supabase_url,
         &anon_key,
         session_data,
     )
-    .await)
+    .await;
+
+    Ok(if is_valid {
+        SessionValidationStatus::Valid
+    } else {
+        SessionValidationStatus::Invalid
+    })
 }
 
 #[tauri::command]

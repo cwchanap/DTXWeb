@@ -1,5 +1,5 @@
 // Session management service for renderer process
-// All Supabase operations are handled in the main process
+// All Supabase operations are handled in the Rust backend
 
 import { desktopHost } from './desktopHost';
 
@@ -59,24 +59,34 @@ export const clearStoredSessionData = (): void => {
 	}
 };
 
-// Function to check if session is valid via main process
-export const validateSession = async (): Promise<boolean> => {
+// Function to check if session is valid via the Rust backend
+export type SessionValidationStatus = 'valid' | 'invalid' | 'not-configured';
+
+export const validateSession = async (): Promise<SessionValidationStatus> => {
 	try {
 		const sessionData = getStoredSessionData();
 		if (!sessionData) {
-			return false;
+			return 'invalid';
 		}
 
-		// Ask host process to validate the session
-		const isValid = await desktopHost.validateSession<boolean>(sessionData);
-		return isValid;
+		// Ask the Rust backend to validate the session. It distinguishes
+		// "not-configured" (Supabase env missing on a misconfigured build) from
+		// a genuine "invalid" so the caller does not silently wipe a good
+		// stored session when the build itself is the problem.
+		const result = await desktopHost.validateSession<{ status: SessionValidationStatus }>(
+			sessionData
+		);
+		return result.status;
 	} catch (error) {
 		console.error('Failed to validate session:', error);
-		return false;
+		// A transport failure is not necessarily an invalid session, but we
+		// preserve the historical behavior (treat as invalid -> caller clears)
+		// rather than risk masking a real rejection by keeping the session.
+		return 'invalid';
 	}
 };
 
-// Function to get current session from main process
+// Function to get current session from Rust backend
 export const getCurrentSession = async (): Promise<unknown> => {
 	try {
 		const session = await desktopHost.getCurrentSession();

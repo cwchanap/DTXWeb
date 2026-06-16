@@ -117,9 +117,15 @@ describe('desktopHost', () => {
 				workspaceRoot: '/songs'
 			}
 		);
-		await expectTauriInvoke({}, () => desktopHost.listDirectory('/songs'), 'list_directory', {
-			dirPath: '/songs'
-		});
+		await expectTauriInvoke(
+			{},
+			() => desktopHost.listDirectory('/songs', '/songs'),
+			'list_directory',
+			{
+				dirPath: '/songs',
+				workspaceRoot: '/songs'
+			}
+		);
 		await expectTauriInvoke(
 			{},
 			() => desktopHost.loadTreeStructure('/songs', 'DTXFiles.A'),
@@ -129,9 +135,15 @@ describe('desktopHost', () => {
 				pathParts: ['DTXFiles.A']
 			}
 		);
-		await expectTauriInvoke({}, () => desktopHost.listFiles('/songs/A'), 'list_files', {
-			dirPath: '/songs/A'
-		});
+		await expectTauriInvoke(
+			{},
+			() => desktopHost.listFiles('/songs/A', '/songs/A'),
+			'list_files',
+			{
+				dirPath: '/songs/A',
+				workspaceRoot: '/songs/A'
+			}
+		);
 		await expectTauriInvoke(
 			{},
 			() => desktopHost.getSkinAsset('default/Graphics/7_pads.png'),

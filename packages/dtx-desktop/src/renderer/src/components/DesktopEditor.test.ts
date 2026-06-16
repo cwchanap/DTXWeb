@@ -255,6 +255,19 @@ describe('DesktopEditor', () => {
 		});
 	});
 
+	it('surfaces a visible chart load error when list-files returns an error', async () => {
+		// A workspace path in storage triggers loadChartFromPath on mount.
+		// Spy on the localStorage instance (not the prototype) so it shadows
+		// the beforeEach prototype spy cleanly.
+		vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+		mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: 'permission-denied' });
+		render(DesktopEditor);
+
+		await waitFor(() => {
+			expect(screen.getByText(/Could not load chart files/)).toBeInTheDocument();
+		});
+	});
+
 	it('shows simFileId in header when provided', () => {
 		render(DesktopEditor, { props: { simFileId: 'test-song-42' } });
 		expect(screen.getByText(/test-song-42/)).toBeInTheDocument();

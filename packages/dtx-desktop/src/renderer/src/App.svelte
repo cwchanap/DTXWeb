@@ -27,13 +27,6 @@
 		};
 	};
 
-	type LegacyDataMigrationResult = {
-		migrated: boolean;
-		importedKeys: string[];
-		warnings: string[];
-		localStorage?: Record<string, unknown>;
-	};
-
 	// Routing state
 	let currentRoute = $state('workspace');
 	let routeParams = $state<{ simFileId?: string }>({});
@@ -47,37 +40,6 @@
 		}
 
 		hostUnlisteners.push(unlisten);
-	};
-
-	const localStorageValue = (value: unknown): string => {
-		if (typeof value === 'string') {
-			return value;
-		}
-
-		return JSON.stringify(value);
-	};
-
-	const applyImportedLocalStorage = (result: LegacyDataMigrationResult): void => {
-		const imported = result.localStorage ?? {};
-		for (const [key, value] of Object.entries(imported)) {
-			if (localStorage.getItem(key) !== null) {
-				continue;
-			}
-
-			localStorage.setItem(key, localStorageValue(value));
-		}
-	};
-
-	const runLegacyDataMigration = async (): Promise<void> => {
-		try {
-			const result = await desktopHost.migrateLegacyData();
-			applyImportedLocalStorage(result);
-			for (const warning of result.warnings) {
-				console.warn('Legacy desktop data migration warning:', warning);
-			}
-		} catch (error) {
-			console.warn('Legacy desktop data migration did not complete:', error);
-		}
 	};
 
 	// Function to handle route changes
@@ -128,9 +90,6 @@
 		} catch (error) {
 			console.error('Failed to drain pending auth events:', error);
 		}
-
-		if (destroyed) return;
-		await runLegacyDataMigration();
 
 		// Try to restore session
 		if (destroyed) return;

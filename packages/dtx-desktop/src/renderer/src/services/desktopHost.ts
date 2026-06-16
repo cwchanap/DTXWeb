@@ -7,13 +7,6 @@ export type DesktopHostVersions = {
 	tauri: string | null;
 };
 
-export type LegacyDataMigrationResult = {
-	migrated: boolean;
-	importedKeys: string[];
-	warnings: string[];
-	localStorage?: Record<string, unknown>;
-};
-
 export type DesktopHostRuntime = {
 	kind: 'tauri';
 	invoke: <T = unknown>(command: string, ...args: unknown[]) => Promise<T>;
@@ -237,9 +230,6 @@ export const desktopHost = {
 
 	drainPendingAuthEvents: async (): Promise<void> =>
 		await invokeHost<void>('drain_pending_auth_events'),
-
-	migrateLegacyData: async (): Promise<LegacyDataMigrationResult> =>
-		await invokeHost<LegacyDataMigrationResult>('migrate_legacy_data'),
 
 	fetchUserSimfiles: async <T = unknown>(): Promise<T> =>
 		await invokeHost<T>('fetch_user_simfiles'),

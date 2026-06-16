@@ -3,8 +3,7 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 
 const mockDesktopHost = vi.hoisted(() => ({
 	onMagicLinkResult: vi.fn(),
-	drainPendingAuthEvents: vi.fn(),
-	migrateLegacyData: vi.fn()
+	drainPendingAuthEvents: vi.fn()
 }));
 
 const mockAuthService = vi.hoisted(() => ({
@@ -68,12 +67,6 @@ describe('App lifecycle', () => {
 		window.location.hash = '';
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
 		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
-		mockDesktopHost.migrateLegacyData.mockResolvedValue({
-			migrated: false,
-			importedKeys: [],
-			warnings: [],
-			localStorage: {}
-		});
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 	});
 
@@ -97,11 +90,10 @@ describe('App lifecycle', () => {
 
 		expect(magicLinkUnlisten).toHaveBeenCalledOnce();
 		expect(mockDesktopHost.drainPendingAuthEvents).not.toHaveBeenCalled();
-		expect(mockDesktopHost.migrateLegacyData).not.toHaveBeenCalled();
 		expect(mockAuthService.restoreSession).not.toHaveBeenCalled();
 	});
 
-	it('drains pending auth events and migrates data before restoring the session', async () => {
+	it('drains pending auth events before restoring the session', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 
 		render(App);
@@ -109,48 +101,13 @@ describe('App lifecycle', () => {
 		await waitFor(() => {
 			expect(mockDesktopHost.drainPendingAuthEvents).toHaveBeenCalledOnce();
 		});
-		expect(mockDesktopHost.migrateLegacyData).toHaveBeenCalledOnce();
 		expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
 		expect(mockDesktopHost.onMagicLinkResult.mock.invocationCallOrder[0]).toBeLessThan(
 			mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]
 		);
 		expect(mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]).toBeLessThan(
-			mockDesktopHost.migrateLegacyData.mock.invocationCallOrder[0]
-		);
-		expect(mockDesktopHost.migrateLegacyData.mock.invocationCallOrder[0]).toBeLessThan(
 			mockAuthService.restoreSession.mock.invocationCallOrder[0]
 		);
-	});
-
-	it('applies migrated localStorage keys without overwriting existing keys', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.migrateLegacyData.mockResolvedValue({
-			migrated: true,
-			importedKeys: ['auth_access_token', 'app_settings'],
-			warnings: [],
-			localStorage: {
-				auth_access_token: 'access',
-				app_settings: { exportDirectory: '/exports' }
-			}
-		});
-		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockImplementation(
-			(key: string) => (key === 'app_settings' ? '{"exportDirectory":"/existing"}' : null)
-		);
-
-		render(App);
-
-		await waitFor(() => {
-			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
-		});
-
-		expect(window.localStorage.setItem).toHaveBeenCalledWith('auth_access_token', 'access');
-		expect(window.localStorage.setItem).not.toHaveBeenCalledWith(
-			'app_settings',
-			'{"exportDirectory":"/exports"}'
-		);
-		expect(
-			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
-		).toBeLessThan(mockAuthService.restoreSession.mock.invocationCallOrder[0]);
 	});
 
 	it('still restores the session when a bootstrap call fails', async () => {
@@ -173,52 +130,6 @@ describe('App lifecycle', () => {
 		await waitFor(() => {
 			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
 		});
-	});
-
-	it('logs warnings from legacy data migration', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.migrateLegacyData.mockResolvedValue({
-			migrated: true,
-			importedKeys: [],
-			warnings: ['Missing preview image', 'Stale cache entry'],
-			localStorage: {}
-		});
-
-		render(App);
-
-		await waitFor(() => {
-			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
-		});
-		expect(console.warn).toHaveBeenCalledWith(
-			'Legacy desktop data migration warning:',
-			'Missing preview image'
-		);
-		expect(console.warn).toHaveBeenCalledWith(
-			'Legacy desktop data migration warning:',
-			'Stale cache entry'
-		);
-	});
-
-	it('JSON-stringifies non-string localStorage values during migration', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.migrateLegacyData.mockResolvedValue({
-			migrated: true,
-			importedKeys: ['app_settings'],
-			warnings: [],
-			localStorage: { app_settings: { exportDirectory: '/exports' } }
-		});
-		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-		render(App);
-
-		await waitFor(() => {
-			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
-		});
-
-		expect(window.localStorage.setItem).toHaveBeenCalledWith(
-			'app_settings',
-			'{"exportDirectory":"/exports"}'
-		);
 	});
 
 	it('fetches simfile data and triggers auto-linking when user becomes authenticated', async () => {

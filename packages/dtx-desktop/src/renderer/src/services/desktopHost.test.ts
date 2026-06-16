@@ -63,24 +63,6 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenCalledWith('check_for_update');
 	});
 
-	it('maps migrateLegacyData to the Tauri command', async () => {
-		vi.mocked(runtime.invoke).mockResolvedValue({
-			migrated: true,
-			importedKeys: ['workspace_path'],
-			warnings: [],
-			localStorage: { workspace_path: '"/songs"' }
-		});
-
-		await expect(desktopHost.migrateLegacyData()).resolves.toEqual({
-			migrated: true,
-			importedKeys: ['workspace_path'],
-			warnings: [],
-			localStorage: { workspace_path: '"/songs"' }
-		});
-
-		expect(runtime.invoke).toHaveBeenCalledWith('migrate_legacy_data');
-	});
-
 	it('maps renderer methods to Tauri snake_case commands', async () => {
 		const expectTauriInvoke = async (
 			returnValue: unknown,

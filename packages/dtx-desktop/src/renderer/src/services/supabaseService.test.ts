@@ -167,7 +167,7 @@ describe('supabaseService', () => {
 				if (key === 'auth_user_data') return JSON.stringify(userData);
 				return null;
 			});
-			host.validateSession.mockResolvedValue({ status: 'valid' });
+			host.validateSession.mockResolvedValue('valid');
 
 			const result = await validateSession();
 
@@ -185,7 +185,7 @@ describe('supabaseService', () => {
 				if (key === 'auth_user_data') return JSON.stringify(userData);
 				return null;
 			});
-			host.validateSession.mockResolvedValue({ status: 'not-configured' });
+			host.validateSession.mockResolvedValue('not-configured');
 
 			const result = await validateSession();
 

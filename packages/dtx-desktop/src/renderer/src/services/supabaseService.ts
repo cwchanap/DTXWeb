@@ -72,11 +72,11 @@ export const validateSession = async (): Promise<SessionValidationStatus> => {
 		// Ask the Rust backend to validate the session. It distinguishes
 		// "not-configured" (Supabase env missing on a misconfigured build) from
 		// a genuine "invalid" so the caller does not silently wipe a good
-		// stored session when the build itself is the problem.
-		const result = await desktopHost.validateSession<{ status: SessionValidationStatus }>(
-			sessionData
-		);
-		return result.status;
+		// stored session when the build itself is the problem. The Rust command
+		// returns `SessionValidationStatus` directly — serde serializes the enum
+		// as the bare string "valid" | "invalid" | "not-configured" (kebab-case,
+		// no struct wrapper), so the result IS the status string.
+		return await desktopHost.validateSession<SessionValidationStatus>(sessionData);
 	} catch (error) {
 		console.error('Failed to validate session:', error);
 		// A transport failure is not necessarily an invalid session, but we

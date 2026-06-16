@@ -95,6 +95,12 @@ describe('desktop local dev topology', () => {
 	it('bundles the generated Drumery desktop app icon', () => {
 		const tauriConfig = readJson<TauriConfig>('packages/dtx-desktop/src-tauri/tauri.conf.json');
 
-		expect(tauriConfig.bundle?.icon).toEqual(['icons/icon.png']);
+		expect(tauriConfig.bundle?.icon).toEqual([
+			'icons/32x32.png',
+			'icons/128x128.png',
+			'icons/128x128@2x.png',
+			'icons/icon.icns',
+			'icons/icon.ico'
+		]);
 	});
 });

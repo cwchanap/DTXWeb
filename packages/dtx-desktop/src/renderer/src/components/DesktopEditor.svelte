@@ -420,7 +420,7 @@
 				);
 				if (!dtxResult.error) {
 					// Use the pre-decoded content directly since the Rust backend already handled encoding
-					if (dtxResult.isText) {
+					if (dtxResult.kind === 'text') {
 						dtxFile = new DTXFile(toUtf8String(dtxResult.content));
 					} else {
 						// Convert Buffer to string for DTX files

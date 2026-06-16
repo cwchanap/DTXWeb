@@ -587,6 +587,56 @@ mod tests {
         assert!(matches!(result, ReadFileResult::Error { .. }));
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_file_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempdir().expect("root");
+        let outside = tempdir().expect("outside");
+        let secret = outside.path().join("secret.dtx");
+        fs::write(&secret, "#TITLE: Secret")
+            .await
+            .expect("write");
+
+        // A symlink inside the workspace that resolves to a file outside.
+        // canonicalize() follows the link, so starts_with(&root) must fail.
+        let link = root.path().join("escape.dtx");
+        symlink(&secret, &link).expect("symlink");
+
+        let result = read_file_path(&link, Some(root.path())).await;
+
+        assert!(matches!(result, ReadFileResult::Error { .. }));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_files_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempdir().expect("root");
+        let outside = tempdir().expect("outside");
+        fs::write(outside.path().join("leak.txt"), "secret")
+            .await
+            .expect("write");
+
+        // A symlink directory inside the workspace pointing outside.
+        let link = root.path().join("escape_dir");
+        symlink(outside.path(), &link).expect("symlink");
+
+        let result = list_files(
+            link.to_string_lossy().into_owned(),
+            Some(root.path().to_string_lossy().into_owned()),
+        )
+        .await
+        .expect("envelope");
+
+        assert_eq!(result["files"], serde_json::json!([]));
+        assert!(result["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("outside the workspace")));
+    }
+
     #[tokio::test]
     async fn read_file_rejects_missing_workspace_root() {
         let root = tempdir().expect("tempdir");

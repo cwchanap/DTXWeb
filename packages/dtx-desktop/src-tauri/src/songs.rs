@@ -156,10 +156,11 @@ pub async fn get_skin_asset(app: AppHandle, asset_path: String) -> Result<serde_
 
 #[tauri::command]
 pub async fn parse_dtx_files(folder_path: String) -> Result<DtxParseResult> {
-    match parse_dtx_folder(Path::new(&folder_path)).await {
-        Ok(result) => Ok(result),
-        Err(_) => Ok(DtxParseResult::empty()),
-    }
+    // Propagate I/O errors (non-existent path, permission denied, etc.) to the
+    // caller instead of silently returning an empty result. The renderer's
+    // caller already catches errors and degrades gracefully. Genuinely empty
+    // folders (no .dtx files) are handled inside parse_dtx_folder itself.
+    parse_dtx_folder(Path::new(&folder_path)).await
 }
 
 pub async fn parse_dtx_folder(folder_path: &Path) -> Result<DtxParseResult> {
@@ -1078,6 +1079,13 @@ mod tests {
         assert_eq!(result.bpm, Some(142.5));
         assert!(result.levels.is_empty());
         assert_eq!(result.parse_failures, None);
+    }
+
+    #[tokio::test]
+    async fn parse_dtx_files_propagates_io_error_for_nonexistent_folder() {
+        let result =
+            parse_dtx_files("/nonexistent/path/that/does/not/exist".to_string()).await;
+        assert!(result.is_err());
     }
 
     #[test]

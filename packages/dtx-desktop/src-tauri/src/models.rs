@@ -39,41 +39,45 @@ impl Serialize for ReadFileResult {
             Self::Error { error, content } => {
                 #[derive(Serialize)]
                 struct ErrorResult<'a> {
+                    kind: &'static str,
                     error: &'a str,
                     content: &'a str,
                 }
 
-                ErrorResult { error, content }.serialize(serializer)
+                ErrorResult {
+                    kind: "error",
+                    error,
+                    content,
+                }
+                .serialize(serializer)
             }
             Self::Text { error, content } => {
                 #[derive(Serialize)]
                 struct TextResult<'a> {
+                    kind: &'static str,
                     error: &'a Option<String>,
                     content: &'a str,
-                    #[serde(rename = "isText")]
-                    is_text: bool,
                 }
 
                 TextResult {
+                    kind: "text",
                     error,
                     content,
-                    is_text: true,
                 }
                 .serialize(serializer)
             }
             Self::Binary { error, content } => {
                 #[derive(Serialize)]
                 struct BinaryResult<'a> {
+                    kind: &'static str,
                     error: &'a Option<String>,
                     content: &'a [u8],
-                    #[serde(rename = "isText")]
-                    is_text: bool,
                 }
 
                 BinaryResult {
+                    kind: "binary",
                     error,
                     content,
-                    is_text: false,
                 }
                 .serialize(serializer)
             }
@@ -135,25 +139,22 @@ mod tests {
         };
 
         let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["kind"], "text");
         assert_eq!(json["error"], serde_json::Value::Null);
         assert_eq!(json["content"], "#TITLE: Song");
-        assert_eq!(json["isText"], true);
     }
 
     #[test]
-    fn read_file_error_serializes_without_is_text() {
-        // The Error variant intentionally omits the isText field that Text and
-        // Binary include. This documents that structural difference so the
-        // renderer can rely on it (e.g. treating a missing isText as an error).
+    fn read_file_error_serializes_with_kind_tag() {
         let result = ReadFileResult::Error {
             error: "File type not allowed".to_string(),
             content: String::new(),
         };
 
         let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["kind"], "error");
         assert_eq!(json["error"], "File type not allowed");
         assert_eq!(json["content"], "");
-        assert!(json.get("isText").is_none());
     }
 
     #[test]
@@ -164,9 +165,9 @@ mod tests {
         };
 
         let json = serde_json::to_value(result).expect("serializes");
+        assert_eq!(json["kind"], "binary");
         assert_eq!(json["error"], serde_json::Value::Null);
         assert_eq!(json["content"], serde_json::json!([1, 2, 3]));
-        assert_eq!(json["isText"], false);
     }
 
     #[test]

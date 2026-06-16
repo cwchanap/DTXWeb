@@ -207,4 +207,48 @@ mod tests {
         assert_eq!(result.warnings.len(), 1);
         assert!(tauri.path().join("migration-v1.json").exists());
     }
+
+    #[tokio::test]
+    async fn non_object_legacy_storage_records_warning() {
+        let legacy = tempdir().expect("legacy");
+        let tauri = tempdir().expect("tauri");
+        fs::write(
+            legacy.path().join("local-storage.json"),
+            "[1, 2, 3]",
+        )
+        .await
+        .expect("write");
+
+        let result = migrate_from_paths(legacy.path(), tauri.path())
+            .await
+            .expect("migrate");
+
+        assert_eq!(result.migrated, true);
+        assert!(result.imported_keys.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("not an object"));
+        assert!(tauri.path().join("migration-v1.json").exists());
+    }
+
+    #[tokio::test]
+    async fn malformed_legacy_storage_records_warning() {
+        let legacy = tempdir().expect("legacy");
+        let tauri = tempdir().expect("tauri");
+        fs::write(
+            legacy.path().join("local-storage.json"),
+            "{not valid json",
+        )
+        .await
+        .expect("write");
+
+        let result = migrate_from_paths(legacy.path(), tauri.path())
+            .await
+            .expect("migrate");
+
+        assert_eq!(result.migrated, true);
+        assert!(result.imported_keys.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Failed to parse"));
+        assert!(tauri.path().join("migration-v1.json").exists());
+    }
 }

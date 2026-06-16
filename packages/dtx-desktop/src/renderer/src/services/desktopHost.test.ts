@@ -278,15 +278,15 @@ describe('desktopHost', () => {
 
 	it('maps readFile to the host command with workspaceRoot', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({
+			kind: 'text',
 			error: null,
-			content: '#TITLE: Song',
-			isText: true
+			content: '#TITLE: Song'
 		});
 
 		await expect(desktopHost.readFile('/songs/a.dtx', '/songs')).resolves.toEqual({
+			kind: 'text',
 			error: null,
-			content: '#TITLE: Song',
-			isText: true
+			content: '#TITLE: Song'
 		});
 		expect(runtime.invoke).toHaveBeenCalledWith('read_file', {
 			filePath: '/songs/a.dtx',
@@ -296,15 +296,15 @@ describe('desktopHost', () => {
 
 	it('normalizes Tauri readFile binary arrays into Uint8Array content', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({
+			kind: 'binary',
 			error: null,
-			content: [1, 2, 3],
-			isText: false
+			content: [1, 2, 3]
 		});
 
 		const result = await desktopHost.readFile('/songs/snare.wav', '/songs');
 
+		expect(result.kind).toBe('binary');
 		expect(result.error).toBeNull();
-		expect(result.isText).toBe(false);
 		expect(result.content).toBeInstanceOf(Uint8Array);
 		expect([...result.content]).toEqual([1, 2, 3]);
 		expect(runtime.invoke).toHaveBeenCalledWith('read_file', {

@@ -69,13 +69,11 @@
 		key: string;
 	};
 
-	type LoadAssetFilesResult =
-		| {
-				success: boolean;
-				data?: AssetFile[];
-				error?: string;
-		  }
-		| AssetFile[];
+	type LoadAssetFilesResult = {
+		success: boolean;
+		data?: AssetFile[];
+		error?: string;
+	};
 
 	let { song }: Props = $props();
 
@@ -308,15 +306,11 @@
 		// For linked songs, fetch actual cloud files via IPC
 		try {
 			const result = await desktopHost.loadAssetFiles<LoadAssetFilesResult>(simfileId);
-			if (result && typeof result === 'object' && 'success' in result) {
-				if (!result.success) {
-					console.error('Error loading cloud asset files:', result.error);
-					return [];
-				}
-				return result.data ?? [];
+			if (!result.success) {
+				console.error('Error loading cloud asset files:', result.error);
+				return [];
 			}
-			// Fallback for unexpected shapes
-			return Array.isArray(result) ? result : [];
+			return result.data ?? [];
 		} catch (error) {
 			console.error('Error loading cloud asset files:', error);
 			return [];

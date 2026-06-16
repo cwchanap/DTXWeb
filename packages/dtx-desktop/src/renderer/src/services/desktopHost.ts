@@ -34,15 +34,15 @@ type ReadFileContent = string | ArrayBuffer | Uint8Array;
 type TauriReadFileContent = ReadFileContent | number[];
 
 type ReadFileResult = {
+	kind: 'error' | 'text' | 'binary';
 	error: string | null;
 	content: ReadFileContent;
-	isText?: boolean;
 };
 
 type HostReadFileResult = {
+	kind: 'error' | 'text' | 'binary';
 	error: string | null;
 	content: TauriReadFileContent;
-	isText?: boolean;
 };
 
 type PathExistsResult = {
@@ -161,15 +161,16 @@ const sendHost = async (
 };
 
 const normalizeTauriReadFileResult = (result: HostReadFileResult): ReadFileResult => {
-	if (result.error !== null || result.isText !== false || !Array.isArray(result.content)) {
-		return result as ReadFileResult;
+	// Tauri serializes Vec<u8> as a plain JSON array (number[]), not a
+	// Uint8Array. Convert binary content back to Uint8Array for consumers.
+	if (result.kind === 'binary' && Array.isArray(result.content)) {
+		return {
+			kind: 'binary',
+			error: result.error,
+			content: new Uint8Array(result.content)
+		};
 	}
-
-	return {
-		error: null,
-		content: new Uint8Array(result.content),
-		isText: false
-	};
+	return result as ReadFileResult;
 };
 
 export const setDesktopHostRuntimeForTests = (runtime: DesktopHostRuntime | null): void => {

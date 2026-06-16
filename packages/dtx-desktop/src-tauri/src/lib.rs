@@ -11,7 +11,7 @@ mod songs;
 mod updater;
 
 use auth::AuthState;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 fn spawn_deep_link_handler(app: &AppHandle, raw_url: String) {
@@ -23,6 +23,10 @@ fn spawn_deep_link_handler(app: &AppHandle, raw_url: String) {
     });
 }
 
+/// Used during app startup (`setup`): the deep-link plugin delivers URLs that
+/// were passed to launch the app, but the Tauri command layer and AuthState are
+/// not ready to resolve them yet (the session mutex/local callback server are
+/// still initializing). Queue them and drain once via `drain_pending_auth_events`.
 fn queue_deep_link_handler(app: &AppHandle, raw_url: String) {
     let _ = crate::auth::queue_deep_link(app, &raw_url);
 }
@@ -34,6 +38,14 @@ pub fn run() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // A second launch (e.g. clicking a dtx:// link while the app already
+            // runs on Windows/Linux) must raise/focus the existing window — the
+            // plugin guarantees only the first instance keeps running, so without
+            // this the user sees nothing happen even though the link is processed.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
             for arg in argv {
                 if arg.starts_with("dtx://") {
                     spawn_deep_link_handler(app, arg);

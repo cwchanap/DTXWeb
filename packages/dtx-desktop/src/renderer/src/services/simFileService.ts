@@ -5,7 +5,7 @@ const CACHE_KEY = 'simfiles_cache';
 const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-// Match the discriminated union type from main process
+// Match the discriminated union type from Rust backend
 type MainProcessSimFileResult =
 	| {
 			success: true;
@@ -27,7 +27,7 @@ export interface SimFileServiceResult {
 
 class SimFileService {
 	/**
-	 * Fetches all simFiles for the authenticated user from Supabase via main process
+	 * Fetches all simFiles for the authenticated user from Supabase via Rust backend
 	 * Includes caching logic similar to CharList.svelte
 	 */
 	async fetchUserSimFiles(): Promise<SimFileServiceResult> {
@@ -146,7 +146,7 @@ class SimFileService {
 	}
 
 	/**
-	 * Gets preview URL for a simFile via main process
+	 * Gets preview URL for a simFile via Rust backend
 	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.jpg
 	 */
 	async getPreviewUrl(simfileId: number): Promise<string> {
@@ -159,7 +159,7 @@ class SimFileService {
 	}
 
 	/**
-	 * Gets sound preview URL for a simFile via main process
+	 * Gets sound preview URL for a simFile via Rust backend
 	 * Always constructs R2 URL: {BUCKET_URL}/{simfileId}/preview.mp3
 	 */
 	async getSoundPreviewUrl(simfileId: number): Promise<string> {

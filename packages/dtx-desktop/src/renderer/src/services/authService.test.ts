@@ -144,7 +144,7 @@ describe('AuthService', () => {
 				refreshToken: mockRefreshToken,
 				userData: mockUserData
 			});
-			(validateSession as any).mockResolvedValue(true);
+			(validateSession as any).mockResolvedValue('valid');
 
 			// Act
 			const result = await authService.restoreSession();
@@ -180,7 +180,7 @@ describe('AuthService', () => {
 				refreshToken: mockRefreshToken,
 				userData: mockUserData
 			});
-			(validateSession as any).mockResolvedValue(false);
+			(validateSession as any).mockResolvedValue('invalid');
 
 			// Act
 			const result = await authService.restoreSession();
@@ -189,6 +189,29 @@ describe('AuthService', () => {
 			expect(getStoredSessionData).toHaveBeenCalled();
 			expect(validateSession).toHaveBeenCalled();
 			expect(clearStoredSessionData).toHaveBeenCalled();
+			expect(authStore.setUser).not.toHaveBeenCalled();
+			expect(result).toBe(false);
+		});
+
+		it('should surface a not-configured error without wiping the stored session', async () => {
+			// Arrange: a misconfigured build cannot validate, but the stored
+			// session may still be good — it must not be cleared.
+			(getStoredSessionData as any).mockReturnValue({
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				userData: mockUserData
+			});
+			(validateSession as any).mockResolvedValue('not-configured');
+
+			// Act
+			const result = await authService.restoreSession();
+
+			// Assert
+			expect(validateSession).toHaveBeenCalled();
+			expect(clearStoredSessionData).not.toHaveBeenCalled();
+			expect(authStore.setError).toHaveBeenCalledWith(
+				expect.stringContaining('not configured')
+			);
 			expect(authStore.setUser).not.toHaveBeenCalled();
 			expect(result).toBe(false);
 		});

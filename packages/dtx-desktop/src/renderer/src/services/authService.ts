@@ -82,7 +82,7 @@ export const authService = {
 		try {
 			authStore.setLoading(true);
 
-			// Ask host process to open the web login page
+			// Ask the Rust backend to open the web login page
 			await desktopHost.openExternalUrl(getDesktopLoginUrl());
 		} catch (error) {
 			console.error('Login failed:', error);
@@ -93,7 +93,7 @@ export const authService = {
 	},
 
 	/**
-	 * Processes magic link result from main process
+	 * Processes magic link result from Rust backend
 	 */
 	handleMagicLinkResult: async (result: MagicLinkResult): Promise<void> => {
 		try {
@@ -138,9 +138,18 @@ export const authService = {
 				return false;
 			}
 
-			// Validate session with main process
-			const isValid = await validateSession();
-			if (!isValid) {
+			// Validate session with the Rust backend
+			const status = await validateSession();
+			if (status === 'not-configured') {
+				// Supabase isn't configured (dev/build misconfiguration). Don't
+				// wipe the stored session — we couldn't actually validate it —
+				// and surface the real reason instead of a misleading silent
+				// logout that the user also can't recover from (login would fail
+				// the same way).
+				authStore.setError('Authentication is not configured on this build.');
+				return false;
+			}
+			if (status !== 'valid') {
 				// Clear invalid session data
 				clearStoredSessionData();
 				return false;
@@ -184,7 +193,7 @@ export const authService = {
 			authStore.logout();
 		} catch (error) {
 			console.error('Failed to logout:', error);
-			// Still clear local state even if main process logout fails
+			// Still clear local state even if Rust backend logout fails
 			clearStoredSessionData();
 
 			// Clear cloud file cache data even if logout fails

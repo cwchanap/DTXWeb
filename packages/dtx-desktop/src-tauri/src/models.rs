@@ -117,21 +117,6 @@ pub struct ListedFile {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum ApiResult<T> {
-    Ok {
-        success: bool,
-        data: T,
-    },
-    Err {
-        success: bool,
-        error: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        code: Option<String>,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SuccessResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,34 +167,6 @@ mod tests {
         assert_eq!(json["error"], serde_json::Value::Null);
         assert_eq!(json["content"], serde_json::json!([1, 2, 3]));
         assert_eq!(json["isText"], false);
-    }
-
-    #[test]
-    fn api_error_serializes_success_false() {
-        let result: ApiResult<Vec<String>> = ApiResult::Err {
-            success: false,
-            error: "User not authenticated".to_string(),
-            code: Some("UNAUTHORIZED".to_string()),
-        };
-
-        let json = serde_json::to_value(result).expect("serializes");
-        assert_eq!(json["success"], false);
-        assert_eq!(json["error"], "User not authenticated");
-        assert_eq!(json["code"], "UNAUTHORIZED");
-    }
-
-    #[test]
-    fn api_error_omits_absent_code() {
-        let result: ApiResult<Vec<String>> = ApiResult::Err {
-            success: false,
-            error: "User not authenticated".to_string(),
-            code: None,
-        };
-
-        let json = serde_json::to_value(result).expect("serializes");
-        assert_eq!(json["success"], false);
-        assert_eq!(json["error"], "User not authenticated");
-        assert_eq!(json.get("code"), None);
     }
 
     #[test]

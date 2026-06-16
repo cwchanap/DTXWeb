@@ -15,7 +15,7 @@ export type AssetFilesResult =
 	| { success: false; error: string };
 
 /**
- * Load asset files for a simfile from the API via main process
+ * Load asset files for a simfile from the API via the Rust backend
  * @param simfileId The ID of the simfile
  * @returns Promise that resolves to a discriminated result with files or error
  */

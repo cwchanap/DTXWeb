@@ -71,6 +71,7 @@
 	let collapseThreshold = 50; // Width below which sidebar collapses
 	const keyboardResizeStep = 20;
 	let validationError = $state<string | null>(null); // Track validation errors
+	let chartLoadError = $state<string | null>(null); // Track chart-folder load errors
 
 	const toArrayBuffer = (content: ArrayBuffer | Uint8Array): ArrayBuffer => {
 		if (content instanceof ArrayBuffer) {
@@ -418,7 +419,7 @@
 					folderPath
 				);
 				if (!dtxResult.error) {
-					// Use the pre-decoded content directly since main process already handled encoding
+					// Use the pre-decoded content directly since the Rust backend already handled encoding
 					if (dtxResult.isText) {
 						dtxFile = new DTXFile(toUtf8String(dtxResult.content));
 					} else {
@@ -478,16 +479,19 @@
 	};
 
 	const loadChartFromPath = async (folderPath: string, songName: string) => {
+		chartLoadError = null;
 		try {
-			// List all DTX files in the folder using existing list-files IPC channel
+			// List all DTX files in the folder using the list-files Tauri command
 			const dtxExtensions = ['.dtx'];
 			const folderContents = await desktopHost.listFiles<{
 				files: Array<{ fileName: string }>;
 				error?: string;
-			}>(folderPath);
+			}>(folderPath, folderPath);
 
 			if (folderContents.error) {
-				console.warn('Could not list directory contents:', folderContents.error);
+				// Surface the failure (containment/permission/missing-dir) instead
+				// of silently leaving the editor blank.
+				chartLoadError = `Could not load chart files: ${folderContents.error}`;
 				return;
 			}
 
@@ -713,6 +717,17 @@
 						</div>
 					</div>
 				{:else if currentTab === 'main'}
+					{#if chartLoadError}
+						<div class="mb-3 rounded-md border border-red-300 bg-red-50 p-3">
+							<div class="flex items-start justify-between gap-2">
+								<p class="text-sm text-red-700">{chartLoadError}</p>
+								<button
+									class="shrink-0 text-red-500 hover:text-red-700"
+									onclick={() => (chartLoadError = null)}>×</button
+								>
+							</div>
+						</div>
+					{/if}
 					{#if validationError}
 						<div class="mb-3 rounded-md border border-red-300 bg-red-50 p-3">
 							<div class="flex items-start justify-between">

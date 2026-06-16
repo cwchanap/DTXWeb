@@ -139,7 +139,7 @@
 		fileLoadError = null;
 
 		try {
-			const result = await desktopHost.listFiles<ListFilesResponse>(song.path);
+			const result = await desktopHost.listFiles<ListFilesResponse>(song.path, song.path);
 
 			if (result.error) {
 				throw new Error(result.error);
@@ -411,9 +411,9 @@
 								level: Number(l.level || 0)
 							}))
 						: [],
-					// Pass the song path so main process can find and read preview files
+					// Pass the song path so the Rust backend can find and read preview files
 					songPath: String(song.path || ''),
-					// Pass the workspace root so the main process can confine preview
+					// Pass the workspace root so the Rust backend can confine preview
 					// reads to the workspace (prevents path-traversal exfiltration)
 					workspaceRoot: String($workspaceStore?.path ?? '')
 				})

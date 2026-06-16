@@ -119,7 +119,7 @@ export const workspaceService = {
 			}
 
 			// Use host adapter to get folders in the workspace. Pass the workspace
-			// root so the main process can enforce path containment.
+			// root so the Rust backend can enforce path containment.
 			const folders = await desktopHost.listDirectories(currentPath, currentPath);
 
 			// Filter only sub-workspaces (folders with DTXFiles. prefix)

@@ -43,6 +43,9 @@ query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize
       bpm
       userId
       isPublished
+      downloadUrl
+      previewUrl
+      videoPreviewUrl
       publishDate
       dtxFiles {
         level
@@ -968,12 +971,19 @@ mod tests {
     }
 
     #[test]
-    fn list_simfiles_query_does_not_request_catalog_urls() {
-        assert!(!LIST_SIMFILES_QUERY.contains("...SimfileFull"));
-        assert!(!LIST_SIMFILES_QUERY.contains("downloadUrl"));
-        assert!(!LIST_SIMFILES_QUERY.contains("previewUrl"));
-        assert!(!LIST_SIMFILES_QUERY.contains("videoPreviewUrl"));
+    fn list_simfiles_query_requests_persisted_catalog_urls() {
+        // The list feeds auto-linking, which caches linked simfiles via
+        // `renderer_simfile_from_graphql`. Those cached records later populate
+        // the metadata editor, so the persisted URL fields must be present in
+        // the list response — otherwise opening and saving an auto-linked song
+        // overwrites the real URLs with empty strings.
+        assert!(LIST_SIMFILES_QUERY.contains("downloadUrl"));
+        assert!(LIST_SIMFILES_QUERY.contains("previewUrl"));
+        assert!(LIST_SIMFILES_QUERY.contains("videoPreviewUrl"));
         assert!(LIST_SIMFILES_QUERY.contains("dtxFiles"));
+        // Still a curated field set (not the full fragment) to keep the
+        // payload lean.
+        assert!(!LIST_SIMFILES_QUERY.contains("...SimfileFull"));
     }
 
     #[test]

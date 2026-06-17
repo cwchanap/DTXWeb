@@ -457,11 +457,36 @@
         assert_eq!(nested, "nested content");
     }
 
+    /// RAII guard that restores the `HOME` environment variable on drop,
+    /// including when an assertion between construction and the end of scope
+    /// panics. Without this, a failing assertion leaks the temporary `HOME`
+    /// into subsequent tests running in the same process.
+    struct HomeEnvGuard {
+        saved: Option<std::ffi::OsString>,
+    }
+
+    impl HomeEnvGuard {
+        fn replace(temp_path: &std::path::Path) -> Self {
+            let saved = std::env::var_os("HOME");
+            std::env::set_var("HOME", temp_path);
+            Self { saved }
+        }
+    }
+
+    impl Drop for HomeEnvGuard {
+        fn drop(&mut self) {
+            match self.saved.take() {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
     #[test]
     fn resolve_export_directory_expands_tilde_and_defaults_to_downloads() {
         let temp = tempdir().expect("tempdir");
-        let saved_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", temp.path());
+        // `_guard` restores HOME on drop — even if an assertion below panics.
+        let _guard = HomeEnvGuard::replace(temp.path());
 
         assert_eq!(resolve_export_directory(None), temp.path().join("Downloads"));
         assert_eq!(
@@ -476,11 +501,6 @@
             resolve_export_directory(Some("/explicit/path")),
             PathBuf::from("/explicit/path")
         );
-
-        match saved_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
     }
 
     #[tokio::test]

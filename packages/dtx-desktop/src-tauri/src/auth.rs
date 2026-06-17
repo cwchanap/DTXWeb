@@ -8,12 +8,18 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use url::Url;
 
 const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
 const LOCAL_AUTH_READ_TIMEOUT_MS: u64 = 10_000;
 const LOCAL_AUTH_CALLBACK_PATH: &str = "/auth-callback";
+/// Maximum number of concurrent local auth callback connections that will be
+/// serviced at once. Bounds memory/thread usage if a local process opens many
+/// loopback connections. Excess connections block on the semaphore until an
+/// in-flight handler completes (each handler is bounded by
+/// `LOCAL_AUTH_READ_TIMEOUT_MS` and `MAX_AUTH_REQUEST_BYTES`).
+const LOCAL_AUTH_CALLBACK_MAX_CONCURRENT: usize = 32;
 const LOCAL_AUTH_CALLBACK_SUCCESS_HTML: &str = r##"<!doctype html>
 <html lang="en">
 <head>
@@ -397,6 +403,11 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
         }
     };
 
+    // Bound concurrent handler tasks so a local process opening many loopback
+    // connections cannot exhaust the runtime. The permit is moved into each
+    // spawned task and released when the handler returns.
+    let concurrency = Arc::new(Semaphore::new(LOCAL_AUTH_CALLBACK_MAX_CONCURRENT));
+
     loop {
         let (stream, _) = match &v6_listener {
             Some(v6) => tokio::select! {
@@ -405,8 +416,17 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
             },
             None => v4_listener.accept().await?,
         };
+        // Hold a permit for the lifetime of the spawned task. Acquiring before
+        // spawning (rather than inside the task) bounds the queue of accepted
+        // but not-yet-handled connections too.
+        let permit = concurrency
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|error| DesktopError::Message(error.to_string()))?;
         let handle = app.clone();
         tauri::async_runtime::spawn(async move {
+            let _permit = permit;
             let _ = handle_local_auth_callback_connection(handle, stream, port).await;
         });
     }

@@ -180,20 +180,26 @@ jobs:
 
       - name: Set Release Version
         id: version
+        env:
+          # Pass the manual input via env var instead of script interpolation
+          # to avoid quote-escaping issues if `inputs.version` ever contains
+          # shell metacharacters (defense in depth: workflow_dispatch still
+          # requires write access to the repo).
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           else
-            VERSION="${{ inputs.version }}"
-            # Tauri's updater requires a SemVer version (optional leading 'v')
-            # in latest.json. A bare timestamp such as 20260616123045 cannot be
-            # parsed by updater.check(), which disables update checks until a
-            # tagged release overwrites the manifest.
-            VERSION="${VERSION#v}"
-            if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
-              echo "::error::Manual deploy version '${{ inputs.version }}' is not valid SemVer (expected MAJOR.MINOR.PATCH, e.g. 1.0.1)."
-              exit 1
-            fi
+            VERSION="${INPUT_VERSION}"
+          fi
+          # Strip an optional leading 'v'. Tauri's updater requires a SemVer
+          # version (MAJOR.MINOR.PATCH) in latest.json; a bare timestamp or a
+          # malformed tag such as `vgarbage` would disable update checks until
+          # a valid tagged release overwrites the manifest.
+          VERSION="${VERSION#v}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Release version '$VERSION' is not valid SemVer (expected MAJOR.MINOR.PATCH, e.g. 1.0.1)."
+            exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"

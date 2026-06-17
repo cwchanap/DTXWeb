@@ -7,6 +7,12 @@ on:
       - master
   pull_request:
 
+# Minimal permissions: this workflow only builds, lints, and tests — it never
+# pushes commits, creates releases, or deploys. Reduces blast radius if the
+# job environment is compromised.
+permissions:
+  contents: read
+
 # Notes:
 # - lib.rs calls `tauri::generate_context!()`, which embeds the frontend
 #   (`frontendDist: ../dist`) at compile time. A stub dist with a minimal
@@ -25,6 +31,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Linux system dependencies
         run: |
@@ -76,6 +84,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Linux system dependencies
         run: |

@@ -268,5 +268,53 @@ describe('NewSong', () => {
 			await fireEvent.click(cancelBtns[cancelBtns.length - 1]);
 			expect(screen.queryByText('Select Template')).not.toBeInTheDocument();
 		});
+
+		it('selects a template and auto-populates empty song name', async () => {
+			const { templateStore } = await import('../stores/templateStore');
+			templateStore.reloadTemplates();
+			templateStore.addTemplate('My Template', '/templates/my-template');
+			render(NewSong);
+			const importBtn = screen.getByText('Import Template').closest('button');
+			await fireEvent.click(importBtn!);
+
+			await fireEvent.click(screen.getByText('My Template'));
+
+			expect(
+				screen.getByText('Template files will be copied to the new song folder')
+			).toBeInTheDocument();
+			const input = screen.getByLabelText(/Song Name/i) as HTMLInputElement;
+			expect(input.value).toBe('My Template');
+		});
+
+		it('selects a template without overwriting an existing song name', async () => {
+			const { templateStore } = await import('../stores/templateStore');
+			templateStore.reloadTemplates();
+			templateStore.addTemplate('My Template', '/templates/my-template');
+			render(NewSong);
+			const input = screen.getByLabelText(/Song Name/i);
+			await fireEvent.input(input, { target: { value: 'Pre-existing Name' } });
+
+			const importBtn = screen.getByText('Import Template').closest('button');
+			await fireEvent.click(importBtn!);
+			await fireEvent.click(screen.getByText('My Template'));
+
+			expect((screen.getByLabelText(/Song Name/i) as HTMLInputElement).value).toBe(
+				'Pre-existing Name'
+			);
+		});
+
+		it('clears the selected template when the remove button is clicked', async () => {
+			const { templateStore } = await import('../stores/templateStore');
+			templateStore.reloadTemplates();
+			templateStore.addTemplate('My Template', '/templates/my-template');
+			render(NewSong);
+			const importBtn = screen.getByText('Import Template').closest('button');
+			await fireEvent.click(importBtn!);
+			await fireEvent.click(screen.getByText('My Template'));
+
+			await fireEvent.click(screen.getByTitle('Remove template'));
+
+			expect(screen.getByText('Import Template')).toBeInTheDocument();
+		});
 	});
 });

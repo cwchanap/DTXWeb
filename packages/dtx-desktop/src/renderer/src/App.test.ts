@@ -154,6 +154,96 @@ describe('App lifecycle', () => {
 		});
 	});
 
+	it('sets simfile store error when fetchUserSimFiles returns an error result', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		const { simFileService } = await import('./services/simFileService');
+		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
+			data: [],
+			error: 'Server unavailable',
+			fromCache: false
+		});
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+
+		authStore.setUser({ id: '1', email: 'test@test.com' });
+
+		await waitFor(() => {
+			expect(simFileService.fetchUserSimFiles).toHaveBeenCalled();
+		});
+		await waitFor(() => {
+			expect(simFileStore.getCurrentState().error).toBe('Server unavailable');
+		});
+	});
+
+	it('redirects from login route to workspace when user becomes authenticated', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		const { simFileService } = await import('./services/simFileService');
+		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
+			data: [],
+			error: null,
+			fromCache: false
+		});
+
+		window.location.hash = '#login';
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+
+		authStore.setUser({ id: '1', email: 'test@test.com' });
+
+		await waitFor(() => {
+			expect(window.location.hash).toBe('');
+		});
+	});
+
+	it('triggers auto-linking when simfiles and tree structure both have data', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		const { simFileService } = await import('./services/simFileService');
+		const { linkingService } = await import('./services/linkingService');
+		const simfileData = [{ id: 1, title: 'Song A', artist: 'Artist', bpm: 120 }];
+		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
+			data: simfileData as any,
+			error: null,
+			fromCache: false
+		});
+
+		workspaceStore.setTreeStructure([
+			{
+				name: 'SongA',
+				path: '/songs/SongA',
+				isExpanded: false,
+				isLoading: false,
+				children: [],
+				hasChildren: false,
+				containsDtxFiles: true,
+				songTitle: null,
+				linkedSimFileId: null,
+				linkedSimFile: null
+			}
+		] as any);
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
+		});
+
+		authStore.setUser({ id: '1', email: 'test@test.com' });
+
+		await waitFor(() => {
+			expect(vi.mocked(linkingService.autoLinkSimFilesToFolders)).toHaveBeenCalledWith(
+				simfileData,
+				expect.any(Array)
+			);
+		});
+	});
+
 	it('sets simfile store error when fetchUserSimFiles rejects', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		const { simFileService } = await import('./services/simFileService');

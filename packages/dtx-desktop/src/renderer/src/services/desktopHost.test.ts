@@ -440,6 +440,48 @@ describe('desktopHost', () => {
 		expect(() => desktopHost.removeAllListeners('nonexistent-event')).not.toThrow();
 	});
 
+	it('normalizes readFile text results through the Tauri runtime without conversion', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(tauriInvoke).mockResolvedValue({
+			kind: 'text',
+			error: null,
+			content: '#TITLE Test'
+		});
+
+		const result = await desktopHost.readFile('/songs/a.dtx', '/songs');
+		expect(result.kind).toBe('text');
+		expect(result.content).toBe('#TITLE Test');
+	});
+
+	it('normalizes readFile error results through the Tauri runtime without conversion', async () => {
+		setDesktopHostRuntimeForTests(null);
+		vi.mocked(tauriInvoke).mockResolvedValue({
+			kind: 'error',
+			error: 'permission-denied',
+			content: ''
+		});
+
+		const result = await desktopHost.readFile('/songs/a.dtx', '/songs');
+		expect(result.kind).toBe('error');
+		expect(result.error).toBe('permission-denied');
+	});
+
+	it('accepts a string argument for fetchCloudSong', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ success: true });
+
+		await desktopHost.fetchCloudSong('42');
+
+		expect(runtime.invoke).toHaveBeenCalledWith('fetch_cloud_song', { cloudSongId: '42' });
+	});
+
+	it('accepts a numeric argument for fetchCloudSong', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ success: true });
+
+		await desktopHost.fetchCloudSong(99);
+
+		expect(runtime.invoke).toHaveBeenCalledWith('fetch_cloud_song', { cloudSongId: 99 });
+	});
+
 	it('resolves app and tauri versions from the Tauri runtime', async () => {
 		setDesktopHostRuntimeForTests(null);
 		vi.mocked(getVersion).mockResolvedValue('2.1.0');

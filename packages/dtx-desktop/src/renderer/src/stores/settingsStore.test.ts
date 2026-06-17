@@ -185,6 +185,18 @@ describe('settingsStore', () => {
 			expect(state.exportDirectory).toContain('Downloads');
 		});
 
+		it('should return macOS download path when platform is Mac and HOME is set', async () => {
+			mockDesktopHost.getPlatform.mockReturnValue('mac');
+			mockDesktopHost.getEnvironment.mockReturnValue({ HOME: '/Users/testuser' });
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			const state = get(freshStore);
+			expect(state.exportDirectory).toBe('/Users/testuser/Downloads');
+		});
+
 		it('should return macOS fallback path when platform is Mac and HOME is not set', async () => {
 			mockDesktopHost.getPlatform.mockReturnValue('darwin');
 			mockDesktopHost.getEnvironment.mockReturnValue({});

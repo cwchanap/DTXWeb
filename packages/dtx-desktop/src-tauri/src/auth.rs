@@ -471,9 +471,8 @@ const MAX_AUTH_REQUEST_BYTES: usize = 64 * 1024;
 /// reads from a misbehaving or malicious caller.
 async fn read_auth_request_line(stream: &mut TcpStream) -> Result<Option<String>> {
     let mut buf: Vec<u8> = Vec::new();
-    let outcome: std::result::Result<(), DesktopError> = tokio::time::timeout(
-        Duration::from_millis(LOCAL_AUTH_READ_TIMEOUT_MS),
-        async {
+    let outcome: std::result::Result<(), DesktopError> =
+        tokio::time::timeout(Duration::from_millis(LOCAL_AUTH_READ_TIMEOUT_MS), async {
             loop {
                 if buf.len() > MAX_AUTH_REQUEST_BYTES {
                     return Err(DesktopError::Message(
@@ -492,10 +491,11 @@ async fn read_auth_request_line(stream: &mut TcpStream) -> Result<Option<String>
                     Err(error) => return Err(DesktopError::Message(error.to_string())),
                 }
             }
-        },
-    )
-    .await
-    .map_err(|_| DesktopError::Message("Auth callback connection read timed out".to_string()))?;
+        })
+        .await
+        .map_err(|_| {
+            DesktopError::Message("Auth callback connection read timed out".to_string())
+        })?;
 
     outcome?;
 

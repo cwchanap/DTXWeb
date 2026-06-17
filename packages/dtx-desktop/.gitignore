@@ -1,5 +1,8 @@
 node_modules
 dist
+
+# Tauri generated files
+src-tauri/gen/
 out
 .DS_Store
 .eslintcache

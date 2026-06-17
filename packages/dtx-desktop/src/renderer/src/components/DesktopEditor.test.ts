@@ -92,11 +92,20 @@ vi.mock('@dtx/common', () => ({
 			artist: 'Mock Artist',
 			comment: '',
 			bpm: 120,
-			level: 1
+			level: 1,
+			parse: vi.fn(async () => {}),
+			parseSoundChips: vi.fn(() => []),
+			parseNotes: vi.fn(() => []),
+			parseBPMChanges: vi.fn(() => ({}))
 		});
 	}),
 	LaneMeasureNote: vi.fn(),
-	SimFile: vi.fn(),
+	SimFile: vi.fn(function (this: object, files?: unknown[]) {
+		Object.assign(this, {
+			title: 'Mock SimFile',
+			parseHeader: vi.fn(async () => {})
+		});
+	}),
 	SoundChip: vi.fn(),
 	setFileProvider: vi.fn(),
 	isValidDtxFile: vi.fn().mockReturnValue(true)
@@ -121,6 +130,7 @@ vi.mock('../stores/editorMappingStore', () => ({
 }));
 
 import DesktopEditor from './DesktopEditor.svelte';
+import { editorMappingStore } from '../stores/editorMappingStore';
 
 describe('DesktopEditor', () => {
 	beforeEach(() => {
@@ -271,5 +281,242 @@ describe('DesktopEditor', () => {
 	it('shows simFileId in header when provided', () => {
 		render(DesktopEditor, { props: { simFileId: 'test-song-42' } });
 		expect(screen.getByText(/test-song-42/)).toBeInTheDocument();
+	});
+
+	describe('loadFromSimFileId', () => {
+		it('loads SET.def and DTX files from the mapped folder path', async () => {
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/test-song',
+				songName: 'Test Song'
+			});
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.includes('SET.def')) {
+					return { kind: 'text', error: null, content: '#TITLE Test Song' };
+				}
+				if (filePath.endsWith('.dtx')) {
+					return {
+						kind: 'text',
+						error: null,
+						content: '#TITLE Test Song\n#ARTIST Artist'
+					};
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({
+				files: [{ fileName: 'ext.dtx' }, { fileName: 'mas.dtx' }],
+				error: null
+			});
+
+			render(DesktopEditor, { props: { simFileId: 'test-song-42' } });
+
+			await waitFor(() => {
+				expect(mockDesktopHost.readFile).toHaveBeenCalledWith(
+					'/songs/test-song/SET.def',
+					'/songs/test-song'
+				);
+			});
+			await waitFor(() => {
+				expect(mockEventBus.emit).toHaveBeenCalledWith(
+					'note-import',
+					expect.any(Array),
+					expect.any(Object)
+				);
+			});
+		});
+
+		it('falls back to lowercase set.def when uppercase fails', async () => {
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/test-song',
+				songName: 'Test Song'
+			});
+			let setDefCallCount = 0;
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath === '/songs/test-song/SET.def') {
+					setDefCallCount++;
+					return { kind: 'error', error: 'not found', content: '' };
+				}
+				if (filePath === '/songs/test-song/set.def') {
+					return { kind: 'text', error: null, content: '#TITLE Lowercase' };
+				}
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'text', error: null, content: '#TITLE Test' };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: null });
+
+			render(DesktopEditor, { props: { simFileId: 'test-song-42' } });
+
+			await waitFor(() => {
+				expect(mockDesktopHost.readFile).toHaveBeenCalledWith(
+					'/songs/test-song/set.def',
+					'/songs/test-song'
+				);
+			});
+		});
+
+		it('loads DTX files with binary content using toUtf8String', async () => {
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/binary',
+				songName: 'Binary Song'
+			});
+			const dtxContent = new Uint8Array([0x23, 0x54, 0x49, 0x54, 0x4c, 0x45]); // "#TITLE"
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'binary', error: null, content: dtxContent };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: null });
+
+			render(DesktopEditor, { props: { simFileId: 'binary-song' } });
+
+			await waitFor(() => {
+				expect(mockEventBus.emit).toHaveBeenCalledWith(
+					'note-import',
+					expect.any(Array),
+					expect.any(Object)
+				);
+			});
+		});
+
+		it('handles errors in loadFromSimFileId and sets default metadata', async () => {
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue(null);
+			vi.mocked(editorMappingStore.getFolderPath).mockReturnValue(null);
+			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: null });
+
+			render(DesktopEditor, { props: { simFileId: 'error-song' } });
+
+			// Should not crash, should show the editor
+			await waitFor(() => {
+				expect(screen.queryByText('Initializing editor...')).toBeNull();
+			});
+		});
+	});
+
+	describe('switchChartDifficulty', () => {
+		it('switches difficulty and loads the new DTX file when selector changes', async () => {
+			vi.useFakeTimers({ shouldAdvanceTime: true });
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/multi',
+				songName: 'Multi Song'
+			});
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'text', error: null, content: '#TITLE Multi Song' };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({
+				files: [{ fileName: 'ext.dtx' }, { fileName: 'adv.dtx' }],
+				error: null
+			});
+
+			render(DesktopEditor, { props: { simFileId: 'multi-song' } });
+
+			// Wait for chart to load and difficulty selector to appear
+			await waitFor(() => {
+				expect(screen.getByText('Main')).toBeInTheDocument();
+			});
+
+			const selector = screen.queryByRole('combobox');
+			expect(selector).not.toBeNull();
+
+			await fireEvent.change(selector!, { target: { value: 'adv.dtx' } });
+
+			// Verify STOP_PREVIEW was emitted immediately
+			expect(mockEventBus.emit).toHaveBeenCalledWith('stop-preview');
+
+			// Advance timers to trigger the NOTE_IMPORT setTimeout
+			vi.advanceTimersByTime(150);
+			expect(mockEventBus.emit).toHaveBeenCalledWith(
+				'note-import',
+				expect.any(Array),
+				expect.any(Object)
+			);
+
+			// Advance timers for the preview cleanup
+			vi.advanceTimersByTime(250);
+
+			vi.useRealTimers();
+		});
+
+		it('handles readFile error during difficulty switch', async () => {
+			vi.useFakeTimers({ shouldAdvanceTime: true });
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/multi',
+				songName: 'Multi Song'
+			});
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'text', error: null, content: '#TITLE Multi Song' };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({
+				files: [{ fileName: 'ext.dtx' }, { fileName: 'adv.dtx' }],
+				error: null
+			});
+
+			render(DesktopEditor, { props: { simFileId: 'multi-song' } });
+
+			await waitFor(() => {
+				expect(screen.getByText('Main')).toBeInTheDocument();
+			});
+
+			// Make readFile return error for the difficulty switch
+			mockDesktopHost.readFile.mockResolvedValue({
+				kind: 'error',
+				error: 'denied',
+				content: ''
+			});
+
+			const selector = screen.getByRole('combobox');
+			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+			await fireEvent.change(selector, { target: { value: 'adv.dtx' } });
+
+			await waitFor(() => {
+				expect(consoleError).toHaveBeenCalledWith('Failed to load DTX file:', 'adv.dtx');
+			});
+			consoleError.mockRestore();
+			vi.useRealTimers();
+		});
+	});
+
+	describe('loadChartFromPath error handling', () => {
+		it('surfaces error and allows dismissal when listFiles returns an error', async () => {
+			vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: 'access-denied' });
+
+			render(DesktopEditor);
+
+			await waitFor(() => {
+				expect(screen.getByText(/Could not load chart files/)).toBeInTheDocument();
+			});
+
+			// Dismiss the error
+			const dismissBtn = screen.getByRole('button', { name: '×' });
+			await fireEvent.click(dismissBtn);
+
+			await waitFor(() => {
+				expect(screen.queryByText(/Could not load chart files/)).toBeNull();
+			});
+		});
+
+		it('catches errors from listFiles rejection gracefully', async () => {
+			vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+			mockDesktopHost.listFiles.mockRejectedValue(new Error('network failure'));
+
+			render(DesktopEditor);
+
+			await waitFor(() => {
+				expect(consoleError).toHaveBeenCalledWith(
+					'Error loading chart from path:',
+					expect.any(Error)
+				);
+			});
+			consoleError.mockRestore();
+		});
 	});
 });

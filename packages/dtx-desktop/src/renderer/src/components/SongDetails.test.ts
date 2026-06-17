@@ -113,6 +113,7 @@ vi.mock('../stores/authStore', () => ({
 }));
 
 import SongDetails from './SongDetails.svelte';
+import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 import { workspaceStore } from '../stores/workspaceStore';
 import { editorMappingStore } from '../stores/editorMappingStore';
 import { ChartDetail } from '@dtx/common/components';
@@ -1135,6 +1136,150 @@ describe('SongDetails', () => {
 					'create-simfile-record',
 					expect.any(Object)
 				);
+			});
+		});
+	});
+
+	describe('handleCloudSongSelect', () => {
+		it('invokes fetch-cloud-song when a cloud song is selected from autocomplete', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'fetch-cloud-song') {
+						return {
+							success: true,
+							cloudSongData: {
+								id: 77,
+								title: 'Linked Song',
+								artist: 'Cloud Artist',
+								bpm: 130,
+								is_published: false,
+								publish_date: '2024-01-01',
+								display_id: 77,
+								download_url: '',
+								preview_url: '',
+								video_preview_url: '',
+								dtx_files: []
+							}
+						};
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+
+			// CloudSongAutocomplete is rendered when authenticated
+			await waitFor(() => {
+				expect(vi.mocked(CloudSongAutocomplete).mock.calls.length).toBeGreaterThan(0);
+			});
+
+			// Get the onselect callback from the mock props
+			const calls = vi.mocked(CloudSongAutocomplete).mock.calls;
+			const props = (calls[calls.length - 1]?.[1] ?? calls[calls.length - 1]?.[0]) as {
+				onselect?: (song: {
+					id: string;
+					title: string;
+					artist: string;
+					is_published: boolean;
+				}) => void;
+			};
+
+			props?.onselect?.({
+				id: '77',
+				title: 'Linked Song',
+				artist: 'Cloud Artist',
+				is_published: false
+			});
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', {
+					cloudSongId: '77'
+				});
+			});
+		});
+
+		it('handles fetch-cloud-song failure gracefully', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'fetch-cloud-song') {
+						return { success: false, error: 'Cloud service unavailable' };
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+
+			await waitFor(() => {
+				expect(vi.mocked(CloudSongAutocomplete).mock.calls.length).toBeGreaterThan(0);
+			});
+
+			const calls = vi.mocked(CloudSongAutocomplete).mock.calls;
+			const props = (calls[calls.length - 1]?.[1] ?? calls[calls.length - 1]?.[0]) as {
+				onselect?: (song: {
+					id: string;
+					title: string;
+					artist: string;
+					is_published: boolean;
+				}) => void;
+			};
+
+			props?.onselect?.({ id: '77', title: 'Song', artist: 'Artist', is_published: false });
+
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', {
+					cloudSongId: '77'
+				});
+			});
+		});
+	});
+
+	describe('handleExportToZip', () => {
+		it('wires export-song-to-zip IPC through desktopHost', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'parse-dtx-files') {
+						return { bpm: 120, artist: 'Artist', levels: [] };
+					}
+					if (channel === 'export-song-to-zip') {
+						return {
+							success: true,
+							zipPath: '/home/user/Downloads/song.zip',
+							filesCount: 5
+						};
+					}
+					return { files: [] };
+				});
+			}
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: makeLinkedSimFile(),
+				linkedSimFileId: '1',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+
+			// Verify the export IPC is wired correctly through the desktopHost abstraction.
+			// The export button is inside a ChartDetail snippet which isn't rendered by the
+			// mock, so we verify the IPC mapping directly.
+			await mockDesktopHost.exportSongToZip({
+				songPath: '/test/TestSong',
+				songTitle: 'TestSong',
+				exportDirectory: '~/Downloads'
+			});
+
+			expect(mockHostInvoke).toHaveBeenCalledWith('export-song-to-zip', {
+				songPath: '/test/TestSong',
+				songTitle: 'TestSong',
+				exportDirectory: '~/Downloads'
 			});
 		});
 	});

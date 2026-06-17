@@ -9,6 +9,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch: # Allows manual triggering
+    inputs:
+      version:
+        description: 'Semver version (MAJOR.MINOR.PATCH) written to the updater manifest. Must exceed the currently installed version to be offered as an update.'
+        required: true
+        type: string
 
 # Notes:
 # - Tauri cannot cross-compile installers the way electron-builder+wine did,
@@ -179,7 +184,16 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           else
-            VERSION=$(date +'%Y%m%d%H%M%S')
+            VERSION="${{ inputs.version }}"
+            # Tauri's updater requires a SemVer version (optional leading 'v')
+            # in latest.json. A bare timestamp such as 20260616123045 cannot be
+            # parsed by updater.check(), which disables update checks until a
+            # tagged release overwrites the manifest.
+            VERSION="${VERSION#v}"
+            if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+              echo "::error::Manual deploy version '${{ inputs.version }}' is not valid SemVer (expected MAJOR.MINOR.PATCH, e.g. 1.0.1)."
+              exit 1
+            fi
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"

@@ -82,7 +82,8 @@ pub async fn list_directory(
     dir_path: String,
     workspace_root: Option<String>,
 ) -> Result<serde_json::Value> {
-    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await {
+    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await
+    {
         Ok(path) => path,
         Err(error) => return Ok(list_error_value(error)),
     };
@@ -97,7 +98,8 @@ pub async fn list_files(
     dir_path: String,
     workspace_root: Option<String>,
 ) -> Result<serde_json::Value> {
-    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await {
+    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await
+    {
         Ok(path) => path,
         Err(error) => return Ok(list_error_value(error)),
     };
@@ -115,9 +117,8 @@ async fn canonicalize_within_workspace(
     target_path: &str,
     workspace_root: Option<&str>,
 ) -> Result<PathBuf> {
-    let root = workspace_root.ok_or_else(|| {
-        DesktopError::Message("A workspace root is required".to_string())
-    })?;
+    let root = workspace_root
+        .ok_or_else(|| DesktopError::Message("A workspace root is required".to_string()))?;
     let canonical_root = fs::canonicalize(root).await?;
     let canonical_target = fs::canonicalize(target_path).await?;
     if !canonical_target.starts_with(&canonical_root) {

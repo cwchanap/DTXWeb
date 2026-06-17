@@ -1,1 +1,6 @@
 lint-staged
+
+# Verify Rust formatting when Rust files are staged
+if git diff --cached --name-only --diff-filter=d | grep -q '\.rs$'; then
+	cargo fmt --check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
+fi

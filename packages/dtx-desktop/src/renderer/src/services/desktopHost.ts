@@ -75,11 +75,6 @@ const createTauriRuntime = (): DesktopHostRuntime => ({
 		return await tauriInvoke<T>(command, args[0] as Record<string, unknown>);
 	},
 	send: async (command: string, ...args: unknown[]): Promise<void> => {
-		if (args.length === 0) {
-			await tauriInvoke(command);
-			return;
-		}
-
 		await tauriInvoke(command, args[0] as Record<string, unknown>);
 	},
 	listen: async <T = unknown>(
@@ -141,15 +136,9 @@ const invokeHost = async <T>(
 
 const sendHost = async (
 	tauriCommand: string,
-	tauriArgs?: Record<string, unknown>
+	tauriArgs: Record<string, unknown>
 ): Promise<void> => {
 	const runtime = getRuntime();
-
-	if (tauriArgs === undefined) {
-		await runtime.send(tauriCommand);
-		return;
-	}
-
 	await runtime.send(tauriCommand, tauriArgs);
 };
 

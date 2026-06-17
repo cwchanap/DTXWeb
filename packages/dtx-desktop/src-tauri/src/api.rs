@@ -399,19 +399,25 @@ fn create_input_from_renderer(simfile_data: &Value) -> Value {
     })
 }
 
-async fn graphql_data(app: &AppHandle, query: &str, variables: Value) -> Result<Value> {
-    let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
-    run_graphql_value(&base_url, &token, query, variables)
+pub(crate) async fn graphql_data_with_url(
+    base_url: &str,
+    token: &str,
+    query: &str,
+    variables: Value,
+) -> Result<Value> {
+    run_graphql_value(base_url, token, query, variables)
         .await
         .success_data()
         .map_err(|(error, _)| DesktopError::Message(error))
 }
 
-async fn graphql_result(app: &AppHandle, query: &str, variables: Value) -> Result<ApiResultValue> {
-    let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
-    Ok(run_graphql_value(&base_url, &token, query, variables).await)
+pub(crate) async fn graphql_result_with_url(
+    base_url: &str,
+    token: &str,
+    query: &str,
+    variables: Value,
+) -> Result<ApiResultValue> {
+    Ok(run_graphql_value(base_url, token, query, variables).await)
 }
 
 async fn upload_bytes_to_api(
@@ -595,15 +601,15 @@ async fn read_preview_within_workspace(
     }
 }
 
-#[tauri::command]
-pub async fn fetch_user_simfiles(app: AppHandle) -> Result<Value> {
+pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Result<Value> {
     let mut all_data = Vec::new();
     let page_size = 100;
     let mut page = 1;
 
     loop {
-        let result = graphql_result(
-            &app,
+        let result = graphql_result_with_url(
+            base_url,
+            token,
             LIST_SIMFILES_QUERY,
             json!({ "scope": "MINE", "page": page, "pageSize": page_size }),
         )
@@ -651,16 +657,29 @@ pub async fn fetch_user_simfiles(app: AppHandle) -> Result<Value> {
 }
 
 #[tauri::command]
-pub async fn get_next_display_id(app: AppHandle) -> Result<i64> {
-    let data = graphql_data(&app, NEXT_DISPLAY_ID_QUERY, json!({})).await?;
+pub async fn fetch_user_simfiles(app: AppHandle) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    fetch_user_simfiles_impl(&base_url, &token).await
+}
+
+pub(crate) async fn get_next_display_id_impl(base_url: &str, token: &str) -> Result<i64> {
+    let data = graphql_data_with_url(base_url, token, NEXT_DISPLAY_ID_QUERY, json!({})).await?;
     data.get("nextDisplayId")
         .and_then(Value::as_i64)
         .ok_or_else(|| DesktopError::Message("Invalid nextDisplayId in API response".to_string()))
 }
 
 #[tauri::command]
-pub async fn search_cloud_songs(
-    app: AppHandle,
+pub async fn get_next_display_id(app: AppHandle) -> Result<i64> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    get_next_display_id_impl(&base_url, &token).await
+}
+
+pub(crate) async fn search_cloud_songs_impl(
+    base_url: &str,
+    token: &str,
     query: String,
     limit: Option<i64>,
     exclude_linked_song_ids: Option<Vec<Value>>,
@@ -680,7 +699,7 @@ pub async fn search_cloud_songs(
         "excludeIds": if exclude_ids.is_empty() { Value::Null } else { json!(exclude_ids) },
     });
 
-    let result = graphql_result(&app, SIMFILE_SEARCH_QUERY, variables).await?;
+    let result = graphql_result_with_url(base_url, token, SIMFILE_SEARCH_QUERY, variables).await?;
     let data = match result.success_data() {
         Ok(data) => data,
         Err((error, _)) => return Ok(api_failure(error)),
@@ -709,9 +728,25 @@ pub async fn search_cloud_songs(
 }
 
 #[tauri::command]
-pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
-    let result = graphql_result(
-        &app,
+pub async fn search_cloud_songs(
+    app: AppHandle,
+    query: String,
+    limit: Option<i64>,
+    exclude_linked_song_ids: Option<Vec<Value>>,
+) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    search_cloud_songs_impl(&base_url, &token, query, limit, exclude_linked_song_ids).await
+}
+
+pub(crate) async fn fetch_cloud_song_impl(
+    base_url: &str,
+    token: &str,
+    cloud_song_id: Value,
+) -> Result<Value> {
+    let result = graphql_result_with_url(
+        base_url,
+        token,
         &graphql_document(GET_SIMFILE_QUERY),
         json!({ "id": cloud_song_id.to_string().trim_matches('"') }),
     )
@@ -731,13 +766,21 @@ pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Va
 }
 
 #[tauri::command]
-pub async fn update_simfile_record(
-    app: AppHandle,
+pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    fetch_cloud_song_impl(&base_url, &token, cloud_song_id).await
+}
+
+pub(crate) async fn update_simfile_record_impl(
+    base_url: &str,
+    token: &str,
     simfile_id: Value,
     update_data: Value,
 ) -> Result<Value> {
-    let result = graphql_result(
-        &app,
+    let result = graphql_result_with_url(
+        base_url,
+        token,
         &graphql_document(UPDATE_SIMFILE_MUTATION),
         json!({
             "id": simfile_id.to_string().trim_matches('"'),
@@ -757,13 +800,25 @@ pub async fn update_simfile_record(
 }
 
 #[tauri::command]
-pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Result<Value> {
+pub async fn update_simfile_record(
+    app: AppHandle,
+    simfile_id: Value,
+    update_data: Value,
+) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    update_simfile_record_impl(&base_url, &token, simfile_id, update_data).await
+}
+
+pub(crate) async fn create_simfile_record_impl(
+    base_url: &str,
+    token: &str,
+    simfile_data: Value,
+) -> Result<Value> {
     let input = create_input_from_renderer(&simfile_data);
     let result = run_graphql_value(
-        &base_url,
-        &token,
+        base_url,
+        token,
         &graphql_document(CREATE_SIMFILE_MUTATION),
         json!({ "input": input }),
     )
@@ -784,8 +839,8 @@ pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Resul
     if let Some(song_path) = simfile_data.get("songPath").and_then(Value::as_str) {
         if !song_path.is_empty() {
             if let Some(error) = upload_preview_if_present(
-                &base_url,
-                &token,
+                base_url,
+                token,
                 song_path,
                 workspace_root,
                 &simfile_id,
@@ -797,8 +852,8 @@ pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Resul
                 warnings.push(format!("Preview image: {error}"));
             }
             if let Some(error) = upload_preview_if_present(
-                &base_url,
-                &token,
+                base_url,
+                token,
                 song_path,
                 workspace_root,
                 &simfile_id,
@@ -824,13 +879,24 @@ pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Resul
 }
 
 #[tauri::command]
-pub async fn load_asset_files(app: AppHandle, simfile_id: String) -> Result<Value> {
+pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    create_simfile_record_impl(&base_url, &token, simfile_data).await
+}
+
+pub(crate) async fn load_asset_files_impl(
+    base_url: &str,
+    token: &str,
+    simfile_id: String,
+) -> Result<Value> {
     if simfile_id.is_empty() || simfile_id == "0" {
         return Ok(api_success(json!([])));
     }
 
-    let result = graphql_result(
-        &app,
+    let result = graphql_result_with_url(
+        base_url,
+        token,
         &graphql_document(GET_SIMFILE_WITH_FILES_QUERY),
         json!({ "id": simfile_id }),
     )
@@ -864,6 +930,13 @@ pub async fn load_asset_files(app: AppHandle, simfile_id: String) -> Result<Valu
         .collect::<Vec<_>>();
 
     Ok(api_success(Value::Array(rows)))
+}
+
+#[tauri::command]
+pub async fn load_asset_files(app: AppHandle, simfile_id: String) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    load_asset_files_impl(&base_url, &token, simfile_id).await
 }
 
 #[tauri::command]
@@ -912,273 +985,5 @@ pub async fn upload_file(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use wiremock::matchers::{header, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn gql_simfile() -> Value {
-        json!({
-            "id": "42",
-            "displayId": 7,
-            "title": "Song",
-            "artist": "Artist",
-            "bpm": 180.5,
-            "userId": "user-1",
-            "isPublished": true,
-            "downloadUrl": "https://files/song.zip",
-            "previewUrl": "https://files/preview.jpg",
-            "videoPreviewUrl": null,
-            "publishDate": "2024-01-01",
-            "createdAt": "2024-01-02",
-            "updatedAt": "2024-01-03",
-            "dtxFiles": [{ "level": 9.2, "label": "EXT" }]
-        })
-    }
-
-    #[test]
-    fn api_base_url_trims_whitespace_and_trailing_slash() {
-        let base =
-            api_base_url_from_values(Some(" https://api.example.com/ ")).expect("base url");
-
-        assert_eq!(base, "https://api.example.com");
-    }
-
-    #[test]
-    fn api_base_url_rejects_empty_value() {
-        let result = api_base_url_from_values(Some(""));
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn renderer_simfile_maps_graphql_camel_case_to_snake_case() {
-        let mapped = renderer_simfile_from_graphql(&gql_simfile()).expect("mapped");
-
-        assert_eq!(mapped["id"], 42);
-        assert_eq!(mapped["display_id"], 7);
-        assert_eq!(mapped["user_id"], "user-1");
-        assert_eq!(mapped["is_published"], true);
-        assert_eq!(mapped["download_url"], "https://files/song.zip");
-        assert_eq!(mapped["preview_url"], "https://files/preview.jpg");
-        assert_eq!(mapped["video_preview_url"], Value::Null);
-        assert_eq!(mapped["publish_date"], "2024-01-01");
-        assert_eq!(mapped["created_at"], "2024-01-02");
-        assert_eq!(mapped["updated_at"], "2024-01-03");
-        assert_eq!(mapped["dtx_files"][0]["id"], 1);
-        assert_eq!(mapped["dtx_files"][0]["label"], "EXT");
-    }
-
-    #[test]
-    fn list_simfiles_query_requests_persisted_catalog_urls() {
-        // The list feeds auto-linking, which caches linked simfiles via
-        // `renderer_simfile_from_graphql`. Those cached records later populate
-        // the metadata editor, so the persisted URL fields must be present in
-        // the list response — otherwise opening and saving an auto-linked song
-        // overwrites the real URLs with empty strings.
-        assert!(LIST_SIMFILES_QUERY.contains("downloadUrl"));
-        assert!(LIST_SIMFILES_QUERY.contains("previewUrl"));
-        assert!(LIST_SIMFILES_QUERY.contains("videoPreviewUrl"));
-        assert!(LIST_SIMFILES_QUERY.contains("dtxFiles"));
-        // Still a curated field set (not the full fragment) to keep the
-        // payload lean.
-        assert!(!LIST_SIMFILES_QUERY.contains("...SimfileFull"));
-    }
-
-    #[test]
-    fn update_input_maps_renderer_snake_case_to_graphql_camel_case() {
-        let mapped = update_input_from_renderer(json!({
-            "display_id": 3,
-            "publish_date": "2024-01-01",
-            "is_published": true,
-            "download_url": "https://files/song.zip",
-            "video_preview_url": "https://video",
-            "preview_url": "https://files/preview.jpg",
-            "title": "Song"
-        }));
-
-        assert_eq!(
-            mapped,
-            json!({
-                "displayId": 3,
-                "publishDate": "2024-01-01",
-                "isPublished": true,
-                "downloadUrl": "https://files/song.zip",
-                "videoPreviewUrl": "https://video",
-                "previewUrl": "https://files/preview.jpg",
-                "title": "Song"
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn run_graphql_value_returns_data_for_successful_response() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .and(header("authorization", "Bearer token-1"))
-            .and(header("user-agent", "DTXDesktopApp"))
-            .and(header("x-requested-with", "DTXDesktopApp"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data": { "nextDisplayId": 99 }
-            })))
-            .mount(&server)
-            .await;
-
-        let result =
-            run_graphql_value(&server.uri(), "token-1", "query Test { ok }", json!({})).await;
-
-        assert_eq!(
-            result,
-            ApiResultValue::Success {
-                data: json!({ "nextDisplayId": 99 })
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn run_graphql_value_extracts_first_graphql_error_code() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "errors": [
-                    { "message": "nope", "extensions": { "code": "FORBIDDEN" } }
-                ]
-            })))
-            .mount(&server)
-            .await;
-
-        let result =
-            run_graphql_value(&server.uri(), "token-1", "query Test { ok }", json!({})).await;
-
-        assert_eq!(
-            result,
-            ApiResultValue::Failure {
-                error: "FORBIDDEN: nope".to_string(),
-                code: Some("FORBIDDEN".to_string())
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn upload_file_to_api_posts_multipart_with_desktop_headers_and_strips_first_directory() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let song_folder = temp.path().join("song");
-        fs::create_dir(&song_folder).expect("song dir");
-        fs::create_dir(song_folder.join("dir")).expect("nested dir");
-        fs::write(song_folder.join("dir").join("kick.wav"), b"audio").expect("audio file");
-
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/upload"))
-            .and(header("authorization", "Bearer token-1"))
-            .and(header("user-agent", "DTXDesktopApp"))
-            .and(header("x-requested-with", "DTXDesktopApp"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "message": "File uploaded successfully",
-                "file": {
-                    "fileName": "kick.wav",
-                    "key": "42/kick.wav",
-                    "size": 5,
-                    "contentType": "application/octet-stream",
-                    "status": "Uploaded"
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let result = upload_file_to_api(
-            &server.uri(),
-            "token-1",
-            "dir/kick.wav",
-            song_folder.to_str().expect("utf8 path"),
-            "42",
-        )
-        .await;
-
-        assert_eq!(result["success"], true);
-        assert_eq!(result["data"]["file"]["fileName"], "kick.wav");
-    }
-
-    #[tokio::test]
-    async fn upload_file_to_api_rejects_paths_outside_song_folder() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let song_folder = temp.path().join("song");
-        fs::create_dir(&song_folder).expect("song dir");
-        fs::write(temp.path().join("secret.wav"), b"audio").expect("secret file");
-
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/upload"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "message": "should not upload",
-                "file": { "fileName": "secret.wav" }
-            })))
-            .mount(&server)
-            .await;
-
-        let result = upload_file_to_api(
-            &server.uri(),
-            "token-1",
-            "../secret.wav",
-            song_folder.to_str().expect("utf8 path"),
-            "42",
-        )
-        .await;
-
-        assert_eq!(result["success"], false);
-        assert_eq!(result["error"], "File path is outside song folder");
-    }
-
-    #[tokio::test]
-    async fn read_preview_rejects_song_folder_outside_workspace() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let outside = tempfile::tempdir().expect("outside");
-        fs::write(outside.path().join("preview.jpg"), b"img").expect("preview");
-
-        let result =
-            read_preview_within_workspace(outside.path().to_str().unwrap(), workspace.path().to_str().unwrap(), "preview.jpg")
-                .await;
-
-        assert!(matches!(result, Err(ref e) if e.contains("outside the workspace")));
-    }
-
-    #[tokio::test]
-    async fn read_preview_rejects_missing_workspace_root() {
-        let song = tempfile::tempdir().expect("song");
-
-        let result =
-            read_preview_within_workspace(song.path().to_str().unwrap(), "", "preview.jpg").await;
-
-        assert!(matches!(result, Err(ref e) if e.contains("workspace root is required")));
-    }
-
-    #[tokio::test]
-    async fn read_preview_returns_none_when_file_absent() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let song = workspace.path().join("song");
-        fs::create_dir(&song).expect("song dir");
-
-        let result =
-            read_preview_within_workspace(song.to_str().unwrap(), workspace.path().to_str().unwrap(), "preview.jpg")
-                .await;
-
-        assert!(matches!(result, Ok(None)));
-    }
-
-    #[tokio::test]
-    async fn read_preview_reads_file_inside_workspace() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let song = workspace.path().join("song");
-        fs::create_dir(&song).expect("song dir");
-        fs::write(song.join("preview.jpg"), b"img").expect("preview");
-
-        let result =
-            read_preview_within_workspace(song.to_str().unwrap(), workspace.path().to_str().unwrap(), "preview.jpg")
-                .await;
-
-        assert!(matches!(result, Ok(Some(ref bytes)) if bytes == b"img"));
-    }
-}
+#[path = "tests/api_tests.rs"]
+mod tests;

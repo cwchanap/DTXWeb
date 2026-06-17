@@ -1,0 +1,126 @@
+name: Tauri Rust CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+# Notes:
+# - lib.rs calls `tauri::generate_context!()`, which embeds the frontend
+#   (`frontendDist: ../dist`) at compile time. A stub dist with a minimal
+#   index.html is enough to satisfy the codegen for compile/lint/test — the
+#   Rust unit tests use wiremock/tempfile, not the real frontend.
+# - `--locked` is safe because src-tauri/Cargo.lock is committed.
+
+jobs:
+  build-and-lint:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/dtx-desktop/src-tauri
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: packages/dtx-desktop/src-tauri
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Prepare frontend dist for codegen
+        run: |
+          mkdir -p ../dist
+          [ -f ../dist/index.html ] || \
+            printf '<!DOCTYPE html><html><head></head><body></body></html>' > ../dist/index.html
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Build
+        run: cargo build --locked
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/dtx-desktop/src-tauri
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2.81.11
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: packages/dtx-desktop/src-tauri
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Prepare frontend dist for codegen
+        run: |
+          mkdir -p ../dist
+          [ -f ../dist/index.html ] || \
+            printf '<!DOCTYPE html><html><head></head><body></body></html>' > ../dist/index.html
+
+      - name: Run unit tests with coverage
+        run: cargo llvm-cov --locked --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        # Codecov merges this Rust upload with the TypeScript coverage uploaded
+        # by unit-test.yml for the same commit, so overall coverage spans both.
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/dtx-desktop/src-tauri/lcov.info
+          fail_ci_if_error: true

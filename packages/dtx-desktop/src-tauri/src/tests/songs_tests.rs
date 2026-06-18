@@ -905,7 +905,7 @@ fn resolve_export_directory_ignores_empty_string() {
     // An empty string should fall through to the ~/Downloads default, not
     // produce a PathBuf of "" (which would be the current directory).
     let path = resolve_export_directory(Some(""));
-    assert!(path.ends_with("Downloads") || path == PathBuf::from("."));
+    assert!(path.ends_with("Downloads") || path == *".");
 }
 
 #[test]

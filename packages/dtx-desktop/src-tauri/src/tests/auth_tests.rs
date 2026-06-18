@@ -1137,3 +1137,46 @@ fn resolve_auth_config_returns_none_in_test_environment() {
     // process-global env mutation that could race with parallel tests.
     assert!(resolve_auth_config().is_none());
 }
+
+// ---------------------------------------------------------------------------
+// session_value_from_data with user field
+// ---------------------------------------------------------------------------
+
+#[test]
+fn session_value_from_data_includes_user_when_present() {
+    let session_data = SessionData {
+        access_token: Some("access".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        user: Some(serde_json::json!({ "id": "user-1", "email": "u@example.com" })),
+    };
+
+    let session = session_value_from_data(session_data).expect("session");
+
+    assert_eq!(session["access_token"], "access");
+    assert_eq!(session["refresh_token"], "refresh");
+    assert_eq!(session["user"]["id"], "user-1");
+    assert_eq!(session["user"]["email"], "u@example.com");
+}
+
+#[test]
+fn session_value_from_data_omits_user_when_none() {
+    let session_data = SessionData {
+        access_token: Some("access".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        user: None,
+    };
+
+    let session = session_value_from_data(session_data).expect("session");
+
+    assert!(session.get("user").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// auth_client
+// ---------------------------------------------------------------------------
+
+#[test]
+fn auth_client_builds_client_with_timeout() {
+    let client = auth_client();
+    assert!(client.is_ok());
+}

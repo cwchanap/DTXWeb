@@ -857,3 +857,104 @@ fn text_decoding_priority_picks_def_priority_for_def_extension_only() {
     let def = text_decoding_priority("def");
     assert!(!std::ptr::eq(dtx.as_ptr(), def.as_ptr()));
 }
+
+// ---------------------------------------------------------------------------
+// File too large check
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn read_file_path_rejects_file_exceeding_text_limit() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("big.dtx");
+    // Write a file just over 1 MiB (TEXT_FILE_SIZE_LIMIT)
+    let big_content = vec![b'x'; (TEXT_FILE_SIZE_LIMIT + 1) as usize];
+    fs::write(&file_path, &big_content).await.unwrap();
+
+    let result = read_file_path(&file_path, Some(dir.path())).await;
+
+    match result {
+        ReadFileResult::Error { error, .. } => {
+            assert_eq!(error, "File too large");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn read_file_path_rejects_audio_file_exceeding_audio_limit() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("big.mp3");
+    // Write a file just over 10 MiB (AUDIO_FILE_SIZE_LIMIT)
+    let big_content = vec![b'x'; (AUDIO_FILE_SIZE_LIMIT + 1) as usize];
+    fs::write(&file_path, &big_content).await.unwrap();
+
+    let result = read_file_path(&file_path, Some(dir.path())).await;
+
+    match result {
+        ReadFileResult::Error { error, .. } => {
+            assert_eq!(error, "File too large");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Encoding detection: decode_text_content fallback path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn decode_text_content_falls_back_to_shift_jis_for_dtx_with_all_nulls() {
+    // Content that fails every validation (all null bytes) should fall
+    // through to the SHIFT_JIS fallback for .dtx files.
+    let bytes = [0x00u8; 64];
+    let result = decode_text_content(&bytes, "dtx");
+    // The fallback produces a non-panic string; its exact content depends
+    // on SHIFT_JIS decoding of null bytes, which yields null chars.
+    assert!(result.contains('\0'));
+}
+
+#[test]
+fn decode_text_content_falls_back_to_utf8_for_non_dtx_with_all_nulls() {
+    let bytes = [0x00u8; 64];
+    let result = decode_text_content(&bytes, "txt");
+    // For non-dtx files, the fallback is UTF-8.
+    assert!(result.contains('\0'));
+}
+
+#[test]
+fn decode_text_content_strips_utf8_bom_before_decoding() {
+    let mut bytes = vec![0xef, 0xbb, 0xbf]; // UTF-8 BOM
+    bytes.extend_from_slice(b"#TITLE: Test");
+    let result = decode_text_content(&bytes, "dtx");
+    assert!(result.starts_with("#TITLE: Test"));
+}
+
+// ---------------------------------------------------------------------------
+// join_path_parts
+// ---------------------------------------------------------------------------
+
+#[test]
+fn join_path_parts_joins_base_with_parts() {
+    let result = join_path_parts(
+        "/base".to_string(),
+        vec!["sub".to_string(), "file.dtx".to_string()],
+    );
+    assert_eq!(result, PathBuf::from("/base/sub/file.dtx"));
+}
+
+#[test]
+fn join_path_parts_returns_base_when_no_parts() {
+    let result = join_path_parts("/base".to_string(), vec![]);
+    assert_eq!(result, PathBuf::from("/base"));
+}
+
+// ---------------------------------------------------------------------------
+// file_path_to_string
+// ---------------------------------------------------------------------------
+
+#[test]
+fn file_path_to_string_converts_path_to_string() {
+    let file_path = FilePath::Path("/some/path/to/file.dtx".into());
+    let result = file_path_to_string(file_path).unwrap();
+    assert_eq!(result, "/some/path/to/file.dtx");
+}

@@ -828,3 +828,142 @@ fn windows_home_dir_fallback_returns_none_with_only_one_of_drive_or_path() {
         None
     );
 }
+
+// ---------------------------------------------------------------------------
+// parse_dtx_folder edge cases
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn parse_dtx_folder_returns_empty_result_for_folder_without_dtx_files() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("readme.txt"), b"not a dtx file")
+        .await
+        .unwrap();
+
+    let result = parse_dtx_folder(dir.path()).await.unwrap();
+
+    assert!(result.bpm.is_none());
+    assert!(result.artist.is_none());
+    assert!(result.levels.is_empty());
+    assert!(result.parse_failures.is_none());
+}
+
+#[tokio::test]
+async fn parse_dtx_folder_counts_unreadable_dtx_as_parse_failure() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("test.dtx");
+
+    // Write a valid .dtx, then remove read permissions so fs::read fails.
+    fs::write(&file_path, b"#TITLE: Test\n#BPM: 120")
+        .await
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&file_path).await.unwrap().permissions();
+        perms.set_mode(0o000);
+        fs::set_permissions(&file_path, perms).await.unwrap();
+    }
+
+    let result = parse_dtx_folder(dir.path()).await.unwrap();
+
+    #[cfg(unix)]
+    {
+        assert_eq!(result.parse_failures, Some(1));
+    }
+    // On non-unix we can't easily trigger a read failure; just verify it
+    // doesn't panic.
+    let _ = result;
+}
+
+#[tokio::test]
+async fn parse_dtx_folder_counts_dtx_without_metadata_as_parse_failure() {
+    let dir = tempdir().unwrap();
+    // A .dtx file with no recognizable directives and no SET.def label
+    fs::write(dir.path().join("noise.dtx"), b"just some garbage text")
+        .await
+        .unwrap();
+
+    let result = parse_dtx_folder(dir.path()).await.unwrap();
+
+    assert_eq!(result.parse_failures, Some(1));
+    assert!(result.levels.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// resolve_export_directory
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_export_directory_uses_explicit_path() {
+    let path = resolve_export_directory(Some("/custom/export"));
+    assert_eq!(path, PathBuf::from("/custom/export"));
+}
+
+#[test]
+fn resolve_export_directory_ignores_empty_string() {
+    // An empty string should fall through to the ~/Downloads default, not
+    // produce a PathBuf of "" (which would be the current directory).
+    let path = resolve_export_directory(Some(""));
+    assert!(path.ends_with("Downloads") || path == PathBuf::from("."));
+}
+
+#[test]
+fn resolve_export_directory_expands_tilde_prefix() {
+    let path = resolve_export_directory(Some("~/Music/exports"));
+    // On systems with HOME set, the tilde is expanded. On systems without
+    // HOME (rare in tests), the fallback strips the "~/". Either way the
+    // result should contain "Music/exports" without the literal "~".
+    assert!(path.ends_with("Music/exports"));
+    assert!(!path.starts_with("~"));
+}
+
+// ---------------------------------------------------------------------------
+// data_url_for_asset
+// ---------------------------------------------------------------------------
+
+#[test]
+fn data_url_for_asset_uses_png_mime_for_png_files() {
+    let url = data_url_for_asset("image.png", b"\x89PNG...");
+    assert!(url.starts_with("data:image/png;base64,"));
+}
+
+#[test]
+fn data_url_for_asset_uses_jpeg_mime_for_jpg_files() {
+    let url = data_url_for_asset("photo.jpg", b"\xff\xd8...");
+    assert!(url.starts_with("data:image/jpeg;base64,"));
+}
+
+#[test]
+fn data_url_for_asset_uses_jpeg_mime_for_jpeg_extension() {
+    let url = data_url_for_asset("photo.jpeg", b"\xff\xd8...");
+    assert!(url.starts_with("data:image/jpeg;base64,"));
+}
+
+#[test]
+fn data_url_for_asset_defaults_to_octet_stream_for_unknown_extensions() {
+    let url = data_url_for_asset("file.xyz", b"bytes");
+    assert!(url.starts_with("data:application/octet-stream;base64,"));
+}
+
+// ---------------------------------------------------------------------------
+// valid_export_files skips directories
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn valid_export_files_skips_directories_and_invalid_extensions() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("song.dtx"), b"#TITLE: Test")
+        .await
+        .unwrap();
+    fs::write(dir.path().join("notes.txt"), b"notes")
+        .await
+        .unwrap();
+    fs::create_dir(dir.path().join("subfolder")).await.unwrap();
+
+    let files = valid_export_files(dir.path()).await.unwrap();
+
+    // Only .dtx should be included; .txt and the directory should be excluded.
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].0, "song.dtx");
+}

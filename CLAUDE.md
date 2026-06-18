@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Drumery is a rhythm game platform for DTX (drum simulation) files. It's a monorepo with 4 packages:
+Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-workspaces monorepo (orchestrated by Turborepo) with 5 packages:
 
-- `packages/common` - Shared Svelte component library and DTX file parsing
-- `packages/dtx-web` - SvelteKit web application (main app)
-- `packages/dtx-desktop` - Electron desktop application
-- `packages/ui-components` - Shadcn-Svelte UI component library (export-only components)
+- `packages/common` (`@dtx/common`) - Shared Svelte component library and DTX file parsing
+- `packages/dtx-web` (`dtx-web`) - SvelteKit web application (main app), deployed to Cloudflare Workers
+- `packages/dtx-desktop` (`dtx-desktop`) - Tauri 2 desktop app: Svelte/Vite frontend (`src/`) + Rust backend (`src-tauri/`)
+- `packages/dtx-api` (`dtx-api`) - GraphQL API on Cloudflare Workers (Pothos + GraphQL Yoga), backing both web and desktop
+- `packages/ui-components` (`@dtx/ui-components`) - Shadcn-Svelte UI component library (export-only components)
+
+> The desktop app was migrated from Electron to Tauri. References to Electron, the "main process", or `electron-builder` elsewhere in older docs are obsolete — the native layer is now Rust under `src-tauri/`.
 
 ## Development Commands
 
@@ -21,37 +24,49 @@ Use `--filter={package}` flag to run commands in specific packages:
 # Building (only build common if modified)
 bun run --filter=@dtx/common build    # Build shared package ONLY if you modified it
 
-# Testing
+# Testing (JS/TS via Vitest)
 bun run --filter=dtx-web test         # Run web app tests
-bun run --filter=dtx-web test -- TestFile.test.ts  # Run specific test
-bun run --filter=dtx-desktop test     # Run desktop app tests
+bun run --filter=dtx-web test -- TestFile.test.ts  # Run a single test file
+bun run --filter=dtx-desktop test     # Run desktop frontend tests
+bun run --filter=dtx-api test         # Run API tests
 bun run --filter=@dtx/common test     # Run common package tests
 bun run --filter=@dtx/ui-components test  # Run UI components tests
 
+# Desktop Rust backend (run from packages/dtx-desktop/src-tauri)
+cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml      # Rust unit tests
+cargo fmt --check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml  # Format check (enforced by pre-commit hook)
+cargo clippy --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml    # Lints
+
 # Type checking
-bun run --filter=dtx-web check        # TypeScript/Svelte check
-bun run --filter=dtx-desktop check    # Desktop TypeScript check
-bun run --filter=dtx-desktop typecheck:node  # Desktop Node.js type check
+bun run --filter=dtx-web check        # SvelteKit sync + svelte-check
+bun run --filter=dtx-desktop typecheck  # Desktop svelte-check (tsconfig.web.json)
+bun run --filter=dtx-api check        # tsc --noEmit
+
+# GraphQL codegen (web client types are generated from the dtx-api schema)
+bun run --filter=dtx-web codegen      # Regenerate src/lib/api/generated/ after schema changes
+bun run --filter=dtx-api gen-schema   # Regenerate the GraphQL schema from the API
 ```
 
 ### Project-wide commands
 
 ```bash
 # Development servers
-bun run dev                     # Run both web and desktop dev servers
+bun run dev                     # Run API (8787) + web (5173) + desktop (Tauri), wired for local
 bun run dev:web                 # Run web app only (port 5173)
-bun run dev:desktop             # Run desktop app only
-bun run dev:common              # Run common package dev server (port 5175)
-bun run dev:all                 # Run all dev servers
+bun run dev:desktop             # Run desktop app only (tauri dev)
+bun run dev:common              # Run common package dev server
+bun run dev:all                 # Run all dev servers + common
 
 # Linting & formatting
-bun run lint                    # Check formatting and lint
-bun run format                  # Auto-format code
+bun run lint                    # ESLint over .js/.ts/.svelte
+bun run format                  # Prettier auto-format (tabs, single quotes, width 100)
+bun run check                   # Type-check across packages
 
 # Building and testing
-bun run build                   # Build all packages
+bun run build                   # Build all packages (Turborepo, respects ^build order)
 bun run test                    # Run tests for all packages
 bun run test:coverage           # Run tests with coverage
+bun run test:web | test:desktop | test:common  # Per-package test shortcuts
 
 # E2E tests (Playwright)
 bun run e2e                     # Run all Playwright e2e tests
@@ -59,10 +74,13 @@ bun run e2e:ui                  # Run e2e tests in interactive UI mode
 bun run fixtures:generate       # Generate MIDI test fixtures for e2e tests
 bun run fixtures:verify         # Verify e2e test fixtures are valid
 
-# Deployment (Cloudflare Workers)
+# Deployment (Cloudflare Workers) — manual, no CI/CD
 bun run deploy:web                       # Deploy web app to production
 bun run deploy:web:preprod               # Deploy web app to pre-prod (preprod D1 + R2)
 bun run deploy:web:preprod:prod-data     # Deploy web app to pre-prod with prod D1 + R2
+bun run deploy:api                       # Deploy GraphQL API to production
+bun run deploy:api:preprod               # Deploy API to pre-prod
+bun run deploy:api:preprod:prod-data     # Deploy API to pre-prod with prod data
 
 # Supabase type generation
 bun run gen-types              # Generate TypeScript types from Supabase schema
@@ -78,9 +96,10 @@ bun run clean                  # Remove all node_modules
 - **Frontend**: Svelte 5 + SvelteKit 2.x + TypeScript 5.x
 - **Game Engine**: Phaser 3.88 for rhythm game mechanics
 - **Styling**: TailwindCSS 4.x + Skeleton UI components
-- **Backend**: Supabase (auth/database) + Cloudflare Workers (API)
-- **Desktop**: Electron 35.x with Svelte frontend
-- **Build**: Vite 6.x + bun workspaces
+- **API**: `dtx-api` — GraphQL on Cloudflare Workers (Pothos schema-builder + GraphQL Yoga); web client types generated via graphql-codegen
+- **Backend services**: Supabase (auth/database), Cloudflare D1 + R2 (simfile storage)
+- **Desktop**: Tauri 2 — Svelte/Vite webview frontend + Rust backend (`src-tauri/`), Rust 1.77 / edition 2021
+- **Build**: Vite 6.x + Bun workspaces + Turborepo
 
 ### DTX File Processing
 
@@ -107,6 +126,20 @@ The ui-components package exports:
 
 - Shadcn-Svelte UI components via main export and `./components` export
 - Built with Tailwind CSS variants and utilities
+
+### GraphQL API (`dtx-api`)
+
+- A Cloudflare Worker exposing a GraphQL endpoint via GraphQL Yoga; the schema is built code-first with Pothos (`schema/`), backed by `services/` (Supabase + D1/R2) and `rest/` handlers.
+- Auth uses Pothos scope-auth; requests carry Supabase session context (`context.ts`).
+- The web client consumes it through generated typed documents: edit a GraphQL operation, then run the web `codegen` script to refresh `src/lib/api/generated/`. `lint:codegen` fails CI if generated output is stale, so commit regenerated files.
+- Local dev runs on port `8787` (`dtx-api#dev:local`); web/desktop point at it via `VITE_DTX_API_URL` / `PUBLIC_DTX_API_URL`.
+
+### Desktop (Tauri) Backend
+
+- Native logic lives in Rust under `packages/dtx-desktop/src-tauri/src/`: `api.rs` (API calls), `auth.rs` (deep-link OAuth callback on port 47931), `filesystem.rs` (workspace file access), `songs.rs`, `updater.rs`, `models.rs`, `error.rs`. Commands are exposed to the Svelte frontend via Tauri's IPC.
+- The frontend calls Rust commands through `@tauri-apps/api`; capabilities/permissions are declared in `src-tauri/capabilities/` and `tauri.conf.json`.
+- Rust tests live in `src-tauri/src/tests/` (use `wiremock` for HTTP, `tempfile` for fs). `cargo fmt --check` is enforced by the pre-commit hook for staged `.rs` files.
+- `tauri build` only bundles for the host OS (`build:mac` / `build:win`); cross-OS builds must run on the target OS.
 
 ### File Structure Patterns
 
@@ -136,7 +169,7 @@ Clear cache when:
 - Level labels are missing after database schema changes
 - Stale simfile data is displayed
 - Template changes aren't reflected
-- Data inconsistencies after main process updates
+- Data inconsistencies after Rust backend / API updates
 
 ### Manual Cache Clearing
 
@@ -226,10 +259,10 @@ import { Button } from '@dtx/common/components';
 ## Deployment & Infrastructure
 
 - **Web App**: Deployed to Cloudflare Workers via @sveltejs/adapter-cloudflare
-- **Desktop**: Built with electron-builder, distributed via GitHub releases
-- **Worker**: Deployed to Cloudflare Workers
-- **Database**: Supabase PostgreSQL with real-time subscriptions
-- **Storage**: AWS S3 and Cloudflare R2 for game assets
+- **GraphQL API** (`dtx-api`): Deployed to Cloudflare Workers via wrangler (`deploy:api*`)
+- **Desktop**: Built with Tauri (`tauri build`), with auto-update via `tauri-plugin-updater`; distributed via GitHub releases (`desktop-build-deploy.yml`)
+- **Database**: Supabase PostgreSQL + Cloudflare D1
+- **Storage**: Cloudflare R2 (and AWS S3) for game assets
 
 ### Deployment Environments
 
@@ -251,12 +284,14 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 
 - Node.js 22.x or later
 - Bun v1.3.9 (package manager and runtime)
+- Rust 1.77+ toolchain (required to build/test the desktop `src-tauri` backend)
 - Uses bun workspaces for monorepo management
 - Turborepo for build orchestration and caching
-- Uses husky + lint-staged for git hooks
+- Uses husky + lint-staged for git hooks (lint-staged + `cargo fmt --check` on staged Rust files)
 - Prettier for code formatting (tabs, single quotes, width 100)
 - ESLint for TypeScript and Svelte linting
 - Supabase CLI for type generation and local development
+- CI (`.github/workflows/`): `lint-and-format`, `unit-test`, `e2e-test`, `tauri-rust-ci` (Rust fmt/clippy/test), and `desktop-build-deploy` run on push/PR. Worker deploys are manual.
 
 ## Code Maintenance
 

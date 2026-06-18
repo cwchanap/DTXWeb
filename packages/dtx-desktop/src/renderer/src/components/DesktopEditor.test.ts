@@ -380,6 +380,37 @@ describe('DesktopEditor', () => {
 			});
 		});
 
+		it('accepts ArrayBuffer binary content (distinct from Uint8Array) for DTX files', async () => {
+			// toUtf8String → toArrayBuffer has two branches: pass-through for
+			// ArrayBuffer and copy for Uint8Array. The previous test exercises
+			// the Uint8Array path; this one ensures the ArrayBuffer instanceof
+			// branch (which returns content unchanged) is also covered.
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/arraybuffer',
+				songName: 'ArrayBuffer Song'
+			});
+			// Build a real ArrayBuffer (not a Uint8Array view) so the
+			// `content instanceof ArrayBuffer` branch is taken.
+			const buffer = new Uint8Array([0x23, 0x54, 0x49, 0x54, 0x4c, 0x45]).buffer;
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'binary', error: null, content: buffer };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: null });
+
+			render(DesktopEditor, { props: { simFileId: 'arraybuffer-song' } });
+
+			await waitFor(() => {
+				expect(mockEventBus.emit).toHaveBeenCalledWith(
+					'note-import',
+					expect.any(Array),
+					expect.any(Object)
+				);
+			});
+		});
+
 		it('handles errors in loadFromSimFileId and sets default metadata', async () => {
 			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue(null);
 			vi.mocked(editorMappingStore.getFolderPath).mockReturnValue(null);

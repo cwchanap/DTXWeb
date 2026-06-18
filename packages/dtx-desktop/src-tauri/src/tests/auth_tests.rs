@@ -5,6 +5,17 @@ async fn auth_event_from_url(raw_url: &str) -> Option<AuthEvent> {
 }
 
 use super::*;
+use std::sync::{Mutex, OnceLock};
+
+/// Singleton mutex serializing tests that mutate process-global env vars
+/// (DTX_DESKTOP_AUTH_CALLBACK_PORT). Without this, parallel test runs race:
+/// one test's `set_var` is visible to another test's `remove_var`, producing
+/// flaky failures. Each env-mutating test acquires this lock for its full
+/// duration.
+fn auth_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[test]
 fn extracts_magic_link_from_dtx_auth_callback() {
@@ -841,4 +852,288 @@ async fn refresh_session_fails_when_response_has_no_tokens() {
 
     assert!(!is_valid);
     assert!(state.current_session().await.is_none());
+}
+
+#[test]
+fn parse_auth_callback_returns_none_for_malformed_url() {
+    // `url::Url::parse` rejects spaces and stray scheme separators, so a
+    // garbage request line cannot leak through as a partial AuthCallback.
+    assert!(parse_auth_callback("not a url").is_none());
+    assert!(parse_auth_callback("://missing-scheme").is_none());
+    assert!(parse_auth_callback("").is_none());
+}
+
+#[test]
+fn session_validation_status_serializes_to_kebab_case() {
+    // The renderer matches on the exact strings "valid"/"invalid"/"not-configured".
+    assert_eq!(
+        serde_json::to_value(SessionValidationStatus::Valid).unwrap(),
+        serde_json::json!("valid")
+    );
+    assert_eq!(
+        serde_json::to_value(SessionValidationStatus::Invalid).unwrap(),
+        serde_json::json!("invalid")
+    );
+    assert_eq!(
+        serde_json::to_value(SessionValidationStatus::NotConfigured).unwrap(),
+        serde_json::json!("not-configured")
+    );
+}
+
+#[test]
+fn magic_link_result_serializes_with_camel_case_and_skips_empty_optional_fields() {
+    let result = MagicLinkResult {
+        success: true,
+        error: None,
+        session: Some(serde_json::json!({ "access_token": "tok" })),
+        user: None,
+    };
+
+    let value = serde_json::to_value(&result).unwrap();
+    assert_eq!(value["success"], true);
+    assert_eq!(value["session"]["access_token"], "tok");
+    // Skipped optional fields must not appear (keeps the IPC payload small
+    // and matches the renderer's optional-field handling).
+    assert!(value.get("error").is_none());
+    assert!(value.get("user").is_none());
+}
+
+#[test]
+fn magic_link_result_serializes_failure_with_error_message() {
+    let result = MagicLinkResult {
+        success: false,
+        error: Some("Token has expired".to_string()),
+        session: None,
+        user: None,
+    };
+
+    let value = serde_json::to_value(&result).unwrap();
+    assert_eq!(value["success"], false);
+    assert_eq!(value["error"], "Token has expired");
+    assert!(value.get("session").is_none());
+}
+
+#[test]
+fn session_data_deserializes_camel_case_aliases_from_renderer() {
+    // The renderer stores session data in camelCase; the alias attribute lets
+    // the same struct accept either casing without custom conversion.
+    let data = serde_json::from_value::<SessionData>(serde_json::json!({
+        "accessToken": "access",
+        "refreshToken": "refresh",
+        "userData": { "id": "u-1" }
+    }))
+    .expect("session data");
+
+    assert_eq!(data.access_token.as_deref(), Some("access"));
+    assert_eq!(data.refresh_token.as_deref(), Some("refresh"));
+    assert_eq!(data.user.as_ref().unwrap()["id"], "u-1");
+}
+
+#[test]
+fn session_data_deserializes_snake_case_and_defaults_missing_fields_to_none() {
+    let data = serde_json::from_value::<SessionData>(serde_json::json!({
+        "access_token": "a",
+        "refresh_token": "r"
+    }))
+    .expect("session data");
+
+    assert_eq!(data.access_token.as_deref(), Some("a"));
+    assert_eq!(data.refresh_token.as_deref(), Some("r"));
+    assert!(data.user.is_none());
+}
+
+#[test]
+fn session_data_defaults_all_fields_to_none_when_empty() {
+    let data = serde_json::from_value::<SessionData>(serde_json::json!({})).expect("session data");
+
+    assert!(data.access_token.is_none());
+    assert!(data.refresh_token.is_none());
+    assert!(data.user.is_none());
+}
+
+#[test]
+fn auth_event_name_and_payload_round_trip_through_serde() {
+    // AuthEvent is emitted over Tauri's event bus; its name and payload shape
+    // are part of the IPC contract with the renderer.
+    let result = MagicLinkResult {
+        success: true,
+        error: None,
+        session: Some(serde_json::json!({ "access_token": "tok" })),
+        user: Some(serde_json::json!({ "id": "u-1" })),
+    };
+    let event = AuthEvent::MagicLinkResult(result);
+
+    assert_eq!(event.name(), "magic-link-result");
+    let payload = event.payload();
+    assert_eq!(payload["success"], true);
+    assert_eq!(payload["session"]["access_token"], "tok");
+    assert_eq!(payload["user"]["id"], "u-1");
+}
+
+#[test]
+fn auth_event_payload_falls_back_when_serialization_fails() {
+    // MagicLinkResult always serializes (its fields are plain JSON Values),
+    // so the fallback arm is unreachable in practice — but the enum variant
+    // name must stay stable regardless.
+    let result = MagicLinkResult {
+        success: false,
+        error: Some("err".to_string()),
+        session: None,
+        user: None,
+    };
+    let event = AuthEvent::MagicLinkResult(result);
+
+    assert_eq!(event.name(), "magic-link-result");
+    assert_eq!(event.payload()["success"], false);
+}
+
+#[tokio::test]
+async fn auth_event_from_url_returns_none_for_callback_without_magic_link_async() {
+    // A bare auth-callback URL with no magic_link query param produces no
+    // event: legacy token-only callbacks must never be honored without
+    // server-side verification. This covers the Option::None branch in
+    // auth_event_from_url_with_state through the real async state machine.
+    let state = AuthState::default();
+    let event =
+        auth_event_from_url_with_state(&state, "dtx://auth-callback?access_token=tok").await;
+    assert!(event.is_none());
+}
+
+#[test]
+fn route_callback_request_returns_bad_request_when_request_line_is_missing() {
+    assert!(matches!(
+        route_callback_request(None, 47931),
+        CallbackRoute::BadRequest
+    ));
+}
+
+#[test]
+fn route_callback_request_returns_bad_request_when_target_is_missing() {
+    // A request line that has no whitespace-separated target (e.g. just "GET")
+    // is malformed.
+    assert!(matches!(
+        route_callback_request(Some("GET"), 47931),
+        CallbackRoute::BadRequest
+    ));
+}
+
+#[test]
+fn route_callback_request_returns_valid_url_for_auth_callback_target() {
+    let route = route_callback_request(
+        Some("GET /auth-callback?magic_link=https%3A%2F%2Fexample.com HTTP/1.1"),
+        47931,
+    );
+
+    match route {
+        CallbackRoute::Valid(raw_url) => {
+            assert!(raw_url.contains("/auth-callback?magic_link="));
+            assert!(raw_url.starts_with("http://127.0.0.1:47931/"));
+        }
+        other => panic!("expected Valid, got {other:?}"),
+    }
+}
+
+#[test]
+fn route_callback_request_returns_not_found_for_non_auth_callback_target() {
+    // Any other path on the loopback server is rejected with 404 to avoid
+    // proxying arbitrary requests through the auth callback server.
+    assert!(matches!(
+        route_callback_request(Some("GET /other HTTP/1.1"), 47931),
+        CallbackRoute::NotFound
+    ));
+}
+
+#[test]
+fn local_auth_callback_status_text_maps_known_http_status_codes() {
+    assert_eq!(local_auth_callback_status_text(200), "OK");
+    assert_eq!(local_auth_callback_status_text(400), "Bad Request");
+    assert_eq!(local_auth_callback_status_text(404), "Not Found");
+}
+
+#[test]
+fn local_auth_callback_status_text_defaults_to_internal_server_error() {
+    // Any status code outside the explicit map falls through to a generic 500
+    // label so the response line is always well-formed.
+    assert_eq!(
+        local_auth_callback_status_text(500),
+        "Internal Server Error"
+    );
+    assert_eq!(
+        local_auth_callback_status_text(302),
+        "Internal Server Error"
+    );
+}
+
+#[test]
+fn format_local_auth_callback_response_builds_http_response_with_headers_and_body() {
+    // Body of 6 bytes: `<h1>ok`. content-length is the *byte* length of the
+    // body, not the char count — multi-byte sequences must be measured
+    // correctly.
+    let response = format_local_auth_callback_response(200, "text/html; charset=utf-8", "<h1>ok");
+
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(response.contains("content-type: text/html; charset=utf-8\r\n"));
+    assert_eq!(
+        response.matches("content-length: 6\r\n").count(),
+        1,
+        "expected content-length header for 6-byte body"
+    );
+    assert!(response.contains("\r\n\r\n<h1>ok"));
+    assert!(response.ends_with("<h1>ok"));
+}
+
+#[test]
+fn format_local_auth_callback_response_emits_bad_request_for_400_status() {
+    let response = format_local_auth_callback_response(400, "text/plain", "Bad Request");
+    assert!(response.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    assert!(response.contains("content-type: text/plain\r\n"));
+    assert!(response.ends_with("Bad Request"));
+}
+
+#[test]
+fn format_local_auth_callback_response_emits_not_found_for_404_status() {
+    let response = format_local_auth_callback_response(404, "text/plain", "Not Found");
+    assert!(response.starts_with("HTTP/1.1 404 Not Found\r\n"));
+}
+
+#[test]
+fn local_auth_callback_port_returns_none_when_env_unset() {
+    // CI does not bake in DTX_DESKTOP_AUTH_CALLBACK_PORT, so the default
+    // behavior is "no callback server". Only assert the unset path to avoid
+    // races between parallel tests mutating process-global env.
+    let _guard = auth_env_lock().lock().unwrap();
+    std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+    assert!(local_auth_callback_port().is_none());
+}
+
+#[test]
+fn local_auth_callback_port_rejects_zero_and_invalid_values() {
+    // Port 0 is reserved as "any port" by the OS and must not be used as a
+    // real listen port for the auth callback server.
+    let _guard = auth_env_lock().lock().unwrap();
+    std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "0");
+    assert!(local_auth_callback_port().is_none());
+
+    std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "not-a-number");
+    assert!(local_auth_callback_port().is_none());
+
+    std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+}
+
+#[test]
+fn local_auth_callback_port_parses_valid_port() {
+    let _guard = auth_env_lock().lock().unwrap();
+    std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "47931");
+    assert_eq!(local_auth_callback_port(), Some(47931));
+    std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+}
+
+#[test]
+fn resolve_auth_config_returns_none_in_test_environment() {
+    // The test/CI environment does not bake in PUBLIC_SUPABASE_URL or
+    // PUBLIC_SUPABASE_ANON_KEY, so the resolver returns None — which both
+    // validate_session and verify_magic_link translate to a "not configured"
+    // response. This covers the NotConfigured branch without requiring
+    // process-global env mutation that could race with parallel tests.
+    assert!(resolve_auth_config().is_none());
 }

@@ -296,13 +296,8 @@ pub async fn validate_session(
     app: AppHandle,
     session_data: SessionData,
 ) -> Result<SessionValidationStatus> {
-    let supabase_url = match config_env!("PUBLIC_SUPABASE_URL") {
-        Some(value) => value,
-        None => return Ok(SessionValidationStatus::NotConfigured),
-    };
-    let anon_key = match config_env!("PUBLIC_SUPABASE_ANON_KEY") {
-        Some(value) => value,
-        None => return Ok(SessionValidationStatus::NotConfigured),
+    let Some((supabase_url, anon_key)) = resolve_auth_config() else {
+        return Ok(SessionValidationStatus::NotConfigured);
     };
     let client = match auth_client() {
         Ok(client) => client,
@@ -432,30 +427,58 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
     }
 }
 
+/// Routing decision for an inbound local auth callback request, extracted so
+/// the request-line classification can be unit-tested without a TcpStream or
+/// AppHandle.
+#[derive(Debug)]
+enum CallbackRoute {
+    /// Request line targeted `/auth-callback` and should be dispatched.
+    Valid(String),
+    /// Request line was missing or malformed.
+    BadRequest,
+    /// Request line did not target the auth-callback path.
+    NotFound,
+}
+
+fn route_callback_request(request_line: Option<&str>, port: u16) -> CallbackRoute {
+    let Some(request_line) = request_line else {
+        return CallbackRoute::BadRequest;
+    };
+    let Some(target) = request_line.split_whitespace().nth(1) else {
+        return CallbackRoute::BadRequest;
+    };
+
+    let raw_url = format!("http://127.0.0.1:{port}{target}");
+    if parse_auth_callback(&raw_url).is_none() {
+        return CallbackRoute::NotFound;
+    }
+
+    CallbackRoute::Valid(raw_url)
+}
+
 async fn handle_local_auth_callback_connection(
     app: AppHandle,
     mut stream: TcpStream,
     port: u16,
 ) -> Result<()> {
-    let Some(request_line) = read_auth_request_line(&mut stream).await? else {
-        write_local_auth_callback_text_response(&mut stream, 400, "Bad Request").await?;
-        return Ok(());
-    };
-
-    let Some(target) = request_line.split_whitespace().nth(1) else {
-        write_local_auth_callback_text_response(&mut stream, 400, "Bad Request").await?;
-        return Ok(());
-    };
-
-    let raw_url = format!("http://127.0.0.1:{port}{target}");
-    if parse_auth_callback(&raw_url).is_none() {
-        write_local_auth_callback_text_response(&mut stream, 404, "Not Found").await?;
-        return Ok(());
+    let request_line = read_auth_request_line(&mut stream).await?;
+    match route_callback_request(request_line.as_deref(), port) {
+        CallbackRoute::Valid(raw_url) => {
+            handle_deep_link(&app, &raw_url).await?;
+            write_local_auth_callback_html_response(
+                &mut stream,
+                200,
+                local_auth_callback_success_html(),
+            )
+            .await?;
+        }
+        CallbackRoute::BadRequest => {
+            write_local_auth_callback_text_response(&mut stream, 400, "Bad Request").await?;
+        }
+        CallbackRoute::NotFound => {
+            write_local_auth_callback_text_response(&mut stream, 404, "Not Found").await?;
+        }
     }
-
-    handle_deep_link(&app, &raw_url).await?;
-    write_local_auth_callback_html_response(&mut stream, 200, local_auth_callback_success_html())
-        .await?;
     Ok(())
 }
 
@@ -522,23 +545,32 @@ async fn write_local_auth_callback_html_response(
     write_local_auth_callback_response(stream, status, "text/html; charset=utf-8", body).await
 }
 
+fn local_auth_callback_status_text(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        _ => "Internal Server Error",
+    }
+}
+
+fn format_local_auth_callback_response(status: u16, content_type: &str, body: &str) -> String {
+    let status_text = local_auth_callback_status_text(status);
+    format!(
+        "HTTP/1.1 {status} {status_text}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
 async fn write_local_auth_callback_response(
     stream: &mut TcpStream,
     status: u16,
     content_type: &str,
     body: &str,
 ) -> Result<()> {
-    let status_text = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        _ => "Internal Server Error",
-    };
-    let response = format!(
-        "HTTP/1.1 {status} {status_text}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.as_bytes().len()
-    );
-    stream.write_all(response.as_bytes()).await?;
+    stream
+        .write_all(format_local_auth_callback_response(status, content_type, body).as_bytes())
+        .await?;
     stream.shutdown().await?;
     Ok(())
 }
@@ -589,6 +621,17 @@ fn auth_client() -> std::result::Result<reqwest::Client, reqwest::Error> {
     reqwest::Client::builder()
         .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
         .build()
+}
+
+/// Resolves the Supabase URL and anon key from build-time/runtime env. Returns
+/// None when either value is missing or blank, which the callers translate
+/// into a `NotConfigured` status (validate_session) or a sanitized "not
+/// configured" error (verify_magic_link). Extracted so the env-resolution
+/// branching is unit-testable independent of the Tauri command wrappers.
+fn resolve_auth_config() -> Option<(String, String)> {
+    let supabase_url = config_env!("PUBLIC_SUPABASE_URL")?;
+    let anon_key = config_env!("PUBLIC_SUPABASE_ANON_KEY")?;
+    Some((supabase_url, anon_key))
 }
 
 fn supabase_auth_url(supabase_url: &str, path: &str) -> String {
@@ -877,27 +920,13 @@ async fn refresh_session_with_client(
 }
 
 async fn verify_magic_link(state: &AuthState, magic_link: &str) -> MagicLinkResult {
-    let supabase_url = match config_env!("PUBLIC_SUPABASE_URL") {
-        Some(value) => value,
-        None => {
-            return MagicLinkResult {
-                success: false,
-                error: Some("Magic link verification is not configured".to_string()),
-                session: None,
-                user: None,
-            };
-        }
-    };
-    let anon_key = match config_env!("PUBLIC_SUPABASE_ANON_KEY") {
-        Some(value) => value,
-        None => {
-            return MagicLinkResult {
-                success: false,
-                error: Some("Magic link verification is not configured".to_string()),
-                session: None,
-                user: None,
-            };
-        }
+    let Some((supabase_url, anon_key)) = resolve_auth_config() else {
+        return MagicLinkResult {
+            success: false,
+            error: Some("Magic link verification is not configured".to_string()),
+            session: None,
+            user: None,
+        };
     };
     let client = match auth_client() {
         Ok(client) => client,

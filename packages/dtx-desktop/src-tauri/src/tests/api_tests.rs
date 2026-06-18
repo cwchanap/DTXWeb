@@ -1201,3 +1201,329 @@ fn api_result_value_success_data_returns_error_tuple_for_failure() {
     assert_eq!(error, "boom");
     assert_eq!(code.as_deref(), Some("INTERNAL"));
 }
+
+// ---------------------------------------------------------------------------
+// upload_name_from_file_name
+// ---------------------------------------------------------------------------
+
+#[test]
+fn upload_name_from_file_name_strips_leading_slash_prefix() {
+    let name = upload_name_from_file_name("subfolder/song.dtx");
+    assert_eq!(name, "song.dtx");
+}
+
+#[test]
+fn upload_name_from_file_name_preserves_deep_subfolder() {
+    let name = upload_name_from_file_name("a/b/c.dtx");
+    assert_eq!(name, "b/c.dtx");
+}
+
+#[test]
+fn upload_name_from_file_name_returns_original_when_no_slash() {
+    assert_eq!(upload_name_from_file_name("song.dtx"), "song.dtx");
+}
+
+#[test]
+fn upload_name_from_file_name_falls_back_when_only_slash() {
+    assert_eq!(upload_name_from_file_name("/song.dtx"), "song.dtx");
+}
+
+// ---------------------------------------------------------------------------
+// upload_file_to_api error paths (temp-file based, no wiremock needed)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn upload_file_to_api_fails_when_song_folder_missing() {
+    let result = upload_file_to_api(
+        "https://example.com",
+        "token",
+        "song.dtx",
+        "/nonexistent-folder-12345",
+        "sim-1",
+    )
+    .await;
+
+    assert_eq!(result["success"], false);
+    assert!(result["error"].as_str().unwrap().contains("File not found"));
+}
+
+#[tokio::test]
+async fn upload_file_to_api_fails_when_file_missing() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let result = upload_file_to_api(
+        "https://example.com",
+        "token",
+        "nonexistent.dtx",
+        dir.path().to_str().unwrap(),
+        "sim-1",
+    )
+    .await;
+
+    assert_eq!(result["success"], false);
+    assert!(result["error"].as_str().unwrap().contains("File not found"));
+}
+
+#[tokio::test]
+async fn upload_file_to_api_rejects_path_outside_song_folder() {
+    let song_dir = tempfile::tempdir().unwrap();
+    let outside_dir = tempfile::tempdir().unwrap();
+    let outside_file = outside_dir.path().join("secret.dtx");
+    fs::write(&outside_file, b"#TITLE: Test").unwrap();
+
+    let result = upload_file_to_api(
+        "https://example.com",
+        "token",
+        // Simulate a path-traversal attempt
+        &format!(
+            "../{}/secret.dtx",
+            outside_dir.path().file_name().unwrap().to_string_lossy()
+        ),
+        song_dir.path().to_str().unwrap(),
+        "sim-1",
+    )
+    .await;
+
+    assert_eq!(result["success"], false);
+    assert_eq!(result["error"], "File path is outside song folder");
+}
+
+// ---------------------------------------------------------------------------
+// read_preview_within_workspace (temp-file based)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn read_preview_within_workspace_rejects_empty_workspace_root() {
+    let result = read_preview_within_workspace("/some/song", "", "preview.jpg").await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("workspace root"));
+}
+
+#[tokio::test]
+async fn read_preview_within_workspace_rejects_nonexistent_workspace_root() {
+    let result = read_preview_within_workspace(
+        "/some/song",
+        "/nonexistent-workspace-root-12345",
+        "preview.jpg",
+    )
+    .await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Workspace root not found"));
+}
+
+#[tokio::test]
+async fn read_preview_within_workspace_rejects_song_outside_workspace() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+
+    let result = read_preview_within_workspace(
+        outside.path().to_str().unwrap(),
+        workspace.path().to_str().unwrap(),
+        "preview.jpg",
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside the workspace"));
+}
+
+#[tokio::test]
+async fn read_preview_within_workspace_returns_none_when_preview_absent() {
+    let workspace = tempfile::tempdir().unwrap();
+    let song = workspace.path().join("mysong");
+    fs::create_dir(&song).unwrap();
+
+    let result = read_preview_within_workspace(
+        song.to_str().unwrap(),
+        workspace.path().to_str().unwrap(),
+        "preview.jpg",
+    )
+    .await;
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), None);
+}
+
+#[tokio::test]
+async fn read_preview_within_workspace_returns_bytes_when_preview_present() {
+    let workspace = tempfile::tempdir().unwrap();
+    let song = workspace.path().join("mysong");
+    fs::create_dir(&song).unwrap();
+    fs::write(song.join("preview.jpg"), b"image-bytes").unwrap();
+
+    let result = read_preview_within_workspace(
+        song.to_str().unwrap(),
+        workspace.path().to_str().unwrap(),
+        "preview.jpg",
+    )
+    .await;
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), Some(b"image-bytes".to_vec()));
+}
+
+// ---------------------------------------------------------------------------
+// Wiremock-based: timeouts and NOT_FOUND paths
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn run_graphql_value_times_out_on_slow_server() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(5)))
+        .mount(&server)
+        .await;
+
+    // Use a client with a short timeout so the test doesn't wait 30s.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(100))
+        .build()
+        .unwrap();
+
+    let result = run_graphql_value_with_client(client, &server.uri(), "tok", "q", json!({})).await;
+
+    match result {
+        ApiResultValue::Failure { error, .. } => {
+            assert!(error.contains("timed out"), "got: {error}");
+        }
+        other => panic!("expected Failure, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn upload_form_to_api_times_out_on_slow_server() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload"))
+        .respond_with(
+            ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(
+                API_REQUEST_TIMEOUT_MS / 1000 + 5,
+            )),
+        )
+        .mount(&server)
+        .await;
+
+    let form = Form::new().text("data", "test");
+    let result = upload_form_to_api(&server.uri(), "tok", form).await;
+
+    assert_eq!(result["success"], false);
+    assert!(result["error"].as_str().unwrap().contains("timed out"));
+}
+
+#[tokio::test]
+async fn load_asset_files_impl_returns_empty_for_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "errors": [{
+                "message": "Record not found",
+                "extensions": { "code": "NOT_FOUND" }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let result = load_asset_files_impl(&server.uri(), "tok", "999".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(result["success"], true);
+    assert_eq!(result["data"], json!([]));
+}
+
+#[tokio::test]
+async fn load_asset_files_impl_returns_empty_for_simfile_id_zero() {
+    let result = load_asset_files_impl("https://unused.com", "tok", "0".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(result["success"], true);
+    assert_eq!(result["data"], json!([]));
+}
+
+#[tokio::test]
+async fn load_asset_files_impl_returns_failure_for_general_graphql_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "errors": [{
+                "message": "Internal server error",
+                "extensions": { "code": "INTERNAL" }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let result = load_asset_files_impl(&server.uri(), "tok", "42".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(result["success"], false);
+    assert_eq!(result["error"], "INTERNAL: Internal server error");
+}
+
+#[tokio::test]
+async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
+    let server = MockServer::start().await;
+    // Create mutation succeeds
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": {
+                "createSimfile": {
+                    "id": 42,
+                    "title": "Song",
+                    "artist": null,
+                    "bpm": null,
+                    "userId": "u1",
+                    "isPublished": false,
+                    "displayId": null,
+                    "downloadUrl": null,
+                    "previewUrl": null,
+                    "videoPreviewUrl": null,
+                    "publishDate": null,
+                    "createdAt": null,
+                    "updatedAt": null,
+                }
+            }
+        })))
+        .mount(&server)
+        .await;
+    // Upload endpoint fails
+    Mock::given(method("POST"))
+        .and(path("/upload"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "error": "Storage error"
+        })))
+        .mount(&server)
+        .await;
+
+    let workspace = tempfile::tempdir().unwrap();
+    let song = workspace.path().join("mysong");
+    fs::create_dir(&song).unwrap();
+    fs::write(song.join("preview.jpg"), b"image").unwrap();
+    fs::write(song.join("preview.mp3"), b"audio").unwrap();
+
+    let simfile_data = json!({
+        "title": "Song",
+        "songPath": song.to_str().unwrap(),
+        "workspaceRoot": workspace.path().to_str().unwrap(),
+    });
+
+    let result = create_simfile_record_impl(&server.uri(), "tok", simfile_data)
+        .await
+        .unwrap();
+
+    assert_eq!(result["success"], true);
+    let warnings = result["warnings"].as_array().expect("warnings array");
+    assert!(warnings.len() >= 2, "should have preview + sound warnings");
+    assert!(warnings
+        .iter()
+        .any(|w| w.as_str().unwrap().contains("Preview image")));
+    assert!(warnings
+        .iter()
+        .any(|w| w.as_str().unwrap().contains("Sound preview")));
+}

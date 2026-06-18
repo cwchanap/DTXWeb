@@ -1,7 +1,18 @@
 use super::*;
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// Singleton mutex serializing tests that mutate process-global env vars
+/// (PUBLIC_SIMFILE_BUCKET_URL). Without this, parallel test runs race: one
+/// test's `set_var` is visible to another test's `remove_var`, producing
+/// flaky failures. Each env-mutating test acquires this lock for its full
+/// duration.
+fn bucket_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 fn gql_simfile() -> Value {
     json!({
@@ -616,7 +627,13 @@ async fn get_preview_url_rejects_non_positive_ids() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn get_preview_urls_build_paths_from_bucket_env() {
+    // Holds the env lock across `.await`. Safe here because the lock is only
+    // contended by other env-mutating tests (which block on this test's
+    // completion before reading), and the awaited future (get_preview_url)
+    // never tries to re-acquire the same lock — no deadlock risk.
+    let _guard = bucket_env_lock().lock().unwrap();
     std::env::set_var("PUBLIC_SIMFILE_BUCKET_URL", "https://bucket.example.com");
     let preview = get_preview_url(42).await.expect("preview url");
     let sound = get_sound_preview_url(42).await.expect("sound preview url");
@@ -1069,4 +1086,118 @@ async fn create_simfile_record_impl_skips_previews_when_files_absent() {
 
     assert_eq!(result["success"], true);
     assert!(result.get("warnings").is_none());
+}
+
+#[tokio::test]
+async fn get_sound_preview_url_rejects_non_positive_ids() {
+    // Symmetric with get_preview_url: an invalid id must surface as an error
+    // rather than producing a malformed bucket URL.
+    assert!(get_sound_preview_url(0).await.is_err());
+    assert!(get_sound_preview_url(-5).await.is_err());
+}
+
+#[test]
+fn bucket_base_url_from_env_errors_when_unset() {
+    // The CI/test environment does not bake in PUBLIC_SIMFILE_BUCKET_URL, so
+    // the resolver must surface a clear error rather than silently producing
+    // a malformed URL. Synchronous test (no await) so the env lock can be
+    // held cleanly without tripping clippy::await_holding_lock.
+    let _guard = bucket_env_lock().lock().unwrap();
+    std::env::remove_var("PUBLIC_SIMFILE_BUCKET_URL");
+    let result = std::thread::spawn(bucket_base_url_from_env)
+        .join()
+        .expect("thread");
+    assert!(result.is_err());
+}
+
+#[test]
+fn bucket_base_url_from_env_trims_whitespace_and_trailing_slash() {
+    // The renderer concatenates the bucket base with `/{id}/preview.{ext}`;
+    // a stray trailing slash would yield `//42/preview.jpg`, so the resolver
+    // must normalize. Sync test for the same reason as above.
+    let _guard = bucket_env_lock().lock().unwrap();
+    std::env::set_var(
+        "PUBLIC_SIMFILE_BUCKET_URL",
+        "  https://bucket.example.com/  ",
+    );
+    let url = bucket_base_url_from_env().expect("bucket url");
+    std::env::remove_var("PUBLIC_SIMFILE_BUCKET_URL");
+
+    assert_eq!(url, "https://bucket.example.com");
+}
+
+#[test]
+fn api_failure_envelope_carries_success_false_and_error_message() {
+    let value = api_failure("something went wrong");
+
+    assert_eq!(value["success"], false);
+    assert_eq!(value["error"], "something went wrong");
+}
+
+#[test]
+fn api_success_envelope_wraps_payload_under_data_key() {
+    let value = api_success(json!({ "count": 3 }));
+
+    assert_eq!(value["success"], true);
+    assert_eq!(value["data"]["count"], 3);
+}
+
+#[test]
+fn graphql_document_prefixes_operation_with_simfile_full_fragment() {
+    // The fragment defines the field set the renderer depends on; omitting it
+    // would make the GraphQL request fail with "Cannot query field on type
+    // Simfile".
+    let document = graphql_document("query Foo { simfile { id } }");
+
+    assert!(document.contains("fragment SimfileFull on Simfile"));
+    assert!(document.contains("query Foo { simfile { id } }"));
+    // Fragment comes first so subsequent spreads resolve.
+    assert!(document.find("fragment SimfileFull").unwrap() < document.find("query Foo").unwrap());
+}
+
+#[test]
+fn number_id_rejects_object_and_array_input() {
+    // Defensive: a malformed renderer payload must surface as an error rather
+    // than panicking inside number_id.
+    assert!(number_id(&json!({ "id": "x" })).is_err());
+    assert!(number_id(&json!([1, 2, 3])).is_err());
+    assert!(number_id(&Value::Null).is_err());
+}
+
+#[test]
+fn number_id_accepts_u64_that_fits_in_i64() {
+    // IDs coming from JSON could deserialize as u64; values within i64 range
+    // must convert cleanly. (Anything outside i64 range must error — covered
+    // by number_id_accepts_i64_and_numeric_strings_but_rejects_overflow_and_invalid_types.)
+    let value: u64 = 123_456;
+    assert_eq!(number_id(&json!(value)).unwrap(), 123_456);
+}
+
+#[test]
+fn reqwest_client_builder_produces_usable_client() {
+    // Sanity: the helper must succeed in constructing a client — failures
+    // here would indicate a TLS/build configuration issue.
+    let client = reqwest_client();
+    assert!(client.is_ok());
+}
+
+#[test]
+fn api_result_value_success_data_returns_ok_for_success() {
+    let result = ApiResultValue::Success {
+        data: json!({ "ok": true }),
+    };
+
+    assert_eq!(result.success_data().unwrap(), json!({ "ok": true }));
+}
+
+#[test]
+fn api_result_value_success_data_returns_error_tuple_for_failure() {
+    let result = ApiResultValue::Failure {
+        error: "boom".to_string(),
+        code: Some("INTERNAL".to_string()),
+    };
+
+    let (error, code) = result.success_data().unwrap_err();
+    assert_eq!(error, "boom");
+    assert_eq!(code.as_deref(), Some("INTERNAL"));
 }

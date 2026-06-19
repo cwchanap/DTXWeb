@@ -109,11 +109,12 @@ jobs:
         run: |
           mkdir -p dist/artifacts
           BUNDLE_DIR="packages/dtx-desktop/src-tauri/target/release/bundle"
-          # NSIS installer (for first-time download)
+          # NSIS installer + updater signature. With createUpdaterArtifacts: true
+          # (the Tauri v2 format), the NSIS setup .exe IS the updater bundle —
+          # there is no separate .nsis.zip wrapper (that only exists for
+          # "v1Compat"). The .exe.sig sidecar holds the minisign signature.
           cp "$BUNDLE_DIR/nsis/"*-setup.exe dist/artifacts/ 2>/dev/null || true
-          # Updater bundle + signature (consumed by the Tauri updater)
-          cp "$BUNDLE_DIR/nsis/"*-setup.nsis.zip dist/artifacts/ 2>/dev/null || true
-          cp "$BUNDLE_DIR/nsis/"*-setup.nsis.zip.sig dist/artifacts/ 2>/dev/null || true
+          cp "$BUNDLE_DIR/nsis/"*-setup.exe.sig dist/artifacts/ 2>/dev/null || true
           ls -la dist/artifacts/
 
       - name: Upload Artifacts
@@ -269,13 +270,14 @@ jobs:
           R2_URL="${{ vars.R2_PUBLIC_URL }}"
 
           # Locate the Tauri updater bundles (not the .sig sidecars) and their
-          # signature files. The .nsis.zip / .app.tar.gz are what the updater
-          # downloads; the matching .sig holds the minisign signature string.
-          WIN_BUNDLE=$(find dist/artifacts/all -maxdepth 1 -type f -name '*.nsis.zip' -print -quit)
+          # signature files. For Windows v2 artifacts the setup .exe is both the
+          # installer and the updater bundle; its .exe.sig holds the minisign
+          # signature. For macOS the .app.tar.gz is the updater bundle.
+          WIN_BUNDLE=$(find dist/artifacts/all -maxdepth 1 -type f -name '*-setup.exe' -print -quit)
           MAC_BUNDLE=$(find dist/artifacts/all -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)
 
           if [[ -z "$WIN_BUNDLE" || -z "$MAC_BUNDLE" ]]; then
-            echo "Missing Tauri updater bundle (expected .nsis.zip and .app.tar.gz)" >&2
+            echo "Missing Tauri updater bundle (expected *-setup.exe and .app.tar.gz)" >&2
             ls -la dist/artifacts/all/
             exit 1
           fi

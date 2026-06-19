@@ -330,7 +330,19 @@ pub async fn get_current_session(app: AppHandle) -> Result<Option<serde_json::Va
 
 #[tauri::command]
 pub async fn logout_session(app: AppHandle) -> Result<bool> {
-    app.state::<AuthState>().set_current_session(None).await;
+    let state = app.state::<AuthState>();
+    // Best-effort server-side revocation: if we have config + a working HTTP
+    // client, POST to Supabase's /logout endpoint to invalidate the refresh
+    // token before clearing local state. If config/client is unavailable we
+    // fall through to clearing local state only (mirrors the renderer's
+    // fallback behavior of always logging the user out locally).
+    if let Some((supabase_url, anon_key)) = resolve_auth_config() {
+        if let Ok(client) = auth_client() {
+            revoke_session_with_client(client, &state, &supabase_url, &anon_key).await;
+            return Ok(true);
+        }
+    }
+    state.set_current_session(None).await;
     Ok(true)
 }
 
@@ -917,6 +929,36 @@ async fn refresh_session_with_client(
 
     state.set_current_session(result.session).await;
     true
+}
+
+/// Best-effort server-side session revocation. POSTs to Supabase's
+/// `/auth/v1/logout` endpoint with the current access token to invalidate the
+/// refresh token, then clears the in-memory session regardless of whether the
+/// network call succeeded. Local state is always cleared so the user appears
+/// logged out even if the server is unreachable (mirrors the renderer's
+/// fallback behavior in `authService.logout`).
+async fn revoke_session_with_client(
+    client: reqwest::Client,
+    state: &AuthState,
+    supabase_url: &str,
+    anon_key: &str,
+) {
+    let session = state.current_session().await;
+    if let Some(access_token) = session
+        .as_ref()
+        .and_then(|s| s.get("access_token"))
+        .and_then(serde_json::Value::as_str)
+    {
+        // Fire-and-forget: the outcome doesn't change whether we clear local
+        // state, so the result is intentionally dropped.
+        let _ = client
+            .post(supabase_auth_url(supabase_url, "logout"))
+            .header("apikey", anon_key)
+            .bearer_auth(access_token)
+            .send()
+            .await;
+    }
+    state.set_current_session(None).await;
 }
 
 async fn verify_magic_link(state: &AuthState, magic_link: &str) -> MagicLinkResult {

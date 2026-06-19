@@ -6,12 +6,7 @@ vi.mock('@lucide/svelte');
 
 const mockDesktopHost = vi.hoisted(() => ({
 	selectFolder: vi.fn(),
-	getPlatform: vi.fn(() => 'darwin'),
-	getEnvironment: vi.fn(() => ({
-		HOME: '/Users/Test',
-		USERPROFILE: 'C:\\Users\\Test',
-		USERNAME: 'Test'
-	}))
+	getDefaultDownloadsDir: vi.fn(async () => '/Users/Test/Downloads')
 }));
 
 vi.mock('../services/desktopHost', () => ({
@@ -21,16 +16,11 @@ vi.mock('../services/desktopHost', () => ({
 import SettingsComponent from './Settings.svelte';
 
 describe('Settings', () => {
-	beforeEach(() => {
-		settingsStore.reset();
+	beforeEach(async () => {
+		await settingsStore.reset();
 		vi.clearAllMocks();
 		mockDesktopHost.selectFolder.mockResolvedValue({ canceled: true, filePaths: [] });
-		mockDesktopHost.getPlatform.mockReturnValue('darwin');
-		mockDesktopHost.getEnvironment.mockReturnValue({
-			HOME: '/Users/Test',
-			USERPROFILE: 'C:\\Users\\Test',
-			USERNAME: 'Test'
-		});
+		mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue('/Users/Test/Downloads');
 	});
 
 	afterEach(() => {

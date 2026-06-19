@@ -7,6 +7,21 @@ export type DesktopHostVersions = {
 	tauri: string | null;
 };
 
+/**
+ * Shape returned by the Rust `check_for_update` command (`updater.rs`).
+ * - `success: true, available: true`  -> `version`/`body`/`date` populated
+ * - `success: true, available: false` -> no update
+ * - `success: false`                  -> `error` populated, `available: false`
+ */
+export type UpdateCheckResult = {
+	success: boolean;
+	available: boolean;
+	version?: string | null;
+	body?: string | null;
+	date?: string | null;
+	error?: string | null;
+};
+
 export type DesktopHostRuntime = {
 	kind: 'tauri';
 	invoke: <T = unknown>(command: string, ...args: unknown[]) => Promise<T>;
@@ -14,7 +29,7 @@ export type DesktopHostRuntime = {
 	listen: <T = unknown>(event: string, callback: (payload: T) => void) => Promise<() => void>;
 	removeAllListeners: (event?: string) => void | Promise<void>;
 	getPlatform: () => string;
-	getEnvironment: () => Record<string, string | undefined>;
+	getDefaultDownloadsDir: () => Promise<string | null>;
 	getVersions: () => Promise<DesktopHostVersions>;
 };
 
@@ -109,7 +124,7 @@ const createTauriRuntime = (): DesktopHostRuntime => ({
 		}
 	},
 	getPlatform: getBrowserPlatform,
-	getEnvironment: () => ({}),
+	getDefaultDownloadsDir: async () => null,
 	getVersions: async () => ({
 		app: await getVersion().catch(() => null),
 		tauri: await getTauriVersion().catch(() => null)
@@ -270,11 +285,12 @@ export const desktopHost = {
 		simfileId: string
 	): Promise<T> => await invokeHost<T>('upload_file', { fileName, songFolderPath, simfileId }),
 
-	checkForUpdate: async <T = unknown>(): Promise<T> => await invokeHost<T>('check_for_update'),
+	checkForUpdate: async (): Promise<UpdateCheckResult> =>
+		await invokeHost<UpdateCheckResult>('check_for_update'),
 
 	getPlatform: (): string => getRuntime().getPlatform(),
 
-	getEnvironment: (): Record<string, string | undefined> => getRuntime().getEnvironment(),
+	getDefaultDownloadsDir: (): Promise<string | null> => getRuntime().getDefaultDownloadsDir(),
 
 	getVersions: (): Promise<DesktopHostVersions> => getRuntime().getVersions(),
 

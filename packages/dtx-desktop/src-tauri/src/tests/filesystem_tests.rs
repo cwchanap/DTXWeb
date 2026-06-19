@@ -432,6 +432,21 @@ fn parse_title_returns_none_when_no_title_directive() {
 }
 
 #[test]
+fn default_downloads_dir_returns_canonical_path_when_home_is_set() {
+    // `dirs::download_dir()` resolves from the OS-native home directory.
+    // In a test runner the env is the developer's real machine, so we assert
+    // shape (non-empty, absolute, ends with Downloads) rather than a specific
+    // user path. Skipped on CI runners without a home dir (returns None there).
+    let result = default_downloads_dir();
+    if let Some(path) = result {
+        assert!(path.ends_with("Downloads"), "got: {path}");
+        assert!(std::path::Path::new(&path).is_absolute(), "got: {path}");
+    } else {
+        // Sandboxed/CI environments without HOME — accept None as a valid shape.
+    }
+}
+
+#[test]
 fn strip_bom_bytes_removes_utf8_bom() {
     assert_eq!(strip_bom_bytes(&[0xef, 0xbb, 0xbf, b'h', b'i']), b"hi");
 }

@@ -115,6 +115,7 @@ pub fn run() {
             filesystem::read_file,
             filesystem::load_tree_structure,
             filesystem::open_folder,
+            filesystem::get_default_downloads_dir,
             songs::create_song,
             songs::export_song_to_zip,
             songs::get_skin_asset,

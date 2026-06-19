@@ -11,17 +11,21 @@ async function initializeApp() {
 	document.documentElement.classList.add('dark');
 
 	try {
-		console.log('[App] Starting XA decoder initialization...');
+		if (import.meta.env.DEV) {
+			console.log('[App] Starting XA decoder initialization...');
+		}
 		await init({});
-		console.log('[App] XA decoder initialized successfully');
+		if (import.meta.env.DEV) {
+			console.log('[App] XA decoder initialized successfully');
+		}
 
 		// Test if WasmXADecoder is available after init
 		const { WasmXADecoder } = await import('xa_decoder');
-		console.log('[App] WasmXADecoder availability:', typeof WasmXADecoder !== 'undefined');
+		if (import.meta.env.DEV) {
+			console.log('[App] WasmXADecoder availability:', typeof WasmXADecoder !== 'undefined');
+		}
 
-		if (typeof WasmXADecoder !== 'undefined') {
-			console.log('[App] WasmXADecoder is available after initialization');
-		} else {
+		if (typeof WasmXADecoder === 'undefined') {
 			console.warn('[App] WasmXADecoder is still undefined after initialization');
 		}
 	} catch (error) {

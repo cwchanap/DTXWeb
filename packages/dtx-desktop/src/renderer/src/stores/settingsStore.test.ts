@@ -2,49 +2,61 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 const mockDesktopHost = vi.hoisted(() => ({
-	getPlatform: vi.fn(() => 'linux'),
-	getEnvironment: vi.fn(() => ({
-		HOME: '/home/testuser',
-		USERPROFILE: 'C:\\Users\\TestUser',
-		USERNAME: 'TestUser'
-	}))
+	getDefaultDownloadsDir: vi.fn(async (): Promise<string | null> => '/home/testuser/Downloads')
 }));
 
 vi.mock('../services/desktopHost', () => ({
 	desktopHost: mockDesktopHost
 }));
 
-// Pin navigator.platform to Linux so getDefaultDownloadsPath() always takes
-// the Linux branch during this test file, regardless of the host OS.
-Object.defineProperty(window.navigator, 'platform', {
-	value: 'Linux x86_64',
-	configurable: true
-});
-
-const { settingsStore } = await import('./settingsStore');
+// We re-import the store after each module reset, so keep a handle that the
+// tests can reassign.
+let settingsStore: (typeof import('./settingsStore'))['settingsStore'];
+let __resetDefaultDownloadsCacheForTests: (typeof import('./settingsStore'))['__resetDefaultDownloadsCacheForTests'];
 
 describe('settingsStore', () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks();
-		mockDesktopHost.getPlatform.mockReturnValue('linux');
-		mockDesktopHost.getEnvironment.mockReturnValue({
-			HOME: '/home/testuser',
-			USERPROFILE: 'C:\\Users\\TestUser',
-			USERNAME: 'TestUser'
-		});
+		mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue('/home/testuser/Downloads');
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-		settingsStore.reset();
+		vi.resetModules();
+		({ settingsStore, __resetDefaultDownloadsCacheForTests } = await import('./settingsStore'));
+		__resetDefaultDownloadsCacheForTests();
+		// The store eagerly kicks off a getDefaultDownloadsPath() promise on
+		// import; let it resolve before assertions run.
+		await vi.waitFor(() => {
+			expect(mockDesktopHost.getDefaultDownloadsDir).toHaveBeenCalled();
+		});
 	});
 
 	afterEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it('should initialize with a default export directory', () => {
-		const state = get(settingsStore);
-		expect(state.exportDirectory).toBeDefined();
-		expect(typeof state.exportDirectory).toBe('string');
-		expect(state.exportDirectory.length).toBeGreaterThan(0);
+	describe('initial state', () => {
+		it('hydrates the default Downloads path from the Rust command on import', async () => {
+			const state = get(settingsStore);
+			expect(mockDesktopHost.getDefaultDownloadsDir).toHaveBeenCalled();
+			expect(state.exportDirectory).toBe('/home/testuser/Downloads');
+		});
+
+		it('falls back to empty string when the Rust command fails', async () => {
+			mockDesktopHost.getDefaultDownloadsDir.mockRejectedValue(new Error('IPC down'));
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			await vi.waitFor(() => expect(get(freshStore).exportDirectory).toBe(''));
+		});
+
+		it('falls back to empty string when the OS reports no Downloads dir', async () => {
+			mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue(null);
+			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			vi.resetModules();
+			const { settingsStore: freshStore } = await import('./settingsStore');
+
+			await vi.waitFor(() => expect(get(freshStore).exportDirectory).toBe(''));
+		});
 	});
 
 	describe('set', () => {
@@ -101,23 +113,31 @@ describe('settingsStore', () => {
 	});
 
 	describe('reset', () => {
-		it('should reset to default export directory', () => {
+		it('should reset to the OS default Downloads directory', async () => {
+			__resetDefaultDownloadsCacheForTests();
+			mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue('/reset/path/Downloads');
 			settingsStore.updateExportDirectory('/custom/path');
-			settingsStore.reset();
+			await settingsStore.reset();
 
 			const state = get(settingsStore);
-			expect(state.exportDirectory).toBeDefined();
-			// Should be a default path (not the custom one)
-			expect(state.exportDirectory).not.toBe('/custom/path');
+			expect(state.exportDirectory).toBe('/reset/path/Downloads');
 		});
 
-		it('should persist reset settings to localStorage', () => {
-			settingsStore.reset();
+		it('should persist reset settings to localStorage', async () => {
+			await settingsStore.reset();
 
 			expect(window.localStorage.setItem).toHaveBeenCalledWith(
 				'app_settings',
 				expect.any(String)
 			);
+		});
+
+		it('should fall back to empty string when the OS reports no Downloads dir', async () => {
+			__resetDefaultDownloadsCacheForTests();
+			mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue(null);
+			await settingsStore.reset();
+
+			expect(get(settingsStore).exportDirectory).toBe('');
 		});
 	});
 
@@ -127,7 +147,6 @@ describe('settingsStore', () => {
 				JSON.stringify({ exportDirectory: '/stored/export/path' })
 			);
 
-			// Reset module cache so the store re-initializes from localStorage
 			vi.resetModules();
 			const { settingsStore: freshStore } = await import('./settingsStore');
 
@@ -135,102 +154,44 @@ describe('settingsStore', () => {
 			expect(get(freshStore).exportDirectory).toBe('/stored/export/path');
 		});
 
-		it('should fall back to default when exportDirectory is missing in stored data', async () => {
+		it('should hydrate the OS default when stored data is missing exportDirectory', async () => {
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
 				JSON.stringify({})
 			);
+			mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue('/home/testuser/Downloads');
 
 			vi.resetModules();
 			const { settingsStore: freshStore } = await import('./settingsStore');
 
-			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
-			// exportDirectory key is absent — should fall back to OS default
-			const state = get(freshStore);
-			expect(state.exportDirectory).toBeDefined();
-			expect(state.exportDirectory).toBe('/home/testuser/Downloads');
+			await vi.waitFor(() =>
+				expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads')
+			);
 		});
 
-		it('should use default path when localStorage is empty', async () => {
+		it('should fall back to OS default when localStorage is empty', async () => {
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue('/home/testuser/Downloads');
 
 			vi.resetModules();
 			const { settingsStore: freshStore } = await import('./settingsStore');
 
-			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
-			expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads');
+			await vi.waitFor(() =>
+				expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads')
+			);
 		});
 
-		it('should use default path when localStorage contains invalid JSON', async () => {
+		it('should fall back to OS default when localStorage contains invalid JSON', async () => {
 			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
 				'not-valid-json{'
 			);
+			mockDesktopHost.getDefaultDownloadsDir.mockResolvedValue('/home/testuser/Downloads');
 
 			vi.resetModules();
 			const { settingsStore: freshStore } = await import('./settingsStore');
 
-			expect(window.localStorage.getItem).toHaveBeenCalledWith('app_settings');
-			// Parse error falls back to default
-			expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads');
-		});
-
-		it('should return Windows download path when platform is Win32', async () => {
-			mockDesktopHost.getPlatform.mockReturnValue('win32');
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-			vi.resetModules();
-			const { settingsStore: freshStore } = await import('./settingsStore');
-
-			const state = get(freshStore);
-			expect(state.exportDirectory).toContain('C:\\Users');
-			expect(state.exportDirectory).toContain('Downloads');
-		});
-
-		it('should return macOS download path when platform is Mac and HOME is set', async () => {
-			mockDesktopHost.getPlatform.mockReturnValue('mac');
-			mockDesktopHost.getEnvironment.mockReturnValue({ HOME: '/Users/testuser' });
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-			vi.resetModules();
-			const { settingsStore: freshStore } = await import('./settingsStore');
-
-			const state = get(freshStore);
-			expect(state.exportDirectory).toBe('/Users/testuser/Downloads');
-		});
-
-		it('should return macOS fallback path when platform is Mac and HOME is not set', async () => {
-			mockDesktopHost.getPlatform.mockReturnValue('darwin');
-			mockDesktopHost.getEnvironment.mockReturnValue({});
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-			vi.resetModules();
-			const { settingsStore: freshStore } = await import('./settingsStore');
-
-			const state = get(freshStore);
-			expect(state.exportDirectory).toBe('~/Downloads');
-		});
-
-		it('should return fallback when platform is Windows and neither USERPROFILE nor HOME is set', async () => {
-			mockDesktopHost.getPlatform.mockReturnValue('win32');
-			mockDesktopHost.getEnvironment.mockReturnValue({});
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-			vi.resetModules();
-			const { settingsStore: freshStore } = await import('./settingsStore');
-
-			const state = get(freshStore);
-			expect(state.exportDirectory).toBe('~/Downloads');
-		});
-
-		it('should return fallback when platform is Linux and HOME is not set', async () => {
-			mockDesktopHost.getPlatform.mockReturnValue('linux');
-			mockDesktopHost.getEnvironment.mockReturnValue({});
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-			vi.resetModules();
-			const { settingsStore: freshStore } = await import('./settingsStore');
-
-			const state = get(freshStore);
-			expect(state.exportDirectory).toBe('~/Downloads');
+			await vi.waitFor(() =>
+				expect(get(freshStore).exportDirectory).toBe('/home/testuser/Downloads')
+			);
 		});
 	});
 

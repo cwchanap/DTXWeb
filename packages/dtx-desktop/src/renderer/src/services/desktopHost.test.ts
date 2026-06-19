@@ -24,7 +24,7 @@ const makeRuntime = (): DesktopHostRuntime => ({
 	listen: vi.fn(),
 	removeAllListeners: vi.fn(),
 	getPlatform: vi.fn(() => 'darwin'),
-	getEnvironment: vi.fn(() => ({ HOME: '/Users/Test' })),
+	getDefaultDownloadsDir: vi.fn(async () => '/Users/Test/Downloads'),
 	getVersions: vi.fn(async () => ({ app: '1.0.0', tauri: '2' }))
 });
 
@@ -52,15 +52,47 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenCalledWith('select_folder');
 	});
 
-	it('maps checkForUpdate to the Tauri command', async () => {
-		vi.mocked(runtime.invoke).mockResolvedValue({ success: true, updateInfo: null });
+	it('maps checkForUpdate to the Tauri command and returns an update when available', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			success: true,
+			available: true,
+			version: '2.0.0',
+			body: 'release notes',
+			date: '2026-06-18'
+		});
 
 		await expect(desktopHost.checkForUpdate()).resolves.toEqual({
 			success: true,
-			updateInfo: null
+			available: true,
+			version: '2.0.0',
+			body: 'release notes',
+			date: '2026-06-18'
 		});
 
 		expect(runtime.invoke).toHaveBeenCalledWith('check_for_update');
+	});
+
+	it('maps checkForUpdate to the Tauri command when no update is available', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ success: true, available: false });
+
+		await expect(desktopHost.checkForUpdate()).resolves.toEqual({
+			success: true,
+			available: false
+		});
+	});
+
+	it('maps checkForUpdate to the Tauri command when the updater is unavailable', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({
+			success: false,
+			available: false,
+			error: 'updater disabled'
+		});
+
+		await expect(desktopHost.checkForUpdate()).resolves.toEqual({
+			success: false,
+			available: false,
+			error: 'updater disabled'
+		});
 	});
 
 	it('maps renderer methods to Tauri snake_case commands', async () => {
@@ -325,9 +357,11 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenCalledWith('drain_pending_auth_events');
 	});
 
-	it('returns environment values from the active runtime', () => {
-		expect(desktopHost.getEnvironment()).toEqual({ HOME: '/Users/Test' });
-		expect(runtime.getEnvironment).toHaveBeenCalled();
+	it('delegates getDefaultDownloadsDir to the active runtime', async () => {
+		vi.mocked(runtime.getDefaultDownloadsDir).mockResolvedValue('/Users/Test/Downloads');
+
+		await expect(desktopHost.getDefaultDownloadsDir()).resolves.toBe('/Users/Test/Downloads');
+		expect(runtime.getDefaultDownloadsDir).toHaveBeenCalled();
 	});
 
 	it('uses Tauri runtime when the global Tauri marker is present', async () => {
@@ -345,14 +379,17 @@ describe('desktopHost', () => {
 		expect(tauriInvoke).toHaveBeenCalledWith('select_folder');
 	});
 
-	it('returns an empty environment for the Tauri runtime', () => {
+	it('returns null for getDefaultDownloadsDir in the browser-style Tauri runtime fallback', async () => {
+		// When the runtime falls back to createTauriRuntime() (no test runtime
+		// set, __TAURI__ present), getDefaultDownloadsDir has no IPC to call,
+		// so it resolves to null rather than throwing.
 		setDesktopHostRuntimeForTests(null);
 		Object.defineProperty(window, '__TAURI__', {
 			configurable: true,
 			value: {}
 		});
 
-		expect(desktopHost.getEnvironment()).toEqual({});
+		await expect(desktopHost.getDefaultDownloadsDir()).resolves.toBeNull();
 	});
 
 	it('uses the Tauri runtime when the global Tauri marker is absent', async () => {

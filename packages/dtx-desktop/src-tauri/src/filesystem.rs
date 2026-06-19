@@ -248,6 +248,24 @@ pub async fn open_folder(app: AppHandle, folder_path: String) -> Result<SuccessR
     })
 }
 
+/// Returns the user's OS-native Downloads directory (e.g.
+/// `/Users/alice/Downloads` on macOS, `C:\Users\Alice\Downloads` on Windows).
+/// Used by the renderer as the default export directory. Resolved in Rust so
+/// the webview never needs to read env vars or expand `~` itself.
+///
+/// Returns `null` when the OS reports no Downloads directory (rare; usually
+/// means a missing `$HOME`/`%USERPROFILE%` or a broken xdg config on Linux).
+#[tauri::command]
+pub async fn get_default_downloads_dir() -> Result<Option<String>> {
+    Ok(default_downloads_dir())
+}
+
+/// Pure helper extracted from `get_default_downloads_dir` so the path
+/// resolution can be unit-tested without spinning up a Tauri command.
+pub fn default_downloads_dir() -> Option<String> {
+    dirs::download_dir().and_then(|path| path.to_str().map(|s| s.to_string()))
+}
+
 async fn read_file_path_inner(
     file_path: &Path,
     workspace_root: Option<&Path>,

@@ -124,7 +124,17 @@ const createTauriRuntime = (): DesktopHostRuntime => ({
 		}
 	},
 	getPlatform: getBrowserPlatform,
-	getDefaultDownloadsDir: async () => null,
+	// Invoke the registered `get_default_downloads_dir` Rust command so the
+	// native OS Downloads path is returned in a real Tauri window. Fall back
+	// to null if the IPC layer is unavailable (e.g. headless/CI without the
+	// command wired up) rather than throwing.
+	getDefaultDownloadsDir: async (): Promise<string | null> => {
+		try {
+			return await tauriInvoke<string | null>('get_default_downloads_dir');
+		} catch {
+			return null;
+		}
+	},
 	getVersions: async () => ({
 		app: await getVersion().catch(() => null),
 		tauri: await getTauriVersion().catch(() => null)

@@ -1,9 +1,11 @@
 use crate::error::{DesktopError, Result};
+use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -12,6 +14,11 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use url::Url;
 
 const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
+/// Refresh the access token proactively when it expires within this many
+/// seconds. Supabase access tokens default to a 1-hour lifetime; refreshing
+/// just ahead of expiry keeps long-running desktop sessions working without
+/// waiting for an authenticated API call to fail with an expired-JWT error.
+const TOKEN_REFRESH_SKEW_SECS: i64 = 60;
 const LOCAL_AUTH_READ_TIMEOUT_MS: u64 = 10_000;
 const LOCAL_AUTH_CALLBACK_PATH: &str = "/auth-callback";
 /// Maximum number of concurrent local auth callback connections that will be
@@ -887,6 +894,33 @@ async fn refresh_session_with_client(
         return false;
     };
 
+    match perform_refresh(client, supabase_url, anon_key, &refresh_token).await {
+        Some(session) => {
+            state.set_current_session(Some(session)).await;
+            true
+        }
+        None => {
+            // Startup validation treats any refresh failure as "log the user
+            // out": a rejected refresh token means the session is no longer
+            // recoverable and we must not leave stale credentials around.
+            state.set_current_session(None).await;
+            false
+        }
+    }
+}
+
+/// Pure HTTP refresh: POSTs the refresh token to Supabase's token endpoint and
+/// returns the new session value on success, or `None` on any failure. Does
+/// NOT touch `AuthState`, so callers decide whether to clear state on failure
+/// (startup validation clears; the proactive path used during long sessions
+/// leaves the previous session intact so a transient network blip doesn't log
+/// the user out while their token is still valid).
+async fn perform_refresh(
+    client: &reqwest::Client,
+    supabase_url: &str,
+    anon_key: &str,
+    refresh_token: &str,
+) -> Option<serde_json::Value> {
     let response = client
         .post(format!(
             "{}?grant_type=refresh_token",
@@ -896,39 +930,139 @@ async fn refresh_session_with_client(
         .bearer_auth(anon_key)
         .json(&json!({ "refresh_token": refresh_token }))
         .send()
-        .await;
-
-    let response = match response {
-        Ok(response) => response,
-        Err(_) => {
-            state.set_current_session(None).await;
-            return false;
-        }
-    };
+        .await
+        .ok()?;
 
     if !response.status().is_success() {
-        state.set_current_session(None).await;
-        return false;
+        return None;
     }
 
-    let body = match response.json::<serde_json::Value>().await {
-        Ok(body) => body,
-        Err(_) => {
-            state.set_current_session(None).await;
-            return false;
-        }
+    let body = response.json::<serde_json::Value>().await.ok()?;
+    let result = magic_link_result_from_verify_response(body).ok()?;
+    if result.success {
+        result.session
+    } else {
+        None
+    }
+}
+
+/// Best-effort proactive refresh used by `ensure_valid_access_token`. Calls
+/// Supabase's token endpoint with the resolved config and, on success, stores
+/// the new session. On any failure it leaves the existing session untouched
+/// (unlike the startup path) so the caller can still try the possibly-still-
+/// valid token and surface a clear server-side error. `config` is threaded in
+/// (rather than re-resolved) so the decision path is unit-testable without
+/// mutating process-global env.
+async fn try_refresh_session(
+    state: &AuthState,
+    config: Option<(String, String)>,
+    client: &reqwest::Client,
+) {
+    let Some((supabase_url, anon_key)) = config else {
+        return;
+    };
+    let refresh_token = state
+        .current_session()
+        .await
+        .as_ref()
+        .and_then(|session| session.get("refresh_token"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let Some(refresh_token) = non_empty_token(refresh_token) else {
+        return;
+    };
+    if let Some(new_session) =
+        perform_refresh(client, &supabase_url, &anon_key, &refresh_token).await
+    {
+        state.set_current_session(Some(new_session)).await;
+    }
+}
+
+/// Decodes the `exp` (expiry, seconds since epoch) claim from a JWT payload
+/// without verifying the signature. Returns `None` for malformed tokens or
+/// tokens without an `exp` claim. Signature verification is intentionally
+/// skipped: this is only used to decide whether to refresh proactively, and
+/// the API still validates the token server-side on every request.
+fn jwt_exp_seconds(token: &str) -> Option<i64> {
+    let payload_b64 = token.split('.').nth(1)?;
+    // JWT payloads are base64url; tolerate both padded and unpadded encodings.
+    let decoded = URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .or_else(|_| URL_SAFE.decode(payload_b64))
+        .ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    value.get("exp").and_then(serde_json::Value::as_i64)
+}
+
+fn unix_now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Returns an access token that is not within `TOKEN_REFRESH_SKEW_SECS` of
+/// expiry, refreshing the session proactively when the current token is about
+/// to expire. Used by every authenticated API/upload command so long-running
+/// desktop sessions keep working past the Supabase access-token lifetime
+/// (default 1 hour) instead of failing with expired-JWT errors until restart.
+///
+/// If the user has no session at all this returns an error. If a refresh is
+/// attempted but fails (network blip, revoked refresh token), the previous
+/// token is returned so the API call proceeds and surfaces a clear server-side
+/// error rather than masking the real cause as "not authenticated".
+pub async fn ensure_valid_access_token(state: &AuthState) -> Result<String> {
+    ensure_valid_access_token_with_config(state, resolve_auth_config()).await
+}
+
+/// Config-injected core of `ensure_valid_access_token`. Tests pass an explicit
+/// `(supabase_url, anon_key)` so the refresh path can be exercised against a
+/// mock server without mutating process-global env (which would race with
+/// other config-dependent tests). `config = None` mirrors the "auth not
+/// configured" case: refresh is skipped and the existing token is returned.
+async fn ensure_valid_access_token_with_config(
+    state: &AuthState,
+    config: Option<(String, String)>,
+) -> Result<String> {
+    let session = state
+        .current_session()
+        .await
+        .ok_or_else(|| DesktopError::Message("User not authenticated".to_string()))?;
+    let access_token = session
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| DesktopError::Message("User not authenticated".to_string()))?
+        .to_string();
+
+    let needs_refresh = match jwt_exp_seconds(&access_token) {
+        Some(exp) => exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS,
+        // No parseable exp: can't tell, let the server validate it.
+        None => false,
     };
 
-    let result = match magic_link_result_from_verify_response(body) {
-        Ok(result) if result.success => result,
-        _ => {
-            state.set_current_session(None).await;
-            return false;
+    if needs_refresh && config.is_some() {
+        // Only build a client when we might actually use it.
+        if let Ok(client) = auth_client() {
+            try_refresh_session(state, config, &client).await;
         }
-    };
+        // Re-read in case refresh replaced the session with a fresh token.
+        if let Some(new_token) = state
+            .current_session()
+            .await
+            .as_ref()
+            .and_then(|session| session.get("access_token"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+        {
+            return Ok(new_token);
+        }
+    }
 
-    state.set_current_session(result.session).await;
-    true
+    Ok(access_token)
 }
 
 /// Best-effort server-side session revocation. POSTs to Supabase's

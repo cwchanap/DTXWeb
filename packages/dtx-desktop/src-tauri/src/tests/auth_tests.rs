@@ -854,6 +854,212 @@ async fn refresh_session_fails_when_response_has_no_tokens() {
     assert!(state.current_session().await.is_none());
 }
 
+// ---------------------------------------------------------------------------
+// perform_refresh — pure HTTP refresh extracted from refresh_session_with_client
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn perform_refresh_returns_new_session_on_success() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .and(wiremock::matchers::body_json(serde_json::json!({
+            "refresh_token": "refresh-old"
+        })))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "access-new",
+                "refresh_token": "refresh-new",
+                "user": { "id": "user-1" }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let session = perform_refresh(
+        &reqwest::Client::new(),
+        &server.uri(),
+        "anon",
+        "refresh-old",
+    )
+    .await
+    .expect("refreshed session");
+
+    assert_eq!(
+        session.get("access_token").and_then(|v| v.as_str()),
+        Some("access-new")
+    );
+    assert_eq!(
+        session.get("refresh_token").and_then(|v| v.as_str()),
+        Some("refresh-new")
+    );
+}
+
+#[tokio::test]
+async fn perform_refresh_returns_none_on_non_success_status() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .respond_with(wiremock::ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let session = perform_refresh(
+        &reqwest::Client::new(),
+        &server.uri(),
+        "anon",
+        "refresh-old",
+    )
+    .await;
+
+    assert!(session.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// jwt_exp_seconds + ensure_valid_access_token
+// ---------------------------------------------------------------------------
+
+/// Builds a minimal unsigned JWT whose payload carries the given `exp`.
+/// Signature verification is intentionally irrelevant here: the desktop only
+/// decodes `exp` to decide whether to refresh proactively, and the API still
+/// validates the token server-side on every request.
+fn make_jwt(exp: i64) -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(format!("{{\"exp\":{exp}}}"));
+    let sig = URL_SAFE_NO_PAD.encode(b"sig");
+    format!("{header}.{payload}.{sig}")
+}
+
+#[test]
+fn jwt_exp_seconds_decodes_exp_claim() {
+    let exp = unix_now_secs() + 3600;
+    assert_eq!(jwt_exp_seconds(&make_jwt(exp)), Some(exp));
+}
+
+#[test]
+fn jwt_exp_seconds_returns_none_for_non_jwt() {
+    assert_eq!(jwt_exp_seconds("not-a-jwt"), None);
+    assert_eq!(jwt_exp_seconds("only.two"), None);
+    assert_eq!(jwt_exp_seconds(""), None);
+}
+
+#[test]
+fn jwt_exp_seconds_returns_none_without_exp_claim() {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(r#"{"sub":"user-1"}"#);
+    let sig = URL_SAFE_NO_PAD.encode(b"sig");
+    let token = format!("{header}.{payload}.{sig}");
+    assert_eq!(jwt_exp_seconds(&token), None);
+}
+
+#[tokio::test]
+async fn ensure_valid_access_token_errors_without_session() {
+    let state = AuthState::default();
+    assert!(ensure_valid_access_token(&state).await.is_err());
+}
+
+#[tokio::test]
+async fn ensure_valid_access_token_returns_fresh_token_without_refresh() {
+    // A token expiring well past the refresh skew is returned as-is without
+    // any network call: needs_refresh is false, so the config/refresh path is
+    // never reached and no auth env needs to be available.
+    let state = AuthState::default();
+    let token = make_jwt(unix_now_secs() + 3600);
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": token,
+            "refresh_token": "refresh-1",
+        })))
+        .await;
+
+    // config = None is fine here because refresh is never attempted.
+    let result = ensure_valid_access_token_with_config(&state, None)
+        .await
+        .expect("token");
+    assert_eq!(result, token);
+}
+
+#[tokio::test]
+async fn ensure_valid_access_token_refreshes_near_expiry_token() {
+    // Inject a mock (supabase_url, anon_key) so the refresh path hits the
+    // mock token endpoint — no process-global env mutation required.
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .and(wiremock::matchers::body_json(serde_json::json!({
+            "refresh_token": "refresh-old"
+        })))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": make_jwt(unix_now_secs() + 3600),
+                "refresh_token": "refresh-new",
+                "user": { "id": "user-1" }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+    let expired = make_jwt(unix_now_secs() - 10);
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": expired,
+            "refresh_token": "refresh-old",
+        })))
+        .await;
+
+    let result = ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())))
+        .await
+        .expect("token");
+
+    assert_ne!(result, expired);
+    // The refreshed session must now hold the new token + rotated refresh token.
+    let session = state.current_session().await.expect("session present");
+    assert_eq!(
+        session.get("access_token").and_then(|v| v.as_str()),
+        Some(result.as_str())
+    );
+    assert_eq!(
+        session.get("refresh_token").and_then(|v| v.as_str()),
+        Some("refresh-new")
+    );
+}
+
+#[tokio::test]
+async fn ensure_valid_access_token_preserves_token_when_refresh_unavailable() {
+    // Near-expiry token but auth config is None: refresh cannot happen, so the
+    // original token is returned (non-destructive) rather than erroring or
+    // wiping the session. A transient blip during proactive refresh must not
+    // log the user out while their token may still be server-valid.
+    let state = AuthState::default();
+    let near_expiry = make_jwt(unix_now_secs() - 10);
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": near_expiry,
+            "refresh_token": "refresh-old",
+        })))
+        .await;
+
+    let result = ensure_valid_access_token_with_config(&state, None)
+        .await
+        .expect("token");
+    assert_eq!(result, near_expiry);
+    // Session is preserved (not cleared) when refresh is unavailable.
+    assert!(state.current_session().await.is_some());
+}
+
 #[test]
 fn parse_auth_callback_returns_none_for_malformed_url() {
     // `url::Url::parse` rejects spaces and stray scheme separators, so a

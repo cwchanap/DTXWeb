@@ -150,17 +150,10 @@ fn bucket_base_url_from_env() -> Result<String> {
 }
 
 async fn access_token_from_auth_state(state: &AuthState) -> Result<String> {
-    let session = state
-        .current_session()
-        .await
-        .ok_or_else(|| DesktopError::Message("User not authenticated".to_string()))?;
-    let token = session
-        .get("access_token")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| DesktopError::Message("User not authenticated".to_string()))?;
-    Ok(token.to_string())
+    // Delegates to `ensure_valid_access_token`, which proactively refreshes
+    // the session when the access token is near expiry so long-running
+    // desktop sessions keep working past the Supabase token lifetime.
+    crate::auth::ensure_valid_access_token(state).await
 }
 
 fn graphql_document(operation: &str) -> String {

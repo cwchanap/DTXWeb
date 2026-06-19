@@ -379,17 +379,34 @@ describe('desktopHost', () => {
 		expect(tauriInvoke).toHaveBeenCalledWith('select_folder');
 	});
 
-	it('returns null for getDefaultDownloadsDir in the browser-style Tauri runtime fallback', async () => {
+	it('invokes get_default_downloads_dir through the Tauri runtime', async () => {
 		// When the runtime falls back to createTauriRuntime() (no test runtime
-		// set, __TAURI__ present), getDefaultDownloadsDir has no IPC to call,
-		// so it resolves to null rather than throwing.
+		// set, __TAURI__ present), getDefaultDownloadsDir must invoke the
+		// registered `get_default_downloads_dir` Rust command rather than
+		// hard-coding null, so the native OS Downloads path is returned.
 		setDesktopHostRuntimeForTests(null);
 		Object.defineProperty(window, '__TAURI__', {
 			configurable: true,
 			value: {}
 		});
+		vi.mocked(tauriInvoke).mockResolvedValue('/native/Downloads');
+
+		await expect(desktopHost.getDefaultDownloadsDir()).resolves.toBe('/native/Downloads');
+		expect(tauriInvoke).toHaveBeenCalledWith('get_default_downloads_dir');
+	});
+
+	it('falls back to null when get_default_downloads_dir IPC rejects', async () => {
+		// If the command is unavailable (e.g. a headless/CI window without the
+		// command wired up), resolve to null instead of surfacing the error.
+		setDesktopHostRuntimeForTests(null);
+		Object.defineProperty(window, '__TAURI__', {
+			configurable: true,
+			value: {}
+		});
+		vi.mocked(tauriInvoke).mockRejectedValue(new Error('command not registered'));
 
 		await expect(desktopHost.getDefaultDownloadsDir()).resolves.toBeNull();
+		expect(tauriInvoke).toHaveBeenCalledWith('get_default_downloads_dir');
 	});
 
 	it('uses the Tauri runtime when the global Tauri marker is absent', async () => {

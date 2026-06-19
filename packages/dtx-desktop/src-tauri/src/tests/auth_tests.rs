@@ -1180,3 +1180,82 @@ fn auth_client_builds_client_with_timeout() {
     let client = auth_client();
     assert!(client.is_ok());
 }
+
+// ---------------------------------------------------------------------------
+// revoke_session_with_client (logout)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn revoke_session_posts_access_token_to_supabase_logout_endpoint() {
+    // The renderer's logout flow must invalidate the Supabase refresh token
+    // server-side (regression from the Electron signOut() path). This verifies
+    // the POST hits /auth/v1/logout with the session's access_token as bearer.
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/logout"))
+        .and(wiremock::matchers::header("apikey", "anon"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer access-token",
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(204))
+        // Expect exactly one call — verified on MockServer drop.
+        .expect(1)
+        .mount(&server)
+        .await;
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        })))
+        .await;
+
+    revoke_session_with_client(reqwest::Client::new(), &state, &server.uri(), "anon").await;
+
+    // Server-side revocation was called, and local state is cleared.
+    assert!(state.current_session().await.is_none());
+}
+
+#[tokio::test]
+async fn revoke_session_clears_local_state_when_server_is_unreachable() {
+    // Logout must clear local state even if the Supabase revocation endpoint
+    // can't be reached (offline, DNS failure, etc.) — the user should always
+    // appear logged out locally.
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        })))
+        .await;
+
+    revoke_session_with_client(
+        reqwest::Client::new(),
+        &state,
+        // Unreachable loopback port — connect fails, body is dropped.
+        "http://127.0.0.1:1",
+        "anon",
+    )
+    .await;
+
+    assert!(state.current_session().await.is_none());
+}
+
+#[tokio::test]
+async fn revoke_session_without_session_skips_server_call_and_clears_state() {
+    // When there is no session to revoke (e.g. user was never logged in),
+    // no server call is made and local state stays None.
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::any())
+        .respond_with(wiremock::ResponseTemplate::new(500))
+        // Expect zero calls — any request would fail the test on drop.
+        .expect(0)
+        .mount(&server)
+        .await;
+    let state = AuthState::default();
+
+    revoke_session_with_client(reqwest::Client::new(), &state, &server.uri(), "anon").await;
+
+    assert!(state.current_session().await.is_none());
+}

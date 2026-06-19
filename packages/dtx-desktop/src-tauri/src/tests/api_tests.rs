@@ -1362,6 +1362,34 @@ async fn read_preview_within_workspace_returns_bytes_when_preview_present() {
     assert_eq!(result.unwrap(), Some(b"image-bytes".to_vec()));
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn read_preview_rejects_symlink_pointing_outside_workspace() {
+    use std::os::unix::fs::symlink;
+
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let song = workspace.path().join("song");
+    fs::create_dir(&song).unwrap();
+
+    // File outside the workspace that the symlink will target.
+    let secret = outside.path().join("secret.jpg");
+    fs::write(&secret, b"secret-bytes").unwrap();
+
+    // Symlink inside the song folder pointing outside the workspace.
+    symlink(&secret, song.join("preview.jpg")).unwrap();
+
+    let result = read_preview_within_workspace(
+        song.to_str().unwrap(),
+        workspace.path().to_str().unwrap(),
+        "preview.jpg",
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside the workspace"));
+}
+
 // ---------------------------------------------------------------------------
 // Wiremock-based: timeouts and NOT_FOUND paths
 // ---------------------------------------------------------------------------

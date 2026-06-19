@@ -595,7 +595,19 @@ async fn read_preview_within_workspace(
     if !canonical_song.starts_with(&canonical_root) {
         return Err("Song folder is outside the workspace".to_string());
     }
-    match fs::read(canonical_song.join(file_name)).await {
+    // Canonicalize the preview file itself (resolving symlinks) before
+    // reading, so a symlinked preview.jpg/mp3 cannot exfiltrate bytes from
+    // outside the workspace. If the file doesn't exist, canonicalize fails
+    // and we return Ok(None) — no preview to upload, not an error.
+    let preview_path = canonical_song.join(file_name);
+    let canonical_preview = match fs::canonicalize(&preview_path).await {
+        Ok(path) => path,
+        Err(_) => return Ok(None),
+    };
+    if !canonical_preview.starts_with(&canonical_root) {
+        return Err("Preview file is outside the workspace".to_string());
+    }
+    match fs::read(&canonical_preview).await {
         Ok(bytes) => Ok(Some(bytes)),
         Err(_) => Ok(None),
     }

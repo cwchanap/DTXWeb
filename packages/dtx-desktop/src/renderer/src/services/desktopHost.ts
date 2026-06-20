@@ -188,8 +188,12 @@ export const desktopHost = {
 	selectFolder: async (): Promise<SelectFolderResult> =>
 		await invokeHost<SelectFolderResult>('select_folder'),
 
-	pathExists: async (basePath: string, ...pathParts: string[]): Promise<PathExistsResult> =>
-		await invokeHost<PathExistsResult>('path_exists', { basePath, pathParts }),
+	pathExists: async (
+		basePath: string,
+		workspaceRoot: string,
+		...pathParts: string[]
+	): Promise<PathExistsResult> =>
+		await invokeHost<PathExistsResult>('path_exists', { basePath, pathParts, workspaceRoot }),
 
 	openExternalUrl: async (url: string): Promise<void> =>
 		await sendHost('open_external_url', { url }),
@@ -208,8 +212,12 @@ export const desktopHost = {
 		workspaceRoot: string | null = null
 	): Promise<T> => await invokeHost<T>('list_directory', { dirPath, workspaceRoot }),
 
-	loadTreeStructure: async <T = unknown>(basePath: string, ...pathParts: string[]): Promise<T> =>
-		await invokeHost<T>('load_tree_structure', { basePath, pathParts }),
+	loadTreeStructure: async <T = unknown>(
+		basePath: string,
+		workspaceRoot: string,
+		...pathParts: string[]
+	): Promise<T> =>
+		await invokeHost<T>('load_tree_structure', { basePath, pathParts, workspaceRoot }),
 
 	listFiles: async <T = unknown>(
 		dirPath: string,
@@ -231,8 +239,8 @@ export const desktopHost = {
 	getSkinAsset: async <T = unknown>(assetPath: string): Promise<T> =>
 		await invokeHost<T>('get_skin_asset', { assetPath }),
 
-	parseDtxFiles: async <T = unknown>(folderPath: string): Promise<T> =>
-		await invokeHost<T>('parse_dtx_files', { folderPath }),
+	parseDtxFiles: async <T = unknown>(folderPath: string, workspaceRoot: string): Promise<T> =>
+		await invokeHost<T>('parse_dtx_files', { folderPath, workspaceRoot }),
 
 	validateSession: async <T = unknown>(sessionData: unknown): Promise<T> =>
 		await invokeHost<T>('validate_session', { sessionData }),
@@ -242,8 +250,8 @@ export const desktopHost = {
 
 	logoutSession: async <T = unknown>(): Promise<T> => await invokeHost<T>('logout_session'),
 
-	drainPendingAuthEvents: async (): Promise<void> =>
-		await invokeHost<void>('drain_pending_auth_events'),
+	drainPendingAuthEvents: async (): Promise<number> =>
+		await invokeHost<number>('drain_pending_auth_events'),
 
 	fetchUserSimfiles: async <T = unknown>(): Promise<T> =>
 		await invokeHost<T>('fetch_user_simfiles'),
@@ -287,14 +295,16 @@ export const desktopHost = {
 		songPath: string;
 		songTitle?: string;
 		exportDirectory?: string;
-		workspaceRoot?: string;
+		workspaceRoot: string;
 	}): Promise<T> => await invokeHost<T>('export_song_to_zip', params),
 
 	uploadFile: async <T = unknown>(
 		fileName: string,
 		songFolderPath: string,
+		workspaceRoot: string,
 		simfileId: string
-	): Promise<T> => await invokeHost<T>('upload_file', { fileName, songFolderPath, simfileId }),
+	): Promise<T> =>
+		await invokeHost<T>('upload_file', { fileName, songFolderPath, workspaceRoot, simfileId }),
 
 	checkForUpdate: async (): Promise<UpdateCheckResult> =>
 		await invokeHost<UpdateCheckResult>('check_for_update'),

@@ -270,6 +270,7 @@ async fn path_exists_confirms_existing_file() {
     let result = path_exists(
         root.path().to_string_lossy().into_owned(),
         vec!["song.dtx".to_string()],
+        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -284,11 +285,53 @@ async fn path_exists_reports_missing_file() {
     let result = path_exists(
         root.path().to_string_lossy().into_owned(),
         vec!["missing.dtx".to_string()],
+        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
     assert!(!result.exists);
     assert_eq!(result.error.as_deref(), Some("not-found"));
+}
+
+#[tokio::test]
+async fn path_exists_rejects_missing_workspace_root() {
+    let root = tempdir().expect("tempdir");
+    let file = root.path().join("song.dtx");
+    fs::write(&file, "#TITLE: Song").await.expect("write");
+
+    let result = path_exists(
+        root.path().to_string_lossy().into_owned(),
+        vec!["song.dtx".to_string()],
+        None,
+    )
+    .await;
+
+    assert!(!result.exists);
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("workspace root is required")));
+}
+
+#[tokio::test]
+async fn path_exists_rejects_path_outside_workspace() {
+    let root = tempdir().expect("root");
+    let outside = tempdir().expect("outside");
+    let file = outside.path().join("secret.dtx");
+    fs::write(&file, "#TITLE: Secret").await.expect("write");
+
+    let result = path_exists(
+        outside.path().to_string_lossy().into_owned(),
+        vec!["secret.dtx".to_string()],
+        Some(root.path().to_string_lossy().into_owned()),
+    )
+    .await;
+
+    assert!(!result.exists);
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("outside the workspace")));
 }
 
 #[tokio::test]
@@ -400,6 +443,70 @@ async fn load_tree_includes_dtx_prefixed_folder_with_subdirs() {
     assert_eq!(nodes[0].name, "DTXFiles.Empty");
     assert!(nodes[0].has_children);
     assert!(!nodes[0].contains_dtx_files);
+}
+
+#[tokio::test]
+async fn load_tree_structure_rejects_missing_workspace_root() {
+    let root = tempdir().expect("tempdir");
+    let song = root.path().join("DTXFiles.Test");
+    fs::create_dir(&song).await.expect("mkdir");
+
+    let result =
+        load_tree_structure(root.path().to_string_lossy().into_owned(), vec![], None).await;
+
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("error")
+        .to_string()
+        .contains("workspace root is required"));
+}
+
+#[tokio::test]
+async fn load_tree_structure_rejects_path_outside_workspace() {
+    let root = tempdir().expect("root");
+    let outside = tempdir().expect("outside");
+    let song = outside.path().join("DTXFiles.Test");
+    fs::create_dir(&song).await.expect("mkdir");
+
+    let result = load_tree_structure(
+        outside.path().to_string_lossy().into_owned(),
+        vec![],
+        Some(root.path().to_string_lossy().into_owned()),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("error")
+        .to_string()
+        .contains("outside the workspace"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn list_directory_labels_symlinks_as_symlink_type() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempdir().expect("tempdir");
+    fs::write(root.path().join("real.dtx"), "#TITLE: Real")
+        .await
+        .expect("write");
+    symlink("real.dtx", root.path().join("link.dtx")).expect("symlink");
+
+    let result = list_directory(
+        root.path().to_string_lossy().into_owned(),
+        Some(root.path().to_string_lossy().into_owned()),
+    )
+    .await
+    .expect("envelope");
+
+    let files = result["files"].as_array().expect("files array");
+    let by_name: std::collections::HashMap<&str, &serde_json::Value> = files
+        .iter()
+        .map(|entry| (entry["name"].as_str().expect("name"), entry))
+        .collect();
+    assert_eq!(by_name["link.dtx"]["type"], "symlink");
+    assert_eq!(by_name["real.dtx"]["type"], "file");
 }
 
 #[test]
@@ -629,20 +736,6 @@ fn assert_iso_utc_timestamp(value: &str) {
             "fraction: {time}"
         );
     }
-}
-
-#[test]
-fn path_access_error_maps_not_found_kind_to_machine_readable_token() {
-    // The renderer matches on the exact tokens "not-found"/"permission-denied"
-    // to decide whether to show a "missing folder" hint vs. a generic error.
-    let not_found = std::io::Error::from(ErrorKind::NotFound);
-    assert_eq!(path_access_error(&not_found), "not-found");
-
-    let denied = std::io::Error::from(ErrorKind::PermissionDenied);
-    assert_eq!(path_access_error(&denied), "permission-denied");
-
-    let other = std::io::Error::from(ErrorKind::AlreadyExists);
-    assert_eq!(path_access_error(&other), "unknown");
 }
 
 #[test]

@@ -103,7 +103,10 @@ describe('WorkspaceService', () => {
 			await workspaceService.loadTreeStructure();
 
 			// Verify that the host call was made
-			expect(host.loadTreeStructure).toHaveBeenCalledWith('/test/workspace');
+			expect(host.loadTreeStructure).toHaveBeenCalledWith(
+				'/test/workspace',
+				'/test/workspace'
+			);
 
 			// Verify that setTreeStructure was called with the mocked data
 			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([
@@ -145,6 +148,7 @@ describe('WorkspaceService', () => {
 
 			// Verify that the host call was made with the sub-workspace path
 			expect(host.loadTreeStructure).toHaveBeenCalledWith(
+				'/test/workspace',
 				'/test/workspace',
 				'DTXFiles.TestSubWorkspace'
 			);

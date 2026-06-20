@@ -2,7 +2,6 @@ use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
 use reqwest::multipart::{Form, Part};
 use serde_json::{json, Map, Value};
-use std::path::Path;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::fs;
@@ -500,16 +499,24 @@ pub async fn upload_file_to_api(
     token: &str,
     file_name: &str,
     song_folder_path: &str,
+    workspace_root: &str,
     simfile_id: &str,
 ) -> Value {
-    let song_folder = Path::new(song_folder_path);
-    let file_path = song_folder.join(file_name);
-    let canonical_song_folder = match fs::canonicalize(song_folder).await {
+    // Enforce song-folder-within-workspace before any file access, mirroring
+    // read_preview_within_workspace. Without this, a compromised renderer could
+    // pass song_folder_path=/etc and exfiltrate arbitrary readable files to the
+    // Drumery API. Routes through the canonical containment primitive so the
+    // symlink-safe invariant lives in one tested place.
+    let canonical_song_folder = match crate::filesystem::canonicalize_within_workspace(
+        song_folder_path,
+        Some(workspace_root),
+    )
+    .await
+    {
         Ok(path) => path,
-        Err(_) => {
-            return api_failure(format!("File not found: {}", song_folder.display()));
-        }
+        Err(error) => return api_failure(error.to_string()),
     };
+    let file_path = canonical_song_folder.join(file_name);
     let canonical_file_path = match fs::canonicalize(&file_path).await {
         Ok(path) => path,
         Err(_) => {
@@ -975,6 +982,7 @@ pub async fn upload_file(
     app: AppHandle,
     file_name: String,
     song_folder_path: String,
+    workspace_root: String,
     simfile_id: String,
 ) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
@@ -984,6 +992,7 @@ pub async fn upload_file(
         &token,
         &file_name,
         &song_folder_path,
+        &workspace_root,
         &simfile_id,
     )
     .await)

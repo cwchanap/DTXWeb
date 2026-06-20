@@ -106,20 +106,16 @@ pub async fn export_song_to_zip(
     song_path: String,
     song_title: Option<String>,
     export_directory: Option<String>,
-    workspace_root: Option<String>,
+    workspace_root: String,
 ) -> Result<ExportSongResult> {
-    // Workspace containment: when a root is provided, refuse to read a song
-    // folder outside it — mirroring every other file-access command so export
-    // can't be used to zip arbitrary paths the user never selected in-tree.
-    // Routes through the single canonical containment primitive
+    // Workspace containment is mandatory: refuse to read a song folder outside
+    // the workspace — mirroring every other file-access command so export can't
+    // be used to zip arbitrary paths the user never selected in-tree. Routes
+    // through the single canonical containment primitive
     // (`canonicalize_within_workspace`) so the symlink-safe invariant isn't
-    // re-implemented here. Backward-compatible: no root => proceed as before.
-    if let Some(root) = workspace_root
-        .as_deref()
-        .filter(|root| !root.trim().is_empty())
-    {
-        crate::filesystem::canonicalize_within_workspace(&song_path, Some(root)).await?;
-    }
+    // re-implemented here. The renderer always has the workspace path in
+    // workspaceStore, so a missing root is a caller bug, not a supported state.
+    crate::filesystem::canonicalize_within_workspace(&song_path, Some(&workspace_root)).await?;
     let export_directory = resolve_export_directory(export_directory.as_deref());
     let song_title = song_title
         .as_deref()
@@ -179,12 +175,22 @@ pub async fn get_skin_asset(app: AppHandle, asset_path: String) -> Result<serde_
 }
 
 #[tauri::command]
-pub async fn parse_dtx_files(folder_path: String) -> Result<DtxParseResult> {
+pub async fn parse_dtx_files(
+    folder_path: String,
+    workspace_root: String,
+) -> Result<DtxParseResult> {
+    // Enforce workspace containment at the IPC boundary so a compromised
+    // renderer can't enumerate metadata (titles/levels/artists) for arbitrary
+    // folders outside the workspace. Routes through the canonical containment
+    // primitive; the inner helper still accepts a canonical path for tests.
+    let canonical =
+        crate::filesystem::canonicalize_within_workspace(&folder_path, Some(&workspace_root))
+            .await?;
     // Propagate I/O errors (non-existent path, permission denied, etc.) to the
     // caller instead of silently returning an empty result. The renderer's
     // caller already catches errors and degrades gracefully. Genuinely empty
     // folders (no .dtx files) are handled inside parse_dtx_folder itself.
-    parse_dtx_folder(Path::new(&folder_path)).await
+    parse_dtx_folder(&canonical).await
 }
 
 pub async fn parse_dtx_folder(folder_path: &Path) -> Result<DtxParseResult> {

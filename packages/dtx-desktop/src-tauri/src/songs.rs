@@ -115,14 +115,20 @@ pub async fn export_song_to_zip(
     // (`canonicalize_within_workspace`) so the symlink-safe invariant isn't
     // re-implemented here. The renderer always has the workspace path in
     // workspaceStore, so a missing root is a caller bug, not a supported state.
-    crate::filesystem::canonicalize_within_workspace(&song_path, Some(&workspace_root)).await?;
+    //
+    // Use the returned canonical path (symlinks resolved at validation time)
+    // for the export itself — passing the original `song_path` here would
+    // re-introduce a TOCTOU window where a symlink could be repointed outside
+    // the workspace between validation and use.
+    let canonical_song_path =
+        crate::filesystem::canonicalize_within_workspace(&song_path, Some(&workspace_root)).await?;
     let export_directory = resolve_export_directory(export_directory.as_deref());
     let song_title = song_title
         .as_deref()
         .filter(|title| !title.trim().is_empty())
         .unwrap_or("song");
 
-    export_song_folder_to_zip(Path::new(&song_path), song_title, &export_directory).await
+    export_song_folder_to_zip(&canonical_song_path, song_title, &export_directory).await
 }
 
 pub async fn export_song_folder_to_zip(

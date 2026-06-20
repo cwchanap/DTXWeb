@@ -41,7 +41,11 @@ where
 {
     argv.into_iter()
         .map(|arg| arg.as_ref().to_string())
-        .filter(|arg| arg.starts_with("dtx://"))
+        // Per RFC 3986 the URI scheme is case-insensitive, so an OS-delivered
+        // `DTX://` launch argument is just as valid as `dtx://`. Compare against
+        // a lowercase copy while keeping the original casing in the captured
+        // URL (the auth handler normalizes the scheme itself).
+        .filter(|arg| arg.to_ascii_lowercase().starts_with("dtx://"))
         .collect()
 }
 

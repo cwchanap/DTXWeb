@@ -107,3 +107,21 @@ fn extract_deep_link_args_rejects_lookalike_schemes() {
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0], "dtx://auth-callback?magic_link=x");
 }
+
+#[test]
+fn extract_deep_link_args_accepts_case_insensitive_scheme() {
+    // RFC 3986 makes the URI scheme case-insensitive, so an OS that delivers
+    // `DTX://` (or any mixed-case variant) must be treated the same as the
+    // canonical `dtx://` form. The original casing is preserved so the auth
+    // handler sees the URL exactly as delivered.
+    let argv = [
+        "DTX://auth-callback?magic_link=upper",
+        "Dtx://auth-callback?magic_link=mixed",
+        "noise",
+    ];
+
+    let filtered = extract_deep_link_args(argv);
+    assert_eq!(filtered.len(), 2);
+    assert_eq!(filtered[0], "DTX://auth-callback?magic_link=upper");
+    assert_eq!(filtered[1], "Dtx://auth-callback?magic_link=mixed");
+}

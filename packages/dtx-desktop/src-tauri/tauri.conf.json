@@ -44,7 +44,7 @@
 			"icons/icon.icns",
 			"icons/icon.ico"
 		],
-		"createUpdaterArtifacts": true,
+		"createUpdaterArtifacts": false,
 		"resources": ["../static/skin"],
 		"macOS": {
 			"minimumSystemVersion": "10.13",

@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - preview
+      - main
     tags:
       - 'v*'
   workflow_dispatch: # Allows manual triggering
@@ -31,6 +32,14 @@ on:
 #   option_env! to capture it during `tauri build`. VITE_DTX_SERVER_URL is also
 #   required by the Vite renderer (authService login redirect) and is inlined at
 #   frontend build time.
+# - Push to main is a CONTINUOUS RELEASE channel: every merge builds SIGNED
+#   updater artifacts and uploads them (plus latest.json) to R2, using the
+#   version committed in tauri.conf.json. Bump that version in the merge to
+#   actually offer an update to installed clients; merges that don't bump it
+#   re-publish the same version (a no-op for the updater). This requires the
+#   TAURI_SIGNING_PRIVATE_KEY(/_PASSWORD) secrets in the Desktop environment,
+#   or the signed main build will hard-fail. main and tagged releases share one
+#   R2 bucket / latest.json, so each main merge overwrites the previous upload.
 
 jobs:
   build-windows:
@@ -74,15 +83,22 @@ jobs:
         run: bun run --filter=@dtx/common build
 
       - name: Set Release Version
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
+          CONF="packages/dtx-desktop/src-tauri/tauri.conf.json"
+          CARGO="packages/dtx-desktop/src-tauri/Cargo.toml"
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
-          else
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
             VERSION="${INPUT_VERSION}"
+          else
+            # Push to main (continuous release): use the version committed in
+            # tauri.conf.json. Bump it in the merge to offer a real update;
+            # an unchanged version re-publishes the same release (updater no-op).
+            VERSION="$(jq -r '.version' "$CONF")"
           fi
           VERSION="${VERSION#v}"
           if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
@@ -93,11 +109,9 @@ jobs:
           # time and the updater compares latest.json against it. Without this,
           # a manifest with 1.0.1 and a binary still reporting 1.0.0 causes
           # clients to re-offer the same update indefinitely.
-          CONF="packages/dtx-desktop/src-tauri/tauri.conf.json"
           tmp=$(mktemp)
           jq --tab --arg v "$VERSION" '.version = $v' "$CONF" > "$tmp" && mv "$tmp" "$CONF"
           # Keep Cargo.toml in sync (first 'version =' is the package version).
-          CARGO="packages/dtx-desktop/src-tauri/Cargo.toml"
           tmp=$(mktemp)
           awk -v v="\"$VERSION\"" '/^version = / && !done {print "version = " v; done=1; next} {print}' "$CARGO" > "$tmp" && mv "$tmp" "$CARGO"
           # Re-enable updater artifact generation for this signed release build.
@@ -105,9 +119,10 @@ jobs:
           # so that PR builds (which deliberately run WITHOUT the signing key)
           # and local builds without TAURI_SIGNING_PRIVATE_KEY don't hard-fail:
           # Tauri errors out whenever an updater-enabled target (nsis) is built
-          # with a configured pubkey but no private key. Only this release-only
-          # step (tag/workflow_dispatch) flips it back on, where the signing key
-          # is present and the deploy job actually consumes the .sig sidecars.
+          # with a configured pubkey but no private key. Only signed release
+          # builds (tag / workflow_dispatch / push to main) flip it back on,
+          # where the signing key is present and the deploy job consumes the
+          # .sig sidecars.
           tmp=$(mktemp)
           jq --tab '.bundle.createUpdaterArtifacts = true' "$CONF" > "$tmp" && mv "$tmp" "$CONF"
           echo "Baked release version $VERSION into tauri.conf.json and Cargo.toml"
@@ -189,25 +204,29 @@ jobs:
         run: bun run --filter=@dtx/common build
 
       - name: Set Release Version
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
+          CONF="packages/dtx-desktop/src-tauri/tauri.conf.json"
+          CARGO="packages/dtx-desktop/src-tauri/Cargo.toml"
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
-          else
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
             VERSION="${INPUT_VERSION}"
+          else
+            # Push to main (continuous release): use the committed tauri.conf.json
+            # version. See the Windows job for the full rationale.
+            VERSION="$(jq -r '.version' "$CONF")"
           fi
           VERSION="${VERSION#v}"
           if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
             echo "::error::Release version '$VERSION' is not valid SemVer (expected MAJOR.MINOR.PATCH, e.g. 1.0.1)."
             exit 1
           fi
-          CONF="packages/dtx-desktop/src-tauri/tauri.conf.json"
           tmp=$(mktemp)
           jq --tab --arg v "$VERSION" '.version = $v' "$CONF" > "$tmp" && mv "$tmp" "$CONF"
-          CARGO="packages/dtx-desktop/src-tauri/Cargo.toml"
           tmp=$(mktemp)
           awk -v v="\"$VERSION\"" '/^version = / && !done {print "version = " v; done=1; next} {print}' "$CARGO" > "$tmp" && mv "$tmp" "$CARGO"
           # Re-enable updater artifact generation for this signed release build.
@@ -255,7 +274,7 @@ jobs:
     name: Deploy to Cloudflare R2
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout Repository
@@ -284,8 +303,13 @@ jobs:
         run: |
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
-          else
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
             VERSION="${INPUT_VERSION}"
+          else
+            # Push to main (continuous release): read the committed version the
+            # build jobs baked into the binaries and bundle filenames, so
+            # latest.json matches exactly what the updater compares against.
+            VERSION="$(jq -r '.version' packages/dtx-desktop/src-tauri/tauri.conf.json)"
           fi
           # Strip an optional leading 'v'. Tauri's updater requires a SemVer
           # version (MAJOR.MINOR.PATCH) in latest.json; a bare timestamp or a

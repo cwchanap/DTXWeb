@@ -102,7 +102,18 @@ jobs:
           awk -v v="\"$VERSION\"" '/^version = / && !done {print "version = " v; done=1; next} {print}' "$CARGO" > "$tmp" && mv "$tmp" "$CARGO"
           echo "Baked release version $VERSION into tauri.conf.json and Cargo.toml"
 
-      - name: Build Tauri App for Windows
+      # PR builds run unsigned: the updater signing key must never be exposed
+      # to PR-controlled build scripts (beforeBuildCommand runs PR-controlled
+      # Vite/Cargo code that could exfiltrate it). A leaked signing key lets an
+      # attacker ship trusted updater bundles to every installed desktop client.
+      - name: Build Tauri App for Windows (PR, unsigned)
+        if: github.event_name == 'pull_request'
+        run: bun run --filter=dtx-desktop tauri build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Tauri App for Windows (release, signed)
+        if: github.event_name != 'pull_request'
         run: bun run --filter=dtx-desktop tauri build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -189,7 +200,14 @@ jobs:
           awk -v v="\"$VERSION\"" '/^version = / && !done {print "version = " v; done=1; next} {print}' "$CARGO" > "$tmp" && mv "$tmp" "$CARGO"
           echo "Baked release version $VERSION into tauri.conf.json and Cargo.toml"
 
-      - name: Build Tauri App for macOS
+      - name: Build Tauri App for macOS (PR, unsigned)
+        if: github.event_name == 'pull_request'
+        run: bun run --filter=dtx-desktop tauri build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Tauri App for macOS (release, signed)
+        if: github.event_name != 'pull_request'
         run: bun run --filter=dtx-desktop tauri build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

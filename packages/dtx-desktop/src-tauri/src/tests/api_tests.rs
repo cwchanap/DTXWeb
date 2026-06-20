@@ -1465,16 +1465,21 @@ async fn upload_form_to_api_times_out_on_slow_server() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/upload"))
-        .respond_with(
-            ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(
-                API_REQUEST_TIMEOUT_MS / 1000 + 5,
-            )),
-        )
+        // The mock outlasts any plausible client timeout, so the injected
+        // short-timeout client (below) is what actually triggers the failure.
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(5)))
         .mount(&server)
         .await;
 
+    // Use a client with a short timeout so the test doesn't wait the full
+    // production API_REQUEST_TIMEOUT_MS. Mirrors run_graphql_value_times_out.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(100))
+        .build()
+        .unwrap();
+
     let form = Form::new().text("data", "test");
-    let result = upload_form_to_api(&server.uri(), "tok", form).await;
+    let result = upload_form_to_api_with_client(client, &server.uri(), "tok", form).await;
 
     assert_eq!(result["success"], false);
     assert!(result["error"].as_str().unwrap().contains("timed out"));

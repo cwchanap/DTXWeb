@@ -445,6 +445,19 @@ async fn upload_form_to_api(base_url: &str, token: &str, form: Form) -> Value {
         Ok(client) => client,
         Err(error) => return api_failure(error.to_string()),
     };
+    upload_form_to_api_with_client(client, base_url, token, form).await
+}
+
+/// Injectable-client variant of `upload_form_to_api` — mirrors the
+/// `run_graphql_value` / `run_graphql_value_with_client` split so timeout
+/// tests can pass a short-timeout client instead of waiting the full
+/// production `API_REQUEST_TIMEOUT_MS`.
+async fn upload_form_to_api_with_client(
+    client: reqwest::Client,
+    base_url: &str,
+    token: &str,
+    form: Form,
+) -> Value {
     let endpoint = format!("{}/upload", base_url.trim_end_matches('/'));
     let response = client
         .post(endpoint)

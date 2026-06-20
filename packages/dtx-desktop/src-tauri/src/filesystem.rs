@@ -132,6 +132,13 @@ pub async fn list_files(
 /// file-access commands should call it (or accept a workspace root and route
 /// through it) instead of hand-writing `.starts_with` checks, so the symlink-
 /// safe invariant lives in exactly one tested place.
+///
+/// Non-existent targets are checked against the nearest existing ancestor's
+/// canonical path so a caller can't use the result as a filesystem oracle
+/// (otherwise `path_exists("/etc/passwd")` vs `path_exists("/etc/no-such")`
+/// would distinguish "exists outside the workspace" from "missing"). Ancestors
+/// inside the workspace still surface `NotFound` so legitimate missing-file
+/// probes report "not found" rather than falsely reporting existence.
 pub(crate) async fn canonicalize_within_workspace(
     target_path: &str,
     workspace_root: Option<&str>,
@@ -144,13 +151,55 @@ pub(crate) async fn canonicalize_within_workspace(
         .filter(|root| !root.trim().is_empty())
         .ok_or_else(|| DesktopError::Message("A workspace root is required".to_string()))?;
     let canonical_root = fs::canonicalize(root).await?;
-    let canonical_target = fs::canonicalize(target_path).await?;
+    let canonical_target = match fs::canonicalize(target_path).await {
+        Ok(path) => path,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            // Target doesn't exist. Resolve the nearest existing ancestor so
+            // we can still enforce containment without leaking whether the
+            // missing path would have lived outside the workspace.
+            let canonical_ancestor = canonicalize_existing_ancestor(target_path).await?;
+            if !canonical_ancestor.starts_with(&canonical_root) {
+                return Err(DesktopError::Message(
+                    "Path is outside the workspace".to_string(),
+                ));
+            }
+            // Containment passed for the ancestor — surface NotFound for the
+            // (missing) target itself so callers like `path_exists` report
+            // "not found" instead of treating a missing path as present.
+            return Err(DesktopError::Io(std::io::Error::from(ErrorKind::NotFound)));
+        }
+        Err(error) => return Err(error.into()),
+    };
     if !canonical_target.starts_with(&canonical_root) {
         return Err(DesktopError::Message(
             "Path is outside the workspace".to_string(),
         ));
     }
     Ok(canonical_target)
+}
+
+/// Walks up `target_path` until it finds an existing ancestor, then returns
+/// that ancestor's canonical path (symlinks resolved). Used by
+/// `canonicalize_within_workspace` to evaluate containment for not-yet-existing
+/// paths without revealing whether the missing path is inside or outside the
+/// workspace. Surfaces `NotFound` if no ancestor exists at all.
+async fn canonicalize_existing_ancestor(target_path: &str) -> Result<PathBuf> {
+    let mut current = PathBuf::from(target_path);
+    loop {
+        match fs::canonicalize(&current).await {
+            Ok(canonical) => return Ok(canonical),
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                let Some(parent) = current.parent().map(Path::to_path_buf) else {
+                    return Err(DesktopError::Io(std::io::Error::from(ErrorKind::NotFound)));
+                };
+                if parent == current {
+                    return Err(DesktopError::Io(std::io::Error::from(ErrorKind::NotFound)));
+                }
+                current = parent;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 async fn list_directory_entries(dir_path: &Path) -> Result<Vec<FileEntry>> {
@@ -375,7 +424,20 @@ async fn inspect_tree_folder(folder_path: &Path) -> TreeFolderInfo {
         }
     };
 
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            // Natural end of iteration.
+            Ok(None) => break,
+            // Log iteration failures (e.g. a transient I/O error mid-directory)
+            // and stop rather than silently treating the rest of the folder as
+            // absent. Matches the read_dir error handling above; we still
+            // return whatever info we have gathered so far.
+            Err(error) => {
+                eprintln!("[fs] inspect_tree_folder: next_entry {folder_path:?} failed: {error}");
+                break;
+            }
+        };
         let file_type = match entry.file_type().await {
             Ok(file_type) => file_type,
             // Log per-entry failures (e.g. a stale symlink, permission error)

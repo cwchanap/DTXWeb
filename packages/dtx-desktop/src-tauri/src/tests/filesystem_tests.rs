@@ -855,6 +855,102 @@ async fn canonicalize_within_workspace_accepts_path_inside_root() {
 }
 
 #[tokio::test]
+async fn canonicalize_within_workspace_surfaces_not_found_for_missing_in_workspace_path() {
+    // A missing path INSIDE the workspace still reports NotFound so callers
+    // like `path_exists` can distinguish "absent" from "forbidden". The
+    // nearest existing ancestor (the workspace root itself here) passes the
+    // containment check, so the in-workspace NotFound semantics win.
+    let root = tempdir().expect("tempdir");
+    let missing = root.path().join("does-not-exist.dtx");
+
+    let result = canonicalize_within_workspace(
+        missing.to_str().unwrap(),
+        Some(root.path().to_str().unwrap()),
+    )
+    .await;
+
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert!(
+        matches!(error, DesktopError::Io(ref io) if io.kind() == std::io::ErrorKind::NotFound),
+        "expected NotFound, got {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn canonicalize_within_workspace_reports_outside_for_missing_out_of_workspace_path() {
+    // Closing the info-disclosure oracle: a missing path whose nearest
+    // existing ancestor lives OUTSIDE the workspace must surface "outside
+    // the workspace" rather than NotFound. Otherwise a compromised renderer
+    // could probe arbitrary filesystem locations by distinguishing "exists
+    // outside" from "doesn't exist at all".
+    let root = tempdir().expect("tempdir");
+    let outside = tempdir().expect("outside");
+    // `outside` exists; `outside/never-created.dtx` does not.
+    let missing_outside = outside.path().join("never-created.dtx");
+
+    let result = canonicalize_within_workspace(
+        missing_outside.to_str().unwrap(),
+        Some(root.path().to_str().unwrap()),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("outside the workspace"),
+        "missing out-of-workspace path must not be reported as NotFound"
+    );
+}
+
+#[tokio::test]
+async fn path_exists_reports_not_found_for_missing_in_workspace_path() {
+    // The info-disclosure fix must not regress the legitimate "missing in
+    // workspace" case: those probes still return the existing "not-found"
+    // token the renderer matches on.
+    let root = tempdir().expect("tempdir");
+
+    let result = path_exists(
+        root.path().to_string_lossy().into_owned(),
+        vec!["missing.dtx".to_string()],
+        Some(root.path().to_string_lossy().into_owned()),
+    )
+    .await;
+
+    assert!(!result.exists);
+    assert_eq!(result.error.as_deref(), Some("not-found"));
+}
+
+#[tokio::test]
+async fn path_exists_reports_outside_workspace_for_missing_out_of_workspace_path() {
+    // Counterpart to the oracle-closing canonicalize test: a missing path
+    // outside the workspace must surface "outside the workspace" (not
+    // "not-found"), so both missing AND existing out-of-workspace probes
+    // return the same error and can't be used as an existence oracle.
+    let root = tempdir().expect("tempdir");
+    let outside = tempdir().expect("outside");
+
+    let result = path_exists(
+        outside.path().to_string_lossy().into_owned(),
+        vec!["never-created.dtx".to_string()],
+        Some(root.path().to_string_lossy().into_owned()),
+    )
+    .await;
+
+    assert!(!result.exists);
+    assert!(
+        result
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("outside the workspace")),
+        "missing out-of-workspace path must surface 'outside the workspace', got: {:?}",
+        result.error
+    );
+}
+
+#[tokio::test]
 async fn inspect_tree_folder_detects_dtx_files_and_set_def_title() {
     // A folder with a .dtx file plus a SET.def containing #TITLE should
     // report both contains_dtx_files=true and the parsed song_title.

@@ -12,6 +12,7 @@
 	import { workspaceStore, type WorkspaceState } from './stores/workspaceStore';
 	import { linkingService } from './services/linkingService';
 	import { desktopHost } from './services/desktopHost';
+	import { storeSessionData } from './services/supabaseService';
 	import { onMount, onDestroy } from 'svelte';
 	import type { Session } from '@supabase/supabase-js';
 	import type { SimfileWithDtx } from '@dtx/common';
@@ -25,6 +26,15 @@
 			email: string | null;
 			user_metadata?: { name?: string };
 		};
+	};
+
+	// Supabase session value emitted by the Rust backend after a token refresh
+	// rotates the access/refresh tokens. Shape mirrors `StoredSession` in
+	// supabaseService so it can be persisted directly.
+	type RefreshedSession = {
+		access_token: string;
+		refresh_token: string;
+		user: unknown;
 	};
 
 	// Routing state
@@ -82,6 +92,26 @@
 			registerHostUnlistener(unlistenMagicLinkResult);
 		} catch (error) {
 			console.error('Failed to register magic link result handler:', error);
+		}
+
+		// Persist rotated tokens whenever the Rust backend refreshes the
+		// session (proactive near-expiry refresh during long sessions, or the
+		// startup validation refresh). Without this, localStorage keeps the
+		// now-revoked refresh token and the next launch logs the user out.
+		if (destroyed) return;
+		try {
+			const unlistenSessionRefreshed = await desktopHost.onSessionRefreshed<RefreshedSession>(
+				(session) => {
+					try {
+						storeSessionData(session);
+					} catch (error) {
+						console.error('Failed to persist refreshed session:', error);
+					}
+				}
+			);
+			registerHostUnlistener(unlistenSessionRefreshed);
+		} catch (error) {
+			console.error('Failed to register session refreshed handler:', error);
 		}
 
 		if (destroyed) return;

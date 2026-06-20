@@ -318,6 +318,15 @@ export const desktopHost = {
 	onMagicLinkResult: async <T = unknown>(callback: (result: T) => void): Promise<HostUnlisten> =>
 		await getRuntime().listen<T>('magic-link-result', callback),
 
+	// Emitted by the Rust backend whenever a token refresh rotates the session
+	// (proactive near-expiry refresh during a long-running session, or the
+	// startup validation refresh). The payload is the new Supabase session
+	// value; the renderer must persist the rotated access/refresh tokens so the
+	// next launch doesn't try the now-revoked refresh token and log the user out.
+	onSessionRefreshed: async <T = unknown>(
+		callback: (session: T) => void
+	): Promise<HostUnlisten> => await getRuntime().listen<T>('session-refreshed', callback),
+
 	removeAllListeners: (event?: string): void | Promise<void> =>
 		getRuntime().removeAllListeners(event)
 };

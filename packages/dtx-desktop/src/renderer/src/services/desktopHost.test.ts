@@ -351,6 +351,18 @@ describe('desktopHost', () => {
 		expect(unlisten).toHaveBeenCalledTimes(1);
 	});
 
+	it('registers and removes session-refreshed listeners', async () => {
+		const unlisten = vi.fn();
+		vi.mocked(runtime.listen).mockResolvedValue(unlisten);
+		const callback = vi.fn();
+
+		const stop = await desktopHost.onSessionRefreshed(callback);
+		expect(runtime.listen).toHaveBeenCalledWith('session-refreshed', callback);
+
+		stop();
+		expect(unlisten).toHaveBeenCalledTimes(1);
+	});
+
 	it('removes host listeners by event name', () => {
 		desktopHost.removeAllListeners('magic-link-result');
 

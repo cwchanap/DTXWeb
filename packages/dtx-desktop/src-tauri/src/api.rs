@@ -148,11 +148,16 @@ fn bucket_base_url_from_env() -> Result<String> {
     Ok(url.trim().trim_end_matches('/').to_string())
 }
 
-async fn access_token_from_auth_state(state: &AuthState) -> Result<String> {
+async fn access_token_from_auth_state(
+    state: &AuthState,
+    app: Option<&AppHandle>,
+) -> Result<String> {
     // Delegates to `ensure_valid_access_token`, which proactively refreshes
     // the session when the access token is near expiry so long-running
-    // desktop sessions keep working past the Supabase token lifetime.
-    crate::auth::ensure_valid_access_token(state).await
+    // desktop sessions keep working past the Supabase token lifetime. The
+    // `AppHandle` is forwarded so a successful refresh can emit
+    // `session-refreshed` and the renderer persists the rotated tokens.
+    crate::auth::ensure_valid_access_token(state, app).await
 }
 
 fn graphql_document(operation: &str) -> String {
@@ -671,7 +676,7 @@ pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Res
 #[tauri::command]
 pub async fn fetch_user_simfiles(app: AppHandle) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     fetch_user_simfiles_impl(&base_url, &token).await
 }
 
@@ -685,7 +690,7 @@ pub(crate) async fn get_next_display_id_impl(base_url: &str, token: &str) -> Res
 #[tauri::command]
 pub async fn get_next_display_id(app: AppHandle) -> Result<i64> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     get_next_display_id_impl(&base_url, &token).await
 }
 
@@ -747,7 +752,7 @@ pub async fn search_cloud_songs(
     exclude_linked_song_ids: Option<Vec<Value>>,
 ) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     search_cloud_songs_impl(&base_url, &token, query, limit, exclude_linked_song_ids).await
 }
 
@@ -780,7 +785,7 @@ pub(crate) async fn fetch_cloud_song_impl(
 #[tauri::command]
 pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     fetch_cloud_song_impl(&base_url, &token, cloud_song_id).await
 }
 
@@ -818,7 +823,7 @@ pub async fn update_simfile_record(
     update_data: Value,
 ) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     update_simfile_record_impl(&base_url, &token, simfile_id, update_data).await
 }
 
@@ -893,7 +898,7 @@ pub(crate) async fn create_simfile_record_impl(
 #[tauri::command]
 pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     create_simfile_record_impl(&base_url, &token, simfile_data).await
 }
 
@@ -947,7 +952,7 @@ pub(crate) async fn load_asset_files_impl(
 #[tauri::command]
 pub async fn load_asset_files(app: AppHandle, simfile_id: String) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     load_asset_files_impl(&base_url, &token, simfile_id).await
 }
 
@@ -986,7 +991,7 @@ pub async fn upload_file(
     simfile_id: String,
 ) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>()).await?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     Ok(upload_file_to_api(
         &base_url,
         &token,

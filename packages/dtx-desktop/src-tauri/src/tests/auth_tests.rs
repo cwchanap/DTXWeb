@@ -80,7 +80,9 @@ async fn magic_link_failure_does_not_echo_raw_link() {
     .await
     .expect("event");
 
-    let AuthEvent::MagicLinkResult(result) = event;
+    let AuthEvent::MagicLinkResult(result) = event else {
+        panic!("expected MagicLinkResult, got {event:?}");
+    };
 
     assert!(!result.success);
     assert_eq!(
@@ -265,6 +267,7 @@ async fn validate_session_rejects_invalid_supabase_user_response() {
         &server.uri(),
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -300,6 +303,7 @@ async fn validate_session_stores_user_from_supabase_user_response() {
         &server.uri(),
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -354,6 +358,7 @@ async fn validate_session_refreshes_expired_access_token() {
         &server.uri(),
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -652,6 +657,7 @@ async fn validate_session_rejects_session_data_without_tokens() {
         "https://example.supabase.co",
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -674,6 +680,7 @@ async fn validate_session_fails_on_network_error() {
         "http://127.0.0.1:1",
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -705,6 +712,7 @@ async fn validate_session_fails_on_invalid_json_response() {
         &server.uri(),
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -737,6 +745,7 @@ async fn validate_session_rejects_user_response_without_id() {
         &server.uri(),
         "anon",
         session_data,
+        None,
     )
     .await;
 
@@ -753,6 +762,7 @@ async fn refresh_session_rejects_empty_refresh_token() {
         &state,
         "https://example.supabase.co",
         "anon",
+        None,
         None,
     )
     .await;
@@ -771,6 +781,7 @@ async fn refresh_session_fails_on_network_error() {
         "http://127.0.0.1:1",
         "anon",
         Some("refresh-old".to_string()),
+        None,
     )
     .await;
 
@@ -798,6 +809,7 @@ async fn refresh_session_fails_on_non_success_status() {
         &server.uri(),
         "anon",
         Some("refresh-old".to_string()),
+        None,
     )
     .await;
 
@@ -824,6 +836,7 @@ async fn refresh_session_fails_on_invalid_json_response() {
         &server.uri(),
         "anon",
         Some("refresh-old".to_string()),
+        None,
     )
     .await;
 
@@ -847,6 +860,7 @@ async fn refresh_session_fails_when_response_has_no_tokens() {
         &server.uri(),
         "anon",
         Some("refresh-old".to_string()),
+        None,
     )
     .await;
 
@@ -963,7 +977,7 @@ fn jwt_exp_seconds_returns_none_without_exp_claim() {
 #[tokio::test]
 async fn ensure_valid_access_token_errors_without_session() {
     let state = AuthState::default();
-    assert!(ensure_valid_access_token(&state).await.is_err());
+    assert!(ensure_valid_access_token(&state, None).await.is_err());
 }
 
 #[tokio::test]
@@ -981,7 +995,7 @@ async fn ensure_valid_access_token_returns_fresh_token_without_refresh() {
         .await;
 
     // config = None is fine here because refresh is never attempted.
-    let result = ensure_valid_access_token_with_config(&state, None)
+    let result = ensure_valid_access_token_with_config(&state, None, None)
         .await
         .expect("token");
     assert_eq!(result, token);
@@ -1020,9 +1034,10 @@ async fn ensure_valid_access_token_refreshes_near_expiry_token() {
         })))
         .await;
 
-    let result = ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())))
-        .await
-        .expect("token");
+    let result =
+        ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())), None)
+            .await
+            .expect("token");
 
     assert_ne!(result, expired);
     // The refreshed session must now hold the new token + rotated refresh token.
@@ -1052,7 +1067,7 @@ async fn ensure_valid_access_token_preserves_token_when_refresh_unavailable() {
         })))
         .await;
 
-    let result = ensure_valid_access_token_with_config(&state, None)
+    let result = ensure_valid_access_token_with_config(&state, None, None)
         .await
         .expect("token");
     assert_eq!(result, near_expiry);
@@ -1087,9 +1102,10 @@ async fn ensure_valid_access_token_preserves_token_when_server_rejects_refresh()
         })))
         .await;
 
-    let result = ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())))
-        .await
-        .expect("token");
+    let result =
+        ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())), None)
+            .await
+            .expect("token");
 
     assert_eq!(result, near_expiry);
     // AuthState preserved — a rejected proactive refresh must not log out.
@@ -1133,8 +1149,8 @@ async fn ensure_valid_access_token_single_flights_concurrent_refreshes() {
 
     let config = Some((server.uri(), "anon".into()));
     let (a, b) = tokio::join!(
-        ensure_valid_access_token_with_config(&state, config.clone()),
-        ensure_valid_access_token_with_config(&state, config),
+        ensure_valid_access_token_with_config(&state, config.clone(), None),
+        ensure_valid_access_token_with_config(&state, config, None),
     );
     a.expect("first token");
     b.expect("second token");
@@ -1262,6 +1278,23 @@ fn auth_event_name_and_payload_round_trip_through_serde() {
     assert_eq!(payload["success"], true);
     assert_eq!(payload["session"]["access_token"], "tok");
     assert_eq!(payload["user"]["id"], "u-1");
+}
+
+#[test]
+fn session_refreshed_event_carries_session_payload() {
+    // The renderer persists rotated tokens from this event, so its name and
+    // payload shape are part of the IPC contract: the payload MUST be the
+    // Supabase session value (with access_token/refresh_token) verbatim.
+    let session = serde_json::json!({
+        "access_token": "new-access",
+        "refresh_token": "new-refresh",
+        "user": { "id": "u-1" },
+    });
+    let event = AuthEvent::SessionRefreshed(session.clone());
+
+    assert_eq!(event.name(), "session-refreshed");
+    assert_eq!(event.payload(), session);
+    assert_eq!(event.payload()["refresh_token"], "new-refresh");
 }
 
 #[test]

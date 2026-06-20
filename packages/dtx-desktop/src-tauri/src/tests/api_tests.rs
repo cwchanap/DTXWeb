@@ -654,7 +654,7 @@ async fn get_preview_urls_build_paths_from_bucket_env() {
 async fn access_token_from_auth_state_errors_without_session() {
     let state = AuthState::default();
 
-    assert!(access_token_from_auth_state(&state).await.is_err());
+    assert!(access_token_from_auth_state(&state, None).await.is_err());
 }
 
 #[tokio::test]
@@ -664,7 +664,9 @@ async fn access_token_from_auth_state_returns_token_from_session() {
         .set_current_session(Some(json!({ "access_token": "tok-1" })))
         .await;
 
-    let token = access_token_from_auth_state(&state).await.expect("token");
+    let token = access_token_from_auth_state(&state, None)
+        .await
+        .expect("token");
 
     assert_eq!(token, "tok-1");
 }

@@ -215,12 +215,20 @@ pub struct AuthCallback {
 #[derive(Debug, Clone, PartialEq)]
 enum AuthEvent {
     MagicLinkResult(MagicLinkResult),
+    /// Emitted whenever a token refresh rotates the session (proactive
+    /// near-expiry refresh during a long-running session, or the startup
+    /// validation refresh). The payload is the new Supabase session value so
+    /// the renderer can persist the rotated `access_token`/`refresh_token` to
+    /// localStorage — without this, the renderer keeps the now-revoked refresh
+    /// token and the next launch logs the user out.
+    SessionRefreshed(serde_json::Value),
 }
 
 impl AuthEvent {
     fn name(&self) -> &'static str {
         match self {
             AuthEvent::MagicLinkResult(_) => "magic-link-result",
+            AuthEvent::SessionRefreshed(_) => "session-refreshed",
         }
     }
 
@@ -229,6 +237,7 @@ impl AuthEvent {
             AuthEvent::MagicLinkResult(result) => {
                 serde_json::to_value(result).unwrap_or_else(|_| json!({ "success": false }))
             }
+            AuthEvent::SessionRefreshed(session) => session.clone(),
         }
     }
 }
@@ -349,6 +358,7 @@ pub async fn validate_session(
         &supabase_url,
         &anon_key,
         session_data,
+        Some(&app),
     )
     .await;
 
@@ -860,6 +870,7 @@ async fn validate_session_with_client(
     supabase_url: &str,
     anon_key: &str,
     session_data: SessionData,
+    app: Option<&AppHandle>,
 ) -> bool {
     let Some(mut session) = session_value_from_data(session_data) else {
         state.set_current_session(None).await;
@@ -887,8 +898,15 @@ async fn validate_session_with_client(
     };
 
     if !response.status().is_success() {
-        return refresh_session_with_client(&client, state, supabase_url, anon_key, refresh_token)
-            .await;
+        return refresh_session_with_client(
+            &client,
+            state,
+            supabase_url,
+            anon_key,
+            refresh_token,
+            app,
+        )
+        .await;
     }
 
     let user = match response.json::<serde_json::Value>().await {
@@ -910,6 +928,7 @@ async fn refresh_session_with_client(
     supabase_url: &str,
     anon_key: &str,
     refresh_token: Option<String>,
+    app: Option<&AppHandle>,
 ) -> bool {
     let Some(refresh_token) = non_empty_token(refresh_token) else {
         state.set_current_session(None).await;
@@ -918,7 +937,12 @@ async fn refresh_session_with_client(
 
     match perform_refresh(client, supabase_url, anon_key, &refresh_token).await {
         Some(session) => {
-            state.set_current_session(Some(session)).await;
+            state.set_current_session(Some(session.clone())).await;
+            if let Some(app) = app {
+                // Persist the rotated tokens in the renderer so the next launch
+                // uses the fresh refresh token instead of the now-revoked one.
+                let _ = emit_auth_event(app, &AuthEvent::SessionRefreshed(session));
+            }
             true
         }
         None => {
@@ -970,15 +994,19 @@ async fn perform_refresh(
 
 /// Best-effort proactive refresh used by `ensure_valid_access_token`. Calls
 /// Supabase's token endpoint with the resolved config and, on success, stores
-/// the new session. On any failure it leaves the existing session untouched
+/// the new session and emits `session-refreshed` so the renderer persists the
+/// rotated tokens. On any failure it leaves the existing session untouched
 /// (unlike the startup path) so the caller can still try the possibly-still-
 /// valid token and surface a clear server-side error. `config` is threaded in
 /// (rather than re-resolved) so the decision path is unit-testable without
-/// mutating process-global env.
+/// mutating process-global env. `app` is `Option` so unit tests can exercise
+/// the refresh logic without a real `AppHandle` (pass `None` to skip emission);
+/// production callers pass `Some(&app)`.
 async fn try_refresh_session(
     state: &AuthState,
     config: Option<(String, String)>,
     client: &reqwest::Client,
+    app: Option<&AppHandle>,
 ) {
     let Some((supabase_url, anon_key)) = config else {
         return;
@@ -994,7 +1022,14 @@ async fn try_refresh_session(
     if let Some(new_session) =
         perform_refresh(client, &supabase_url, &anon_key, &refresh_token).await
     {
-        state.set_current_session(Some(new_session)).await;
+        state.set_current_session(Some(new_session.clone())).await;
+        if let Some(app) = app {
+            // Best-effort: a failure to emit must not break the API call that
+            // triggered the refresh — the in-memory session is already updated,
+            // so the worst case is the renderer persists stale tokens this once
+            // and rotates them on the next refresh.
+            let _ = emit_auth_event(app, &AuthEvent::SessionRefreshed(new_session));
+        }
     }
 }
 
@@ -1031,8 +1066,11 @@ fn unix_now_secs() -> i64 {
 /// attempted but fails (network blip, revoked refresh token), the previous
 /// token is returned so the API call proceeds and surfaces a clear server-side
 /// error rather than masking the real cause as "not authenticated".
-pub async fn ensure_valid_access_token(state: &AuthState) -> Result<String> {
-    ensure_valid_access_token_with_config(state, resolve_auth_config()).await
+pub async fn ensure_valid_access_token(
+    state: &AuthState,
+    app: Option<&AppHandle>,
+) -> Result<String> {
+    ensure_valid_access_token_with_config(state, resolve_auth_config(), app).await
 }
 
 /// Config-injected core of `ensure_valid_access_token`. Tests pass an explicit
@@ -1040,9 +1078,12 @@ pub async fn ensure_valid_access_token(state: &AuthState) -> Result<String> {
 /// mock server without mutating process-global env (which would race with
 /// other config-dependent tests). `config = None` mirrors the "auth not
 /// configured" case: refresh is skipped and the existing token is returned.
+/// `app = None` skips the `session-refreshed` emission (unit tests pass `None`
+/// since no `AppHandle` is available); production callers pass `Some(&app)`.
 async fn ensure_valid_access_token_with_config(
     state: &AuthState,
     config: Option<(String, String)>,
+    app: Option<&AppHandle>,
 ) -> Result<String> {
     let session = state
         .current_session()
@@ -1079,7 +1120,7 @@ async fn ensure_valid_access_token_with_config(
                 })
                 .unwrap_or(true);
             if still_stale {
-                try_refresh_session(state, config, &client).await;
+                try_refresh_session(state, config, &client, app).await;
             }
         }
         // Re-read in case refresh replaced the session with a fresh token.

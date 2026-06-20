@@ -3,7 +3,7 @@
  *
  * This interface abstracts file operations to support different implementations:
  * - dtx-web: Files stored in browser memory via FileManager
- * - dtx-desktop: Files cached in Electron main process, accessed via IPC
+ * - dtx-desktop: Files cached in the Tauri Rust backend, accessed via IPC commands
  */
 
 export interface IFileProvider {

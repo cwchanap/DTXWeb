@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Use the real testing library (override global setup mock)
 vi.mock('@testing-library/svelte', async () => await vi.importActual('@testing-library/svelte'));
@@ -45,15 +45,6 @@ const makeProps = (overrides = {}) => ({
 describe('UploadedAssetFiles', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-	});
-
-	afterEach(() => {
-		// Restore window.electron to undefined to prevent state leakage between tests
-		Object.defineProperty(window, 'electron', {
-			value: undefined,
-			writable: true,
-			configurable: true
-		});
 	});
 
 	it('renders without crashing when no simfileId provided', () => {
@@ -271,49 +262,7 @@ describe('UploadedAssetFiles', () => {
 		});
 	});
 
-	it('calls uploadSelectedFiles when bulk upload button clicked (desktop, IPC success)', async () => {
-		const ipcInvoke = vi.fn().mockResolvedValue({ success: true });
-		// Set electron on the existing window object (don't replace the whole window)
-		Object.defineProperty(window, 'electron', {
-			value: { ipcRenderer: { invoke: ipcInvoke } },
-			writable: true,
-			configurable: true
-		});
-
-		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
-		const loadAssetFiles = vi.fn().mockResolvedValue([]);
-		render(UploadedAssetFiles, {
-			props: makeProps({
-				simfileId: 'sim-1',
-				isDesktop: true,
-				songFolderPath: '/songs/sim-1',
-				userFiles: [dtxFile],
-				loadAssetFiles
-			})
-		});
-
-		await waitFor(() => {
-			expect(screen.getByRole('button', { name: /Bulk Upload/i })).toBeInTheDocument();
-		});
-
-		await fireEvent.click(screen.getByRole('button', { name: /Bulk Upload/i }));
-
-		await waitFor(() => {
-			expect(ipcInvoke).toHaveBeenCalledWith(
-				'upload-file',
-				'song.dtx',
-				'/songs/sim-1',
-				'sim-1'
-			);
-		});
-	});
-
-	it('uses injected uploadFile handler for desktop bulk uploads when Electron IPC is unavailable', async () => {
-		Object.defineProperty(window, 'electron', {
-			value: undefined,
-			writable: true,
-			configurable: true
-		});
+	it('calls the injected uploadFile handler for desktop bulk uploads', async () => {
 		const uploadFile = vi.fn().mockResolvedValue({ success: true });
 
 		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
@@ -341,13 +290,8 @@ describe('UploadedAssetFiles', () => {
 		});
 	});
 
-	it('shows "Failed" status when IPC upload returns an error', async () => {
-		const ipcInvoke = vi.fn().mockResolvedValue({ success: false, error: 'Upload failed' });
-		Object.defineProperty(window, 'electron', {
-			value: { ipcRenderer: { invoke: ipcInvoke } },
-			writable: true,
-			configurable: true
-		});
+	it('shows "Failed" status when the uploadFile handler returns an error', async () => {
+		const uploadFile = vi.fn().mockResolvedValue({ success: false, error: 'Upload failed' });
 
 		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
 		const loadAssetFiles = vi.fn().mockResolvedValue([]);
@@ -357,7 +301,8 @@ describe('UploadedAssetFiles', () => {
 				isDesktop: true,
 				songFolderPath: '/songs/sim-1',
 				userFiles: [dtxFile],
-				loadAssetFiles
+				loadAssetFiles,
+				uploadFile
 			})
 		});
 
@@ -369,14 +314,7 @@ describe('UploadedAssetFiles', () => {
 		});
 	});
 
-	it('shows "Failed" status when IPC renderer is not available (invokeIpc throws)', async () => {
-		// Ensure window.electron is undefined → invokeIpc throws "IPC Renderer is not available"
-		Object.defineProperty(window, 'electron', {
-			value: undefined,
-			writable: true,
-			configurable: true
-		});
-
+	it('shows "Failed" status when no uploadFile handler is provided', async () => {
 		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
 		const loadAssetFiles = vi.fn().mockResolvedValue([]);
 		render(UploadedAssetFiles, {

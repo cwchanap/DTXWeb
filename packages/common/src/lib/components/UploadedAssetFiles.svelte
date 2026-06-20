@@ -174,11 +174,12 @@
 			if (!simfileId) {
 				throw new Error('Simfile ID is required for uploads');
 			}
+			if (!uploadFile) {
+				throw new Error('Upload handler is required for desktop uploads');
+			}
 
 			// Host process will construct the full path from the selected file name.
-			const result = uploadFile
-				? await uploadFile(fileName, songFolderPath, simfileId)
-				: await invokeIpc('upload-file', fileName, songFolderPath, simfileId);
+			const result = await uploadFile(fileName, songFolderPath, simfileId);
 
 			if (!result || !result.success) {
 				throw new Error(result?.error || 'Upload failed');
@@ -298,20 +299,6 @@
 		}
 
 		return merged;
-	}
-
-	// Helper function to safely invoke IPC channels
-	function invokeIpc(
-		channel: string,
-		...args: unknown[]
-	): Promise<{ success: boolean; error?: string }> {
-		const ipcRenderer = (
-			window as { electron?: { ipcRenderer?: { invoke: typeof invokeIpc } } }
-		).electron?.ipcRenderer;
-		if (!ipcRenderer) {
-			throw new Error('IPC Renderer is not available');
-		}
-		return ipcRenderer.invoke(channel, ...args);
 	}
 </script>
 

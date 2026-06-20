@@ -13,6 +13,8 @@ Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-wo
 - `packages/ui-components` (`@dtx/ui-components`) - Shadcn-Svelte UI component library (export-only components)
 
 > The desktop app was migrated from Electron to Tauri. References to Electron, the "main process", or `electron-builder` elsewhere in older docs are obsolete — the native layer is now Rust under `src-tauri/`.
+>
+> `AGENTS.md` (referenced by `README.md` as the contributor guide) is a symlink to this file, so editing `CLAUDE.md` updates both — no manual sync needed. The `.cursor/rules/*.mdc` files are stale (they still describe Electron, npm workspaces, and 4 packages); trust this file over them.
 
 ## Development Commands
 

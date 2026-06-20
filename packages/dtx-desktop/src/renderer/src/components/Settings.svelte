@@ -34,8 +34,8 @@
 	};
 
 	// Handle reset to default
-	const handleResetToDefault = () => {
-		settingsStore.reset();
+	const handleResetToDefault = async () => {
+		await settingsStore.reset();
 		showSaveSuccess();
 	};
 

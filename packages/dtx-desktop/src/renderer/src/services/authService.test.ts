@@ -296,6 +296,20 @@ describe('AuthService', () => {
 
 			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
 		});
+
+		it('should set error when user is missing from successful result', async () => {
+			// The Rust backend serializes `user` with skip_serializing_if, so a
+			// successful response may omit it — the handler must guard rather
+			// than crash reading `.id` on undefined.
+			const result = {
+				success: true,
+				session: { access_token: 'abc', refresh_token: 'xyz' }
+			};
+
+			await authService.handleMagicLinkResult(result as any);
+
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+		});
 	});
 
 	describe('logout', () => {

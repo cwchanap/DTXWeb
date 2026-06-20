@@ -3,7 +3,6 @@ use super::*;
 #[test]
 fn read_file_text_serializes_renderer_shape() {
     let result = ReadFileResult::Text {
-        error: None,
         content: "#TITLE: Song".to_string(),
     };
 
@@ -17,7 +16,6 @@ fn read_file_text_serializes_renderer_shape() {
 fn read_file_error_serializes_with_kind_tag() {
     let result = ReadFileResult::Error {
         error: "File type not allowed".to_string(),
-        content: String::new(),
     };
 
     let json = serde_json::to_value(result).expect("serializes");
@@ -29,7 +27,6 @@ fn read_file_error_serializes_with_kind_tag() {
 #[test]
 fn read_file_binary_serializes_renderer_shape() {
     let result = ReadFileResult::Binary {
-        error: None,
         content: vec![1, 2, 3],
     };
 

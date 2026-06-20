@@ -170,6 +170,71 @@ async fn export_zip_rejects_unsafe_song_title_without_writing_outside_export_dir
 }
 
 #[tokio::test]
+async fn export_song_to_zip_rejects_song_path_outside_workspace() {
+    // When a workspace root is supplied, the command must refuse to read a song
+    // folder outside it (defense-in-depth: even though the renderer only passes
+    // in-tree paths, the IPC boundary enforces containment like every other
+    // file-access command). The outside path is never zipped.
+    let workspace = tempdir().expect("workspace");
+    let outside = tempdir().expect("outside");
+    let export = workspace.path().join("Export");
+    let song = workspace.path().join("Song");
+    fs::create_dir_all(&song).await.expect("in-workspace song");
+    fs::create_dir_all(&export).await.expect("export dir");
+    fs::write(song.join("main.dtx"), "#TITLE: Song")
+        .await
+        .expect("dtx");
+
+    // Path outside the workspace is rejected with an error (not zipped).
+    let rejected = export_song_to_zip(
+        outside.path().to_string_lossy().to_string(),
+        Some("Song".to_string()),
+        Some(export.to_string_lossy().to_string()),
+        Some(workspace.path().to_string_lossy().to_string()),
+    )
+    .await;
+    assert!(
+        rejected.is_err(),
+        "export of out-of-workspace path must be rejected"
+    );
+
+    // An in-workspace path proceeds normally (containment passes, export runs).
+    let accepted = export_song_to_zip(
+        song.to_string_lossy().to_string(),
+        Some("Song".to_string()),
+        Some(export.to_string_lossy().to_string()),
+        Some(workspace.path().to_string_lossy().to_string()),
+    )
+    .await
+    .expect("in-workspace export should proceed");
+    assert!(accepted.success);
+}
+
+#[tokio::test]
+async fn export_song_to_zip_skips_containment_when_no_workspace_root() {
+    // Backward compatibility: when no workspace root is supplied, the command
+    // proceeds without a containment check (matching pre-existing callers).
+    let root = tempdir().expect("root");
+    let song = root.path().join("Song");
+    let export = root.path().join("Export");
+    fs::create_dir_all(&song).await.expect("song");
+    fs::create_dir_all(&export).await.expect("export");
+    fs::write(song.join("main.dtx"), "#TITLE: Song")
+        .await
+        .expect("dtx");
+
+    let result = export_song_to_zip(
+        song.to_string_lossy().to_string(),
+        Some("Song".to_string()),
+        Some(export.to_string_lossy().to_string()),
+        None,
+    )
+    .await
+    .expect("export envelope");
+    assert!(result.success);
+}
+
+#[tokio::test]
 async fn parse_dtx_files_returns_metadata_and_set_def_labels() {
     let root = tempdir().expect("tempdir");
     fs::write(
@@ -490,13 +555,19 @@ fn resolve_export_directory_expands_tilde_and_defaults_to_downloads() {
     // `_guard` restores HOME on drop — even if an assertion below panics.
     let _guard = HomeEnvGuard::replace(temp.path());
 
-    assert_eq!(
-        resolve_export_directory(None),
-        temp.path().join("Downloads")
-    );
+    // The default and "~/Downloads" now resolve through the SAME dirs-based
+    // resolver as the renderer's displayed default (`default_downloads_dir`),
+    // so the two can't diverge (e.g. on XDG-configured Linux). When dirs
+    // can't resolve a Downloads dir (sandboxed/CI), it falls back to
+    // $HOME/Downloads (= temp/Downloads under this guard).
+    let expected_default = crate::filesystem::default_downloads_dir()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| temp.path().join("Downloads"));
+
+    assert_eq!(resolve_export_directory(None), expected_default);
     assert_eq!(
         resolve_export_directory(Some("~/Downloads")),
-        temp.path().join("Downloads")
+        expected_default
     );
     assert_eq!(
         resolve_export_directory(Some("~/Songs")),

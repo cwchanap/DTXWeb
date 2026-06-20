@@ -20,7 +20,7 @@
 		success: boolean;
 		error?: string;
 		session?: Session | null;
-		user: {
+		user?: {
 			id: string;
 			email: string | null;
 			user_metadata?: { name?: string };

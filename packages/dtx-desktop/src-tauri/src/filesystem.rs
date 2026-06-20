@@ -113,7 +113,12 @@ pub async fn list_files(
 /// A missing workspace root is rejected outright: every canonical path
 /// starts_with its own parent, so falling back to the target's parent would
 /// make the containment check meaningless (mirrors `read_file_path_inner`).
-async fn canonicalize_within_workspace(
+///
+/// This is the single canonical primitive for workspace containment — new
+/// file-access commands should call it (or accept a workspace root and route
+/// through it) instead of hand-writing `.starts_with` checks, so the symlink-
+/// safe invariant lives in exactly one tested place.
+pub(crate) async fn canonicalize_within_workspace(
     target_path: &str,
     workspace_root: Option<&str>,
 ) -> Result<PathBuf> {
@@ -184,7 +189,6 @@ pub async fn read_file_path(file_path: &Path, workspace_root: Option<&Path>) -> 
         Ok(result) => result,
         Err(error) => ReadFileResult::Error {
             error: error.to_string(),
-            content: String::new(),
         },
     }
 }
@@ -286,7 +290,6 @@ async fn read_file_path_inner(
     if !canonical_file_path.starts_with(&allowed_root) {
         return Ok(ReadFileResult::Error {
             error: "Invalid file path".to_string(),
-            content: String::new(),
         });
     }
 
@@ -294,7 +297,6 @@ async fn read_file_path_inner(
     if !ALLOWED_EXTENSIONS.contains(&extension.as_str()) {
         return Ok(ReadFileResult::Error {
             error: "File type not allowed".to_string(),
-            content: String::new(),
         });
     }
 
@@ -309,21 +311,16 @@ async fn read_file_path_inner(
     if metadata.len() > max_file_size {
         return Ok(ReadFileResult::Error {
             error: "File too large".to_string(),
-            content: String::new(),
         });
     }
 
     let content = fs::read(&canonical_file_path).await?;
 
     if is_audio_file {
-        return Ok(ReadFileResult::Binary {
-            error: None,
-            content,
-        });
+        return Ok(ReadFileResult::Binary { content });
     }
 
     Ok(ReadFileResult::Text {
-        error: None,
         content: decode_text_content(&content, &extension),
     })
 }
@@ -340,13 +337,27 @@ async fn inspect_tree_folder(folder_path: &Path) -> TreeFolderInfo {
     let mut set_def_path: Option<PathBuf> = None;
     let mut entries = match fs::read_dir(folder_path).await {
         Ok(entries) => entries,
-        Err(_) => return info,
+        // Log the failure (typically permission denied) so a real song folder
+        // doesn't silently look empty/non-DTX and drop out of the tree. We
+        // still return an empty info — the folder is unreadable, not absent.
+        Err(error) => {
+            eprintln!("[fs] inspect_tree_folder: read_dir {folder_path:?} failed: {error}");
+            return info;
+        }
     };
 
     while let Ok(Some(entry)) = entries.next_entry().await {
         let file_type = match entry.file_type().await {
             Ok(file_type) => file_type,
-            Err(_) => continue,
+            // Log per-entry failures (e.g. a stale symlink, permission error)
+            // and skip the entry rather than treating the whole folder empty.
+            Err(error) => {
+                eprintln!(
+                    "[fs] inspect_tree_folder: file_type {:?} failed: {error}",
+                    entry.path()
+                );
+                continue;
+            }
         };
         let name = file_name_to_string(entry.file_name());
 
@@ -379,10 +390,7 @@ async fn inspect_tree_folder(folder_path: &Path) -> TreeFolderInfo {
 
 async fn read_set_def_title(file_path: &Path) -> Option<String> {
     let content = match read_file_path(file_path, Some(file_path.parent()?)).await {
-        ReadFileResult::Text {
-            error: None,
-            content,
-        } => content,
+        ReadFileResult::Text { content } => content,
         _ => return None,
     };
 

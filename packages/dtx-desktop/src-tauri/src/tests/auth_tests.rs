@@ -1060,6 +1060,94 @@ async fn ensure_valid_access_token_preserves_token_when_refresh_unavailable() {
     assert!(state.current_session().await.is_some());
 }
 
+#[tokio::test]
+async fn ensure_valid_access_token_preserves_token_when_server_rejects_refresh() {
+    // Near-expiry token with auth config PRESENT but the refresh endpoint
+    // rejects (400). The proactive refresh must be non-destructive: the old
+    // token is returned and AuthState is left intact (not cleared) so the
+    // caller can still let the API surface the real server-side error rather
+    // than being silently logged out. (Previously this path had no test.)
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(400))
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+    let near_expiry = make_jwt(unix_now_secs() - 10);
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": near_expiry,
+            "refresh_token": "refresh-old",
+        })))
+        .await;
+
+    let result = ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())))
+        .await
+        .expect("token");
+
+    assert_eq!(result, near_expiry);
+    // AuthState preserved — a rejected proactive refresh must not log out.
+    assert!(state.current_session().await.is_some());
+}
+
+#[tokio::test]
+async fn ensure_valid_access_token_single_flights_concurrent_refreshes() {
+    // Two concurrent commands that both see a near-expiry token must trigger
+    // exactly ONE refresh request. Without single-flight, both would POST the
+    // same (rotated) refresh token and Supabase would either reject the
+    // second call or revoke the whole token family. The delayed mock response
+    // guarantees both callers are in flight before the first refresh resolves.
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({
+                    "access_token": make_jwt(unix_now_secs() + 3600),
+                    "refresh_token": "refresh-new",
+                    "user": { "id": "user-1" }
+                }))
+                .set_delay(std::time::Duration::from_millis(100)),
+        )
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+    let near_expiry = make_jwt(unix_now_secs() - 10);
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": near_expiry,
+            "refresh_token": "refresh-old",
+        })))
+        .await;
+
+    let config = Some((server.uri(), "anon".into()));
+    let (a, b) = tokio::join!(
+        ensure_valid_access_token_with_config(&state, config.clone()),
+        ensure_valid_access_token_with_config(&state, config),
+    );
+    a.expect("first token");
+    b.expect("second token");
+
+    // Exactly one refresh request reached the server — the second caller
+    // waited on refresh_lock, then saw a fresh token and skipped its own POST.
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        1,
+        "concurrent near-expiry refreshes must be single-flighted"
+    );
+}
+
 #[test]
 fn parse_auth_callback_returns_none_for_malformed_url() {
     // `url::Url::parse` rejects spaces and stray scheme separators, so a
@@ -1460,6 +1548,32 @@ async fn revoke_session_without_session_skips_server_call_and_clears_state() {
         .mount(&server)
         .await;
     let state = AuthState::default();
+
+    revoke_session_with_client(reqwest::Client::new(), &state, &server.uri(), "anon").await;
+
+    assert!(state.current_session().await.is_none());
+}
+
+#[tokio::test]
+async fn revoke_session_clears_local_state_when_server_rejects_revocation() {
+    // The revocation endpoint may reject (4xx/5xx). Local state must still be
+    // cleared (best-effort) — the user is signed out locally regardless of the
+    // server outcome, and the rejected status is logged so it is observable.
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/logout"))
+        .respond_with(wiremock::ResponseTemplate::new(401))
+        // Expect exactly one call — verified on MockServer drop.
+        .expect(1)
+        .mount(&server)
+        .await;
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        })))
+        .await;
 
     revoke_session_with_client(reqwest::Client::new(), &state, &server.uri(), "anon").await;
 

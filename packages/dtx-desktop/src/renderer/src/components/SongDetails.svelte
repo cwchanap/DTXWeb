@@ -655,7 +655,8 @@
 			const result = await desktopHost.exportSongToZip<ExportSongResult>({
 				songPath: song.path,
 				songTitle: zipFileName,
-				exportDirectory: currentSettings.exportDirectory
+				exportDirectory: currentSettings.exportDirectory,
+				workspaceRoot: String($workspaceStore?.path ?? '')
 			});
 
 			if (result.success) {

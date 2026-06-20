@@ -287,6 +287,7 @@ export const desktopHost = {
 		songPath: string;
 		songTitle?: string;
 		exportDirectory?: string;
+		workspaceRoot?: string;
 	}): Promise<T> => await invokeHost<T>('export_song_to_zip', params),
 
 	uploadFile: async <T = unknown>(

@@ -13,21 +13,17 @@ pub struct PathExistsResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[serde(untagged)]
+/// Result of reading a file for the renderer. Each variant carries only the
+/// fields that are meaningful for its kind: `Error` never has content, and
+/// `Text`/`Binary` never have an error. The custom `Serialize` impl below still
+/// emits the full `{ kind, error, content }` shape the renderer expects, so the
+/// wire contract is unchanged — only the illegal Rust states (e.g. an `Error`
+/// with stray content) are now unrepresentable.
+#[derive(Debug, Clone)]
 pub enum ReadFileResult {
-    Error {
-        error: String,
-        content: String,
-    },
-    Text {
-        error: Option<String>,
-        content: String,
-    },
-    Binary {
-        error: Option<String>,
-        content: Vec<u8>,
-    },
+    Error { error: String },
+    Text { content: String },
+    Binary { content: Vec<u8> },
 }
 
 impl Serialize for ReadFileResult {
@@ -36,7 +32,7 @@ impl Serialize for ReadFileResult {
         S: serde::Serializer,
     {
         match self {
-            Self::Error { error, content } => {
+            Self::Error { error } => {
                 #[derive(Serialize)]
                 struct ErrorResult<'a> {
                     kind: &'static str,
@@ -47,36 +43,36 @@ impl Serialize for ReadFileResult {
                 ErrorResult {
                     kind: "error",
                     error,
-                    content,
+                    content: "",
                 }
                 .serialize(serializer)
             }
-            Self::Text { error, content } => {
+            Self::Text { content } => {
                 #[derive(Serialize)]
                 struct TextResult<'a> {
                     kind: &'static str,
-                    error: &'a Option<String>,
+                    error: Option<&'a str>,
                     content: &'a str,
                 }
 
                 TextResult {
                     kind: "text",
-                    error,
+                    error: None,
                     content,
                 }
                 .serialize(serializer)
             }
-            Self::Binary { error, content } => {
+            Self::Binary { content } => {
                 #[derive(Serialize)]
                 struct BinaryResult<'a> {
                     kind: &'static str,
-                    error: &'a Option<String>,
+                    error: Option<&'a str>,
                     content: &'a [u8],
                 }
 
                 BinaryResult {
                     kind: "binary",
-                    error,
+                    error: None,
                     content,
                 }
                 .serialize(serializer)

@@ -37,7 +37,10 @@ type MagicLinkResult = {
 	success: boolean;
 	error?: string;
 	session?: Session | null;
-	user: {
+	// Optional: the Rust backend serializes `user` with `skip_serializing_if =
+	// "Option::is_none"`, so a successful response may omit it. The handler
+	// guards for its absence before reading user fields.
+	user?: {
 		id: string;
 		email: string | null;
 		user_metadata?: { name?: string };
@@ -103,6 +106,10 @@ export const authService = {
 
 			if (!result.session) {
 				throw new Error('No session received from magic link verification');
+			}
+
+			if (!result.user) {
+				throw new Error('No user data received from magic link verification');
 			}
 
 			// Store session data locally

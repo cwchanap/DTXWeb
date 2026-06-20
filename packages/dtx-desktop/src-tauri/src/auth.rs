@@ -150,6 +150,14 @@ const LOCAL_AUTH_CALLBACK_SUCCESS_HTML: &str = r##"<!doctype html>
 pub struct AuthState {
     current_session: Arc<AsyncMutex<Option<serde_json::Value>>>,
     pending_urls: Arc<StdMutex<Vec<String>>>,
+    /// Single-flights proactive token refreshes. Held across the
+    /// read-refresh-write in `ensure_valid_access_token_with_config` so that
+    /// concurrent authenticated commands serialize onto ONE refresh: without
+    /// this, two commands that both see a near-expiry token would each replay
+    /// the same (rotated) refresh token, and Supabase would either reject the
+    /// second call or, with reuse-detection enabled, revoke the whole token
+    /// family — silently forcing a full re-login.
+    refresh_lock: Arc<AsyncMutex<()>>,
 }
 
 impl AuthState {
@@ -279,6 +287,27 @@ fn non_empty_token(token: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+/// Non-empty, trimmed access token borrowed from a stored Supabase session
+/// value. Collapses the `session.get("access_token")...` boilerplate that was
+/// hand-rolled at every read site so token extraction lives in one place.
+fn session_access_token(session: &serde_json::Value) -> Option<&str> {
+    session
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+/// Non-empty refresh token (owned) from a stored Supabase session value.
+fn session_refresh_token(session: &serde_json::Value) -> Option<String> {
+    non_empty_token(
+        session
+            .get("refresh_token")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    )
 }
 
 /// Outcome of `validate_session`. Serialized to `"valid"`, `"invalid"`, or
@@ -836,18 +865,11 @@ async fn validate_session_with_client(
         state.set_current_session(None).await;
         return false;
     };
-    let Some(access_token) = session
-        .get("access_token")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string)
-    else {
+    let Some(access_token) = session_access_token(&session).map(str::to_string) else {
         state.set_current_session(None).await;
         return false;
     };
-    let refresh_token = session
-        .get("refresh_token")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
+    let refresh_token = session_refresh_token(&session);
 
     let response = client
         .get(supabase_auth_url(supabase_url, "user"))
@@ -961,14 +983,12 @@ async fn try_refresh_session(
     let Some((supabase_url, anon_key)) = config else {
         return;
     };
-    let refresh_token = state
+    let Some(refresh_token) = state
         .current_session()
         .await
         .as_ref()
-        .and_then(|session| session.get("refresh_token"))
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-    let Some(refresh_token) = non_empty_token(refresh_token) else {
+        .and_then(session_refresh_token)
+    else {
         return;
     };
     if let Some(new_session) =
@@ -1028,11 +1048,7 @@ async fn ensure_valid_access_token_with_config(
         .current_session()
         .await
         .ok_or_else(|| DesktopError::Message("User not authenticated".to_string()))?;
-    let access_token = session
-        .get("access_token")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let access_token = session_access_token(&session)
         .ok_or_else(|| DesktopError::Message("User not authenticated".to_string()))?
         .to_string();
 
@@ -1045,18 +1061,33 @@ async fn ensure_valid_access_token_with_config(
     if needs_refresh && config.is_some() {
         // Only build a client when we might actually use it.
         if let Ok(client) = auth_client() {
-            try_refresh_session(state, config, &client).await;
+            // Single-flight the refresh (mirrors supabase-js): hold
+            // `refresh_lock` across the read-refresh-write so concurrent
+            // callers serialize onto one refresh instead of each replaying
+            // the rotated refresh token. After acquiring the lock, re-check
+            // staleness — the previous holder may have just refreshed, in
+            // which case this caller must NOT POST again.
+            let _refresh_guard = state.refresh_lock.lock().await;
+            let still_stale = state
+                .current_session()
+                .await
+                .as_ref()
+                .and_then(session_access_token)
+                .map(|token| {
+                    jwt_exp_seconds(token)
+                        .map_or(true, |exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)
+                })
+                .unwrap_or(true);
+            if still_stale {
+                try_refresh_session(state, config, &client).await;
+            }
         }
         // Re-read in case refresh replaced the session with a fresh token.
         if let Some(new_token) = state
             .current_session()
             .await
             .as_ref()
-            .and_then(|session| session.get("access_token"))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
+            .and_then(|session| session_access_token(session).map(str::to_string))
         {
             return Ok(new_token);
         }
@@ -1070,7 +1101,9 @@ async fn ensure_valid_access_token_with_config(
 /// refresh token, then clears the in-memory session regardless of whether the
 /// network call succeeded. Local state is always cleared so the user appears
 /// logged out even if the server is unreachable (mirrors the renderer's
-/// fallback behavior in `authService.logout`).
+/// fallback behavior in `authService.logout`). The revocation HTTP status is
+/// logged so a failed server-side logout is observable rather than silently
+/// reported as success — local logout still succeeds either way.
 async fn revoke_session_with_client(
     client: reqwest::Client,
     state: &AuthState,
@@ -1078,19 +1111,28 @@ async fn revoke_session_with_client(
     anon_key: &str,
 ) {
     let session = state.current_session().await;
-    if let Some(access_token) = session
-        .as_ref()
-        .and_then(|s| s.get("access_token"))
-        .and_then(serde_json::Value::as_str)
-    {
-        // Fire-and-forget: the outcome doesn't change whether we clear local
-        // state, so the result is intentionally dropped.
-        let _ = client
+    if let Some(access_token) = session.as_ref().and_then(|s| session_access_token(s)) {
+        // Best-effort: the outcome doesn't change whether we clear local
+        // state below, but we surface it so a rejected/unreachable revocation
+        // is observable instead of indistinguishable from success.
+        match client
             .post(supabase_auth_url(supabase_url, "logout"))
             .header("apikey", anon_key)
             .bearer_auth(access_token)
             .send()
-            .await;
+            .await
+        {
+            Ok(response) if !response.status().is_success() => {
+                eprintln!(
+                    "[auth] logout revocation rejected by server: HTTP {}",
+                    response.status()
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("[auth] logout revocation request failed: {error}");
+            }
+        }
     }
     state.set_current_session(None).await;
 }

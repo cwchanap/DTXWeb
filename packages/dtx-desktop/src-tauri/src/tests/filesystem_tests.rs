@@ -256,10 +256,7 @@ async fn read_file_decodes_utf16le_set_def_with_level_directives() {
     let result = read_file_path(&file, Some(root.path())).await;
 
     match result {
-        ReadFileResult::Text {
-            error: None,
-            content: actual,
-        } => assert_eq!(actual, content),
+        ReadFileResult::Text { content: actual } => assert_eq!(actual, content),
         other => panic!("expected decoded text, got {other:?}"),
     }
 }
@@ -304,10 +301,7 @@ async fn read_file_path_returns_text_for_dtx_file() {
     let result = read_file_path(&file, Some(root.path())).await;
 
     match result {
-        ReadFileResult::Text {
-            error: None,
-            content: actual,
-        } => assert_eq!(actual, content),
+        ReadFileResult::Text { content: actual } => assert_eq!(actual, content),
         other => panic!("expected text result, got {other:?}"),
     }
 }
@@ -322,10 +316,7 @@ async fn read_file_path_returns_binary_for_audio_file() {
     let result = read_file_path(&file, Some(root.path())).await;
 
     match result {
-        ReadFileResult::Binary {
-            error: None,
-            content,
-        } => assert_eq!(content, bytes.to_vec()),
+        ReadFileResult::Binary { content } => assert_eq!(content, bytes.to_vec()),
         other => panic!("expected binary result, got {other:?}"),
     }
 }

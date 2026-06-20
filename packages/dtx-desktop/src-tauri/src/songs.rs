@@ -106,7 +106,20 @@ pub async fn export_song_to_zip(
     song_path: String,
     song_title: Option<String>,
     export_directory: Option<String>,
+    workspace_root: Option<String>,
 ) -> Result<ExportSongResult> {
+    // Workspace containment: when a root is provided, refuse to read a song
+    // folder outside it — mirroring every other file-access command so export
+    // can't be used to zip arbitrary paths the user never selected in-tree.
+    // Routes through the single canonical containment primitive
+    // (`canonicalize_within_workspace`) so the symlink-safe invariant isn't
+    // re-implemented here. Backward-compatible: no root => proceed as before.
+    if let Some(root) = workspace_root
+        .as_deref()
+        .filter(|root| !root.trim().is_empty())
+    {
+        crate::filesystem::canonicalize_within_workspace(&song_path, Some(root)).await?;
+    }
     let export_directory = resolve_export_directory(export_directory.as_deref());
     let song_title = song_title
         .as_deref()
@@ -139,12 +152,23 @@ pub async fn get_skin_asset(app: AppHandle, asset_path: String) -> Result<serde_
     }
 
     for candidate in skin_asset_candidates(&app, asset_path) {
-        if let Ok(bytes) = fs::read(&candidate).await {
-            let data_url = data_url_for_asset(asset_path, &bytes);
-            return Ok(json!({
-                "success": true,
-                "dataUrl": data_url
-            }));
+        match fs::read(&candidate).await {
+            Ok(bytes) => {
+                let data_url = data_url_for_asset(asset_path, &bytes);
+                return Ok(json!({
+                    "success": true,
+                    "dataUrl": data_url
+                }));
+            }
+            // Distinguish "absent" (try the next candidate) from a real I/O
+            // error (permission denied, etc.) so the latter isn't masked as a
+            // generic "not found". Non-not-found errors are logged and we keep
+            // scanning the remaining candidates.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                eprintln!("[songs] get_skin_asset: read {candidate:?} failed: {error}");
+                continue;
+            }
         }
     }
 
@@ -431,8 +455,15 @@ fn is_valid_export_file_name(file_name: &str) -> bool {
 
 fn resolve_export_directory(export_directory: Option<&str>) -> PathBuf {
     match export_directory.filter(|path| !path.trim().is_empty()) {
-        None | Some("~/Downloads") => home_dir()
-            .map(|home| home.join("Downloads"))
+        // Default and explicit "~/Downloads": resolve through the SAME
+        // dirs-based resolver the renderer's displayed default uses
+        // (`default_downloads_dir`), so the displayed default and the real
+        // write target can never diverge (e.g. on XDG-configured Linux, where
+        // $HOME/Downloads != $XDG_DOWNLOAD_DIR). Falls back to $HOME/Downloads
+        // when dirs can't resolve one (headless/sandboxed envs).
+        None | Some("~/Downloads") => crate::filesystem::default_downloads_dir()
+            .map(PathBuf::from)
+            .or_else(|| home_dir().map(|home| home.join("Downloads")))
             .unwrap_or_else(|| PathBuf::from(".")),
         Some(path) if path.starts_with("~/") => home_dir()
             .map(|home| home.join(&path[2..]))

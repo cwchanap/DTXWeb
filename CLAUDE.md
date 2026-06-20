@@ -136,7 +136,7 @@ The ui-components package exports:
 
 ### Desktop (Tauri) Backend
 
-- Native logic lives in Rust under `packages/dtx-desktop/src-tauri/src/`: `api.rs` (API calls), `auth.rs` (deep-link OAuth callback on port 47931), `filesystem.rs` (workspace file access), `songs.rs`, `updater.rs`, `models.rs`, `error.rs`. Commands are exposed to the Svelte frontend via Tauri's IPC.
+- Native logic lives in Rust under `packages/dtx-desktop/src-tauri/src/`: `api.rs` (API calls), `auth.rs` (deep-link OAuth callback; loopback port is configurable via `DTX_DESKTOP_AUTH_CALLBACK_PORT`, defaulting to `47931` in the local-dev scripts), `filesystem.rs` (workspace file access), `songs.rs`, `updater.rs`, `models.rs`, `error.rs`. Commands are exposed to the Svelte frontend via Tauri's IPC.
 - The frontend calls Rust commands through `@tauri-apps/api`; capabilities/permissions are declared in `src-tauri/capabilities/` and `tauri.conf.json`.
 - Rust tests live in `src-tauri/src/tests/` (use `wiremock` for HTTP, `tempfile` for fs). `cargo fmt --check` is enforced by the pre-commit hook for staged `.rs` files.
 - `tauri build` only bundles for the host OS (`build:mac` / `build:win`); cross-OS builds must run on the target OS.

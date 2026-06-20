@@ -18,10 +18,11 @@ on:
 # Notes:
 # - Tauri cannot cross-compile installers the way electron-builder+wine did,
 #   so Windows now builds on windows-latest and macOS on macos-latest.
-# - macOS currently targets aarch64 (Apple Silicon) only. To also ship Intel
-#   macs, add a second mac job with `--target x86_64-apple-darwin` (or build
-#   universal-apple-darwin once you confirm native deps support it), then add
-#   a `darwin-x86_64` entry to latest.json in the deploy job.
+# - macOS targets aarch64 (Apple Silicon) only; Intel Macs are no longer
+#   supported. If Intel support is needed in the future, add a second mac job
+#   with `--target x86_64-apple-darwin` (or build universal-apple-darwin once
+#   you confirm native deps support it), then add a `darwin-x86_64` entry to
+#   latest.json in the deploy job.
 # - The packaged app bakes public config into the binary at BUILD time via the
 #   config_env! macro (option_env! first, std::env::var fallback). The packaged
 #   binary does NOT load .env files, so every public config value used by the
@@ -36,7 +37,11 @@ jobs:
     name: Windows Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: windows-latest
-    environment: Electron
+    # NOTE: Renamed from the legacy "Electron" environment. The GitHub
+    # repository's Environments settings must have a "Desktop" environment
+    # (with the same secrets/variables) before this workflow is next run,
+    # otherwise the environment lookup will fail.
+    environment: Desktop
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
@@ -128,7 +133,7 @@ jobs:
     name: macOS Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: macos-latest
-    environment: Electron
+    environment: Desktop
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}

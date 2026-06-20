@@ -146,6 +146,7 @@ describe('NewSong', () => {
 			await waitFor(() => {
 				expect(mockDesktopHost.pathExists).toHaveBeenCalledWith(
 					'/test/workspace',
+					'/test/workspace',
 					'Test Song'
 				);
 			});

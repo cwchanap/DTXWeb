@@ -193,6 +193,7 @@ async fn upload_file_to_api_posts_multipart_with_desktop_headers_and_strips_firs
         "token-1",
         "dir/kick.wav",
         song_folder.to_str().expect("utf8 path"),
+        temp.path().to_str().expect("utf8 workspace"),
         "42",
     )
     .await;
@@ -223,6 +224,7 @@ async fn upload_file_to_api_rejects_paths_outside_song_folder() {
         "token-1",
         "../secret.wav",
         song_folder.to_str().expect("utf8 path"),
+        temp.path().to_str().expect("utf8 workspace"),
         "42",
     )
     .await;
@@ -590,17 +592,21 @@ async fn upload_form_to_api_fails_on_network_error() {
 
 #[tokio::test]
 async fn upload_file_to_api_fails_when_song_folder_is_missing() {
+    let workspace = tempfile::tempdir().expect("workspace");
     let result = upload_file_to_api(
         "https://api.example.com",
         "token-1",
         "kick.wav",
         "/this/path/does/not/exist",
+        workspace.path().to_str().expect("utf8 workspace"),
         "42",
     )
     .await;
 
     assert_eq!(result["success"], false);
-    assert!(result["error"].as_str().unwrap().contains("File not found"));
+    assert!(result["error"]
+        .as_str()
+        .is_some_and(|error| !error.is_empty()));
 }
 
 #[tokio::test]
@@ -612,6 +618,7 @@ async fn upload_file_to_api_fails_when_file_missing_within_folder() {
         "token-1",
         "missing.wav",
         temp.path().to_str().expect("utf8 path"),
+        temp.path().to_str().expect("utf8 workspace"),
         "42",
     )
     .await;
@@ -1234,17 +1241,21 @@ fn upload_name_from_file_name_falls_back_when_only_slash() {
 
 #[tokio::test]
 async fn upload_file_to_api_fails_when_song_folder_missing() {
+    let workspace = tempfile::tempdir().unwrap();
     let result = upload_file_to_api(
         "https://example.com",
         "token",
         "song.dtx",
         "/nonexistent-folder-12345",
+        workspace.path().to_str().unwrap(),
         "sim-1",
     )
     .await;
 
     assert_eq!(result["success"], false);
-    assert!(result["error"].as_str().unwrap().contains("File not found"));
+    assert!(result["error"]
+        .as_str()
+        .is_some_and(|error| !error.is_empty()));
 }
 
 #[tokio::test]
@@ -1255,6 +1266,7 @@ async fn upload_file_to_api_fails_when_file_missing() {
         "https://example.com",
         "token",
         "nonexistent.dtx",
+        dir.path().to_str().unwrap(),
         dir.path().to_str().unwrap(),
         "sim-1",
     )
@@ -1280,12 +1292,39 @@ async fn upload_file_to_api_rejects_path_outside_song_folder() {
             outside_dir.path().file_name().unwrap().to_string_lossy()
         ),
         song_dir.path().to_str().unwrap(),
+        song_dir.path().to_str().unwrap(),
         "sim-1",
     )
     .await;
 
     assert_eq!(result["success"], false);
     assert_eq!(result["error"], "File path is outside song folder");
+}
+
+#[tokio::test]
+async fn upload_file_to_api_rejects_song_folder_outside_workspace() {
+    // A compromised renderer passing song_folder_path outside the workspace
+    // must be rejected before any file is read or uploaded.
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_song = outside.path().join("song");
+    fs::create_dir(&outside_song).unwrap();
+    fs::write(outside_song.join("main.dtx"), b"#TITLE: Test").unwrap();
+
+    let result = upload_file_to_api(
+        "https://example.com",
+        "token",
+        "main.dtx",
+        outside_song.to_str().unwrap(),
+        workspace.path().to_str().unwrap(),
+        "sim-1",
+    )
+    .await;
+
+    assert_eq!(result["success"], false);
+    assert!(result["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("outside the workspace")));
 }
 
 // ---------------------------------------------------------------------------

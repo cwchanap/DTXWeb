@@ -142,11 +142,12 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{},
-			() => desktopHost.loadTreeStructure('/songs', 'DTXFiles.A'),
+			() => desktopHost.loadTreeStructure('/songs', '/songs', 'DTXFiles.A'),
 			'load_tree_structure',
 			{
 				basePath: '/songs',
-				pathParts: ['DTXFiles.A']
+				pathParts: ['DTXFiles.A'],
+				workspaceRoot: '/songs'
 			}
 		);
 		await expectTauriInvoke(
@@ -168,10 +169,11 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{},
-			() => desktopHost.parseDtxFiles('/songs/A'),
+			() => desktopHost.parseDtxFiles('/songs/A', '/songs'),
 			'parse_dtx_files',
 			{
-				folderPath: '/songs/A'
+				folderPath: '/songs/A',
+				workspaceRoot: '/songs'
 			}
 		);
 		await expectTauriInvoke(
@@ -259,19 +261,21 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{ success: true },
-			() => desktopHost.exportSongToZip({ songPath: '/songs/A' }),
+			() => desktopHost.exportSongToZip({ songPath: '/songs/A', workspaceRoot: '/songs' }),
 			'export_song_to_zip',
 			{
-				songPath: '/songs/A'
+				songPath: '/songs/A',
+				workspaceRoot: '/songs'
 			}
 		);
 		await expectTauriInvoke(
 			{ success: true },
-			() => desktopHost.uploadFile('main.dtx', '/songs/A', '42'),
+			() => desktopHost.uploadFile('main.dtx', '/songs/A', '/songs', '42'),
 			'upload_file',
 			{
 				fileName: 'main.dtx',
 				songFolderPath: '/songs/A',
+				workspaceRoot: '/songs',
 				simfileId: '42'
 			}
 		);
@@ -280,13 +284,14 @@ describe('desktopHost', () => {
 	it('maps multi-part pathExists arguments for Tauri', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
 
-		await expect(desktopHost.pathExists('/songs', 'DTXFiles.foo')).resolves.toEqual({
+		await expect(desktopHost.pathExists('/songs', '/songs', 'DTXFiles.foo')).resolves.toEqual({
 			exists: true,
 			error: null
 		});
 		expect(runtime.invoke).toHaveBeenCalledWith('path_exists', {
 			basePath: '/songs',
-			pathParts: ['DTXFiles.foo']
+			pathParts: ['DTXFiles.foo'],
+			workspaceRoot: '/songs'
 		});
 	});
 

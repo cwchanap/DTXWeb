@@ -190,7 +190,7 @@ async fn export_song_to_zip_rejects_song_path_outside_workspace() {
         outside.path().to_string_lossy().to_string(),
         Some("Song".to_string()),
         Some(export.to_string_lossy().to_string()),
-        Some(workspace.path().to_string_lossy().to_string()),
+        workspace.path().to_string_lossy().to_string(),
     )
     .await;
     assert!(
@@ -203,7 +203,7 @@ async fn export_song_to_zip_rejects_song_path_outside_workspace() {
         song.to_string_lossy().to_string(),
         Some("Song".to_string()),
         Some(export.to_string_lossy().to_string()),
-        Some(workspace.path().to_string_lossy().to_string()),
+        workspace.path().to_string_lossy().to_string(),
     )
     .await
     .expect("in-workspace export should proceed");
@@ -211,9 +211,9 @@ async fn export_song_to_zip_rejects_song_path_outside_workspace() {
 }
 
 #[tokio::test]
-async fn export_song_to_zip_skips_containment_when_no_workspace_root() {
-    // Backward compatibility: when no workspace root is supplied, the command
-    // proceeds without a containment check (matching pre-existing callers).
+async fn export_song_to_zip_rejects_missing_workspace_root() {
+    // The workspace root is now mandatory (the renderer always has it in
+    // workspaceStore). A missing root is a caller bug, not a supported state.
     let root = tempdir().expect("root");
     let song = root.path().join("Song");
     let export = root.path().join("Export");
@@ -227,11 +227,13 @@ async fn export_song_to_zip_skips_containment_when_no_workspace_root() {
         song.to_string_lossy().to_string(),
         Some("Song".to_string()),
         Some(export.to_string_lossy().to_string()),
-        None,
+        String::new(),
     )
-    .await
-    .expect("export envelope");
-    assert!(result.success);
+    .await;
+    assert!(
+        result.is_err(),
+        "export with empty workspace root must be rejected"
+    );
 }
 
 #[tokio::test]
@@ -286,8 +288,49 @@ async fn parse_dtx_files_does_not_emit_set_def_label_without_dlevel() {
 
 #[tokio::test]
 async fn parse_dtx_files_propagates_io_error_for_nonexistent_folder() {
-    let result = parse_dtx_files("/nonexistent/path/that/does/not/exist".to_string()).await;
+    let root = tempdir().expect("tempdir");
+    let result = parse_dtx_files(
+        "/nonexistent/path/that/does/not/exist".to_string(),
+        root.path().to_string_lossy().to_string(),
+    )
+    .await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn parse_dtx_files_rejects_path_outside_workspace() {
+    let root = tempdir().expect("root");
+    let outside = tempdir().expect("outside");
+    fs::write(outside.path().join("main.dtx"), "#TITLE: Song")
+        .await
+        .expect("dtx");
+
+    let result = parse_dtx_files(
+        outside.path().to_string_lossy().to_string(),
+        root.path().to_string_lossy().to_string(),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("error")
+        .to_string()
+        .contains("outside the workspace"));
+}
+
+#[tokio::test]
+async fn parse_dtx_files_rejects_missing_workspace_root() {
+    let root = tempdir().expect("tempdir");
+    fs::write(root.path().join("main.dtx"), "#TITLE: Song")
+        .await
+        .expect("dtx");
+
+    let result = parse_dtx_files(root.path().to_string_lossy().to_string(), String::new()).await;
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("error")
+        .to_string()
+        .contains("workspace root is required"));
 }
 
 #[test]

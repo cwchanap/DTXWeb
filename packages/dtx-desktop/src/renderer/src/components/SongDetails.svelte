@@ -707,7 +707,7 @@
 						bpm?: number;
 						artist?: string;
 						levels?: { label: string; level: number }[];
-					} | null>(song.path);
+					} | null>(song.path, String($workspaceStore?.path ?? ''));
 
 					if (result) {
 						parsedLocalData = {
@@ -993,7 +993,13 @@
 							userFiles={localFiles}
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
-							uploadFile={desktopHost.uploadFile}
+							uploadFile={(fileName, songFolderPath, simfileId) =>
+								desktopHost.uploadFile(
+									fileName,
+									songFolderPath,
+									String($workspaceStore?.path ?? ''),
+									simfileId
+								)}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
 							disableUploads={!$authStore.isAuthenticated}
@@ -1284,7 +1290,13 @@
 							userFiles={localFiles}
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
-							uploadFile={desktopHost.uploadFile}
+							uploadFile={(fileName, songFolderPath, simfileId) =>
+								desktopHost.uploadFile(
+									fileName,
+									songFolderPath,
+									String($workspaceStore?.path ?? ''),
+									simfileId
+								)}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
 							disableUploads={!$authStore.isAuthenticated}

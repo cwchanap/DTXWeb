@@ -38,9 +38,16 @@ const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
 				hostInvoke('update-simfile-record', params)
 			),
 			exportSongToZip: vi.fn((params: unknown) => hostInvoke('export-song-to-zip', params)),
-			parseDtxFiles: vi.fn((folderPath: string) => hostInvoke('parse-dtx-files', folderPath)),
-			uploadFile: vi.fn((fileName: string, songFolderPath: string, simfileId: string) =>
-				hostInvoke('upload-file', fileName, songFolderPath, simfileId)
+			parseDtxFiles: vi.fn((folderPath: string, workspaceRoot: string) =>
+				hostInvoke('parse-dtx-files', folderPath, workspaceRoot)
+			),
+			uploadFile: vi.fn(
+				(
+					fileName: string,
+					songFolderPath: string,
+					workspaceRoot: string,
+					simfileId: string
+				) => hostInvoke('upload-file', fileName, songFolderPath, workspaceRoot, simfileId)
 			)
 		}
 	};
@@ -250,7 +257,11 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('parse-dtx-files', '/test/TestSong');
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'parse-dtx-files',
+					'/test/TestSong',
+					''
+				);
 			});
 		});
 	});
@@ -362,7 +373,11 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('parse-dtx-files', '/test/TestSong');
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'parse-dtx-files',
+					'/test/TestSong',
+					''
+				);
 			});
 		});
 	});

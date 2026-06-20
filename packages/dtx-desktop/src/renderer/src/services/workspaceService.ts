@@ -59,7 +59,7 @@ export const workspaceService = {
 			// Validate the bookmark path still exists before resetting workspace state
 			let pathResult: { exists: boolean; error: string | null };
 			try {
-				pathResult = await desktopHost.pathExists(bookmark.path);
+				pathResult = await desktopHost.pathExists(bookmark.path, bookmark.path);
 			} catch {
 				return {
 					ok: false,
@@ -157,6 +157,7 @@ export const workspaceService = {
 				// If a sub-workspace is selected, show its contents
 				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(
 					currentPath,
+					currentPath,
 					currentSubWorkspace
 				);
 				workspaceStore.setTreeStructure(treeData);
@@ -165,7 +166,10 @@ export const workspaceService = {
 				workspaceService.triggerAutoLinking();
 			} else {
 				// If no sub-workspace is selected, show all folders in the workspace
-				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(currentPath);
+				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(
+					currentPath,
+					currentPath
+				);
 				workspaceStore.setTreeStructure(treeData);
 
 				// Trigger auto-linking after tree structure is loaded
@@ -244,6 +248,7 @@ export const workspaceService = {
 		try {
 			// Get current node state to check if children are already loaded
 			let currentNode: TreeNode | null = null;
+			let workspaceRoot: string | null = null;
 			const unsubscribe = workspaceStore.subscribe((state) => {
 				const findNode = (nodes: TreeNode[], path: string): TreeNode | null => {
 					for (const node of nodes) {
@@ -253,6 +258,7 @@ export const workspaceService = {
 					}
 					return null;
 				};
+				workspaceRoot = state.path;
 				currentNode = findNode(state.treeStructure, nodePath);
 			});
 			unsubscribe();
@@ -268,7 +274,10 @@ export const workspaceService = {
 			// Set loading state for the node
 			workspaceStore.updateTreeNode(nodePath, { isLoading: true });
 
-			const children = await desktopHost.loadTreeStructure<TreeNode[]>(nodePath);
+			const children = await desktopHost.loadTreeStructure<TreeNode[]>(
+				nodePath,
+				workspaceRoot ?? nodePath
+			);
 
 			// Apply cached linkage to newly loaded children
 			const enrichedChildren = children.map((child: TreeNode) => {

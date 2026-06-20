@@ -43,17 +43,31 @@ pub async fn select_folder(app: AppHandle) -> Result<DialogResult> {
 }
 
 #[tauri::command]
-pub async fn path_exists(base_path: String, path_parts: Vec<String>) -> PathExistsResult {
+pub async fn path_exists(
+    base_path: String,
+    path_parts: Vec<String>,
+    workspace_root: Option<String>,
+) -> PathExistsResult {
     let full_path = join_path_parts(base_path, path_parts);
-
-    match fs::metadata(full_path).await {
+    // Route through the canonical containment primitive so a compromised
+    // renderer can't use path_exists as an info-disclosure oracle to probe
+    // arbitrary paths outside the workspace. A missing target (or root)
+    // canonicalizes to NotFound, which maps to the existing "not-found" token
+    // the renderer already matches on; containment failures surface their own
+    // message so the renderer can distinguish "missing" from "forbidden".
+    let full_path_string = full_path.to_string_lossy().into_owned();
+    match canonicalize_within_workspace(&full_path_string, workspace_root.as_deref()).await {
         Ok(_) => PathExistsResult {
             exists: true,
             error: None,
         },
+        Err(DesktopError::Io(error)) if error.kind() == ErrorKind::NotFound => PathExistsResult {
+            exists: false,
+            error: Some("not-found".to_string()),
+        },
         Err(error) => PathExistsResult {
             exists: false,
-            error: Some(path_access_error(&error)),
+            error: Some(error.to_string()),
         },
     }
 }
@@ -122,7 +136,12 @@ pub(crate) async fn canonicalize_within_workspace(
     target_path: &str,
     workspace_root: Option<&str>,
 ) -> Result<PathBuf> {
+    // Treat a missing OR empty/whitespace-only root as absent: the renderer
+    // passes `String($workspaceStore?.path ?? '')` (empty when no workspace is
+    // selected), and canonicalizing "" yields an opaque I/O error instead of
+    // the actionable "workspace root is required" message.
     let root = workspace_root
+        .filter(|root| !root.trim().is_empty())
         .ok_or_else(|| DesktopError::Message("A workspace root is required".to_string()))?;
     let canonical_root = fs::canonicalize(root).await?;
     let canonical_target = fs::canonicalize(target_path).await?;
@@ -145,6 +164,8 @@ async fn list_directory_entries(dir_path: &Path) -> Result<Vec<FileEntry>> {
             path: entry.path().to_string_lossy().into_owned(),
             entry_type: if file_type.is_dir() {
                 "directory".to_string()
+            } else if file_type.is_symlink() {
+                "symlink".to_string()
             } else {
                 "file".to_string()
             },
@@ -197,9 +218,17 @@ pub async fn read_file_path(file_path: &Path, workspace_root: Option<&Path>) -> 
 pub async fn load_tree_structure(
     base_path: String,
     path_parts: Vec<String>,
+    workspace_root: Option<String>,
 ) -> Result<Vec<TreeNode>> {
     let full_path = join_path_parts(base_path, path_parts);
-    load_tree_structure_path(&full_path).await
+    // Enforce workspace containment at the IPC boundary so a compromised
+    // renderer can't enumerate arbitrary directory structures or read SET.def
+    // titles outside the workspace. The inner helper still accepts a
+    // canonicalized path for internal reuse and tests.
+    let full_path_string = full_path.to_string_lossy().into_owned();
+    let canonical =
+        canonicalize_within_workspace(&full_path_string, workspace_root.as_deref()).await?;
+    load_tree_structure_path(&canonical).await
 }
 
 pub async fn load_tree_structure_path(dir_path: &Path) -> Result<Vec<TreeNode>> {
@@ -563,14 +592,6 @@ fn join_path_parts(base_path: String, path_parts: Vec<String>) -> PathBuf {
         full_path.push(path_part);
     }
     full_path
-}
-
-fn path_access_error(error: &std::io::Error) -> String {
-    match error.kind() {
-        ErrorKind::NotFound => "not-found".to_string(),
-        ErrorKind::PermissionDenied => "permission-denied".to_string(),
-        _ => "unknown".to_string(),
-    }
 }
 
 fn list_error_value(error: DesktopError) -> serde_json::Value {

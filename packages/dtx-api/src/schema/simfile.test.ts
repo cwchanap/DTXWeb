@@ -485,6 +485,52 @@ describe('Mutation.createSimfile', () => {
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
 	});
+
+	it('strips R2 bucket URLs from downloadUrl input (write-time filter)', async () => {
+		// Defense-in-depth: even if a client sends an R2 bucket URL (e.g.
+		// a cached bass.ogg value from the old resolver), the mutation must
+		// pass null to the service instead of persisting the sample-chip URL.
+		mockedCreateService.mockResolvedValue({
+			simfile: {
+				id: 1,
+				title: '',
+				artist: '',
+				bpm: 120,
+				user_id: 'u1',
+				is_published: 0 as const,
+				display_id: null,
+				download_url: null,
+				preview_url: null,
+				video_preview_url: null,
+				publish_date: '2026-05-19T00:00:00Z',
+				created_at: '2026-05-19T00:00:00Z',
+				updated_at: '2026-05-19T00:00:00Z'
+			},
+			dtxFiles: []
+		});
+
+		await runQuery(
+			makeCtx({
+				user: { id: 'u1' } as Ctx['user'],
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{
+				query: `mutation {
+					createSimfile(input: {
+						bpm: 120,
+						downloadUrl: "https://chart.hapadona.com/375/bass.ogg"
+					}) { id }
+				}`
+			}
+		);
+
+		expect(mockedCreateService).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				downloadUrl: null
+			})
+		);
+	});
 });
 
 vi.mock('../services/r2Enrichment', () => ({
@@ -733,6 +779,57 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(result.errors).toBeUndefined();
 		expect(result.data?.simfile).toEqual({
 			downloadUrl: null
+		});
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('filters out R2 bucket URLs persisted in download_url by the old resolver', async () => {
+		// Regression: the old resolver returned discovered bass.ogg URLs as
+		// downloadUrl, ChartDetail pre-populated the edit form with that value,
+		// and saving wrote it back to the DB. The resolver must strip any
+		// download_url that starts with PUBLIC_SIMFILE_BUCKET_URL so those
+		// polluted rows render as "download not available".
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			download_url: 'https://chart.hapadona.com/375/bass.ogg'
+		});
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{
+				query: '{ simfile(id: "42") { downloadUrl } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			downloadUrl: null
+		});
+		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
+	});
+
+	it('preserves external download_url that does not match the R2 bucket URL', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			download_url: 'https://drive.google.com/file/d/abc/view'
+		});
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{
+				query: '{ simfile(id: "42") { downloadUrl } }'
+			}
+		);
+
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			downloadUrl: 'https://drive.google.com/file/d/abc/view'
 		});
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
@@ -1697,6 +1794,62 @@ describe('Mutation.updateSimfile', () => {
 			query: 'mutation { updateSimfile(id: "42", input: { publishDate: "not-a-date" }) { id } }'
 		});
 		expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+	});
+
+	it('strips R2 bucket URLs from downloadUrl input (write-time filter)', async () => {
+		// Defense-in-depth: even if a client sends an R2 bucket URL (e.g.
+		// a cached bass.ogg value from the old resolver), the mutation must
+		// store null instead of persisting the sample-chip URL.
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedUpdate.mockResolvedValue({} as Awaited<ReturnType<typeof updateSimfile>>);
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, download_url: null });
+
+		await runQuery(
+			makeCtx({
+				user: { id: 'u1' } as Ctx['user'],
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{
+				query: `mutation {
+					updateSimfile(
+						id: "42",
+						input: { downloadUrl: "https://chart.hapadona.com/375/bass.ogg" }
+					) { id downloadUrl }
+				}`
+			}
+		);
+
+		expect(mockedUpdate).toHaveBeenCalledWith(expect.anything(), 42, {
+			download_url: null
+		});
+	});
+
+	it('preserves external downloadUrl input that does not match the R2 bucket', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedUpdate.mockResolvedValue({} as Awaited<ReturnType<typeof updateSimfile>>);
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			download_url: 'https://drive.google.com/file/d/abc/view'
+		});
+
+		await runQuery(
+			makeCtx({
+				user: { id: 'u1' } as Ctx['user'],
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{
+				query: `mutation {
+					updateSimfile(
+						id: "42",
+						input: { downloadUrl: "https://drive.google.com/file/d/abc/view" }
+					) { id downloadUrl }
+				}`
+			}
+		);
+
+		expect(mockedUpdate).toHaveBeenCalledWith(expect.anything(), 42, {
+			download_url: 'https://drive.google.com/file/d/abc/view'
+		});
 	});
 
 	it('rejects empty input with BAD_USER_INPUT', async () => {

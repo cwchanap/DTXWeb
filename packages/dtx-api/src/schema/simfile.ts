@@ -152,6 +152,32 @@ type DtxFileParent = {
 const nonBlank = (value: string | null | undefined): string | null =>
 	value != null && value.trim() !== '' ? value : null;
 
+/**
+ * Filters a download_url value for both read and write paths.
+ *
+ * R2 bucket URLs (e.g. `https://chart.hapadona.com/375/bass.ogg`) are
+ * drum sample chips, not external download links. The old resolver
+ * returned discovered sample-chip URLs as downloadUrl, ChartDetail
+ * pre-populated the edit form with that value, and saving wrote it
+ * back to the DB — polluting download_url for many simfiles.
+ *
+ * This helper strips any value that starts with PUBLIC_SIMFILE_BUCKET_URL
+ * so that:
+ *   - the read resolver returns null (renders "download not available")
+ *   - the create/update mutations refuse to persist R2 bucket URLs
+ *
+ * Genuine external links (Google Drive, etc.) are preserved.
+ */
+const filterDownloadUrl = (
+	value: string | null | undefined,
+	bucketUrl: string | undefined
+): string | null => {
+	const url = nonBlank(value);
+	if (url == null) return null;
+	if (bucketUrl && url.startsWith(bucketUrl)) return null;
+	return url;
+};
+
 const getCatalogDiscovery = (
 	ctx: Ctx,
 	simfile: SimfileWithDtxFiles
@@ -260,14 +286,14 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
 		downloadUrl: t.string({
 			nullable: true,
-			// Only return the user-set DB download_url (an external download
-			// link). Do NOT fall back to discovered R2 audio objects: those are
-			// individual drum sample chips (e.g. bass.ogg), not full simfile
-			// downloads, and the R2 download path is handled separately via
-			// hasUploadedFiles + downloadSimfile() (gated by the blog download
-			// feature flag). Returning a sample chip here made the blog render
-			// a broken "download bass.ogg" link instead of "download not available".
-			resolve: (s) => nonBlank(s.download_url)
+			// Only return the user-set DB download_url when it is a genuine
+			// external download link (e.g. Google Drive). See filterDownloadUrl
+			// for why R2 bucket URLs are stripped (polluted by old resolver).
+			// No R2 discovery fallback: the R2 download path is handled
+			// separately via hasUploadedFiles + downloadSimfile(), gated by
+			// the blog download feature flag.
+			resolve: (s, _args, ctx) =>
+				filterDownloadUrl(s.download_url, ctx.env.PUBLIC_SIMFILE_BUCKET_URL)
 		}),
 		previewUrl: t.string({
 			nullable: true,
@@ -613,7 +639,10 @@ builder.mutationField('createSimfile', (t) =>
 				bpm: input.bpm,
 				isPublished: input.isPublished ?? false,
 				displayId: input.displayId ?? null,
-				downloadUrl: input.downloadUrl ?? null,
+				downloadUrl: filterDownloadUrl(
+					input.downloadUrl,
+					ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+				),
 				previewUrl: input.previewUrl ?? null,
 				videoPreviewUrl: input.videoPreviewUrl ?? null,
 				publishDate: input.publishDate ?? undefined,
@@ -671,7 +700,11 @@ builder.mutationField('updateSimfile', (t) =>
 			}
 			if (input.isPublished != null) updateData.is_published = input.isPublished ? 1 : 0;
 			if (input.displayId !== undefined) updateData.display_id = input.displayId;
-			if (input.downloadUrl !== undefined) updateData.download_url = input.downloadUrl;
+			if (input.downloadUrl !== undefined)
+				updateData.download_url = filterDownloadUrl(
+					input.downloadUrl,
+					ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+				);
 			if (input.previewUrl !== undefined) updateData.preview_url = input.previewUrl;
 			if (input.videoPreviewUrl !== undefined)
 				updateData.video_preview_url = input.videoPreviewUrl;

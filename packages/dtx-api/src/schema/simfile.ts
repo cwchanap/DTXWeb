@@ -260,10 +260,14 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
 		downloadUrl: t.string({
 			nullable: true,
-			// Return the DB download_url if set; otherwise discover a likely
-			// full-audio object under the simfile's R2 prefix.
-			resolve: async (s, _args, ctx) =>
-				nonBlank(s.download_url) ?? (await getCatalogDiscovery(ctx, s)).downloadUrl
+			// Only return the user-set DB download_url (an external download
+			// link). Do NOT fall back to discovered R2 audio objects: those are
+			// individual drum sample chips (e.g. bass.ogg), not full simfile
+			// downloads, and the R2 download path is handled separately via
+			// hasUploadedFiles + downloadSimfile() (gated by the blog download
+			// feature flag). Returning a sample chip here made the blog render
+			// a broken "download bass.ogg" link instead of "download not available".
+			resolve: (s) => nonBlank(s.download_url)
 		}),
 		previewUrl: t.string({
 			nullable: true,
@@ -350,7 +354,6 @@ export const SimfileConnectionRef = builder
 						}
 
 						const previewSelected = isFieldSelected(info, 'previewUrl');
-						const downloadSelected = isFieldSelected(info, 'downloadUrl');
 						const dtxSelected = isNestedFieldSelected(info, 'dtxFiles', [
 							'fileUrl',
 							'fileSizeBytes',
@@ -361,9 +364,10 @@ export const SimfileConnectionRef = builder
 						// to the batch. Sims whose selected catalog-backed fields all have
 						// non-blank DB values skip discovery entirely — their resolvers
 						// short-circuit at nonBlank(...) before ever consulting the cache.
+						// downloadUrl is DB-only (no discovery fallback), so it never
+						// triggers discovery here.
 						const simsNeedingDiscovery = c.data.filter((s) => {
 							if (previewSelected && nonBlank(s.preview_url) == null) return true;
-							if (downloadSelected && nonBlank(s.download_url) == null) return true;
 							if (dtxSelected) return true;
 							return false;
 						});

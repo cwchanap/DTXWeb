@@ -14,7 +14,7 @@ Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-wo
 
 > The desktop app was migrated from Electron to Tauri. References to Electron, the "main process", or `electron-builder` elsewhere in older docs are obsolete — the native layer is now Rust under `src-tauri/`.
 >
-> `AGENTS.md` (referenced by `README.md` as the contributor guide) is a symlink to this file, so editing `CLAUDE.md` updates both — no manual sync needed. The `.cursor/rules/*.mdc` files are stale (they still describe Electron, npm workspaces, and 4 packages); trust this file over them.
+> `AGENTS.md` (referenced by `README.md` as the contributor guide) is a symlink to this file, so editing `CLAUDE.md` updates both — no manual sync needed. The former `.cursor/rules/*.mdc` files (Electron-era, npm-workspace, 4-package) have been consolidated into this file and removed; trust this file as the single source of truth.
 
 ## Development Commands
 
@@ -213,6 +213,7 @@ Check `__mocks__/` folder before creating new mocks:
 - For unit tests, only write tests involving code logic
 - Never write trivial tests (like testing variable assignment, simple math)
 - **ALWAYS check the `__mocks__` folder** before creating new mocks for external libraries
+- Prefer mocking dependencies over installing additional test packages
 - Enhance global mocks rather than creating local ones when possible; use local mocks only for project-specific modules or one-off test-specific behavior
 - Use `Preview.test.ts` as the reference pattern for test structure (beforeEach/afterEach setup, vi.mock at the top)
 - Use workspace-specific test commands for individual packages

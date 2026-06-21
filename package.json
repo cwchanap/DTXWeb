@@ -4,6 +4,8 @@
 	"private": true,
 	"scripts": {
 		"build": "turbo run build",
+		"build:web": "turbo run build --filter=dtx-web...",
+		"build:api": "turbo run build --filter=dtx-api...",
 		"test": "turbo run test",
 		"test:coverage": "turbo run test:coverage",
 		"lint": "eslint . --ext .js,.ts,.svelte",

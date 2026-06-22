@@ -7,3 +7,58 @@
 
 @source '../../../../../../node_modules/@skeletonlabs/skeleton-svelte/dist';
 @source '../../../../../../node_modules/@dtx/common/dist';
+
+@theme {
+	--color-base: #0a0a12;
+	--color-surface-1: #12101f;
+	--color-surface-2: #1a1730;
+	--color-surface-3: #221e3a;
+	--color-hairline: #2a2540;
+	--color-hi: #f4f2fb;
+	--color-base-text: #c9c5de;
+	--color-dim: #8682a3;
+	--color-faint: #5e5a78;
+	--color-magenta: #ff2d9b;
+	--color-cyan: #21e6ff;
+	--color-violet: #a855f7;
+	--color-amber: #ffb020;
+	--color-green: #34d399;
+	--color-red: #ff4d6d;
+
+	--font-display: 'Chakra Petch', sans-serif;
+	--font-body: 'Sora', sans-serif;
+	--font-mono: 'Martian Mono', monospace;
+	--font-mono-alt: 'JetBrains Mono', monospace;
+}
+
+:root {
+	color-scheme: dark;
+}
+
+body {
+	background-color: var(--color-base);
+	color: var(--color-base-text);
+	font-family: var(--font-body);
+}
+
+::selection {
+	background: color-mix(in srgb, var(--color-magenta) 40%, transparent);
+	color: var(--color-hi);
+}
+
+/* Neon scrollbars */
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-track {
+	background: var(--color-surface-1);
+}
+::-webkit-scrollbar-thumb {
+	background: var(--color-surface-3);
+	border-radius: 6px;
+	border: 2px solid var(--color-surface-1);
+}
+::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--color-magenta) 50%, var(--color-surface-3));
+}

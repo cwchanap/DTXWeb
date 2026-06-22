@@ -41,3 +41,10 @@ global.console = {
 
 // Mock atob for base64 decoding
 global.atob = vi.fn();
+
+// Mock ResizeObserver (not implemented in jsdom)
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+	observe: vi.fn(),
+	unobserve: vi.fn(),
+	disconnect: vi.fn()
+}));

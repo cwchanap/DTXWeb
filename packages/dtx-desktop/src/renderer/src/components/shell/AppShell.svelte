@@ -1,0 +1,65 @@
+<script lang="ts">
+	import TopToolbar from './TopToolbar.svelte';
+	import NavRail from './NavRail.svelte';
+	import DetailPane from './DetailPane.svelte';
+	import CommandPalette from './CommandPalette.svelte';
+	import Workspace from '../Workspace.svelte';
+	import SimFileList from '../SimFileList.svelte';
+	import Templates from '../Templates.svelte';
+	import Settings from '../Settings.svelte';
+	import NewSong from '../NewSong.svelte';
+	import { workspaceStore } from '../../stores/workspaceStore';
+	import { resolveShellMode } from '../../lib/shellMode';
+	import { onMount } from 'svelte';
+
+	let width = $state(typeof window !== 'undefined' ? window.innerWidth : 1280);
+	let paletteOpen = $state(false);
+	const mode = $derived(resolveShellMode(width));
+	const section = $derived($workspaceStore.activeSection);
+	const isListSection = $derived(section === 'library' || section === 'cloud');
+	const showDetail = $derived(isListSection && !!$workspaceStore.selectedSong);
+
+	let rootEl: HTMLElement;
+	onMount(() => {
+		const ro = new ResizeObserver((entries) => {
+			width = entries[0].contentRect.width;
+		});
+		ro.observe(rootEl);
+		return () => ro.disconnect();
+	});
+</script>
+
+<div bind:this={rootEl} class="bg-base text-base-text flex h-screen flex-col">
+	<TopToolbar onOpenPalette={() => (paletteOpen = true)} />
+	<div class="flex min-h-0 flex-1">
+		<NavRail />
+		<div class="flex min-h-0 flex-1">
+			{#if section === 'settings'}
+				<Settings />
+			{:else if section === 'templates'}
+				<Templates />
+			{:else if $workspaceStore.showNewSong}
+				<NewSong />
+			{:else}
+				<!-- master pane -->
+				<div
+					class="border-hairline min-w-0 flex-1 overflow-auto border-r"
+					class:hidden={mode === 'narrow' && showDetail}
+				>
+					{#if section === 'cloud'}<SimFileList />{:else}<Workspace />{/if}
+				</div>
+				<!-- detail pane -->
+				{#if showDetail}
+					<div
+						class:w-[420px]={mode === 'wide'}
+						class:flex-1={mode !== 'wide'}
+						class="min-w-0"
+					>
+						<DetailPane />
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</div>
+	<CommandPalette open={paletteOpen} onClose={() => (paletteOpen = false)} />
+</div>

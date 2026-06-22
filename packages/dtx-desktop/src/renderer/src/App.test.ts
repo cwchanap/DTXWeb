@@ -36,7 +36,6 @@ vi.mock('./components/Login.svelte', () => ({ default: vi.fn() }));
 vi.mock('./components/Workspace.svelte', () => ({ default: vi.fn() }));
 vi.mock('./components/NewSong.svelte', () => ({ default: vi.fn() }));
 vi.mock('./components/DesktopEditor.svelte', () => ({ default: vi.fn() }));
-vi.mock('./components/Navbar.svelte', () => ({ default: vi.fn() }));
 vi.mock('./components/VersionsModal.svelte', () => ({ default: vi.fn() }));
 
 import App from './App.svelte';

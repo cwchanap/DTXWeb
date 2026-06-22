@@ -3,7 +3,6 @@
 	import Workspace from './components/Workspace.svelte';
 	import NewSong from './components/NewSong.svelte';
 	import DesktopEditor from './components/DesktopEditor.svelte';
-	import Navbar from './components/Navbar.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
 	import { authService } from './services/authService';
@@ -195,8 +194,6 @@
 		window.removeEventListener('hashchange', handleRouteChange);
 	});
 </script>
-
-<Navbar />
 
 <main
 	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 px-8 pt-16 pb-8 text-slate-800 dark:from-slate-900 dark:to-slate-800 dark:text-slate-100"

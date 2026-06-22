@@ -3,24 +3,6 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import type { TreeNode } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
-vi.mock('@skeletonlabs/skeleton-svelte', () => ({
-	Navigation: {
-		Rail: vi.fn(),
-		Tile: vi.fn()
-	},
-	Switch: vi.fn(),
-	Pagination: vi.fn(),
-	createToaster: vi.fn(() => ({ trigger: vi.fn(), close: vi.fn(), closeAll: vi.fn() }))
-}));
-
-vi.mock('../stores/authStore', () => ({
-	authStore: {
-		subscribe: vi.fn((cb) => {
-			cb({ isAuthenticated: false, isLoading: false, user: null, error: null });
-			return () => {};
-		})
-	}
-}));
 
 vi.mock('../stores/workspaceStore', () => {
 	let state = {
@@ -81,10 +63,6 @@ vi.mock('../services/workspaceService', () => ({
 
 vi.mock('./WorkspaceTree.svelte', () => ({ default: vi.fn() }));
 vi.mock('./SubWorkspaceItem.svelte', () => ({ default: vi.fn() }));
-vi.mock('./SongDetails.svelte', () => ({ default: vi.fn() }));
-vi.mock('./SimFileList.svelte', () => ({ default: vi.fn() }));
-vi.mock('./Templates.svelte', () => ({ default: vi.fn() }));
-vi.mock('./Settings.svelte', () => ({ default: vi.fn() }));
 
 vi.mock('../stores/bookmarkStore', () => {
 	let value: Array<{ path: string; name: string }> = [];
@@ -370,47 +348,6 @@ describe('Workspace – sub-workspaces section', () => {
 
 		expect(screen.queryByRole('link', { name: /change folder/i })).toBeNull();
 		expect(WorkspaceBookmarksMenu).toHaveBeenCalled();
-	});
-});
-
-describe('Workspace – song details view', () => {
-	afterEach(() => {
-		cleanup();
-		vi.mocked(workspaceStore).reset();
-	});
-
-	it('shows SongDetails when showSongDetails is true with a selected song', () => {
-		const song = makeNode('TestSong', '/test/TestSong');
-		vi.mocked(workspaceStore).setState({
-			path: '/workspace/test',
-			showSongDetails: true,
-			selectedSong: song
-		});
-		render(Workspace);
-		// SongDetails is mocked so it renders nothing, but the condition passes
-		// The main content area should not show workspace tree
-		expect(screen.queryByRole('button', { name: /create new song/i })).not.toBeInTheDocument();
-	});
-
-	it('does not show workspace tree when song details are visible', () => {
-		const song = makeNode('TestSong', '/test/TestSong');
-		vi.mocked(workspaceStore).setState({
-			path: '/workspace/test',
-			showSongDetails: true,
-			selectedSong: song
-		});
-		render(Workspace);
-		expect(screen.queryByText('Workspace Tree')).not.toBeInTheDocument();
-	});
-
-	it('shows Templates view when showTemplates is true', () => {
-		vi.mocked(workspaceStore).setState({
-			path: '/workspace/test',
-			showTemplates: true
-		});
-		render(Workspace);
-		// Templates is mocked as vi.fn(), so no visible text - but condition should pass
-		expect(screen.queryByText('Workspace Tree')).not.toBeInTheDocument();
 	});
 });
 

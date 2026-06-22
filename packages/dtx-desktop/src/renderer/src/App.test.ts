@@ -33,8 +33,7 @@ vi.mock('./services/linkingService', () => ({
 }));
 
 vi.mock('./components/Login.svelte', () => ({ default: vi.fn() }));
-vi.mock('./components/Workspace.svelte', () => ({ default: vi.fn() }));
-vi.mock('./components/NewSong.svelte', () => ({ default: vi.fn() }));
+vi.mock('./components/shell/AppShell.svelte', () => ({ default: vi.fn() }));
 vi.mock('./components/DesktopEditor.svelte', () => ({ default: vi.fn() }));
 vi.mock('./components/VersionsModal.svelte', () => ({ default: vi.fn() }));
 

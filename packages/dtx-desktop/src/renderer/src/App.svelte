@@ -1,7 +1,6 @@
 <script lang="ts">
 	import Login from './components/Login.svelte';
-	import Workspace from './components/Workspace.svelte';
-	import NewSong from './components/NewSong.svelte';
+	import AppShell from './components/shell/AppShell.svelte';
 	import DesktopEditor from './components/DesktopEditor.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
 	import { authStore } from './stores/authStore';
@@ -195,29 +194,20 @@
 	});
 </script>
 
-<main
-	class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 px-8 pt-16 pb-8 text-slate-800 dark:from-slate-900 dark:to-slate-800 dark:text-slate-100"
->
-	<div class="mx-auto w-full">
-		<div class="mb-10">
-			{#if currentRoute === 'login'}
-				<div
-					class="mx-auto mb-10 max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-slate-800"
-				>
-					<Login />
-				</div>
-			{:else if currentRoute === 'editor'}
-				<DesktopEditor simFileId={routeParams.simFileId} />
-			{:else if $workspaceStore.showNewSong}
-				<NewSong />
-			{:else}
-				<Workspace />
-			{/if}
+{#if currentRoute === 'login'}
+	<div class="bg-base flex min-h-screen items-center justify-center p-8">
+		<div
+			class="border-hairline bg-surface-1 w-full max-w-3xl overflow-hidden rounded-2xl border"
+		>
+			<Login />
 		</div>
-
-		<!-- Add the versions modal component -->
-		{#if $authStore.isAuthenticated}
-			<VersionsModal />
-		{/if}
 	</div>
-</main>
+{:else if currentRoute === 'editor'}
+	<DesktopEditor simFileId={routeParams.simFileId} />
+{:else}
+	<AppShell />
+{/if}
+
+{#if $authStore.isAuthenticated}
+	<VersionsModal />
+{/if}

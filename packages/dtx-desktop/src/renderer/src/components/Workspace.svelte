@@ -2,27 +2,9 @@
 	import { onMount } from 'svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { workspaceService } from '../services/workspaceService';
-	import { authStore } from '../stores/authStore';
-	import {
-		Folder,
-		FolderOpen,
-		Loader,
-		RefreshCw,
-		X,
-		HardDrive,
-		Cloud,
-		Plus,
-		FileText,
-		Search,
-		Settings as SettingsIcon
-	} from '@lucide/svelte';
-	import { Navigation } from '@skeletonlabs/skeleton-svelte';
+	import { Folder, FolderOpen, Loader, RefreshCw, X, Plus, Search } from '@lucide/svelte';
 	import WorkspaceTree from './WorkspaceTree.svelte';
 	import SubWorkspaceItem from './SubWorkspaceItem.svelte';
-	import SongDetails from './SongDetails.svelte';
-	import SimFileList from './SimFileList.svelte';
-	import Templates from './Templates.svelte';
-	import Settings from './Settings.svelte';
 	import WorkspaceBookmarksMenu from './WorkspaceBookmarksMenu.svelte';
 
 	let isLoading = $state(false);
@@ -31,29 +13,7 @@
 	let subWorkspaces = $state<string[]>([]);
 	let treeStructure = $state<TreeNode[]>([]);
 	let error = $state('');
-	let selectedSong = $state<TreeNode | null>(null);
-	let showSongDetails = $state(false);
-	let showTemplates = $state(false);
 	let searchQuery = $state('');
-
-	// Navigation state
-	let activeTab = $state('workspace');
-
-	// Reset active tab if user is not authenticated and tries to access cloud features
-	$effect(() => {
-		if (!$authStore.isAuthenticated && activeTab === 'online') {
-			activeTab = 'workspace';
-		}
-	});
-
-	// Handle navigation tab changes
-	$effect(() => {
-		if (activeTab === 'templates') {
-			workspaceStore.showTemplatesView();
-		} else {
-			workspaceStore.closeTemplatesView();
-		}
-	});
 
 	// Subscribe to the workspace store
 	const unsubscribe = workspaceStore.subscribe((state) => {
@@ -63,9 +23,6 @@
 		treeStructure = state.treeStructure;
 		isLoading = state.isLoading;
 		error = state.error || '';
-		selectedSong = state.selectedSong;
-		showSongDetails = state.showSongDetails;
-		showTemplates = state.showTemplates;
 	});
 
 	const handleSelectWorkspace = async () => {
@@ -137,267 +94,164 @@
 	});
 </script>
 
-<div
-	class="grid h-[calc(100vh-8rem)] w-full grid-cols-[10%_90%] overflow-hidden rounded-xl bg-white shadow-md dark:bg-slate-800"
->
-	<!-- Navigation Rail -->
-	<Navigation.Rail
-		value={activeTab}
-		onValueChange={(newValue) => (activeTab = newValue)}
-		background="bg-slate-50 dark:bg-slate-900"
-		padding="p-4"
-		width="w-full"
-		classes="border-r border-slate-200 dark:border-slate-700"
-		tilesJustify="justify-center"
-		tilesItems="items-center"
-	>
-		{#snippet tiles()}
-			<Navigation.Tile
-				id="workspace"
-				label="Local"
-				labelExpanded="Local Workspace"
-				padding="p-4"
-				gap="gap-3"
-			>
-				<HardDrive size={32} />
-			</Navigation.Tile>
-			{#if $authStore.isAuthenticated}
-				<Navigation.Tile
-					id="online"
-					label="Cloud"
-					labelExpanded="Online SimFiles"
-					padding="p-4"
-					gap="gap-3"
+<div class="bg-surface-1 flex h-full flex-col p-6">
+	<!-- Header row: title + (when workspacePath) New Song / Refresh / Clear buttons -->
+	<div class="mb-4 flex items-center justify-between gap-2">
+		<div class="flex items-center gap-2">
+			<Folder size={20} class="text-magenta" />
+			<h2 class="font-display text-hi text-lg font-semibold tracking-wide">Library</h2>
+		</div>
+		{#if workspacePath}
+			<div class="flex gap-2">
+				<button
+					class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"
+					style="box-shadow:0 0 22px -6px var(--color-magenta)"
+					onclick={handleNewSong}
+					tabindex="0"
+					aria-label="Create new song"
 				>
-					<Cloud size={32} />
-				</Navigation.Tile>
-			{/if}
-			<Navigation.Tile
-				id="templates"
-				label="Templates"
-				labelExpanded="Song Templates"
-				padding="p-4"
-				gap="gap-3"
-			>
-				<FileText size={32} />
-			</Navigation.Tile>
-			<Navigation.Tile
-				id="settings"
-				label="Settings"
-				labelExpanded="Application Settings"
-				padding="p-4"
-				gap="gap-3"
-			>
-				<SettingsIcon size={32} />
-			</Navigation.Tile>
-		{/snippet}
-	</Navigation.Rail>
-
-	<!-- Main Content Area -->
-	<div class="flex flex-col overflow-hidden bg-white dark:bg-slate-800">
-		{#if showSongDetails && selectedSong}
-			<!-- Song Details View -->
-			<SongDetails song={selectedSong} />
-		{:else if showTemplates}
-			<!-- Templates View -->
-			<Templates />
-		{:else if activeTab === 'settings'}
-			<!-- Settings View -->
-			<Settings />
-		{:else}
-			<!-- Header -->
-			<div
-				class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
-			>
-				<div class="flex items-center gap-2">
-					<Folder size={20} class="text-slate-500" />
-					<h2 class="text-xl font-semibold">
-						{activeTab === 'workspace'
-							? 'Local Workspace'
-							: activeTab === 'online'
-								? 'Online SimFiles'
-								: activeTab === 'settings'
-									? 'Settings'
-									: 'Templates'}
-					</h2>
-				</div>
-				{#if workspacePath && activeTab === 'workspace'}
-					<div class="flex gap-2">
-						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-emerald-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-							onclick={handleNewSong}
-							tabindex="0"
-							aria-label="Create new song"
-						>
-							<Plus size={16} />
-							New Song
-						</button>
-						<button
-							class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
-							onclick={handleRefreshWorkspace}
-							tabindex="0"
-							aria-label="Refresh workspace"
-						>
-							<RefreshCw size={16} />
-						</button>
-						<button
-							class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
-							onclick={handleClearWorkspace}
-							tabindex="0"
-							aria-label="Clear workspace"
-						>
-							<X size={16} />
-						</button>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Content Area -->
-			<div class="flex-1 overflow-auto p-6">
-				{#if activeTab === 'workspace'}
-					<!-- Workspace Tab Content -->
-					{#if isLoading}
-						<div class="flex flex-col items-center py-8">
-							<div class="relative flex h-16 w-16 items-center justify-center">
-								<Loader size={40} class="animate-spin text-blue-500" />
-							</div>
-							<p class="mt-4 text-slate-600 dark:text-slate-400">
-								Loading workspace...
-							</p>
-						</div>
-					{:else if error}
-						<div
-							class="rounded-lg bg-red-50 p-4 text-red-800 dark:bg-red-900/20 dark:text-red-300"
-						>
-							<p>{error}</p>
-							<div class="mt-2 flex flex-wrap gap-2">
-								<button
-									class="rounded bg-red-100 px-3 py-1 text-sm font-medium text-red-800 hover:bg-red-200 dark:bg-red-800/30 dark:text-red-200 dark:hover:bg-red-800/50"
-									onclick={handleSelectWorkspace}
-									tabindex="0"
-									aria-label="Try again"
-								>
-									Try Again
-								</button>
-							</div>
-						</div>
-					{:else if !workspacePath}
-						<div class="flex flex-col items-center py-8">
-							<div
-								class="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30"
-							>
-								<FolderOpen size={40} class="text-blue-500 dark:text-blue-300" />
-							</div>
-							<p class="mb-6 text-center text-slate-600 dark:text-slate-400">
-								Select a root folder for your DTX files workspace
-							</p>
-							<div class="flex items-center gap-3">
-								<button
-									class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2.5 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-									onclick={handleSelectWorkspace}
-									tabindex="0"
-									aria-label="Select workspace folder"
-								>
-									<Folder size={20} />
-									Select Folder
-								</button>
-								<WorkspaceBookmarksMenu />
-							</div>
-						</div>
-					{:else}
-						<!-- Workspace Content -->
-						<div class="mb-4">
-							<WorkspaceBookmarksMenu />
-						</div>
-
-						<!-- Search Filter -->
-						<div class="mb-4">
-							<div class="relative">
-								<div
-									class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"
-								>
-									<Search size={16} class="text-slate-400" />
-								</div>
-								<input
-									type="text"
-									bind:value={searchQuery}
-									placeholder="Search songs and folders..."
-									class="w-full rounded-lg border border-slate-200 bg-white py-2 pr-4 pl-10 text-sm placeholder-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-white"
-								/>
-								{#if searchQuery}
-									<button
-										onclick={() => (searchQuery = '')}
-										class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-										aria-label="Clear search"
-									>
-										<X size={16} />
-									</button>
-								{/if}
-							</div>
-						</div>
-
-						<!-- Sub-workspaces Section -->
-						{#if subWorkspaces.length > 0}
-							<div class="mb-4">
-								<div class="space-y-1">
-									{#each subWorkspaces as subWorkspace}
-										<SubWorkspaceItem
-											{subWorkspace}
-											isActive={currentSubWorkspace === subWorkspace}
-										/>
-									{/each}
-								</div>
-							</div>
-						{/if}
-
-						<!-- Tree Structure Section -->
-						<div class="mb-6">
-							<h3 class="mb-3 text-lg font-medium">
-								{currentSubWorkspace
-									? `Tree: ${currentSubWorkspace.replace(/^DTXFiles\./, '')}`
-									: 'Workspace Tree'}
-							</h3>
-							<div class="mb-2 text-sm text-slate-600 dark:text-slate-400">
-								{currentSubWorkspace
-									? 'Showing contents of selected sub-workspace'
-									: 'Showing all folders in workspace'}
-							</div>
-							{#if filteredTreeStructure.length > 0}
-								<div
-									class="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50"
-								>
-									<WorkspaceTree nodes={filteredTreeStructure} />
-								</div>
-							{:else if searchQuery.trim()}
-								<div
-									class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
-								>
-									No results found for "{searchQuery}"
-								</div>
-							{:else}
-								<div
-									class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
-								>
-									No folders found
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{:else if activeTab === 'online'}
-					<!-- Online SimFiles Tab Content -->
-					<div class="mb-6">
-						<h3 class="mb-3 text-lg font-medium">Your SimFiles</h3>
-						<div class="mb-2 text-sm text-slate-600 dark:text-slate-400">
-							Your uploaded simFiles from the cloud
-						</div>
-						<div
-							class="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50"
-						>
-							<SimFileList />
-						</div>
-					</div>
-				{/if}
+					<Plus size={14} />
+					New Song
+				</button>
+				<button
+					class="border-hairline bg-surface-2 text-dim hover:text-hi flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
+					onclick={handleRefreshWorkspace}
+					tabindex="0"
+					aria-label="Refresh workspace"
+				>
+					<RefreshCw size={14} />
+				</button>
+				<button
+					class="border-hairline bg-surface-2 text-dim hover:text-hi flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
+					onclick={handleClearWorkspace}
+					tabindex="0"
+					aria-label="Clear workspace"
+				>
+					<X size={14} />
+				</button>
 			</div>
 		{/if}
 	</div>
+
+	<!-- Content states -->
+	{#if isLoading}
+		<div class="flex flex-col items-center py-8">
+			<div class="relative flex h-16 w-16 items-center justify-center">
+				<Loader size={40} class="text-magenta animate-spin" />
+			</div>
+			<p class="text-dim mt-4">Loading workspace...</p>
+		</div>
+	{:else if error}
+		<div class="border-hairline bg-surface-2 text-red rounded-lg border p-4">
+			<p>{error}</p>
+			<div class="mt-2 flex flex-wrap gap-2">
+				<button
+					class="border-hairline bg-surface-2 text-dim hover:text-hi rounded px-3 py-1 text-sm font-medium transition-colors"
+					onclick={handleSelectWorkspace}
+					tabindex="0"
+					aria-label="Try again"
+				>
+					Try Again
+				</button>
+			</div>
+		</div>
+	{:else if !workspacePath}
+		<div class="flex flex-col items-center py-8">
+			<div
+				class="bg-surface-2 border-hairline mb-4 flex h-20 w-20 items-center justify-center rounded-full border"
+			>
+				<FolderOpen size={40} class="text-magenta" />
+			</div>
+			<p class="text-dim mb-6 text-center">
+				Select a root folder for your DTX files workspace
+			</p>
+			<div class="flex items-center gap-3">
+				<button
+					class="bg-magenta font-display flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold text-[#16001a]"
+					style="box-shadow:0 0 22px -6px var(--color-magenta)"
+					onclick={handleSelectWorkspace}
+					tabindex="0"
+					aria-label="Select workspace folder"
+				>
+					<Folder size={18} />
+					Select Folder
+				</button>
+				<WorkspaceBookmarksMenu />
+			</div>
+		</div>
+	{:else}
+		<!-- Workspace Content -->
+		<div class="mb-4">
+			<WorkspaceBookmarksMenu />
+		</div>
+
+		<!-- Search Filter -->
+		<div class="mb-4">
+			<div class="relative">
+				<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+					<Search size={16} class="text-dim" />
+				</div>
+				<input
+					type="text"
+					bind:value={searchQuery}
+					placeholder="Search songs and folders..."
+					class="border-hairline bg-surface-2 text-hi placeholder-dim focus:border-magenta w-full rounded-lg border py-2 pr-4 pl-10 text-sm focus:outline-none"
+				/>
+				{#if searchQuery}
+					<button
+						onclick={() => (searchQuery = '')}
+						class="text-dim hover:text-hi absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
+						aria-label="Clear search"
+					>
+						<X size={16} />
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Sub-workspaces Section -->
+		{#if subWorkspaces.length > 0}
+			<div class="mb-4">
+				<div class="space-y-1">
+					{#each subWorkspaces as subWorkspace}
+						<SubWorkspaceItem
+							{subWorkspace}
+							isActive={currentSubWorkspace === subWorkspace}
+						/>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Tree Structure Section -->
+		<div class="mb-6">
+			<h3 class="text-hi mb-3 text-base font-medium">
+				{currentSubWorkspace
+					? `Tree: ${currentSubWorkspace.replace(/^DTXFiles\./, '')}`
+					: 'Workspace Tree'}
+			</h3>
+			<div class="text-dim mb-2 text-sm">
+				{currentSubWorkspace
+					? 'Showing contents of selected sub-workspace'
+					: 'Showing all folders in workspace'}
+			</div>
+			{#if filteredTreeStructure.length > 0}
+				<div class="border-hairline bg-surface-2 rounded-lg border p-3">
+					<WorkspaceTree nodes={filteredTreeStructure} />
+				</div>
+			{:else if searchQuery.trim()}
+				<div
+					class="border-hairline bg-surface-2 text-dim rounded-lg border p-3 text-center text-sm"
+				>
+					No results found for "{searchQuery}"
+				</div>
+			{:else}
+				<div
+					class="border-hairline bg-surface-2 text-dim rounded-lg border p-3 text-center text-sm"
+				>
+					No folders found
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>

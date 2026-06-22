@@ -3,6 +3,19 @@ import init from 'xa_decoder';
 
 import './assets/main.css';
 
+// Self-hosted fonts (bundled woff2 — CSP-safe, no Google CDN)
+import '@fontsource/chakra-petch/500.css';
+import '@fontsource/chakra-petch/600.css';
+import '@fontsource/chakra-petch/700.css';
+import '@fontsource/sora/400.css';
+import '@fontsource/sora/500.css';
+import '@fontsource/sora/600.css';
+import '@fontsource/sora/700.css';
+import '@fontsource/martian-mono/400.css';
+import '@fontsource/martian-mono/500.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/600.css';
+
 import App from './App.svelte';
 
 // Initialize XA decoder WASM module

@@ -22,6 +22,10 @@
 	"dependencies": {
 		"@dtx/common": "*",
 		"@dtx/ui-components": "*",
+		"@fontsource/chakra-petch": "^5.2.7",
+		"@fontsource/jetbrains-mono": "^5.2.8",
+		"@fontsource/martian-mono": "^5.2.7",
+		"@fontsource/sora": "^5.2.8",
 		"@lucide/svelte": "^0.511.0",
 		"@supabase/supabase-js": "^2.49.8",
 		"@tauri-apps/api": "^2",

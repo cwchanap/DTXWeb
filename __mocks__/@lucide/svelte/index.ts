@@ -32,3 +32,5 @@ export const X = vi.fn();
 export const Star = vi.fn();
 export const CheckCircle2 = vi.fn();
 export const Pencil = vi.fn();
+export const Play = vi.fn();
+export const Square = vi.fn();

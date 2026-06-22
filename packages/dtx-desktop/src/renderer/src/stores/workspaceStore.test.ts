@@ -379,4 +379,28 @@ describe('workspaceStore', () => {
 			expect(state.error).toBeNull();
 		});
 	});
+
+	describe('activeSection', () => {
+		beforeEach(() => workspaceStore.reset());
+
+		it('defaults to library', () => {
+			const s = get(workspaceStore);
+			expect(s.activeSection).toBe('library');
+		});
+
+		it('setActiveSection switches section and clears song selection', () => {
+			workspaceStore.selectSong({ name: 'x', path: '/x' } as TreeNode);
+			workspaceStore.setActiveSection('cloud');
+			const s = get(workspaceStore);
+			expect(s.activeSection).toBe('cloud');
+			expect(s.selectedSong).toBeNull();
+			expect(s.showSongDetails).toBe(false);
+			expect(s.showTemplates).toBe(false);
+		});
+
+		it('setActiveSection("templates") sets showTemplates true', () => {
+			workspaceStore.setActiveSection('templates');
+			expect(get(workspaceStore).showTemplates).toBe(true);
+		});
+	});
 });

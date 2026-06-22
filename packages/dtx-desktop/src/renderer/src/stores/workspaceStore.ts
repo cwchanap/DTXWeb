@@ -2,6 +2,8 @@ import { writable } from 'svelte/store';
 import type { SimfileWithDtx } from '@dtx/common';
 import { linkageCacheService } from '../services/linkageCacheService';
 
+export type ShellSection = 'library' | 'cloud' | 'templates' | 'settings';
+
 export interface TreeNode {
 	name: string;
 	path: string;
@@ -26,6 +28,7 @@ export interface WorkspaceState {
 	showSongDetails: boolean;
 	showNewSong: boolean;
 	showTemplates: boolean;
+	activeSection: ShellSection;
 }
 
 const initialState: WorkspaceState = {
@@ -38,7 +41,8 @@ const initialState: WorkspaceState = {
 	selectedSong: null,
 	showSongDetails: false,
 	showNewSong: false,
-	showTemplates: false
+	showTemplates: false,
+	activeSection: 'library'
 };
 
 // Helper function to update tree nodes recursively
@@ -209,6 +213,16 @@ function createWorkspaceStore() {
 					linkedSimFileId: null,
 					linkedSimFile: null
 				})
+			}));
+		},
+		setActiveSection: (section: ShellSection) => {
+			update((state) => ({
+				...state,
+				activeSection: section,
+				showTemplates: section === 'templates',
+				selectedSong: null,
+				showSongDetails: false,
+				showNewSong: false
 			}));
 		},
 		reset: () => set(initialState)

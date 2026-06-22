@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Music, ArrowLeft, Link, Search, Download } from '@lucide/svelte';
+	import { Music, X, Link, Search, Download } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { settingsStore } from '../stores/settingsStore';
 	import { editorMappingStore } from '../stores/editorMappingStore';
@@ -809,15 +809,16 @@
 			{#snippet header()}
 				<!-- Header -->
 				<div
-					class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
+					class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
 				>
 					<div class="flex items-center gap-2">
-						<Music size={20} class="text-purple-500 dark:text-purple-400" />
-						<h2 class="text-xl font-semibold">Song Details</h2>
+						<Music size={20} class="text-cyan" />
+						<h2 class="font-display text-hi text-xl">Song Details</h2>
 					</div>
 					<div class="flex items-center gap-2">
 						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-blue-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+							style="box-shadow:0 0 22px -6px var(--color-magenta)"
 							onclick={handleOpenEditor}
 							tabindex="0"
 							aria-label="Open Editor"
@@ -826,7 +827,7 @@
 							Open Editor
 						</button>
 						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-green-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleExportToZip}
 							disabled={isExporting}
 							tabindex="0"
@@ -834,7 +835,7 @@
 						>
 							{#if isExporting}
 								<div
-									class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+									class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 								></div>
 								Exporting...
 							{:else}
@@ -843,13 +844,13 @@
 							{/if}
 						</button>
 						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleClose}
 							tabindex="0"
-							aria-label="Back to workspace"
+							aria-label="Close"
 						>
-							<ArrowLeft size={16} />
-							Back to Workspace
+							<X size={16} />
+							Close
 						</button>
 					</div>
 				</div>
@@ -857,15 +858,13 @@
 
 			{#snippet desktop_info()}
 				<!-- Status Section - This will be rendered outside the grid -->
-				<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+				<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 					<div class="flex items-center gap-2">
-						<Link size={16} class="text-green-500 dark:text-green-400" />
-						<span class="font-semibold text-green-800 dark:text-green-200">
+						<Link size={16} class="text-green" />
+						<span class="text-green font-semibold">
 							{song.linkedSimFile.title}
 						</span>
-						<span
-							class="rounded bg-green-200 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-800 dark:text-green-200"
-						>
+						<span class="bg-green/20 text-green rounded px-2 py-1 text-xs font-medium">
 							Linked
 						</span>
 					</div>
@@ -873,22 +872,20 @@
 
 				<!-- Update Status Messages -->
 				{#if isUpdating && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+					<div class="border-cyan/40 bg-cyan/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
 							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+								class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 							></div>
-							<span class="text-sm text-blue-800 dark:text-blue-200">
-								Updating cloud song...
-							</span>
+							<span class="text-cyan text-sm"> Updating cloud song... </span>
 						</div>
 					</div>
 				{/if}
 
 				{#if updateError && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="border-red/40 bg-red/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-red-800 dark:text-red-200">
+							<span class="text-red text-sm">
 								Update failed: {updateError}
 							</span>
 						</div>
@@ -896,9 +893,9 @@
 				{/if}
 
 				{#if updateSuccess && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-green-800 dark:text-green-200">
+							<span class="text-green text-sm">
 								Cloud song updated successfully!
 							</span>
 						</div>
@@ -907,22 +904,20 @@
 
 				<!-- Export Status Messages -->
 				{#if isExporting}
-					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+					<div class="border-cyan/40 bg-cyan/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
 							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+								class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 							></div>
-							<span class="text-sm text-blue-800 dark:text-blue-200">
-								Exporting song to ZIP...
-							</span>
+							<span class="text-cyan text-sm"> Exporting song to ZIP... </span>
 						</div>
 					</div>
 				{/if}
 
 				{#if exportError}
-					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="border-red/40 bg-red/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-red-800 dark:text-red-200">
+							<span class="text-red text-sm">
 								Export failed: {exportError}
 							</span>
 						</div>
@@ -930,15 +925,13 @@
 				{/if}
 
 				{#if exportSuccess}
-					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 						<div class="flex flex-col gap-1">
-							<span class="text-sm font-medium text-green-800 dark:text-green-200">
+							<span class="text-green text-sm font-medium">
 								Song exported to ZIP successfully!
 							</span>
 							{#if exportedFilePath}
-								<span
-									class="font-mono text-xs break-all text-green-700 dark:text-green-300"
-								>
+								<span class="text-green font-mono text-xs break-all">
 									Saved to: {exportedFilePath}
 								</span>
 							{/if}
@@ -1027,15 +1020,16 @@
 			{#snippet header()}
 				<!-- Header -->
 				<div
-					class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
+					class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
 				>
 					<div class="flex items-center gap-2">
-						<Music size={20} class="text-purple-500 dark:text-purple-400" />
-						<h2 class="text-xl font-semibold">Song Details</h2>
+						<Music size={20} class="text-cyan" />
+						<h2 class="font-display text-hi text-xl">Song Details</h2>
 					</div>
 					<div class="flex items-center gap-2">
 						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-blue-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+							style="box-shadow:0 0 22px -6px var(--color-magenta)"
 							onclick={handleOpenEditor}
 							tabindex="0"
 							aria-label="Open Editor"
@@ -1044,7 +1038,7 @@
 							Open Editor
 						</button>
 						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-green-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleExportToZip}
 							disabled={isExporting}
 							tabindex="0"
@@ -1052,7 +1046,7 @@
 						>
 							{#if isExporting}
 								<div
-									class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+									class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 								></div>
 								Exporting...
 							{:else}
@@ -1061,13 +1055,13 @@
 							{/if}
 						</button>
 						<button
-							class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleClose}
 							tabindex="0"
-							aria-label="Back to workspace"
+							aria-label="Close"
 						>
-							<ArrowLeft size={16} />
-							Back to Workspace
+							<X size={16} />
+							Close
 						</button>
 					</div>
 				</div>
@@ -1076,22 +1070,23 @@
 			{#snippet desktop_info()}
 				<!-- Status Section - This will be rendered outside the grid -->
 				{#if song.containsDtxFiles && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+					<div class="border-amber/40 bg-amber/10 rounded-lg border p-3">
 						<div class="flex items-center justify-between gap-2">
 							<div class="flex items-center gap-2">
-								<Music size={16} class="text-yellow-600 dark:text-yellow-400" />
-								<span class="text-sm text-yellow-800 dark:text-yellow-200">
+								<Music size={16} class="text-amber" />
+								<span class="text-amber text-sm">
 									Not linked - Local song not yet uploaded to cloud
 								</span>
 							</div>
 							<button
-								class="flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:outline-none dark:bg-purple-600 dark:hover:bg-purple-700"
+								class="bg-magenta flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+								style="box-shadow:0 0 22px -6px var(--color-magenta)"
 								onclick={handleShowAutocomplete}
 								disabled={isLinking}
 							>
 								{#if isLinking}
 									<div
-										class="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent"
+										class="h-3 w-3 animate-spin rounded-full border border-[#16001a] border-t-transparent"
 									></div>
 									Linking...
 								{:else}
@@ -1104,13 +1099,13 @@
 				{/if}
 
 				{#if displayIdAutoPopulateError && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+					<div class="border-amber/40 bg-amber/10 rounded-lg border p-3">
 						<div class="flex items-center justify-between gap-2">
-							<span class="text-sm text-yellow-800 dark:text-yellow-200">
+							<span class="text-amber text-sm">
 								{displayIdAutoPopulateError}
 							</span>
 							<button
-								class="rounded bg-yellow-200 px-3 py-1 text-sm font-medium text-yellow-900 hover:bg-yellow-300 focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:outline-none dark:bg-yellow-800 dark:text-yellow-100 dark:hover:bg-yellow-700"
+								class="bg-surface-2 text-cyan rounded px-3 py-1 text-sm font-medium hover:opacity-90 focus:outline-none"
 								onclick={handleRetryDisplayIdAutoPopulate}
 							>
 								Retry
@@ -1121,22 +1116,20 @@
 
 				<!-- Linking Status Messages -->
 				{#if isLinking && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+					<div class="border-cyan/40 bg-cyan/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
 							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+								class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 							></div>
-							<span class="text-sm text-blue-800 dark:text-blue-200">
-								Linking song to cloud...
-							</span>
+							<span class="text-cyan text-sm"> Linking song to cloud... </span>
 						</div>
 					</div>
 				{/if}
 
 				{#if linkingError && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="border-red/40 bg-red/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-red-800 dark:text-red-200">
+							<span class="text-red text-sm">
 								Linking failed: {linkingError}
 							</span>
 						</div>
@@ -1144,9 +1137,9 @@
 				{/if}
 
 				{#if linkingSuccess && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-green-800 dark:text-green-200">
+							<span class="text-green text-sm">
 								Song linked successfully! It is now linked to the cloud.
 							</span>
 						</div>
@@ -1155,22 +1148,20 @@
 
 				<!-- Upload Status Messages -->
 				{#if isUploading && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+					<div class="border-cyan/40 bg-cyan/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
 							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+								class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 							></div>
-							<span class="text-sm text-blue-800 dark:text-blue-200">
-								Uploading song to cloud...
-							</span>
+							<span class="text-cyan text-sm"> Uploading song to cloud... </span>
 						</div>
 					</div>
 				{/if}
 
 				{#if uploadError && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="border-red/40 bg-red/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-red-800 dark:text-red-200">
+							<span class="text-red text-sm">
 								Upload failed: {uploadError}
 							</span>
 						</div>
@@ -1178,24 +1169,22 @@
 				{/if}
 
 				{#if uploadWarnings.length > 0 && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-yellow-50 p-3 dark:bg-yellow-900/20">
+					<div class="border-amber/40 bg-amber/10 rounded-lg border p-3">
 						<div class="flex flex-col gap-1">
-							<span class="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+							<span class="text-amber text-sm font-medium">
 								Song uploaded, but some preview files could not be uploaded:
 							</span>
 							{#each uploadWarnings as warning}
-								<span class="text-xs text-yellow-700 dark:text-yellow-300"
-									>{warning}</span
-								>
+								<span class="text-amber text-xs">{warning}</span>
 							{/each}
 						</div>
 					</div>
 				{/if}
 
 				{#if uploadSuccess && $authStore.isAuthenticated}
-					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-green-800 dark:text-green-200">
+							<span class="text-green text-sm">
 								Song uploaded successfully! It is now linked to the cloud.
 							</span>
 						</div>
@@ -1204,22 +1193,20 @@
 
 				<!-- Export Status Messages -->
 				{#if isExporting}
-					<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+					<div class="border-cyan/40 bg-cyan/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
 							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+								class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 							></div>
-							<span class="text-sm text-blue-800 dark:text-blue-200">
-								Exporting song to ZIP...
-							</span>
+							<span class="text-cyan text-sm"> Exporting song to ZIP... </span>
 						</div>
 					</div>
 				{/if}
 
 				{#if exportError}
-					<div class="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+					<div class="border-red/40 bg-red/10 rounded-lg border p-3">
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-red-800 dark:text-red-200">
+							<span class="text-red text-sm">
 								Export failed: {exportError}
 							</span>
 						</div>
@@ -1227,15 +1214,13 @@
 				{/if}
 
 				{#if exportSuccess}
-					<div class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 						<div class="flex flex-col gap-1">
-							<span class="text-sm font-medium text-green-800 dark:text-green-200">
+							<span class="text-green text-sm font-medium">
 								Song exported to ZIP successfully!
 							</span>
 							{#if exportedFilePath}
-								<span
-									class="font-mono text-xs break-all text-green-700 dark:text-green-300"
-								>
+								<span class="text-green font-mono text-xs break-all">
 									Saved to: {exportedFilePath}
 								</span>
 							{/if}

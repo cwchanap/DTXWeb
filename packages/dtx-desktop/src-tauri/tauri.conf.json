@@ -14,8 +14,10 @@
 			{
 				"label": "main",
 				"title": "Drumery",
-				"width": 900,
-				"height": 670,
+				"width": 1200,
+				"height": 800,
+				"minWidth": 640,
+				"minHeight": 560,
 				"resizable": true
 			}
 		],

@@ -643,7 +643,6 @@
 					class:bg-cyan={isDragging}
 					onmousedown={handleMouseDown}
 					onkeydown={handleKeyResize}
-					tabindex="0"
 					aria-label="Resize sidebar"
 				></button>
 			</div>

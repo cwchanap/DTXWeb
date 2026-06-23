@@ -54,12 +54,28 @@ fn read_preferences_from(path: &Path) -> Preferences {
     prefs
 }
 
-/// Creates `~/.dtxweb/` if absent, then writes pretty JSON.
+/// Creates `~/.dtxweb/` if absent, then writes pretty JSON atomically.
+///
+/// Writes to a sibling temp file and renames it into place, so a crash mid-write
+/// cannot leave `preferences.json` truncated/corrupt. (The read path already
+/// falls back to defaults on a parse error, but losing the user's prefs on a
+/// crash is still worth avoiding.)
 fn write_preferences_to(path: &Path, prefs: &Preferences) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, serde_json::to_string_pretty(prefs)?)?;
+    let json = serde_json::to_string_pretty(prefs)?;
+    let mut tmp = path.to_path_buf();
+    tmp.set_extension("json.tmp");
+    fs::write(&tmp, json)?;
+    // Rename is atomic when source and destination share a filesystem (they do:
+    // both live in ~/.dtxweb/). On Windows, std::fs::rename replaces the target.
+    let rename_result = fs::rename(&tmp, path);
+    if rename_result.is_err() {
+        // Best-effort cleanup of the temp file so it doesn't linger on failure.
+        let _ = fs::remove_file(&tmp);
+    }
+    rename_result?;
     Ok(())
 }
 

@@ -1,6 +1,8 @@
 export const fuzzyScore = (query: string, text: string): number => {
-	const q = query.toLowerCase();
-	const t = text.toLowerCase();
+	// Iterate by Unicode code point (not UTF-16 code unit) so astral characters
+	// rendered as surrogate pairs (e.g. emoji in song titles) score as one unit.
+	const q = [...query.toLowerCase()];
+	const t = [...text.toLowerCase()];
 	if (q.length === 0) return 1;
 	let score = 0;
 	let ti = 0;

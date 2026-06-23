@@ -32,7 +32,6 @@
 		? 'border-cyan/40 bg-cyan/10'
 		: ''}"
 	onclick={handleSelectSubWorkspace}
-	tabindex="0"
 	aria-label={`${isActive ? 'Deselect' : 'Select'} sub-workspace ${displayName}`}
 >
 	<div class="flex items-center gap-2">

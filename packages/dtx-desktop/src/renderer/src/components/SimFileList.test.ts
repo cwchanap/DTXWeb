@@ -135,6 +135,27 @@ describe('SimFileList', () => {
 		});
 	});
 
+	describe('selection', () => {
+		it('selects the cloud simfile when a card is clicked', async () => {
+			simFileStore.setUserSimFiles([makeSimFile({ id: 9, title: 'Pick Me' })]);
+			render(SimFileList);
+			const card = screen.getByRole('button', { name: /View details for Pick Me/i });
+			await fireEvent.click(card);
+			const { get } = await import('svelte/store');
+			expect(get(workspaceStore).selectedCloudSimFile?.id).toBe(9);
+			expect(get(workspaceStore).showCloudSongDetails).toBe(true);
+		});
+
+		it('selects the cloud simfile when a card is focused and Enter is pressed', async () => {
+			simFileStore.setUserSimFiles([makeSimFile({ id: 9, title: 'Pick Me' })]);
+			render(SimFileList);
+			const card = screen.getByRole('button', { name: /View details for Pick Me/i });
+			await fireEvent.keyDown(card, { key: 'Enter' });
+			const { get } = await import('svelte/store');
+			expect(get(workspaceStore).selectedCloudSimFile?.id).toBe(9);
+		});
+	});
+
 	describe('search functionality', () => {
 		it('renders search input', () => {
 			render(SimFileList);

@@ -820,7 +820,6 @@
 							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							style="box-shadow:0 0 22px -6px var(--color-magenta)"
 							onclick={handleOpenEditor}
-							tabindex="0"
 							aria-label="Open Editor"
 						>
 							<Music size={16} />
@@ -830,7 +829,6 @@
 							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleExportToZip}
 							disabled={isExporting}
-							tabindex="0"
 							aria-label="Export to ZIP"
 						>
 							{#if isExporting}
@@ -846,7 +844,6 @@
 						<button
 							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleClose}
-							tabindex="0"
 							aria-label="Close"
 						>
 							<X size={16} />
@@ -1031,7 +1028,6 @@
 							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							style="box-shadow:0 0 22px -6px var(--color-magenta)"
 							onclick={handleOpenEditor}
-							tabindex="0"
 							aria-label="Open Editor"
 						>
 							<Music size={16} />
@@ -1041,7 +1037,6 @@
 							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleExportToZip}
 							disabled={isExporting}
-							tabindex="0"
 							aria-label="Export to ZIP"
 						>
 							{#if isExporting}
@@ -1057,7 +1052,6 @@
 						<button
 							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 							onclick={handleClose}
-							tabindex="0"
 							aria-label="Close"
 						>
 							<X size={16} />

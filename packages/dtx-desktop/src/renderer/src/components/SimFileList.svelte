@@ -203,7 +203,17 @@
 		<div class="grid gap-3">
 			{#each paginatedSimFiles as simFile (simFile.id)}
 				<div
-					class="border-hairline bg-surface-1 rounded-lg border p-4 transition-shadow hover:shadow-md"
+					class="border-hairline bg-surface-1 focus-visible:ring-cyan/40 cursor-pointer rounded-lg border p-4 transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2"
+					role="button"
+					tabindex="0"
+					aria-label="View details for {simFile.title} by {simFile.artist}"
+					onclick={() => workspaceStore.selectCloudSimFile(simFile)}
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							workspaceStore.selectCloudSimFile(simFile);
+						}
+					}}
 				>
 					<div class="flex items-start justify-between">
 						<div class="flex-1">

@@ -271,6 +271,48 @@ describe('workspaceStore', () => {
 		});
 	});
 
+	describe('selectCloudSimFile', () => {
+		it('should set the selected cloud simfile and show its details', () => {
+			const sim = makeSimFile(7);
+			workspaceStore.selectCloudSimFile(sim);
+
+			const state = get(workspaceStore);
+			expect(state.selectedCloudSimFile).toEqual(sim);
+			expect(state.showCloudSongDetails).toBe(true);
+		});
+
+		it('should clear the local song selection (mutually exclusive)', () => {
+			workspaceStore.selectSong(makeTreeNode('Local', '/local'));
+			workspaceStore.selectCloudSimFile(makeSimFile(7));
+
+			const state = get(workspaceStore);
+			expect(state.selectedSong).toBeNull();
+			expect(state.showSongDetails).toBe(false);
+			expect(state.selectedCloudSimFile).not.toBeNull();
+		});
+
+		it('selectSong should clear the cloud selection (mutually exclusive)', () => {
+			workspaceStore.selectCloudSimFile(makeSimFile(7));
+			workspaceStore.selectSong(makeTreeNode('Local', '/local'));
+
+			const state = get(workspaceStore);
+			expect(state.selectedCloudSimFile).toBeNull();
+			expect(state.showCloudSongDetails).toBe(false);
+			expect(state.selectedSong).not.toBeNull();
+		});
+	});
+
+	describe('closeCloudSongDetails', () => {
+		it('should clear the selected cloud simfile and hide its details', () => {
+			workspaceStore.selectCloudSimFile(makeSimFile(7));
+			workspaceStore.closeCloudSongDetails();
+
+			const state = get(workspaceStore);
+			expect(state.selectedCloudSimFile).toBeNull();
+			expect(state.showCloudSongDetails).toBe(false);
+		});
+	});
+
 	describe('showNewSongForm', () => {
 		it('should show new song form and hide other panels', () => {
 			workspaceStore.selectSong(makeTreeNode('My Song', '/path'));
@@ -401,6 +443,14 @@ describe('workspaceStore', () => {
 		it('setActiveSection("templates") sets showTemplates true', () => {
 			workspaceStore.setActiveSection('templates');
 			expect(get(workspaceStore).showTemplates).toBe(true);
+		});
+
+		it('setActiveSection clears the cloud simfile selection', () => {
+			workspaceStore.selectCloudSimFile(makeSimFile(3));
+			workspaceStore.setActiveSection('library');
+			const s = get(workspaceStore);
+			expect(s.selectedCloudSimFile).toBeNull();
+			expect(s.showCloudSongDetails).toBe(false);
 		});
 	});
 });

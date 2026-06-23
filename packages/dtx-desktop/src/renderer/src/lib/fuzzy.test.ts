@@ -14,6 +14,19 @@ describe('fuzzyScore', () => {
 	it('is case-insensitive', () => {
 		expect(fuzzyScore('TANK', 'tank')).toBeGreaterThan(0);
 	});
+	it('scores astral (surrogate-pair) characters as single code points', () => {
+		// 🎵 is U+1F3B5 — two UTF-16 code units. Searching by it must match.
+		expect(fuzzyScore('🎵', '🎵 Ripple')).toBeGreaterThan(0);
+		// A matching subsequence that straddles an astral char still works.
+		expect(fuzzyScore('rpe', '🎵 Ripple')).toBeGreaterThan(0);
+		// A BMP char that isn't present must not match.
+		expect(fuzzyScore('z', '🎵 Ripple')).toBe(0);
+	});
+	it('treats a surrogate pair and a BMP char as the same number of units', () => {
+		// '🐉a' and 'Xa' both have 2 code points; 'a' sits at index 1 in each,
+		// so the score for query 'a' must be identical.
+		expect(fuzzyScore('a', '🐉a')).toBe(fuzzyScore('a', 'Xa'));
+	});
 });
 
 describe('searchItems', () => {

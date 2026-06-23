@@ -19,7 +19,10 @@
 	const section = $derived($workspaceStore.activeSection);
 	const isListSection = $derived(section === 'library' || section === 'cloud');
 	const detailVisible = $derived($preferencesStore.detailPaneVisible);
-	const showDetail = $derived(isListSection && !!$workspaceStore.selectedSong && detailVisible);
+	const hasSelection = $derived(
+		!!$workspaceStore.selectedSong || !!$workspaceStore.selectedCloudSimFile
+	);
+	const showDetail = $derived(isListSection && hasSelection && detailVisible);
 
 	const MIN_DETAIL = 320;
 	const MAX_DETAIL = 640;
@@ -116,7 +119,6 @@
 								class:bg-cyan={isDraggingDetail}
 								onmousedown={handleDetailResizeDown}
 								onkeydown={handleDetailResizeKey}
-								tabindex="0"
 								aria-label="Resize details panel"
 							></button>
 						{/if}

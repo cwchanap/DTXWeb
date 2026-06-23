@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, createEvent } from '@testing-library/svelte';
 import { authStore } from '../../stores/authStore';
 import { workspaceStore } from '../../stores/workspaceStore';
+import { simFileStore } from '../../stores/simFileStore';
+import type { SimfileWithDtx } from '@dtx/common';
 
 vi.mock('@lucide/svelte');
 vi.mock('../../services/authService', () => ({ authService: { login: vi.fn(), logout: vi.fn() } }));
@@ -17,10 +19,23 @@ vi.mock('../../services/workspaceService', () => ({
 
 import CommandPalette from './CommandPalette.svelte';
 
+const makeCloudSimFile = (overrides: Partial<SimfileWithDtx> = {}): SimfileWithDtx =>
+	({
+		id: 1,
+		title: 'Cloud Anthem',
+		artist: 'Cloud Artist',
+		bpm: 120,
+		is_published: false,
+		publish_date: null,
+		dtx_files: [],
+		...overrides
+	}) as SimfileWithDtx;
+
 describe('CommandPalette', () => {
 	beforeEach(() => {
 		authStore.reset();
 		workspaceStore.reset();
+		simFileStore.reset();
 		vi.clearAllMocks();
 	});
 	afterEach(() => cleanup());
@@ -36,7 +51,7 @@ describe('CommandPalette', () => {
 	});
 	it('filters by query', async () => {
 		render(CommandPalette, { open: true, onClose: vi.fn() });
-		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'settings' } });
+		await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'settings' } });
 		expect(screen.getByText('Open Settings')).toBeInTheDocument();
 		expect(screen.queryByText('New Song')).not.toBeInTheDocument();
 	});
@@ -52,13 +67,13 @@ describe('CommandPalette', () => {
 		// nothing in the palette may stop its propagation.
 		const onClose = vi.fn();
 		render(CommandPalette, { open: true, onClose });
-		await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+		await fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
 		expect(onClose).toHaveBeenCalled();
 	});
 	it('Enter runs the selected command and closes', async () => {
 		const onClose = vi.fn();
 		render(CommandPalette, { open: true, onClose });
-		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'settings' } });
+		await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'settings' } });
 		await fireEvent.keyDown(window, { key: 'Enter' });
 		const { get } = await import('svelte/store');
 		expect(get(workspaceStore).activeSection).toBe('settings');
@@ -90,7 +105,7 @@ describe('CommandPalette', () => {
 		]);
 		render(CommandPalette, { open: true, onClose });
 		// type a query that matches the song but no command
-		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'my song' } });
+		await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'my song' } });
 		await fireEvent.keyDown(window, { key: 'Enter' });
 		const { get } = await import('svelte/store');
 		expect(get(workspaceStore).activeSection).toBe('library');
@@ -103,11 +118,87 @@ describe('CommandPalette', () => {
 		// Move selection to index 1 (Go to Templates)
 		await fireEvent.keyDown(window, { key: 'ArrowDown' });
 		// Now narrow the query so only 1 result remains: "Open Settings"
-		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'open settings' } });
+		await fireEvent.input(screen.getByRole('combobox'), {
+			target: { value: 'open settings' }
+		});
 		// Enter must run the single remaining result (index 0 = Open Settings → settings)
 		await fireEvent.keyDown(window, { key: 'Enter' });
 		const { get } = await import('svelte/store');
 		expect(get(workspaceStore).activeSection).toBe('settings');
+		expect(onClose).toHaveBeenCalled();
+	});
+
+	it('renders a combobox controlling a listbox of options (spec §7 ARIA)', () => {
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		const combobox = screen.getByRole('combobox');
+		expect(combobox).toHaveAttribute('aria-expanded', 'true');
+		expect(combobox.getAttribute('aria-controls')).toBe('cmd-palette-list');
+		// listbox + options exist
+		expect(screen.getByRole('listbox')).toBeInTheDocument();
+		expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
+	});
+
+	it('updates aria-activedescendant + aria-selected during arrow navigation', async () => {
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		const combobox = screen.getByRole('combobox');
+		// Initially the first option is active/selected
+		expect(combobox.getAttribute('aria-activedescendant')).toBe('cmd-opt-0');
+		expect(screen.getByRole('option', { name: /Go to Library/i })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		// Arrow down moves the active descendant to the 2nd option
+		await fireEvent.keyDown(window, { key: 'ArrowDown' });
+		expect(combobox.getAttribute('aria-activedescendant')).toBe('cmd-opt-1');
+		expect(screen.getByRole('option', { name: /Go to Templates/i })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		expect(screen.getByRole('option', { name: /Go to Library/i })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+	});
+
+	it('traps Tab inside the dialog (prevents focus leaving the palette)', async () => {
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		const combobox = screen.getByRole('combobox');
+		combobox.focus();
+		expect(document.activeElement).toBe(combobox);
+		// Tab must be intercepted (preventDefault) so focus cannot escape the modal
+		const tabEvent = createEvent.keyDown(window, { key: 'Tab' });
+		const preventDefault = vi.spyOn(tabEvent, 'preventDefault');
+		fireEvent(window, tabEvent);
+		expect(preventDefault).toHaveBeenCalled();
+		// Shift+Tab is trapped too
+		const shiftTabEvent = createEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+		const preventDefaultShift = vi.spyOn(shiftTabEvent, 'preventDefault');
+		fireEvent(window, shiftTabEvent);
+		expect(preventDefaultShift).toHaveBeenCalled();
+	});
+
+	it('clicking an option runs it (mouse path on role=option)', async () => {
+		const onClose = vi.fn();
+		render(CommandPalette, { open: true, onClose });
+		await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'settings' } });
+		await fireEvent.click(screen.getByRole('option', { name: /Open Settings/i }));
+		const { get } = await import('svelte/store');
+		expect(get(workspaceStore).activeSection).toBe('settings');
+		expect(onClose).toHaveBeenCalled();
+	});
+
+	it('includes cloud simfiles in search and Enter opens their detail', async () => {
+		const onClose = vi.fn();
+		simFileStore.setUserSimFiles([makeCloudSimFile({ id: 42, title: 'Cloud Anthem' })]);
+		render(CommandPalette, { open: true, onClose });
+		await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'cloud anthem' } });
+		// The cloud result is tagged CLOUD and is the only match for this query.
+		expect(screen.getByText('CLOUD')).toBeInTheDocument();
+		await fireEvent.keyDown(window, { key: 'Enter' });
+		const { get } = await import('svelte/store');
+		expect(get(workspaceStore).activeSection).toBe('cloud');
+		expect(get(workspaceStore).selectedCloudSimFile?.id).toBe(42);
+		expect(get(workspaceStore).showCloudSongDetails).toBe(true);
 		expect(onClose).toHaveBeenCalled();
 	});
 });

@@ -55,11 +55,11 @@
 <div class="flex h-full flex-col">
 	<!-- Header -->
 	<div
-		class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
+		class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
 	>
 		<div class="flex items-center gap-2">
-			<SettingsIcon size={20} class="text-slate-500 dark:text-slate-400" />
-			<h2 class="text-xl font-semibold">Settings</h2>
+			<SettingsIcon size={20} class="text-dim" />
+			<h2 class="font-display text-hi text-xl font-semibold">Settings</h2>
 		</div>
 	</div>
 
@@ -67,20 +67,18 @@
 	<div class="flex-1 overflow-auto p-6">
 		<div class="mx-auto max-w-2xl space-y-6">
 			<!-- Export Settings Section -->
-			<div class="rounded-lg bg-white p-6 shadow-sm dark:bg-slate-800">
-				<h3 class="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
-					Export Settings
-				</h3>
+			<div class="bg-surface-1 rounded-lg p-6 shadow-sm">
+				<h3 class="font-display text-hi mb-4 text-lg font-semibold">Export Settings</h3>
 
 				<!-- Export Directory Setting -->
 				<div class="space-y-3">
 					<label
 						for="export-directory-display"
-						class="block text-sm font-medium text-slate-700 dark:text-slate-300"
+						class="text-base-text block text-sm font-medium"
 					>
 						Default Export Directory
 					</label>
-					<p class="text-sm text-slate-600 dark:text-slate-400">
+					<p class="text-dim text-sm">
 						Choose where exported ZIP files will be saved by default.
 					</p>
 
@@ -88,24 +86,23 @@
 						<div class="flex-1">
 							<div
 								id="export-directory-display"
-								class="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-600 dark:bg-slate-700"
+								class="border-hairline bg-surface-2 flex items-center rounded-lg border px-3 py-2"
 							>
-								<Folder size={16} class="mr-2 text-slate-400" />
-								<span
-									class="flex-1 truncate font-mono text-sm text-slate-700 dark:text-slate-300"
-								>
+								<Folder size={16} class="text-faint mr-2" />
+								<span class="text-base-text flex-1 truncate font-mono text-sm">
 									{settings?.exportDirectory || '~/Downloads'}
 								</span>
 							</div>
 						</div>
 						<button
-							class="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"
+							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] transition-colors hover:opacity-90 focus:outline-none disabled:opacity-50"
+							style="box-shadow:0 0 22px -6px var(--color-magenta)"
 							onclick={handleSelectDirectory}
 							disabled={isSelectingDirectory}
 						>
 							{#if isSelectingDirectory}
 								<div
-									class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+									class="h-4 w-4 animate-spin rounded-full border-2 border-[#16001a] border-t-transparent"
 								></div>
 								Selecting...
 							{:else}
@@ -117,7 +114,7 @@
 
 					<!-- Reset to Default Button -->
 					<button
-						class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+						class="text-dim hover:text-base-text flex items-center gap-2 text-sm"
 						onclick={handleResetToDefault}
 					>
 						<RotateCcw size={14} />
@@ -128,10 +125,8 @@
 
 			<!-- Success Message -->
 			{#if saveSuccess}
-				<div
-					class="rounded-lg bg-green-50 p-4 text-green-800 dark:bg-green-900/20 dark:text-green-300"
-				>
-					<div class="flex items-center gap-2">
+				<div class="border-green/40 bg-green/10 rounded-lg p-4">
+					<div class="text-green flex items-center gap-2">
 						<Save size={16} />
 						<span class="text-sm font-medium">Settings saved successfully!</span>
 					</div>

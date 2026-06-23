@@ -159,16 +159,16 @@
 
 	<!-- Popup -->
 	<div
-		class="autocomplete-popup fixed z-50 rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800"
+		class="autocomplete-popup border-hairline bg-surface-1 fixed z-50 rounded-lg border shadow-xl"
 		style="top: {position?.top || 50}px; left: {position?.left ||
 			50}px; width: {position?.width || 400}px;"
 	>
 		<!-- Header -->
-		<div class="flex items-center gap-2 border-b border-slate-200 p-4 dark:border-slate-700">
-			<Link size={18} class="text-purple-500 dark:text-purple-400" />
-			<h3 class="font-semibold text-slate-900 dark:text-slate-100">Link to Cloud Song</h3>
+		<div class="border-hairline flex items-center gap-2 border-b p-4">
+			<Link size={18} class="text-cyan" />
+			<h3 class="font-display text-hi font-semibold">Link to Cloud Song</h3>
 			<button
-				class="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+				class="text-faint hover:bg-surface-2 hover:text-base-text ml-auto rounded-lg p-1"
 				onclick={handleClose}
 				aria-label="Close"
 			>
@@ -180,14 +180,14 @@
 		<div class="p-4">
 			<div class="relative">
 				<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-					<Search size={16} class="text-slate-400" />
+					<Search size={16} class="text-faint" />
 				</div>
 				<input
 					bind:this={searchInputRef}
 					type="text"
 					bind:value={searchQuery}
 					placeholder="Search by song title or artist..."
-					class="w-full rounded-lg border border-slate-200 bg-white py-2 pr-4 pl-10 text-slate-900 placeholder-slate-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-purple-400 dark:focus:ring-purple-400"
+					class="border-hairline bg-surface-2 text-hi placeholder-faint focus:border-cyan w-full rounded-lg border py-2 pr-4 pl-10 focus:ring-1 focus:outline-none"
 					oninput={handleSearchInput}
 					onkeydown={handleKeydown}
 				/>
@@ -198,7 +198,7 @@
 							suggestions = [];
 							selectedIndex = -1;
 						}}
-						class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+						class="text-faint hover:text-base-text absolute inset-y-0 right-0 flex items-center pr-3"
 						aria-label="Clear search"
 					>
 						<X size={16} />
@@ -212,47 +212,42 @@
 			{#if isLoading}
 				<div class="flex items-center justify-center p-6">
 					<div
-						class="h-5 w-5 animate-spin rounded-full border-2 border-purple-500 border-t-transparent"
+						class="border-cyan h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
 					></div>
-					<span class="ml-2 text-sm text-slate-600 dark:text-slate-400">Searching...</span
-					>
+					<span class="text-dim ml-2 text-sm">Searching...</span>
 				</div>
 			{:else if searchQuery.trim().length >= 2}
 				{#if suggestions.length > 0}
-					<div class="border-t border-slate-200 dark:border-slate-700">
+					<div class="border-hairline border-t">
 						{#each suggestions as song, index}
 							<button
-								class="flex w-full items-center gap-3 border-b border-slate-100 p-4 text-left transition-colors hover:bg-slate-50 focus:bg-slate-50 focus:outline-none dark:border-slate-700 dark:hover:bg-slate-700/50 dark:focus:bg-slate-700/50 {selectedIndex ===
+								class="border-hairline hover:bg-surface-2 focus:bg-surface-2 flex w-full items-center gap-3 border-b p-4 text-left transition-colors focus:outline-none {selectedIndex ===
 								index
-									? 'bg-slate-50 dark:bg-slate-700/50'
+									? 'bg-surface-2'
 									: ''}"
 								onclick={() => selectSong(song)}
 								onmouseenter={() => (selectedIndex = index)}
 							>
 								<div
-									class="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/30"
+									class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-lg"
 								>
-									<Music size={16} class="text-purple-600 dark:text-purple-400" />
+									<Music size={16} class="text-cyan" />
 								</div>
 								<div class="min-w-0 flex-1">
-									<div
-										class="truncate font-medium text-slate-900 dark:text-slate-100"
-									>
+									<div class="text-hi truncate font-medium">
 										{song.title}
 									</div>
-									<div
-										class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"
-									>
+									<div class="text-dim flex items-center gap-2 text-sm">
 										<User size={12} />
 										<span class="truncate">{song.artist}</span>
 										{#if song.bpm}
-											<span class="text-slate-400">•</span>
-											<span>{song.bpm} BPM</span>
+											<span class="text-faint">•</span>
+											<span class="font-mono">{song.bpm} BPM</span>
 										{/if}
 										<span
 											class="ml-auto rounded px-2 py-0.5 text-xs font-medium {song.is_published
-												? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-												: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}"
+												? 'border-green/40 bg-green/10 text-green'
+												: 'bg-surface-2 text-dim'}"
 										>
 											{song.is_published ? 'Published' : 'Draft'}
 										</span>
@@ -262,23 +257,17 @@
 						{/each}
 					</div>
 				{:else}
-					<div class="border-t border-slate-200 p-6 text-center dark:border-slate-700">
-						<Music size={24} class="mx-auto mb-2 text-slate-400" />
-						<p class="text-sm font-medium text-slate-600 dark:text-slate-400">
-							No songs found
-						</p>
-						<p class="text-xs text-slate-500 dark:text-slate-500">
-							Try a different search term
-						</p>
+					<div class="border-hairline border-t p-6 text-center">
+						<Music size={24} class="text-faint mx-auto mb-2" />
+						<p class="text-dim text-sm font-medium">No songs found</p>
+						<p class="text-faint text-xs">Try a different search term</p>
 					</div>
 				{/if}
 			{:else}
-				<div class="border-t border-slate-200 p-6 text-center dark:border-slate-700">
-					<Search size={24} class="mx-auto mb-2 text-slate-400" />
-					<p class="text-sm font-medium text-slate-600 dark:text-slate-400">
-						Start typing to search
-					</p>
-					<p class="text-xs text-slate-500 dark:text-slate-500">
+				<div class="border-hairline border-t p-6 text-center">
+					<Search size={24} class="text-faint mx-auto mb-2" />
+					<p class="text-dim text-sm font-medium">Start typing to search</p>
+					<p class="text-faint text-xs">
 						Enter at least 2 characters to search for cloud songs
 					</p>
 				</div>

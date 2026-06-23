@@ -278,23 +278,23 @@
 	}
 </script>
 
-<div class="flex h-full flex-col overflow-hidden bg-white dark:bg-slate-800">
+<div class="bg-base flex h-full flex-col overflow-hidden">
 	<!-- Header -->
 	<div
-		class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
+		class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
 	>
 		<div class="flex items-center gap-2">
 			<button
 				onclick={goBack}
-				class="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+				class="bg-surface-2 text-base-text hover:text-hi flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-90"
 			>
 				<ArrowLeft size={16} />
 				Back
 			</button>
 		</div>
 		<div class="flex items-center gap-2">
-			<Music size={20} class="text-slate-500" />
-			<h2 class="text-xl font-semibold">Create New Song</h2>
+			<Music size={20} class="text-dim" />
+			<h2 class="font-display text-hi text-xl font-semibold">Create New Song</h2>
 		</div>
 		<div class="w-20"></div>
 		<!-- Spacer for centering -->
@@ -302,26 +302,20 @@
 
 	<!-- Main Content -->
 	<div class="flex flex-1 items-center justify-center p-6">
-		<div
-			class="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-600 dark:bg-slate-700"
-		>
+		<div class="border-hairline bg-surface-1 w-full max-w-md rounded-lg border p-6 shadow-lg">
 			<div class="mb-6 text-center">
-				<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
-					New Song Folder
-				</h3>
+				<h3 class="font-display text-hi text-lg font-semibold">New Song Folder</h3>
 			</div>
 
 			{#if error}
-				<div
-					class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"
-				>
+				<div class="border-red/40 bg-red/10 text-red mb-4 rounded-lg border p-3 text-sm">
 					{error}
 				</div>
 			{/if}
 
 			{#if folderExistsWarning}
 				<div
-					class="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+					class="border-amber/40 bg-amber/10 text-amber mb-4 rounded-lg border p-3 text-sm"
 				>
 					⚠️ {folderExistsWarning}
 				</div>
@@ -336,10 +330,7 @@
 			>
 				<!-- Song Name Input -->
 				<div>
-					<label
-						for="songName"
-						class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
-					>
+					<label for="songName" class="text-base-text mb-2 block text-sm font-medium">
 						Song Name
 					</label>
 					<input
@@ -348,7 +339,7 @@
 						bind:value={songName}
 						placeholder="Enter song name..."
 						required
-						class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
+						class="border-hairline bg-surface-2 text-hi placeholder-faint focus:border-cyan w-full rounded-lg border px-3 py-2 focus:ring-1 focus:outline-none"
 					/>
 				</div>
 
@@ -358,9 +349,9 @@
 						id="useSameName"
 						type="checkbox"
 						bind:checked={useSameNameForFolder}
-						class="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+						class="border-hairline text-cyan focus:ring-cyan rounded"
 					/>
-					<label for="useSameName" class="text-sm text-slate-700 dark:text-slate-300">
+					<label for="useSameName" class="text-base-text text-sm">
 						Use same name for folder
 					</label>
 				</div>
@@ -370,7 +361,7 @@
 					<div>
 						<label
 							for="folderName"
-							class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
+							class="text-base-text mb-2 block text-sm font-medium"
 						>
 							Folder Name
 						</label>
@@ -380,47 +371,37 @@
 							bind:value={folderName}
 							placeholder="Enter folder name..."
 							required
-							class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
+							class="border-hairline bg-surface-2 text-hi placeholder-faint focus:border-cyan w-full rounded-lg border px-3 py-2 focus:ring-1 focus:outline-none"
 						/>
 					</div>
 				{/if}
 
 				<!-- Template Import Section -->
 				<div>
-					<label
-						for="template"
-						class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
-					>
+					<label for="template" class="text-base-text mb-2 block text-sm font-medium">
 						Template (Optional)
 					</label>
 
 					{#if selectedTemplate}
 						<!-- Show selected template -->
-						<div
-							class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/30"
-						>
+						<div class="border-green/40 bg-green/10 rounded-lg border p-3">
 							<div class="flex items-center justify-between">
 								<div class="flex items-center gap-2">
-									<FileText
-										size={16}
-										class="text-green-600 dark:text-green-400"
-									/>
-									<span
-										class="text-sm font-medium text-green-800 dark:text-green-200"
-									>
+									<FileText size={16} class="text-green" />
+									<span class="text-green text-sm font-medium">
 										{selectedTemplate.name}
 									</span>
 								</div>
 								<button
 									type="button"
 									onclick={handleClearTemplate}
-									class="flex items-center gap-1 rounded-lg bg-red-500 px-2 py-1 text-xs font-medium text-white hover:bg-red-600"
+									class="border-red/40 bg-red/10 text-red flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium hover:opacity-90"
 									title="Remove template"
 								>
 									<X size={12} />
 								</button>
 							</div>
-							<p class="mt-1 text-xs text-green-700 dark:text-green-300">
+							<p class="text-green mt-1 text-xs">
 								Template files will be copied to the new song folder
 							</p>
 						</div>
@@ -430,7 +411,7 @@
 							id="template"
 							type="button"
 							onclick={handleImportTemplate}
-							class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+							class="border-hairline bg-surface-2 text-dim hover:border-cyan hover:text-cyan flex w-full items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-3 text-sm transition-colors"
 						>
 							<FileText size={16} />
 							Import Template
@@ -443,7 +424,7 @@
 					<button
 						type="button"
 						onclick={selectCustomPath}
-						class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+						class="border-hairline bg-surface-2 text-dim hover:border-cyan hover:text-cyan flex w-full items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-3 text-sm transition-colors"
 					>
 						<Folder size={14} />
 						Choose different folder...
@@ -452,9 +433,9 @@
 
 				<!-- Selected Path Display -->
 				{#if selectedPath}
-					<div class="mt-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
-						<p class="text-xs text-slate-600 dark:text-slate-400">Full path:</p>
-						<p class="font-mono text-sm text-slate-800 dark:text-slate-200">
+					<div class="bg-surface-2 mt-2 rounded-lg p-3">
+						<p class="text-dim text-xs">Full path:</p>
+						<p class="text-hi font-mono text-sm">
 							{selectedPath}/{(useSameNameForFolder ? songName : folderName) ||
 								'[folder-name]'}
 						</p>
@@ -466,7 +447,7 @@
 					<button
 						type="button"
 						onclick={goBack}
-						class="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+						class="border-hairline bg-surface-2 text-base-text hover:text-hi flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:opacity-90"
 					>
 						Cancel
 					</button>
@@ -476,7 +457,8 @@
 							!songName.trim() ||
 							!selectedPath ||
 							!!folderExistsWarning}
-						class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-slate-800"
+						class="bg-magenta flex-1 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] transition-colors hover:opacity-90 focus:ring-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+						style="box-shadow:0 0 22px -6px var(--color-magenta)"
 					>
 						{#if isCreating}
 							Creating...
@@ -493,18 +475,14 @@
 <!-- Template Selection Modal -->
 {#if showTemplateSelection}
 	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div
-			class="max-h-[80vh] w-full max-w-md overflow-hidden rounded-lg bg-white shadow-xl dark:bg-slate-800"
-		>
+		<div class="bg-surface-1 max-h-[80vh] w-full max-w-md overflow-hidden rounded-lg shadow-xl">
 			<!-- Modal Header -->
-			<div class="border-b border-slate-200 p-4 dark:border-slate-700">
+			<div class="border-hairline border-b p-4">
 				<div class="flex items-center justify-between">
-					<h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
-						Select Template
-					</h3>
+					<h3 class="font-display text-hi text-lg font-semibold">Select Template</h3>
 					<button
 						onclick={handleCancelTemplateSelection}
-						class="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+						class="text-faint hover:bg-surface-2 hover:text-base-text rounded-lg p-1"
 					>
 						<X size={20} />
 					</button>
@@ -515,8 +493,8 @@
 			<div class="max-h-[60vh] overflow-y-auto p-4">
 				{#if templates.length === 0}
 					<div class="flex flex-col items-center py-8 text-center">
-						<FileText size={48} class="mb-3 text-slate-400" />
-						<p class="text-slate-600 dark:text-slate-400">
+						<FileText size={48} class="text-faint mb-3" />
+						<p class="text-dim">
 							No templates available. Create a template first in the Templates
 							section.
 						</p>
@@ -526,25 +504,23 @@
 						{#each templates as template (template.id)}
 							<button
 								onclick={() => handleSelectTemplate(template)}
-								class="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-600 dark:hover:bg-blue-900/30"
+								class="border-hairline bg-surface-2 hover:border-cyan w-full rounded-lg border p-3 text-left transition-colors hover:opacity-90"
 							>
 								<div class="flex items-start justify-between">
 									<div class="flex-1">
-										<h4 class="font-medium text-slate-900 dark:text-slate-100">
+										<h4 class="text-hi font-medium">
 											{template.name}
 										</h4>
-										<p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+										<p class="text-dim mt-1 text-sm">
 											Created: {new Date(
 												template.createdAt
 											).toLocaleDateString()}
 										</p>
-										<p
-											class="mt-1 font-mono text-xs text-slate-500 dark:text-slate-500"
-										>
+										<p class="text-faint mt-1 font-mono text-xs">
 											{template.folderPath}
 										</p>
 									</div>
-									<FileText size={20} class="text-slate-400" />
+									<FileText size={20} class="text-faint" />
 								</div>
 							</button>
 						{/each}
@@ -553,10 +529,10 @@
 			</div>
 
 			<!-- Modal Footer -->
-			<div class="border-t border-slate-200 p-4 dark:border-slate-700">
+			<div class="border-hairline border-t p-4">
 				<button
 					onclick={handleCancelTemplateSelection}
-					class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+					class="border-hairline bg-surface-2 text-base-text hover:text-hi w-full rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:opacity-90"
 				>
 					Cancel
 				</button>

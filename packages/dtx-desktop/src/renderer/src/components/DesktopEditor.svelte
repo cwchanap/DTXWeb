@@ -57,8 +57,6 @@
 	let isEditorReady = $state(false);
 	let gameContainer: HTMLDivElement;
 	let isGameInitialized = $state(false);
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	let isLoading = $state(true);
 	let chartMetadata = $state<ChartMetadata | null>(null);
 	let fileProvider: DesktopFileProvider | null = null;
 	let game: Phaser.Game | null = null;
@@ -287,8 +285,6 @@
 				console.error('Failed to initialize desktop editor:', error);
 				// Set initialized to true even on error so we don't show loading forever
 				isGameInitialized = true;
-			} finally {
-				isLoading = false;
 			}
 		};
 

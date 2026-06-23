@@ -1,9 +1,10 @@
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
 	import { onMount } from 'svelte';
-	import { ArrowLeft } from '@lucide/svelte';
-	import { MainTab, SoundTab, PreviewTab } from '@dtx/common/components';
 	import Phaser from 'phaser';
+	import EditorContextBar from './editor/EditorContextBar.svelte';
+	import EditorDock from './editor/EditorDock.svelte';
+	import TransportBar from './editor/TransportBar.svelte';
 	import { Editor, Preloader, MainMenu, EventBus, EventType } from '@dtx/common/game';
 	import { DesktopPreview } from '../scenes/DesktopPreview';
 	import { store } from '@dtx/common';
@@ -53,9 +54,10 @@
 	let { simFileId }: Props = $props();
 
 	// Editor state
-	let currentTab = $state('main');
+	let isEditorReady = $state(false);
 	let gameContainer: HTMLDivElement;
 	let isGameInitialized = $state(false);
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let isLoading = $state(true);
 	let chartMetadata = $state<ChartMetadata | null>(null);
 	let fileProvider: DesktopFileProvider | null = null;
@@ -117,10 +119,6 @@
 	const handleBackToWorkspace = () => {
 		// Navigate back to workspace
 		window.location.hash = '';
-	};
-
-	const switchTab = (tab: string) => {
-		currentTab = tab;
 	};
 
 	const handleMouseDown = (e: MouseEvent) => {
@@ -279,6 +277,7 @@
 
 					// Wait for the game to be ready before emitting NOTE_IMPORT
 					game.events.once('ready', () => {
+						isEditorReady = true;
 						EventBus.emit(EventType.NOTE_IMPORT, [], {});
 					});
 
@@ -621,137 +620,31 @@
 	};
 </script>
 
-<div class="h-screen w-full bg-slate-900 text-white">
-	<!-- Header with navigation and tabs -->
-	<div
-		class="flex items-center justify-between border-b border-slate-700 bg-slate-800 p-4 shadow-sm"
-	>
-		<div class="flex items-center gap-4">
-			<button
-				class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-slate-500 to-slate-600 px-4 py-2 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-slate-600 hover:to-slate-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
-				onclick={handleBackToWorkspace}
-				title="Back to Workspace"
-			>
-				<ArrowLeft size={16} />
-				Back to Workspace
-			</button>
-
-			<h1 class="text-xl font-semibold">
-				DTX Editor {currentSongName
-					? `- ${currentSongName}`
-					: simFileId
-						? `- ${simFileId}`
-						: '- New Chart'}
-			</h1>
-		</div>
-
-		<!-- Tab Navigation and Difficulty Switcher -->
-		<div class="flex items-center gap-4">
-			{#if currentChart && currentChart.dtxFiles.length > 1}
-				<!-- Difficulty/DTX File Selector -->
-				<div class="relative">
-					<select
-						class="rounded border border-slate-500 bg-slate-600 px-3 py-2 text-sm text-white hover:bg-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-						value={currentChart.currentDTX || ''}
-						onchange={(e) =>
-							switchChartDifficulty((e.target as HTMLSelectElement).value)}
-					>
-						{#each currentChart.dtxFiles as dtxFile}
-							<option value={dtxFile.name} class="bg-slate-700 text-white">
-								{dtxFile.name.replace('.dtx', '').toUpperCase()}
-							</option>
-						{/each}
-					</select>
-				</div>
-			{/if}
-
-			{#if !isSidebarCollapsed}
-				<div class="flex rounded-lg bg-slate-700 p-1">
-					<button
-						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-						'main'
-							? 'bg-slate-600 text-white'
-							: 'text-slate-300 hover:text-white'}"
-						onclick={() => switchTab('main')}
-					>
-						Main
-					</button>
-					<button
-						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-						'sound'
-							? 'bg-slate-600 text-white'
-							: 'text-slate-300 hover:text-white'}"
-						onclick={() => switchTab('sound')}
-					>
-						Sound
-					</button>
-					<button
-						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {currentTab ===
-						'preview'
-							? 'bg-slate-600 text-white'
-							: 'text-slate-300 hover:text-white'}"
-						onclick={() => switchTab('preview')}
-					>
-						Preview
-					</button>
-				</div>
-			{/if}
-		</div>
-	</div>
-
-	<!-- Editor Content -->
-	<div class="flex h-full">
-		<!-- Sidebar for tabs -->
+<div class="bg-base text-base-text flex h-screen flex-col">
+	<EditorContextBar
+		songName={currentSongName}
+		{simFileId}
+		difficulties={currentChart?.dtxFiles ?? []}
+		currentDtx={currentChart?.currentDTX ?? ''}
+		onBack={handleBackToWorkspace}
+		onSwitchDifficulty={switchChartDifficulty}
+	/>
+	<div class="flex min-h-0 flex-1">
 		{#if !isSidebarCollapsed}
 			<div
-				class="relative border-r border-slate-700 bg-slate-800 p-4"
-				style="width: {sidebarWidth}px; max-width: {maxSidebarWidth}px;"
+				class="border-hairline relative border-r"
+				style="width:{sidebarWidth}px;max-width:{maxSidebarWidth}px"
 			>
-				{#if isLoading}
-					<div class="flex h-full items-center justify-center">
-						<div class="text-center">
-							<div
-								class="mx-auto mb-4 h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
-							></div>
-							<p class="text-sm text-slate-400">Loading chart data...</p>
-						</div>
-					</div>
-				{:else if currentTab === 'main'}
-					{#if chartLoadError}
-						<div class="mb-3 rounded-md border border-red-300 bg-red-50 p-3">
-							<div class="flex items-start justify-between gap-2">
-								<p class="text-sm text-red-700">{chartLoadError}</p>
-								<button
-									class="shrink-0 text-red-500 hover:text-red-700"
-									onclick={() => (chartLoadError = null)}>×</button
-								>
-							</div>
-						</div>
-					{/if}
-					{#if validationError}
-						<div class="mb-3 rounded-md border border-red-300 bg-red-50 p-3">
-							<div class="flex items-start justify-between">
-								<p class="text-sm text-red-700">{validationError}</p>
-								<button
-									class="text-red-500 hover:text-red-700"
-									onclick={() => (validationError = null)}>×</button
-								>
-							</div>
-						</div>
-					{/if}
-					<MainTab />
-				{:else if currentTab === 'sound'}
-					<SoundTab simfileID={isLocalEditingMode ? null : simFileId} bucketUrl="" />
-				{:else if currentTab === 'preview'}
-					<PreviewTab />
-				{/if}
-
-				<!-- Drag handle -->
+				<EditorDock
+					simfileId={isLocalEditingMode ? null : simFileId}
+					{chartLoadError}
+					{validationError}
+					{isEditorReady}
+				/>
 				<button
 					type="button"
-					class="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-500/50 {isDragging
-						? 'bg-blue-500'
-						: ''}"
+					class="hover:bg-cyan/40 absolute top-0 right-0 h-full w-1 cursor-col-resize"
+					class:bg-cyan={isDragging}
 					onmousedown={handleMouseDown}
 					onkeydown={handleKeyResize}
 					tabindex="0"
@@ -759,36 +652,26 @@
 				></button>
 			</div>
 		{:else}
-			<!-- Collapsed sidebar - expand area -->
 			<div
-				class="relative cursor-col-resize border-r border-slate-700 bg-slate-800 transition-colors hover:bg-slate-700"
+				class="border-hairline hover:bg-surface-2 relative w-3 cursor-col-resize border-r"
 				onclick={expandSidebar}
 				onmousedown={handleMouseDown}
 				onkeydown={(e) => e.key === 'Enter' && expandSidebar()}
 				role="button"
 				tabindex="0"
-				title="Drag to expand sidebar"
-			>
-				<div class="flex h-full w-2 items-center justify-center">
-					<div class="h-8 w-0.5 rounded bg-slate-600"></div>
-				</div>
-			</div>
+				title="Expand dock"
+				aria-label="Expand dock"
+			></div>
 		{/if}
-
-		<!-- Game Canvas Area -->
-		<div class="flex-1 bg-slate-900">
+		<div class="bg-base min-w-0 flex-1">
 			<div bind:this={gameContainer} class="h-full w-full">
 				{#if !isGameInitialized}
-					<div class="flex h-full items-center justify-center">
-						<div class="text-center">
-							<div
-								class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
-							></div>
-							<p class="text-slate-400">Initializing editor...</p>
-						</div>
+					<div class="text-dim flex h-full items-center justify-center">
+						Initializing editor…
 					</div>
 				{/if}
 			</div>
 		</div>
 	</div>
+	<TransportBar {isEditorReady} />
 </div>

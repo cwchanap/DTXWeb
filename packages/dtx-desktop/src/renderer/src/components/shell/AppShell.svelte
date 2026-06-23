@@ -9,6 +9,7 @@
 	import Settings from '../Settings.svelte';
 	import NewSong from '../NewSong.svelte';
 	import { workspaceStore } from '../../stores/workspaceStore';
+	import { preferencesStore } from '../../stores/preferencesStore';
 	import { resolveShellMode } from '../../lib/shellMode';
 	import { onMount } from 'svelte';
 
@@ -17,10 +18,54 @@
 	const mode = $derived(resolveShellMode(width));
 	const section = $derived($workspaceStore.activeSection);
 	const isListSection = $derived(section === 'library' || section === 'cloud');
-	const showDetail = $derived(isListSection && !!$workspaceStore.selectedSong);
+	const detailVisible = $derived($preferencesStore.detailPaneVisible);
+	const showDetail = $derived(isListSection && !!$workspaceStore.selectedSong && detailVisible);
+
+	const MIN_DETAIL = 320;
+	const MAX_DETAIL = 640;
+	const clampDetail = (w: number) => Math.min(Math.max(w, MIN_DETAIL), MAX_DETAIL);
+	let isDraggingDetail = $state(false);
+	let dragDetailWidth = $state(420);
+	const detailRenderWidth = $derived(
+		isDraggingDetail ? dragDetailWidth : $preferencesStore.detailPaneWidth
+	);
+
+	const handleDetailResizeMove = (e: MouseEvent) => {
+		if (!isDraggingDetail) return;
+		dragDetailWidth = clampDetail(window.innerWidth - e.clientX);
+	};
+	const handleDetailResizeUp = () => {
+		isDraggingDetail = false;
+		document.removeEventListener('mousemove', handleDetailResizeMove);
+		document.removeEventListener('mouseup', handleDetailResizeUp);
+		document.body.style.cursor = '';
+		document.body.style.userSelect = '';
+		if (dragDetailWidth !== $preferencesStore.detailPaneWidth) {
+			preferencesStore.setDetailWidth(dragDetailWidth);
+		}
+	};
+	const handleDetailResizeDown = (e: MouseEvent) => {
+		e.preventDefault();
+		dragDetailWidth = $preferencesStore.detailPaneWidth;
+		isDraggingDetail = true;
+		document.addEventListener('mousemove', handleDetailResizeMove);
+		document.addEventListener('mouseup', handleDetailResizeUp);
+		document.body.style.cursor = 'col-resize';
+		document.body.style.userSelect = 'none';
+	};
+	const handleDetailResizeKey = (e: KeyboardEvent) => {
+		if (e.key === 'ArrowLeft') {
+			e.preventDefault();
+			preferencesStore.setDetailWidth($preferencesStore.detailPaneWidth + 20);
+		} else if (e.key === 'ArrowRight') {
+			e.preventDefault();
+			preferencesStore.setDetailWidth($preferencesStore.detailPaneWidth - 20);
+		}
+	};
 
 	let rootEl: HTMLElement;
 	onMount(() => {
+		void preferencesStore.load();
 		const ro = new ResizeObserver((entries) => {
 			width = entries[0].contentRect.width;
 		});
@@ -60,10 +105,21 @@
 				<!-- detail pane -->
 				{#if showDetail}
 					<div
-						class:w-[420px]={mode === 'wide'}
+						class="reveal reveal-1 relative min-w-0"
 						class:flex-1={mode !== 'wide'}
-						class="reveal reveal-1 min-w-0"
+						style={mode === 'wide' ? `width:${detailRenderWidth}px` : ''}
 					>
+						{#if mode === 'wide'}
+							<button
+								type="button"
+								class="hover:bg-cyan/40 absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize"
+								class:bg-cyan={isDraggingDetail}
+								onmousedown={handleDetailResizeDown}
+								onkeydown={handleDetailResizeKey}
+								tabindex="0"
+								aria-label="Resize details panel"
+							></button>
+						{/if}
 						<DetailPane />
 					</div>
 				{/if}

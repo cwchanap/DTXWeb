@@ -64,6 +64,11 @@
 		}
 	});
 
+	$effect(() => {
+		query; // track query
+		selected = 0;
+	});
+
 	const runAt = (i: number) => {
 		const r = flatResults[i];
 		if (!r) return;

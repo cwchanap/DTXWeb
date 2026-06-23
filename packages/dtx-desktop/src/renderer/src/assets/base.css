@@ -62,3 +62,36 @@ body {
 ::-webkit-scrollbar-thumb:hover {
 	background: color-mix(in srgb, var(--color-magenta) 50%, var(--color-surface-3));
 }
+
+@keyframes neon-rise {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+.reveal {
+	animation: neon-rise 0.4s ease both;
+}
+.reveal-1 {
+	animation-delay: 0.05s;
+}
+.reveal-2 {
+	animation-delay: 0.1s;
+}
+.reveal-3 {
+	animation-delay: 0.15s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+	}
+}

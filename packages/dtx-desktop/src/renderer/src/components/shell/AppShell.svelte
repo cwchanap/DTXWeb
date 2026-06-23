@@ -52,7 +52,7 @@
 			{:else}
 				<!-- master pane -->
 				<div
-					class="border-hairline min-w-0 flex-1 overflow-auto border-r"
+					class="reveal border-hairline min-w-0 flex-1 overflow-auto border-r"
 					class:hidden={mode === 'narrow' && showDetail}
 				>
 					{#if section === 'cloud'}<SimFileList />{:else}<Workspace />{/if}
@@ -62,7 +62,7 @@
 					<div
 						class:w-[420px]={mode === 'wide'}
 						class:flex-1={mode !== 'wide'}
-						class="min-w-0"
+						class="reveal reveal-1 min-w-0"
 					>
 						<DetailPane />
 					</div>

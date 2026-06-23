@@ -9,6 +9,7 @@ packages/dtx-api/dist/*
 !.env.example
 !packages/dtx-web/.env.types-only
 .temp
+.superpowers/
 
 sample/
 static/skin/

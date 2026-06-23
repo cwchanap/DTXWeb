@@ -29,6 +29,15 @@
 	});
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			paletteOpen = true;
+		}
+	}}
+/>
+
 <div bind:this={rootEl} class="bg-base text-base-text flex h-screen flex-col">
 	<TopToolbar onOpenPalette={() => (paletteOpen = true)} />
 	<div class="flex min-h-0 flex-1">

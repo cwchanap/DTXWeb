@@ -172,7 +172,7 @@
 <div class="relative inline-block" bind:this={rootEl}>
 	<button
 		type="button"
-		class="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+		class="bg-surface-2 text-base-text hover:border-cyan border-hairline flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium"
 		aria-label="Workspace menu"
 		aria-haspopup="menu"
 		aria-expanded={isOpen}
@@ -187,17 +187,12 @@
 		<div
 			role="menu"
 			bind:this={menuEl}
-			class="absolute left-0 z-20 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+			class="border-hairline bg-surface-1 absolute left-0 z-20 mt-2 w-80 rounded-lg border p-2 shadow-lg"
 		>
 			{#if currentPath}
 				<div class="px-2 py-1">
-					<div class="text-xs font-medium text-slate-500 dark:text-slate-400">
-						Current
-					</div>
-					<div
-						class="mt-1 truncate font-mono text-xs text-slate-700 dark:text-slate-200"
-						title={currentPath}
-					>
+					<div class="text-faint text-xs font-medium">Current</div>
+					<div class="text-base-text mt-1 truncate font-mono text-xs" title={currentPath}>
 						{currentPath}
 					</div>
 				</div>
@@ -206,32 +201,28 @@
 				<button
 					type="button"
 					role="menuitem"
-					class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+					class="text-base-text hover:bg-surface-2 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm"
 					onclick={handleBookmarkCurrent}
 				>
 					<Star size={16} />
 					<span>Bookmark this folder</span>
 				</button>
 			{:else if currentBookmark}
-				<div
-					class="flex items-center gap-2 px-2 py-2 text-sm text-emerald-700 dark:text-emerald-300"
-				>
+				<div class="text-green flex items-center gap-2 px-2 py-2 text-sm">
 					<CheckCircle2 size={16} />
 					<span>Bookmarked as {currentBookmark.name}</span>
 				</div>
 			{/if}
 			{#if addError}
-				<div class="px-2 py-1 text-xs text-red-600 dark:text-red-300">{addError}</div>
+				<div class="text-red px-2 py-1 text-xs">{addError}</div>
 			{/if}
 			{#if bookmarkSwitchError}
-				<div
-					class="mx-2 my-1 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300"
-				>
-					<p>{bookmarkSwitchError.message}</p>
+				<div class="border-red/40 bg-red/10 mx-2 my-1 rounded p-2 text-xs">
+					<p class="text-red">{bookmarkSwitchError.message}</p>
 					{#if bookmarkSwitchError.path}
 						<button
 							type="button"
-							class="mt-1 font-medium text-red-800 underline hover:text-red-900 dark:text-red-200 dark:hover:text-red-100"
+							class="text-red mt-1 font-medium underline hover:opacity-80"
 							onclick={() => {
 								bookmarkStore.remove(bookmarkSwitchError.path!);
 								bookmarkSwitchError = null;
@@ -243,10 +234,8 @@
 				</div>
 			{/if}
 			{#if bookmarks.length > 0}
-				<div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
-				<div class="px-2 pt-2 pb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-					Bookmarks
-				</div>
+				<div class="border-hairline my-1 border-t"></div>
+				<div class="text-faint px-2 pt-2 pb-1 text-xs font-medium">Bookmarks</div>
 				<ul class="max-h-72 overflow-auto">
 					{#each bookmarks as bookmark (bookmark.path)}
 						{@const isActive = bookmark.path === currentPath}
@@ -259,10 +248,9 @@
 							data-testid={`bookmark-row-${bookmark.path}`}
 							data-active={isActive ? 'true' : 'false'}
 							tabindex="0"
-							class="group flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+							class="group hover:bg-surface-2 flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-2 text-sm"
 							class:cursor-default={isActive}
-							class:bg-slate-50={isActive}
-							class:dark:bg-slate-700={isActive}
+							class:bg-surface-2={isActive}
 							onclick={() => handleSwitchTo(bookmark)}
 							onkeydown={(e) => {
 								if (e.target !== e.currentTarget) return;
@@ -277,7 +265,7 @@
 									<!-- svelte-ignore a11y_autofocus -->
 									<input
 										type="text"
-										class="w-full rounded border border-slate-300 bg-white px-1 py-0.5 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+										class="border-hairline bg-surface-2 text-hi focus:border-cyan w-full rounded border px-1 py-0.5 text-sm focus:ring-2 focus:outline-none"
 										aria-label={`Rename ${bookmark.name}`}
 										bind:value={editingValue}
 										onkeydown={handleEditKeydown}
@@ -286,12 +274,12 @@
 										autofocus
 									/>
 								{:else}
-									<div class="truncate text-slate-800 dark:text-slate-100">
+									<div class="text-hi truncate">
 										{bookmark.name}
 									</div>
 								{/if}
 								<div
-									class="truncate font-mono text-xs text-slate-500 dark:text-slate-400"
+									class="text-faint truncate font-mono text-xs"
 									title={bookmark.path}
 								>
 									{bookmark.path}
@@ -299,7 +287,7 @@
 							</div>
 							<button
 								type="button"
-								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-slate-700 focus-visible:opacity-100 dark:hover:bg-slate-600 dark:hover:text-slate-200"
+								class="text-faint hover:bg-surface-2 hover:text-base-text rounded p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
 								aria-label={`Rename ${bookmark.name}`}
 								onclick={(e) => {
 									e.stopPropagation();
@@ -310,7 +298,7 @@
 							</button>
 							<button
 								type="button"
-								class="rounded p-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 hover:text-red-600 focus-visible:opacity-100 dark:hover:bg-slate-600 dark:hover:text-red-400"
+								class="text-faint hover:bg-surface-2 hover:text-red rounded p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
 								aria-label={`Remove ${bookmark.name}`}
 								onclick={(e) => {
 									e.stopPropagation();
@@ -323,11 +311,11 @@
 					{/each}
 				</ul>
 			{/if}
-			<div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
+			<div class="border-hairline my-1 border-t"></div>
 			<button
 				type="button"
 				role="menuitem"
-				class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+				class="text-base-text hover:bg-surface-2 flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm"
 				onclick={handleBrowse}
 			>
 				<FolderOpen size={16} />

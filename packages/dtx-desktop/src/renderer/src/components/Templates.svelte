@@ -145,18 +145,19 @@
 	});
 </script>
 
-<div class="flex h-full flex-col overflow-hidden bg-white dark:bg-slate-800">
+<div class="bg-base flex h-full flex-col overflow-hidden">
 	<!-- Header -->
 	<div
-		class="flex items-center justify-between gap-2 border-b border-slate-200 p-6 pb-4 dark:border-slate-700"
+		class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
 	>
 		<div class="flex items-center gap-2">
-			<FileText size={20} class="text-slate-500" />
-			<h2 class="text-xl font-semibold">Song Templates</h2>
+			<FileText size={20} class="text-dim" />
+			<h2 class="font-display text-hi text-xl font-semibold">Song Templates</h2>
 		</div>
 		<div class="flex gap-2">
 			<button
-				class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-green-600 hover:to-emerald-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+				class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] shadow-md transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+				style="box-shadow:0 0 22px -6px var(--color-magenta)"
 				onclick={handleCreateTemplate}
 				tabindex="0"
 				aria-label="Create new template"
@@ -170,25 +171,21 @@
 	<!-- Content Area -->
 	<div class="flex-1 overflow-auto p-6">
 		{#if error}
-			<div
-				class="mb-4 rounded-lg bg-red-50 p-4 text-red-800 dark:bg-red-900/20 dark:text-red-300"
-			>
+			<div class="border-red/40 bg-red/10 text-red mb-4 rounded-lg p-4">
 				<p>{error}</p>
 			</div>
 		{/if}
 
 		{#if showCreateForm}
 			<!-- Create Template Form -->
-			<div
-				class="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-6 dark:border-slate-700 dark:bg-slate-800/50"
-			>
-				<h3 class="mb-4 text-lg font-medium">Create New Template</h3>
+			<div class="border-hairline bg-surface-2 mb-6 rounded-lg border p-6">
+				<h3 class="font-display text-hi mb-4 text-lg font-medium">Create New Template</h3>
 
 				<div class="space-y-4">
 					<div>
 						<label
 							for="template-name"
-							class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
+							class="text-base-text mb-2 block text-sm font-medium"
 						>
 							Template Name
 						</label>
@@ -197,14 +194,14 @@
 							bind:value={newTemplateName}
 							type="text"
 							placeholder="Enter template name..."
-							class="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
+							class="border-hairline bg-surface-1 text-hi focus:border-cyan focus:ring-cyan/20 w-full rounded-lg border px-3 py-2 focus:ring-2"
 						/>
 					</div>
 
 					<div>
 						<label
 							for="template-folder"
-							class="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300"
+							class="text-base-text mb-2 block text-sm font-medium"
 						>
 							Template Folder
 						</label>
@@ -215,11 +212,11 @@
 								type="text"
 								placeholder="Select a folder..."
 								readonly
-								class="flex-1 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-600 dark:text-slate-100"
+								class="border-hairline bg-surface-2 text-hi flex-1 rounded-lg border px-3 py-2 font-mono"
 							/>
 							<button
 								onclick={handleSelectTemplateFolder}
-								class="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+								class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium hover:opacity-90"
 							>
 								<FolderOpen size={16} />
 								Browse
@@ -230,14 +227,14 @@
 					<div class="flex gap-2">
 						<button
 							onclick={handleSaveTemplate}
-							class="flex items-center gap-2 rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600"
+							class="border-green/40 bg-green/10 text-green flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium hover:opacity-90"
 						>
 							<Save size={16} />
 							Save Template
 						</button>
 						<button
 							onclick={handleCancelCreate}
-							class="flex items-center gap-2 rounded-lg bg-slate-500 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"
+							class="bg-surface-2 text-dim flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium hover:opacity-90"
 						>
 							<X size={16} />
 							Cancel
@@ -249,21 +246,22 @@
 
 		{#if isLoading}
 			<div class="flex items-center justify-center py-8">
-				<div class="text-slate-600 dark:text-slate-400">Loading templates...</div>
+				<div class="text-dim">Loading templates...</div>
 			</div>
 		{:else if templates.length === 0}
 			<div class="flex flex-col items-center py-8">
 				<div
-					class="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30"
+					class="bg-surface-2 mb-4 flex h-20 w-20 items-center justify-center rounded-full"
 				>
-					<FileText size={40} class="text-blue-500 dark:text-blue-300" />
+					<FileText size={40} class="text-cyan" />
 				</div>
-				<p class="mb-6 text-center text-slate-600 dark:text-slate-400">
+				<p class="text-dim mb-6 text-center">
 					No templates found. Create your first song template to get started.
 				</p>
 				{#if !showCreateForm}
 					<button
-						class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2.5 font-medium text-white shadow-md transition duration-150 ease-in-out hover:from-blue-600 hover:to-indigo-700 hover:shadow-lg focus:shadow-lg focus:outline-none active:shadow-lg"
+						class="bg-magenta flex items-center gap-2 rounded-lg px-6 py-2.5 font-medium text-[#16001a] shadow-md transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+						style="box-shadow:0 0 22px -6px var(--color-magenta)"
 						onclick={handleCreateTemplate}
 						tabindex="0"
 						aria-label="Create your first template"
@@ -277,27 +275,25 @@
 			<!-- Templates List -->
 			<div class="space-y-4">
 				{#each templates as template (template.id)}
-					<div
-						class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800"
-					>
+					<div class="border-hairline bg-surface-1 rounded-lg border p-4">
 						{#if editingTemplateId === template.id}
 							<!-- Edit Mode -->
 							<div class="flex items-center gap-2">
 								<input
 									bind:value={editTemplateName}
 									type="text"
-									class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
+									class="border-hairline bg-surface-2 text-hi focus:border-cyan focus:ring-cyan/20 flex-1 rounded-lg border px-3 py-2 focus:ring-2"
 								/>
 								<button
 									onclick={() => handleSaveEdit(template.id)}
-									class="flex items-center gap-1 rounded-lg bg-green-500 px-3 py-2 text-sm font-medium text-white hover:bg-green-600"
+									class="border-green/40 bg-green/10 text-green flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90"
 								>
 									<Save size={14} />
 									Save
 								</button>
 								<button
 									onclick={handleCancelEdit}
-									class="flex items-center gap-1 rounded-lg bg-slate-500 px-3 py-2 text-sm font-medium text-white hover:bg-slate-600"
+									class="bg-surface-2 text-dim flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90"
 								>
 									<X size={14} />
 									Cancel
@@ -307,15 +303,13 @@
 							<!-- View Mode -->
 							<div class="flex items-center justify-between">
 								<div class="flex-1">
-									<h3
-										class="text-lg font-medium text-slate-900 dark:text-slate-100"
-									>
+									<h3 class="text-hi text-lg font-medium">
 										{template.name}
 									</h3>
-									<p class="text-sm text-slate-600 dark:text-slate-400">
+									<p class="text-dim text-sm">
 										Created: {new Date(template.createdAt).toLocaleDateString()}
 									</p>
-									<p class="font-mono text-xs text-slate-500 dark:text-slate-500">
+									<p class="text-faint font-mono text-xs">
 										{template.folderPath}
 									</p>
 								</div>
@@ -323,21 +317,21 @@
 									<button
 										onclick={() =>
 											handleOpenTemplateFolder(template.folderPath)}
-										class="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600"
+										class="bg-surface-2 text-cyan flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90"
 										title="Open folder"
 									>
 										<FolderOpen size={14} />
 									</button>
 									<button
 										onclick={() => handleEditTemplate(template)}
-										class="flex items-center gap-1 rounded-lg bg-slate-500 px-3 py-2 text-sm font-medium text-white hover:bg-slate-600"
+										class="bg-surface-2 text-dim flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90"
 										title="Edit template"
 									>
 										<Edit2 size={14} />
 									</button>
 									<button
 										onclick={() => handleDeleteTemplate(template.id)}
-										class="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-2 text-sm font-medium text-white hover:bg-red-600"
+										class="border-red/40 bg-red/10 text-red flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium hover:opacity-90"
 										title="Delete template"
 									>
 										<Trash2 size={14} />

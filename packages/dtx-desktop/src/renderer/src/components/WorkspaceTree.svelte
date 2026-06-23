@@ -61,9 +61,9 @@
 			<button
 				class="flex flex-1 items-center gap-2 rounded px-2 py-1 text-left text-sm transition-colors {node.containsDtxFiles
 					? node.linkedSimFileId
-						? 'cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20'
-						: 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
-					: 'hover:bg-slate-100 dark:hover:bg-slate-700'}"
+						? 'hover:bg-green/10 cursor-pointer'
+						: 'hover:bg-surface-2 cursor-pointer'
+					: 'hover:bg-surface-2'}"
 				style={getIndentStyle(level)}
 				onclick={() => handleToggleNode(node)}
 				disabled={node.isLoading}
@@ -71,12 +71,12 @@
 				<!-- Expand/Collapse Icon -->
 				<div class="flex h-4 w-4 items-center justify-center">
 					{#if node.isLoading}
-						<Loader size={12} class="animate-spin text-slate-500" />
+						<Loader size={12} class="text-dim animate-spin" />
 					{:else if node.hasChildren && !node.containsDtxFiles}
 						{#if node.isExpanded}
-							<ChevronDown size={14} class="text-slate-500" />
+							<ChevronDown size={14} class="text-dim" />
 						{:else}
-							<ChevronRight size={14} class="text-slate-500" />
+							<ChevronRight size={14} class="text-dim" />
 						{/if}
 					{:else}
 						<!-- Empty space for alignment -->
@@ -86,23 +86,18 @@
 
 				<!-- Folder/Song Icon -->
 				{#if node.containsDtxFiles}
-					<Music
-						size={16}
-						class={node.linkedSimFileId
-							? 'text-green-500 dark:text-green-400'
-							: 'text-purple-500 dark:text-purple-400'}
-					/>
+					<Music size={16} class={node.linkedSimFileId ? 'text-green' : 'text-cyan'} />
 				{:else if node.isExpanded}
-					<FolderOpen size={16} class="text-blue-500 dark:text-blue-400" />
+					<FolderOpen size={16} class="text-cyan" />
 				{:else}
-					<Folder size={16} class="text-blue-500 dark:text-blue-400" />
+					<Folder size={16} class="text-cyan" />
 				{/if}
 
 				<!-- Folder Name and Song Title -->
 				<div class="flex flex-1 flex-col truncate">
-					<span class="truncate text-slate-700 dark:text-slate-300">{node.name}</span>
+					<span class="text-base-text truncate">{node.name}</span>
 					{#if node.songTitle}
-						<span class="truncate text-xs text-slate-500 italic dark:text-slate-400">
+						<span class="text-faint truncate text-xs italic">
 							{node.songTitle}
 						</span>
 					{/if}
@@ -111,8 +106,8 @@
 				<!-- Linked Indicator -->
 				{#if node.containsDtxFiles && node.linkedSimFileId}
 					<div class="flex items-center gap-1">
-						<Link size={12} class="text-green-500 dark:text-green-400" />
-						<span class="text-xs text-green-600 dark:text-green-400">Linked</span>
+						<Link size={12} class="text-green" />
+						<span class="text-green text-xs">Linked</span>
 					</div>
 				{/if}
 			</button>
@@ -120,7 +115,7 @@
 			<!-- Unlink Button (outside main button) -->
 			{#if node.containsDtxFiles && node.linkedSimFileId}
 				<button
-					class="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+					class="border-red/40 bg-red/10 text-red hover:bg-red/20 flex h-5 w-5 items-center justify-center rounded-full"
 					onclick={(event) => handleUnlinkFolder(event, node)}
 					title="Unlink from cloud"
 					aria-label="Unlink folder from cloud simFile"

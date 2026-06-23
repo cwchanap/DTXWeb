@@ -25,7 +25,8 @@
 <!-- Info button in the bottom right corner -->
 <div class="fixed right-4 bottom-4 z-10">
 	<button
-		class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-transform hover:scale-105 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:outline-none"
+		class="bg-magenta flex h-12 w-12 items-center justify-center rounded-full text-[#16001a] shadow-lg transition-transform hover:scale-105 focus:ring-2 focus:ring-offset-2 focus:outline-none"
+		style="box-shadow:0 0 22px -6px var(--color-magenta)"
 		onclick={() => (openState = true)}
 		tabindex="0"
 		aria-label="Show application information"
@@ -40,33 +41,33 @@
 		<article>
 			<div class="grid gap-3 md:grid-cols-2">
 				<div
-					class="rounded-lg border border-slate-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-600 dark:bg-slate-700"
+					class="border-hairline bg-surface-1 rounded-lg border p-4 shadow-sm transition-shadow hover:shadow-md"
 				>
 					<div class="flex items-center gap-3">
 						<div
-							class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/40"
+							class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-full"
 						>
-							<Zap size={24} class="text-blue-600 dark:text-blue-400" />
+							<Zap size={24} class="text-cyan" />
 						</div>
 						<div>
-							<p class="text-xs text-slate-500 dark:text-slate-400">Application</p>
-							<p class="font-medium">{versions.app ?? '—'}</p>
+							<p class="text-faint text-xs">Application</p>
+							<p class="text-hi font-medium">{versions.app ?? '—'}</p>
 						</div>
 					</div>
 				</div>
 
 				<div
-					class="rounded-lg border border-slate-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-600 dark:bg-slate-700"
+					class="border-hairline bg-surface-1 rounded-lg border p-4 shadow-sm transition-shadow hover:shadow-md"
 				>
 					<div class="flex items-center gap-3">
 						<div
-							class="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40"
+							class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-full"
 						>
-							<Server size={24} class="text-green-600 dark:text-green-400" />
+							<Server size={24} class="text-green" />
 						</div>
 						<div>
-							<p class="text-xs text-slate-500 dark:text-slate-400">Tauri</p>
-							<p class="font-medium">{versions.tauri ?? '—'}</p>
+							<p class="text-faint text-xs">Tauri</p>
+							<p class="text-hi font-medium">{versions.tauri ?? '—'}</p>
 						</div>
 					</div>
 				</div>

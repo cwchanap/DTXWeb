@@ -30,11 +30,19 @@ vi.mock('@dtx/common/game', () => ({
 	EventType: {
 		VALIDATION_ERROR: 'validation-error',
 		NOTE_IMPORT: 'note-import',
-		STOP_PREVIEW: 'stop-preview'
+		STOP_PREVIEW: 'stop-preview',
+		START_PREVIEW: 'start-preview',
+		CELL_HEIGHT_UPDATE: 'cell-height-update'
 	},
 	Editor: { key: 'Editor' },
 	Preloader: { key: 'Preloader' },
 	MainMenu: { key: 'MainMenu' }
+}));
+
+vi.mock('@dtx/common/components', () => ({
+	MainTab: vi.fn(),
+	SoundTab: vi.fn(),
+	PreviewTab: vi.fn()
 }));
 
 const mockPhaserGame = vi.hoisted(() => ({
@@ -76,12 +84,31 @@ vi.mock('../services/desktopHost', () => ({
 const mockStore = vi.hoisted(() => ({
 	currentSimfileID: { set: vi.fn() },
 	currentDifficulty: { set: vi.fn() },
-	currentDtxFile: { set: vi.fn() },
+	currentDtxFile: {
+		set: vi.fn(),
+		subscribe: vi.fn((cb: (v: unknown) => void) => {
+			cb(null);
+			return () => {};
+		})
+	},
 	editorNotes: { set: vi.fn() },
 	currentSoundChip: { set: vi.fn() },
-	measureCount: { set: vi.fn() },
+	measureCount: {
+		set: vi.fn(),
+		subscribe: vi.fn((cb: (v: unknown) => void) => {
+			cb(10);
+			return () => {};
+		})
+	},
 	currentSimfile: { set: vi.fn() },
-	activeScene: { set: vi.fn() }
+	activeScene: { set: vi.fn() },
+	isPreviewing: {
+		set: vi.fn(),
+		subscribe: vi.fn((cb: (v: unknown) => void) => {
+			cb(false);
+			return () => {};
+		})
+	}
 }));
 
 vi.mock('@dtx/common', () => ({
@@ -150,14 +177,14 @@ describe('DesktopEditor', () => {
 		expect(screen.getByText(/New Chart/)).toBeInTheDocument();
 	});
 
-	it('renders Back to Workspace button', () => {
+	it('renders the back button', () => {
 		render(DesktopEditor);
-		expect(screen.getByRole('button', { name: /Back to Workspace/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Back to library' })).toBeInTheDocument();
 	});
 
 	it('navigates back to workspace when Back button is clicked', async () => {
 		render(DesktopEditor);
-		await fireEvent.click(screen.getByRole('button', { name: /Back to Workspace/i }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Back to library' }));
 		expect(window.location.hash).toBe('');
 	});
 
@@ -169,10 +196,6 @@ describe('DesktopEditor', () => {
 	it('displays validation error when event is emitted and auto-hides it', async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		render(DesktopEditor);
-		// Wait for loading to finish so the main tab is visible
-		await waitFor(() => {
-			expect(screen.getByText('Main')).toBeInTheDocument();
-		});
 
 		mockEventBus.emit('validation-error', 'Invalid note position');
 		await waitFor(() => {
@@ -184,24 +207,6 @@ describe('DesktopEditor', () => {
 			expect(screen.queryByText('Invalid note position')).toBeNull();
 		});
 		vi.useRealTimers();
-	});
-
-	it('can dismiss validation error manually', async () => {
-		render(DesktopEditor);
-		await waitFor(() => {
-			expect(screen.getByText('Main')).toBeInTheDocument();
-		});
-
-		mockEventBus.emit('validation-error', 'Something went wrong');
-		await waitFor(() => {
-			expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-		});
-
-		const dismissBtn = screen.getByRole('button', { name: '×' });
-		await fireEvent.click(dismissBtn);
-		await waitFor(() => {
-			expect(screen.queryByText('Something went wrong')).toBeNull();
-		});
 	});
 
 	it('removes the validation error listener on destroy', () => {
@@ -226,34 +231,19 @@ describe('DesktopEditor', () => {
 		expect(mockPhaserGame.destroy).toHaveBeenCalledWith(true);
 	});
 
-	it('switches to the Sound tab when clicked', async () => {
-		render(DesktopEditor);
-		await waitFor(() => expect(screen.queryByText('Sound')).toBeInTheDocument());
-		await fireEvent.click(screen.getByText('Sound'));
-		// Sound tab click should not throw
-		expect(screen.getByText('Sound')).toBeInTheDocument();
-	});
-
-	it('switches to the Preview tab when clicked', async () => {
-		render(DesktopEditor);
-		await waitFor(() => expect(screen.queryByText('Preview')).toBeInTheDocument());
-		await fireEvent.click(screen.getByText('Preview'));
-		expect(screen.getByText('Preview')).toBeInTheDocument();
-	});
-
 	it('collapses and expands the sidebar via keyboard', async () => {
 		render(DesktopEditor);
 		const resizeHandle = screen.getByLabelText('Resize sidebar');
 
 		// Press Enter to collapse
 		await fireEvent.keyDown(resizeHandle, { key: 'Enter' });
-		// Now tabs should be hidden (collapsed state)
-		expect(screen.queryByText('Main')).toBeNull();
+		// Now Chart Info button should be hidden (collapsed state)
+		expect(screen.queryByRole('button', { name: /Chart Info/i })).toBeNull();
 
 		// Click on collapsed sidebar to expand
-		const collapsedHandle = screen.getByTitle('Drag to expand sidebar');
+		const collapsedHandle = screen.getByTitle('Expand dock');
 		await fireEvent.click(collapsedHandle);
-		expect(screen.getByText('Main')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Chart Info/i })).toBeInTheDocument();
 	});
 
 	it('handles initialization error gracefully without crashing', async () => {
@@ -261,7 +251,7 @@ describe('DesktopEditor', () => {
 		render(DesktopEditor);
 		// Should not throw, just log error
 		await waitFor(() => {
-			expect(screen.queryByText('Initializing editor...')).toBeNull();
+			expect(screen.queryByText(/Initializing editor/)).toBeNull();
 		});
 	});
 
@@ -420,7 +410,7 @@ describe('DesktopEditor', () => {
 
 			// Should not crash, should show the editor
 			await waitFor(() => {
-				expect(screen.queryByText('Initializing editor...')).toBeNull();
+				expect(screen.queryByText(/Initializing editor/)).toBeNull();
 			});
 		});
 	});
@@ -447,7 +437,7 @@ describe('DesktopEditor', () => {
 
 			// Wait for chart to load and difficulty selector to appear
 			await waitFor(() => {
-				expect(screen.getByText('Main')).toBeInTheDocument();
+				expect(screen.queryByRole('combobox')).not.toBeNull();
 			});
 
 			const selector = screen.queryByRole('combobox');
@@ -492,7 +482,7 @@ describe('DesktopEditor', () => {
 			render(DesktopEditor, { props: { simFileId: 'multi-song' } });
 
 			await waitFor(() => {
-				expect(screen.getByText('Main')).toBeInTheDocument();
+				expect(screen.queryByRole('combobox')).not.toBeNull();
 			});
 
 			// Make readFile return error for the difficulty switch
@@ -515,7 +505,7 @@ describe('DesktopEditor', () => {
 	});
 
 	describe('loadChartFromPath error handling', () => {
-		it('surfaces error and allows dismissal when listFiles returns an error', async () => {
+		it('surfaces error when listFiles returns an error', async () => {
 			vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
 			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: 'access-denied' });
 
@@ -523,14 +513,6 @@ describe('DesktopEditor', () => {
 
 			await waitFor(() => {
 				expect(screen.getByText(/Could not load chart files/)).toBeInTheDocument();
-			});
-
-			// Dismiss the error
-			const dismissBtn = screen.getByRole('button', { name: '×' });
-			await fireEvent.click(dismissBtn);
-
-			await waitFor(() => {
-				expect(screen.queryByText(/Could not load chart files/)).toBeNull();
 			});
 		});
 

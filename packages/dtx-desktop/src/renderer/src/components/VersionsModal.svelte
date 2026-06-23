@@ -28,7 +28,6 @@
 		class="bg-magenta flex h-12 w-12 items-center justify-center rounded-full text-[#16001a] shadow-lg transition-transform hover:scale-105 focus:ring-2 focus:ring-offset-2 focus:outline-none"
 		style="box-shadow:0 0 22px -6px var(--color-magenta)"
 		onclick={() => (openState = true)}
-		tabindex="0"
 		aria-label="Show application information"
 	>
 		<Info size={24} />

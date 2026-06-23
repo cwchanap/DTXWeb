@@ -107,7 +107,6 @@
 					class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"
 					style="box-shadow:0 0 22px -6px var(--color-magenta)"
 					onclick={handleNewSong}
-					tabindex="0"
 					aria-label="Create new song"
 				>
 					<Plus size={14} />
@@ -116,7 +115,6 @@
 				<button
 					class="border-hairline bg-surface-2 text-dim hover:text-hi flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
 					onclick={handleRefreshWorkspace}
-					tabindex="0"
 					aria-label="Refresh workspace"
 				>
 					<RefreshCw size={14} />
@@ -124,7 +122,6 @@
 				<button
 					class="border-hairline bg-surface-2 text-dim hover:text-hi flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
 					onclick={handleClearWorkspace}
-					tabindex="0"
 					aria-label="Clear workspace"
 				>
 					<X size={14} />
@@ -148,7 +145,6 @@
 				<button
 					class="border-hairline bg-surface-2 text-dim hover:text-hi rounded px-3 py-1 text-sm font-medium transition-colors"
 					onclick={handleSelectWorkspace}
-					tabindex="0"
 					aria-label="Try again"
 				>
 					Try Again
@@ -170,7 +166,6 @@
 					class="bg-magenta font-display flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold text-[#16001a]"
 					style="box-shadow:0 0 22px -6px var(--color-magenta)"
 					onclick={handleSelectWorkspace}
-					tabindex="0"
 					aria-label="Select workspace folder"
 				>
 					<Folder size={18} />

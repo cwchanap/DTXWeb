@@ -26,6 +26,8 @@ export interface WorkspaceState {
 	error: string | null;
 	selectedSong: TreeNode | null;
 	showSongDetails: boolean;
+	selectedCloudSimFile: SimfileWithDtx | null;
+	showCloudSongDetails: boolean;
 	showNewSong: boolean;
 	showTemplates: boolean;
 	activeSection: ShellSection;
@@ -40,6 +42,8 @@ const initialState: WorkspaceState = {
 	error: null,
 	selectedSong: null,
 	showSongDetails: false,
+	selectedCloudSimFile: null,
+	showCloudSongDetails: false,
 	showNewSong: false,
 	showTemplates: false,
 	activeSection: 'library'
@@ -143,6 +147,8 @@ function createWorkspaceStore() {
 				error: null,
 				selectedSong: null,
 				showSongDetails: false,
+				selectedCloudSimFile: null,
+				showCloudSongDetails: false,
 				showNewSong: false,
 				showTemplates: false
 			}));
@@ -152,7 +158,28 @@ function createWorkspaceStore() {
 				...state,
 				selectedSong: song,
 				showSongDetails: true,
+				showNewSong: false,
+				// Local and cloud selections are mutually exclusive.
+				selectedCloudSimFile: null,
+				showCloudSongDetails: false
+			}));
+		},
+		selectCloudSimFile: (simFile: SimfileWithDtx) => {
+			update((state) => ({
+				...state,
+				selectedCloudSimFile: simFile,
+				showCloudSongDetails: true,
+				// Local and cloud selections are mutually exclusive.
+				selectedSong: null,
+				showSongDetails: false,
 				showNewSong: false
+			}));
+		},
+		closeCloudSongDetails: () => {
+			update((state) => ({
+				...state,
+				selectedCloudSimFile: null,
+				showCloudSongDetails: false
 			}));
 		},
 		closeSongDetails: () => {
@@ -167,7 +194,9 @@ function createWorkspaceStore() {
 				...state,
 				showNewSong: true,
 				selectedSong: null,
-				showSongDetails: false
+				showSongDetails: false,
+				selectedCloudSimFile: null,
+				showCloudSongDetails: false
 			}));
 		},
 		closeNewSongForm: () => {
@@ -182,6 +211,8 @@ function createWorkspaceStore() {
 				showTemplates: true,
 				selectedSong: null,
 				showSongDetails: false,
+				selectedCloudSimFile: null,
+				showCloudSongDetails: false,
 				showNewSong: false
 			}));
 		},
@@ -222,6 +253,8 @@ function createWorkspaceStore() {
 				showTemplates: section === 'templates',
 				selectedSong: null,
 				showSongDetails: false,
+				selectedCloudSimFile: null,
+				showCloudSongDetails: false,
 				showNewSong: false
 			}));
 		},

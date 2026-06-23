@@ -38,6 +38,23 @@ fn write_creates_dtxweb_directory_and_file() {
 }
 
 #[test]
+fn write_is_atomic_no_temp_file_left_behind() {
+    let dir = TempDir::new().unwrap();
+    let path = preferences_path(dir.path());
+    write_preferences_to(&path, &Preferences::default()).unwrap();
+    // A successful write must rename the temp file into place, leaving no .tmp.
+    let tmp = dir.path().join(".dtxweb").join("preferences.json.tmp");
+    assert!(
+        !tmp.exists(),
+        "temp file should not linger after a clean write"
+    );
+    assert!(path.exists());
+    // And the resulting file must be valid JSON (round-trips).
+    let read = read_preferences_from(&path);
+    assert_eq!(read.detail_pane_width, 420.0);
+}
+
+#[test]
 fn corrupt_json_returns_defaults() {
     let dir = TempDir::new().unwrap();
     let path = preferences_path(dir.path());

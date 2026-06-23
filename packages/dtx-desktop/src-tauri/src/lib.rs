@@ -6,6 +6,7 @@ mod auth;
 mod error;
 mod filesystem;
 mod models;
+mod preferences;
 mod songs;
 mod updater;
 
@@ -120,6 +121,8 @@ pub fn run() {
             filesystem::load_tree_structure,
             filesystem::open_folder,
             filesystem::get_default_downloads_dir,
+            preferences::read_preferences,
+            preferences::write_preferences,
             songs::create_song,
             songs::export_song_to_zip,
             songs::get_skin_asset,

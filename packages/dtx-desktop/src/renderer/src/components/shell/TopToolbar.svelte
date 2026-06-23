@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { authStore } from '../../stores/authStore';
+	import { workspaceStore } from '../../stores/workspaceStore';
+	import { preferencesStore } from '../../stores/preferencesStore';
 	import { authService } from '../../services/authService';
 	import { simFileService } from '../../services/simFileService';
-	import { Music, LogOut, User, RefreshCw, Search } from '@lucide/svelte';
+	import { Music, LogOut, User, RefreshCw, Search, PanelRight } from '@lucide/svelte';
 
 	interface Props {
 		onOpenPalette: () => void;
@@ -10,6 +12,9 @@
 	let { onOpenPalette }: Props = $props();
 
 	let isClearing = $state(false);
+	const isListSection = $derived(
+		$workspaceStore.activeSection === 'library' || $workspaceStore.activeSection === 'cloud'
+	);
 
 	const handleLogout = async () => {
 		await authService.logout();
@@ -41,6 +46,17 @@
 	</button>
 
 	<div class="ml-auto flex items-center gap-3">
+		{#if isListSection}
+			<button
+				class="bg-surface-2 text-dim hover:text-hi flex items-center rounded-lg px-2 py-1 text-xs"
+				class:text-cyan={$preferencesStore.detailPaneVisible}
+				onclick={() => preferencesStore.toggleDetail()}
+				aria-label="Toggle details panel"
+				aria-pressed={$preferencesStore.detailPaneVisible}
+			>
+				<PanelRight size={14} />
+			</button>
+		{/if}
 		{#if $authStore.isAuthenticated}
 			<div class="text-right leading-tight">
 				<p class="text-hi text-xs font-medium">{$authStore.user?.name || 'User'}</p>

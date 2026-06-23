@@ -34,3 +34,4 @@ export const CheckCircle2 = vi.fn();
 export const Pencil = vi.fn();
 export const Play = vi.fn();
 export const Square = vi.fn();
+export const PanelRight = vi.fn();

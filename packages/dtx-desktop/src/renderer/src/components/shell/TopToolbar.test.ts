@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 import { authStore } from '../../stores/authStore';
+import { workspaceStore } from '../../stores/workspaceStore';
+import { preferencesStore } from '../../stores/preferencesStore';
 
 vi.mock('@lucide/svelte');
 vi.mock('../../services/authService', () => ({
@@ -10,14 +13,21 @@ vi.mock('../../services/authService', () => ({
 	}
 }));
 vi.mock('../../services/simFileService', () => ({ simFileService: { clearCache: vi.fn() } }));
+vi.mock('../../services/preferencesService', () => ({
+	loadPreferences: vi.fn().mockResolvedValue({ detailPaneWidth: 420, detailPaneVisible: true }),
+	savePreferences: vi.fn().mockResolvedValue(undefined)
+}));
 
 import TopToolbar from './TopToolbar.svelte';
 import { authService } from '../../services/authService';
 import { simFileService } from '../../services/simFileService';
+import { savePreferences } from '../../services/preferencesService';
 
 describe('TopToolbar', () => {
 	beforeEach(() => {
 		authStore.reset();
+		workspaceStore.reset();
+		preferencesStore.reset();
 		vi.clearAllMocks();
 	});
 	afterEach(() => cleanup());
@@ -39,6 +49,25 @@ describe('TopToolbar', () => {
 		const btn = screen.getByRole('button', { name: /Login to access cloud features/i });
 		await fireEvent.click(btn);
 		expect(authService.login).toHaveBeenCalled();
+	});
+
+	it('shows the details toggle in a list section and toggles + persists visibility', async () => {
+		// default section after reset is 'library'
+		render(TopToolbar, { onOpenPalette: vi.fn() });
+		const toggle = screen.getByRole('button', { name: /Toggle details panel/i });
+		expect(get(preferencesStore).detailPaneVisible).toBe(true);
+		await fireEvent.click(toggle);
+		expect(get(preferencesStore).detailPaneVisible).toBe(false);
+		expect(savePreferences).toHaveBeenCalledWith({
+			detailPaneWidth: 420,
+			detailPaneVisible: false
+		});
+	});
+
+	it('hides the details toggle outside list sections', () => {
+		workspaceStore.setActiveSection('settings');
+		render(TopToolbar, { onOpenPalette: vi.fn() });
+		expect(screen.queryByRole('button', { name: /Toggle details panel/i })).toBeNull();
 	});
 
 	describe('authenticated', () => {

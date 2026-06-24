@@ -80,6 +80,11 @@ describe('TopToolbar', () => {
 			expect(screen.getByText('Test User')).toBeInTheDocument();
 			expect(screen.getByText('test@example.com')).toBeInTheDocument();
 		});
+		it('falls back to "User" when the profile has no display name', () => {
+			authStore.setUser({ id: 'u2', email: 'noname@example.com', name: '' });
+			render(TopToolbar, { onOpenPalette: vi.fn() });
+			expect(screen.getByText('User')).toBeInTheDocument();
+		});
 		it('calls logout', async () => {
 			render(TopToolbar, { onOpenPalette: vi.fn() });
 			await fireEvent.click(screen.getByRole('button', { name: /Logout/i }));

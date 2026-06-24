@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { SimfileWithDtx } from '@dtx/common';
+import type { TreeNode } from './workspaceStore';
 
 // Mock linkageCacheService before importing workspaceStore
 vi.mock('../services/linkageCacheService', () => ({
@@ -413,12 +414,32 @@ describe('workspaceStore', () => {
 			expect(get(workspaceStore).activeSection).toBe('templates');
 		});
 
-		it('setActiveSection clears the cloud simfile selection', () => {
+		it('switching from cloud to library clears the cloud simfile selection', () => {
+			// Realistic flow: cloud selection only happens while in the cloud
+			// section (the command palette switches section before selecting).
+			workspaceStore.setActiveSection('cloud');
 			workspaceStore.selectCloudSimFile(makeSimFile(3));
-			workspaceStore.setActiveSection('library');
+			workspaceStore.setActiveSection('library'); // cloud → library: real change
 			const s = get(workspaceStore);
 			expect(s.selectedCloudSimFile).toBeNull();
 			expect(s.showCloudSongDetails).toBe(false);
+		});
+
+		it('re-clicking the active section is a no-op (keeps selection)', () => {
+			// default activeSection is 'library'
+			workspaceStore.selectSong({ name: 'x', path: '/x' } as TreeNode);
+			workspaceStore.setActiveSection('library'); // same section → no-op
+			const s = get(workspaceStore);
+			expect(s.activeSection).toBe('library');
+			expect(s.selectedSong).not.toBeNull(); // selection preserved
+		});
+
+		it('switching to a different section still clears selection', () => {
+			workspaceStore.selectSong({ name: 'x', path: '/x' } as TreeNode);
+			workspaceStore.setActiveSection('cloud'); // real change → clears
+			const s = get(workspaceStore);
+			expect(s.activeSection).toBe('cloud');
+			expect(s.selectedSong).toBeNull();
 		});
 	});
 });

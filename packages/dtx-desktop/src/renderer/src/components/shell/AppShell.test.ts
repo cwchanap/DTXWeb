@@ -95,6 +95,15 @@ describe('AppShell', () => {
 		await waitFor(() => expect(handle.parentElement?.style.width).toBe('480px'));
 	});
 
+	it('the resize handle exposes a focus-visible ring for keyboard users', async () => {
+		window.innerWidth = 1400;
+		selectAnySong();
+		render(AppShell);
+		const handle = await screen.findByRole('button', { name: /Resize details panel/i });
+		expect(handle).toHaveClass('focus-visible:ring-2');
+		expect(handle).toHaveClass('focus-visible:ring-cyan/40');
+	});
+
 	it('hides the detail pane (and handle) when stored visibility is false', async () => {
 		vi.mocked(loadPreferences).mockResolvedValue({
 			detailPaneWidth: 420,

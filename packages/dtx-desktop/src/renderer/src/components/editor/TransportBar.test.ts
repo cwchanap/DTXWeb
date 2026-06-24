@@ -60,4 +60,13 @@ describe('TransportBar', () => {
 		});
 		expect(mockEventBus.emit).toHaveBeenCalledWith('cell-height-update', 30);
 	});
+
+	it('disables the zoom slider (matching the play button) until the editor is ready', () => {
+		const { rerender } = render(TransportBar, { isEditorReady: false });
+		expect(screen.getByRole('slider', { name: /zoom/i })).toBeDisabled();
+		expect(mockEventBus.emit).not.toHaveBeenCalled();
+
+		rerender({ isEditorReady: true });
+		expect(screen.getByRole('slider', { name: /zoom/i })).not.toBeDisabled();
+	});
 });

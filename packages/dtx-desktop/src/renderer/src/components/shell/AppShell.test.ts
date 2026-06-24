@@ -68,6 +68,21 @@ describe('AppShell', () => {
 		expect(vi.mocked(Workspace)).not.toHaveBeenCalled();
 	});
 
+	it('auto-collapses the master pane in medium mode when a song is selected', () => {
+		// default window.innerWidth = 1024 → medium: the two-pane layout collapses so the
+		// selected song's detail shows full-screen instead of squeezing both panes.
+		selectAnySong();
+		render(AppShell);
+		expect(screen.getByTestId('master-pane')).toHaveClass('hidden');
+		// the resize handle only exists in wide mode
+		expect(screen.queryByRole('button', { name: /Resize details panel/i })).toBeNull();
+	});
+
+	it('keeps the master pane visible in medium mode when nothing is selected', () => {
+		render(AppShell);
+		expect(screen.getByTestId('master-pane')).not.toHaveClass('hidden');
+	});
+
 	it('renders the detail pane at the stored width with a resize handle in wide mode', async () => {
 		vi.mocked(loadPreferences).mockResolvedValue({
 			detailPaneWidth: 480,

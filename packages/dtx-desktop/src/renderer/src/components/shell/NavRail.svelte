@@ -17,7 +17,7 @@
 </script>
 
 <nav
-	class="border-hairline bg-surface-1 flex h-full w-20 flex-col items-center gap-2 border-r py-4"
+	class="border-hairline bg-surface-1 flex h-full w-16 flex-col items-center gap-2 border-r py-4 md:w-20"
 >
 	{#each visible as item (item.id)}
 		<button
@@ -28,7 +28,7 @@
 			aria-current={$workspaceStore.activeSection === item.id ? 'page' : undefined}
 		>
 			<item.icon size={24} />
-			<span>{item.label.toUpperCase()}</span>
+			<span class="hidden md:inline">{item.label.toUpperCase()}</span>
 		</button>
 	{/each}
 </nav>

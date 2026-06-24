@@ -105,9 +105,9 @@ Confirmed values: default width **420**, clamp **320–640px**, file **`~/.dtxwe
 
 ## Behavior Details
 
-- Resize handle exists only in wide mode; in medium/narrow the detail is a full-width overlay, but the width preference is preserved for when wide returns.
+- Resize handle exists only in wide mode; in medium/narrow the master pane is collapsed and detail fills the content area full-width, but the width preference is preserved for when wide returns.
 - Toggling visibility with no song selected still persists the preference; the pane only renders when `isListSection && selectedSong && detailVisible`.
-- The master pane's existing `class:hidden={mode === 'narrow' && showDetail}` continues to work (when detail is hidden, `showDetail` is false, so master is never wrongly hidden).
+- The master pane's `class:hidden={mode !== 'wide' && showDetail}` collapses the list whenever the detail is shown in medium or narrow mode (when detail is hidden, `showDetail` is false, so master is never wrongly hidden).
 
 ## Error Handling
 

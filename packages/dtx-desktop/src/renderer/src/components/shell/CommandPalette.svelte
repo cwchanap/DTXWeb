@@ -205,6 +205,9 @@
 				class="max-h-80 overflow-auto py-2"
 			>
 				{#each flatResults as r, i (keyOf(r))}
+					<!-- Option keyboard activation (Enter/arrows) is handled at window level by
+				     handleKey via aria-activedescendant; the option is intentionally not focusable. -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<li
 						id={optionId(i)}
 						role="option"
@@ -213,12 +216,6 @@
 						class:bg-surface-3={i === selected}
 						aria-label={labelOf(r)}
 						onclick={() => runAt(i)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								runAt(i);
-							}
-						}}
 					>
 						<span class={r.kind === 'command' ? 'text-hi' : 'text-cyan'}>
 							{labelOf(r)}

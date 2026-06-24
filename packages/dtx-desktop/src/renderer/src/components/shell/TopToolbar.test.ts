@@ -67,6 +67,17 @@ describe('TopToolbar', () => {
 		});
 	});
 
+	it('disables the details toggle until preferences have loaded', async () => {
+		// reset() in beforeEach leaves loaded=false; the toggle must be inert so a
+		// pre-hydration click is visibly disabled rather than swallowed as a no-op.
+		render(TopToolbar, { onOpenPalette: vi.fn() });
+		const toggle = screen.getByRole('button', { name: /Toggle details panel/i });
+		expect(toggle).toBeDisabled();
+		await fireEvent.click(toggle);
+		// loaded is still false → toggleDetail() is a no-op, visibility unchanged
+		expect(get(preferencesStore).detailPaneVisible).toBe(true);
+	});
+
 	it('hides the details toggle outside list sections', () => {
 		workspaceStore.setActiveSection('settings');
 		render(TopToolbar, { onOpenPalette: vi.fn() });

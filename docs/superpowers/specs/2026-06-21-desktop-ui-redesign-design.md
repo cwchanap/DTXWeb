@@ -151,11 +151,11 @@ auth gates Cloud (exactly as today).
 
 Driven by window width (the C→A fallback the user asked for):
 
-| Width                 | Layout                                                                                                                           |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `≥ 1100px` (wide)     | Full master–detail: rail + list + detail all visible.                                                                            |
-| `760–1099px` (medium) | Rail + list; selecting a song opens detail as a **slide-over/overlay** panel over the list.                                      |
-| `< 760px` (narrow)    | **Fallback to shell A**: rail + single content pane; the list is a toggle, detail replaces content (today's behavior, restyled). |
+| Width                 | Layout                                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `≥ 1100px` (wide)     | Full master–detail: rail + list + detail all visible.                                                                                           |
+| `760–1099px` (medium) | Rail + master pane; selecting a song **collapses the master** so detail fills the content area full-width (list returns when detail is closed). |
+| `< 760px` (narrow)    | **Fallback to shell A**: rail + single content pane; the list is a toggle, detail replaces content (today's behavior, restyled).                |
 
 Implementation via a `ResizeObserver`/container query on the shell root; the rail may
 collapse to icons-only at the narrowest sizes. The detail pane is also user-collapsible at

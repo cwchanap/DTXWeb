@@ -55,6 +55,7 @@
 				onclick={handleToggleDetail}
 				aria-label="Toggle details panel"
 				aria-pressed={$preferencesStore.detailPaneVisible}
+				disabled={!$preferencesStore.loaded}
 			>
 				<PanelRight size={14} />
 			</button>

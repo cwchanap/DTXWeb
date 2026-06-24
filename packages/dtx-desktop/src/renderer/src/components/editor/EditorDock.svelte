@@ -4,14 +4,12 @@
 
 	interface Props {
 		simfileId: string | null;
-		bucketUrl?: string;
 		isEditorReady?: boolean;
 		chartLoadError?: string | null;
 		validationError?: string | null;
 	}
 	let {
 		simfileId,
-		bucketUrl = '',
 		isEditorReady = false,
 		chartLoadError = null,
 		validationError = null
@@ -62,7 +60,7 @@
 				class={open.sound ? 'rotate-180 transition' : 'transition'}
 			/>
 		</button>
-		{#if open.sound}<div class="p-3"><SoundTab simfileID={simfileId} {bucketUrl} /></div>{/if}
+		{#if open.sound}<div class="p-3"><SoundTab simfileID={simfileId} /></div>{/if}
 	</section>
 	<section>
 		<button

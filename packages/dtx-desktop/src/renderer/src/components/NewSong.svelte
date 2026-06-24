@@ -4,6 +4,7 @@
 	import { Folder, ArrowLeft, Music, FileText, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { desktopHost } from '../services/desktopHost';
+	import { sanitizeName } from '../lib/sanitizeName';
 
 	let songName = $state('');
 	let folderName = $state('');
@@ -92,58 +93,6 @@
 			}
 		};
 	});
-
-	/**
-	 * Sanitizes a file or folder name to prevent directory traversal attacks
-	 * and ensure valid directory names
-	 */
-	function sanitizeName(name: string): string {
-		if (!name || typeof name !== 'string') {
-			return '';
-		}
-
-		// Remove leading/trailing whitespace
-		let sanitized = name.trim();
-
-		// Remove or replace dangerous path traversal sequences
-		sanitized = sanitized.replace(/\.\.+/g, ''); // Remove .. sequences
-		sanitized = sanitized.replace(/[\\/]/g, ''); // Remove path separators
-
-		// Remove or replace invalid filename characters (Windows + Unix)
-		// Invalid characters: < > : " | ? * and control characters (0-31, 127)
-		sanitized = sanitized.replace(/[<>:"|?*]/g, '');
-		sanitized = sanitized
-			.split('')
-			.filter((char) => {
-				const code = char.charCodeAt(0);
-				return code >= 32 && code !== 127;
-			})
-			.join('');
-
-		// Remove leading dots and spaces (Windows restriction)
-		sanitized = sanitized.replace(/^[.\s]+/, '');
-
-		// Remove trailing dots and spaces (Windows restriction)
-		sanitized = sanitized.replace(/[.\s]+$/, '');
-
-		// Handle reserved names on Windows
-		const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-		if (reservedNames.test(sanitized)) {
-			sanitized = sanitized + '_safe';
-		}
-
-		// Ensure the name is not empty after sanitization
-		if (!sanitized) {
-			sanitized = 'untitled';
-		}
-
-		// Limit length to prevent filesystem issues (255 is common limit)
-		if (sanitized.length > 200) {
-			sanitized = sanitized.substring(0, 200);
-		}
-
-		return sanitized;
-	}
 
 	onMount(() => {
 		// Get list of available folders from workspace state

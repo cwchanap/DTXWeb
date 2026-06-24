@@ -3,6 +3,7 @@
 	import AppShell from './components/shell/AppShell.svelte';
 	import DesktopEditor from './components/DesktopEditor.svelte';
 	import VersionsModal from './components/VersionsModal.svelte';
+	import Toaster from './components/shell/Toaster.svelte';
 	import { authStore } from './stores/authStore';
 	import { authService } from './services/authService';
 	import { simFileService } from './services/simFileService';
@@ -211,3 +212,6 @@
 {#if $authStore.isAuthenticated}
 	<VersionsModal />
 {/if}
+
+<!-- Global ephemeral notifications (preference-save/export failures, etc.) -->
+<Toaster />

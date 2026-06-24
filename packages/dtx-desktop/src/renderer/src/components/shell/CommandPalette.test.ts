@@ -3,6 +3,8 @@ import { render, screen, cleanup, fireEvent, createEvent } from '@testing-librar
 import { authStore } from '../../stores/authStore';
 import { workspaceStore } from '../../stores/workspaceStore';
 import { simFileStore } from '../../stores/simFileStore';
+import { toastStore } from '../../stores/toastStore';
+import { get } from 'svelte/store';
 import type { SimfileWithDtx } from '@dtx/common';
 
 vi.mock('@lucide/svelte');
@@ -38,6 +40,7 @@ describe('CommandPalette', () => {
 		authStore.reset();
 		workspaceStore.reset();
 		simFileStore.reset();
+		toastStore.reset();
 		vi.clearAllMocks();
 		vi.mocked(exportSelectedSong).mockReset();
 	});
@@ -232,5 +235,68 @@ describe('CommandPalette', () => {
 		await fireEvent.click(exportOption);
 		expect(exportSelectedSong).toHaveBeenCalledTimes(1);
 		expect(onClose).toHaveBeenCalled();
+	});
+
+	it('surfaces a success toast when export succeeds (instead of only console)', async () => {
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		workspaceStore.selectSong({
+			name: 'Pick',
+			path: '/songs/pick',
+			isExpanded: false,
+			isLoading: false,
+			children: [],
+			hasChildren: false
+		} as any);
+		await new Promise((r) => setTimeout(r, 0)); // flush reactive update
+		vi.mocked(exportSelectedSong).mockResolvedValue({
+			success: true,
+			zipPath: '/out/pick.zip',
+			filesCount: 2
+		});
+		await fireEvent.click(screen.getByRole('option', { name: 'Export Selected Song' }));
+		await vi.waitFor(() => {
+			expect(get(toastStore).some((t) => t.kind === 'success')).toBe(true);
+		});
+	});
+
+	it('surfaces an error toast when export fails', async () => {
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		workspaceStore.selectSong({
+			name: 'Pick',
+			path: '/songs/pick',
+			isExpanded: false,
+			isLoading: false,
+			children: [],
+			hasChildren: false
+		} as any);
+		await new Promise((r) => setTimeout(r, 0));
+		vi.mocked(exportSelectedSong).mockResolvedValue({ success: false, error: 'disk full' });
+		await fireEvent.click(screen.getByRole('option', { name: 'Export Selected Song' }));
+		await vi.waitFor(() => {
+			expect(get(toastStore).some((t) => t.kind === 'error')).toBe(true);
+		});
+	});
+
+	it('surfaces an error toast when no song is selected (export no-op)', async () => {
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		workspaceStore.selectSong({
+			name: 'Pick',
+			path: '/songs/pick',
+			isExpanded: false,
+			isLoading: false,
+			children: [],
+			hasChildren: false
+		} as any);
+		await new Promise((r) => setTimeout(r, 0));
+		// The service returns a structured {success:false} no-op when nothing is
+		// selected; the palette must not silently close with no feedback.
+		vi.mocked(exportSelectedSong).mockResolvedValue({
+			success: false,
+			error: 'No song selected'
+		});
+		await fireEvent.click(screen.getByRole('option', { name: 'Export Selected Song' }));
+		await vi.waitFor(() => {
+			expect(get(toastStore).some((t) => t.kind === 'error')).toBe(true);
+		});
 	});
 });

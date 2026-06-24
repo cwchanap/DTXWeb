@@ -26,4 +26,13 @@ describe('preferencesService', () => {
 			prefs: { detailPaneWidth: 360, detailPaneVisible: true }
 		});
 	});
+
+	it('rethrows write_preferences failures so callers can surface them', async () => {
+		// Swallowing here would hide "settings don't stick" bugs; persist() in
+		// the store catches and routes this to a toast.
+		vi.mocked(invoke).mockRejectedValue(new Error('home dir missing'));
+		await expect(
+			savePreferences({ detailPaneWidth: 360, detailPaneVisible: true })
+		).rejects.toThrow('home dir missing');
+	});
 });

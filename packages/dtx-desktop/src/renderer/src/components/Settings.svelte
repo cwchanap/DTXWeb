@@ -95,7 +95,7 @@
 							</div>
 						</div>
 						<button
-							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] transition-colors hover:opacity-90 focus:outline-none disabled:opacity-50"
+							class="bg-magenta focus-visible:outline-cyan flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] transition-colors hover:opacity-90 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
 							style="box-shadow:0 0 22px -6px var(--color-magenta)"
 							onclick={handleSelectDirectory}
 							disabled={isSelectingDirectory}

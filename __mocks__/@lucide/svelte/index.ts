@@ -35,3 +35,4 @@ export const Pencil = vi.fn();
 export const Play = vi.fn();
 export const Square = vi.fn();
 export const PanelRight = vi.fn();
+export const Cloud = vi.fn();

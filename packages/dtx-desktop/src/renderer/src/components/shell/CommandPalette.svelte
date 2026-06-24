@@ -46,7 +46,18 @@
 		},
 		login: () => void authService.login(),
 		logout: () => void authService.logout(),
-		exportSelected: () => void exportSelectedSong()
+		// exportSelectedSong returns a structured result (its contract says the
+		// caller surfaces it); await it and log the outcome instead of discarding.
+		exportSelected: async () => {
+			const result = await exportSelectedSong();
+			if (result.success) {
+				console.log(
+					`Exported${result.filesCount ? ` ${result.filesCount} files` : ''} to ${result.zipPath}`
+				);
+			} else {
+				console.error('Export failed:', result.error ?? 'unknown error');
+			}
+		}
 	};
 
 	const flatten = (nodes: TreeNode[], acc: TreeNode[] = []): TreeNode[] => {

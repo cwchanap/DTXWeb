@@ -26,9 +26,12 @@ export const fuzzyScore = (query: string, text: string): number => {
 };
 
 export const searchItems = <T>(query: string, items: T[], key: (t: T) => string): T[] => {
-	if (query.trim().length === 0) return items;
+	// Normalize once so leading/trailing whitespace doesn't affect the empty check
+	// or the per-item scoring.
+	const trimmed = query.trim();
+	if (trimmed.length === 0) return items;
 	return items
-		.map((item) => ({ item, score: fuzzyScore(query, key(item)) }))
+		.map((item) => ({ item, score: fuzzyScore(trimmed, key(item)) }))
 		.filter((r) => r.score > 0)
 		.sort((a, b) => b.score - a.score)
 		.map((r) => r.item);

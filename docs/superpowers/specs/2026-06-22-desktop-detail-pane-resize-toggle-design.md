@@ -17,7 +17,7 @@ In the wide master–detail layout, let the song-detail pane be **drag-resized**
 
 ## Architecture Overview
 
-```
+```text
 TopToolbar (toggle button) ─┐
                             ├─> preferencesStore (Svelte) ──> preferencesService.ts ──invoke──> Rust commands ──> ~/.dtxweb/preferences.json
 AppShell (width + render) ──┘            ▲                                                         (read/write via dirs + serde_json)

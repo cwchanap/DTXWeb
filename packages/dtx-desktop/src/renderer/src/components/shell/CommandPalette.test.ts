@@ -221,6 +221,13 @@ describe('CommandPalette', () => {
 			hasChildren: false
 		} as any);
 		await new Promise((r) => setTimeout(r, 0)); // flush reactive update
+		// The handler now awaits exportSelectedSong's result to surface it, so the
+		// mock must resolve a structured ExportResult rather than undefined.
+		vi.mocked(exportSelectedSong).mockResolvedValue({
+			success: true,
+			zipPath: '/out/pick.zip',
+			filesCount: 1
+		});
 		const exportOption = screen.getByRole('option', { name: 'Export Selected Song' });
 		await fireEvent.click(exportOption);
 		expect(exportSelectedSong).toHaveBeenCalledTimes(1);

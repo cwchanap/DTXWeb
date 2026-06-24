@@ -490,7 +490,7 @@
 <!-- Template Selection Modal -->
 {#if showTemplateSelection}
 	<div
-		class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="template-modal-title"

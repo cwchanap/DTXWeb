@@ -32,8 +32,15 @@
 			.sort((a, b) => a - b)
 	);
 
-	const formatDate = (dateString?: string): string =>
-		dateString ? new Date(dateString).toLocaleDateString() : '—';
+	const formatDate = (dateString?: string): string => {
+		if (!dateString) return '—';
+		// Date-only values (YYYY-MM-DD) are parsed as UTC by Date, which can shift the
+		// displayed day in local time zones. Append local midnight so it stays on the same day.
+		const local = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+			? new Date(`${dateString}T00:00:00`)
+			: new Date(dateString);
+		return local.toLocaleDateString();
+	};
 </script>
 
 <div class="flex h-full flex-col">

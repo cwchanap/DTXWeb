@@ -3,18 +3,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import { workspaceStore } from '../stores/workspaceStore';
 import type { SimfileWithDtx } from '@dtx/common';
 
-vi.mock('@lucide/svelte', () => {
-	// Explicit factory: vitest's auto-mock doesn't reliably stub every icon in
-	// this large barrel. vi.fn() works as a renderless Svelte component stub.
-	const stub = vi.fn();
-	return {
-		Music: stub,
-		X: stub,
-		Calendar: stub,
-		Link: stub,
-		Cloud: stub
-	};
-});
+vi.mock('@lucide/svelte');
 
 vi.mock('../services/linkageCacheService', () => ({
 	linkageCacheService: {

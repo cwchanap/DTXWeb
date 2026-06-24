@@ -39,4 +39,12 @@ describe('searchItems', () => {
 		expect(r[0].n).toBe('Tank');
 		expect(r.find((i) => i.n === 'Spice and Wolf')).toBeUndefined();
 	});
+	it('ignores leading/trailing whitespace in the query', () => {
+		// Whitespace around the query must not change results vs the trimmed query.
+		expect(searchItems('  tan  ', items, (i) => i.n)).toEqual(
+			searchItems('tan', items, (i) => i.n)
+		);
+		const padded = searchItems('  tank  ', items, (i) => i.n);
+		expect(padded[0].n).toBe('Tank');
+	});
 });

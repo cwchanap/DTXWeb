@@ -100,8 +100,9 @@
 			{:else}
 				<!-- master pane -->
 				<div
+					data-testid="master-pane"
 					class="reveal border-hairline min-w-0 flex-1 overflow-auto border-r"
-					class:hidden={mode === 'narrow' && showDetail}
+					class:hidden={mode !== 'wide' && showDetail}
 				>
 					{#if section === 'cloud'}<SimFileList />{:else}<Workspace />{/if}
 				</div>

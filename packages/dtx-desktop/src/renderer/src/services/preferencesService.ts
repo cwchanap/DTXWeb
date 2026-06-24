@@ -17,9 +17,7 @@ export const loadPreferences = async (): Promise<Preferences> => {
 };
 
 export const savePreferences = async (prefs: Preferences): Promise<void> => {
-	try {
-		await invoke('write_preferences', { prefs });
-	} catch (error) {
-		console.error('Failed to save preferences:', error);
-	}
+	// Intentionally rethrows: callers (preferencesStore.persist) decide how to
+	// surface the failure (toast). Swallowing here hides "settings don't stick".
+	await invoke('write_preferences', { prefs });
 };

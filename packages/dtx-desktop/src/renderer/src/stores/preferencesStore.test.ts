@@ -8,10 +8,12 @@ vi.mock('../services/preferencesService', () => ({
 
 import { loadPreferences, savePreferences } from '../services/preferencesService';
 import { preferencesStore, clampWidth } from './preferencesStore';
+import { toastStore } from './toastStore';
 
 describe('preferencesStore', () => {
 	beforeEach(() => {
 		preferencesStore.reset();
+		toastStore.reset();
 		vi.clearAllMocks();
 	});
 
@@ -104,5 +106,27 @@ describe('preferencesStore', () => {
 		preferencesStore.toggleDetail();
 		expect(get(preferencesStore).detailPaneVisible).toBe(false);
 		expect(savePreferences).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps the optimistic update but surfaces a toast when the save fails', async () => {
+		// The in-memory store updates immediately so the UI looks saved; without
+		// surfacing the IPC rejection, the change silently reverts on restart.
+		vi.mocked(loadPreferences).mockResolvedValue({
+			detailPaneWidth: 420,
+			detailPaneVisible: true
+		});
+		vi.mocked(savePreferences).mockRejectedValue(new Error('ipc down'));
+		await preferencesStore.load();
+
+		preferencesStore.setDetailWidth(500);
+		// Optimistic update is retained (UI responsiveness must not depend on the write).
+		expect(get(preferencesStore).detailPaneWidth).toBe(500);
+		expect(savePreferences).toHaveBeenCalledTimes(1);
+		// The failure is surfaced to the global toast store.
+		await vi.waitFor(() => {
+			const toasts = get(toastStore);
+			expect(toasts.some((t) => t.kind === 'error')).toBe(true);
+		});
+		toastStore.reset();
 	});
 });

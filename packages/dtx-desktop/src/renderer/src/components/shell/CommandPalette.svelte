@@ -8,6 +8,7 @@
 	import { exportSelectedSong } from '../../services/exportService';
 	import { buildCommands, type Command } from '../../commands/commands';
 	import { searchItems } from '../../lib/fuzzy';
+	import { toastStore } from '../../stores/toastStore';
 	import type { SimfileWithDtx } from '@dtx/common';
 
 	type FlatResult =
@@ -46,16 +47,17 @@
 		},
 		login: () => void authService.login(),
 		logout: () => void authService.logout(),
-		// exportSelectedSong returns a structured result (its contract says the
-		// caller surfaces it); await it and log the outcome instead of discarding.
+		// exportSelectedSong returns a structured result; surface it to the user
+		// via the global toast store rather than only console (the palette closes
+		// immediately, so there is no inline surface for a banner here).
 		exportSelected: async () => {
 			const result = await exportSelectedSong();
 			if (result.success) {
-				console.log(
+				toastStore.success(
 					`Exported${result.filesCount ? ` ${result.filesCount} files` : ''} to ${result.zipPath}`
 				);
 			} else {
-				console.error('Export failed:', result.error ?? 'unknown error');
+				toastStore.error(result.error ?? 'Export failed');
 			}
 		}
 	};
@@ -125,11 +127,13 @@
 		}
 	});
 
-	const runAt = (i: number) => {
+	const runAt = async (i: number) => {
 		const r = flatResults[i];
 		if (!r) return;
 		if (r.kind === 'command') {
-			r.c.run();
+			// Await so an async command (e.g. export) can surface its result/error
+			// to the toast store before the palette closes.
+			await r.c.run();
 		} else if (r.kind === 'song') {
 			workspaceStore.setActiveSection('library');
 			workspaceStore.selectSong(r.s);

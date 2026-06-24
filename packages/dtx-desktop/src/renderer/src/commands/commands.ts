@@ -4,7 +4,9 @@ export type Command = {
 	id: string;
 	title: string;
 	group: 'Navigation' | 'Workspace' | 'Account';
-	run: () => void;
+	// A command may be async (e.g. export). Callers should `await run()` so the
+	// handler's own error handling completes before the palette closes.
+	run: () => void | Promise<void>;
 };
 export type CommandHandlers = {
 	goToSection: (s: ShellSection) => void;
@@ -15,7 +17,7 @@ export type CommandHandlers = {
 	clearCache: () => void;
 	login: () => void;
 	logout: () => void;
-	exportSelected: () => void;
+	exportSelected: () => void | Promise<void>;
 };
 export type CommandContext = {
 	isAuthenticated: boolean;

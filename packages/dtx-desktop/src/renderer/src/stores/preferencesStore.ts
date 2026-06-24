@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { loadPreferences, savePreferences } from '../services/preferencesService';
+import { toastStore } from './toastStore';
 
 export const MIN_DETAIL_WIDTH = 320;
 export const MAX_DETAIL_WIDTH = 640;
@@ -27,9 +28,14 @@ const createPreferencesStore = () => {
 
 	const persist = () => {
 		const s = get(store);
-		void savePreferences({
+		// Fire-and-forget so a slow IPC write never blocks the UI, but surface a
+		// failure toast: the in-memory store already updated optimistically, so
+		// without this the change silently reverts on the next launch.
+		savePreferences({
 			detailPaneWidth: s.detailPaneWidth,
 			detailPaneVisible: s.detailPaneVisible
+		}).catch(() => {
+			toastStore.error('Could not save layout preference');
 		});
 	};
 

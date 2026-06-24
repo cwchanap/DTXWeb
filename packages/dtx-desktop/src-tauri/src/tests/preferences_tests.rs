@@ -95,3 +95,30 @@ fn read_clamps_out_of_range_width() {
     .unwrap();
     assert_eq!(read_preferences_from(&path).detail_pane_width, 320.0);
 }
+
+#[test]
+fn write_clamps_out_of_range_width() {
+    let dir = TempDir::new().unwrap();
+    let path = preferences_path(dir.path());
+    // Writing a too-large value must persist the clamped max, not the raw input.
+    write_preferences_to(
+        &path,
+        &Preferences {
+            detail_pane_width: 5000.0,
+            detail_pane_visible: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(read_preferences_from(&path).detail_pane_width, 640.0);
+
+    // Writing a too-small value must persist the clamped min.
+    write_preferences_to(
+        &path,
+        &Preferences {
+            detail_pane_width: 10.0,
+            detail_pane_visible: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(read_preferences_from(&path).detail_pane_width, 320.0);
+}

@@ -73,7 +73,15 @@
 			width = entries[0].contentRect.width;
 		});
 		ro.observe(rootEl);
-		return () => ro.disconnect();
+		return () => {
+			ro.disconnect();
+			// If the component tears down while a drag is in progress, drop the document
+			// listeners and restore body styles so nothing leaks behind.
+			document.removeEventListener('mousemove', handleDetailResizeMove);
+			document.removeEventListener('mouseup', handleDetailResizeUp);
+			document.body.style.cursor = '';
+			document.body.style.userSelect = '';
+		};
 	});
 </script>
 

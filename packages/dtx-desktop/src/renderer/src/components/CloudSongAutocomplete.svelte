@@ -221,10 +221,8 @@
 					<div class="border-hairline border-t">
 						{#each suggestions as song, index}
 							<button
-								class="border-hairline hover:bg-surface-2 focus:bg-surface-2 flex w-full items-center gap-3 border-b p-4 text-left transition-colors focus:outline-none {selectedIndex ===
-								index
-									? 'bg-surface-2'
-									: ''}"
+								class="border-hairline hover:bg-surface-2 focus:bg-surface-2 flex w-full items-center gap-3 border-b p-4 text-left transition-colors focus:outline-none"
+								class:bg-surface-2={selectedIndex === index}
 								onclick={() => selectSong(song)}
 								onmouseenter={() => (selectedIndex = index)}
 							>

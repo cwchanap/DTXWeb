@@ -156,7 +156,7 @@
 		</div>
 		<div class="flex gap-2">
 			<button
-				class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] shadow-md transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+				class="bg-magenta focus-visible:outline-cyan flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-[#16001a] shadow-md transition duration-150 ease-in-out hover:opacity-90 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
 				style="box-shadow:0 0 22px -6px var(--color-magenta)"
 				onclick={handleCreateTemplate}
 				aria-label="Create new template"
@@ -259,7 +259,7 @@
 				</p>
 				{#if !showCreateForm}
 					<button
-						class="bg-magenta flex items-center gap-2 rounded-lg px-6 py-2.5 font-medium text-[#16001a] shadow-md transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+						class="bg-magenta focus-visible:outline-cyan flex items-center gap-2 rounded-lg px-6 py-2.5 font-medium text-[#16001a] shadow-md transition duration-150 ease-in-out hover:opacity-90 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
 						style="box-shadow:0 0 22px -6px var(--color-magenta)"
 						onclick={handleCreateTemplate}
 						aria-label="Create your first template"

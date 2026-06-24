@@ -117,7 +117,7 @@ Packages: `@fontsource/chakra-petch`, `@fontsource/sora`, `@fontsource/martian-m
 
 A single persistent shell replaces the per-route card layouts.
 
-```
+```text
 ┌───────────────────────────────────────────────────────────────┐
 │ [native OS controls]   DRUMERY   ⌘K search…           user ▾   │  Top toolbar
 ├──────┬───────────────────────┬────────────────────────────────┤
@@ -195,7 +195,7 @@ A new global overlay component.
 Rework `DesktopEditor.svelte` from "tabbed sidebar + canvas" into a console. **The Phaser
 canvas region is unchanged.**
 
-```
+```text
 ┌───────────────────────────────────────────────────────────────┐
 │ ← Back   Spice & Wolf   [MASTER ▾ diff]            ● saved      │  Context bar
 ├────────────────┬──────────────────────────────────────────────┤

@@ -29,6 +29,7 @@
 			class="border-hairline bg-surface-2 font-mono-alt text-hi focus:border-cyan ml-auto rounded-lg border px-3 py-1.5 text-xs focus:outline-none"
 			value={currentDtx}
 			onchange={(e) => onSwitchDifficulty((e.target as HTMLSelectElement).value)}
+			aria-label="Difficulty"
 		>
 			{#each difficulties as d}<option value={d.name}
 					>{d.name.replace('.dtx', '').toUpperCase()}</option

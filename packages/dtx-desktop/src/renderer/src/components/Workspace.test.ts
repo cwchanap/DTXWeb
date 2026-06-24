@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
-import type { TreeNode } from '../stores/workspaceStore';
+import type { SimfileWithDtx } from '@dtx/common';
+import type { TreeNode, ShellSection } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
 
@@ -13,7 +14,10 @@ vi.mock('../stores/workspaceStore', () => {
 		isLoading: false,
 		error: null as string | null,
 		selectedSong: null as TreeNode | null,
-		showNewSong: false
+		selectedCloudSimFile: null as SimfileWithDtx | null,
+		showCloudSongDetails: false,
+		showNewSong: false,
+		activeSection: 'library' as ShellSection
 	};
 	const listeners: Array<(s: typeof state) => void> = [];
 
@@ -37,7 +41,10 @@ vi.mock('../stores/workspaceStore', () => {
 					isLoading: false,
 					error: null,
 					selectedSong: null,
-					showNewSong: false
+					selectedCloudSimFile: null,
+					showCloudSongDetails: false,
+					showNewSong: false,
+					activeSection: 'library'
 				};
 				listeners.forEach((cb) => cb(state));
 			},

@@ -651,7 +651,13 @@
 				class="border-hairline hover:bg-surface-2 relative w-3 cursor-col-resize border-r"
 				onclick={expandSidebar}
 				onmousedown={handleMouseDown}
-				onkeydown={(e) => e.key === 'Enter' && expandSidebar()}
+				onkeydown={(e) => {
+					// role="button" should activate on both Enter and Space (WAI-ARIA pattern).
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						expandSidebar();
+					}
+				}}
 				role="button"
 				tabindex="0"
 				title="Expand dock"

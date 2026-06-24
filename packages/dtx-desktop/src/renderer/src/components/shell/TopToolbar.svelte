@@ -28,6 +28,8 @@
 			setTimeout(() => (isClearing = false), 1000);
 		}
 	};
+	const handleToggleDetail = () => preferencesStore.toggleDetail();
+	const handleLogin = () => authService.login();
 </script>
 
 <header class="border-hairline bg-surface-1 flex h-12 items-center gap-3 border-b px-4">
@@ -50,7 +52,7 @@
 			<button
 				class="bg-surface-2 text-dim hover:text-hi flex items-center rounded-lg px-2 py-1 text-xs"
 				class:text-cyan={$preferencesStore.detailPaneVisible}
-				onclick={() => preferencesStore.toggleDetail()}
+				onclick={handleToggleDetail}
 				aria-label="Toggle details panel"
 				aria-pressed={$preferencesStore.detailPaneVisible}
 			>
@@ -80,7 +82,7 @@
 			<button
 				class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"
 				style="box-shadow:0 0 22px -6px var(--color-magenta)"
-				onclick={async () => authService.login()}
+				onclick={handleLogin}
 				aria-label="Login to access cloud features"
 			>
 				<User size={14} /> Login

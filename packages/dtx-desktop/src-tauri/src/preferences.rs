@@ -64,7 +64,11 @@ fn write_preferences_to(path: &Path, prefs: &Preferences) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(prefs)?;
+    // Mirror read_preferences_from and clamp on write so the on-disk invariant
+    // (MIN_DETAIL_WIDTH..=MAX_DETAIL_WIDTH) holds regardless of the caller.
+    let mut sanitized = prefs.clone();
+    sanitized.detail_pane_width = clamp_width(sanitized.detail_pane_width);
+    let json = serde_json::to_string_pretty(&sanitized)?;
     let mut tmp = path.to_path_buf();
     tmp.set_extension("json.tmp");
     fs::write(&tmp, json)?;

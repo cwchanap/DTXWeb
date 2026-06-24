@@ -242,7 +242,7 @@ And inside `tauri::generate_handler![ … ]`, add the two commands after the `fi
 
 Run:
 
-```
+```bash
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml preferences
 cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
 cargo clippy --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml

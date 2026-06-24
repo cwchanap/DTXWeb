@@ -219,16 +219,21 @@ function createWorkspaceStore() {
 				})
 			}));
 		},
-		setActiveSection: (section: ShellSection) => {
-			update((state) => ({
-				...state,
-				activeSection: section,
-				selectedSong: null,
-				selectedCloudSimFile: null,
-				showCloudSongDetails: false,
-				showNewSong: false
-			}));
-		},
+		setActiveSection: (section: ShellSection) =>
+			update((state) => {
+				// Re-clicking the already-active section is a no-op: it must not
+				// discard an open selection (otherwise the detail pane snaps shut).
+				// Transient state only resets on an actual section change.
+				if (section === state.activeSection) return state;
+				return {
+					...state,
+					activeSection: section,
+					selectedSong: null,
+					selectedCloudSimFile: null,
+					showCloudSongDetails: false,
+					showNewSong: false
+				};
+			}),
 		reset: () => set(initialState)
 	};
 }

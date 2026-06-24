@@ -67,8 +67,9 @@
 			max="48"
 			value={zoom}
 			oninput={handleZoom}
+			disabled={!isEditorReady}
 			aria-label="Zoom"
-			class="accent-cyan"
+			class="accent-cyan disabled:opacity-40"
 		/>
 	</label>
 </div>

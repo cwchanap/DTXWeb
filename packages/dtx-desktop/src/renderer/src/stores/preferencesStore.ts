@@ -19,6 +19,7 @@ const initialState: PreferencesState = {
 
 const clampWidth = (px: number): number =>
 	Math.min(Math.max(Math.round(px), MIN_DETAIL_WIDTH), MAX_DETAIL_WIDTH);
+export { clampWidth };
 
 const createPreferencesStore = () => {
 	const store = writable<PreferencesState>(initialState);
@@ -43,15 +44,21 @@ const createPreferencesStore = () => {
 				loaded: true
 			}));
 		},
+		// Race guard: ignore mutations issued while load() is still in-flight.
+		// Otherwise a pre-load toggle/resize would be overwritten when load()
+		// resolves with the stale on-disk snapshot it read before the mutation.
 		setDetailWidth: (px: number) => {
+			if (!get(store).loaded) return;
 			update((s) => ({ ...s, detailPaneWidth: clampWidth(px) }));
 			persist();
 		},
 		setDetailVisible: (visible: boolean) => {
+			if (!get(store).loaded) return;
 			update((s) => ({ ...s, detailPaneVisible: visible }));
 			persist();
 		},
 		toggleDetail: () => {
+			if (!get(store).loaded) return;
 			update((s) => ({ ...s, detailPaneVisible: !s.detailPaneVisible }));
 			persist();
 		},

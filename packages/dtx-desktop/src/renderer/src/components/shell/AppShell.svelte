@@ -9,7 +9,10 @@
 	import Settings from '../Settings.svelte';
 	import NewSong from '../NewSong.svelte';
 	import { workspaceStore } from '../../stores/workspaceStore';
-	import { preferencesStore } from '../../stores/preferencesStore';
+	import {
+		preferencesStore,
+		clampWidth as clampDetailWidth
+	} from '../../stores/preferencesStore';
 	import { resolveShellMode } from '../../lib/shellMode';
 	import { onMount } from 'svelte';
 
@@ -24,9 +27,7 @@
 	);
 	const showDetail = $derived(isListSection && hasSelection && detailVisible);
 
-	const MIN_DETAIL = 320;
-	const MAX_DETAIL = 640;
-	const clampDetail = (w: number) => Math.min(Math.max(w, MIN_DETAIL), MAX_DETAIL);
+	const clampDetail = clampDetailWidth;
 	let isDraggingDetail = $state(false);
 	let dragDetailWidth = $state(420);
 	const detailRenderWidth = $derived(
@@ -124,7 +125,7 @@
 						{#if mode === 'wide'}
 							<button
 								type="button"
-								class="hover:bg-cyan/40 absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize"
+								class="hover:bg-cyan/40 focus-visible:ring-cyan/40 absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize focus-visible:ring-2 focus-visible:outline-none"
 								class:bg-cyan={isDraggingDetail}
 								onmousedown={handleDetailResizeDown}
 								onkeydown={handleDetailResizeKey}

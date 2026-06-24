@@ -52,6 +52,9 @@ describe('TopToolbar', () => {
 	});
 
 	it('shows the details toggle in a list section and toggles + persists visibility', async () => {
+		// In the app, AppShell calls preferencesStore.load() on mount before the
+		// toolbar toggle is clickable. Mirror that so the loaded-gate is open.
+		await preferencesStore.load();
 		// default section after reset is 'library'
 		render(TopToolbar, { onOpenPalette: vi.fn() });
 		const toggle = screen.getByRole('button', { name: /Toggle details panel/i });

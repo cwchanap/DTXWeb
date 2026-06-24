@@ -940,37 +940,33 @@
 			{#snippet folder_upload()}
 				<!-- Folder Name -->
 				<div class="col-span-1 flex items-center">
-					<span class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</span>
+					<span class="text-dim mr-2 block">Folder:</span>
 				</div>
 				<div class="col-span-7">
-					<span class="font-mono text-sm text-slate-900 dark:text-slate-100"
-						>{song.name}</span
-					>
+					<span class="text-hi font-mono text-sm">{song.name}</span>
 				</div>
 
 				<!-- Song Path -->
 				<div class="col-span-1 flex items-center">
-					<span class="mr-2 block text-slate-700 dark:text-slate-300">Path:</span>
+					<span class="text-dim mr-2 block">Path:</span>
 				</div>
 				<div class="col-span-7">
-					<span class="truncate font-mono text-sm text-slate-900 dark:text-slate-100"
-						>{song.path}</span
-					>
+					<span class="text-hi truncate font-mono text-sm">{song.path}</span>
 				</div>
 			{/snippet}
 
 			{#snippet local_files()}
 				<!-- Local Asset Files Section -->
-				<div class="rounded-lg bg-slate-50 dark:bg-slate-800/50">
+				<div class="bg-surface-2 rounded-lg">
 					{#if isLoadingFiles}
 						<div class="flex justify-center p-4">
-							<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
+							<p class="text-dim">Loading files...</p>
 						</div>
 					{:else if fileLoadError}
-						<div class="p-4 text-red-500">
+						<div class="text-red p-4">
 							<p>{fileLoadError}</p>
 							<button
-								class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+								class="bg-magenta mt-2 rounded-sm px-3 py-1 text-sm text-[#16001a] hover:opacity-90"
 								onclick={loadLocalFiles}
 							>
 								Retry
@@ -1226,37 +1222,33 @@
 			{#snippet folder_upload()}
 				<!-- Folder Name -->
 				<div class="col-span-1 flex items-center">
-					<span class="mr-2 block text-slate-700 dark:text-slate-300">Folder:</span>
+					<span class="text-dim mr-2 block">Folder:</span>
 				</div>
 				<div class="col-span-7">
-					<span class="font-mono text-sm text-slate-900 dark:text-slate-100"
-						>{song.name}</span
-					>
+					<span class="text-hi font-mono text-sm">{song.name}</span>
 				</div>
 
 				<!-- Song Path -->
 				<div class="col-span-1 flex items-center">
-					<span class="mr-2 block text-slate-700 dark:text-slate-300">Path:</span>
+					<span class="text-dim mr-2 block">Path:</span>
 				</div>
 				<div class="col-span-7">
-					<span class="truncate font-mono text-sm text-slate-900 dark:text-slate-100"
-						>{song.path}</span
-					>
+					<span class="text-hi truncate font-mono text-sm">{song.path}</span>
 				</div>
 			{/snippet}
 
 			{#snippet local_files()}
 				<!-- Local Asset Files Section -->
-				<div class="rounded-lg bg-slate-50 dark:bg-slate-800/50">
+				<div class="bg-surface-2 rounded-lg">
 					{#if isLoadingFiles}
 						<div class="flex justify-center p-4">
-							<p class="text-slate-600 dark:text-slate-400">Loading files...</p>
+							<p class="text-dim">Loading files...</p>
 						</div>
 					{:else if fileLoadError}
-						<div class="p-4 text-red-500">
+						<div class="text-red p-4">
 							<p>{fileLoadError}</p>
 							<button
-								class="mt-2 rounded-sm bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
+								class="bg-magenta mt-2 rounded-sm px-3 py-1 text-sm text-[#16001a] hover:opacity-90"
 								onclick={loadLocalFiles}
 							>
 								Retry
@@ -1296,13 +1288,13 @@
 							</div>
 						{:else}
 							<button
-								class="rounded-sm bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-800"
+								class="bg-magenta rounded-sm px-4 py-2 font-bold text-[#16001a] hover:opacity-90"
 								onclick={() => triggerSave(false)}
 							>
 								Upload as Draft
 							</button>
 							<button
-								class="rounded-sm bg-green-500 px-4 py-2 font-bold text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-800"
+								class="bg-green rounded-sm px-4 py-2 font-bold text-[#16001a] hover:opacity-90"
 								onclick={() => triggerSave(true)}
 							>
 								Upload and Publish

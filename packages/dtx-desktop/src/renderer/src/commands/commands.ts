@@ -15,10 +15,19 @@ export type CommandHandlers = {
 	clearCache: () => void;
 	login: () => void;
 	logout: () => void;
+	exportSelected: () => void;
 };
-export type CommandContext = { isAuthenticated: boolean; handlers: CommandHandlers };
+export type CommandContext = {
+	isAuthenticated: boolean;
+	hasSelectedSong: boolean;
+	handlers: CommandHandlers;
+};
 
-export const buildCommands = ({ isAuthenticated, handlers: h }: CommandContext): Command[] => {
+export const buildCommands = ({
+	isAuthenticated,
+	hasSelectedSong,
+	handlers: h
+}: CommandContext): Command[] => {
 	const cmds: Command[] = [
 		{
 			id: 'nav.library',
@@ -58,6 +67,14 @@ export const buildCommands = ({ isAuthenticated, handlers: h }: CommandContext):
 			run: h.clearWorkspace
 		}
 	];
+	if (hasSelectedSong) {
+		cmds.push({
+			id: 'workspace.exportSelected',
+			title: 'Export Selected Song',
+			group: 'Workspace',
+			run: h.exportSelected
+		});
+	}
 	if (isAuthenticated) {
 		cmds.splice(1, 0, {
 			id: 'nav.cloud',

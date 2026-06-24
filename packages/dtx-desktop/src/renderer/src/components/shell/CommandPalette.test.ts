@@ -8,6 +8,7 @@ import type { SimfileWithDtx } from '@dtx/common';
 vi.mock('@lucide/svelte');
 vi.mock('../../services/authService', () => ({ authService: { login: vi.fn(), logout: vi.fn() } }));
 vi.mock('../../services/simFileService', () => ({ simFileService: { clearCache: vi.fn() } }));
+vi.mock('../../services/exportService', () => ({ exportSelectedSong: vi.fn() }));
 vi.mock('../../services/workspaceService', () => ({
 	workspaceService: {
 		selectWorkspace: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('../../services/workspaceService', () => ({
 }));
 
 import CommandPalette from './CommandPalette.svelte';
+import { exportSelectedSong } from '../../services/exportService';
 
 const makeCloudSimFile = (overrides: Partial<SimfileWithDtx> = {}): SimfileWithDtx =>
 	({
@@ -37,6 +39,7 @@ describe('CommandPalette', () => {
 		workspaceStore.reset();
 		simFileStore.reset();
 		vi.clearAllMocks();
+		vi.mocked(exportSelectedSong).mockReset();
 	});
 	afterEach(() => cleanup());
 
@@ -199,6 +202,28 @@ describe('CommandPalette', () => {
 		expect(get(workspaceStore).activeSection).toBe('cloud');
 		expect(get(workspaceStore).selectedCloudSimFile?.id).toBe(42);
 		expect(get(workspaceStore).showCloudSongDetails).toBe(true);
+		expect(onClose).toHaveBeenCalled();
+	});
+
+	it('shows "Export Selected Song" only when a song is selected and runs it', async () => {
+		const onClose = vi.fn();
+		render(CommandPalette, { open: true, onClose });
+		// No selection yet → command absent.
+		expect(screen.queryByText('Export Selected Song')).not.toBeInTheDocument();
+
+		// Select a local song; the command appears.
+		workspaceStore.selectSong({
+			name: 'Pick',
+			path: '/songs/pick',
+			isExpanded: false,
+			isLoading: false,
+			children: [],
+			hasChildren: false
+		} as any);
+		await new Promise((r) => setTimeout(r, 0)); // flush reactive update
+		const exportOption = screen.getByRole('option', { name: 'Export Selected Song' });
+		await fireEvent.click(exportOption);
+		expect(exportSelectedSong).toHaveBeenCalledTimes(1);
 		expect(onClose).toHaveBeenCalled();
 	});
 });

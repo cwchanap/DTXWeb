@@ -57,9 +57,7 @@ describe('workspaceStore', () => {
 		expect(state.isLoading).toBe(false);
 		expect(state.error).toBeNull();
 		expect(state.selectedSong).toBeNull();
-		expect(state.showSongDetails).toBe(false);
 		expect(state.showNewSong).toBe(false);
-		expect(state.showTemplates).toBe(false);
 	});
 
 	describe('setPath', () => {
@@ -233,7 +231,6 @@ describe('workspaceStore', () => {
 			expect(state.subWorkspaces).toEqual([]);
 			expect(state.treeStructure).toEqual([]);
 			expect(state.selectedSong).toBeNull();
-			expect(state.showSongDetails).toBe(false);
 			expect(state.error).toBeNull();
 		});
 
@@ -249,25 +246,23 @@ describe('workspaceStore', () => {
 	});
 
 	describe('selectSong', () => {
-		it('should set the selected song and show song details', () => {
+		it('should set the selected song', () => {
 			const song = makeTreeNode('My Song', '/path/My Song');
 			workspaceStore.selectSong(song);
 
 			const state = get(workspaceStore);
 			expect(state.selectedSong).toEqual(song);
-			expect(state.showSongDetails).toBe(true);
 			expect(state.showNewSong).toBe(false);
 		});
 	});
 
 	describe('closeSongDetails', () => {
-		it('should clear selected song and hide song details', () => {
+		it('should clear the selected song', () => {
 			workspaceStore.selectSong(makeTreeNode('My Song', '/path'));
 			workspaceStore.closeSongDetails();
 
 			const state = get(workspaceStore);
 			expect(state.selectedSong).toBeNull();
-			expect(state.showSongDetails).toBe(false);
 		});
 	});
 
@@ -287,7 +282,6 @@ describe('workspaceStore', () => {
 
 			const state = get(workspaceStore);
 			expect(state.selectedSong).toBeNull();
-			expect(state.showSongDetails).toBe(false);
 			expect(state.selectedCloudSimFile).not.toBeNull();
 		});
 
@@ -321,7 +315,6 @@ describe('workspaceStore', () => {
 			const state = get(workspaceStore);
 			expect(state.showNewSong).toBe(true);
 			expect(state.selectedSong).toBeNull();
-			expect(state.showSongDetails).toBe(false);
 		});
 	});
 
@@ -331,29 +324,6 @@ describe('workspaceStore', () => {
 			workspaceStore.closeNewSongForm();
 
 			expect(get(workspaceStore).showNewSong).toBe(false);
-		});
-	});
-
-	describe('showTemplatesView', () => {
-		it('should show templates and hide other panels', () => {
-			workspaceStore.selectSong(makeTreeNode('My Song', '/path'));
-			workspaceStore.showNewSongForm();
-			workspaceStore.showTemplatesView();
-
-			const state = get(workspaceStore);
-			expect(state.showTemplates).toBe(true);
-			expect(state.selectedSong).toBeNull();
-			expect(state.showSongDetails).toBe(false);
-			expect(state.showNewSong).toBe(false);
-		});
-	});
-
-	describe('closeTemplatesView', () => {
-		it('should hide the templates view', () => {
-			workspaceStore.showTemplatesView();
-			workspaceStore.closeTemplatesView();
-
-			expect(get(workspaceStore).showTemplates).toBe(false);
 		});
 	});
 
@@ -436,13 +406,11 @@ describe('workspaceStore', () => {
 			const s = get(workspaceStore);
 			expect(s.activeSection).toBe('cloud');
 			expect(s.selectedSong).toBeNull();
-			expect(s.showSongDetails).toBe(false);
-			expect(s.showTemplates).toBe(false);
 		});
 
-		it('setActiveSection("templates") sets showTemplates true', () => {
+		it('setActiveSection("templates") sets activeSection to templates', () => {
 			workspaceStore.setActiveSection('templates');
-			expect(get(workspaceStore).showTemplates).toBe(true);
+			expect(get(workspaceStore).activeSection).toBe('templates');
 		});
 
 		it('setActiveSection clears the cloud simfile selection', () => {

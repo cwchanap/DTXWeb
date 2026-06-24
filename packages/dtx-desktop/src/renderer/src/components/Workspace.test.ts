@@ -13,9 +13,7 @@ vi.mock('../stores/workspaceStore', () => {
 		isLoading: false,
 		error: null as string | null,
 		selectedSong: null as TreeNode | null,
-		showSongDetails: false,
-		showNewSong: false,
-		showTemplates: false
+		showNewSong: false
 	};
 	const listeners: Array<(s: typeof state) => void> = [];
 
@@ -39,15 +37,11 @@ vi.mock('../stores/workspaceStore', () => {
 					isLoading: false,
 					error: null,
 					selectedSong: null,
-					showSongDetails: false,
-					showNewSong: false,
-					showTemplates: false
+					showNewSong: false
 				};
 				listeners.forEach((cb) => cb(state));
 			},
-			showNewSongForm: vi.fn(),
-			showTemplatesView: vi.fn(),
-			closeTemplatesView: vi.fn()
+			showNewSongForm: vi.fn()
 		}
 	};
 });

@@ -25,11 +25,9 @@ export interface WorkspaceState {
 	isLoading: boolean;
 	error: string | null;
 	selectedSong: TreeNode | null;
-	showSongDetails: boolean;
 	selectedCloudSimFile: SimfileWithDtx | null;
 	showCloudSongDetails: boolean;
 	showNewSong: boolean;
-	showTemplates: boolean;
 	activeSection: ShellSection;
 }
 
@@ -41,11 +39,9 @@ const initialState: WorkspaceState = {
 	isLoading: false,
 	error: null,
 	selectedSong: null,
-	showSongDetails: false,
 	selectedCloudSimFile: null,
 	showCloudSongDetails: false,
 	showNewSong: false,
-	showTemplates: false,
 	activeSection: 'library'
 };
 
@@ -146,18 +142,15 @@ function createWorkspaceStore() {
 				treeStructure: [],
 				error: null,
 				selectedSong: null,
-				showSongDetails: false,
 				selectedCloudSimFile: null,
 				showCloudSongDetails: false,
-				showNewSong: false,
-				showTemplates: false
+				showNewSong: false
 			}));
 		},
 		selectSong: (song: TreeNode) => {
 			update((state) => ({
 				...state,
 				selectedSong: song,
-				showSongDetails: true,
 				showNewSong: false,
 				// Local and cloud selections are mutually exclusive.
 				selectedCloudSimFile: null,
@@ -171,7 +164,6 @@ function createWorkspaceStore() {
 				showCloudSongDetails: true,
 				// Local and cloud selections are mutually exclusive.
 				selectedSong: null,
-				showSongDetails: false,
 				showNewSong: false
 			}));
 		},
@@ -185,8 +177,7 @@ function createWorkspaceStore() {
 		closeSongDetails: () => {
 			update((state) => ({
 				...state,
-				selectedSong: null,
-				showSongDetails: false
+				selectedSong: null
 			}));
 		},
 		showNewSongForm: () => {
@@ -194,7 +185,6 @@ function createWorkspaceStore() {
 				...state,
 				showNewSong: true,
 				selectedSong: null,
-				showSongDetails: false,
 				selectedCloudSimFile: null,
 				showCloudSongDetails: false
 			}));
@@ -203,23 +193,6 @@ function createWorkspaceStore() {
 			update((state) => ({
 				...state,
 				showNewSong: false
-			}));
-		},
-		showTemplatesView: () => {
-			update((state) => ({
-				...state,
-				showTemplates: true,
-				selectedSong: null,
-				showSongDetails: false,
-				selectedCloudSimFile: null,
-				showCloudSongDetails: false,
-				showNewSong: false
-			}));
-		},
-		closeTemplatesView: () => {
-			update((state) => ({
-				...state,
-				showTemplates: false
 			}));
 		},
 		linkSimFileToFolder: (folderPath: string, simFile: SimfileWithDtx) => {
@@ -250,9 +223,7 @@ function createWorkspaceStore() {
 			update((state) => ({
 				...state,
 				activeSection: section,
-				showTemplates: section === 'templates',
 				selectedSong: null,
-				showSongDetails: false,
 				selectedCloudSimFile: null,
 				showCloudSongDetails: false,
 				showNewSong: false

@@ -5,6 +5,7 @@
 	import { authService } from '../../services/authService';
 	import { simFileService } from '../../services/simFileService';
 	import { workspaceService } from '../../services/workspaceService';
+	import { exportSelectedSong } from '../../services/exportService';
 	import { buildCommands, type Command } from '../../commands/commands';
 	import { searchItems } from '../../lib/fuzzy';
 	import type { SimfileWithDtx } from '@dtx/common';
@@ -44,7 +45,8 @@
 			localStorage.removeItem('song_templates');
 		},
 		login: () => void authService.login(),
-		logout: () => void authService.logout()
+		logout: () => void authService.logout(),
+		exportSelected: () => void exportSelectedSong()
 	};
 
 	const flatten = (nodes: TreeNode[], acc: TreeNode[] = []): TreeNode[] => {
@@ -56,7 +58,11 @@
 	};
 
 	const commands = $derived(
-		buildCommands({ isAuthenticated: $authStore.isAuthenticated, handlers })
+		buildCommands({
+			isAuthenticated: $authStore.isAuthenticated,
+			hasSelectedSong: !!$workspaceStore.selectedSong,
+			handlers
+		})
 	);
 	const songs = $derived(flatten($workspaceStore.treeStructure));
 	const cloudSongs = $derived($simFileStore.userSimFiles);

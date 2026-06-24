@@ -66,9 +66,7 @@ const initialWorkspaceState = {
 	isLoading: false,
 	error: null as string | null,
 	selectedSong: null as TreeNode | null,
-	showSongDetails: false,
-	showNewSong: false,
-	showTemplates: false
+	showNewSong: false
 };
 let workspaceState = { ...initialWorkspaceState };
 const workspaceListeners: Array<(s: typeof workspaceState) => void> = [];

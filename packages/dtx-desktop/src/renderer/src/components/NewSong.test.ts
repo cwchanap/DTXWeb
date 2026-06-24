@@ -270,6 +270,35 @@ describe('NewSong', () => {
 			expect(screen.queryByText('Select Template')).not.toBeInTheDocument();
 		});
 
+		it('exposes a labelled dialog when the template modal opens', async () => {
+			render(NewSong);
+			const importBtn = screen.getByText('Import Template').closest('button');
+			await fireEvent.click(importBtn!);
+			const dialog = screen.getByRole('dialog');
+			expect(dialog).toHaveAttribute('aria-modal', 'true');
+			expect(dialog).toHaveAttribute('aria-labelledby', 'template-modal-title');
+		});
+
+		it('closes the template modal on Escape', async () => {
+			render(NewSong);
+			const importBtn = screen.getByText('Import Template').closest('button');
+			await fireEvent.click(importBtn!);
+			expect(screen.getByText('Select Template')).toBeInTheDocument();
+			await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+			expect(screen.queryByText('Select Template')).not.toBeInTheDocument();
+		});
+
+		it('closes the template modal when the backdrop is clicked', async () => {
+			render(NewSong);
+			const importBtn = screen.getByText('Import Template').closest('button');
+			await fireEvent.click(importBtn!);
+			expect(screen.getByText('Select Template')).toBeInTheDocument();
+			// role="dialog" lives on the backdrop; clicking it directly (target === currentTarget)
+			// dismisses, while clicks inside the panel do not.
+			await fireEvent.click(screen.getByRole('dialog'));
+			expect(screen.queryByText('Select Template')).not.toBeInTheDocument();
+		});
+
 		it('selects a template and auto-populates empty song name', async () => {
 			const { templateStore } = await import('../stores/templateStore');
 			templateStore.reloadTemplates();

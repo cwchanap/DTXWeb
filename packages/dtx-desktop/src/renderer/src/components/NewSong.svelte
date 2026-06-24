@@ -276,6 +276,21 @@
 	function handleCancelTemplateSelection() {
 		showTemplateSelection = false;
 	}
+
+	// Dismiss the template modal when the backdrop itself (not its children) is clicked.
+	function handleTemplateBackdropClick(event: MouseEvent) {
+		if (event.target === event.currentTarget) {
+			handleCancelTemplateSelection();
+		}
+	}
+
+	// Dismiss the template modal on Escape. Key events bubble from the panel to
+	// the backdrop, which carries the handler.
+	function handleTemplateEscape(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			handleCancelTemplateSelection();
+		}
+	}
 </script>
 
 <div class="bg-base flex h-full flex-col overflow-hidden">
@@ -474,12 +489,25 @@
 
 <!-- Template Selection Modal -->
 {#if showTemplateSelection}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+	<div
+		class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="template-modal-title"
+		tabindex="-1"
+		onclick={handleTemplateBackdropClick}
+		onkeydown={handleTemplateEscape}
+	>
 		<div class="bg-surface-1 max-h-[80vh] w-full max-w-md overflow-hidden rounded-lg shadow-xl">
 			<!-- Modal Header -->
 			<div class="border-hairline border-b p-4">
 				<div class="flex items-center justify-between">
-					<h3 class="font-display text-hi text-lg font-semibold">Select Template</h3>
+					<h3
+						id="template-modal-title"
+						class="font-display text-hi text-lg font-semibold"
+					>
+						Select Template
+					</h3>
 					<button
 						onclick={handleCancelTemplateSelection}
 						class="text-faint hover:bg-surface-2 hover:text-base-text rounded-lg p-1"

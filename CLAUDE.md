@@ -91,6 +91,10 @@ bun run gen-types              # Generate TypeScript types from Supabase schema
 bun run clean                  # Remove all node_modules
 ```
 
+> **E2E note**: `playwright.config.ts` auto-starts its own servers (web on 5173 + API via `wrangler dev`) and seeds a local Supabase stack (`e2e/setup/prepare-stack.ts`, `seed.sql`, `global.setup.ts` for auth storage state). Do **not** manually start dev servers before running `bun run e2e` — Playwright manages the full stack. Override the target with `PLAYWRIGHT_BASE_URL`.
+
+> **R2 uploads**: `scripts/cli.py` is a standalone Python (Click + boto3) tool — `python scripts/cli.py upload_r2 <file> [<bucket>:<path>]` — for pushing assets to Cloudflare R2. It is independent of the Bun workspace: `pip install -r scripts/requirements.txt` and set `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ACCESS_KEY_ID` / `CLOUDFLARE_ACCESS_KEY_SECRET` in `.env`.
+
 ## Architecture
 
 ### Technology Stack
@@ -294,7 +298,7 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 - Prettier for code formatting (tabs, single quotes, width 100)
 - ESLint for TypeScript and Svelte linting
 - Supabase CLI for type generation and local development
-- CI (`.github/workflows/`): `lint-and-format`, `unit-test`, `e2e-test`, `tauri-rust-ci` (Rust fmt/clippy/test), and `desktop-build-deploy` run on push/PR. Worker deploys are manual.
+- CI (`.github/workflows/`): `lint-and-format`, `unit-test`, `e2e-test`, `tauri-rust-ci` (Rust fmt/clippy/test), `codeql` (security scan), and `desktop-build-deploy` run on push/PR. Worker deploys are manual.
 
 ## Code Maintenance
 

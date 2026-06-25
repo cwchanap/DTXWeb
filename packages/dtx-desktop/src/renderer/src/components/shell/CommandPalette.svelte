@@ -130,16 +130,20 @@
 	const runAt = async (i: number) => {
 		const r = flatResults[i];
 		if (!r) return;
-		if (r.kind === 'command') {
-			// Await so an async command (e.g. export) can surface its result/error
-			// to the toast store before the palette closes.
-			await r.c.run();
-		} else if (r.kind === 'song') {
-			workspaceStore.setActiveSection('library');
-			workspaceStore.selectSong(r.s);
-		} else {
-			workspaceStore.setActiveSection('cloud');
-			workspaceStore.selectCloudSimFile(r.s);
+		try {
+			if (r.kind === 'command') {
+				// Await so an async command (e.g. export) can surface its result/error
+				// to the toast store before the palette closes.
+				await r.c.run();
+			} else if (r.kind === 'song') {
+				workspaceStore.setActiveSection('library');
+				workspaceStore.selectSong(r.s);
+			} else {
+				workspaceStore.setActiveSection('cloud');
+				workspaceStore.selectCloudSimFile(r.s);
+			}
+		} catch (err) {
+			toastStore.error(err instanceof Error ? err.message : String(err));
 		}
 		onClose();
 	};

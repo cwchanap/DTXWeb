@@ -42,6 +42,9 @@ const createPreferencesStore = () => {
 	return {
 		subscribe,
 		load: async () => {
+			// Idempotent: a second load() (e.g. double-mount in dev) must not
+			// clobber in-memory mutations applied since the first load resolved.
+			if (get(store).loaded) return;
 			const prefs = await loadPreferences();
 			update((s) => ({
 				...s,

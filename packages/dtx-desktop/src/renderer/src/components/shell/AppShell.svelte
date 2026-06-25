@@ -9,6 +9,7 @@
 	import Settings from '../Settings.svelte';
 	import NewSong from '../NewSong.svelte';
 	import { workspaceStore } from '../../stores/workspaceStore';
+	import { authStore } from '../../stores/authStore';
 	import {
 		preferencesStore,
 		clampWidth as clampDetailWidth
@@ -26,6 +27,16 @@
 		!!$workspaceStore.selectedSong || !!$workspaceStore.selectedCloudSimFile
 	);
 	const showDetail = $derived(isListSection && hasSelection && detailVisible);
+
+	// The Cloud section is auth-only: NavRail hides its button when signed out,
+	// but activeSection is left untouched, so it would otherwise stay 'cloud'
+	// and keep rendering the cloud list for a signed-out session. Reset to the
+	// local library so the master pane always reflects an accessible section.
+	$effect(() => {
+		if (!$authStore.isAuthenticated && $workspaceStore.activeSection === 'cloud') {
+			workspaceStore.setActiveSection('library');
+		}
+	});
 
 	const clampDetail = clampDetailWidth;
 	let isDraggingDetail = $state(false);

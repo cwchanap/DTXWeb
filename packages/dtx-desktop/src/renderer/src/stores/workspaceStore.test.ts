@@ -316,6 +316,22 @@ describe('workspaceStore', () => {
 			const state = get(workspaceStore);
 			expect(state.showNewSong).toBe(true);
 			expect(state.selectedSong).toBeNull();
+			// The form must land in the library section: AppShell renders
+			// Settings/Templates before it checks showNewSong, so the flag alone
+			// would be invisible from those sections.
+			expect(state.activeSection).toBe('library');
+		});
+
+		it('switches to library when opened from a non-list section', () => {
+			// Simulate running the New Song command while on Settings/Templates,
+			// where the form would otherwise never render.
+			workspaceStore.setActiveSection('settings');
+			workspaceStore.setActiveSection('templates');
+			workspaceStore.showNewSongForm();
+
+			const state = get(workspaceStore);
+			expect(state.activeSection).toBe('library');
+			expect(state.showNewSong).toBe(true);
 		});
 	});
 

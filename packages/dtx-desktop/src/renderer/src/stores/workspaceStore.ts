@@ -184,6 +184,11 @@ function createWorkspaceStore() {
 			update((state) => ({
 				...state,
 				showNewSong: true,
+				// AppShell renders Settings/Templates before it checks showNewSong,
+				// so the flag alone does nothing there. NewSong creates a local
+				// workspace folder, so it always belongs in the library section;
+				// switch to it to guarantee the form is actually shown.
+				activeSection: 'library',
 				selectedSong: null,
 				selectedCloudSimFile: null,
 				showCloudSongDetails: false

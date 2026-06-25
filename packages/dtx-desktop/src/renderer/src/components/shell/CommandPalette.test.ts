@@ -277,7 +277,7 @@ describe('CommandPalette', () => {
 		});
 	});
 
-	it('surfaces an error toast when no song is selected (export no-op)', async () => {
+	it('surfaces an error toast when export returns a no-op failure', async () => {
 		render(CommandPalette, { open: true, onClose: vi.fn() });
 		workspaceStore.selectSong({
 			name: 'Pick',

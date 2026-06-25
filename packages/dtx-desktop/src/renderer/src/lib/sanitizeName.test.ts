@@ -65,6 +65,21 @@ describe('sanitizeName', () => {
 		expect(result).toBe('a'.repeat(200));
 	});
 
+	it('does not reintroduce a trailing dot/space after truncation (Windows safety)', () => {
+		// After truncating to 200 chars the 200th char would be a '.', which
+		// Windows rejects. The strip must run again after the length limit.
+		const longWithTrailingDotAfterLimit = 'a'.repeat(199) + '.' + 'b'.repeat(10);
+		const resultDot = sanitizeName(longWithTrailingDotAfterLimit);
+		expect(resultDot).toBe('a'.repeat(199));
+		expect(resultDot).not.toMatch(/[.\s]$/);
+
+		// Same regression check with a trailing space landing on the cut.
+		const longWithTrailingSpaceAfterLimit = 'a'.repeat(199) + ' ' + 'b'.repeat(10);
+		const resultSpace = sanitizeName(longWithTrailingSpaceAfterLimit);
+		expect(resultSpace).toBe('a'.repeat(199));
+		expect(resultSpace).not.toMatch(/[.\s]$/);
+	});
+
 	it('handles a typical user-typed song name unchanged', () => {
 		expect(sanitizeName('My Awesome Drum Chart')).toBe('My Awesome Drum Chart');
 	});

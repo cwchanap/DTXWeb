@@ -37,6 +37,14 @@ export const sanitizeName = (name: string): string => {
 		})
 		.join('');
 
+	// Limit length to prevent filesystem issues (255 is common limit).
+	// This MUST run before the leading/trailing dot+space strip below,
+	// otherwise truncation could reintroduce a trailing '.' or ' ' that
+	// Windows rejects (the earlier strip would have been undone).
+	if (sanitized.length > 200) {
+		sanitized = sanitized.substring(0, 200);
+	}
+
 	// Remove leading dots and spaces (Windows restriction)
 	sanitized = sanitized.replace(/^[.\s]+/, '');
 
@@ -52,11 +60,6 @@ export const sanitizeName = (name: string): string => {
 	// Ensure the name is not empty after sanitization
 	if (!sanitized) {
 		sanitized = 'untitled';
-	}
-
-	// Limit length to prevent filesystem issues (255 is common limit)
-	if (sanitized.length > 200) {
-		sanitized = sanitized.substring(0, 200);
 	}
 
 	return sanitized;

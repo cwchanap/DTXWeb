@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import { authStore } from '../../stores/authStore';
 import { workspaceStore } from '../../stores/workspaceStore';
@@ -66,6 +67,21 @@ describe('AppShell', () => {
 		render(AppShell);
 		expect(vi.mocked(Templates)).toHaveBeenCalled();
 		expect(vi.mocked(Workspace)).not.toHaveBeenCalled();
+	});
+
+	it('resets to the library section when a signed-in user signs out while on Cloud', async () => {
+		// Cloud is auth-only: NavRail hides its button on logout, but without the
+		// guard the active section would stay 'cloud' and keep rendering the cloud
+		// list for a signed-out session.
+		authStore.setUser({ id: 'u1', email: 'a@b.c' });
+		workspaceStore.setActiveSection('cloud');
+		render(AppShell);
+		expect(get(workspaceStore).activeSection).toBe('cloud');
+
+		authStore.logout();
+		await tick();
+
+		expect(get(workspaceStore).activeSection).toBe('library');
 	});
 
 	it('auto-collapses the master pane in medium mode when a song is selected', () => {

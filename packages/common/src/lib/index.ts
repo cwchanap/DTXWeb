@@ -40,3 +40,21 @@ export { default as store } from './store';
 // Export file provider interface (implementations stay in respective packages)
 export type { IFileProvider } from './services/fileProvider';
 export { setFileProvider, getFileProvider } from './services/fileProvider';
+
+// Notation model (pure; safe for SSR — no Phaser/Svelte)
+export { laneToStaff, PLAYABLE_DRUM_LANES, type DrumStaff } from './notation/drumMapping';
+export {
+	TICKS_PER_WHOLE,
+	type NotationNoteEntry,
+	type NotationRestEntry,
+	type NotationEntry,
+	type NotationMeasure,
+	type NotationChart
+} from './notation/model';
+export { buildChartTiming, type ChartTiming, type TimingInput } from './notation/timing';
+export {
+	ticksToDurations,
+	quantizeMeasure,
+	groupNotesByLane,
+	buildNotationChart
+} from './notation/quantize';

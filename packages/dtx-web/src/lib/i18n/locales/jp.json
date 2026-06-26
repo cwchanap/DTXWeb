@@ -34,5 +34,15 @@
 	"toast": {
 		"error_title": "エラー",
 		"cannot_delete_chart_invalid_id": "チャートを削除できません: 無効なチャートID"
+	},
+	"preview": {
+		"no_id": "譜面が指定されていません。",
+		"not_available": "譜面が見つからないか、利用できません。",
+		"loading": "譜面を読み込み中…",
+		"level": "レベル",
+		"play": "再生",
+		"pause": "一時停止",
+		"audio_loading": "音声を読み込み中…",
+		"audio_partial": "一部の音声を読み込めませんでした。"
 	}
 }

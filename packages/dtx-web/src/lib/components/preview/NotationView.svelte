@@ -77,8 +77,8 @@
 			try {
 				const notes = toStaveNotes(measure);
 				const voice = new Voice({
-					numBeats: measure.beatsPerMeasure,
-					beatValue: 4
+					num_beats: measure.beatsPerMeasure,
+					beat_value: 4
 				}).setStrict(false);
 				voice.addTickables(notes);
 				new Formatter().joinVoices([voice]).format([voice], staveWidth - 40);

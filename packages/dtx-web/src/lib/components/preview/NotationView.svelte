@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam } from 'vexflow';
 	import type { NotationChart, NotationMeasure } from '@dtx/common';
+	import type { MeasureGeometry } from './cursorGeometry';
 
 	interface Props {
 		chart: NotationChart;
@@ -16,15 +17,6 @@
 	const LEFT = 10;
 	const TOP = 20;
 
-	/** Geometry recorded per measure for the cursor (consumed in M3). */
-	interface MeasureGeometry {
-		index: number;
-		systemRow: number;
-		xStart: number;
-		xEnd: number;
-		top: number;
-		height: number;
-	}
 	let geometry: MeasureGeometry[] = [];
 
 	const toStaveNotes = (measure: NotationMeasure): StaveNote[] =>

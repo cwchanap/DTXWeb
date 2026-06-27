@@ -58,3 +58,5 @@ export {
 	groupNotesByLane,
 	buildNotationChart
 } from './notation/quantize';
+
+export { PreviewAudioEngine, type AudioEngineLoadParams } from './audio/previewAudioEngine';

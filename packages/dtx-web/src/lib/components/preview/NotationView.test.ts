@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import NotationView from './NotationView.svelte';
 import type { NotationChart } from '@dtx/common';
 
@@ -83,5 +84,37 @@ describe('NotationView', () => {
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 		expect(setContext).toHaveBeenCalled();
 		expect(draw).toHaveBeenCalled();
+	});
+});
+
+describe('NotationView cursor', () => {
+	beforeEach(() => {
+		draw.mockClear();
+		setContext.mockClear();
+	});
+
+	it('renders a cursor element', async () => {
+		const { container } = render(NotationView, { props: { chart, currentTime: 0 } });
+		await tick();
+		expect(container.querySelector('[data-testid="notation-cursor"]')).toBeTruthy();
+	});
+
+	it('emits onSeek with the clicked measure and fraction', async () => {
+		const onSeek = vi.fn();
+		const { container } = render(NotationView, { props: { chart, onSeek } });
+		await tick();
+		const surface = container.querySelector(
+			'[data-testid="notation-container"]'
+		) as HTMLElement;
+		// jsdom: getBoundingClientRect is all-zero and scrollLeft is 0, so the click
+		// maps directly through the mocked stave geometry (xStart=30, xEnd=200, top=20,
+		// height=140): clickToFraction(130, 30) -> measure 0, fraction 100/170.
+		surface.dispatchEvent(
+			new MouseEvent('click', { bubbles: true, clientX: 130, clientY: 30 })
+		);
+		expect(onSeek).toHaveBeenCalledTimes(1);
+		const arg = onSeek.mock.calls[0][0];
+		expect(arg.measure).toBe(0);
+		expect(arg.fraction).toBeCloseTo(100 / 170, 5);
 	});
 });

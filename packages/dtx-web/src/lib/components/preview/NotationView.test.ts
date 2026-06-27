@@ -4,6 +4,10 @@ import { tick } from 'svelte';
 import NotationView from './NotationView.svelte';
 import type { NotationChart } from '@dtx/common';
 
+// NotationView now uses `$_` for the seek aria-label; activate the global
+// __mocks__/svelte-i18n.ts so `_` returns the key unchanged.
+vi.mock('svelte-i18n');
+
 // Mock vexflow: we assert orchestration, not SVG output.
 const draw = vi.fn();
 const setContext = vi.fn(() => ({ draw }));

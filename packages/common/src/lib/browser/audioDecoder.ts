@@ -2,7 +2,17 @@ type XaDecoderModule = typeof import('xa_decoder');
 
 let xaDecoderModule: XaDecoderModule | null = null;
 
-export class XAAudioContext extends AudioContext {
+// `AudioContext` is a browser-only global. This module is reachable from the
+// `@dtx/common` barrel (via PreviewAudioEngine), so it gets evaluated during
+// SSR (Vite / Cloudflare Worker) where `AudioContext` is undefined. Extending
+// `undefined` throws at module-evaluation time and 500s the page. Fall back to
+// a no-op base on the server; the real audio paths only run in the browser.
+const AudioContextBase: typeof AudioContext =
+	typeof AudioContext !== 'undefined'
+		? AudioContext
+		: (class {} as unknown as typeof AudioContext);
+
+export class XAAudioContext extends AudioContextBase {
 	private initialized = false;
 	private initializationPromise: Promise<void> | null = null;
 

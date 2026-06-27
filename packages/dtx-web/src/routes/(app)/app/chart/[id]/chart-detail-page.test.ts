@@ -34,6 +34,10 @@ vi.mock('$lib/toaster', () => ({
 	default: { error: vi.fn(), success: vi.fn() }
 }));
 
+// The page now uses `$_` from svelte-i18n for the /preview link label; activate
+// the global __mocks__/svelte-i18n.ts so `_` returns the key unchanged.
+vi.mock('svelte-i18n');
+
 const capturedLoadAssetFiles = vi.hoisted(() => vi.fn());
 
 vi.mock('@dtx/common/components', () => ({

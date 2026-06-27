@@ -19,8 +19,25 @@ vi.mock('$lib/components/preview/NotationView.svelte', async () => {
 
 vi.mock('@dtx/common', () => ({
 	SimFile: { parseFromRemoteURL: parseFromRemoteURLMock },
-	buildNotationChart: buildNotationChartMock
+	buildNotationChart: buildNotationChartMock,
+	PreviewAudioEngine: class {
+		onEnded?: () => void;
+		async load() {
+			return { loaded: 0, failedFiles: [] };
+		}
+		play() {}
+		pause() {}
+		seek() {}
+		get currentTime() {
+			return 0;
+		}
+		get duration() {
+			return 0;
+		}
+		dispose() {}
+	}
 }));
+vi.mock('$lib/toaster', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
 
 let searchId: string | null = '5';
 vi.mock('$app/stores', () => ({
@@ -32,7 +49,12 @@ vi.mock('$app/stores', () => ({
 	}
 }));
 
-const makeDtx = () => ({ title: 'Song', bpm: 120, difficulty: 'MASTER' });
+const makeDtx = () => ({
+	title: 'Song',
+	bpm: 120,
+	difficulty: 'MASTER',
+	parseSoundChips: () => []
+});
 
 describe('/preview page', () => {
 	beforeEach(() => {

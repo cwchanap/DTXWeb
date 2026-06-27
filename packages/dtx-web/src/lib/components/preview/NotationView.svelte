@@ -2,12 +2,18 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam } from 'vexflow';
 	import type { NotationChart, NotationMeasure } from '@dtx/common';
-	import type { MeasureGeometry } from './cursorGeometry';
+	import { cursorPoint, clickToFraction, type MeasureGeometry } from './cursorGeometry';
 
 	interface Props {
 		chart: NotationChart;
+		currentTime?: number;
+		/** measure/fraction is enough for the page to convert to seconds via timing. */
+		onSeek?: (pos: { measure: number; fraction: number }) => void;
+		/** timing-derived position; supplied by the page each frame. */
+		cursorMeasure?: number;
+		cursorFraction?: number;
 	}
-	let { chart }: Props = $props();
+	let { chart, onSeek, cursorMeasure = 0, cursorFraction = 0 }: Props = $props();
 
 	let container = $state<HTMLDivElement>();
 
@@ -18,6 +24,11 @@
 	const TOP = 20;
 
 	let geometry: MeasureGeometry[] = [];
+
+	let cursorX = $state(0);
+	let cursorTop = $state(0);
+	let cursorHeight = $state(0);
+	let cursorVisible = $state(false);
 
 	const toStaveNotes = (measure: NotationMeasure): StaveNote[] =>
 		measure.entries.map((entry) => {
@@ -114,14 +125,78 @@
 		void chart;
 		renderChart();
 	});
+
+	const handleClick = (event: MouseEvent) => {
+		if (!container || !onSeek) return;
+		const rect = container.getBoundingClientRect();
+		const pos = clickToFraction(
+			event.clientX - rect.left + container.scrollLeft,
+			event.clientY - rect.top,
+			geometry
+		);
+		if (pos) onSeek(pos);
+	};
+
+	const handleKeydown = (event: KeyboardEvent) => {
+		if (event.key === 'Enter' || event.key === ' ') event.preventDefault();
+	};
+
+	$effect(() => {
+		// Re-run after each geometry rebuild (chart change) and whenever the
+		// timing-derived position changes. `geometry` is intentionally a plain
+		// (non-reactive) array; the chart dependency drives the re-read.
+		void chart;
+		const point = cursorPoint(cursorMeasure, cursorFraction, geometry);
+		if (!point) {
+			cursorVisible = false;
+			return;
+		}
+		cursorVisible = true;
+		cursorX = point.x;
+		cursorTop = point.top;
+		cursorHeight = point.height;
+		// Autoscroll the active position into view (no-op in jsdom).
+		container?.scrollTo?.({ left: Math.max(0, point.x - 200), behavior: 'smooth' });
+	});
 </script>
 
-<div bind:this={container} data-testid="notation-container" class="notation-container"></div>
+<div class="notation-wrapper">
+	<div
+		bind:this={container}
+		data-testid="notation-container"
+		class="notation-container"
+		role="slider"
+		tabindex="0"
+		aria-label="Seek position"
+		aria-valuemin={0}
+		aria-valuemax={chart.measures.length}
+		aria-valuenow={cursorMeasure}
+		onclick={handleClick}
+		onkeydown={handleKeydown}
+	></div>
+	{#if cursorVisible}
+		<div
+			data-testid="notation-cursor"
+			class="notation-cursor"
+			style="left:{cursorX}px; top:{cursorTop}px; height:{cursorHeight}px;"
+		></div>
+	{/if}
+</div>
 
 <style>
+	.notation-wrapper {
+		position: relative;
+		width: 100%;
+	}
 	.notation-container {
 		width: 100%;
 		overflow-x: auto;
 		background: white;
+	}
+	.notation-cursor {
+		position: absolute;
+		width: 2px;
+		background: rgba(220, 38, 38, 0.85);
+		pointer-events: none;
 	}
 </style>

@@ -6,7 +6,8 @@
 		SimFile,
 		buildNotationChart,
 		PreviewAudioEngine,
-		type NotationChart
+		type NotationChart,
+		type ChartTiming
 	} from '@dtx/common';
 	import type { DTXFile } from '@dtx/common';
 	import { getSimfile } from '$lib/api';
@@ -31,6 +32,13 @@
 	// Bumped on every (re)load so a superseded async load (rapid level switch)
 	// cannot write state for an engine that is no longer current.
 	let loadGeneration = 0;
+	let timing = $state<ChartTiming | null>(null);
+	let cursorMeasure = $state(0);
+	let cursorFraction = $state(0);
+	let currentSeconds = $state(0);
+	let totalSeconds = $derived(timing?.totalDuration ?? 0);
+	let rafId = 0;
+	let wallClockStart = 0;
 
 	const loadAudioForLevel = async (level: number | null) => {
 		if (!simFile) return;
@@ -57,6 +65,7 @@
 			if (generation !== loadGeneration) return;
 			localEngine.onEnded = () => {
 				playing = false;
+				cancelAnimationFrame(rafId);
 			};
 			if (result.failedFiles.length) {
 				toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
@@ -64,24 +73,61 @@
 			audioReady = true;
 		} catch {
 			if (generation !== loadGeneration) return;
-			// Audio failed entirely; surface it but don't block the viewer.
+			// Total audio failure: drop the engine so playback falls back to the
+			// visual-only wall clock; keep the notation usable.
+			localEngine.dispose();
+			engine = null;
 			toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
 			audioReady = true;
 		}
 	};
 
-	const handleToggle = () => {
-		if (!engine) return;
-		if (playing) {
-			engine.pause();
+	const tickCursor = () => {
+		if (!timing) return;
+		const t =
+			engine && audioReady ? engine.currentTime : (performance.now() - wallClockStart) / 1000;
+		currentSeconds = t;
+		const pos = timing.timeToPosition(t);
+		cursorMeasure = pos.measure;
+		cursorFraction = pos.fraction;
+		if (t >= timing.totalDuration) {
 			playing = false;
-		} else {
-			engine.play(engine.currentTime);
-			playing = true;
+			return;
 		}
+		if (playing) rafId = requestAnimationFrame(tickCursor);
 	};
 
-	onDestroy(() => engine?.dispose());
+	const handleSeek = (pos: { measure: number; fraction: number }) => {
+		if (!timing) return;
+		const seconds = timing.positionToTime(pos.measure, pos.fraction);
+		cursorMeasure = pos.measure;
+		cursorFraction = pos.fraction;
+		if (engine && audioReady) engine.seek(seconds);
+		else wallClockStart = performance.now() - seconds * 1000;
+	};
+
+	const handleToggle = () => {
+		if (playing) {
+			engine?.pause();
+			playing = false;
+			cancelAnimationFrame(rafId);
+			return;
+		}
+		playing = true;
+		if (engine && audioReady) {
+			engine.play(engine.currentTime);
+		} else {
+			// Audio unavailable: visual-only playback from the current cursor position.
+			const startSeconds = timing ? timing.positionToTime(cursorMeasure, cursorFraction) : 0;
+			wallClockStart = performance.now() - startSeconds * 1000;
+		}
+		rafId = requestAnimationFrame(tickCursor);
+	};
+
+	onDestroy(() => {
+		cancelAnimationFrame(rafId);
+		engine?.dispose();
+	});
 
 	const buildForLevel = (level: number | null) => {
 		if (!simFile) return;
@@ -90,6 +136,7 @@
 			simFile.getHighestLevel();
 		const built = buildNotationChart(dtx);
 		chart = built.chart;
+		timing = built.timing;
 	};
 
 	const load = async () => {
@@ -156,8 +203,14 @@
 			{/if}
 		</header>
 		<div class="mb-3">
-			<PreviewTransport {playing} {audioReady} onToggle={handleToggle} />
+			<PreviewTransport
+				{playing}
+				{audioReady}
+				onToggle={handleToggle}
+				currentTime={currentSeconds}
+				duration={totalSeconds}
+			/>
 		</div>
-		<NotationView {chart} />
+		<NotationView {chart} {cursorMeasure} {cursorFraction} onSeek={handleSeek} />
 	{/if}
 </div>

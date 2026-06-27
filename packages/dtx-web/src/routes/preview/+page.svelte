@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
 	import {
@@ -125,6 +126,9 @@
 	};
 
 	onDestroy(() => {
+		// onDestroy also runs during SSR teardown, where browser-only rAF APIs do
+		// not exist (Cloudflare Worker). Nothing is scheduled/created server-side.
+		if (!browser) return;
 		cancelAnimationFrame(rafId);
 		engine?.dispose();
 	});

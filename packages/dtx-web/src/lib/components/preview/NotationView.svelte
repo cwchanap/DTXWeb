@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { _ } from 'svelte-i18n';
 	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam } from 'vexflow';
 	import type { NotationChart, NotationMeasure } from '@dtx/common';
 	import { cursorPoint, clickToFraction, type MeasureGeometry } from './cursorGeometry';
@@ -167,7 +168,7 @@
 		class="notation-container"
 		role="slider"
 		tabindex="0"
-		aria-label="Seek position"
+		aria-label={$_('preview.seek')}
 		aria-valuemin={0}
 		aria-valuemax={chart.measures.length}
 		aria-valuenow={cursorMeasure}

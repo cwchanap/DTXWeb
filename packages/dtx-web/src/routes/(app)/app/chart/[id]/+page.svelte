@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { _ } from 'svelte-i18n';
 	import type { SimFile, DTXFile } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
@@ -95,6 +96,16 @@
 	{:else if error}
 		<p class="text-red-500">Error: {error}</p>
 	{:else if simfile}
+		<div class="mb-4">
+			<a
+				class="rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+				href={`/preview?id=${$page.params.id}`}
+				target="_blank"
+				rel="noopener"
+			>
+				{$_('preview.play')}
+			</a>
+		</div>
 		<ChartDetail
 			simfile={simfile as import('@dtx/common').SimfileWithDtxFiles}
 			on:onSave={(e) =>

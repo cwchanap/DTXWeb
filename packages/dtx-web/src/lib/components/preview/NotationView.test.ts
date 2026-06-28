@@ -99,8 +99,13 @@ describe('NotationView highlight', () => {
 		setContext.mockClear();
 	});
 
-	it('highlights the active note (the chart has one note at position 0)', async () => {
-		const { container } = render(NotationView, { props: { chart, currentTime: 0 } });
+	it('highlights the active note at the current cursor position', async () => {
+		// The highlight is driven by cursorMeasure/cursorFraction (the page converts
+		// timing to those each frame), not by a wall-clock currentTime. The chart's
+		// only note sits at measure 0 / position 0, so the default cursor lands on it.
+		const { container } = render(NotationView, {
+			props: { chart, cursorMeasure: 0, cursorFraction: 0 }
+		});
 		await tick();
 		expect(container.querySelector('[data-testid="notation-note-highlight"]')).toBeTruthy();
 		// The red playhead bar was removed; only the highlight remains.
@@ -211,6 +216,30 @@ describe('NotationView layout & interaction', () => {
 		const spy = vi.spyOn(event, 'preventDefault');
 		surface.dispatchEvent(event);
 		expect(spy).toHaveBeenCalled();
+	});
+
+	it('seeks via Arrow/Home/End keys (role="slider" keyboard operability)', async () => {
+		// richChart has 6 measures (0..5). Starting at cursor measure 2, ArrowRight
+		// advances to 3, Home jumps to 0, End jumps to the last measure (5).
+		const onSeek = vi.fn();
+		const { container } = render(NotationView, {
+			props: { chart: richChart, cursorMeasure: 2, cursorFraction: 0, onSeek }
+		});
+		await tick();
+		const surface = container.querySelector(
+			'[data-testid="notation-container"]'
+		) as HTMLElement;
+		const press = (key: string) => {
+			const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+			surface.dispatchEvent(event);
+		};
+		press('ArrowRight');
+		press('Home');
+		press('End');
+		expect(onSeek).toHaveBeenCalledTimes(3);
+		expect(onSeek.mock.calls[0][0]).toEqual({ measure: 3, fraction: 0 });
+		expect(onSeek.mock.calls[1][0]).toEqual({ measure: 0, fraction: 0 });
+		expect(onSeek.mock.calls[2][0]).toEqual({ measure: 5, fraction: 1 });
 	});
 
 	it('re-renders on resize via the ResizeObserver callback', async () => {

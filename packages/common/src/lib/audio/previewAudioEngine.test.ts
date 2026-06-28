@@ -441,4 +441,45 @@ describe('PreviewAudioEngine coverage', () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it('reload() on the same instance tears down prior playback state', async () => {
+		// Verify load() is self-cleaning: after playing, a second load() on the
+		// same engine must stop the old sources, clear the scheduler, and drop the
+		// old context so nothing leaks across a reload.
+		const engine = new PreviewAudioEngine();
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		await engine.load({
+			simfileID: '5',
+			bucketUrl: 'https://b.test',
+			soundChips: [makeChip(2, 'snare.wav')],
+			notesByLane: { '12': [snare] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		vi.useFakeTimers();
+		try {
+			engine.play(0);
+			expect(ctx.sources.length).toBe(1);
+			const firstSource = ctx.sources[0];
+			// Reusing the same engine + context for a reload must stop the active
+			// source from the first load before scheduling the new one.
+			await engine.load({
+				simfileID: '5',
+				bucketUrl: 'https://b.test',
+				soundChips: [makeChip(2, 'snare.wav')],
+				notesByLane: { '12': [snare] },
+				timing,
+				fetchFn: fetchFn as unknown as typeof fetch,
+				context: ctx as unknown as never
+			});
+			expect(firstSource.stop).toHaveBeenCalled();
+			// Playback state was reset by load(); currentTime reports the offset, not
+			// the old playing clock.
+			expect(engine.currentTime).toBe(0);
+		} finally {
+			engine.dispose();
+			vi.useRealTimers();
+		}
+	});
 });

@@ -65,6 +65,20 @@ export class PreviewAudioEngine {
 	}
 
 	async load(params: AudioEngineLoadParams): Promise<{ loaded: number; failedFiles: string[] }> {
+		// Tear down any playback state from a prior load so reusing the same
+		// instance (e.g. a reload) does not leak sources/timers or keep an old
+		// AudioContext running in the background. Today the page disposes + news
+		// the engine per level switch, but load() must stay self-cleaning.
+		this.stopSources();
+		this.clearScheduler();
+		if (this.endTimer) clearTimeout(this.endTimer);
+		this.endTimer = null;
+		if (this.ownsContext && this.ctx) void this.ctx.close();
+
+		this.playing = false;
+		this.startCtxTime = 0;
+		this.startOffset = 0;
+		this.nextEventIdx = 0;
 		this.timing = params.timing;
 		this.ctx = params.context ?? new XAAudioContext();
 		this.ownsContext = !params.context;

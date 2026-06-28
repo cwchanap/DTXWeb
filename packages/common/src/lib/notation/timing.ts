@@ -49,6 +49,52 @@ const secondsIntoMeasure = (
 	return { seconds, endBpm: bpm };
 };
 
+/**
+ * Inverse of secondsIntoMeasure: find the fraction f in [0,1] such that the
+ * seconds elapsed from the measure start equal `targetSeconds`. Walks the same
+ * piecewise bpm segments so a mid-measure channel-08 tempo change inverts
+ * exactly (a linear elapsed/duration ratio would be wrong here).
+ */
+const fractionAtSeconds = (
+	measure: number,
+	targetSeconds: number,
+	input: TimingInput,
+	startBpm: number
+): number => {
+	if (targetSeconds <= 0) return 0;
+	const measureLength = input.measureLengths[measure] ?? 1;
+	const perFractionUnit = (bpm: number) => (60 / bpm) * BEATS_PER_WHOLE * measureLength;
+
+	// All bpm-change boundaries inside this measure, ascending. (Unlike
+	// secondsIntoMeasure we consider every change, since f ranges over [0,1].)
+	const bounds = input.bpmChanges
+		.filter((n) => n.measure === measure)
+		.flatMap((n) => n.notes)
+		.filter((n) => n.noteID !== '00' && n.position > 0 && n.position < 1)
+		.map((n) => ({ position: n.position, bpm: input.bpmValueMap[n.noteID] ?? startBpm }))
+		.sort((a, b) => a.position - b.position);
+
+	let bpm = startBpm;
+	let last = 0;
+	let acc = 0;
+	const interpolate = (endPos: number) => {
+		const unit = perFractionUnit(bpm);
+		if (unit <= 0) return endPos;
+		return Math.min(endPos, last + (targetSeconds - acc) / unit);
+	};
+	for (const bound of bounds) {
+		const segSeconds = perFractionUnit(bpm) * (bound.position - last);
+		if (acc + segSeconds >= targetSeconds) return interpolate(bound.position);
+		acc += segSeconds;
+		bpm = bound.bpm;
+		last = bound.position;
+	}
+	// Final segment [last, 1] at the current bpm.
+	const segSeconds = perFractionUnit(bpm) * (1 - last);
+	if (acc + segSeconds >= targetSeconds) return interpolate(1);
+	return 1;
+};
+
 export const buildChartTiming = (input: TimingInput): ChartTiming => {
 	const measureStartSeconds: number[] = [];
 	const measureBpmAtStart: number[] = [];
@@ -69,9 +115,6 @@ export const buildChartTiming = (input: TimingInput): ChartTiming => {
 		return base + secondsIntoMeasure(measure, fraction, input, startBpm).seconds;
 	};
 
-	const measureDuration = (measure: number): number =>
-		(measureStartSeconds[measure + 1] ?? totalDuration) - (measureStartSeconds[measure] ?? 0);
-
 	const timeToPosition = (t: number): { measure: number; fraction: number } => {
 		if (t <= 0) return { measure: 0, fraction: 0 };
 		if (t >= totalDuration)
@@ -81,8 +124,17 @@ export const buildChartTiming = (input: TimingInput): ChartTiming => {
 			if (t >= measureStartSeconds[m]) measure = m;
 			else break;
 		}
-		const dur = measureDuration(measure) || 1;
-		const fraction = Math.min(1, Math.max(0, (t - measureStartSeconds[measure]) / dur));
+		// Invert secondsIntoMeasure piecewise so a mid-measure bpm change (channel
+		// 08) round-trips exactly. A linear (t-start)/duration ratio diverges from
+		// positionToTime whenever the tempo changes inside the measure.
+		const startBpm = measureBpmAtStart[measure] ?? input.bpm;
+		const fraction = Math.min(
+			1,
+			Math.max(
+				0,
+				fractionAtSeconds(measure, t - measureStartSeconds[measure], input, startBpm)
+			)
+		);
 		return { measure, fraction };
 	};
 

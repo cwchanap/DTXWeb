@@ -67,6 +67,32 @@ describe('buildChartTiming', () => {
 		expect(t.totalDuration).toBe(3); // 2s + 1s
 	});
 
+	it('round-trips positionToTime/timeToPosition through a mid-measure bpm change', () => {
+		// Channel 08 changes tempo at position 0.5 inside measure 0: the first
+		// half runs at 120 bpm (1s) and the second at 240 bpm (0.5s), so the whole
+		// measure is 1.5s, not the 2s a constant-tempo measure would be. A linear
+		// (elapsed/duration) inverse maps the half-way time back to the wrong
+		// fraction; the piecewise inverse must recover the exact position.
+		const bpmChanges = [new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0.5 }])];
+		const t = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: { AA: 240 },
+			bpmChanges,
+			measureLengths: [1],
+			measureCount: 1
+		});
+		// measure is 1.5s: 1s at 120 + 0.5s at 240.
+		expect(t.totalDuration).toBeCloseTo(1.5, 6);
+		// The boundary time (1s) corresponds to fraction 0.5 exactly.
+		expect(t.positionToTime(0, 0.5)).toBeCloseTo(1, 6);
+		expect(t.timeToPosition(1)).toEqual({ measure: 0, fraction: 0.5 });
+		// A point in the fast second half: position 0.75 -> 1s + 0.25*0.5s of 240bpm span.
+		const timeAt75 = t.positionToTime(0, 0.75);
+		const back = t.timeToPosition(timeAt75);
+		expect(back.measure).toBe(0);
+		expect(back.fraction).toBeCloseTo(0.75, 6);
+	});
+
 	it('timeToPosition stops scanning once a later measure starts after t (break path)', () => {
 		// 3 measures at 120 bpm -> starts [0,2,4]. A time inside measure 1 must
 		// break out of the loop at measure 2's start (4 > t) rather than run past.

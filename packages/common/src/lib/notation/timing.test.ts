@@ -66,4 +66,56 @@ describe('buildChartTiming', () => {
 		expect(t.measureStartSeconds).toEqual([0, 2]);
 		expect(t.totalDuration).toBe(3); // 2s + 1s
 	});
+
+	it('timeToPosition stops scanning once a later measure starts after t (break path)', () => {
+		// 3 measures at 120 bpm -> starts [0,2,4]. A time inside measure 1 must
+		// break out of the loop at measure 2's start (4 > t) rather than run past.
+		const t = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: {},
+			bpmChanges: noBpmChanges,
+			measureLengths: [1, 1, 1],
+			measureCount: 3
+		});
+		expect(t.timeToPosition(2.5)).toEqual({ measure: 1, fraction: 0.25 });
+	});
+
+	it('falls back to measureLength 1 when measureLengths is shorter than measureCount', () => {
+		// Only one length provided but two measures; measure 1 must default to 1.
+		const t = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: {},
+			bpmChanges: noBpmChanges,
+			measureLengths: [1],
+			measureCount: 2
+		});
+		expect(t.measureStartSeconds).toEqual([0, 2]);
+		expect(t.totalDuration).toBe(4);
+	});
+
+	it('keeps the current bpm when a bpm-change noteID is not in the value map', () => {
+		// A bpm change references noteID 'ZZ' which was never defined via #BPMZZ;
+		// the change must be a no-op (bpm stays at 120 for the whole chart).
+		const bpmChanges = [new LaneMeasureNote(1, '08', [{ noteID: 'ZZ', position: 0 }])];
+		const t = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: {},
+			bpmChanges,
+			measureLengths: [1, 1],
+			measureCount: 2
+		});
+		expect(t.totalDuration).toBe(4); // both measures at 120 bpm
+	});
+
+	it('positionToTime clamps an out-of-range measure to the end + falls back to base bpm', () => {
+		const t = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: {},
+			bpmChanges: noBpmChanges,
+			measureLengths: [1],
+			measureCount: 1
+		});
+		// measure 99 has no recorded start time or starting bpm; both fall back.
+		expect(t.positionToTime(99, 0)).toBe(t.totalDuration);
+	});
 });

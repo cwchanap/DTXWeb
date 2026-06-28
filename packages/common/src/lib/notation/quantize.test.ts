@@ -115,6 +115,30 @@ describe('quantizeMeasure', () => {
 		const notes = measure.entries.filter((e) => e.kind === 'note');
 		expect(notes[0].durTicks).toBe(3);
 	});
+
+	it('fully consumes an off-grid onset span so entries sum to measureTicks', () => {
+		// position 1/11 -> round(192/11) = 17 ticks, which is not a clean
+		// binary/triplet boundary. A naive greedy decomposition (12 + 3) drops 2
+		// ticks from the leading rest and 1 from the trailing span, leaving gaps.
+		// Assert the leftover is absorbed so sum(durTicks) === measureTicks.
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '01', position: 1 / 11 }]);
+		const measure = quantizeMeasure(0, [snare]);
+		expect(measure.measureTicks).toBe(192);
+		const total = measure.entries.reduce((sum, e) => sum + e.durTicks, 0);
+		expect(total).toBe(measure.measureTicks);
+		// Every entry stays within the measure bounds.
+		for (const e of measure.entries) {
+			expect(e.startTick).toBeGreaterThanOrEqual(0);
+			expect(e.startTick + e.durTicks).toBeLessThanOrEqual(measure.measureTicks);
+		}
+		// The off-grid position produced a leftover that had to be absorbed, so at
+		// least one rest carries a non-standard (non power-of-two) tick count.
+		expect(
+			measure.entries.some(
+				(e) => e.kind === 'rest' && ![192, 96, 48, 24, 12, 6, 3].includes(e.durTicks)
+			)
+		).toBe(true);
+	});
 });
 
 describe('groupNotesByLane', () => {

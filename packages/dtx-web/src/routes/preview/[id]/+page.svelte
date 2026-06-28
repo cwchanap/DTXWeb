@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
@@ -103,6 +103,9 @@
 		const seconds = timing.positionToTime(pos.measure, pos.fraction);
 		cursorMeasure = pos.measure;
 		cursorFraction = pos.fraction;
+		// Keep the transport display in sync with the seek; otherwise it keeps
+		// showing the pre-seek time until the next animation frame.
+		currentSeconds = seconds;
 		if (engine && audioReady) engine.seek(seconds);
 		else wallClockStart = performance.now() - seconds * 1000;
 	};
@@ -128,6 +131,9 @@
 	const handleWindowKeydown = (event: KeyboardEvent) => {
 		if (event.key !== ' ' && event.code !== 'Space') return;
 		if (status !== 'ready') return;
+		// Match the disabled transport button: ignore the shortcut until audio is
+		// ready so playback can't start on the wall clock during engine.load().
+		if (!audioReady) return;
 		// Let form controls and buttons keep their native space behavior.
 		const tag = (event.target as HTMLElement | null)?.tagName;
 		if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
@@ -151,9 +157,34 @@
 		const built = buildNotationChart(dtx);
 		chart = built.chart;
 		timing = built.timing;
+		// Re-initialize cursor/time so the transport display and notation cursor
+		// don't carry a stale position (possibly past the new chart's end) into the
+		// freshly rebuilt chart.
+		cursorMeasure = 0;
+		cursorFraction = 0;
+		currentSeconds = 0;
 	};
 
 	const load = async () => {
+		// Re-entry cleanup for in-app navigation between /preview/[id] routes:
+		// SvelteKit reuses this component across id changes, so drop the previous
+		// chart's engine + animation loop before loading the new one.
+		cancelAnimationFrame(rafId);
+		engine?.dispose();
+		engine = null;
+		audioReady = false;
+		playing = false;
+		status = 'loading';
+		title = '';
+		artist = '';
+		chart = null;
+		levels = [];
+		selectedLevel = null;
+		simFile = null;
+		cursorMeasure = 0;
+		cursorFraction = 0;
+		currentSeconds = 0;
+
 		const id = $page.params.id;
 		if (!id) {
 			status = 'error';
@@ -161,6 +192,8 @@
 		}
 		try {
 			const meta = await getSimfile(id);
+			// A newer navigation superseded this load; drop its results.
+			if (id !== $page.params.id) return;
 			title = meta.title;
 			artist = meta.artist;
 			levels = (meta.dtx_files ?? [])
@@ -168,6 +201,7 @@
 				.sort((a, b) => b.level - a.level);
 
 			simFile = await SimFile.parseFromRemoteURL(id, PUBLIC_SIMFILE_BUCKET_URL);
+			if (id !== $page.params.id) return;
 			currentId = id;
 			selectedLevel = levels.length ? levels[0].level : null;
 			buildForLevel(selectedLevel);
@@ -185,7 +219,14 @@
 		void loadAudioForLevel(value);
 	};
 
-	onMount(load);
+	// React to the route id itself. SvelteKit reuses this component across
+	// /preview/[id] navigations, so onMount alone would leave the previous song's
+	// title/chart/audio in place; this effect re-runs load() on every id change
+	// (and once on mount).
+	$effect(() => {
+		void $page.params.id;
+		void load();
+	});
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />

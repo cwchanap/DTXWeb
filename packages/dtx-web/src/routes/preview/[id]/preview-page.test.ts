@@ -6,7 +6,7 @@ const getSimfileMock = vi.hoisted(() => vi.fn());
 const parseFromRemoteURLMock = vi.hoisted(() => vi.fn());
 const buildNotationChartMock = vi.hoisted(() => vi.fn());
 // Controllable PreviewAudioEngine mock state.
-const engineLoad = vi.hoisted(() => ({ reject: false, failedFiles: [] as string[] }));
+const engineLoad = vi.hoisted(() => ({ reject: false, hang: false, failedFiles: [] as string[] }));
 const engineState = vi.hoisted(() => ({ currentTime: 0, duration: 2 }));
 const engineSpies = vi.hoisted(() => ({
 	play: vi.fn(),
@@ -33,6 +33,7 @@ vi.mock('@dtx/common', () => ({
 		onEnded?: () => void;
 		async load() {
 			if (engineLoad.reject) throw new Error('audio failure');
+			if (engineLoad.hang) return new Promise(() => {});
 			return { loaded: 0, failedFiles: engineLoad.failedFiles };
 		}
 		play = engineSpies.play;
@@ -97,6 +98,7 @@ describe('/preview page', () => {
 		buildNotationChartMock.mockReset();
 		buildNotationChartMock.mockReturnValue(readyChart());
 		engineLoad.reject = false;
+		engineLoad.hang = false;
 		engineLoad.failedFiles = [];
 		engineState.currentTime = 0;
 		engineState.duration = 2;
@@ -219,14 +221,39 @@ describe('/preview page', () => {
 		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
-		// Grab the button before toggling, while its label is still 'preview.play'.
-		const playButton = screen.getByLabelText('preview.play');
+		// The shortcut is disabled until audio is ready (matching the transport
+		// button), so wait for the play label + enabled state before firing space.
+		const playButton = await screen.findByLabelText('preview.play');
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
 		// Space on the window toggles play.
 		await fireEvent.keyDown(window, { key: ' ', code: 'Space' });
 		expect(engineSpies.play).toHaveBeenCalledTimes(1);
 		// Space on a BUTTON target is ignored (native behavior preserved).
 		await fireEvent.keyDown(playButton, { key: ' ', code: 'Space' });
 		expect(engineSpies.play).toHaveBeenCalledTimes(1); // still 1, not 2
+	});
+
+	it('ignores the spacebar shortcut until audio is ready', async () => {
+		// Hang the audio load so audioReady stays false; the spacebar must not
+		// start wall-clock playback during engine.load() (matches the disabled
+		// transport button).
+		engineLoad.hang = true;
+		getSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			dtx_files: [{ level: 4, label: 'MASTER' }]
+		});
+		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		// While audio is still loading the transport shows the loading label and
+		// the button is disabled. (Target by label: the notation stub also renders
+		// a button, so getByRole('button') is ambiguous.)
+		const btn = screen.getByLabelText('preview.audio_loading') as HTMLButtonElement;
+		expect(btn.disabled).toBe(true);
+		await fireEvent.keyDown(window, { key: ' ', code: 'Space' });
+		expect(engineSpies.play).not.toHaveBeenCalled();
 	});
 
 	it('seeks via the notation onSeek handler', async () => {

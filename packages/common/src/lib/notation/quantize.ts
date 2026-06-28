@@ -72,10 +72,24 @@ export const quantizeMeasure = (
 	const entries: NotationEntry[] = [];
 	const pushRests = (startTick: number, spanTicks: number) => {
 		let cursor = startTick;
-		for (const code of ticksToDurations(spanTicks)) {
-			const dur = DURATION_TABLE.find(([, c]) => c === code)![0];
-			entries.push({ kind: 'rest', startTick: cursor, durTicks: dur });
-			cursor += dur;
+		let remaining = spanTicks;
+		while (remaining >= 3) {
+			const entry = DURATION_TABLE.find(([t]) => t <= remaining);
+			if (!entry) break;
+			entries.push({ kind: 'rest', startTick: cursor, durTicks: entry[0] });
+			cursor += entry[0];
+			remaining -= entry[0];
+		}
+		// Off-grid onsets (e.g. position 1/11) leave a 1-2 tick remainder that no
+		// binary duration can represent. Fold it into the last rest so the span is
+		// fully consumed and sum(durTicks) == spanTicks (== measureTicks overall).
+		if (remaining > 0) {
+			const last = entries[entries.length - 1];
+			if (last && last.kind === 'rest' && last.startTick >= startTick) {
+				last.durTicks += remaining;
+			} else {
+				entries.push({ kind: 'rest', startTick: cursor, durTicks: remaining });
+			}
 		}
 	};
 

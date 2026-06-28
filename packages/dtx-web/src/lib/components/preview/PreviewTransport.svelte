@@ -23,7 +23,11 @@
 		class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
 		disabled={!audioReady}
 		onclick={onToggle}
-		aria-label={playing ? $_('preview.pause') : $_('preview.play')}
+		aria-label={!audioReady
+			? $_('preview.audio_loading')
+			: playing
+				? $_('preview.pause')
+				: $_('preview.play')}
 	>
 		{#if !audioReady}
 			{$_('preview.audio_loading')}

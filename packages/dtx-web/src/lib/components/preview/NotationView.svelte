@@ -14,7 +14,6 @@
 
 	interface Props {
 		chart: NotationChart;
-		currentTime?: number;
 		/** measure/fraction is enough for the page to convert to seconds via timing. */
 		onSeek?: (pos: { measure: number; fraction: number }) => void;
 		/** timing-derived position; supplied by the page each frame. */
@@ -40,10 +39,16 @@
 	const NOTE_SPACING = 30;
 	const STAVE_PADDING = 48; // clef / barline / trailing space within a stave
 
+	// Plain (non-reactive) arrays rebuilt by renderChart.
 	let geometry: MeasureGeometry[] = [];
 	// Rendered onset positions (per note), used to highlight the active note as the
-	// playhead passes it. Plain (non-reactive) array, rebuilt by renderChart.
+	// playhead passes it. Rebuilt by renderChart.
 	let noteOnsets: NoteOnset[] = [];
+	// Bumped from the (non-effect) ResizeObserver timeout after a relayout so the
+	// highlight $effect re-syncs on resize. Chart switches already retrigger via
+	// `void chart`; this covers the resize-only path. Never written inside an
+	// effect, to avoid Svelte's update-depth guard.
+	let resizeGen = $state(0);
 	let lastScrollTop = -1;
 
 	let hlX = $state(0);
@@ -199,7 +204,12 @@
 		renderChart();
 		resizeObserver = new ResizeObserver(() => {
 			clearTimeout(resizeTimer);
-			resizeTimer = setTimeout(renderChart, 150);
+			resizeTimer = setTimeout(() => {
+				renderChart();
+				// Bumped outside any effect so the highlight overlay re-syncs after a
+				// resize-driven relayout without tripping the update-depth guard.
+				resizeGen++;
+			}, 150);
 		});
 		if (container) resizeObserver.observe(container);
 	});
@@ -227,14 +237,47 @@
 	};
 
 	const handleKeydown = (event: KeyboardEvent) => {
-		if (event.key === 'Enter' || event.key === ' ') event.preventDefault();
+		// The seek surface has role="slider", so it must be operable from the
+		// keyboard: Arrow/Home/End actually move the playhead, not just suppress
+		// scrolling. The slider's unit is a measure (aria-valuemax = measure count).
+		if (!onSeek) {
+			if (event.key === 'Enter' || event.key === ' ') event.preventDefault();
+			return;
+		}
+		const lastMeasure = Math.max(0, chart.measures.length - 1);
+		switch (event.key) {
+			case 'ArrowLeft':
+			case 'ArrowDown':
+				event.preventDefault();
+				onSeek({ measure: Math.max(0, cursorMeasure - 1), fraction: 0 });
+				break;
+			case 'ArrowRight':
+			case 'ArrowUp':
+				event.preventDefault();
+				onSeek({ measure: Math.min(lastMeasure, cursorMeasure + 1), fraction: 0 });
+				break;
+			case 'Home':
+				event.preventDefault();
+				onSeek({ measure: 0, fraction: 0 });
+				break;
+			case 'End':
+				event.preventDefault();
+				onSeek({ measure: lastMeasure, fraction: 1 });
+				break;
+			case 'Enter':
+			case ' ':
+				event.preventDefault();
+				break;
+		}
 	};
 
 	$effect(() => {
-		// Re-run after each geometry rebuild (chart change) and whenever the
-		// timing-derived position changes. `geometry` is intentionally a plain
-		// (non-reactive) array; the chart dependency drives the re-read.
+		// Re-run after each geometry rebuild and whenever the timing-derived
+		// position changes. `resizeGen` is bumped from the ResizeObserver timeout
+		// after a relayout, so the overlay re-syncs on resize even while paused.
+		// `void chart` covers chart switches (which retrigger renderChart).
 		void chart;
+		void resizeGen;
 		const point = cursorPoint(cursorMeasure, cursorFraction, geometry);
 		const active = activeOnset(cursorMeasure, cursorFraction, noteOnsets);
 		if (!point) {

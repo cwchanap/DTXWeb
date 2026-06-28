@@ -93,7 +93,7 @@ describe('PreviewAudioEngine', () => {
 		expect(res.loaded).toBe(0);
 	});
 
-	it('schedules a source per note on play() and tracks currentTime', async () => {
+	it('schedules sources just-in-time via lookahead and tracks currentTime', async () => {
 		const engine = new PreviewAudioEngine();
 		const snare = new LaneMeasureNote(0, '12', [
 			{ noteID: '02', position: 0 },
@@ -108,10 +108,23 @@ describe('PreviewAudioEngine', () => {
 			fetchFn: fetchFn as unknown as typeof fetch,
 			context: ctx as unknown as never
 		});
-		engine.play(0);
-		expect(ctx.sources.length).toBe(2);
-		ctx.currentTime = 0.5;
-		expect(engine.currentTime).toBeCloseTo(0.5);
+		vi.useFakeTimers();
+		try {
+			engine.play(0);
+			// Only the imminent note (t=0) is within the 0.5s lookahead horizon;
+			// the t=1 note is not scheduled yet (this is what keeps the node graph
+			// small enough that ctx.currentTime does not stall).
+			expect(ctx.sources.length).toBe(1);
+			ctx.currentTime = 0.5;
+			expect(engine.currentTime).toBeCloseTo(0.5);
+			// Advancing the clock past the horizon and ticking schedules the later note.
+			ctx.currentTime = 1;
+			vi.advanceTimersByTime(150);
+			expect(ctx.sources.length).toBe(2);
+		} finally {
+			engine.dispose();
+			vi.useRealTimers();
+		}
 	});
 
 	it('seek sets currentTime when paused', async () => {

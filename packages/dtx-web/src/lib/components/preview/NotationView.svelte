@@ -3,7 +3,14 @@
 	import { _ } from 'svelte-i18n';
 	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam } from 'vexflow';
 	import type { NotationChart, NotationMeasure } from '@dtx/common';
-	import { cursorPoint, clickToFraction, type MeasureGeometry } from './cursorGeometry';
+	import {
+		cursorPoint,
+		clickToFraction,
+		playheadAt,
+		snapToOnset,
+		type MeasureGeometry,
+		type NoteOnset
+	} from './cursorGeometry';
 
 	interface Props {
 		chart: NotationChart;
@@ -13,23 +20,42 @@
 		/** timing-derived position; supplied by the page each frame. */
 		cursorMeasure?: number;
 		cursorFraction?: number;
+		/** Only auto-scroll to follow the cursor while playing, not on manual seek. */
+		playing?: boolean;
 	}
-	let { chart, onSeek, cursorMeasure = 0, cursorFraction = 0 }: Props = $props();
+	let { chart, onSeek, cursorMeasure = 0, cursorFraction = 0, playing = false }: Props = $props();
 
 	let container = $state<HTMLDivElement>();
+	let cursorEl = $state<HTMLDivElement>();
 
-	const MEASURES_PER_SYSTEM = 4;
 	const SYSTEM_HEIGHT = 140;
-	const STAVE_WIDTH = 260;
 	const LEFT = 10;
 	const TOP = 20;
+	// A measure's width scales with how many onsets it holds, so dense measures
+	// get the room they need instead of cramming notes together.
+	const MIN_STAVE_WIDTH = 160;
+	// Horizontal px budget per onset. VexFlow allocates space by note duration, so
+	// fast 32nd-note clusters get compressed well below the average; a generous
+	// budget keeps even the densest clusters legible (~20px between onsets).
+	const NOTE_SPACING = 30;
+	const STAVE_PADDING = 48; // clef / barline / trailing space within a stave
 
 	let geometry: MeasureGeometry[] = [];
+	// Rendered onset positions (per note), used to highlight the active note as the
+	// cursor passes it. Plain (non-reactive) array, rebuilt by renderChart.
+	let noteOnsets: NoteOnset[] = [];
+	let lastScrollTop = -1;
 
 	let cursorX = $state(0);
 	let cursorTop = $state(0);
 	let cursorHeight = $state(0);
 	let cursorVisible = $state(false);
+
+	let hlX = $state(0);
+	let hlW = $state(0);
+	let hlTop = $state(0);
+	let hlHeight = $state(0);
+	let hlVisible = $state(false);
 
 	const toStaveNotes = (measure: NotationMeasure): StaveNote[] =>
 		measure.entries.map((entry) => {
@@ -55,26 +81,73 @@
 	};
 	const ticksToRestCode = (ticks: number): string => TICK_CODE[ticks] ?? 'q';
 
+	const onsetCount = (measure: NotationMeasure): number =>
+		measure.entries.reduce((n, e) => n + (e.kind === 'note' ? 1 : 0), 0);
+
 	const renderChart = () => {
 		if (!container) return;
 		container.innerHTML = '';
 		geometry = [];
-		const width = container.clientWidth || STAVE_WIDTH * MEASURES_PER_SYSTEM + LEFT * 2;
-		const rows = Math.ceil(chart.measures.length / MEASURES_PER_SYSTEM);
+		noteOnsets = [];
+		const containerWidth = container.clientWidth || 900;
+		const usableWidth = Math.max(MIN_STAVE_WIDTH, containerWidth - LEFT * 2);
+
+		// Pass 1: give each measure a width proportional to its onset count, then
+		// pack measures left-to-right, wrapping to a new row when one won't fit.
+		type LaidOutMeasure = {
+			measure: NotationMeasure;
+			x: number;
+			y: number;
+			width: number;
+			row: number;
+		};
+		const layout: LaidOutMeasure[] = [];
+		let x = LEFT;
+		let row = 0;
+		for (const measure of chart.measures) {
+			const width = Math.min(
+				usableWidth,
+				Math.max(MIN_STAVE_WIDTH, onsetCount(measure) * NOTE_SPACING + STAVE_PADDING)
+			);
+			if (x !== LEFT && x + width > LEFT + usableWidth) {
+				row++;
+				x = LEFT;
+			}
+			layout.push({ measure, x, y: TOP + row * SYSTEM_HEIGHT, width, row });
+			x += width;
+		}
+
+		const rows = row + 1;
+
+		// Pass 2: justify every wrapped row (all but the last) so its staves stretch
+		// to the right edge instead of leaving a ragged gap where a measure didn't
+		// fit. The last row keeps its natural width to avoid over-spreading a lone
+		// trailing measure.
+		const lastRow = layout.length ? layout[layout.length - 1].row : 0;
+		const byRow = new Map<number, LaidOutMeasure[]>();
+		for (const item of layout) {
+			(byRow.get(item.row) ?? byRow.set(item.row, []).get(item.row)!).push(item);
+		}
+		for (const [r, items] of byRow) {
+			if (r === lastRow) continue;
+			const natural = items.reduce((sum, it) => sum + it.width, 0);
+			if (natural <= 0) continue;
+			const scale = usableWidth / natural;
+			let rx = LEFT;
+			for (const it of items) {
+				it.width *= scale;
+				it.x = rx;
+				rx += it.width;
+			}
+		}
 		const renderer = new Renderer(container, Renderer.Backends.SVG);
-		renderer.resize(width, TOP + rows * SYSTEM_HEIGHT + 40);
+		renderer.resize(containerWidth, TOP + rows * SYSTEM_HEIGHT + 40);
 		const context = renderer.getContext();
 
-		const usableWidth = width - LEFT * 2;
-		const staveWidth = Math.max(160, usableWidth / MEASURES_PER_SYSTEM);
-
-		chart.measures.forEach((measure, i) => {
-			const row = Math.floor(i / MEASURES_PER_SYSTEM);
-			const col = i % MEASURES_PER_SYSTEM;
-			const x = LEFT + col * staveWidth;
-			const y = TOP + row * SYSTEM_HEIGHT;
-			const stave = new Stave(x, y, staveWidth);
-			if (col === 0) stave.addClef('percussion');
+		layout.forEach(({ measure, x, y, width, row }, i) => {
+			const firstInRow = x === LEFT;
+			const stave = new Stave(x, y, width);
+			if (firstInRow) stave.addClef('percussion');
 			if (i === 0) stave.addTimeSignature(`${measure.beatsPerMeasure}/4`);
 			stave.setContext(context).draw();
 
@@ -85,10 +158,30 @@
 					beat_value: 4
 				}).setStrict(false);
 				voice.addTickables(notes);
-				new Formatter().joinVoices([voice]).format([voice], staveWidth - 40);
-				voice.draw(context, stave);
 				const onlyNotes = notes.filter((_, idx) => measure.entries[idx].kind === 'note');
-				Beam.generateBeams(onlyNotes).forEach((b) => b.setContext(context).draw());
+				// Generate beams BEFORE drawing the voice: beaming sets each note's beam
+				// reference, which suppresses its individual flag/tail at draw time.
+				const beams = Beam.generateBeams(onlyNotes);
+				new Formatter()
+					.joinVoices([voice])
+					.format([voice], Math.max(40, width - STAVE_PADDING));
+				voice.draw(context, stave);
+				beams.forEach((b) => b.setContext(context).draw());
+				// Capture rendered note x-extents for the active-note highlight.
+				measure.entries.forEach((entry, idx) => {
+					if (entry.kind !== 'note') return;
+					try {
+						const bb = notes[idx].getBoundingBox();
+						noteOnsets.push({
+							measure: measure.index,
+							position: entry.startTick / measure.measureTicks,
+							x: bb.getX(),
+							w: bb.getW()
+						});
+					} catch {
+						/* not measurable (e.g. jsdom in tests) */
+					}
+				});
 			} catch (err) {
 				console.warn(`Failed to render measure ${measure.index}`, err);
 			}
@@ -130,12 +223,12 @@
 	const handleClick = (event: MouseEvent) => {
 		if (!container || !onSeek) return;
 		const rect = container.getBoundingClientRect();
-		const pos = clickToFraction(
-			event.clientX - rect.left + container.scrollLeft,
-			event.clientY - rect.top,
-			geometry
-		);
-		if (pos) onSeek(pos);
+		const contentX = event.clientX - rect.left + container.scrollLeft;
+		const pos = clickToFraction(contentX, event.clientY - rect.top, geometry);
+		if (!pos) return;
+		// Snap to the nearest note so the cursor and highlight land together.
+		const fraction = snapToOnset(pos.measure, contentX, pos.fraction, noteOnsets);
+		onSeek({ measure: pos.measure, fraction });
 	};
 
 	const handleKeydown = (event: KeyboardEvent) => {
@@ -148,16 +241,37 @@
 		// (non-reactive) array; the chart dependency drives the re-read.
 		void chart;
 		const point = cursorPoint(cursorMeasure, cursorFraction, geometry);
-		if (!point) {
+		const playhead = playheadAt(cursorMeasure, cursorFraction, geometry, noteOnsets);
+		if (!point || !playhead) {
 			cursorVisible = false;
+			hlVisible = false;
 			return;
 		}
 		cursorVisible = true;
-		cursorX = point.x;
+		// Cursor x follows the rendered note layout (see playheadAt) so the bar
+		// stays aligned with the highlighted note instead of drifting ahead of it.
+		cursorX = playhead.x;
 		cursorTop = point.top;
 		cursorHeight = point.height;
-		// Autoscroll the active position into view (no-op in jsdom).
-		container?.scrollTo?.({ left: Math.max(0, point.x - 200), behavior: 'smooth' });
+
+		// Highlight the note the cursor is currently on.
+		if (playhead.active) {
+			hlVisible = true;
+			hlX = playhead.active.x - 3;
+			hlW = playhead.active.w + 6;
+			hlTop = point.top;
+			hlHeight = point.height;
+		} else {
+			hlVisible = false;
+		}
+
+		// Follow the cursor only during playback (no-op in jsdom). Manual seeks
+		// must not yank the view, so don't scroll while paused. Only scroll when
+		// the row changes, to avoid per-frame scroll jank.
+		if (playing && point.top !== lastScrollTop) {
+			lastScrollTop = point.top;
+			cursorEl?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+		}
 	});
 </script>
 
@@ -175,8 +289,16 @@
 		onclick={handleClick}
 		onkeydown={handleKeydown}
 	></div>
+	{#if hlVisible}
+		<div
+			data-testid="notation-note-highlight"
+			class="notation-note-highlight"
+			style="left:{hlX}px; top:{hlTop}px; width:{hlW}px; height:{hlHeight}px;"
+		></div>
+	{/if}
 	{#if cursorVisible}
 		<div
+			bind:this={cursorEl}
 			data-testid="notation-cursor"
 			class="notation-cursor"
 			style="left:{cursorX}px; top:{cursorTop}px; height:{cursorHeight}px;"
@@ -193,6 +315,12 @@
 		width: 100%;
 		overflow-x: auto;
 		background: white;
+	}
+	.notation-note-highlight {
+		position: absolute;
+		background: rgba(59, 130, 246, 0.25);
+		border-radius: 3px;
+		pointer-events: none;
 	}
 	.notation-cursor {
 		position: absolute;

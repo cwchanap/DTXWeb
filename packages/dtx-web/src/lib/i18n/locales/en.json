@@ -36,7 +36,6 @@
 		"cannot_delete_chart_invalid_id": "Cannot delete chart: invalid chart ID"
 	},
 	"preview": {
-		"no_id": "No chart specified.",
 		"not_available": "Chart not found or not available.",
 		"loading": "Loading chart…",
 		"level": "Level",

@@ -17,7 +17,7 @@
 	import PreviewTransport from '$lib/components/preview/PreviewTransport.svelte';
 	import toastStore from '$lib/toaster';
 
-	type Status = 'loading' | 'error' | 'no-id' | 'ready';
+	type Status = 'loading' | 'error' | 'ready';
 
 	let status = $state<Status>('loading');
 	let title = $state('');
@@ -125,6 +125,16 @@
 		rafId = requestAnimationFrame(tickCursor);
 	};
 
+	const handleWindowKeydown = (event: KeyboardEvent) => {
+		if (event.key !== ' ' && event.code !== 'Space') return;
+		if (status !== 'ready') return;
+		// Let form controls and buttons keep their native space behavior.
+		const tag = (event.target as HTMLElement | null)?.tagName;
+		if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+		event.preventDefault();
+		handleToggle();
+	};
+
 	onDestroy(() => {
 		// onDestroy also runs during SSR teardown, where browser-only rAF APIs do
 		// not exist (Cloudflare Worker). Nothing is scheduled/created server-side.
@@ -144,9 +154,9 @@
 	};
 
 	const load = async () => {
-		const id = $page.url.searchParams.get('id');
+		const id = $page.params.id;
 		if (!id) {
-			status = 'no-id';
+			status = 'error';
 			return;
 		}
 		try {
@@ -178,10 +188,10 @@
 	onMount(load);
 </script>
 
+<svelte:window onkeydown={handleWindowKeydown} />
+
 <div class="mx-auto max-w-5xl p-4">
-	{#if status === 'no-id'}
-		<p class="text-center text-lg">{$_('preview.no_id')}</p>
-	{:else if status === 'error'}
+	{#if status === 'error'}
 		<p class="text-center text-lg">{$_('preview.not_available')}</p>
 	{:else if status === 'loading'}
 		<p class="text-center text-lg">{$_('preview.loading')}</p>
@@ -215,6 +225,6 @@
 				duration={totalSeconds}
 			/>
 		</div>
-		<NotationView {chart} {cursorMeasure} {cursorFraction} onSeek={handleSeek} />
+		<NotationView {chart} {cursorMeasure} {cursorFraction} {playing} onSeek={handleSeek} />
 	{/if}
 </div>

@@ -32,6 +32,9 @@ vi.mock('vexflow', () => {
 	}
 	class StaveNote {
 		constructor(_: unknown) {}
+		getBoundingBox() {
+			return { getX: () => 0, getW: () => 0 };
+		}
 	}
 	return {
 		Renderer: class {
@@ -103,7 +106,7 @@ describe('NotationView cursor', () => {
 		expect(container.querySelector('[data-testid="notation-cursor"]')).toBeTruthy();
 	});
 
-	it('emits onSeek with the clicked measure and fraction', async () => {
+	it('emits onSeek snapped to the nearest note', async () => {
 		const onSeek = vi.fn();
 		const { container } = render(NotationView, { props: { chart, onSeek } });
 		await tick();
@@ -111,14 +114,15 @@ describe('NotationView cursor', () => {
 			'[data-testid="notation-container"]'
 		) as HTMLElement;
 		// jsdom: getBoundingClientRect is all-zero and scrollLeft is 0, so the click
-		// maps directly through the mocked stave geometry (xStart=30, xEnd=200, top=20,
-		// height=140): clickToFraction(130, 30) -> measure 0, fraction 100/170.
+		// maps through the mocked stave geometry (xStart=30, xEnd=200) to a raw
+		// fraction of 100/170. The chart's only note sits at position 0, so the click
+		// snaps to it — proving snapToOnset is applied (fraction != raw 100/170).
 		surface.dispatchEvent(
 			new MouseEvent('click', { bubbles: true, clientX: 130, clientY: 30 })
 		);
 		expect(onSeek).toHaveBeenCalledTimes(1);
 		const arg = onSeek.mock.calls[0][0];
 		expect(arg.measure).toBe(0);
-		expect(arg.fraction).toBeCloseTo(100 / 170, 5);
+		expect(arg.fraction).toBe(0);
 	});
 });

@@ -39,6 +39,15 @@ export class PreviewAudioEngine {
 	private masterVolume = 1;
 	private endTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Lookahead scheduler state. Creating every source node up front (thousands
+	// for a full chart) overloads the Web Audio render thread and stalls
+	// ctx.currentTime to a fraction of real time. Instead we create nodes
+	// just-in-time, a small horizon ahead of the playback clock.
+	private static readonly SCHEDULE_AHEAD_SEC = 0.5;
+	private static readonly TICK_MS = 100;
+	private schedulerTimer: ReturnType<typeof setInterval> | null = null;
+	private nextEventIdx = 0;
+
 	onEnded?: () => void;
 
 	get duration(): number {
@@ -128,33 +137,81 @@ export class PreviewAudioEngine {
 		if (this.ctx.state === 'suspended') void this.ctx.resume();
 
 		this.stopSources();
+		this.clearScheduler();
 		this.startCtxTime = this.ctx.currentTime;
 		this.playing = true;
 
-		for (const event of this.events) {
-			if (event.timeSec < this.startOffset) continue;
+		// Position the scheduler cursor at the first event due at/after the start
+		// offset. Long samples that began before the offset but are still sounding
+		// (e.g. the BGM track) are started immediately at the correct buffer offset.
+		this.nextEventIdx = 0;
+		while (
+			this.nextEventIdx < this.events.length &&
+			this.events[this.nextEventIdx].timeSec < this.startOffset
+		) {
+			const event = this.events[this.nextEventIdx];
 			const buffer = this.buffers.get(event.fileName);
-			if (!buffer) continue;
-			const source = this.ctx.createBufferSource();
-			source.buffer = buffer;
-			const gain = this.ctx.createGain();
-			gain.gain.value = event.gain * this.masterVolume;
-			const panner = this.ctx.createStereoPanner();
-			panner.pan.value = event.pan;
-			source.connect(panner);
-			panner.connect(gain);
-			gain.connect(this.ctx.destination);
-			source.start(this.startCtxTime + (event.timeSec - this.startOffset));
-			this.active.push(source);
+			if (buffer && event.timeSec + buffer.duration > this.startOffset) {
+				this.startSource(event, this.ctx.currentTime, this.startOffset - event.timeSec);
+			}
+			this.nextEventIdx++;
 		}
+
+		this.schedulerTimer = setInterval(() => this.tick(), PreviewAudioEngine.TICK_MS);
+		this.tick();
 
 		if (this.endTimer) clearTimeout(this.endTimer);
 		const remaining = Math.max(0, this.duration - this.startOffset);
 		this.endTimer = setTimeout(() => {
 			this.playing = false;
 			this.startOffset = this.duration;
+			this.clearScheduler();
 			this.onEnded?.();
 		}, remaining * 1000);
+	}
+
+	/** Schedule every event whose time falls within the lookahead horizon. */
+	private tick(): void {
+		if (!this.ctx || !this.playing) return;
+		const horizon = this.currentTime + PreviewAudioEngine.SCHEDULE_AHEAD_SEC;
+		while (
+			this.nextEventIdx < this.events.length &&
+			this.events[this.nextEventIdx].timeSec <= horizon
+		) {
+			const event = this.events[this.nextEventIdx++];
+			this.startSource(event, this.startCtxTime + (event.timeSec - this.startOffset), 0);
+		}
+	}
+
+	private startSource(event: ScheduledEvent, when: number, bufferOffset: number): void {
+		if (!this.ctx) return;
+		const buffer = this.buffers.get(event.fileName);
+		if (!buffer) return;
+		const source = this.ctx.createBufferSource();
+		source.buffer = buffer;
+		const gain = this.ctx.createGain();
+		gain.gain.value = event.gain * this.masterVolume;
+		const panner = this.ctx.createStereoPanner();
+		panner.pan.value = event.pan;
+		source.connect(panner);
+		panner.connect(gain);
+		gain.connect(this.ctx.destination);
+		const startAt = Math.max(this.ctx.currentTime, when);
+		if (bufferOffset > 0) source.start(startAt, bufferOffset);
+		else source.start(startAt);
+		// Prune finished sources so the active set never accumulates the whole chart.
+		source.onended = () => {
+			const i = this.active.indexOf(source);
+			if (i >= 0) this.active.splice(i, 1);
+		};
+		this.active.push(source);
+	}
+
+	private clearScheduler(): void {
+		if (this.schedulerTimer) {
+			clearInterval(this.schedulerTimer);
+			this.schedulerTimer = null;
+		}
 	}
 
 	pause(): void {
@@ -162,6 +219,7 @@ export class PreviewAudioEngine {
 		this.startOffset = this.currentTime;
 		this.playing = false;
 		this.stopSources();
+		this.clearScheduler();
 		if (this.endTimer) clearTimeout(this.endTimer);
 	}
 
@@ -187,6 +245,7 @@ export class PreviewAudioEngine {
 
 	dispose(): void {
 		this.stopSources();
+		this.clearScheduler();
 		if (this.endTimer) clearTimeout(this.endTimer);
 		this.buffers.clear();
 		this.events = [];

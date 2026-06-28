@@ -99,7 +99,7 @@
 		<div class="mb-4">
 			<a
 				class="rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-				href={`/preview?id=${$page.params.id}`}
+				href={`/preview/${$page.params.id}`}
 				target="_blank"
 				rel="noopener"
 			>

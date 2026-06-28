@@ -12,7 +12,7 @@ vi.mock('svelte-i18n');
 vi.mock('$lib/api', () => ({ getSimfile: getSimfileMock }));
 vi.mock('$env/static/public', () => ({ PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.test' }));
 vi.mock('$lib/components/preview/NotationView.svelte', async () => {
-	const Stub = (await import('../../lib/components/preview/__stubs__/NotationViewStub.svelte'))
+	const Stub = (await import('../../../lib/components/preview/__stubs__/NotationViewStub.svelte'))
 		.default;
 	return { default: Stub };
 });
@@ -39,11 +39,14 @@ vi.mock('@dtx/common', () => ({
 }));
 vi.mock('$lib/toaster', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
 
-let searchId: string | null = '5';
+let routeId: string | null = '5';
 vi.mock('$app/stores', () => ({
 	page: {
 		subscribe: (run: (v: unknown) => void) => {
-			run({ url: new URL(`https://app.test/preview?id=${searchId ?? ''}`) });
+			run({
+				url: new URL(`https://app.test/preview/${routeId ?? ''}`),
+				params: { id: routeId ?? '' }
+			});
 			return () => {};
 		}
 	}
@@ -58,7 +61,7 @@ const makeDtx = () => ({
 
 describe('/preview page', () => {
 	beforeEach(() => {
-		searchId = '5';
+		routeId = '5';
 		getSimfileMock.mockReset();
 		parseFromRemoteURLMock.mockReset();
 		buildNotationChartMock.mockReset();
@@ -74,12 +77,6 @@ describe('/preview page', () => {
 		getSimfileMock.mockRejectedValue(new Error('Simfile not found'));
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByText('preview.not_available')).toBeTruthy());
-	});
-
-	it('shows "no chart specified" when id is missing', async () => {
-		searchId = null;
-		render(PreviewPage);
-		await waitFor(() => expect(screen.getByText('preview.no_id')).toBeTruthy());
 	});
 
 	it('renders the notation when the chart loads', async () => {

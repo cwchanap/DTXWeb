@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	cursorPoint,
 	clickToFraction,
-	playheadAt,
+	activeOnset,
 	snapToOnset,
 	type MeasureGeometry,
 	type NoteOnset
@@ -28,50 +28,32 @@ describe('cursorPoint', () => {
 	});
 });
 
-describe('playheadAt', () => {
-	// Deliberately non-linear layout: a linear stave mapping would place the
-	// fraction-0.25 cursor at x=80 (30 + 0.25*200), but interpolating across the
-	// note centers (50 and 150) puts it at 100.
+describe('activeOnset', () => {
 	const onsets: NoteOnset[] = [
-		{ measure: 0, position: 0, x: 40, w: 20 }, // center 50
-		{ measure: 0, position: 0.5, x: 140, w: 20 } // center 150
+		{ measure: 0, position: 0, x: 40, w: 20 },
+		{ measure: 0, position: 0.5, x: 140, w: 20 },
+		{ measure: 1, position: 0.25, x: 240, w: 20 }
 	];
 
-	it('interpolates the cursor across rendered note centers, not the stave', () => {
-		const r = playheadAt(0, 0.25, geo, onsets);
-		expect(r?.x).toBeCloseTo(100, 5);
-		expect(r?.active?.position).toBe(0); // still on the first note
+	it('returns the latest note at or before the fraction', () => {
+		expect(activeOnset(0, 0.25, onsets)?.position).toBe(0);
+		expect(activeOnset(0, 0.6, onsets)?.position).toBe(0.5);
 	});
 
-	it('sits on a note center and marks it active at its exact onset', () => {
-		const r = playheadAt(0, 0.5, geo, onsets);
-		expect(r?.x).toBeCloseTo(150, 5);
-		expect(r?.active?.position).toBe(0.5);
+	it('returns the note exactly at the fraction', () => {
+		expect(activeOnset(0, 0.5, onsets)?.position).toBe(0.5);
 	});
 
-	it('glides from the last onset to the stave end after the final note', () => {
-		// active = onset@0.5 (center 150); halfway to xEnd (230) -> 190.
-		const r = playheadAt(0, 0.75, geo, onsets);
-		expect(r?.x).toBeCloseTo(190, 5);
-		expect(r?.active?.position).toBe(0.5);
+	it('only considers notes in the given measure', () => {
+		expect(activeOnset(1, 0.9, onsets)?.position).toBe(0.25);
 	});
 
-	it('glides from the stave start to the first onset, with no active note', () => {
-		const late: NoteOnset[] = [{ measure: 0, position: 0.25, x: 100, w: 20 }]; // center 110
-		// before the first onset: 30 + (0.1/0.25)*(110-30) = 62.
-		const r = playheadAt(0, 0.1, geo, late);
-		expect(r?.x).toBeCloseTo(62, 5);
-		expect(r?.active).toBeNull();
+	it('returns null before the first note in the measure', () => {
+		expect(activeOnset(1, 0.1, onsets)).toBeNull();
 	});
 
-	it('falls back to linear interpolation for a measure with no notes', () => {
-		const r = playheadAt(1, 0.5, geo, onsets);
-		expect(r?.x).toBeCloseTo(330, 5); // 230 + 0.5*(430-230)
-		expect(r?.active).toBeNull();
-	});
-
-	it('returns null for an unknown measure', () => {
-		expect(playheadAt(9, 0, geo, onsets)).toBeNull();
+	it('returns null for a measure with no notes', () => {
+		expect(activeOnset(2, 0.5, onsets)).toBeNull();
 	});
 });
 

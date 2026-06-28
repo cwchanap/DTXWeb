@@ -6,7 +6,7 @@
 	import {
 		cursorPoint,
 		clickToFraction,
-		playheadAt,
+		activeOnset,
 		snapToOnset,
 		type MeasureGeometry,
 		type NoteOnset
@@ -26,7 +26,7 @@
 	let { chart, onSeek, cursorMeasure = 0, cursorFraction = 0, playing = false }: Props = $props();
 
 	let container = $state<HTMLDivElement>();
-	let cursorEl = $state<HTMLDivElement>();
+	let highlightEl = $state<HTMLDivElement>();
 
 	const SYSTEM_HEIGHT = 140;
 	const LEFT = 10;
@@ -42,14 +42,9 @@
 
 	let geometry: MeasureGeometry[] = [];
 	// Rendered onset positions (per note), used to highlight the active note as the
-	// cursor passes it. Plain (non-reactive) array, rebuilt by renderChart.
+	// playhead passes it. Plain (non-reactive) array, rebuilt by renderChart.
 	let noteOnsets: NoteOnset[] = [];
 	let lastScrollTop = -1;
-
-	let cursorX = $state(0);
-	let cursorTop = $state(0);
-	let cursorHeight = $state(0);
-	let cursorVisible = $state(false);
 
 	let hlX = $state(0);
 	let hlW = $state(0);
@@ -241,36 +236,29 @@
 		// (non-reactive) array; the chart dependency drives the re-read.
 		void chart;
 		const point = cursorPoint(cursorMeasure, cursorFraction, geometry);
-		const playhead = playheadAt(cursorMeasure, cursorFraction, geometry, noteOnsets);
-		if (!point || !playhead) {
-			cursorVisible = false;
+		const active = activeOnset(cursorMeasure, cursorFraction, noteOnsets);
+		if (!point) {
 			hlVisible = false;
 			return;
 		}
-		cursorVisible = true;
-		// Cursor x follows the rendered note layout (see playheadAt) so the bar
-		// stays aligned with the highlighted note instead of drifting ahead of it.
-		cursorX = playhead.x;
-		cursorTop = point.top;
-		cursorHeight = point.height;
 
-		// Highlight the note the cursor is currently on.
-		if (playhead.active) {
+		// Highlight the note the playhead is currently on.
+		if (active) {
 			hlVisible = true;
-			hlX = playhead.active.x - 3;
-			hlW = playhead.active.w + 6;
+			hlX = active.x - 3;
+			hlW = active.w + 6;
 			hlTop = point.top;
 			hlHeight = point.height;
 		} else {
 			hlVisible = false;
 		}
 
-		// Follow the cursor only during playback (no-op in jsdom). Manual seeks
+		// Follow the highlight only during playback (no-op in jsdom). Manual seeks
 		// must not yank the view, so don't scroll while paused. Only scroll when
 		// the row changes, to avoid per-frame scroll jank.
 		if (playing && point.top !== lastScrollTop) {
 			lastScrollTop = point.top;
-			cursorEl?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+			highlightEl?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
 		}
 	});
 </script>
@@ -291,17 +279,10 @@
 	></div>
 	{#if hlVisible}
 		<div
+			bind:this={highlightEl}
 			data-testid="notation-note-highlight"
 			class="notation-note-highlight"
 			style="left:{hlX}px; top:{hlTop}px; width:{hlW}px; height:{hlHeight}px;"
-		></div>
-	{/if}
-	{#if cursorVisible}
-		<div
-			bind:this={cursorEl}
-			data-testid="notation-cursor"
-			class="notation-cursor"
-			style="left:{cursorX}px; top:{cursorTop}px; height:{cursorHeight}px;"
 		></div>
 	{/if}
 </div>
@@ -320,12 +301,6 @@
 		position: absolute;
 		background: rgba(59, 130, 246, 0.25);
 		border-radius: 3px;
-		pointer-events: none;
-	}
-	.notation-cursor {
-		position: absolute;
-		width: 2px;
-		background: rgba(220, 38, 38, 0.85);
 		pointer-events: none;
 	}
 </style>

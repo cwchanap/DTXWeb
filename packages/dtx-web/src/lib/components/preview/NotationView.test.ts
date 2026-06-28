@@ -94,16 +94,18 @@ describe('NotationView', () => {
 	});
 });
 
-describe('NotationView cursor', () => {
+describe('NotationView highlight', () => {
 	beforeEach(() => {
 		draw.mockClear();
 		setContext.mockClear();
 	});
 
-	it('renders a cursor element', async () => {
+	it('highlights the active note (the chart has one note at position 0)', async () => {
 		const { container } = render(NotationView, { props: { chart, currentTime: 0 } });
 		await tick();
-		expect(container.querySelector('[data-testid="notation-cursor"]')).toBeTruthy();
+		expect(container.querySelector('[data-testid="notation-note-highlight"]')).toBeTruthy();
+		// The red playhead bar was removed; only the highlight remains.
+		expect(container.querySelector('[data-testid="notation-cursor"]')).toBeNull();
 	});
 
 	it('emits onSeek snapped to the nearest note', async () => {

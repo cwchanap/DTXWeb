@@ -44,55 +44,22 @@ export const cursorPoint = (
 };
 
 /**
- * The playhead's horizontal position and the note it currently sits on.
- *
- * VexFlow lays notes out non-linearly (width scales with duration, plus
- * clef/trailing padding), so a linear `xStart + fraction * width` cursor drifts
- * away from where notes are actually drawn. Interpolating across the rendered
- * onset centers keeps the bar passing exactly through each note at its onset
- * time, so it stays aligned with the highlight. Measures with no notes fall back
- * to linear interpolation across the stave. Returns null if the measure isn't
- * laid out (cursor should hide).
+ * The note currently under the playhead: the latest onset in the measure at or
+ * before the given fraction, or null when the measure has no earlier note (e.g.
+ * a rest-only intro, or before the first note).
  */
-export const playheadAt = (
+export const activeOnset = (
 	measure: number,
 	fraction: number,
-	geo: MeasureGeometry[],
 	onsets: NoteOnset[]
-): { x: number; active: NoteOnset | null } | null => {
-	const g = geo.find((m) => m.index === measure);
-	if (!g) return null;
-	const clamped = Math.max(0, Math.min(1, fraction));
-	const measureOnsets = onsets.filter((o) => o.measure === measure);
-	if (measureOnsets.length === 0) {
-		return { x: g.xStart + (g.xEnd - g.xStart) * clamped, active: null };
+): NoteOnset | null => {
+	let active: NoteOnset | null = null;
+	for (const o of onsets) {
+		if (o.measure !== measure) continue;
+		if (o.position > fraction + 1e-6) continue;
+		if (!active || o.position > active.position) active = o;
 	}
-	const center = (o: NoteOnset) => o.x + o.w / 2;
-	let active: NoteOnset | undefined;
-	let next: NoteOnset | undefined;
-	for (const o of measureOnsets) {
-		if (o.position <= clamped + 1e-6) {
-			if (!active || o.position > active.position) active = o;
-		} else if (!next || o.position < next.position) {
-			next = o;
-		}
-	}
-	const lerp = (x0: number, x1: number, t: number) => x0 + t * (x1 - x0);
-	if (active && next) {
-		const span = next.position - active.position;
-		const t = span > 0 ? (clamped - active.position) / span : 0;
-		return { x: lerp(center(active), center(next), t), active };
-	}
-	if (active) {
-		// After the last onset: glide from it to the stave's end.
-		const span = 1 - active.position;
-		const t = span > 0 ? (clamped - active.position) / span : 0;
-		return { x: lerp(center(active), g.xEnd, t), active };
-	}
-	// Before the first onset: glide from the stave start to it.
-	const first = next!;
-	const t = first.position > 0 ? clamped / first.position : 0;
-	return { x: lerp(g.xStart, center(first), t), active: null };
+	return active;
 };
 
 /**

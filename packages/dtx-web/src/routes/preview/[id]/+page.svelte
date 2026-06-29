@@ -11,7 +11,7 @@
 		type ChartTiming
 	} from '@dtx/common';
 	import type { DTXFile } from '@dtx/common';
-	import { getSimfile } from '$lib/api';
+	import { getPreviewSimfile, type PreviewLevel } from '$lib/api';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import NotationView from '$lib/components/preview/NotationView.svelte';
 	import PreviewTransport from '$lib/components/preview/PreviewTransport.svelte';
@@ -23,7 +23,7 @@
 	let title = $state('');
 	let artist = $state('');
 	let chart = $state<NotationChart | null>(null);
-	let levels = $state<{ level: number; label: string; fileUrl: string }[]>([]);
+	let levels = $state<PreviewLevel[]>([]);
 	let selectedLevel = $state<number | null>(null);
 	let audioReady = $state(false);
 	let playing = $state(false);
@@ -219,14 +219,12 @@
 			return;
 		}
 		try {
-			const meta = await getSimfile(id);
+			const meta = await getPreviewSimfile(id);
 			// A newer navigation superseded this load; drop its results.
 			if (id !== $page.params.id) return;
 			title = meta.title;
 			artist = meta.artist;
-			levels = (meta.dtx_files ?? [])
-				.map((f) => ({ level: f.level, label: f.label, fileUrl: f.fileUrl }))
-				.sort((a, b) => b.level - a.level);
+			levels = [...meta.levels].sort((a, b) => b.level - a.level);
 			if (!levels.length) {
 				status = 'error';
 				return;

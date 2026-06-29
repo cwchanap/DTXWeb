@@ -38,6 +38,7 @@
 	"preview": {
 		"not_available": "Chart not found or not available.",
 		"loading": "Loading chart…",
+		"open": "Open in Preview",
 		"level": "Level",
 		"play": "Play",
 		"pause": "Pause",

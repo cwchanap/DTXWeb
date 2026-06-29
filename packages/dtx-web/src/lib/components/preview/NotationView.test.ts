@@ -94,6 +94,19 @@ describe('NotationView', () => {
 		expect(setContext).toHaveBeenCalled();
 		expect(draw).toHaveBeenCalled();
 	});
+
+	it('clamps aria-valuemax to 0 for an empty-measures chart (never -1)', async () => {
+		// buildNotationChart always yields >=1 measure, but guard defensively so
+		// a degenerate empty chart can't produce aria-valuemax=-1 (invalid for a
+		// slider, where valuemin=0 and valuemax must be >= valuemin).
+		const { container } = render(NotationView, {
+			props: { chart: { measures: [] } as NotationChart }
+		});
+		await tick();
+		const slider = container.querySelector('[data-testid="notation-container"]');
+		expect(slider?.getAttribute('aria-valuemax')).toBe('0');
+		expect(slider?.getAttribute('aria-valuemin')).toBe('0');
+	});
 });
 
 describe('NotationView highlight', () => {

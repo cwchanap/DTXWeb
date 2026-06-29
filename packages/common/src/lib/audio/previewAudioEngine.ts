@@ -151,7 +151,12 @@ export class PreviewAudioEngine {
 	}
 
 	private async decode(fileName: string, data: ArrayBuffer): Promise<AudioBuffer> {
-		const ctx = this.ctx!;
+		// ctx is created in load() and nulled in dispose(). decode() is only ever
+		// called mid-load, so ctx should always exist — but fail explicitly rather
+		// than crash inside decodeAudioData with a cryptic null-deref if the engine
+		// was disposed concurrently.
+		if (!this.ctx) throw new Error('PreviewAudioEngine.decode called after dispose');
+		const ctx = this.ctx;
 		if (fileName.toLowerCase().endsWith('.xa')) {
 			return ctx.decodeAudioData(data);
 		}

@@ -103,7 +103,7 @@
 				target="_blank"
 				rel="noopener"
 			>
-				{$_('preview.play')}
+				{$_('preview.open')}
 			</a>
 		</div>
 		<ChartDetail

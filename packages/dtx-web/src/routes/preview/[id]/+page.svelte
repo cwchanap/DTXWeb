@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
@@ -137,6 +137,11 @@
 		}
 		playing = true;
 		if (engine && audioReady) {
+			// Pass engine.currentTime (the AudioContext clock), NOT the page's
+			// currentSeconds. play() sets the engine's startOffset, and seek()
+			// already advanced the engine to the right position — so resuming just
+			// continues from wherever the engine clock currently is. At-end restart
+			// explicitly passes 0 to rewind.
 			engine.play(atEnd ? 0 : engine.currentTime);
 		} else {
 			// Audio unavailable: visual-only playback from the current cursor
@@ -282,9 +287,13 @@
 	// /preview/[id] navigations, so onMount alone would leave the previous song's
 	// title/chart/audio in place; this effect re-runs load() on every id change
 	// (and once on mount).
+	//
+	// load() is untracked so the effect's ONLY dependency is `$page.params.id`.
+	// Without untrack, any future $state read added to load()'s synchronous
+	// prefix would silently become an effect dependency and could trigger loops.
 	$effect(() => {
 		void $page.params.id;
-		void load();
+		untrack(() => void load());
 	});
 </script>
 

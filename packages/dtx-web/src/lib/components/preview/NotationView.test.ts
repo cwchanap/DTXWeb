@@ -85,8 +85,11 @@ describe('NotationView', () => {
 		setContext.mockClear();
 	});
 
-	it('renders a container and draws at least one stave', () => {
+	it('renders a container and draws at least one stave', async () => {
 		const { container } = render(NotationView, { props: { chart } });
+		// renderChart runs in the `void chart` $effect (after mount), not in
+		// onMount, so await tick before asserting draw happened.
+		await tick();
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 		expect(setContext).toHaveBeenCalled();
 		expect(draw).toHaveBeenCalled();

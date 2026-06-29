@@ -152,17 +152,19 @@ describe('/preview page', () => {
 		});
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
-		// buildNotationChart runs once in buildForLevel and once in loadAudioForLevel.
+		// buildNotationChart runs once per level load (buildForLevel builds the
+		// chart and passes the result into loadAudioForLevel, which no longer
+		// rebuilds).
 		const initialCalls = buildNotationChartMock.mock.calls.length;
-		expect(initialCalls).toBeGreaterThanOrEqual(2);
+		expect(initialCalls).toBeGreaterThanOrEqual(1);
 		// Switch to the BASIC level via the select.
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: '3' } });
-		// A level switch fetches the new DTXFile then rebuilds the chart +
-		// reloads audio (two more buildNotationChart calls). The fetch is async,
-		// so wait for the second build to land.
+		// A level switch fetches the new DTXFile then rebuilds the chart once
+		// (a single buildNotationChart call). The fetch is async, so wait for
+		// the build to land.
 		await waitFor(() =>
-			expect(buildNotationChartMock.mock.calls.length).toBe(initialCalls + 2)
+			expect(buildNotationChartMock.mock.calls.length).toBe(initialCalls + 1)
 		);
 	});
 

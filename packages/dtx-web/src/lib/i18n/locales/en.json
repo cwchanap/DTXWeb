@@ -43,6 +43,7 @@
 		"pause": "Pause",
 		"audio_loading": "Loading audio…",
 		"audio_partial": "Some sounds could not be loaded.",
+		"level_load_failed": "This level could not be loaded.",
 		"seek": "Seek position"
 	}
 }

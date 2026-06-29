@@ -21,7 +21,7 @@ type DeleteResult {
 type DtxFile {
   fileEncoding: FileEncoding!
   fileSizeBytes: Int!
-  fileUrl: String!
+  fileUrl: String
   label: String!
   level: Float!
 }

@@ -40,13 +40,16 @@
 	let rafId = 0;
 	let wallClockStart = 0;
 
-	const loadAudioForLevel = async (dtx: DTXFile, generation: number) => {
+	const loadAudioForLevel = async (
+		dtx: DTXFile,
+		built: ReturnType<typeof buildNotationChart>,
+		generation: number
+	) => {
 		audioReady = false;
 		playing = false;
 		engine?.dispose();
 		const localEngine = new PreviewAudioEngine();
 		engine = localEngine;
-		const built = buildNotationChart(dtx);
 		const soundChips = dtx.parseSoundChips();
 		try {
 			const result = await localEngine.load({
@@ -165,7 +168,7 @@
 		engine?.dispose();
 	});
 
-	const buildForLevel = (dtx: DTXFile) => {
+	const buildForLevel = (dtx: DTXFile): ReturnType<typeof buildNotationChart> => {
 		const built = buildNotationChart(dtx);
 		chart = built.chart;
 		timing = built.timing;
@@ -175,6 +178,7 @@
 		cursorMeasure = 0;
 		cursorFraction = 0;
 		currentSeconds = 0;
+		return built;
 	};
 
 	// Fetch the DTXFile for a single level on demand. The preview only renders
@@ -242,9 +246,9 @@
 				return;
 			}
 			if (id !== $page.params.id) return;
-			buildForLevel(dtx);
+			const built = buildForLevel(dtx);
 			status = 'ready';
-			void loadAudioForLevel(dtx, generation);
+			void loadAudioForLevel(dtx, built, generation);
 		} catch {
 			status = 'error';
 		}
@@ -263,14 +267,15 @@
 		const dtx = await fetchLevelDtx(value, generation);
 		if (dtx === null || dtx === 'error') {
 			// On fetch failure keep the previous chart usable and re-enable the
-			// transport so the user can retry or switch back.
+			// transport so the user can retry or switch back. The failure here is
+			// the DTX chart file fetch, not a sound file — use a distinct toast.
 			if (generation !== loadGeneration) return;
-			toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
+			toastStore.error({ title: $_('preview.level_load_failed'), duration: 4000 });
 			audioReady = true;
 			return;
 		}
-		buildForLevel(dtx);
-		void loadAudioForLevel(dtx, generation);
+		const built = buildForLevel(dtx);
+		void loadAudioForLevel(dtx, built, generation);
 	};
 
 	// React to the route id itself. SvelteKit reuses this component across

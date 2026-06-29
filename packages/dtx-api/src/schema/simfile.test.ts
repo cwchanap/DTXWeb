@@ -878,7 +878,10 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
-	it('returns an INTERNAL field error when a selected DTX chart fileUrl is missing', async () => {
+	it('returns null fileUrl (no error) when a selected DTX chart fileUrl is missing', async () => {
+		// fileUrl is nullable + non-throwing so a single missing R2 object only
+		// drops that level in the /preview query, rather than null-propagating
+		// and killing the whole chart. fileSizeBytes/fileEncoding still throw.
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);
 		mockedDiscoverCatalogFiles.mockResolvedValue({
@@ -900,8 +903,10 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			query: '{ simfile(id: "42") { dtxFiles { label fileUrl } } }'
 		});
 
-		expect(result.errors?.[0]?.message).toBe('DTX chart file not found in R2');
-		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.simfile).toEqual({
+			dtxFiles: [{ label: 'BSC', fileUrl: null }]
+		});
 	});
 
 	it('returns INTERNAL for fileSizeBytes when the DTX chart file is missing', async () => {
@@ -956,7 +961,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(result.errors?.[0]?.extensions?.code).toBe('INTERNAL');
 	});
 
-	it('logs to ctx.logger.error before throwing when a DTX chart file is missing', async () => {
+	it('logs to ctx.logger.error when a DTX chart file is missing', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);
 		mockedDiscoverCatalogFiles.mockResolvedValue({

@@ -6,7 +6,7 @@
 
 ## Overview
 
-A new public web route `/preview?id=<simfileID>` that renders a DTX drum chart as
+A new public web route `/preview/<simfileID>` that renders a DTX drum chart as
 **engraved staff notation** (Songsterr-style) flowing horizontally across wrapping
 systems, with a **playback cursor** synced to **full-mix audio** (BGM backing track +
 per-note drum samples). Users can switch between the simfile's difficulty levels.
@@ -35,18 +35,37 @@ This is distinct from the existing Phaser-based vertical-scrolling `Preview` sce
 
 ## Decisions (locked during brainstorming)
 
-| Topic             | Decision                                         |
-| ----------------- | ------------------------------------------------ |
-| Data source       | Load published simfile from R2/GraphQL by `?id=` |
-| Visual form       | True engraved staff notation via VexFlow         |
-| Interactivity     | Full: synced cursor + audio + transport          |
-| Audio             | Full mix — BGM (`01`) + per-note drum samples    |
-| Level handling    | Level switcher, default to highest               |
-| Route / auth      | Public top-level `/preview?id=`                  |
-| Tempo/speed       | **Excluded** from v1                             |
-| Loop              | **Excluded** from v1                             |
-| Notation engine   | VexFlow (dtx-web-only dependency)                |
-| Quantization grid | 1/48 of a measure default                        |
+| Topic             | Decision                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Data source       | Load published simfile from R2/GraphQL by `?id=`                                                                                 |
+| Visual form       | True engraved staff notation via VexFlow                                                                                         |
+| Interactivity     | Full: synced cursor + audio + transport                                                                                          |
+| Audio             | Full mix — BGM (`01`) + per-note drum samples                                                                                    |
+| Level handling    | Level switcher, default to highest                                                                                               |
+| Route / auth      | Public top-level `/preview?id=` _(v1: built as `/preview/[id]` path param — see [v1 deviations](#v1-implementation-deviations))_ |
+| Tempo/speed       | **Excluded** from v1                                                                                                             |
+| Loop              | **Excluded** from v1                                                                                                             |
+| Notation engine   | VexFlow (dtx-web-only dependency)                                                                                                |
+| Quantization grid | 1/48 of a measure default                                                                                                        |
+
+## v1 implementation deviations
+
+The following are deliberate simplifications made during v1 implementation. They
+diverge from the design intent above and are recorded here as accepted scope cuts
+(reviewed 2026-06-28). Playback, timing, and sync correctness are unaffected by both.
+
+1. **Route is a path parameter, not a query parameter.** Built as
+   `/preview/<simfileID>` (`routes/preview/[id]/`) instead of `/preview?id=<simfileID>`.
+   Consequence: there is **no "No chart specified" empty state** — navigating to
+   `/preview` without an id returns a 404 (the `[id]` segment is required). Rationale:
+   cleaner shareable URLs; the empty state was deemed unnecessary for v1.
+
+2. **Cursor is a highlight-only note rectangle, not a sweeping vertical playhead.**
+   The continuously-animated vertical line (`x = lerp(xStart, xEnd, fraction)`) was
+   replaced by a rectangle that highlights the **active note onset** (commit
+   `93aa3021`). The continuous sweep between notes is lost; the active note still
+   tracks playback via the shared timing model, and autoscroll/seek-on-click behave
+   identically. Rationale: simpler visual, less per-frame DOM churn.
 
 ## Feasibility notes (verified against the codebase)
 
@@ -88,15 +107,17 @@ Svelte UI live in `dtx-web`.
 
 ### Route
 
-- File: `packages/dtx-web/src/routes/preview/+page.svelte`, accessed as
-  `/preview?id=<simfileID>` (top-level, public — not under the `(app)` auth group).
+- File: `packages/dtx-web/src/routes/preview/[id]/+page.svelte`, accessed as
+  `/preview/<simfileID>` (top-level, public — not under the `(app)` auth group).
+  _(v1 uses a path parameter instead of the original `?id=` query parameter — see
+  [v1 deviations](#v1-implementation-deviations).)_
 - Chart loading happens client-side in `onMount` (mirrors `/app/chart/[id]`) using an
   **anonymous** GraphQL client; works for published charts via `publicOrOwner`.
   (SSR meta tags are a possible later nicety, not required for v1.)
 
 ### Data flow
 
-1. `onMount`: read `id` from the query → `getSimfile(id)` (anonymous) → metadata
+1. `onMount`: read `id` from the path parameter → `getSimfile(id)` (anonymous) → metadata
    (`title`, `artist`, `dtxFiles: [{ level, label, fileUrl }]`).
 2. Default to the **highest** available level → fetch its `fileUrl` →
    `DTXFile.parse()` → `parseNotes()`, `parseBPMChanges()`, `parseSoundChips()`, `bpm`.
@@ -225,14 +246,17 @@ class PreviewAudioEngine {
   rests, `Beam.generateBeams`, tuplets where needed).
 - **Record geometry**: per measure → `{ systemRow, xStart, xEnd, top, height }` (from
   stave/tickable absolute x), stored in `measureGeometry[]`.
-- **Cursor**: an absolutely-positioned vertical line over the container; position from
-  `timing.timeToPosition(currentTime)` → `{ measure, fraction }` →
-  `x = lerp(xStart, xEnd, fraction)`, row from `systemRow`. Reactive `$effect` on
-  `currentTime`.
-- **Autoscroll**: when the cursor's `systemRow` changes, smooth-scroll it into view.
+- **Cursor** _(v1: highlight-only — see [v1 deviations](#v1-implementation-deviations))_:
+  an absolutely-positioned rectangle highlighting the **active note** (the onset the
+  playhead is currently passing). Position is derived from
+  `timing.timeToPosition(currentTime)` → `{ measure, fraction }` → the nearest rendered
+  note onset's bounding box. Reactive `$effect` on `currentTime`. The continuous
+  sweeping vertical playhead line described in the original design was dropped in v1 in
+  favor of the simpler, lower-DOM-churn note highlight; sync correctness is unchanged.
+- **Autoscroll**: when the active note's `systemRow` changes, smooth-scroll it into view.
 - **Seek-on-click**: click x,y → row + measure + fraction → time → emit `seek`.
-- The **cursor-position** and **click→time** computations are extracted as pure
-  functions so they can be unit-tested directly.
+- The **note-highlight** and **click→time** computations are extracted as pure
+  functions (`cursorGeometry.ts`) so they can be unit-tested directly.
 
 ### `PreviewTransport.svelte`
 
@@ -256,7 +280,9 @@ decoding) → playable`.
 
 ## Error handling
 
-- **Missing `id`** → "No chart specified" empty state.
+- **Missing `id`** _(v1: not applicable — see [v1 deviations](#v1-implementation-deviations))_:
+  the original "No chart specified" empty state is not built; `/preview` without an id
+  returns a 404 (the route is `/preview/[id]`, a required path parameter).
 - **`getSimfile` null or FORBIDDEN** (not found, or unpublished + anonymous) → a
   single "Chart not found or not available" state (the two cases are not
   distinguished, to avoid leaking existence).
@@ -288,19 +314,19 @@ use the `Preview.test.ts` pattern (top-level `vi.mock`, `beforeEach`/`afterEach`
     - `previewAudioEngine`: event-time scheduling, `noteID`→soundChip mapping,
       `failedFiles` handling, `currentTime`/`seek`, using a mocked `AudioContext` +
       `fetch` (enhance existing `__mocks__/audioDecoder`).
-- **Component (`dtx-web`, Vitest + jsdom):** page states (no-id / loading /
+- **Component (`dtx-web`, Vitest + jsdom):** page states (loading /
   not-available / ready), level-switch reload, play/pause wiring (mock `getSimfile`,
-  `fetch`, engine, VexFlow). Unit-test the extracted **cursor-position** and
-  **click→time** pure functions directly. `PreviewTransport`: disabled-until-loaded,
+  `fetch`, engine, VexFlow). Unit-test the extracted **note-highlight** and
+  **click→time** pure functions (`cursorGeometry.ts`) directly. `PreviewTransport`: disabled-until-loaded,
   event emission.
-- **E2E (Playwright): optional follow-up** — load `/preview?id=<seeded published>`,
+- **E2E (Playwright): optional follow-up** — load `/preview/<seeded published>`,
   assert notation renders + Play advances the cursor. Gated on the local stack having
   a seeded published chart with audio.
 
 ## Dependencies & integration
 
 - **New dependency:** `vexflow` (dtx-web only). None added to `@dtx/common`.
-- **Entry points:** add a "View tab" / Preview link to `/preview?id=<id>` from the
+- **Entry points:** add a "View tab" / Preview link to `/preview/<id>` from the
   chart detail page (`/app/chart/[id]`) and optionally the chart list, for published
   charts.
 - **i18n:** all new strings via `svelte-i18n` (en + jp).

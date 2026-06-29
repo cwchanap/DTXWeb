@@ -15,7 +15,25 @@ fragment SimfileFull on Simfile {
 	dtxFiles {
 		level
 		label
-		fileUrl
+	}
+}
+
+# Preview-only: selects the R2 `fileUrl` for each level so the /preview page can
+# fetch + parse the chart. This is deliberately a separate query — NOT part of
+# SimfileFull — because `DtxFile.fileUrl` throws INTERNAL when its R2 object is
+# missing, and (with defaultFieldNullability: false) that would null-propagate
+# and break the entire simfiles/list/detail response. Scoping fileUrl to this
+# single-chart query isolates the throw to the one consumer that needs the URL.
+query GetPreviewSimfile($id: ID!) {
+	simfile(id: $id) {
+		id
+		title
+		artist
+		dtxFiles {
+			level
+			label
+			fileUrl
+		}
 	}
 }
 

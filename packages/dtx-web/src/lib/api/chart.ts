@@ -1,6 +1,7 @@
 import {
 	ListSimfilesDocument,
 	GetSimfileDocument,
+	GetPreviewSimfileDocument,
 	UpdateSimfileDocument,
 	DeleteSimfileDocument,
 	SimfileScope,
@@ -25,7 +26,7 @@ export type LegacySimfile = {
 	publish_date: string;
 	created_at: string;
 	updated_at: string;
-	dtx_files: { level: number; label: string; fileUrl: string }[];
+	dtx_files: { level: number; label: string }[];
 	files?: { key: string; size: number; uploaded: string }[];
 	has_uploaded_files?: boolean;
 };
@@ -98,6 +99,40 @@ export const getSimfile = async (id: string, ctx?: ClientCtx): Promise<LegacySim
 	const result = await client.request(GetSimfileDocument, { id });
 	if (!result.simfile) throw new Error('Simfile not found');
 	return adaptSimfile(result.simfile);
+};
+
+export type PreviewLevel = { level: number; label: string; fileUrl: string };
+
+export type PreviewSimfile = {
+	id: number;
+	title: string;
+	artist: string;
+	levels: PreviewLevel[];
+};
+
+/**
+ * Minimal metadata fetch for the `/preview` page: title/artist plus each level's
+ * R2 `fileUrl`. Uses a dedicated query (not `SimfileFull`) so the throwing
+ * `DtxFile.fileUrl` resolver — which errors INTERNAL on a missing R2 object —
+ * is scoped to this single-chart call and cannot break the shared list/detail
+ * fragments.
+ */
+export const getPreviewSimfile = async (id: string, ctx?: ClientCtx): Promise<PreviewSimfile> => {
+	const client = await getClient(ctx);
+	const result = await client.request(GetPreviewSimfileDocument, { id });
+	if (!result.simfile) throw new Error('Simfile not found');
+	const numId = Number(result.simfile.id);
+	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${result.simfile.id}`);
+	return {
+		id: numId,
+		title: result.simfile.title,
+		artist: result.simfile.artist,
+		levels: (result.simfile.dtxFiles ?? []).map((f) => ({
+			level: f.level,
+			label: f.label,
+			fileUrl: f.fileUrl
+		}))
+	};
 };
 
 export const updateSimfile = async (

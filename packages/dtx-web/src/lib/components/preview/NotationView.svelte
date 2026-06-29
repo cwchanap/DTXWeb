@@ -319,7 +319,7 @@
 		tabindex="0"
 		aria-label={$_('preview.seek')}
 		aria-valuemin={0}
-		aria-valuemax={chart.measures.length - 1}
+		aria-valuemax={Math.max(0, chart.measures.length - 1)}
 		aria-valuenow={cursorMeasure}
 		onclick={handleClick}
 		onkeydown={handleKeydown}

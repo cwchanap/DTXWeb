@@ -188,6 +188,27 @@ describe('buildNotationChart', () => {
 		expect(timing.measureStartSeconds).toEqual([0, 2, 4]);
 	});
 
+	it('groups sparse charts correctly (notes far apart, many empty measures between)', () => {
+		// Exercises the O(n) measure-grouping: a note in measure 0 and one in
+		// measure 5, with measures 1-4 empty. Each empty measure must still get a
+		// full-measure rest, and the two notes must land in their correct measures
+		// (not be dropped or mis-attributed by the grouping).
+		const dtx = makeDtx(['#00012: 01', '#00512: 01'], 120);
+		const { chart, measureCount } = buildNotationChart(dtx);
+		expect(measureCount).toBe(6);
+		expect(chart.measures).toHaveLength(6);
+		// Measures 1-4 are empty -> one full-measure rest each.
+		for (const m of [1, 2, 3, 4]) {
+			expect(chart.measures[m].entries).toHaveLength(1);
+			expect(chart.measures[m].entries[0]).toMatchObject({ kind: 'rest', durTicks: 192 });
+		}
+		// The two notes land in measures 0 and 5.
+		const note0 = chart.measures[0].entries.filter((e) => e.kind === 'note');
+		const note5 = chart.measures[5].entries.filter((e) => e.kind === 'note');
+		expect(note0).toHaveLength(1);
+		expect(note5).toHaveLength(1);
+	});
+
 	it('forwards bpm changes on channel 08 into the timing', () => {
 		// #BPMAA: 240 defines a bpm change value; #00108: AA triggers it at m1.
 		const dtx = makeDtx(['#BPMAA: 240', '#00108: AA'], 120);

@@ -1,6 +1,6 @@
 import type { DTXFile } from '../chart/dtx';
 import type { LaneMeasureNote } from '../chart/note';
-import { laneToStaff, PLAYABLE_DRUM_LANES } from './drumMapping';
+import { laneToStaff } from './drumMapping';
 import {
 	TICKS_PER_WHOLE,
 	type NotationEntry,
@@ -53,10 +53,12 @@ export const quantizeMeasure = (
 	const beatsPerMeasure = Math.max(1, Math.round(measureLength * 4));
 
 	// Collect onsets keyed by tick, accumulating chord keys from playable lanes.
+	// laneToStaff returns undefined for non-playable lanes (bpm/bgm), so the
+	// `!staff` guard alone filters them out — no separate lane-list check needed.
 	const byTick = new Map<number, Set<string>>();
 	for (const lane of laneNotes) {
 		const staff = laneToStaff(lane.laneID);
-		if (!staff || !PLAYABLE_DRUM_LANES.includes(lane.laneID.toUpperCase())) continue;
+		if (!staff) continue;
 		for (const note of lane.notes) {
 			if (note.noteID === '00') continue;
 			const tick = Math.round(note.position * measureTicks);
@@ -141,10 +143,19 @@ export const buildNotationChart = (
 	const measureCount = flat.reduce((max, n) => Math.max(max, n.measure), 0) + 1;
 	const measureLengths = new Array(measureCount).fill(1);
 
+	// Group notes by measure once (O(n)) instead of re-filtering the whole list
+	// for each measure (O(n*m)). Sparse charts with many empty measures would
+	// otherwise re-scan every note per measure.
+	const notesByMeasure = new Map<number, LaneMeasureNote[]>();
+	for (const note of flat) {
+		const bucket = notesByMeasure.get(note.measure);
+		if (bucket) bucket.push(note);
+		else notesByMeasure.set(note.measure, [note]);
+	}
+
 	const measures: NotationMeasure[] = [];
 	for (let m = 0; m < measureCount; m++) {
-		const laneNotes = flat.filter((n) => n.measure === m);
-		measures.push(quantizeMeasure(m, laneNotes, 1));
+		measures.push(quantizeMeasure(m, notesByMeasure.get(m) ?? [], 1));
 	}
 
 	const timing = buildChartTiming({

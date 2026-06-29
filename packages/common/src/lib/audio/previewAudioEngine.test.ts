@@ -144,6 +144,43 @@ describe('PreviewAudioEngine', () => {
 		expect(maxInFlight).toBe(4); // capped, never reached 8
 	});
 
+	it('reports a file as failed (no crash) if the engine is disposed mid-load', async () => {
+		// Race: load() awaits fetch -> arrayBuffer -> decode(). If dispose()
+		// nulls ctx while a fetch is in flight, decode()'s guard throws before
+		// touching the nulled context, and fetchOne's catch reports the file as
+		// failed rather than crashing with a null-deref or an unhandled rejection.
+		const engine = new PreviewAudioEngine();
+		let resolveFetch!: (value: {
+			ok: boolean;
+			arrayBuffer: () => Promise<ArrayBuffer>;
+		}) => void;
+		const deferred = new Promise((r) => {
+			resolveFetch = r as typeof resolveFetch;
+		});
+		const controllableFetch = vi.fn(() => deferred) as unknown as typeof fetch;
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+
+		const loadPromise = engine.load({
+			simfileID: '5',
+			bucketUrl: 'https://b.test',
+			soundChips: [makeChip(2, 'snare.wav')],
+			notesByLane: { '12': [snare] },
+			timing,
+			fetchFn: controllableFetch,
+			context: ctx as unknown as never
+		});
+
+		// Dispose while the fetch is still pending -> ctx becomes null.
+		engine.dispose();
+		resolveFetch({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+
+		const res = await loadPromise;
+		expect(res.loaded).toBe(0);
+		expect(res.failedFiles).toEqual(['snare.wav']);
+		// The guard short-circuited before decodeAudioData ran on the nulled ctx.
+		expect(ctx.decodeAudioData).not.toHaveBeenCalled();
+	});
+
 	it('schedules sources just-in-time via lookahead and tracks currentTime', async () => {
 		const engine = new PreviewAudioEngine();
 		const snare = new LaneMeasureNote(0, '12', [

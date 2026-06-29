@@ -45,6 +45,12 @@ export class PreviewAudioEngine {
 	// just-in-time, a small horizon ahead of the playback clock.
 	private static readonly SCHEDULE_AHEAD_SEC = 0.5;
 	private static readonly TICK_MS = 100;
+	// Cap on parallel sample fetches during load. Bare Promise.all would fire
+	// every unique sample at once, which the preview spec forbids
+	// ("Concurrency-limited"). Matches the MAX_CONCURRENT_R2_FETCHES pattern in
+	// zipBuilder. @dtx/common gains no new dependency, so this is an inline
+	// worker pool rather than a p-limit import.
+	private static readonly MAX_CONCURRENT_FETCHES = 4;
 	private schedulerTimer: ReturnType<typeof setInterval> | null = null;
 	private nextEventIdx = 0;
 
@@ -113,17 +119,30 @@ export class PreviewAudioEngine {
 
 		const failedFiles: string[] = [];
 		const uniqueNames = [...new Set(this.events.map((e) => e.fileName))];
+
+		const fetchOne = async (fileName: string): Promise<void> => {
+			try {
+				const url = `${params.bucketUrl}/${params.simfileID}/${fileName}`;
+				const res = await doFetch(url);
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				const data = await res.arrayBuffer();
+				const buffer = await this.decode(fileName, data);
+				this.buffers.set(fileName, buffer);
+			} catch {
+				failedFiles.push(fileName);
+			}
+		};
+
+		// Concurrency-limited worker pool so a chart with dozens of unique
+		// samples does not fire them all at the browser/R2 simultaneously.
+		let nextIndex = 0;
+		const workerCount = Math.min(PreviewAudioEngine.MAX_CONCURRENT_FETCHES, uniqueNames.length);
 		await Promise.all(
-			uniqueNames.map(async (fileName) => {
-				try {
-					const url = `${params.bucketUrl}/${params.simfileID}/${fileName}`;
-					const res = await doFetch(url);
-					if (!res.ok) throw new Error(`HTTP ${res.status}`);
-					const data = await res.arrayBuffer();
-					const buffer = await this.decode(fileName, data);
-					this.buffers.set(fileName, buffer);
-				} catch {
-					failedFiles.push(fileName);
+			Array.from({ length: workerCount }, async () => {
+				while (nextIndex < uniqueNames.length) {
+					const i = nextIndex;
+					nextIndex += 1;
+					await fetchOne(uniqueNames[i]);
 				}
 			})
 		);

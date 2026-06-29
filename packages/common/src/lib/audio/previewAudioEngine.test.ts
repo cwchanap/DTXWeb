@@ -99,6 +99,51 @@ describe('PreviewAudioEngine', () => {
 		expect(res.loaded).toBe(0);
 	});
 
+	it('limits concurrent sample fetches to the cap (4)', async () => {
+		// Spec: "Concurrency-limited". Bare Promise.all would fire every unique
+		// sample at once. With 8 unique files and a cap of 4, at most 4 fetches
+		// may be in flight simultaneously. Because there are exactly 4 workers
+		// and each holds at most one outstanding fetch, maxInFlight cannot exceed
+		// 4 — and it reaches 4 since all workers enter fetch synchronously.
+		const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((n) => `${n}.wav`);
+		// noteIDs '02'..'09' -> base-36 ids 2..9, each mapped to a distinct chip.
+		const laneNotes: LaneMeasureNote[] = files.map((_, idx) => {
+			const noteID = (idx + 2).toString(36).padStart(2, '0');
+			return new LaneMeasureNote(0, '12', [{ noteID, position: 0 }]);
+		});
+		const chips = files.map((name, idx) => makeChip(idx + 2, name));
+
+		let inFlight = 0;
+		let maxInFlight = 0;
+		let callCount = 0;
+		const concurrencyFetch = ((url: string) => {
+			callCount += 1;
+			inFlight += 1;
+			if (inFlight > maxInFlight) maxInFlight = inFlight;
+			// Auto-resolve so load() completes; decrement when the fetch settles.
+			return Promise.resolve({
+				ok: true,
+				arrayBuffer: async () => new ArrayBuffer(8)
+			}).finally(() => {
+				inFlight -= 1;
+			});
+		}) as unknown as typeof fetch;
+
+		const res = await new PreviewAudioEngine().load({
+			simfileID: '5',
+			bucketUrl: 'https://b.test',
+			soundChips: chips,
+			notesByLane: { '12': laneNotes },
+			timing,
+			fetchFn: concurrencyFetch,
+			context: ctx as unknown as never
+		});
+		expect(res.loaded).toBe(8);
+		expect(res.failedFiles).toEqual([]);
+		expect(callCount).toBe(8); // every file still fetched
+		expect(maxInFlight).toBe(4); // capped, never reached 8
+	});
+
 	it('schedules sources just-in-time via lookahead and tracks currentTime', async () => {
 		const engine = new PreviewAudioEngine();
 		const snare = new LaneMeasureNote(0, '12', [

@@ -23,9 +23,8 @@
 	let title = $state('');
 	let artist = $state('');
 	let chart = $state<NotationChart | null>(null);
-	let levels = $state<{ level: number; label: string }[]>([]);
+	let levels = $state<{ level: number; label: string; fileUrl: string }[]>([]);
 	let selectedLevel = $state<number | null>(null);
-	let simFile: SimFile | null = null;
 	let audioReady = $state(false);
 	let playing = $state(false);
 	let engine: PreviewAudioEngine | null = null;
@@ -41,17 +40,12 @@
 	let rafId = 0;
 	let wallClockStart = 0;
 
-	const loadAudioForLevel = async (level: number | null) => {
-		if (!simFile) return;
-		const generation = ++loadGeneration;
+	const loadAudioForLevel = async (dtx: DTXFile, generation: number) => {
 		audioReady = false;
 		playing = false;
 		engine?.dispose();
 		const localEngine = new PreviewAudioEngine();
 		engine = localEngine;
-		const dtx: DTXFile =
-			(level ? simFile.getLevel(level) : simFile.getHighestLevel()) ??
-			simFile.getHighestLevel();
 		const built = buildNotationChart(dtx);
 		const soundChips = dtx.parseSoundChips();
 		try {
@@ -66,6 +60,11 @@
 			if (generation !== loadGeneration) return;
 			localEngine.onEnded = () => {
 				playing = false;
+				// Snap the transport to the exact end so the replay-after-end check
+				// (currentSeconds >= totalDuration) is reliable. Without this, the
+				// last animation frame may have left currentSeconds a few ms short of
+				// the end, so the replay reset below would not trigger.
+				if (timing) currentSeconds = timing.totalDuration;
 				cancelAnimationFrame(rafId);
 			};
 			if (result.failedFiles.length) {
@@ -82,6 +81,11 @@
 			audioReady = true;
 		}
 	};
+
+	// Resolve the level data for a selection, falling back to the highest
+	// (levels[0], since the list is sorted descending).
+	const pickLevel = (level: number | null) =>
+		(level != null && levels.find((l) => l.level === level)) ?? levels[0];
 
 	const tickCursor = () => {
 		if (!timing) return;
@@ -117,11 +121,23 @@
 			cancelAnimationFrame(rafId);
 			return;
 		}
+		// Replay-after-end: if playback finished, restart from the beginning
+		// (standard media-player behavior). Without this, engine.currentTime
+		// reports the full duration, play(duration) computes remaining = 0, and
+		// the end timer fires instantly — transport flickers to Play then Pause
+		// with no audio.
+		const atEnd = timing != null && currentSeconds >= timing.totalDuration;
+		if (atEnd) {
+			cursorMeasure = 0;
+			cursorFraction = 0;
+			currentSeconds = 0;
+		}
 		playing = true;
 		if (engine && audioReady) {
-			engine.play(engine.currentTime);
+			engine.play(atEnd ? 0 : engine.currentTime);
 		} else {
-			// Audio unavailable: visual-only playback from the current cursor position.
+			// Audio unavailable: visual-only playback from the current cursor
+			// position (already reset to the start above when at end).
 			const startSeconds = timing ? timing.positionToTime(cursorMeasure, cursorFraction) : 0;
 			wallClockStart = performance.now() - startSeconds * 1000;
 		}
@@ -149,11 +165,7 @@
 		engine?.dispose();
 	});
 
-	const buildForLevel = (level: number | null) => {
-		if (!simFile) return;
-		const dtx: DTXFile =
-			(level ? simFile.getLevel(level) : simFile.getHighestLevel()) ??
-			simFile.getHighestLevel();
+	const buildForLevel = (dtx: DTXFile) => {
 		const built = buildNotationChart(dtx);
 		chart = built.chart;
 		timing = built.timing;
@@ -163,6 +175,23 @@
 		cursorMeasure = 0;
 		cursorFraction = 0;
 		currentSeconds = 0;
+	};
+
+	// Fetch the DTXFile for a single level on demand. The preview only renders
+	// one level at a time, so this replaces parseFromRemoteURL (which eagerly
+	// fetched set.def + all five levels) and avoids four wasted round-trips on
+	// load. Returns null if superseded by a newer load.
+	const fetchLevelDtx = async (level: number | null, generation: number) => {
+		const levelData = pickLevel(level);
+		if (!levelData) return null;
+		try {
+			const dtx = await SimFile.parseLevelFromRemoteURL(levelData.fileUrl, levelData.label);
+			if (generation !== loadGeneration) return null;
+			return dtx;
+		} catch {
+			if (generation !== loadGeneration) return null;
+			return 'error' as const;
+		}
 	};
 
 	const load = async () => {
@@ -180,7 +209,6 @@
 		chart = null;
 		levels = [];
 		selectedLevel = null;
-		simFile = null;
 		cursorMeasure = 0;
 		cursorFraction = 0;
 		currentSeconds = 0;
@@ -197,26 +225,54 @@
 			title = meta.title;
 			artist = meta.artist;
 			levels = (meta.dtx_files ?? [])
-				.map((f) => ({ level: f.level, label: f.label }))
+				.map((f) => ({ level: f.level, label: f.label, fileUrl: f.fileUrl }))
 				.sort((a, b) => b.level - a.level);
-
-			simFile = await SimFile.parseFromRemoteURL(id, PUBLIC_SIMFILE_BUCKET_URL);
-			if (id !== $page.params.id) return;
+			if (!levels.length) {
+				status = 'error';
+				return;
+			}
 			currentId = id;
-			selectedLevel = levels.length ? levels[0].level : null;
-			buildForLevel(selectedLevel);
+			selectedLevel = levels[0].level;
+
+			// Fetch ONLY the selected level's DTX file (was: set.def + all five
+			// levels via parseFromRemoteURL). One round-trip instead of six.
+			const generation = ++loadGeneration;
+			const dtx = await fetchLevelDtx(selectedLevel, generation);
+			if (dtx === null) return; // a newer load superseded this one
+			if (dtx === 'error') {
+				status = 'error';
+				return;
+			}
+			if (id !== $page.params.id) return;
+			buildForLevel(dtx);
 			status = 'ready';
-			void loadAudioForLevel(selectedLevel);
+			void loadAudioForLevel(dtx, generation);
 		} catch {
 			status = 'error';
 		}
 	};
 
-	const handleLevelChange = (event: Event) => {
+	const handleLevelChange = async (event: Event) => {
 		const value = Number((event.target as HTMLSelectElement).value);
 		selectedLevel = value;
-		buildForLevel(value);
-		void loadAudioForLevel(value);
+		// Fetch the newly selected level on demand (single round-trip), then
+		// rebuild the chart + reload audio. The old chart stays visible until
+		// the new DTXFile arrives so the notation area does not flash empty.
+		const generation = ++loadGeneration;
+		audioReady = false;
+		playing = false;
+		cancelAnimationFrame(rafId);
+		const dtx = await fetchLevelDtx(value, generation);
+		if (dtx === null || dtx === 'error') {
+			// On fetch failure keep the previous chart usable and re-enable the
+			// transport so the user can retry or switch back.
+			if (generation !== loadGeneration) return;
+			toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
+			audioReady = true;
+			return;
+		}
+		buildForLevel(dtx);
+		void loadAudioForLevel(dtx, generation);
 	};
 
 	// React to the route id itself. SvelteKit reuses this component across

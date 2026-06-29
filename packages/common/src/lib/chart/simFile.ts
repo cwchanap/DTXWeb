@@ -108,6 +108,33 @@ export class SimFile {
 		return simFile;
 	}
 
+	/**
+	 * Parse a single DTX difficulty level directly from its remote file URL.
+	 *
+	 * Used by the preview tab, which only renders one level at a time: fetching
+	 * just the selected level (instead of all five via parseFromRemoteURL)
+	 * avoids four unnecessary DTX round-trips on load and on each level switch.
+	 *
+	 * @param fileUrl Fully-qualified URL to the .dtx file (e.g. the catalog
+	 *   `fileUrl` resolved server-side from R2).
+	 * @param label   Difficulty label for the resulting DTXFile.
+	 */
+	public static async parseLevelFromRemoteURL(fileUrl: string, label: string): Promise<DTXFile> {
+		const response = await dedupedFetch(fileUrl);
+		if (!response.ok) {
+			throw new Error(
+				`Failed to fetch DTX file ${fileUrl}: ${response.status} ${response.statusText}`
+			);
+		}
+		// Derive a filename from the URL so DTXFile.getFileName() still works
+		// (used downstream by the editor and MIDI export).
+		const fileName = decodeURIComponent(fileUrl.split('/').pop() ?? 'chart.dtx');
+		const file = new File([await response.blob()], fileName);
+		const dtx = new DTXFile(file, label);
+		await dtx.parse();
+		return dtx;
+	}
+
 	public getZip() {
 		const zip = new JSZip();
 		for (const file of this.files) {

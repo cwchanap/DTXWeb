@@ -562,6 +562,83 @@ describe('SimFile', () => {
 		});
 	});
 
+	describe('parseLevelFromRemoteURL', () => {
+		it('fetches the level URL, parses it, and returns a DTXFile with the derived filename', async () => {
+			const dtxBlob = new Blob(['dtx content']);
+			const fetchSpy = vi.fn().mockResolvedValue({
+				ok: true,
+				blob: () => Promise.resolve(dtxBlob),
+				clone() {
+					return this;
+				}
+			});
+			vi.stubGlobal('fetch', fetchSpy);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const dtx = await SimFile.parseLevelFromRemoteURL(
+				'https://cdn.example/42/advanced.dtx',
+				'ADVANCED'
+			);
+
+			// Fetches exactly the provided URL — no set.def, no other levels.
+			expect(fetchSpy).toHaveBeenCalledTimes(1);
+			expect(fetchSpy.mock.calls[0][0]).toBe('https://cdn.example/42/advanced.dtx');
+			// Filename is derived from the URL tail so DTXFile.getFileName() works.
+			expect(MockDTXFile).toHaveBeenCalledWith(expect.any(File), 'ADVANCED');
+			const passedFile = MockDTXFile.mock.calls[0][0] as File;
+			expect(passedFile.name).toBe('advanced.dtx');
+			expect(mockDTXParse).toHaveBeenCalled();
+			expect(dtx).toEqual({
+				parse: expect.any(Function),
+				label: 'ADVANCED',
+				getFileName: expect.any(Function)
+			});
+		});
+
+		it('throws when the level fetch returns a non-ok response', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: false,
+					status: 404,
+					statusText: 'Not Found',
+					blob: () => Promise.resolve(new Blob(['not found'])),
+					clone() {
+						return this;
+					}
+				})
+			);
+
+			await expect(
+				SimFile.parseLevelFromRemoteURL('https://cdn.example/42/missing.dtx', 'BASIC')
+			).rejects.toThrow(
+				'Failed to fetch DTX file https://cdn.example/42/missing.dtx: 404 Not Found'
+			);
+		});
+
+		it('decodes percent-encoded filenames from the URL tail', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					blob: () => Promise.resolve(new Blob(['dtx'])),
+					clone() {
+						return this;
+					}
+				})
+			);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			await SimFile.parseLevelFromRemoteURL(
+				'https://cdn.example/42/%E6%97%A5%E6%9C%AC.dtx',
+				'JP'
+			);
+
+			const passedFile = MockDTXFile.mock.calls[0][0] as File;
+			expect(passedFile.name).toBe('日本.dtx');
+		});
+	});
+
 	describe('parseFromZip', () => {
 		it('should extract files from zip, exclude directories, and parse title', async () => {
 			const defBlob = new Blob(['#TITLE Zip Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n']);

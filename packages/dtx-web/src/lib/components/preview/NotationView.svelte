@@ -239,7 +239,8 @@
 	const handleKeydown = (event: KeyboardEvent) => {
 		// The seek surface has role="slider", so it must be operable from the
 		// keyboard: Arrow/Home/End actually move the playhead, not just suppress
-		// scrolling. The slider's unit is a measure (aria-valuemax = measure count).
+		// scrolling. The slider's unit is a measure; valid range is 0..(measure
+		// count − 1), so aria-valuemax matches lastMeasure below.
 		if (!onSeek) {
 			if (event.key === 'Enter' || event.key === ' ') event.preventDefault();
 			return;
@@ -315,7 +316,7 @@
 		tabindex="0"
 		aria-label={$_('preview.seek')}
 		aria-valuemin={0}
-		aria-valuemax={chart.measures.length}
+		aria-valuemax={chart.measures.length - 1}
 		aria-valuenow={cursorMeasure}
 		onclick={handleClick}
 		onkeydown={handleKeydown}

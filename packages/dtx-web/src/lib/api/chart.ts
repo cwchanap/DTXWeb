@@ -25,7 +25,7 @@ export type LegacySimfile = {
 	publish_date: string;
 	created_at: string;
 	updated_at: string;
-	dtx_files: { level: number; label: string }[];
+	dtx_files: { level: number; label: string; fileUrl: string }[];
 	files?: { key: string; size: number; uploaded: string }[];
 	has_uploaded_files?: boolean;
 };

@@ -3,11 +3,14 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import PreviewPage from './+page.svelte';
 
 const getSimfileMock = vi.hoisted(() => vi.fn());
-const parseFromRemoteURLMock = vi.hoisted(() => vi.fn());
+const parseLevelFromRemoteURLMock = vi.hoisted(() => vi.fn());
 const buildNotationChartMock = vi.hoisted(() => vi.fn());
 // Controllable PreviewAudioEngine mock state.
 const engineLoad = vi.hoisted(() => ({ reject: false, hang: false, failedFiles: [] as string[] }));
 const engineState = vi.hoisted(() => ({ currentTime: 0, duration: 2 }));
+// Captures the most recently constructed mock engine so tests can fire its
+// onEnded callback to simulate the chart reaching its end.
+const engineRef = vi.hoisted(() => ({ current: null as null | { onEnded?: () => void } }));
 const engineSpies = vi.hoisted(() => ({
 	play: vi.fn(),
 	pause: vi.fn(),
@@ -27,10 +30,13 @@ vi.mock('$lib/components/preview/NotationView.svelte', async () => {
 });
 
 vi.mock('@dtx/common', () => ({
-	SimFile: { parseFromRemoteURL: parseFromRemoteURLMock },
+	SimFile: { parseLevelFromRemoteURL: parseLevelFromRemoteURLMock },
 	buildNotationChart: buildNotationChartMock,
 	PreviewAudioEngine: class {
 		onEnded?: () => void;
+		constructor() {
+			engineRef.current = this;
+		}
 		async load() {
 			if (engineLoad.reject) throw new Error('audio failure');
 			if (engineLoad.hang) return new Promise(() => {});
@@ -71,13 +77,6 @@ const makeDtx = () => ({
 	parseSoundChips: () => []
 });
 
-const makeSimFile = () => ({
-	title: 'Song',
-	levels: { 4: { label: 'MASTER', file: makeDtx() } },
-	getHighestLevel: () => makeDtx(),
-	getLevel: () => makeDtx()
-});
-
 const readyChart = () => ({
 	chart: { measures: [{ index: 0, measureTicks: 192, beatsPerMeasure: 4, entries: [] }] },
 	timing: {
@@ -94,9 +93,10 @@ describe('/preview page', () => {
 	beforeEach(() => {
 		routeId = '5';
 		getSimfileMock.mockReset();
-		parseFromRemoteURLMock.mockReset();
+		parseLevelFromRemoteURLMock.mockReset();
 		buildNotationChartMock.mockReset();
 		buildNotationChartMock.mockReturnValue(readyChart());
+		parseLevelFromRemoteURLMock.mockResolvedValue(makeDtx());
 		engineLoad.reject = false;
 		engineLoad.hang = false;
 		engineLoad.failedFiles = [];
@@ -134,9 +134,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 	});
@@ -147,11 +146,10 @@ describe('/preview page', () => {
 			title: 'Song',
 			artist: 'Artist',
 			dtx_files: [
-				{ level: 4, label: 'MASTER' },
-				{ level: 3, label: 'BASIC' }
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
 			]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		// buildNotationChart runs once in buildForLevel and once in loadAudioForLevel.
@@ -160,8 +158,12 @@ describe('/preview page', () => {
 		// Switch to the BASIC level via the select.
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: '3' } });
-		// A level switch rebuilds the chart + reloads audio (two more calls).
-		expect(buildNotationChartMock.mock.calls.length).toBe(initialCalls + 2);
+		// A level switch fetches the new DTXFile then rebuilds the chart +
+		// reloads audio (two more buildNotationChart calls). The fetch is async,
+		// so wait for the second build to land.
+		await waitFor(() =>
+			expect(buildNotationChartMock.mock.calls.length).toBe(initialCalls + 2)
+		);
 	});
 
 	it('toasts an error when some audio files fail to load', async () => {
@@ -170,9 +172,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
 	});
@@ -183,9 +184,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		// The catch path disposes the engine and toasts, but keeps audioReady.
 		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
@@ -197,9 +197,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		const playButton = await screen.findByLabelText('preview.play');
 		// Wait until audio is ready (button enabled).
@@ -211,14 +210,39 @@ describe('/preview page', () => {
 		expect(engineSpies.pause).toHaveBeenCalled();
 	});
 
+	it('restarts from the beginning when pressing play after the song ends', async () => {
+		// Regression: after the chart ends, engine.currentTime reports the full
+		// duration. Calling play(duration) -> remaining = 0 -> the end timer
+		// fires instantly, so the transport flickered Pause→Play→Pause with no
+		// audio. Pressing play at the end must restart from 0 instead.
+		getSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		render(PreviewPage);
+		const playButton = await screen.findByLabelText('preview.play');
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
+		// Start playback once.
+		await fireEvent.click(playButton);
+		engineSpies.play.mockClear();
+		// Simulate the chart ending: the page's onEnded snaps currentSeconds to
+		// the duration so the replay-after-end check can fire.
+		expect(engineRef.current?.onEnded).toBeTruthy();
+		engineRef.current?.onEnded?.();
+		// Press play again -> must restart from 0, not from currentTime.
+		await fireEvent.click(playButton);
+		expect(engineSpies.play).toHaveBeenCalledWith(0);
+	});
+
 	it('toggles playback via the spacebar and ignores it for form controls', async () => {
 		getSimfileMock.mockResolvedValue({
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		// The shortcut is disabled until audio is ready (matching the transport
@@ -242,9 +266,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		// While audio is still loading the transport shows the loading label and
@@ -261,9 +284,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		// Wait for audio ready so handleSeek takes the engine.seek branch.
@@ -285,9 +307,8 @@ describe('/preview page', () => {
 			id: 5,
 			title: 'Song',
 			artist: 'Artist',
-			dtx_files: [{ level: 4, label: 'MASTER' }]
+			dtx_files: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
 		});
-		parseFromRemoteURLMock.mockResolvedValue(makeSimFile());
 		render(PreviewPage);
 		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
 

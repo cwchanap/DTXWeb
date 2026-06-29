@@ -15,6 +15,7 @@ fragment SimfileFull on Simfile {
 	dtxFiles {
 		level
 		label
+		fileUrl
 	}
 }
 

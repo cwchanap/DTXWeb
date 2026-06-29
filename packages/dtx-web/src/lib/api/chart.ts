@@ -112,10 +112,11 @@ export type PreviewSimfile = {
 
 /**
  * Minimal metadata fetch for the `/preview` page: title/artist plus each level's
- * R2 `fileUrl`. Uses a dedicated query (not `SimfileFull`) so the throwing
- * `DtxFile.fileUrl` resolver — which errors INTERNAL on a missing R2 object —
- * is scoped to this single-chart call and cannot break the shared list/detail
- * fragments.
+ * R2 `fileUrl`. Uses a dedicated query (not `SimfileFull`) so the
+ * `DtxFile.fileUrl` resolver — which returns null on a missing R2 object — is
+ * scoped to this single-chart call and cannot break the shared list/detail
+ * fragments. Levels whose R2 object is missing (fileUrl null) are filtered out
+ * here so the preview degrades to the available levels instead of failing.
  */
 export const getPreviewSimfile = async (id: string, ctx?: ClientCtx): Promise<PreviewSimfile> => {
 	const client = await getClient(ctx);
@@ -127,11 +128,15 @@ export const getPreviewSimfile = async (id: string, ctx?: ClientCtx): Promise<Pr
 		id: numId,
 		title: result.simfile.title,
 		artist: result.simfile.artist,
-		levels: (result.simfile.dtxFiles ?? []).map((f) => ({
-			level: f.level,
-			label: f.label,
-			fileUrl: f.fileUrl
-		}))
+		levels: (result.simfile.dtxFiles ?? [])
+			.filter(
+				(f): f is { level: number; label: string; fileUrl: string } => f.fileUrl != null
+			)
+			.map((f) => ({
+				level: f.level,
+				label: f.label,
+				fileUrl: f.fileUrl
+			}))
 	};
 };
 

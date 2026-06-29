@@ -201,7 +201,10 @@
 	let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
 	onMount(() => {
-		renderChart();
+		// Initial render is handled by the `void chart` $effect below, which
+		// runs after mount. Setting up the ResizeObserver here is all onMount
+		// needs to do — calling renderChart() here too would double-render on
+		// mount (once in onMount, once in the $effect).
 		resizeObserver = new ResizeObserver(() => {
 			clearTimeout(resizeTimer);
 			resizeTimer = setTimeout(() => {

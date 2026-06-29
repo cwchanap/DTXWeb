@@ -20,10 +20,11 @@ fragment SimfileFull on Simfile {
 
 # Preview-only: selects the R2 `fileUrl` for each level so the /preview page can
 # fetch + parse the chart. This is deliberately a separate query — NOT part of
-# SimfileFull — because `DtxFile.fileUrl` throws INTERNAL when its R2 object is
-# missing, and (with defaultFieldNullability: false) that would null-propagate
-# and break the entire simfiles/list/detail response. Scoping fileUrl to this
-# single-chart query isolates the throw to the one consumer that needs the URL.
+# SimfileFull — because `DtxFile.fileUrl` returns null when its R2 object is
+# missing (nullable + non-throwing), and the /preview client filters out levels
+# with a null fileUrl so one missing R2 object only drops that level instead of
+# failing the whole chart. Keeping fileUrl out of SimfileFull avoids surfacing
+# the nullable field to list/detail consumers that don't need it.
 query GetPreviewSimfile($id: ID!) {
 	simfile(id: $id) {
 		id

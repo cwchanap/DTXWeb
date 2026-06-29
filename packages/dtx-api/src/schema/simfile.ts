@@ -251,8 +251,25 @@ const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
 		level: t.exposeFloat('level'),
 		label: t.exposeString('label'),
+		// Nullable + non-throwing: a missing R2 object for one level returns null
+		// instead of an INTERNAL error, so the /preview query (the only consumer
+		// that selects fileUrl) can filter that level out rather than null-
+		// propagating and killing the entire chart. fileSizeBytes/fileEncoding
+		// still throw (they are not selected by the preview query).
 		fileUrl: t.string({
-			resolve: async (file, _args, ctx) => (await requireCatalogChart(ctx, file)).fileUrl
+			nullable: true,
+			resolve: async (file, _args, ctx) => {
+				const chart = await findCatalogChart(ctx, file);
+				if (!chart || chart.fileUrl === null) {
+					ctx.logger.error('DTX chart file missing in R2', {
+						simfileId: file.simfile.id,
+						label: file.label,
+						level: file.level
+					});
+					return null;
+				}
+				return chart.fileUrl;
+			}
 		}),
 		fileSizeBytes: t.int({
 			resolve: async (file, _args, ctx) =>

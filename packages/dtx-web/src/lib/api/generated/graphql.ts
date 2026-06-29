@@ -38,7 +38,7 @@ export type DeleteResult = {
 export type DtxFile = {
   fileEncoding: FileEncoding;
   fileSizeBytes: Scalars['Int']['output'];
-  fileUrl: Scalars['String']['output'];
+  fileUrl: Maybe<Scalars['String']['output']>;
   label: Scalars['String']['output'];
   level: Scalars['Float']['output'];
 };
@@ -195,7 +195,7 @@ export type GetPreviewSimfileQueryVariables = Exact<{
 }>;
 
 
-export type GetPreviewSimfileQuery = { simfile: { id: string, title: string, artist: string, dtxFiles: Array<{ level: number, label: string, fileUrl: string }> } | null };
+export type GetPreviewSimfileQuery = { simfile: { id: string, title: string, artist: string, dtxFiles: Array<{ level: number, label: string, fileUrl: string | null }> } | null };
 
 export type SimfileWithFilesFragment = { hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> };
 

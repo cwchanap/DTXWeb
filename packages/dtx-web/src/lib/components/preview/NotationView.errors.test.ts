@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import NotationView from './NotationView.svelte';
 import type { NotationChart } from '@dtx/common';
 
@@ -95,10 +96,13 @@ describe('NotationView error paths', () => {
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 	});
 
-	it('survives a throwing voice.draw (outer catch) and logs a warning', () => {
+	it('survives a throwing voice.draw (outer catch) and logs a warning', async () => {
 		drawThrows = true;
 		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const { container } = render(NotationView, { props: { chart } });
+		// renderChart runs in the `void chart` $effect (after mount), so await
+		// tick before asserting the warning fired.
+		await tick();
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 		expect(warnSpy).toHaveBeenCalled();
 		warnSpy.mockRestore();

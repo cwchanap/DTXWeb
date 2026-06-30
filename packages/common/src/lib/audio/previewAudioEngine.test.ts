@@ -381,8 +381,16 @@ describe('PreviewAudioEngine coverage', () => {
 		vi.useFakeTimers();
 		try {
 			engine.play(0);
-			// duration is 4s; advance past the end timer.
-			vi.advanceTimersByTime(4100);
+			expect(onEnded).not.toHaveBeenCalled();
+			// End is now driven by the audio clock (no wall-clock end timer): a
+			// tick before the AudioContext reaches the duration is a no-op.
+			ctx.currentTime = 2;
+			vi.advanceTimersByTime(100); // one scheduler tick
+			expect(onEnded).not.toHaveBeenCalled();
+			// Audio clock reaches the end -> the next tick detects
+			// currentTime >= duration and fires onEnded exactly once.
+			ctx.currentTime = 4;
+			vi.advanceTimersByTime(100);
 			expect(onEnded).toHaveBeenCalledTimes(1);
 		} finally {
 			engine.dispose();

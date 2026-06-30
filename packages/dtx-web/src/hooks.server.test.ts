@@ -33,9 +33,13 @@ describe('authGuard', () => {
 		vi.restoreAllMocks();
 	});
 
-	const expectRedirect = async (promise: Promise<Response>, location: string, status = 303) => {
+	const expectRedirect = async (
+		response: Response | Promise<Response>,
+		location: string,
+		status = 303
+	) => {
 		try {
-			await promise;
+			await response;
 			expect.unreachable('Expected redirect to be thrown');
 		} catch (err: unknown) {
 			// SvelteKit redirect throws a Redirect object

@@ -37,7 +37,6 @@ export class PreviewAudioEngine {
 	private startCtxTime = 0;
 	private startOffset = 0;
 	private masterVolume = 1;
-	private endTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Lookahead scheduler state. Creating every source node up front (thousands
 	// for a full chart) overloads the Web Audio render thread and stalls
@@ -77,8 +76,6 @@ export class PreviewAudioEngine {
 		// the engine per level switch, but load() must stay self-cleaning.
 		this.stopSources();
 		this.clearScheduler();
-		if (this.endTimer) clearTimeout(this.endTimer);
-		this.endTimer = null;
 		if (this.ownsContext && this.ctx) void this.ctx.close();
 
 		this.playing = false;
@@ -197,15 +194,6 @@ export class PreviewAudioEngine {
 
 		this.schedulerTimer = setInterval(() => this.tick(), PreviewAudioEngine.TICK_MS);
 		this.tick();
-
-		if (this.endTimer) clearTimeout(this.endTimer);
-		const remaining = Math.max(0, this.duration - this.startOffset);
-		this.endTimer = setTimeout(() => {
-			this.playing = false;
-			this.startOffset = this.duration;
-			this.clearScheduler();
-			this.onEnded?.();
-		}, remaining * 1000);
 	}
 
 	/** Schedule every event whose time falls within the lookahead horizon. */
@@ -218,6 +206,19 @@ export class PreviewAudioEngine {
 		) {
 			const event = this.events[this.nextEventIdx++];
 			this.startSource(event, this.startCtxTime + (event.timeSec - this.startOffset), 0);
+		}
+		// End-of-playback is driven by the audio clock, not a wall-clock timer:
+		// `currentTime` is clamped to `duration`, so once the AudioContext clock
+		// reaches the end the next tick fires onEnded. A setTimeout would drift
+		// under background-tab throttling / main-thread load; the audio clock is
+		// what the cursor already reads, so this keeps the transport flip aligned
+		// with the last audible sample. handleEnd clears the scheduler, so this
+		// fires exactly once per play().
+		if (this.currentTime >= this.duration) {
+			this.playing = false;
+			this.startOffset = this.duration;
+			this.clearScheduler();
+			this.onEnded?.();
 		}
 	}
 
@@ -258,7 +259,6 @@ export class PreviewAudioEngine {
 		this.playing = false;
 		this.stopSources();
 		this.clearScheduler();
-		if (this.endTimer) clearTimeout(this.endTimer);
 	}
 
 	seek(seconds: number): void {
@@ -284,7 +284,6 @@ export class PreviewAudioEngine {
 	dispose(): void {
 		this.stopSources();
 		this.clearScheduler();
-		if (this.endTimer) clearTimeout(this.endTimer);
 		this.buffers.clear();
 		this.events = [];
 		if (this.ownsContext && this.ctx) void this.ctx.close();

@@ -112,7 +112,13 @@ export const buildChartTiming = (input: TimingInput): ChartTiming => {
 	const totalDuration = elapsed;
 
 	const positionToTime = (measure: number, fraction: number): number => {
-		const base = measureStartSeconds[measure] ?? totalDuration;
+		const base = measureStartSeconds[measure];
+		// Out-of-range measure (e.g. a stale cursor past the chart end, or measure
+		// 99 on a 1-measure chart): clamp to the end regardless of fraction.
+		// Without this guard, secondsIntoMeasure would add a fraction of a
+		// (fallback-length) measure on top of totalDuration, yielding a time past
+		// the chart end and breaking the seek<->cursor round-trip.
+		if (base === undefined) return totalDuration;
 		const startBpm = measureBpmAtStart[measure] ?? input.bpm;
 		return base + secondsIntoMeasure(measure, fraction, input, startBpm).seconds;
 	};

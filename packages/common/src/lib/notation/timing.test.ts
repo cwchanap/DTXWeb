@@ -168,5 +168,9 @@ describe('buildChartTiming', () => {
 		});
 		// measure 99 has no recorded start time or starting bpm; both fall back.
 		expect(t.positionToTime(99, 0)).toBe(t.totalDuration);
+		// A non-zero fraction must STILL clamp to the end, not add a phantom
+		// (fallback-length) measure on top of totalDuration. Without the clamp
+		// this would return 3 (= 2s total + 1s for half a 120bpm measure).
+		expect(t.positionToTime(99, 0.5)).toBe(t.totalDuration);
 	});
 });

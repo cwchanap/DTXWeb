@@ -193,6 +193,30 @@ describe('/preview page', () => {
 		);
 	});
 
+	it('pauses the playing engine immediately when switching levels', async () => {
+		// Regression: the UI transport stopped on level switch but the audio
+		// engine kept sounding until the new chart's DTX fetch resolved. The fix
+		// pauses the active engine before the async fetch so playback is silenced
+		// the moment the user changes levels.
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		engineSpies.pause.mockClear();
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '3' } });
+		// engine.pause() fires synchronously before the async DTX fetch, so no
+		// waitFor is needed — it is called during the change event handling.
+		expect(engineSpies.pause).toHaveBeenCalledTimes(1);
+	});
+
 	it('reverts the level dropdown and keeps the old chart when the level fetch fails', async () => {
 		// Regression: selectedLevel is set eagerly when the dropdown changes,
 		// so on a fetch failure it must snap back to the level the still-visible

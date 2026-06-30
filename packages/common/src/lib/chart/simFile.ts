@@ -127,8 +127,11 @@ export class SimFile {
 			);
 		}
 		// Derive a filename from the URL so DTXFile.getFileName() still works
-		// (used downstream by the editor and MIDI export).
-		const fileName = decodeURIComponent(fileUrl.split('/').pop() ?? 'chart.dtx');
+		// (used downstream by the editor and MIDI export). Strip any query/hash
+		// first: R2/CDN signed URLs append `?X-Amz-Signature=...` which would
+		// otherwise become part of the derived filename.
+		const lastSegment = fileUrl.split('/').pop() ?? 'chart.dtx';
+		const fileName = decodeURIComponent(lastSegment.split(/[?#]/)[0]);
 		const file = new File([await response.blob()], fileName);
 		const dtx = new DTXFile(file, label);
 		await dtx.parse();

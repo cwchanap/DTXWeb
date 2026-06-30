@@ -283,6 +283,10 @@
 		audioReady = false;
 		playing = false;
 		cancelAnimationFrame(rafId);
+		// Silence the currently-playing engine immediately: the UI transport
+		// stopped above, but the audio sources/scheduler keep sounding until
+		// loadAudioForLevel disposes this engine after the (async) DTX fetch.
+		engine?.pause();
 		const dtx = await fetchLevelDtx(value, generation);
 		if (dtx === null || dtx === 'error') {
 			// On fetch failure keep the previous chart usable and re-enable the

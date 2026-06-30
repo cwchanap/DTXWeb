@@ -338,9 +338,11 @@
 		aria-valuemin={0}
 		aria-valuemax={Math.max(0, chart.measures.length - 1)}
 		aria-valuenow={cursorMeasure}
-		aria-valuetext={$_('preview.seek_value', {
-			values: { measure: cursorMeasure + 1, total: chart.measures.length }
-		})}
+		aria-valuetext={chart.measures.length === 0
+			? $_('preview.seek')
+			: $_('preview.seek_value', {
+					values: { measure: cursorMeasure + 1, total: chart.measures.length }
+				})}
 		onclick={handleClick}
 		onkeydown={handleKeydown}
 	></div>

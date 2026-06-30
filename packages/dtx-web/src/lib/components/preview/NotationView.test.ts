@@ -106,6 +106,10 @@ describe('NotationView', () => {
 		const slider = container.querySelector('[data-testid="notation-container"]');
 		expect(slider?.getAttribute('aria-valuemax')).toBe('0');
 		expect(slider?.getAttribute('aria-valuemin')).toBe('0');
+		// An empty chart must not announce the impossible "Measure 1 of 0"
+		// (cursorMeasure defaults to 0 -> +1 = 1, total = 0). Fall back to the
+		// neutral preview.seek label instead of the parameterized seek_value.
+		expect(slider?.getAttribute('aria-valuetext')).toBe('preview.seek');
 	});
 });
 
@@ -187,18 +191,22 @@ describe('NotationView layout & interaction', () => {
 		setContext.mockClear();
 	});
 
-	it('renders rest entries (rest branch of toStaveNotes)', () => {
+	it('renders rest entries (rest branch of toStaveNotes)', async () => {
 		render(NotationView, { props: { chart: richChart } });
+		// renderChart runs in the `void chart` $effect (after mount), so await
+		// tick before asserting draw happened.
+		await tick();
 		// A rest entry produces a StaveNote with a duration ending in 'r'. The
 		// mock StaveNote constructor is a no-op, so we just assert no throw and
 		// that drawing happened (the rest branch ran without error).
 		expect(draw).toHaveBeenCalled();
 	});
 
-	it('wraps measures into multiple rows and justifies non-last rows', () => {
+	it('wraps measures into multiple rows and justifies non-last rows', async () => {
 		// 6 measures at 160px each over an 880px usable width -> 2 rows. The
 		// justify loop scales row 0 (non-last) to fill the width.
 		render(NotationView, { props: { chart: richChart } });
+		await tick();
 		expect(draw).toHaveBeenCalled();
 		// No throw means the wrap (row++/x=LEFT) and justify (byRow scale) paths
 		// executed. The mock Stave records x positions; we can't easily read them,

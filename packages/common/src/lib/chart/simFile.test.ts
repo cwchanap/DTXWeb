@@ -637,6 +637,31 @@ describe('SimFile', () => {
 			const passedFile = MockDTXFile.mock.calls[0][0] as File;
 			expect(passedFile.name).toBe('日本.dtx');
 		});
+
+		it('strips query/hash suffixes from signed URLs before deriving the filename', async () => {
+			// R2/CDN signed URLs append `?X-Amz-Signature=...` (or a `#hash`).
+			// Those must not leak into the File name, which DTXFile.getFileName()
+			// returns and the editor/MIDI export rely on.
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					blob: () => Promise.resolve(new Blob(['dtx'])),
+					clone() {
+						return this;
+					}
+				})
+			);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			await SimFile.parseLevelFromRemoteURL(
+				'https://cdn.example/42/extreme.dtx?X-Amz-Signature=abc123&X-Amz-Date=20260101',
+				'EXTREME'
+			);
+
+			const passedFile = MockDTXFile.mock.calls[0][0] as File;
+			expect(passedFile.name).toBe('extreme.dtx');
+		});
 	});
 
 	describe('parseFromZip', () => {

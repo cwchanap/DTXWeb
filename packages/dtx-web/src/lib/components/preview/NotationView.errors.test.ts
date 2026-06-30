@@ -89,11 +89,23 @@ describe('NotationView error paths', () => {
 		drawThrows = false;
 	});
 
-	it('skips unmeasurable note bounding boxes (inner catch) without crashing', () => {
+	it('skips unmeasurable note bounding boxes (inner catch) without crashing', async () => {
 		// voice.draw succeeds; getBoundingBox throws per note and is swallowed,
-		// so renderChart still completes and pushes geometry.
+		// so renderChart still completes. Asserting setContext (renderChart ran
+		// through the draw path) + console.warn NOT called proves the inner
+		// catch handled the per-note error while the outer catch stayed silent —
+		// not just that the container exists.
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const { container } = render(NotationView, { props: { chart } });
+		// renderChart runs in the `void chart` $effect (after mount), so await
+		// tick before asserting the draw path executed.
+		await tick();
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
+		expect(setContext).toHaveBeenCalled(); // stave.draw ran -> renderChart completed
+		expect(draw).toHaveBeenCalled();
+		// Inner catch swallowed the getBoundingBox error; the outer catch did not.
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
 	});
 
 	it('survives a throwing voice.draw (outer catch) and logs a warning', async () => {

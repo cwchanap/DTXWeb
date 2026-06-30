@@ -43,7 +43,8 @@
 	const loadAudioForLevel = async (
 		dtx: DTXFile,
 		built: ReturnType<typeof buildNotationChart>,
-		generation: number
+		generation: number,
+		chartFileUrl: string
 	) => {
 		audioReady = false;
 		playing = false;
@@ -55,6 +56,7 @@
 			const result = await localEngine.load({
 				simfileID: currentId,
 				bucketUrl: PUBLIC_SIMFILE_BUCKET_URL,
+				chartFileUrl,
 				soundChips,
 				notesByLane: built.notesByLane,
 				timing: built.timing
@@ -199,14 +201,19 @@
 	// Fetch the DTXFile for a single level on demand. The preview only renders
 	// one level at a time, so this replaces parseFromRemoteURL (which eagerly
 	// fetched set.def + all five levels) and avoids four wasted round-trips on
-	// load. Returns null if superseded by a newer load.
-	const fetchLevelDtx = async (level: number | null, generation: number) => {
+	// load. Returns null if superseded by a newer load. On success returns the
+	// parsed DTXFile plus the level's `fileUrl`, which the audio engine uses to
+	// resolve `#WAV` sample paths relative to the chart's directory.
+	const fetchLevelDtx = async (
+		level: number | null,
+		generation: number
+	): Promise<{ dtx: DTXFile; fileUrl: string } | null | 'error'> => {
 		const levelData = pickLevel(level);
 		if (!levelData) return null;
 		try {
 			const dtx = await SimFile.parseLevelFromRemoteURL(levelData.fileUrl, levelData.label);
 			if (generation !== loadGeneration) return null;
-			return dtx;
+			return { dtx, fileUrl: levelData.fileUrl };
 		} catch {
 			if (generation !== loadGeneration) return null;
 			return 'error' as const;
@@ -254,16 +261,16 @@
 			// Fetch ONLY the selected level's DTX file (was: set.def + all five
 			// levels via parseFromRemoteURL). One round-trip instead of six.
 			const generation = ++loadGeneration;
-			const dtx = await fetchLevelDtx(selectedLevel, generation);
-			if (dtx === null) return; // a newer load superseded this one
-			if (dtx === 'error') {
+			const fetched = await fetchLevelDtx(selectedLevel, generation);
+			if (fetched === null) return; // a newer load superseded this one
+			if (fetched === 'error') {
 				status = 'error';
 				return;
 			}
 			if (id !== $page.params.id) return;
-			const built = buildForLevel(dtx);
+			const built = buildForLevel(fetched.dtx);
 			status = 'ready';
-			void loadAudioForLevel(dtx, built, generation);
+			void loadAudioForLevel(fetched.dtx, built, generation, fetched.fileUrl);
 		} catch {
 			status = 'error';
 		}
@@ -287,8 +294,8 @@
 		// stopped above, but the audio sources/scheduler keep sounding until
 		// loadAudioForLevel disposes this engine after the (async) DTX fetch.
 		engine?.pause();
-		const dtx = await fetchLevelDtx(value, generation);
-		if (dtx === null || dtx === 'error') {
+		const fetched = await fetchLevelDtx(value, generation);
+		if (fetched === null || fetched === 'error') {
 			// On fetch failure keep the previous chart usable and re-enable the
 			// transport so the user can retry or switch back. The failure here is
 			// the DTX chart file fetch, not a sound file — use a distinct toast.
@@ -300,8 +307,8 @@
 			audioReady = true;
 			return;
 		}
-		const built = buildForLevel(dtx);
-		void loadAudioForLevel(dtx, built, generation);
+		const built = buildForLevel(fetched.dtx);
+		void loadAudioForLevel(fetched.dtx, built, generation, fetched.fileUrl);
 	};
 
 	// React to the route id itself. SvelteKit reuses this component across

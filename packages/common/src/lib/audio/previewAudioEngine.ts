@@ -7,6 +7,19 @@ import { XAAudioContext } from '../browser/audioDecoder';
 const BPM_CHANNEL = '08';
 const MEASURE_LENGTH_CHANNEL = '02';
 
+/**
+ * Derive the directory portion of a chart file URL for resolving `#WAV`
+ * sample paths relative to the chart. Strips any query/hash first (R2/CDN
+ * signed URLs append `?X-Amz-Signature=...`) and returns everything up to
+ * (but not including) the final slash. Example:
+ *   `https://b.test/42/song/master.dtx` -> `https://b.test/42/song`
+ */
+const deriveChartDir = (chartFileUrl: string): string => {
+	const clean = chartFileUrl.split(/[?#]/)[0];
+	const slashIdx = clean.lastIndexOf('/');
+	return slashIdx >= 0 ? clean.slice(0, slashIdx) : '';
+};
+
 interface ScheduledEvent {
 	timeSec: number;
 	fileName: string;
@@ -23,6 +36,14 @@ export interface AudioEngineLoadParams {
 	fetchFn?: typeof fetch;
 	/** Injectable for tests. Defaults to a new XAAudioContext. */
 	context?: AudioContext;
+	/**
+	 * Fully-qualified URL of the selected chart file (the catalog `fileUrl`).
+	 * When provided, sample files referenced by `#WAV` are resolved relative
+	 * to this file's directory — matching how DTX charts packaged under a
+	 * subfolder reference their samples. Falls back to
+	 * `${bucketUrl}/${simfileID}` for callers that do not supply it.
+	 */
+	chartFileUrl?: string;
 }
 
 export class PreviewAudioEngine {
@@ -116,10 +137,13 @@ export class PreviewAudioEngine {
 
 		const failedFiles: string[] = [];
 		const uniqueNames = [...new Set(this.events.map((e) => e.fileName))];
+		const sampleBaseUrl = params.chartFileUrl
+			? deriveChartDir(params.chartFileUrl)
+			: `${params.bucketUrl}/${params.simfileID}`;
 
 		const fetchOne = async (fileName: string): Promise<void> => {
 			try {
-				const url = `${params.bucketUrl}/${params.simfileID}/${fileName}`;
+				const url = `${sampleBaseUrl}/${fileName}`;
 				const res = await doFetch(url);
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				const data = await res.arrayBuffer();

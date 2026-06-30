@@ -91,6 +91,62 @@ describe('PreviewAudioEngine', () => {
 		expect(res.failedFiles).toEqual([]);
 	});
 
+	it('resolves samples relative to chartFileUrl directory for nested charts', async () => {
+		// Regression: a chart packaged under a subfolder (R2 key
+		// `42/song/master.dtx`) must fetch `42/song/kick.wav`, not
+		// `42/kick.wav`. Without chartFileUrl the engine falls back to
+		// `${bucketUrl}/${simfileID}`, which 404s for nested charts.
+		const kick = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		const res = await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, 'kick.wav')],
+			notesByLane: { '12': [kick] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(res.loaded).toBe(1);
+		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/kick.wav');
+	});
+
+	it('strips query/hash from chartFileUrl when deriving the sample base', async () => {
+		// Signed CDN URLs append `?X-Amz-Signature=...`; the sample base must
+		// be derived from the path portion only.
+		const kick = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx?X-Amz-Signature=abc',
+			soundChips: [makeChip(2, 'kick.wav')],
+			notesByLane: { '12': [kick] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/kick.wav');
+	});
+
+	it('falls back to ${bucketUrl}/${simfileID} when chartFileUrl is omitted', async () => {
+		// Backward compat: callers that do not supply chartFileUrl keep the
+		// legacy sample path resolution.
+		const kick = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			soundChips: [makeChip(2, 'kick.wav')],
+			notesByLane: { '12': [kick] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/kick.wav');
+	});
+
 	it('reports files that fail to fetch without throwing', async () => {
 		fetchFn.mockResolvedValueOnce({ ok: false, status: 404 });
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);

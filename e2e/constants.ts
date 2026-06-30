@@ -7,5 +7,6 @@ export const PAGES = {
 	TOOLS: `${BASE_URL}/tool`,
 	MIDI_PREVIEW: `${BASE_URL}/tool/midi-preview`,
 	DTX_CONVERTER: `${BASE_URL}/tool/dtx-to-midi`,
-	MIDI_TO_DTX_CONVERTER: `${BASE_URL}/tool/midi-to-dtx`
+	MIDI_TO_DTX_CONVERTER: `${BASE_URL}/tool/midi-to-dtx`,
+	PREVIEW: (simfileId: string | number) => `${BASE_URL}/preview/${simfileId}`
 } as const;

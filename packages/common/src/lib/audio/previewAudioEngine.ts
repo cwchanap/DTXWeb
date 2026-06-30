@@ -214,6 +214,12 @@ export class PreviewAudioEngine {
 		// what the cursor already reads, so this keeps the transport flip aligned
 		// with the last audible sample. handleEnd clears the scheduler, so this
 		// fires exactly once per play().
+		//
+		// Deliberate: sources already scheduled within the SCHEDULE_AHEAD_SEC
+		// horizon are NOT stopped here. `duration` is the time of the last note,
+		// not the end of its audio tail, so stopping would chop the final hit
+		// (e.g. a crash cymbal) the instant it starts. Letting the buffer ring
+		// out naturally is the musical behavior for a chart preview.
 		if (this.currentTime >= this.duration) {
 			this.playing = false;
 			this.startOffset = this.duration;

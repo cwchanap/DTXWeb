@@ -116,6 +116,27 @@ describe('quantizeMeasure', () => {
 		expect(notes[0].durTicks).toBe(3);
 	});
 
+	it('drops a sub-3-tick remainder after a note instead of emitting a spurious rest', () => {
+		// Two onsets 49 ticks apart: the first takes a quarter (48), leaving a
+		// 1-tick gap no binary duration can represent. The remainder follows a
+		// note (not a rest), so it can't be folded into the preceding entry.
+		// Emitting a 1-tick rest would render as a quarter rest (ticksToRestCode
+		// falls back to 'q' for values outside TICK_CODE), so the remainder is
+		// dropped instead. The note keeps its clean binary duration and no
+		// misleading rest glyph appears.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 49 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+		const rests = measure.entries.filter((e) => e.kind === 'rest');
+		// No rest carries a sub-3-tick (non-representable) duration.
+		expect(rests.every((r) => r.durTicks >= 3)).toBe(true);
+		// The first note keeps its binary quarter duration.
+		const note0 = measure.entries.find((e) => e.kind === 'note' && e.startTick === 0);
+		expect(note0?.durTicks).toBe(48);
+	});
+
 	it('fully consumes an off-grid onset span so entries sum to measureTicks', () => {
 		// position 1/11 -> round(192/11) = 17 ticks, which is not a clean
 		// binary/triplet boundary. A naive greedy decomposition (12 + 3) drops 2

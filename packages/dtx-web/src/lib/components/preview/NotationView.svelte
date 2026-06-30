@@ -93,6 +93,10 @@
 		container.innerHTML = '';
 		geometry = [];
 		noteOnsets = [];
+		// Reset the auto-scroll tracker so a new chart's first playback doesn't
+		// skip scrollIntoView because lastScrollTop still matches the old chart's
+		// last row.
+		lastScrollTop = -1;
 		const containerWidth = container.clientWidth || 900;
 		lastRenderedWidth = containerWidth;
 		const usableWidth = Math.max(MIN_STAVE_WIDTH, containerWidth - LEFT * 2);
@@ -131,7 +135,9 @@
 		const lastRow = layout.length ? layout[layout.length - 1].row : 0;
 		const byRow = new Map<number, LaidOutMeasure[]>();
 		for (const item of layout) {
-			(byRow.get(item.row) ?? byRow.set(item.row, []).get(item.row)!).push(item);
+			const arr = byRow.get(item.row);
+			if (arr) arr.push(item);
+			else byRow.set(item.row, [item]);
 		}
 		for (const [r, items] of byRow) {
 			if (r === lastRow) continue;
@@ -332,6 +338,9 @@
 		aria-valuemin={0}
 		aria-valuemax={Math.max(0, chart.measures.length - 1)}
 		aria-valuenow={cursorMeasure}
+		aria-valuetext={$_('preview.seek_value', {
+			values: { measure: cursorMeasure + 1, total: chart.measures.length }
+		})}
 		onclick={handleClick}
 		onkeydown={handleKeydown}
 	></div>

@@ -96,16 +96,18 @@
 	{:else if error}
 		<p class="text-red-500">Error: {error}</p>
 	{:else if simfile}
-		<div class="mb-4">
-			<a
-				class="rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-				href={`/preview/${$page.params.id}`}
-				target="_blank"
-				rel="noopener"
-			>
-				{$_('preview.open')}
-			</a>
-		</div>
+		{#if simfile.is_published}
+			<div class="mb-4">
+				<a
+					class="rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+					href={`/preview/${$page.params.id}`}
+					target="_blank"
+					rel="noopener"
+				>
+					{$_('preview.open')}
+				</a>
+			</div>
+		{/if}
 		<ChartDetail
 			simfile={simfile as import('@dtx/common').SimfileWithDtxFiles}
 			on:onSave={(e) =>

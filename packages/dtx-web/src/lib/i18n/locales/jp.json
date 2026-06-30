@@ -45,6 +45,7 @@
 		"audio_loading": "音声を読み込み中…",
 		"audio_partial": "一部の音声を読み込めませんでした。",
 		"level_load_failed": "この譜面を読み込めませんでした。",
-		"seek": "シーク位置"
+		"seek": "シーク位置",
+		"seek_value": "{total}小節中 {measure}小節目"
 	}
 }

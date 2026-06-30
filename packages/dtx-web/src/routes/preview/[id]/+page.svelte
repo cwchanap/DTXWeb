@@ -261,6 +261,10 @@
 
 	const handleLevelChange = async (event: Event) => {
 		const value = Number((event.target as HTMLSelectElement).value);
+		// Remember the level the dropdown currently shows so we can snap it back
+		// if this fetch fails — otherwise the select stays on the failed level
+		// while the notation area keeps rendering the previously built chart.
+		const prev = selectedLevel;
 		selectedLevel = value;
 		// Fetch the newly selected level on demand (single round-trip), then
 		// rebuild the chart + reload audio. The old chart stays visible until
@@ -275,6 +279,9 @@
 			// transport so the user can retry or switch back. The failure here is
 			// the DTX chart file fetch, not a sound file — use a distinct toast.
 			if (generation !== loadGeneration) return;
+			// Revert AFTER the generation guard so a superseded load can never
+			// overwrite the level now owned by a newer in-flight request.
+			selectedLevel = prev;
 			toastStore.error({ title: $_('preview.level_load_failed'), duration: 4000 });
 			audioReady = true;
 			return;

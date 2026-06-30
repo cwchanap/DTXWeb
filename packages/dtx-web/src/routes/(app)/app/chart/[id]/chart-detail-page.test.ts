@@ -451,6 +451,32 @@ describe('handleUpdateSimfile basic update flow', () => {
 	});
 });
 
+describe('Chart Detail Page - preview link visibility', () => {
+	// The /preview route is publicOrOwner-scoped in the API: unpublished charts
+	// 404 for non-owners. The "Open in Preview" link advertises a shareable
+	// public view, so it must only render when the chart is actually published.
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('hides the preview link when the simfile is unpublished', async () => {
+		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, is_published: false });
+		render(ChartDetailPage);
+		await waitFor(() => {
+			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
+		});
+		expect(screen.queryByText('preview.open')).not.toBeInTheDocument();
+	});
+
+	it('shows the preview link when the simfile is published', async () => {
+		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, is_published: true });
+		render(ChartDetailPage);
+		const link = await screen.findByText('preview.open');
+		expect(link).toBeInTheDocument();
+		expect(link.getAttribute('href')).toBe('/preview/123');
+	});
+});
+
 describe('Chart Detail Page - error handling', () => {
 	afterEach(() => {
 		vi.clearAllMocks();

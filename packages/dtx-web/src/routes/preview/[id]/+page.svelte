@@ -60,7 +60,13 @@
 				timing: built.timing
 			});
 			// A newer level switch superseded this load; drop its results.
-			if (generation !== loadGeneration) return;
+			// Dispose explicitly so this bail path is self-contained even if a
+			// future refactor decouples `engine` from `localEngine`; dispose() is
+			// idempotent, so this is safe even if the newer load already disposed it.
+			if (generation !== loadGeneration) {
+				localEngine.dispose();
+				return;
+			}
 			localEngine.onEnded = () => {
 				playing = false;
 				// Snap the transport to the exact end so the replay-after-end check
@@ -75,7 +81,11 @@
 			}
 			audioReady = true;
 		} catch {
-			if (generation !== loadGeneration) return;
+			// Superseded load: same self-contained dispose as the success path.
+			if (generation !== loadGeneration) {
+				localEngine.dispose();
+				return;
+			}
 			// Total audio failure: drop the engine so playback falls back to the
 			// visual-only wall clock; keep the notation usable.
 			localEngine.dispose();

@@ -398,6 +398,49 @@ describe('PreviewAudioEngine coverage', () => {
 		}
 	});
 
+	it('lets sources scheduled near the end ring out naturally when onEnded fires', async () => {
+		// Deliberate behavior: `duration` is the time of the last note, not the
+		// end of its audio tail. A note scheduled within the final SCHEDULE_AHEAD
+		// horizon (e.g. a crash cymbal at the chart's end) must NOT be hard-stopped
+		// when the transport reaches `duration` — otherwise the final hit would be
+		// chopped the instant it starts. This test locks that decision in so a
+		// future "strict stop" change can't regress it silently.
+		const engine = new PreviewAudioEngine();
+		// Note at measure 1, fraction 0.9 -> t = 1*2 + 0.9*2 = 3.8s (within the
+		// 0.5s horizon of totalDuration=4).
+		const crash = new LaneMeasureNote(1, '12', [{ noteID: '02', position: 0.9 }]);
+		await engine.load({
+			simfileID: '5',
+			bucketUrl: 'https://b.test',
+			soundChips: [makeChip(2, 'crash.wav')],
+			notesByLane: { '12': [crash] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		const onEnded = vi.fn();
+		engine.onEnded = onEnded;
+		vi.useFakeTimers();
+		try {
+			engine.play(0);
+			// Advance the clock so the lookahead horizon covers t=3.8 and the
+			// crash source is scheduled.
+			ctx.currentTime = 3.3;
+			vi.advanceTimersByTime(100);
+			expect(ctx.sources.length).toBe(1);
+			const crashSource = ctx.sources[0];
+			// Reach the end -> onEnded fires, but the scheduled crash must keep
+			// ringing (no stopSources() in the end branch).
+			ctx.currentTime = 4;
+			vi.advanceTimersByTime(100);
+			expect(onEnded).toHaveBeenCalledTimes(1);
+			expect(crashSource.stop).not.toHaveBeenCalled();
+		} finally {
+			engine.dispose();
+			vi.useRealTimers();
+		}
+	});
+
 	it('prunes finished sources from the active set via onended', async () => {
 		const engine = new PreviewAudioEngine();
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);

@@ -11,6 +11,17 @@ const engineState = vi.hoisted(() => ({ currentTime: 0, duration: 2 }));
 // Captures the most recently constructed mock engine so tests can fire its
 // onEnded callback to simulate the chart reaching its end.
 const engineRef = vi.hoisted(() => ({ current: null as null | { onEnded?: () => void } }));
+// Per-instance tracking so the rapid-level-switch interleaving test can
+// resolve a specific hung load and assert which engine got disposed. Each
+// entry is populated when its load() promise executor runs.
+const engineInstances = vi.hoisted(
+	() =>
+		[] as Array<{
+			disposeCalls: number;
+			resolve: (r: { loaded: number; failedFiles: string[] }) => void;
+			reject: (e: Error) => void;
+		}>
+);
 const engineSpies = vi.hoisted(() => ({
 	play: vi.fn(),
 	pause: vi.fn(),
@@ -34,18 +45,31 @@ vi.mock('@dtx/common', () => ({
 	buildNotationChart: buildNotationChartMock,
 	PreviewAudioEngine: class {
 		onEnded?: () => void;
+		private readonly idx: number;
 		constructor() {
 			engineRef.current = this;
+			this.idx = engineInstances.length;
+			engineInstances.push({ disposeCalls: 0, resolve: () => {}, reject: () => {} });
 		}
 		async load() {
 			if (engineLoad.reject) throw new Error('audio failure');
-			if (engineLoad.hang) return new Promise(() => {});
+			if (engineLoad.hang) {
+				// Per-instance deferred so a test can resolve/reject one specific
+				// hung load (e.g. to fire the superseded bail path).
+				return new Promise<{ loaded: number; failedFiles: string[] }>((resolve, reject) => {
+					engineInstances[this.idx].resolve = resolve;
+					engineInstances[this.idx].reject = reject;
+				});
+			}
 			return { loaded: 0, failedFiles: engineLoad.failedFiles };
 		}
 		play = engineSpies.play;
 		pause = engineSpies.pause;
 		seek = engineSpies.seek;
-		dispose = engineSpies.dispose;
+		dispose = () => {
+			engineInstances[this.idx].disposeCalls += 1;
+			engineSpies.dispose();
+		};
 		get currentTime() {
 			return engineState.currentTime;
 		}
@@ -100,6 +124,7 @@ describe('/preview page', () => {
 		engineLoad.reject = false;
 		engineLoad.hang = false;
 		engineLoad.failedFiles = [];
+		engineInstances.length = 0;
 		engineState.currentTime = 0;
 		engineState.duration = 2;
 		engineSpies.play.mockClear();
@@ -381,5 +406,69 @@ describe('/preview page', () => {
 			cancelRafSpy.mockRestore();
 			perfSpy.mockRestore();
 		}
+	});
+
+	it('disposes a superseded engine when its load resolves after a newer level switch', async () => {
+		// Regression for the bail-path dispose fix: when a level switch starts a
+		// newer load while an older load is still in flight, the older load's
+		// localEngine must be disposed when it eventually resolves and bails on
+		// the generation guard. Without the fix, only the newer load's
+		// engine?.dispose() call touched the old engine, leaving the bail path
+		// dependent on that external disposal (not self-contained).
+		engineLoad.hang = true; // per-instance deferred loads
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		// Initial load (engine 0, MASTER) is hanging on a deferred promise.
+		expect(engineInstances.length).toBe(1);
+		// Switch to BASIC: starts engine 1 and disposes engine 0 via the
+		// engine?.dispose() call at the top of loadAudioForLevel.
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '3' } });
+		await waitFor(() => expect(engineInstances.length).toBe(2));
+		expect(engineInstances[0].disposeCalls).toBe(1); // disposed by engine 1's setup
+		expect(engineInstances[1].disposeCalls).toBe(0); // current engine, not disposed
+		// Resolve engine 0's hung load -> it hits the superseded bail path. The
+		// fix disposes localEngine (engine 0) before returning; without the fix
+		// this second dispose would not happen.
+		engineInstances[0].resolve({ loaded: 0, failedFiles: [] });
+		await waitFor(() => expect(engineInstances[0].disposeCalls).toBe(2));
+		// The current engine (engine 1) is untouched by the bail.
+		expect(engineInstances[1].disposeCalls).toBe(0);
+	});
+
+	it('disposes a superseded engine when its load rejects after a newer level switch', async () => {
+		// Same interleaving as above, but the superseded load rejects and hits
+		// the catch-path bail. The fix must dispose there too.
+		engineLoad.hang = true;
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		expect(engineInstances.length).toBe(1);
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '3' } });
+		await waitFor(() => expect(engineInstances.length).toBe(2));
+		// Reject engine 0's hung load -> catch-path bail must dispose it.
+		engineInstances[0].reject(new Error('network failure'));
+		await waitFor(() => expect(engineInstances[0].disposeCalls).toBeGreaterThanOrEqual(2));
+		// The superseded failure must NOT toast (only the current engine's
+		// failure path toasts). Engine 1 is still hanging, so no toast yet.
+		expect(toastError).not.toHaveBeenCalled();
 	});
 });

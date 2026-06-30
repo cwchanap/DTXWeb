@@ -24,7 +24,12 @@
 	let artist = $state('');
 	let chart = $state<NotationChart | null>(null);
 	let levels = $state<PreviewLevel[]>([]);
-	let selectedLevel = $state<number | null>(null);
+	// Selection state holds the chosen chart's fileUrl, NOT its numeric
+	// `level`: the API documents (label, level) as non-unique (duplicate
+	// dtx_files rows can share the same level), so keying the dropdown and
+	// lookup by level collapses duplicate-level charts into one selectable
+	// entry. fileUrl is the unique per-row identifier.
+	let selectedFileUrl = $state<string | null>(null);
 	let audioReady = $state(false);
 	let playing = $state(false);
 	let engine: PreviewAudioEngine | null = null;
@@ -98,9 +103,11 @@
 	};
 
 	// Resolve the level data for a selection, falling back to the highest
-	// (levels[0], since the list is sorted descending).
-	const pickLevel = (level: number | null) =>
-		(level != null && levels.find((l) => l.level === level)) ?? levels[0];
+	// (levels[0], since the list is sorted descending). Looked up by fileUrl
+	// because (label, level) is not unique across dtx_files rows — see the
+	// comment on selectedFileUrl.
+	const pickLevel = (fileUrl: string | null) =>
+		(fileUrl != null && levels.find((l) => l.fileUrl === fileUrl)) ?? levels[0];
 
 	const tickCursor = () => {
 		if (!timing) return;
@@ -205,10 +212,10 @@
 	// parsed DTXFile plus the level's `fileUrl`, which the audio engine uses to
 	// resolve `#WAV` sample paths relative to the chart's directory.
 	const fetchLevelDtx = async (
-		level: number | null,
+		fileUrl: string | null,
 		generation: number
 	): Promise<{ dtx: DTXFile; fileUrl: string } | null | 'error'> => {
-		const levelData = pickLevel(level);
+		const levelData = pickLevel(fileUrl);
 		if (!levelData) return null;
 		try {
 			const dtx = await SimFile.parseLevelFromRemoteURL(levelData.fileUrl, levelData.label);
@@ -234,7 +241,7 @@
 		artist = '';
 		chart = null;
 		levels = [];
-		selectedLevel = null;
+		selectedFileUrl = null;
 		cursorMeasure = 0;
 		cursorFraction = 0;
 		currentSeconds = 0;
@@ -256,12 +263,12 @@
 				return;
 			}
 			currentId = id;
-			selectedLevel = levels[0].level;
+			selectedFileUrl = levels[0].fileUrl;
 
 			// Fetch ONLY the selected level's DTX file (was: set.def + all five
 			// levels via parseFromRemoteURL). One round-trip instead of six.
 			const generation = ++loadGeneration;
-			const fetched = await fetchLevelDtx(selectedLevel, generation);
+			const fetched = await fetchLevelDtx(selectedFileUrl, generation);
 			if (fetched === null) return; // a newer load superseded this one
 			if (fetched === 'error') {
 				status = 'error';
@@ -277,16 +284,15 @@
 	};
 
 	const handleLevelChange = async (event: Event) => {
-		const value = Number((event.target as HTMLSelectElement).value);
-		// Remember the level the dropdown currently shows so we can snap it back
+		const value = (event.target as HTMLSelectElement).value;
+		// Remember the fileUrl the dropdown currently shows so we can snap it back
 		// if this fetch fails — otherwise the select stays on the failed level
 		// while the notation area keeps rendering the previously built chart.
-		const prev = selectedLevel;
-		selectedLevel = value;
+		const prev = selectedFileUrl;
+		selectedFileUrl = value;
 		// Fetch the newly selected level on demand (single round-trip), then
 		// rebuild the chart + reload audio. The old chart stays visible until
 		// the new DTXFile arrives so the notation area does not flash empty.
-		const generation = ++loadGeneration;
 		audioReady = false;
 		playing = false;
 		cancelAnimationFrame(rafId);
@@ -294,19 +300,35 @@
 		// stopped above, but the audio sources/scheduler keep sounding until
 		// loadAudioForLevel disposes this engine after the (async) DTX fetch.
 		engine?.pause();
-		const fetched = await fetchLevelDtx(value, generation);
-		if (fetched === null || fetched === 'error') {
+		// Capture the generation BEFORE bumping so fetchLevelDtx can still bail
+		// when a navigation (load()) supersedes this switch. We deliberately do
+		// NOT bump loadGeneration here: bumping would invalidate the previous
+		// level's in-flight audio load (loadAudioForLevel bails and disposes its
+		// engine when its generation no longer matches). If this fetch then
+		// failed, the revert path below would re-enable audioReady even though
+		// `engine` still points at the disposed engine — so Play would no-op on
+		// a dead engine. The generation is bumped only once the fetch succeeds
+		// and we are committed to reloading audio for the new level.
+		const priorGeneration = loadGeneration;
+		const fetched = await fetchLevelDtx(value, priorGeneration);
+		if (fetched === null) return; // a newer navigation superseded this switch
+		if (fetched === 'error') {
+			// A newer load (e.g. navigation) superseded this switch while the
+			// fetch was in flight; let the newer load own the state.
+			if (priorGeneration !== loadGeneration) return;
 			// On fetch failure keep the previous chart usable and re-enable the
 			// transport so the user can retry or switch back. The failure here is
 			// the DTX chart file fetch, not a sound file — use a distinct toast.
-			if (generation !== loadGeneration) return;
 			// Revert AFTER the generation guard so a superseded load can never
 			// overwrite the level now owned by a newer in-flight request.
-			selectedLevel = prev;
+			selectedFileUrl = prev;
 			toastStore.error({ title: $_('preview.level_load_failed'), duration: 4000 });
 			audioReady = true;
 			return;
 		}
+		// Commit to the new level: now bump the generation to invalidate any
+		// still-in-flight previous audio load, then dispose+reload the engine.
+		const generation = ++loadGeneration;
 		const built = buildForLevel(fetched.dtx);
 		void loadAudioForLevel(fetched.dtx, built, generation, fetched.fileUrl);
 	};
@@ -343,11 +365,11 @@
 					<span>{$_('preview.level')}</span>
 					<select
 						class="rounded border px-2 py-1"
-						value={selectedLevel}
+						value={selectedFileUrl}
 						onchange={handleLevelChange}
 					>
-						{#each levels as lvl (lvl.level)}
-							<option value={lvl.level}>{lvl.label}</option>
+						{#each levels as lvl (lvl.fileUrl)}
+							<option value={lvl.fileUrl}>{lvl.label}</option>
 						{/each}
 					</select>
 				</label>

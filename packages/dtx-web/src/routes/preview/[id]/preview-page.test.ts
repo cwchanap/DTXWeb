@@ -184,7 +184,7 @@ describe('/preview page', () => {
 		expect(initialCalls).toBeGreaterThanOrEqual(1);
 		// Switch to the BASIC level via the select.
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: '3' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
 		// A level switch fetches the new DTXFile then rebuilds the chart once
 		// (a single buildNotationChart call). The fetch is async, so wait for
 		// the build to land.
@@ -211,14 +211,14 @@ describe('/preview page', () => {
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		engineSpies.pause.mockClear();
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: '3' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
 		// engine.pause() fires synchronously before the async DTX fetch, so no
 		// waitFor is needed — it is called during the change event handling.
 		expect(engineSpies.pause).toHaveBeenCalledTimes(1);
 	});
 
 	it('reverts the level dropdown and keeps the old chart when the level fetch fails', async () => {
-		// Regression: selectedLevel is set eagerly when the dropdown changes,
+		// Regression: selectedFileUrl is set eagerly when the dropdown changes,
 		// so on a fetch failure it must snap back to the level the still-visible
 		// chart was built for. Otherwise the select advertises a level the
 		// notation area is not showing.
@@ -234,20 +234,21 @@ describe('/preview page', () => {
 		render(PreviewPage);
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
-		// load() picks the highest level (4) after sorting levels desc.
-		expect(select.value).toBe('4');
+		// load() picks the highest level (MASTER) after sorting levels desc, so
+		// the select binds to its fileUrl.
+		expect(select.value).toBe('https://bucket.test/5/master.dtx');
 		const buildsBefore = buildNotationChartMock.mock.calls.length;
 		// Flip the DTX fetch to fail for the level switch (initial load already
 		// resolved, so resetting here only affects the change handler).
 		parseLevelFromRemoteURLMock.mockRejectedValue(new Error('network down'));
-		await fireEvent.change(select, { target: { value: '3' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
 		// Chart-fetch failure toasts with the dedicated message...
 		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
 		expect(toastError).toHaveBeenCalledWith(
 			expect.objectContaining({ title: 'preview.level_load_failed' })
 		);
 		// ...the dropdown reverts to the still-displayed MASTER level...
-		expect(select.value).toBe('4');
+		expect(select.value).toBe('https://bucket.test/5/master.dtx');
 		// ...and the chart is NOT rebuilt (old notation stays in place).
 		expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore);
 	});
@@ -456,7 +457,7 @@ describe('/preview page', () => {
 		// Switch to BASIC: starts engine 1 and disposes engine 0 via the
 		// engine?.dispose() call at the top of loadAudioForLevel.
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: '3' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
 		await waitFor(() => expect(engineInstances.length).toBe(2));
 		expect(engineInstances[0].disposeCalls).toBe(1); // disposed by engine 1's setup
 		expect(engineInstances[1].disposeCalls).toBe(0); // current engine, not disposed
@@ -486,7 +487,7 @@ describe('/preview page', () => {
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		expect(engineInstances.length).toBe(1);
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: '3' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
 		await waitFor(() => expect(engineInstances.length).toBe(2));
 		// Reject engine 0's hung load -> catch-path bail must dispose it.
 		engineInstances[0].reject(new Error('network failure'));
@@ -494,5 +495,88 @@ describe('/preview page', () => {
 		// The superseded failure must NOT toast (only the current engine's
 		// failure path toasts). Engine 1 is still hanging, so no toast yet.
 		expect(toastError).not.toHaveBeenCalled();
+	});
+
+	it('selects either chart when two levels share the same numeric level', async () => {
+		// Regression: the level dropdown keyed <option>s and the selection by
+		// numeric `level`. Two dtx_files rows with the same level (e.g. two
+		// MASTER charts) collapsed to a single selectable entry — the second
+		// chart could never be loaded because levels.find(l => l.level === X)
+		// always returns the first match. The API documents (label, level) as
+		// non-unique (it resolves charts by row index), so the preview must key
+		// by the unique fileUrl instead.
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER-A', fileUrl: 'https://bucket.test/5/master-a.dtx' },
+				{ level: 4, label: 'MASTER-B', fileUrl: 'https://bucket.test/5/master-b.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		// Both duplicate-level charts are present with DISTINCT option values
+		// (previously both options had value="4" so the second was unreachable).
+		expect(Array.from(select.options).map((o) => o.value)).toEqual([
+			'https://bucket.test/5/master-a.dtx',
+			'https://bucket.test/5/master-b.dtx'
+		]);
+		// Selecting the second duplicate-level chart actually fetches + rebuilds
+		// it (buildNotationChart runs again for the newly selected fileUrl).
+		const buildsBefore = buildNotationChartMock.mock.calls.length;
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/master-b.dtx' } });
+		await waitFor(() =>
+			expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore + 1)
+		);
+		expect(select.value).toBe('https://bucket.test/5/master-b.dtx');
+	});
+
+	it('keeps playback working when a level fetch fails mid audio-load', async () => {
+		// Regression: handleLevelChange used to bump loadGeneration at the start
+		// of the switch, which invalidated the previous level's in-flight audio
+		// load (its engine got disposed on the bail path when the load later
+		// resolved). When the new level's DTX fetch then failed, the revert path
+		// re-enabled audioReady even though `engine` still pointed at the
+		// disposed engine — so Play would no-op on a dead engine. The fix
+		// delays the generation bump until the fetch has succeeded.
+		engineLoad.hang = true; // initial MASTER audio load hangs in-flight
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		expect(engineInstances.length).toBe(1); // MASTER engine hanging on deferred load
+		// Make the BASIC chart fetch fail, then start the switch.
+		parseLevelFromRemoteURLMock.mockRejectedValue(new Error('network down'));
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
+		// While the fetch is in flight, resolve MASTER's hung audio load. With
+		// the buggy early generation bump this would trip the bail path and
+		// dispose engine 0; with the fix the load completes normally.
+		engineInstances[0].resolve({ loaded: 0, failedFiles: [] });
+		await waitFor(() =>
+			expect(toastError).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'preview.level_load_failed' })
+			)
+		);
+		// The dropdown reverts to MASTER...
+		expect(select.value).toBe('https://bucket.test/5/master.dtx');
+		// ...and the MASTER engine is still alive (not disposed by a premature
+		// generation bump). Under the old code disposeCalls would be >= 1 here.
+		expect(engineInstances[0].disposeCalls).toBe(0);
+		// ...so Play now drives a LIVE engine instead of no-op'ing on a dead one.
+		const playButton = await screen.findByLabelText('preview.play');
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
+		engineSpies.play.mockClear();
+		await fireEvent.click(playButton);
+		expect(engineSpies.play).toHaveBeenCalledTimes(1);
 	});
 });

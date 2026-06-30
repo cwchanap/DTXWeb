@@ -168,6 +168,41 @@ describe('/preview page', () => {
 		);
 	});
 
+	it('reverts the level dropdown and keeps the old chart when the level fetch fails', async () => {
+		// Regression: selectedLevel is set eagerly when the dropdown changes,
+		// so on a fetch failure it must snap back to the level the still-visible
+		// chart was built for. Otherwise the select advertises a level the
+		// notation area is not showing.
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		// load() picks the highest level (4) after sorting levels desc.
+		expect(select.value).toBe('4');
+		const buildsBefore = buildNotationChartMock.mock.calls.length;
+		// Flip the DTX fetch to fail for the level switch (initial load already
+		// resolved, so resetting here only affects the change handler).
+		parseLevelFromRemoteURLMock.mockRejectedValue(new Error('network down'));
+		await fireEvent.change(select, { target: { value: '3' } });
+		// Chart-fetch failure toasts with the dedicated message...
+		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+		expect(toastError).toHaveBeenCalledWith(
+			expect.objectContaining({ title: 'preview.level_load_failed' })
+		);
+		// ...the dropdown reverts to the still-displayed MASTER level...
+		expect(select.value).toBe('4');
+		// ...and the chart is NOT rebuilt (old notation stays in place).
+		expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore);
+	});
+
 	it('toasts an error when some audio files fail to load', async () => {
 		engineLoad.failedFiles = ['missing.wav'];
 		getPreviewSimfileMock.mockResolvedValue({

@@ -65,12 +65,14 @@ const fractionAtSeconds = (
 	const measureLength = input.measureLengths[measure] ?? 1;
 	const perFractionUnit = (bpm: number) => (60 / bpm) * BEATS_PER_WHOLE * measureLength;
 
-	// All bpm-change boundaries inside this measure, ascending. (Unlike
-	// secondsIntoMeasure we consider every change, since f ranges over [0,1].)
+	// All bpm-change boundaries inside this measure, ascending. A change at
+	// position 0 (downbeat) is included so the inverse matches secondsIntoMeasure,
+	// which also applies position-0 changes: it becomes a zero-width first segment
+	// that only swaps `bpm` to the new value before the real segments run.
 	const bounds = input.bpmChanges
 		.filter((n) => n.measure === measure)
 		.flatMap((n) => n.notes)
-		.filter((n) => n.noteID !== '00' && n.position > 0 && n.position < 1)
+		.filter((n) => n.noteID !== '00' && n.position >= 0 && n.position < 1)
 		.map((n) => ({ position: n.position, bpm: input.bpmValueMap[n.noteID] ?? startBpm }))
 		.sort((a, b) => a.position - b.position);
 

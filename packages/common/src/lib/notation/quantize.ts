@@ -85,12 +85,14 @@ export const quantizeMeasure = (
 		// Off-grid onsets (e.g. position 1/11) leave a 1-2 tick remainder that no
 		// binary duration can represent. Fold it into the last rest so the span is
 		// fully consumed and sum(durTicks) == spanTicks (== measureTicks overall).
+		// When the remainder follows a note (no rest to fold into), drop it: a
+		// 1-2 tick rest has no representable VexFlow code and would fall back to a
+		// quarter-rest glyph. VexFlow runs setStrict(false) and cursorGeometry uses
+		// startTick (not the tick sum), so the dropped sub-3-tick gap is harmless.
 		if (remaining > 0) {
 			const last = entries[entries.length - 1];
 			if (last && last.kind === 'rest' && last.startTick >= startTick) {
 				last.durTicks += remaining;
-			} else {
-				entries.push({ kind: 'rest', startTick: cursor, durTicks: remaining });
 			}
 		}
 	};

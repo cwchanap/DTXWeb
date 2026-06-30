@@ -133,6 +133,31 @@ describe('buildChartTiming', () => {
 		expect(t.totalDuration).toBe(4); // both measures at 120 bpm
 	});
 
+	it('round-trips through a bpm change at measure position 0 (downbeat change)', () => {
+		// Channel 08 changes tempo at the downbeat of measure 1 (position 0).
+		// measureBpmAtStart[1] holds the entering bpm (120), and positionToTime
+		// applies the position-0 change for the segment starting at 0, so it uses
+		// the new bpm (240) across [0, fraction]. timeToPosition must invert with
+		// the same bpm or the seek<->cursor round-trip diverges within the measure.
+		const bpmChanges = [new LaneMeasureNote(1, '08', [{ noteID: 'AA', position: 0 }])];
+		const t = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: { AA: 240 },
+			bpmChanges,
+			measureLengths: [1, 1],
+			measureCount: 2
+		});
+		// m0 = 2s at 120; m1 = 1s at 240 (change applies from the downbeat).
+		expect(t.measureStartSeconds).toEqual([0, 2]);
+		expect(t.totalDuration).toBe(3);
+		// Halfway through m1 at 240bpm = 0.5s -> absolute 2.5s.
+		expect(t.positionToTime(1, 0.5)).toBeCloseTo(2.5, 6);
+		// The inverse must recover fraction 0.5, not the 120bpm-linear 0.25.
+		const back = t.timeToPosition(2.5);
+		expect(back.measure).toBe(1);
+		expect(back.fraction).toBeCloseTo(0.5, 6);
+	});
+
 	it('positionToTime clamps an out-of-range measure to the end + falls back to base bpm', () => {
 		const t = buildChartTiming({
 			bpm: 120,

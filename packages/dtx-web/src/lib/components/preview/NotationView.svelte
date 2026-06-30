@@ -50,6 +50,10 @@
 	// effect, to avoid Svelte's update-depth guard.
 	let resizeGen = $state(0);
 	let lastScrollTop = -1;
+	// The width renderChart last laid out at. The ResizeObserver re-fires when a
+	// render grows the SVG's height (more rows); only a *width* change warrants a
+	// re-wrap, so height-only changes are ignored to avoid a re-render feedback.
+	let lastRenderedWidth = 0;
 
 	let hlX = $state(0);
 	let hlW = $state(0);
@@ -90,6 +94,7 @@
 		geometry = [];
 		noteOnsets = [];
 		const containerWidth = container.clientWidth || 900;
+		lastRenderedWidth = containerWidth;
 		const usableWidth = Math.max(MIN_STAVE_WIDTH, containerWidth - LEFT * 2);
 
 		// Pass 1: give each measure a width proportional to its onset count, then
@@ -206,6 +211,12 @@
 		// needs to do — calling renderChart() here too would double-render on
 		// mount (once in onMount, once in the $effect).
 		resizeObserver = new ResizeObserver(() => {
+			// The only legitimate re-render trigger is a *width* change (responsive
+			// re-wrap). A render grows the SVG's height, which re-fires this
+			// observer; ignoring width-stable callbacks breaks that feedback loop
+			// and removes the redundant re-render noise on first paint.
+			const width = container?.clientWidth ?? 0;
+			if (width === lastRenderedWidth) return;
 			clearTimeout(resizeTimer);
 			resizeTimer = setTimeout(() => {
 				renderChart();

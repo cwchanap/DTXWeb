@@ -529,6 +529,54 @@ describe('PreviewAudioEngine coverage', () => {
 		}
 	});
 
+	it('stops BGM backing sources at the transport end but lets drum tails ring', async () => {
+		// A channel 01 BGM buffer that extends past `totalDuration` (fade-out,
+		// trailing silence) must be stopped when the transport ends — otherwise
+		// it keeps playing for seconds after the UI reports "ended", diverging
+		// from the transport. One-shot drum hits near the end (a crash cymbal)
+		// must still ring out naturally. This locks the BGM-stop / drum-ring
+		// distinction in so a future change can't regress either side.
+		ctx.bufferDuration = 10; // BGM buffer extends past totalDuration=4
+		const engine = new PreviewAudioEngine();
+		const bgm = new LaneMeasureNote(0, '01', [{ noteID: '02', position: 0 }]);
+		// Crash at measure 1, fraction 0.9 -> t = 3.8s (within the 0.5s horizon).
+		const crash = new LaneMeasureNote(1, '12', [{ noteID: '03', position: 0.9 }]);
+		await engine.load({
+			simfileID: '5',
+			bucketUrl: 'https://b.test',
+			soundChips: [makeChip(2, 'bgm.wav'), makeChip(3, 'crash.wav')],
+			notesByLane: { '01': [bgm], '12': [crash] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		const onEnded = vi.fn();
+		engine.onEnded = onEnded;
+		vi.useFakeTimers();
+		try {
+			engine.play(0);
+			// BGM (t=0) is scheduled within the first tick; crash (t=3.8) is not.
+			expect(ctx.sources.length).toBe(1);
+			const bgmSource = ctx.sources[0];
+			// Advance so the lookahead horizon covers t=3.8 and the crash schedules.
+			ctx.currentTime = 3.3;
+			vi.advanceTimersByTime(100);
+			expect(ctx.sources.length).toBe(2);
+			const crashSource = ctx.sources[1];
+			// Reach the end -> onEnded fires. The BGM backing track is stopped
+			// (it would otherwise ring past the transport), but the crash tail
+			// keeps decaying naturally.
+			ctx.currentTime = 4;
+			vi.advanceTimersByTime(100);
+			expect(onEnded).toHaveBeenCalledTimes(1);
+			expect(bgmSource.stop).toHaveBeenCalledTimes(1);
+			expect(crashSource.stop).not.toHaveBeenCalled();
+		} finally {
+			engine.dispose();
+			vi.useRealTimers();
+		}
+	});
+
 	it('prunes finished sources from the active set via onended', async () => {
 		const engine = new PreviewAudioEngine();
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);

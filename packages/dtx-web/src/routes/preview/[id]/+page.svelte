@@ -278,15 +278,26 @@
 			const generation = ++loadGeneration;
 			const fetched = await fetchLevelDtx(selectedFileUrl, generation);
 			if (fetched === null) return; // a newer load superseded this one
+			// A navigation to a different /preview/[id] superseded this load while
+			// the fetch was in flight; drop its results (success or error) so a
+			// failed old chart cannot overwrite the new page's loading/ready state.
+			// The generation guard inside fetchLevelDtx only catches supersession
+			// once the new load has bumped loadGeneration (line 278), which happens
+			// after its own getPreviewSimfile resolves — so a fetch that rejects
+			// during that window returns 'error' rather than null and must be
+			// guarded here by the route id.
+			if (id !== $page.params.id) return;
 			if (fetched === 'error') {
 				status = 'error';
 				return;
 			}
-			if (id !== $page.params.id) return;
 			const built = buildForLevel(fetched.dtx);
 			status = 'ready';
 			void loadAudioForLevel(fetched.dtx, built, generation, fetched.fileUrl);
 		} catch {
+			// Same stale-route guard as above: getPreviewSimfile (or any earlier
+			// await) can reject after navigation has moved on to a new id.
+			if (id !== $page.params.id) return;
 			status = 'error';
 		}
 	};

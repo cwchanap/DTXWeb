@@ -90,14 +90,33 @@ const toastError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/toaster', () => ({ default: { error: toastError, success: vi.fn() } }));
 
 let routeId: string | null = '5';
+// Reactive page store so tests can simulate in-app navigation between
+// /preview/[id] routes (SvelteKit reuses the component across id changes).
+// `setRouteId` updates the captured id and notifies all subscribers, mirroring
+// how $page updates on navigation.
+const pageSubscribers = new Set<(v: unknown) => void>();
+const emitPage = () => {
+	const value = {
+		url: new URL(`https://app.test/preview/${routeId ?? ''}`),
+		params: { id: routeId ?? '' }
+	};
+	for (const fn of pageSubscribers) fn(value);
+};
+const setRouteId = (id: string | null) => {
+	routeId = id;
+	emitPage();
+};
 vi.mock('$app/stores', () => ({
 	page: {
 		subscribe: (run: (v: unknown) => void) => {
+			pageSubscribers.add(run);
 			run({
 				url: new URL(`https://app.test/preview/${routeId ?? ''}`),
 				params: { id: routeId ?? '' }
 			});
-			return () => {};
+			return () => {
+				pageSubscribers.delete(run);
+			};
 		}
 	}
 }));
@@ -728,5 +747,116 @@ describe('/preview page', () => {
 		engineSpies.play.mockClear();
 		await fireEvent.click(playButton);
 		expect(engineSpies.play).toHaveBeenCalledWith(1.0);
+	});
+
+	it('ignores a stale DTX fetch error after navigating to a different chart', async () => {
+		// Regression: when navigating between /preview/[id] routes while the
+		// previous chart's DTX fetch was still in flight, the old fetch could
+		// reject and set status='error' AFTER $page.params.id had moved to the
+		// new chart. The success path already guarded with `id !== $page.params.id`,
+		// but the error branch (and the surrounding catch) did not — so a failed
+		// old chart replaced the new page's loading state with
+		// 'preview.not_available'. The fix hoists the stale-route guard above
+		// the error assignment and adds it to the catch path.
+		// Both charts' getPreviewSimfile AND DTX fetches are deferred so we can
+		// interleave: the old chart's DTX fetch must reject while the new
+		// chart's getPreviewSimfile is still in flight (before the new load
+		// bumps loadGeneration). Otherwise fetchLevelDtx's generation guard
+		// would return null instead of 'error' and the bug wouldn't trigger.
+		const metaDeferred: Array<{
+			resolve: (v: unknown) => void;
+			reject: (e: Error) => void;
+		}> = [];
+		const fetchDeferred: Array<{
+			resolve: (v: unknown) => void;
+			reject: (e: Error) => void;
+		}> = [];
+		getPreviewSimfileMock.mockImplementation(() => {
+			return new Promise((resolve, reject) => {
+				metaDeferred.push({ resolve, reject });
+			});
+		});
+		parseLevelFromRemoteURLMock.mockImplementation(() => {
+			return new Promise((resolve, reject) => {
+				fetchDeferred.push({ resolve, reject });
+			});
+		});
+		render(PreviewPage);
+		// id 5: resolve getPreviewSimfile so its DTX fetch starts (and hangs).
+		await waitFor(() => expect(metaDeferred).toHaveLength(1));
+		metaDeferred[0].resolve({
+			id: 5,
+			title: 'Song A',
+			artist: 'Artist A',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		await waitFor(() => expect(fetchDeferred).toHaveLength(1));
+		// Navigate to id 6 while id-5's DTX fetch is still hanging. The new
+		// load()'s getPreviewSimfile is deferred, so loadGeneration has NOT been
+		// bumped yet — this is the window where the bug triggers.
+		setRouteId('6');
+		await waitFor(() => expect(metaDeferred).toHaveLength(2));
+		expect(screen.getByText('preview.loading')).toBeTruthy();
+		// Now the OLD chart's DTX fetch rejects. Inside fetchLevelDtx the
+		// generation guard sees generation === loadGeneration (the new load
+		// hasn't bumped it yet), so it returns 'error' rather than null.
+		// Without the fix, the error branch sets status='error' on the new page.
+		fetchDeferred[0].reject(new Error('stale chart network failure'));
+		await new Promise((r) => setTimeout(r, 10));
+		// The new page must STILL be loading, NOT showing the error state from
+		// the old chart's failure.
+		expect(screen.queryByText('preview.not_available')).toBeNull();
+		// Resolve the new chart's getPreviewSimfile -> it bumps loadGeneration,
+		// starts its DTX fetch, and on resolution becomes ready.
+		metaDeferred[1].resolve({
+			id: 6,
+			title: 'Song B',
+			artist: 'Artist B',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/6/master.dtx' }]
+		});
+		await waitFor(() => expect(fetchDeferred).toHaveLength(2));
+		fetchDeferred[1].resolve(makeDtx());
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+	});
+
+	it('ignores a stale getPreviewSimfile rejection after navigating to a different chart', async () => {
+		// Regression for the catch-path guard: if getPreviewSimfile (or any
+		// earlier await in load()) rejects after navigation has moved on to a
+		// new id, the catch must not clobber the new page's state with
+		// 'preview.not_available'.
+		// Both charts' getPreviewSimfile calls are deferred so we can control
+		// their resolution order and deliver the stale rejection after
+		// navigation.
+		const metaDeferred: Array<{
+			resolve: (v: unknown) => void;
+			reject: (e: Error) => void;
+		}> = [];
+		getPreviewSimfileMock.mockImplementation(() => {
+			return new Promise((resolve, reject) => {
+				metaDeferred.push({ resolve, reject });
+			});
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(metaDeferred).toHaveLength(1));
+		// Navigate to a different chart (id 6) while id-5's getPreviewSimfile is
+		// still hanging. The $effect re-runs load() for the new id, which pushes
+		// a second deferred entry.
+		setRouteId('6');
+		await waitFor(() => expect(metaDeferred).toHaveLength(2));
+		expect(screen.getByText('preview.loading')).toBeTruthy();
+		// The OLD chart's getPreviewSimfile rejects. Without the catch-path
+		// guard this would set status='error' on the new page.
+		metaDeferred[0].reject(new Error('stale meta failure'));
+		await new Promise((r) => setTimeout(r, 10));
+		// The new page must still be loading, not in the error state.
+		expect(screen.queryByText('preview.not_available')).toBeNull();
+		// Resolve the new chart's getPreviewSimfile -> it should become ready.
+		metaDeferred[1].resolve({
+			id: 6,
+			title: 'Song B',
+			artist: 'Artist B',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/6/master.dtx' }]
+		});
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 	});
 });

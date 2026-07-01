@@ -171,6 +171,49 @@ describe('PreviewAudioEngine', () => {
 		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/drums/kick%3F2.wav');
 	});
 
+	it('rejects path-traversal filenames without fetching outside the chart directory', async () => {
+		// Security: a malicious DTX `#WAV` line like `../../secret.wav` must not
+		// escape the chart directory. encodeURIComponent does not encode `.`,
+		// so without an explicit guard the browser would normalize the URL to
+		// the parent directory. The engine should report the file as failed and
+		// never issue a fetch to the traversed URL.
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		const res = await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, '../../secret.wav')],
+			notesByLane: { '12': [snare] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(res.failedFiles).toEqual(['../../secret.wav']);
+		expect(res.loaded).toBe(0);
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it('rejects absolute-path and dot-segment filenames', async () => {
+		// Leading `/` and lone `.`/`..` segments are also unsafe.
+		const kick = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '03', position: 0.5 }]);
+		const engine = new PreviewAudioEngine();
+		const res = await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, '/etc/passwd'), makeChip(3, './local.wav')],
+			notesByLane: { '12': [kick, snare] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(res.failedFiles.sort()).toEqual(['./local.wav', '/etc/passwd']);
+		expect(res.loaded).toBe(0);
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
 	it('falls back to ${bucketUrl}/${simfileID} when chartFileUrl is omitted', async () => {
 		// Backward compat: callers that do not supply chartFileUrl keep the
 		// legacy sample path resolution.

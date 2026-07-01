@@ -35,7 +35,7 @@ vi.mock('svelte-i18n');
 vi.mock('$lib/api', () => ({ getPreviewSimfile: getPreviewSimfileMock }));
 vi.mock('$env/static/public', () => ({ PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.test' }));
 vi.mock('$lib/components/preview/NotationView.svelte', async () => {
-	const Stub = (await import('../../../lib/components/preview/__stubs__/NotationViewStub.svelte'))
+	const Stub = (await import('$lib/components/preview/__stubs__/NotationViewStub.svelte'))
 		.default;
 	return { default: Stub };
 });

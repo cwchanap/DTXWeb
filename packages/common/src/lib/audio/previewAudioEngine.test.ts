@@ -366,8 +366,8 @@ describe('PreviewAudioEngine coverage', () => {
 		expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1);
 	});
 
-	it('skips bpm/measure-length lanes, "00" notes, and chips missing a fileName', async () => {
-		// '08' = bpm, '02' = measure length -> skipped entirely.
+	it('skips non-audio lanes (bpm/measure-length), "00" notes, and chips missing a fileName', async () => {
+		// '08' = bpm, '02' = measure length -> not in AUDIO_LANES whitelist.
 		// '12' has a '00' note (skipped) and an '01' note whose chip has no file.
 		const bpm = new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0 }]);
 		const meas = new LaneMeasureNote(0, '02', [{ noteID: '01', position: 0 }]);
@@ -383,16 +383,34 @@ describe('PreviewAudioEngine coverage', () => {
 
 	it('skips legacy bpm channel 03 so hex tempo values are not played as samples', async () => {
 		// Channel 03 noteIDs are hex BPM values (e.g. '0A' = 10). Without the
-		// skip, noteID '0A' would resolve to chip id 10 (parseInt('0A', 36))
-		// and play #WAV0A as audio. With the skip, the lane is ignored entirely.
+		// whitelist, noteID '0A' would resolve to chip id 10 (parseInt('0A', 36))
+		// and play #WAV0A as audio. With the whitelist, the lane is ignored entirely.
 		const legacyBpm = new LaneMeasureNote(0, '03', [{ noteID: '0A', position: 0 }]);
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
-		// Chip id 10 would match noteID '0A' if channel 03 were not skipped.
+		// Chip id 10 would match noteID '0A' if channel 03 were not excluded.
 		const chipFor0A = makeChip(10, 'should-not-play.wav');
 		const snareChip = makeChip(2, 'snare.wav');
 		const res = await load({ '03': [legacyBpm], '12': [snare] }, [chipFor0A, snareChip]);
 		expect(res.loaded).toBe(1); // only snare.wav fetched
 		expect(res.failedFiles).toEqual([]);
+	});
+
+	it('skips BGA lanes (04/07) so #BMP noteIDs do not play unrelated #WAV samples', async () => {
+		// DTX BGA channels 04/07 reference #BMP (image) IDs, not #WAV (audio)
+		// IDs. The #BMP and #WAV namespaces are independent and can overlap:
+		// a BGA noteID '05' means "show #BMP05", not "play #WAV05". Without
+		// the whitelist, the engine would resolve BGA noteIDs through the
+		// #WAV chip map and play unrelated audio for visual events.
+		const bga04 = new LaneMeasureNote(0, '04', [{ noteID: '05', position: 0 }]);
+		const bga07 = new LaneMeasureNote(0, '07', [{ noteID: '02', position: 0 }]);
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		// #WAV02 and #WAV05 exist; BGA lanes must NOT trigger them.
+		const chip02 = makeChip(2, 'snare.wav');
+		const chip05 = makeChip(5, 'bga-collision.wav');
+		const res = await load({ '04': [bga04], '07': [bga07], '12': [snare] }, [chip02, chip05]);
+		expect(res.loaded).toBe(1); // only snare.wav fetched
+		expect(res.failedFiles).toEqual([]);
+		expect(fetchFn).not.toHaveBeenCalledWith(expect.stringContaining('bga-collision.wav'));
 	});
 
 	it('defaults chip volume/position to 100/0 when undefined', async () => {

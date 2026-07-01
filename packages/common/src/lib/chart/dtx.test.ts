@@ -242,6 +242,33 @@ describe('DTXFile', () => {
 			expect(soundChips).toHaveLength(1);
 			expect(soundChips[0].id).toBe(361); // A1 in base 36 = 10*36 + 1
 		});
+
+		it('tolerates no-space colon form (#WAV01:kick.wav)', () => {
+			// Some DTX authors omit the space after the colon. parseNotes and
+			// parseMeasureLengths already tolerate this form; parseSoundChips must
+			// too, otherwise `line.split('#WAV01: ')[1]` is undefined and the
+			// SoundChip constructor throws on `undefined.toLowerCase()`.
+			dtxFile.lines = ['#WAV01:kick.wav', '#WAV02:snare.wav'];
+
+			const soundChips = dtxFile.parseSoundChips();
+
+			expect(soundChips).toHaveLength(2);
+			expect(soundChips[0].id).toBe(1);
+			expect(soundChips[0].fileName).toBe('kick.wav');
+			expect(soundChips[1].id).toBe(2);
+			expect(soundChips[1].fileName).toBe('snare.wav');
+		});
+
+		it('tolerates no-space colon form for VOLUME and POSITION', () => {
+			dtxFile.lines = ['#WAV01:kick.wav', '#VOLUME01:80', '#POSITION01:50'];
+
+			const soundChips = dtxFile.parseSoundChips();
+
+			expect(soundChips).toHaveLength(1);
+			expect(soundChips[0].fileName).toBe('kick.wav');
+			expect(soundChips[0].volume).toBe(80);
+			expect(soundChips[0].position).toBe(50);
+		});
 	});
 
 	describe('parseBPMChanges', () => {
@@ -267,6 +294,32 @@ describe('DTXFile', () => {
 			const bpmChanges = dtxFile.parseBPMChanges();
 
 			expect(Object.keys(bpmChanges)).toHaveLength(0);
+		});
+
+		it('tolerates no-space colon form (#BPMAA:240)', () => {
+			// Some DTX authors omit the space after the colon. parseNotes and
+			// parseMeasureLengths already tolerate this form; parseBPMChanges
+			// must too, otherwise `line.split(': ', 2)` returns a single element,
+			// `bpm` is undefined, `parseFloat(undefined)` is NaN, and feeding
+			// that into the timing builder turns totalDuration/cursor times into
+			// NaN (NaN ?? bpm is NaN — `??` does not catch NaN).
+			dtxFile.lines = ['#BPMAA:240', '#BPM01: 140.5'];
+
+			const bpmChanges = dtxFile.parseBPMChanges();
+
+			expect(bpmChanges['AA']).toBe(240);
+			expect(bpmChanges['01']).toBe(140.5);
+		});
+
+		it('skips BPM lines with unparseable values instead of recording NaN', () => {
+			// A malformed value (e.g. empty after the colon) must not inject NaN
+			// into the bpm map, which would poison the timing builder.
+			dtxFile.lines = ['#BPMAA:', '#BPM01: 140.5'];
+
+			const bpmChanges = dtxFile.parseBPMChanges();
+
+			expect(bpmChanges['AA']).toBeUndefined();
+			expect(bpmChanges['01']).toBe(140.5);
 		});
 	});
 

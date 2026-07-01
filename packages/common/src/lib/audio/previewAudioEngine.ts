@@ -181,6 +181,16 @@ export class PreviewAudioEngine {
 
 		const fetchOne = async (fileName: string): Promise<void> => {
 			try {
+				// Normalize Windows-style backslashes to forward slashes for the
+				// fetch URL. R2 stores sample paths with forward slashes (the
+				// upload sanitizer at dtx-api/sanitizeFilename.ts and the set.def
+				// normalizer both replace `\` with `/`), so a #WAV reference like
+				// `sound\kick.wav` must be fetched as `sound/kick.wav`. Without
+				// this, the backslash survives segment splitting and is
+				// percent-encoded to %5C, producing a URL R2 does not have. The
+				// buffer stays keyed by the original `fileName` so playback
+				// lookups (this.buffers.get(event.fileName)) still match.
+				const normalized = fileName.replaceAll('\\', '/');
 				// Reject path-traversal segments before building the URL. The
 				// fileName originates from untrusted DTX `#WAV` lines, and
 				// encodeURIComponent does NOT encode `.` — so `../foo.wav`
@@ -188,10 +198,10 @@ export class PreviewAudioEngine {
 				// out of the chart directory. Block `.`, `..`, empty segments,
 				// and absolute paths (leading `/`) to confine fetches to the
 				// intended bucket subdirectory.
-				const segments = fileName.split('/');
+				const segments = normalized.split('/');
 				if (
 					segments.some((s) => s === '..' || s === '.' || s === '') ||
-					fileName.startsWith('/')
+					normalized.startsWith('/')
 				) {
 					failedFiles.push(fileName);
 					return;

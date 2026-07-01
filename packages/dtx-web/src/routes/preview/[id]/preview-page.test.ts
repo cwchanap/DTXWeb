@@ -306,6 +306,35 @@ describe('/preview page', () => {
 		expect(engineSpies.dispose).toHaveBeenCalled();
 	});
 
+	it('falls back to visual-only when parseSoundChips throws', async () => {
+		// Regression: parseSoundChips() was called before the try block in
+		// loadAudioForLevel. A malformed #WAV line that the parser cannot
+		// handle threw synchronously, and because loadAudioForLevel is
+		// fire-and-forget (void ...), the rejection went unhandled —
+		// audioReady stayed false and the transport was stuck on "Loading
+		// audio" instead of degrading to the visual-only wall clock.
+		parseLevelFromRemoteURLMock.mockResolvedValue({
+			...makeDtx(),
+			parseSoundChips: () => {
+				throw new Error('parse fail');
+			}
+		});
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		render(PreviewPage);
+		// The catch path disposes the engine, toasts, and keeps audioReady so
+		// the transport enables visual-only wall-clock playback instead of
+		// staying stuck on the loading label.
+		await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+		expect(engineSpies.dispose).toHaveBeenCalled();
+		const playButton = await screen.findByLabelText('preview.play');
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
+	});
+
 	it('toggles playback via the transport button (engine.play path)', async () => {
 		getPreviewSimfileMock.mockResolvedValue({
 			id: 5,

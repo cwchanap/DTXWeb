@@ -57,8 +57,14 @@
 		engine?.dispose();
 		const localEngine = new PreviewAudioEngine();
 		engine = localEngine;
-		const soundChips = dtx.parseSoundChips();
 		try {
+			// Parse sound chips inside the guarded path so a malformed #WAV line
+			// that parseSoundChips() cannot handle degrades to the visual-only
+			// fallback below instead of throwing synchronously before the try
+			// block. loadAudioForLevel is invoked fire-and-forget (void ...), so
+			// an unguarded throw would be an unhandled rejection and audioReady
+			// would stay false, leaving the transport stuck on "Loading audio".
+			const soundChips = dtx.parseSoundChips();
 			const result = await localEngine.load({
 				simfileID: currentId,
 				bucketUrl: PUBLIC_SIMFILE_BUCKET_URL,

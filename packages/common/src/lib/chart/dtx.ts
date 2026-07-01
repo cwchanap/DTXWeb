@@ -169,13 +169,26 @@ export class DTXFile {
 	parseSoundChips() {
 		const wavLines = this.lines.filter((line) => line.startsWith('#WAV'));
 
+		// Extract the value after the first colon, trimming whitespace. Tolerates
+		// both `: ` (standard DTX) and `:` (no-space, e.g. `#WAV01:kick.wav`),
+		// matching parseNotes' colon handling. The strict `': '` split left
+		// soundFile undefined for the no-space form, crashing the SoundChip
+		// constructor on `undefined.toLowerCase()`.
+		const valueAfterColon = (line: string): string => {
+			const idx = line.indexOf(':');
+			return idx === -1 ? '' : line.slice(idx + 1).trim();
+		};
+
 		this.soundChips = wavLines.map((line) => {
 			const id = line.split('#WAV')[1].split(':')[0];
-			const volumeLine = this.lines.find((l) => l.startsWith(`#VOLUME${id}: `));
-			const volume = volumeLine ? parseInt(volumeLine.split(`#VOLUME${id}: `)[1]) : 100;
-			const positionLine = this.lines.find((l) => l.startsWith(`#POSITION${id}: `));
-			const position = positionLine ? parseInt(positionLine.split(`#POSITION${id}: `)[1]) : 0;
-			const soundFile = line.split(`#WAV${id}: `)[1];
+			// `startsWith('#VOLUME${id}:')` (colon, no trailing space) matches both
+			// `#VOLUME01: 80` and `#VOLUME01:80`; the colon delimits the id so it
+			// won't prefix-match a longer id like `#VOLUME012:`.
+			const volumeLine = this.lines.find((l) => l.startsWith(`#VOLUME${id}:`));
+			const volume = volumeLine ? parseInt(valueAfterColon(volumeLine)) : 100;
+			const positionLine = this.lines.find((l) => l.startsWith(`#POSITION${id}:`));
+			const position = positionLine ? parseInt(valueAfterColon(positionLine)) : 0;
+			const soundFile = valueAfterColon(line);
 			return new SoundChip('', parseInt(id, 36), volume, position, soundFile);
 		});
 
@@ -186,9 +199,20 @@ export class DTXFile {
 		const bpmLines = this.lines.filter((line) => line.startsWith('#BPM'));
 		const bpmNotes: Record<string, number> = {};
 		bpmLines.forEach((line) => {
-			const [header, bpm] = line.split(': ', 2);
+			// Split on the first colon, tolerating both `: ` (standard DTX)
+			// and `:` (no-space, e.g. `#BPMAA:240`), matching parseNotes'
+			// colon handling. The strict `': '` split left `bpm` undefined for
+			// the no-space form, so parseFloat(undefined) recorded NaN — and
+			// feeding that into the timing builder turned totalDuration/cursor
+			// times into NaN (NaN ?? bpm is NaN; `??` does not catch NaN).
+			const colonIndex = line.indexOf(':');
+			if (colonIndex === -1) return;
+			const header = line.slice(0, colonIndex);
+			const value = parseFloat(line.slice(colonIndex + 1).trim());
 			const noteID = header.slice(4, 6);
-			bpmNotes[noteID] = parseFloat(bpm);
+			// Skip unparseable values so a malformed line does not inject NaN
+			// into the bpm map and poison the timing builder.
+			if (!isNaN(value)) bpmNotes[noteID] = value;
 		});
 		return bpmNotes;
 	}

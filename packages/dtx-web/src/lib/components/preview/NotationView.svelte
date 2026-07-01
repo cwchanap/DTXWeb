@@ -72,8 +72,13 @@
 			return new StaveNote({ keys: entry.keys, duration: code });
 		});
 
-	// Map each (binary) duration-tick value to its VexFlow code. quantize only emits
-	// these plain values, so every note/rest duration maps cleanly.
+	// Map each (binary) duration-tick value to its VexFlow code. quantize
+	// emits these plain values for notes, but off-grid positions can produce
+	// rests with non-table durations (e.g. a 5-tick rest from the sub-3-tick
+	// fold in pushRests). Those have no exact VexFlow glyph, so the fallback
+	// picks the largest representable duration <= ticks instead of defaulting
+	// to a quarter — a 5-tick rest renders as a 64th (3 ticks), not a quarter
+	// (48 ticks), keeping VexFlow's glyph and spacing close to the real span.
 	const TICK_CODE: Record<number, string> = {
 		192: 'w',
 		96: 'h',
@@ -83,7 +88,15 @@
 		6: '32',
 		3: '64'
 	};
-	const ticksToRestCode = (ticks: number): string => TICK_CODE[ticks] ?? 'q';
+	const TICK_ENTRIES = Object.entries(TICK_CODE)
+		.map(([t, c]) => [Number(t), c] as const)
+		.sort((a, b) => b[0] - a[0]);
+	const ticksToRestCode = (ticks: number): string => {
+		const exact = TICK_CODE[ticks];
+		if (exact) return exact;
+		const entry = TICK_ENTRIES.find(([t]) => t <= ticks);
+		return entry ? entry[1] : '64';
+	};
 
 	const onsetCount = (measure: NotationMeasure): number =>
 		measure.entries.reduce((n, e) => n + (e.kind === 'note' ? 1 : 0), 0);

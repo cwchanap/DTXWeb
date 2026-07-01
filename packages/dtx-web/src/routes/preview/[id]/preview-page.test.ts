@@ -42,7 +42,9 @@ vi.mock('$lib/components/preview/NotationView.svelte', async () => {
 
 vi.mock('@dtx/common', () => ({
 	SimFile: { parseLevelFromRemoteURL: parseLevelFromRemoteURLMock },
-	buildNotationChart: buildNotationChartMock,
+	buildNotationChart: buildNotationChartMock
+}));
+vi.mock('@dtx/common/audio', () => ({
 	PreviewAudioEngine: class {
 		onEnded?: () => void;
 		private readonly idx: number;

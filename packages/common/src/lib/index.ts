@@ -59,4 +59,8 @@ export {
 	buildNotationChart
 } from './notation/quantize';
 
-export { PreviewAudioEngine, type AudioEngineLoadParams } from './audio/previewAudioEngine';
+// PreviewAudioEngine lives in the `./audio` subpath export to keep the main
+// barrel free of browser-only audio modules. Re-exporting it here would pull
+// `audioDecoder` (and its top-level `new XAAudioContext()`) into every page
+// that imports anything from `@dtx/common`, constructing an AudioContext before
+// the user reaches a preview/gameplay route. Import from `@dtx/common/audio`.

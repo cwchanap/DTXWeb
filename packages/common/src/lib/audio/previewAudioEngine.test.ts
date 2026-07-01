@@ -381,6 +381,20 @@ describe('PreviewAudioEngine coverage', () => {
 		expect(res.loaded).toBe(0); // no playable events -> nothing fetched
 	});
 
+	it('skips legacy bpm channel 03 so hex tempo values are not played as samples', async () => {
+		// Channel 03 noteIDs are hex BPM values (e.g. '0A' = 10). Without the
+		// skip, noteID '0A' would resolve to chip id 10 (parseInt('0A', 36))
+		// and play #WAV0A as audio. With the skip, the lane is ignored entirely.
+		const legacyBpm = new LaneMeasureNote(0, '03', [{ noteID: '0A', position: 0 }]);
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		// Chip id 10 would match noteID '0A' if channel 03 were not skipped.
+		const chipFor0A = makeChip(10, 'should-not-play.wav');
+		const snareChip = makeChip(2, 'snare.wav');
+		const res = await load({ '03': [legacyBpm], '12': [snare] }, [chipFor0A, snareChip]);
+		expect(res.loaded).toBe(1); // only snare.wav fetched
+		expect(res.failedFiles).toEqual([]);
+	});
+
 	it('defaults chip volume/position to 100/0 when undefined', async () => {
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
 		const chip = new SoundChip(

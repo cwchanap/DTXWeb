@@ -2,11 +2,12 @@ type XaDecoderModule = typeof import('xa_decoder');
 
 let xaDecoderModule: XaDecoderModule | null = null;
 
-// `AudioContext` is a browser-only global. This module is reachable from the
-// `@dtx/common` barrel (via PreviewAudioEngine), so it gets evaluated during
-// SSR (Vite / Cloudflare Worker) where `AudioContext` is undefined. Extending
-// `undefined` throws at module-evaluation time and 500s the page. Fall back to
-// a no-op base on the server; the real audio paths only run in the browser.
+// `AudioContext` is a browser-only global. This module is reachable from
+// `@dtx/common/audio` (via PreviewAudioEngine) and from direct relative imports
+// (SoundTab.svelte, game scenes), so it can be evaluated during SSR (Vite /
+// Cloudflare Worker) where `AudioContext` is undefined. Extending `undefined`
+// throws at module-evaluation time and 500s the page. Fall back to a no-op base
+// on the server; the real audio paths only run in the browser.
 const AudioContextBase: typeof AudioContext =
 	typeof AudioContext !== 'undefined'
 		? AudioContext

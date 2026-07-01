@@ -3,14 +3,9 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
-	import {
-		SimFile,
-		buildNotationChart,
-		PreviewAudioEngine,
-		type NotationChart,
-		type ChartTiming
-	} from '@dtx/common';
+	import { SimFile, buildNotationChart, type NotationChart, type ChartTiming } from '@dtx/common';
 	import type { DTXFile } from '@dtx/common';
+	import { PreviewAudioEngine } from '@dtx/common/audio';
 	import { getPreviewSimfile, type PreviewLevel } from '$lib/api';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import NotationView from '$lib/components/preview/NotationView.svelte';

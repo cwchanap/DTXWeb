@@ -321,6 +321,19 @@ describe('DTXFile', () => {
 			expect(bpmChanges['AA']).toBeUndefined();
 			expect(bpmChanges['01']).toBe(140.5);
 		});
+
+		it('rejects non-finite BPM values (Infinity / 1e309)', () => {
+			// `parseFloat('Infinity')` and `parseFloat('1e309')` (which overflows
+			// to Infinity) pass `!isNaN`, so an `isFinite` guard is required to
+			// keep them out of the bpm map, matching parseMeasureLengths.
+			dtxFile.lines = ['#BPMAA: Infinity', '#BPM02: 1e309', '#BPM03: 140.5'];
+
+			const bpmChanges = dtxFile.parseBPMChanges();
+
+			expect(bpmChanges['AA']).toBeUndefined();
+			expect(bpmChanges['02']).toBeUndefined();
+			expect(bpmChanges['03']).toBe(140.5);
+		});
 	});
 
 	describe('parseNotes', () => {
@@ -368,6 +381,20 @@ describe('DTXFile', () => {
 			expect(notes[0].laneID).toBe('11');
 			expect(notes[0].notes).toHaveLength(4);
 			expect(notes[1].laneID).toBe('02');
+		});
+
+		it('skips note lines without a colon instead of building garbage notes', () => {
+			// A line matching `^#\d+` but lacking a colon must be skipped, matching
+			// the colon guard in parseBPMChanges and parseMeasureLengths. Without
+			// the guard, `line.slice(0, -1)` drops the last header char and
+			// `line.slice(0)` returns the whole line as the pattern.
+			dtxFile.lines = ['#00011', '#00111: 01020000'];
+
+			const notes = dtxFile.parseNotes();
+
+			expect(notes).toHaveLength(1);
+			expect(notes[0].measure).toBe(1);
+			expect(notes[0].laneID).toBe('11');
 		});
 
 		describe('higher subdivision parsing', () => {

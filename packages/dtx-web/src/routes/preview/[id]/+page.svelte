@@ -37,6 +37,12 @@
 	// Bumped on every (re)load so a superseded async load (rapid level switch)
 	// cannot write state for an engine that is no longer current.
 	let loadGeneration = 0;
+	// Bumped on every handleLevelChange so a stale switch (superseded by a
+	// newer switch before its DTX fetch returned) cannot commit its chart/audio
+	// or revert the dropdown. loadGeneration is only bumped on successful commit
+	// (line ~331), so two rapid switches share the same priorGeneration — this
+	// token is the per-switch guard that distinguishes them.
+	let switchToken = 0;
 	let timing = $state<ChartTiming | null>(null);
 	let cursorMeasure = $state(0);
 	let cursorFraction = $state(0);
@@ -289,6 +295,13 @@
 		// if this fetch fails — otherwise the select stays on the failed level
 		// while the notation area keeps rendering the previously built chart.
 		const prev = selectedFileUrl;
+		// Remember the audio readiness BEFORE disabling it below. On fetch
+		// failure we restore this so the transport reflects the previous level's
+		// actual audio state — not unconditionally true (which would enable Play
+		// against an engine whose buffers are still loading). If the previous
+		// level's audio finished loading during the fetch, loadAudioForLevel
+		// already set audioReady=true, so the restore uses `||` to preserve that.
+		const prevAudioReady = audioReady;
 		selectedFileUrl = value;
 		// Fetch the newly selected level on demand (single round-trip), then
 		// rebuild the chart + reload audio. The old chart stays visible until
@@ -300,6 +313,12 @@
 		// stopped above, but the audio sources/scheduler keep sounding until
 		// loadAudioForLevel disposes this engine after the (async) DTX fetch.
 		engine?.pause();
+		// Bump the switch token so a stale switch (superseded by a newer switch
+		// before this fetch returned) cannot commit its chart or revert the
+		// dropdown. loadGeneration is only bumped on successful commit, so two
+		// rapid switches share the same priorGeneration — the switch token is
+		// the per-switch guard that distinguishes them.
+		const token = ++switchToken;
 		// Capture the generation BEFORE bumping so fetchLevelDtx can still bail
 		// when a navigation (load()) supersedes this switch. We deliberately do
 		// NOT bump loadGeneration here: bumping would invalidate the previous
@@ -312,6 +331,9 @@
 		const priorGeneration = loadGeneration;
 		const fetched = await fetchLevelDtx(value, priorGeneration);
 		if (fetched === null) return; // a newer navigation superseded this switch
+		// A newer level switch superseded this one while the fetch was in flight;
+		// let the newer switch own the dropdown and chart state.
+		if (token !== switchToken) return;
 		if (fetched === 'error') {
 			// A newer load (e.g. navigation) superseded this switch while the
 			// fetch was in flight; let the newer load own the state.
@@ -323,7 +345,12 @@
 			// overwrite the level now owned by a newer in-flight request.
 			selectedFileUrl = prev;
 			toastStore.error({ title: $_('preview.level_load_failed'), duration: 4000 });
-			audioReady = true;
+			// Restore the previous audio state: if the previous level's audio was
+			// ready before the switch, re-enable it; if it was still loading,
+			// keep the transport disabled until loadAudioForLevel finishes. Use
+			// `||` so a load that completed during the fetch (already set
+			// audioReady=true) is not clobbered back to false.
+			audioReady = audioReady || prevAudioReady;
 			return;
 		}
 		// Commit to the new level: now bump the generation to invalidate any

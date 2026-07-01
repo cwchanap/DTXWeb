@@ -10,6 +10,8 @@ vi.mock('svelte-i18n');
 // Mock vexflow: we assert orchestration, not SVG output.
 const draw = vi.fn();
 const setContext = vi.fn(() => ({ draw }));
+// Captures StaveNote constructor args so tests can assert duration codes.
+const staveNoteArgs = vi.hoisted(() => [] as Array<{ keys: string[]; duration: string }>);
 vi.mock('vexflow', () => {
 	class Stave {
 		addClef() {
@@ -30,7 +32,9 @@ vi.mock('vexflow', () => {
 		}
 	}
 	class StaveNote {
-		constructor(_: unknown) {}
+		constructor(opts: { keys: string[]; duration: string }) {
+			staveNoteArgs.push(opts);
+		}
 		getBoundingBox() {
 			return { getX: () => 0, getW: () => 0 };
 		}
@@ -83,6 +87,7 @@ describe('NotationView', () => {
 	beforeEach(() => {
 		draw.mockClear();
 		setContext.mockClear();
+		staveNoteArgs.length = 0;
 	});
 
 	it('renders a container and draws at least one stave', async () => {
@@ -110,6 +115,37 @@ describe('NotationView', () => {
 		// (cursorMeasure defaults to 0 -> +1 = 1, total = 0). Fall back to the
 		// neutral preview.seek label instead of the parameterized seek_value.
 		expect(slider?.getAttribute('aria-valuetext')).toBe('preview.seek');
+	});
+
+	it('renders non-table rest durations as the closest representable code, not a quarter', async () => {
+		// Regression: quantizeMeasure's sub-3-tick fold can produce rests with
+		// non-table durations (e.g. 5 ticks = 3 + 2 fold). ticksToRestCode used
+		// to fall back to 'q' (48 ticks) for any unknown value, making VexFlow
+		// spacing wildly wrong for small rests. The fix picks the largest
+		// representable duration <= ticks: 5 ticks -> '64' (3 ticks), not 'q'.
+		const offGridChart: NotationChart = {
+			measures: [
+				{
+					index: 0,
+					measureTicks: 192,
+					beatsPerMeasure: 4,
+					entries: [
+						// 5-tick rest (non-table): should render as '64r', not 'qr'
+						{ kind: 'rest', startTick: 0, durTicks: 5 },
+						// 50-tick rest (non-table): should render as 'qr' (48 <= 50)
+						{ kind: 'rest', startTick: 5, durTicks: 50 },
+						// 7-tick rest (non-table): should render as '32r' (6 <= 7)
+						{ kind: 'rest', startTick: 55, durTicks: 7 },
+						// 130-tick rest (non-table): should render as 'hr' (96 <= 130)
+						{ kind: 'rest', startTick: 62, durTicks: 130 }
+					]
+				}
+			]
+		};
+		render(NotationView, { props: { chart: offGridChart } });
+		await tick();
+		const restDurations = staveNoteArgs.map((a) => a.duration);
+		expect(restDurations).toEqual(['64r', 'qr', '32r', 'hr']);
 	});
 });
 
@@ -189,6 +225,7 @@ describe('NotationView layout & interaction', () => {
 	beforeEach(() => {
 		draw.mockClear();
 		setContext.mockClear();
+		staveNoteArgs.length = 0;
 	});
 
 	it('renders rest entries (rest branch of toStaveNotes)', async () => {

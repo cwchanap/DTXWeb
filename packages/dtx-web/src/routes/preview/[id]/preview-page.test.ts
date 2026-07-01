@@ -579,4 +579,102 @@ describe('/preview page', () => {
 		await fireEvent.click(playButton);
 		expect(engineSpies.play).toHaveBeenCalledTimes(1);
 	});
+
+	it('ignores a stale level switch superseded by a newer switch before fetch returns', async () => {
+		// Regression: two rapid level switches shared the same priorGeneration
+		// (loadGeneration is only bumped on successful commit). The first
+		// switch's fetch could return and commit its chart/audio after
+		// selectedFileUrl already pointed at the second selection, leaving the
+		// dropdown and rendered notation on different levels. The switchToken
+		// guard ensures the stale (first) switch bails without committing.
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' },
+				{ level: 2, label: 'ADVANCED', fileUrl: 'https://bucket.test/5/advanced.dtx' }
+			]
+		});
+		render(PreviewPage);
+		// Wait for the initial load to complete (its fetch resolves normally).
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		// Now switch to deferred DTX fetches so we can interleave two switches.
+		const fetchDeferred: Array<{
+			resolve: (v: unknown) => void;
+			reject: (e: Error) => void;
+		}> = [];
+		parseLevelFromRemoteURLMock.mockImplementation(() => {
+			return new Promise((resolve, reject) => {
+				fetchDeferred.push({ resolve, reject });
+			});
+		});
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		// Switch to BASIC (fetch 0 hangs), then immediately switch to ADVANCED
+		// (fetch 1 hangs). Both share the same priorGeneration.
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/advanced.dtx' } });
+		expect(fetchDeferred).toHaveLength(2);
+		const buildsBefore = buildNotationChartMock.mock.calls.length;
+		// Resolve the FIRST switch (BASIC) — it must NOT commit because the
+		// switchToken has moved on to the ADVANCED switch.
+		fetchDeferred[0].resolve(makeDtx());
+		// Give the microtask queue a tick to process the stale resolution.
+		await new Promise((r) => setTimeout(r, 10));
+		// No new chart build from the stale BASIC switch.
+		expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore);
+		// The dropdown still shows ADVANCED (the current selection).
+		expect(select.value).toBe('https://bucket.test/5/advanced.dtx');
+		// Now resolve the SECOND switch (ADVANCED) — it SHOULD commit.
+		fetchDeferred[1].resolve(makeDtx());
+		await waitFor(() =>
+			expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore + 1)
+		);
+		expect(select.value).toBe('https://bucket.test/5/advanced.dtx');
+	});
+
+	it('keeps audioReady false on failed level switch while previous audio is still loading', async () => {
+		// Regression: handleLevelChange unconditionally set audioReady=true on
+		// fetch failure, even if the previous level's audio was still loading.
+		// This enabled Play against a partially loaded engine. The fix restores
+		// the previous audioReady state (false when audio was still loading).
+		engineLoad.hang = true; // initial MASTER audio load hangs in-flight
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		// MASTER audio is still loading (hung), so audioReady is false.
+		expect(engineInstances.length).toBe(1);
+		// Make the BASIC chart fetch fail, then start the switch.
+		parseLevelFromRemoteURLMock.mockRejectedValue(new Error('network down'));
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
+		await waitFor(() =>
+			expect(toastError).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'preview.level_load_failed' })
+			)
+		);
+		// The dropdown reverts to MASTER...
+		expect(select.value).toBe('https://bucket.test/5/master.dtx');
+		// ...but audioReady must stay false because MASTER's audio is STILL
+		// loading — the transport must not enable Play on a partially loaded
+		// engine.
+		const playButton = screen.getByLabelText('preview.audio_loading') as HTMLButtonElement;
+		expect(playButton.disabled).toBe(true);
+		// Now resolve MASTER's hung audio load — audioReady becomes true.
+		engineInstances[0].resolve({ loaded: 0, failedFiles: [] });
+		await waitFor(() =>
+			expect((screen.getByLabelText('preview.play') as HTMLButtonElement).disabled).toBe(
+				false
+			)
+		);
+	});
 });

@@ -171,6 +171,30 @@ describe('PreviewAudioEngine', () => {
 		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/drums/kick%3F2.wav');
 	});
 
+	it('normalizes backslash sample paths to forward slashes before fetching', async () => {
+		// DTX packs authored on Windows reference samples with backslashes
+		// (e.g. `sound\kick.wav`). R2 stores these normalized to
+		// `sound/kick.wav` (the upload sanitizer at
+		// dtx-api/sanitizeFilename.ts and the set.def normalizer both replace
+		// `\` with `/`), so the engine must normalize before building the fetch
+		// URL — otherwise the backslash is percent-encoded to %5C and the
+		// sample is reported missing even though the object exists.
+		const kick = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		const res = await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, 'sound\\kick.wav')],
+			notesByLane: { '12': [kick] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(res.loaded).toBe(1);
+		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/sound/kick.wav');
+	});
+
 	it('rejects path-traversal filenames without fetching outside the chart directory', async () => {
 		// Security: a malicious DTX `#WAV` line like `../../secret.wav` must not
 		// escape the chart directory. encodeURIComponent does not encode `.`,

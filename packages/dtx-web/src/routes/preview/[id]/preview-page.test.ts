@@ -690,6 +690,73 @@ describe('/preview page', () => {
 		expect(select.value).toBe('https://bucket.test/5/advanced.dtx');
 	});
 
+	it('reverts to the committed level (not a transient pending switch) on rapid failed switch', async () => {
+		// Regression: handleLevelChange captured `prev = selectedFileUrl` and
+		// `prevAudioReady = audioReady` at switch start. On a rapid A→B→C
+		// interleaving where B's fetch succeeds (bails on switchToken) and C's
+		// fetch fails, `prev` was B (the transient pending selection) and
+		// `prevAudioReady` was false (cleared by B's switch) — so the dropdown
+		// reverted to B and the transport stayed disabled even though chart A
+		// + engine A were still the ones on screen. The fix tracks the last
+		// COMMITTED fileUrl/audioReady and reverts to those instead.
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' },
+				{ level: 2, label: 'ADVANCED', fileUrl: 'https://bucket.test/5/advanced.dtx' }
+			]
+		});
+		render(PreviewPage);
+		// Initial load (MASTER = A) completes; audio resolves so audioReady=true
+		// and committedFileUrl/committedAudioReady track A.
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const playButton = await screen.findByLabelText('preview.play');
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
+		// Defer DTX fetches so we can interleave two rapid switches.
+		const fetchDeferred: Array<{
+			resolve: (v: unknown) => void;
+			reject: (e: Error) => void;
+		}> = [];
+		parseLevelFromRemoteURLMock.mockImplementation(
+			() =>
+				new Promise((resolve, reject) => {
+					fetchDeferred.push({ resolve, reject });
+				})
+		);
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		const buildsBefore = buildNotationChartMock.mock.calls.length;
+		// Rapid A→B (fetch 0 hangs) then B→C (fetch 1 hangs).
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/advanced.dtx' } });
+		expect(fetchDeferred).toHaveLength(2);
+		// Resolve B's fetch — it must bail on switchToken (C owns the dropdown).
+		fetchDeferred[0].resolve(makeDtx());
+		await new Promise((r) => setTimeout(r, 10));
+		// No commit from the stale B switch.
+		expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore);
+		// Now reject C's fetch — the failure path must revert to the COMMITTED
+		// level A (MASTER), not the transient pending B (BASIC).
+		fetchDeferred[1].reject(new Error('advanced chart network failure'));
+		await waitFor(() =>
+			expect(toastError).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'preview.level_load_failed' })
+			)
+		);
+		expect(select.value).toBe('https://bucket.test/5/master.dtx');
+		// The transport must reflect A's still-alive engine (audioReady=true),
+		// not stay disabled from B's transient switch.
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
+		// No chart rebuild happened — A's notation is still on screen.
+		expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore);
+		// Play drives A's live engine (engine 0), not a dead/disposed one.
+		engineSpies.play.mockClear();
+		await fireEvent.click(playButton);
+		expect(engineSpies.play).toHaveBeenCalledTimes(1);
+	});
+
 	it('keeps audioReady false on failed level switch while previous audio is still loading', async () => {
 		// Regression: handleLevelChange unconditionally set audioReady=true on
 		// fetch failure, even if the previous level's audio was still loading.

@@ -38,6 +38,20 @@
 	// (line ~331), so two rapid switches share the same priorGeneration — this
 	// token is the per-switch guard that distinguishes them.
 	let switchToken = 0;
+	// The fileUrl of the chart currently committed to the notation area +
+	// engine — i.e. the last level whose DTX fetch succeeded and whose chart
+	// was built via buildForLevel. Updated on successful initial load and on
+	// successful level-switch commit. Used to revert the dropdown when a
+	// pending switch's DTX fetch fails, so we snap back to the still-rendered
+	// chart rather than a transient pending selection (e.g. when the user
+	// rapid-switches A→B→C and C fails: prev would be B, not A).
+	let committedFileUrl = $state<string | null>(null);
+	// The audioReady state of the committed chart's engine. Mirrored from
+	// audioReady inside loadAudioForLevel only when the live load's generation
+	// is current (which implies it belongs to the committed level), so a failed
+	// switch can restore the transport to the committed engine's actual
+	// readiness instead of the stale value captured at switch start.
+	let committedAudioReady = false;
 	let timing = $state<ChartTiming | null>(null);
 	let cursorMeasure = $state(0);
 	let cursorFraction = $state(0);
@@ -94,6 +108,10 @@
 				toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
 			}
 			audioReady = true;
+			// Mirror into committedAudioReady: this load's generation is current
+			// (guard above), which implies it belongs to committedFileUrl, so the
+			// committed chart's engine is now ready.
+			committedAudioReady = true;
 			// Sync the engine to the current visual cursor position. If the user
 			// seeked while audio was still loading, handleSeek took the wall-clock
 			// branch and never called engine.seek() — so engine.currentTime is
@@ -113,6 +131,9 @@
 			engine = null;
 			toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
 			audioReady = true;
+			// Visual-only fallback is "ready" from the transport's perspective;
+			// mirror so a failed switch can restore this state.
+			committedAudioReady = true;
 		}
 	};
 
@@ -265,6 +286,8 @@
 		chart = null;
 		levels = [];
 		selectedFileUrl = null;
+		committedFileUrl = null;
+		committedAudioReady = false;
 		cursorMeasure = 0;
 		cursorFraction = 0;
 		currentSeconds = 0;
@@ -307,6 +330,8 @@
 				return;
 			}
 			const built = buildForLevel(fetched.dtx);
+			committedFileUrl = fetched.fileUrl;
+			committedAudioReady = false;
 			status = 'ready';
 			void loadAudioForLevel(fetched.dtx, built, generation, fetched.fileUrl);
 		} catch {
@@ -319,17 +344,14 @@
 
 	const handleLevelChange = async (event: Event) => {
 		const value = (event.target as HTMLSelectElement).value;
-		// Remember the fileUrl the dropdown currently shows so we can snap it back
-		// if this fetch fails — otherwise the select stays on the failed level
-		// while the notation area keeps rendering the previously built chart.
-		const prev = selectedFileUrl;
-		// Remember the audio readiness BEFORE disabling it below. On fetch
-		// failure we restore this so the transport reflects the previous level's
-		// actual audio state — not unconditionally true (which would enable Play
-		// against an engine whose buffers are still loading). If the previous
-		// level's audio finished loading during the fetch, loadAudioForLevel
-		// already set audioReady=true, so the restore uses `||` to preserve that.
-		const prevAudioReady = audioReady;
+		// On fetch failure we revert the dropdown to committedFileUrl (the last
+		// level whose chart was actually built and is still on screen) and
+		// restore committedAudioReady — NOT the current selectedFileUrl/audioReady,
+		// which may already reflect a transient pending switch. Capturing the
+		// current select value would snap back to a pending level whose chart was
+		// never rendered (e.g. rapid A→B→C where C fails: prev would be B, not A)
+		// and could leave the transport disabled even though the committed
+		// engine is still alive and ready.
 		selectedFileUrl = value;
 		// Fetch the newly selected level on demand (single round-trip), then
 		// rebuild the chart + reload audio. The old chart stays visible until
@@ -371,20 +393,22 @@
 			// the DTX chart file fetch, not a sound file — use a distinct toast.
 			// Revert AFTER the generation guard so a superseded load can never
 			// overwrite the level now owned by a newer in-flight request.
-			selectedFileUrl = prev;
+			selectedFileUrl = committedFileUrl;
 			toastStore.error({ title: $_('preview.level_load_failed'), duration: 4000 });
-			// Restore the previous audio state: if the previous level's audio was
-			// ready before the switch, re-enable it; if it was still loading,
-			// keep the transport disabled until loadAudioForLevel finishes. Use
-			// `||` so a load that completed during the fetch (already set
-			// audioReady=true) is not clobbered back to false.
-			audioReady = audioReady || prevAudioReady;
+			// Restore the committed chart's audio readiness. committedAudioReady
+			// is mirrored inside loadAudioForLevel whenever the live load's
+			// generation is current, so it reflects the committed engine's actual
+			// state — including the case where the committed level's audio
+			// finished loading during this failed fetch.
+			audioReady = committedAudioReady;
 			return;
 		}
 		// Commit to the new level: now bump the generation to invalidate any
 		// still-in-flight previous audio load, then dispose+reload the engine.
 		const generation = ++loadGeneration;
 		const built = buildForLevel(fetched.dtx);
+		committedFileUrl = fetched.fileUrl;
+		committedAudioReady = false;
 		void loadAudioForLevel(fetched.dtx, built, generation, fetched.fileUrl);
 	};
 

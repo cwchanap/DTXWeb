@@ -142,7 +142,9 @@ export const groupNotesByLane = (notes: LaneMeasureNote[]): Record<string, LaneM
 
 /**
  * Build the full notation chart + timing from a parsed DTXFile.
- * v1: every measure is 4/4 (measureLength = 1); channel '02' is not honored.
+ * Channel 02 bar-length changes are honored: a decimal multiplier of 4/4
+ * (e.g. 0.75 = 3/4) is applied to the measure and persists (sticky) until
+ * the next channel 02 line, matching DTX semantics.
  */
 export const buildNotationChart = (
 	dtx: DTXFile
@@ -157,7 +159,22 @@ export const buildNotationChart = (
 	const bpmValueMap = dtx.parseBPMChanges();
 
 	const measureCount = flat.reduce((max, n) => Math.max(max, n.measure), 0) + 1;
-	const measureLengths = new Array(measureCount).fill(1);
+
+	// Build the per-measure length array from channel 02 bar-length changes.
+	// DTX semantics: a change is sticky — it applies to its measure and every
+	// subsequent measure until another channel 02 line overrides it.
+	const measureLengthChanges = dtx.parseMeasureLengths();
+	const sortedChanges = [...measureLengthChanges.entries()].sort((a, b) => a[0] - b[0]);
+	const measureLengths = new Array(measureCount);
+	let currentLength = 1;
+	let changeIdx = 0;
+	for (let m = 0; m < measureCount; m++) {
+		while (changeIdx < sortedChanges.length && sortedChanges[changeIdx][0] <= m) {
+			currentLength = sortedChanges[changeIdx][1];
+			changeIdx++;
+		}
+		measureLengths[m] = currentLength;
+	}
 
 	// Group notes by measure once (O(n)) instead of re-filtering the whole list
 	// for each measure (O(n*m)). Sparse charts with many empty measures would
@@ -171,7 +188,7 @@ export const buildNotationChart = (
 
 	const measures: NotationMeasure[] = [];
 	for (let m = 0; m < measureCount; m++) {
-		measures.push(quantizeMeasure(m, notesByMeasure.get(m) ?? [], 1));
+		measures.push(quantizeMeasure(m, notesByMeasure.get(m) ?? [], measureLengths[m]));
 	}
 
 	// Channel 08 (#BPMzz references) and channel 03 (legacy direct-hex BPM) both

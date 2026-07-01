@@ -181,7 +181,14 @@ export class PreviewAudioEngine {
 
 		const fetchOne = async (fileName: string): Promise<void> => {
 			try {
-				const url = `${sampleBaseUrl}/${fileName}`;
+				// Encode each path segment to match the API's R2 URL construction
+				// (toPublicUrl: key.split('/').map(encodeURIComponent).join('/')).
+				// Without this, a filename containing URL-reserved characters (e.g.
+				// `snare#1.wav`) builds an unescaped URL — the browser treats `#1.wav`
+				// as a fragment and never sends it to R2, so the sample is reported
+				// missing even though the object exists.
+				const encodedFileName = fileName.split('/').map(encodeURIComponent).join('/');
+				const url = `${sampleBaseUrl}/${encodedFileName}`;
 				const res = await doFetch(url);
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				const data = await res.arrayBuffer();

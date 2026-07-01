@@ -6,7 +6,7 @@ export interface TimingInput {
 	bpmValueMap: Record<string, number>;
 	/** Channel '08' notes (bpm changes), as returned grouped by lane. */
 	bpmChanges: LaneMeasureNote[];
-	/** Per-measure length multiplier (v1: all 1). */
+	/** Per-measure length multiplier (1 = 4/4; from channel 02 bar-length changes). */
 	measureLengths: number[];
 	measureCount: number;
 }

@@ -182,10 +182,24 @@
 					beat_value: 4
 				}).setStrict(false);
 				voice.addTickables(notes);
-				const onlyNotes = notes.filter((_, idx) => measure.entries[idx].kind === 'note');
 				// Generate beams BEFORE drawing the voice: beaming sets each note's beam
 				// reference, which suppresses its individual flag/tail at draw time.
-				const beams = Beam.generateBeams(onlyNotes);
+				// Split into contiguous note groups (runs of consecutive note entries
+				// uninterrupted by rests) so beams don't cross rest boundaries —
+				// otherwise an eighth note, eighth rest, eighth note would render as
+				// one beamed group, misrepresenting the rhythm.
+				const noteGroups: StaveNote[][] = [];
+				let currentGroup: StaveNote[] = [];
+				measure.entries.forEach((entry, idx) => {
+					if (entry.kind === 'note') {
+						currentGroup.push(notes[idx]);
+					} else if (currentGroup.length > 0) {
+						noteGroups.push(currentGroup);
+						currentGroup = [];
+					}
+				});
+				if (currentGroup.length > 0) noteGroups.push(currentGroup);
+				const beams = noteGroups.flatMap((group) => Beam.generateBeams(group));
 				new Formatter()
 					.joinVoices([voice])
 					.format([voice], Math.max(40, width - STAVE_PADDING));

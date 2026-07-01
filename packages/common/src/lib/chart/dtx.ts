@@ -213,7 +213,7 @@ export class DTXFile {
 			if (!match) continue;
 			const measure = parseInt(match[1], 10);
 			const length = parseFloat(match[2]);
-			if (!isNaN(length) && length > 0) {
+			if (!isNaN(length) && isFinite(length) && length > 0) {
 				result.set(measure, length);
 			}
 		}
@@ -224,7 +224,13 @@ export class DTXFile {
 		const noteLines = this.lines.filter((line) => /^#\d+/.test(line));
 		if (noteLines.length > 0) {
 			const notes = noteLines.map((line) => {
-				const [header, pattern] = line.split(': ', 2);
+				// Split on the first colon and trim, tolerating both `: ` (standard
+				// DTX) and `:` (no space, e.g. `#NNN02:0.5`). The strict `': '`
+				// split left `pattern` undefined for the no-space form, crashing
+				// LaneMeasureNote.parseFromPattern().
+				const colonIndex = line.indexOf(':');
+				const header = line.slice(0, colonIndex);
+				const pattern = line.slice(colonIndex + 1).trim();
 				const measure = parseInt(header.slice(1, 4));
 				const laneID = header.slice(4, 6);
 				const parsedNotes = LaneMeasureNote.parseFromPattern(pattern);

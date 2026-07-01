@@ -303,6 +303,20 @@ describe('DTXFile', () => {
 			consoleSpy.mockRestore();
 		});
 
+		it('should parse note lines with colon-without-space delimiter', () => {
+			// Some DTX writers omit the space after the colon (e.g. `#NNN02:0.5`).
+			// parseNotes must tolerate both `: ` and `:` so the pattern is not
+			// left undefined before LaneMeasureNote.parseFromPattern() runs.
+			dtxFile.lines = ['#00011:01020304', '#00102:0.5'];
+
+			const notes = dtxFile.parseNotes();
+
+			expect(notes).toHaveLength(2);
+			expect(notes[0].laneID).toBe('11');
+			expect(notes[0].notes).toHaveLength(4);
+			expect(notes[1].laneID).toBe('02');
+		});
+
 		describe('higher subdivision parsing', () => {
 			it('should parse 24th note patterns correctly', () => {
 				// Create a 24-note pattern (48 characters)
@@ -466,6 +480,29 @@ describe('DTXFile', () => {
 				expect(positions[5]).toBeCloseTo(12 / 48, 10); // 12/48 = 1/4
 				expect(positions[6]).toBeCloseTo(24 / 48, 10); // 24/48 = 1/2
 			});
+		});
+	});
+
+	describe('parseMeasureLengths', () => {
+		let dtxFile: DTXFile;
+
+		beforeEach(() => {
+			dtxFile = new DTXFile();
+		});
+
+		it('parses channel-02 bar-length with and without space after colon', () => {
+			dtxFile.lines = ['#00102: 0.5', '#00202:0.75'];
+			const lengths = dtxFile.parseMeasureLengths();
+			expect(lengths.get(1)).toBe(0.5);
+			expect(lengths.get(2)).toBe(0.75);
+		});
+
+		it('rejects non-finite bar-length values (Infinity / 1e999)', () => {
+			dtxFile.lines = ['#00102: Infinity', '#00202: 1e999', '#00302: 0.5'];
+			const lengths = dtxFile.parseMeasureLengths();
+			expect(lengths.has(1)).toBe(false);
+			expect(lengths.has(2)).toBe(false);
+			expect(lengths.get(3)).toBe(0.5);
 		});
 	});
 

@@ -181,13 +181,28 @@ export class PreviewAudioEngine {
 
 		const fetchOne = async (fileName: string): Promise<void> => {
 			try {
+				// Reject path-traversal segments before building the URL. The
+				// fileName originates from untrusted DTX `#WAV` lines, and
+				// encodeURIComponent does NOT encode `.` — so `../foo.wav`
+				// would survive encoding and let the browser normalize the URL
+				// out of the chart directory. Block `.`, `..`, empty segments,
+				// and absolute paths (leading `/`) to confine fetches to the
+				// intended bucket subdirectory.
+				const segments = fileName.split('/');
+				if (
+					segments.some((s) => s === '..' || s === '.' || s === '') ||
+					fileName.startsWith('/')
+				) {
+					failedFiles.push(fileName);
+					return;
+				}
 				// Encode each path segment to match the API's R2 URL construction
 				// (toPublicUrl: key.split('/').map(encodeURIComponent).join('/')).
 				// Without this, a filename containing URL-reserved characters (e.g.
 				// `snare#1.wav`) builds an unescaped URL — the browser treats `#1.wav`
 				// as a fragment and never sends it to R2, so the sample is reported
 				// missing even though the object exists.
-				const encodedFileName = fileName.split('/').map(encodeURIComponent).join('/');
+				const encodedFileName = segments.map(encodeURIComponent).join('/');
 				const url = `${sampleBaseUrl}/${encodedFileName}`;
 				const res = await doFetch(url);
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);

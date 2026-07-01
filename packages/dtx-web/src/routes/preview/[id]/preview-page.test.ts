@@ -67,7 +67,13 @@ vi.mock('@dtx/common/audio', () => ({
 		}
 		play = engineSpies.play;
 		pause = engineSpies.pause;
-		seek = engineSpies.seek;
+		// Mirror the real engine: seek() sets startOffset, and currentTime
+		// returns startOffset at rest. Tests that assert play(currentTime)
+		// after a seek need the mock to reflect this.
+		seek = (seconds: number) => {
+			engineState.currentTime = seconds;
+			engineSpies.seek(seconds);
+		};
 		dispose = () => {
 			engineInstances[this.idx].disposeCalls += 1;
 			engineSpies.dispose();
@@ -678,5 +684,49 @@ describe('/preview page', () => {
 				false
 			)
 		);
+	});
+
+	it('preserves seek position when audio finishes loading after a seek', async () => {
+		// Regression: clicking the notation before audio finished loading only
+		// updated the wall-clock visual state (handleSeek's else branch) without
+		// calling engine.seek(). When audio then became ready, pressing Play used
+		// engine.currentTime (still 0), so playback jumped to the beginning
+		// instead of the visible cursor position. The fix syncs the engine to the
+		// current visual position when audio finishes loading.
+		engineLoad.hang = true;
+		// positionToTime must yield a non-zero seek target so we can distinguish
+		// a preserved seek (1.0) from the default (0). The stub seeks to
+		// { measure: 0, fraction: 0.5 }, so 0.5 * 2 = 1.0 second.
+		const baseChart = readyChart();
+		buildNotationChartMock.mockReturnValue({
+			...baseChart,
+			timing: {
+				...baseChart.timing,
+				positionToTime: (_m: number, f: number) => f * 2
+			}
+		});
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		// Audio is still loading (hung), so handleSeek takes the wall-clock
+		// branch — engine.seek() is NOT called here.
+		const seekButton = screen.getByTestId('stub-seek');
+		await fireEvent.click(seekButton);
+		expect(engineSpies.seek).not.toHaveBeenCalled();
+		// Resolve the hung audio load -> audioReady becomes true and the fix
+		// syncs the engine to the current visual position (1.0s).
+		engineInstances[0].resolve({ loaded: 0, failedFiles: [] });
+		const playButton = await screen.findByLabelText('preview.play');
+		await waitFor(() => expect((playButton as HTMLButtonElement).disabled).toBe(false));
+		expect(engineSpies.seek).toHaveBeenCalledWith(1.0);
+		// Pressing play must resume from the preserved position, not 0.
+		engineSpies.play.mockClear();
+		await fireEvent.click(playButton);
+		expect(engineSpies.play).toHaveBeenCalledWith(1.0);
 	});
 });

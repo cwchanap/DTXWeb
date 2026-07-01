@@ -88,6 +88,13 @@
 				toastStore.error({ title: $_('preview.audio_partial'), duration: 4000 });
 			}
 			audioReady = true;
+			// Sync the engine to the current visual cursor position. If the user
+			// seeked while audio was still loading, handleSeek took the wall-clock
+			// branch and never called engine.seek() — so engine.currentTime is
+			// still 0. Without this sync, pressing Play after audio loads would
+			// jump back to the beginning instead of resuming from the visible
+			// cursor position.
+			if (currentSeconds > 0) localEngine.seek(currentSeconds);
 		} catch {
 			// Superseded load: same self-contained dispose as the success path.
 			if (generation !== loadGeneration) {

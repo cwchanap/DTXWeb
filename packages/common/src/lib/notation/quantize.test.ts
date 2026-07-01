@@ -239,6 +239,26 @@ describe('buildNotationChart', () => {
 		expect(timing.totalDuration).toBe(3);
 	});
 
+	it('forwards legacy bpm changes on channel 03 into the timing', () => {
+		// Channel 03 noteIDs are direct hex BPM values: 'F0' = 240 bpm.
+		// #00103: F0 triggers a tempo change to 240 at the start of m1.
+		const dtx = makeDtx(['#00103: F0'], 120);
+		const { timing } = buildNotationChart(dtx);
+		// m0 at 120bpm = 2s; m1 switches to 240bpm = 1s -> total 3s.
+		expect(timing.measureStartSeconds).toEqual([0, 2]);
+		expect(timing.totalDuration).toBe(3);
+	});
+
+	it('does not schedule channel 03 notes as audio in the notation', () => {
+		// Channel 03 is tempo metadata, not a drum lane — it must not produce
+		// note entries in the notation (laneToStaff returns undefined for '03').
+		const dtx = makeDtx(['#00003: 78', '#00012: 01'], 120);
+		const { chart } = buildNotationChart(dtx);
+		const notes = chart.measures[0].entries.filter((e) => e.kind === 'note');
+		// Only the snare (channel 12) should appear; channel 03 is filtered.
+		expect(notes).toHaveLength(1);
+	});
+
 	it('defaults bpm to 120 when the dtx has none', () => {
 		const dtx = makeDtx(['#00012: 01'], undefined as unknown as number);
 		const { timing } = buildNotationChart(dtx);

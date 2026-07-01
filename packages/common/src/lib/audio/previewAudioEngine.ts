@@ -5,6 +5,10 @@ import type { ChartTiming } from '../notation/timing';
 import { XAAudioContext } from '../browser/audioDecoder';
 
 const BPM_CHANNEL = '08';
+// Channel 03 is the legacy DTX BPM-change channel: noteIDs are direct hex BPM
+// values (00-FF), optionally added to #BASEBPM. Like channel 08, these are
+// tempo metadata, not audio — scheduling them would play BPM values as samples.
+const LEGACY_BPM_CHANNEL = '03';
 const MEASURE_LENGTH_CHANNEL = '02';
 
 /**
@@ -118,7 +122,12 @@ export class PreviewAudioEngine {
 		// Build the schedule across every channel except bpm/measure-length.
 		this.events = [];
 		for (const [laneId, laneNotes] of Object.entries(params.notesByLane)) {
-			if (laneId === BPM_CHANNEL || laneId === MEASURE_LENGTH_CHANNEL) continue;
+			if (
+				laneId === BPM_CHANNEL ||
+				laneId === LEGACY_BPM_CHANNEL ||
+				laneId === MEASURE_LENGTH_CHANNEL
+			)
+				continue;
 			for (const measureNote of laneNotes) {
 				for (const note of measureNote.notes) {
 					if (note.noteID === '00') continue;

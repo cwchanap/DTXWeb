@@ -12,6 +12,8 @@ const draw = vi.fn();
 const setContext = vi.fn(() => ({ draw }));
 // Captures StaveNote constructor args so tests can assert duration codes.
 const staveNoteArgs = vi.hoisted(() => [] as Array<{ keys: string[]; duration: string }>);
+// Captures Beam.generateBeams call args so tests can assert beam grouping.
+const generateBeamsCalls = vi.hoisted(() => [] as Array<unknown[]>);
 vi.mock('vexflow', () => {
 	class Stave {
 		addClef() {
@@ -67,7 +69,12 @@ vi.mock('vexflow', () => {
 				return this;
 			}
 		},
-		Beam: { generateBeams: () => [] },
+		Beam: {
+			generateBeams: vi.fn((notes: unknown[]) => {
+				generateBeamsCalls.push(notes);
+				return [];
+			})
+		},
 		Stem: { UP: 1, DOWN: -1 }
 	};
 });
@@ -88,6 +95,7 @@ describe('NotationView', () => {
 		draw.mockClear();
 		setContext.mockClear();
 		staveNoteArgs.length = 0;
+		generateBeamsCalls.length = 0;
 	});
 
 	it('renders a container and draws at least one stave', async () => {
@@ -115,6 +123,36 @@ describe('NotationView', () => {
 		// (cursorMeasure defaults to 0 -> +1 = 1, total = 0). Fall back to the
 		// neutral preview.seek label instead of the parameterized seek_value.
 		expect(slider?.getAttribute('aria-valuetext')).toBe('preview.seek');
+	});
+
+	it('splits beams at rest boundaries so notes separated by rests are not beamed together', async () => {
+		// Regression: filtering rests out before Beam.generateBeams() made
+		// VexFlow beam across the gap — e.g. eighth note, eighth rest, eighth
+		// note rendered as one beamed group. The fix generates beams per
+		// contiguous note run so the engraved rhythm matches the chart.
+		const beamChart: NotationChart = {
+			measures: [
+				{
+					index: 0,
+					measureTicks: 192,
+					beatsPerMeasure: 4,
+					entries: [
+						{ kind: 'note', startTick: 0, durTicks: 24, keys: ['c/5'] },
+						{ kind: 'rest', startTick: 24, durTicks: 24 },
+						{ kind: 'note', startTick: 48, durTicks: 24, keys: ['c/5'] },
+						{ kind: 'note', startTick: 72, durTicks: 24, keys: ['c/5'] }
+					]
+				}
+			]
+		};
+		render(NotationView, { props: { chart: beamChart } });
+		await tick();
+		// Two contiguous note groups: [note0] and [note2, note3].
+		// Beam.generateBeams must be called once per group, not once for all
+		// three notes together.
+		expect(generateBeamsCalls).toHaveLength(2);
+		expect(generateBeamsCalls[0]).toHaveLength(1);
+		expect(generateBeamsCalls[1]).toHaveLength(2);
 	});
 
 	it('renders non-table rest durations as the closest representable code, not a quarter', async () => {
@@ -226,6 +264,7 @@ describe('NotationView layout & interaction', () => {
 		draw.mockClear();
 		setContext.mockClear();
 		staveNoteArgs.length = 0;
+		generateBeamsCalls.length = 0;
 	});
 
 	it('renders rest entries (rest branch of toStaveNotes)', async () => {

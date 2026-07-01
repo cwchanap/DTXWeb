@@ -264,4 +264,47 @@ describe('buildNotationChart', () => {
 		const { timing } = buildNotationChart(dtx);
 		expect(timing.totalDuration).toBe(2); // 120 bpm -> 2s/measure
 	});
+
+	it('honors channel 02 measure-length changes in timing and notation', () => {
+		// #00202: 0.5 -> measure 2 is 2/4 (half length). At 120bpm, a 4/4
+		// measure is 2s; a 2/4 measure is 1s. Without channel 02 support,
+		// measure 2 would be treated as 4/4 (2s), drifting the preview cursor
+		// and scheduled audio from the actual chart.
+		const dtx = makeDtx(['#00012: 01', '#00202: 0.5', '#00212: 01'], 120);
+		const { chart, timing, measureCount } = buildNotationChart(dtx);
+		expect(measureCount).toBe(3);
+		// m0: 4/4 = 2s, m1: 4/4 = 2s, m2: 2/4 = 1s -> total 5s
+		expect(timing.measureStartSeconds).toEqual([0, 2, 4]);
+		expect(timing.totalDuration).toBe(5);
+		// Notation: measure 2 has half the ticks (96) and 2 beats
+		expect(chart.measures[0].measureTicks).toBe(192);
+		expect(chart.measures[0].beatsPerMeasure).toBe(4);
+		expect(chart.measures[2].measureTicks).toBe(96);
+		expect(chart.measures[2].beatsPerMeasure).toBe(2);
+	});
+
+	it('channel 02 measure-length changes are sticky until the next change', () => {
+		// In DTX (unlike BMS), a bar-length change persists for all subsequent
+		// measures until another channel 02 line appears. #00102: 0.5 sets m1
+		// to 2/4, and m2 stays 2/4. #00302: 1 restores 4/4 for m3+.
+		const dtx = makeDtx(['#00012: 01', '#00102: 0.5', '#00302: 1', '#00412: 01'], 120);
+		const { chart, timing, measureCount } = buildNotationChart(dtx);
+		expect(measureCount).toBe(5);
+		// m0: 4/4=2s, m1: 2/4=1s, m2: 2/4=1s, m3: 4/4=2s, m4: 4/4=2s
+		expect(timing.measureStartSeconds).toEqual([0, 2, 3, 4, 6]);
+		expect(timing.totalDuration).toBe(8);
+		expect(chart.measures[1].measureTicks).toBe(96);
+		expect(chart.measures[2].measureTicks).toBe(96);
+		expect(chart.measures[3].measureTicks).toBe(192);
+	});
+
+	it('defaults all measures to 4/4 when no channel 02 lines are present', () => {
+		// Backward compat: charts without channel 02 must behave exactly as
+		// before — every measure is 4/4 (length 1).
+		const dtx = makeDtx(['#00012: 01', '#00112: 01'], 120);
+		const { chart, timing } = buildNotationChart(dtx);
+		expect(timing.measureStartSeconds).toEqual([0, 2]);
+		expect(timing.totalDuration).toBe(4);
+		expect(chart.measures.every((m) => m.measureTicks === 192)).toBe(true);
+	});
 });

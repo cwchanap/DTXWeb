@@ -193,6 +193,33 @@ export class DTXFile {
 		return bpmNotes;
 	}
 
+	/**
+	 * Parse channel 02 (bar-length change) entries. In DTX, channel 02
+	 * specifies the measure length as a decimal multiplier of 4/4 time
+	 * (e.g. 0.75 = 3/4, 2 = 8/4). Unlike BMS where the effect lasts one
+	 * measure, DTX bar-length changes are sticky: once set, all subsequent
+	 * measures use that length until another channel 02 line appears.
+	 *
+	 * Returns a map of measure index -> length multiplier for measures that
+	 * explicitly set a length. Callers must apply the sticky semantics when
+	 * building a full per-measure array.
+	 */
+	parseMeasureLengths(): Map<number, number> {
+		const result = new Map<number, number>();
+		for (const line of this.lines) {
+			// Channel 02 lines: #NNN02: value (matching parseNotes' colon-space
+			// convention; \s* also tolerates colon-without-space).
+			const match = line.match(/^#(\d{3})02:\s*(.+)$/);
+			if (!match) continue;
+			const measure = parseInt(match[1], 10);
+			const length = parseFloat(match[2]);
+			if (!isNaN(length) && length > 0) {
+				result.set(measure, length);
+			}
+		}
+		return result;
+	}
+
 	parseNotes(): LaneMeasureNote[] {
 		const noteLines = this.lines.filter((line) => /^#\d+/.test(line));
 		if (noteLines.length > 0) {

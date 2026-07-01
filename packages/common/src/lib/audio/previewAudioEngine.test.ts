@@ -130,6 +130,47 @@ describe('PreviewAudioEngine', () => {
 		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/kick.wav');
 	});
 
+	it('encodes URL-reserved characters in sample filenames', async () => {
+		// A sample filename containing `#` (e.g. `snare#1.wav`) must be
+		// percent-encoded before fetching. Without encoding, the browser treats
+		// `#1.wav` as a URL fragment and never sends it to R2, so the sample is
+		// reported missing even though the object exists. The API's toPublicUrl
+		// encodes each path segment with encodeURIComponent; the engine must
+		// match that to fetch the same URL the API publishes.
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, 'snare#1.wav')],
+			notesByLane: { '12': [snare] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/snare%231.wav');
+	});
+
+	it('encodes reserved characters in subdirectory sample paths', async () => {
+		// A sample in a subfolder with a reserved char must encode each segment
+		// independently, preserving the `/` separators (matching the API's
+		// `key.split('/').map(encodeURIComponent).join('/')` pattern).
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, 'drums/kick?2.wav')],
+			notesByLane: { '12': [snare] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(fetchFn).toHaveBeenCalledWith('https://b.test/42/song/drums/kick%3F2.wav');
+	});
+
 	it('falls back to ${bucketUrl}/${simfileID} when chartFileUrl is omitted', async () => {
 		// Backward compat: callers that do not supply chartFileUrl keep the
 		// legacy sample path resolution.

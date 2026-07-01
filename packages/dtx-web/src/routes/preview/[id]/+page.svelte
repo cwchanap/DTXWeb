@@ -248,6 +248,15 @@
 		cancelAnimationFrame(rafId);
 		engine?.dispose();
 		engine = null;
+		// Invalidate any in-flight loadAudioForLevel from the previous page
+		// immediately. Without this, a stale audio load whose `await
+		// localEngine.load(...)` resolves while the new getPreviewSimfile fetch
+		// is still pending would pass the generation guard (loadGeneration is
+		// otherwise only bumped at line ~284, after that fetch resolves) and
+		// set audioReady / fire a toast / seek on a disposed engine for the
+		// wrong page. The bail path in loadAudioForLevel self-disposes its
+		// localEngine, which is idempotent, so this is safe.
+		loadGeneration++;
 		audioReady = false;
 		playing = false;
 		status = 'loading';
@@ -287,11 +296,11 @@
 			// A navigation to a different /preview/[id] superseded this load while
 			// the fetch was in flight; drop its results (success or error) so a
 			// failed old chart cannot overwrite the new page's loading/ready state.
-			// The generation guard inside fetchLevelDtx only catches supersession
-			// once the new load has bumped loadGeneration (line 278), which happens
-			// after its own getPreviewSimfile resolves — so a fetch that rejects
-			// during that window returns 'error' rather than null and must be
-			// guarded here by the route id.
+			// The cleanup at the top of load() now bumps loadGeneration immediately,
+			// so fetchLevelDtx's generation guard already bails on supersession —
+			// but this route-id check is kept as belt-and-suspenders defense in
+			// depth (e.g. for any future await added between the bump and the fetch
+			// that could re-enter load() without a fresh bump).
 			if (id !== $page.params.id) return;
 			if (fetched === 'error') {
 				status = 'error';

@@ -14,7 +14,18 @@ const BPM_CHANNEL = '08';
 // values (00-FF), optionally added to #BASEBPM (not parsed here; treated as 0).
 const LEGACY_BPM_CHANNEL = '03';
 
-/** Representable single durations, largest first: [ticks, vexflowCode]. */
+/**
+ * Representable single durations, largest first: [ticks, vexflowCode].
+ *
+ * BINARY-ONLY — no triplet durations. TICKS_PER_WHOLE (192) was chosen as the
+ * LCM of binary + triplet subdivisions, so triplet *onsets* quantize cleanly,
+ * but their *spans* (e.g. triplet-8th = 16 ticks, triplet-quarter = 32 ticks)
+ * are decomposed by `ticksToDurations` into binary approximations (16 →
+ * ['16','64'], 32 → ['8','32']) instead of tuplet groupings. The result is
+ * visually wrong engraving for triplet fills; playback timing is unaffected
+ * (it uses startTick, not the duration codes). Proper tuplet support requires
+ * model + quantizer + renderer changes — tracked in HPA-116.
+ */
 const DURATION_TABLE: ReadonlyArray<readonly [number, string]> = [
 	[192, 'w'],
 	[96, 'h'],

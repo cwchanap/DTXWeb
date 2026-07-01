@@ -46,6 +46,15 @@ interface ScheduledEvent {
 	fileName: string;
 	gain: number;
 	pan: number;
+	/**
+	 * Channel 01 BGM/backing sources are long continuous buffers that can
+	 * extend past `timing.totalDuration` (e.g. a song fade-out past the last
+	 * notated measure). Unlike one-shot drum hits whose tails should ring out
+	 * naturally at the chart end, a backing track left running would keep
+	 * playing for seconds after the transport reports "ended", diverging from
+	 * the UI. Flagged so the end-of-playback branch can stop only these.
+	 */
+	isBgm: boolean;
 }
 
 export interface AudioEngineLoadParams {
@@ -73,6 +82,11 @@ export class PreviewAudioEngine {
 	private buffers = new Map<string, AudioBuffer>();
 	private events: ScheduledEvent[] = [];
 	private active: AudioBufferSourceNode[] = [];
+	// BGM (channel 01) sources currently sounding. Subset of `active`; tracked
+	// separately so the end-of-playback branch can stop long backing tracks that
+	// would otherwise ring past `totalDuration` while leaving one-shot drum tails
+	// (a crash at the chart end) to decay naturally.
+	private bgmSources = new Set<AudioBufferSourceNode>();
 	private timing: ChartTiming | null = null;
 
 	private playing = false;
@@ -151,7 +165,8 @@ export class PreviewAudioEngine {
 						timeSec: params.timing.positionToTime(measureNote.measure, note.position),
 						fileName: chip.fileName,
 						gain: (chip.volume ?? 100) / 100,
-						pan: Math.max(-1, Math.min(1, (chip.position ?? 0) / 100))
+						pan: Math.max(-1, Math.min(1, (chip.position ?? 0) / 100)),
+						isBgm: laneId === '01'
 					});
 				}
 			}
@@ -262,12 +277,18 @@ export class PreviewAudioEngine {
 		// with the last audible sample. handleEnd clears the scheduler, so this
 		// fires exactly once per play().
 		//
-		// Deliberate: sources already scheduled within the SCHEDULE_AHEAD_SEC
-		// horizon are NOT stopped here. `duration` is the time of the last note,
-		// not the end of its audio tail, so stopping would chop the final hit
-		// (e.g. a crash cymbal) the instant it starts. Letting the buffer ring
-		// out naturally is the musical behavior for a chart preview.
+		// Deliberate: one-shot drum sources already scheduled within the
+		// SCHEDULE_AHEAD_SEC horizon are NOT stopped here. `duration` is the time of
+		// the last note, not the end of its audio tail, so stopping would chop the
+		// final hit (e.g. a crash cymbal) the instant it starts. Letting the buffer
+		// ring out naturally is the musical behavior for a chart preview.
+		//
+		// BGM (channel 01) backing tracks are the exception: a long backing buffer
+		// that extends past `totalDuration` (fade-out, trailing silence) would keep
+		// playing for seconds after the transport reports "ended", diverging from
+		// the UI. stopBgmSources halts only those; drum one-shots keep ringing.
 		if (this.currentTime >= this.duration) {
+			this.stopBgmSources();
 			this.playing = false;
 			this.startOffset = this.duration;
 			this.clearScheduler();
@@ -295,8 +316,10 @@ export class PreviewAudioEngine {
 		source.onended = () => {
 			const i = this.active.indexOf(source);
 			if (i >= 0) this.active.splice(i, 1);
+			this.bgmSources.delete(source);
 		};
 		this.active.push(source);
+		if (event.isBgm) this.bgmSources.add(source);
 	}
 
 	private clearScheduler(): void {
@@ -332,6 +355,18 @@ export class PreviewAudioEngine {
 			}
 		}
 		this.active = [];
+		this.bgmSources.clear();
+	}
+
+	private stopBgmSources(): void {
+		for (const source of this.bgmSources) {
+			try {
+				source.stop();
+			} catch {
+				/* already stopped */
+			}
+		}
+		this.bgmSources.clear();
 	}
 
 	dispose(): void {

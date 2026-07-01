@@ -112,7 +112,17 @@ export const quantizeMeasure = (
 	};
 
 	if (onsets.length === 0) {
-		entries.push({ kind: 'rest', startTick: 0, durTicks: measureTicks });
+		// Decompose the empty bar via pushRests so non-4/4 measures render with
+		// rests that sum to the whole bar (e.g. 3/4 = 144 ticks -> half + quarter
+		// rest). A single-rest push with durTicks=144 would fall through
+		// NotationView's TICK_CODE lookup (no exact match) and render as a lone
+		// half rest, misrepresenting the bar length. pushRests skips sub-3-tick
+		// spans, so fall back to a single rest when it produces nothing — keeping
+		// at least one entry for VexFlow to render.
+		pushRests(0, measureTicks);
+		if (entries.length === 0) {
+			entries.push({ kind: 'rest', startTick: 0, durTicks: measureTicks });
+		}
 		return { index, measureTicks, beatsPerMeasure, entries };
 	}
 

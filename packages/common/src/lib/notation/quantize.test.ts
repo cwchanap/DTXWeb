@@ -68,6 +68,22 @@ describe('quantizeMeasure', () => {
 		expect(measure.entries[0]).toMatchObject({ kind: 'rest', durTicks: 192 });
 	});
 
+	it('decomposes an empty non-4/4 measure into rests that sum to the bar', () => {
+		// 3/4 = 0.75 * 192 = 144 ticks. A single 144-tick rest has no exact
+		// VexFlow glyph (NotationView's TICK_CODE only knows binary values), so
+		// it would fall back to a half rest (96) and misrepresent the bar length.
+		// pushRests decomposes 144 -> 96 + 48 (half + quarter rest), filling the
+		// whole 3/4 bar.
+		const measure = quantizeMeasure(0, [], 0.75);
+		expect(measure.measureTicks).toBe(144);
+		expect(measure.entries).toEqual([
+			{ kind: 'rest', startTick: 0, durTicks: 96 },
+			{ kind: 'rest', startTick: 96, durTicks: 48 }
+		]);
+		const total = measure.entries.reduce((sum, e) => sum + e.durTicks, 0);
+		expect(total).toBe(measure.measureTicks);
+	});
+
 	it('ignores non-playable lanes (bpm/bgm)', () => {
 		const bpm = new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0 }]);
 		const measure = quantizeMeasure(0, [bpm]);

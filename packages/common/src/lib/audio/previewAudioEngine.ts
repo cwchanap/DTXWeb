@@ -4,12 +4,29 @@ import type { LaneMeasureNote } from '../chart/note';
 import type { ChartTiming } from '../notation/timing';
 import { XAAudioContext } from '../browser/audioDecoder';
 
-const BPM_CHANNEL = '08';
-// Channel 03 is the legacy DTX BPM-change channel: noteIDs are direct hex BPM
-// values (00-FF), optionally added to #BASEBPM. Like channel 08, these are
-// tempo metadata, not audio — scheduling them would play BPM values as samples.
-const LEGACY_BPM_CHANNEL = '03';
-const MEASURE_LENGTH_CHANNEL = '02';
+// DTX audio lanes scheduled by the preview: BGM (01) plus the playable
+// drum lanes (11-1C). Non-audio lanes — BGA (04-07), BPM (08), legacy
+// BPM (03), measure length (02) — reference separate #BMP/object
+// namespaces whose IDs can overlap #WAV IDs, so resolving them through
+// the #WAV chip map would play unrelated samples for visual events.
+// This whitelist mirrors the lanes the Preview scene schedules
+// (BGM 01 + playable laneConfigs) and replaces the prior blacklist of
+// 02/03/08, which let BGA and other non-audio lanes leak through.
+const AUDIO_LANES = new Set([
+	'01', // BGM
+	'11',
+	'12',
+	'13',
+	'14',
+	'15',
+	'16',
+	'17',
+	'18',
+	'19',
+	'1A',
+	'1B',
+	'1C'
+]);
 
 /**
  * Derive the directory portion of a chart file URL for resolving `#WAV`
@@ -119,15 +136,12 @@ export class PreviewAudioEngine {
 		const chipById = new Map<number, SoundChip>();
 		for (const chip of params.soundChips) chipById.set(chip.id, chip);
 
-		// Build the schedule across every channel except bpm/measure-length.
+		// Build the schedule across audio lanes only (BGM + playable drums).
+		// Non-audio lanes (BGA, BPM, measure-length, etc.) reference separate
+		// #BMP/object namespaces whose IDs can overlap #WAV IDs.
 		this.events = [];
 		for (const [laneId, laneNotes] of Object.entries(params.notesByLane)) {
-			if (
-				laneId === BPM_CHANNEL ||
-				laneId === LEGACY_BPM_CHANNEL ||
-				laneId === MEASURE_LENGTH_CHANNEL
-			)
-				continue;
+			if (!AUDIO_LANES.has(laneId)) continue;
 			for (const measureNote of laneNotes) {
 				for (const note of measureNote.notes) {
 					if (note.noteID === '00') continue;

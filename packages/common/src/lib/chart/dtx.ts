@@ -231,12 +231,17 @@ export class DTXFile {
 	parseMeasureLengths(): Map<number, number> {
 		const result = new Map<number, number>();
 		for (const line of this.lines) {
-			// Channel 02 lines: #NNN02: value (matching parseNotes' colon-space
-			// convention; \s* also tolerates colon-without-space).
-			const match = line.match(/^#(\d{3})02:\s*(.+)$/);
-			if (!match) continue;
-			const measure = parseInt(match[1], 10);
-			const length = parseFloat(match[2]);
+			// Channel 02 lines: #NNN02: value. Split on the first colon and trim,
+			// matching parseNotes'/bpmLines' colon handling (tolerates both `: `
+			// and `:`). Avoids a `\s*(.+)` regex whose overlapping whitespace
+			// classes trigger CodeQL js/polynomial-redos on untrusted input.
+			const colonIndex = line.indexOf(':');
+			if (colonIndex === -1) continue;
+			const header = line.slice(0, colonIndex);
+			// Fixed `{3}` quantifier — no backtracking ambiguity.
+			if (!/^#\d{3}02$/.test(header)) continue;
+			const measure = parseInt(header.slice(1, 4), 10);
+			const length = parseFloat(line.slice(colonIndex + 1).trim());
 			if (!isNaN(length) && isFinite(length) && length > 0) {
 				result.set(measure, length);
 			}

@@ -210,9 +210,12 @@ export class DTXFile {
 			const header = line.slice(0, colonIndex);
 			const value = parseFloat(line.slice(colonIndex + 1).trim());
 			const noteID = header.slice(4, 6);
-			// Skip unparseable values so a malformed line does not inject NaN
-			// into the bpm map and poison the timing builder.
-			if (!isNaN(value)) bpmNotes[noteID] = value;
+			// Skip unparseable or non-finite values so a malformed line does not
+			// inject NaN/Infinity into the bpm map and poison the timing builder.
+			// `parseFloat('Infinity')` and `parseFloat('1e309')` (which overflows
+			// to Infinity) pass `!isNaN`, so the `isFinite` guard mirrors
+			// parseMeasureLengths' finite-number check.
+			if (!isNaN(value) && isFinite(value)) bpmNotes[noteID] = value;
 		});
 		return bpmNotes;
 	}
@@ -252,18 +255,24 @@ export class DTXFile {
 	parseNotes(): LaneMeasureNote[] {
 		const noteLines = this.lines.filter((line) => /^#\d+/.test(line));
 		if (noteLines.length > 0) {
-			const notes = noteLines.map((line) => {
+			const notes = noteLines.flatMap((line) => {
 				// Split on the first colon and trim, tolerating both `: ` (standard
 				// DTX) and `:` (no space, e.g. `#NNN02:0.5`). The strict `': '`
 				// split left `pattern` undefined for the no-space form, crashing
 				// LaneMeasureNote.parseFromPattern().
 				const colonIndex = line.indexOf(':');
+				// Skip malformed note lines without a colon, matching the guard
+				// used by parseBPMChanges and parseMeasureLengths. Without this,
+				// `line.slice(0, -1)` drops the last header char and
+				// `line.slice(0)` returns the whole line as the pattern, building
+				// a LaneMeasureNote from garbage.
+				if (colonIndex === -1) return [];
 				const header = line.slice(0, colonIndex);
 				const pattern = line.slice(colonIndex + 1).trim();
 				const measure = parseInt(header.slice(1, 4));
 				const laneID = header.slice(4, 6);
 				const parsedNotes = LaneMeasureNote.parseFromPattern(pattern);
-				return new LaneMeasureNote(measure, laneID, parsedNotes);
+				return [new LaneMeasureNote(measure, laneID, parsedNotes)];
 			});
 			return notes;
 		} else {

@@ -31,7 +31,7 @@ export const buildAccountCallbackUrl = (origin: string): string => {
 
 export const safeAppRedirectPath = (value: string | null | undefined): string => {
 	if (!value || value.startsWith('//')) return '/app/account';
-	if (!value.startsWith('/app')) return '/app/account';
+	if (value !== '/app' && !value.startsWith('/app/')) return '/app/account';
 	return value;
 };
 

@@ -35,6 +35,8 @@ describe('google auth helpers', () => {
 		expect(safeAppRedirectPath('https://evil.example')).toBe('/app/account');
 		expect(safeAppRedirectPath('//evil.example')).toBe('/app/account');
 		expect(safeAppRedirectPath('/login')).toBe('/app/account');
+		expect(safeAppRedirectPath('/application')).toBe('/app/account');
+		expect(safeAppRedirectPath('/app.evil')).toBe('/app/account');
 		expect(safeAppRedirectPath('/app/chart')).toBe('/app/chart');
 	});
 

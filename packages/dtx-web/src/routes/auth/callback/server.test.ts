@@ -109,6 +109,23 @@ describe('/auth/callback', () => {
 		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
 	});
 
+	it('rejects forged linking callbacks that produce a Google-only session', async () => {
+		// An unauthenticated user can craft `link=google` in the callback URL and
+		// initiate a Google OAuth flow with that redirect. If Google signups are
+		// enabled, exchangeCodeForSession leaves them with a Google-only session.
+		// The post-exchange identity check must reject this regardless of `link`.
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
+			null,
+			[{ provider: 'google' }]
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
+	});
+
 	it('redirects successful account linking back to account page', async () => {
 		const event = makeEvent(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account'

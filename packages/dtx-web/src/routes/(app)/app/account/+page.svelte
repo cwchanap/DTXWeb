@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { replaceState } from '$app/navigation';
 	import { AlertCircle, CheckCircle2, Loader } from '@lucide/svelte';
 	import {
 		GOOGLE_OAUTH_SCOPES,
@@ -70,13 +71,22 @@
 	};
 
 	onMount(() => {
-		if ($page.url.searchParams.get('linked') === 'google') {
+		const params = $page.url.searchParams;
+		if (params.get('linked') === 'google') {
 			message = 'Google account connected.';
 		} else {
-			const callbackError = $page.url.searchParams.get('auth_error');
+			const callbackError = params.get('auth_error');
 			if (callbackError) {
 				error = callbackError;
 			}
+		}
+
+		// Clear callback params so the banner does not persist on refresh.
+		if (params.has('linked') || params.has('auth_error')) {
+			const cleanUrl = new URL($page.url);
+			cleanUrl.searchParams.delete('linked');
+			cleanUrl.searchParams.delete('auth_error');
+			replaceState(cleanUrl, {});
 		}
 
 		loadIdentities();
@@ -89,6 +99,7 @@
 	{#if message}
 		<div
 			class="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-950/30 p-4 text-emerald-100"
+			role="status"
 		>
 			<div class="flex items-center gap-2">
 				<CheckCircle2 size={18} />
@@ -98,7 +109,10 @@
 	{/if}
 
 	{#if error}
-		<div class="mb-4 rounded-lg border border-red-400/30 bg-red-950/30 p-4 text-red-100">
+		<div
+			class="mb-4 rounded-lg border border-red-400/30 bg-red-950/30 p-4 text-red-100"
+			role="alert"
+		>
 			<div class="flex items-center gap-2">
 				<AlertCircle size={18} />
 				<p>{error}</p>
@@ -141,7 +155,7 @@
 								type="button"
 								onclick={handleConnectGoogle}
 								disabled={isConnecting}
-								class="rounded-md bg-cyan-600 px-4 py-2 font-medium text-white hover:bg-cyan-500 focus:ring-2 focus:ring-cyan-300 focus:ring-offset-2 focus:ring-offset-slate-950 focus:outline-none disabled:opacity-50"
+								class="connect-google-btn"
 							>
 								{isConnecting ? 'Connecting...' : 'Connect Google'}
 							</button>
@@ -152,3 +166,11 @@
 		</div>
 	</div>
 </section>
+
+<style>
+	@reference 'tailwindcss';
+
+	.connect-google-btn {
+		@apply rounded-md bg-cyan-600 px-4 py-2 font-medium text-white hover:bg-cyan-500 focus:ring-2 focus:ring-cyan-300 focus:ring-offset-2 focus:ring-offset-slate-950 focus:outline-none disabled:opacity-50;
+	}
+</style>

@@ -96,5 +96,5 @@ export const sanitizeGoogleAuthError = (message: string | null | undefined): str
 		return GOOGLE_AUTH_GENERIC_MESSAGE;
 	}
 
-	return GOOGLE_AUTH_UNAVAILABLE_MESSAGE;
+	return GOOGLE_AUTH_GENERIC_MESSAGE;
 };

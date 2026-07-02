@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	GOOGLE_AUTH_GENERIC_MESSAGE,
 	GOOGLE_AUTH_LINKING_CONFIG_MESSAGE,
 	GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE,
 	GOOGLE_AUTH_UNAVAILABLE_MESSAGE,
@@ -81,8 +82,6 @@ describe('google auth helpers', () => {
 	});
 
 	it('uses a generic sanitized message for unknown errors', () => {
-		expect(sanitizeGoogleAuthError('raw provider token abc')).toBe(
-			GOOGLE_AUTH_UNAVAILABLE_MESSAGE
-		);
+		expect(sanitizeGoogleAuthError('raw provider token abc')).toBe(GOOGLE_AUTH_GENERIC_MESSAGE);
 	});
 });

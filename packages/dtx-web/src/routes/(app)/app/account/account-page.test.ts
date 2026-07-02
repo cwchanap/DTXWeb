@@ -14,6 +14,10 @@ vi.mock('$app/stores', () => ({
 	}
 }));
 
+vi.mock('$app/navigation', () => ({
+	replaceState: vi.fn()
+}));
+
 vi.mock('@lucide/svelte');
 
 import AccountPage from './+page.svelte';
@@ -160,5 +164,23 @@ describe('/app/account page', () => {
 		expect(
 			screen.getByText('Google authentication failed. Please try again.')
 		).toBeInTheDocument();
+	});
+
+	it('shows fallback message when loadIdentities fails', async () => {
+		const { data, mockSupabase } = makeData();
+		mockSupabase.auth.getUserIdentities.mockResolvedValueOnce({
+			data: null,
+			error: new Error('network failure')
+		});
+
+		render(AccountPage, { props: { data } });
+
+		await vi.waitFor(() => {
+			expect(
+				screen.getByText('Unable to load linked account providers.')
+			).toBeInTheDocument();
+		});
+		expect(screen.getByText('Google is not connected')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Connect Google' })).toBeInTheDocument();
 	});
 });

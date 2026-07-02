@@ -16,12 +16,21 @@ vi.mock('@sveltejs/kit', () => ({
 import { GOOGLE_AUTH_GENERIC_MESSAGE, GOOGLE_AUTH_UNAVAILABLE_MESSAGE } from '$lib/auth/google';
 import { GET } from './+server';
 
-const makeEvent = (rawUrl: string, exchangeError: Error | null = null) => ({
+const makeEvent = (
+	rawUrl: string,
+	exchangeError: Error | null = null,
+	identities = [{ provider: 'email' }, { provider: 'google' }]
+) => ({
 	url: new URL(rawUrl),
 	locals: {
 		supabase: {
 			auth: {
-				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: exchangeError })
+				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: exchangeError }),
+				getUserIdentities: vi.fn().mockResolvedValue({
+					data: { identities },
+					error: null
+				}),
+				signOut: vi.fn().mockResolvedValue({ error: null })
 			}
 		}
 	}
@@ -87,6 +96,17 @@ describe('/auth/callback', () => {
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
 		});
+	});
+
+	it('rejects Google-only login sessions created outside the linking flow', async () => {
+		const event = makeEvent('http://localhost/auth/callback?code=abc', null, [
+			{ provider: 'google' }
+		]);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
 	});
 
 	it('redirects successful account linking back to account page', async () => {

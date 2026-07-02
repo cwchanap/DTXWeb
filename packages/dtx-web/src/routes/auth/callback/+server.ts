@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import {
 	GOOGLE_AUTH_GENERIC_MESSAGE,
+	GOOGLE_AUTH_UNAVAILABLE_MESSAGE,
 	buildLinkedAccountRedirect,
 	buildLoginErrorRedirect,
 	safeAppRedirectPath,
@@ -51,6 +52,19 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 				? buildLinkedAccountRedirect(nextPath, 'error', message)
 				: buildLoginErrorRedirect(message, intent)
 		);
+	}
+
+	if (!accountLink) {
+		const { data: identitiesData, error: identitiesError } =
+			await supabase.auth.getUserIdentities();
+		const identities = identitiesData?.identities ?? [];
+		const hasGoogleIdentity = identities.some((identity) => identity.provider === 'google');
+		const hasNonGoogleIdentity = identities.some((identity) => identity.provider !== 'google');
+
+		if (identitiesError || !hasGoogleIdentity || !hasNonGoogleIdentity) {
+			await supabase.auth.signOut();
+			redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_UNAVAILABLE_MESSAGE, intent));
+		}
 	}
 
 	if (accountLink) {

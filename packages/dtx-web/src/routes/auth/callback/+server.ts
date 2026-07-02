@@ -54,17 +54,22 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 		);
 	}
 
-	if (!accountLink) {
-		const { data: identitiesData, error: identitiesError } =
-			await supabase.auth.getUserIdentities();
-		const identities = identitiesData?.identities ?? [];
-		const hasGoogleIdentity = identities.some((identity) => identity.provider === 'google');
-		const hasNonGoogleIdentity = identities.some((identity) => identity.provider !== 'google');
+	// Validate the post-exchange identity for both login and linking callbacks.
+	// `link` is a client-controllable query param, so an unauthenticated user can
+	// initiate a Google OAuth flow with `redirectTo=/auth/callback?link=google`
+	// and, if Google signups are enabled, land here with a fresh Google-only
+	// session. A genuine linkIdentity flow adds Google to an already-authenticated
+	// user, who must therefore have a non-Google identity as well. Reject any
+	// Google-only session regardless of the `link` flag.
+	const { data: identitiesData, error: identitiesError } =
+		await supabase.auth.getUserIdentities();
+	const identities = identitiesData?.identities ?? [];
+	const hasGoogleIdentity = identities.some((identity) => identity.provider === 'google');
+	const hasNonGoogleIdentity = identities.some((identity) => identity.provider !== 'google');
 
-		if (identitiesError || !hasGoogleIdentity || !hasNonGoogleIdentity) {
-			await supabase.auth.signOut();
-			redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_UNAVAILABLE_MESSAGE, intent));
-		}
+	if (identitiesError || !hasGoogleIdentity || !hasNonGoogleIdentity) {
+		await supabase.auth.signOut();
+		redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_UNAVAILABLE_MESSAGE, intent));
 	}
 
 	if (accountLink) {

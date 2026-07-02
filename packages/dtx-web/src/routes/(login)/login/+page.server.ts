@@ -1,4 +1,9 @@
 import { redirect, fail } from '@sveltejs/kit';
+import {
+	GOOGLE_OAUTH_SCOPES,
+	buildAuthCallbackUrl,
+	sanitizeGoogleAuthError
+} from '$lib/auth/google';
 
 import type { Actions } from './$types';
 
@@ -25,5 +30,30 @@ export const actions: Actions = {
 		} else {
 			redirect(303, '/app');
 		}
+	},
+
+	google: async ({ request, url, locals: { supabase } }) => {
+		const formData = await request.formData();
+		const redirectToDesktop = formData.get('redirect') === 'desktop';
+		const redirectTo = buildAuthCallbackUrl(url.origin, redirectToDesktop ? 'desktop' : 'web');
+
+		const { data, error } = await supabase.auth.signInWithOAuth({
+			provider: 'google',
+			options: {
+				redirectTo,
+				scopes: GOOGLE_OAUTH_SCOPES,
+				skipBrowserRedirect: true
+			}
+		});
+
+		if (error || !data?.url) {
+			console.error('Google login error:', error);
+			return fail(400, {
+				success: false,
+				error: sanitizeGoogleAuthError(error?.message)
+			});
+		}
+
+		redirect(303, data.url);
 	}
 };

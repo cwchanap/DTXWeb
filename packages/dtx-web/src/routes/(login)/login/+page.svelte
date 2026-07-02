@@ -13,8 +13,8 @@
 	let redirectToDesktop = $state(false);
 	let isCheckingAuthState = $state(true);
 
-	// Use derived state to include server-side errors
-	let error = $derived(form?.error || '');
+	// Include server action errors and sanitized callback errors.
+	let error = $derived(form?.error || $page.url.searchParams.get('error') || '');
 
 	// Check for desktop redirect parameter
 	onMount(() => {
@@ -105,6 +105,28 @@
 					</button>
 				</div>
 			</form>
+
+			<div class="my-6 flex items-center gap-3">
+				<div class="h-px flex-1 bg-gray-200"></div>
+				<span class="text-xs font-medium text-gray-500 uppercase">or</span>
+				<div class="h-px flex-1 bg-gray-200"></div>
+			</div>
+
+			<form action="?/google" method="POST" onsubmit={handleSubmit}>
+				{#if redirectToDesktop}
+					<input type="hidden" name="redirect" value="desktop" />
+				{/if}
+				<button
+					type="submit"
+					disabled={isLoading}
+					class="w-full rounded-md border border-gray-300 bg-white px-4 py-2 font-medium text-gray-800 hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"
+				>
+					Continue with Google
+				</button>
+			</form>
+			<p class="mt-3 text-center text-xs text-gray-500">
+				Google sign-in is only available for existing linked accounts.
+			</p>
 
 			{#if redirectToDesktop}
 				<div class="mt-6 text-center text-sm text-gray-500">

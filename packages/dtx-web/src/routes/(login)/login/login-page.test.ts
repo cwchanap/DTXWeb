@@ -104,4 +104,45 @@ describe('Login Page', () => {
 			expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
 		});
 	});
+
+	it('shows Google sign-in for existing linked accounts', async () => {
+		envMock.browser = true;
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole('button', { name: 'Continue with Google' })
+			).toBeInTheDocument();
+		});
+		expect(
+			screen.getByText('Google sign-in is only available for existing linked accounts.')
+		).toBeInTheDocument();
+	});
+
+	it('does not show signup copy', async () => {
+		envMock.browser = true;
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+		});
+		expect(screen.queryByText(/sign up/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/create account/i)).not.toBeInTheDocument();
+	});
+
+	it('shows sanitized Google errors from query params', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL(
+			'http://localhost/login?error=Google+sign-in+is+only+available+for+existing+linked+accounts.'
+		);
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByText(
+					'Google sign-in is only available for existing linked accounts.'
+				).length
+			).toBeGreaterThan(0);
+		});
+	});
 });

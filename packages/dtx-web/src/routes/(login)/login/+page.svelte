@@ -3,6 +3,19 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { Loader } from '@lucide/svelte';
+	import {
+		GOOGLE_AUTH_GENERIC_MESSAGE,
+		GOOGLE_AUTH_LINKING_CONFIG_MESSAGE,
+		GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE,
+		GOOGLE_AUTH_UNAVAILABLE_MESSAGE
+	} from '$lib/auth/google';
+
+	const GOOGLE_AUTH_ERROR_MESSAGES = [
+		GOOGLE_AUTH_UNAVAILABLE_MESSAGE,
+		GOOGLE_AUTH_GENERIC_MESSAGE,
+		GOOGLE_AUTH_LINKING_CONFIG_MESSAGE,
+		GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE
+	] as const;
 
 	// Get form action data which may contain error messages
 	let { form } = $props();
@@ -14,7 +27,12 @@
 	let isCheckingAuthState = $state(true);
 
 	// Include server action errors and sanitized callback errors.
-	let error = $derived(form?.error || $page.url.searchParams.get('error') || '');
+	// Only display trusted, allow-listed messages from the error query param.
+	let error = $derived(
+		form?.error ||
+			GOOGLE_AUTH_ERROR_MESSAGES.find((m) => m === $page.url.searchParams.get('error')) ||
+			''
+	);
 
 	// Check for desktop redirect parameter
 	onMount(() => {

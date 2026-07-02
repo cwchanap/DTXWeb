@@ -16,8 +16,7 @@
 	};
 
 	const navigateToProfile = () => {
-		console.log('Profile clicked');
-		// Navigate to profile page
+		goto('/app/account');
 	};
 </script>
 

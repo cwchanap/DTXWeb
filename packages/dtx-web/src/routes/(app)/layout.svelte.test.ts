@@ -86,15 +86,13 @@ describe('(app)/+layout.svelte', () => {
 		});
 	});
 
-	it('calls navigateToProfile when Profile is clicked', async () => {
-		const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+	it('navigates to /app/account when Profile is clicked', async () => {
 		const { data } = makeData();
 		render(AppLayout, { props: { data, children: noopChildren } });
 
 		const profileBtn = screen.getByText('Profile').closest('button')!;
 		await fireEvent.click(profileBtn);
 
-		expect(consoleSpy).toHaveBeenCalledWith('Profile clicked');
-		consoleSpy.mockRestore();
+		expect(gotoMock).toHaveBeenCalledWith('/app/account');
 	});
 });

@@ -34,9 +34,10 @@ const makeData = (identities: Array<Record<string, unknown>> = []) => {
 
 	return {
 		data: {
+			session: null,
 			user: { email: 'owner@example.com' },
 			supabase: mockSupabase
-		},
+		} as any,
 		mockSupabase
 	};
 };

@@ -145,4 +145,20 @@ describe('/app/account page', () => {
 			expect(screen.getByText('Google account connected.')).toBeInTheDocument();
 		});
 	});
+
+	it('keeps callback error visible after providers load', async () => {
+		pageMock.url = new URL(
+			'http://localhost/app/account?auth_error=Google+authentication+failed.+Please+try+again.'
+		);
+		const { data } = makeData();
+
+		render(AccountPage, { props: { data } });
+
+		await vi.waitFor(() => {
+			expect(screen.getByText('Google is not connected')).toBeInTheDocument();
+		});
+		expect(
+			screen.getByText('Google authentication failed. Please try again.')
+		).toBeInTheDocument();
+	});
 });

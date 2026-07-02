@@ -33,7 +33,6 @@
 
 	const loadIdentities = async () => {
 		isLoading = true;
-		error = '';
 		const { data: identityData, error: identityError } =
 			await supabase.auth.getUserIdentities();
 

@@ -31,17 +31,23 @@
 
 	const loadIdentities = async () => {
 		isLoading = true;
-		const { data: identityData, error: identityError } =
-			await supabase.auth.getUserIdentities();
+		try {
+			const { data: identityData, error: identityError } =
+				await supabase.auth.getUserIdentities();
 
-		if (identityError) {
+			if (identityError) {
+				error = 'Unable to load linked account providers.';
+				identities = [];
+			} else {
+				identities = identityData?.identities ?? [];
+			}
+		} catch (caughtError) {
+			console.error('Failed to load account identities:', caughtError);
 			error = 'Unable to load linked account providers.';
 			identities = [];
-		} else {
-			identities = identityData?.identities ?? [];
+		} finally {
+			isLoading = false;
 		}
-
-		isLoading = false;
 	};
 
 	const handleConnectGoogle = async () => {

@@ -214,4 +214,20 @@ describe('/app/account page', () => {
 		expect(screen.getByText('Google is not connected')).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Connect Google' })).toBeInTheDocument();
 	});
+
+	it('surfaces error and resets loading when getUserIdentities rejects', async () => {
+		const { data, mockSupabase } = makeData();
+		mockSupabase.auth.getUserIdentities.mockRejectedValueOnce(new Error('network failure'));
+
+		render(AccountPage, { props: { data } });
+
+		await vi.waitFor(() => {
+			expect(
+				screen.getByText('Unable to load linked account providers.')
+			).toBeInTheDocument();
+		});
+		expect(screen.getByText('Google is not connected')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Connect Google' })).toBeInTheDocument();
+		expect(screen.queryByText('Loading providers...')).not.toBeInTheDocument();
+	});
 });

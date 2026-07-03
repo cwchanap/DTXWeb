@@ -16,6 +16,9 @@ vi.mock('$app/stores', () => ({
 		}
 	}
 }));
+vi.mock('$app/navigation', () => ({
+	replaceState: vi.fn()
+}));
 
 import LoginPage from './+page.svelte';
 

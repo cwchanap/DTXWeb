@@ -2,20 +2,9 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { Loader } from '@lucide/svelte';
-	import {
-		GOOGLE_AUTH_GENERIC_MESSAGE,
-		GOOGLE_AUTH_LINKING_CONFIG_MESSAGE,
-		GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE,
-		GOOGLE_AUTH_UNAVAILABLE_MESSAGE
-	} from '$lib/auth/google';
-
-	const GOOGLE_AUTH_ERROR_MESSAGES = [
-		GOOGLE_AUTH_UNAVAILABLE_MESSAGE,
-		GOOGLE_AUTH_GENERIC_MESSAGE,
-		GOOGLE_AUTH_LINKING_CONFIG_MESSAGE,
-		GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE
-	] as const;
+	import { GOOGLE_AUTH_ERROR_MESSAGES } from '$lib/auth/google';
 
 	// Get form action data which may contain error messages
 	let { form } = $props();
@@ -26,19 +15,29 @@
 	let redirectToDesktop = $state(false);
 	let isCheckingAuthState = $state(true);
 
-	// Include server action errors and sanitized callback errors.
-	// Only display trusted, allow-listed messages from the error query param.
-	let error = $derived(
-		form?.error ||
-			GOOGLE_AUTH_ERROR_MESSAGES.find((m) => m === $page.url.searchParams.get('error')) ||
-			''
-	);
+	// Capture the allow-listed URL error once on mount so we can clear the
+	// query param (preventing it from persisting on refresh) without losing
+	// the message. Server action errors still flow through `form?.error`.
+	let urlError = $state('');
+	let error = $derived(form?.error || urlError);
 
 	// Check for desktop redirect parameter
 	onMount(() => {
 		if (browser) {
+			const params = $page.url.searchParams;
+
+			// Only display trusted, allow-listed messages from the error query param.
+			urlError = GOOGLE_AUTH_ERROR_MESSAGES.find((m) => m === params.get('error')) || '';
+
+			// Clear callback error param so the banner does not persist on refresh.
+			if (params.has('error')) {
+				const cleanUrl = new URL($page.url);
+				cleanUrl.searchParams.delete('error');
+				replaceState(cleanUrl, {});
+			}
+
 			// Check if we're redirecting from desktop app
-			const redirectParam = $page.url.searchParams.get('redirect');
+			const redirectParam = params.get('redirect');
 			redirectToDesktop = redirectParam === 'desktop';
 			isCheckingAuthState = false;
 		}

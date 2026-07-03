@@ -36,6 +36,55 @@ const makeEvent = (
 	}
 });
 
+const makeEventWithIdentitiesError = (
+	rawUrl: string,
+	identitiesError: Error,
+	identities = [{ provider: 'email' }, { provider: 'google' }]
+) => ({
+	url: new URL(rawUrl),
+	locals: {
+		supabase: {
+			auth: {
+				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: null }),
+				getUserIdentities: vi.fn().mockResolvedValue({
+					data: { identities },
+					error: identitiesError
+				}),
+				signOut: vi.fn().mockResolvedValue({ error: null })
+			}
+		}
+	}
+});
+
+const makeEventWithThrowingExchange = (rawUrl: string) => ({
+	url: new URL(rawUrl),
+	locals: {
+		supabase: {
+			auth: {
+				exchangeCodeForSession: vi.fn().mockRejectedValue(new Error('network failure')),
+				getUserIdentities: vi.fn().mockResolvedValue({
+					data: { identities: [{ provider: 'email' }, { provider: 'google' }] },
+					error: null
+				}),
+				signOut: vi.fn().mockResolvedValue({ error: null })
+			}
+		}
+	}
+});
+
+const makeEventWithThrowingIdentities = (rawUrl: string) => ({
+	url: new URL(rawUrl),
+	locals: {
+		supabase: {
+			auth: {
+				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: null }),
+				getUserIdentities: vi.fn().mockRejectedValue(new Error('network failure')),
+				signOut: vi.fn().mockResolvedValue({ error: null })
+			}
+		}
+	}
+});
+
 describe('/auth/callback', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -144,5 +193,44 @@ describe('/auth/callback', () => {
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
 		});
+	});
+
+	it('signs out and redirects to login when getUserIdentities returns an error', async () => {
+		const event = makeEventWithIdentitiesError(
+			'http://localhost/auth/callback?code=abc',
+			new Error('identity lookup failed')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
+	});
+
+	it('redirects to login with generic error when exchangeCodeForSession throws', async () => {
+		const event = makeEventWithThrowingExchange('http://localhost/auth/callback?code=abc');
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+	});
+
+	it('redirects account-linking to account page when exchangeCodeForSession throws', async () => {
+		const event = makeEventWithThrowingExchange(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account'
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+	});
+
+	it('signs out and redirects to login when getUserIdentities throws', async () => {
+		const event = makeEventWithThrowingIdentities('http://localhost/auth/callback?code=abc');
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
 	});
 });

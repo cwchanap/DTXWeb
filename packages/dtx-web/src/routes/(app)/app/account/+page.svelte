@@ -2,22 +2,19 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { replaceState } from '$app/navigation';
+	import type { UserIdentity } from '@supabase/supabase-js';
 	import { AlertCircle, CheckCircle2, Loader } from '@lucide/svelte';
 	import {
+		GOOGLE_AUTH_ERROR_MESSAGES,
 		GOOGLE_OAUTH_SCOPES,
 		buildAccountCallbackUrl,
 		sanitizeGoogleAuthError
 	} from '$lib/auth/google';
 
-	type LinkedIdentity = {
-		provider: string;
-		identity_data?: { email?: unknown } | null;
-	};
-
 	let { data } = $props();
 	let { supabase, user } = $derived(data);
 
-	let identities = $state<LinkedIdentity[]>([]);
+	let identities = $state<UserIdentity[]>([]);
 	let isLoading = $state(true);
 	let isConnecting = $state(false);
 	let error = $state('');
@@ -75,9 +72,11 @@
 		if (params.get('linked') === 'google') {
 			message = 'Google account connected.';
 		} else {
+			// Only display trusted, allow-listed messages from the auth_error
+			// query param; discard attacker-crafted values.
 			const callbackError = params.get('auth_error');
 			if (callbackError) {
-				error = callbackError;
+				error = GOOGLE_AUTH_ERROR_MESSAGES.find((m) => m === callbackError) || '';
 			}
 		}
 

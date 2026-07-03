@@ -139,6 +139,23 @@ describe('/app/account page', () => {
 		});
 	});
 
+	it('surfaces error and resets loading when linkIdentity rejects', async () => {
+		const { data, mockSupabase } = makeData();
+		mockSupabase.auth.linkIdentity.mockRejectedValueOnce(new Error('network failure'));
+
+		render(AccountPage, { props: { data } });
+
+		const button = await screen.findByRole('button', { name: 'Connect Google' });
+		await fireEvent.click(button);
+
+		await vi.waitFor(() => {
+			expect(
+				screen.getByText('Google authentication failed. Please try again.')
+			).toBeInTheDocument();
+			expect(button).not.toBeDisabled();
+		});
+	});
+
 	it('shows callback success and error messages from query params', async () => {
 		pageMock.url = new URL('http://localhost/app/account?linked=google&auth_error=ignored');
 		const { data } = makeData();

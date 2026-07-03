@@ -251,31 +251,34 @@ describe('/auth/callback', () => {
 		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
 	});
 
-	it('preserves session and redirects to account page when getUserIdentities throws during linking', async () => {
+	it('signs out and redirects to login when getUserIdentities throws during linking', async () => {
+		// A forged `link=google` callback can produce a Google-only session,
+		// and the /app guard doesn't re-check identities on subsequent requests.
+		// When identities lookup throws, we can't verify a non-Google identity,
+		// so the session must be cleared even for account-link callbacks.
 		const event = makeEventWithThrowingIdentities(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account'
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
-			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
 		});
-		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
 	});
 
-	it('preserves session when getUserIdentities returns an error during linking', async () => {
-		// A signed-in user whose Google link callback hits an identities-lookup
-		// error (return, not throw) must keep their password session and be sent
-		// back to the account page with an error — not signed out and sent to
-		// /login like a Google-only login session.
+	it('signs out and redirects to login when getUserIdentities returns an error during linking', async () => {
+		// Same rationale as the throw case: an identities-lookup error means
+		// we cannot confirm a non-Google identity, so a forged `link=google`
+		// Google-only session must not be retained.
 		const event = makeEventWithIdentitiesError(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
 			new Error('identity lookup failed')
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
-			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
 		});
-		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
 	});
 
 	it('preserves session when a link callback lacks the Google identity', async () => {

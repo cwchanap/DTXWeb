@@ -49,22 +49,30 @@
 		error = '';
 		message = '';
 
-		const { data: linkData, error: linkError } = await supabase.auth.linkIdentity({
-			provider: 'google',
-			options: {
-				redirectTo: buildAccountCallbackUrl(window.location.origin),
-				scopes: GOOGLE_OAUTH_SCOPES,
-				skipBrowserRedirect: true
+		try {
+			const { data: linkData, error: linkError } = await supabase.auth.linkIdentity({
+				provider: 'google',
+				options: {
+					redirectTo: buildAccountCallbackUrl(window.location.origin),
+					scopes: GOOGLE_OAUTH_SCOPES,
+					skipBrowserRedirect: true
+				}
+			});
+
+			if (linkError || !linkData?.url) {
+				error = sanitizeGoogleAuthError(linkError?.message);
+				return;
 			}
-		});
 
-		if (linkError || !linkData?.url) {
-			error = sanitizeGoogleAuthError(linkError?.message);
+			window.location.href = linkData.url;
+		} catch (caughtError) {
+			console.error('Google link identity failed:', caughtError);
+			error = sanitizeGoogleAuthError(
+				caughtError instanceof Error ? caughtError.message : undefined
+			);
+		} finally {
 			isConnecting = false;
-			return;
 		}
-
-		window.location.href = linkData.url;
 	};
 
 	onMount(() => {

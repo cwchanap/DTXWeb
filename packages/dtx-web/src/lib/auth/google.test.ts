@@ -41,6 +41,17 @@ describe('google auth helpers', () => {
 		expect(safeAppRedirectPath('/app/chart')).toBe('/app/chart');
 	});
 
+	it('normalizes ../ traversal that would escape the /app prefix', () => {
+		expect(safeAppRedirectPath('/app/../etc')).toBe('/app/account');
+		expect(safeAppRedirectPath('/app/account/../../etc')).toBe('/app/account');
+		expect(safeAppRedirectPath('/app/foo/../chart')).toBe('/app/chart');
+	});
+
+	it('preserves query strings on safe /app paths', () => {
+		expect(safeAppRedirectPath('/app/account?tab=security')).toBe('/app/account?tab=security');
+		expect(safeAppRedirectPath('/app?redirect=desktop')).toBe('/app?redirect=desktop');
+	});
+
 	it('builds login error redirects while preserving desktop intent', () => {
 		expect(buildLoginErrorRedirect('Sign-in failed')).toBe('/login?error=Sign-in+failed');
 		expect(buildLoginErrorRedirect('Sign-in failed', 'desktop')).toBe(
@@ -79,6 +90,16 @@ describe('google auth helpers', () => {
 		expect(sanitizeGoogleAuthError('identity already linked to another user')).toBe(
 			GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE
 		);
+	});
+
+	it('maps cancelled/canceled/denied OAuth errors to the generic retry message', () => {
+		expect(sanitizeGoogleAuthError('User cancelled the OAuth flow')).toBe(
+			GOOGLE_AUTH_GENERIC_MESSAGE
+		);
+		expect(sanitizeGoogleAuthError('The user canceled sign-in')).toBe(
+			GOOGLE_AUTH_GENERIC_MESSAGE
+		);
+		expect(sanitizeGoogleAuthError('access_denied')).toBe(GOOGLE_AUTH_GENERIC_MESSAGE);
 	});
 
 	it('uses a generic sanitized message for unknown errors', () => {

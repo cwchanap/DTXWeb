@@ -166,6 +166,20 @@ describe('/app/account page', () => {
 		).toBeInTheDocument();
 	});
 
+	it('discards non-allow-listed auth_error values from query params', async () => {
+		pageMock.url = new URL(
+			'http://localhost/app/account?auth_error=Click+here+to+reset+your+password'
+		);
+		const { data } = makeData();
+
+		render(AccountPage, { props: { data } });
+
+		await vi.waitFor(() => {
+			expect(screen.getByText('Google is not connected')).toBeInTheDocument();
+		});
+		expect(screen.queryByText('Click here to reset your password')).not.toBeInTheDocument();
+	});
+
 	it('shows fallback message when loadIdentities fails', async () => {
 		const { data, mockSupabase } = makeData();
 		mockSupabase.auth.getUserIdentities.mockResolvedValueOnce({

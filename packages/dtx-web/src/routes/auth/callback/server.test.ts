@@ -262,6 +262,39 @@ describe('/auth/callback', () => {
 		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
 	});
 
+	it('preserves session when getUserIdentities returns an error during linking', async () => {
+		// A signed-in user whose Google link callback hits an identities-lookup
+		// error (return, not throw) must keep their password session and be sent
+		// back to the account page with an error — not signed out and sent to
+		// /login like a Google-only login session.
+		const event = makeEventWithIdentitiesError(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
+			new Error('identity lookup failed')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
+	});
+
+	it('preserves session when a link callback lacks the Google identity', async () => {
+		// The Google link did not actually attach the Google identity (e.g. the
+		// provider returned success but the identity is temporarily absent), yet
+		// the user still has their password identity. Preserve the session and
+		// report the error on the account page.
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
+			null,
+			[{ provider: 'email' }]
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
+	});
+
 	it('redirects account-linking to account page when exchangeCodeForSession returns an error', async () => {
 		const event = makeEvent(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',

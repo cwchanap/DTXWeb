@@ -85,6 +85,18 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 
 	if (identitiesError || !hasGoogleIdentity || !hasNonGoogleIdentity) {
 		console.error('Auth callback identity check failed:', identitiesError);
+		// Account-link callbacks run for an already-signed-in user. Preserve
+		// their existing password session when the link failed but they have
+		// (or may have, when identities lookup errored) a non-Google identity,
+		// and report the error on the account page. Only confirmed Google-only
+		// sessions (forged link or normal login) need to be cleared.
+		const preserveSession = accountLink && (identitiesError || hasNonGoogleIdentity);
+		if (preserveSession) {
+			redirect(
+				303,
+				buildLinkedAccountRedirect(nextPath, 'error', GOOGLE_AUTH_GENERIC_MESSAGE)
+			);
+		}
 		await supabase.auth.signOut();
 		redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_UNAVAILABLE_MESSAGE, intent));
 	}

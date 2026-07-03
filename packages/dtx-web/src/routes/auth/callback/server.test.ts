@@ -22,67 +22,33 @@ import { GET } from './+server';
 
 const makeEvent = (
 	rawUrl: string,
-	exchangeError: Error | null = null,
-	identities = [{ provider: 'email' }, { provider: 'google' }]
+	{
+		exchangeError,
+		exchangeThrow,
+		identitiesError,
+		identitiesThrow,
+		identities = [{ provider: 'email' }, { provider: 'google' }]
+	}: {
+		exchangeError?: Error | null;
+		exchangeThrow?: Error;
+		identitiesError?: Error;
+		identitiesThrow?: Error;
+		identities?: Array<{ provider: string }>;
+	} = {}
 ) => ({
 	url: new URL(rawUrl),
 	locals: {
 		supabase: {
 			auth: {
-				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: exchangeError }),
-				getUserIdentities: vi.fn().mockResolvedValue({
-					data: { identities },
-					error: null
-				}),
-				signOut: vi.fn().mockResolvedValue({ error: null })
-			}
-		}
-	}
-});
-
-const makeEventWithIdentitiesError = (
-	rawUrl: string,
-	identitiesError: Error,
-	identities = [{ provider: 'email' }, { provider: 'google' }]
-) => ({
-	url: new URL(rawUrl),
-	locals: {
-		supabase: {
-			auth: {
-				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: null }),
-				getUserIdentities: vi.fn().mockResolvedValue({
-					data: { identities },
-					error: identitiesError
-				}),
-				signOut: vi.fn().mockResolvedValue({ error: null })
-			}
-		}
-	}
-});
-
-const makeEventWithThrowingExchange = (rawUrl: string) => ({
-	url: new URL(rawUrl),
-	locals: {
-		supabase: {
-			auth: {
-				exchangeCodeForSession: vi.fn().mockRejectedValue(new Error('network failure')),
-				getUserIdentities: vi.fn().mockResolvedValue({
-					data: { identities: [{ provider: 'email' }, { provider: 'google' }] },
-					error: null
-				}),
-				signOut: vi.fn().mockResolvedValue({ error: null })
-			}
-		}
-	}
-});
-
-const makeEventWithThrowingIdentities = (rawUrl: string) => ({
-	url: new URL(rawUrl),
-	locals: {
-		supabase: {
-			auth: {
-				exchangeCodeForSession: vi.fn().mockResolvedValue({ error: null }),
-				getUserIdentities: vi.fn().mockRejectedValue(new Error('network failure')),
+				exchangeCodeForSession: exchangeThrow
+					? vi.fn().mockRejectedValue(exchangeThrow)
+					: vi.fn().mockResolvedValue({ error: exchangeError ?? null }),
+				getUserIdentities: identitiesThrow
+					? vi.fn().mockRejectedValue(identitiesThrow)
+					: vi.fn().mockResolvedValue({
+							data: { identities },
+							error: identitiesError ?? null
+						}),
 				signOut: vi.fn().mockResolvedValue({ error: null })
 			}
 		}
@@ -154,10 +120,9 @@ describe('/auth/callback', () => {
 	});
 
 	it('redirects exchange errors to login', async () => {
-		const event = makeEvent(
-			'http://localhost/auth/callback?code=abc',
-			new Error('Signups not allowed')
-		);
+		const event = makeEvent('http://localhost/auth/callback?code=abc', {
+			exchangeError: new Error('Signups not allowed')
+		});
 
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
@@ -165,9 +130,9 @@ describe('/auth/callback', () => {
 	});
 
 	it('rejects Google-only login sessions created outside the linking flow', async () => {
-		const event = makeEvent('http://localhost/auth/callback?code=abc', null, [
-			{ provider: 'google' }
-		]);
+		const event = makeEvent('http://localhost/auth/callback?code=abc', {
+			identities: [{ provider: 'google' }]
+		});
 
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
@@ -182,8 +147,7 @@ describe('/auth/callback', () => {
 		// The post-exchange identity check must reject this regardless of `link`.
 		const event = makeEvent(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
-			null,
-			[{ provider: 'google' }]
+			{ identities: [{ provider: 'google' }] }
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
@@ -213,10 +177,9 @@ describe('/auth/callback', () => {
 	});
 
 	it('signs out and redirects to login when getUserIdentities returns an error', async () => {
-		const event = makeEventWithIdentitiesError(
-			'http://localhost/auth/callback?code=abc',
-			new Error('identity lookup failed')
-		);
+		const event = makeEvent('http://localhost/auth/callback?code=abc', {
+			identitiesError: new Error('identity lookup failed')
+		});
 
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
@@ -225,7 +188,9 @@ describe('/auth/callback', () => {
 	});
 
 	it('redirects to login with generic error when exchangeCodeForSession throws', async () => {
-		const event = makeEventWithThrowingExchange('http://localhost/auth/callback?code=abc');
+		const event = makeEvent('http://localhost/auth/callback?code=abc', {
+			exchangeThrow: new Error('network failure')
+		});
 
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
@@ -233,8 +198,9 @@ describe('/auth/callback', () => {
 	});
 
 	it('redirects account-linking to account page when exchangeCodeForSession throws', async () => {
-		const event = makeEventWithThrowingExchange(
-			'http://localhost/auth/callback?code=abc&link=google&next=/app/account'
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
+			{ exchangeThrow: new Error('network failure') }
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
@@ -243,7 +209,9 @@ describe('/auth/callback', () => {
 	});
 
 	it('signs out and redirects to login when getUserIdentities throws', async () => {
-		const event = makeEventWithThrowingIdentities('http://localhost/auth/callback?code=abc');
+		const event = makeEvent('http://localhost/auth/callback?code=abc', {
+			identitiesThrow: new Error('network failure')
+		});
 
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
@@ -256,8 +224,9 @@ describe('/auth/callback', () => {
 		// and the /app guard doesn't re-check identities on subsequent requests.
 		// When identities lookup throws, we can't verify a non-Google identity,
 		// so the session must be cleared even for account-link callbacks.
-		const event = makeEventWithThrowingIdentities(
-			'http://localhost/auth/callback?code=abc&link=google&next=/app/account'
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
+			{ identitiesThrow: new Error('network failure') }
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
@@ -270,9 +239,9 @@ describe('/auth/callback', () => {
 		// Same rationale as the throw case: an identities-lookup error means
 		// we cannot confirm a non-Google identity, so a forged `link=google`
 		// Google-only session must not be retained.
-		const event = makeEventWithIdentitiesError(
+		const event = makeEvent(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
-			new Error('identity lookup failed')
+			{ identitiesError: new Error('identity lookup failed') }
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
@@ -288,8 +257,7 @@ describe('/auth/callback', () => {
 		// report the error on the account page.
 		const event = makeEvent(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
-			null,
-			[{ provider: 'email' }]
+			{ identities: [{ provider: 'email' }] }
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({
@@ -301,7 +269,7 @@ describe('/auth/callback', () => {
 	it('redirects account-linking to account page when exchangeCodeForSession returns an error', async () => {
 		const event = makeEvent(
 			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
-			new Error('identity already linked to another user')
+			{ exchangeError: new Error('identity already linked to another user') }
 		);
 
 		await expect(GET(event as any)).rejects.toMatchObject({

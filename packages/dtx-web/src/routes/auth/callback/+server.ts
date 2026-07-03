@@ -69,12 +69,6 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 		identitiesResult = await supabase.auth.getUserIdentities();
 	} catch (error) {
 		console.error('Auth callback identity lookup error:', error);
-		if (accountLink) {
-			redirect(
-				303,
-				buildLinkedAccountRedirect(nextPath, 'error', GOOGLE_AUTH_GENERIC_MESSAGE)
-			);
-		}
 		await supabase.auth.signOut();
 		redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_GENERIC_MESSAGE, intent));
 	}
@@ -86,11 +80,14 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 	if (identitiesError || !hasGoogleIdentity || !hasNonGoogleIdentity) {
 		console.error('Auth callback identity check failed:', identitiesError);
 		// Account-link callbacks run for an already-signed-in user. Preserve
-		// their existing password session when the link failed but they have
-		// (or may have, when identities lookup errored) a non-Google identity,
-		// and report the error on the account page. Only confirmed Google-only
-		// sessions (forged link or normal login) need to be cleared.
-		const preserveSession = accountLink && (identitiesError || hasNonGoogleIdentity);
+		// their existing password session only when identities lookup succeeded
+		// and confirms a non-Google identity — the Google link failed but
+		// they're still a verified password user. When identities lookup
+		// errored or returned a Google-only session, sign out: a forged
+		// `link=google` callback can produce a Google-only session, and the
+		// /app guard doesn't re-check identities on subsequent requests, so
+		// retaining it would grant persistent access.
+		const preserveSession = accountLink && !identitiesError && hasNonGoogleIdentity;
 		if (preserveSession) {
 			redirect(
 				303,

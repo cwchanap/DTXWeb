@@ -46,7 +46,6 @@
 	// Handle form submission
 	const handleSubmit = () => {
 		isLoading = true;
-		return true; // Allow the form to submit
 	};
 </script>
 

@@ -13,7 +13,11 @@ vi.mock('@sveltejs/kit', () => ({
 	redirect: mockRedirect
 }));
 
-import { GOOGLE_AUTH_GENERIC_MESSAGE, GOOGLE_AUTH_UNAVAILABLE_MESSAGE } from '$lib/auth/google';
+import {
+	GOOGLE_AUTH_GENERIC_MESSAGE,
+	GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE,
+	GOOGLE_AUTH_UNAVAILABLE_MESSAGE
+} from '$lib/auth/google';
 import { GET } from './+server';
 
 const makeEvent = (
@@ -106,6 +110,19 @@ describe('/auth/callback', () => {
 
 		await expect(GET(event as any)).rejects.toMatchObject({
 			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}`
+		});
+	});
+
+	it('prefers error_description over error when sanitizing provider errors', async () => {
+		// `error=access_denied` alone would sanitize to the generic message, but
+		// `error_description=identity already linked` must win and produce the
+		// provider-conflict message. This locks in the ?? precedence in +server.ts.
+		const event = makeEvent(
+			'http://localhost/auth/callback?error=access_denied&error_description=identity+already+linked'
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE.replaceAll(' ', '+')}`
 		});
 	});
 
@@ -232,5 +249,28 @@ describe('/auth/callback', () => {
 			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
 		});
 		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
+	});
+
+	it('preserves session and redirects to account page when getUserIdentities throws during linking', async () => {
+		const event = makeEventWithThrowingIdentities(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account'
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/app/account?auth_error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
+	});
+
+	it('redirects account-linking to account page when exchangeCodeForSession returns an error', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&link=google&next=/app/account',
+			new Error('identity already linked to another user')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/app/account?auth_error=${GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE.replaceAll(' ', '+')}`
+		});
+		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
 	});
 });

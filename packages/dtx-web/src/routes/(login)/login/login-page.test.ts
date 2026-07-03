@@ -148,4 +148,15 @@ describe('Login Page', () => {
 			).toBeGreaterThan(0);
 		});
 	});
+
+	it('discards non-allow-listed error values from query params', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?error=Click+here+to+reset+your+password');
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+		});
+		expect(screen.queryByText('Click here to reset your password')).not.toBeInTheDocument();
+	});
 });

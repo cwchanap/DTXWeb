@@ -9,11 +9,6 @@ export const GOOGLE_AUTH_LINKING_CONFIG_MESSAGE =
 export const GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE =
 	'That Google account is already connected to another Drumery account.';
 
-/**
- * Allow-list of trusted, server-sanitized Google auth error messages that may
- * be rendered from a query param. Any other value is discarded to prevent
- * attacker-crafted URLs from phishing/misleading users.
- */
 export const GOOGLE_AUTH_ERROR_MESSAGES = [
 	GOOGLE_AUTH_UNAVAILABLE_MESSAGE,
 	GOOGLE_AUTH_GENERIC_MESSAGE,
@@ -43,8 +38,16 @@ export const buildAccountCallbackUrl = (origin: string): string => {
 
 export const safeAppRedirectPath = (value: string | null | undefined): string => {
 	if (!value || value.startsWith('//')) return '/app/account';
-	if (value !== '/app' && !value.startsWith('/app/')) return '/app/account';
-	return value;
+	let resolved: URL;
+	try {
+		resolved = new URL(value, 'http://local.invalid');
+	} catch {
+		return '/app/account';
+	}
+	if (resolved.pathname !== '/app' && !resolved.pathname.startsWith('/app/')) {
+		return '/app/account';
+	}
+	return `${resolved.pathname}${resolved.search}`;
 };
 
 export const appendSearchParam = (path: string, key: string, value: string): string => {

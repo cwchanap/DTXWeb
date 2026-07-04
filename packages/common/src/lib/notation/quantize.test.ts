@@ -55,6 +55,21 @@ describe('quantizeMeasure', () => {
 		expect(first.keys.sort()).toEqual(['f/4', 'g/5/x2']);
 	});
 
+	it('renders open hi-hat (lane 18) with the circled-x key g/5/x3', () => {
+		const openHat = new LaneMeasureNote(0, '18', [{ noteID: '01', position: 0 }]);
+		const measure = quantizeMeasure(0, [openHat]);
+		const first = measure.entries.find((e) => e.kind === 'note') as { keys: string[] };
+		expect(first.keys).toEqual(['g/5/x3']);
+	});
+
+	it('keeps open and closed hi-hat keys distinct in a single chord', () => {
+		const closed = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }]);
+		const open = new LaneMeasureNote(0, '18', [{ noteID: '01', position: 0 }]);
+		const measure = quantizeMeasure(0, [closed, open]);
+		const first = measure.entries.find((e) => e.kind === 'note') as { keys: string[] };
+		expect(first.keys.sort()).toEqual(['g/5/x2', 'g/5/x3']);
+	});
+
 	it('emits a leading rest before the first onset', () => {
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '01', position: 0.5 }]);
 		const measure = quantizeMeasure(0, [snare]);

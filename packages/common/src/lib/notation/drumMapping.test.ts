@@ -10,6 +10,11 @@ describe('laneToStaff', () => {
 		expect(laneToStaff('11')).toEqual({ key: 'g/5/x2', name: 'HHC' });
 	});
 
+	it('maps open hi-hat to a circled-x notehead on g/5 (distinct from closed)', () => {
+		// /x3 suffix -> VexFlow noteheadCircleX; /x2 (closed) -> noteheadXBlack.
+		expect(laneToStaff('18')).toEqual({ key: 'g/5/x3', name: 'HH' });
+	});
+
 	it('maps both bass-drum lanes (13, 1C) to f/4', () => {
 		expect(laneToStaff('13')?.key).toBe('f/4');
 		expect(laneToStaff('1C')?.key).toBe('f/4');

@@ -251,6 +251,41 @@ describe('Editor Scene', () => {
 		});
 	});
 
+	it('removes its EventBus handlers when Phaser emits DESTROY (game.destroy path)', () => {
+		// Phaser's game.destroy() emits DESTROY on the scene's event emitter
+		// but never calls scene.shutdown(). The DESTROY listener registered in
+		// create() must remove the EventBus handlers so they do not leak.
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		// Simulate Phaser's Systems.destroy() firing the DESTROY listener
+		// registered via this.events.once(Phaser.Scenes.Events.DESTROY, ...).
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(destroyListener).toEqual(expect.any(Function));
+		(destroyListener as (() => void) | undefined)?.();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
 	it('removes its EventBus handlers on restart so stale handlers are not retained', () => {
 		editorScene.create();
 

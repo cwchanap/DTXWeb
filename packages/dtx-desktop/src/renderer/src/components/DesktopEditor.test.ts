@@ -184,6 +184,7 @@ vi.mock('../stores/editorMappingStore', () => ({
 }));
 
 import DesktopEditor from './DesktopEditor.svelte';
+import { __resetPendingTeardownForTests } from './DesktopEditor.svelte';
 import { editorMappingStore } from '../stores/editorMappingStore';
 import Phaser from 'phaser';
 
@@ -202,6 +203,7 @@ describe('DesktopEditor', () => {
 		mockEventBus._reset();
 		mockPhaserState.isDestroying = false;
 		mockPhaserState.successfulGames = 0;
+		__resetPendingTeardownForTests();
 		mockPhaserGame.destroy.mockImplementation(() => {
 			mockPhaserState.isDestroying = true;
 			setTimeout(() => {
@@ -315,6 +317,82 @@ describe('DesktopEditor', () => {
 		expect(screen.queryByText(/Initializing editor/)).toBeNull();
 
 		secondRender.unmount();
+	});
+
+	it('resolves pendingPhaserTeardown via the 5s safety timeout when destroy never fires', async () => {
+		// Cover the safety timeout added in dac8f7d1: if Phaser's 'destroy'
+		// event never emits (scene throw during shutdown, WebGL context loss),
+		// the teardown promise must still resolve so a later remount boots.
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+
+		// Override destroy to NOT fire the destroy callback, simulating a
+		// hung teardown.
+		mockPhaserGame.destroy.mockImplementation(() => {
+			mockPhaserState.isDestroying = true;
+		});
+
+		const firstRender = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserState.successfulGames).toBe(1);
+		});
+
+		firstRender.unmount();
+		// At this point pendingPhaserTeardown is chained to a promise that only
+		// resolves via the 5s timeout. Advance past it, then mark the game as
+		// fully torn down (the real Phaser would be gone by now).
+		vi.advanceTimersByTime(5000);
+		mockPhaserState.isDestroying = false;
+
+		const secondRender = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserState.successfulGames).toBe(2);
+		});
+
+		secondRender.unmount();
+		vi.useRealTimers();
+	});
+
+	it('clears the validation error auto-hide timeout on unmount', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		const { unmount } = render(DesktopEditor);
+
+		mockEventBus.emit('validation-error', 'Bad note');
+		await waitFor(() => {
+			expect(screen.getByText('Bad note')).toBeInTheDocument();
+		});
+
+		// Unmount before the 5s auto-hide fires; the timeout must be cleared
+		// so it does not run on a destroyed component.
+		unmount();
+		vi.advanceTimersByTime(5000);
+		vi.useRealTimers();
+		// No throw / no console error means the timeout was cleared.
+	});
+
+	it('handles a double unmount without throwing or double-destroying the game', async () => {
+		const { unmount } = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserGame.events.once).toHaveBeenCalled();
+		});
+		unmount();
+		// Second unmount must be a no-op (game already nulled).
+		expect(() => unmount()).not.toThrow();
+		expect(mockPhaserGame.destroy).toHaveBeenCalledTimes(1);
+	});
+
+	it('persists sidebar width to localStorage and restores it on remount', async () => {
+		vi.spyOn(localStorage, 'getItem').mockReturnValue('240');
+		const { unmount } = render(DesktopEditor);
+		const sidebar = screen.getByLabelText('Resize sidebar');
+		expect(sidebar.parentElement?.style.width).toBe('240px');
+
+		// Drag to a new width and confirm it is written to localStorage.
+		await fireEvent.mouseDown(sidebar, { clientX: 240 });
+		await fireEvent.mouseMove(document, { clientX: 200 });
+		await fireEvent.mouseUp(document);
+		expect(localStorage.setItem).toHaveBeenCalledWith('desktop_editor_sidebar_width', '200');
+
+		unmount();
 	});
 
 	it('collapses and expands the sidebar via keyboard', async () => {

@@ -143,6 +143,18 @@ export class Preview extends BaseGame {
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.STOP_PREVIEW, this.boundStopPreview);
 		EventBus.on(EventType.RESUME_PREVIEW, this.boundResumePreview);
+
+		// Phaser's game.destroy() emits DESTROY and calls removeAllListeners() on
+		// the scene's event emitter, but never invokes scene.shutdown(). Register a
+		// DESTROY listener so the module-singleton EventBus handlers are removed
+		// when the game is torn down, otherwise they leak and reference a destroyed
+		// scene whose sys is nulled.
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
+	}
+
+	private removeEventBusListeners(): void {
+		EventBus.off(EventType.STOP_PREVIEW, this.boundStopPreview);
+		EventBus.off(EventType.RESUME_PREVIEW, this.boundResumePreview);
 	}
 
 	/**
@@ -1152,8 +1164,7 @@ export class Preview extends BaseGame {
 		}
 
 		// Remove event listeners to prevent leaks
-		EventBus.off(EventType.STOP_PREVIEW, this.boundStopPreview);
-		EventBus.off(EventType.RESUME_PREVIEW, this.boundResumePreview);
+		this.removeEventBusListeners();
 
 		// Reset all container scales
 		if (this.gridContainer) this.gridContainer.setScale(1);

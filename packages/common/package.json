@@ -84,7 +84,7 @@
 		"svelte"
 	],
 	"dependencies": {
-		"drizzle-orm": "^0.44.5",
+		"drizzle-orm": "^0.45.2",
 		"jszip": "^3.10.1",
 		"winston": "^3.17.0"
 	}

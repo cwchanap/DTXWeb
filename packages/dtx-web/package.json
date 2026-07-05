@@ -27,7 +27,7 @@
 		"@graphql-codegen/cli": "^5.0.3",
 		"@graphql-codegen/typescript": "^4.1.2",
 		"@graphql-codegen/typescript-operations": "^4.4.0",
-		"@graphql-codegen/typed-document-node": "^5.0.12",
+		"@graphql-codegen/typed-document-node": "^7.0.3",
 		"@iconify/svelte": "^4.2.0",
 		"@lucide/svelte": "^0.511.0",
 		"@skeletonlabs/skeleton": "^3.1.2",

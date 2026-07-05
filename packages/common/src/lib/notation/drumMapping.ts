@@ -8,8 +8,8 @@ export interface DrumStaff {
 
 /**
  * DTX drum lane id -> drum-staff position + notehead.
- * Keys ending in '/x2' render an X notehead (cymbals / hi-hats).
- * Note: open hi-hat (18) renders identically to closed (11) in v1.
+ * Key suffix selects the notehead glyph: '/x2' -> plain x (cymbals / closed hi-hat),
+ * '/x3' -> circled x (open hi-hat).
  */
 const LANE_TO_STAFF: Record<string, DrumStaff> = {
 	'13': { key: 'f/4', name: 'BD' }, // bass drum
@@ -19,7 +19,7 @@ const LANE_TO_STAFF: Record<string, DrumStaff> = {
 	'15': { key: 'd/5', name: 'LT' }, // low/mid tom
 	'17': { key: 'a/4', name: 'FT' }, // floor tom
 	'11': { key: 'g/5/x2', name: 'HHC' }, // closed hi-hat
-	'18': { key: 'g/5/x2', name: 'HH' }, // open hi-hat (v1: same as closed)
+	'18': { key: 'g/5/x3', name: 'HH' }, // open hi-hat (circled-x)
 	'1B': { key: 'd/4/x2', name: 'LP' }, // pedal hi-hat (foot)
 	'16': { key: 'a/5/x2', name: 'CY' }, // crash
 	'1A': { key: 'b/5/x2', name: 'LC' }, // left crash / china

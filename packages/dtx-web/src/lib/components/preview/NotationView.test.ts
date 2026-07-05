@@ -185,6 +185,26 @@ describe('NotationView', () => {
 		const restDurations = staveNoteArgs.map((a) => a.duration);
 		expect(restDurations).toEqual(['64r', 'qr', '32r', 'hr']);
 	});
+
+	it('passes the circled-x key (g/5/x3) through to StaveNote for open hi-hat entries', async () => {
+		// The key suffix /x3 selects VexFlow's noteheadCircleX glyph. NotationView
+		// passes entry.keys straight to StaveNote, so this asserts the propagation
+		// contract (VexFlow itself is mocked; the glyph rendering is manual-check).
+		const openHatChart: NotationChart = {
+			measures: [
+				{
+					index: 0,
+					measureTicks: 192,
+					beatsPerMeasure: 4,
+					entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['g/5/x3'] }]
+				}
+			]
+		};
+		render(NotationView, { props: { chart: openHatChart } });
+		await tick();
+		const openHatNote = staveNoteArgs.find((a) => a.keys.includes('g/5/x3'));
+		expect(openHatNote).toBeDefined();
+	});
 });
 
 describe('NotationView highlight', () => {

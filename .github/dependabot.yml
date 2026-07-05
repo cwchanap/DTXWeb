@@ -3,58 +3,58 @@ version: 2
 updates:
   # JavaScript / TypeScript dependencies
   # Use this if you commit bun.lock and actually install with Bun.
-  - package-ecosystem: "bun"
-    directory: "/"
+  - package-ecosystem: 'bun'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "America/Vancouver"
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'America/Vancouver'
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore(deps)"
-      include: "scope"
+      prefix: 'chore(deps)'
+      include: 'scope'
     groups:
       js-minor-and-patch:
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
 
   # Rust dependencies for the Tauri desktop app
-  - package-ecosystem: "cargo"
-    directory: "/packages/dtx-desktop/src-tauri"
+  - package-ecosystem: 'cargo'
+    directory: '/packages/dtx-desktop/src-tauri'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:30"
-      timezone: "America/Vancouver"
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:30'
+      timezone: 'America/Vancouver'
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "chore(deps)"
-      include: "scope"
+      prefix: 'chore(deps)'
+      include: 'scope'
     groups:
       rust-minor-and-patch:
         patterns:
-          - "*"
+          - '*'
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
 
   # GitHub Actions versions in .github/workflows
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "10:00"
-      timezone: "America/Vancouver"
+      interval: 'weekly'
+      day: 'monday'
+      time: '10:00'
+      timezone: 'America/Vancouver'
     open-pull-requests-limit: 3
     commit-message:
-      prefix: "chore(deps)"
-      include: "scope"
+      prefix: 'chore(deps)'
+      include: 'scope'
     groups:
       github-actions:
         patterns:
-          - "*"
+          - '*'

@@ -46,11 +46,17 @@ jobs:
     name: Windows Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: windows-latest
-    # NOTE: Renamed from the legacy "Electron" environment. The GitHub
-    # repository's Environments settings must have a "Desktop" environment
-    # (with the same secrets/variables) before this workflow is next run,
-    # otherwise the environment lookup will fail.
-    environment: Desktop
+    # Each platform build targets its own GitHub environment so concurrent
+    # build-windows / build-mac runs each get their own "active" deployment
+    # record (a single shared environment would mark one of the two as
+    # "inactive" purely because GitHub keeps only one active deployment per
+    # environment at a time). The GitHub repository's Environments settings
+    # must have "Desktop-Windows" and "Desktop-macOS" environments, each with
+    # the build secrets (PUBLIC_SUPABASE_ANON_KEY, TAURI_SIGNING_PRIVATE_KEY).
+    # The build vars (PUBLIC_SUPABASE_URL, VITE_DTX_API_URL,
+    # VITE_DTX_SERVER_URL) live at repo level and are inherited by every
+    # environment, so they do not need to be duplicated here.
+    environment: Desktop-Windows
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
@@ -171,7 +177,8 @@ jobs:
     name: macOS Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: macos-latest
-    environment: Desktop
+    # See build-windows for the rationale on per-platform environments.
+    environment: Desktop-macOS
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
@@ -275,6 +282,13 @@ jobs:
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+    # The deploy job pushes signed updater artifacts + latest.json to the
+    # production R2 bucket. No `environment:` is set: the Cloudflare
+    # secrets/vars it needs (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+    # R2_BUCKET, R2_PUBLIC_URL) are repo-level and inherited everywhere, and
+    # 'Production' is reserved for the web app. Build jobs use per-platform
+    # environments (Desktop-Windows / Desktop-macOS) so they each get their
+    # own active deployment record.
 
     steps:
       - name: Checkout Repository

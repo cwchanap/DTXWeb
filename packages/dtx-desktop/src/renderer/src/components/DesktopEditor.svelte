@@ -316,9 +316,15 @@
 				game = null;
 				// Register the destroy listener before calling destroy so we
 				// never miss the event, then resolve pendingPhaserTeardown only
-				// when Phaser signals full teardown completion.
+				// when Phaser signals full teardown completion. Race with a
+				// timeout so a missing 'destroy' event (scene throw during
+				// shutdown, WebGL context loss) cannot hang every later mount.
 				const teardownPromise = new Promise<void>((resolve) => {
-					gameToDestroy.events.once('destroy', () => resolve());
+					const timeout = setTimeout(() => resolve(), 5000);
+					gameToDestroy.events.once('destroy', () => {
+						clearTimeout(timeout);
+						resolve();
+					});
 					gameToDestroy.destroy(true);
 				});
 				pendingPhaserTeardown = pendingPhaserTeardown.then(

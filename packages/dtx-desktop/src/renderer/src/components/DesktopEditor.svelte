@@ -1,6 +1,11 @@
+<script module lang="ts">
+	const waitForNextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+	let pendingPhaserTeardown: Promise<void> = Promise.resolve();
+</script>
+
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import Phaser from 'phaser';
 	import EditorContextBar from './editor/EditorContextBar.svelte';
 	import EditorDock from './editor/EditorDock.svelte';
@@ -66,7 +71,7 @@
 	let currentChart = $state<ChartState | null>(null); // Track current chart with DTX files
 	let sidebarWidth = $state(320); // Sidebar width in pixels (default 80 * 0.25rem = 320px)
 	let isDragging = $state(false);
-	let minSidebarWidth = 200;
+	let minSidebarWidth = 120;
 	let maxSidebarWidth = 600;
 	let collapseThreshold = 50; // Width below which sidebar collapses
 	const keyboardResizeStep = 20;
@@ -198,11 +203,16 @@
 	};
 
 	onMount(() => {
+		let mounted = true;
 		// Set up validation error event listener
 		EventBus.on(EventType.VALIDATION_ERROR, handleValidationError);
 
 		const initializeEditor = async () => {
 			try {
+				await pendingPhaserTeardown;
+				await tick();
+				if (!mounted) return;
+
 				// Initialize file provider
 				let workspacePath = localStorage.getItem('workspace_path') || '';
 				// Remove extra quotes if present
@@ -280,11 +290,15 @@
 					});
 
 					isGameInitialized = true;
+				} else {
+					throw new Error('Desktop editor game container was not available');
 				}
 			} catch (error) {
 				console.error('Failed to initialize desktop editor:', error);
 				// Set initialized to true even on error so we don't show loading forever
-				isGameInitialized = true;
+				if (mounted) {
+					isGameInitialized = true;
+				}
 			}
 		};
 
@@ -293,9 +307,16 @@
 
 		// Return cleanup function
 		return () => {
+			mounted = false;
 			EventBus.off(EventType.VALIDATION_ERROR, handleValidationError);
 			if (game) {
-				game.destroy(true);
+				const gameToDestroy = game;
+				game = null;
+				gameToDestroy.destroy(true);
+				pendingPhaserTeardown = pendingPhaserTeardown.then(
+					waitForNextTask,
+					waitForNextTask
+				);
 			}
 		};
 	});

@@ -38,6 +38,15 @@ export class Editor extends BaseGame {
 	private soundFileHashCache: Map<File, string> = new Map(); // Cache file hashes to avoid recomputing
 	private onGridSpacingUpdate?: (cellsPerMeasure: number) => void;
 	private onCellHeightUpdate?: (height: number) => void;
+	private onMeasureUpdate?: (measureCount: number) => void;
+	private onNoteImport?: (
+		notes: LaneMeasureNote[],
+		bpmNotes: Record<string, number>,
+		draftMeasureCount?: number
+	) => Promise<void>;
+	private onMeasureGoto?: (measure: number) => void;
+	private onStartPreview?: (bpm: number) => void;
+	private onStopPreview?: () => void;
 
 	// Store references to grid line graphics for direct access
 	private cellLinesGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -324,10 +333,11 @@ export class Editor extends BaseGame {
 		this.setupKeyBindingListener();
 
 		EventBus.emit(EventType.SCENE_READY, this);
-		EventBus.on(EventType.MEASURE_UPDATE, (measureCount: number) => {
+		this.onMeasureUpdate = (measureCount: number) => {
 			this.measureCount = get(store.measureCount);
 			this.restart({ measureCount });
-		});
+		};
+		EventBus.on(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
 		this.onGridSpacingUpdate = (cellsPerMeasure: number) => {
 			this.updateGridSpacing(cellsPerMeasure);
 		};
@@ -336,46 +346,45 @@ export class Editor extends BaseGame {
 		};
 		EventBus.on(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
 		EventBus.on(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
-		EventBus.on(
-			EventType.NOTE_IMPORT,
-			async (
-				notes: LaneMeasureNote[],
-				bpmNotes: Record<string, number>,
-				draftMeasureCount?: number
-			) => {
-				// Mark as not loaded at the start of import process
-				this.isLoaded = false;
-				this.notes = {};
-				this.sound.removeAll();
-				notes.forEach((note) => {
-					if (!(note.laneID in this.notes)) {
-						this.notes[note.laneID] = [];
-					}
-					this.notes[note.laneID].push(note);
-				});
-				this.parseMesaureLength();
-				if (notes.length > 0) {
-					const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
-					const baseMeasureCount = maxMeasure + 1;
-					this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
-				} else {
-					// draftMeasureCount of 0 is invalid — treat as "not provided"
-					this.measureCount = draftMeasureCount || this.measureCount;
+		this.onNoteImport = async (
+			notes: LaneMeasureNote[],
+			bpmNotes: Record<string, number>,
+			draftMeasureCount?: number
+		) => {
+			// Mark as not loaded at the start of import process
+			this.isLoaded = false;
+			this.notes = {};
+			this.sound.removeAll();
+			notes.forEach((note) => {
+				if (!(note.laneID in this.notes)) {
+					this.notes[note.laneID] = [];
 				}
-				store.measureCount.set(this.measureCount);
-				this.bpmNotes = bpmNotes;
-				this.syncNotesToStore();
-				await this.autoSaveChart(); // Save immediately instead of debounced
-				this.setDirty(false); // Clear dirty state after importing notes
-				this.restart({ measureCount: this.measureCount });
+				this.notes[note.laneID].push(note);
+			});
+			this.parseMesaureLength();
+			if (notes.length > 0) {
+				const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
+				const baseMeasureCount = maxMeasure + 1;
+				this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
+			} else {
+				// draftMeasureCount of 0 is invalid — treat as "not provided"
+				this.measureCount = draftMeasureCount || this.measureCount;
 			}
-		);
+			store.measureCount.set(this.measureCount);
+			this.bpmNotes = bpmNotes;
+			this.syncNotesToStore();
+			await this.autoSaveChart(); // Save immediately instead of debounced
+			this.setDirty(false); // Clear dirty state after importing notes
+			this.restart({ measureCount: this.measureCount });
+		};
+		EventBus.on(EventType.NOTE_IMPORT, this.onNoteImport);
 
-		EventBus.on(EventType.MEASURE_GOTO, (measure: number) => {
+		this.onMeasureGoto = (measure: number) => {
 			this.panelContainer.y = clampY(this.getTotalMesaureOffest(measure));
-		});
+		};
+		EventBus.on(EventType.MEASURE_GOTO, this.onMeasureGoto);
 
-		EventBus.on(EventType.START_PREVIEW, (bpm: number) => {
+		this.onStartPreview = (bpm: number) => {
 			const currentMeasure = Math.floor(
 				this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
 			);
@@ -433,9 +442,10 @@ export class Editor extends BaseGame {
 					startMeasure: currentMeasure
 				});
 			}
-		});
+		};
+		EventBus.on(EventType.START_PREVIEW, this.onStartPreview);
 
-		EventBus.on(EventType.STOP_PREVIEW, () => {
+		this.onStopPreview = () => {
 			// Pause the preview scene to keep it alive for resume
 			if (this.scene.isActive(Preview.key)) {
 				this.scene.pause(Preview.key);
@@ -443,7 +453,8 @@ export class Editor extends BaseGame {
 			}
 			this.scene.resume();
 			this.scene.setVisible(true);
-		});
+		};
+		EventBus.on(EventType.STOP_PREVIEW, this.onStopPreview);
 
 		// Listen for active note changes to update cursor
 		this.activeNoteSubscription = store.activeNote.subscribe(() => {
@@ -811,6 +822,7 @@ export class Editor extends BaseGame {
 	shutdown() {
 		// Reset cursor to default when shutting down
 		this.input.setDefaultCursor('default');
+		this.removeEventBusListeners();
 		// Clean up context menu event listener when scene shuts down
 		this.enableBrowserContextMenu();
 		// Clean up key binding listener to prevent memory leaks
@@ -827,13 +839,7 @@ export class Editor extends BaseGame {
 		this.isLoaded = false;
 		// Clear hash cache to avoid stale File references
 		this.soundFileHashCache.clear();
-		EventBus.off(EventType.MEASURE_UPDATE);
-		EventBus.off(EventType.GRID_SPACING_UPDATE);
-		EventBus.off(EventType.CELL_HEIGHT_UPDATE);
-		EventBus.off(EventType.NOTE_IMPORT);
-		EventBus.off(EventType.MEASURE_GOTO);
-		EventBus.off(EventType.START_PREVIEW);
-		EventBus.off(EventType.STOP_PREVIEW);
+		this.removeEventBusListeners();
 		this.input.off('pointerdown');
 		this.input.off('pointermove');
 		this.input.off('pointerup');
@@ -847,14 +853,6 @@ export class Editor extends BaseGame {
 		if (this.activeNoteSubscription) {
 			this.activeNoteSubscription();
 			this.activeNoteSubscription = null;
-		}
-
-		// Clean up EventBus listeners
-		if (this.onGridSpacingUpdate) {
-			EventBus.off(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
-		}
-		if (this.onCellHeightUpdate) {
-			EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
 		}
 
 		// Clean up key bindings subscription
@@ -893,6 +891,37 @@ export class Editor extends BaseGame {
 			this.autoSaveTimeout = null;
 		}
 		this.scene.restart(data);
+	}
+
+	private removeEventBusListeners(): void {
+		if (this.onMeasureUpdate) {
+			EventBus.off(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
+			this.onMeasureUpdate = undefined;
+		}
+		if (this.onGridSpacingUpdate) {
+			EventBus.off(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
+			this.onGridSpacingUpdate = undefined;
+		}
+		if (this.onCellHeightUpdate) {
+			EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
+			this.onCellHeightUpdate = undefined;
+		}
+		if (this.onNoteImport) {
+			EventBus.off(EventType.NOTE_IMPORT, this.onNoteImport);
+			this.onNoteImport = undefined;
+		}
+		if (this.onMeasureGoto) {
+			EventBus.off(EventType.MEASURE_GOTO, this.onMeasureGoto);
+			this.onMeasureGoto = undefined;
+		}
+		if (this.onStartPreview) {
+			EventBus.off(EventType.START_PREVIEW, this.onStartPreview);
+			this.onStartPreview = undefined;
+		}
+		if (this.onStopPreview) {
+			EventBus.off(EventType.STOP_PREVIEW, this.onStopPreview);
+			this.onStopPreview = undefined;
+		}
 	}
 
 	drawFooterLane(laneConfig: LaneConfig, currentX: number) {

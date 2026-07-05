@@ -59,12 +59,29 @@ const mockPhaserGame = vi.hoisted(() => ({
 	}
 }));
 
+const mockPhaserState = vi.hoisted(() => ({
+	isDestroying: false,
+	successfulGames: 0
+}));
+
 vi.mock('phaser', () => ({
 	default: {
-		Game: vi.fn(() => mockPhaserGame),
+		Game: vi.fn(() => {
+			if (mockPhaserState.isDestroying) {
+				throw new Error('Previous Phaser game is still destroying');
+			}
+			mockPhaserState.successfulGames += 1;
+			return mockPhaserGame;
+		}),
 		AUTO: 0
 	},
-	Game: vi.fn(() => mockPhaserGame),
+	Game: vi.fn(() => {
+		if (mockPhaserState.isDestroying) {
+			throw new Error('Previous Phaser game is still destroying');
+		}
+		mockPhaserState.successfulGames += 1;
+		return mockPhaserGame;
+	}),
 	AUTO: 0
 }));
 
@@ -158,11 +175,29 @@ vi.mock('../stores/editorMappingStore', () => ({
 
 import DesktopEditor from './DesktopEditor.svelte';
 import { editorMappingStore } from '../stores/editorMappingStore';
+import Phaser from 'phaser';
+
+const createDeferred = <T>() => {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+
+	return { promise, resolve };
+};
 
 describe('DesktopEditor', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockEventBus._reset();
+		mockPhaserState.isDestroying = false;
+		mockPhaserState.successfulGames = 0;
+		mockPhaserGame.destroy.mockImplementation(() => {
+			mockPhaserState.isDestroying = true;
+			setTimeout(() => {
+				mockPhaserState.isDestroying = false;
+			}, 0);
+		});
 		mockDesktopHost.readFile.mockResolvedValue({ error: 'not found', content: '' });
 		mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: null });
 		vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
@@ -231,6 +266,44 @@ describe('DesktopEditor', () => {
 		expect(mockPhaserGame.destroy).toHaveBeenCalledWith(true);
 	});
 
+	it('does not finish a stale editor initialization after unmount', async () => {
+		vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+		const pendingWorkspaceLoad = createDeferred<{ files: []; error: null }>();
+		mockDesktopHost.listFiles.mockReturnValueOnce(pendingWorkspaceLoad.promise);
+
+		const { unmount } = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockDesktopHost.listFiles).toHaveBeenCalledWith(
+				'/test/workspace',
+				'/test/workspace'
+			);
+		});
+
+		unmount();
+		pendingWorkspaceLoad.resolve({ files: [], error: null });
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(Phaser.Game).not.toHaveBeenCalled();
+		expect(console.error).not.toHaveBeenCalled();
+	});
+
+	it('waits for a previous Phaser game teardown before booting a remounted editor', async () => {
+		const firstRender = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserState.successfulGames).toBe(1);
+		});
+
+		firstRender.unmount();
+		const secondRender = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserState.successfulGames).toBe(2);
+		});
+		expect(screen.queryByText(/Initializing editor/)).toBeNull();
+
+		secondRender.unmount();
+	});
+
 	it('collapses and expands the sidebar via keyboard', async () => {
 		render(DesktopEditor);
 		const resizeHandle = screen.getByLabelText('Resize sidebar');
@@ -243,6 +316,18 @@ describe('DesktopEditor', () => {
 		// Click on collapsed sidebar to expand
 		const collapsedHandle = screen.getByTitle('Expand dock');
 		await fireEvent.click(collapsedHandle);
+		expect(screen.getByRole('button', { name: /Chart Info/i })).toBeInTheDocument();
+	});
+
+	it('lets the editor sidebar be dragged to a compact width before collapsing', async () => {
+		render(DesktopEditor);
+		const resizeHandle = screen.getByLabelText('Resize sidebar');
+
+		await fireEvent.mouseDown(resizeHandle, { clientX: 320 });
+		await fireEvent.mouseMove(document, { clientX: 120 });
+		await fireEvent.mouseUp(document);
+
+		expect(resizeHandle.parentElement?.style.width).toBe('120px');
 		expect(screen.getByRole('button', { name: /Chart Info/i })).toBeInTheDocument();
 	});
 

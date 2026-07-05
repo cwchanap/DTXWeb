@@ -43,13 +43,15 @@ export class DesktopFileProvider implements IFileProvider {
 				return undefined;
 			}
 
+			const normalizedFileName = this.normalizeFileName(fileName);
+
 			// For simfile-specific files, look in the simfile directory
 			// For local files (simfileId is null), look in the workspace root
 			let filePath: string;
 			if (simfileId) {
-				filePath = `${this._workspaceRoot}/${simfileId}/${fileName}`;
+				filePath = `${this._workspaceRoot}/${simfileId}/${normalizedFileName}`;
 			} else {
-				filePath = `${this._workspaceRoot}/${fileName}`;
+				filePath = `${this._workspaceRoot}/${normalizedFileName}`;
 			}
 
 			// Ask host process to read the local file
@@ -137,6 +139,10 @@ export class DesktopFileProvider implements IFileProvider {
 
 	private generateKey(simfileId: string | null, fileName: string): string {
 		return `${simfileId || 'local'}:${fileName}`;
+	}
+
+	private normalizeFileName(fileName: string): string {
+		return fileName.replaceAll('\\', '/');
 	}
 
 	private copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {

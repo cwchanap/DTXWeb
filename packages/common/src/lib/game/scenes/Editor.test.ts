@@ -251,6 +251,31 @@ describe('Editor Scene', () => {
 		});
 	});
 
+	it('removes its EventBus handlers on restart so stale handlers are not retained', () => {
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		editorScene.restart();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
 	it('should handle missing game container gracefully', () => {
 		// Mock getElementById to return null
 		vi.spyOn(document, 'getElementById').mockReturnValue(null);

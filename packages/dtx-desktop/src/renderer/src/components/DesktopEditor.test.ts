@@ -45,19 +45,29 @@ vi.mock('@dtx/common/components', () => ({
 	PreviewTab: vi.fn()
 }));
 
-const mockPhaserGame = vi.hoisted(() => ({
-	events: {
-		once: vi.fn((event: string, cb: () => void) => {
-			if (event === 'ready') {
-				setTimeout(cb, 0);
-			}
-		})
-	},
-	destroy: vi.fn(),
-	scene: {
-		getScene: vi.fn(() => null)
-	}
-}));
+const mockPhaserGame = vi.hoisted(() => {
+	let destroyCallback: (() => void) | null = null;
+	return {
+		events: {
+			once: vi.fn((event: string, cb: () => void) => {
+				if (event === 'ready') {
+					setTimeout(cb, 0);
+				} else if (event === 'destroy') {
+					destroyCallback = cb;
+				}
+			})
+		},
+		destroy: vi.fn(),
+		scene: {
+			getScene: vi.fn(() => null)
+		},
+		_takeDestroyCallback: () => {
+			const cb = destroyCallback;
+			destroyCallback = null;
+			return cb;
+		}
+	};
+});
 
 const mockPhaserState = vi.hoisted(() => ({
 	isDestroying: false,
@@ -196,6 +206,9 @@ describe('DesktopEditor', () => {
 			mockPhaserState.isDestroying = true;
 			setTimeout(() => {
 				mockPhaserState.isDestroying = false;
+				// Simulate Phaser's DESTROY event firing after async teardown.
+				const cb = mockPhaserGame._takeDestroyCallback();
+				if (cb) cb();
 			}, 0);
 		});
 		mockDesktopHost.readFile.mockResolvedValue({ error: 'not found', content: '' });

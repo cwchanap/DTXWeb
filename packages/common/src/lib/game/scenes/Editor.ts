@@ -36,17 +36,124 @@ export class Editor extends BaseGame {
 	private isInitializing = false; // Flag to prevent auto-save during initialization
 	private isLoaded = false; // Flag to track if scene has finished loading and drawing
 	private soundFileHashCache: Map<File, string> = new Map(); // Cache file hashes to avoid recomputing
-	private onGridSpacingUpdate?: (cellsPerMeasure: number) => void;
-	private onCellHeightUpdate?: (height: number) => void;
-	private onMeasureUpdate?: (measureCount: number) => void;
-	private onNoteImport?: (
+	private readonly clampY = (newY: number) =>
+		Phaser.Math.Clamp(
+			newY,
+			0,
+			this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin
+		);
+	private onGridSpacingUpdate = (cellsPerMeasure: number) => {
+		this.updateGridSpacing(cellsPerMeasure);
+	};
+	private onCellHeightUpdate = (height: number) => {
+		this.updateCellHeight(height);
+	};
+	private onMeasureUpdate = (measureCount: number) => {
+		this.measureCount = get(store.measureCount);
+		this.restart({ measureCount });
+	};
+	private onNoteImport = async (
 		notes: LaneMeasureNote[],
 		bpmNotes: Record<string, number>,
 		draftMeasureCount?: number
-	) => Promise<void>;
-	private onMeasureGoto?: (measure: number) => void;
-	private onStartPreview?: (bpm: number) => void;
-	private onStopPreview?: () => void;
+	) => {
+		// Mark as not loaded at the start of import process
+		this.isLoaded = false;
+		this.notes = {};
+		this.sound.removeAll();
+		notes.forEach((note) => {
+			if (!(note.laneID in this.notes)) {
+				this.notes[note.laneID] = [];
+			}
+			this.notes[note.laneID].push(note);
+		});
+		this.parseMesaureLength();
+		if (notes.length > 0) {
+			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
+			const baseMeasureCount = maxMeasure + 1;
+			this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
+		} else {
+			// draftMeasureCount of 0 is invalid — treat as "not provided"
+			this.measureCount = draftMeasureCount || this.measureCount;
+		}
+		store.measureCount.set(this.measureCount);
+		this.bpmNotes = bpmNotes;
+		this.syncNotesToStore();
+		await this.autoSaveChart(); // Save immediately instead of debounced
+		this.setDirty(false); // Clear dirty state after importing notes
+		this.restart({ measureCount: this.measureCount });
+	};
+	private onMeasureGoto = (measure: number) => {
+		this.panelContainer.y = this.clampY(this.getTotalMesaureOffest(measure));
+	};
+	private onStartPreview = (bpm: number) => {
+		const currentMeasure = Math.floor(
+			this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
+		);
+		this.scene.pause();
+		this.scene.setVisible(false);
+
+		// If preview scene doesn't exist, create it
+		if (!this.scene.isActive(Preview.key) && !this.scene.isPaused(Preview.key)) {
+			// Launch new preview
+			this.scene.launch(Preview.key, {
+				bpm: bpm,
+				bpmNotes: this.bpmNotes,
+				notes: this.notes,
+				measureCount: this.measureCount,
+				startMeasure: currentMeasure
+			});
+
+			// Clear dirty state after successful preview creation
+			this.setDirty(false);
+		} else if (this.isDirty) {
+			// Update existing scene data without recreating
+			const previewScene = this.scene.get(Preview.key) as Preview;
+			if (previewScene) {
+				// Update scene data
+				previewScene.updateData({
+					bpm: bpm,
+					bpmNotes: this.bpmNotes,
+					notes: this.notes,
+					measureCount: this.measureCount,
+					startMeasure: currentMeasure
+				});
+				this.scene.setVisible(true, Preview.key);
+				this.scene.resume(Preview.key);
+
+				// Clear dirty state after successful preview update
+				this.setDirty(false);
+			} else {
+				// Fallback to recreation if scene not found
+				this.scene.launch(Preview.key, {
+					bpm: bpm,
+					bpmNotes: this.bpmNotes,
+					notes: this.notes,
+					measureCount: this.measureCount,
+					startMeasure: currentMeasure
+				});
+
+				// Clear dirty state after successful preview creation
+				this.setDirty(false);
+			}
+		} else {
+			// Resume existing preview if no changes
+			this.scene.setVisible(true, Preview.key);
+			this.scene.resume(Preview.key);
+			EventBus.emit(EventType.RESUME_PREVIEW, {
+				startMeasure: currentMeasure
+			});
+		}
+	};
+	private onStopPreview = () => {
+		// Pause the preview scene to keep it alive for resume
+		if (this.scene.isActive(Preview.key)) {
+			this.scene.pause(Preview.key);
+			this.scene.setVisible(false, Preview.key);
+		}
+		this.scene.resume();
+		this.scene.setVisible(true);
+	};
 
 	// Store references to grid line graphics for direct access
 	private cellLinesGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -87,15 +194,6 @@ export class Editor extends BaseGame {
 
 		this.drawPanel();
 		this.drawNotes();
-
-		// Helper function for clamping Y position (still needed for wheel scrolling)
-		const clampY = (newY: number) => {
-			return Phaser.Math.Clamp(
-				newY,
-				0,
-				this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin
-			);
-		};
 
 		// Enable input events
 		this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -299,7 +397,7 @@ export class Editor extends BaseGame {
 			) => {
 				if (pointer.y < this.scale.height - this.bottomMargin) {
 					const newY = this.panelContainer.y - deltaY * 0.5;
-					this.panelContainer.y = clampY(newY);
+					this.panelContainer.y = this.clampY(newY);
 				}
 			}
 		);
@@ -333,127 +431,12 @@ export class Editor extends BaseGame {
 		this.setupKeyBindingListener();
 
 		EventBus.emit(EventType.SCENE_READY, this);
-		this.onMeasureUpdate = (measureCount: number) => {
-			this.measureCount = get(store.measureCount);
-			this.restart({ measureCount });
-		};
 		EventBus.on(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
-		this.onGridSpacingUpdate = (cellsPerMeasure: number) => {
-			this.updateGridSpacing(cellsPerMeasure);
-		};
-		this.onCellHeightUpdate = (height: number) => {
-			this.updateCellHeight(height);
-		};
 		EventBus.on(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
 		EventBus.on(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
-		this.onNoteImport = async (
-			notes: LaneMeasureNote[],
-			bpmNotes: Record<string, number>,
-			draftMeasureCount?: number
-		) => {
-			// Mark as not loaded at the start of import process
-			this.isLoaded = false;
-			this.notes = {};
-			this.sound.removeAll();
-			notes.forEach((note) => {
-				if (!(note.laneID in this.notes)) {
-					this.notes[note.laneID] = [];
-				}
-				this.notes[note.laneID].push(note);
-			});
-			this.parseMesaureLength();
-			if (notes.length > 0) {
-				const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
-				const baseMeasureCount = maxMeasure + 1;
-				this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
-			} else {
-				// draftMeasureCount of 0 is invalid — treat as "not provided"
-				this.measureCount = draftMeasureCount || this.measureCount;
-			}
-			store.measureCount.set(this.measureCount);
-			this.bpmNotes = bpmNotes;
-			this.syncNotesToStore();
-			await this.autoSaveChart(); // Save immediately instead of debounced
-			this.setDirty(false); // Clear dirty state after importing notes
-			this.restart({ measureCount: this.measureCount });
-		};
 		EventBus.on(EventType.NOTE_IMPORT, this.onNoteImport);
-
-		this.onMeasureGoto = (measure: number) => {
-			this.panelContainer.y = clampY(this.getTotalMesaureOffest(measure));
-		};
 		EventBus.on(EventType.MEASURE_GOTO, this.onMeasureGoto);
-
-		this.onStartPreview = (bpm: number) => {
-			const currentMeasure = Math.floor(
-				this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
-			);
-			this.scene.pause();
-			this.scene.setVisible(false);
-
-			// If preview scene doesn't exist, create it
-			if (!this.scene.isActive(Preview.key) && !this.scene.isPaused(Preview.key)) {
-				// Launch new preview
-				this.scene.launch(Preview.key, {
-					bpm: bpm,
-					bpmNotes: this.bpmNotes,
-					notes: this.notes,
-					measureCount: this.measureCount,
-					startMeasure: currentMeasure
-				});
-
-				// Clear dirty state after successful preview creation
-				this.setDirty(false);
-			} else if (this.isDirty) {
-				// Update existing scene data without recreating
-				const previewScene = this.scene.get(Preview.key) as Preview;
-				if (previewScene) {
-					// Update scene data
-					previewScene.updateData({
-						bpm: bpm,
-						bpmNotes: this.bpmNotes,
-						notes: this.notes,
-						measureCount: this.measureCount,
-						startMeasure: currentMeasure
-					});
-					this.scene.setVisible(true, Preview.key);
-					this.scene.resume(Preview.key);
-
-					// Clear dirty state after successful preview update
-					this.setDirty(false);
-				} else {
-					// Fallback to recreation if scene not found
-					this.scene.launch(Preview.key, {
-						bpm: bpm,
-						bpmNotes: this.bpmNotes,
-						notes: this.notes,
-						measureCount: this.measureCount,
-						startMeasure: currentMeasure
-					});
-
-					// Clear dirty state after successful preview creation
-					this.setDirty(false);
-				}
-			} else {
-				// Resume existing preview if no changes
-				this.scene.setVisible(true, Preview.key);
-				this.scene.resume(Preview.key);
-				EventBus.emit(EventType.RESUME_PREVIEW, {
-					startMeasure: currentMeasure
-				});
-			}
-		};
 		EventBus.on(EventType.START_PREVIEW, this.onStartPreview);
-
-		this.onStopPreview = () => {
-			// Pause the preview scene to keep it alive for resume
-			if (this.scene.isActive(Preview.key)) {
-				this.scene.pause(Preview.key);
-				this.scene.setVisible(false, Preview.key);
-			}
-			this.scene.resume();
-			this.scene.setVisible(true);
-		};
 		EventBus.on(EventType.STOP_PREVIEW, this.onStopPreview);
 
 		// Listen for active note changes to update cursor
@@ -894,34 +877,13 @@ export class Editor extends BaseGame {
 	}
 
 	private removeEventBusListeners(): void {
-		if (this.onMeasureUpdate) {
-			EventBus.off(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
-			this.onMeasureUpdate = undefined;
-		}
-		if (this.onGridSpacingUpdate) {
-			EventBus.off(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
-			this.onGridSpacingUpdate = undefined;
-		}
-		if (this.onCellHeightUpdate) {
-			EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
-			this.onCellHeightUpdate = undefined;
-		}
-		if (this.onNoteImport) {
-			EventBus.off(EventType.NOTE_IMPORT, this.onNoteImport);
-			this.onNoteImport = undefined;
-		}
-		if (this.onMeasureGoto) {
-			EventBus.off(EventType.MEASURE_GOTO, this.onMeasureGoto);
-			this.onMeasureGoto = undefined;
-		}
-		if (this.onStartPreview) {
-			EventBus.off(EventType.START_PREVIEW, this.onStartPreview);
-			this.onStartPreview = undefined;
-		}
-		if (this.onStopPreview) {
-			EventBus.off(EventType.STOP_PREVIEW, this.onStopPreview);
-			this.onStopPreview = undefined;
-		}
+		EventBus.off(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
+		EventBus.off(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
+		EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
+		EventBus.off(EventType.NOTE_IMPORT, this.onNoteImport);
+		EventBus.off(EventType.MEASURE_GOTO, this.onMeasureGoto);
+		EventBus.off(EventType.START_PREVIEW, this.onStartPreview);
+		EventBus.off(EventType.STOP_PREVIEW, this.onStopPreview);
 	}
 
 	drawFooterLane(laneConfig: LaneConfig, currentX: number) {

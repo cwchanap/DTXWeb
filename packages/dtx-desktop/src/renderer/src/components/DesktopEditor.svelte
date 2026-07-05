@@ -1,5 +1,4 @@
 <script module lang="ts">
-	const waitForNextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 	let pendingPhaserTeardown: Promise<void> = Promise.resolve();
 </script>
 
@@ -259,6 +258,9 @@
 				}
 
 				// Initialize the Phaser game for the editor
+				// Re-check mounted here because loadFromSimFileId / loadChartFromPath
+				// above may still have been in flight when teardown began.
+				if (!mounted) return;
 				if (gameContainer) {
 					// Set the active scene to Editor for desktop
 					store.activeScene.set(Editor.key);
@@ -312,10 +314,16 @@
 			if (game) {
 				const gameToDestroy = game;
 				game = null;
-				gameToDestroy.destroy(true);
+				// Register the destroy listener before calling destroy so we
+				// never miss the event, then resolve pendingPhaserTeardown only
+				// when Phaser signals full teardown completion.
+				const teardownPromise = new Promise<void>((resolve) => {
+					gameToDestroy.events.once('destroy', () => resolve());
+					gameToDestroy.destroy(true);
+				});
 				pendingPhaserTeardown = pendingPhaserTeardown.then(
-					waitForNextTask,
-					waitForNextTask
+					() => teardownPromise,
+					() => teardownPromise
 				);
 			}
 		};

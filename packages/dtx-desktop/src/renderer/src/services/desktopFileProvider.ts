@@ -138,7 +138,7 @@ export class DesktopFileProvider implements IFileProvider {
 	}
 
 	private generateKey(simfileId: string | null, fileName: string): string {
-		return `${simfileId || 'local'}:${fileName}`;
+		return `${simfileId || 'local'}:${this.normalizeFileName(fileName)}`;
 	}
 
 	private normalizeFileName(fileName: string): string {

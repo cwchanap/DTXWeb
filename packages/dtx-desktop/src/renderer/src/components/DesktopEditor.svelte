@@ -1,5 +1,11 @@
 <script module lang="ts">
 	let pendingPhaserTeardown: Promise<void> = Promise.resolve();
+
+	// Test-only hook: resets the module-scoped teardown promise so test suites
+	// are not order-coupled by leftover chain state. Not for production use.
+	export function __resetPendingTeardownForTests(): void {
+		pendingPhaserTeardown = Promise.resolve();
+	}
 </script>
 
 <script lang="ts">
@@ -68,7 +74,11 @@
 	let isSidebarCollapsed = $state(false); // Track sidebar collapse state
 	let currentSongName = $state<string | null>(null); // Track current song name
 	let currentChart = $state<ChartState | null>(null); // Track current chart with DTX files
-	let sidebarWidth = $state(320); // Sidebar width in pixels (default 80 * 0.25rem = 320px)
+	const SIDEBAR_WIDTH_STORAGE_KEY = 'desktop_editor_sidebar_width';
+	const SIDEBAR_WIDTH_DEFAULT = 320;
+	let sidebarWidth = $state(
+		Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)) || SIDEBAR_WIDTH_DEFAULT
+	);
 	let isDragging = $state(false);
 	let minSidebarWidth = 120;
 	let maxSidebarWidth = 600;
@@ -76,6 +86,12 @@
 	const keyboardResizeStep = 20;
 	let validationError = $state<string | null>(null); // Track validation errors
 	let chartLoadError = $state<string | null>(null); // Track chart-folder load errors
+	let validationErrorTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Persist sidebar width to localStorage so it survives remounts/reloads.
+	$effect(() => {
+		localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+	});
 
 	const toArrayBuffer = (content: ArrayBuffer | Uint8Array): ArrayBuffer => {
 		if (content instanceof ArrayBuffer) {
@@ -196,8 +212,12 @@
 	const handleValidationError = (message: string) => {
 		validationError = message;
 		// Auto-hide error after 5 seconds
-		setTimeout(() => {
+		if (validationErrorTimeout !== null) {
+			clearTimeout(validationErrorTimeout);
+		}
+		validationErrorTimeout = setTimeout(() => {
 			validationError = null;
+			validationErrorTimeout = null;
 		}, 5000);
 	};
 
@@ -311,6 +331,10 @@
 		return () => {
 			mounted = false;
 			EventBus.off(EventType.VALIDATION_ERROR, handleValidationError);
+			if (validationErrorTimeout !== null) {
+				clearTimeout(validationErrorTimeout);
+				validationErrorTimeout = null;
+			}
 			if (game) {
 				const gameToDestroy = game;
 				game = null;

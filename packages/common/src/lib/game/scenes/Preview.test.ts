@@ -825,6 +825,39 @@ describe('Preview Scene', () => {
 			setupSoundsSpy.mockRestore();
 			startPreviewSpy.mockRestore();
 		});
+
+		it('removes EventBus handlers when Phaser emits DESTROY (game.destroy path)', async () => {
+			// Phaser's game.destroy() emits DESTROY on the scene's event emitter
+			// but never calls scene.shutdown(). The DESTROY listener registered in
+			// create() must remove the EventBus handlers so they do not leak.
+			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
+			(Preview as any).animationsCreated = true;
+
+			vi.spyOn(previewScene as any, 'drawPanel').mockImplementation(() => {});
+			vi.spyOn(previewScene as any, 'drawNotes').mockImplementation(() => {});
+			vi.spyOn(previewScene as any, 'setupSoundsAsync').mockResolvedValue(undefined);
+			vi.spyOn(previewScene as any, 'startPreview').mockImplementation(() => {});
+
+			await previewScene.create();
+
+			// Simulate Phaser's Systems.destroy() firing the DESTROY listener
+			// registered via this.events.once(Phaser.Scenes.Events.DESTROY, ...).
+			const onceMock = previewScene.events.once as unknown as MockedFn;
+			const destroyListener = onceMock.mock.calls.find(
+				(call: unknown[]) => call[0] === 'destroy'
+			)?.[1];
+			expect(destroyListener).toEqual(expect.any(Function));
+			(destroyListener as (() => void) | undefined)?.();
+
+			expect(EventBus.off).toHaveBeenCalledWith(
+				EventType.STOP_PREVIEW,
+				previewScene['boundStopPreview']
+			);
+			expect(EventBus.off).toHaveBeenCalledWith(
+				EventType.RESUME_PREVIEW,
+				previewScene['boundResumePreview']
+			);
+		});
 	});
 
 	describe('updateData()', () => {

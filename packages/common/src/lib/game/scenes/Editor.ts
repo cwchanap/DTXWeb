@@ -439,6 +439,13 @@ export class Editor extends BaseGame {
 		EventBus.on(EventType.START_PREVIEW, this.onStartPreview);
 		EventBus.on(EventType.STOP_PREVIEW, this.onStopPreview);
 
+		// Phaser's game.destroy() emits DESTROY and calls removeAllListeners() on
+		// the scene's event emitter, but never invokes scene.shutdown(). Register a
+		// DESTROY listener so the module-singleton EventBus handlers are removed
+		// when the game is torn down, otherwise they leak and reference a destroyed
+		// scene whose sys is nulled.
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
+
 		// Listen for active note changes to update cursor
 		this.activeNoteSubscription = store.activeNote.subscribe(() => {
 			if (this.isEditing) {

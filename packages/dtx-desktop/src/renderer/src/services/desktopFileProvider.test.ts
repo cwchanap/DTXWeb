@@ -143,6 +143,21 @@ describe('DesktopFileProvider', () => {
 			expect(host.readFile).toHaveBeenCalledTimes(1);
 		});
 
+		it('dedupes cache entries for backslash and forward-slash variants of the same file', async () => {
+			// generateKey must normalize fileName so that 'foo\\bar.wav' and
+			// 'foo/bar.wav' share a single cache entry instead of duplicating.
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({
+				error: null,
+				content: 'audio content'
+			});
+
+			await provider.getFile('sim1', 'sound\\kick.wav');
+			await provider.getFile('sim1', 'sound/kick.wav');
+
+			expect(host.readFile).toHaveBeenCalledTimes(1);
+		});
+
 		it('returns undefined when host throws an error', async () => {
 			provider.setWorkspaceRoot('/workspace');
 			host.readFile.mockRejectedValue(new Error('IPC error'));

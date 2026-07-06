@@ -166,6 +166,36 @@ describe('DesktopFileProvider', () => {
 			expect(file).toBeUndefined();
 		});
 
+		it('rejects parent-directory traversal without calling the host', async () => {
+			// Defense-in-depth: the renderer must not send `..` segments to the
+			// Rust IPC layer, even though read_file_path_inner canonicalizes
+			// and enforces workspace containment authoritatively.
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({ error: null, content: 'secret' });
+
+			const file = await provider.getFile('sim1', '../escape.dtx');
+			expect(file).toBeUndefined();
+			expect(host.readFile).not.toHaveBeenCalled();
+		});
+
+		it('rejects backslash-encoded parent-directory traversal', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({ error: null, content: 'secret' });
+
+			const file = await provider.getFile(null, '..\\..\\etc\\passwd');
+			expect(file).toBeUndefined();
+			expect(host.readFile).not.toHaveBeenCalled();
+		});
+
+		it('rejects nested parent-directory traversal segments', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({ error: null, content: 'secret' });
+
+			const file = await provider.getFile('sim1', 'songs/../etc/passwd');
+			expect(file).toBeUndefined();
+			expect(host.readFile).not.toHaveBeenCalled();
+		});
+
 		it('returns File for audio files with binary content', async () => {
 			provider.setWorkspaceRoot('/workspace');
 			host.readFile.mockResolvedValue({

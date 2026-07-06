@@ -45,8 +45,8 @@ export class Preview extends BaseGame {
 	private isInitialized = false;
 
 	// Bound event handlers to prevent listener leaks
-	private boundStopPreview = () => this.pausePreview();
-	private boundResumePreview = (data: { startMeasure: number }) => {
+	private readonly boundStopPreview = () => this.pausePreview();
+	private readonly boundResumePreview = (data: { startMeasure: number }) => {
 		this.startMeasure = data.startMeasure;
 		this.resumePreview();
 	};

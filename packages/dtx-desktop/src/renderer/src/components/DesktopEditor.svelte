@@ -4,11 +4,11 @@
 	// Test-only hook: resets the module-scoped teardown promise so test suites
 	// are not order-coupled by leftover chain state. Guarded by DEV so it is
 	// stripped from production builds.
-	export function __resetPendingTeardownForTests(): void {
+	export const __resetPendingTeardownForTests = (): void => {
 		if (import.meta.env.DEV) {
 			pendingPhaserTeardown = Promise.resolve();
 		}
-	}
+	};
 </script>
 
 <script lang="ts">

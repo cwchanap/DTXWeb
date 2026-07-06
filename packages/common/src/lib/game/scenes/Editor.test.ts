@@ -255,6 +255,13 @@ describe('Editor Scene', () => {
 		// Phaser's game.destroy() emits DESTROY on the scene's event emitter
 		// but never calls scene.shutdown(). The DESTROY listener registered in
 		// create() must remove the EventBus handlers so they do not leak.
+		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
+		// for once/emit/off, so this test manually invokes the captured DESTROY
+		// callback rather than driving a real emit. This verifies the callback
+		// calls removeEventBusListeners(), but cannot verify Phaser actual
+		// emit-vs-removeAllListeners ordering (Systems.destroy emits DESTROY
+		// THEN calls removeAllListeners). Correct for Phaser 3.88 today; if
+		// Phaser reorders, this test would not catch the regression.
 		editorScene.create();
 
 		const eventBusOnMock = EventBus.on as MockedFn;

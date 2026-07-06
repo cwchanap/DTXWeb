@@ -186,15 +186,18 @@ export class Editor extends BaseGame {
 		// EventBus handlers are removed when the game is torn down, otherwise
 		// they leak and reference a destroyed scene whose sys is nulled. The
 		// SHUTDOWN listener runs the full tearDown() (cursor, context menu, key
-		// binding, autoSave, EventBus) to cover scene.stop()/scene.restart()
-		// paths where DESTROY never fires. tearDown() is idempotent, so it is
-		// safe to call from both the SHUTDOWN listener and restart(). The
-		// DESTROY listener only calls removeEventBusListeners() because
-		// this.input may be nulled by the time DESTROY fires during
-		// game.destroy(), and the other tearDown() steps are not needed when
-		// the entire game is going away.
+		// binding, autoSave, Svelte store subscriptions, EventBus) to cover
+		// scene.stop()/scene.restart() paths where DESTROY never fires. The
+		// DESTROY listener also calls tearDown() so the document-level keydown
+		// listener and Svelte store subscriptions are cleaned up on
+		// game.destroy(). tearDown() is idempotent, so it is safe to call from
+		// both the SHUTDOWN listener, the DESTROY listener, and restart(). At
+		// DESTROY emit time this.input is still valid: Phaser's Systems.destroy
+		// emits DESTROY before nulling its props list (which does not include
+		// 'input'), and the Editor's constructor-registered DESTROY listener
+		// fires before InputPlugin.destroy (registered at scene boot).
 		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.tearDown());
-		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.tearDown());
 	}
 
 	init(data: Data) {
@@ -832,10 +835,11 @@ export class Editor extends BaseGame {
 	}
 
 	/**
-	 * Shared cleanup between shutdown() and restart(). Idempotent: safe to call
-	 * from the SHUTDOWN listener and restart()/shutdown(), since
-	 * removeEventBusListeners(), enableBrowserContextMenu(), and
-	 * removeKeyBindingListener() are no-ops when already cleaned up, and
+	 * Shared cleanup between shutdown(), DESTROY, and restart(). Idempotent:
+	 * safe to call from the SHUTDOWN listener, the DESTROY listener, and
+	 * restart()/shutdown(), since removeEventBusListeners(),
+	 * enableBrowserContextMenu(), removeKeyBindingListener(), and the Svelte
+	 * store unsubscribe calls are no-ops when already cleaned up, and
 	 * autoSaveTimeout is null-guarded.
 	 */
 	private tearDown(): void {
@@ -850,6 +854,24 @@ export class Editor extends BaseGame {
 		if (this.autoSaveTimeout !== null) {
 			this.autoSaveTimeout.destroy();
 			this.autoSaveTimeout = null;
+		}
+		// Clean up Svelte store subscriptions to prevent leaks across
+		// scene.stop()/scene.restart() (SHUTDOWN) and game.destroy() (DESTROY)
+		if (this.activeNoteSubscription) {
+			this.activeNoteSubscription();
+			this.activeNoteSubscription = null;
+		}
+		if (this.keyBindingsSubscription) {
+			this.keyBindingsSubscription();
+			this.keyBindingsSubscription = null;
+		}
+		if (this.dtxFileSubscription) {
+			this.dtxFileSubscription();
+			this.dtxFileSubscription = null;
+		}
+		if (this.soundChipSubscription) {
+			this.soundChipSubscription();
+			this.soundChipSubscription = null;
 		}
 	}
 
@@ -867,30 +889,6 @@ export class Editor extends BaseGame {
 		this.input.keyboard?.off('keydown-BACKSPACE');
 		this.input.keyboard?.off('keydown-DELETE');
 		this.input.keyboard?.off('keydown-Z');
-
-		// Clean up active note subscription
-		if (this.activeNoteSubscription) {
-			this.activeNoteSubscription();
-			this.activeNoteSubscription = null;
-		}
-
-		// Clean up key bindings subscription
-		if (this.keyBindingsSubscription) {
-			this.keyBindingsSubscription();
-			this.keyBindingsSubscription = null;
-		}
-
-		// Clean up DTX file subscription
-		if (this.dtxFileSubscription) {
-			this.dtxFileSubscription();
-			this.dtxFileSubscription = null;
-		}
-
-		// Clean up sound chip subscription
-		if (this.soundChipSubscription) {
-			this.soundChipSubscription();
-			this.soundChipSubscription = null;
-		}
 
 		// Clean up drag state
 		this.noteManager.destroy();

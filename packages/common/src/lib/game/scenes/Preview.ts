@@ -77,11 +77,13 @@ export class Preview extends BaseGame {
 		// EventBus handlers are removed when the game is torn down, otherwise
 		// they leak and reference a destroyed scene whose sys is nulled. The
 		// SHUTDOWN listener covers scene.stop()/scene.restart() paths where
-		// DESTROY never fires. removeEventBusListeners() is idempotent
-		// (EventBus.off is a no-op for unregistered handlers), so calling it on
-		// both SHUTDOWN and DESTROY is safe.
-		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.removeEventBusListeners());
-		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
+		// DESTROY never fires. Both listeners call the full shutdown() method,
+		// which cleans up the Svelte store subscription (storeUnsubscribe),
+		// preview tween, playing audio, scheduled time events, and EventBus
+		// handlers. shutdown() is idempotent, so calling it from both SHUTDOWN
+		// and DESTROY (and any explicit call) is safe.
+		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdown());
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.shutdown());
 	}
 
 	init(data: Data) {

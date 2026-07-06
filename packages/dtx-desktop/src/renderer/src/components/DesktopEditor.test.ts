@@ -381,8 +381,10 @@ describe('DesktopEditor', () => {
 	});
 
 	it('persists sidebar width to localStorage and restores it on remount', async () => {
-		vi.spyOn(localStorage, 'getItem').mockReturnValue('240');
-		const { unmount } = render(DesktopEditor);
+		vi.spyOn(localStorage, 'getItem').mockImplementation((key) =>
+			key === 'desktop_editor_sidebar_width' ? '240' : null
+		);
+		const first = render(DesktopEditor);
 		const sidebar = screen.getByLabelText('Resize sidebar');
 		expect(sidebar.parentElement?.style.width).toBe('240px');
 
@@ -392,7 +394,16 @@ describe('DesktopEditor', () => {
 		await fireEvent.mouseUp(document);
 		expect(localStorage.setItem).toHaveBeenCalledWith('desktop_editor_sidebar_width', '200');
 
-		unmount();
+		first.unmount();
+
+		// Remount and confirm the persisted width is restored from localStorage.
+		vi.spyOn(localStorage, 'getItem').mockImplementation((key) =>
+			key === 'desktop_editor_sidebar_width' ? '200' : null
+		);
+		const second = render(DesktopEditor);
+		const restoredSidebar = screen.getByLabelText('Resize sidebar');
+		expect(restoredSidebar.parentElement?.style.width).toBe('200px');
+		second.unmount();
 	});
 
 	it('collapses and expands the sidebar via keyboard', async () => {

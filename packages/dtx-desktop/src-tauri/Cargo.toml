@@ -48,7 +48,7 @@ tokio = { version = "1", features = [
     "time",
 ] }
 url = "2"
-zip = "4"
+zip = "8"
 
 [dev-dependencies]
 png = "0.18"

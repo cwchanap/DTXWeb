@@ -2,9 +2,12 @@
 	let pendingPhaserTeardown: Promise<void> = Promise.resolve();
 
 	// Test-only hook: resets the module-scoped teardown promise so test suites
-	// are not order-coupled by leftover chain state. Not for production use.
+	// are not order-coupled by leftover chain state. Guarded by DEV so it is
+	// stripped from production builds.
 	export function __resetPendingTeardownForTests(): void {
-		pendingPhaserTeardown = Promise.resolve();
+		if (import.meta.env.DEV) {
+			pendingPhaserTeardown = Promise.resolve();
+		}
 	}
 </script>
 
@@ -90,7 +93,12 @@
 
 	// Persist sidebar width to localStorage so it survives remounts/reloads.
 	$effect(() => {
-		localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+		try {
+			localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+		} catch {
+			// localStorage can throw (quota exceeded, disabled in private mode);
+			// sidebar width persistence is non-critical, ignore.
+		}
 	});
 
 	const toArrayBuffer = (content: ArrayBuffer | Uint8Array): ArrayBuffer => {
@@ -344,7 +352,13 @@
 				// timeout so a missing 'destroy' event (scene throw during
 				// shutdown, WebGL context loss) cannot hang every later mount.
 				const teardownPromise = new Promise<void>((resolve) => {
-					const timeout = setTimeout(() => resolve(), 5000);
+					const timeout = setTimeout(() => {
+						console.warn(
+							'[DesktopEditor] Phaser destroy event did not fire within 5s; ' +
+								'resolving teardown to avoid hanging subsequent mounts.'
+						);
+						resolve();
+					}, 5000);
 					gameToDestroy.events.once('destroy', () => {
 						clearTimeout(timeout);
 						resolve();

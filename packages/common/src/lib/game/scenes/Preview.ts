@@ -64,6 +64,16 @@ export class Preview extends BaseGame {
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
+		// Register the DESTROY listener once per scene instance. scene.restart()
+		// emits SHUTDOWN and re-runs init()/create(), but does NOT emit DESTROY,
+		// so a once-listener registered in create() would accumulate across
+		// restarts. The constructor runs only once per instance, avoiding the
+		// leak. Phaser's game.destroy() emits DESTROY and calls
+		// removeAllListeners() on the scene's event emitter, but never invokes
+		// scene.shutdown(); this listener ensures the module-singleton EventBus
+		// handlers are removed when the game is torn down, otherwise they leak
+		// and reference a destroyed scene whose sys is nulled.
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
 	}
 
 	init(data: Data) {
@@ -144,12 +154,8 @@ export class Preview extends BaseGame {
 		EventBus.on(EventType.STOP_PREVIEW, this.boundStopPreview);
 		EventBus.on(EventType.RESUME_PREVIEW, this.boundResumePreview);
 
-		// Phaser's game.destroy() emits DESTROY and calls removeAllListeners() on
-		// the scene's event emitter, but never invokes scene.shutdown(). Register a
-		// DESTROY listener so the module-singleton EventBus handlers are removed
-		// when the game is torn down, otherwise they leak and reference a destroyed
-		// scene whose sys is nulled.
-		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
+		// DESTROY listener is registered in the constructor to avoid
+		// accumulation across scene.restart() (see constructor comment).
 	}
 
 	private removeEventBusListeners(): void {

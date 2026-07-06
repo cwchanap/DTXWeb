@@ -173,6 +173,16 @@ export class Editor extends BaseGame {
 			this.setDirty(true);
 			this.debouncedAutoSave();
 		});
+		// Register the DESTROY listener once per scene instance. scene.restart()
+		// emits SHUTDOWN and re-runs init()/create(), but does NOT emit DESTROY,
+		// so a once-listener registered in create() would accumulate across
+		// restarts. The constructor runs only once per instance, avoiding the
+		// leak. Phaser's game.destroy() emits DESTROY and calls
+		// removeAllListeners() on the scene's event emitter, but never invokes
+		// scene.shutdown(); this listener ensures the module-singleton EventBus
+		// handlers are removed when the game is torn down, otherwise they leak
+		// and reference a destroyed scene whose sys is nulled.
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
 	}
 
 	init(data: Data) {
@@ -439,12 +449,8 @@ export class Editor extends BaseGame {
 		EventBus.on(EventType.START_PREVIEW, this.onStartPreview);
 		EventBus.on(EventType.STOP_PREVIEW, this.onStopPreview);
 
-		// Phaser's game.destroy() emits DESTROY and calls removeAllListeners() on
-		// the scene's event emitter, but never invokes scene.shutdown(). Register a
-		// DESTROY listener so the module-singleton EventBus handlers are removed
-		// when the game is torn down, otherwise they leak and reference a destroyed
-		// scene whose sys is nulled.
-		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
+		// DESTROY listener is registered in the constructor to avoid
+		// accumulation across scene.restart() (see constructor comment).
 
 		// Listen for active note changes to update cursor
 		this.activeNoteSubscription = store.activeNote.subscribe(() => {

@@ -293,6 +293,46 @@ describe('Editor Scene', () => {
 		});
 	});
 
+	it('removes its EventBus handlers when Phaser emits SHUTDOWN (scene.stop path)', () => {
+		// scene.stop() (e.g. difficulty switching in DesktopEditor) calls
+		// sys.shutdown() which emits SHUTDOWN but never emits DESTROY and never
+		// re-runs the constructor. The SHUTDOWN listener registered in the
+		// constructor must remove the EventBus handlers so they do not leak
+		// across stop/start cycles (each create() re-adds them).
+		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
+		// for on/emit/off, so this test manually invokes the captured SHUTDOWN
+		// callback rather than driving a real emit.
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		// Simulate Phaser's Systems.shutdown() firing the SHUTDOWN listener
+		// registered via this.events.on(Phaser.Scenes.Events.SHUTDOWN, ...).
+		const onMock = editorScene.events.on as unknown as MockedFn;
+		const shutdownListener = onMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'shutdown'
+		)?.[1];
+		expect(shutdownListener).toEqual(expect.any(Function));
+		(shutdownListener as (() => void) | undefined)?.();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
 	it('removes its EventBus handlers on restart so stale handlers are not retained', () => {
 		editorScene.create();
 

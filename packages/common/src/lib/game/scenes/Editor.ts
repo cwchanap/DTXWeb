@@ -173,15 +173,27 @@ export class Editor extends BaseGame {
 			this.setDirty(true);
 			this.debouncedAutoSave();
 		});
-		// Register the DESTROY listener once per scene instance. scene.restart()
-		// emits SHUTDOWN and re-runs init()/create(), but does NOT emit DESTROY,
-		// so a once-listener registered in create() would accumulate across
-		// restarts. The constructor runs only once per instance, avoiding the
-		// leak. Phaser's game.destroy() emits DESTROY and calls
+		// Register lifecycle listeners once per scene instance. scene.restart()
+		// and scene.stop() emit SHUTDOWN (re-running init()/create() on restart,
+		// or leaving the scene dormant on stop) but neither emits DESTROY, so
+		// once-listeners registered in create() would accumulate across
+		// restarts and EventBus handlers would leak across scene.stop() calls
+		// (e.g. difficulty switching via editorScene.scene.stop() in
+		// DesktopEditor). The constructor runs only once per instance, avoiding
+		// both leaks. Phaser's game.destroy() emits DESTROY and calls
 		// removeAllListeners() on the scene's event emitter, but never invokes
-		// scene.shutdown(); this listener ensures the module-singleton EventBus
-		// handlers are removed when the game is torn down, otherwise they leak
-		// and reference a destroyed scene whose sys is nulled.
+		// scene.shutdown(); the DESTROY listener ensures the module-singleton
+		// EventBus handlers are removed when the game is torn down, otherwise
+		// they leak and reference a destroyed scene whose sys is nulled. The
+		// SHUTDOWN listener runs the full tearDown() (cursor, context menu, key
+		// binding, autoSave, EventBus) to cover scene.stop()/scene.restart()
+		// paths where DESTROY never fires. tearDown() is idempotent, so it is
+		// safe to call from both the SHUTDOWN listener and restart(). The
+		// DESTROY listener only calls removeEventBusListeners() because
+		// this.input may be nulled by the time DESTROY fires during
+		// game.destroy(), and the other tearDown() steps are not needed when
+		// the entire game is going away.
+		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.tearDown());
 		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
 	}
 
@@ -816,10 +828,21 @@ export class Editor extends BaseGame {
 	}
 
 	shutdown() {
-		// Reset cursor to default when shutting down
-		this.input.setDefaultCursor('default');
+		this.tearDown();
+	}
+
+	/**
+	 * Shared cleanup between shutdown() and restart(). Idempotent: safe to call
+	 * from the SHUTDOWN listener and restart()/shutdown(), since
+	 * removeEventBusListeners(), enableBrowserContextMenu(), and
+	 * removeKeyBindingListener() are no-ops when already cleaned up, and
+	 * autoSaveTimeout is null-guarded.
+	 */
+	private tearDown(): void {
 		this.removeEventBusListeners();
-		// Clean up context menu event listener when scene shuts down
+		// Reset cursor to default
+		this.input.setDefaultCursor('default');
+		// Clean up context menu event listener
 		this.enableBrowserContextMenu();
 		// Clean up key binding listener to prevent memory leaks
 		this.removeKeyBindingListener();
@@ -835,7 +858,7 @@ export class Editor extends BaseGame {
 		this.isLoaded = false;
 		// Clear hash cache to avoid stale File references
 		this.soundFileHashCache.clear();
-		this.removeEventBusListeners();
+		this.tearDown();
 		this.input.off('pointerdown');
 		this.input.off('pointermove');
 		this.input.off('pointerup');
@@ -875,17 +898,6 @@ export class Editor extends BaseGame {
 		// Clear undo history when restarting
 		this.noteManager.clearUndoHistory();
 
-		// Reset cursor to default when restarting
-		this.input.setDefaultCursor('default');
-		// Re-enable browser context menu when restarting
-		this.enableBrowserContextMenu();
-		// Clean up key binding listener to prevent memory leaks
-		this.removeKeyBindingListener();
-		// Clean up auto-save timeout
-		if (this.autoSaveTimeout !== null) {
-			this.autoSaveTimeout.destroy();
-			this.autoSaveTimeout = null;
-		}
 		this.scene.restart(data);
 	}
 

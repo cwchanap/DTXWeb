@@ -31,7 +31,8 @@ export class DesktopFileProvider implements IFileProvider {
 
 	async getFile(simfileId: string | null, fileName: string): Promise<File | undefined> {
 		try {
-			const key = this.generateKey(simfileId, fileName);
+			const normalizedFileName = this.normalizeFileName(fileName);
+			const key = this.generateKey(simfileId, normalizedFileName);
 
 			// Check cache first
 			if (this.fileCache.has(key)) {
@@ -42,8 +43,6 @@ export class DesktopFileProvider implements IFileProvider {
 			if (!this._workspaceRoot) {
 				return undefined;
 			}
-
-			const normalizedFileName = this.normalizeFileName(fileName);
 
 			// For simfile-specific files, look in the simfile directory
 			// For local files (simfileId is null), look in the workspace root
@@ -81,7 +80,7 @@ export class DesktopFileProvider implements IFileProvider {
 
 	async setFile(simfileId: string | null, fileName: string, file: File): Promise<boolean> {
 		try {
-			const key = this.generateKey(simfileId, fileName);
+			const key = this.generateKey(simfileId, this.normalizeFileName(fileName));
 
 			// For desktop app, we just cache the file in memory
 			// Actual file writing to disk would require additional IPC handlers
@@ -96,7 +95,7 @@ export class DesktopFileProvider implements IFileProvider {
 
 	async removeFile(simfileId: string | null, fileName: string): Promise<boolean> {
 		try {
-			const key = this.generateKey(simfileId, fileName);
+			const key = this.generateKey(simfileId, this.normalizeFileName(fileName));
 			return this.fileCache.delete(key);
 		} catch (error) {
 			console.error('Failed to remove file:', error);
@@ -137,8 +136,8 @@ export class DesktopFileProvider implements IFileProvider {
 			.map((key) => key.substring(prefix.length)); // Return just the filename part
 	}
 
-	private generateKey(simfileId: string | null, fileName: string): string {
-		return `${simfileId || 'local'}:${this.normalizeFileName(fileName)}`;
+	private generateKey(simfileId: string | null, normalizedFileName: string): string {
+		return `${simfileId || 'local'}:${normalizedFileName}`;
 	}
 
 	private normalizeFileName(fileName: string): string {

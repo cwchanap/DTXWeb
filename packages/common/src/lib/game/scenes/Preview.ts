@@ -64,15 +64,23 @@ export class Preview extends BaseGame {
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
-		// Register the DESTROY listener once per scene instance. scene.restart()
-		// emits SHUTDOWN and re-runs init()/create(), but does NOT emit DESTROY,
-		// so a once-listener registered in create() would accumulate across
-		// restarts. The constructor runs only once per instance, avoiding the
-		// leak. Phaser's game.destroy() emits DESTROY and calls
+		// Register lifecycle listeners once per scene instance. scene.restart()
+		// and scene.stop() emit SHUTDOWN (re-running init()/create() on restart,
+		// or leaving the scene dormant on stop) but neither emits DESTROY, so
+		// once-listeners registered in create() would accumulate across
+		// restarts and EventBus handlers would leak across scene.stop() calls
+		// (e.g. difficulty switching via previewScene.scene.stop() in
+		// DesktopEditor). The constructor runs only once per instance, avoiding
+		// both leaks. Phaser's game.destroy() emits DESTROY and calls
 		// removeAllListeners() on the scene's event emitter, but never invokes
-		// scene.shutdown(); this listener ensures the module-singleton EventBus
-		// handlers are removed when the game is torn down, otherwise they leak
-		// and reference a destroyed scene whose sys is nulled.
+		// scene.shutdown(); the DESTROY listener ensures the module-singleton
+		// EventBus handlers are removed when the game is torn down, otherwise
+		// they leak and reference a destroyed scene whose sys is nulled. The
+		// SHUTDOWN listener covers scene.stop()/scene.restart() paths where
+		// DESTROY never fires. removeEventBusListeners() is idempotent
+		// (EventBus.off is a no-op for unregistered handlers), so calling it on
+		// both SHUTDOWN and DESTROY is safe.
+		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.removeEventBusListeners());
 		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.removeEventBusListeners());
 	}
 

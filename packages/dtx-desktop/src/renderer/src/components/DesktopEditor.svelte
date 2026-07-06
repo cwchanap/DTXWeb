@@ -92,7 +92,11 @@
 	let validationErrorTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Persist sidebar width to localStorage so it survives remounts/reloads.
+	// Skip writing during drag (handleMouseMove fires every pointermove) to
+	// avoid a synchronous localStorage write per frame; the final width is
+	// persisted when isDragging flips back to false on mouseup.
 	$effect(() => {
+		if (isDragging) return;
 		try {
 			localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
 		} catch {

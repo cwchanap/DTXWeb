@@ -32,6 +32,17 @@ export class DesktopFileProvider implements IFileProvider {
 	async getFile(simfileId: string | null, fileName: string): Promise<File | undefined> {
 		try {
 			const normalizedFileName = this.normalizeFileName(fileName);
+
+			// Defense-in-depth: reject parent-directory traversal segments
+			// before building the IPC path. The authoritative containment
+			// check lives in the Rust read_file_path_inner (canonicalize +
+			// starts_with(workspace_root)), which defeats `..`, symlinks, and
+			// absolute paths; this renderer guard avoids sending the IPC call
+			// at all and guards against any future code path that bypasses it.
+			if (this.containsParentTraversal(normalizedFileName)) {
+				return undefined;
+			}
+
 			const key = this.generateKey(simfileId, normalizedFileName);
 
 			// Check cache first
@@ -142,6 +153,14 @@ export class DesktopFileProvider implements IFileProvider {
 
 	private normalizeFileName(fileName: string): string {
 		return fileName.replaceAll('\\', '/');
+	}
+
+	/**
+	 * Returns true if any path segment is a parent-directory reference (`..`).
+	 * Used as defense-in-depth alongside the Rust-layer containment check.
+	 */
+	private containsParentTraversal(normalizedFileName: string): boolean {
+		return normalizedFileName.split('/').some((segment) => segment === '..');
 	}
 
 	private copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {

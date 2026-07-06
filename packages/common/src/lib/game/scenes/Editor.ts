@@ -42,51 +42,58 @@ export class Editor extends BaseGame {
 			0,
 			this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin
 		);
-	private onGridSpacingUpdate = (cellsPerMeasure: number) => {
+	private readonly onGridSpacingUpdate = (cellsPerMeasure: number) => {
 		this.updateGridSpacing(cellsPerMeasure);
 	};
-	private onCellHeightUpdate = (height: number) => {
+	private readonly onCellHeightUpdate = (height: number) => {
 		this.updateCellHeight(height);
 	};
-	private onMeasureUpdate = (measureCount: number) => {
+	private readonly onMeasureUpdate = (measureCount: number) => {
 		this.measureCount = get(store.measureCount);
 		this.restart({ measureCount });
 	};
-	private onNoteImport = async (
+	private readonly onNoteImport = async (
 		notes: LaneMeasureNote[],
 		bpmNotes: Record<string, number>,
 		draftMeasureCount?: number
 	) => {
-		// Mark as not loaded at the start of import process
-		this.isLoaded = false;
-		this.notes = {};
-		this.sound.removeAll();
-		notes.forEach((note) => {
-			if (!(note.laneID in this.notes)) {
-				this.notes[note.laneID] = [];
+		// EventBus.emit is synchronous and does not await the returned promise,
+		// so a throw here would surface as an unhandled rejection. Wrap the
+		// body so failures are logged instead of swallowed silently.
+		try {
+			// Mark as not loaded at the start of import process
+			this.isLoaded = false;
+			this.notes = {};
+			this.sound.removeAll();
+			notes.forEach((note) => {
+				if (!(note.laneID in this.notes)) {
+					this.notes[note.laneID] = [];
+				}
+				this.notes[note.laneID].push(note);
+			});
+			this.parseMesaureLength();
+			if (notes.length > 0) {
+				const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
+				const baseMeasureCount = maxMeasure + 1;
+				this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
+			} else {
+				// draftMeasureCount of 0 is invalid — treat as "not provided"
+				this.measureCount = draftMeasureCount || this.measureCount;
 			}
-			this.notes[note.laneID].push(note);
-		});
-		this.parseMesaureLength();
-		if (notes.length > 0) {
-			const maxMeasure = notes.reduce((max, note) => Math.max(max, note.measure), 0);
-			const baseMeasureCount = maxMeasure + 1;
-			this.measureCount = Math.max(baseMeasureCount, draftMeasureCount || 0);
-		} else {
-			// draftMeasureCount of 0 is invalid — treat as "not provided"
-			this.measureCount = draftMeasureCount || this.measureCount;
+			store.measureCount.set(this.measureCount);
+			this.bpmNotes = bpmNotes;
+			this.syncNotesToStore();
+			await this.autoSaveChart(); // Save immediately instead of debounced
+			this.setDirty(false); // Clear dirty state after importing notes
+			this.restart({ measureCount: this.measureCount });
+		} catch (error) {
+			console.error('[Editor] onNoteImport failed:', error);
 		}
-		store.measureCount.set(this.measureCount);
-		this.bpmNotes = bpmNotes;
-		this.syncNotesToStore();
-		await this.autoSaveChart(); // Save immediately instead of debounced
-		this.setDirty(false); // Clear dirty state after importing notes
-		this.restart({ measureCount: this.measureCount });
 	};
-	private onMeasureGoto = (measure: number) => {
+	private readonly onMeasureGoto = (measure: number) => {
 		this.panelContainer.y = this.clampY(this.getTotalMesaureOffest(measure));
 	};
-	private onStartPreview = (bpm: number) => {
+	private readonly onStartPreview = (bpm: number) => {
 		const currentMeasure = Math.floor(
 			this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
 		);
@@ -145,7 +152,7 @@ export class Editor extends BaseGame {
 			});
 		}
 	};
-	private onStopPreview = () => {
+	private readonly onStopPreview = () => {
 		// Pause the preview scene to keep it alive for resume
 		if (this.scene.isActive(Preview.key)) {
 			this.scene.pause(Preview.key);
@@ -830,6 +837,13 @@ export class Editor extends BaseGame {
 		return true;
 	}
 
+	/**
+	 * Public teardown entry point. Auto-invoked by the SHUTDOWN listener
+	 * registered in the constructor (scene.stop()/scene.restart() paths) and
+	 * the DESTROY listener (game.destroy() path), both of which call
+	 * tearDown() directly. Kept public for explicit callers and tests; the
+	 * underlying tearDown() is idempotent so repeated calls are safe.
+	 */
 	shutdown() {
 		this.tearDown();
 	}

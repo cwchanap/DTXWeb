@@ -79,9 +79,8 @@
 	let currentChart = $state<ChartState | null>(null); // Track current chart with DTX files
 	const SIDEBAR_WIDTH_STORAGE_KEY = 'desktop_editor_sidebar_width';
 	const SIDEBAR_WIDTH_DEFAULT = 320;
-	let sidebarWidth = $state(
-		Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)) || SIDEBAR_WIDTH_DEFAULT
-	);
+	const storedSidebarWidth = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+	let sidebarWidth = $state(Number(storedSidebarWidth) || SIDEBAR_WIDTH_DEFAULT);
 	let isDragging = $state(false);
 	let minSidebarWidth = 120;
 	let maxSidebarWidth = 600;
@@ -94,11 +93,18 @@
 	// Persist sidebar width to localStorage so it survives remounts/reloads.
 	// Skip writing during drag (handleMouseMove fires every pointermove) to
 	// avoid a synchronous localStorage write per frame; the final width is
-	// persisted when isDragging flips back to false on mouseup.
+	// persisted when isDragging flips back to false on mouseup. The
+	// last-persisted guard is seeded from the same localStorage read that
+	// initializes sidebarWidth, so a mount with an unchanged value writes
+	// nothing; a missing or invalid stored value persists the resolved default.
+	let lastPersistedSidebarWidth: string | null = storedSidebarWidth;
 	$effect(() => {
 		if (isDragging) return;
+		const serialized = String(sidebarWidth);
+		if (serialized === lastPersistedSidebarWidth) return;
 		try {
-			localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+			localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, serialized);
+			lastPersistedSidebarWidth = serialized;
 		} catch {
 			// localStorage can throw (quota exceeded, disabled in private mode);
 			// sidebar width persistence is non-critical, ignore.

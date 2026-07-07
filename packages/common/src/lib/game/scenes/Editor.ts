@@ -35,6 +35,7 @@ export class Editor extends BaseGame {
 	private keyBindings: Record<string, string> = {}; // key -> noteId mapping
 	private isInitializing = false; // Flag to prevent auto-save during initialization
 	private isLoaded = false; // Flag to track if scene has finished loading and drawing
+	private isSceneActive = false; // Liveness guard: false after tearDown(), true after create()
 	private soundFileHashCache: Map<File, string> = new Map(); // Cache file hashes to avoid recomputing
 	private readonly clampY = (newY: number) =>
 		Phaser.Math.Clamp(
@@ -42,17 +43,17 @@ export class Editor extends BaseGame {
 			0,
 			this.laneHeight - this.cameras.main.height + this.bottomMargin + this.cellMargin
 		);
-	private readonly onGridSpacingUpdate = (cellsPerMeasure: number) => {
+	private readonly handleGridSpacingUpdate = (cellsPerMeasure: number) => {
 		this.updateGridSpacing(cellsPerMeasure);
 	};
-	private readonly onCellHeightUpdate = (height: number) => {
+	private readonly handleCellHeightUpdate = (height: number) => {
 		this.updateCellHeight(height);
 	};
-	private readonly onMeasureUpdate = (measureCount: number) => {
+	private readonly handleMeasureUpdate = (measureCount: number) => {
 		this.measureCount = get(store.measureCount);
 		this.restart({ measureCount });
 	};
-	private readonly onNoteImport = async (
+	private readonly handleNoteImport = async (
 		notes: LaneMeasureNote[],
 		bpmNotes: Record<string, number>,
 		draftMeasureCount?: number
@@ -84,20 +85,24 @@ export class Editor extends BaseGame {
 			this.bpmNotes = bpmNotes;
 			this.syncNotesToStore();
 			await this.autoSaveChart(); // Save immediately instead of debounced
+			// Liveness guard: the await above can allow SHUTDOWN/DESTROY to
+			// fire tearDown() mid-import. Skip the restart path if the scene
+			// is no longer active so we don't operate on a torn-down scene.
+			if (!this.isSceneActive) return;
 			this.setDirty(false); // Clear dirty state after importing notes
 			this.restart({ measureCount: this.measureCount });
 		} catch (error) {
-			console.error('[Editor] onNoteImport failed:', error);
+			console.error('[Editor] handleNoteImport failed:', error);
 			EventBus.emit(
 				EventType.VALIDATION_ERROR,
 				`Failed to import notes: ${error instanceof Error ? error.message : String(error)}`
 			);
 		}
 	};
-	private readonly onMeasureGoto = (measure: number) => {
+	private readonly handleMeasureGoto = (measure: number) => {
 		this.panelContainer.y = this.clampY(this.getTotalMesaureOffest(measure));
 	};
-	private readonly onStartPreview = (bpm: number) => {
+	private readonly handleStartPreview = (bpm: number) => {
 		const currentMeasure = Math.floor(
 			this.panelContainer.y / (this.cellHeight * this.cellsPerMeasure)
 		);
@@ -156,7 +161,7 @@ export class Editor extends BaseGame {
 			});
 		}
 	};
-	private readonly onStopPreview = () => {
+	private readonly handleStopPreview = () => {
 		// Pause the preview scene to keep it alive for resume
 		if (this.scene.isActive(Preview.key)) {
 			this.scene.pause(Preview.key);
@@ -449,13 +454,13 @@ export class Editor extends BaseGame {
 		this.setupKeyBindingListener();
 
 		EventBus.emit(EventType.SCENE_READY, this);
-		EventBus.on(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
-		EventBus.on(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
-		EventBus.on(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
-		EventBus.on(EventType.NOTE_IMPORT, this.onNoteImport);
-		EventBus.on(EventType.MEASURE_GOTO, this.onMeasureGoto);
-		EventBus.on(EventType.START_PREVIEW, this.onStartPreview);
-		EventBus.on(EventType.STOP_PREVIEW, this.onStopPreview);
+		EventBus.on(EventType.MEASURE_UPDATE, this.handleMeasureUpdate);
+		EventBus.on(EventType.GRID_SPACING_UPDATE, this.handleGridSpacingUpdate);
+		EventBus.on(EventType.CELL_HEIGHT_UPDATE, this.handleCellHeightUpdate);
+		EventBus.on(EventType.NOTE_IMPORT, this.handleNoteImport);
+		EventBus.on(EventType.MEASURE_GOTO, this.handleMeasureGoto);
+		EventBus.on(EventType.START_PREVIEW, this.handleStartPreview);
+		EventBus.on(EventType.STOP_PREVIEW, this.handleStopPreview);
 
 		// Listen for active note changes to update cursor
 		this.activeNoteSubscription = store.activeNote.subscribe(() => {
@@ -498,6 +503,7 @@ export class Editor extends BaseGame {
 
 		// All drawing operations are synchronous, so scene is loaded when create() completes
 		this.markAsLoaded();
+		this.isSceneActive = true;
 	}
 
 	update() {
@@ -836,9 +842,12 @@ export class Editor extends BaseGame {
 	 * restart()/shutdown(), since removeEventBusListeners(),
 	 * enableBrowserContextMenu(), removeKeyBindingListener(), and the Svelte
 	 * store unsubscribe calls are no-ops when already cleaned up, and
-	 * autoSaveTimeout is null-guarded.
+	 * autoSaveTimeout is null-guarded. NoteManager.destroy() is also
+	 * idempotent (Phaser GameObject.destroy guards on !this.scene, and all
+	 * DOM listener removals are null-guarded).
 	 */
 	private tearDown(): void {
+		this.isSceneActive = false;
 		this.removeEventBusListeners();
 		// Reset cursor to default. Guard: on the DESTROY path (game.destroy()),
 		// InputPlugin registers its DESTROY handler during BOOT (before
@@ -851,10 +860,26 @@ export class Editor extends BaseGame {
 		if (this.input?.manager) {
 			this.input.setDefaultCursor('default');
 		}
+		// Unregister scene input/keyboard handlers so they do not leak across
+		// non-restart shutdown/start cycles (scene.stop() then scene.start()).
+		// Phaser's InputPlugin.shutdown/destroy also clears these, but
+		// centralizing here ensures cleanup on every teardown path.
+		this.input?.off('pointerdown');
+		this.input?.off('pointermove');
+		this.input?.off('pointerup');
+		this.input?.off('wheel');
+		this.input?.keyboard?.off('keydown-Q');
+		this.input?.keyboard?.off('keydown-BACKSPACE');
+		this.input?.keyboard?.off('keydown-DELETE');
+		this.input?.keyboard?.off('keydown-Z');
 		// Clean up context menu event listener
 		this.enableBrowserContextMenu();
 		// Clean up key binding listener to prevent memory leaks
 		this.removeKeyBindingListener();
+		// Clean up NoteManager: removes global DOM listeners (keydown/mousemove
+		// on document) that Phaser's scene shutdown does NOT handle, plus
+		// selection overlays and drag state.
+		this.noteManager.destroy();
 		// Clean up auto-save timeout
 		if (this.autoSaveTimeout !== null) {
 			this.autoSaveTimeout.destroy();
@@ -886,32 +911,17 @@ export class Editor extends BaseGame {
 		// Clear hash cache to avoid stale File references
 		this.soundFileHashCache.clear();
 		this.tearDown();
-		this.input.off('pointerdown');
-		this.input.off('pointermove');
-		this.input.off('pointerup');
-		this.input.off('wheel');
-		this.input.keyboard?.off('keydown-Q');
-		this.input.keyboard?.off('keydown-BACKSPACE');
-		this.input.keyboard?.off('keydown-DELETE');
-		this.input.keyboard?.off('keydown-Z');
-
-		// Clean up drag state
-		this.noteManager.destroy();
-
-		// Clear undo history when restarting
-		this.noteManager.clearUndoHistory();
-
 		this.scene.restart(data);
 	}
 
 	private removeEventBusListeners(): void {
-		EventBus.off(EventType.MEASURE_UPDATE, this.onMeasureUpdate);
-		EventBus.off(EventType.GRID_SPACING_UPDATE, this.onGridSpacingUpdate);
-		EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.onCellHeightUpdate);
-		EventBus.off(EventType.NOTE_IMPORT, this.onNoteImport);
-		EventBus.off(EventType.MEASURE_GOTO, this.onMeasureGoto);
-		EventBus.off(EventType.START_PREVIEW, this.onStartPreview);
-		EventBus.off(EventType.STOP_PREVIEW, this.onStopPreview);
+		EventBus.off(EventType.MEASURE_UPDATE, this.handleMeasureUpdate);
+		EventBus.off(EventType.GRID_SPACING_UPDATE, this.handleGridSpacingUpdate);
+		EventBus.off(EventType.CELL_HEIGHT_UPDATE, this.handleCellHeightUpdate);
+		EventBus.off(EventType.NOTE_IMPORT, this.handleNoteImport);
+		EventBus.off(EventType.MEASURE_GOTO, this.handleMeasureGoto);
+		EventBus.off(EventType.START_PREVIEW, this.handleStartPreview);
+		EventBus.off(EventType.STOP_PREVIEW, this.handleStopPreview);
 	}
 
 	drawFooterLane(laneConfig: LaneConfig, currentX: number) {

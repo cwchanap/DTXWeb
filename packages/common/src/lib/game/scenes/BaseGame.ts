@@ -10,29 +10,56 @@ export abstract class BaseGame extends Phaser.Scene {
 	/**
 	 * Subclass cleanup for SHUTDOWN (scene.stop()/scene.restart()) and
 	 * DESTROY (game.destroy()). Must be idempotent — it is invoked from both
-	 * lifecycle listeners registered in the constructor, and may also be
-	 * called directly by restart() or tests.
+	 * lifecycle listeners registered in init(), and may also be called
+	 * directly by restart() or tests.
 	 */
 	abstract shutdown(): void;
 
+	/**
+	 * Per-instance guard preventing SHUTDOWN/DESTROY listener accumulation
+	 * across scene.restart() (which re-runs init()/create() on the same
+	 * instance). See init() for details.
+	 */
+	private lifecycleListenersRegistered = false;
+
 	constructor(config?: string | Phaser.Types.Scenes.SettingsConfig) {
 		super(config);
-		// Register lifecycle listeners once per scene instance. scene.restart()
-		// and scene.stop() emit SHUTDOWN (re-running init()/create() on restart,
-		// or leaving the scene dormant on stop) but neither emits DESTROY, so
-		// once-listeners registered in create() would accumulate across
-		// restarts and EventBus handlers would leak across scene.stop() calls
-		// (e.g. difficulty switching via editorScene.scene.stop() in
-		// DesktopEditor). The constructor runs only once per instance, avoiding
-		// both leaks. Phaser's game.destroy() emits DESTROY and calls
-		// removeAllListeners() on the scene's event emitter, but never invokes
-		// scene.shutdown(); the DESTROY listener ensures the module-singleton
-		// EventBus handlers are removed when the game is torn down, otherwise
-		// they leak and reference a destroyed scene whose sys is nulled. Both
-		// listeners call shutdown(), which must be idempotent so it is safe to
-		// invoke from both SHUTDOWN and DESTROY (and any explicit call).
+		// Lifecycle listeners are registered in init(), not here: Phaser only
+		// installs the scene's EventEmitter plugin (this.events) during
+		// sys.init(game), which SceneManager#createSceneFromInstance calls
+		// AFTER the constructor returns. Accessing this.events here throws in
+		// real Phaser (the __mocks__/phaser.ts mock initializes it as a class
+		// field, masking this). init() is the earliest post-injection hook.
+	}
+
+	/**
+	 * Register SHUTDOWN/DESTROY listeners once per scene instance. Phaser
+	 * injects this.events during sys.init() (called by SceneManager after the
+	 * constructor), so this is the earliest safe registration point.
+	 *
+	 * scene.restart() and scene.stop() emit SHUTDOWN (re-running init()/create()
+	 * on restart, or leaving the scene dormant on stop) but neither emits
+	 * DESTROY, so listeners registered without a guard would accumulate across
+	 * restarts and EventBus handlers would leak across scene.stop() calls
+	 * (e.g. difficulty switching via editorScene.scene.stop() in
+	 * DesktopEditor). The lifecycleListenersRegistered guard ensures
+	 * once-per-instance registration. Phaser's game.destroy() emits DESTROY and
+	 * calls removeAllListeners() on the scene's event emitter, but never
+	 * invokes scene.shutdown(); the DESTROY listener ensures the
+	 * module-singleton EventBus handlers are removed when the game is torn
+	 * down, otherwise they leak and reference a destroyed scene whose sys is
+	 * nulled. Both listeners call shutdown(), which must be idempotent so it
+	 * is safe to invoke from both SHUTDOWN and DESTROY (and any explicit call).
+	 *
+	 * Subclasses that override init() MUST call super.init(data) so these
+	 * listeners are registered.
+	 */
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	init(_data?: unknown) {
+		if (this.lifecycleListenersRegistered) return;
 		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdown());
 		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.shutdown());
+		this.lifecycleListenersRegistered = true;
 	}
 
 	protected cellsPerMeasure = 16;

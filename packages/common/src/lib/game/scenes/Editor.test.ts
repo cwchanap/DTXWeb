@@ -254,8 +254,8 @@ describe('Editor Scene', () => {
 	it('removes its EventBus handlers when Phaser emits DESTROY (game.destroy path)', () => {
 		// Phaser's game.destroy() emits DESTROY on the scene's event emitter
 		// but never calls scene.shutdown(). The DESTROY listener registered in
-		// BaseGame's constructor must remove the EventBus handlers so they do
-		// not leak.
+		// BaseGame.init() must remove the EventBus handlers so they do not
+		// leak.
 		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
 		// for once/emit/off, so this test manually invokes the captured DESTROY
 		// callback rather than driving a real emit. This verifies the callback
@@ -263,6 +263,10 @@ describe('Editor Scene', () => {
 		// emit-vs-removeAllListeners ordering (Systems.destroy emits DESTROY
 		// THEN calls removeAllListeners). Correct for Phaser 3.88 today; if
 		// Phaser reorders, this test would not catch the regression.
+		// init() is called before create() to mirror Phaser's lifecycle (init
+		// runs first, registering the SHUTDOWN/DESTROY listeners) and to
+		// exercise the post-injection registration path in BaseGame.init().
+		editorScene.init({});
 		editorScene.create();
 
 		const eventBusOnMock = EventBus.on as MockedFn;
@@ -298,11 +302,14 @@ describe('Editor Scene', () => {
 		// scene.stop() (e.g. difficulty switching in DesktopEditor) calls
 		// sys.shutdown() which emits SHUTDOWN but never emits DESTROY and never
 		// re-runs the constructor. The SHUTDOWN listener registered in
-		// BaseGame's constructor must remove the EventBus handlers so they do
-		// not leak across stop/start cycles (each create() re-adds them).
+		// BaseGame.init() must remove the EventBus handlers so they do not
+		// leak across stop/start cycles (each create() re-adds them).
 		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
 		// for on/emit/off, so this test manually invokes the captured SHUTDOWN
 		// callback rather than driving a real emit.
+		// init() is called before create() to mirror Phaser's lifecycle (init
+		// runs first, registering the SHUTDOWN/DESTROY listeners).
+		editorScene.init({});
 		editorScene.create();
 
 		const eventBusOnMock = EventBus.on as MockedFn;
@@ -340,7 +347,10 @@ describe('Editor Scene', () => {
 		// same scene instance. tearDown() must be idempotent so the second
 		// call does not throw on already-nulled subscriptions / removed
 		// listeners. This is the load-bearing invariant for the
-		// constructor-registered listeners.
+		// init()-registered listeners.
+		// init() is called before create() to mirror Phaser's lifecycle (init
+		// runs first, registering the SHUTDOWN/DESTROY listeners).
+		editorScene.init({});
 		editorScene.create();
 
 		const onMock = editorScene.events.on as unknown as MockedFn;

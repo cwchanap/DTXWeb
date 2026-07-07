@@ -67,6 +67,13 @@ vi.mock('vexflow', () => {
 			}
 		},
 		Beam: { generateBeams: () => [] },
+		Tuplet: class {
+			constructor(_notes: unknown[], _options: unknown) {}
+			setContext() {
+				return this;
+			}
+			draw() {}
+		},
 		Stem: { UP: 1, DOWN: -1 }
 	};
 });
@@ -77,7 +84,8 @@ const chart: NotationChart = {
 			index: 0,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }]
+			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
+			tuplets: []
 		}
 	]
 };

@@ -129,7 +129,9 @@ const makeDtx = () => ({
 });
 
 const readyChart = () => ({
-	chart: { measures: [{ index: 0, measureTicks: 192, beatsPerMeasure: 4, entries: [] }] },
+	chart: {
+		measures: [{ index: 0, measureTicks: 192, beatsPerMeasure: 4, entries: [], tuplets: [] }]
+	},
 	timing: {
 		totalDuration: 2,
 		measureStartSeconds: [0],

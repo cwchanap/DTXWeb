@@ -31,7 +31,19 @@ export class DesktopFileProvider implements IFileProvider {
 
 	async getFile(simfileId: string | null, fileName: string): Promise<File | undefined> {
 		try {
-			const key = this.generateKey(simfileId, fileName);
+			const normalizedFileName = this.normalizeFileName(fileName);
+
+			// Defense-in-depth: reject parent-directory traversal segments
+			// before building the IPC path. The authoritative containment
+			// check lives in the Rust read_file_path_inner (canonicalize +
+			// starts_with(workspace_root)), which defeats `..`, symlinks, and
+			// absolute paths; this renderer guard avoids sending the IPC call
+			// at all and guards against any future code path that bypasses it.
+			if (this.containsParentTraversal(normalizedFileName)) {
+				return undefined;
+			}
+
+			const key = this.generateKey(simfileId, normalizedFileName);
 
 			// Check cache first
 			if (this.fileCache.has(key)) {
@@ -47,9 +59,9 @@ export class DesktopFileProvider implements IFileProvider {
 			// For local files (simfileId is null), look in the workspace root
 			let filePath: string;
 			if (simfileId) {
-				filePath = `${this._workspaceRoot}/${simfileId}/${fileName}`;
+				filePath = `${this._workspaceRoot}/${simfileId}/${normalizedFileName}`;
 			} else {
-				filePath = `${this._workspaceRoot}/${fileName}`;
+				filePath = `${this._workspaceRoot}/${normalizedFileName}`;
 			}
 
 			// Ask host process to read the local file
@@ -79,7 +91,7 @@ export class DesktopFileProvider implements IFileProvider {
 
 	async setFile(simfileId: string | null, fileName: string, file: File): Promise<boolean> {
 		try {
-			const key = this.generateKey(simfileId, fileName);
+			const key = this.generateKey(simfileId, this.normalizeFileName(fileName));
 
 			// For desktop app, we just cache the file in memory
 			// Actual file writing to disk would require additional IPC handlers
@@ -94,7 +106,7 @@ export class DesktopFileProvider implements IFileProvider {
 
 	async removeFile(simfileId: string | null, fileName: string): Promise<boolean> {
 		try {
-			const key = this.generateKey(simfileId, fileName);
+			const key = this.generateKey(simfileId, this.normalizeFileName(fileName));
 			return this.fileCache.delete(key);
 		} catch (error) {
 			console.error('Failed to remove file:', error);
@@ -135,8 +147,20 @@ export class DesktopFileProvider implements IFileProvider {
 			.map((key) => key.substring(prefix.length)); // Return just the filename part
 	}
 
-	private generateKey(simfileId: string | null, fileName: string): string {
-		return `${simfileId || 'local'}:${fileName}`;
+	private generateKey(simfileId: string | null, normalizedFileName: string): string {
+		return `${simfileId || 'local'}:${normalizedFileName}`;
+	}
+
+	private normalizeFileName(fileName: string): string {
+		return fileName.replaceAll('\\', '/');
+	}
+
+	/**
+	 * Returns true if any path segment is a parent-directory reference (`..`).
+	 * Used as defense-in-depth alongside the Rust-layer containment check.
+	 */
+	private containsParentTraversal(normalizedFileName: string): boolean {
+		return normalizedFileName.split('/').some((segment) => segment === '..');
 	}
 
 	private copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {

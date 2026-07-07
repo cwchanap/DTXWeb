@@ -45,8 +45,8 @@ export class Preview extends BaseGame {
 	private isInitialized = false;
 
 	// Bound event handlers to prevent listener leaks
-	private boundStopPreview = () => this.pausePreview();
-	private boundResumePreview = (data: { startMeasure: number }) => {
+	private readonly boundStopPreview = () => this.pausePreview();
+	private readonly boundResumePreview = (data: { startMeasure: number }) => {
 		this.startMeasure = data.startMeasure;
 		this.resumePreview();
 	};
@@ -64,9 +64,15 @@ export class Preview extends BaseGame {
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
+		// SHUTDOWN/DESTROY listeners are registered by BaseGame.init(), which
+		// runs before create() on every scene start/restart. shutdown() cleans
+		// up the Svelte store subscription (storeUnsubscribe), preview tween,
+		// playing audio, scheduled time events, and EventBus handlers, and is
+		// idempotent so both listeners firing is safe.
 	}
 
 	init(data: Data) {
+		super.init(data);
 		this.measureCount = data.measureCount;
 		this.notes = data.notes;
 		this.bpm = data.bpm;
@@ -143,6 +149,11 @@ export class Preview extends BaseGame {
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.STOP_PREVIEW, this.boundStopPreview);
 		EventBus.on(EventType.RESUME_PREVIEW, this.boundResumePreview);
+	}
+
+	private removeEventBusListeners(): void {
+		EventBus.off(EventType.STOP_PREVIEW, this.boundStopPreview);
+		EventBus.off(EventType.RESUME_PREVIEW, this.boundResumePreview);
 	}
 
 	/**
@@ -1152,8 +1163,7 @@ export class Preview extends BaseGame {
 		}
 
 		// Remove event listeners to prevent leaks
-		EventBus.off(EventType.STOP_PREVIEW, this.boundStopPreview);
-		EventBus.off(EventType.RESUME_PREVIEW, this.boundResumePreview);
+		this.removeEventBusListeners();
 
 		// Reset all container scales
 		if (this.gridContainer) this.gridContainer.setScale(1);

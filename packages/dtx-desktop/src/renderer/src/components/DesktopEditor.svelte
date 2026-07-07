@@ -1,6 +1,23 @@
+<script module lang="ts">
+	let pendingPhaserTeardown: Promise<void> = Promise.resolve();
+
+	// Test-only hook: resets the module-scoped teardown promise so test suites
+	// are not order-coupled by leftover chain state. Guarded by DEV so the
+	// body is a no-op in production. The export itself is only imported by
+	// DesktopEditor.test.ts; in production builds tree-shaking drops it since
+	// no production code references it. Co-located with the state it resets
+	// rather than split into a separate module to keep the teardown chain
+	// logic in one place.
+	export const __resetPendingTeardownForTests = (): void => {
+		if (import.meta.env.DEV) {
+			pendingPhaserTeardown = Promise.resolve();
+		}
+	};
+</script>
+
 <script lang="ts">
 	// Desktop Editor component that uses common package components directly
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import Phaser from 'phaser';
 	import EditorContextBar from './editor/EditorContextBar.svelte';
 	import EditorDock from './editor/EditorDock.svelte';
@@ -64,14 +81,39 @@
 	let isSidebarCollapsed = $state(false); // Track sidebar collapse state
 	let currentSongName = $state<string | null>(null); // Track current song name
 	let currentChart = $state<ChartState | null>(null); // Track current chart with DTX files
-	let sidebarWidth = $state(320); // Sidebar width in pixels (default 80 * 0.25rem = 320px)
+	const SIDEBAR_WIDTH_STORAGE_KEY = 'desktop_editor_sidebar_width';
+	const SIDEBAR_WIDTH_DEFAULT = 320;
+	const storedSidebarWidth = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+	let sidebarWidth = $state(Number(storedSidebarWidth) || SIDEBAR_WIDTH_DEFAULT);
 	let isDragging = $state(false);
-	let minSidebarWidth = 200;
+	let minSidebarWidth = 120;
 	let maxSidebarWidth = 600;
 	let collapseThreshold = 50; // Width below which sidebar collapses
 	const keyboardResizeStep = 20;
 	let validationError = $state<string | null>(null); // Track validation errors
 	let chartLoadError = $state<string | null>(null); // Track chart-folder load errors
+	let validationErrorTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Persist sidebar width to localStorage so it survives remounts/reloads.
+	// Skip writing during drag (handleMouseMove fires every pointermove) to
+	// avoid a synchronous localStorage write per frame; the final width is
+	// persisted when isDragging flips back to false on mouseup. The
+	// last-persisted guard is seeded from the same localStorage read that
+	// initializes sidebarWidth, so a mount with an unchanged value writes
+	// nothing; a missing or invalid stored value persists the resolved default.
+	let lastPersistedSidebarWidth: string | null = storedSidebarWidth;
+	$effect(() => {
+		if (isDragging) return;
+		const serialized = String(sidebarWidth);
+		if (serialized === lastPersistedSidebarWidth) return;
+		try {
+			localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, serialized);
+			lastPersistedSidebarWidth = serialized;
+		} catch {
+			// localStorage can throw (quota exceeded, disabled in private mode);
+			// sidebar width persistence is non-critical, ignore.
+		}
+	});
 
 	const toArrayBuffer = (content: ArrayBuffer | Uint8Array): ArrayBuffer => {
 		if (content instanceof ArrayBuffer) {
@@ -192,17 +234,26 @@
 	const handleValidationError = (message: string) => {
 		validationError = message;
 		// Auto-hide error after 5 seconds
-		setTimeout(() => {
+		if (validationErrorTimeout !== null) {
+			clearTimeout(validationErrorTimeout);
+		}
+		validationErrorTimeout = setTimeout(() => {
 			validationError = null;
+			validationErrorTimeout = null;
 		}, 5000);
 	};
 
 	onMount(() => {
+		let mounted = true;
 		// Set up validation error event listener
 		EventBus.on(EventType.VALIDATION_ERROR, handleValidationError);
 
 		const initializeEditor = async () => {
 			try {
+				await pendingPhaserTeardown;
+				await tick();
+				if (!mounted) return;
+
 				// Initialize file provider
 				let workspacePath = localStorage.getItem('workspace_path') || '';
 				// Remove extra quotes if present
@@ -249,6 +300,9 @@
 				}
 
 				// Initialize the Phaser game for the editor
+				// Re-check mounted here because loadFromSimFileId / loadChartFromPath
+				// above may still have been in flight when teardown began.
+				if (!mounted) return;
 				if (gameContainer) {
 					// Set the active scene to Editor for desktop
 					store.activeScene.set(Editor.key);
@@ -280,11 +334,15 @@
 					});
 
 					isGameInitialized = true;
+				} else {
+					throw new Error('Desktop editor game container was not available');
 				}
 			} catch (error) {
 				console.error('Failed to initialize desktop editor:', error);
 				// Set initialized to true even on error so we don't show loading forever
-				isGameInitialized = true;
+				if (mounted) {
+					isGameInitialized = true;
+				}
 			}
 		};
 
@@ -293,9 +351,47 @@
 
 		// Return cleanup function
 		return () => {
+			mounted = false;
 			EventBus.off(EventType.VALIDATION_ERROR, handleValidationError);
+			if (validationErrorTimeout !== null) {
+				clearTimeout(validationErrorTimeout);
+				validationErrorTimeout = null;
+			}
 			if (game) {
-				game.destroy(true);
+				const gameToDestroy = game;
+				game = null;
+				// Register the destroy listener before calling destroy so we
+				// never miss the event, then resolve pendingPhaserTeardown only
+				// when Phaser signals full teardown completion. Race with a
+				// timeout so a missing 'destroy' event (scene throw during
+				// shutdown, WebGL context loss) cannot hang every later mount.
+				const teardownPromise = new Promise<void>((resolve) => {
+					const timeout = setTimeout(() => {
+						console.warn(
+							'[DesktopEditor] Phaser destroy event did not fire within 5s; ' +
+								'resolving teardown to avoid hanging subsequent mounts.'
+						);
+						resolve();
+					}, 5000);
+					gameToDestroy.events.once('destroy', () => {
+						clearTimeout(timeout);
+						resolve();
+					});
+					// If destroy throws synchronously (e.g. scene error during
+					// shutdown), resolve like the missing-'destroy' event path so
+					// pendingPhaserTeardown never rejects and hangs later mounts.
+					try {
+						gameToDestroy.destroy(true);
+					} catch (err) {
+						console.error('[DesktopEditor] Phaser destroy threw synchronously:', err);
+						clearTimeout(timeout);
+						resolve();
+					}
+				});
+				pendingPhaserTeardown = pendingPhaserTeardown.then(
+					() => teardownPromise,
+					() => teardownPromise
+				);
 			}
 		};
 	});

@@ -95,6 +95,18 @@ describe('DesktopFileProvider', () => {
 			expect(host.readFile).toHaveBeenCalledWith('/workspace/test.dtx', '/workspace');
 		});
 
+		it('normalizes DTX backslash sample paths before reading from the local filesystem', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({
+				error: null,
+				content: new Uint8Array([1, 2, 3])
+			});
+
+			await provider.getFile(null, 'sound\\kick.wav');
+
+			expect(host.readFile).toHaveBeenCalledWith('/workspace/sound/kick.wav', '/workspace');
+		});
+
 		it('returns undefined when host returns error', async () => {
 			provider.setWorkspaceRoot('/workspace');
 			host.readFile.mockResolvedValue({
@@ -131,12 +143,57 @@ describe('DesktopFileProvider', () => {
 			expect(host.readFile).toHaveBeenCalledTimes(1);
 		});
 
+		it('dedupes cache entries for backslash and forward-slash variants of the same file', async () => {
+			// generateKey must normalize fileName so that 'foo\\bar.wav' and
+			// 'foo/bar.wav' share a single cache entry instead of duplicating.
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({
+				error: null,
+				content: 'audio content'
+			});
+
+			await provider.getFile('sim1', 'sound\\kick.wav');
+			await provider.getFile('sim1', 'sound/kick.wav');
+
+			expect(host.readFile).toHaveBeenCalledTimes(1);
+		});
+
 		it('returns undefined when host throws an error', async () => {
 			provider.setWorkspaceRoot('/workspace');
 			host.readFile.mockRejectedValue(new Error('IPC error'));
 
 			const file = await provider.getFile('sim1', 'test.dtx');
 			expect(file).toBeUndefined();
+		});
+
+		it('rejects parent-directory traversal without calling the host', async () => {
+			// Defense-in-depth: the renderer must not send `..` segments to the
+			// Rust IPC layer, even though read_file_path_inner canonicalizes
+			// and enforces workspace containment authoritatively.
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({ error: null, content: 'secret' });
+
+			const file = await provider.getFile('sim1', '../escape.dtx');
+			expect(file).toBeUndefined();
+			expect(host.readFile).not.toHaveBeenCalled();
+		});
+
+		it('rejects backslash-encoded parent-directory traversal', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({ error: null, content: 'secret' });
+
+			const file = await provider.getFile(null, '..\\..\\etc\\passwd');
+			expect(file).toBeUndefined();
+			expect(host.readFile).not.toHaveBeenCalled();
+		});
+
+		it('rejects nested parent-directory traversal segments', async () => {
+			provider.setWorkspaceRoot('/workspace');
+			host.readFile.mockResolvedValue({ error: null, content: 'secret' });
+
+			const file = await provider.getFile('sim1', 'songs/../etc/passwd');
+			expect(file).toBeUndefined();
+			expect(host.readFile).not.toHaveBeenCalled();
 		});
 
 		it('returns File for audio files with binary content', async () => {

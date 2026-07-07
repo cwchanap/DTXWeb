@@ -169,6 +169,16 @@ const Events = {
 	}
 };
 
+// Mock Phaser.Scenes (lifecycle event name constants used by scene code)
+const Scenes = {
+	Events: {
+		DESTROY: 'destroy',
+		SHUTDOWN: 'shutdown',
+		START: 'start',
+		READY: 'ready'
+	}
+};
+
 // Mock Phaser.Scene
 const Scene = class MockScene {
 	constructor(config = {}) {
@@ -256,10 +266,14 @@ const Scene = class MockScene {
 		pause: vi.fn(),
 		setVisible: vi.fn(),
 		isPaused: vi.fn().mockReturnValue(false),
+		isActive: vi.fn().mockReturnValue(true),
 		resume: vi.fn(),
 		launch: vi.fn(),
 		restart: vi.fn()
 	};
+
+	// Phaser Scene event emitter — used for lifecycle hooks (DESTROY, SHUTDOWN)
+	events = new Events.EventEmitter();
 
 	sound = {
 		add: vi.fn().mockReturnValue(new Sound.WebAudioSound()),
@@ -327,6 +341,7 @@ const Phaser = {
 	Sound,
 	Tweens,
 	Events,
+	Scenes,
 	Scene,
 	Math: {
 		Clamp: (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
@@ -344,5 +359,5 @@ const Phaser = {
 // Make Phaser available globally for tests
 globalThis.Phaser = Phaser;
 
-export { Scene, GameObjects, Sound, Tweens, Events, Geom, Input };
+export { Scene, GameObjects, Sound, Tweens, Events, Geom, Input, Scenes };
 export default Phaser;

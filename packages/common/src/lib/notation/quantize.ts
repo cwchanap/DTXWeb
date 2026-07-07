@@ -4,6 +4,7 @@ import { laneToStaff } from './drumMapping';
 import {
 	TICKS_PER_WHOLE,
 	type NotationEntry,
+	type NotationTuplet,
 	type NotationMeasure,
 	type NotationChart
 } from './model';
@@ -15,16 +16,9 @@ const BPM_CHANNEL = '08';
 const LEGACY_BPM_CHANNEL = '03';
 
 /**
- * Representable single durations, largest first: [ticks, vexflowCode].
- *
- * BINARY-ONLY — no triplet durations. TICKS_PER_WHOLE (192) was chosen as the
- * LCM of binary + triplet subdivisions, so triplet *onsets* quantize cleanly,
- * but their *spans* (e.g. triplet-8th = 16 ticks, triplet-quarter = 32 ticks)
- * are decomposed by `ticksToDurations` into binary approximations (16 →
- * ['16','64'], 32 → ['8','32']) instead of tuplet groupings. The result is
- * visually wrong engraving for triplet fills; playback timing is unaffected
- * (it uses startTick, not the duration codes). Proper tuplet support requires
- * model + quantizer + renderer changes — tracked in HPA-116.
+ * Representable binary single durations, largest first: [ticks, vexflowCode].
+ * Triplet groups are detected separately and rendered with these binary base
+ * durations inside VexFlow Tuplet objects.
  */
 const DURATION_TABLE: ReadonlyArray<readonly [number, string]> = [
 	[192, 'w'],
@@ -57,6 +51,71 @@ interface Onset {
 	tick: number;
 	keys: string[];
 }
+
+const TRIPLET_GROUP_TICKS = [48, 96, 192] as const;
+
+interface TripletCandidate {
+	groupTicks: number;
+	groupEnd: number;
+	slotTicks: number;
+	baseDurTicks: number;
+	slotStarts: [number, number, number];
+	occupiedCount: number;
+	observedEnd: boolean;
+}
+
+const findNextOnsetTick = (onsets: Onset[], tick: number, measureTicks: number): number =>
+	onsets.find((onset) => onset.tick > tick)?.tick ?? measureTicks;
+
+const findTripletCandidate = (
+	cursor: number,
+	onsets: Onset[],
+	onsetByTick: ReadonlyMap<number, Onset>,
+	measureTicks: number
+): TripletCandidate | undefined => {
+	const candidates: TripletCandidate[] = [];
+
+	for (const groupTicks of TRIPLET_GROUP_TICKS) {
+		const slotTicks = groupTicks / 3;
+		const groupEnd = cursor + groupTicks;
+		if (!Number.isInteger(slotTicks) || groupEnd > measureTicks) continue;
+
+		const slotStarts = [cursor, cursor + slotTicks, cursor + slotTicks * 2] as [
+			number,
+			number,
+			number
+		];
+		const slotStartSet = new Set<number>(slotStarts);
+		const hasOffSlotOnset = onsets.some(
+			(onset) => onset.tick > cursor && onset.tick < groupEnd && !slotStartSet.has(onset.tick)
+		);
+		if (hasOffSlotOnset) continue;
+
+		const occupiedSlots = slotStarts.map((tick) => onsetByTick.has(tick));
+		const occupiedCount = occupiedSlots.filter(Boolean).length;
+		if (occupiedCount < 2) continue;
+
+		const observedEnd = groupEnd === measureTicks || onsetByTick.has(groupEnd);
+		if (!occupiedSlots[2] && !observedEnd) continue;
+
+		candidates.push({
+			groupTicks,
+			groupEnd,
+			slotTicks,
+			baseDurTicks: groupTicks / 2,
+			slotStarts,
+			occupiedCount,
+			observedEnd
+		});
+	}
+
+	return candidates.sort(
+		(a, b) =>
+			b.occupiedCount - a.occupiedCount ||
+			Number(b.observedEnd) - Number(a.observedEnd) ||
+			a.groupTicks - b.groupTicks
+	)[0];
+};
 
 export const quantizeMeasure = (
 	index: number,
@@ -111,6 +170,9 @@ export const quantizeMeasure = (
 		}
 	};
 
+	const tuplets: NotationTuplet[] = [];
+	const onsetByTick = new Map<number, Onset>(onsets.map((onset) => [onset.tick, onset]));
+
 	if (onsets.length === 0) {
 		// Decompose the empty bar via pushRests so non-4/4 measures render with
 		// rests that sum to the whole bar (e.g. 3/4 = 144 ticks -> half + quarter
@@ -123,23 +185,63 @@ export const quantizeMeasure = (
 		if (entries.length === 0) {
 			entries.push({ kind: 'rest', startTick: 0, durTicks: measureTicks });
 		}
-		return { index, measureTicks, beatsPerMeasure, entries };
+		return { index, measureTicks, beatsPerMeasure, entries, tuplets };
 	}
 
-	// Leading rest before first onset.
-	if (onsets[0].tick > 0) pushRests(0, onsets[0].tick);
+	let cursor = 0;
+	while (cursor < measureTicks) {
+		const triplet = findTripletCandidate(cursor, onsets, onsetByTick, measureTicks);
+		if (triplet) {
+			const startIndex = entries.length;
+			for (const slotStart of triplet.slotStarts) {
+				const onset = onsetByTick.get(slotStart);
+				if (onset) {
+					entries.push({
+						kind: 'note',
+						startTick: slotStart,
+						durTicks: triplet.slotTicks,
+						keys: onset.keys
+					});
+				} else {
+					entries.push({
+						kind: 'rest',
+						startTick: slotStart,
+						durTicks: triplet.slotTicks
+					});
+				}
+			}
+			tuplets.push({
+				startIndex,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: triplet.slotTicks,
+				baseDurTicks: triplet.baseDurTicks
+			});
+			cursor = triplet.groupEnd;
+			continue;
+		}
 
-	onsets.forEach((onset, i) => {
-		const nextTick = i + 1 < onsets.length ? onsets[i + 1].tick : measureTicks;
-		const span = nextTick - onset.tick;
-		const codes = ticksToDurations(span);
-		// The note takes the largest leading duration; the remainder becomes rests.
-		const noteDur = codes.length ? DURATION_TABLE.find(([, c]) => c === codes[0])![0] : span;
-		entries.push({ kind: 'note', startTick: onset.tick, durTicks: noteDur, keys: onset.keys });
-		if (span - noteDur > 0) pushRests(onset.tick + noteDur, span - noteDur);
-	});
+		const onset = onsetByTick.get(cursor);
+		if (onset) {
+			const nextTick = findNextOnsetTick(onsets, cursor, measureTicks);
+			const span = nextTick - cursor;
+			const codes = ticksToDurations(span);
+			const noteDur = codes.length
+				? DURATION_TABLE.find(([, c]) => c === codes[0])![0]
+				: span;
+			entries.push({ kind: 'note', startTick: cursor, durTicks: noteDur, keys: onset.keys });
+			if (span - noteDur > 0) pushRests(cursor + noteDur, span - noteDur);
+			cursor = nextTick;
+			continue;
+		}
 
-	return { index, measureTicks, beatsPerMeasure, entries };
+		const nextTick = findNextOnsetTick(onsets, cursor, measureTicks);
+		pushRests(cursor, nextTick - cursor);
+		cursor = nextTick;
+	}
+
+	return { index, measureTicks, beatsPerMeasure, entries, tuplets };
 };
 
 export const groupNotesByLane = (notes: LaneMeasureNote[]): Record<string, LaneMeasureNote[]> => {

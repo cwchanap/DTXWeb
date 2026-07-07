@@ -13,6 +13,10 @@ class TestableBaseGame extends BaseGame {
 		super({ key: 'TestableBaseGame' });
 	}
 
+	shutdown(): void {
+		// Test-only no-op implementation
+	}
+
 	drawFooterLane(laneConfig: LaneConfig, currentX: number): void {
 		// Mock implementation for testing
 		const sprite = this.add.rectangle(

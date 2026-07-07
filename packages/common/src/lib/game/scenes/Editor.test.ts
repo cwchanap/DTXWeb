@@ -254,7 +254,8 @@ describe('Editor Scene', () => {
 	it('removes its EventBus handlers when Phaser emits DESTROY (game.destroy path)', () => {
 		// Phaser's game.destroy() emits DESTROY on the scene's event emitter
 		// but never calls scene.shutdown(). The DESTROY listener registered in
-		// create() must remove the EventBus handlers so they do not leak.
+		// BaseGame's constructor must remove the EventBus handlers so they do
+		// not leak.
 		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
 		// for once/emit/off, so this test manually invokes the captured DESTROY
 		// callback rather than driving a real emit. This verifies the callback
@@ -296,9 +297,9 @@ describe('Editor Scene', () => {
 	it('removes its EventBus handlers when Phaser emits SHUTDOWN (scene.stop path)', () => {
 		// scene.stop() (e.g. difficulty switching in DesktopEditor) calls
 		// sys.shutdown() which emits SHUTDOWN but never emits DESTROY and never
-		// re-runs the constructor. The SHUTDOWN listener registered in the
-		// constructor must remove the EventBus handlers so they do not leak
-		// across stop/start cycles (each create() re-adds them).
+		// re-runs the constructor. The SHUTDOWN listener registered in
+		// BaseGame's constructor must remove the EventBus handlers so they do
+		// not leak across stop/start cycles (each create() re-adds them).
 		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
 		// for on/emit/off, so this test manually invokes the captured SHUTDOWN
 		// callback rather than driving a real emit.
@@ -331,6 +332,37 @@ describe('Editor Scene', () => {
 		registeredHandlers.forEach(([eventName, handler]) => {
 			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
 		});
+	});
+
+	it('survives SHUTDOWN then DESTROY firing on the same instance (idempotent tearDown)', () => {
+		// Real-world sequence: scene.stop() emits SHUTDOWN (tearDown runs),
+		// then later game.destroy() emits DESTROY (tearDown runs again) on the
+		// same scene instance. tearDown() must be idempotent so the second
+		// call does not throw on already-nulled subscriptions / removed
+		// listeners. This is the load-bearing invariant for the
+		// constructor-registered listeners.
+		editorScene.create();
+
+		const onMock = editorScene.events.on as unknown as MockedFn;
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const shutdownListener = onMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'shutdown'
+		)?.[1];
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(shutdownListener).toEqual(expect.any(Function));
+		expect(destroyListener).toEqual(expect.any(Function));
+
+		expect(() => {
+			(shutdownListener as (() => void) | undefined)?.();
+			(destroyListener as (() => void) | undefined)?.();
+		}).not.toThrow();
+
+		// tearDown ran twice but EventBus.off is called at least once per
+		// handler (idempotent removeEventBusListeners re-off is safe).
+		expect(EventBus.off).toHaveBeenCalledWith(EventType.MEASURE_UPDATE, expect.any(Function));
+		expect(EventBus.off).toHaveBeenCalledWith(EventType.NOTE_IMPORT, expect.any(Function));
 	});
 
 	it('removes its EventBus handlers on restart so stale handlers are not retained', () => {
@@ -2243,6 +2275,31 @@ describe('Editor Scene', () => {
 			expect(restartSpy).toHaveBeenCalledWith({ measureCount: 10 });
 
 			restartSpy.mockRestore();
+		});
+
+		it('emits VALIDATION_ERROR when onNoteImport throws so the UI can surface it', async () => {
+			// autoSaveChart rejection (or any throw inside the try body) must not
+			// be swallowed silently — DesktopEditor listens for VALIDATION_ERROR
+			// and shows it in the UI. Only console.error would leave the user
+			// with a blank editor and no indication of failure.
+			editorScene.create();
+
+			vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockRejectedValue(new Error('disk full'));
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+			expect(noteImportCallback).toBeDefined();
+
+			await noteImportCallback?.([], {});
+
+			expect(EventBus.emit).toHaveBeenCalledWith(
+				EventType.VALIDATION_ERROR,
+				expect.stringContaining('Failed to import notes')
+			);
 		});
 	});
 

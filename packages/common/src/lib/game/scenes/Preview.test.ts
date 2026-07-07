@@ -828,8 +828,9 @@ describe('Preview Scene', () => {
 
 		it('removes EventBus handlers when Phaser emits DESTROY (game.destroy path)', async () => {
 			// Phaser's game.destroy() emits DESTROY on the scene's event emitter
-			// but never calls scene.shutdown(). The DESTROY listener registered in
-			// create() must remove the EventBus handlers so they do not leak.
+			// but never calls scene.shutdown(). The DESTROY listener registered
+			// in BaseGame's constructor must remove the EventBus handlers so
+			// they do not leak.
 			// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
 			// for once/emit/off, so this test manually invokes the captured DESTROY
 			// callback rather than driving a real emit. This verifies the callback
@@ -869,9 +870,9 @@ describe('Preview Scene', () => {
 		it('removes EventBus handlers when Phaser emits SHUTDOWN (scene.stop path)', async () => {
 			// scene.stop() (e.g. difficulty switching in DesktopEditor) calls
 			// sys.shutdown() which emits SHUTDOWN but never emits DESTROY and never
-			// re-runs the constructor. The SHUTDOWN listener registered in the
-			// constructor must remove the EventBus handlers so they do not leak
-			// across stop/start cycles (each create() re-adds them).
+			// re-runs the constructor. The SHUTDOWN listener registered in
+			// BaseGame's constructor must remove the EventBus handlers so they
+			// do not leak across stop/start cycles (each create() re-adds them).
 			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
 			(Preview as any).animationsCreated = true;
 
@@ -890,6 +891,49 @@ describe('Preview Scene', () => {
 			)?.[1];
 			expect(shutdownListener).toEqual(expect.any(Function));
 			(shutdownListener as (() => void) | undefined)?.();
+
+			expect(EventBus.off).toHaveBeenCalledWith(
+				EventType.STOP_PREVIEW,
+				previewScene['boundStopPreview']
+			);
+			expect(EventBus.off).toHaveBeenCalledWith(
+				EventType.RESUME_PREVIEW,
+				previewScene['boundResumePreview']
+			);
+		});
+
+		it('survives SHUTDOWN then DESTROY firing on the same instance (idempotent shutdown)', async () => {
+			// Real-world sequence: scene.stop() emits SHUTDOWN (shutdown runs),
+			// then later game.destroy() emits DESTROY (shutdown runs again) on
+			// the same scene instance. shutdown() must be idempotent so the
+			// second call does not throw on already-nulled storeUnsubscribe /
+			// stopped tweens / cleared audio. This is the load-bearing
+			// invariant for the constructor-registered listeners.
+			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
+			(Preview as any).animationsCreated = true;
+
+			vi.spyOn(previewScene as any, 'drawPanel').mockImplementation(() => {});
+			vi.spyOn(previewScene as any, 'drawNotes').mockImplementation(() => {});
+			vi.spyOn(previewScene as any, 'setupSoundsAsync').mockResolvedValue(undefined);
+			vi.spyOn(previewScene as any, 'startPreview').mockImplementation(() => {});
+
+			await previewScene.create();
+
+			const onMock = previewScene.events.on as unknown as MockedFn;
+			const onceMock = previewScene.events.once as unknown as MockedFn;
+			const shutdownListener = onMock.mock.calls.find(
+				(call: unknown[]) => call[0] === 'shutdown'
+			)?.[1];
+			const destroyListener = onceMock.mock.calls.find(
+				(call: unknown[]) => call[0] === 'destroy'
+			)?.[1];
+			expect(shutdownListener).toEqual(expect.any(Function));
+			expect(destroyListener).toEqual(expect.any(Function));
+
+			expect(() => {
+				(shutdownListener as (() => void) | undefined)?.();
+				(destroyListener as (() => void) | undefined)?.();
+			}).not.toThrow();
 
 			expect(EventBus.off).toHaveBeenCalledWith(
 				EventType.STOP_PREVIEW,

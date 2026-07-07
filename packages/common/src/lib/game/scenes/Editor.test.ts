@@ -418,6 +418,83 @@ describe('Editor Scene', () => {
 		expect(EventBus.off).toHaveBeenCalledWith(EventType.NOTE_IMPORT, expect.any(Function));
 	});
 
+	it('unregisters input and keyboard handlers on shutdown', () => {
+		editorScene.create();
+
+		const inputOffMock = editorScene.input.off as MockedFn;
+		const keyboardOffMock = editorScene.input.keyboard?.off as MockedFn;
+
+		editorScene.shutdown();
+
+		// Verify scene input handlers are unregistered
+		expect(inputOffMock).toHaveBeenCalledWith('pointerdown');
+		expect(inputOffMock).toHaveBeenCalledWith('pointermove');
+		expect(inputOffMock).toHaveBeenCalledWith('pointerup');
+		expect(inputOffMock).toHaveBeenCalledWith('wheel');
+
+		// Verify keyboard handlers are unregistered
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Q');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-BACKSPACE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-DELETE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Z');
+	});
+
+	it('unregisters input and keyboard handlers when Phaser emits DESTROY', () => {
+		editorScene.init({});
+		editorScene.create();
+
+		const inputOffMock = editorScene.input.off as MockedFn;
+		const keyboardOffMock = editorScene.input.keyboard?.off as MockedFn;
+
+		// Simulate Phaser's Systems.destroy() firing the DESTROY listener
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(destroyListener).toEqual(expect.any(Function));
+		(destroyListener as (() => void) | undefined)?.();
+
+		// Verify scene input handlers are unregistered
+		expect(inputOffMock).toHaveBeenCalledWith('pointerdown');
+		expect(inputOffMock).toHaveBeenCalledWith('pointermove');
+		expect(inputOffMock).toHaveBeenCalledWith('pointerup');
+		expect(inputOffMock).toHaveBeenCalledWith('wheel');
+
+		// Verify keyboard handlers are unregistered
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Q');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-BACKSPACE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-DELETE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Z');
+	});
+
+	it('unregisters input and keyboard handlers when Phaser emits SHUTDOWN', () => {
+		editorScene.init({});
+		editorScene.create();
+
+		const inputOffMock = editorScene.input.off as MockedFn;
+		const keyboardOffMock = editorScene.input.keyboard?.off as MockedFn;
+
+		// Simulate Phaser's Systems.shutdown() firing the SHUTDOWN listener
+		const onMock = editorScene.events.on as unknown as MockedFn;
+		const shutdownListener = onMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'shutdown'
+		)?.[1];
+		expect(shutdownListener).toEqual(expect.any(Function));
+		(shutdownListener as (() => void) | undefined)?.();
+
+		// Verify scene input handlers are unregistered
+		expect(inputOffMock).toHaveBeenCalledWith('pointerdown');
+		expect(inputOffMock).toHaveBeenCalledWith('pointermove');
+		expect(inputOffMock).toHaveBeenCalledWith('pointerup');
+		expect(inputOffMock).toHaveBeenCalledWith('wheel');
+
+		// Verify keyboard handlers are unregistered
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Q');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-BACKSPACE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-DELETE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Z');
+	});
+
 	it('removes its EventBus handlers on restart so stale handlers are not retained', () => {
 		editorScene.create();
 
@@ -2330,7 +2407,7 @@ describe('Editor Scene', () => {
 			restartSpy.mockRestore();
 		});
 
-		it('emits VALIDATION_ERROR when onNoteImport throws so the UI can surface it', async () => {
+		it('emits VALIDATION_ERROR when handleNoteImport throws so the UI can surface it', async () => {
 			// autoSaveChart rejection (or any throw inside the try body) must not
 			// be swallowed silently — DesktopEditor listens for VALIDATION_ERROR
 			// and shows it in the UI. Only console.error would leave the user
@@ -2353,6 +2430,34 @@ describe('Editor Scene', () => {
 				EventType.VALIDATION_ERROR,
 				expect.stringContaining('Failed to import notes')
 			);
+		});
+
+		it('skips restart when scene is torn down during handleNoteImport await', async () => {
+			// Liveness guard: if SHUTDOWN/DESTROY fires tearDown() while
+			// autoSaveChart() is awaited, isSceneActive becomes false and the
+			// post-import restart must be skipped to avoid operating on a
+			// torn-down scene.
+			editorScene.create();
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+
+			// Simulate tearDown() firing during the await by making autoSaveChart
+			// call shutdown() before resolving.
+			vi.spyOn(editorScene, 'autoSaveChart').mockImplementation(async () => {
+				editorScene.shutdown(); // sets isSceneActive = false via tearDown()
+			});
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			await noteImportCallback?.([], {});
+
+			expect(restartSpy).not.toHaveBeenCalled();
+
+			restartSpy.mockRestore();
 		});
 	});
 
@@ -2440,28 +2545,28 @@ describe('Editor Scene', () => {
 		});
 	});
 
-	describe('onGridSpacingUpdate and onCellHeightUpdate callbacks', () => {
-		it('should call updateGridSpacing when onGridSpacingUpdate is invoked', () => {
+	describe('handleGridSpacingUpdate and handleCellHeightUpdate callbacks', () => {
+		it('should call updateGridSpacing when handleGridSpacingUpdate is invoked', () => {
 			editorScene.create();
 
 			const updateGridSpacingSpy = vi
 				.spyOn(editorScene as any, 'updateGridSpacing')
 				.mockImplementation(() => {});
 
-			editorScene['onGridSpacingUpdate']?.(16);
+			editorScene['handleGridSpacingUpdate']?.(16);
 
 			expect(updateGridSpacingSpy).toHaveBeenCalledWith(16);
 			updateGridSpacingSpy.mockRestore();
 		});
 
-		it('should call updateCellHeight when onCellHeightUpdate is invoked', () => {
+		it('should call updateCellHeight when handleCellHeightUpdate is invoked', () => {
 			editorScene.create();
 
 			const updateCellHeightSpy = vi
 				.spyOn(editorScene as any, 'updateCellHeight')
 				.mockImplementation(() => {});
 
-			editorScene['onCellHeightUpdate']?.(30);
+			editorScene['handleCellHeightUpdate']?.(30);
 
 			expect(updateCellHeightSpy).toHaveBeenCalledWith(30);
 			updateCellHeightSpy.mockRestore();

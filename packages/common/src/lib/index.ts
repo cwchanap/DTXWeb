@@ -48,6 +48,7 @@ export {
 	type NotationNoteEntry,
 	type NotationRestEntry,
 	type NotationEntry,
+	type NotationTuplet,
 	type NotationMeasure,
 	type NotationChart
 } from './notation/model';

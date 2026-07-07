@@ -95,6 +95,7 @@ describe('quantizeMeasure', () => {
 			{ kind: 'rest', startTick: 0, durTicks: 96 },
 			{ kind: 'rest', startTick: 96, durTicks: 48 }
 		]);
+		expect(measure.tuplets).toEqual([]);
 		const total = measure.entries.reduce((sum, e) => sum + e.durTicks, 0);
 		expect(total).toBe(measure.measureTicks);
 	});
@@ -166,6 +167,129 @@ describe('quantizeMeasure', () => {
 		// The first note keeps its binary quarter duration.
 		const note0 = measure.entries.find((e) => e.kind === 'note' && e.startTick === 0);
 		expect(note0?.durTicks).toBe(48);
+	});
+
+	it('detects an all-note eighth-triplet group', () => {
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 32 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			}
+		]);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
+	it('emits rests inside detected triplet groups', () => {
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 32 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 16, durTicks: 16 },
+			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			}
+		]);
+	});
+
+	it('uses an observed group end to emit a trailing triplet rest', () => {
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 48 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 4)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 32, durTicks: 16 },
+			{ kind: 'note', startTick: 48, durTicks: 96, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			}
+		]);
+	});
+
+	it('detects a triplet group after a binary quarter note', () => {
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 48 / 192 },
+			{ noteID: '01', position: 64 / 192 },
+			{ noteID: '01', position: 80 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 4)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] },
+			{ kind: 'note', startTick: 48, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 64, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 80, durTicks: 16, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 1,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			}
+		]);
+	});
+
+	it('does not infer a trailing triplet rest from an isolated 16-tick pair', () => {
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.tuplets).toEqual([]);
+		expect(measure.entries[0]).toMatchObject({
+			kind: 'note',
+			startTick: 0,
+			durTicks: 12
+		});
+		expect(measure.entries[1]).toMatchObject({
+			kind: 'rest',
+			startTick: 12,
+			durTicks: 4
+		});
 	});
 
 	it('fully consumes an off-grid onset span so entries sum to measureTicks', () => {

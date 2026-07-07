@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { _ } from 'svelte-i18n';
-	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam } from 'vexflow';
+	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam, Tuplet } from 'vexflow';
 	import type { NotationChart, NotationMeasure } from '@dtx/common';
 	import {
 		cursorPoint,
@@ -61,16 +61,29 @@
 	let hlHeight = $state(0);
 	let hlVisible = $state(false);
 
-	const toStaveNotes = (measure: NotationMeasure): StaveNote[] =>
-		measure.entries.map((entry) => {
+	const tupletBaseDurTicksByEntry = (measure: NotationMeasure): Map<number, number> => {
+		const covered = new Map<number, number>();
+		for (const tuplet of measure.tuplets) {
+			for (let offset = 0; offset < tuplet.count; offset++) {
+				covered.set(tuplet.startIndex + offset, tuplet.baseDurTicks);
+			}
+		}
+		return covered;
+	};
+
+	const toStaveNotes = (measure: NotationMeasure): StaveNote[] => {
+		const tupletDurTicks = tupletBaseDurTicksByEntry(measure);
+		return measure.entries.map((entry, idx) => {
+			const durationTicks = tupletDurTicks.get(idx) ?? entry.durTicks;
 			if (entry.kind === 'rest') {
 				// Rest position is cosmetic; b/4 is the conventional rest line.
-				const code = ticksToRestCode(entry.durTicks);
+				const code = ticksToVexflowCode(durationTicks);
 				return new StaveNote({ keys: ['b/4'], duration: `${code}r` });
 			}
-			const code = ticksToRestCode(entry.durTicks);
+			const code = ticksToVexflowCode(durationTicks);
 			return new StaveNote({ keys: entry.keys, duration: code });
 		});
+	};
 
 	// Map each (binary) duration-tick value to its VexFlow code. quantize
 	// emits these plain values for notes, but off-grid positions can produce
@@ -91,7 +104,7 @@
 	const TICK_ENTRIES = Object.entries(TICK_CODE)
 		.map(([t, c]) => [Number(t), c] as const)
 		.sort((a, b) => b[0] - a[0]);
-	const ticksToRestCode = (ticks: number): string => {
+	const ticksToVexflowCode = (ticks: number): string => {
 		const exact = TICK_CODE[ticks];
 		if (exact) return exact;
 		const entry = TICK_ENTRIES.find(([t]) => t <= ticks);
@@ -177,6 +190,16 @@
 
 			try {
 				const notes = toStaveNotes(measure);
+				const tuplets = measure.tuplets.map(
+					(tuplet) =>
+						new Tuplet(
+							notes.slice(tuplet.startIndex, tuplet.startIndex + tuplet.count),
+							{
+								num_notes: tuplet.numNotes,
+								notes_occupied: tuplet.notesOccupied
+							}
+						)
+				);
 				const voice = new Voice({
 					num_beats: measure.beatsPerMeasure,
 					beat_value: 4
@@ -205,6 +228,7 @@
 					.format([voice], Math.max(40, width - STAVE_PADDING));
 				voice.draw(context, stave);
 				beams.forEach((b) => b.setContext(context).draw());
+				tuplets.forEach((tuplet) => tuplet.setContext(context).draw());
 				// Capture rendered note x-extents for the active-note highlight.
 				measure.entries.forEach((entry, idx) => {
 					if (entry.kind !== 'note') return;

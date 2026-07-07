@@ -14,6 +14,14 @@ const setContext = vi.fn(() => ({ draw }));
 const staveNoteArgs = vi.hoisted(() => [] as Array<{ keys: string[]; duration: string }>);
 // Captures Beam.generateBeams call args so tests can assert beam grouping.
 const generateBeamsCalls = vi.hoisted(() => [] as Array<unknown[]>);
+const tupletArgs = vi.hoisted(
+	() =>
+		[] as Array<{
+			notes: unknown[];
+			options: { num_notes: number; notes_occupied: number };
+		}>
+);
+const tupletDraw = vi.hoisted(() => vi.fn());
 vi.mock('vexflow', () => {
 	class Stave {
 		addClef() {
@@ -75,6 +83,17 @@ vi.mock('vexflow', () => {
 				return [];
 			})
 		},
+		Tuplet: class {
+			constructor(notes: unknown[], options: { num_notes: number; notes_occupied: number }) {
+				tupletArgs.push({ notes, options });
+			}
+			setContext() {
+				return this;
+			}
+			draw() {
+				tupletDraw();
+			}
+		},
 		Stem: { UP: 1, DOWN: -1 }
 	};
 });
@@ -85,7 +104,8 @@ const chart: NotationChart = {
 			index: 0,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }]
+			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
+			tuplets: []
 		}
 	]
 };
@@ -96,6 +116,8 @@ describe('NotationView', () => {
 		setContext.mockClear();
 		staveNoteArgs.length = 0;
 		generateBeamsCalls.length = 0;
+		tupletArgs.length = 0;
+		tupletDraw.mockClear();
 	});
 
 	it('renders a container and draws at least one stave', async () => {
@@ -141,7 +163,8 @@ describe('NotationView', () => {
 						{ kind: 'rest', startTick: 24, durTicks: 24 },
 						{ kind: 'note', startTick: 48, durTicks: 24, keys: ['c/5'] },
 						{ kind: 'note', startTick: 72, durTicks: 24, keys: ['c/5'] }
-					]
+					],
+					tuplets: []
 				}
 			]
 		};
@@ -176,7 +199,8 @@ describe('NotationView', () => {
 						{ kind: 'rest', startTick: 55, durTicks: 7 },
 						// 130-tick rest (non-table): should render as 'hr' (96 <= 130)
 						{ kind: 'rest', startTick: 62, durTicks: 130 }
-					]
+					],
+					tuplets: []
 				}
 			]
 		};
@@ -196,7 +220,8 @@ describe('NotationView', () => {
 					index: 0,
 					measureTicks: 192,
 					beatsPerMeasure: 4,
-					entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['g/5/x3'] }]
+					entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['g/5/x3'] }],
+					tuplets: []
 				}
 			]
 		};
@@ -204,6 +229,42 @@ describe('NotationView', () => {
 		await tick();
 		const openHatNote = staveNoteArgs.find((a) => a.keys.includes('g/5/x3'));
 		expect(openHatNote).toBeDefined();
+	});
+
+	it('renders triplet-covered entries with base durations and draws a VexFlow Tuplet', async () => {
+		const tripletChart: NotationChart = {
+			measures: [
+				{
+					index: 0,
+					measureTicks: 192,
+					beatsPerMeasure: 4,
+					entries: [
+						{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+						{ kind: 'rest', startTick: 16, durTicks: 16 },
+						{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+					],
+					tuplets: [
+						{
+							startIndex: 0,
+							count: 3,
+							numNotes: 3,
+							notesOccupied: 2,
+							slotTicks: 16,
+							baseDurTicks: 24
+						}
+					]
+				}
+			]
+		};
+
+		render(NotationView, { props: { chart: tripletChart } });
+		await tick();
+
+		expect(staveNoteArgs.map((a) => a.duration)).toEqual(['8', '8r', '8']);
+		expect(tupletArgs).toHaveLength(1);
+		expect(tupletArgs[0].notes).toHaveLength(3);
+		expect(tupletArgs[0].options).toEqual({ num_notes: 3, notes_occupied: 2 });
+		expect(tupletDraw).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -259,7 +320,8 @@ const richChart: NotationChart = {
 			entries: [
 				{ kind: 'rest', startTick: 0, durTicks: 48 },
 				{ kind: 'note', startTick: 48, durTicks: 48, keys: ['c/5'] }
-			]
+			],
+			tuplets: []
 		},
 		// Measures 1..4 are rest-only (no onsets) so they pad row 0 and let us
 		// test the "no active onset" + "no point" highlight paths.
@@ -267,14 +329,16 @@ const richChart: NotationChart = {
 			index: i + 1,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'rest' as const, startTick: 0, durTicks: 192 }]
+			entries: [{ kind: 'rest' as const, startTick: 0, durTicks: 192 }],
+			tuplets: []
 		})),
 		// Measure 5 wraps to row 1 and has a note for the autoscroll test.
 		{
 			index: 5,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }]
+			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
+			tuplets: []
 		}
 	]
 };
@@ -285,6 +349,8 @@ describe('NotationView layout & interaction', () => {
 		setContext.mockClear();
 		staveNoteArgs.length = 0;
 		generateBeamsCalls.length = 0;
+		tupletArgs.length = 0;
+		tupletDraw.mockClear();
 	});
 
 	it('renders rest entries (rest branch of toStaveNotes)', async () => {

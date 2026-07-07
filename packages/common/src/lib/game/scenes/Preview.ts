@@ -64,26 +64,10 @@ export class Preview extends BaseGame {
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
-		// Register lifecycle listeners once per scene instance. scene.restart()
-		// and scene.stop() emit SHUTDOWN (re-running init()/create() on restart,
-		// or leaving the scene dormant on stop) but neither emits DESTROY, so
-		// once-listeners registered in create() would accumulate across
-		// restarts and EventBus handlers would leak across scene.stop() calls
-		// (e.g. difficulty switching via previewScene.scene.stop() in
-		// DesktopEditor). The constructor runs only once per instance, avoiding
-		// both leaks. Phaser's game.destroy() emits DESTROY and calls
-		// removeAllListeners() on the scene's event emitter, but never invokes
-		// scene.shutdown(); the DESTROY listener ensures the module-singleton
-		// EventBus handlers are removed when the game is torn down, otherwise
-		// they leak and reference a destroyed scene whose sys is nulled. The
-		// SHUTDOWN listener covers scene.stop()/scene.restart() paths where
-		// DESTROY never fires. Both listeners call the full shutdown() method,
-		// which cleans up the Svelte store subscription (storeUnsubscribe),
+		// SHUTDOWN/DESTROY listeners are registered by BaseGame's constructor.
+		// shutdown() cleans up the Svelte store subscription (storeUnsubscribe),
 		// preview tween, playing audio, scheduled time events, and EventBus
-		// handlers. shutdown() is idempotent, so calling it from both SHUTDOWN
-		// and DESTROY (and any explicit call) is safe.
-		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdown());
-		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.shutdown());
+		// handlers, and is idempotent so both listeners firing is safe.
 	}
 
 	init(data: Data) {
@@ -163,9 +147,6 @@ export class Preview extends BaseGame {
 		EventBus.emit(EventType.SCENE_READY, this);
 		EventBus.on(EventType.STOP_PREVIEW, this.boundStopPreview);
 		EventBus.on(EventType.RESUME_PREVIEW, this.boundResumePreview);
-
-		// DESTROY listener is registered in the constructor to avoid
-		// accumulation across scene.restart() (see constructor comment).
 	}
 
 	private removeEventBusListeners(): void {

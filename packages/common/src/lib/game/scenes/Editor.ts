@@ -88,6 +88,10 @@ export class Editor extends BaseGame {
 			this.restart({ measureCount: this.measureCount });
 		} catch (error) {
 			console.error('[Editor] onNoteImport failed:', error);
+			EventBus.emit(
+				EventType.VALIDATION_ERROR,
+				`Failed to import notes: ${error instanceof Error ? error.message : String(error)}`
+			);
 		}
 	};
 	private readonly onMeasureGoto = (measure: number) => {
@@ -180,31 +184,11 @@ export class Editor extends BaseGame {
 			this.setDirty(true);
 			this.debouncedAutoSave();
 		});
-		// Register lifecycle listeners once per scene instance. scene.restart()
-		// and scene.stop() emit SHUTDOWN (re-running init()/create() on restart,
-		// or leaving the scene dormant on stop) but neither emits DESTROY, so
-		// once-listeners registered in create() would accumulate across
-		// restarts and EventBus handlers would leak across scene.stop() calls
-		// (e.g. difficulty switching via editorScene.scene.stop() in
-		// DesktopEditor). The constructor runs only once per instance, avoiding
-		// both leaks. Phaser's game.destroy() emits DESTROY and calls
-		// removeAllListeners() on the scene's event emitter, but never invokes
-		// scene.shutdown(); the DESTROY listener ensures the module-singleton
-		// EventBus handlers are removed when the game is torn down, otherwise
-		// they leak and reference a destroyed scene whose sys is nulled. The
-		// SHUTDOWN listener runs the full tearDown() (cursor, context menu, key
-		// binding, autoSave, Svelte store subscriptions, EventBus) to cover
-		// scene.stop()/scene.restart() paths where DESTROY never fires. The
-		// DESTROY listener also calls tearDown() so the document-level keydown
-		// listener and Svelte store subscriptions are cleaned up on
-		// game.destroy(). tearDown() is idempotent, so it is safe to call from
-		// both the SHUTDOWN listener, the DESTROY listener, and restart(). At
-		// DESTROY emit time this.input is still valid: Phaser's Systems.destroy
+		// SHUTDOWN/DESTROY listeners are registered by BaseGame's constructor.
+		// At DESTROY emit time this.input is still valid: Phaser's Systems.destroy
 		// emits DESTROY before nulling its props list (which does not include
-		// 'input'), and the Editor's constructor-registered DESTROY listener
-		// fires before InputPlugin.destroy (registered at scene boot).
-		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.tearDown());
-		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.tearDown());
+		// 'input'), and the DESTROY listener fires before InputPlugin.destroy
+		// (registered at scene boot).
 	}
 
 	init(data: Data) {
@@ -470,9 +454,6 @@ export class Editor extends BaseGame {
 		EventBus.on(EventType.MEASURE_GOTO, this.onMeasureGoto);
 		EventBus.on(EventType.START_PREVIEW, this.onStartPreview);
 		EventBus.on(EventType.STOP_PREVIEW, this.onStopPreview);
-
-		// DESTROY listener is registered in the constructor to avoid
-		// accumulation across scene.restart() (see constructor comment).
 
 		// Listen for active note changes to update cursor
 		this.activeNoteSubscription = store.activeNote.subscribe(() => {
@@ -838,11 +819,10 @@ export class Editor extends BaseGame {
 	}
 
 	/**
-	 * Public teardown entry point. Auto-invoked by the SHUTDOWN listener
-	 * registered in the constructor (scene.stop()/scene.restart() paths) and
-	 * the DESTROY listener (game.destroy() path), both of which call
-	 * tearDown() directly. Kept public for explicit callers and tests; the
-	 * underlying tearDown() is idempotent so repeated calls are safe.
+	 * Public teardown entry point. Auto-invoked by the SHUTDOWN and DESTROY
+	 * listeners registered in BaseGame's constructor. Delegates to tearDown()
+	 * which is idempotent, so repeated calls (SHUTDOWN then DESTROY, or
+	 * explicit restart() + listener) are safe.
 	 */
 	shutdown() {
 		this.tearDown();

@@ -6,6 +6,35 @@ import { calculateHighResolutionPosition } from '../utils/notePositioning';
 
 export abstract class BaseGame extends Phaser.Scene {
 	static measureLengthNoteID = '02';
+
+	/**
+	 * Subclass cleanup for SHUTDOWN (scene.stop()/scene.restart()) and
+	 * DESTROY (game.destroy()). Must be idempotent — it is invoked from both
+	 * lifecycle listeners registered in the constructor, and may also be
+	 * called directly by restart() or tests.
+	 */
+	abstract shutdown(): void;
+
+	constructor(config?: string | Phaser.Types.Scenes.SettingsConfig) {
+		super(config);
+		// Register lifecycle listeners once per scene instance. scene.restart()
+		// and scene.stop() emit SHUTDOWN (re-running init()/create() on restart,
+		// or leaving the scene dormant on stop) but neither emits DESTROY, so
+		// once-listeners registered in create() would accumulate across
+		// restarts and EventBus handlers would leak across scene.stop() calls
+		// (e.g. difficulty switching via editorScene.scene.stop() in
+		// DesktopEditor). The constructor runs only once per instance, avoiding
+		// both leaks. Phaser's game.destroy() emits DESTROY and calls
+		// removeAllListeners() on the scene's event emitter, but never invokes
+		// scene.shutdown(); the DESTROY listener ensures the module-singleton
+		// EventBus handlers are removed when the game is torn down, otherwise
+		// they leak and reference a destroyed scene whose sys is nulled. Both
+		// listeners call shutdown(), which must be idempotent so it is safe to
+		// invoke from both SHUTDOWN and DESTROY (and any explicit call).
+		this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdown());
+		this.events.once(Phaser.Scenes.Events.DESTROY, () => this.shutdown());
+	}
+
 	protected cellsPerMeasure = 16;
 	protected cellWidth = 50;
 	protected cellHeight = 25;

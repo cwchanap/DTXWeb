@@ -377,7 +377,16 @@
 						clearTimeout(timeout);
 						resolve();
 					});
-					gameToDestroy.destroy(true);
+					// If destroy throws synchronously (e.g. scene error during
+					// shutdown), resolve like the missing-'destroy' event path so
+					// pendingPhaserTeardown never rejects and hangs later mounts.
+					try {
+						gameToDestroy.destroy(true);
+					} catch (err) {
+						console.error('[DesktopEditor] Phaser destroy threw synchronously:', err);
+						clearTimeout(timeout);
+						resolve();
+					}
 				});
 				pendingPhaserTeardown = pendingPhaserTeardown.then(
 					() => teardownPromise,

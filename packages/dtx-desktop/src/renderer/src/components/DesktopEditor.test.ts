@@ -352,6 +352,33 @@ describe('DesktopEditor', () => {
 		vi.useRealTimers();
 	});
 
+	it('resolves pendingPhaserTeardown when destroy throws synchronously', async () => {
+		// If Phaser's destroy() throws synchronously (scene error during
+		// shutdown), the teardown promise must still resolve so a later
+		// remount boots instead of awaiting a rejected promise forever.
+		mockPhaserGame.destroy.mockImplementation(() => {
+			mockPhaserState.isDestroying = true;
+			throw new Error('boom during destroy');
+		});
+
+		const firstRender = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserState.successfulGames).toBe(1);
+		});
+
+		firstRender.unmount();
+		// Synchronous throw resolves teardown immediately; no timeout needed.
+		mockPhaserState.isDestroying = false;
+
+		const secondRender = render(DesktopEditor);
+		await waitFor(() => {
+			expect(mockPhaserState.successfulGames).toBe(2);
+		});
+		expect(screen.queryByText(/Initializing editor/)).toBeNull();
+
+		secondRender.unmount();
+	});
+
 	it('clears the validation error auto-hide timeout on unmount', async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		const { unmount } = render(DesktopEditor);

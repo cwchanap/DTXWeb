@@ -64,13 +64,15 @@ export class Preview extends BaseGame {
 	constructor() {
 		super({ key: Preview.key });
 		this.laneConfigs = this.laneConfigs.filter((lane) => lane.playable);
-		// SHUTDOWN/DESTROY listeners are registered by BaseGame's constructor.
-		// shutdown() cleans up the Svelte store subscription (storeUnsubscribe),
-		// preview tween, playing audio, scheduled time events, and EventBus
-		// handlers, and is idempotent so both listeners firing is safe.
+		// SHUTDOWN/DESTROY listeners are registered by BaseGame.init(), which
+		// runs before create() on every scene start/restart. shutdown() cleans
+		// up the Svelte store subscription (storeUnsubscribe), preview tween,
+		// playing audio, scheduled time events, and EventBus handlers, and is
+		// idempotent so both listeners firing is safe.
 	}
 
 	init(data: Data) {
+		super.init(data);
 		this.measureCount = data.measureCount;
 		this.notes = data.notes;
 		this.bpm = data.bpm;

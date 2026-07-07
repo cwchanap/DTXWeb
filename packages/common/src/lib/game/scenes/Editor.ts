@@ -184,14 +184,16 @@ export class Editor extends BaseGame {
 			this.setDirty(true);
 			this.debouncedAutoSave();
 		});
-		// SHUTDOWN/DESTROY listeners are registered by BaseGame's constructor.
-		// At DESTROY emit time this.input is still valid: Phaser's Systems.destroy
-		// emits DESTROY before nulling its props list (which does not include
-		// 'input'), and the DESTROY listener fires before InputPlugin.destroy
-		// (registered at scene boot).
+		// SHUTDOWN/DESTROY listeners are registered by BaseGame.init(), which
+		// runs before create() on every scene start/restart. At DESTROY emit
+		// time this.input is still valid: Phaser's Systems.destroy emits DESTROY
+		// before nulling its props list (which does not include 'input'), and
+		// the DESTROY listener fires before InputPlugin.destroy (registered at
+		// scene boot).
 	}
 
 	init(data: Data) {
+		super.init(data);
 		this.measureCount = data.measureCount || this.measureCount;
 	}
 
@@ -820,7 +822,7 @@ export class Editor extends BaseGame {
 
 	/**
 	 * Public teardown entry point. Auto-invoked by the SHUTDOWN and DESTROY
-	 * listeners registered in BaseGame's constructor. Delegates to tearDown()
+	 * listeners registered in BaseGame.init(). Delegates to tearDown()
 	 * which is idempotent, so repeated calls (SHUTDOWN then DESTROY, or
 	 * explicit restart() + listener) are safe.
 	 */

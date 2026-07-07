@@ -840,8 +840,17 @@ export class Editor extends BaseGame {
 	 */
 	private tearDown(): void {
 		this.removeEventBusListeners();
-		// Reset cursor to default
-		this.input.setDefaultCursor('default');
+		// Reset cursor to default. Guard: on the DESTROY path (game.destroy()),
+		// InputPlugin registers its DESTROY handler during BOOT (before
+		// BaseGame.init() registers this listener), so InputPlugin.destroy()
+		// runs first and nulls this.input.manager. Calling setDefaultCursor
+		// then throws TypeError, aborting Systems.destroy() before it nulls
+		// props/removeAllListeners and potentially hanging SceneManager.destroy
+		// (and remount). On SHUTDOWN the input plugin is still alive, so the
+		// cursor reset still runs.
+		if (this.input?.manager) {
+			this.input.setDefaultCursor('default');
+		}
 		// Clean up context menu event listener
 		this.enableBrowserContextMenu();
 		// Clean up key binding listener to prevent memory leaks

@@ -298,6 +298,49 @@ describe('Editor Scene', () => {
 		});
 	});
 
+	it('does not throw on DESTROY when InputPlugin.destroy() has nulled input.manager first', () => {
+		// Real Phaser DESTROY ordering (game.destroy() path):
+		// InputPlugin registers its DESTROY handler during BOOT (InputPlugin.boot,
+		// which runs on Systems.init's BOOT emit during scene *add*), BEFORE
+		// BaseGame.init() registers its DESTROY handler (during scene *start*).
+		// Systems.destroy emits DESTROY and EventEmitter fires handlers in
+		// registration order, so InputPlugin.destroy() runs first and nulls
+		// this.input.manager. Then BaseGame's DESTROY listener fires tearDown(),
+		// which calls this.input.setDefaultCursor('default') -> delegates to
+		// this.manager.setDefaultCursor -> TypeError on null. The throw aborts
+		// Systems.destroy() before removeAllListeners()/prop-nulling and can
+		// abort the SceneManager.destroy() loop, hanging remount.
+		// This test simulates that ordering by nulling input.manager (mimicking
+		// InputPlugin.destroy() having run) before invoking the DESTROY listener.
+		editorScene.init({});
+		editorScene.create();
+
+		// Mimic real InputPlugin.setDefaultCursor: delegates to manager, throws
+		// if manager was nulled by InputPlugin.destroy().
+		(editorScene.input as any).manager = { setDefaultCursor: vi.fn() };
+		(editorScene.input as any).setDefaultCursor = function (cursor: string) {
+			this.manager.setDefaultCursor(cursor);
+		};
+
+		// Simulate InputPlugin.destroy() having run before our DESTROY listener.
+		(editorScene.input as any).manager = null;
+
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(destroyListener).toEqual(expect.any(Function));
+
+		// tearDown() must guard the plugin-dependent setDefaultCursor call so
+		// the DESTROY listener does not throw and abort Phaser teardown.
+		expect(() => {
+			(destroyListener as (() => void) | undefined)?.();
+		}).not.toThrow();
+
+		// EventBus handlers must still be removed on DESTROY despite the guard.
+		expect(EventBus.off).toHaveBeenCalledWith(EventType.MEASURE_UPDATE, expect.any(Function));
+	});
+
 	it('removes its EventBus handlers when Phaser emits SHUTDOWN (scene.stop path)', () => {
 		// scene.stop() (e.g. difficulty switching in DesktopEditor) calls
 		// sys.shutdown() which emits SHUTDOWN but never emits DESTROY and never

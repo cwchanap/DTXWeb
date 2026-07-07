@@ -226,6 +226,300 @@ describe('Editor Scene', () => {
 		expect(editorScene['autoSaveTimeout']).toBeNull();
 	});
 
+	it('removes its EventBus handlers on shutdown so a destroyed scene cannot redraw later', () => {
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		editorScene.shutdown();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
+	it('removes its EventBus handlers when Phaser emits DESTROY (game.destroy path)', () => {
+		// Phaser's game.destroy() emits DESTROY on the scene's event emitter
+		// but never calls scene.shutdown(). The DESTROY listener registered in
+		// BaseGame.init() must remove the EventBus handlers so they do not
+		// leak.
+		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
+		// for once/emit/off, so this test manually invokes the captured DESTROY
+		// callback rather than driving a real emit. This verifies the callback
+		// calls removeEventBusListeners(), but cannot verify Phaser actual
+		// emit-vs-removeAllListeners ordering (Systems.destroy emits DESTROY
+		// THEN calls removeAllListeners). Correct for Phaser 3.88 today; if
+		// Phaser reorders, this test would not catch the regression.
+		// init() is called before create() to mirror Phaser's lifecycle (init
+		// runs first, registering the SHUTDOWN/DESTROY listeners) and to
+		// exercise the post-injection registration path in BaseGame.init().
+		editorScene.init({});
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		// Simulate Phaser's Systems.destroy() firing the DESTROY listener
+		// registered via this.events.once(Phaser.Scenes.Events.DESTROY, ...).
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(destroyListener).toEqual(expect.any(Function));
+		(destroyListener as (() => void) | undefined)?.();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
+	it('does not throw on DESTROY when InputPlugin.destroy() has nulled input.manager first', () => {
+		// Real Phaser DESTROY ordering (game.destroy() path):
+		// InputPlugin registers its DESTROY handler during BOOT (InputPlugin.boot,
+		// which runs on Systems.init's BOOT emit during scene *add*), BEFORE
+		// BaseGame.init() registers its DESTROY handler (during scene *start*).
+		// Systems.destroy emits DESTROY and EventEmitter fires handlers in
+		// registration order, so InputPlugin.destroy() runs first and nulls
+		// this.input.manager. Then BaseGame's DESTROY listener fires tearDown(),
+		// which calls this.input.setDefaultCursor('default') -> delegates to
+		// this.manager.setDefaultCursor -> TypeError on null. The throw aborts
+		// Systems.destroy() before removeAllListeners()/prop-nulling and can
+		// abort the SceneManager.destroy() loop, hanging remount.
+		// This test simulates that ordering by nulling input.manager (mimicking
+		// InputPlugin.destroy() having run) before invoking the DESTROY listener.
+		editorScene.init({});
+		editorScene.create();
+
+		// Mimic real InputPlugin.setDefaultCursor: delegates to manager, throws
+		// if manager was nulled by InputPlugin.destroy().
+		(editorScene.input as any).manager = { setDefaultCursor: vi.fn() };
+		(editorScene.input as any).setDefaultCursor = function (cursor: string) {
+			this.manager.setDefaultCursor(cursor);
+		};
+
+		// Simulate InputPlugin.destroy() having run before our DESTROY listener.
+		(editorScene.input as any).manager = null;
+
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(destroyListener).toEqual(expect.any(Function));
+
+		// tearDown() must guard the plugin-dependent setDefaultCursor call so
+		// the DESTROY listener does not throw and abort Phaser teardown.
+		expect(() => {
+			(destroyListener as (() => void) | undefined)?.();
+		}).not.toThrow();
+
+		// EventBus handlers must still be removed on DESTROY despite the guard.
+		expect(EventBus.off).toHaveBeenCalledWith(EventType.MEASURE_UPDATE, expect.any(Function));
+	});
+
+	it('removes its EventBus handlers when Phaser emits SHUTDOWN (scene.stop path)', () => {
+		// scene.stop() (e.g. difficulty switching in DesktopEditor) calls
+		// sys.shutdown() which emits SHUTDOWN but never emits DESTROY and never
+		// re-runs the constructor. The SHUTDOWN listener registered in
+		// BaseGame.init() must remove the EventBus handlers so they do not
+		// leak across stop/start cycles (each create() re-adds them).
+		// Mock limitation: __mocks__/phaser.ts EventEmitter uses no-op vi.fn()s
+		// for on/emit/off, so this test manually invokes the captured SHUTDOWN
+		// callback rather than driving a real emit.
+		// init() is called before create() to mirror Phaser's lifecycle (init
+		// runs first, registering the SHUTDOWN/DESTROY listeners).
+		editorScene.init({});
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		// Simulate Phaser's Systems.shutdown() firing the SHUTDOWN listener
+		// registered via this.events.on(Phaser.Scenes.Events.SHUTDOWN, ...).
+		const onMock = editorScene.events.on as unknown as MockedFn;
+		const shutdownListener = onMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'shutdown'
+		)?.[1];
+		expect(shutdownListener).toEqual(expect.any(Function));
+		(shutdownListener as (() => void) | undefined)?.();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
+	it('survives SHUTDOWN then DESTROY firing on the same instance (idempotent tearDown)', () => {
+		// Real-world sequence: scene.stop() emits SHUTDOWN (tearDown runs),
+		// then later game.destroy() emits DESTROY (tearDown runs again) on the
+		// same scene instance. tearDown() must be idempotent so the second
+		// call does not throw on already-nulled subscriptions / removed
+		// listeners. This is the load-bearing invariant for the
+		// init()-registered listeners.
+		// init() is called before create() to mirror Phaser's lifecycle (init
+		// runs first, registering the SHUTDOWN/DESTROY listeners).
+		editorScene.init({});
+		editorScene.create();
+
+		const onMock = editorScene.events.on as unknown as MockedFn;
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const shutdownListener = onMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'shutdown'
+		)?.[1];
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(shutdownListener).toEqual(expect.any(Function));
+		expect(destroyListener).toEqual(expect.any(Function));
+
+		expect(() => {
+			(shutdownListener as (() => void) | undefined)?.();
+			(destroyListener as (() => void) | undefined)?.();
+		}).not.toThrow();
+
+		// tearDown ran twice but EventBus.off is called at least once per
+		// handler (idempotent removeEventBusListeners re-off is safe).
+		expect(EventBus.off).toHaveBeenCalledWith(EventType.MEASURE_UPDATE, expect.any(Function));
+		expect(EventBus.off).toHaveBeenCalledWith(EventType.NOTE_IMPORT, expect.any(Function));
+	});
+
+	it('unregisters input and keyboard handlers on shutdown', () => {
+		editorScene.create();
+
+		const inputOffMock = editorScene.input.off as MockedFn;
+		const keyboardOffMock = editorScene.input.keyboard?.off as MockedFn;
+
+		editorScene.shutdown();
+
+		// Verify scene input handlers are unregistered
+		expect(inputOffMock).toHaveBeenCalledWith('pointerdown');
+		expect(inputOffMock).toHaveBeenCalledWith('pointermove');
+		expect(inputOffMock).toHaveBeenCalledWith('pointerup');
+		expect(inputOffMock).toHaveBeenCalledWith('wheel');
+
+		// Verify keyboard handlers are unregistered
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Q');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-BACKSPACE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-DELETE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Z');
+	});
+
+	it('unregisters input and keyboard handlers when Phaser emits DESTROY', () => {
+		editorScene.init({});
+		editorScene.create();
+
+		const inputOffMock = editorScene.input.off as MockedFn;
+		const keyboardOffMock = editorScene.input.keyboard?.off as MockedFn;
+
+		// Simulate Phaser's Systems.destroy() firing the DESTROY listener
+		const onceMock = editorScene.events.once as unknown as MockedFn;
+		const destroyListener = onceMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'destroy'
+		)?.[1];
+		expect(destroyListener).toEqual(expect.any(Function));
+		(destroyListener as (() => void) | undefined)?.();
+
+		// Verify scene input handlers are unregistered
+		expect(inputOffMock).toHaveBeenCalledWith('pointerdown');
+		expect(inputOffMock).toHaveBeenCalledWith('pointermove');
+		expect(inputOffMock).toHaveBeenCalledWith('pointerup');
+		expect(inputOffMock).toHaveBeenCalledWith('wheel');
+
+		// Verify keyboard handlers are unregistered
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Q');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-BACKSPACE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-DELETE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Z');
+	});
+
+	it('unregisters input and keyboard handlers when Phaser emits SHUTDOWN', () => {
+		editorScene.init({});
+		editorScene.create();
+
+		const inputOffMock = editorScene.input.off as MockedFn;
+		const keyboardOffMock = editorScene.input.keyboard?.off as MockedFn;
+
+		// Simulate Phaser's Systems.shutdown() firing the SHUTDOWN listener
+		const onMock = editorScene.events.on as unknown as MockedFn;
+		const shutdownListener = onMock.mock.calls.find(
+			(call: unknown[]) => call[0] === 'shutdown'
+		)?.[1];
+		expect(shutdownListener).toEqual(expect.any(Function));
+		(shutdownListener as (() => void) | undefined)?.();
+
+		// Verify scene input handlers are unregistered
+		expect(inputOffMock).toHaveBeenCalledWith('pointerdown');
+		expect(inputOffMock).toHaveBeenCalledWith('pointermove');
+		expect(inputOffMock).toHaveBeenCalledWith('pointerup');
+		expect(inputOffMock).toHaveBeenCalledWith('wheel');
+
+		// Verify keyboard handlers are unregistered
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Q');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-BACKSPACE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-DELETE');
+		expect(keyboardOffMock).toHaveBeenCalledWith('keydown-Z');
+	});
+
+	it('removes its EventBus handlers on restart so stale handlers are not retained', () => {
+		editorScene.create();
+
+		const eventBusOnMock = EventBus.on as MockedFn;
+		const registeredHandlers = [
+			EventType.MEASURE_UPDATE,
+			EventType.GRID_SPACING_UPDATE,
+			EventType.CELL_HEIGHT_UPDATE,
+			EventType.NOTE_IMPORT,
+			EventType.MEASURE_GOTO,
+			EventType.START_PREVIEW,
+			EventType.STOP_PREVIEW
+		].map((eventName) => {
+			const handler = eventBusOnMock.mock.calls.find((call) => call[0] === eventName)?.[1];
+			expect(handler).toEqual(expect.any(Function));
+			return [eventName, handler] as const;
+		});
+
+		editorScene.restart();
+
+		registeredHandlers.forEach(([eventName, handler]) => {
+			expect(EventBus.off).toHaveBeenCalledWith(eventName, handler);
+		});
+	});
+
 	it('should handle missing game container gracefully', () => {
 		// Mock getElementById to return null
 		vi.spyOn(document, 'getElementById').mockReturnValue(null);
@@ -2112,6 +2406,59 @@ describe('Editor Scene', () => {
 
 			restartSpy.mockRestore();
 		});
+
+		it('emits VALIDATION_ERROR when handleNoteImport throws so the UI can surface it', async () => {
+			// autoSaveChart rejection (or any throw inside the try body) must not
+			// be swallowed silently — DesktopEditor listens for VALIDATION_ERROR
+			// and shows it in the UI. Only console.error would leave the user
+			// with a blank editor and no indication of failure.
+			editorScene.create();
+
+			vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+			vi.spyOn(editorScene, 'autoSaveChart').mockRejectedValue(new Error('disk full'));
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+			expect(noteImportCallback).toBeDefined();
+
+			await noteImportCallback?.([], {});
+
+			expect(EventBus.emit).toHaveBeenCalledWith(
+				EventType.VALIDATION_ERROR,
+				expect.stringContaining('Failed to import notes')
+			);
+		});
+
+		it('skips restart when scene is torn down during handleNoteImport await', async () => {
+			// Liveness guard: if SHUTDOWN/DESTROY fires tearDown() while
+			// autoSaveChart() is awaited, isSceneActive becomes false and the
+			// post-import restart must be skipped to avoid operating on a
+			// torn-down scene.
+			editorScene.create();
+
+			const restartSpy = vi.spyOn(editorScene as any, 'restart').mockImplementation(() => {});
+			vi.spyOn(editorScene as any, 'syncNotesToStore').mockImplementation(() => {});
+
+			// Simulate tearDown() firing during the await by making autoSaveChart
+			// call shutdown() before resolving.
+			vi.spyOn(editorScene, 'autoSaveChart').mockImplementation(async () => {
+				editorScene.shutdown(); // sets isSceneActive = false via tearDown()
+			});
+
+			const eventBusOnMock = EventBus.on as MockedFn;
+			const noteImportCallback = eventBusOnMock.mock.calls.find(
+				(call) => call[0] === EventType.NOTE_IMPORT
+			)?.[1];
+
+			await noteImportCallback?.([], {});
+
+			expect(restartSpy).not.toHaveBeenCalled();
+
+			restartSpy.mockRestore();
+		});
 	});
 
 	describe('START_PREVIEW event handler', () => {
@@ -2198,28 +2545,28 @@ describe('Editor Scene', () => {
 		});
 	});
 
-	describe('onGridSpacingUpdate and onCellHeightUpdate callbacks', () => {
-		it('should call updateGridSpacing when onGridSpacingUpdate is invoked', () => {
+	describe('handleGridSpacingUpdate and handleCellHeightUpdate callbacks', () => {
+		it('should call updateGridSpacing when handleGridSpacingUpdate is invoked', () => {
 			editorScene.create();
 
 			const updateGridSpacingSpy = vi
 				.spyOn(editorScene as any, 'updateGridSpacing')
 				.mockImplementation(() => {});
 
-			editorScene['onGridSpacingUpdate']?.(16);
+			editorScene['handleGridSpacingUpdate']?.(16);
 
 			expect(updateGridSpacingSpy).toHaveBeenCalledWith(16);
 			updateGridSpacingSpy.mockRestore();
 		});
 
-		it('should call updateCellHeight when onCellHeightUpdate is invoked', () => {
+		it('should call updateCellHeight when handleCellHeightUpdate is invoked', () => {
 			editorScene.create();
 
 			const updateCellHeightSpy = vi
 				.spyOn(editorScene as any, 'updateCellHeight')
 				.mockImplementation(() => {});
 
-			editorScene['onCellHeightUpdate']?.(30);
+			editorScene['handleCellHeightUpdate']?.(30);
 
 			expect(updateCellHeightSpy).toHaveBeenCalledWith(30);
 			updateCellHeightSpy.mockRestore();

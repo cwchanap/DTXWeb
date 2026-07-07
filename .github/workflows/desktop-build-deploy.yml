@@ -46,11 +46,17 @@ jobs:
     name: Windows Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: windows-latest
-    # NOTE: Renamed from the legacy "Electron" environment. The GitHub
-    # repository's Environments settings must have a "Desktop" environment
-    # (with the same secrets/variables) before this workflow is next run,
-    # otherwise the environment lookup will fail.
-    environment: Desktop
+    # Each platform build targets its own GitHub environment so concurrent
+    # build-windows / build-mac runs each get their own "active" deployment
+    # record (a single shared environment would mark one of the two as
+    # "inactive" purely because GitHub keeps only one active deployment per
+    # environment at a time). The GitHub repository's Environments settings
+    # must have "Desktop-Windows" and "Desktop-macOS" environments, each with
+    # the build secrets (PUBLIC_SUPABASE_ANON_KEY, TAURI_SIGNING_PRIVATE_KEY).
+    # The build vars (PUBLIC_SUPABASE_URL, VITE_DTX_API_URL,
+    # VITE_DTX_SERVER_URL) live at repo level and are inherited by every
+    # environment, so they do not need to be duplicated here.
+    environment: Desktop-Windows
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
@@ -60,7 +66,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -161,7 +167,7 @@ jobs:
           ls -la dist/artifacts/
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tauri-app-win
           path: dist/artifacts/
@@ -171,7 +177,8 @@ jobs:
     name: macOS Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: macos-latest
-    environment: Desktop
+    # See build-windows for the rationale on per-platform environments.
+    environment: Desktop-macOS
     env:
       PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
@@ -181,7 +188,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -264,7 +271,7 @@ jobs:
           ls -la dist/artifacts/
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tauri-app-mac
           path: dist/artifacts/
@@ -275,19 +282,26 @@ jobs:
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+    # The deploy job pushes signed updater artifacts + latest.json to the
+    # production R2 bucket. No `environment:` is set: the Cloudflare
+    # secrets/vars it needs (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+    # R2_BUCKET, R2_PUBLIC_URL) are repo-level and inherited everywhere, and
+    # 'Production' is reserved for the web app. Build jobs use per-platform
+    # environments (Desktop-Windows / Desktop-macOS) so they each get their
+    # own active deployment record.
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download Windows Artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tauri-app-win
           path: dist/artifacts/win
 
       - name: Download macOS Artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tauri-app-mac
           path: dist/artifacts/mac
@@ -422,7 +436,7 @@ jobs:
 
       - name: Create Release (for tags only)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false

@@ -20,10 +20,7 @@ export type NotationEntry = NotationNoteEntry | NotationRestEntry;
 export interface NotationTuplet {
 	startIndex: number;
 	count: number;
-	numNotes: 3;
-	notesOccupied: 2;
 	slotTicks: number;
-	baseDurTicks: number;
 }
 
 export interface NotationMeasure {

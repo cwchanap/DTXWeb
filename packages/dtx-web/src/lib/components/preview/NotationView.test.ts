@@ -247,10 +247,7 @@ describe('NotationView', () => {
 						{
 							startIndex: 0,
 							count: 3,
-							numNotes: 3,
-							notesOccupied: 2,
-							slotTicks: 16,
-							baseDurTicks: 24
+							slotTicks: 16
 						}
 					]
 				}

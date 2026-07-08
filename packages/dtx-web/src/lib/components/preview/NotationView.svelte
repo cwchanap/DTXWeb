@@ -64,8 +64,10 @@
 	const tupletBaseDurTicksByEntry = (measure: NotationMeasure): Map<number, number> => {
 		const covered = new Map<number, number>();
 		for (const tuplet of measure.tuplets) {
+			// baseDurTicks = slotTicks * 3 / 2 (groupTicks/2 where groupTicks = slotTicks*3)
+			const baseDurTicks = (tuplet.slotTicks * 3) / 2;
 			for (let offset = 0; offset < tuplet.count; offset++) {
-				covered.set(tuplet.startIndex + offset, tuplet.baseDurTicks);
+				covered.set(tuplet.startIndex + offset, baseDurTicks);
 			}
 		}
 		return covered;
@@ -190,16 +192,16 @@
 
 			try {
 				const notes = toStaveNotes(measure);
-				const tuplets = measure.tuplets.map(
-					(tuplet) =>
-						new Tuplet(
-							notes.slice(tuplet.startIndex, tuplet.startIndex + tuplet.count),
-							{
-								num_notes: tuplet.numNotes,
-								notes_occupied: tuplet.notesOccupied
-							}
-						)
-				);
+				const tuplets = measure.tuplets.map((tuplet) => {
+					// Guard against a malformed tuplet whose startIndex + count
+					// exceeds the entry array — slice clamps silently, which would
+					// hand VexFlow a short note list instead of failing loudly.
+					const end = Math.min(tuplet.startIndex + tuplet.count, notes.length);
+					return new Tuplet(notes.slice(tuplet.startIndex, end), {
+						num_notes: 3,
+						notes_occupied: 2
+					});
+				});
 				const voice = new Voice({
 					num_beats: measure.beatsPerMeasure,
 					beat_value: 4

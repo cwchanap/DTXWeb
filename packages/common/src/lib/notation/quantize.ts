@@ -52,7 +52,12 @@ interface Onset {
 	keys: string[];
 }
 
-const TRIPLET_GROUP_TICKS = [48, 96, 192] as const;
+// 24 = 16th-note triplet (3 16ths in an eighth span, 8-tick slots); 48/96/192
+// = eighth/quarter/half-note triplets. 8-tick slots aren't in DURATION_TABLE,
+// so without the 24-group those onsets fall back to 6-tick 32nds with dropped
+// 2-tick gaps. The renderer derives baseDurTicks = slotTicks*3/2 = 12 ('16')
+// for the VexFlow Tuplet, engraving a proper 16th-note triplet.
+const TRIPLET_GROUP_TICKS = [24, 48, 96, 192] as const;
 
 interface TripletCandidate {
 	groupTicks: number;

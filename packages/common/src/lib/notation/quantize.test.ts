@@ -314,6 +314,85 @@ describe('quantizeMeasure', () => {
 		]);
 	});
 
+	it('detects a 16th-note triplet group (groupTicks=24, slotTicks=8)', () => {
+		// 3 onsets spanning 24 ticks (one eighth) at 8-tick slots:
+		// positions 0, 8/192, 16/192 -> ticks 0, 8, 16. A 16th-note triplet
+		// packs three 16ths into the time of one eighth (24 ticks). 8 is not in
+		// DURATION_TABLE, so without the 24-group these fall back to 6-tick 32nds
+		// with dropped 2-tick gaps. baseDurTicks=12 ('16') via slotTicks*3/2.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 8 / 192 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 24 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'note', startTick: 8, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'note', startTick: 16, durTicks: 8, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 8
+			}
+		]);
+		expect(measure.entries.slice(0, 3).reduce((sum, e) => sum + e.durTicks, 0)).toBe(24);
+	});
+
+	it('detects a 16th-note triplet group without an observed end', () => {
+		// 3 onsets at 0, 8, 16 with the next onset at 48 (not at 24). The third
+		// slot is occupied, so the group is rhythmically complete even without
+		// an onset marking groupEnd=24. The 24-group wins because the 48-group
+		// sees tick 8 as an off-slot onset and is rejected.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 8 / 192 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 48 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 4)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'note', startTick: 8, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'note', startTick: 16, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 24, durTicks: 24 }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 8
+			}
+		]);
+	});
+
+	it('does not mis-detect a 16th triplet when an eighth triplet is intended', () => {
+		// Onsets at 0, 16, 32 (eighth-note triplet slots). The 24-group's slots
+		// are 0, 8, 16: tick 32 is outside the group, tick 16 is on-slot, so
+		// occupiedCount=2. The 48-group's slots 0, 16, 32 are all occupied
+		// (occupiedCount=3) and wins the tie-break. Verifies adding 24 doesn't
+		// shadow larger groups.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 32 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 16
+			}
+		]);
+	});
+
 	it('tie-breaks between candidate group sizes by observedEnd when occupiedCount is equal', () => {
 		// Onsets at 0, 32, 96. At cursor=0 two candidates qualify:
 		//  - groupTicks=48: slots 0,16,32; occupiedCount=2, observedEnd=false
@@ -418,23 +497,30 @@ describe('quantizeMeasure', () => {
 	});
 
 	it('does not infer a trailing triplet rest from an isolated 16-tick pair', () => {
+		// Onsets at 0 and 16. The 48-group's slots are 0, 16, 32: [T,T,F] with
+		// the last slot empty and no observed end, so the guard rejects it — no
+		// eighth-triplet-with-trailing-rest is inferred. The 24-group's slots are
+		// 0, 8, 16: [T,F,T] with the last slot occupied, which the guard allows,
+		// so a 16th-triplet-with-middle-rest IS detected (symmetric with the
+		// 48-group's "emits rests inside detected triplet groups" behavior).
 		const snare = new LaneMeasureNote(0, '12', [
 			{ noteID: '01', position: 0 },
 			{ noteID: '01', position: 16 / 192 }
 		]);
 		const measure = quantizeMeasure(0, [snare]);
 
-		expect(measure.tuplets).toEqual([]);
-		expect(measure.entries[0]).toMatchObject({
-			kind: 'note',
-			startTick: 0,
-			durTicks: 12
-		});
-		expect(measure.entries[1]).toMatchObject({
-			kind: 'rest',
-			startTick: 12,
-			durTicks: 4
-		});
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 8
+			}
+		]);
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 8, durTicks: 8 },
+			{ kind: 'note', startTick: 16, durTicks: 8, keys: ['c/5'] }
+		]);
 	});
 
 	it('fully consumes an off-grid onset span so entries sum to measureTicks', () => {

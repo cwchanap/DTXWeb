@@ -272,6 +272,172 @@ describe('quantizeMeasure', () => {
 		]);
 	});
 
+	it('detects a quarter-note triplet group (groupTicks=96, slotTicks=32)', () => {
+		// 3 onsets spanning 96 ticks (one half note) at 32-tick slots:
+		// positions 0, 32/192, 64/192 -> ticks 0, 32, 64. A quarter-note
+		// triplet packs three quarter notes into the time of two (96 ticks).
+		// baseDurTicks=48 (quarter), slotTicks=32 (96/3).
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 32 / 192 },
+			{ noteID: '01', position: 64 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 64, durTicks: 32, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 32,
+				baseDurTicks: 48
+			}
+		]);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
+	it('detects a half-note triplet group (groupTicks=192, slotTicks=64)', () => {
+		// 3 onsets spanning the whole 4/4 bar (192 ticks) at 64-tick slots:
+		// positions 0, 64/192, 128/192 -> ticks 0, 64, 128. groupEnd=192 equals
+		// measureTicks so observedEnd is true. baseDurTicks=96.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 64 / 192 },
+			{ noteID: '01', position: 128 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 64, keys: ['c/5'] },
+			{ kind: 'note', startTick: 64, durTicks: 64, keys: ['c/5'] },
+			{ kind: 'note', startTick: 128, durTicks: 64, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 64,
+				baseDurTicks: 96
+			}
+		]);
+	});
+
+	it('tie-breaks between candidate group sizes by observedEnd when occupiedCount is equal', () => {
+		// Onsets at 0, 32, 96. At cursor=0 two candidates qualify:
+		//  - groupTicks=48: slots 0,16,32; occupiedCount=2, observedEnd=false
+		//    (no onset at 48, 48 != measureTicks).
+		//  - groupTicks=96: slots 0,32,64; occupiedCount=2, observedEnd=true
+		//    (onset at 96 marks the group end). The third slot (64) is a rest.
+		// Equal occupiedCount -> the observedEnd tie-breaker picks groupTicks=96.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 32 / 192 },
+			{ noteID: '01', position: 96 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 4)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 64, durTicks: 32 },
+			{ kind: 'note', startTick: 96, durTicks: 96, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 32,
+				baseDurTicks: 48
+			}
+		]);
+	});
+
+	it('detects two consecutive eighth-triplet groups in one measure', () => {
+		// Two back-to-back triplet groups: onsets at 0,16,32 (group 1) and
+		// 48,64,80 (group 2). After group 1 ends at cursor=48, the loop
+		// re-enters findTripletCandidate and detects group 2. The remaining
+		// 96 ticks (96->192) become a half rest.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 32 / 192 },
+			{ noteID: '01', position: 48 / 192 },
+			{ noteID: '01', position: 64 / 192 },
+			{ noteID: '01', position: 80 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 48, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 64, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 80, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 96, durTicks: 96 }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			},
+			{
+				startIndex: 3,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			}
+		]);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
+	it('detects a triplet group after a leading rest', () => {
+		// No onset at 0 -> the cursor emits a leading quarter rest (48 ticks),
+		// then re-enters the loop at cursor=48 and detects an eighth-triplet
+		// group at slots 48, 64, 80. The remaining 96 ticks become a half rest.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 48 / 192 },
+			{ noteID: '01', position: 64 / 192 },
+			{ noteID: '01', position: 80 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries).toEqual([
+			{ kind: 'rest', startTick: 0, durTicks: 48 },
+			{ kind: 'note', startTick: 48, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 64, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 80, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 96, durTicks: 96 }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 1,
+				count: 3,
+				numNotes: 3,
+				notesOccupied: 2,
+				slotTicks: 16,
+				baseDurTicks: 24
+			}
+		]);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
 	it('does not infer a trailing triplet rest from an isolated 16-tick pair', () => {
 		const snare = new LaneMeasureNote(0, '12', [
 			{ noteID: '01', position: 0 },

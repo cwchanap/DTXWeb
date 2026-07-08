@@ -58,7 +58,6 @@ interface TripletCandidate {
 	groupTicks: number;
 	groupEnd: number;
 	slotTicks: number;
-	baseDurTicks: number;
 	slotStarts: [number, number, number];
 	occupiedCount: number;
 	observedEnd: boolean;
@@ -102,7 +101,6 @@ const findTripletCandidate = (
 			groupTicks,
 			groupEnd,
 			slotTicks,
-			baseDurTicks: groupTicks / 2,
 			slotStarts,
 			occupiedCount,
 			observedEnd
@@ -213,10 +211,7 @@ export const quantizeMeasure = (
 			tuplets.push({
 				startIndex,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: triplet.slotTicks,
-				baseDurTicks: triplet.baseDurTicks
+				slotTicks: triplet.slotTicks
 			});
 			cursor = triplet.groupEnd;
 			continue;

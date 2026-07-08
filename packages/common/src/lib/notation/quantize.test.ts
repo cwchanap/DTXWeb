@@ -186,13 +186,12 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			}
 		]);
 		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+		// Per-tuplet tick sum: 3 slots × 16 ticks = 48.
+		expect(measure.entries.slice(0, 3).reduce((sum, e) => sum + e.durTicks, 0)).toBe(48);
 	});
 
 	it('emits rests inside detected triplet groups', () => {
@@ -211,10 +210,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			}
 		]);
 	});
@@ -237,10 +233,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			}
 		]);
 	});
@@ -264,10 +257,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 1,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			}
 		]);
 	});
@@ -276,7 +266,7 @@ describe('quantizeMeasure', () => {
 		// 3 onsets spanning 96 ticks (one half note) at 32-tick slots:
 		// positions 0, 32/192, 64/192 -> ticks 0, 32, 64. A quarter-note
 		// triplet packs three quarter notes into the time of two (96 ticks).
-		// baseDurTicks=48 (quarter), slotTicks=32 (96/3).
+		// baseDurTicks=48 (quarter, derived from slotTicks*3/2), slotTicks=32 (96/3).
 		const snare = new LaneMeasureNote(0, '12', [
 			{ noteID: '01', position: 0 },
 			{ noteID: '01', position: 32 / 192 },
@@ -293,10 +283,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 32,
-				baseDurTicks: 48
+				slotTicks: 32
 			}
 		]);
 		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
@@ -305,7 +292,7 @@ describe('quantizeMeasure', () => {
 	it('detects a half-note triplet group (groupTicks=192, slotTicks=64)', () => {
 		// 3 onsets spanning the whole 4/4 bar (192 ticks) at 64-tick slots:
 		// positions 0, 64/192, 128/192 -> ticks 0, 64, 128. groupEnd=192 equals
-		// measureTicks so observedEnd is true. baseDurTicks=96.
+		// measureTicks so observedEnd is true. baseDurTicks=96 (derived from slotTicks*3/2).
 		const snare = new LaneMeasureNote(0, '12', [
 			{ noteID: '01', position: 0 },
 			{ noteID: '01', position: 64 / 192 },
@@ -322,10 +309,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 64,
-				baseDurTicks: 96
+				slotTicks: 64
 			}
 		]);
 	});
@@ -354,10 +338,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 32,
-				baseDurTicks: 48
+				slotTicks: 32
 			}
 		]);
 	});
@@ -390,21 +371,22 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 0,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			},
 			{
 				startIndex: 3,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			}
 		]);
 		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+		// Per-tuplet tick sums: each group spans 48 ticks (3 × 16).
+		for (const tuplet of measure.tuplets) {
+			const sum = measure.entries
+				.slice(tuplet.startIndex, tuplet.startIndex + tuplet.count)
+				.reduce((s, e) => s + e.durTicks, 0);
+			expect(sum).toBe(tuplet.slotTicks * 3);
+		}
 	});
 
 	it('detects a triplet group after a leading rest', () => {
@@ -429,10 +411,7 @@ describe('quantizeMeasure', () => {
 			{
 				startIndex: 1,
 				count: 3,
-				numNotes: 3,
-				notesOccupied: 2,
-				slotTicks: 16,
-				baseDurTicks: 24
+				slotTicks: 16
 			}
 		]);
 		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
@@ -480,6 +459,173 @@ describe('quantizeMeasure', () => {
 				(e) => e.kind === 'rest' && ![192, 96, 48, 24, 12, 6, 3].includes(e.durTicks)
 			)
 		).toBe(true);
+	});
+
+	it('detects a triplet group in a 3/4 measure (96-tick group in 144 ticks)', () => {
+		// 3/4 = 0.75 * 192 = 144 ticks. A 96-tick triplet group fits (96 ≤ 144):
+		// slots at 0, 32, 64. The remaining 48 ticks become a quarter rest.
+		// Positions are fractions of the measure, so 32/144 and 64/144 map to
+		// ticks 32 and 64 via round(position * 144).
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 32 / 144 },
+			{ noteID: '01', position: 64 / 144 }
+		]);
+		const measure = quantizeMeasure(0, [snare], 0.75);
+
+		expect(measure.measureTicks).toBe(144);
+		expect(measure.entries).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 64, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 96, durTicks: 48 }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 32
+			}
+		]);
+		// Per-tuplet tick sum: 3 slots × 32 ticks = 96 (the group span).
+		const tupletSum = measure.entries.slice(0, 3).reduce((sum, e) => sum + e.durTicks, 0);
+		expect(tupletSum).toBe(96);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
+	it('detects a triplet group in a 2/4 measure (48-tick group in 96 ticks)', () => {
+		// 2/4 = 0.5 * 192 = 96 ticks. A 48-tick triplet group fits (48 ≤ 96):
+		// slots at 0, 16, 32. A 96-tick group would also fit (groupEnd=96=
+		// measureTicks), but its slots (0, 32, 64) don't match the onsets
+		// (0, 16, 32) — 16 is an off-slot onset → rejected. So the 48-tick
+		// group is detected. The remaining 48 ticks become a quarter rest.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 96 },
+			{ noteID: '01', position: 32 / 96 }
+		]);
+		const measure = quantizeMeasure(0, [snare], 0.5);
+
+		expect(measure.measureTicks).toBe(96);
+		expect(measure.entries).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'rest', startTick: 48, durTicks: 48 }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 16
+			}
+		]);
+		// Per-tuplet tick sum: 3 slots × 16 ticks = 48 (the group span).
+		const tupletSum = measure.entries.slice(0, 3).reduce((sum, e) => sum + e.durTicks, 0);
+		expect(tupletSum).toBe(48);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
+	it('renders a chord inside a triplet group', () => {
+		// Two lanes (hi-hat 11 + snare 12) hitting the same triplet slots
+		// should produce chord keys at each slot, not separate entries.
+		const hat = new LaneMeasureNote(0, '11', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 32 / 192 }
+		]);
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 32 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [hat, snare]);
+
+		// Key order depends on lane processing order (hat 11 before snare 12),
+		// so sort before comparing — same pattern as the chord-merge test above.
+		const notesWithKeys = measure.entries
+			.slice(0, 3)
+			.map((e) => (e.kind === 'note' ? { ...e, keys: [...e.keys].sort() } : e));
+		expect(notesWithKeys).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5', 'g/5/x2'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5', 'g/5/x2'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5', 'g/5/x2'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 16
+			}
+		]);
+		// Per-tuplet tick sum: 3 slots × 16 ticks = 48.
+		const tupletSum = measure.entries.slice(0, 3).reduce((sum, e) => sum + e.durTicks, 0);
+		expect(tupletSum).toBe(48);
+	});
+
+	it('detects a rest-note-note triplet group (slot 0 empty)', () => {
+		// Onsets at slots 1 and 2 only (positions 16/192, 32/192). Slot 0
+		// has no onset → a rest fills it. occupiedCount=2 with occupiedSlots[2]
+		// =true satisfies the detection guard. This verifies the quantizer
+		// accepts a triplet whose first slot is a rest.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 16 / 192 },
+			{ noteID: '01', position: 32 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'rest', startTick: 0, durTicks: 16 },
+			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 0,
+				count: 3,
+				slotTicks: 16
+			}
+		]);
+		// Per-tuplet tick sum: rest(16) + note(16) + note(16) = 48.
+		const tupletSum = measure.entries.slice(0, 3).reduce((sum, e) => sum + e.durTicks, 0);
+		expect(tupletSum).toBe(48);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
+	});
+
+	it('detects a 96-tick triplet group at the end of a 4/4 bar', () => {
+		// A half note at 0 (96 ticks), then a 96-tick triplet group at
+		// cursor=96: slots 96, 128, 160. groupEnd=192=measureTicks so
+		// observedEnd=true. The 96-tick group wins over a 48-tick candidate
+		// (occupiedCount 3 > 2). This covers the end-of-bar case for the
+		// 96-tick group size.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 96 / 192 },
+			{ noteID: '01', position: 128 / 192 },
+			{ noteID: '01', position: 160 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+
+		expect(measure.entries).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 96, keys: ['c/5'] },
+			{ kind: 'note', startTick: 96, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 128, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 160, durTicks: 32, keys: ['c/5'] }
+		]);
+		expect(measure.tuplets).toEqual([
+			{
+				startIndex: 1,
+				count: 3,
+				slotTicks: 32
+			}
+		]);
+		// Per-tuplet tick sum: 3 slots × 32 ticks = 96 (the group span).
+		const tuplet = measure.tuplets[0];
+		const tupletSum = measure.entries
+			.slice(tuplet.startIndex, tuplet.startIndex + tuplet.count)
+			.reduce((sum, e) => sum + e.durTicks, 0);
+		expect(tupletSum).toBe(96);
+		expect(measure.entries.reduce((sum, e) => sum + e.durTicks, 0)).toBe(measure.measureTicks);
 	});
 });
 

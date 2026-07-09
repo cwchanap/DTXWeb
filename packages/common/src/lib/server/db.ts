@@ -7,7 +7,9 @@ import type {
 	UserProfileRow,
 	UserProfileInsert,
 	UserProfileUpdate,
-	SimfileWithDtxFiles
+	SimfileWithDtxFiles,
+	ChartScoreRow,
+	ScoreInsert
 } from '../types/d1.types';
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '../types/d1.types';
@@ -468,4 +470,68 @@ export const updateUserProfile = async (
 		.prepare('UPDATE user_profiles SET username = ? WHERE user_id = ? RETURNING *')
 		.bind(data.username, userId)
 		.first<UserProfileRow>();
+};
+
+// ---------------------------------------------------------------------------
+// Chart Scores
+// ---------------------------------------------------------------------------
+
+export const upsertChartScore = async (
+	db: D1Database,
+	params: { chartId: number; userId: string; playCount: number; clearCount: number }
+): Promise<ChartScoreRow> => {
+	const now = new Date().toISOString();
+	const row = await db
+		.prepare(
+			`INSERT INTO chart_scores
+				(chart_id, user_id, play_count, clear_count, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(user_id, chart_id) DO UPDATE SET
+				play_count = excluded.play_count,
+				clear_count = excluded.clear_count,
+				updated_at = excluded.updated_at
+			 RETURNING *`
+		)
+		.bind(params.chartId, params.userId, params.playCount, params.clearCount, now, now)
+		.first<ChartScoreRow>();
+	if (!row) throw new Error('Failed to upsert chart_score');
+	return row;
+};
+
+export const replaceScores = async (
+	db: D1Database,
+	chartScoreId: number,
+	scores: ScoreInsert[]
+): Promise<void> => {
+	const statements = [
+		db.prepare('DELETE FROM scores WHERE chart_score_id = ?').bind(chartScoreId),
+		...scores.map((s) =>
+			db
+				.prepare(
+					`INSERT INTO scores
+						(chart_score_id, is_best, score, achievement_rate, rank_label,
+						 full_combo, cleared, max_combo, perfect, great, good, poor, miss,
+						 performed_at, display_order)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				)
+				.bind(
+					chartScoreId,
+					s.is_best ? 1 : 0,
+					s.score ?? null,
+					s.achievement_rate ?? null,
+					s.rank_label ?? null,
+					s.full_combo ? 1 : 0,
+					s.cleared ? 1 : 0,
+					s.max_combo ?? null,
+					s.perfect ?? null,
+					s.great ?? null,
+					s.good ?? null,
+					s.poor ?? null,
+					s.miss ?? null,
+					s.performed_at ?? null,
+					s.display_order ?? null
+				)
+		)
+	];
+	await db.batch(statements);
 };

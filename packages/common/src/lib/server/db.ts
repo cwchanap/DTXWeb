@@ -9,6 +9,7 @@ import type {
 	UserProfileUpdate,
 	SimfileWithDtxFiles,
 	ChartScoreRow,
+	ScoreRow,
 	ScoreInsert
 } from '../types/d1.types';
 import type { D1Database } from '@cloudflare/workers-types';
@@ -534,4 +535,24 @@ export const replaceScores = async (
 		)
 	];
 	await db.batch(statements);
+};
+
+export const getUserChartScore = async (
+	db: D1Database,
+	userId: string,
+	chartId: number
+): Promise<{ chartScore: ChartScoreRow; scores: ScoreRow[] } | null> => {
+	const chartScore = await db
+		.prepare('SELECT * FROM chart_scores WHERE user_id = ? AND chart_id = ? LIMIT 1')
+		.bind(userId, chartId)
+		.first<ChartScoreRow>();
+	if (!chartScore) return null;
+	const { results } = await db
+		.prepare(
+			`SELECT * FROM scores WHERE chart_score_id = ?
+			 ORDER BY is_best DESC, display_order ASC`
+		)
+		.bind(chartScore.id)
+		.all<ScoreRow>();
+	return { chartScore, scores: results ?? [] };
 };

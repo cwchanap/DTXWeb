@@ -20,7 +20,8 @@ import {
 	upsertUserProfile,
 	updateUserProfile,
 	upsertChartScore,
-	replaceScores
+	replaceScores,
+	getUserChartScore
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
@@ -937,5 +938,40 @@ describe('replaceScores', () => {
 		await replaceScores(db as unknown as D1Database, 3, []);
 		expect(db.prepare).toHaveBeenCalledTimes(1);
 		expect(db.batch.mock.calls[0][0]).toHaveLength(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getUserChartScore
+// ---------------------------------------------------------------------------
+describe('getUserChartScore', () => {
+	it('returns null when there is no chart_scores row', async () => {
+		const db = createMockDb(() => createMockStmt(null));
+		const result = await getUserChartScore(db as unknown as D1Database, 'u1', 55);
+		expect(result).toBeNull();
+	});
+
+	it('returns the chart_scores row with its ordered scores', async () => {
+		const chartScore = {
+			id: 3,
+			chart_id: 55,
+			user_id: 'u1',
+			play_count: 10,
+			clear_count: 4,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const scoreRows = [
+			{ id: 1, chart_score_id: 3, is_best: 1 },
+			{ id: 2, chart_score_id: 3, is_best: 0, display_order: 1 }
+		];
+		const db = createMockDb((sql: string) =>
+			sql.includes('FROM chart_scores')
+				? createMockStmt(chartScore)
+				: createMockStmt(null, scoreRows)
+		);
+		const result = await getUserChartScore(db as unknown as D1Database, 'u1', 55);
+		expect(result?.chartScore).toEqual(chartScore);
+		expect(result?.scores).toEqual(scoreRows);
 	});
 });

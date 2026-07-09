@@ -157,6 +157,9 @@ builder.mutationField('uploadScores', (t) =>
 					continue;
 				}
 
+				// Two separate round-trips, deliberately: replaceScores needs the
+				// chart_score_id that upsertChartScore's RETURNING produces, so the
+				// aggregate upsert and the atomic score-replace can't be combined.
 				const chartScore = await upsertChartScore(ctx.db, {
 					chartId: numericId,
 					userId: ctx.user!.id,

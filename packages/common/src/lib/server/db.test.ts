@@ -740,6 +740,8 @@ describe('deleteSimfile', () => {
 		const db = createMockDb();
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ meta: { changes: 0 } },
+			{ meta: { changes: 0 } },
+			{ meta: { changes: 0 } },
 			{ meta: { changes: 1 } }
 		]);
 		await expect(deleteSimfile(db as unknown as D1Database, 1)).resolves.toBeUndefined();
@@ -749,11 +751,48 @@ describe('deleteSimfile', () => {
 		const db = createMockDb();
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ meta: { changes: 0 } },
+			{ meta: { changes: 0 } },
+			{ meta: { changes: 0 } },
 			{ meta: { changes: 0 } }
 		]);
 		await expect(deleteSimfile(db as unknown as D1Database, 99)).rejects.toThrow(
 			'Simfile not found'
 		);
+	});
+
+	it('deletes scores and chart_scores for the simfile before dtx_files and simfiles', async () => {
+		const db = createMockDb();
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ meta: { changes: 2 } },
+			{ meta: { changes: 1 } },
+			{ meta: { changes: 1 } },
+			{ meta: { changes: 1 } }
+		]);
+
+		await deleteSimfile(db as unknown as D1Database, 1);
+
+		// Would fail against the old 2-statement batch: only 4 prepared
+		// statements, in this exact order, gate the new children being deleted.
+		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls.map(
+			(call) => call[0]
+		);
+		expect(prepareCalls).toHaveLength(4);
+		expect(prepareCalls[0]).toBe(
+			'DELETE FROM scores WHERE chart_score_id IN (SELECT id FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?))'
+		);
+		expect(prepareCalls[1]).toBe(
+			'DELETE FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?)'
+		);
+		expect(prepareCalls[2]).toBe('DELETE FROM dtx_files WHERE simfile_id = ?');
+		expect(prepareCalls[3]).toBe('DELETE FROM simfiles WHERE id = ?');
+
+		// Each statement must be parameterized with the simfile id, not string-interpolated.
+		const stmts = (db.prepare as ReturnType<typeof vi.fn>).mock.results.map(
+			(result) => result.value
+		);
+		for (const stmt of stmts) {
+			expect(stmt.bind).toHaveBeenCalledWith(1);
+		}
 	});
 });
 

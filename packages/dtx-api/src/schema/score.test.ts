@@ -163,6 +163,9 @@ describe('DtxFile.myChartScore', () => {
 			achievementRate: 91.3,
 			rankLabel: 'S'
 		});
+		// Guards against a file.index-vs-file.id mixup: must resolve using the
+		// chart's id (10), not its position in the dtxFiles array.
+		expect(mockedGetUserChartScore).toHaveBeenCalledWith(ctx.db, 'user-1', 10);
 	});
 
 	it('resolves null when unauthenticated', async () => {
@@ -277,7 +280,11 @@ describe('uploadScores', () => {
 		expect(payload.updatedCharts).toBe(1);
 		expect(payload.insertedScores).toBe(2);
 		expect(payload.skipped).toEqual([]);
-		expect(mockedUpsert).toHaveBeenCalledWith({}, expect.anything()); // db is {} in ctx
+		// Locks down the exact field mapping (guards against swapped playCount/clearCount).
+		expect(mockedUpsert).toHaveBeenCalledWith(
+			{}, // db is {} in ctx
+			{ chartId: 10, userId: 'user-1', playCount: 10, clearCount: 4 }
+		);
 		expect(mockedReplace).toHaveBeenCalledTimes(1);
 	});
 

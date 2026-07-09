@@ -142,7 +142,7 @@ export const getChartVisibility = async (
 		)
 		.bind(chartId)
 		.first<{ user_id: string; is_published: 0 | 1 }>();
-	return row ?? null;
+	return row;
 };
 
 export interface ListSimfilesOptions {
@@ -390,8 +390,20 @@ export const updateSimfile = async (
 };
 
 export const deleteSimfile = async (db: D1Database, id: number): Promise<void> => {
-	// Explicitly delete children first since D1 doesn't guarantee FK cascade PRAGMA applies
-	const [, simfileResult] = await db.batch([
+	// Explicitly delete children first since D1 doesn't guarantee FK cascade PRAGMA applies.
+	// Order matters: scores -> chart_scores (both keyed off dtx_files via subqueries) must
+	// run before dtx_files is deleted, since they resolve simfile -> chart via dtx_files.id.
+	const [, , , simfileResult] = await db.batch([
+		db
+			.prepare(
+				'DELETE FROM scores WHERE chart_score_id IN (SELECT id FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?))'
+			)
+			.bind(id),
+		db
+			.prepare(
+				'DELETE FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?)'
+			)
+			.bind(id),
 		db.prepare('DELETE FROM dtx_files WHERE simfile_id = ?').bind(id),
 		db.prepare('DELETE FROM simfiles WHERE id = ?').bind(id)
 	]);

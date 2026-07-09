@@ -24,7 +24,11 @@ export type {
 	UserProfileInsert,
 	UserProfileUpdate,
 	SimfileWithDtxFiles,
-	SimfileWithDtx
+	SimfileWithDtx,
+	ChartScoreRow,
+	ChartScoreInsert,
+	ScoreRow,
+	ScoreInsert
 } from './types/d1.types';
 export { toSimfileWithDtx } from './types/d1.types';
 
@@ -47,7 +51,7 @@ export {
 } from './server/zipBuilder';
 
 // Drizzle schema
-export { simfiles, dtxFiles, userProfiles } from './server/db/schema';
+export { simfiles, dtxFiles, userProfiles, chartScores, scores } from './server/db/schema';
 
 // D1 queries + mock factory
 export {

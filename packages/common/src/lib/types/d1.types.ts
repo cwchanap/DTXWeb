@@ -56,6 +56,60 @@ export interface DtxFileInsert {
 	simfile_id: number;
 }
 
+export interface ChartScoreRow {
+	id: number;
+	chart_id: number;
+	user_id: string;
+	play_count: number;
+	clear_count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ChartScoreInsert {
+	chart_id: number;
+	user_id: string;
+	play_count?: number;
+	clear_count?: number;
+}
+
+export interface ScoreRow {
+	id: number;
+	chart_score_id: number;
+	is_best: 0 | 1;
+	score: number | null;
+	achievement_rate: number | null;
+	rank_label: string | null;
+	full_combo: 0 | 1;
+	cleared: 0 | 1;
+	max_combo: number | null;
+	perfect: number | null;
+	great: number | null;
+	good: number | null;
+	poor: number | null;
+	miss: number | null;
+	performed_at: string | null;
+	display_order: number | null;
+	created_at: string;
+}
+
+export interface ScoreInsert {
+	is_best?: boolean;
+	score?: number | null;
+	achievement_rate?: number | null;
+	rank_label?: string | null;
+	full_combo?: boolean;
+	cleared?: boolean;
+	max_combo?: number | null;
+	perfect?: number | null;
+	great?: number | null;
+	good?: number | null;
+	poor?: number | null;
+	miss?: number | null;
+	performed_at?: string | null;
+	display_order?: number | null;
+}
+
 export interface UserProfileRow {
 	id: number;
 	user_id: string;

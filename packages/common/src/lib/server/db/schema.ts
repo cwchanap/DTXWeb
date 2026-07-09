@@ -57,3 +57,59 @@ export const userProfiles = sqliteTable(
 		userIdUniqueIdx: uniqueIndex('user_profiles_user_id_unique').on(table.userId)
 	})
 );
+
+export const chartScores = sqliteTable(
+	'chart_scores',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		chartId: integer('chart_id')
+			.notNull()
+			.references(() => dtxFiles.id, { onDelete: 'cascade' }),
+		userId: text('user_id').notNull(),
+		playCount: integer('play_count').notNull().default(0),
+		clearCount: integer('clear_count').notNull().default(0),
+		createdAt: text('created_at')
+			.notNull()
+			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`),
+		updatedAt: text('updated_at')
+			.notNull()
+			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`)
+	},
+	(table) => ({
+		userChartUniqueIdx: uniqueIndex('idx_chart_scores_user_chart').on(
+			table.userId,
+			table.chartId
+		),
+		chartIdx: index('idx_chart_scores_chart').on(table.chartId)
+	})
+);
+
+export const scores = sqliteTable(
+	'scores',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		chartScoreId: integer('chart_score_id')
+			.notNull()
+			.references(() => chartScores.id, { onDelete: 'cascade' }),
+		isBest: integer('is_best').$type<0 | 1>().notNull().default(0),
+		score: integer('score'),
+		achievementRate: real('achievement_rate'),
+		rankLabel: text('rank_label'),
+		fullCombo: integer('full_combo').$type<0 | 1>().notNull().default(0),
+		cleared: integer('cleared').$type<0 | 1>().notNull().default(0),
+		maxCombo: integer('max_combo'),
+		perfect: integer('perfect'),
+		great: integer('great'),
+		good: integer('good'),
+		poor: integer('poor'),
+		miss: integer('miss'),
+		performedAt: text('performed_at'),
+		displayOrder: integer('display_order'),
+		createdAt: text('created_at')
+			.notNull()
+			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`)
+	},
+	(table) => ({
+		chartScoreIdx: index('idx_scores_chart_score').on(table.chartScoreId)
+	})
+);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toSimfileWithDtx } from '../types/d1.types';
-import { simfiles, dtxFiles, userProfiles } from './db/schema';
+import { simfiles, dtxFiles, userProfiles, chartScores, scores } from './db/schema';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import { drizzle } from 'drizzle-orm/d1';
 import {
@@ -144,6 +144,26 @@ describe('db schema', () => {
 		const config = getTableConfig(userProfiles);
 		const indexNames = config.indexes.map((i) => i.config.name);
 		expect(indexNames).toContain('user_profiles_user_id_unique');
+	});
+});
+
+describe('score schema', () => {
+	it('exports the chart_scores and scores tables', () => {
+		expect(chartScores).toBeDefined();
+		expect(scores).toBeDefined();
+	});
+
+	it('defines the unique (user, chart) index on chart_scores', () => {
+		const config = getTableConfig(chartScores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_chart_scores_user_chart');
+		expect(indexNames).toContain('idx_chart_scores_chart');
+	});
+
+	it('defines the chart_score index on scores', () => {
+		const config = getTableConfig(scores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_scores_chart_score');
 	});
 });
 

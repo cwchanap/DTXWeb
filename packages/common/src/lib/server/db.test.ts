@@ -21,7 +21,8 @@ import {
 	updateUserProfile,
 	upsertChartScore,
 	replaceScores,
-	getUserChartScore
+	getUserChartScore,
+	listUserScoredSimfiles
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
@@ -973,5 +974,31 @@ describe('getUserChartScore', () => {
 		const result = await getUserChartScore(db as unknown as D1Database, 'u1', 55);
 		expect(result?.chartScore).toEqual(chartScore);
 		expect(result?.scores).toEqual(scoreRows);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// listUserScoredSimfiles
+// ---------------------------------------------------------------------------
+describe('listUserScoredSimfiles', () => {
+	it('returns empty when the user has no scores', async () => {
+		const db = createMockDb(() => createMockStmt(null, []));
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, { userId: 'u1' });
+		expect(result).toEqual({ data: [], count: 0 });
+	});
+
+	it('lists scored simfiles with their dtx_files', async () => {
+		const scoredSimfileRow = { ...baseSimfileRow, id: 42 };
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('DISTINCT')) return createMockStmt(null, [{ simfile_id: 42 }]);
+			if (sql.includes('FROM simfiles')) return createMockStmt(null, [scoredSimfileRow]);
+			return createMockStmt(null, [{ id: 10, label: 'BASIC', level: 5, simfile_id: 42 }]);
+		});
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
+			userId: 'user-1'
+		});
+		expect(result.count).toBe(1);
+		expect(result.data[0].id).toBe(42);
+		expect(result.data[0].dtx_files).toEqual([{ id: 10, level: 5, label: 'BASIC' }]);
 	});
 });

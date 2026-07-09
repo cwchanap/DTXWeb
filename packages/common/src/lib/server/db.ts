@@ -556,3 +556,51 @@ export const getUserChartScore = async (
 		.all<ScoreRow>();
 	return { chartScore, scores: results ?? [] };
 };
+
+export const listUserScoredSimfiles = async (
+	db: D1Database,
+	options: { userId: string; page?: number; pageSize?: number }
+): Promise<{ data: SimfileWithDtxFiles[]; count: number }> => {
+	const page = options.page ?? 1;
+	const pageSize = options.pageSize ?? 20;
+
+	const { results: idRows } = await db
+		.prepare(
+			`SELECT DISTINCT d.simfile_id AS simfile_id
+			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
+			 WHERE cs.user_id = ?
+			 ORDER BY d.simfile_id DESC`
+		)
+		.bind(options.userId)
+		.all<{ simfile_id: number }>();
+
+	const simfileIds = (idRows ?? []).map((r) => r.simfile_id);
+	const count = simfileIds.length;
+	if (count === 0) return { data: [], count: 0 };
+
+	const pageIds = simfileIds.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+	const placeholders = pageIds.map(() => '?').join(',');
+
+	const { results: simfileRows } = await db
+		.prepare(`SELECT * FROM simfiles WHERE id IN (${placeholders}) ORDER BY id DESC`)
+		.bind(...pageIds)
+		.all<SimfileRow>();
+
+	const { results: dtxRows } = await db
+		.prepare(
+			`SELECT id, label, level, simfile_id FROM dtx_files WHERE simfile_id IN (${placeholders})`
+		)
+		.bind(...pageIds)
+		.all<DtxFileRow>();
+
+	const data = (simfileRows ?? []).map((row) =>
+		toSimfileWithDtx(
+			row,
+			(dtxRows ?? [])
+				.filter((d) => d.simfile_id === row.id)
+				.map((d) => ({ id: d.id, level: d.level, label: d.label }))
+		)
+	);
+
+	return { data, count };
+};

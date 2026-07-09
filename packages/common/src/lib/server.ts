@@ -74,6 +74,7 @@ export {
 	upsertChartScore,
 	replaceScores,
 	getUserChartScore,
+	listUserScoredSimfiles,
 	type ListSimfilesOptions,
 	type SearchSimfilesOptions,
 	type SearchSimfileResult

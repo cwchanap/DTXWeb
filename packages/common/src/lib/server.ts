@@ -60,6 +60,7 @@ export {
 	escapeLikePattern,
 	getSimfile,
 	getSimfileOwner,
+	getChartVisibility,
 	listSimfiles,
 	searchSimfiles,
 	getNextDisplayId,

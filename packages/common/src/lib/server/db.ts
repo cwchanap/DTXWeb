@@ -127,6 +127,21 @@ export const getSimfileOwner = async (
 	return owner ?? null;
 };
 
+export const getChartVisibility = async (
+	db: D1Database,
+	chartId: number
+): Promise<{ user_id: string; is_published: 0 | 1 } | null> => {
+	const row = await db
+		.prepare(
+			`SELECT s.user_id AS user_id, s.is_published AS is_published
+			 FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id
+			 WHERE d.id = ? LIMIT 1`
+		)
+		.bind(chartId)
+		.first<{ user_id: string; is_published: 0 | 1 }>();
+	return row ?? null;
+};
+
 export interface ListSimfilesOptions {
 	userId?: string;
 	publishedOnly?: boolean;

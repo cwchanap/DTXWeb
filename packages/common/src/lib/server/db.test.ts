@@ -8,6 +8,7 @@ import {
 	escapeLikePattern,
 	getSimfile,
 	getSimfileOwner,
+	getChartVisibility,
 	listSimfiles,
 	searchSimfiles,
 	getNextDisplayId,
@@ -858,5 +859,22 @@ describe('updateUserProfile', () => {
 		const db = createMockDb(() => createMockStmt(profile));
 		const result = await updateUserProfile(db as unknown as D1Database, 'user-1', {});
 		expect(result).toEqual(profile);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getChartVisibility
+// ---------------------------------------------------------------------------
+describe('getChartVisibility', () => {
+	it("returns the owning simfile's visibility for a chart", async () => {
+		const db = createMockDb(() => createMockStmt({ user_id: 'user-9', is_published: 1 }));
+		const result = await getChartVisibility(db as unknown as D1Database, 55);
+		expect(result).toEqual({ user_id: 'user-9', is_published: 1 });
+	});
+
+	it('returns null when the chart does not exist', async () => {
+		const db = createMockDb(() => createMockStmt(null));
+		const result = await getChartVisibility(db as unknown as D1Database, 999);
+		expect(result).toBeNull();
 	});
 });

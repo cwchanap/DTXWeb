@@ -1,3 +1,17 @@
+type ChartScore {
+  clearCount: Int!
+  id: ID!
+  playCount: Int!
+  scores: [Score!]!
+}
+
+input ChartScoresInput {
+  chartId: ID!
+  clearCount: Int!
+  playCount: Int!
+  scores: [ScoreInput!]!
+}
+
 input CreateSimfileInput {
   artist: String
   bpm: Float!
@@ -22,8 +36,10 @@ type DtxFile {
   fileEncoding: FileEncoding!
   fileSizeBytes: Int!
   fileUrl: String
+  id: ID!
   label: String!
   level: Float!
+  myChartScore: ChartScore
 }
 
 input DtxFileInput {
@@ -46,12 +62,14 @@ type Mutation {
   deleteSimfile(id: ID!): DeleteResult!
   generateMagicLink: MagicLinkResult!
   updateSimfile(id: ID!, input: UpdateSimfileInput!): Simfile!
+  uploadScores(input: UploadScoresInput!): UploadScoresResult!
   upsertUserProfile(input: UpsertUserProfileInput!): UserProfile!
 }
 
 type Query {
   healthz: String!
   me: UserProfile!
+  myScoredSimfiles(page: Int = 1, pageSize: Int = 20): SimfileConnection!
   nextDisplayId: Int!
   simfile(id: ID!): Simfile
   simfileSearch(excludeIds: [ID!], limit: Int = 8, query: String!): [SimfileSearchResult!]!
@@ -62,6 +80,41 @@ type R2File {
   key: String!
   size: Int!
   uploaded: String!
+}
+
+type Score {
+  achievementRate: Float
+  cleared: Boolean!
+  displayOrder: Int
+  fullCombo: Boolean!
+  good: Int
+  great: Int
+  id: ID!
+  isBest: Boolean!
+  maxCombo: Int
+  miss: Int
+  perfect: Int
+  performedAt: String
+  poor: Int
+  rankLabel: String
+  score: Int
+}
+
+input ScoreInput {
+  achievementRate: Float
+  cleared: Boolean!
+  displayOrder: Int
+  fullCombo: Boolean!
+  good: Int
+  great: Int
+  isBest: Boolean!
+  maxCombo: Int
+  miss: Int
+  perfect: Int
+  performedAt: String
+  poor: Int
+  rankLabel: String
+  score: Int
 }
 
 type Simfile {
@@ -104,6 +157,11 @@ type SimfileSearchResult {
   title: String!
 }
 
+type SkippedChart {
+  chartId: ID!
+  reason: String!
+}
+
 input UpdateSimfileInput {
   artist: String
   bpm: Float
@@ -114,6 +172,16 @@ input UpdateSimfileInput {
   publishDate: String
   title: String
   videoPreviewUrl: String
+}
+
+input UploadScoresInput {
+  charts: [ChartScoresInput!]!
+}
+
+type UploadScoresResult {
+  insertedScores: Int!
+  skipped: [SkippedChart!]!
+  updatedCharts: Int!
 }
 
 input UpsertUserProfileInput {

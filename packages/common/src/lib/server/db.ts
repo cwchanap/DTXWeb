@@ -561,8 +561,12 @@ export const listUserScoredSimfiles = async (
 	db: D1Database,
 	options: { userId: string; page?: number; pageSize?: number }
 ): Promise<{ data: SimfileWithDtxFiles[]; count: number }> => {
-	const page = options.page ?? 1;
-	const pageSize = options.pageSize ?? 20;
+	const pageRaw = options.page ?? 1;
+	const pageSizeRaw = options.pageSize ?? 20;
+	const page = Number.isFinite(pageRaw) ? Math.max(1, Math.trunc(pageRaw)) : 1;
+	const pageSize = Number.isFinite(pageSizeRaw)
+		? Math.min(100, Math.max(1, Math.trunc(pageSizeRaw)))
+		: 20;
 
 	const { results: idRows } = await db
 		.prepare(

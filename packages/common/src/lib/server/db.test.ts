@@ -1001,4 +1001,46 @@ describe('listUserScoredSimfiles', () => {
 		expect(result.data[0].id).toBe(42);
 		expect(result.data[0].dtx_files).toEqual([{ id: 10, level: 5, label: 'BASIC' }]);
 	});
+
+	it('clamps an out-of-range page to 1, returning a full page instead of an empty one', async () => {
+		// 25 scored simfile ids for the user, matching the DISTINCT query's DESC ordering
+		const allIds = Array.from({ length: 25 }, (_, i) => 125 - i); // [125, 124, ..., 101]
+
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('DISTINCT')) {
+				return createMockStmt(
+					null,
+					allIds.map((simfile_id) => ({ simfile_id }))
+				);
+			}
+			if (sql.includes('FROM simfiles')) {
+				const stmt = {
+					bind: vi.fn((...ids: number[]) => {
+						stmt.all = vi.fn().mockResolvedValue({
+							results: ids.map((id) => ({ ...baseSimfileRow, id }))
+						});
+						return stmt;
+					}),
+					first: vi.fn().mockResolvedValue(null),
+					all: vi.fn().mockResolvedValue({ results: [] })
+				};
+				return stmt;
+			}
+			return createMockStmt(null, []);
+		});
+
+		// page: 0 is out of range; unclamped this computes a negative slice window
+		// ((0 - 1) * 20, (0 - 1) * 20 + 20) = (-20, 0), which yields an empty page
+		// even though 25 matching simfiles exist. Clamped, page 0 -> 1, so this
+		// should return the first 20 ids instead of an empty page.
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
+			userId: 'user-1',
+			page: 0,
+			pageSize: 20
+		});
+
+		expect(result.count).toBe(25);
+		expect(result.data).toHaveLength(20);
+		expect(result.data.map((d) => d.id)).toEqual(allIds.slice(0, 20));
+	});
 });

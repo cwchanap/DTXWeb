@@ -323,3 +323,51 @@ describe('uploadScores', () => {
 		expect(mockedUpsert).not.toHaveBeenCalled();
 	});
 });
+
+const { listUserScoredSimfiles } = await import('@dtx/common/server');
+const mockedListScored = vi.mocked(listUserScoredSimfiles);
+
+describe('myScoredSimfiles', () => {
+	it('rejects unauthenticated callers', async () => {
+		const result = await runQuery(makeCtx(), {
+			query: `query { myScoredSimfiles { count data { id } } }`
+		});
+		expect(result.errors?.[0].extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it("returns the caller's scored simfiles", async () => {
+		mockedListScored.mockResolvedValue({
+			count: 1,
+			data: [
+				{
+					id: 42,
+					title: 'Song',
+					artist: 'Artist',
+					bpm: 150,
+					is_published: true,
+					user_id: 'user-1',
+					display_id: null,
+					download_url: null,
+					preview_url: null,
+					video_preview_url: null,
+					publish_date: 't',
+					created_at: 't',
+					updated_at: 't',
+					dtx_files: [{ id: 10, level: 5, label: 'BASIC' }]
+				}
+			]
+		} as never);
+
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: `query { myScoredSimfiles { count data { id title dtxFiles { id level } } } }`
+		});
+		const conn = result.data?.myScoredSimfiles as {
+			count: number;
+			data: { id: string; title: string; dtxFiles: { id: string; level: number }[] }[];
+		};
+		expect(conn.count).toBe(1);
+		expect(conn.data[0].id).toBe('42');
+		expect(conn.data[0].dtxFiles[0].id).toBe('10');
+	});
+});

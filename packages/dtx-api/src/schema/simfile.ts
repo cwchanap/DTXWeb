@@ -3,6 +3,7 @@ import {
 	getSimfile,
 	getNextDisplayId,
 	listSimfiles,
+	listUserScoredSimfiles,
 	searchSimfiles,
 	toSimfileWithDtx,
 	updateSimfile,
@@ -614,6 +615,25 @@ builder.queryField('simfiles', (t) =>
 				pageSize: args.pageSize ?? 20 // defaultValue may not narrow to non-null in this Pothos version
 			});
 		}
+	})
+);
+
+// --- Query.myScoredSimfiles ---
+
+builder.queryField('myScoredSimfiles', (t) =>
+	t.field({
+		type: SimfileConnectionRef,
+		args: {
+			page: t.arg.int({ required: false, defaultValue: 1 }),
+			pageSize: t.arg.int({ required: false, defaultValue: 20 })
+		},
+		authScopes: { user: true },
+		resolve: async (_root, args, ctx) =>
+			listUserScoredSimfiles(ctx.db, {
+				userId: ctx.user!.id,
+				page: args.page ?? 1,
+				pageSize: args.pageSize ?? 20
+			})
 	})
 );
 

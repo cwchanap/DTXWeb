@@ -232,10 +232,17 @@ describe('getSimfile', () => {
 
 describe('getSimfile chart id', () => {
 	it('includes the dtx_files id in the joined result', async () => {
+		mockDrizzleDb.select.mockClear();
 		drizzleSelectResults.push([baseSimfileRow]); // simfile select
 		drizzleSelectResults.push([{ id: 77, level: 5, label: 'BASIC' }]); // dtx select
 		const result = await getSimfile({} as unknown as D1Database, 1);
 		expect(result?.dtx_files).toEqual([{ id: 77, level: 5, label: 'BASIC' }]);
+
+		// Guard against regressing the `id: dtxFiles.id` field in the dtx select itself:
+		// the mock replays queued rows regardless of the requested fields, so without this
+		// assertion the test above would still pass even if `id` were dropped from the select.
+		const dtxSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[1]?.[0];
+		expect(dtxSelectCall).toHaveProperty('id', dtxFiles.id);
 	});
 });
 
@@ -418,6 +425,20 @@ describe('listSimfiles', () => {
 		// pageSize defaults to 20, page defaults to 1, so offset = 0
 		expect(dataQuery?.limit).toHaveBeenCalledWith(20);
 		expect(dataQuery?.offset).toHaveBeenCalledWith(0);
+	});
+
+	it('requests the dtx_files id in the joined dtx select', async () => {
+		const dtxRow = { simfile_id: 1, id: 77, level: 5, label: 'BASIC' };
+		drizzleSelectResults.push([{ cnt: 1 }], [baseSimfileRow], [dtxRow]);
+		const db = createMockDb();
+
+		await listSimfiles(db as unknown as D1Database, {});
+
+		// Guard against regressing the `id: dtxFiles.id` field in the dtx select itself:
+		// the mock replays queued rows regardless of the requested fields, so without this
+		// assertion the test above would still pass even if `id` were dropped from the select.
+		const dtxSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[2]?.[0];
+		expect(dtxSelectCall).toHaveProperty('id', dtxFiles.id);
 	});
 
 	it('applies search condition when search option is provided', async () => {

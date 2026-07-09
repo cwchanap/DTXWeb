@@ -7,9 +7,11 @@ import {
 	toSimfileWithDtx,
 	updateSimfile,
 	deleteSimfile,
+	getUserChartScore,
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
+import { ChartScoreRef } from './score';
 import {
 	enrichFiles,
 	enrichHasUploadedFiles,
@@ -131,6 +133,7 @@ export const FileEncodingEnum = builder.enumType('FileEncoding', {
 // --- object types ---
 
 type DtxFileParent = {
+	id?: number;
 	level: number;
 	label: string;
 	/** Row index within simfile.dtx_files. Carried so the resolver can
@@ -249,6 +252,15 @@ const requireCatalogChart = async (
 
 const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
+		id: t.id({ resolve: (file) => String(file.id) }),
+		myChartScore: t.field({
+			type: ChartScoreRef,
+			nullable: true,
+			resolve: async (file, _args, ctx) => {
+				if (!ctx.user || file.id == null) return null;
+				return getUserChartScore(ctx.db, ctx.user.id, file.id);
+			}
+		}),
 		level: t.exposeFloat('level'),
 		label: t.exposeString('label'),
 		// Nullable + non-throwing: a missing R2 object for one level returns null

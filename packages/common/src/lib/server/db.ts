@@ -100,6 +100,7 @@ export const getSimfile = async (
 
 	const dtx = await orm
 		.select({
+			id: dtxFiles.id,
 			level: dtxFiles.level,
 			label: dtxFiles.label
 		})
@@ -205,16 +206,17 @@ export const listSimfiles = async (
 	const dtxRows = await orm
 		.select({
 			simfile_id: dtxFiles.simfileId,
+			id: dtxFiles.id,
 			level: dtxFiles.level,
 			label: dtxFiles.label
 		})
 		.from(dtxFiles)
 		.where(inArray(dtxFiles.simfileId, ids));
 
-	const dtxMap = new Map<number, { level: number; label: string }[]>();
+	const dtxMap = new Map<number, { id?: number; level: number; label: string }[]>();
 	for (const d of dtxRows) {
 		const arr = dtxMap.get(d.simfile_id) ?? [];
-		arr.push({ level: d.level, label: d.label });
+		arr.push({ id: d.id, level: d.level, label: d.label });
 		dtxMap.set(d.simfile_id, arr);
 	}
 

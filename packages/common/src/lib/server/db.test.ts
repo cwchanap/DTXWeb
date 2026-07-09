@@ -230,6 +230,15 @@ describe('getSimfile', () => {
 	});
 });
 
+describe('getSimfile chart id', () => {
+	it('includes the dtx_files id in the joined result', async () => {
+		drizzleSelectResults.push([baseSimfileRow]); // simfile select
+		drizzleSelectResults.push([{ id: 77, level: 5, label: 'BASIC' }]); // dtx select
+		const result = await getSimfile({} as unknown as D1Database, 1);
+		expect(result?.dtx_files).toEqual([{ id: 77, level: 5, label: 'BASIC' }]);
+	});
+});
+
 // ---------------------------------------------------------------------------
 // getSimfileOwner
 // ---------------------------------------------------------------------------

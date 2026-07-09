@@ -74,8 +74,8 @@ describe('createSimfileWithDtx', () => {
 			]
 		});
 		expect(result.dtxFiles).toEqual([
-			{ label: 'BSC', level: 5.5 },
-			{ label: 'ADV', level: 7.5 }
+			{ id: 1, label: 'BSC', level: 5.5 },
+			{ id: 2, label: 'ADV', level: 7.5 }
 		]);
 		expect(mockedCreateDtx).toHaveBeenCalledWith(expect.anything(), [
 			{ label: 'BSC', level: 5.5, simfile_id: 7 },

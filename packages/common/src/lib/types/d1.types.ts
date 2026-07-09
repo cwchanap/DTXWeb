@@ -130,7 +130,7 @@ export interface UserProfileUpdate {
 export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published' | 'user_id'> {
 	is_published: boolean;
 	user_id?: string;
-	dtx_files: { level: number; label: string }[];
+	dtx_files: { id?: number; level: number; label: string }[];
 }
 
 /** Simfile with joined dtx_files — desktop-compatible shape matching old Supabase type */
@@ -150,7 +150,7 @@ export interface SimfileWithDtx extends Omit<
 /** Convert a raw D1 simfile row (integer booleans) to the API-facing shape */
 export const toSimfileWithDtx = (
 	row: Omit<SimfileRow, 'user_id'> & { user_id?: string },
-	dtxFiles: { level: number; label: string }[]
+	dtxFiles: { id?: number; level: number; label: string }[]
 ): SimfileWithDtxFiles => ({
 	...row,
 	is_published: row.is_published === 1,

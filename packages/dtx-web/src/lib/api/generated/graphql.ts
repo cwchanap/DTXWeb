@@ -15,6 +15,20 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type ChartScore = {
+  clearCount: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  playCount: Scalars['Int']['output'];
+  scores: Array<Score>;
+};
+
+export type ChartScoresInput = {
+  chartId: Scalars['ID']['input'];
+  clearCount: Scalars['Int']['input'];
+  playCount: Scalars['Int']['input'];
+  scores: Array<ScoreInput>;
+};
+
 export type CreateSimfileInput = {
   artist?: InputMaybe<Scalars['String']['input']>;
   bpm: Scalars['Float']['input'];
@@ -39,8 +53,10 @@ export type DtxFile = {
   fileEncoding: FileEncoding;
   fileSizeBytes: Scalars['Int']['output'];
   fileUrl: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
   label: Scalars['String']['output'];
   level: Scalars['Float']['output'];
+  myChartScore: Maybe<ChartScore>;
 };
 
 export type DtxFileInput = {
@@ -63,6 +79,7 @@ export type Mutation = {
   deleteSimfile: DeleteResult;
   generateMagicLink: MagicLinkResult;
   updateSimfile: Simfile;
+  uploadScores: UploadScoresResult;
   upsertUserProfile: UserProfile;
 };
 
@@ -83,6 +100,11 @@ export type MutationUpdateSimfileArgs = {
 };
 
 
+export type MutationUploadScoresArgs = {
+  input: UploadScoresInput;
+};
+
+
 export type MutationUpsertUserProfileArgs = {
   input: UpsertUserProfileInput;
 };
@@ -90,10 +112,17 @@ export type MutationUpsertUserProfileArgs = {
 export type Query = {
   healthz: Scalars['String']['output'];
   me: UserProfile;
+  myScoredSimfiles: SimfileConnection;
   nextDisplayId: Scalars['Int']['output'];
   simfile: Maybe<Simfile>;
   simfileSearch: Array<SimfileSearchResult>;
   simfiles: SimfileConnection;
+};
+
+
+export type QueryMyScoredSimfilesArgs = {
+  page?: InputMaybe<Scalars['Int']['input']>;
+  pageSize?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -120,6 +149,41 @@ export type R2File = {
   key: Scalars['String']['output'];
   size: Scalars['Int']['output'];
   uploaded: Scalars['String']['output'];
+};
+
+export type Score = {
+  achievementRate: Maybe<Scalars['Float']['output']>;
+  cleared: Scalars['Boolean']['output'];
+  displayOrder: Maybe<Scalars['Int']['output']>;
+  fullCombo: Scalars['Boolean']['output'];
+  good: Maybe<Scalars['Int']['output']>;
+  great: Maybe<Scalars['Int']['output']>;
+  id: Scalars['ID']['output'];
+  isBest: Scalars['Boolean']['output'];
+  maxCombo: Maybe<Scalars['Int']['output']>;
+  miss: Maybe<Scalars['Int']['output']>;
+  perfect: Maybe<Scalars['Int']['output']>;
+  performedAt: Maybe<Scalars['String']['output']>;
+  poor: Maybe<Scalars['Int']['output']>;
+  rankLabel: Maybe<Scalars['String']['output']>;
+  score: Maybe<Scalars['Int']['output']>;
+};
+
+export type ScoreInput = {
+  achievementRate?: InputMaybe<Scalars['Float']['input']>;
+  cleared: Scalars['Boolean']['input'];
+  displayOrder?: InputMaybe<Scalars['Int']['input']>;
+  fullCombo: Scalars['Boolean']['input'];
+  good?: InputMaybe<Scalars['Int']['input']>;
+  great?: InputMaybe<Scalars['Int']['input']>;
+  isBest: Scalars['Boolean']['input'];
+  maxCombo?: InputMaybe<Scalars['Int']['input']>;
+  miss?: InputMaybe<Scalars['Int']['input']>;
+  perfect?: InputMaybe<Scalars['Int']['input']>;
+  performedAt?: InputMaybe<Scalars['String']['input']>;
+  poor?: InputMaybe<Scalars['Int']['input']>;
+  rankLabel?: InputMaybe<Scalars['String']['input']>;
+  score?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type Simfile = {
@@ -162,6 +226,11 @@ export type SimfileSearchResult = {
   title: Scalars['String']['output'];
 };
 
+export type SkippedChart = {
+  chartId: Scalars['ID']['output'];
+  reason: Scalars['String']['output'];
+};
+
 export type UpdateSimfileInput = {
   artist?: InputMaybe<Scalars['String']['input']>;
   bpm?: InputMaybe<Scalars['Float']['input']>;
@@ -172,6 +241,16 @@ export type UpdateSimfileInput = {
   publishDate?: InputMaybe<Scalars['String']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
   videoPreviewUrl?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UploadScoresInput = {
+  charts: Array<ChartScoresInput>;
+};
+
+export type UploadScoresResult = {
+  insertedScores: Scalars['Int']['output'];
+  skipped: Array<SkippedChart>;
+  updatedCharts: Scalars['Int']['output'];
 };
 
 export type UpsertUserProfileInput = {
@@ -231,6 +310,14 @@ export type DeleteSimfileMutationVariables = Exact<{
 
 export type DeleteSimfileMutation = { deleteSimfile: { id: string, deleted: boolean, partialDeletion: boolean | null, message: string | null } };
 
+export type MyScoredSimfilesQueryVariables = Exact<{
+  page?: InputMaybe<Scalars['Int']['input']>;
+  pageSize?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type MyScoredSimfilesQuery = { myScoredSimfiles: { count: number, data: Array<{ id: string, title: string, artist: string, dtxFiles: Array<{ id: string, label: string, level: number, myChartScore: { playCount: number, clearCount: number, scores: Array<{ id: string, isBest: boolean, score: number | null, achievementRate: number | null, rankLabel: string | null, fullCombo: boolean, cleared: boolean, maxCombo: number | null, perfect: number | null, great: number | null, good: number | null, poor: number | null, miss: number | null, performedAt: string | null, displayOrder: number | null }> } | null }> }> } };
+
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -251,5 +338,6 @@ export const ListSimfilesDocument = {"kind":"Document","definitions":[{"kind":"O
 export const GetSimfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSimfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"simfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SimfileWithFiles"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SimfileFull"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Simfile"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayId"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"artist"}},{"kind":"Field","name":{"kind":"Name","value":"bpm"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"isPublished"}},{"kind":"Field","name":{"kind":"Name","value":"downloadUrl"}},{"kind":"Field","name":{"kind":"Name","value":"previewUrl"}},{"kind":"Field","name":{"kind":"Name","value":"videoPreviewUrl"}},{"kind":"Field","name":{"kind":"Name","value":"publishDate"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"dtxFiles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"level"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SimfileWithFiles"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Simfile"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SimfileFull"}},{"kind":"Field","name":{"kind":"Name","value":"files"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"uploaded"}}]}},{"kind":"Field","name":{"kind":"Name","value":"hasUploadedFiles"}}]}}]} as unknown as DocumentNode<GetSimfileQuery, GetSimfileQueryVariables>;
 export const UpdateSimfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateSimfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateSimfileInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateSimfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SimfileWithFiles"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SimfileFull"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Simfile"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayId"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"artist"}},{"kind":"Field","name":{"kind":"Name","value":"bpm"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"isPublished"}},{"kind":"Field","name":{"kind":"Name","value":"downloadUrl"}},{"kind":"Field","name":{"kind":"Name","value":"previewUrl"}},{"kind":"Field","name":{"kind":"Name","value":"videoPreviewUrl"}},{"kind":"Field","name":{"kind":"Name","value":"publishDate"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"dtxFiles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"level"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SimfileWithFiles"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Simfile"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SimfileFull"}},{"kind":"Field","name":{"kind":"Name","value":"files"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"uploaded"}}]}},{"kind":"Field","name":{"kind":"Name","value":"hasUploadedFiles"}}]}}]} as unknown as DocumentNode<UpdateSimfileMutation, UpdateSimfileMutationVariables>;
 export const DeleteSimfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteSimfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteSimfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"deleted"}},{"kind":"Field","name":{"kind":"Name","value":"partialDeletion"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DeleteSimfileMutation, DeleteSimfileMutationVariables>;
+export const MyScoredSimfilesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MyScoredSimfiles"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"page"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"pageSize"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myScoredSimfiles"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"page"},"value":{"kind":"Variable","name":{"kind":"Name","value":"page"}}},{"kind":"Argument","name":{"kind":"Name","value":"pageSize"},"value":{"kind":"Variable","name":{"kind":"Name","value":"pageSize"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"count"}},{"kind":"Field","name":{"kind":"Name","value":"data"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"artist"}},{"kind":"Field","name":{"kind":"Name","value":"dtxFiles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"level"}},{"kind":"Field","name":{"kind":"Name","value":"myChartScore"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playCount"}},{"kind":"Field","name":{"kind":"Name","value":"clearCount"}},{"kind":"Field","name":{"kind":"Name","value":"scores"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"isBest"}},{"kind":"Field","name":{"kind":"Name","value":"score"}},{"kind":"Field","name":{"kind":"Name","value":"achievementRate"}},{"kind":"Field","name":{"kind":"Name","value":"rankLabel"}},{"kind":"Field","name":{"kind":"Name","value":"fullCombo"}},{"kind":"Field","name":{"kind":"Name","value":"cleared"}},{"kind":"Field","name":{"kind":"Name","value":"maxCombo"}},{"kind":"Field","name":{"kind":"Name","value":"perfect"}},{"kind":"Field","name":{"kind":"Name","value":"great"}},{"kind":"Field","name":{"kind":"Name","value":"good"}},{"kind":"Field","name":{"kind":"Name","value":"poor"}},{"kind":"Field","name":{"kind":"Name","value":"miss"}},{"kind":"Field","name":{"kind":"Name","value":"performedAt"}},{"kind":"Field","name":{"kind":"Name","value":"displayOrder"}}]}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<MyScoredSimfilesQuery, MyScoredSimfilesQueryVariables>;
 export const MeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"Me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"username"}}]}}]}}]} as unknown as DocumentNode<MeQuery, MeQueryVariables>;
 export const UpsertUserProfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpsertUserProfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpsertUserProfileInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"upsertUserProfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"username"}}]}}]}}]} as unknown as DocumentNode<UpsertUserProfileMutation, UpsertUserProfileMutationVariables>;

@@ -1,0 +1,36 @@
+query MyScoredSimfiles($page: Int, $pageSize: Int) {
+	myScoredSimfiles(page: $page, pageSize: $pageSize) {
+		count
+		data {
+			id
+			title
+			artist
+			dtxFiles {
+				id
+				label
+				level
+				myChartScore {
+					playCount
+					clearCount
+					scores {
+						id
+						isBest
+						score
+						achievementRate
+						rankLabel
+						fullCombo
+						cleared
+						maxCombo
+						perfect
+						great
+						good
+						poor
+						miss
+						performedAt
+						displayOrder
+					}
+				}
+			}
+		}
+	}
+}

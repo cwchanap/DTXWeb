@@ -9,6 +9,7 @@ import {
 	updateSimfile,
 	deleteSimfile,
 	getUserChartScore,
+	listUserChartScores,
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
@@ -259,7 +260,17 @@ const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 			nullable: true,
 			resolve: async (file, _args, ctx) => {
 				if (!ctx.user || file.id == null) return null;
-				return getUserChartScore(ctx.db, ctx.user.id, file.id);
+				const chartId = file.id;
+				// Prefer the request-scoped batch (populated by the connection
+				// resolver when myChartScore is selected on a list). On a single
+				// simfile(id) query there is no batch, so resolve individually and
+				// memoize under the same cache.
+				const cache = ctx.chartScoresCache ?? (ctx.chartScoresCache = new Map());
+				const cached = cache.get(chartId);
+				if (cached) return cached;
+				const promise = getUserChartScore(ctx.db, ctx.user.id, chartId);
+				cache.set(chartId, promise);
+				return promise;
 			}
 		}),
 		level: t.exposeFloat('level'),
@@ -471,6 +482,32 @@ export const SimfileConnectionRef = builder
 							// to single-sim discovery, and resolvers for skipped sims
 							// short-circuit at nonBlank(...) before ever consulting the
 							// cache, so leaving them uncached has no cost in normal flow.
+						}
+
+						// Batch-load the caller's chart scores when myChartScore is selected,
+						// so a scored-simfiles page issues 2 D1 queries total instead of 2 per
+						// chart. Mirrors the hasUploadedFiles / files batch pattern above.
+						if (ctx.user && isNestedFieldSelected(info, 'dtxFiles', ['myChartScore'])) {
+							const chartIds = c.data.flatMap((s) =>
+								s.dtx_files
+									.map((d) => d.id)
+									.filter((id): id is number => id != null)
+							);
+							if (chartIds.length > 0) {
+								const cache =
+									ctx.chartScoresCache ?? (ctx.chartScoresCache = new Map());
+								const batchPromise = listUserChartScores(
+									ctx.db,
+									ctx.user.id,
+									chartIds
+								);
+								for (const chartId of chartIds) {
+									cache.set(
+										chartId,
+										batchPromise.then((map) => map.get(chartId) ?? null)
+									);
+								}
+							}
 						}
 					}
 					return c.data;

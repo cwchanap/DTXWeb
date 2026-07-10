@@ -18,7 +18,8 @@ vi.mock('@dtx/common/server', async () => {
 		getUserChartScore: vi.fn(),
 		upsertChartScore: vi.fn(),
 		replaceScores: vi.fn(),
-		listUserScoredSimfiles: vi.fn()
+		listUserScoredSimfiles: vi.fn(),
+		listUserChartScores: vi.fn()
 	};
 });
 
@@ -27,6 +28,9 @@ const { getSimfile, getSimfileOwner, getUserChartScore } = await import('@dtx/co
 const mockedGetSimfile = vi.mocked(getSimfile);
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedGetUserChartScore = vi.mocked(getUserChartScore);
+
+const { listUserChartScores } = await import('@dtx/common/server');
+const mockedListChartScores = vi.mocked(listUserChartScores);
 
 const { getChartVisibility, upsertChartScore, replaceScores } = await import('@dtx/common/server');
 const mockedVisibility = vi.mocked(getChartVisibility);
@@ -376,5 +380,100 @@ describe('myScoredSimfiles', () => {
 		expect(conn.count).toBe(1);
 		expect(conn.data[0].id).toBe('42');
 		expect(conn.data[0].dtxFiles[0].id).toBe('10');
+	});
+});
+
+describe('DtxFile.myChartScore batching (N+1)', () => {
+	it('batches every chart on the page into ONE listUserChartScores call', async () => {
+		mockedListScored.mockResolvedValue({
+			count: 1,
+			data: [
+				{
+					id: 42,
+					title: 'Song',
+					artist: 'Artist',
+					bpm: 150,
+					is_published: true,
+					user_id: 'user-1',
+					display_id: null,
+					download_url: null,
+					preview_url: null,
+					video_preview_url: null,
+					publish_date: 't',
+					created_at: 't',
+					updated_at: 't',
+					dtx_files: [
+						{ id: 10, level: 5, label: 'BASIC' },
+						{ id: 11, level: 8, label: 'EXTREME' }
+					]
+				}
+			]
+		} as never);
+
+		mockedListChartScores.mockResolvedValue(
+			new Map([
+				[
+					10,
+					{
+						chartScore: {
+							id: 3,
+							chart_id: 10,
+							user_id: 'user-1',
+							play_count: 10,
+							clear_count: 4,
+							created_at: 't',
+							updated_at: 't'
+						},
+						scores: [
+							{
+								id: 1,
+								chart_score_id: 3,
+								is_best: 1,
+								score: 900000,
+								achievement_rate: 90,
+								rank_label: 'A',
+								full_combo: 0,
+								cleared: 1,
+								max_combo: 800,
+								perfect: 1,
+								great: 1,
+								good: 1,
+								poor: 1,
+								miss: 1,
+								performed_at: 't',
+								display_order: null,
+								created_at: 't'
+							}
+						]
+					}
+				]
+			]) as never
+		);
+
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: `query {
+				myScoredSimfiles {
+					data {
+						dtxFiles { id myChartScore { playCount scores { isBest score } } }
+					}
+				}
+			}`
+		});
+
+		const charts = (
+			result.data?.myScoredSimfiles as {
+				data: { dtxFiles: { id: string; myChartScore: { playCount: number } | null }[] }[];
+			}
+		).data[0].dtxFiles;
+
+		// One batched call for both charts, with both chart ids — not one per chart.
+		expect(mockedListChartScores).toHaveBeenCalledTimes(1);
+		expect(mockedListChartScores).toHaveBeenCalledWith(ctx.db, 'user-1', [10, 11]);
+		// The per-chart getUserChartScore path must NOT run when batched.
+		expect(mockedGetUserChartScore).not.toHaveBeenCalled();
+		// Chart 10 resolves from the batch map; chart 11 (absent from map) is null.
+		expect(charts[0].myChartScore?.playCount).toBe(10);
+		expect(charts[1].myChartScore).toBeNull();
 	});
 });

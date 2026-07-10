@@ -43,6 +43,30 @@ pub async fn select_folder(app: AppHandle) -> Result<DialogResult> {
 }
 
 #[tauri::command]
+pub async fn select_dtxmania_db(app: AppHandle) -> Result<DialogResult> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("DTXMania database", &["db"])
+        .pick_file(move |file_path| {
+            let _ = sender.send(file_path);
+        });
+
+    let picked = receiver
+        .await
+        .map_err(|error| DesktopError::Message(error.to_string()))?;
+    let file_paths = match picked {
+        Some(path) => vec![file_path_to_string(path)?],
+        None => Vec::new(),
+    };
+
+    Ok(DialogResult {
+        canceled: file_paths.is_empty(),
+        file_paths,
+    })
+}
+
+#[tauri::command]
 pub async fn path_exists(
     base_path: String,
     path_parts: Vec<String>,

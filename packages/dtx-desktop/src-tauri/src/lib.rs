@@ -7,6 +7,7 @@ mod error;
 mod filesystem;
 mod models;
 mod preferences;
+mod scores;
 mod songs;
 mod updater;
 
@@ -127,6 +128,8 @@ pub fn run() {
             songs::export_song_to_zip,
             songs::get_skin_asset,
             songs::parse_dtx_files,
+            filesystem::select_dtxmania_db,
+            scores::default_dtxmania_db_path,
             updater::check_for_update
         ])
         .run(tauri::generate_context!())

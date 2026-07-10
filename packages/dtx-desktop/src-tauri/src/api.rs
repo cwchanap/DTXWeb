@@ -110,6 +110,31 @@ mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
 }
 "#;
 
+const SIMFILE_CHARTS_QUERY: &str = r#"
+query SimfileCharts($id: ID!) {
+  simfile(id: $id) {
+    dtxFiles {
+      id
+      label
+      level
+    }
+  }
+}
+"#;
+
+const UPLOAD_SCORES_MUTATION: &str = r#"
+mutation UploadScores($input: UploadScoresInput!) {
+  uploadScores(input: $input) {
+    updatedCharts
+    insertedScores
+    skipped {
+      chartId
+      reason
+    }
+  }
+}
+"#;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ApiResultValue {
     Success { data: Value },
@@ -800,6 +825,80 @@ pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Va
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     fetch_cloud_song_impl(&base_url, &token, cloud_song_id).await
+}
+
+pub(crate) async fn fetch_cloud_song_charts_impl(
+    base_url: &str,
+    token: &str,
+    cloud_song_id: Value,
+) -> Result<Value> {
+    let result = graphql_result_with_url(
+        base_url,
+        token,
+        SIMFILE_CHARTS_QUERY,
+        json!({ "id": cloud_song_id.to_string().trim_matches('"') }),
+    )
+    .await?;
+    let data = match result.success_data() {
+        Ok(data) => data,
+        Err((error, _)) => return Ok(api_failure(error)),
+    };
+
+    let charts = data
+        .pointer("/simfile/dtxFiles")
+        .and_then(Value::as_array)
+        .map(|files| {
+            files
+                .iter()
+                .map(|file| {
+                    json!({
+                        "id": file["id"],
+                        "label": file["label"],
+                        "level": file["level"],
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(api_success(Value::Array(charts)))
+}
+
+#[tauri::command]
+pub async fn fetch_cloud_song_charts(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    fetch_cloud_song_charts_impl(&base_url, &token, cloud_song_id).await
+}
+
+pub(crate) async fn upload_scores_impl(
+    base_url: &str,
+    token: &str,
+    payload: Value,
+) -> Result<Value> {
+    let result = graphql_result_with_url(
+        base_url,
+        token,
+        UPLOAD_SCORES_MUTATION,
+        json!({ "input": payload }),
+    )
+    .await?;
+    let data = match result.success_data() {
+        Ok(data) => data,
+        Err((error, _)) => return Ok(api_failure(error)),
+    };
+
+    Ok(json!({
+        "success": true,
+        "data": data.get("uploadScores").cloned().unwrap_or(Value::Null),
+    }))
+}
+
+#[tauri::command]
+pub async fn upload_scores(app: AppHandle, payload: Value) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    upload_scores_impl(&base_url, &token, payload).await
 }
 
 pub(crate) async fn update_simfile_record_impl(

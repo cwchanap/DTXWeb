@@ -1601,3 +1601,83 @@ async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
         .iter()
         .any(|w| w.as_str().unwrap().contains("Sound preview")));
 }
+
+#[tokio::test]
+async fn fetch_cloud_song_charts_returns_real_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfile": { "dtxFiles": [
+                { "id": "10", "label": "BASIC", "level": 5.5 },
+                { "id": "11", "label": "EXTREME", "level": 8.8 }
+            ] } }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token", serde_json::json!("42"))
+        .await
+        .expect("charts");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    let charts = result["data"].as_array().expect("data array");
+    assert_eq!(charts.len(), 2);
+    assert_eq!(charts[0]["id"], serde_json::json!("10"));
+    assert_eq!(charts[0]["level"], serde_json::json!(5.5));
+    assert_eq!(charts[1]["id"], serde_json::json!("11"));
+}
+
+#[tokio::test]
+async fn upload_scores_returns_result() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "uploadScores": {
+                "updatedCharts": 1, "insertedScores": 3,
+                "skipped": [ { "chartId": "99", "reason": "Chart not visible" } ]
+            } }
+        })))
+        .mount(&server)
+        .await;
+
+    let payload = serde_json::json!({ "charts": [
+        { "chartId": "10", "playCount": 7, "clearCount": 5, "scores": [
+            { "isBest": true, "cleared": true, "fullCombo": false, "score": 950000 }
+        ] }
+    ] });
+    let result = upload_scores_impl(&server.uri(), "token", payload)
+        .await
+        .expect("upload");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    assert_eq!(result["data"]["updatedCharts"], serde_json::json!(1));
+    assert_eq!(result["data"]["insertedScores"], serde_json::json!(3));
+    assert_eq!(
+        result["data"]["skipped"][0]["chartId"],
+        serde_json::json!("99")
+    );
+}
+
+#[tokio::test]
+async fn upload_scores_surfaces_graphql_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [ { "message": "Not authenticated", "extensions": { "code": "FORBIDDEN" } } ]
+        })))
+        .mount(&server)
+        .await;
+
+    let result = upload_scores_impl(&server.uri(), "token", serde_json::json!({ "charts": [] }))
+        .await
+        .expect("upload");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("Not authenticated"));
+}

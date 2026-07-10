@@ -113,6 +113,8 @@ pub fn run() {
             api::get_preview_url,
             api::get_sound_preview_url,
             api::upload_file,
+            api::fetch_cloud_song_charts,
+            api::upload_scores,
             filesystem::select_folder,
             filesystem::path_exists,
             filesystem::list_directories,

@@ -17,6 +17,8 @@ pub enum DesktopError {
     Tauri(#[from] tauri::Error),
     #[error("Zip error: {0}")]
     Zip(#[from] zip::result::ZipError),
+    #[error("SQLite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
 }
 
 impl Serialize for DesktopError {

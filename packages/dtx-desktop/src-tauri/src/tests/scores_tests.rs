@@ -67,3 +67,104 @@ fn default_path_absent_when_db_missing() {
     );
     assert_eq!(default_dtxmania_db_path_from(None), None);
 }
+
+use rusqlite::Connection;
+
+/// Minimal DTXMania-shaped schema holding only the columns the parser reads.
+fn seed_db(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, SongScoreId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Played Song', 'Artist A', 'Rock');
+         INSERT INTO Songs VALUES (2, 'Never Played', 'Artist B', 'Pop');
+
+         -- Song 1: chart 1 played (with history), chart 2 has a NON-drums score only.
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 'hash-extreme');
+         -- Song 2: chart 3 never played (drums score exists, all zero).
+         INSERT INTO SongCharts VALUES (3, 2, 1, '', 33, 'hash-np');
+
+         -- Drums score for chart 1 (played), with judgement breakdown.
+         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
+         -- Guitar score for chart 2 (Instrument=1) -> must be ignored, no drums row.
+         INSERT INTO SongScores VALUES (11, 2, 1, 111, 50.0, 0, 3, 1, 100, 0, 0, 0, 0, 0, '2026-06-01');
+         -- Drums score for chart 3 (never played -> PlayCount 0).
+         INSERT INTO SongScores VALUES (12, 3, 0, 0, 0.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL);
+
+         -- Two recent rows for score 10 (one parseable, one garbage), plus a 6th
+         -- ignored by the LIMIT 5 is not needed here; order by DisplayOrder.
+         INSERT INTO PerformanceHistory VALUES (100, 10, '2026-06-02T00:00:00', '10.26/6/2 Cleared (S: 91.30)', 1);
+         INSERT INTO PerformanceHistory VALUES (101, 10, '2026-05-28T00:00:00', 'totally malformed line', 2);",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_maps_best_recent_and_ignores_non_drums() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db(&db);
+
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+
+    // Song 2 (never played) still appears because chart 3 has a drums score row.
+    assert_eq!(songs.len(), 2);
+
+    let played = &songs[0];
+    assert_eq!(played.title, "Played Song");
+    // Chart 2 (guitar-only) is dropped; only the played drums chart remains.
+    assert_eq!(played.charts.len(), 1);
+    let chart = &played.charts[0];
+    assert_eq!(chart.drum_level, 55);
+    assert_eq!(chart.difficulty_label, "BASIC");
+    assert_eq!(chart.aggregate.play_count, 7);
+    assert_eq!(chart.aggregate.clear_count, 5);
+
+    let best = chart.best.as_ref().expect("best present");
+    assert!(best.is_best);
+    assert_eq!(best.score, Some(950000));
+    assert_eq!(best.rank_label.as_deref(), Some("A")); // 91.3 -> A
+    assert!(best.cleared); // clear_count > 0
+    assert!(best.full_combo);
+    assert_eq!(best.max_combo, Some(800));
+    assert_eq!(best.perfect, Some(500));
+    assert_eq!(best.performed_at.as_deref(), Some("2026-06-02"));
+    assert_eq!(best.display_order, None);
+
+    // Recent: 2 rows, ordered by DisplayOrder; score NULL; garbage tolerated.
+    assert_eq!(chart.recent.len(), 2);
+    let r1 = &chart.recent[0];
+    assert!(!r1.is_best);
+    assert_eq!(r1.score, None);
+    assert_eq!(r1.rank_label.as_deref(), Some("S"));
+    assert_eq!(r1.achievement_rate, Some(91.30));
+    assert!(r1.cleared);
+    assert_eq!(r1.display_order, Some(1));
+    let r2 = &chart.recent[1];
+    assert_eq!(r2.rank_label, None); // malformed line
+    assert!(!r2.cleared); // defaults to false
+    assert_eq!(r2.performed_at.as_deref(), Some("2026-05-28T00:00:00"));
+
+    // Never-played chart: present, best null, recent empty.
+    let never = &songs[1];
+    assert_eq!(never.charts.len(), 1);
+    assert!(never.charts[0].best.is_none());
+    assert!(never.charts[0].recent.is_empty());
+    assert_eq!(never.charts[0].aggregate.play_count, 0);
+}
+
+#[test]
+fn parse_missing_db_errors() {
+    let dir = tempdir().expect("tempdir");
+    let missing = dir.path().join("nope.db");
+    assert!(parse_dtxmania_scores_impl(missing.to_str().unwrap()).is_err());
+}

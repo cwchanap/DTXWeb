@@ -130,6 +130,7 @@ pub fn run() {
             songs::parse_dtx_files,
             filesystem::select_dtxmania_db,
             scores::default_dtxmania_db_path,
+            scores::parse_dtxmania_scores,
             updater::check_for_update
         ])
         .run(tauri::generate_context!())

@@ -22,7 +22,8 @@ import {
 	upsertChartScore,
 	replaceScores,
 	getUserChartScore,
-	listUserScoredSimfiles
+	listUserScoredSimfiles,
+	listUserChartScores
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
@@ -1081,5 +1082,67 @@ describe('listUserScoredSimfiles', () => {
 		expect(result.count).toBe(25);
 		expect(result.data).toHaveLength(20);
 		expect(result.data.map((d) => d.id)).toEqual(allIds.slice(0, 20));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// listUserChartScores
+// ---------------------------------------------------------------------------
+describe('listUserChartScores', () => {
+	it('returns an empty map without querying when chartIds is empty', async () => {
+		const db = createMockDb();
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', []);
+		expect(result.size).toBe(0);
+		expect(db.prepare).not.toHaveBeenCalled();
+	});
+
+	it('batches chart_scores + scores into two queries and groups by chart_id', async () => {
+		const csRows = [
+			{
+				id: 3,
+				chart_id: 10,
+				user_id: 'u1',
+				play_count: 10,
+				clear_count: 4,
+				created_at: 't',
+				updated_at: 't'
+			},
+			{
+				id: 4,
+				chart_id: 11,
+				user_id: 'u1',
+				play_count: 2,
+				clear_count: 0,
+				created_at: 't',
+				updated_at: 't'
+			}
+		];
+		const scoreRows = [
+			{ id: 1, chart_score_id: 3, is_best: 1, display_order: null },
+			{ id: 2, chart_score_id: 3, is_best: 0, display_order: 1 },
+			{ id: 5, chart_score_id: 4, is_best: 1, display_order: null }
+		];
+		const db = createMockDb((sql: string) =>
+			sql.includes('FROM chart_scores')
+				? createMockStmt(null, csRows)
+				: createMockStmt(null, scoreRows)
+		);
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', [10, 11]);
+
+		// The whole point of this helper: two queries total, NOT two per chart.
+		expect(db.prepare).toHaveBeenCalledTimes(2);
+		expect(result.get(10)?.chartScore.id).toBe(3);
+		expect(result.get(10)?.scores.map((s) => s.id)).toEqual([1, 2]);
+		expect(result.get(11)?.chartScore.id).toBe(4);
+		expect(result.get(11)?.scores.map((s) => s.id)).toEqual([5]);
+	});
+
+	it('short-circuits before the scores query when no chart_scores match', async () => {
+		const db = createMockDb((sql: string) =>
+			sql.includes('FROM chart_scores') ? createMockStmt(null, []) : createMockStmt(null, [])
+		);
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', [10, 11]);
+		expect(result.size).toBe(0);
+		expect(db.prepare).toHaveBeenCalledTimes(1);
 	});
 });

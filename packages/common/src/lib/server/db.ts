@@ -620,3 +620,53 @@ export const listUserScoredSimfiles = async (
 
 	return { data, count };
 };
+
+/**
+ * Batched sibling of getUserChartScore: fetches the caller's chart_scores +
+ * their scores for many charts at once. Two D1 queries total (one for the
+ * aggregate rows, one for all their scores) regardless of chartIds length,
+ * so a scored-simfiles page does not fan out into 2 queries per chart.
+ * Returned map is keyed by chart_id; scores are best-first then display_order.
+ */
+export const listUserChartScores = async (
+	db: D1Database,
+	userId: string,
+	chartIds: number[]
+): Promise<Map<number, { chartScore: ChartScoreRow; scores: ScoreRow[] }>> => {
+	const result = new Map<number, { chartScore: ChartScoreRow; scores: ScoreRow[] }>();
+	if (chartIds.length === 0) return result;
+
+	const chartPlaceholders = chartIds.map(() => '?').join(',');
+	const { results: csRows } = await db
+		.prepare(
+			`SELECT * FROM chart_scores WHERE user_id = ? AND chart_id IN (${chartPlaceholders})`
+		)
+		.bind(userId, ...chartIds)
+		.all<ChartScoreRow>();
+	const chartScores = csRows ?? [];
+	if (chartScores.length === 0) return result;
+
+	const scorePlaceholders = chartScores.map(() => '?').join(',');
+	const { results: scoreRows } = await db
+		.prepare(
+			`SELECT * FROM scores WHERE chart_score_id IN (${scorePlaceholders})
+			 ORDER BY is_best DESC, display_order ASC`
+		)
+		.bind(...chartScores.map((c) => c.id))
+		.all<ScoreRow>();
+
+	const scoresByChartScoreId = new Map<number, ScoreRow[]>();
+	for (const s of scoreRows ?? []) {
+		const list = scoresByChartScoreId.get(s.chart_score_id);
+		if (list) list.push(s);
+		else scoresByChartScoreId.set(s.chart_score_id, [s]);
+	}
+
+	for (const cs of chartScores) {
+		result.set(cs.chart_id, {
+			chartScore: cs,
+			scores: scoresByChartScoreId.get(cs.id) ?? []
+		});
+	}
+	return result;
+};

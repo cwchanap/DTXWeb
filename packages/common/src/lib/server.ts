@@ -75,6 +75,7 @@ export {
 	replaceScores,
 	getUserChartScore,
 	listUserScoredSimfiles,
+	listUserChartScores,
 	type ListSimfilesOptions,
 	type SearchSimfilesOptions,
 	type SearchSimfileResult

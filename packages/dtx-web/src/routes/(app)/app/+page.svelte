@@ -11,9 +11,49 @@
 	let redirectError = $state('');
 	let redirectAttempted = $state(false);
 
+	// Deep-link schemes a bundled desktop app may register for the callback.
+	const ALLOWED_DESKTOP_CALLBACK_SCHEMES = ['dtx:', 'dtx-dev:'];
+
+	// The magic link carries an auth token, so the redirect target must be
+	// strictly validated: either a loopback HTTP callback (a `tauri dev`
+	// instance) or one of our own deep-link schemes. Anything else is rejected
+	// to prevent an open redirect from leaking the token to another origin.
+	const validateDesktopCallbackUrl = (raw: string | null | undefined): string | null => {
+		if (!raw) return null;
+		let parsed: URL;
+		try {
+			parsed = new URL(raw);
+		} catch {
+			return null;
+		}
+		if (ALLOWED_DESKTOP_CALLBACK_SCHEMES.includes(parsed.protocol)) {
+			return parsed.hostname === 'auth-callback' ? raw : null;
+		}
+		if (parsed.protocol === 'http:') {
+			const isLoopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+			if (isLoopback && parsed.pathname === '/auth-callback') return raw;
+		}
+		return null;
+	};
+
+	// The desktop app stashes its declared callback on the /login page; read it
+	// once here (single-use) and honor it over the build-time default.
+	const readDesktopSuppliedCallbackUrl = (): string | null => {
+		if (!browser) return null;
+		try {
+			const stored = sessionStorage.getItem('dtx_desktop_auth_callback');
+			if (stored) sessionStorage.removeItem('dtx_desktop_auth_callback');
+			return validateDesktopCallbackUrl(stored);
+		} catch {
+			return null;
+		}
+	};
+
 	const buildDesktopAuthCallbackUrl = (magicLinkUrl: string) => {
+		const desktopSuppliedCallbackUrl = readDesktopSuppliedCallbackUrl();
 		const configuredCallbackUrl = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
-		const callbackUrl = configuredCallbackUrl || 'dtx://auth-callback';
+		const callbackUrl =
+			desktopSuppliedCallbackUrl || configuredCallbackUrl || 'dtx://auth-callback';
 		const separator = callbackUrl.includes('?') ? '&' : '?';
 		return `${callbackUrl}${separator}magic_link=${encodeURIComponent(magicLinkUrl)}`;
 	};

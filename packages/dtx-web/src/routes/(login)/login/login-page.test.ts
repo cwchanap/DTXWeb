@@ -27,10 +27,12 @@ describe('Login Page', () => {
 		// Reset to default (SSR) state before each test
 		envMock.browser = false;
 		pageMock.url = new URL('http://localhost/login');
+		sessionStorage.clear();
 	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		sessionStorage.clear();
 	});
 
 	it('shows loading spinner while checking auth state (browser:false)', () => {
@@ -68,6 +70,35 @@ describe('Login Page', () => {
 		expect(
 			screen.getByText("You'll be redirected back to the desktop app after login.")
 		).toBeInTheDocument();
+	});
+
+	it('stashes the desktop-supplied callback in sessionStorage when redirect=desktop', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL(
+			'http://localhost/login?redirect=desktop&desktop_callback=' +
+				encodeURIComponent('http://127.0.0.1:47931/auth-callback')
+		);
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBe(
+				'http://127.0.0.1:47931/auth-callback'
+			);
+		});
+	});
+
+	it('clears a stale stashed callback when redirect=desktop has no desktop_callback', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://127.0.0.1:47931/auth-callback');
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?redirect=desktop');
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole('heading', { name: 'Login to Desktop App' })
+			).toBeInTheDocument();
+		});
+		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBeNull();
 	});
 
 	it('shows email and password inputs after auth check (browser:true)', async () => {

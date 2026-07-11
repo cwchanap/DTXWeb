@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { RefreshCw, FolderOpen, Trophy, Upload, AlertTriangle } from '@lucide/svelte';
+	import { Pagination } from '@skeletonlabs/skeleton-svelte';
+	import {
+		RefreshCw,
+		FolderOpen,
+		Trophy,
+		Upload,
+		AlertTriangle,
+		ChevronDown,
+		ChevronRight
+	} from '@lucide/svelte';
 	import { desktopHost } from '../services/desktopHost';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import { matchCharts, type CloudChart } from '../lib/scoreMatching';
@@ -49,6 +58,19 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
+	// Client-side pagination over the parsed local songs list. The upload flow
+	// still walks the full `songs` array; paging only limits what is rendered.
+	// `pageStart` keeps the global song index stable so links/matches, which are
+	// keyed by index into `songs`, stay correct across pages.
+	let currentPage = $state(1);
+	let pageSize = $state(10);
+	const pageStart = $derived((currentPage - 1) * pageSize);
+	const pagedSongs = $derived(songs.slice(pageStart, pageStart + pageSize));
+
+	const handlePageChange = (event: { page: number }) => {
+		currentPage = event.page;
+	};
+
 	let links = $state<Record<number, CloudSong>>({});
 	let cloudChartsBySong = $state<Record<number, CloudChart[]>>({});
 	let matchesBySong = $state<Record<number, (string | null)[]>>({});
@@ -62,6 +84,15 @@
 
 	const songKey = (song: DtxmaniaSong): string => `${song.title}${song.artist}`;
 	let savedLinks = $state<Record<string, string>>({});
+
+	// Per-song collapse state, keyed by song identity so it survives paging.
+	// Absent key = expanded (default), so songs start open until collapsed.
+	let expandedByKey = $state<Record<string, boolean>>({});
+	const isSongExpanded = (song: DtxmaniaSong): boolean => expandedByKey[songKey(song)] ?? true;
+	const toggleSong = (song: DtxmaniaSong): void => {
+		const key = songKey(song);
+		expandedByKey[key] = !(expandedByKey[key] ?? true);
+	};
 
 	onMount(async () => {
 		savedLinks = await desktopHost.readScoreSongLinks();
@@ -88,6 +119,7 @@
 	const loadScores = async (path: string) => {
 		loading = true;
 		error = null;
+		currentPage = 1;
 		try {
 			songs = await desktopHost.parseDtxmaniaScores<DtxmaniaSong[]>(path);
 			links = {};
@@ -186,7 +218,7 @@
 	};
 </script>
 
-<div class="bg-base text-base-text min-h-full overflow-auto p-6">
+<div class="bg-base text-base-text min-w-0 flex-1 overflow-auto p-6">
 	<div class="mb-4 flex items-center gap-3">
 		<Trophy size={22} class="text-cyan" />
 		<h1 class="font-display text-hi text-xl font-semibold">Scores</h1>
@@ -237,13 +269,27 @@
 		<p class="text-dim text-sm">No drum scores found in this database.</p>
 	{:else}
 		<div class="flex flex-col gap-4">
-			{#each songs as song, songIndex (song.title + song.artist + songIndex)}
+			{#each pagedSongs as song, i (song.title + song.artist + (pageStart + i))}
+				{@const songIndex = pageStart + i}
 				<div class="border-hairline bg-surface-1 rounded-xl border p-4">
 					<div class="mb-2 flex items-center gap-3">
-						<div class="min-w-0">
-							<div class="text-hi truncate font-medium">{song.title}</div>
-							<div class="text-dim truncate text-sm">{song.artist}</div>
-						</div>
+						<button
+							type="button"
+							class="hover:text-hi flex min-w-0 flex-1 items-center gap-2 text-left"
+							onclick={() => toggleSong(song)}
+							aria-expanded={isSongExpanded(song)}
+							aria-label="Toggle {song.title}"
+						>
+							{#if isSongExpanded(song)}
+								<ChevronDown size={16} class="text-faint shrink-0" />
+							{:else}
+								<ChevronRight size={16} class="text-faint shrink-0" />
+							{/if}
+							<span class="min-w-0">
+								<span class="text-hi block truncate font-medium">{song.title}</span>
+								<span class="text-dim block truncate text-sm">{song.artist}</span>
+							</span>
+						</button>
 						<div class="relative ml-auto">
 							{#if links[songIndex]}
 								<span class="text-cyan text-sm"
@@ -270,90 +316,114 @@
 						</div>
 					</div>
 
-					<div class="flex flex-col gap-2">
-						{#each song.charts as chart, chartIndex (chart.fileHash + chartIndex)}
-							{@const matchedId =
-								(matchesBySong[songIndex] ?? [])[chartIndex] ?? null}
-							{@const cloudCharts = cloudChartsBySong[songIndex] ?? []}
-							<div class="border-hairline rounded-lg border p-3">
-								<div class="mb-1 flex items-center gap-2 text-sm">
-									<span class="text-hi font-medium"
-										>{chart.difficultyLabel || 'DRUMS'}</span
-									>
-									<span class="text-faint">Lv {chart.drumLevel / 10}</span>
-									<span class="text-dim"
-										>· plays {chart.aggregate.playCount} · clears {chart
-											.aggregate.clearCount}</span
-									>
-									{#if links[songIndex]}
-										{#if matchedId}
-											<span class="text-green ml-auto text-xs">
-												→ matched
-											</span>
-										{:else}
-											<span
-												class="ml-auto inline-flex items-center gap-1 text-xs text-red-300"
-											>
-												<AlertTriangle size={12} /> Unmatched
-											</span>
+					{#if isSongExpanded(song)}
+						<div class="flex flex-col gap-2">
+							{#each song.charts as chart, chartIndex (chart.fileHash + chartIndex)}
+								{@const matchedId =
+									(matchesBySong[songIndex] ?? [])[chartIndex] ?? null}
+								{@const cloudCharts = cloudChartsBySong[songIndex] ?? []}
+								<div class="border-hairline rounded-lg border p-3">
+									<div class="mb-1 flex items-center gap-2 text-sm">
+										<span class="text-hi font-medium"
+											>{chart.difficultyLabel || 'DRUMS'}</span
+										>
+										<span class="text-faint">Lv {chart.drumLevel / 10}</span>
+										<span class="text-dim"
+											>· plays {chart.aggregate.playCount} · clears {chart
+												.aggregate.clearCount}</span
+										>
+										{#if links[songIndex]}
+											{#if matchedId}
+												<span class="text-green ml-auto text-xs">
+													→ matched
+												</span>
+											{:else}
+												<span
+													class="ml-auto inline-flex items-center gap-1 text-xs text-red-300"
+												>
+													<AlertTriangle size={12} /> Unmatched
+												</span>
+											{/if}
 										{/if}
+									</div>
+
+									{#if links[songIndex] && cloudCharts.length > 0}
+										<label class="text-faint mb-2 block text-xs">
+											Target chart:
+											<select
+												class="border-hairline bg-surface-2 text-hi ml-1 rounded px-2 py-1 text-xs"
+												value={matchedId ?? ''}
+												onchange={(e) =>
+													overrideMatch(
+														songIndex,
+														chartIndex,
+														(e.currentTarget as HTMLSelectElement).value
+													)}
+											>
+												<option value="">— none —</option>
+												{#each cloudCharts as cc}
+													<option value={cc.id}
+														>{cc.label || 'chart'} (Lv {cc.level})</option
+													>
+												{/each}
+											</select>
+										</label>
+									{/if}
+
+									{#if chart.best}
+										<div class="text-dim text-xs">
+											Best: {formatScore(chart.best.score)} · {chart.best
+												.rankLabel} ·
+											{chart.best.achievementRate}% · combo {chart.best
+												.maxCombo}
+											{#if chart.best.fullCombo}· FC{/if}
+										</div>
+									{:else}
+										<div class="text-faint text-xs">
+											No best score recorded.
+										</div>
+									{/if}
+
+									{#if chart.recent.length > 0}
+										<ul class="text-faint mt-1 text-xs">
+											{#each chart.recent as recent}
+												<li>
+													<span
+														class:text-green-300={recent.cleared}
+														class:text-red-300={!recent.cleared}
+														>{recent.cleared
+															? 'Cleared'
+															: 'Failed'}</span
+													>
+													· {recent.rankLabel ?? '—'} · {recent.achievementRate ??
+														'—'}% · {recent.performedAt}
+												</li>
+											{/each}
+										</ul>
 									{/if}
 								</div>
-
-								{#if links[songIndex] && cloudCharts.length > 0}
-									<label class="text-faint mb-2 block text-xs">
-										Target chart:
-										<select
-											class="border-hairline bg-surface-2 text-hi ml-1 rounded px-2 py-1 text-xs"
-											value={matchedId ?? ''}
-											onchange={(e) =>
-												overrideMatch(
-													songIndex,
-													chartIndex,
-													(e.currentTarget as HTMLSelectElement).value
-												)}
-										>
-											<option value="">— none —</option>
-											{#each cloudCharts as cc}
-												<option value={cc.id}
-													>{cc.label || 'chart'} (Lv {cc.level})</option
-												>
-											{/each}
-										</select>
-									</label>
-								{/if}
-
-								{#if chart.best}
-									<div class="text-dim text-xs">
-										Best: {formatScore(chart.best.score)} · {chart.best
-											.rankLabel} ·
-										{chart.best.achievementRate}% · combo {chart.best.maxCombo}
-										{#if chart.best.fullCombo}· FC{/if}
-									</div>
-								{:else}
-									<div class="text-faint text-xs">No best score recorded.</div>
-								{/if}
-
-								{#if chart.recent.length > 0}
-									<ul class="text-faint mt-1 text-xs">
-										{#each chart.recent as recent}
-											<li>
-												<span
-													class:text-green-300={recent.cleared}
-													class:text-red-300={!recent.cleared}
-													>{recent.cleared ? 'Cleared' : 'Failed'}</span
-												>
-												· {recent.rankLabel ?? '—'} · {recent.achievementRate ??
-													'—'}% · {recent.performedAt}
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</div>
-						{/each}
-					</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
+
+		{#if songs.length > pageSize}
+			<div class="mt-6 flex justify-center">
+				<Pagination
+					data={songs}
+					page={currentPage}
+					{pageSize}
+					onPageChange={handlePageChange}
+					siblingCount={2}
+					showFirstLastButtons={true}
+					classes="flex items-center gap-2"
+					buttonBase="btn btn-sm"
+					buttonActive="preset-filled-primary-500"
+					buttonInactive="preset-tonal-surface"
+				/>
+			</div>
+		{/if}
 	{/if}
 </div>

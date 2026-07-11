@@ -171,4 +171,55 @@ describe('Scores', () => {
 		render(Scores);
 		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
 	});
+
+	it('paginates the parsed songs, rendering one page at a time', async () => {
+		const manySongs = Array.from({ length: 25 }, (_, i) => ({
+			title: `Song ${i + 1}`,
+			artist: 'Artist',
+			genre: 'Rock',
+			charts: [
+				{
+					difficultyLevel: 2,
+					difficultyLabel: 'BASIC',
+					drumLevel: 55,
+					fileHash: `hash-${i}`,
+					aggregate: { playCount: 1, clearCount: 1 },
+					best: bestRow,
+					recent: []
+				}
+			]
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue(manySongs);
+
+		render(Scores);
+
+		// Page 1 renders only the first 10 songs.
+		expect(await screen.findByText('Song 1')).toBeInTheDocument();
+		expect(screen.getByText('Song 10')).toBeInTheDocument();
+		expect(screen.queryByText('Song 11')).not.toBeInTheDocument();
+
+		// Navigating to page 2 renders the next slice and drops the first page.
+		await fireEvent.click(screen.getByText('2'));
+
+		expect(await screen.findByText('Song 11')).toBeInTheDocument();
+		expect(screen.getByText('Song 20')).toBeInTheDocument();
+		expect(screen.queryByText('Song 1')).not.toBeInTheDocument();
+		expect(screen.queryByText('Song 21')).not.toBeInTheDocument();
+	});
+
+	it('collapses and expands a song to hide and show its charts', async () => {
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+		// Charts are shown by default (the best score is visible).
+		expect(screen.getByText(/950,?000/)).toBeInTheDocument();
+
+		// Collapsing hides the chart details but keeps the song header.
+		await fireEvent.click(screen.getByRole('button', { name: /toggle played song/i }));
+		expect(screen.getByText('Played Song')).toBeInTheDocument();
+		expect(screen.queryByText(/950,?000/)).not.toBeInTheDocument();
+
+		// Expanding again brings the charts back.
+		await fireEvent.click(screen.getByRole('button', { name: /toggle played song/i }));
+		expect(screen.getByText(/950,?000/)).toBeInTheDocument();
+	});
 });

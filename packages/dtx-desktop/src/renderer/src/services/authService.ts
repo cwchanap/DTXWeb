@@ -16,9 +16,34 @@ import { desktopHost } from './desktopHost';
 const DEFAULT_SERVER_URL = 'http://localhost:5173';
 const SERVER_URL = import.meta.env.VITE_DTX_SERVER_URL || DEFAULT_SERVER_URL;
 
+// The loopback HTTP callback used when running under `tauri dev`. The Rust
+// backend listens on DTX_DESKTOP_AUTH_CALLBACK_PORT (default 47931); the dev
+// scripts set the matching port here via VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT.
+const DEFAULT_AUTH_CALLBACK_PORT = '47931';
+// The custom-scheme deep link used by a bundled (installed) desktop app.
+const DEEP_LINK_AUTH_CALLBACK_URL = 'dtx://auth-callback';
+
+/**
+ * The callback the (prod/preprod) web should redirect back to after issuing a
+ * magic link. The desktop is the source of truth: a bundled app is registered
+ * for the `dtx://` deep-link scheme, while a `tauri dev` binary is unbundled so
+ * macOS won't route deep links to it — that instance is instead reachable via
+ * the Rust loopback HTTP server. Sending this to the web means the deployed
+ * app needs no per-instance configuration and works for both dev and bundled.
+ */
+export const getDesktopAuthCallbackUrl = (): string => {
+	if (import.meta.env.DEV) {
+		const port =
+			import.meta.env.VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT || DEFAULT_AUTH_CALLBACK_PORT;
+		return `http://127.0.0.1:${port}/auth-callback`;
+	}
+	return DEEP_LINK_AUTH_CALLBACK_URL;
+};
+
 export const getDesktopLoginUrl = (serverUrl = SERVER_URL): string => {
 	const normalizedServerUrl = serverUrl.replace(/\/+$/, '');
-	return `${normalizedServerUrl}/login?redirect=desktop`;
+	const desktopCallback = encodeURIComponent(getDesktopAuthCallbackUrl());
+	return `${normalizedServerUrl}/login?redirect=desktop&desktop_callback=${desktopCallback}`;
 };
 
 type StoredUserData = {

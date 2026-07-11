@@ -39,6 +39,27 @@
 			// Check if we're redirecting from desktop app
 			const redirectParam = params.get('redirect');
 			redirectToDesktop = redirectParam === 'desktop';
+
+			// The desktop app declares where it wants the magic link sent back
+			// (a loopback URL under `tauri dev`, or its `dtx://` deep link when
+			// bundled). Stash it so the /app page can honor it after login — this
+			// survives both the password POST redirect and the Google OAuth
+			// round-trip within this browser tab. The /app page validates it
+			// before use, so storing the raw value here is safe.
+			if (redirectToDesktop) {
+				const desktopCallback = params.get('desktop_callback');
+				try {
+					if (desktopCallback) {
+						sessionStorage.setItem('dtx_desktop_auth_callback', desktopCallback);
+					} else {
+						sessionStorage.removeItem('dtx_desktop_auth_callback');
+					}
+				} catch {
+					// sessionStorage may be unavailable (private mode); the /app
+					// page falls back to the configured/default deep-link callback.
+				}
+			}
+
 			isCheckingAuthState = false;
 		}
 	});

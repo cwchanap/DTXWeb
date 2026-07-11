@@ -42,6 +42,7 @@ describe('App Home Page – desktop redirect flow', () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL = '';
+		sessionStorage.clear();
 		Object.defineProperty(window, 'location', {
 			value: { href: '' },
 			writable: true,
@@ -53,6 +54,7 @@ describe('App Home Page – desktop redirect flow', () => {
 		vi.runAllTimers();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
+		sessionStorage.clear();
 		Object.defineProperty(window, 'location', {
 			value: originalLocation,
 			writable: true,
@@ -120,6 +122,82 @@ describe('App Home Page – desktop redirect flow', () => {
 		const expectedHref = `http://127.0.0.1:47931/auth-callback?source=web&magic_link=${encodeURIComponent('https://example.com/magic')}`;
 		await vi.waitFor(() => {
 			expect(generateMagicLink).toHaveBeenCalledOnce();
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('prefers the desktop-supplied loopback callback from sessionStorage over the default', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://127.0.0.1:47931/auth-callback');
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:47931/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+		// Single-use: the bridged value is cleared after being read.
+		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBeNull();
+	});
+
+	it('accepts a dtx:// deep-link callback supplied via sessionStorage', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'dtx://auth-callback');
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('takes the sessionStorage callback in preference to the configured env callback', async () => {
+		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL = 'dtx://auth-callback';
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://localhost:47931/auth-callback');
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://localhost:47931/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('rejects a non-loopback http callback and falls back to the default', async () => {
+		sessionStorage.setItem(
+			'dtx_desktop_auth_callback',
+			'http://evil.example.com/auth-callback'
+		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('rejects a disallowed scheme (external https) and falls back to the default', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'https://evil.example.com/steal');
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
 			expect(window.location.href).toBe(expectedHref);
 		});
 	});

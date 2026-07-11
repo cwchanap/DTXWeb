@@ -7,6 +7,7 @@
 	import SimFileList from '../SimFileList.svelte';
 	import Templates from '../Templates.svelte';
 	import Settings from '../Settings.svelte';
+	import Scores from '../Scores.svelte';
 	import NewSong from '../NewSong.svelte';
 	import { workspaceStore } from '../../stores/workspaceStore';
 	import { authStore } from '../../stores/authStore';
@@ -33,7 +34,11 @@
 	// and keep rendering the cloud list for a signed-out session. Reset to the
 	// local library so the master pane always reflects an accessible section.
 	$effect(() => {
-		if (!$authStore.isAuthenticated && $workspaceStore.activeSection === 'cloud') {
+		if (
+			!$authStore.isAuthenticated &&
+			($workspaceStore.activeSection === 'cloud' ||
+				$workspaceStore.activeSection === 'scores')
+		) {
 			workspaceStore.setActiveSection('library');
 		}
 	});
@@ -115,6 +120,8 @@
 				<Settings />
 			{:else if section === 'templates'}
 				<Templates />
+			{:else if section === 'scores'}
+				<Scores />
 			{:else if $workspaceStore.showNewSong}
 				<NewSong />
 			{:else}

@@ -843,9 +843,12 @@ pub(crate) async fn fetch_cloud_song_charts_impl(
         Ok(data) => data,
         Err((error, _)) => return Ok(api_failure(error)),
     };
+    let Some(simfile) = data.get("simfile").filter(|simfile| !simfile.is_null()) else {
+        return Ok(api_failure("Simfile not found"));
+    };
 
-    let charts = data
-        .pointer("/simfile/dtxFiles")
+    let charts = simfile
+        .get("dtxFiles")
         .and_then(Value::as_array)
         .map(|files| {
             files
@@ -888,10 +891,9 @@ pub(crate) async fn upload_scores_impl(
         Err((error, _)) => return Ok(api_failure(error)),
     };
 
-    Ok(json!({
-        "success": true,
-        "data": data.get("uploadScores").cloned().unwrap_or(Value::Null),
-    }))
+    Ok(api_success(
+        data.get("uploadScores").cloned().unwrap_or(Value::Null),
+    ))
 }
 
 #[tauri::command]

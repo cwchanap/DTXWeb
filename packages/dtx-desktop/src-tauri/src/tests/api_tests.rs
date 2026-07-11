@@ -1629,6 +1629,25 @@ async fn fetch_cloud_song_charts_returns_real_ids() {
 }
 
 #[tokio::test]
+async fn fetch_cloud_song_charts_returns_failure_when_simfile_null() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfile": null }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token", serde_json::json!("42"))
+        .await
+        .expect("charts");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert_eq!(result["error"], serde_json::json!("Simfile not found"));
+}
+
+#[tokio::test]
 async fn upload_scores_returns_result() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

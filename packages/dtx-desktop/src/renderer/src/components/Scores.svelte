@@ -4,6 +4,7 @@
 	import { desktopHost } from '../services/desktopHost';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import { matchCharts, type CloudChart } from '../lib/scoreMatching';
+	import { toastStore } from '../stores/toastStore';
 
 	interface ScorePayload {
 		isBest: boolean;
@@ -68,7 +69,6 @@
 		if (path) {
 			dbPath = path;
 			await loadScores(path);
-			await restoreLinks();
 		}
 	});
 
@@ -101,6 +101,7 @@
 		} finally {
 			loading = false;
 		}
+		await restoreLinks();
 	};
 
 	const chooseDb = async () => {
@@ -114,7 +115,9 @@
 	const handleLinkSelect = async (songIndex: number, song: CloudSong) => {
 		links[songIndex] = song;
 		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
-		void desktopHost.writeScoreSongLinks(savedLinks);
+		desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
+			toastStore.error('Could not save song link');
+		});
 		autocompleteFor = null;
 		const result = await desktopHost.fetchCloudSongCharts<{
 			success: boolean;

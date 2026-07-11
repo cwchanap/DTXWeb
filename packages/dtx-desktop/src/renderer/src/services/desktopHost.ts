@@ -299,6 +299,12 @@ export const desktopHost = {
 	uploadScores: async <T = unknown>(payload: unknown): Promise<T> =>
 		await invokeHost<T>('upload_scores', { payload }),
 
+	readScoreSongLinks: async (): Promise<Record<string, string>> =>
+		await invokeHost<Record<string, string>>('read_score_song_links'),
+
+	writeScoreSongLinks: async (links: Record<string, string>): Promise<void> =>
+		await sendHost('write_score_song_links', { links }),
+
 	fetchCloudSong: async <T = unknown>(
 		params: { cloudSongId: string | number } | string | number
 	): Promise<T> => {

@@ -9,7 +9,9 @@ const host = vi.hoisted(() => ({
 	parseDtxmaniaScores: vi.fn(),
 	fetchCloudSongCharts: vi.fn(),
 	uploadScores: vi.fn(),
-	searchCloudSongs: vi.fn()
+	searchCloudSongs: vi.fn(),
+	readScoreSongLinks: vi.fn(),
+	writeScoreSongLinks: vi.fn()
 }));
 vi.mock('../services/desktopHost', () => ({ desktopHost: host }));
 
@@ -82,6 +84,8 @@ beforeEach(() => {
 		success: true,
 		data: { updatedCharts: 1, insertedScores: 2, skipped: [] }
 	});
+	host.readScoreSongLinks.mockResolvedValue({});
+	host.writeScoreSongLinks.mockResolvedValue(undefined);
 });
 
 afterEach(() => cleanup());
@@ -143,5 +147,28 @@ describe('Scores', () => {
 		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
 
 		expect(await screen.findByText(/unmatched/i)).toBeInTheDocument();
+	});
+
+	it('persists a link selection and restores it on next mount', async () => {
+		const { unmount } = render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+
+		await waitFor(() =>
+			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
+				['Played SongArtist A']: '42'
+			})
+		);
+		unmount();
+
+		// Next mount: saved link is restored -> fetchCloudSongCharts called for '42'.
+		host.readScoreSongLinks.mockResolvedValue({ ['Played SongArtist A']: '42' });
+		host.fetchCloudSongCharts.mockClear();
+		render(Scores);
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
 	});
 });

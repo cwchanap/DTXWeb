@@ -59,13 +59,31 @@
 	const formatScore = (value: number | null): string =>
 		value === null ? '—' : value.toLocaleString('en-US');
 
+	const songKey = (song: DtxmaniaSong): string => `${song.title}${song.artist}`;
+	let savedLinks = $state<Record<string, string>>({});
+
 	onMount(async () => {
+		savedLinks = await desktopHost.readScoreSongLinks();
 		const path = await desktopHost.defaultDtxmaniaDbPath();
 		if (path) {
 			dbPath = path;
 			await loadScores(path);
+			await restoreLinks();
 		}
 	});
+
+	const restoreLinks = async () => {
+		for (let i = 0; i < songs.length; i++) {
+			const cloudId = savedLinks[songKey(songs[i])];
+			if (!cloudId) continue;
+			await handleLinkSelect(i, {
+				id: cloudId,
+				title: `Simfile #${cloudId}`,
+				artist: songs[i].artist,
+				is_published: false
+			});
+		}
+	};
 
 	const loadScores = async (path: string) => {
 		loading = true;
@@ -95,6 +113,8 @@
 
 	const handleLinkSelect = async (songIndex: number, song: CloudSong) => {
 		links[songIndex] = song;
+		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
+		void desktopHost.writeScoreSongLinks(savedLinks);
 		autocompleteFor = null;
 		const result = await desktopHost.fetchCloudSongCharts<{
 			success: boolean;

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
+	import { Button } from '@dtx/ui-components';
 	import { myScoredSimfiles, type ScoredSimfile } from '$lib/api';
 	import ScoreCard from '$lib/components/ScoreCard.svelte';
 
@@ -55,7 +56,8 @@
 	</div>
 {:else if loadError}
 	<div class="music-card p-8 text-center">
-		<p class="text-slate-300">Failed to load your scores. Please try again.</p>
+		<p class="mb-4 text-slate-300">Failed to load your scores. Please try again.</p>
+		<Button onclick={loadScores} variant="primary">{#snippet children()}Retry{/snippet}</Button>
 	</div>
 {:else if songs.length === 0}
 	<div class="music-card p-8 text-center">

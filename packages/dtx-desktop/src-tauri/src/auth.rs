@@ -260,10 +260,12 @@ pub fn parse_auth_callback(raw_url: &str) -> Option<AuthCallback> {
 }
 
 fn is_auth_callback_url(url: &Url) -> bool {
-    // Both the production `dtx://` and dev `dtx-dev://` schemes are accepted.
-    // The dev build registers `dtx-dev` in tauri.dev.conf.json so deep links
-    // route to the dev app instead of an installed production copy.
-    if url.scheme() == "dtx" || url.scheme() == "dtx-dev" {
+    // The production `dtx://` scheme is always accepted. The dev `dtx-dev://`
+    // scheme is accepted only in debug builds — the dev build registers
+    // `dtx-dev` in tauri.dev.conf.json so deep links route to the dev app
+    // instead of an installed production copy, and a release build must never
+    // honor it.
+    if url.scheme() == "dtx" || (cfg!(debug_assertions) && url.scheme() == "dtx-dev") {
         return url.host_str() == Some("auth-callback");
     }
 

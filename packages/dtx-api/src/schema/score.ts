@@ -279,7 +279,12 @@ builder.mutationField('uploadScores', (t) =>
 					});
 					updatedCharts += 1;
 					insertedScores += inserts.length;
-				} catch {
+				} catch (error) {
+					ctx.logger.error('Score upload write failed for chart', {
+						chartId: chart.chartId,
+						userId: ctx.user!.id,
+						error: error instanceof Error ? error.message : String(error)
+					});
 					skipped.push({ chartId: String(chart.chartId), reason: 'write failed' });
 				}
 			}

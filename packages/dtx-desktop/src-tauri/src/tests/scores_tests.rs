@@ -224,9 +224,10 @@ fn parse_accepts_dialog_path_matching_canonical_form() {
     assert_eq!(songs.len(), 2);
 }
 
-/// A chart with no drums score row at all is skipped (the `continue` branch
-/// in `read_song_charts`), so its parent song only appears if another chart
-/// has a drums score.
+/// A chart with no drums score row at all is skipped: `JOINED_QUERY` uses an
+/// INNER JOIN on `SongScores` with `Instrument = 0`, so a scoreless chart
+/// never produces a row. Its parent song only appears if another chart has a
+/// drums score.
 fn seed_db_with_scoreless_chart(path: &std::path::Path) {
     let conn = Connection::open(path).expect("open seed db");
     conn.execute_batch(

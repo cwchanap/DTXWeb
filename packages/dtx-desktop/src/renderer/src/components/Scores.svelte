@@ -107,6 +107,30 @@
 		}
 	});
 
+	// Drops saved links whose song no longer appears in the parsed DTXMania
+	// database, so score_links.json can't grow unbounded as songs are removed
+	// or renamed. Persists only when entries were actually dropped (avoids
+	// spurious writes on a stable song set). Best-effort: a persist failure is
+	// non-fatal — the in-memory map is still pruned for this session.
+	const pruneSavedLinks = () => {
+		if (Object.keys(savedLinks).length === 0) return;
+		const currentKeys = new Set(songs.map(songKey));
+		let dropped = 0;
+		const pruned: Record<string, string> = {};
+		for (const [key, cloudId] of Object.entries(savedLinks)) {
+			if (currentKeys.has(key)) {
+				pruned[key] = cloudId;
+			} else {
+				dropped += 1;
+			}
+		}
+		if (dropped === 0) return;
+		savedLinks = pruned;
+		desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
+			// Best-effort prune persist; failure is non-fatal.
+		});
+	};
+
 	const restoreLinks = async () => {
 		const entries = songs
 			.map((song, i) => ({ i, cloudId: savedLinks[songKey(song)] }))
@@ -177,6 +201,7 @@
 		} finally {
 			loading = false;
 		}
+		pruneSavedLinks();
 		try {
 			await restoreLinks();
 		} catch {

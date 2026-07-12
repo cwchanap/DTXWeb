@@ -184,6 +184,24 @@ describe('Scores', () => {
 		expect(await screen.findByText('Linked: Cloud Song')).toBeInTheDocument();
 	});
 
+	it('prunes orphaned saved links for songs no longer in the database', async () => {
+		// savedLinks has one live entry (Played Song) and one orphan (Ghost Song).
+		host.readScoreSongLinks.mockResolvedValue({
+			['Played Song\u0000Artist A\u0000Rock']: '42',
+			['Ghost Song\u0000Ghost Artist\u0000Jazz']: '99'
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		// The orphan must be dropped and the pruned map persisted.
+		await waitFor(() =>
+			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
+				['Played Song\u0000Artist A\u0000Rock']: '42'
+			})
+		);
+	});
+
 	it('paginates the parsed songs, rendering one page at a time', async () => {
 		const manySongs = Array.from({ length: 25 }, (_, i) => ({
 			title: `Song ${i + 1}`,

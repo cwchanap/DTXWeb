@@ -47,6 +47,16 @@ describe('ScoreList', () => {
 		);
 	});
 
+	it('retries the load when the retry button is clicked', async () => {
+		myScoredSimfilesMock.mockRejectedValueOnce(new Error('boom'));
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: [song], count: 1 });
+		render(ScoreList);
+		const retry = await screen.findByRole('button', { name: /retry/i });
+		await fireEvent.click(retry);
+		await waitFor(() => expect(screen.getByText('Song A')).toBeInTheDocument());
+		expect(myScoredSimfilesMock).toHaveBeenCalledTimes(2);
+	});
+
 	it('renders pagination and loads the next page on click', async () => {
 		const page1 = Array.from({ length: 10 }, (_, i) => ({
 			...song,

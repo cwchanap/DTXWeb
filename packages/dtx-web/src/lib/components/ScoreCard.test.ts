@@ -76,4 +76,45 @@ describe('ScoreCard', () => {
 		expect(screen.getByText('EXTREME · Lv 8')).toBeInTheDocument();
 		expect(screen.getByText('No best score recorded.')).toBeInTheDocument();
 	});
+
+	it('renders at most five recent plays even when more are provided', () => {
+		const sixRecent = Array.from({ length: 6 }, (_, i) => ({
+			id: 100 + i,
+			isBest: false,
+			score: null,
+			achievementRate: 50,
+			rankLabel: 'E',
+			fullCombo: false,
+			cleared: true,
+			maxCombo: null,
+			perfect: null,
+			great: null,
+			good: null,
+			poor: null,
+			miss: null,
+			performedAt: `2026-06-0${i + 1}T00:00:00Z`,
+			displayOrder: i + 1
+		}));
+		const songWithSix: ScoredSimfile = {
+			...song,
+			charts: [
+				{
+					id: 10,
+					label: 'BASIC',
+					level: 5,
+					chartScore: {
+						playCount: 6,
+						clearCount: 6,
+						best: null,
+						recent: sixRecent
+					}
+				}
+			]
+		};
+		render(ScoreCard, { props: { song: songWithSix } });
+		// Each recent play renders as a list item with "Cleared" text.
+		// Only the first 5 of 6 should be rendered.
+		const clearedItems = screen.getAllByText('Cleared');
+		expect(clearedItems).toHaveLength(5);
+	});
 });

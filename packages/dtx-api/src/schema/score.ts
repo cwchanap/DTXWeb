@@ -1,7 +1,6 @@
 import {
 	getChartVisibility,
-	upsertChartScore,
-	replaceScores,
+	upsertChartScoreAndReplaceScores,
 	type ScoreRow,
 	type ChartScoreRow,
 	type ScoreInsert
@@ -107,8 +106,22 @@ const validateChartScores = (
 ): string | null => {
 	const bestCount = scores.filter((s) => s.isBest).length;
 	if (bestCount > 1) return 'more than one best score';
-	const recentCount = scores.filter((s) => s.displayOrder != null).length;
-	if (recentCount > 5) return 'more than 5 recent scores';
+	const recentRows = scores.filter((s) => s.displayOrder != null);
+	if (recentRows.length > 5) return 'more than 5 recent scores';
+	// Best rows must not carry a displayOrder (they are not recent plays).
+	for (const s of scores) {
+		if (s.isBest && s.displayOrder != null) return 'best score with displayOrder';
+	}
+	// Every non-null displayOrder must be a unique integer in 1..5.
+	const seenOrders = new Set<number>();
+	for (const s of recentRows) {
+		const order = s.displayOrder as number;
+		if (!Number.isInteger(order) || order < 1 || order > 5) {
+			return 'displayOrder out of range (expected 1..5)';
+		}
+		if (seenOrders.has(order)) return 'duplicate displayOrder';
+		seenOrders.add(order);
+	}
 	for (const s of scores) {
 		if (s.score != null && !Number.isFinite(s.score)) return 'non-finite score';
 		if (s.achievementRate != null && (s.achievementRate < 0 || s.achievementRate > 100)) {
@@ -157,16 +170,9 @@ builder.mutationField('uploadScores', (t) =>
 					continue;
 				}
 
-				// Two separate round-trips, deliberately: replaceScores needs the
-				// chart_score_id that upsertChartScore's RETURNING produces, so the
-				// aggregate upsert and the atomic score-replace can't be combined.
-				const chartScore = await upsertChartScore(ctx.db, {
-					chartId: numericId,
-					userId: ctx.user!.id,
-					playCount: chart.playCount,
-					clearCount: chart.clearCount
-				});
-
+				// Single atomic D1 batch: upsert the chart_scores aggregate, delete
+				// old scores, and insert new ones in one transaction so no partial
+				// replacement can commit.
 				const inserts: ScoreInsert[] = chart.scores.map((s) => ({
 					is_best: s.isBest,
 					score: s.score ?? null,
@@ -183,7 +189,13 @@ builder.mutationField('uploadScores', (t) =>
 					performed_at: s.performedAt ?? null,
 					display_order: s.displayOrder ?? null
 				}));
-				await replaceScores(ctx.db, chartScore.id, inserts);
+				await upsertChartScoreAndReplaceScores(ctx.db, {
+					chartId: numericId,
+					userId: ctx.user!.id,
+					playCount: chart.playCount,
+					clearCount: chart.clearCount,
+					scores: inserts
+				});
 				updatedCharts += 1;
 				insertedScores += inserts.length;
 			}

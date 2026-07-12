@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { myScoredSimfiles, type ScoredSimfile } from '$lib/api';
-	import ScoreCard from './ScoreCard.svelte';
+	import ScoreCard from '$lib/components/ScoreCard.svelte';
 
 	interface Props {
 		pageSize?: number;
@@ -15,24 +15,33 @@
 	let totalPages = $state(1);
 	let loading = $state(false);
 	let loadError = $state(false);
+	// Monotonically increasing request ID: only the latest page load's response
+	// is applied, so rapid page changes can't overwrite the current page or hide
+	// the loading state prematurely.
+	let loadRequestId = 0;
 
-	const loadScores = async () => {
+	const loadScores = async (): Promise<void> => {
+		const requestId = ++loadRequestId;
 		loading = true;
 		loadError = false;
 		try {
 			const result = await myScoredSimfiles({ page: currentPage, pageSize });
+			if (requestId !== loadRequestId) return;
 			songs = result.data;
 			totalCount = result.count;
 			totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 		} catch (error) {
+			if (requestId !== loadRequestId) return;
 			console.error('Failed to load scores:', error);
 			loadError = true;
 		} finally {
-			loading = false;
+			if (requestId === loadRequestId) {
+				loading = false;
+			}
 		}
 	};
 
-	const handlePageChange = (event: { page: number }) => {
+	const handlePageChange = (event: { page: number }): void => {
 		currentPage = event.page;
 		loadScores();
 	};

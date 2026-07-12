@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS scores (
 );
 CREATE INDEX idx_scores_chart_score ON scores(chart_score_id);
 CREATE UNIQUE INDEX idx_scores_one_best ON scores(chart_score_id) WHERE is_best = 1;
+-- Invariant: each chart_score has zero or one best score (is_best = 1). The partial unique index enforces at-most-one; zero is valid (no best score recorded yet).
 ```
 
 - [ ] **Step 2: Write the failing schema test**
@@ -634,7 +635,74 @@ export const replaceScores = async (
 };
 ```
 
-Export both from `packages/common/src/lib/server.ts`.
+> Prefer `upsertChartScoreAndReplaceScores` for the upload flow — it upserts the chart_scores aggregate and replaces scores in a single D1 batch (one transaction), so no partial replacement can commit. The delete and inserts resolve `chart_score_id` via a subquery on `(user_id, chart_id)` since D1's batch API cannot pipe one statement's `RETURNING` output into the next.
+
+```ts
+export const upsertChartScoreAndReplaceScores = async (
+	db: D1Database,
+	params: {
+		chartId: number;
+		userId: string;
+		playCount: number;
+		clearCount: number;
+		scores: ScoreInsert[];
+	}
+): Promise<void> => {
+	const now = new Date().toISOString();
+	const statements = [
+		db
+			.prepare(
+				`INSERT INTO chart_scores
+					(chart_id, user_id, play_count, clear_count, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(user_id, chart_id) DO UPDATE SET
+					play_count = excluded.play_count,
+					clear_count = excluded.clear_count,
+					updated_at = excluded.updated_at`
+			)
+			.bind(params.chartId, params.userId, params.playCount, params.clearCount, now, now),
+		db
+			.prepare(
+				`DELETE FROM scores WHERE chart_score_id = (
+					SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ?
+				)`
+			)
+			.bind(params.userId, params.chartId),
+		...params.scores.map((s) =>
+			db
+				.prepare(
+					`INSERT INTO scores
+						(chart_score_id, is_best, score, achievement_rate, rank_label,
+						 full_combo, cleared, max_combo, perfect, great, good, poor, miss,
+						 performed_at, display_order)
+					 SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+					 FROM chart_scores WHERE user_id = ? AND chart_id = ?`
+				)
+				.bind(
+					s.is_best ? 1 : 0,
+					s.score ?? null,
+					s.achievement_rate ?? null,
+					s.rank_label ?? null,
+					s.full_combo ? 1 : 0,
+					s.cleared ? 1 : 0,
+					s.max_combo ?? null,
+					s.perfect ?? null,
+					s.great ?? null,
+					s.good ?? null,
+					s.poor ?? null,
+					s.miss ?? null,
+					s.performed_at ?? null,
+					s.display_order ?? null,
+					params.userId,
+					params.chartId
+				)
+		)
+	];
+	await db.batch(statements);
+};
+```
+
+Export all three (`upsertChartScore`, `replaceScores`, `upsertChartScoreAndReplaceScores`) from `packages/common/src/lib/server.ts`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -711,6 +779,8 @@ Expected: FAIL — `getUserChartScore is not a function`.
 - [ ] **Step 3: Implement**
 
 In `packages/common/src/lib/server/db.ts`:
+
+> Note: the dashboard's nested chart resolver already batches `myChartScore` via `listUserChartScores` when selected on a list (see the connection resolver). This single-chart path is only for `simfile(id)` queries without a batch.
 
 ```ts
 export const getUserChartScore = async (
@@ -803,6 +873,8 @@ Expected: FAIL — `listUserScoredSimfiles is not a function`.
 
 In `packages/common/src/lib/server/db.ts` (add `SimfileRow`, `DtxFileRow` to the `../types/d1.types` import if not already present; `toSimfileWithDtx` is already imported):
 
+> Note: the implemented version uses separate SQL count and page queries instead of fetching all IDs and slicing in memory, so large score sets don't require loading every simfile_id into the client.
+
 ```ts
 export const listUserScoredSimfiles = async (
 	db: D1Database,
@@ -810,22 +882,32 @@ export const listUserScoredSimfiles = async (
 ): Promise<{ data: SimfileWithDtxFiles[]; count: number }> => {
 	const page = options.page ?? 1;
 	const pageSize = options.pageSize ?? 20;
+	const offset = (page - 1) * pageSize;
 
-	const { results: idRows } = await db
+	const countRow = await db
+		.prepare(
+			`SELECT COUNT(DISTINCT d.simfile_id) AS total
+			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
+			 WHERE cs.user_id = ?`
+		)
+		.bind(options.userId)
+		.first<{ total: number }>();
+	const count = countRow?.total ?? 0;
+	if (count === 0) return { data: [], count: 0 };
+
+	const { results: pageRows } = await db
 		.prepare(
 			`SELECT DISTINCT d.simfile_id AS simfile_id
 			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
 			 WHERE cs.user_id = ?
-			 ORDER BY d.simfile_id DESC`
+			 ORDER BY d.simfile_id DESC
+			 LIMIT ? OFFSET ?`
 		)
-		.bind(options.userId)
+		.bind(options.userId, pageSize, offset)
 		.all<{ simfile_id: number }>();
 
-	const simfileIds = (idRows ?? []).map((r) => r.simfile_id);
-	const count = simfileIds.length;
-	if (count === 0) return { data: [], count: 0 };
-
-	const pageIds = simfileIds.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+	const pageIds = (pageRows ?? []).map((r) => r.simfile_id);
+	if (pageIds.length === 0) return { data: [], count };
 	const placeholders = pageIds.map(() => '?').join(',');
 
 	const { results: simfileRows } = await db
@@ -1434,6 +1516,24 @@ const validateChartScores = (
 	if (bestCount > 1) return 'more than one best score';
 	const recentCount = scores.filter((s) => s.displayOrder != null).length;
 	if (recentCount > 5) return 'more than 5 recent scores';
+	// Recent-row invariants: the best row must not carry a displayOrder, and
+	// recent rows must use a unique displayOrder in the 1..5 range.
+	for (const s of scores) {
+		if (s.isBest && s.displayOrder != null) {
+			return 'best score must not have a displayOrder';
+		}
+		if (!s.isBest && s.displayOrder != null) {
+			if (!Number.isInteger(s.displayOrder) || s.displayOrder < 1 || s.displayOrder > 5) {
+				return 'displayOrder out of range (1..5)';
+			}
+		}
+	}
+	const recentOrders = scores
+		.filter((s) => !s.isBest && s.displayOrder != null)
+		.map((s) => s.displayOrder);
+	if (new Set(recentOrders).size !== recentOrders.length) {
+		return 'duplicate displayOrder among recent scores';
+	}
 	for (const s of scores) {
 		if (s.score != null && !Number.isFinite(s.score)) return 'non-finite score';
 		if (s.achievementRate != null && (s.achievementRate < 0 || s.achievementRate > 100)) {

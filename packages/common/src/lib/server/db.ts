@@ -549,6 +549,86 @@ export const replaceScores = async (
 	await db.batch(statements);
 };
 
+/**
+ * Atomic chart-score replacement: upserts the chart_scores aggregate row and
+ * replaces all its scores in a single D1 batch (one transaction), so no partial
+ * replacement can commit if any statement fails. The delete and inserts resolve
+ * chart_score_id via a subquery on (user_id, chart_id) since D1's batch API
+ * cannot pipe one statement's RETURNING output into the next.
+ *
+ * Returns the upserted ChartScoreRow (from the first statement's RETURNING).
+ */
+export const upsertChartScoreAndReplaceScores = async (
+	db: D1Database,
+	params: {
+		chartId: number;
+		userId: string;
+		playCount: number;
+		clearCount: number;
+		scores: ScoreInsert[];
+	}
+): Promise<ChartScoreRow> => {
+	const now = new Date().toISOString();
+	const { chartId, userId, playCount, clearCount, scores } = params;
+
+	// The subquery resolves the chart_score_id at execution time within the
+	// transaction, so the delete/inserts always target the upserted row.
+	const resolveChartScoreId = `(SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ?)`;
+
+	const statements = [
+		db
+			.prepare(
+				`INSERT INTO chart_scores
+					(chart_id, user_id, play_count, clear_count, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(user_id, chart_id) DO UPDATE SET
+					play_count = excluded.play_count,
+					clear_count = excluded.clear_count,
+					updated_at = excluded.updated_at
+				 RETURNING *`
+			)
+			.bind(chartId, userId, playCount, clearCount, now, now),
+		db
+			.prepare(`DELETE FROM scores WHERE chart_score_id = ${resolveChartScoreId}`)
+			.bind(userId, chartId),
+		...scores.map((s) =>
+			db
+				.prepare(
+					`INSERT INTO scores
+						(chart_score_id, is_best, score, achievement_rate, rank_label,
+						 full_combo, cleared, max_combo, perfect, great, good, poor, miss,
+						 performed_at, display_order)
+					 SELECT ${resolveChartScoreId}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`
+				)
+				.bind(
+					userId,
+					chartId,
+					s.is_best ? 1 : 0,
+					s.score ?? null,
+					s.achievement_rate ?? null,
+					s.rank_label ?? null,
+					s.full_combo ? 1 : 0,
+					s.cleared ? 1 : 0,
+					s.max_combo ?? null,
+					s.perfect ?? null,
+					s.great ?? null,
+					s.good ?? null,
+					s.poor ?? null,
+					s.miss ?? null,
+					s.performed_at ?? null,
+					s.display_order ?? null
+				)
+		)
+	];
+
+	const batchResults = await db.batch(statements);
+	const chartScore = (batchResults[0] as { results?: unknown[] }).results?.[0] as
+		| ChartScoreRow
+		| undefined;
+	if (!chartScore) throw new Error('Failed to upsert chart_score');
+	return chartScore;
+};
+
 export const getUserChartScore = async (
 	db: D1Database,
 	userId: string,
@@ -579,22 +659,34 @@ export const listUserScoredSimfiles = async (
 	const pageSize = Number.isFinite(pageSizeRaw)
 		? Math.min(100, Math.max(1, Math.trunc(pageSizeRaw)))
 		: 20;
+	const offset = (page - 1) * pageSize;
 
+	// Count distinct scored simfiles without fetching all IDs into memory.
+	const countRow = await db
+		.prepare(
+			`SELECT COUNT(DISTINCT d.simfile_id) AS cnt
+			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
+			 WHERE cs.user_id = ?`
+		)
+		.bind(options.userId)
+		.first<{ cnt: number }>();
+	const count = countRow?.cnt ?? 0;
+	if (count === 0) return { data: [], count: 0 };
+
+	// Page at the SQL level: only fetch the IDs for the requested page.
 	const { results: idRows } = await db
 		.prepare(
 			`SELECT DISTINCT d.simfile_id AS simfile_id
 			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
 			 WHERE cs.user_id = ?
-			 ORDER BY d.simfile_id DESC`
+			 ORDER BY d.simfile_id DESC
+			 LIMIT ? OFFSET ?`
 		)
-		.bind(options.userId)
+		.bind(options.userId, pageSize, offset)
 		.all<{ simfile_id: number }>();
 
-	const simfileIds = (idRows ?? []).map((r) => r.simfile_id);
-	const count = simfileIds.length;
-	if (count === 0) return { data: [], count: 0 };
-
-	const pageIds = simfileIds.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+	const pageIds = (idRows ?? []).map((r) => r.simfile_id);
+	if (pageIds.length === 0) return { data: [], count };
 	const placeholders = pageIds.map(() => '?').join(',');
 
 	const { results: simfileRows } = await db
@@ -634,29 +726,44 @@ export const listUserChartScores = async (
 	chartIds: number[]
 ): Promise<Map<number, { chartScore: ChartScoreRow; scores: ScoreRow[] }>> => {
 	const result = new Map<number, { chartScore: ChartScoreRow; scores: ScoreRow[] }>();
-	if (chartIds.length === 0) return result;
+	// Deduplicate so repeated IDs don't waste bind slots or produce duplicate rows.
+	const uniqueChartIds = [...new Set(chartIds)];
+	if (uniqueChartIds.length === 0) return result;
 
-	const chartPlaceholders = chartIds.map(() => '?').join(',');
-	const { results: csRows } = await db
-		.prepare(
-			`SELECT * FROM chart_scores WHERE user_id = ? AND chart_id IN (${chartPlaceholders})`
-		)
-		.bind(userId, ...chartIds)
-		.all<ChartScoreRow>();
-	const chartScores = csRows ?? [];
+	// D1 limits each statement to 100 bound parameters. The chart_scores query
+	// also binds userId, so each chunk can hold at most 99 chart IDs.
+	const CHUNK_SIZE = 99;
+	const chartScores: ChartScoreRow[] = [];
+	for (let i = 0; i < uniqueChartIds.length; i += CHUNK_SIZE) {
+		const chunk = uniqueChartIds.slice(i, i + CHUNK_SIZE);
+		const placeholders = chunk.map(() => '?').join(',');
+		const { results } = await db
+			.prepare(
+				`SELECT * FROM chart_scores WHERE user_id = ? AND chart_id IN (${placeholders})`
+			)
+			.bind(userId, ...chunk)
+			.all<ChartScoreRow>();
+		chartScores.push(...(results ?? []));
+	}
 	if (chartScores.length === 0) return result;
 
-	const scorePlaceholders = chartScores.map(() => '?').join(',');
-	const { results: scoreRows } = await db
-		.prepare(
-			`SELECT * FROM scores WHERE chart_score_id IN (${scorePlaceholders})
-			 ORDER BY is_best DESC, display_order ASC`
-		)
-		.bind(...chartScores.map((c) => c.id))
-		.all<ScoreRow>();
+	// Chunk the score query by chart_score_id, staying within the 100-param limit.
+	const scoreRows: ScoreRow[] = [];
+	for (let i = 0; i < chartScores.length; i += CHUNK_SIZE) {
+		const chunk = chartScores.slice(i, i + CHUNK_SIZE);
+		const placeholders = chunk.map(() => '?').join(',');
+		const { results } = await db
+			.prepare(
+				`SELECT * FROM scores WHERE chart_score_id IN (${placeholders})
+				 ORDER BY is_best DESC, display_order ASC`
+			)
+			.bind(...chunk.map((c) => c.id))
+			.all<ScoreRow>();
+		scoreRows.push(...(results ?? []));
+	}
 
 	const scoresByChartScoreId = new Map<number, ScoreRow[]>();
-	for (const s of scoreRows ?? []) {
+	for (const s of scoreRows) {
 		const list = scoresByChartScoreId.get(s.chart_score_id);
 		if (list) list.push(s);
 		else scoresByChartScoreId.set(s.chart_score_id, [s]);

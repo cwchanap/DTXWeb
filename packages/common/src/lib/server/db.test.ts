@@ -21,6 +21,7 @@ import {
 	updateUserProfile,
 	upsertChartScore,
 	replaceScores,
+	upsertChartScoreAndReplaceScores,
 	getUserChartScore,
 	listUserScoredSimfiles,
 	listUserChartScores
@@ -161,15 +162,35 @@ describe('score schema', () => {
 
 	it('defines the unique (user, chart) index on chart_scores', () => {
 		const config = getTableConfig(chartScores);
-		const indexNames = config.indexes.map((i) => i.config.name);
-		expect(indexNames).toContain('idx_chart_scores_user_chart');
-		expect(indexNames).toContain('idx_chart_scores_chart');
+		const userChartIdx = config.indexes.find(
+			(i) => i.config.name === 'idx_chart_scores_user_chart'
+		);
+		expect(userChartIdx).toBeDefined();
+		// The index must be unique — not just a plain index — to enforce the
+		// one-chart_score-per-user-per-chart invariant from the migration.
+		expect(userChartIdx?.config.unique).toBe(true);
+		expect(config.indexes.map((i) => i.config.name)).toContain('idx_chart_scores_chart');
 	});
 
 	it('defines the chart_score index on scores', () => {
 		const config = getTableConfig(scores);
 		const indexNames = config.indexes.map((i) => i.config.name);
 		expect(indexNames).toContain('idx_scores_chart_score');
+	});
+
+	// Parity check: the migration declares a partial unique index
+	// idx_scores_one_best (WHERE is_best = 1) that Drizzle's sqlite-core
+	// builder cannot express. This test documents that the Drizzle schema
+	// intentionally omits it and the migration is the source of truth.
+	// If a future Drizzle version adds partial-index support, move the
+	// declaration into schema.ts and remove this test.
+	it('documents the migration-only idx_scores_one_best partial unique index', () => {
+		const config = getTableConfig(scores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		// The Drizzle schema does NOT include idx_scores_one_best — it lives
+		// only in 0002_scores.sql. This assertion guards against accidental
+		// removal of the migration index by making the gap explicit.
+		expect(indexNames).not.toContain('idx_scores_one_best');
 	});
 });
 
@@ -982,6 +1003,77 @@ describe('replaceScores', () => {
 	});
 });
 
+describe('upsertChartScoreAndReplaceScores', () => {
+	it('batches the upsert, delete, and inserts in one D1 batch', async () => {
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 10,
+			clear_count: 4,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi
+			.fn()
+			.mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }, { results: [] }]);
+		const result = await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'u1',
+			playCount: 10,
+			clearCount: 4,
+			scores: [
+				{ is_best: true, score: 900000, achievement_rate: 91.3 },
+				{ is_best: false, achievement_rate: 82.4, display_order: 1 }
+			]
+		});
+		// 1 upsert + 1 delete + 2 inserts = 4 statements in ONE batch
+		expect(db.prepare).toHaveBeenCalledTimes(4);
+		expect(db.batch).toHaveBeenCalledTimes(1);
+		expect(db.batch.mock.calls[0][0]).toHaveLength(4);
+		expect(result).toEqual(chartScoreRow);
+	});
+
+	it('batches only the upsert and delete when there are no scores', async () => {
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 0,
+			clear_count: 0,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi.fn().mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }]);
+		const result = await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'u1',
+			playCount: 0,
+			clearCount: 0,
+			scores: []
+		});
+		expect(db.prepare).toHaveBeenCalledTimes(2);
+		expect(db.batch.mock.calls[0][0]).toHaveLength(2);
+		expect(result).toEqual(chartScoreRow);
+	});
+
+	it('throws when the upsert returns no row', async () => {
+		const db = createMockDb();
+		db.batch = vi.fn().mockResolvedValue([{ results: [] }, { results: [] }]);
+		await expect(
+			upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+				chartId: 10,
+				userId: 'u1',
+				playCount: 0,
+				clearCount: 0,
+				scores: []
+			})
+		).rejects.toThrow('Failed to upsert chart_score');
+	});
+});
+
 // ---------------------------------------------------------------------------
 // getUserChartScore
 // ---------------------------------------------------------------------------
@@ -1022,7 +1114,10 @@ describe('getUserChartScore', () => {
 // ---------------------------------------------------------------------------
 describe('listUserScoredSimfiles', () => {
 	it('returns empty when the user has no scores', async () => {
-		const db = createMockDb(() => createMockStmt(null, []));
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 0 });
+			return createMockStmt(null, []);
+		});
 		const result = await listUserScoredSimfiles(db as unknown as D1Database, { userId: 'u1' });
 		expect(result).toEqual({ data: [], count: 0 });
 	});
@@ -1030,6 +1125,7 @@ describe('listUserScoredSimfiles', () => {
 	it('lists scored simfiles with their dtx_files', async () => {
 		const scoredSimfileRow = { ...baseSimfileRow, id: 42 };
 		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 1 });
 			if (sql.includes('DISTINCT')) return createMockStmt(null, [{ simfile_id: 42 }]);
 			if (sql.includes('FROM simfiles')) return createMockStmt(null, [scoredSimfileRow]);
 			return createMockStmt(null, [{ id: 10, label: 'BASIC', level: 5, simfile_id: 42 }]);
@@ -1047,10 +1143,14 @@ describe('listUserScoredSimfiles', () => {
 		const allIds = Array.from({ length: 25 }, (_, i) => 125 - i); // [125, 124, ..., 101]
 
 		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) {
+				return createMockStmt({ cnt: 25 });
+			}
 			if (sql.includes('DISTINCT')) {
+				// The paged query returns only the first page (20 ids) when page is clamped to 1
 				return createMockStmt(
 					null,
-					allIds.map((simfile_id) => ({ simfile_id }))
+					allIds.slice(0, 20).map((simfile_id) => ({ simfile_id }))
 				);
 			}
 			if (sql.includes('FROM simfiles')) {
@@ -1069,10 +1169,9 @@ describe('listUserScoredSimfiles', () => {
 			return createMockStmt(null, []);
 		});
 
-		// page: 0 is out of range; unclamped this computes a negative slice window
-		// ((0 - 1) * 20, (0 - 1) * 20 + 20) = (-20, 0), which yields an empty page
-		// even though 25 matching simfiles exist. Clamped, page 0 -> 1, so this
-		// should return the first 20 ids instead of an empty page.
+		// page: 0 is out of range; unclamped this computes a negative offset
+		// which would yield an empty page even though 25 matching simfiles exist.
+		// Clamped, page 0 -> 1, so this should return the first 20 ids.
 		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
 			userId: 'user-1',
 			page: 0,
@@ -1144,5 +1243,95 @@ describe('listUserChartScores', () => {
 		const result = await listUserChartScores(db as unknown as D1Database, 'u1', [10, 11]);
 		expect(result.size).toBe(0);
 		expect(db.prepare).toHaveBeenCalledTimes(1);
+	});
+
+	it('chunks more than 99 chart IDs to stay within D1 parameter limit', async () => {
+		// 150 chart IDs -> 2 chart_scores chunks (99 + 51) + 2 score chunks (99 + 51) = 4 queries
+		const chartIds = Array.from({ length: 150 }, (_, i) => i + 1);
+		const db = createMockDb((sql: string) => {
+			let boundArgs: unknown[] = [];
+			const stmt = {
+				bind: vi.fn((...args: unknown[]) => {
+					boundArgs = args;
+					return stmt;
+				}),
+				first: vi.fn().mockResolvedValue(null),
+				all: vi.fn().mockImplementation(() => {
+					if (sql.includes('FROM chart_scores')) {
+						const chunkIds = boundArgs.slice(1) as number[];
+						return Promise.resolve({
+							results: chunkIds.map((id) => ({
+								id: id + 1000,
+								chart_id: id,
+								user_id: 'u1',
+								play_count: 1,
+								clear_count: 0,
+								created_at: 't',
+								updated_at: 't'
+							}))
+						});
+					}
+					const csIds = boundArgs as number[];
+					return Promise.resolve({
+						results: csIds.map((csId) => ({
+							id: csId + 5000,
+							chart_score_id: csId,
+							is_best: 1,
+							display_order: null
+						}))
+					});
+				})
+			};
+			return stmt;
+		});
+
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', chartIds);
+
+		expect(db.prepare).toHaveBeenCalledTimes(4);
+		expect(result.size).toBe(150);
+		expect(result.get(1)?.chartScore.chart_id).toBe(1);
+		expect(result.get(150)?.chartScore.chart_id).toBe(150);
+		expect(result.get(1)?.scores).toHaveLength(1);
+	});
+
+	it('deduplicates chart IDs before chunking', async () => {
+		const db = createMockDb((sql: string) => {
+			let boundArgs: unknown[] = [];
+			const stmt = {
+				bind: vi.fn((...args: unknown[]) => {
+					boundArgs = args;
+					return stmt;
+				}),
+				first: vi.fn().mockResolvedValue(null),
+				all: vi.fn().mockImplementation(() => {
+					if (sql.includes('FROM chart_scores')) {
+						const chunkIds = boundArgs.slice(1) as number[];
+						return Promise.resolve({
+							results: chunkIds.map((id) => ({
+								id: id + 1000,
+								chart_id: id,
+								user_id: 'u1',
+								play_count: 1,
+								clear_count: 0,
+								created_at: 't',
+								updated_at: 't'
+							}))
+						});
+					}
+					return Promise.resolve({ results: [] });
+				})
+			};
+			return stmt;
+		});
+
+		const result = await listUserChartScores(
+			db as unknown as D1Database,
+			'u1',
+			[10, 10, 11, 11, 12]
+		);
+		expect(result.size).toBe(3);
+		expect(result.get(10)).toBeDefined();
+		expect(result.get(11)).toBeDefined();
+		expect(result.get(12)).toBeDefined();
 	});
 });

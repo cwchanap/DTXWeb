@@ -136,7 +136,7 @@
 		await restoreLinks();
 	};
 
-	const chooseDb = async () => {
+	const handleChooseDb = async () => {
 		const result = await desktopHost.selectDtxmaniaDb();
 		if (!result.canceled && result.filePaths[0]) {
 			dbPath = result.filePaths[0];
@@ -160,9 +160,19 @@
 		matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
 	};
 
-	const overrideMatch = (songIndex: number, chartIndex: number, cloudChartId: string) => {
+	const handleOverrideMatch = (songIndex: number, chartIndex: number, cloudChartId: string) => {
 		const next = [...(matchesBySong[songIndex] ?? [])];
-		next[chartIndex] = cloudChartId || null;
+		const targetId = cloudChartId || null;
+		// Enforce one-to-one: if the chosen cloud chart is already assigned to
+		// another chart in this song, clear that other chart's match first.
+		if (targetId) {
+			for (let i = 0; i < next.length; i++) {
+				if (i !== chartIndex && next[i] === targetId) {
+					next[i] = null;
+				}
+			}
+		}
+		next[chartIndex] = targetId;
 		matchesBySong[songIndex] = next;
 	};
 
@@ -173,12 +183,16 @@
 			clearCount: number;
 			scores: ScorePayload[];
 		}> = [];
+		const seenChartIds = new Set<string>();
 		songs.forEach((song, songIndex) => {
 			if (!links[songIndex]) return;
 			const matches = matchesBySong[songIndex] ?? [];
 			song.charts.forEach((chart, chartIndex) => {
 				const chartId = matches[chartIndex];
 				if (!chartId) return;
+				// Deduplicate: never send the same cloud chart ID twice.
+				if (seenChartIds.has(chartId)) return;
+				seenChartIds.add(chartId);
 				const scores = [...(chart.best ? [chart.best] : []), ...chart.recent];
 				if (scores.length === 0) return;
 				charts.push({
@@ -192,7 +206,7 @@
 		return { charts };
 	};
 
-	const upload = async () => {
+	const handleUpload = async () => {
 		uploadStatus = 'Uploading…';
 		skipped = [];
 		const input = buildUpload();
@@ -225,7 +239,7 @@
 		<div class="ml-auto flex items-center gap-2">
 			<button
 				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm"
-				onclick={chooseDb}
+				onclick={handleChooseDb}
 			>
 				<FolderOpen size={16} /> Choose songs.db
 			</button>
@@ -238,7 +252,7 @@
 				</button>
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium"
-					onclick={upload}
+					onclick={handleUpload}
 				>
 					<Upload size={16} /> Upload
 				</button>
@@ -354,7 +368,7 @@
 												class="border-hairline bg-surface-2 text-hi ml-1 rounded px-2 py-1 text-xs"
 												value={matchedId ?? ''}
 												onchange={(e) =>
-													overrideMatch(
+													handleOverrideMatch(
 														songIndex,
 														chartIndex,
 														(e.currentTarget as HTMLSelectElement).value

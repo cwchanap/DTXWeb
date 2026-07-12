@@ -51,7 +51,9 @@
 
 	const buildDesktopAuthCallbackUrl = (magicLinkUrl: string) => {
 		const desktopSuppliedCallbackUrl = readDesktopSuppliedCallbackUrl();
-		const configuredCallbackUrl = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
+		const configuredCallbackUrl = validateDesktopCallbackUrl(
+			env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim()
+		);
 		const callbackUrl =
 			desktopSuppliedCallbackUrl || configuredCallbackUrl || 'dtx://auth-callback';
 		const separator = callbackUrl.includes('?') ? '&' : '?';

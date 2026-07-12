@@ -16,8 +16,7 @@ vi.mock('@dtx/common/server', async () => {
 		getSimfileOwner: vi.fn(),
 		getChartVisibility: vi.fn(),
 		getUserChartScore: vi.fn(),
-		upsertChartScore: vi.fn(),
-		replaceScores: vi.fn(),
+		upsertChartScoreAndReplaceScores: vi.fn(),
 		listUserScoredSimfiles: vi.fn(),
 		listUserChartScores: vi.fn()
 	};
@@ -32,10 +31,9 @@ const mockedGetUserChartScore = vi.mocked(getUserChartScore);
 const { listUserChartScores } = await import('@dtx/common/server');
 const mockedListChartScores = vi.mocked(listUserChartScores);
 
-const { getChartVisibility, upsertChartScore, replaceScores } = await import('@dtx/common/server');
+const { getChartVisibility, upsertChartScoreAndReplaceScores } = await import('@dtx/common/server');
 const mockedVisibility = vi.mocked(getChartVisibility);
-const mockedUpsert = vi.mocked(upsertChartScore);
-const mockedReplace = vi.mocked(replaceScores);
+const mockedUpsertReplace = vi.mocked(upsertChartScoreAndReplaceScores);
 
 const makeEnv = (): Env => ({
 	DB: {} as Env['DB'],
@@ -230,10 +228,9 @@ describe('uploadScores', () => {
 		expect(result.errors?.[0].extensions?.code).toBe('FORBIDDEN');
 	});
 
-	it('upserts a visible chart and replaces its scores', async () => {
+	it('upserts a visible chart and replaces its scores atomically', async () => {
 		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
-		mockedUpsert.mockResolvedValue(chartScoreRow);
-		mockedReplace.mockResolvedValue(undefined);
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
@@ -284,12 +281,21 @@ describe('uploadScores', () => {
 		expect(payload.updatedCharts).toBe(1);
 		expect(payload.insertedScores).toBe(2);
 		expect(payload.skipped).toEqual([]);
-		// Locks down the exact field mapping (guards against swapped playCount/clearCount).
-		expect(mockedUpsert).toHaveBeenCalledWith(
+		// Single atomic call with all params (guards against swapped playCount/clearCount).
+		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
+		expect(mockedUpsertReplace).toHaveBeenCalledWith(
 			{}, // db is {} in ctx
-			{ chartId: 10, userId: 'user-1', playCount: 10, clearCount: 4 }
+			{
+				chartId: 10,
+				userId: 'user-1',
+				playCount: 10,
+				clearCount: 4,
+				scores: expect.arrayContaining([
+					expect.objectContaining({ is_best: true, score: 912380 }),
+					expect.objectContaining({ is_best: false, display_order: 1 })
+				])
+			}
 		);
-		expect(mockedReplace).toHaveBeenCalledTimes(1);
 	});
 
 	it('skips a chart that is not visible to the caller', async () => {
@@ -307,7 +313,7 @@ describe('uploadScores', () => {
 		};
 		expect(payload.updatedCharts).toBe(0);
 		expect(payload.skipped[0].chartId).toBe('999');
-		expect(mockedUpsert).not.toHaveBeenCalled();
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
 	it('skips a chart with more than 5 recent scores', async () => {
@@ -331,7 +337,7 @@ describe('uploadScores', () => {
 			skipped: { chartId: string; reason: string }[];
 		};
 		expect(payload.skipped[0].chartId).toBe('10');
-		expect(mockedUpsert).not.toHaveBeenCalled();
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 });
 

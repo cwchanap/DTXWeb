@@ -1026,7 +1026,7 @@ Create `packages/dtx-web/src/lib/components/ScoreCard.svelte`:
 					<div class="mt-3 border-t border-slate-700/50 pt-2">
 						<p class="mb-1 text-xs font-medium text-slate-400">Recent</p>
 						<ul class="space-y-1">
-							{#each chart.chartScore.recent as recent (recent.id)}
+							{#each chart.chartScore.recent.slice(0, 5) as recent (recent.id)}
 								<li
 									class="flex flex-wrap items-center gap-2 text-xs text-slate-300"
 								>
@@ -1060,6 +1060,8 @@ Create `packages/dtx-web/src/lib/components/ScoreCard.svelte`:
 	</div>
 </div>
 ```
+
+> Note: the implemented version slices to the first 5 recent plays as defense-in-depth, even though the upstream API and SQL already limit to 5.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1164,7 +1166,7 @@ Create `packages/dtx-web/src/lib/components/ScoreList.svelte`:
 	import { onMount } from 'svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { myScoredSimfiles, type ScoredSimfile } from '$lib/api';
-	import ScoreCard from './ScoreCard.svelte';
+	import ScoreCard from '$lib/components/ScoreCard.svelte';
 
 	interface Props {
 		pageSize?: number;
@@ -1178,7 +1180,7 @@ Create `packages/dtx-web/src/lib/components/ScoreList.svelte`:
 	let loading = $state(false);
 	let loadError = $state(false);
 
-	const loadScores = async () => {
+	const loadScores = async (): Promise<void> => {
 		loading = true;
 		loadError = false;
 		try {
@@ -1194,7 +1196,7 @@ Create `packages/dtx-web/src/lib/components/ScoreList.svelte`:
 		}
 	};
 
-	const handlePageChange = (event: { page: number }) => {
+	const handlePageChange = (event: { page: number }): void => {
 		currentPage = event.page;
 		loadScores();
 	};
@@ -1240,6 +1242,8 @@ Create `packages/dtx-web/src/lib/components/ScoreList.svelte`:
 	{/if}
 {/if}
 ```
+
+> Note: the implemented version tracks a monotonically increasing request ID so rapid page changes cannot overwrite the current page with a stale response.
 
 - [ ] **Step 4: Run test to verify it passes**
 

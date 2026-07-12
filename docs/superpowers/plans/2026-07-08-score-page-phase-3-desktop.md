@@ -1451,9 +1451,9 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { RefreshCw, FolderOpen, Trophy, Upload, AlertTriangle } from '@lucide/svelte';
-	import { desktopHost } from '../services/desktopHost';
-	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
-	import { matchCharts, type CloudChart } from '../lib/scoreMatching';
+	import { desktopHost } from '$lib/services/desktopHost';
+	import CloudSongAutocomplete from '$lib/components/CloudSongAutocomplete.svelte';
+	import { matchCharts, type CloudChart } from '$lib/lib/scoreMatching';
 
 	interface ScorePayload {
 		isBest: boolean;
@@ -1535,7 +1535,7 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 		}
 	};
 
-	const chooseDb = async () => {
+	const handleChooseDb = async () => {
 		const result = await desktopHost.selectDtxmaniaDb();
 		if (!result.canceled && result.filePaths[0]) {
 			dbPath = result.filePaths[0];
@@ -1555,7 +1555,7 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 		matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
 	};
 
-	const overrideMatch = (songIndex: number, chartIndex: number, cloudChartId: string) => {
+	const handleOverrideMatch = (songIndex: number, chartIndex: number, cloudChartId: string) => {
 		const next = [...(matchesBySong[songIndex] ?? [])];
 		next[chartIndex] = cloudChartId || null;
 		matchesBySong[songIndex] = next;
@@ -1587,7 +1587,7 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 		return { charts };
 	};
 
-	const upload = async () => {
+	const handleUpload = async () => {
 		uploadStatus = 'Uploading…';
 		skipped = [];
 		const input = buildUpload();
@@ -1620,7 +1620,7 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 		<div class="ml-auto flex items-center gap-2">
 			<button
 				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm"
-				onclick={chooseDb}
+				onclick={handleChooseDb}
 			>
 				<FolderOpen size={16} /> Choose songs.db
 			</button>
@@ -1633,7 +1633,7 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 				</button>
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium"
-					onclick={upload}
+					onclick={handleUpload}
 				>
 					<Upload size={16} /> Upload
 				</button>
@@ -1734,7 +1734,7 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 											class="border-hairline bg-surface-2 text-hi ml-1 rounded px-2 py-1 text-xs"
 											value={matchedId ?? ''}
 											onchange={(e) =>
-												overrideMatch(
+												handleOverrideMatch(
 													songIndex,
 													chartIndex,
 													(e.currentTarget as HTMLSelectElement).value
@@ -1785,6 +1785,12 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 	{/if}
 </div>
 ```
+
+> Note: handlers are prefixed with 'handle' per project convention (CLAUDE.md).
+
+> Note: the implemented version calls `restoreLinks()` at the end of every `loadScores`, which covers both `handleChooseDb` and the Reparse flow. Each successful load restores persisted links after `loadScores` clears them.
+
+> Note: `handleOverrideMatch` enforces one-to-one assignments — if the chosen cloud chart is already assigned to another local chart, that other chart's match is cleared first. `buildUpload` also deduplicates chart IDs as a safety net.
 
 - [ ] **Step 8: Run the test to verify it passes**
 

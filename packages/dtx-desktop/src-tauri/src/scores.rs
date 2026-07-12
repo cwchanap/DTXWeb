@@ -329,7 +329,7 @@ pub(crate) fn parse_dtxmania_scores_impl(db_path: &str) -> Result<Vec<DtxmaniaSo
 }
 
 #[tauri::command]
-pub async fn parse_dtxmania_scores(db_path: String) -> Result<Vec<DtxmaniaSong>> {
+pub fn parse_dtxmania_scores(db_path: String) -> Result<Vec<DtxmaniaSong>> {
     parse_dtxmania_scores_impl(&db_path)
 }
 

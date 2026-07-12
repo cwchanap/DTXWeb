@@ -77,7 +77,7 @@
 					<div class="mt-3 border-t border-slate-700/50 pt-2">
 						<p class="mb-1 text-xs font-medium text-slate-400">Recent</p>
 						<ul class="space-y-1">
-							{#each chart.chartScore.recent as recent (recent.id)}
+							{#each chart.chartScore.recent.slice(0, 5) as recent (recent.id)}
 								<li
 									class="flex flex-wrap items-center gap-2 text-xs text-slate-300"
 								>

@@ -594,6 +594,179 @@ describe('uploadScores', () => {
 		expect(payload.skipped).toEqual([{ chartId: '11', reason: 'write failed' }]);
 		expect(mockedUpsertReplace).toHaveBeenCalledTimes(2);
 	});
+
+	it('skips a chart with a negative playCount', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: -1,
+							clearCount: 0,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('playCount must be a non-negative integer');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with a negative clearCount', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 5,
+							clearCount: -1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('clearCount must be a non-negative integer');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart where clearCount exceeds playCount', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 3,
+							clearCount: 5,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('clearCount cannot exceed playCount');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with a negative judgment count', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									fullCombo: false,
+									cleared: true,
+									perfect: -5
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('judgment counts must be non-negative integers');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with a negative score', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: -100,
+									fullCombo: false,
+									cleared: true
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('score must be a non-negative integer');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with a negative maxCombo', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									fullCombo: false,
+									cleared: true,
+									maxCombo: -1
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('judgment counts must be non-negative integers');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
 });
 
 const { listUserScoredSimfiles } = await import('@dtx/common/server');

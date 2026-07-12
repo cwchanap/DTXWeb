@@ -107,13 +107,29 @@ const UploadScoresResultRef = builder
 
 // Validates a single chart payload. Returns a skip reason string, or null when valid.
 const validateChartScores = (
+	playCount: number,
+	clearCount: number,
 	scores: {
 		isBest: boolean;
-		achievementRate?: number | null;
 		score?: number | null;
+		achievementRate?: number | null;
+		maxCombo?: number | null;
+		perfect?: number | null;
+		great?: number | null;
+		good?: number | null;
+		poor?: number | null;
+		miss?: number | null;
 		displayOrder?: number | null;
 	}[]
 ): string | null => {
+	// Chart-level aggregate validation: counts must be non-negative integers
+	// and clearCount cannot exceed playCount (can't clear more times than played).
+	if (!Number.isInteger(playCount) || playCount < 0)
+		return 'playCount must be a non-negative integer';
+	if (!Number.isInteger(clearCount) || clearCount < 0)
+		return 'clearCount must be a non-negative integer';
+	if (clearCount > playCount) return 'clearCount cannot exceed playCount';
+
 	const bestCount = scores.filter((s) => s.isBest).length;
 	if (bestCount > 1) return 'more than one best score';
 	const recentRows = scores.filter((s) => s.displayOrder != null);
@@ -133,7 +149,8 @@ const validateChartScores = (
 		seenOrders.add(order);
 	}
 	for (const s of scores) {
-		if (s.score != null && !Number.isFinite(s.score)) return 'non-finite score';
+		if (s.score != null && (!Number.isInteger(s.score) || s.score < 0))
+			return 'score must be a non-negative integer';
 		if (
 			s.achievementRate != null &&
 			(!Number.isFinite(s.achievementRate) ||
@@ -141,6 +158,13 @@ const validateChartScores = (
 				s.achievementRate > 100)
 		) {
 			return 'achievementRate out of range';
+		}
+		// Judgment counts and maxCombo must be non-negative integers when present.
+		const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
+		for (const c of counts) {
+			if (c != null && (!Number.isInteger(c) || c < 0)) {
+				return 'judgment counts must be non-negative integers';
+			}
 		}
 	}
 	return null;
@@ -185,10 +209,18 @@ builder.mutationField('uploadScores', (t) =>
 				}
 
 				const invalid = validateChartScores(
+					chart.playCount,
+					chart.clearCount,
 					chart.scores.map((s) => ({
 						isBest: s.isBest,
-						achievementRate: s.achievementRate,
 						score: s.score,
+						achievementRate: s.achievementRate,
+						maxCombo: s.maxCombo,
+						perfect: s.perfect,
+						great: s.great,
+						good: s.good,
+						poor: s.poor,
+						miss: s.miss,
 						displayOrder: s.displayOrder
 					}))
 				);

@@ -71,8 +71,6 @@ export {
 	getUserProfile,
 	upsertUserProfile,
 	updateUserProfile,
-	upsertChartScore,
-	replaceScores,
 	upsertChartScoreAndReplaceScores,
 	getUserChartScore,
 	listUserScoredSimfiles,

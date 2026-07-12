@@ -174,10 +174,12 @@ async fn parse_dtxmania_scores_command_delegates_to_impl() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("songs.db");
     seed_db(&db);
+    let db_path = db.to_string_lossy().into_owned();
 
-    let songs = parse_dtxmania_scores(db.to_string_lossy().into_owned())
-        .await
-        .expect("parse");
+    // The command validates the path against the allowed set (default OS
+    // DTXMania path or a dialog-selected path) before parsing. Simulate the
+    // dialog path being set to the temp DB so the validation passes.
+    let songs = parse_dtxmania_scores_with_dialog_path(&db_path, Some(&db)).expect("parse");
     assert_eq!(songs.len(), 2);
     assert_eq!(songs[0].title, "Played Song");
 }
@@ -186,11 +188,40 @@ async fn parse_dtxmania_scores_command_delegates_to_impl() {
 async fn parse_dtxmania_scores_command_errors_for_missing_db() {
     let dir = tempdir().expect("tempdir");
     let missing = dir.path().join("nope.db");
+    // Register the missing path as a dialog path so the validation passes and
+    // the error comes from the SQLite open, not the path guard.
     assert!(
-        parse_dtxmania_scores(missing.to_string_lossy().into_owned())
-            .await
-            .is_err()
+        parse_dtxmania_scores_with_dialog_path(missing.to_str().unwrap(), Some(&missing)).is_err()
     );
+}
+
+#[test]
+fn parse_rejects_path_not_in_allowed_set() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db(&db);
+
+    // No dialog path registered and the temp path is not the default DTXMania
+    // path, so the path guard must reject it before opening the database.
+    let err = parse_dtxmania_scores_with_dialog_path(db.to_str().unwrap(), None).unwrap_err();
+    assert!(
+        err.to_string().contains("not allowed"),
+        "expected 'not allowed' in error, got: {err}"
+    );
+}
+
+#[test]
+fn parse_accepts_dialog_path_matching_canonical_form() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db(&db);
+
+    // A relative path that resolves to the same file as the dialog path must
+    // be accepted (canonicalization handles representation differences).
+    let canonical = std::fs::canonicalize(&db).expect("canonicalize");
+    let songs = parse_dtxmania_scores_with_dialog_path(canonical.to_str().unwrap(), Some(&db))
+        .expect("parse");
+    assert_eq!(songs.len(), 2);
 }
 
 /// A chart with no drums score row at all is skipped (the `continue` branch

@@ -19,8 +19,6 @@ import {
 	getUserProfile,
 	upsertUserProfile,
 	updateUserProfile,
-	upsertChartScore,
-	replaceScores,
 	upsertChartScoreAndReplaceScores,
 	getUserChartScore,
 	listUserScoredSimfiles,
@@ -941,65 +939,6 @@ describe('getChartVisibility', () => {
 		const db = createMockDb(() => createMockStmt(null));
 		const result = await getChartVisibility(db as unknown as D1Database, 999);
 		expect(result).toBeNull();
-	});
-});
-
-// ---------------------------------------------------------------------------
-// upsertChartScore
-// ---------------------------------------------------------------------------
-describe('upsertChartScore', () => {
-	it('returns the upserted chart_scores row', async () => {
-		const row = {
-			id: 3,
-			chart_id: 55,
-			user_id: 'u1',
-			play_count: 10,
-			clear_count: 4,
-			created_at: 't',
-			updated_at: 't'
-		};
-		const db = createMockDb(() => createMockStmt(row));
-		const result = await upsertChartScore(db as unknown as D1Database, {
-			chartId: 55,
-			userId: 'u1',
-			playCount: 10,
-			clearCount: 4
-		});
-		expect(result).toEqual(row);
-	});
-
-	it('throws when RETURNING yields no row', async () => {
-		const db = createMockDb(() => createMockStmt(null));
-		await expect(
-			upsertChartScore(db as unknown as D1Database, {
-				chartId: 1,
-				userId: 'u1',
-				playCount: 0,
-				clearCount: 0
-			})
-		).rejects.toThrow();
-	});
-});
-
-describe('replaceScores', () => {
-	it('batches a delete followed by one insert per score', async () => {
-		const db = createMockDb();
-		db.batch = vi.fn().mockResolvedValue([]);
-		await replaceScores(db as unknown as D1Database, 3, [
-			{ is_best: true, score: 900000, achievement_rate: 91.3 },
-			{ is_best: false, achievement_rate: 82.4, display_order: 1 }
-		]);
-		expect(db.prepare).toHaveBeenCalledTimes(3); // 1 delete + 2 inserts
-		expect(db.batch).toHaveBeenCalledTimes(1);
-		expect(db.batch.mock.calls[0][0]).toHaveLength(3);
-	});
-
-	it('batches only the delete when there are no scores', async () => {
-		const db = createMockDb();
-		db.batch = vi.fn().mockResolvedValue([]);
-		await replaceScores(db as unknown as D1Database, 3, []);
-		expect(db.prepare).toHaveBeenCalledTimes(1);
-		expect(db.batch.mock.calls[0][0]).toHaveLength(1);
 	});
 });
 

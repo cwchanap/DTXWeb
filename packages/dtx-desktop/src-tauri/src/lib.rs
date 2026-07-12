@@ -13,6 +13,7 @@ mod songs;
 mod updater;
 
 use auth::AuthState;
+use scores::DtxmaniaDbState;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -61,7 +62,9 @@ where
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default().manage(AuthState::default());
+    let mut builder = tauri::Builder::default()
+        .manage(AuthState::default())
+        .manage(DtxmaniaDbState::default());
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {

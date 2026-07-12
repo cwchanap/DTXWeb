@@ -1,8 +1,10 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use serde::Serialize;
 
 use rusqlite::{Connection, OpenFlags};
+use tauri::{AppHandle, Manager};
 
 use crate::error::{DesktopError, Result};
 
@@ -149,6 +151,78 @@ fn default_dtxmania_db_path_from(data_dir: Option<PathBuf>) -> Option<String> {
 #[tauri::command]
 pub fn default_dtxmania_db_path() -> Option<String> {
     default_dtxmania_db_path_from(dirs::data_dir())
+}
+
+/// Tauri-managed state tracking the last database path selected via the OS
+/// file dialog (`select_dtxmania_db`). `parse_dtxmania_scores` only accepts
+/// the default DTXMania path or a path stored here, so a compromised renderer
+/// cannot open an arbitrary SQLite file.
+#[derive(Default)]
+pub struct DtxmaniaDbState {
+    dialog_path: Mutex<Option<PathBuf>>,
+}
+
+impl DtxmaniaDbState {
+    pub fn set(&self, path: PathBuf) {
+        *self
+            .dialog_path
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
+    }
+
+    pub fn get(&self) -> Option<PathBuf> {
+        self.dialog_path
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+/// Compares two filesystem paths by canonicalizing both and comparing the
+/// resolved forms, so a path that differs in representation (relative vs
+/// absolute, symlink, trailing slash) but points to the same file is accepted.
+/// Falls back to a raw string comparison when canonicalization fails for
+/// either side (e.g. the path does not exist).
+fn paths_equal(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
+}
+
+/// Validates that `db_path` is either the default DTXMania database path
+/// (resolved from the OS data directory) or a path previously selected via
+/// the OS file dialog (stored in `DtxmaniaDbState`). Any other path is
+/// rejected so a compromised renderer cannot use `parse_dtxmania_scores` to
+/// open an arbitrary SQLite database.
+fn validate_dtxmania_db_path(db_path: &str, dialog_path: Option<&std::path::Path>) -> Result<()> {
+    if let Some(default) = default_dtxmania_db_path() {
+        if paths_equal(db_path, &default) {
+            return Ok(());
+        }
+    }
+    if let Some(dialog) = dialog_path {
+        if paths_equal(db_path, &dialog.to_string_lossy()) {
+            return Ok(());
+        }
+    }
+    Err(DesktopError::Message(
+        "Database path is not allowed. Use the default DTXMania path or select a database via the file picker.".to_string(),
+    ))
+}
+
+/// Testable inner: validates the path against the allowed set, then parses.
+/// Production code passes the dialog path from `DtxmaniaDbState`; tests pass
+/// it directly.
+pub(crate) fn parse_dtxmania_scores_with_dialog_path(
+    db_path: &str,
+    dialog_path: Option<&std::path::Path>,
+) -> Result<Vec<DtxmaniaSong>> {
+    validate_dtxmania_db_path(db_path, dialog_path)?;
+    parse_dtxmania_scores_impl(db_path)
 }
 
 struct DrumsScoreRow {
@@ -360,12 +434,17 @@ pub(crate) fn parse_dtxmania_scores_impl(db_path: &str) -> Result<Vec<DtxmaniaSo
 }
 
 #[tauri::command]
-pub async fn parse_dtxmania_scores(db_path: String) -> Result<Vec<DtxmaniaSong>> {
+pub async fn parse_dtxmania_scores(app: AppHandle, db_path: String) -> Result<Vec<DtxmaniaSong>> {
     // Offload the sync SQLite work to a blocking thread so the Tauri async
     // runtime (and the webview UI) is not frozen while parsing a large library.
-    tokio::task::spawn_blocking(move || parse_dtxmania_scores_impl(&db_path))
-        .await
-        .map_err(|error| DesktopError::Message(format!("Parse task failed: {error}")))?
+    // The dialog path is read from managed state before spawning so the
+    // blocking task can validate + parse in one shot.
+    let dialog_path = app.state::<DtxmaniaDbState>().get();
+    tokio::task::spawn_blocking(move || {
+        parse_dtxmania_scores_with_dialog_path(&db_path, dialog_path.as_deref())
+    })
+    .await
+    .map_err(|error| DesktopError::Message(format!("Parse task failed: {error}")))?
 }
 
 #[cfg(test)]

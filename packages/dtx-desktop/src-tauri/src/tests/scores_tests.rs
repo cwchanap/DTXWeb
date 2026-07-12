@@ -168,3 +168,71 @@ fn parse_missing_db_errors() {
     let missing = dir.path().join("nope.db");
     assert!(parse_dtxmania_scores_impl(missing.to_str().unwrap()).is_err());
 }
+
+#[test]
+fn parse_dtxmania_scores_command_delegates_to_impl() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db(&db);
+
+    let songs = parse_dtxmania_scores(db.to_string_lossy().into_owned()).expect("parse");
+    assert_eq!(songs.len(), 2);
+    assert_eq!(songs[0].title, "Played Song");
+}
+
+#[test]
+fn parse_dtxmania_scores_command_errors_for_missing_db() {
+    let dir = tempdir().expect("tempdir");
+    let missing = dir.path().join("nope.db");
+    assert!(parse_dtxmania_scores(missing.to_string_lossy().into_owned()).is_err());
+}
+
+/// A chart with no drums score row at all is skipped (the `continue` branch
+/// in `read_song_charts`), so its parent song only appears if another chart
+/// has a drums score.
+fn seed_db_with_scoreless_chart(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, SongScoreId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Mixed Song', 'Artist', 'Rock');
+
+         -- Chart 1: has a drums score row (played).
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         -- Chart 2: NO drums score row at all -> must be skipped.
+         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 'hash-extreme');
+
+         INSERT INTO SongScores VALUES (20, 1, 0, 880000, 88.0, 0, 3, 2, 700, 400, 50, 20, 10, 5, '2026-06-01');",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_skips_chart_with_no_drums_score_row() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_with_scoreless_chart(&db);
+
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+    // Only the chart with a drums score row appears; the scoreless chart is dropped.
+    assert_eq!(songs[0].charts.len(), 1);
+    assert_eq!(songs[0].charts[0].file_hash, "hash-basic");
+}
+
+#[test]
+fn default_dtxmania_db_path_does_not_panic() {
+    // `dirs::data_dir()` resolves from the OS environment. In a test runner this
+    // is the developer's real machine, so we only assert it returns a consistent
+    // Option<String> without panicking — the path-existence logic is covered by
+    // the `default_dtxmania_db_path_from` unit tests above.
+    let _ = default_dtxmania_db_path();
+}

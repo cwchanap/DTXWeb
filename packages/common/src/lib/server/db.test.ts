@@ -1182,6 +1182,22 @@ describe('listUserScoredSimfiles', () => {
 		expect(result.data).toHaveLength(20);
 		expect(result.data.map((d) => d.id)).toEqual(allIds.slice(0, 20));
 	});
+
+	it('returns empty data with count when the paged id query yields no rows', async () => {
+		// count > 0 but the page is beyond the data (e.g. page 999 of 1 page).
+		// The DISTINCT id query returns [] -> pageIds.length === 0 early return.
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 5 });
+			if (sql.includes('DISTINCT')) return createMockStmt(null, []);
+			return createMockStmt(null, []);
+		});
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
+			userId: 'user-1',
+			page: 999,
+			pageSize: 10
+		});
+		expect(result).toEqual({ data: [], count: 5 });
+	});
 });
 
 // ---------------------------------------------------------------------------

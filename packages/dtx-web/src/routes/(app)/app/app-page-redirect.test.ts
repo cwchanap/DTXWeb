@@ -156,6 +156,59 @@ describe('App Home Page – desktop redirect flow', () => {
 		});
 	});
 
+	it('accepts a dtx-dev: deep-link callback supplied via sessionStorage', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'dtx-dev://auth-callback');
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx-dev://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('rejects a deep-link callback with the wrong hostname and falls back to the default', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'dtx://evil-host');
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('falls back to the default when sessionStorage throws (e.g. disabled by browser)', async () => {
+		const originalGetItem = sessionStorage.getItem;
+		Object.defineProperty(sessionStorage, 'getItem', {
+			configurable: true,
+			value: vi.fn(() => {
+				throw new Error('SecurityError');
+			})
+		});
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+
+		Object.defineProperty(sessionStorage, 'getItem', {
+			configurable: true,
+			value: originalGetItem
+		});
+	});
+
 	it('takes the sessionStorage callback in preference to the configured env callback', async () => {
 		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL = 'dtx://auth-callback';
 		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://localhost:47931/auth-callback');

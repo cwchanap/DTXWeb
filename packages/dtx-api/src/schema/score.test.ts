@@ -339,6 +339,179 @@ describe('uploadScores', () => {
 		expect(payload.skipped[0].chartId).toBe('10');
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
+
+	it('skips a chart with more than one best score', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 2,
+							clearCount: 1,
+							scores: [
+								{ isBest: true, score: 900, fullCombo: false, cleared: true },
+								{ isBest: true, score: 950, fullCombo: false, cleared: true }
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('more than one best score');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart whose best score carries a displayOrder', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									fullCombo: false,
+									cleared: true,
+									displayOrder: 1
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('best score with displayOrder');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with a displayOrder outside the 1..5 range', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 0,
+							scores: [
+								{ isBest: false, fullCombo: false, cleared: false, displayOrder: 6 }
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('displayOrder out of range (expected 1..5)');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with a duplicate displayOrder', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 2,
+							clearCount: 0,
+							scores: [
+								{
+									isBest: false,
+									fullCombo: false,
+									cleared: false,
+									displayOrder: 1
+								},
+								{ isBest: false, fullCombo: false, cleared: false, displayOrder: 1 }
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('duplicate displayOrder');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with an achievementRate outside 0..100', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									achievementRate: 150,
+									fullCombo: false,
+									cleared: true
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('achievementRate out of range');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with an invalid chart id', async () => {
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [{ chartId: 'not-a-number', playCount: 0, clearCount: 0, scores: [] }]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].chartId).toBe('not-a-number');
+		expect(payload.skipped[0].reason).toBe('invalid chart id');
+		expect(mockedVisibility).not.toHaveBeenCalled();
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
 });
 
 const { listUserScoredSimfiles } = await import('@dtx/common/server');

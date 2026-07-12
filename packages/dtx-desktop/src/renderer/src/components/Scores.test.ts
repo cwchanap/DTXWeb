@@ -222,4 +222,167 @@ describe('Scores', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /toggle played song/i }));
 		expect(screen.getByText(/950,?000/)).toBeInTheDocument();
 	});
+
+	it('shows the no-db prompt when no default songs.db is found', async () => {
+		host.defaultDtxmaniaDbPath.mockResolvedValue(null);
+		render(Scores);
+		expect(await screen.findByText(/No DTXManiaCX/i)).toBeInTheDocument();
+		expect(host.parseDtxmaniaScores).not.toHaveBeenCalled();
+	});
+
+	it('shows an error message when parsing the database fails', async () => {
+		host.parseDtxmaniaScores.mockRejectedValue(new Error('corrupt db'));
+		render(Scores);
+		expect(await screen.findByText('corrupt db')).toBeInTheDocument();
+	});
+
+	it('shows the empty state when the database has no drum scores', async () => {
+		host.parseDtxmaniaScores.mockResolvedValue([]);
+		render(Scores);
+		expect(await screen.findByText(/No drum scores found/i)).toBeInTheDocument();
+	});
+
+	it('loads scores from a manually chosen songs.db', async () => {
+		host.defaultDtxmaniaDbPath.mockResolvedValue(null);
+		host.selectDtxmaniaDb.mockResolvedValue({
+			canceled: false,
+			filePaths: ['/custom/songs.db']
+		});
+		host.parseDtxmaniaScores.mockResolvedValue(parsedSongs);
+
+		render(Scores);
+		expect(await screen.findByText(/No DTXManiaCX/i)).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /choose songs\.db/i }));
+		await waitFor(() =>
+			expect(host.parseDtxmaniaScores).toHaveBeenCalledWith('/custom/songs.db')
+		);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+	});
+
+	it('does not load when the file picker is canceled', async () => {
+		host.defaultDtxmaniaDbPath.mockResolvedValue(null);
+		host.selectDtxmaniaDb.mockResolvedValue({ canceled: true, filePaths: [] });
+
+		render(Scores);
+		expect(await screen.findByText(/No DTXManiaCX/i)).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /choose songs\.db/i }));
+		expect(host.parseDtxmaniaScores).not.toHaveBeenCalled();
+	});
+
+	it('shows nothing-to-upload when no songs are linked', async () => {
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		expect(await screen.findByText(/Nothing to upload/i)).toBeInTheDocument();
+		expect(host.uploadScores).not.toHaveBeenCalled();
+	});
+
+	it('shows an error message when the upload fails', async () => {
+		host.uploadScores.mockResolvedValue({ success: false, error: 'Server exploded' });
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		// Link the song first so there's something to upload.
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		expect(await screen.findByText('Server exploded')).toBeInTheDocument();
+	});
+
+	it('renders skipped chart details after a partial upload', async () => {
+		host.uploadScores.mockResolvedValue({
+			success: true,
+			data: {
+				updatedCharts: 0,
+				insertedScores: 0,
+				skipped: [{ chartId: '10', reason: 'chart not found' }]
+			}
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		expect(await screen.findByText(/Chart 10 skipped/i)).toBeInTheDocument();
+		expect(screen.getByText(/chart not found/i)).toBeInTheDocument();
+	});
+
+	it('shows no-best-score placeholder for a chart without a best row', async () => {
+		host.parseDtxmaniaScores.mockResolvedValue([
+			{
+				title: 'No Best Song',
+				artist: 'Artist B',
+				genre: 'Pop',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-nb',
+						aggregate: { playCount: 0, clearCount: 0 },
+						best: null,
+						recent: []
+					}
+				]
+			}
+		]);
+
+		render(Scores);
+		expect(await screen.findByText('No Best Song')).toBeInTheDocument();
+		expect(screen.getByText(/No best score recorded/i)).toBeInTheDocument();
+	});
+
+	it('overrides a chart match via the target-chart select dropdown', async () => {
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: [
+				{ id: '10', label: 'BASIC', level: 5.5 },
+				{ id: '11', label: 'EXTREME', level: 8.8 }
+			]
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		// The auto-match selects chart '10'. Override to '11' via the dropdown.
+		const select = await screen.findByRole('combobox');
+		await fireEvent.change(select, { target: { value: '11' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		await waitFor(() =>
+			expect(host.uploadScores).toHaveBeenCalledWith({
+				charts: [
+					{
+						chartId: '11',
+						playCount: 7,
+						clearCount: 5,
+						scores: [bestRow, recentRow]
+					}
+				]
+			})
+		);
+	});
 });

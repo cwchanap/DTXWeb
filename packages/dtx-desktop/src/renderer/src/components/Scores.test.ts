@@ -437,4 +437,82 @@ describe('Scores', () => {
 			})
 		);
 	});
+
+	it('surfaces cross-song duplicate chart matches as skipped instead of silently dropping them', async () => {
+		// Two songs, each with one BASIC chart. Both are linked to the same
+		// cloud song whose only chart is '10' — so both auto-match to chartId
+		// '10'. The upload must send only the first and surface the second as
+		// a client-side skipped duplicate.
+		const twoSongs = [
+			{
+				title: 'First Song',
+				artist: 'Artist A',
+				genre: 'Rock',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-a',
+						aggregate: { playCount: 7, clearCount: 5 },
+						best: bestRow,
+						recent: [recentRow]
+					}
+				]
+			},
+			{
+				title: 'Second Song',
+				artist: 'Artist B',
+				genre: 'Pop',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-b',
+						aggregate: { playCount: 3, clearCount: 1 },
+						best: bestRow,
+						recent: []
+					}
+				]
+			}
+		];
+		host.parseDtxmaniaScores.mockResolvedValue(twoSongs);
+		host.readScoreSongLinks.mockResolvedValue({
+			['First Song\u0000Artist A\u0000Rock']: '42',
+			['Second Song\u0000Artist B\u0000Pop']: '42'
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 5.5 }]
+		});
+
+		render(Scores);
+		// Wait for both songs to render and their links to restore.
+		expect(await screen.findByText('First Song')).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText('Second Song')).toBeInTheDocument());
+		// Wait for both chart fetches to complete so matches are populated.
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledTimes(2));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		// The upload payload contains only the first chart; the second is
+		// dropped as a duplicate.
+		await waitFor(() =>
+			expect(host.uploadScores).toHaveBeenCalledWith({
+				charts: [
+					{
+						chartId: '10',
+						playCount: 7,
+						clearCount: 5,
+						scores: [bestRow, recentRow]
+					}
+				]
+			})
+		);
+
+		// The skipped duplicate is surfaced to the user.
+		expect(await screen.findByText(/Chart 10 skipped/i)).toBeInTheDocument();
+		expect(screen.getByText(/duplicate match/i)).toBeInTheDocument();
+	});
 });

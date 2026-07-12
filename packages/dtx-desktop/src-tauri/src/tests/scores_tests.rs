@@ -274,3 +274,129 @@ fn default_dtxmania_db_path_does_not_panic() {
     // the `default_dtxmania_db_path_from` unit tests above.
     let _ = default_dtxmania_db_path();
 }
+
+/// Seed a single song with TWO drums-scored charts (BASIC + EXTREME), each with
+/// its own drums `SongScores` row (Instrument = 0). This exercises the
+/// chart-boundary logic in `group_joined_rows` that the other seeds don't
+/// cover: both `seed_db` and `seed_db_with_scoreless_chart` give each song at
+/// most one drums-scored chart, so the "push the in-progress chart, start a new
+/// one" branch at scores.rs:367-388 is never exercised with a real second
+/// chart.
+fn seed_db_with_two_drums_charts(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, SongScoreId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Two-Chart Song', 'Artist', 'Rock');
+
+         -- Chart 1: BASIC, drums score (played).
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         -- Chart 2: EXTREME, drums score (played) — a SECOND drums-scored chart
+         -- for the same song, which the other seeds never produce.
+         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 'hash-extreme');
+
+         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
+         INSERT INTO SongScores VALUES (11, 2, 0, 880000, 88.0, 0, 3, 2, 700, 400, 50, 20, 10, 5, '2026-06-01');
+
+         INSERT INTO PerformanceHistory VALUES (100, 10, '2026-06-02T00:00:00', '10.26/6/2 Cleared (S: 91.30)', 1);
+         INSERT INTO PerformanceHistory VALUES (101, 11, '2026-06-01T00:00:00', '9.26/5/28 Cleared (A: 88.00)', 1);",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_groups_multiple_drums_charts_per_song() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_with_two_drums_charts(&db);
+
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+
+    // The critical assertion: both drums-scored charts appear under the same
+    // song. This exercises the chart-boundary branch in group_joined_rows that
+    // pushes the in-progress chart and starts a new one when chart_id changes.
+    let song = &songs[0];
+    assert_eq!(song.charts.len(), 2);
+
+    // Charts appear in DB order (ORDER BY c.Id): BASIC first, EXTREME second.
+    assert_eq!(song.charts[0].difficulty_label, "BASIC");
+    assert_eq!(song.charts[0].file_hash, "hash-basic");
+    assert_eq!(song.charts[0].drum_level, 55);
+    assert!(song.charts[0].best.is_some());
+    assert_eq!(song.charts[0].recent.len(), 1);
+
+    assert_eq!(song.charts[1].difficulty_label, "EXTREME");
+    assert_eq!(song.charts[1].file_hash, "hash-extreme");
+    assert_eq!(song.charts[1].drum_level, 88);
+    assert!(song.charts[1].best.is_some());
+    assert_eq!(song.charts[1].recent.len(), 1);
+
+    // Best scores are distinct per chart.
+    assert_eq!(song.charts[0].best.as_ref().unwrap().score, Some(950000));
+    assert_eq!(song.charts[1].best.as_ref().unwrap().score, Some(880000));
+}
+
+/// Seed a single chart with 6 PerformanceHistory rows (DisplayOrder 1..6) to
+/// exercise the 5-recent-row cap in group_joined_rows (scores.rs:396). The
+/// other seeds insert at most 2 history rows, so the `recent_count < 5` guard
+/// is never tested with enough rows to actually trigger the cap.
+fn seed_db_with_six_history_rows(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, SongScoreId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Capped Song', 'Artist', 'Rock');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
+
+         -- 6 history rows (DisplayOrder 1..6); the cap at recent_count < 5 must
+         -- keep only the first 5 and drop the 6th.
+         INSERT INTO PerformanceHistory VALUES (100, 10, '2026-06-02T00:00:00', '10.26/6/2 Cleared (S: 91.30)', 1);
+         INSERT INTO PerformanceHistory VALUES (101, 10, '2026-06-01T00:00:00', '9.26/5/28 Cleared (A: 88.00)', 2);
+         INSERT INTO PerformanceHistory VALUES (102, 10, '2026-05-30T00:00:00', '8.26/5/25 Cleared (B: 80.00)', 3);
+         INSERT INTO PerformanceHistory VALUES (103, 10, '2026-05-28T00:00:00', '7.26/5/20 Failed (C: 70.00)', 4);
+         INSERT INTO PerformanceHistory VALUES (104, 10, '2026-05-25T00:00:00', '6.26/5/18 Cleared (D: 60.00)', 5);
+         INSERT INTO PerformanceHistory VALUES (105, 10, '2026-05-20T00:00:00', '5.26/5/15 Failed (F: 45.00)', 6);",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_caps_recent_scores_at_five() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_with_six_history_rows(&db);
+
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+    assert_eq!(songs[0].charts.len(), 1);
+
+    let chart = &songs[0].charts[0];
+    // The cap keeps only the first 5 rows (by DisplayOrder); the 6th is dropped.
+    assert_eq!(chart.recent.len(), 5);
+
+    // Verify the kept rows are DisplayOrder 1..5 (the first 5 in order).
+    for (i, recent) in chart.recent.iter().enumerate() {
+        assert_eq!(recent.display_order, Some((i + 1) as i64));
+    }
+
+    // The 6th row (DisplayOrder 6) must not appear.
+    assert!(chart.recent.iter().all(|r| r.display_order != Some(6)));
+}

@@ -268,13 +268,22 @@
 		matchesBySong[songIndex] = next;
 	};
 
-	const buildUpload = () => {
+	const buildUpload = (): {
+		charts: Array<{
+			chartId: string;
+			playCount: number;
+			clearCount: number;
+			scores: ScorePayload[];
+		}>;
+		clientSkipped: { chartId: string; reason: string }[];
+	} => {
 		const charts: Array<{
 			chartId: string;
 			playCount: number;
 			clearCount: number;
 			scores: ScorePayload[];
 		}> = [];
+		const clientSkipped: { chartId: string; reason: string }[] = [];
 		const seenChartIds = new Set<string>();
 		songs.forEach((song, songIndex) => {
 			if (!links[songIndex]) return;
@@ -282,8 +291,17 @@
 			song.charts.forEach((chart, chartIndex) => {
 				const chartId = matches[chartIndex];
 				if (!chartId) return;
-				// Deduplicate: never send the same cloud chart ID twice.
-				if (seenChartIds.has(chartId)) return;
+				// Deduplicate: never send the same cloud chart ID twice. Surface
+				// the dropped match so the user knows a chart was skipped, not
+				// silently lost.
+				if (seenChartIds.has(chartId)) {
+					const label = chart.difficultyLabel || 'DRUMS';
+					clientSkipped.push({
+						chartId,
+						reason: `duplicate match — "${song.title}" ${label} already linked from another song`
+					});
+					return;
+				}
 				seenChartIds.add(chartId);
 				const scores = [...(chart.best ? [chart.best] : []), ...chart.recent];
 				if (scores.length === 0) return;
@@ -295,7 +313,7 @@
 				});
 			});
 		});
-		return { charts };
+		return { charts, clientSkipped };
 	};
 
 	const handleUpload = async () => {
@@ -309,15 +327,18 @@
 			uploading = false;
 			return;
 		}
+		// Surface client-side skips (duplicate chart matches) alongside any
+		// server-side skips returned in the upload response.
+		skipped = input.clientSkipped;
 		try {
 			const result = await desktopHost.uploadScores<{
 				success: boolean;
 				data?: { updatedCharts: number; insertedScores: number; skipped: typeof skipped };
 				error?: string;
-			}>(input);
+			}>({ charts: input.charts });
 			if (result.success && result.data) {
 				uploadStatus = `Uploaded ${result.data.updatedCharts} chart(s), ${result.data.insertedScores} score(s).`;
-				skipped = result.data.skipped ?? [];
+				skipped = [...input.clientSkipped, ...(result.data.skipped ?? [])];
 			} else {
 				uploadStatus = result.error ?? 'Upload failed.';
 			}

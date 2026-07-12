@@ -1413,3 +1413,16 @@ EOF
 **3. Type consistency:** `ScoreView`/`ChartScoreView`/`ScoredChart`/`ScoredSimfile`/`ScoredSimfilesResult`/`MyScoredSimfilesParams` defined in Task 3 are used verbatim in Tasks 4–6. `listUserChartScores` signature in Task 1 matches its consumption in Task 2 (`ctx.db`, `ctx.user.id`, `chartIds: number[]` → `Map<number, {chartScore, scores}>`). `chartScoresCache` type in the context (Task 2) matches the promise stored by both the batch and the per-chart resolver. ✅
 
 **Cross-task ordering note:** Task 2's test build (`vi.importActual('@dtx/common/server')`) requires Task 1's `bun run --filter=@dtx/common build` (Task 1 Step 5) to have run. Tasks 3–6 depend only on the Phase-1 schema already committed in `dtx-api/dist/schema.graphql`, not on Tasks 1–2.
+
+---
+
+## Addendum: Auth Deep-Link Hardening (scope amendment)
+
+During implementation, the `feat/score-page` branch also landed auth deep-link hardening in two web route files that were not part of the original Phase 2 plan. This addendum documents that scope expansion so the PR and plan stay aligned.
+
+**Files added to the PR scope:**
+
+- `packages/dtx-web/src/routes/(app)/app/+page.svelte` — added `validateDesktopCallbackUrl`, a strict allowlist-based validator for the `dtx://` callback URL stored/passed through the auth flow. Prevents open-redirect abuse by rejecting URLs that don't match the expected `dtx://` scheme and hostname.
+- `packages/dtx-web/src/routes/(login)/login/+page.svelte` — consumes the validated callback URL, passing it through the Supabase OAuth redirect only after `validateDesktopCallbackUrl` accepts it.
+
+**Rationale for bundling:** The score dashboard requires authenticated access (`myScoredSimfiles` is owner-scoped). The desktop app's score-upload flow triggers a web-based OAuth login that redirects back via `dtx://`. Hardening this callback path was a prerequisite for the score feature to work safely on desktop, so it was included in the same branch rather than split into a separate PR.

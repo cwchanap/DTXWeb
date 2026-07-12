@@ -226,7 +226,9 @@ export type SimfileSearchResult = {
   title: Scalars['String']['output'];
 };
 
+/** A chart that was excluded from the upload. chartId is the requested chart ID, or the sentinel "*" when the entire payload was rejected (e.g. too many charts) rather than a single chart. */
 export type SkippedChart = {
+  /** The skipped chart ID, or "*" (sentinel) when the skip applies to the whole upload batch rather than a specific chart. */
   chartId: Scalars['ID']['output'];
   reason: Scalars['String']['output'];
 };

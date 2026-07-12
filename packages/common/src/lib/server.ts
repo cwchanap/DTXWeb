@@ -59,7 +59,6 @@ export {
 	escapeLikePattern,
 	getSimfile,
 	getSimfileOwner,
-	getChartVisibility,
 	getChartVisibilityBatch,
 	listSimfiles,
 	searchSimfiles,

@@ -8,7 +8,6 @@ import {
 	escapeLikePattern,
 	getSimfile,
 	getSimfileOwner,
-	getChartVisibility,
 	listSimfiles,
 	searchSimfiles,
 	getNextDisplayId,
@@ -925,23 +924,6 @@ describe('updateUserProfile', () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// getChartVisibility
-// ---------------------------------------------------------------------------
-describe('getChartVisibility', () => {
-	it("returns the owning simfile's visibility for a chart", async () => {
-		const db = createMockDb(() => createMockStmt({ user_id: 'user-9', is_published: 1 }));
-		const result = await getChartVisibility(db as unknown as D1Database, 55);
-		expect(result).toEqual({ user_id: 'user-9', is_published: 1 });
-	});
-
-	it('returns null when the chart does not exist', async () => {
-		const db = createMockDb(() => createMockStmt(null));
-		const result = await getChartVisibility(db as unknown as D1Database, 999);
-		expect(result).toBeNull();
-	});
-});
-
 describe('upsertChartScoreAndReplaceScores', () => {
 	it('batches the upsert, delete, and inserts in one D1 batch', async () => {
 		const chartScoreRow = {
@@ -1065,7 +1047,7 @@ describe('listUserScoredSimfiles', () => {
 		const scoredSimfileRow = { ...baseSimfileRow, id: 42 };
 		const db = createMockDb((sql: string) => {
 			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 1 });
-			if (sql.includes('DISTINCT')) return createMockStmt(null, [{ simfile_id: 42 }]);
+			if (sql.includes('GROUP BY')) return createMockStmt(null, [{ simfile_id: 42 }]);
 			if (sql.includes('FROM simfiles')) return createMockStmt(null, [scoredSimfileRow]);
 			return createMockStmt(null, [{ id: 10, label: 'BASIC', level: 5, simfile_id: 42 }]);
 		});
@@ -1078,14 +1060,14 @@ describe('listUserScoredSimfiles', () => {
 	});
 
 	it('clamps an out-of-range page to 1, returning a full page instead of an empty one', async () => {
-		// 25 scored simfile ids for the user, matching the DISTINCT query's DESC ordering
+		// 25 scored simfile ids for the user, matching the paged query's recency ordering
 		const allIds = Array.from({ length: 25 }, (_, i) => 125 - i); // [125, 124, ..., 101]
 
 		const db = createMockDb((sql: string) => {
 			if (sql.includes('COUNT(DISTINCT')) {
 				return createMockStmt({ cnt: 25 });
 			}
-			if (sql.includes('DISTINCT')) {
+			if (sql.includes('GROUP BY')) {
 				// The paged query returns only the first page (20 ids) when page is clamped to 1
 				return createMockStmt(
 					null,
@@ -1124,10 +1106,10 @@ describe('listUserScoredSimfiles', () => {
 
 	it('returns empty data with count when the paged id query yields no rows', async () => {
 		// count > 0 but the page is beyond the data (e.g. page 999 of 1 page).
-		// The DISTINCT id query returns [] -> pageIds.length === 0 early return.
+		// The paged id query returns [] -> pageIds.length === 0 early return.
 		const db = createMockDb((sql: string) => {
 			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 5 });
-			if (sql.includes('DISTINCT')) return createMockStmt(null, []);
+			if (sql.includes('GROUP BY')) return createMockStmt(null, []);
 			return createMockStmt(null, []);
 		});
 		const result = await listUserScoredSimfiles(db as unknown as D1Database, {

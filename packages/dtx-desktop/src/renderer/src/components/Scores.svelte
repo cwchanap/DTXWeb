@@ -78,6 +78,7 @@
 
 	let uploadStatus = $state<string | null>(null);
 	let skipped = $state<{ chartId: string; reason: string }[]>([]);
+	let uploading = $state(false);
 
 	const formatScore = (value: number | null): string =>
 		value === null ? '—' : value.toLocaleString('en-US');
@@ -114,6 +115,11 @@
 	// non-fatal — the in-memory map is still pruned for this session.
 	const pruneSavedLinks = () => {
 		if (Object.keys(savedLinks).length === 0) return;
+		// Guard against a transient parse failure (corrupt/locked songs.db):
+		// songs = [] would classify every saved link as orphaned and persist
+		// an empty map, silently wiping all persisted links. Skip pruning when
+		// no songs were parsed — the links are almost certainly still valid.
+		if (songs.length === 0) return;
 		const currentKeys = new Set(songs.map(songKey));
 		let dropped = 0;
 		const pruned: Record<string, string> = {};
@@ -177,11 +183,16 @@
 				};
 			}
 			try {
-				await handleLinkSelect(i, song);
+				await handleLinkSelect(i, song, false);
 			} catch {
 				// handleLinkSelect handles its own fetch errors; continue.
 			}
 		}
+
+		// Persist the full restored map once, not once per link.
+		desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
+			toastStore.error('Could not save song links');
+		});
 	};
 
 	const loadScores = async (path: string) => {
@@ -217,12 +228,14 @@
 		}
 	};
 
-	const handleLinkSelect = async (songIndex: number, song: CloudSong) => {
+	const handleLinkSelect = async (songIndex: number, song: CloudSong, persist = true) => {
 		links[songIndex] = song;
 		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
-		desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
-			toastStore.error('Could not save song link');
-		});
+		if (persist) {
+			desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
+				toastStore.error('Could not save song link');
+			});
+		}
 		autocompleteFor = null;
 		try {
 			const result = await desktopHost.fetchCloudSongCharts<{
@@ -286,11 +299,14 @@
 	};
 
 	const handleUpload = async () => {
+		if (uploading) return;
+		uploading = true;
 		uploadStatus = 'Uploading…';
 		skipped = [];
 		const input = buildUpload();
 		if (input.charts.length === 0) {
 			uploadStatus = 'Nothing to upload — link a song and match at least one chart first.';
+			uploading = false;
 			return;
 		}
 		try {
@@ -307,6 +323,8 @@
 			}
 		} catch (e) {
 			uploadStatus = e instanceof Error ? e.message : 'Upload failed.';
+		} finally {
+			uploading = false;
 		}
 	};
 </script>
@@ -330,8 +348,9 @@
 					<RefreshCw size={16} /> Reparse
 				</button>
 				<button
-					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium"
+					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
 					onclick={handleUpload}
+					disabled={uploading}
 				>
 					<Upload size={16} /> Upload
 				</button>

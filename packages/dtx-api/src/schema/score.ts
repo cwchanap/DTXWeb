@@ -85,8 +85,16 @@ const MAX_SCORES_PER_CHART = 10;
 const SkippedChartRef = builder
 	.objectRef<{ chartId: string; reason: string }>('SkippedChart')
 	.implement({
+		description:
+			'A chart that was excluded from the upload. chartId is the requested ' +
+			'chart ID, or the sentinel "*" when the entire payload was rejected ' +
+			'(e.g. too many charts) rather than a single chart.',
 		fields: (t) => ({
-			chartId: t.exposeID('chartId'),
+			chartId: t.exposeID('chartId', {
+				description:
+					'The skipped chart ID, or "*" (sentinel) when the skip applies ' +
+					'to the whole upload batch rather than a specific chart.'
+			}),
 			reason: t.exposeString('reason')
 		})
 	});

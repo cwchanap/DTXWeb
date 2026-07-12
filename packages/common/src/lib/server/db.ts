@@ -130,26 +130,11 @@ export const getSimfileOwner = async (
 	return owner ?? null;
 };
 
-export const getChartVisibility = async (
-	db: D1Database,
-	chartId: number
-): Promise<{ user_id: string; is_published: 0 | 1 } | null> => {
-	const row = await db
-		.prepare(
-			`SELECT s.user_id AS user_id, s.is_published AS is_published
-			 FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id
-			 WHERE d.id = ? LIMIT 1`
-		)
-		.bind(chartId)
-		.first<{ user_id: string; is_published: 0 | 1 }>();
-	return row;
-};
-
 /**
- * Batched sibling of getChartVisibility: resolves visibility for many chart
- * IDs in a single D1 query (chunked at 100 IDs per D1 parameter limit) so
- * uploadScores does not issue one round-trip per chart. Returns a map keyed
- * by chart_id; IDs not found in the DB are absent from the map.
+ * Resolves visibility for many chart IDs in a single D1 query (chunked at 100
+ * IDs per D1 parameter limit) so uploadScores does not issue one round-trip
+ * per chart. Returns a map keyed by chart_id; IDs not found in the DB are
+ * absent from the map.
  */
 export const getChartVisibilityBatch = async (
 	db: D1Database,
@@ -648,10 +633,11 @@ export const listUserScoredSimfiles = async (
 	// Page at the SQL level: only fetch the IDs for the requested page.
 	const { results: idRows } = await db
 		.prepare(
-			`SELECT DISTINCT d.simfile_id AS simfile_id
+			`SELECT d.simfile_id AS simfile_id
 			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
 			 WHERE cs.user_id = ?
-			 ORDER BY d.simfile_id DESC
+			 GROUP BY d.simfile_id
+			 ORDER BY MAX(cs.updated_at) DESC
 			 LIMIT ? OFFSET ?`
 		)
 		.bind(options.userId, pageSize, offset)
@@ -662,7 +648,7 @@ export const listUserScoredSimfiles = async (
 	const placeholders = pageIds.map(() => '?').join(',');
 
 	const { results: simfileRows } = await db
-		.prepare(`SELECT * FROM simfiles WHERE id IN (${placeholders}) ORDER BY id DESC`)
+		.prepare(`SELECT * FROM simfiles WHERE id IN (${placeholders})`)
 		.bind(...pageIds)
 		.all<SimfileRow>();
 
@@ -673,14 +659,20 @@ export const listUserScoredSimfiles = async (
 		.bind(...pageIds)
 		.all<DtxFileRow>();
 
-	const data = (simfileRows ?? []).map((row) =>
-		toSimfileWithDtx(
-			row,
-			(dtxRows ?? [])
-				.filter((d) => d.simfile_id === row.id)
-				.map((d) => ({ id: d.id, level: d.level, label: d.label }))
-		)
-	);
+	// Preserve the recency order from the paged ID query (MAX(updated_at) DESC)
+	// instead of falling back to id ordering.
+	const simfileById = new Map((simfileRows ?? []).map((r) => [r.id, r]));
+	const data = pageIds
+		.map((id) => simfileById.get(id))
+		.filter((row): row is SimfileRow => !!row)
+		.map((row) =>
+			toSimfileWithDtx(
+				row,
+				(dtxRows ?? [])
+					.filter((d) => d.simfile_id === row.id)
+					.map((d) => ({ id: d.id, level: d.level, label: d.label }))
+			)
+		);
 
 	return { data, count };
 };

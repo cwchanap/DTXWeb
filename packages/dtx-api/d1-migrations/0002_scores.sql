@@ -2,13 +2,19 @@
 -- Per-user score import from DTXManiaCX.
 -- dtx_files stays a global chart definition; chart_scores is the per-user
 -- intermediate holding aggregates; scores holds individual plays.
+--
+-- CHECK constraints mirror validateChartScores (score.ts) as a DB-level
+-- backstop so a race or bypassed validator cannot corrupt the data:
+--   chart_scores: play_count >= 0, clear_count >= 0, clear_count <= play_count
+--   scores: non-negative judgment counts, score >= 0, achievement_rate 0..100,
+--           display_order NULL or 1..5, boolean columns IN (0, 1)
 
 CREATE TABLE IF NOT EXISTS chart_scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chart_id INTEGER NOT NULL,
     user_id TEXT NOT NULL,
-    play_count INTEGER NOT NULL DEFAULT 0,
-    clear_count INTEGER NOT NULL DEFAULT 0,
+    play_count INTEGER NOT NULL DEFAULT 0 CHECK (play_count >= 0),
+    clear_count INTEGER NOT NULL DEFAULT 0 CHECK (clear_count >= 0 AND clear_count <= play_count),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     FOREIGN KEY (chart_id) REFERENCES dtx_files(id) ON DELETE CASCADE
@@ -19,16 +25,20 @@ CREATE INDEX IF NOT EXISTS idx_chart_scores_chart ON chart_scores(chart_id);
 CREATE TABLE IF NOT EXISTS scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chart_score_id INTEGER NOT NULL,
-    is_best INTEGER NOT NULL DEFAULT 0,
-    score INTEGER,
-    achievement_rate REAL,
+    is_best INTEGER NOT NULL DEFAULT 0 CHECK (is_best IN (0, 1)),
+    score INTEGER CHECK (score IS NULL OR score >= 0),
+    achievement_rate REAL CHECK (achievement_rate IS NULL OR (achievement_rate >= 0 AND achievement_rate <= 100)),
     rank_label TEXT,
-    full_combo INTEGER NOT NULL DEFAULT 0,
-    cleared INTEGER NOT NULL DEFAULT 0,
-    max_combo INTEGER,
-    perfect INTEGER, great INTEGER, good INTEGER, poor INTEGER, miss INTEGER,
+    full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1)),
+    cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0, 1)),
+    max_combo INTEGER CHECK (max_combo IS NULL OR max_combo >= 0),
+    perfect INTEGER CHECK (perfect IS NULL OR perfect >= 0),
+    great INTEGER CHECK (great IS NULL OR great >= 0),
+    good INTEGER CHECK (good IS NULL OR good >= 0),
+    poor INTEGER CHECK (poor IS NULL OR poor >= 0),
+    miss INTEGER CHECK (miss IS NULL OR miss >= 0),
     performed_at TEXT,
-    display_order INTEGER,
+    display_order INTEGER CHECK (display_order IS NULL OR (display_order >= 1 AND display_order <= 5)),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     FOREIGN KEY (chart_score_id) REFERENCES chart_scores(id) ON DELETE CASCADE
 );

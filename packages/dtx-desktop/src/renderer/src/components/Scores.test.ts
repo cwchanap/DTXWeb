@@ -266,6 +266,28 @@ describe('Scores', () => {
 		expect(await screen.findByText('corrupt db')).toBeInTheDocument();
 	});
 
+	it('does not wipe saved links when parsing fails (transient DB lock)', async () => {
+		// savedLinks has entries that must survive a transient parse failure.
+		host.readScoreSongLinks.mockResolvedValue({
+			['Played Song\u0000Artist A\u0000Rock']: '42',
+			['Other Song\u0000Artist B\u0000Pop']: '88'
+		});
+		host.parseDtxmaniaScores.mockRejectedValue(new Error('database is locked'));
+
+		render(Scores);
+		expect(await screen.findByText('database is locked')).toBeInTheDocument();
+
+		// writeScoreSongLinks must NOT be called with an empty object — that
+		// would wipe all persisted links on a transient parse failure.
+		await waitFor(() => {
+			const calls = host.writeScoreSongLinks.mock.calls;
+			for (const [arg] of calls) {
+				expect(Object.keys(arg as Record<string, string>).length).toBeGreaterThan(0);
+			}
+		});
+		expect(host.writeScoreSongLinks).not.toHaveBeenCalledWith({});
+	});
+
 	it('shows the empty state when the database has no drum scores', async () => {
 		host.parseDtxmaniaScores.mockResolvedValue([]);
 		render(Scores);

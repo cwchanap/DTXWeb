@@ -66,13 +66,6 @@ export interface ChartScoreRow {
 	updated_at: string;
 }
 
-export interface ChartScoreInsert {
-	chart_id: number;
-	user_id: string;
-	play_count?: number;
-	clear_count?: number;
-}
-
 export interface ScoreRow {
 	id: number;
 	chart_score_id: number;

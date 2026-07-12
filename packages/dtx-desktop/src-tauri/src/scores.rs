@@ -12,8 +12,8 @@ use crate::error::{DesktopError, Result};
 /// exact `ScoreInput` field set (camelCase), so the renderer forwards these
 /// objects to `uploadScores` verbatim.
 ///
-/// Not yet constructed in this task — `scores::parse_dtxmania_scores` (Task 2)
-/// is the reader that builds these from the DTXMania SQLite database.
+/// Constructed by `build_best` (best row) and `group_joined_rows` (recent rows)
+/// from the DTXMania SQLite database.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScorePayload {
@@ -33,7 +33,8 @@ pub struct ScorePayload {
     pub display_order: Option<i64>,
 }
 
-/// Not yet constructed in this task — see `ScorePayload`.
+/// Per-chart aggregate counts. Constructed by `group_joined_rows` from the
+/// joined DTXMania `SongScores` row.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartAggregate {
@@ -41,7 +42,8 @@ pub struct ChartAggregate {
     pub clear_count: i64,
 }
 
-/// Not yet constructed in this task — see `ScorePayload`.
+/// One chart within a DTXMania song. Constructed by `group_joined_rows` from
+/// the joined DTXMania `SongCharts` + `SongScores` rows.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DtxmaniaChart {
@@ -54,7 +56,8 @@ pub struct DtxmaniaChart {
     pub recent: Vec<ScorePayload>,
 }
 
-/// Not yet constructed in this task — see `ScorePayload`.
+/// One song from the DTXMania library. Constructed by `group_joined_rows`
+/// from the joined DTXMania `Songs` + `SongCharts` + `SongScores` rows.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DtxmaniaSong {
@@ -67,8 +70,7 @@ pub struct DtxmaniaSong {
 /// Rank label for the best row, derived from the achievement rate (0–100).
 /// Recent rows keep the RANK token parsed from the history line instead.
 ///
-/// Unit-tested directly (see `tests/scores_tests.rs`); not yet called from
-/// production code — `scores::parse_dtxmania_scores` (Task 2) is the caller.
+/// Called by `build_best`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn derive_rank_label(rate: f64) -> &'static str {
     if rate >= 100.0 {
         "SS"
@@ -89,7 +91,8 @@ pub fn derive_rank_label(rate: f64) -> &'static str {
     }
 }
 
-/// Not yet constructed in this task — see `ScorePayload`.
+/// Output of `parse_history_line`. Consumed by `group_joined_rows` when
+/// building recent `ScorePayload` rows from DTXMania `PerformanceHistory`.
 pub struct ParsedHistory {
     pub cleared: Option<bool>,
     pub rank_label: Option<String>,
@@ -99,8 +102,7 @@ pub struct ParsedHistory {
 /// Tolerant parser for a DTXMania `HistoryLine`, e.g. `10.26/6/2 Cleared (S: 91.30)`.
 /// Any field that cannot be read is left `None`; the parser never fails.
 ///
-/// Unit-tested directly (see `tests/scores_tests.rs`); not yet called from
-/// production code — `scores::parse_dtxmania_scores` (Task 2) is the caller.
+/// Called by `group_joined_rows`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn parse_history_line(line: &str) -> ParsedHistory {
     let cleared = if line.contains("Cleared") {
         Some(true)

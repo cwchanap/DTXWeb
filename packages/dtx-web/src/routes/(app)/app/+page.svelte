@@ -16,8 +16,10 @@
 
 	// Loopback hostnames the Rust auth callback server binds on (auth.rs
 	// matches the same set). `localhost` is included for browser-resolved
-	// loopback, alongside the explicit IPv4/IPv6 addresses.
-	const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '::1'];
+	// loopback, alongside the explicit IPv4/IPv6 addresses. Note: the URL API
+	// returns IPv6 hostnames with brackets in `.hostname`, so `::1` is listed
+	// as `[::1]` here to match `new URL('http://[::1]:...').hostname`.
+	const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '[::1]'];
 
 	// The magic link carries an auth token, so the redirect target must be
 	// strictly validated: either a loopback HTTP callback (a `tauri dev`

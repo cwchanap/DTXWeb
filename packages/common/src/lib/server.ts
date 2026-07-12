@@ -26,7 +26,6 @@ export type {
 	SimfileWithDtxFiles,
 	SimfileWithDtx,
 	ChartScoreRow,
-	ChartScoreInsert,
 	ScoreRow,
 	ScoreInsert
 } from './types/d1.types';
@@ -61,6 +60,7 @@ export {
 	getSimfile,
 	getSimfileOwner,
 	getChartVisibility,
+	getChartVisibilityBatch,
 	listSimfiles,
 	searchSimfiles,
 	getNextDisplayId,

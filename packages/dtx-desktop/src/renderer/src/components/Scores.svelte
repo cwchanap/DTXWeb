@@ -63,7 +63,7 @@
 	// `pageStart` keeps the global song index stable so links/matches, which are
 	// keyed by index into `songs`, stay correct across pages.
 	let currentPage = $state(1);
-	let pageSize = $state(10);
+	const pageSize = 10;
 	const pageStart = $derived((currentPage - 1) * pageSize);
 	const pagedSongs = $derived(songs.slice(pageStart, pageStart + pageSize));
 
@@ -108,15 +108,55 @@
 	});
 
 	const restoreLinks = async () => {
-		for (let i = 0; i < songs.length; i++) {
-			const cloudId = savedLinks[songKey(songs[i])];
-			if (!cloudId) continue;
-			await handleLinkSelect(i, {
+		const entries = songs
+			.map((song, i) => ({ i, cloudId: savedLinks[songKey(song)] }))
+			.filter((e): e is { i: number; cloudId: string } => !!e.cloudId);
+		if (entries.length === 0) return;
+
+		// Fetch real cloud song titles in parallel so restored links show the
+		// actual song title instead of a "Simfile #<id>" placeholder. A fetch
+		// failure falls back to the placeholder so one bad link doesn't block
+		// the rest of the restore.
+		const titleResults = await Promise.allSettled(
+			entries.map((e) =>
+				desktopHost.fetchCloudSong<{
+					success: boolean;
+					cloudSongData?: {
+						id: number;
+						title: string;
+						artist: string;
+						is_published: boolean;
+					};
+				}>(e.cloudId)
+			)
+		);
+
+		for (let idx = 0; idx < entries.length; idx++) {
+			const { i, cloudId } = entries[idx];
+			const result = titleResults[idx];
+			let song: CloudSong = {
 				id: cloudId,
 				title: `Simfile #${cloudId}`,
 				artist: songs[i].artist,
 				is_published: false
-			});
+			};
+			if (
+				result.status === 'fulfilled' &&
+				result.value.success &&
+				result.value.cloudSongData
+			) {
+				song = {
+					id: cloudId,
+					title: result.value.cloudSongData.title,
+					artist: result.value.cloudSongData.artist,
+					is_published: result.value.cloudSongData.is_published
+				};
+			}
+			try {
+				await handleLinkSelect(i, song);
+			} catch {
+				// handleLinkSelect handles its own fetch errors; continue.
+			}
 		}
 	};
 
@@ -137,7 +177,11 @@
 		} finally {
 			loading = false;
 		}
-		await restoreLinks();
+		try {
+			await restoreLinks();
+		} catch {
+			// restoreLinks handles per-link errors internally; swallow unexpected errors.
+		}
 	};
 
 	const handleChooseDb = async () => {
@@ -155,13 +199,19 @@
 			toastStore.error('Could not save song link');
 		});
 		autocompleteFor = null;
-		const result = await desktopHost.fetchCloudSongCharts<{
-			success: boolean;
-			data?: CloudChart[];
-		}>(song.id);
-		const charts = result.success ? (result.data ?? []) : [];
-		cloudChartsBySong[songIndex] = charts;
-		matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
+		try {
+			const result = await desktopHost.fetchCloudSongCharts<{
+				success: boolean;
+				data?: CloudChart[];
+			}>(song.id);
+			const charts = result.success ? (result.data ?? []) : [];
+			cloudChartsBySong[songIndex] = charts;
+			matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
+		} catch {
+			cloudChartsBySong[songIndex] = [];
+			matchesBySong[songIndex] = [];
+			toastStore.error('Could not fetch cloud charts for linked song');
+		}
 	};
 
 	const handleOverrideMatch = (songIndex: number, chartIndex: number, cloudChartId: string) => {

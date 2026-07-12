@@ -7,6 +7,7 @@ const host = vi.hoisted(() => ({
 	defaultDtxmaniaDbPath: vi.fn(),
 	selectDtxmaniaDb: vi.fn(),
 	parseDtxmaniaScores: vi.fn(),
+	fetchCloudSong: vi.fn(),
 	fetchCloudSongCharts: vi.fn(),
 	uploadScores: vi.fn(),
 	searchCloudSongs: vi.fn(),
@@ -75,6 +76,10 @@ beforeEach(() => {
 	host.searchCloudSongs.mockResolvedValue({
 		success: true,
 		data: [{ id: '42', title: 'Cloud Song', artist: 'Artist A', is_published: true }]
+	});
+	host.fetchCloudSong.mockResolvedValue({
+		success: true,
+		cloudSongData: { id: 42, title: 'Cloud Song', artist: 'Artist A', is_published: true }
 	});
 	host.fetchCloudSongCharts.mockResolvedValue({
 		success: true,
@@ -165,13 +170,18 @@ describe('Scores', () => {
 		);
 		unmount();
 
-		// Next mount: saved link is restored -> fetchCloudSongCharts called for '42'.
+		// Next mount: saved link is restored -> fetchCloudSong fetches the real
+		// title, then fetchCloudSongCharts is called for '42'.
 		host.readScoreSongLinks.mockResolvedValue({
 			['Played Song\u0000Artist A\u0000Rock']: '42'
 		});
+		host.fetchCloudSong.mockClear();
 		host.fetchCloudSongCharts.mockClear();
 		render(Scores);
+		await waitFor(() => expect(host.fetchCloudSong).toHaveBeenCalledWith('42'));
 		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+		// The restored link shows the real cloud title, not a "Simfile #42" placeholder.
+		expect(await screen.findByText('Linked: Cloud Song')).toBeInTheDocument();
 	});
 
 	it('paginates the parsed songs, rendering one page at a time', async () => {

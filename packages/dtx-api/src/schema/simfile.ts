@@ -254,7 +254,16 @@ const requireCatalogChart = async (
 
 const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
-		id: t.id({ resolve: (file) => String(file.id) }),
+		id: t.id({
+			resolve: (file) => {
+				if (file.id == null) {
+					throw new GraphQLError('DtxFile missing id', {
+						extensions: { code: 'INTERNAL' }
+					});
+				}
+				return String(file.id);
+			}
+		}),
 		myChartScore: t.field({
 			type: ChartScoreRef,
 			nullable: true,

@@ -145,6 +145,38 @@ export const getChartVisibility = async (
 	return row;
 };
 
+/**
+ * Batched sibling of getChartVisibility: resolves visibility for many chart
+ * IDs in a single D1 query (chunked at 100 IDs per D1 parameter limit) so
+ * uploadScores does not issue one round-trip per chart. Returns a map keyed
+ * by chart_id; IDs not found in the DB are absent from the map.
+ */
+export const getChartVisibilityBatch = async (
+	db: D1Database,
+	chartIds: number[]
+): Promise<Map<number, { user_id: string; is_published: 0 | 1 }>> => {
+	const result = new Map<number, { user_id: string; is_published: 0 | 1 }>();
+	const uniqueIds = [...new Set(chartIds)];
+	if (uniqueIds.length === 0) return result;
+	const CHUNK_SIZE = 100;
+	for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+		const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
+		const placeholders = chunk.map(() => '?').join(',');
+		const { results } = await db
+			.prepare(
+				`SELECT d.id AS chart_id, s.user_id AS user_id, s.is_published AS is_published
+				 FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id
+				 WHERE d.id IN (${placeholders})`
+			)
+			.bind(...chunk)
+			.all<{ chart_id: number; user_id: string; is_published: 0 | 1 }>();
+		for (const row of results ?? []) {
+			result.set(row.chart_id, { user_id: row.user_id, is_published: row.is_published });
+		}
+	}
+	return result;
+};
+
 export interface ListSimfilesOptions {
 	userId?: string;
 	publishedOnly?: boolean;
@@ -655,9 +687,10 @@ export const listUserScoredSimfiles = async (
 
 /**
  * Batched sibling of getUserChartScore: fetches the caller's chart_scores +
- * their scores for many charts at once. Two D1 queries total (one for the
- * aggregate rows, one for all their scores) regardless of chartIds length,
- * so a scored-simfiles page does not fan out into 2 queries per chart.
+ * their scores for many charts at once. Two D1 queries per 99-chart chunk
+ * (one for the aggregate rows, one for all their scores), so a scored-simfiles
+ * page does not fan out into 2 queries per chart. D1 limits each statement to
+ * 100 bound parameters; the userId bind leaves 99 slots per chunk.
  * Returned map is keyed by chart_id; scores are best-first then display_order.
  */
 export const listUserChartScores = async (

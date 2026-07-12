@@ -1,5 +1,5 @@
 import {
-	getChartVisibility,
+	getChartVisibilityBatch,
 	upsertChartScoreAndReplaceScores,
 	type ScoreRow,
 	type ChartScoreRow,
@@ -193,6 +193,15 @@ builder.mutationField('uploadScores', (t) =>
 				};
 			}
 
+			// Pre-fetch visibility for all charts with valid numeric IDs in a
+			// single batched D1 query, so the loop below does not issue one
+			// round-trip per chart. Charts that fail later validation are
+			// harmless extra rows in the batch.
+			const validNumericIds = input.charts
+				.map((c) => Number(c.chartId))
+				.filter((id) => Number.isSafeInteger(id) && id > 0);
+			const visibilityMap = await getChartVisibilityBatch(ctx.db, validNumericIds);
+
 			for (const chart of input.charts) {
 				const numericId = Number(chart.chartId);
 				if (!Number.isSafeInteger(numericId) || numericId <= 0) {
@@ -229,7 +238,7 @@ builder.mutationField('uploadScores', (t) =>
 					continue;
 				}
 
-				const visibility = await getChartVisibility(ctx.db, numericId);
+				const visibility = visibilityMap.get(numericId);
 				const visible =
 					visibility != null &&
 					(visibility.is_published === 1 || visibility.user_id === ctx.user!.id);

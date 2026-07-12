@@ -14,7 +14,7 @@ vi.mock('@dtx/common/server', async () => {
 		...actual,
 		getSimfile: vi.fn(),
 		getSimfileOwner: vi.fn(),
-		getChartVisibility: vi.fn(),
+		getChartVisibilityBatch: vi.fn(),
 		getUserChartScore: vi.fn(),
 		upsertChartScoreAndReplaceScores: vi.fn(),
 		listUserScoredSimfiles: vi.fn(),
@@ -31,9 +31,14 @@ const mockedGetUserChartScore = vi.mocked(getUserChartScore);
 const { listUserChartScores } = await import('@dtx/common/server');
 const mockedListChartScores = vi.mocked(listUserChartScores);
 
-const { getChartVisibility, upsertChartScoreAndReplaceScores } = await import('@dtx/common/server');
-const mockedVisibility = vi.mocked(getChartVisibility);
+const { getChartVisibilityBatch, upsertChartScoreAndReplaceScores } =
+	await import('@dtx/common/server');
+const mockedVisibility = vi.mocked(getChartVisibilityBatch);
 const mockedUpsertReplace = vi.mocked(upsertChartScoreAndReplaceScores);
+
+/** Helper: build a visibility Map that marks all given chart IDs as published. */
+const visibleMap = (ids: number[]): Map<number, { user_id: string; is_published: 0 | 1 }> =>
+	new Map(ids.map((id) => [id, { user_id: 'owner-1', is_published: 1 as 0 | 1 }]));
 
 const makeEnv = (): Env => ({
 	DB: {} as Env['DB'],
@@ -229,7 +234,7 @@ describe('uploadScores', () => {
 	});
 
 	it('upserts a visible chart and replaces its scores atomically', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
@@ -299,7 +304,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart that is not visible to the caller', async () => {
-		mockedVisibility.mockResolvedValue(null);
+		mockedVisibility.mockResolvedValue(new Map());
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -317,7 +322,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with more than 5 recent scores', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const recent = Array.from({ length: 6 }, (_v, i) => ({
 			isBest: false,
@@ -341,7 +346,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with more than one best score', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -369,7 +374,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart whose best score carries a displayOrder', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -402,7 +407,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a displayOrder outside the 1..5 range', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -429,7 +434,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a duplicate displayOrder', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -462,7 +467,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with an achievementRate outside 0..100', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -509,7 +514,9 @@ describe('uploadScores', () => {
 		};
 		expect(payload.skipped[0].chartId).toBe('not-a-number');
 		expect(payload.skipped[0].reason).toBe('invalid chart id');
-		expect(mockedVisibility).not.toHaveBeenCalled();
+		// Visibility batch is called with an empty array (no valid IDs), which
+		// returns an empty map — no chart is looked up.
+		expect(mockedVisibility).toHaveBeenCalledWith(ctx.db, []);
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
@@ -536,7 +543,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with too many score rows', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const scores = Array.from({ length: 11 }, () => ({
 			isBest: false,
@@ -558,7 +565,7 @@ describe('uploadScores', () => {
 	});
 
 	it('isolates per-chart write failures: a failed chart is skipped, prior commits survive', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		mockedUpsertReplace
 			.mockResolvedValueOnce(chartScoreRow)
 			.mockRejectedValueOnce(new Error('D1 batch failed'));
@@ -596,7 +603,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a negative playCount', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -621,7 +628,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a negative clearCount', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -646,7 +653,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart where clearCount exceeds playCount', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -671,7 +678,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a negative judgment count', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -704,7 +711,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a negative score', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -736,7 +743,7 @@ describe('uploadScores', () => {
 	});
 
 	it('skips a chart with a negative maxCombo', async () => {
-		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,

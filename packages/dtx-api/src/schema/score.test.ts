@@ -512,6 +512,88 @@ describe('uploadScores', () => {
 		expect(mockedVisibility).not.toHaveBeenCalled();
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
+
+	it('rejects a payload exceeding the chart cap without writing anything', async () => {
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const charts = Array.from({ length: 101 }, (_v, i) => ({
+			chartId: String(i + 1),
+			playCount: 1,
+			clearCount: 1,
+			scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+		}));
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: { input: { charts } }
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.updatedCharts).toBe(0);
+		expect(payload.skipped[0].chartId).toBe('*');
+		expect(payload.skipped[0].reason).toContain('too many charts');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with too many score rows', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const scores = Array.from({ length: 11 }, () => ({
+			isBest: false,
+			fullCombo: false,
+			cleared: false,
+			displayOrder: 1
+		}));
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: { charts: [{ chartId: '10', playCount: 11, clearCount: 0, scores }] }
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toContain('too many scores');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('isolates per-chart write failures: a failed chart is skipped, prior commits survive', async () => {
+		mockedVisibility.mockResolvedValue({ user_id: 'owner-1', is_published: 1 });
+		mockedUpsertReplace
+			.mockResolvedValueOnce(chartScoreRow)
+			.mockRejectedValueOnce(new Error('D1 batch failed'));
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						},
+						{
+							chartId: '11',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 950, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.insertedScores).toBe(1);
+		expect(payload.skipped).toEqual([{ chartId: '11', reason: 'write failed' }]);
+		expect(mockedUpsertReplace).toHaveBeenCalledTimes(2);
+	});
 });
 
 const { listUserScoredSimfiles } = await import('@dtx/common/server');

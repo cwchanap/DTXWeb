@@ -13,7 +13,7 @@
 	let currentPage = $state(1);
 	let totalCount = $state(0);
 	let totalPages = $state(1);
-	let loading = $state(false);
+	let loading = $state(true);
 	let loadError = $state(false);
 	// Monotonically increasing request ID: only the latest page load's response
 	// is applied, so rapid page changes can't overwrite the current page or hide

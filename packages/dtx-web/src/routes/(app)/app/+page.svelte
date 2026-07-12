@@ -14,6 +14,11 @@
 	// Deep-link schemes a bundled desktop app may register for the callback.
 	const ALLOWED_DESKTOP_CALLBACK_SCHEMES = ['dtx:', 'dtx-dev:'];
 
+	// Loopback hostnames the Rust auth callback server binds on (auth.rs
+	// matches the same set). `localhost` is included for browser-resolved
+	// loopback, alongside the explicit IPv4/IPv6 addresses.
+	const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '::1'];
+
 	// The magic link carries an auth token, so the redirect target must be
 	// strictly validated: either a loopback HTTP callback (a `tauri dev`
 	// instance) or one of our own deep-link schemes. Anything else is rejected
@@ -30,8 +35,11 @@
 			return parsed.hostname === 'auth-callback' ? raw : null;
 		}
 		if (parsed.protocol === 'http:') {
-			const isLoopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
-			if (isLoopback && parsed.pathname === '/auth-callback') return raw;
+			if (
+				LOOPBACK_HOSTNAMES.includes(parsed.hostname) &&
+				parsed.pathname === '/auth-callback'
+			)
+				return raw;
 		}
 		return null;
 	};
@@ -83,8 +91,6 @@
 			if (!magicLinkUrl) {
 				throw new Error('No magic link received');
 			}
-
-			console.log('Generated magic link for desktop authentication');
 
 			// Redirect to desktop app with magic link
 			const redirectUrl = buildDesktopAuthCallbackUrl(magicLinkUrl);

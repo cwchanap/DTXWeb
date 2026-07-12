@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS chart_scores (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     FOREIGN KEY (chart_id) REFERENCES dtx_files(id) ON DELETE CASCADE
 );
-CREATE UNIQUE INDEX idx_chart_scores_user_chart ON chart_scores(user_id, chart_id);
-CREATE INDEX idx_chart_scores_chart ON chart_scores(chart_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chart_scores_user_chart ON chart_scores(user_id, chart_id);
+CREATE INDEX IF NOT EXISTS idx_chart_scores_chart ON chart_scores(chart_id);
 
 CREATE TABLE IF NOT EXISTS scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,5 +32,12 @@ CREATE TABLE IF NOT EXISTS scores (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     FOREIGN KEY (chart_score_id) REFERENCES chart_scores(id) ON DELETE CASCADE
 );
-CREATE INDEX idx_scores_chart_score ON scores(chart_score_id);
-CREATE UNIQUE INDEX idx_scores_one_best ON scores(chart_score_id) WHERE is_best = 1;
+CREATE INDEX IF NOT EXISTS idx_scores_chart_score ON scores(chart_score_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_one_best ON scores(chart_score_id) WHERE is_best = 1;
+-- Enforce display_order uniqueness at the DB level: each chart_score may have
+-- at most one score per display_order value. Only non-null display_order rows
+-- are constrained (best scores carry NULL and are excluded). Mirrors the app-
+-- layer validation in validateChartScores so a race or bypassed validator can-
+-- not corrupt the recent-scores ordering.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_display_order
+    ON scores(chart_score_id, display_order) WHERE display_order IS NOT NULL;

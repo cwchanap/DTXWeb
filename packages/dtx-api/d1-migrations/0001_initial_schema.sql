@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS simfiles (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE INDEX idx_simfiles_user_id ON simfiles(user_id);
-CREATE INDEX idx_simfiles_is_published ON simfiles(is_published);
-CREATE INDEX idx_simfiles_publish_date ON simfiles(publish_date);
+CREATE INDEX IF NOT EXISTS idx_simfiles_user_id ON simfiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_simfiles_is_published ON simfiles(is_published);
+CREATE INDEX IF NOT EXISTS idx_simfiles_publish_date ON simfiles(publish_date);
 
 CREATE TABLE IF NOT EXISTS dtx_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS dtx_files (
     FOREIGN KEY (simfile_id) REFERENCES simfiles(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_dtx_files_simfile_id ON dtx_files(simfile_id);
+CREATE INDEX IF NOT EXISTS idx_dtx_files_simfile_id ON dtx_files(simfile_id);
 
 CREATE TABLE IF NOT EXISTS user_profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

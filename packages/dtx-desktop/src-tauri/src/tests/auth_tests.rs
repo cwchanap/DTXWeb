@@ -490,6 +490,12 @@ fn is_auth_callback_url_accepts_dtx_scheme_with_auth_callback_host() {
 }
 
 #[test]
+fn is_auth_callback_url_accepts_dtx_dev_scheme_with_auth_callback_host() {
+    let url = Url::parse("dtx-dev://auth-callback?magic_link=x").unwrap();
+    assert!(is_auth_callback_url(&url));
+}
+
+#[test]
 fn is_auth_callback_url_rejects_dtx_scheme_with_other_host() {
     let url = Url::parse("dtx://other?magic_link=x").unwrap();
     assert!(!is_auth_callback_url(&url));

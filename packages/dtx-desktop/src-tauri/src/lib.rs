@@ -33,10 +33,13 @@ fn queue_deep_link_handler(app: &AppHandle, raw_url: String) {
     let _ = crate::auth::queue_deep_link(app, &raw_url);
 }
 
-/// Filters a second-instance launch's argv for `dtx://` deep-link URLs. Any
-/// non-`dtx://` argument (executable path, file-open arguments, flags) is
-/// ignored. Extracted from the single-instance handler closure so the filter
-/// can be unit-tested without a real second-launch event.
+/// Filters a second-instance launch's argv for deep-link URLs. Both the
+/// production `dtx://` and dev `dtx-dev://` schemes are accepted (the dev
+/// build registers `dtx-dev` in `tauri.dev.conf.json` to avoid colliding
+/// with an installed production app). Any non-matching argument (executable
+/// path, file-open arguments, flags) is ignored. Extracted from the
+/// single-instance handler closure so the filter can be unit-tested without
+/// a real second-launch event.
 fn extract_deep_link_args<I, S>(argv: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -45,10 +48,14 @@ where
     argv.into_iter()
         .map(|arg| arg.as_ref().to_string())
         // Per RFC 3986 the URI scheme is case-insensitive, so an OS-delivered
-        // `DTX://` launch argument is just as valid as `dtx://`. Compare against
-        // a lowercase copy while keeping the original casing in the captured
-        // URL (the auth handler normalizes the scheme itself).
-        .filter(|arg| arg.to_ascii_lowercase().starts_with("dtx://"))
+        // `DTX://` or `DTX-DEV://` launch argument is just as valid as the
+        // lowercase form. Compare against a lowercase copy while keeping the
+        // original casing in the captured URL (the auth handler normalizes
+        // the scheme itself).
+        .filter(|arg| {
+            let lower = arg.to_ascii_lowercase();
+            lower.starts_with("dtx://") || lower.starts_with("dtx-dev://")
+        })
         .collect()
 }
 

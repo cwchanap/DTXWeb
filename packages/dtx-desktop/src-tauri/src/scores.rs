@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags};
 
 use crate::error::{DesktopError, Result};
 
@@ -152,7 +152,6 @@ pub fn default_dtxmania_db_path() -> Option<String> {
 }
 
 struct DrumsScoreRow {
-    score_id: i64,
     best_score: i64,
     best_achievement_rate: f64,
     full_combo: i64,
@@ -165,35 +164,6 @@ struct DrumsScoreRow {
     best_poor: i64,
     best_miss: i64,
     last_played_at: Option<String>,
-}
-
-fn read_drums_score(conn: &Connection, chart_id: i64) -> Result<Option<DrumsScoreRow>> {
-    let row = conn
-        .query_row(
-            "SELECT Id, BestScore, BestAchievementRate, FullCombo, PlayCount, ClearCount, MaxCombo, \
-             BestPerfect, BestGreat, BestGood, BestPoor, BestMiss, LastPlayedAt \
-             FROM SongScores WHERE ChartId = ?1 AND Instrument = 0",
-            [chart_id],
-            |row| {
-                Ok(DrumsScoreRow {
-                    score_id: row.get(0)?,
-                    best_score: row.get(1)?,
-                    best_achievement_rate: row.get(2)?,
-                    full_combo: row.get(3)?,
-                    play_count: row.get(4)?,
-                    clear_count: row.get(5)?,
-                    max_combo: row.get(6)?,
-                    best_perfect: row.get(7)?,
-                    best_great: row.get(8)?,
-                    best_good: row.get(9)?,
-                    best_poor: row.get(10)?,
-                    best_miss: row.get(11)?,
-                    last_played_at: row.get(12)?,
-                })
-            },
-        )
-        .optional()?;
-    Ok(row)
 }
 
 fn build_best(score: &DrumsScoreRow) -> Option<ScorePayload> {
@@ -218,119 +188,184 @@ fn build_best(score: &DrumsScoreRow) -> Option<ScorePayload> {
     })
 }
 
-fn read_recent(conn: &Connection, score_id: i64) -> Result<Vec<ScorePayload>> {
-    let mut stmt = conn.prepare(
-        "SELECT PerformedAt, HistoryLine, DisplayOrder FROM PerformanceHistory \
-         WHERE SongScoreId = ?1 ORDER BY DisplayOrder LIMIT 5",
-    )?;
-    let rows = stmt
-        .query_map([score_id], |row| {
-            let performed_at: String = row.get(0)?;
-            let history_line: String = row.get(1)?;
-            let display_order: i64 = row.get(2)?;
-            Ok((performed_at, history_line, display_order))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(performed_at, history_line, display_order)| {
-            let parsed = parse_history_line(&history_line);
-            ScorePayload {
-                is_best: false,
-                score: None,
-                achievement_rate: parsed.achievement_rate,
-                rank_label: parsed.rank_label,
-                full_combo: false,
-                cleared: parsed.cleared.unwrap_or(false),
-                max_combo: None,
-                perfect: None,
-                great: None,
-                good: None,
-                poor: None,
-                miss: None,
-                performed_at: Some(performed_at),
-                display_order: Some(display_order),
-            }
-        })
-        .collect())
+/// One row from the joined SELECT. The song/chart/score columns repeat across
+/// rows for the same chart; only the history columns (`hist_*`) vary (and are
+/// `None` when the chart has no PerformanceHistory rows, via LEFT JOIN).
+struct JoinedRow {
+    song_id: i64,
+    title: String,
+    artist: String,
+    genre: String,
+    chart_id: i64,
+    difficulty_level: i64,
+    difficulty_label: String,
+    drum_level: i64,
+    file_hash: String,
+    score: DrumsScoreRow,
+    hist_performed_at: Option<String>,
+    hist_history_line: Option<String>,
+    hist_display_order: Option<i64>,
 }
 
-fn read_song_charts(conn: &Connection, song_id: i64) -> Result<Vec<DtxmaniaChart>> {
-    let mut stmt = conn.prepare(
-        "SELECT Id, DifficultyLevel, DifficultyLabel, DrumLevel, FileHash \
-         FROM SongCharts WHERE SongId = ?1 ORDER BY Id",
-    )?;
-    let chart_rows = stmt
-        .query_map([song_id], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                row.get::<_, i64>(3)?,
-                row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-            ))
+const JOINED_QUERY: &str = "\
+SELECT s.Id, s.Title, s.Artist, s.Genre, \
+       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.FileHash, \
+       ss.BestScore, ss.BestAchievementRate, ss.FullCombo, ss.PlayCount, \
+       ss.ClearCount, ss.MaxCombo, ss.BestPerfect, ss.BestGreat, ss.BestGood, \
+       ss.BestPoor, ss.BestMiss, ss.LastPlayedAt, \
+       ph.PerformedAt, ph.HistoryLine, ph.DisplayOrder \
+FROM Songs s \
+JOIN SongCharts c ON c.SongId = s.Id \
+JOIN SongScores ss ON ss.ChartId = c.Id AND ss.Instrument = 0 \
+LEFT JOIN PerformanceHistory ph ON ph.SongScoreId = ss.Id \
+ORDER BY s.Id, c.Id, ph.DisplayOrder";
+
+fn read_joined_rows(conn: &Connection) -> Result<Vec<JoinedRow>> {
+    let mut stmt = conn.prepare(JOINED_QUERY)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(JoinedRow {
+                song_id: row.get(0)?,
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                artist: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                genre: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                chart_id: row.get(4)?,
+                difficulty_level: row.get(5)?,
+                difficulty_label: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                drum_level: row.get(7)?,
+                file_hash: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+                score: DrumsScoreRow {
+                    best_score: row.get(9)?,
+                    best_achievement_rate: row.get(10)?,
+                    full_combo: row.get(11)?,
+                    play_count: row.get(12)?,
+                    clear_count: row.get(13)?,
+                    max_combo: row.get(14)?,
+                    best_perfect: row.get(15)?,
+                    best_great: row.get(16)?,
+                    best_good: row.get(17)?,
+                    best_poor: row.get(18)?,
+                    best_miss: row.get(19)?,
+                    last_played_at: row.get(20)?,
+                },
+                hist_performed_at: row.get(21)?,
+                hist_history_line: row.get(22)?,
+                hist_display_order: row.get(23)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
 
-    let mut charts = Vec::new();
-    for (chart_id, difficulty_level, difficulty_label, drum_level, file_hash) in chart_rows {
-        let Some(score) = read_drums_score(conn, chart_id)? else {
-            continue; // no drums score row -> nothing to upload for this chart
-        };
-        let recent = read_recent(conn, score.score_id)?;
-        let best = build_best(&score);
-        charts.push(DtxmaniaChart {
-            difficulty_level,
-            difficulty_label,
-            drum_level,
-            file_hash,
-            aggregate: ChartAggregate {
-                play_count: score.play_count,
-                clear_count: score.clear_count,
-            },
-            best,
-            recent,
-        });
+/// Groups the flat joined rows into the nested `DtxmaniaSong` → `DtxmaniaChart`
+/// → best + recent structure. Rows are ordered by `s.Id, c.Id, ph.DisplayOrder`,
+/// so a sequential walk builds each song/chart in order. Recent scores are
+/// capped at 5 per chart (matching the original `LIMIT 5`).
+fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
+    let mut songs: Vec<DtxmaniaSong> = Vec::new();
+    let mut cur_song_id: Option<i64> = None;
+    let mut cur_chart_id: Option<i64> = None;
+    let mut cur_chart: Option<DtxmaniaChart> = None;
+    let mut recent_count: usize = 0;
+
+    for row in rows {
+        // Song boundary: push the in-progress chart (if any) and song, reset.
+        if cur_song_id != Some(row.song_id) {
+            if let Some(chart) = cur_chart.take() {
+                if let Some(song) = songs.last_mut() {
+                    song.charts.push(chart);
+                }
+            }
+            cur_chart_id = None;
+            recent_count = 0;
+            cur_song_id = Some(row.song_id);
+            songs.push(DtxmaniaSong {
+                title: row.title.clone(),
+                artist: row.artist.clone(),
+                genre: row.genre.clone(),
+                charts: Vec::new(),
+            });
+        }
+
+        // Chart boundary: push the in-progress chart, start a new one.
+        if cur_chart_id != Some(row.chart_id) {
+            if let Some(chart) = cur_chart.take() {
+                if let Some(song) = songs.last_mut() {
+                    song.charts.push(chart);
+                }
+            }
+            cur_chart_id = Some(row.chart_id);
+            recent_count = 0;
+            let best = build_best(&row.score);
+            cur_chart = Some(DtxmaniaChart {
+                difficulty_level: row.difficulty_level,
+                difficulty_label: row.difficulty_label.clone(),
+                drum_level: row.drum_level,
+                file_hash: row.file_hash.clone(),
+                aggregate: ChartAggregate {
+                    play_count: row.score.play_count,
+                    clear_count: row.score.clear_count,
+                },
+                best,
+                recent: Vec::new(),
+            });
+        }
+
+        // History row (if present): append to recent, capped at 5.
+        if let (Some(performed_at), Some(history_line), Some(display_order)) = (
+            row.hist_performed_at,
+            row.hist_history_line,
+            row.hist_display_order,
+        ) {
+            if recent_count < 5 {
+                let parsed = parse_history_line(&history_line);
+                if let Some(chart) = cur_chart.as_mut() {
+                    chart.recent.push(ScorePayload {
+                        is_best: false,
+                        score: None,
+                        achievement_rate: parsed.achievement_rate,
+                        rank_label: parsed.rank_label,
+                        full_combo: false,
+                        cleared: parsed.cleared.unwrap_or(false),
+                        max_combo: None,
+                        perfect: None,
+                        great: None,
+                        good: None,
+                        poor: None,
+                        miss: None,
+                        performed_at: Some(performed_at),
+                        display_order: Some(display_order),
+                    });
+                }
+                recent_count += 1;
+            }
+        }
     }
-    Ok(charts)
+
+    // Push the final in-progress chart into the last song.
+    if let Some(chart) = cur_chart {
+        if let Some(song) = songs.last_mut() {
+            song.charts.push(chart);
+        }
+    }
+
+    songs
 }
 
 pub(crate) fn parse_dtxmania_scores_impl(db_path: &str) -> Result<Vec<DtxmaniaSong>> {
     let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| DesktopError::Message(format!("Failed to open songs.db: {error}")))?;
-
-    let mut stmt = conn.prepare("SELECT Id, Title, Artist, Genre FROM Songs ORDER BY Id")?;
-    let song_rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    let mut songs = Vec::new();
-    for (song_id, title, artist, genre) in song_rows {
-        let charts = read_song_charts(&conn, song_id)?;
-        if charts.is_empty() {
-            continue; // no drums charts -> nothing to show/upload
-        }
-        songs.push(DtxmaniaSong {
-            title,
-            artist,
-            genre,
-            charts,
-        });
-    }
-    Ok(songs)
+    let rows = read_joined_rows(&conn)?;
+    Ok(group_joined_rows(rows))
 }
 
 #[tauri::command]
-pub fn parse_dtxmania_scores(db_path: String) -> Result<Vec<DtxmaniaSong>> {
-    parse_dtxmania_scores_impl(&db_path)
+pub async fn parse_dtxmania_scores(db_path: String) -> Result<Vec<DtxmaniaSong>> {
+    // Offload the sync SQLite work to a blocking thread so the Tauri async
+    // runtime (and the webview UI) is not frozen while parsing a large library.
+    tokio::task::spawn_blocking(move || parse_dtxmania_scores_impl(&db_path))
+        .await
+        .map_err(|error| DesktopError::Message(format!("Parse task failed: {error}")))?
 }
 
 #[cfg(test)]

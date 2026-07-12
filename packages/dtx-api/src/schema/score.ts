@@ -72,6 +72,16 @@ const UploadScoresInput = builder.inputType('UploadScoresInput', {
 	})
 });
 
+/// Maximum number of charts accepted in a single uploadScores mutation. Each
+/// chart triggers a D1 batch (upsert + delete + inserts), so an unbounded
+/// charts[] could exhaust Worker CPU/D1 budget. 100 charts × ~8 statements
+/// per batch stays well within the Worker CPU time limit.
+const MAX_UPLOAD_CHARTS = 100;
+/// Maximum number of score rows per chart. The invariant validator already
+/// rejects >5 recent + >1 best, but this cap short-circuits before validation
+/// to prevent a pathologically large scores[] from consuming CPU.
+const MAX_SCORES_PER_CHART = 10;
+
 const SkippedChartRef = builder
 	.objectRef<{ chartId: string; reason: string }>('SkippedChart')
 	.implement({
@@ -124,7 +134,12 @@ const validateChartScores = (
 	}
 	for (const s of scores) {
 		if (s.score != null && !Number.isFinite(s.score)) return 'non-finite score';
-		if (s.achievementRate != null && (s.achievementRate < 0 || s.achievementRate > 100)) {
+		if (
+			s.achievementRate != null &&
+			(!Number.isFinite(s.achievementRate) ||
+				s.achievementRate < 0 ||
+				s.achievementRate > 100)
+		) {
 			return 'achievementRate out of range';
 		}
 	}
@@ -141,10 +156,31 @@ builder.mutationField('uploadScores', (t) =>
 			let updatedCharts = 0;
 			let insertedScores = 0;
 
+			if (input.charts.length > MAX_UPLOAD_CHARTS) {
+				return {
+					updatedCharts: 0,
+					insertedScores: 0,
+					skipped: [
+						{
+							chartId: '*',
+							reason: `too many charts (max ${MAX_UPLOAD_CHARTS})`
+						}
+					]
+				};
+			}
+
 			for (const chart of input.charts) {
 				const numericId = Number(chart.chartId);
 				if (!Number.isSafeInteger(numericId) || numericId <= 0) {
 					skipped.push({ chartId: String(chart.chartId), reason: 'invalid chart id' });
+					continue;
+				}
+
+				if (chart.scores.length > MAX_SCORES_PER_CHART) {
+					skipped.push({
+						chartId: String(chart.chartId),
+						reason: `too many scores (max ${MAX_SCORES_PER_CHART})`
+					});
 					continue;
 				}
 
@@ -189,15 +225,22 @@ builder.mutationField('uploadScores', (t) =>
 					performed_at: s.performedAt ?? null,
 					display_order: s.displayOrder ?? null
 				}));
-				await upsertChartScoreAndReplaceScores(ctx.db, {
-					chartId: numericId,
-					userId: ctx.user!.id,
-					playCount: chart.playCount,
-					clearCount: chart.clearCount,
-					scores: inserts
-				});
-				updatedCharts += 1;
-				insertedScores += inserts.length;
+				// Per-chart write isolation: a D1 failure on one chart must not
+				// abort the whole mutation and lose already-committed results for
+				// prior charts. Record the failure as skipped and continue.
+				try {
+					await upsertChartScoreAndReplaceScores(ctx.db, {
+						chartId: numericId,
+						userId: ctx.user!.id,
+						playCount: chart.playCount,
+						clearCount: chart.clearCount,
+						scores: inserts
+					});
+					updatedCharts += 1;
+					insertedScores += inserts.length;
+				} catch {
+					skipped.push({ chartId: String(chart.chartId), reason: 'write failed' });
+				}
 			}
 
 			return { updatedCharts, insertedScores, skipped };

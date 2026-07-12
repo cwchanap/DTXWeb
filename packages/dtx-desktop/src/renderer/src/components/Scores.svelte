@@ -82,7 +82,11 @@
 	const formatScore = (value: number | null): string =>
 		value === null ? '—' : value.toLocaleString('en-US');
 
-	const songKey = (song: DtxmaniaSong): string => `${song.title}${song.artist}`;
+	// Key includes genre to reduce collision risk for duplicate DTXMania
+	// titles with the same artist. The DTXMania Songs table has a Genre column
+	// that further disambiguates entries.
+	const songKey = (song: DtxmaniaSong): string =>
+		`${song.title}\u0000${song.artist}\u0000${song.genre}`;
 	let savedLinks = $state<Record<string, string>>({});
 
 	// Per-song collapse state, keyed by song identity so it survives paging.
@@ -283,7 +287,7 @@
 		<p class="text-dim text-sm">No drum scores found in this database.</p>
 	{:else}
 		<div class="flex flex-col gap-4">
-			{#each pagedSongs as song, i (song.title + song.artist + (pageStart + i))}
+			{#each pagedSongs as song, i (songKey(song) + (pageStart + i))}
 				{@const songIndex = pageStart + i}
 				<div class="border-hairline bg-surface-1 rounded-xl border p-4">
 					<div class="mb-2 flex items-center gap-3">

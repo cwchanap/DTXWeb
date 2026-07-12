@@ -169,22 +169,28 @@ fn parse_missing_db_errors() {
     assert!(parse_dtxmania_scores_impl(missing.to_str().unwrap()).is_err());
 }
 
-#[test]
-fn parse_dtxmania_scores_command_delegates_to_impl() {
+#[tokio::test]
+async fn parse_dtxmania_scores_command_delegates_to_impl() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("songs.db");
     seed_db(&db);
 
-    let songs = parse_dtxmania_scores(db.to_string_lossy().into_owned()).expect("parse");
+    let songs = parse_dtxmania_scores(db.to_string_lossy().into_owned())
+        .await
+        .expect("parse");
     assert_eq!(songs.len(), 2);
     assert_eq!(songs[0].title, "Played Song");
 }
 
-#[test]
-fn parse_dtxmania_scores_command_errors_for_missing_db() {
+#[tokio::test]
+async fn parse_dtxmania_scores_command_errors_for_missing_db() {
     let dir = tempdir().expect("tempdir");
     let missing = dir.path().join("nope.db");
-    assert!(parse_dtxmania_scores(missing.to_string_lossy().into_owned()).is_err());
+    assert!(
+        parse_dtxmania_scores(missing.to_string_lossy().into_owned())
+            .await
+            .is_err()
+    );
 }
 
 /// A chart with no drums score row at all is skipped (the `continue` branch

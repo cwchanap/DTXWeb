@@ -160,13 +160,15 @@ describe('Scores', () => {
 
 		await waitFor(() =>
 			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
-				['Played SongArtist A']: '42'
+				['Played Song\u0000Artist A\u0000Rock']: '42'
 			})
 		);
 		unmount();
 
 		// Next mount: saved link is restored -> fetchCloudSongCharts called for '42'.
-		host.readScoreSongLinks.mockResolvedValue({ ['Played SongArtist A']: '42' });
+		host.readScoreSongLinks.mockResolvedValue({
+			['Played Song\u0000Artist A\u0000Rock']: '42'
+		});
 		host.fetchCloudSongCharts.mockClear();
 		render(Scores);
 		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));

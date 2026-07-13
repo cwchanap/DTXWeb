@@ -70,24 +70,22 @@ pub struct DtxmaniaSong {
 /// Rank label for the best row, derived from the achievement rate (0–100).
 /// Recent rows keep the RANK token parsed from the history line instead.
 ///
+/// Thresholds match DTXManiaCX: SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 62, C ≥ 50, D < 50.
+///
 /// Called by `build_best`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn derive_rank_label(rate: f64) -> &'static str {
-    if rate >= 100.0 {
+    if rate >= 95.0 {
         "SS"
-    } else if rate >= 95.0 {
-        "S"
-    } else if rate >= 90.0 {
-        "A"
     } else if rate >= 80.0 {
+        "S"
+    } else if rate >= 73.0 {
+        "A"
+    } else if rate >= 62.0 {
         "B"
-    } else if rate >= 70.0 {
-        "C"
-    } else if rate >= 60.0 {
-        "D"
     } else if rate >= 50.0 {
-        "E"
+        "C"
     } else {
-        "F"
+        "D"
     }
 }
 

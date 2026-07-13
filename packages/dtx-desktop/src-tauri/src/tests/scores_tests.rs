@@ -3,17 +3,19 @@ use tempfile::tempdir;
 
 #[test]
 fn derive_rank_label_covers_all_bands() {
+    // DTXManiaCX thresholds: SS >= 95, S >= 80, A >= 73, B >= 62, C >= 50, D < 50.
     assert_eq!(derive_rank_label(100.0), "SS");
-    assert_eq!(derive_rank_label(99.99), "S");
-    assert_eq!(derive_rank_label(95.0), "S");
-    assert_eq!(derive_rank_label(94.99), "A");
-    assert_eq!(derive_rank_label(90.0), "A");
-    assert_eq!(derive_rank_label(80.0), "B");
-    assert_eq!(derive_rank_label(70.0), "C");
-    assert_eq!(derive_rank_label(60.0), "D");
-    assert_eq!(derive_rank_label(50.0), "E");
-    assert_eq!(derive_rank_label(49.99), "F");
-    assert_eq!(derive_rank_label(0.0), "F");
+    assert_eq!(derive_rank_label(95.0), "SS");
+    assert_eq!(derive_rank_label(94.99), "S");
+    assert_eq!(derive_rank_label(80.0), "S");
+    assert_eq!(derive_rank_label(79.99), "A");
+    assert_eq!(derive_rank_label(73.0), "A");
+    assert_eq!(derive_rank_label(72.99), "B");
+    assert_eq!(derive_rank_label(62.0), "B");
+    assert_eq!(derive_rank_label(61.99), "C");
+    assert_eq!(derive_rank_label(50.0), "C");
+    assert_eq!(derive_rank_label(49.99), "D");
+    assert_eq!(derive_rank_label(0.0), "D");
 }
 
 #[test]
@@ -132,7 +134,7 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     let best = chart.best.as_ref().expect("best present");
     assert!(best.is_best);
     assert_eq!(best.score, Some(950000));
-    assert_eq!(best.rank_label.as_deref(), Some("A")); // 91.3 -> A
+    assert_eq!(best.rank_label.as_deref(), Some("S")); // 91.3 -> S (DTXManiaCX: >= 80)
     assert!(best.cleared); // clear_count > 0
     assert!(best.full_combo);
     assert_eq!(best.max_combo, Some(800));

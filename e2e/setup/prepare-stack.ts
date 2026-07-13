@@ -15,14 +15,16 @@ const pkg = 'dtx-api';
 const pkgDir = join(repoRoot, 'packages', pkg);
 const persist = '.wrangler/state';
 const absPersist = join(pkgDir, persist);
-const migration = join(repoRoot, 'packages/dtx-api/d1-migrations/0001_initial_schema.sql');
+const migrations = ['0001_initial_schema.sql', '0002_scores.sql'].map((name) =>
+	join(repoRoot, 'packages/dtx-api/d1-migrations', name)
+);
 const seedFile = join(here, 'seed.sql');
 const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
 
 // Pre-check: all required files must exist before we start, otherwise failures
 // surface as opaque Playwright "webServer timed out after 180s" errors.
 for (const [label, path] of [
-	['D1 migration', migration],
+	...migrations.map((m, i) => [`D1 migration ${i + 1}`, m] as const),
 	['seed SQL', seedFile],
 	['R2 fixture (test-sample.dtx)', fixture]
 ] as const) {
@@ -60,19 +62,22 @@ if (!UUID_RE.test(ownerId)) {
 	);
 }
 
-// 1. Fresh state, then apply schema (migration CREATE INDEX lacks IF NOT EXISTS,
-//    so we wipe + re-migrate for a deterministic seed).
+// 1. Fresh state, then apply all migrations in order (CREATE INDEX in some
+//    migrations lacks IF NOT EXISTS, so we wipe + re-migrate for a deterministic
+//    seed).
 rmSync(absPersist, { recursive: true, force: true });
-wrangler('apply D1 migration', [
-	'd1',
-	'execute',
-	D1_NAME,
-	'--local',
-	'--persist-to',
-	persist,
-	'--file',
-	migration
-]);
+migrations.forEach((migration, i) => {
+	wrangler(`apply D1 migration ${i + 1}/${migrations.length}`, [
+		'd1',
+		'execute',
+		D1_NAME,
+		'--local',
+		'--persist-to',
+		persist,
+		'--file',
+		migration
+	]);
+});
 
 // 2. Seed rows (idempotent: the seed deletes ids 1001/1002 first).
 const seedSql = readFileSync(seedFile, 'utf8').replaceAll('__TEST_USER_ID__', ownerId);

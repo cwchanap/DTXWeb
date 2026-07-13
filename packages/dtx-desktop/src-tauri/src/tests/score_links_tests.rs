@@ -10,6 +10,31 @@ fn home_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// RAII guard that restores the `HOME` environment variable on drop,
+/// including when an assertion between construction and the end of scope
+/// panics. Without this, a failing assertion leaks the temporary `HOME`
+/// into subsequent tests running in the same process.
+struct HomeEnvGuard {
+    saved: Option<std::ffi::OsString>,
+}
+
+impl HomeEnvGuard {
+    fn replace(temp_path: &std::path::Path) -> Self {
+        let saved = std::env::var_os("HOME");
+        std::env::set_var("HOME", temp_path);
+        Self { saved }
+    }
+}
+
+impl Drop for HomeEnvGuard {
+    fn drop(&mut self) {
+        match self.saved.take() {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+}
+
 #[test]
 fn read_missing_returns_empty_map() {
     let dir = tempdir().expect("tempdir");
@@ -43,27 +68,19 @@ fn read_tolerates_corrupt_file() {
 
 #[test]
 fn read_score_song_links_command_returns_empty_when_no_file() {
-    let _guard = home_env_lock().lock().unwrap();
+    let _guard = home_env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempdir().expect("tempdir");
-    let original_home = std::env::var_os("HOME");
-    std::env::set_var("HOME", dir.path());
+    let _home = HomeEnvGuard::replace(dir.path());
 
     let links = read_score_song_links();
     assert!(links.is_empty());
-
-    if let Some(home) = original_home {
-        std::env::set_var("HOME", home);
-    } else {
-        std::env::remove_var("HOME");
-    }
 }
 
 #[test]
 fn write_then_read_score_song_links_command_round_trips() {
-    let _guard = home_env_lock().lock().unwrap();
+    let _guard = home_env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempdir().expect("tempdir");
-    let original_home = std::env::var_os("HOME");
-    std::env::set_var("HOME", dir.path());
+    let _home = HomeEnvGuard::replace(dir.path());
 
     let mut links = std::collections::HashMap::new();
     links.insert("Song A\u{1f}Artist X".to_string(), "7".to_string());
@@ -74,20 +91,13 @@ fn write_then_read_score_song_links_command_round_trips() {
         read.get("Song A\u{1f}Artist X").map(String::as_str),
         Some("7")
     );
-
-    if let Some(home) = original_home {
-        std::env::set_var("HOME", home);
-    } else {
-        std::env::remove_var("HOME");
-    }
 }
 
 #[test]
 fn write_score_song_links_command_creates_dtxweb_dir() {
-    let _guard = home_env_lock().lock().unwrap();
+    let _guard = home_env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempdir().expect("tempdir");
-    let original_home = std::env::var_os("HOME");
-    std::env::set_var("HOME", dir.path());
+    let _home = HomeEnvGuard::replace(dir.path());
 
     // The .dtxweb directory does not exist yet.
     assert!(!dir.path().join(".dtxweb").exists());
@@ -97,10 +107,4 @@ fn write_score_song_links_command_creates_dtxweb_dir() {
 
     // The command must create .dtxweb/ and write score_links.json inside it.
     assert!(dir.path().join(".dtxweb").join("score_links.json").exists());
-
-    if let Some(home) = original_home {
-        std::env::set_var("HOME", home);
-    } else {
-        std::env::remove_var("HOME");
-    }
 }

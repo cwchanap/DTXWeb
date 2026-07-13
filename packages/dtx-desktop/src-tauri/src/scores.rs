@@ -102,9 +102,9 @@ pub struct ParsedHistory {
 ///
 /// Called by `group_joined_rows`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn parse_history_line(line: &str) -> ParsedHistory {
-    let cleared = if line.contains("Cleared") {
+    let cleared = if line.contains(" Cleared") || line.starts_with("Cleared") {
         Some(true)
-    } else if line.contains("Failed") {
+    } else if line.contains(" Failed") || line.starts_with("Failed") {
         Some(false)
     } else {
         None
@@ -299,27 +299,27 @@ fn read_joined_rows(conn: &Connection) -> Result<Vec<JoinedRow>> {
     let rows = stmt
         .query_map([], |row| {
             Ok(JoinedRow {
-                song_id: row.get(0)?,
+                song_id: row.get::<_, Option<i64>>(0)?.unwrap_or(0),
                 title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                 artist: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 genre: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                chart_id: row.get(4)?,
-                difficulty_level: row.get(5)?,
+                chart_id: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                difficulty_level: row.get::<_, Option<i64>>(5)?.unwrap_or(0),
                 difficulty_label: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                drum_level: row.get(7)?,
+                drum_level: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
                 file_hash: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
                 score: DrumsScoreRow {
-                    best_score: row.get(9)?,
-                    best_achievement_rate: row.get(10)?,
-                    full_combo: row.get(11)?,
-                    play_count: row.get(12)?,
-                    clear_count: row.get(13)?,
-                    max_combo: row.get(14)?,
-                    best_perfect: row.get(15)?,
-                    best_great: row.get(16)?,
-                    best_good: row.get(17)?,
-                    best_poor: row.get(18)?,
-                    best_miss: row.get(19)?,
+                    best_score: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
+                    best_achievement_rate: row.get::<_, Option<f64>>(10)?.unwrap_or(0.0),
+                    full_combo: row.get::<_, Option<i64>>(11)?.unwrap_or(0),
+                    play_count: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
+                    clear_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
+                    max_combo: row.get::<_, Option<i64>>(14)?.unwrap_or(0),
+                    best_perfect: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
+                    best_great: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
+                    best_good: row.get::<_, Option<i64>>(17)?.unwrap_or(0),
+                    best_poor: row.get::<_, Option<i64>>(18)?.unwrap_or(0),
+                    best_miss: row.get::<_, Option<i64>>(19)?.unwrap_or(0),
                     last_played_at: row.get(20)?,
                 },
                 hist_performed_at: row.get(21)?,

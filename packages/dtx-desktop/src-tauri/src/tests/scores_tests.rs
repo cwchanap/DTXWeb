@@ -171,8 +171,8 @@ fn parse_missing_db_errors() {
     assert!(parse_dtxmania_scores_impl(missing.to_str().unwrap()).is_err());
 }
 
-#[tokio::test]
-async fn parse_dtxmania_scores_command_delegates_to_impl() {
+#[test]
+fn parse_dtxmania_scores_command_delegates_to_impl() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("songs.db");
     seed_db(&db);
@@ -186,8 +186,8 @@ async fn parse_dtxmania_scores_command_delegates_to_impl() {
     assert_eq!(songs[0].title, "Played Song");
 }
 
-#[tokio::test]
-async fn parse_dtxmania_scores_command_errors_for_missing_db() {
+#[test]
+fn parse_dtxmania_scores_command_errors_for_missing_db() {
     let dir = tempdir().expect("tempdir");
     let missing = dir.path().join("nope.db");
     // Register the missing path as a dialog path so the validation passes and
@@ -401,4 +401,46 @@ fn parse_caps_recent_scores_at_five() {
 
     // The 6th row (DisplayOrder 6) must not appear.
     assert!(chart.recent.iter().all(|r| r.display_order != Some(6)));
+}
+
+fn seed_db_with_null_integers(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, SongScoreId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Null Song', 'Artist', 'Rock');
+         INSERT INTO SongCharts VALUES (1, 1, NULL, 'BASIC', NULL, 'hash');
+         INSERT INTO SongScores VALUES (10, 1, 0, NULL, NULL, NULL, 5, 2, NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_tolerates_null_integer_columns() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_with_null_integers(&db);
+
+    // With tolerant reads, NULLs in integer columns default to 0 instead of
+    // aborting the entire parse. The song appears with zeroed values.
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+    let chart = &songs[0].charts[0];
+    assert_eq!(chart.difficulty_level, 0);
+    assert_eq!(chart.drum_level, 0);
+    assert_eq!(chart.aggregate.play_count, 5);
+    assert_eq!(chart.aggregate.clear_count, 2);
+    let best = chart.best.as_ref().expect("best present");
+    assert_eq!(best.score, Some(0));
+    assert_eq!(best.achievement_rate, Some(0.0));
+    assert!(!best.full_combo);
+    assert_eq!(best.max_combo, Some(0));
 }

@@ -24,8 +24,7 @@ fn write_score_song_links_to(path: &Path, links: &LinkMap) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(links)?;
-    let mut tmp = path.to_path_buf();
-    tmp.set_extension("json.tmp");
+    let tmp = path.with_extension(format!("json.tmp.{}", std::process::id()));
     fs::write(&tmp, json)?;
     let rename_result = fs::rename(&tmp, path);
     if rename_result.is_err() {

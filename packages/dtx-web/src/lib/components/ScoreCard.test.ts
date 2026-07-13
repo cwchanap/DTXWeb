@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
+
+vi.mock('svelte-i18n');
 import ScoreCard from './ScoreCard.svelte';
 import type { ScoredSimfile } from '$lib/api/score';
 
@@ -62,19 +64,19 @@ describe('ScoreCard', () => {
 		render(ScoreCard, { props: { song } });
 		expect(screen.getByText('Test Song')).toBeInTheDocument();
 		expect(screen.getByText('Test Artist')).toBeInTheDocument();
-		expect(screen.getByText('BASIC · Lv 5')).toBeInTheDocument();
+		expect(screen.getByText('BASIC · score.level_short 5')).toBeInTheDocument();
 		expect(screen.getByText('912,380')).toBeInTheDocument();
 		expect(screen.getByText('91.30%')).toBeInTheDocument();
 		expect(screen.getByText('S')).toBeInTheDocument();
 		expect(screen.getByText('FC')).toBeInTheDocument();
 		// The single recent play was a failure.
-		expect(screen.getByText('Failed')).toBeInTheDocument();
+		expect(screen.getByText('score.failed')).toBeInTheDocument();
 	});
 
 	it('shows an empty best-score message for a chart with no scores', () => {
 		render(ScoreCard, { props: { song } });
-		expect(screen.getByText('EXTREME · Lv 8')).toBeInTheDocument();
-		expect(screen.getByText('No best score recorded.')).toBeInTheDocument();
+		expect(screen.getByText('EXTREME · score.level_short 8')).toBeInTheDocument();
+		expect(screen.getByText('score.no_best_score')).toBeInTheDocument();
 	});
 
 	it('renders at most five recent plays even when more are provided', () => {
@@ -114,7 +116,7 @@ describe('ScoreCard', () => {
 		render(ScoreCard, { props: { song: songWithSix } });
 		// Each recent play renders as a list item with "Cleared" text.
 		// Only the first 5 of 6 should be rendered.
-		const clearedItems = screen.getAllByText('Cleared');
+		const clearedItems = screen.getAllByText('score.cleared');
 		expect(clearedItems).toHaveLength(5);
 	});
 });

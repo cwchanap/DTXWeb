@@ -176,7 +176,7 @@ Per recent play (`PerformanceHistory` row, up to 5 by `DisplayOrder`):
 - Parse → `cleared` (`"Cleared"` vs `"Failed"`), `rankLabel` (`RANK` token), `achievementRate` (float). `performedAt` comes from `PerformanceHistory.PerformedAt` (fuller timestamp than the abbreviated date in the line). `score` is **NULL** for recent rows (not present in the history line). `displayOrder` = `PerformanceHistory.DisplayOrder`.
 - Parsing is tolerant: a line that doesn't match keeps `performedAt` and leaves the parsed fields null rather than failing the whole song.
 
-**Rank table (initial, validate against DTXManiaCX during implementation):** SS = 100, S ≥ 95, A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, E ≥ 50, else F. Recent rows use the `RANK` token from the line verbatim; only the best row derives its label from the table.
+**Rank table (validated against DTXManiaCX source):** SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 62, C ≥ 50, D < 50. Recent rows use the `RANK` token from the line verbatim; only the best row derives its label from the table. See [DTXManiaCX](https://github.com/cwchanap/DTXManiaCX) for the source scoring bands.
 
 Returned `DtxmaniaSong` shape (JSON):
 

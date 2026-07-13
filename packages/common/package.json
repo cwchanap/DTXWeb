@@ -78,7 +78,8 @@
 		"vite": "^6.2.6",
 		"vitest": "^3.0.0",
 		"tailwindcss": "^4.1.4",
-		"@tailwindcss/vite": "^4.1.8"
+		"@tailwindcss/vite": "^4.1.8",
+		"miniflare": "^4.20260219.0"
 	},
 	"keywords": [
 		"svelte"

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { _ } from 'svelte-i18n';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { Button } from '@dtx/ui-components';
 	import { myScoredSimfiles, type ScoredSimfile } from '$lib/api';
@@ -52,18 +53,20 @@
 
 {#if loading}
 	<div class="flex items-center justify-center py-12">
-		<p class="font-medium text-slate-300">Loading scores…</p>
+		<p class="font-medium text-slate-300">{$_('score.loading')}</p>
 	</div>
 {:else if loadError}
 	<div class="music-card p-8 text-center">
-		<p class="mb-4 text-slate-300">Failed to load your scores. Please try again.</p>
-		<Button onclick={loadScores} variant="primary">{#snippet children()}Retry{/snippet}</Button>
+		<p class="mb-4 text-slate-300">{$_('score.load_error')}</p>
+		<Button onclick={loadScores} variant="primary"
+			>{#snippet children()}{$_('score.retry')}{/snippet}</Button
+		>
 	</div>
 {:else if songs.length === 0}
 	<div class="music-card p-8 text-center">
-		<p class="mb-2 font-medium text-slate-200">No scores yet</p>
+		<p class="mb-2 font-medium text-slate-200">{$_('score.no_scores')}</p>
 		<p class="text-sm text-slate-400">
-			Import your scores from the DTX desktop app to see them here.
+			{$_('score.no_scores_hint')}
 		</p>
 	</div>
 {:else}

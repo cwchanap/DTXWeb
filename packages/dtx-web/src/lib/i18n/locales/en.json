@@ -47,5 +47,26 @@
 		"level_load_failed": "This level could not be loaded.",
 		"seek": "Seek position",
 		"seek_value": "Measure {measure} of {total}"
+	},
+	"score": {
+		"my_scores": "My Scores",
+		"loading": "Loading scores…",
+		"load_error": "Failed to load your scores. Please try again.",
+		"retry": "Retry",
+		"no_scores": "No scores yet",
+		"no_scores_hint": "Import your scores from the DTX desktop app to see them here.",
+		"no_best_score": "No best score recorded.",
+		"recent": "Recent",
+		"cleared": "Cleared",
+		"failed": "Failed",
+		"plays": "Plays",
+		"clears": "Clears",
+		"max_combo": "Max combo",
+		"perfect": "Perfect",
+		"great": "Great",
+		"good": "Good",
+		"poor": "Poor",
+		"miss": "Miss",
+		"level_short": "Lv"
 	}
 }

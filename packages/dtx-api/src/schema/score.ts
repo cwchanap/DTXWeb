@@ -142,6 +142,11 @@ const validateChartScores = (
 	if (bestCount > 1) return 'more than one best score';
 	const recentRows = scores.filter((s) => s.displayOrder != null);
 	if (recentRows.length > 5) return 'more than 5 recent scores';
+	// Non-best rows must carry a displayOrder (they are recent plays).
+	// A row with isBest=false and displayOrder=null is an orphan — reject it.
+	for (const s of scores) {
+		if (!s.isBest && s.displayOrder == null) return 'non-best score without displayOrder';
+	}
 	// Best rows must not carry a displayOrder (they are not recent plays).
 	for (const s of scores) {
 		if (s.isBest && s.displayOrder != null) return 'best score with displayOrder';
@@ -206,12 +211,12 @@ builder.mutationField('uploadScores', (t) =>
 			// round-trip per chart. Charts that fail later validation are
 			// harmless extra rows in the batch.
 			const validNumericIds = input.charts
-				.map((c) => Number(c.chartId))
+				.map((c) => parseInt(c.chartId, 10))
 				.filter((id) => Number.isSafeInteger(id) && id > 0);
 			const visibilityMap = await getChartVisibilityBatch(ctx.db, validNumericIds);
 
 			for (const chart of input.charts) {
-				const numericId = Number(chart.chartId);
+				const numericId = parseInt(chart.chartId, 10);
 				if (!Number.isSafeInteger(numericId) || numericId <= 0) {
 					skipped.push({ chartId: String(chart.chartId), reason: 'invalid chart id' });
 					continue;

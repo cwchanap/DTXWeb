@@ -619,13 +619,18 @@ export const listUserScoredSimfiles = async (
 	const offset = (page - 1) * pageSize;
 
 	// Count distinct scored simfiles without fetching all IDs into memory.
+	// Apply the visibility filter: a simfile is visible if it is published or
+	// owned by the caller. This prevents an unpublish from leaking a simfile's
+	// title/artist to someone who previously scored it.
 	const countRow = await db
 		.prepare(
 			`SELECT COUNT(DISTINCT d.simfile_id) AS cnt
-			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
-			 WHERE cs.user_id = ?`
+			 FROM chart_scores cs
+			 JOIN dtx_files d ON d.id = cs.chart_id
+			 JOIN simfiles s ON s.id = d.simfile_id
+			 WHERE cs.user_id = ? AND (s.is_published = 1 OR s.user_id = ?)`
 		)
-		.bind(options.userId)
+		.bind(options.userId, options.userId)
 		.first<{ cnt: number }>();
 	const count = countRow?.cnt ?? 0;
 	if (count === 0) return { data: [], count: 0 };
@@ -634,13 +639,15 @@ export const listUserScoredSimfiles = async (
 	const { results: idRows } = await db
 		.prepare(
 			`SELECT d.simfile_id AS simfile_id
-			 FROM chart_scores cs JOIN dtx_files d ON d.id = cs.chart_id
-			 WHERE cs.user_id = ?
+			 FROM chart_scores cs
+			 JOIN dtx_files d ON d.id = cs.chart_id
+			 JOIN simfiles s ON s.id = d.simfile_id
+			 WHERE cs.user_id = ? AND (s.is_published = 1 OR s.user_id = ?)
 			 GROUP BY d.simfile_id
 			 ORDER BY MAX(cs.updated_at) DESC
 			 LIMIT ? OFFSET ?`
 		)
-		.bind(options.userId, pageSize, offset)
+		.bind(options.userId, options.userId, pageSize, offset)
 		.all<{ simfile_id: number }>();
 
 	const pageIds = (idRows ?? []).map((r) => r.simfile_id);
@@ -648,8 +655,10 @@ export const listUserScoredSimfiles = async (
 	const placeholders = pageIds.map(() => '?').join(',');
 
 	const { results: simfileRows } = await db
-		.prepare(`SELECT * FROM simfiles WHERE id IN (${placeholders})`)
-		.bind(...pageIds)
+		.prepare(
+			`SELECT * FROM simfiles WHERE id IN (${placeholders}) AND (is_published = 1 OR user_id = ?)`
+		)
+		.bind(...pageIds, options.userId)
 		.all<SimfileRow>();
 
 	const { results: dtxRows } = await db

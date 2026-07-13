@@ -505,10 +505,15 @@
 
 									{#if chart.best}
 										<div class="text-dim text-xs">
-											Best: {formatScore(chart.best.score)} · {chart.best
-												.rankLabel} ·
-											{chart.best.achievementRate}% · combo {chart.best
-												.maxCombo}
+											Best: {formatScore(chart.best.score)} ·
+											{#if chart.best.rankLabel}{chart.best.rankLabel} ·
+											{/if}
+											{chart.best.achievementRate != null
+												? `${chart.best.achievementRate}%`
+												: '—'} ·
+											{#if chart.best.maxCombo != null}combo {chart.best
+													.maxCombo}
+											{/if}
 											{#if chart.best.fullCombo}· FC{/if}
 										</div>
 									{:else}
@@ -519,7 +524,7 @@
 
 									{#if chart.recent.length > 0}
 										<ul class="text-faint mt-1 text-xs">
-											{#each chart.recent as recent}
+											{#each chart.recent as recent (recent.performedAt + '-' + recent.displayOrder)}
 												<li>
 													<span
 														class:text-green-300={recent.cleared}

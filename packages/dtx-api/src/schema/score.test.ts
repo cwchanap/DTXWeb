@@ -822,6 +822,62 @@ describe('myScoredSimfiles', () => {
 		expect(conn.data[0].id).toBe('42');
 		expect(conn.data[0].dtxFiles[0].id).toBe('10');
 	});
+
+	it('isolates scored simfiles between users', async () => {
+		// user-1 has scored simfiles; user-2 has none
+		mockedListScored.mockImplementation(async (_db, opts) => {
+			if (opts.userId === 'user-1') {
+				return {
+					count: 1,
+					data: [
+						{
+							id: 42,
+							title: 'Song',
+							artist: 'Artist',
+							bpm: 150,
+							is_published: true,
+							user_id: 'user-1',
+							display_id: null,
+							download_url: null,
+							preview_url: null,
+							video_preview_url: null,
+							publish_date: 't',
+							created_at: 't',
+							updated_at: 't',
+							dtx_files: [{ id: 10, level: 5, label: 'BASIC' }]
+						}
+					]
+				} as never;
+			}
+			return { count: 0, data: [] } as never;
+		});
+
+		// User 1 sees their scored simfile
+		const ctx1 = makeCtx({ user: { id: 'user-1' } as never });
+		const result1 = await runQuery(ctx1, {
+			query: `query { myScoredSimfiles { count data { id } } }`
+		});
+		const conn1 = result1.data?.myScoredSimfiles as { count: number; data: { id: string }[] };
+		expect(conn1.count).toBe(1);
+		expect(conn1.data).toHaveLength(1);
+		expect(mockedListScored).toHaveBeenCalledWith(
+			ctx1.db,
+			expect.objectContaining({ userId: 'user-1' })
+		);
+
+		// User 2 sees nothing
+		const ctx2 = makeCtx({ user: { id: 'user-2' } as never });
+		const result2 = await runQuery(ctx2, {
+			query: `query { myScoredSimfiles { count data { id } } }`
+		});
+		const conn2 = result2.data?.myScoredSimfiles as { count: number; data: unknown[] };
+		expect(conn2.count).toBe(0);
+		expect(conn2.data).toHaveLength(0);
+		expect(mockedListScored).toHaveBeenCalledWith(
+			ctx2.db,
+			expect.objectContaining({ userId: 'user-2' })
+		);
+	});
 });
 
 describe('DtxFile.myChartScore batching (N+1)', () => {

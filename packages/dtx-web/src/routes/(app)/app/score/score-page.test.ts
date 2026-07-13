@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 
+vi.mock('svelte-i18n');
+
 const { myScoredSimfilesMock } = vi.hoisted(() => ({ myScoredSimfilesMock: vi.fn() }));
 vi.mock('$lib/api', () => ({ myScoredSimfiles: myScoredSimfilesMock }));
 
@@ -50,13 +52,13 @@ describe('Score Page', () => {
 	it('renders the heading and the user scores', async () => {
 		myScoredSimfilesMock.mockResolvedValue({ data: [song], count: 1 });
 		render(ScorePage);
-		expect(screen.getByRole('heading', { name: 'My Scores' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'score.my_scores' })).toBeInTheDocument();
 		await waitFor(() => expect(screen.getByText('Dashboard Song')).toBeInTheDocument());
 	});
 
 	it('shows the empty state when there are no scores', async () => {
 		myScoredSimfilesMock.mockResolvedValue({ data: [], count: 0 });
 		render(ScorePage);
-		await waitFor(() => expect(screen.getByText('No scores yet')).toBeInTheDocument());
+		await waitFor(() => expect(screen.getByText('score.no_scores')).toBeInTheDocument());
 	});
 });

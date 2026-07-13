@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
 	import type { ScoredSimfile } from '$lib/api/score';
 
 	interface Props {
@@ -27,12 +28,14 @@
 					<span
 						class="rounded-full border border-purple-500/30 bg-purple-600/20 px-2 py-1 text-xs font-medium text-purple-200"
 					>
-						{chart.label} · Lv {chart.level}
+						{chart.label} · {$_('score.level_short')}
+						{chart.level}
 					</span>
 					{#if chart.chartScore}
 						<span class="text-xs text-slate-400">
-							Plays {chart.chartScore.playCount} · Clears {chart.chartScore
-								.clearCount}
+							{$_('score.plays')}
+							{chart.chartScore.playCount} · {$_('score.clears')}
+							{chart.chartScore.clearCount}
 						</span>
 					{/if}
 				</div>
@@ -57,25 +60,27 @@
 							</span>
 						{/if}
 						{#if best.maxCombo != null}
-							<span class="text-slate-400">Max combo {best.maxCombo}</span>
+							<span class="text-slate-400"
+								>{$_('score.max_combo')} {best.maxCombo}</span
+							>
 						{/if}
 					</div>
 					{#if best.perfect != null || best.great != null || best.good != null || best.poor != null || best.miss != null}
 						<div class="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
-							<span>Perfect {best.perfect ?? 0}</span>
-							<span>Great {best.great ?? 0}</span>
-							<span>Good {best.good ?? 0}</span>
-							<span>Poor {best.poor ?? 0}</span>
-							<span>Miss {best.miss ?? 0}</span>
+							<span>{$_('score.perfect')} {best.perfect ?? 0}</span>
+							<span>{$_('score.great')} {best.great ?? 0}</span>
+							<span>{$_('score.good')} {best.good ?? 0}</span>
+							<span>{$_('score.poor')} {best.poor ?? 0}</span>
+							<span>{$_('score.miss')} {best.miss ?? 0}</span>
 						</div>
 					{/if}
 				{:else}
-					<p class="text-xs text-slate-500">No best score recorded.</p>
+					<p class="text-xs text-slate-500">{$_('score.no_best_score')}</p>
 				{/if}
 
 				{#if chart.chartScore && chart.chartScore.recent.length > 0}
 					<div class="mt-3 border-t border-slate-700/50 pt-2">
-						<p class="mb-1 text-xs font-medium text-slate-400">Recent</p>
+						<p class="mb-1 text-xs font-medium text-slate-400">{$_('score.recent')}</p>
 						<ul class="space-y-1">
 							{#each chart.chartScore.recent.slice(0, 5) as recent (recent.id)}
 								<li
@@ -88,7 +93,7 @@
 										class:text-green-300={recent.cleared}
 										class:text-red-300={!recent.cleared}
 									>
-										{recent.cleared ? 'Cleared' : 'Failed'}
+										{recent.cleared ? $_('score.cleared') : $_('score.failed')}
 									</span>
 									{#if recent.rankLabel}
 										<span class="text-amber-300">{recent.rankLabel}</span>

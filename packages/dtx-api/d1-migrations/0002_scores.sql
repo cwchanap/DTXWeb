@@ -8,6 +8,13 @@
 --   chart_scores: play_count >= 0, clear_count >= 0, clear_count <= play_count
 --   scores: non-negative judgment counts, score >= 0, achievement_rate 0..100,
 --           display_order NULL or 1..5, boolean columns IN (0, 1)
+--
+-- ON DELETE CASCADE foreign keys are declared as a backstop only. D1 (SQLite)
+-- does not reliably enforce FK cascade PRAGMAs across connections, so
+-- deleteSimfile (db.ts) explicitly deletes children in the correct order
+-- (scores -> chart_scores -> dtx_files -> simfiles) in a single D1 batch.
+-- Do NOT add a code path that deletes dtx_files directly without first
+-- deleting its chart_scores/scores children, or rows will be orphaned.
 
 CREATE TABLE IF NOT EXISTS chart_scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

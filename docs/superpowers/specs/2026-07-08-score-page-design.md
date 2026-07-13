@@ -88,6 +88,8 @@ For each uploaded chart, in a single D1 batch/transaction:
 
 This makes re-uploads idempotent (last upload wins) and keeps the recent window bounded at 5.
 
+**Concurrency caveat:** "last upload wins" means concurrent uploads from multiple devices for the same `(user, chart)` will silently overwrite each other — the later-committed batch replaces all scores from the earlier one. `chart_scores.updated_at` is refreshed on every upsert so the most recent write is observable, but no merge or conflict-resolution is performed. This is acceptable for the DTXMania import use case (single-user, typically one device at a time); cross-device sync is a future extension (§11).
+
 ## 3. Query layer (`@dtx/common/server`)
 
 All new DB functions live in `packages/common/src/lib/server/db.ts`, with Drizzle table definitions in `packages/common/src/lib/server/db/schema.ts` and row types in `packages/common/src/lib/types/d1.types.ts`.

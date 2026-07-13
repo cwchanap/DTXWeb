@@ -143,6 +143,13 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     assert_eq!(best.display_order, None);
 
     // Recent: 2 rows, ordered by DisplayOrder; score NULL; garbage tolerated.
+    // The malformed row is KEPT (not dropped) with cleared=false: the row
+    // exists in the user's DTXMania DB, so a play happened — we just can't
+    // parse the outcome. This pins the deliberate tolerance contract
+    // documented at the `unwrap_or(false)` call site in `group_joined_rows`.
+    // An unparseable line is not the same as a known failure, but the binary
+    // `cleared: bool` field admits no "unknown" state without a schema/UI
+    // change. If you change this assertion, update that comment too.
     assert_eq!(chart.recent.len(), 2);
     let r1 = &chart.recent[0];
     assert!(!r1.is_best);
@@ -153,7 +160,7 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     assert_eq!(r1.display_order, Some(1));
     let r2 = &chart.recent[1];
     assert_eq!(r2.rank_label, None); // malformed line
-    assert!(!r2.cleared); // defaults to false
+    assert!(!r2.cleared); // unparseable -> safe default (NOT a known failure)
     assert_eq!(r2.performed_at.as_deref(), Some("2026-05-28T00:00:00"));
 
     // Never-played chart: present, best null, recent empty.

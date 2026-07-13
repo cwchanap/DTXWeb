@@ -400,6 +400,18 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
                         achievement_rate: parsed.achievement_rate,
                         rank_label: parsed.rank_label,
                         full_combo: false,
+                        // A history row that can't be parsed (no "Cleared"/"Failed"
+                        // token) is kept rather than dropped — the row exists in the
+                        // user's DTXMania DB, so a play happened; we just can't tell
+                        // the outcome. We render the safe default (not cleared) so the
+                        // entry stays visible without overclaiming a clear. This is a
+                        // deliberate tolerance contract: an unparseable line is NOT the
+                        // same as a known failure, but the binary `cleared: bool` field
+                        // (mirrored by the GraphQL `cleared: Boolean!` schema) leaves no
+                        // room for an "unknown" state without a schema/UI change. See
+                        // `parse_maps_best_recent_and_ignores_non_drums` for the pinned
+                        // behavior and `parse_history_line_tolerates_garbage` for the
+                        // parser contract.
                         cleared: parsed.cleared.unwrap_or(false),
                         max_combo: None,
                         perfect: None,

@@ -368,7 +368,14 @@
 					error?: string;
 				}>({ charts: batch });
 				if (!result.success || !result.data) {
-					uploadStatus = result.error ?? 'Upload failed.';
+					// Earlier batches in this loop already committed server-side.
+					// Surface the partial progress so the user knows what landed
+					// before the failure, instead of a bare "Upload failed."
+					const partial =
+						totalUpdated > 0 || totalInserted > 0
+							? ` Partial upload: ${totalUpdated} chart(s), ${totalInserted} score(s) committed before failure.`
+							: '';
+					uploadStatus = `${result.error ?? 'Upload failed.'}${partial}`;
 					return;
 				}
 				totalUpdated += result.data.updatedCharts;

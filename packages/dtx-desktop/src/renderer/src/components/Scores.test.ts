@@ -575,4 +575,68 @@ describe('Scores', () => {
 		expect(host.uploadScores.mock.calls[1][0].charts).toHaveLength(1);
 		expect(await screen.findByText(/uploaded 101 chart/i)).toBeInTheDocument();
 	});
+
+	it('surfaces partial success when a mid-batch failure leaves earlier batches committed', async () => {
+		// 101 charts → two batches (100 + 1). The first batch succeeds, the
+		// second fails. The status must include both the error and the counts
+		// from the already-committed first batch.
+		const charts = Array.from({ length: 101 }, (_, i) => ({
+			difficultyLevel: 2,
+			difficultyLabel: `LV${i}`,
+			drumLevel: (i + 1) * 10,
+			fileHash: `hash-${i}`,
+			aggregate: { playCount: 1, clearCount: 1 },
+			best: bestRow,
+			recent: []
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue([
+			{ title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+		]);
+		host.readScoreSongLinks.mockResolvedValue({
+			['Mega Song Artist A Rock']: '42'
+		});
+		host.fetchCloudSong.mockResolvedValue({
+			success: true,
+			cloudSongData: {
+				id: 42,
+				title: 'Cloud Mega Song',
+				artist: 'Artist A',
+				is_published: true
+			}
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: charts.map((c, i) => ({
+				id: `${1000 + i}`,
+				label: `LV${i}`,
+				level: (i + 1) * 1.0
+			}))
+		});
+		let callCount = 0;
+		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					success: true,
+					data: {
+						updatedCharts: payload.charts.length,
+						insertedScores: payload.charts.length * 2,
+						skipped: []
+					}
+				};
+			}
+			return { success: false, error: 'Server exploded on batch 2' };
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Mega Song')).toBeInTheDocument();
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		await waitFor(() => expect(host.uploadScores).toHaveBeenCalledTimes(2));
+		expect(await screen.findByText(/server exploded on batch 2/i)).toBeInTheDocument();
+		expect(screen.getByText(/partial upload: 100 chart/i)).toBeInTheDocument();
+		expect(screen.getByText(/200 score/i)).toBeInTheDocument();
+	});
 });

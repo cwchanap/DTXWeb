@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import {
 		RefreshCw,
@@ -66,9 +66,18 @@
 	const pageSize = 10;
 	const pageStart = $derived((currentPage - 1) * pageSize);
 	const pagedSongs = $derived(songs.slice(pageStart, pageStart + pageSize));
+	// Global song indices currently visible on the page. Used to gate cloud
+	// link restoration (see restoreLinksFor) so opening the view only fetches
+	// titles/charts for the visible page, not the whole library at once.
+	const pagedIndices = $derived(
+		Array.from({ length: pagedSongs.length }, (_, i) => pageStart + i)
+	);
 
 	const handlePageChange = (event: { page: number }) => {
 		currentPage = event.page;
+		// Restore cloud links for the newly visible page. Songs already linked
+		// are skipped inside restoreLinksFor, so paging back is a no-op.
+		restoreLinksForPage();
 	};
 
 	let links = $state<Record<number, CloudSong>>({});
@@ -98,6 +107,23 @@
 		const key = songKey(song);
 		expandedByKey[key] = !(expandedByKey[key] ?? true);
 	};
+
+	// Debounce persisted writes of savedLinks so a burst of link selections
+	// (or a page restore followed by a manual change) coalesces into one disk
+	// write instead of one write per selection.
+	let persistTimer: ReturnType<typeof setTimeout> | null = null;
+	const schedulePersist = (): void => {
+		if (persistTimer) clearTimeout(persistTimer);
+		persistTimer = setTimeout(() => {
+			persistTimer = null;
+			desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
+				toastStore.error('Could not save song links');
+			});
+		}, 300);
+	};
+	onDestroy(() => {
+		if (persistTimer) clearTimeout(persistTimer);
+	});
 
 	onMount(async () => {
 		savedLinks = await desktopHost.readScoreSongLinks();
@@ -137,10 +163,20 @@
 		});
 	};
 
-	const restoreLinks = async () => {
-		const entries = songs
-			.map((song, i) => ({ i, cloudId: savedLinks[songKey(song)] }))
-			.filter((e): e is { i: number; cloudId: string } => !!e.cloudId);
+	// Restore cloud links for the given song indices: fetch the real cloud
+	// song title (so a restored link shows the actual title instead of a
+	// "Simfile #<id>" placeholder) and the cloud charts for auto-matching.
+	// `indices` is gated to the visible page by restoreLinksForPage so opening
+	// the view no longer fires N GraphQL requests for the whole library;
+	// handleUpload passes every index so the full library is restored before
+	// building the upload payload (an explicit user action justifies the
+	// burst). Songs already linked (manual link or prior restore) are skipped
+	// to avoid re-fetching on page-back or repeated restores.
+	const restoreLinksFor = async (indices: number[]) => {
+		const entries = indices
+			.map((i) => ({ i, cloudId: savedLinks[songKey(songs[i])] }))
+			.filter((e): e is { i: number; cloudId: string } => !!e.cloudId)
+			.filter((e) => !links[e.i]);
 		if (entries.length === 0) return;
 
 		// Fetch real cloud song titles in parallel so restored links show the
@@ -190,10 +226,10 @@
 		}
 
 		// Persist the full restored map once, not once per link.
-		desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
-			toastStore.error('Could not save song links');
-		});
+		schedulePersist();
 	};
+
+	const restoreLinksForPage = () => restoreLinksFor(pagedIndices);
 
 	const loadScores = async (path: string) => {
 		loading = true;
@@ -214,9 +250,9 @@
 		}
 		pruneSavedLinks();
 		try {
-			await restoreLinks();
+			await restoreLinksForPage();
 		} catch {
-			// restoreLinks handles per-link errors internally; swallow unexpected errors.
+			// restoreLinksFor handles per-link errors internally; swallow unexpected errors.
 		}
 	};
 
@@ -231,11 +267,7 @@
 	const handleLinkSelect = async (songIndex: number, song: CloudSong, persist = true) => {
 		links[songIndex] = song;
 		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
-		if (persist) {
-			desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
-				toastStore.error('Could not save song link');
-			});
-		}
+		if (persist) schedulePersist();
 		autocompleteFor = null;
 		try {
 			const result = await desktopHost.fetchCloudSongCharts<{
@@ -321,6 +353,12 @@
 		uploading = true;
 		uploadStatus = 'Uploading…';
 		skipped = [];
+		// Paging only restores cloud links for the visible page. Upload walks
+		// the full `songs` array, so restore every saved link first — upload is
+		// an explicit user action, so the burst of fetches is expected and the
+		// user is already waiting on the result. Songs already linked are
+		// skipped inside restoreLinksFor.
+		await restoreLinksFor(songs.map((_, i) => i));
 		const input = buildUpload();
 		if (input.charts.length === 0) {
 			uploadStatus = 'Nothing to upload — link a song and match at least one chart first.';

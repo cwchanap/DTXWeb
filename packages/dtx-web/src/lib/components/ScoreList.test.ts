@@ -3,6 +3,11 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 
 vi.mock('svelte-i18n');
 
+vi.mock('@skeletonlabs/skeleton-svelte', async () => {
+	const { default: PaginationStub } = await import('../../tests/stubs/PaginationStub.svelte');
+	return { Pagination: PaginationStub };
+});
+
 const { myScoredSimfilesMock } = vi.hoisted(() => ({ myScoredSimfilesMock: vi.fn() }));
 vi.mock('$lib/api', () => ({ myScoredSimfiles: myScoredSimfilesMock }));
 
@@ -83,8 +88,9 @@ describe('ScoreList', () => {
 	});
 
 	// The loadRequestId guard in ScoreList prevents stale responses from
-	// overwriting current data when rapid page changes occur. The pagination
-	// component is hidden during loading, so two concurrent loads can't be
-	// triggered through the UI — the guard is defensive programming verified
-	// by code review (ScoreList.svelte:25-42: requestId check in try/catch/finally).
+	// overwriting current data when rapid page changes occur. The list stays
+	// visible during a page-change load (only the initial load shows the
+	// full-page loading state), so the pagination buttons remain clickable
+	// mid-load — the guard is what keeps concurrent loads safe
+	// (ScoreList.svelte:25-42: requestId check in try/catch/finally).
 });

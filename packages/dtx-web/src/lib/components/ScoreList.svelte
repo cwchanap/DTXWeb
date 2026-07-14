@@ -14,7 +14,9 @@
 	let songs: ScoredSimfile[] = $state([]);
 	let currentPage = $state(1);
 	let totalCount = $state(0);
-	let totalPages = $state(1);
+	// Derived from totalCount so it can't drift out of sync with the latest
+	// fetch result. Recomputes reactively when totalCount changes.
+	const totalPages = $derived(Math.max(1, Math.ceil(totalCount / pageSize)));
 	let loading = $state(true);
 	let loadError = $state(false);
 	// Monotonically increasing request ID: only the latest page load's response
@@ -31,7 +33,6 @@
 			if (requestId !== loadRequestId) return;
 			songs = result.data;
 			totalCount = result.count;
-			totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 		} catch (error) {
 			if (requestId !== loadRequestId) return;
 			console.error('Failed to load scores:', error);
@@ -51,16 +52,19 @@
 	onMount(loadScores);
 </script>
 
-{#if loading}
-	<div class="flex items-center justify-center py-12">
-		<p class="font-medium text-slate-300">{$_('score.loading')}</p>
-	</div>
-{:else if loadError}
+{#if loadError}
 	<div class="music-card p-8 text-center">
 		<p class="mb-4 text-slate-300">{$_('score.load_error')}</p>
 		<Button onclick={loadScores} variant="primary"
 			>{#snippet children()}{$_('score.retry')}{/snippet}</Button
 		>
+	</div>
+{:else if loading && songs.length === 0}
+	<!-- Initial load only: a full-page spinner. During a page-change load the
+	     list below stays visible (showing the previous page) instead of
+	     flashing to a loading state, so paging feels continuous. -->
+	<div class="flex items-center justify-center py-12">
+		<p class="font-medium text-slate-300">{$_('score.loading')}</p>
 	</div>
 {:else if songs.length === 0}
 	<div class="music-card p-8 text-center">

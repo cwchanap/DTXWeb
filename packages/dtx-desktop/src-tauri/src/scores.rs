@@ -386,6 +386,14 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
         }
 
         // History row (if present): append to recent, capped at 5.
+        // NOTE: a row with any of performed_at / history_line / display_order
+        // NULL is silently dropped by this destructuring. In practice a real
+        // DTXManiaCX PerformanceHistory row carries all three, but a NULL
+        // DisplayOrder (e.g. a row written by an older/other client) is
+        // dropped here rather than partially reconstructed — there is no
+        // meaningful recent-play ordering without display_order, and the
+        // downstream app validator (score.ts) requires a non-null
+        // displayOrder on every non-best row anyway.
         if let (Some(performed_at), Some(history_line), Some(display_order)) = (
             row.hist_performed_at,
             row.hist_history_line,

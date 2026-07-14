@@ -127,6 +127,7 @@ const validateChartScores = (
 		good?: number | null;
 		poor?: number | null;
 		miss?: number | null;
+		performedAt?: string | null;
 		displayOrder?: number | null;
 	}[]
 ): string | null => {
@@ -152,6 +153,13 @@ const validateChartScores = (
 		if (s.isBest && s.displayOrder != null) return 'best score with displayOrder';
 	}
 	// Every non-null displayOrder must be a unique integer in 1..5.
+	// NOTE on app-validator/DB asymmetry: the DB (0002_scores.sql) enforces
+	// only `display_order IS NULL OR (1..5)` plus a partial unique index over
+	// non-null values. It does NOT enforce the best/non-best coupling below
+	// (best rows must be NULL, non-best rows must be non-null) — that stricter
+	// invariant lives only here. The DB constraints are a backstop for range
+	// and uniqueness; the app validator is the source of truth for the
+	// isBest↔displayOrder relationship.
 	const seenOrders = new Set<number>();
 	for (const s of recentRows) {
 		const order = s.displayOrder as number;
@@ -171,6 +179,12 @@ const validateChartScores = (
 				s.achievementRate > 100)
 		) {
 			return 'achievementRate out of range';
+		}
+		// performedAt, when present, must be a parseable date string. Mirrors
+		// the publishDate check in simfile.ts so a garbage timestamp can't
+		// reach the DB's performed_at TEXT column.
+		if (s.performedAt != null && Number.isNaN(Date.parse(s.performedAt))) {
+			return 'invalid performedAt';
 		}
 		// Judgment counts and maxCombo must be non-negative integers when present.
 		const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
@@ -211,16 +225,25 @@ builder.mutationField('uploadScores', (t) =>
 			// round-trip per chart. Charts that fail later validation are
 			// harmless extra rows in the batch.
 			const validNumericIds = input.charts
-				.map((c) => parseInt(c.chartId, 10))
+				.map((c) => Number(c.chartId))
 				.filter((id) => Number.isSafeInteger(id) && id > 0);
 			const visibilityMap = await getChartVisibilityBatch(ctx.db, validNumericIds);
+			const seenChartIds = new Set<number>();
 
 			for (const chart of input.charts) {
-				const numericId = parseInt(chart.chartId, 10);
+				const numericId = Number(chart.chartId);
 				if (!Number.isSafeInteger(numericId) || numericId <= 0) {
 					skipped.push({ chartId: String(chart.chartId), reason: 'invalid chart id' });
 					continue;
 				}
+				// Defense-in-depth: the client (buildUpload) already dedupes chart
+				// matches, but reject a duplicate chartId at the server too so a
+				// bypassed/malformed payload can't double-upsert one chart.
+				if (seenChartIds.has(numericId)) {
+					skipped.push({ chartId: String(chart.chartId), reason: 'duplicate chart id' });
+					continue;
+				}
+				seenChartIds.add(numericId);
 
 				if (chart.scores.length > MAX_SCORES_PER_CHART) {
 					skipped.push({
@@ -243,6 +266,7 @@ builder.mutationField('uploadScores', (t) =>
 						good: s.good,
 						poor: s.poor,
 						miss: s.miss,
+						performedAt: s.performedAt,
 						displayOrder: s.displayOrder
 					}))
 				);

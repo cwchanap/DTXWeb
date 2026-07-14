@@ -261,7 +261,7 @@ describe('uploadScores', () => {
 									good: 20,
 									poor: 5,
 									miss: 5,
-									performedAt: 't'
+									performedAt: '2026-06-02T00:00:00'
 								},
 								{
 									isBest: false,
@@ -270,7 +270,7 @@ describe('uploadScores', () => {
 									fullCombo: false,
 									cleared: true,
 									displayOrder: 1,
-									performedAt: 't'
+									performedAt: '2026-06-02T00:00:00'
 								}
 							]
 						}
@@ -773,6 +773,74 @@ describe('uploadScores', () => {
 		};
 		expect(payload.skipped[0].reason).toBe('judgment counts must be non-negative integers');
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with an unparseable performedAt', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									fullCombo: false,
+									cleared: true,
+									performedAt: 'not-a-date'
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('invalid performedAt');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a duplicate chartId within one payload (defense-in-depth)', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						},
+						{
+							chartId: '10',
+							playCount: 2,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 950, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		// Only the first occurrence is upserted; the second is skipped.
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.skipped).toEqual([{ chartId: '10', reason: 'duplicate chart id' }]);
+		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
 	});
 });
 

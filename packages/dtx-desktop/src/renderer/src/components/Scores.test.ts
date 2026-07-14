@@ -21,7 +21,9 @@ import Scores from './Scores.svelte';
 const bestRow = {
 	isBest: true,
 	score: 950000,
-	achievementRate: 91.3,
+	// 75.0 falls in the A band (73 ≤ rate < 80) per derive_rank_label in
+	// scores.rs, so rankLabel:'A' is internally consistent. (91.3 would be S.)
+	achievementRate: 75.0,
 	rankLabel: 'A',
 	fullCombo: true,
 	cleared: true,

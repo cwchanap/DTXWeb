@@ -122,7 +122,16 @@
 		}, 300);
 	};
 	onDestroy(() => {
-		if (persistTimer) clearTimeout(persistTimer);
+		// Flush any pending debounced write so a link change made within the
+		// 300ms window is not lost when the component unmounts. Clearing the
+		// timer alone would silently drop the last edit.
+		if (persistTimer) {
+			clearTimeout(persistTimer);
+			persistTimer = null;
+			desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
+				// Best-effort flush on unmount; failure is non-fatal.
+			});
+		}
 	});
 
 	onMount(async () => {
@@ -170,8 +179,11 @@
 	// the view no longer fires N GraphQL requests for the whole library;
 	// handleUpload passes every index so the full library is restored before
 	// building the upload payload (an explicit user action justifies the
-	// burst). Songs already linked (manual link or prior restore) are skipped
-	// to avoid re-fetching on page-back or repeated restores.
+	// full restore, but the fetches are still capped to avoid overwhelming
+	// the API/D1 with hundreds of concurrent requests). Songs already linked
+	// (manual link or prior restore) are skipped to avoid re-fetching on
+	// page-back or repeated restores.
+	const RESTORE_CONCURRENCY = 8;
 	const restoreLinksFor = async (indices: number[]) => {
 		const entries = indices
 			.map((i) => ({ i, cloudId: savedLinks[songKey(songs[i])] }))
@@ -179,23 +191,36 @@
 			.filter((e) => !links[e.i]);
 		if (entries.length === 0) return;
 
-		// Fetch real cloud song titles in parallel so restored links show the
-		// actual song title instead of a "Simfile #<id>" placeholder. A fetch
-		// failure falls back to the placeholder so one bad link doesn't block
-		// the rest of the restore.
-		const titleResults = await Promise.allSettled(
-			entries.map((e) =>
-				desktopHost.fetchCloudSong<{
-					success: boolean;
-					cloudSongData?: {
-						id: number;
-						title: string;
-						artist: string;
-						is_published: boolean;
-					};
-				}>(e.cloudId)
-			)
-		);
+		// Fetch real cloud song titles in bounded-concurrency chunks so a
+		// large library (hundreds of saved links) doesn't fire hundreds of
+		// concurrent GraphQL/D1 requests at once. A fetch failure falls back
+		// to the placeholder so one bad link doesn't block the rest.
+		const titleResults: PromiseSettledResult<{
+			success: boolean;
+			cloudSongData?: {
+				id: number;
+				title: string;
+				artist: string;
+				is_published: boolean;
+			};
+		}>[] = [];
+		for (let i = 0; i < entries.length; i += RESTORE_CONCURRENCY) {
+			const chunk = entries.slice(i, i + RESTORE_CONCURRENCY);
+			const results = await Promise.allSettled(
+				chunk.map((e) =>
+					desktopHost.fetchCloudSong<{
+						success: boolean;
+						cloudSongData?: {
+							id: number;
+							title: string;
+							artist: string;
+							is_published: boolean;
+						};
+					}>(e.cloudId)
+				)
+			);
+			titleResults.push(...results);
+		}
 
 		for (let idx = 0; idx < entries.length; idx++) {
 			const { i, cloudId } = entries[idx];

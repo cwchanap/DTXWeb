@@ -58,6 +58,12 @@ export const userProfiles = sqliteTable(
 	})
 );
 
+// NOTE: `chartScores` and `scores` below are Drizzle table definitions used
+// for type inference and test setup (db.test.ts, score.test.ts). Production
+// queries in db.ts use raw SQL strings against the `chart_scores` / `scores`
+// tables rather than these Drizzle builders, so these exports are not imported
+// by the service layer — only by tests. They are kept here so the schema
+// definition lives in one place and test fixtures can use the typed builders.
 export const chartScores = sqliteTable(
 	'chart_scores',
 	{

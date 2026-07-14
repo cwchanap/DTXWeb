@@ -33,6 +33,17 @@
 			if (requestId !== loadRequestId) return;
 			songs = result.data;
 			totalCount = result.count;
+			// Stale-page guard: if scores were deleted and the current page now
+			// exceeds the total page count, clamp to the last valid page and
+			// reload instead of leaving the user stranded on an empty page with
+			// no pagination control (the Pagination component only renders when
+			// totalPages > 1, so a high empty page has no way back without this).
+			const fetchedTotalPages = Math.max(1, Math.ceil(result.count / pageSize));
+			if (currentPage > fetchedTotalPages) {
+				currentPage = fetchedTotalPages;
+				await loadScores();
+				return;
+			}
 		} catch (error) {
 			if (requestId !== loadRequestId) return;
 			console.error('Failed to load scores:', error);

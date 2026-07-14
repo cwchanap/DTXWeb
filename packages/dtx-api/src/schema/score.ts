@@ -81,6 +81,13 @@ const MAX_UPLOAD_CHARTS = 100;
 /// rejects >5 recent + >1 best, but this cap short-circuits before validation
 /// to prevent a pathologically large scores[] from consuming CPU.
 const MAX_SCORES_PER_CHART = 10;
+/// Maximum number of concurrent D1 batch writes. Each chart's upsert is an
+/// independent atomic batch, so bounded concurrency preserves per-chart write
+/// isolation (a failure in one chart does not abort others) while cutting
+/// wall-clock time for large imports. D1 concurrent operations overlap I/O
+/// waits without increasing Worker CPU time, so this is safe within the
+/// Worker CPU budget. 8 keeps concurrent D1 round-trips modest.
+const WRITE_CONCURRENCY = 8;
 
 const SkippedChartRef = builder
 	.objectRef<{ chartId: string; reason: string }>('SkippedChart')
@@ -230,6 +237,18 @@ builder.mutationField('uploadScores', (t) =>
 			const visibilityMap = await getChartVisibilityBatch(ctx.db, validNumericIds);
 			const seenChartIds = new Set<number>();
 
+			// Phase 1 — validate all charts sequentially. Validation is cheap
+			// (pure JS, no I/O) and builds the `seenChartIds` dedup set, so it
+			// must run in order. Charts that pass are collected for the write
+			// phase; charts that fail are recorded in `skipped`.
+			const writable: {
+				chartId: string;
+				numericId: number;
+				playCount: number;
+				clearCount: number;
+				inserts: ScoreInsert[];
+			}[] = [];
+
 			for (const chart of input.charts) {
 				const numericId = Number(chart.chartId);
 				if (!Number.isSafeInteger(numericId) || numericId <= 0) {
@@ -303,26 +322,51 @@ builder.mutationField('uploadScores', (t) =>
 					performed_at: s.performedAt ?? null,
 					display_order: s.displayOrder ?? null
 				}));
-				// Per-chart write isolation: a D1 failure on one chart must not
-				// abort the whole mutation and lose already-committed results for
-				// prior charts. Record the failure as skipped and continue.
-				try {
-					await upsertChartScoreAndReplaceScores(ctx.db, {
-						chartId: numericId,
-						userId: ctx.user!.id,
-						playCount: chart.playCount,
-						clearCount: chart.clearCount,
-						scores: inserts
-					});
-					updatedCharts += 1;
-					insertedScores += inserts.length;
-				} catch (error) {
-					ctx.logger.error('Score upload write failed for chart', {
-						chartId: chart.chartId,
-						userId: ctx.user!.id,
-						error: error instanceof Error ? error.message : String(error)
-					});
-					skipped.push({ chartId: String(chart.chartId), reason: 'write failed' });
+				writable.push({
+					chartId: String(chart.chartId),
+					numericId,
+					playCount: chart.playCount,
+					clearCount: chart.clearCount,
+					inserts
+				});
+			}
+
+			// Phase 2 — write validated charts in bounded-concurrency chunks.
+			// Per-chart write isolation is preserved: each chart's batch is
+			// independent, and Promise.allSettled ensures one failure does not
+			// abort the chunk. Overlapping the D1 I/O waits cuts wall-clock time
+			// for large imports (up to 100 charts) without increasing Worker
+			// CPU time.
+			for (let i = 0; i < writable.length; i += WRITE_CONCURRENCY) {
+				const chunk = writable.slice(i, i + WRITE_CONCURRENCY);
+				const results = await Promise.allSettled(
+					chunk.map((w) =>
+						upsertChartScoreAndReplaceScores(ctx.db, {
+							chartId: w.numericId,
+							userId: ctx.user!.id,
+							playCount: w.playCount,
+							clearCount: w.clearCount,
+							scores: w.inserts
+						}).then(() => w.inserts.length)
+					)
+				);
+				for (let j = 0; j < results.length; j++) {
+					const w = chunk[j];
+					const result = results[j];
+					if (result.status === 'fulfilled') {
+						updatedCharts += 1;
+						insertedScores += result.value;
+					} else {
+						ctx.logger.error('Score upload write failed for chart', {
+							chartId: w.chartId,
+							userId: ctx.user!.id,
+							error:
+								result.reason instanceof Error
+									? result.reason.message
+									: String(result.reason)
+						});
+						skipped.push({ chartId: w.chartId, reason: 'write failed' });
+					}
 				}
 			}
 

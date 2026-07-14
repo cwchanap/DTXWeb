@@ -320,14 +320,17 @@ ORDER BY s.Id, c.Id";
 /// `sqlite_master`. Used to detect whether `PerformanceHistory` is present
 /// before running the joined query, so a schema mismatch degrades to the
 /// best-only fallback instead of aborting the whole parse.
+///
+/// A query error is propagated rather than silently treated as "table absent"
+/// — the `sqlite_master` query is trivial and should only fail on a genuinely
+/// unreadable/corrupt database, in which case degrading to BEST_ONLY would
+/// mask the real problem behind a silent partial result.
 fn has_table(conn: &Connection, name: &str) -> Result<bool> {
-    let exists: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
-            [name],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        [name],
+        |row| row.get(0),
+    )?;
     Ok(exists > 0)
 }
 

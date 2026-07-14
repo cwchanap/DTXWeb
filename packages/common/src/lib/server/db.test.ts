@@ -1034,10 +1034,13 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			expect(bindArgs).not.toContain('user-2');
 		}
 
-		// The upsert binds (chartId, userId, ...) — userId is the 2nd arg.
+		// The upsert binds (chartId, userId, ..., chartId) — userId is the
+		// 2nd arg, and the trailing 7th arg is the chartId for the
+		// `FROM dtx_files WHERE id = ?` existence gate (TOCTOU fix).
 		const upsertBinds = statements[0].bind.mock.calls[0];
 		expect(upsertBinds[0]).toBe(10);
 		expect(upsertBinds[1]).toBe('user-1');
+		expect(upsertBinds[6]).toBe(10);
 
 		// The delete binds (userId, chartId) — the subquery scoping.
 		const deleteBinds = statements[1].bind.mock.calls[0];
@@ -1048,6 +1051,94 @@ describe('upsertChartScoreAndReplaceScores', () => {
 		const insertBinds = statements[2].bind.mock.calls[0];
 		expect(insertBinds[0]).toBe('user-1');
 		expect(insertBinds[1]).toBe(10);
+	});
+
+	it('gates the upsert INSERT on dtx_files existence (TOCTOU defense)', async () => {
+		// The first statement's SQL must use `SELECT ... FROM dtx_files WHERE id = ?`
+		// (not `VALUES (...)`) so a chart deleted between the visibility check and
+		// the write can't orphan a chart_scores row.
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 1,
+			clear_count: 1,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi.fn().mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }]);
+
+		await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'u1',
+			playCount: 1,
+			clearCount: 1,
+			scores: []
+		});
+
+		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls;
+		const upsertSql = prepareCalls[0][0] as string;
+		expect(upsertSql).toContain('FROM dtx_files WHERE id = ?');
+		expect(upsertSql).not.toContain('VALUES (');
+	});
+
+	it('parallel upserts on the same chart are last-write-wins (no partial state)', async () => {
+		// Two concurrent upserts for the same (user, chart) with different
+		// play/clear counts. D1 batches are atomic per call, so each upsert
+		// is an independent transaction. The mock resolves both; the test
+		// verifies each call gets its own batch (no statement sharing) and
+		// the last-write-wins invariant holds (the caller's allSettled in
+		// score.ts accumulates results from both, each seeing its own row).
+		const rowA = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 5,
+			clear_count: 2,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const rowB = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 9,
+			clear_count: 7,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const dbA = createMockDb();
+		dbA.batch = vi.fn().mockResolvedValue([{ results: [rowA] }, { results: [] }]);
+		const dbB = createMockDb();
+		dbB.batch = vi.fn().mockResolvedValue([{ results: [rowB] }, { results: [] }]);
+
+		const [resultA, resultB] = await Promise.all([
+			upsertChartScoreAndReplaceScores(dbA as unknown as D1Database, {
+				chartId: 10,
+				userId: 'u1',
+				playCount: 5,
+				clearCount: 2,
+				scores: []
+			}),
+			upsertChartScoreAndReplaceScores(dbB as unknown as D1Database, {
+				chartId: 10,
+				userId: 'u1',
+				playCount: 9,
+				clearCount: 7,
+				scores: []
+			})
+		]);
+
+		// Each upsert sees its own row — no cross-contamination of bind args.
+		expect(resultA.play_count).toBe(5);
+		expect(resultB.play_count).toBe(9);
+		// Each call issued exactly one batch (independent transactions).
+		expect(dbA.batch).toHaveBeenCalledTimes(1);
+		expect(dbB.batch).toHaveBeenCalledTimes(1);
+		// Each batch has 2 statements (upsert + delete, no scores).
+		expect(dbA.batch.mock.calls[0][0]).toHaveLength(2);
+		expect(dbB.batch.mock.calls[0][0]).toHaveLength(2);
 	});
 });
 

@@ -1700,3 +1700,104 @@ async fn upload_scores_surfaces_graphql_error() {
         .unwrap()
         .contains("Not authenticated"));
 }
+
+#[tokio::test]
+async fn upload_scores_rejects_payload_missing_charts_array() {
+    // No mock server needed — validation short-circuits before the network call.
+    let result = upload_scores_impl("http://unused", "token", serde_json::json!({}))
+        .await
+        .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("missing 'charts'"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_payload_with_non_array_charts() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": "not-an-array" }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("missing 'charts'"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_missing_chart_id() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "playCount": 1, "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("chartId"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_negative_play_count() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": -1, "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("non-negative"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_missing_scores_array() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": 1, "clearCount": 0 }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("scores"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_excessive_chart_count() {
+    // 1001 charts exceeds the IPC sanity cap (1000). No mock needed.
+    let charts: Vec<serde_json::Value> = (0..1001)
+        .map(|i| {
+            serde_json::json!({
+                "chartId": i.to_string(),
+                "playCount": 1,
+                "clearCount": 0,
+                "scores": []
+            })
+        })
+        .collect();
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": charts }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("too many charts"));
+}

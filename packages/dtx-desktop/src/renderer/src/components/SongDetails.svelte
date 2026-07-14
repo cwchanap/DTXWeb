@@ -11,6 +11,7 @@
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import { simFileService } from '../services/simFileService';
 	import { desktopHost } from '../services/desktopHost';
+	import type { FetchCloudSongResult } from '../lib/scoreTypes';
 
 	interface Props {
 		song: TreeNode;
@@ -33,12 +34,6 @@
 		artist: string;
 		bpm?: number;
 		is_published: boolean;
-	};
-
-	type FetchCloudSongResult = {
-		success: boolean;
-		cloudSongData?: SimfileWithDtx;
-		error?: string;
 	};
 
 	type CreateSimfileResult = {
@@ -529,7 +524,9 @@
 			linkingSuccess = false;
 
 			try {
-				const result = await desktopHost.fetchCloudSong<FetchCloudSongResult>({
+				const result = await desktopHost.fetchCloudSong<
+					FetchCloudSongResult<SimfileWithDtx>
+				>({
 					cloudSongId: selectedSong.id
 				});
 

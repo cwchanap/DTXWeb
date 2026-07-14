@@ -874,11 +874,80 @@ pub async fn fetch_cloud_song_charts(app: AppHandle, cloud_song_id: Value) -> Re
     fetch_cloud_song_charts_impl(&base_url, &token, cloud_song_id).await
 }
 
+/// Cheap defense-in-depth validation of the upload_scores payload at the IPC
+/// boundary. The server (score.ts `validateChartScores`) is the real trust
+/// boundary and does full validation; these checks just short-circuit obviously
+/// malformed payloads before the network round-trip so a compromised renderer
+/// can't send arbitrarily large or structurally broken data to the API.
+///
+/// Returns `Ok(api_failure(...))` (not `Err`) on validation failure so the
+/// renderer sees the same `{ success: false, error }` envelope as a server-side
+/// rejection — `handleUpload` already handles that shape.
+fn validate_upload_payload(payload: &Value) -> Result<()> {
+    let charts = payload
+        .get("charts")
+        .and_then(|c| c.as_array())
+        .ok_or_else(|| {
+            DesktopError::Message("upload payload missing 'charts' array".to_string())
+        })?;
+
+    // Sanity cap well above the server's MAX_UPLOAD_CHARTS (100). Catches a
+    // runaway/compromised renderer without rejecting legitimate large imports.
+    const IPC_MAX_CHARTS: usize = 1000;
+    if charts.len() > IPC_MAX_CHARTS {
+        return Err(DesktopError::Message(format!(
+            "upload payload has too many charts ({} > {IPC_MAX_CHARTS})",
+            charts.len()
+        )));
+    }
+
+    for chart in charts {
+        // chartId must be a string or number (the server parses it as a number).
+        let chart_id = chart
+            .get("chartId")
+            .ok_or_else(|| DesktopError::Message("chart payload missing 'chartId'".to_string()))?;
+        if chart_id.as_str().is_none() && chart_id.as_i64().is_none() && chart_id.as_u64().is_none()
+        {
+            return Err(DesktopError::Message(
+                "chart 'chartId' must be a string or number".to_string(),
+            ));
+        }
+        // playCount / clearCount must be non-negative integers.
+        for field in &["playCount", "clearCount"] {
+            let val = chart
+                .get(*field)
+                .ok_or_else(|| DesktopError::Message(format!("chart payload missing '{field}'")))?;
+            let n = val.as_i64().ok_or_else(|| {
+                DesktopError::Message(format!("chart '{field}' must be an integer"))
+            })?;
+            if n < 0 {
+                return Err(DesktopError::Message(format!(
+                    "chart '{field}' must be non-negative (got {n})"
+                )));
+            }
+        }
+        // scores must be an array (the server validates contents).
+        if chart.get("scores").and_then(|s| s.as_array()).is_none() {
+            return Err(DesktopError::Message(
+                "chart payload missing 'scores' array".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn upload_scores_impl(
     base_url: &str,
     token: &str,
     payload: Value,
 ) -> Result<Value> {
+    // Defense-in-depth: validate the payload shape before the network
+    // round-trip. The server is the real trust boundary, but cheap sanity
+    // checks here catch obviously malformed data from a compromised renderer
+    // without costing a round-trip.
+    if let Err(error) = validate_upload_payload(&payload) {
+        return Ok(api_failure(error.to_string()));
+    }
     let result = graphql_result_with_url(
         base_url,
         token,

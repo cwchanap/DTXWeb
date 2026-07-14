@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Arc;
+use std::sync::Barrier;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
@@ -308,5 +310,106 @@ fn write_score_song_links_clear_all_with_empty_map() {
     assert!(
         read_score_song_links().is_empty(),
         "empty write must clear score_links, not restore them"
+    );
+}
+
+/// Stress test for the `preferences_write_lock` invariant: concurrent
+/// `write_preferences` (UI layout saves that merge to preserve score_links)
+/// and `write_score_song_links` (score-link replaces) must not lose updates.
+///
+/// Without the write lock, the classic lost-update race is:
+///   1. write_preferences reads on-disk prefs (score_links = old)
+///   2. write_score_song_links reads old prefs, sets new links, writes
+///   3. write_preferences merges (empty score_links → preserve old from step 1),
+///      writes stale score_links → clobbers step 2's new links
+///
+/// With the lock, each RMW is a critical section so both the UI prefs and the
+/// score links from the respective last writes always survive. A barrier
+/// synchronizes the two threads to start simultaneously, maximizing contention
+/// so a missing lock would manifest as a stale clobber within the iteration
+/// count. The assertion checks the end state: the last write_score_song_links
+/// links must be present (not clobbered by a stale write_preferences), and the
+/// last write_preferences width must be present (not clobbered by a stale
+/// write_score_song_links that read old UI prefs).
+#[test]
+fn concurrent_write_preferences_and_score_links_no_lost_updates() {
+    let _guard = home_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let dir = TempDir::new().unwrap();
+    let _home = HomeEnvGuard::replace(dir.path());
+
+    // Seed: UI prefs + one score link.
+    write_preferences(Preferences {
+        detail_pane_width: 400.0,
+        detail_pane_visible: true,
+        score_links: HashMap::new(),
+    })
+    .expect("seed prefs");
+    write_score_song_links(HashMap::from([("seed".to_string(), "1".to_string())]))
+        .expect("seed links");
+
+    const ITERATIONS: usize = 200;
+    let barrier = Arc::new(Barrier::new(2));
+
+    let barrier_a = barrier.clone();
+    let handle_a = std::thread::spawn(move || {
+        barrier_a.wait();
+        for i in 0..ITERATIONS {
+            write_preferences(Preferences {
+                // Vary width so each write is distinguishable; the last writer's
+                // width is what we assert below. Empty score_links triggers the
+                // merge that preserves on-disk links — the exact path that
+                // clobbers a concurrent write_score_song_links without the lock.
+                detail_pane_width: 400.0 + (i as f64),
+                detail_pane_visible: true,
+                score_links: HashMap::new(),
+            })
+            .expect("write_preferences in thread A");
+        }
+    });
+
+    let barrier_b = barrier.clone();
+    let handle_b = std::thread::spawn(move || {
+        barrier_b.wait();
+        for i in 0..ITERATIONS {
+            // Each call replaces the entire score_links map. The last call's
+            // single key is what should survive — a stale write_preferences
+            // would restore an earlier key (or "seed") instead.
+            let key = format!("link_{i}");
+            write_score_song_links(HashMap::from([(key, i.to_string())]))
+                .expect("write_score_song_links in thread B");
+        }
+    });
+
+    handle_a.join().expect("thread A panicked");
+    handle_b.join().expect("thread B panicked");
+
+    // Both writers preserve the other's field:
+    //   write_preferences merges (preserves score_links)
+    //   write_score_song_links reads current prefs (preserves UI prefs)
+    // So the final state must carry BOTH the last width AND the last links.
+    // Without the lock, a stale write_preferences could clobber the latest
+    // score_links with an earlier read's snapshot.
+    let prefs = read_preferences();
+    // Width must be > the seed 400.0 — i.e., at least one write_preferences
+    // landed after the seed and was not clobbered by a stale
+    // write_score_song_links that read the seed width. (write_score_song_links
+    // preserves UI prefs, so this holds regardless of which thread wrote last.)
+    assert!(
+        prefs.detail_pane_width > 400.0,
+        "write_preferences width updates were lost (width = {}, expected > 400.0)",
+        prefs.detail_pane_width
+    );
+    // Score links must be a "link_N" key from thread B, not the stale "seed".
+    // Without the lock, a stale write_preferences RMW could restore "seed".
+    let links = &prefs.score_links;
+    assert!(
+        links.keys().any(|k| k.starts_with("link_")),
+        "score links were clobbered by a stale write_preferences RMW: {:?}",
+        links
+    );
+    assert!(
+        !links.contains_key("seed"),
+        "stale seed link survived — a write_preferences RMW read before the first write_score_song_links and wrote back the stale snapshot: {:?}",
+        links
     );
 }

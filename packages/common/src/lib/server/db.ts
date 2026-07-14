@@ -537,14 +537,22 @@ export const upsertChartScoreAndReplaceScores = async (
 			.prepare(
 				`INSERT INTO chart_scores
 					(chart_id, user_id, play_count, clear_count, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?)
+				 SELECT ?, ?, ?, ?, ?, ? FROM dtx_files WHERE id = ?
 				 ON CONFLICT(user_id, chart_id) DO UPDATE SET
 					play_count = excluded.play_count,
 					clear_count = excluded.clear_count,
 					updated_at = excluded.updated_at
 				 RETURNING *`
 			)
-			.bind(chartId, userId, playCount, clearCount, now, now),
+			// The trailing chartId gates the INSERT on the chart still existing
+			// in dtx_files at write time (TOCTOU: a chart deleted between the
+			// visibility check in score.ts and this batch would otherwise orphan
+			// a chart_scores row, since D1 does not reliably enforce FK cascades
+			// — see 0002_scores.sql). If the chart was deleted, the SELECT
+			// returns 0 rows, the upsert is a no-op, RETURNING yields nothing,
+			// and the function throws — caught by the caller's allSettled as a
+			// "write failed" skip with no orphaned rows.
+			.bind(chartId, userId, playCount, clearCount, now, now, chartId),
 		db
 			.prepare(`DELETE FROM scores WHERE chart_score_id = ${resolveChartScoreId}`)
 			.bind(userId, chartId),

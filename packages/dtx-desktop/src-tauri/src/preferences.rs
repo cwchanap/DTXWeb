@@ -1,10 +1,29 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{DesktopError, Result};
+
+/// Serializes read-modify-write cycles on `preferences.json`. Both
+/// `write_preferences` (UI layout saves, which merge to preserve score_links)
+/// and `write_score_song_links` (score-link updates/clears) do unlocked RMW on
+/// the same file; without a lock, two concurrent calls can silently clobber
+/// each other's updates (atomic rename prevents corruption but not lost
+/// updates). The guard is held across the full RMW so the read, merge, and
+/// write happen as one critical section.
+///
+/// `OnceLock` avoids a new dependency (available since Rust 1.70). Poisoned-
+/// mutex recovery matches `DtxmaniaDbState` in `scores.rs`: a panic while
+/// holding the lock is non-fatal — the next caller takes the inner value and
+/// proceeds, since a stale preferences file is recoverable (defaults fallback)
+/// and not worth poisoning the whole app over.
+fn preferences_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 const MIN_DETAIL_WIDTH: f64 = 320.0;
 const MAX_DETAIL_WIDTH: f64 = 640.0;
@@ -116,6 +135,14 @@ pub fn write_preferences(prefs: Preferences) -> Result<()> {
     match dirs::home_dir() {
         Some(home) => {
             let path = preferences_path(&home);
+            // Hold the write lock across the full read-modify-write so a
+            // concurrent write_score_song_links call can't interleave: without
+            // the guard, one caller's read could observe the file before the
+            // other's rename, and the second rename would silently discard the
+            // first's score_links update (or vice versa).
+            let _guard = preferences_write_lock()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             // Read-modify-write: the UI pref store (preferencesService) sends
             // only detailPaneWidth/Visible — it does not carry scoreLinks. A
             // blind replace would wipe the score_links map on every layout
@@ -158,6 +185,12 @@ pub fn read_score_song_links() -> HashMap<String, String> {
 /// the empty case, so it must bypass the merge.
 #[tauri::command]
 pub fn write_score_song_links(links: HashMap<String, String>) -> Result<()> {
+    // Hold the write lock across the full read-modify-write so a concurrent
+    // write_preferences call can't interleave and clobber this update (or
+    // vice versa). See write_preferences for the race rationale.
+    let _guard = preferences_write_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut prefs = read_preferences();
     prefs.score_links = links;
     match dirs::home_dir() {

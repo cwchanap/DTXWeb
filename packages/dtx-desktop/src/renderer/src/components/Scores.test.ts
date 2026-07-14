@@ -639,4 +639,76 @@ describe('Scores', () => {
 		expect(screen.getByText(/partial upload: 100 chart/i)).toBeInTheDocument();
 		expect(screen.getByText(/200 score/i)).toBeInTheDocument();
 	});
+
+	it('re-enables the Upload button even when restoreLinksFor throws during upload', async () => {
+		// Seed a saved link so restoreLinksFor has entries to process during
+		// upload. fetchCloudSong throws synchronously so the .map() inside
+		// restoreLinksFor throws before Promise.allSettled can catch it —
+		// simulating the kind of unexpected error that the old try/finally
+		// scope (which only wrapped the batch loop) missed, leaving the Upload
+		// button stuck disabled forever.
+		host.readScoreSongLinks.mockResolvedValue({
+			['Played Song\u0000Artist A\u0000Rock']: '42'
+		});
+		host.fetchCloudSong.mockImplementation(() => {
+			throw new Error('synchronous explosion');
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+		// The onMount restoreLinksForPage call also throws, but loadScores
+		// catches it (try/catch around restoreLinksForPage). Wait for that
+		// call to land before triggering upload.
+		await waitFor(() => expect(host.fetchCloudSong).toHaveBeenCalled());
+
+		const uploadButton = screen.getByRole('button', { name: /^upload/i });
+		await fireEvent.click(uploadButton);
+
+		// The Upload button must be re-enabled (not stuck disabled) after the
+		// throw. Before the fix, the try/finally didn't cover restoreLinksFor,
+		// so `uploading` stayed true forever.
+		await waitFor(() => expect(uploadButton).not.toBeDisabled());
+		expect(screen.getByText(/synchronous explosion/i)).toBeInTheDocument();
+	});
+
+	it('disables Reparse and Choose buttons during upload and re-enables after', async () => {
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		// Link the song so there is something to upload.
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		// Hold the upload in-flight so we can inspect button state mid-upload.
+		let resolveUpload!: (value: unknown) => void;
+		host.uploadScores.mockReturnValue(
+			new Promise((resolve) => {
+				resolveUpload = resolve;
+			})
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		// During upload: all three buttons must be disabled.
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: /^upload/i })).toBeDisabled()
+		);
+		expect(screen.getByRole('button', { name: /choose songs\.db/i })).toBeDisabled();
+		expect(screen.getByRole('button', { name: /reparse/i })).toBeDisabled();
+
+		// Release the upload — buttons re-enable.
+		resolveUpload({
+			success: true,
+			data: { updatedCharts: 1, insertedScores: 2, skipped: [] }
+		});
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: /^upload/i })).not.toBeDisabled()
+		);
+		expect(screen.getByRole('button', { name: /choose songs\.db/i })).not.toBeDisabled();
+		expect(screen.getByRole('button', { name: /reparse/i })).not.toBeDisabled();
+	});
 });

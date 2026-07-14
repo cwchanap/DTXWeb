@@ -93,4 +93,56 @@ describe('ScoreList', () => {
 	// full-page loading state), so the pagination buttons remain clickable
 	// mid-load — the guard is what keeps concurrent loads safe
 	// (ScoreList.svelte:25-42: requestId check in try/catch/finally).
+
+	it('ignores a stale response when a later page change resolves first (loadRequestId guard)', async () => {
+		// 25 songs → 3 pages (10 + 10 + 5). Page 1 loads on mount. Then the
+		// user clicks page 2 (slow response) and immediately page 3 (fast
+		// response). Page 3 resolves first; page 2's stale response must NOT
+		// overwrite page 3's data when it eventually resolves.
+		const page1 = Array.from({ length: 10 }, (_, i) => ({
+			...song,
+			id: i + 1,
+			title: `Song ${i + 1}`
+		}));
+		const page2 = Array.from({ length: 10 }, (_, i) => ({
+			...song,
+			id: i + 11,
+			title: `Song ${i + 11}`
+		}));
+		const page3 = Array.from({ length: 5 }, (_, i) => ({
+			...song,
+			id: i + 21,
+			title: `Song ${i + 21}`
+		}));
+
+		// Page 1 resolves immediately (initial mount load).
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page1, count: 25 });
+
+		render(ScoreList);
+		await waitFor(() => expect(screen.getByText('Song 1')).toBeInTheDocument());
+
+		// Page 2: deferred (slow). Page 3: immediate (fast).
+		let resolvePage2!: (value: { data: typeof page2; count: number }) => void;
+		const page2Promise = new Promise<{ data: typeof page2; count: number }>((resolve) => {
+			resolvePage2 = resolve;
+		});
+		myScoredSimfilesMock.mockReturnValueOnce(page2Promise);
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page3, count: 25 });
+
+		// Click page 2, then immediately page 3 (before page 2 resolves).
+		await fireEvent.click(screen.getByText('2'));
+		await fireEvent.click(screen.getByText('3'));
+
+		// Page 3 resolves first — its data must be rendered.
+		await waitFor(() => expect(screen.getByText('Song 21')).toBeInTheDocument());
+
+		// Now resolve page 2 (the stale response). It must NOT overwrite
+		// page 3's data — the loadRequestId guard drops it.
+		resolvePage2({ data: page2, count: 25 });
+		await waitFor(() => expect(myScoredSimfilesMock).toHaveBeenCalledTimes(3));
+
+		// Page 3's data is still shown; page 2's stale data is NOT.
+		expect(screen.getByText('Song 21')).toBeInTheDocument();
+		expect(screen.queryByText('Song 11')).not.toBeInTheDocument();
+	});
 });

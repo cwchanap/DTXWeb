@@ -6,7 +6,14 @@
 	import ScoreSongCard from './ScoreSongCard.svelte';
 	import { matchCharts, type CloudChart } from '../lib/scoreMatching';
 	import { toastStore } from '../stores/toastStore';
-	import type { ScorePayload, DtxmaniaSong, CloudSong } from '../lib/scoreTypes';
+	import type {
+		ScorePayload,
+		DtxmaniaSong,
+		CloudSong,
+		FetchCloudSongResult,
+		FetchCloudSongChartsResult,
+		UploadScoresResult
+	} from '../lib/scoreTypes';
 
 	let dbPath = $state<string | null>(null);
 	let songs = $state<DtxmaniaSong[]>([]);
@@ -147,29 +154,11 @@
 		// large library (hundreds of saved links) doesn't fire hundreds of
 		// concurrent GraphQL/D1 requests at once. A fetch failure falls back
 		// to the placeholder so one bad link doesn't block the rest.
-		const titleResults: PromiseSettledResult<{
-			success: boolean;
-			cloudSongData?: {
-				id: number;
-				title: string;
-				artist: string;
-				is_published: boolean;
-			};
-		}>[] = [];
+		const titleResults: PromiseSettledResult<FetchCloudSongResult>[] = [];
 		for (let i = 0; i < entries.length; i += RESTORE_CONCURRENCY) {
 			const chunk = entries.slice(i, i + RESTORE_CONCURRENCY);
 			const results = await Promise.allSettled(
-				chunk.map((e) =>
-					desktopHost.fetchCloudSong<{
-						success: boolean;
-						cloudSongData?: {
-							id: number;
-							title: string;
-							artist: string;
-							is_published: boolean;
-						};
-					}>(e.cloudId)
-				)
+				chunk.map((e) => desktopHost.fetchCloudSong<FetchCloudSongResult>(e.cloudId))
 			);
 			titleResults.push(...results);
 		}
@@ -247,10 +236,9 @@
 		if (persist) schedulePersist();
 		autocompleteFor = null;
 		try {
-			const result = await desktopHost.fetchCloudSongCharts<{
-				success: boolean;
-				data?: CloudChart[];
-			}>(song.id);
+			const result = await desktopHost.fetchCloudSongCharts<FetchCloudSongChartsResult>(
+				song.id
+			);
 			const charts = result.success ? (result.data ?? []) : [];
 			cloudChartsBySong[songIndex] = charts;
 			matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
@@ -337,36 +325,36 @@
 		uploading = true;
 		uploadStatus = 'Uploading…';
 		skipped = [];
-		// Paging only restores cloud links for the visible page. Upload walks
-		// the full `songs` array, so restore every saved link first — upload is
-		// an explicit user action, so the burst of fetches is expected and the
-		// user is already waiting on the result. Songs already linked are
-		// skipped inside restoreLinksFor.
-		await restoreLinksFor(songs.map((_, i) => i));
-		const input = buildUpload();
-		if (input.charts.length === 0) {
-			uploadStatus = 'Nothing to upload — link a song and match at least one chart first.';
-			uploading = false;
-			return;
-		}
-		// Surface client-side skips (duplicate chart matches) alongside any
-		// server-side skips returned in the upload response.
-		skipped = input.clientSkipped;
-		let totalUpdated = 0;
-		let totalInserted = 0;
-		const serverSkipped: { chartId: string; reason: string }[] = [];
+		// The try/finally wraps the ENTIRE post-guard body (restore + build +
+		// batch loop) so a throw anywhere resets `uploading`. Previously
+		// restoreLinksFor/buildUpload ran before the try, so a mid-upload
+		// Reparse click (not disabled during upload) could set songs = [] →
+		// restoreLinksFor read songs[i] undefined → threw → finally never ran
+		// → Upload button stuck disabled forever.
 		try {
+			// Paging only restores cloud links for the visible page. Upload walks
+			// the full `songs` array, so restore every saved link first — upload is
+			// an explicit user action, so the burst of fetches is expected and the
+			// user is already waiting on the result. Songs already linked are
+			// skipped inside restoreLinksFor.
+			await restoreLinksFor(songs.map((_, i) => i));
+			const input = buildUpload();
+			if (input.charts.length === 0) {
+				uploadStatus =
+					'Nothing to upload — link a song and match at least one chart first.';
+				return;
+			}
+			// Surface client-side skips (duplicate chart matches) alongside any
+			// server-side skips returned in the upload response.
+			skipped = input.clientSkipped;
+			let totalUpdated = 0;
+			let totalInserted = 0;
+			const serverSkipped: { chartId: string; reason: string }[] = [];
 			for (let i = 0; i < input.charts.length; i += MAX_UPLOAD_CHARTS) {
 				const batch = input.charts.slice(i, i + MAX_UPLOAD_CHARTS);
-				const result = await desktopHost.uploadScores<{
-					success: boolean;
-					data?: {
-						updatedCharts: number;
-						insertedScores: number;
-						skipped: typeof skipped;
-					};
-					error?: string;
-				}>({ charts: batch });
+				const result = await desktopHost.uploadScores<UploadScoresResult>({
+					charts: batch
+				});
 				if (!result.success || !result.data) {
 					// Earlier batches in this loop already committed server-side.
 					// Surface the partial progress so the user knows what landed
@@ -398,15 +386,17 @@
 		<h1 class="font-display text-hi text-xl font-semibold">Scores</h1>
 		<div class="ml-auto flex items-center gap-2">
 			<button
-				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm"
+				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 				onclick={handleChooseDb}
+				disabled={uploading}
 			>
 				<FolderOpen size={16} /> Choose songs.db
 			</button>
 			{#if dbPath}
 				<button
-					class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm"
+					class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 					onclick={() => dbPath && loadScores(dbPath)}
+					disabled={uploading}
 				>
 					<RefreshCw size={16} /> Reparse
 				</button>

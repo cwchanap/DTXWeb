@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { _ } from 'svelte-i18n';
+	import { _, locale } from 'svelte-i18n';
 	import type { ScoredSimfile } from '$lib/api/score';
 
 	interface Props {
@@ -7,12 +7,17 @@
 	}
 	let { song }: Props = $props();
 
+	// svelte-i18n uses 'jp' for Japanese, but Intl expects the BCP 47 tag 'ja'.
+	// Map the active svelte-i18n locale to a valid Intl locale so number/date
+	// formatting follows the UI language instead of the browser default.
+	const intlLocale = (): string => ($locale === 'jp' ? 'ja' : ($locale ?? 'en'));
+
 	const formatScore = (score: number | null): string =>
-		score == null ? '—' : score.toLocaleString('en-US');
+		score == null ? '—' : score.toLocaleString(intlLocale());
 	const formatRate = (rate: number | null): string =>
 		rate == null ? '—' : `${rate.toFixed(2)}%`;
 	const formatDate = (iso: string | null): string =>
-		iso ? new Date(iso).toLocaleDateString() : '—';
+		iso ? new Date(iso).toLocaleDateString(intlLocale()) : '—';
 </script>
 
 <div class="music-card p-6">
@@ -67,11 +72,11 @@
 					</div>
 					{#if best.perfect != null || best.great != null || best.good != null || best.poor != null || best.miss != null}
 						<div class="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
-							<span>{$_('score.perfect')} {best.perfect ?? 0}</span>
-							<span>{$_('score.great')} {best.great ?? 0}</span>
-							<span>{$_('score.good')} {best.good ?? 0}</span>
-							<span>{$_('score.poor')} {best.poor ?? 0}</span>
-							<span>{$_('score.miss')} {best.miss ?? 0}</span>
+							<span>{$_('score.perfect')} {best.perfect ?? '—'}</span>
+							<span>{$_('score.great')} {best.great ?? '—'}</span>
+							<span>{$_('score.good')} {best.good ?? '—'}</span>
+							<span>{$_('score.poor')} {best.poor ?? '—'}</span>
+							<span>{$_('score.miss')} {best.miss ?? '—'}</span>
 						</div>
 					{/if}
 				{:else}

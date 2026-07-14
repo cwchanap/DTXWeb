@@ -451,3 +451,48 @@ fn parse_tolerates_null_integer_columns() {
     assert!(!best.full_combo);
     assert_eq!(best.max_combo, Some(0));
 }
+
+/// Seed a DTXMania-shaped DB WITHOUT the `PerformanceHistory` table, simulating
+/// an older/other DTXManiaCX build whose schema lacks the per-play history
+/// table. The best-only fallback must still load songs + best scores (with
+/// empty `recent`), rather than aborting the whole parse with a generic SQLite
+/// "no such table" error.
+fn seed_db_without_performance_history(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         -- No PerformanceHistory table: simulates a schema-drift build.
+
+         INSERT INTO Songs VALUES (1, 'Drift Song', 'Artist', 'Rock');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_degrades_to_best_only_when_performance_history_missing() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_without_performance_history(&db);
+
+    // Without the schema-drift pre-check, JOINED_QUERY would fail with
+    // "no such table: PerformanceHistory" and return no songs at all. With the
+    // pre-check, the best-only fallback runs and the song loads with its best
+    // score intact and an empty recent list.
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+    let chart = &songs[0].charts[0];
+    assert_eq!(chart.aggregate.play_count, 7);
+    let best = chart.best.as_ref().expect("best present");
+    assert_eq!(best.score, Some(950000));
+    assert_eq!(best.rank_label.as_deref(), Some("S"));
+    // No PerformanceHistory rows -> recent is empty, but the chart still loads.
+    assert!(chart.recent.is_empty());
+}

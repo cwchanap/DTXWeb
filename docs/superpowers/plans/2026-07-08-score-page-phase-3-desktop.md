@@ -18,7 +18,7 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **Drums only:** every `SongScores` read is filtered to `Instrument = 0`.
 - **Read-only DB open:** open `songs.db` with `OpenFlags::SQLITE_OPEN_READ_ONLY` (avoids lock contention with a running DTXMania).
 - **rusqlite dependency (exact):** `rusqlite = { version = "0.32", features = ["bundled"] }` (bundled SQLite; no system dependency).
-- **Rank table (best row only):** `SS = 100`, `S ≥ 95`, `A ≥ 90`, `B ≥ 80`, `C ≥ 70`, `D ≥ 60`, `E ≥ 50`, else `F`. Recent rows use the `RANK` token from the `HistoryLine` verbatim; only the best row derives its label from this table.
+- **Rank table (best row only):** `SS ≥ 95`, `S ≥ 80`, `A ≥ 73`, `B ≥ 62`, `C ≥ 50`, `D < 50` (validated against DTXManiaCX source; matches spec §5.2). Recent rows use the `RANK` token from the `HistoryLine` verbatim; only the best row derives its label from this table.
 - **DrumLevel normalization:** the DTXMania `DrumLevel` integer is stored ×10; the normalized numeric level is `DrumLevel / 10` (e.g. `55 → 5.5`), compared against `dtx_files.level`.
 - **Recent window:** at most 5 recent rows per chart, ordered by `PerformanceHistory.DisplayOrder` (1 = most recent). `score` is **NULL** for recent rows.
 - **Tolerant parsing:** a `HistoryLine` that doesn't match keeps `performedAt` and leaves parsed fields null; it never aborts the song.
@@ -142,17 +142,19 @@ use tempfile::tempdir;
 
 #[test]
 fn derive_rank_label_covers_all_bands() {
+    // DTXManiaCX thresholds: SS >= 95, S >= 80, A >= 73, B >= 62, C >= 50, D < 50.
     assert_eq!(derive_rank_label(100.0), "SS");
-    assert_eq!(derive_rank_label(99.99), "S");
-    assert_eq!(derive_rank_label(95.0), "S");
-    assert_eq!(derive_rank_label(94.99), "A");
-    assert_eq!(derive_rank_label(90.0), "A");
-    assert_eq!(derive_rank_label(80.0), "B");
-    assert_eq!(derive_rank_label(70.0), "C");
-    assert_eq!(derive_rank_label(60.0), "D");
-    assert_eq!(derive_rank_label(50.0), "E");
-    assert_eq!(derive_rank_label(49.99), "F");
-    assert_eq!(derive_rank_label(0.0), "F");
+    assert_eq!(derive_rank_label(95.0), "SS");
+    assert_eq!(derive_rank_label(94.99), "S");
+    assert_eq!(derive_rank_label(80.0), "S");
+    assert_eq!(derive_rank_label(79.99), "A");
+    assert_eq!(derive_rank_label(73.0), "A");
+    assert_eq!(derive_rank_label(72.99), "B");
+    assert_eq!(derive_rank_label(62.0), "B");
+    assert_eq!(derive_rank_label(61.99), "C");
+    assert_eq!(derive_rank_label(50.0), "C");
+    assert_eq!(derive_rank_label(49.99), "D");
+    assert_eq!(derive_rank_label(0.0), "D");
 }
 
 #[test]
@@ -268,23 +270,20 @@ pub struct DtxmaniaSong {
 
 /// Rank label for the best row, derived from the achievement rate (0–100).
 /// Recent rows keep the RANK token parsed from the history line instead.
+/// Thresholds match DTXManiaCX: SS >= 95, S >= 80, A >= 73, B >= 62, C >= 50, D < 50.
 pub fn derive_rank_label(rate: f64) -> &'static str {
-    if rate >= 100.0 {
+    if rate >= 95.0 {
         "SS"
-    } else if rate >= 95.0 {
-        "S"
-    } else if rate >= 90.0 {
-        "A"
     } else if rate >= 80.0 {
+        "S"
+    } else if rate >= 73.0 {
+        "A"
+    } else if rate >= 62.0 {
         "B"
-    } else if rate >= 70.0 {
-        "C"
-    } else if rate >= 60.0 {
-        "D"
     } else if rate >= 50.0 {
-        "E"
+        "C"
     } else {
-        "F"
+        "D"
     }
 }
 

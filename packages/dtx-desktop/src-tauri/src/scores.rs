@@ -181,8 +181,10 @@ impl DtxmaniaDbState {
 /// Compares two filesystem paths by canonicalizing both and comparing the
 /// resolved forms, so a path that differs in representation (relative vs
 /// absolute, symlink, trailing slash) but points to the same file is accepted.
-/// Falls back to a raw string comparison when canonicalization fails for
-/// either side (e.g. the path does not exist).
+/// A raw string equality check runs first (handles the common case without
+/// touching the filesystem); if the strings differ and canonicalization fails
+/// for either side (e.g. the path does not exist), the paths are treated as
+/// not equal.
 fn paths_equal(a: &str, b: &str) -> bool {
     if a == b {
         return true;
@@ -294,8 +296,50 @@ JOIN SongScores ss ON ss.ChartId = c.Id AND ss.Instrument = 0 \
 LEFT JOIN PerformanceHistory ph ON ph.SongScoreId = ss.Id \
 ORDER BY s.Id, c.Id, ph.DisplayOrder";
 
+/// Best-only fallback used when the `PerformanceHistory` table is absent from
+/// the DTXMania database (e.g. an older/other client that doesn't track
+/// per-play history). The three trailing `NULL` columns stand in for
+/// `ph.PerformedAt`, `ph.HistoryLine`, `ph.DisplayOrder` so the same
+/// `JoinedRow` mapper works — every history column is `None`, so
+/// `group_joined_rows` produces an empty `recent` list per chart. Best scores
+/// still load, which is strictly better than aborting the entire parse with a
+/// generic SQLite error.
+const BEST_ONLY_QUERY: &str = "\
+SELECT s.Id, s.Title, s.Artist, s.Genre, \
+       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.FileHash, \
+       ss.BestScore, ss.BestAchievementRate, ss.FullCombo, ss.PlayCount, \
+       ss.ClearCount, ss.MaxCombo, ss.BestPerfect, ss.BestGreat, ss.BestGood, \
+       ss.BestPoor, ss.BestMiss, ss.LastPlayedAt, \
+       NULL, NULL, NULL \
+FROM Songs s \
+JOIN SongCharts c ON c.SongId = s.Id \
+JOIN SongScores ss ON ss.ChartId = c.Id AND ss.Instrument = 0 \
+ORDER BY s.Id, c.Id";
+
+/// Returns true if a table named `name` exists in the database's
+/// `sqlite_master`. Used to detect whether `PerformanceHistory` is present
+/// before running the joined query, so a schema mismatch degrades to the
+/// best-only fallback instead of aborting the whole parse.
+fn has_table(conn: &Connection, name: &str) -> Result<bool> {
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+            [name],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    Ok(exists > 0)
+}
+
 fn read_joined_rows(conn: &Connection) -> Result<Vec<JoinedRow>> {
-    let mut stmt = conn.prepare(JOINED_QUERY)?;
+    // Degrade to the best-only query when PerformanceHistory is missing so a
+    // schema mismatch (e.g. an older DTXManiaCX build) doesn't abort the parse.
+    let query = if has_table(conn, "PerformanceHistory")? {
+        JOINED_QUERY
+    } else {
+        BEST_ONLY_QUERY
+    };
+    let mut stmt = conn.prepare(query)?;
     let rows = stmt
         .query_map([], |row| {
             Ok(JoinedRow {

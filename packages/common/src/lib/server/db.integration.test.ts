@@ -11,7 +11,13 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Miniflare } from 'miniflare';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { upsertChartScoreAndReplaceScores, getUserChartScore } from './db';
+import {
+	upsertChartScoreAndReplaceScores,
+	getUserChartScore,
+	listUserScoredSimfiles,
+	listUserChartScores,
+	getChartVisibilityBatch
+} from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
 const MIGRATIONS_DIR = join(
@@ -389,5 +395,199 @@ describe('D1 partial unique indexes (real D1)', () => {
 
 		const fetched = await getUserChartScore(db, 'user-1', 1);
 		expect(fetched!.scores).toHaveLength(3);
+	});
+});
+
+// Read-path integration tests for the three SQL functions that the score page
+// relies on. These are only mock-tested in score.test.ts; a wrong join/column
+// or a broken visibility filter / recency ORDER BY would pass the mocks but
+// fail in prod. This block seeds two users against real D1 and verifies
+// pagination, the visibility filter (published OR owned), the
+// ORDER BY MAX(cs.updated_at) recency ordering, the batched chart-score fetch,
+// and the visibility-batch map shape.
+//
+// Fixture (all ids are explicit so assertions can reference them):
+//   simfiles: 1 (user-2, published), 2 (user-1, unpublished), 3 (user-2,
+//             unpublished — NOT visible to user-1), 4 (user-2, published)
+//   dtx_files (charts): 10→sim1, 11→sim2, 12→sim3, 13→sim4
+//   chart_scores (user-1 has a row on every chart, including the invisible
+//             sim3, so the visibility filter is actually exercised):
+//     chart 10 (sim1): updated_at 2026-07-10  <- most recent VISIBLE
+//     chart 11 (sim2): updated_at 2026-07-09
+//     chart 12 (sim3): updated_at 2026-07-11  <- most recent overall, but
+//                                                excluded by visibility
+//     chart 13 (sim4): updated_at 2026-07-08
+//   scores: best + 1 recent on chart_score 100 (chart 10); best only on 101.
+const seedReadPathFixture = async (db: D1Database) => {
+	// Clear the simfile/dtx_files/chart_scores/scores seeded by the outer
+	// beforeEach so the explicit fixture below is the only data present.
+	await db.prepare('DELETE FROM scores').run();
+	await db.prepare('DELETE FROM chart_scores').run();
+	await db.prepare('DELETE FROM dtx_files').run();
+	await db.prepare('DELETE FROM simfiles').run();
+
+	await db
+		.prepare(
+			`INSERT INTO simfiles (id, title, artist, bpm, user_id, is_published, publish_date, created_at, updated_at)
+			 VALUES
+			   (1, 'Pub Other',    'A', 120, 'user-2', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+			   (2, 'Mine Unpub',   'B', 130, 'user-1', 0, '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z'),
+			   (3, 'Other Unpub',  'C', 140, 'user-2', 0, '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z'),
+			   (4, 'Pub Other 2',  'D', 150, 'user-2', 1, '2026-01-04T00:00:00Z', '2026-01-04T00:00:00Z', '2026-01-04T00:00:00Z')`
+		)
+		.run();
+
+	await db
+		.prepare(
+			`INSERT INTO dtx_files (id, label, level, simfile_id) VALUES
+			   (10, 'BASIC', 5, 1),
+			   (11, 'ADV',   8, 2),
+			   (12, 'EXT',  10, 3),
+			   (13, 'BASIC', 3, 4)`
+		)
+		.run();
+
+	await db
+		.prepare(
+			`INSERT INTO chart_scores (id, chart_id, user_id, play_count, clear_count, created_at, updated_at)
+			 VALUES
+			   (100, 10, 'user-1', 7, 5, '2026-07-01T00:00:00Z', '2026-07-10T00:00:00Z'),
+			   (101, 11, 'user-1', 3, 2, '2026-07-01T00:00:00Z', '2026-07-09T00:00:00Z'),
+			   (102, 12, 'user-1', 9, 6, '2026-07-01T00:00:00Z', '2026-07-11T00:00:00Z'),
+			   (103, 13, 'user-1', 2, 1, '2026-07-01T00:00:00Z', '2026-07-08T00:00:00Z')`
+		)
+		.run();
+
+	await db
+		.prepare(
+			`INSERT INTO scores (id, chart_score_id, is_best, score, achievement_rate, rank_label, full_combo, cleared, max_combo, perfect, great, good, poor, miss, performed_at, display_order)
+			 VALUES
+			   (200, 100, 1, 950000, 91.3, 'S', 1, 1, 800, 500, 30, 10, 5, 2, '2026-06-02T00:00:00Z', NULL),
+			   (201, 100, 0, NULL,   82.4, 'A', 0, 1, NULL, NULL, NULL, NULL, NULL, NULL, '2026-06-01T00:00:00Z', 1),
+			   (202, 101, 1, 880000, 88.0, 'S', 0, 1, 700, 400, 50, 20, 10, 5, '2026-06-01T00:00:00Z', NULL)`
+		)
+		.run();
+};
+
+describe('read-path SQL (real D1)', () => {
+	beforeEach(async () => {
+		await seedReadPathFixture(db);
+	});
+
+	describe('listUserScoredSimfiles', () => {
+		it('returns only visible simfiles (published OR owned), ordered by recency', async () => {
+			const { data, count } = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 1,
+				pageSize: 20
+			});
+
+			// sim3 is owned by user-2 and unpublished -> excluded by the
+			// visibility filter even though user-1 has a (most-recent)
+			// chart_score on it. A broken filter would leak it.
+			expect(count).toBe(3);
+			expect(data.map((s) => s.id)).toEqual([1, 2, 4]);
+			// Recency: MAX(cs.updated_at) DESC -> sim1 (07-10), sim2 (07-09), sim4 (07-08).
+			expect(data.map((s) => s.title)).toEqual(['Pub Other', 'Mine Unpub', 'Pub Other 2']);
+		});
+
+		it('paginates at the SQL level (page 1 and page 2)', async () => {
+			const page1 = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 1,
+				pageSize: 2
+			});
+			expect(page1.count).toBe(3);
+			expect(page1.data.map((s) => s.id)).toEqual([1, 2]);
+
+			const page2 = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 2,
+				pageSize: 2
+			});
+			expect(page2.count).toBe(3);
+			expect(page2.data.map((s) => s.id)).toEqual([4]);
+		});
+
+		it('joins dtx_files for each returned simfile', async () => {
+			const { data } = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 1,
+				pageSize: 20
+			});
+			const sim1 = data.find((s) => s.id === 1);
+			expect(sim1?.dtx_files).toEqual([{ id: 10, level: 5, label: 'BASIC' }]);
+		});
+
+		it('returns empty data with count 0 for a user with no scores', async () => {
+			const { data, count } = await listUserScoredSimfiles(db, {
+				userId: 'nobody',
+				page: 1,
+				pageSize: 20
+			});
+			expect(count).toBe(0);
+			expect(data).toEqual([]);
+		});
+	});
+
+	describe('listUserChartScores', () => {
+		it('batch-fetches chart_scores + scores keyed by chart_id, best-first', async () => {
+			const map = await listUserChartScores(db, 'user-1', [10, 11]);
+
+			expect(map.size).toBe(2);
+			const chart10 = map.get(10)!;
+			expect(chart10.chartScore.id).toBe(100);
+			expect(chart10.chartScore.play_count).toBe(7);
+			// best-first (is_best DESC), then display_order ASC.
+			expect(chart10.scores).toHaveLength(2);
+			expect(chart10.scores[0].is_best).toBe(1);
+			expect(chart10.scores[0].score).toBe(950000);
+			expect(chart10.scores[1].is_best).toBe(0);
+			expect(chart10.scores[1].display_order).toBe(1);
+
+			const chart11 = map.get(11)!;
+			expect(chart11.chartScore.id).toBe(101);
+			expect(chart11.scores).toHaveLength(1);
+			expect(chart11.scores[0].is_best).toBe(1);
+		});
+
+		it('returns an empty map for an empty chart-id list', async () => {
+			const map = await listUserChartScores(db, 'user-1', []);
+			expect(map.size).toBe(0);
+		});
+
+		it('omits charts the user has no chart_score for', async () => {
+			// Chart 13 exists (sim4) but user-1's score on it (chart_score 103)
+			// has no scores rows — the chart_score itself is still returned.
+			// Chart 999 has no chart_score at all -> absent from the map.
+			const map = await listUserChartScores(db, 'user-1', [13, 999]);
+			expect(map.size).toBe(1);
+			expect(map.has(13)).toBe(true);
+			expect(map.get(13)!.scores).toEqual([]);
+			expect(map.has(999)).toBe(false);
+		});
+	});
+
+	describe('getChartVisibilityBatch', () => {
+		it('resolves owner + published flag for each chart id', async () => {
+			const map = await getChartVisibilityBatch(db, [10, 11, 12, 13]);
+			expect(map.size).toBe(4);
+			expect(map.get(10)).toEqual({ user_id: 'user-2', is_published: 1 });
+			expect(map.get(11)).toEqual({ user_id: 'user-1', is_published: 0 });
+			expect(map.get(12)).toEqual({ user_id: 'user-2', is_published: 0 });
+			expect(map.get(13)).toEqual({ user_id: 'user-2', is_published: 1 });
+		});
+
+		it('omits unknown chart ids from the map', async () => {
+			const map = await getChartVisibilityBatch(db, [10, 999]);
+			expect(map.size).toBe(1);
+			expect(map.has(10)).toBe(true);
+			expect(map.has(999)).toBe(false);
+		});
+
+		it('returns an empty map for an empty id list', async () => {
+			const map = await getChartVisibilityBatch(db, []);
+			expect(map.size).toBe(0);
+		});
 	});
 });

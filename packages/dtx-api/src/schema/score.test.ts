@@ -67,6 +67,7 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	hasUploadedFilesCache: new Map(),
 	filesCache: new Map(),
 	catalogFilesCache: new Map(),
+	chartScoresCache: new Map(),
 	...overrides
 });
 

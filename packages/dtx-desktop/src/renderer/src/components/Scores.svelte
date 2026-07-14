@@ -1,57 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
-	import {
-		RefreshCw,
-		FolderOpen,
-		Trophy,
-		Upload,
-		AlertTriangle,
-		ChevronDown,
-		ChevronRight
-	} from '@lucide/svelte';
+	import { RefreshCw, FolderOpen, Trophy, Upload } from '@lucide/svelte';
 	import { desktopHost } from '../services/desktopHost';
-	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
+	import ScoreSongCard from './ScoreSongCard.svelte';
 	import { matchCharts, type CloudChart } from '../lib/scoreMatching';
 	import { toastStore } from '../stores/toastStore';
-
-	interface ScorePayload {
-		isBest: boolean;
-		score: number | null;
-		achievementRate: number | null;
-		rankLabel: string | null;
-		fullCombo: boolean;
-		cleared: boolean;
-		maxCombo: number | null;
-		perfect: number | null;
-		great: number | null;
-		good: number | null;
-		poor: number | null;
-		miss: number | null;
-		performedAt: string | null;
-		displayOrder: number | null;
-	}
-	interface LocalChartData {
-		difficultyLevel: number;
-		difficultyLabel: string;
-		drumLevel: number;
-		fileHash: string;
-		aggregate: { playCount: number; clearCount: number };
-		best: ScorePayload | null;
-		recent: ScorePayload[];
-	}
-	interface DtxmaniaSong {
-		title: string;
-		artist: string;
-		genre: string;
-		charts: LocalChartData[];
-	}
-	interface CloudSong {
-		id: string;
-		title: string;
-		artist: string;
-		is_published: boolean;
-	}
+	import type { ScorePayload, DtxmaniaSong, CloudSong } from '../lib/scoreTypes';
 
 	let dbPath = $state<string | null>(null);
 	let songs = $state<DtxmaniaSong[]>([]);
@@ -88,9 +43,6 @@
 	let uploadStatus = $state<string | null>(null);
 	let skipped = $state<{ chartId: string; reason: string }[]>([]);
 	let uploading = $state(false);
-
-	const formatScore = (value: number | null): string =>
-		value === null ? '—' : value.toLocaleString('en-US');
 
 	// Key includes genre to reduce collision risk for duplicate DTXMania
 	// titles with the same artist. The DTXMania Songs table has a Genre column
@@ -144,7 +96,7 @@
 	});
 
 	// Drops saved links whose song no longer appears in the parsed DTXMania
-	// database, so score_links.json can't grow unbounded as songs are removed
+	// database, so the score_links map in preferences.json can't grow unbounded
 	// or renamed. Persists only when entries were actually dropped (avoids
 	// spurious writes on a stable song set). Best-effort: a persist failure is
 	// non-fatal — the in-memory map is still pruned for this session.
@@ -467,146 +419,20 @@
 		<div class="flex flex-col gap-4">
 			{#each pagedSongs as song, i (songKey(song) + (pageStart + i))}
 				{@const songIndex = pageStart + i}
-				<div class="border-hairline bg-surface-1 rounded-xl border p-4">
-					<div class="mb-2 flex items-center gap-3">
-						<button
-							type="button"
-							class="hover:text-hi flex min-w-0 flex-1 items-center gap-2 text-left"
-							onclick={() => toggleSong(song)}
-							aria-expanded={isSongExpanded(song)}
-							aria-label="Toggle {song.title}"
-						>
-							{#if isSongExpanded(song)}
-								<ChevronDown size={16} class="text-faint shrink-0" />
-							{:else}
-								<ChevronRight size={16} class="text-faint shrink-0" />
-							{/if}
-							<span class="min-w-0">
-								<span class="text-hi block truncate font-medium">{song.title}</span>
-								<span class="text-dim block truncate text-sm">{song.artist}</span>
-							</span>
-						</button>
-						<div class="relative ml-auto">
-							{#if links[songIndex]}
-								<span class="text-cyan text-sm"
-									>Linked: {links[songIndex].title}</span
-								>
-								<button
-									class="text-faint hover:text-hi ml-2 text-xs underline"
-									onclick={() => (autocompleteFor = songIndex)}>change</button
-								>
-							{:else}
-								<button
-									class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-lg border px-3 py-1.5 text-sm"
-									onclick={() => (autocompleteFor = songIndex)}
-									aria-label="Link to cloud song"
-								>
-									Link to cloud song
-								</button>
-							{/if}
-							<CloudSongAutocomplete
-								isOpen={autocompleteFor === songIndex}
-								onclose={() => (autocompleteFor = null)}
-								onselect={(cloudSong) => handleLinkSelect(songIndex, cloudSong)}
-							/>
-						</div>
-					</div>
-
-					{#if isSongExpanded(song)}
-						<div class="flex flex-col gap-2">
-							{#each song.charts as chart, chartIndex (chart.fileHash + chartIndex)}
-								{@const matchedId =
-									(matchesBySong[songIndex] ?? [])[chartIndex] ?? null}
-								{@const cloudCharts = cloudChartsBySong[songIndex] ?? []}
-								<div class="border-hairline rounded-lg border p-3">
-									<div class="mb-1 flex items-center gap-2 text-sm">
-										<span class="text-hi font-medium"
-											>{chart.difficultyLabel || 'DRUMS'}</span
-										>
-										<span class="text-faint">Lv {chart.drumLevel / 10}</span>
-										<span class="text-dim"
-											>· plays {chart.aggregate.playCount} · clears {chart
-												.aggregate.clearCount}</span
-										>
-										{#if links[songIndex]}
-											{#if matchedId}
-												<span class="text-green ml-auto text-xs">
-													→ matched
-												</span>
-											{:else}
-												<span
-													class="ml-auto inline-flex items-center gap-1 text-xs text-red-300"
-												>
-													<AlertTriangle size={12} /> Unmatched
-												</span>
-											{/if}
-										{/if}
-									</div>
-
-									{#if links[songIndex] && cloudCharts.length > 0}
-										<label class="text-faint mb-2 block text-xs">
-											Target chart:
-											<select
-												class="border-hairline bg-surface-2 text-hi ml-1 rounded px-2 py-1 text-xs"
-												value={matchedId ?? ''}
-												onchange={(e) =>
-													handleOverrideMatch(
-														songIndex,
-														chartIndex,
-														(e.currentTarget as HTMLSelectElement).value
-													)}
-											>
-												<option value="">— none —</option>
-												{#each cloudCharts as cc}
-													<option value={cc.id}
-														>{cc.label || 'chart'} (Lv {cc.level})</option
-													>
-												{/each}
-											</select>
-										</label>
-									{/if}
-
-									{#if chart.best}
-										<div class="text-dim text-xs">
-											Best: {formatScore(chart.best.score)} ·
-											{#if chart.best.rankLabel}{chart.best.rankLabel} ·
-											{/if}
-											{chart.best.achievementRate != null
-												? `${chart.best.achievementRate}%`
-												: '—'} ·
-											{#if chart.best.maxCombo != null}combo {chart.best
-													.maxCombo}
-											{/if}
-											{#if chart.best.fullCombo}· FC{/if}
-										</div>
-									{:else}
-										<div class="text-faint text-xs">
-											No best score recorded.
-										</div>
-									{/if}
-
-									{#if chart.recent.length > 0}
-										<ul class="text-faint mt-1 text-xs">
-											{#each chart.recent as recent (recent.performedAt + '-' + recent.displayOrder)}
-												<li>
-													<span
-														class:text-green-300={recent.cleared}
-														class:text-red-300={!recent.cleared}
-														>{recent.cleared
-															? 'Cleared'
-															: 'Failed'}</span
-													>
-													· {recent.rankLabel ?? '—'} · {recent.achievementRate ??
-														'—'}% · {recent.performedAt}
-												</li>
-											{/each}
-										</ul>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
+				<ScoreSongCard
+					{song}
+					link={links[songIndex]}
+					cloudCharts={cloudChartsBySong[songIndex] ?? []}
+					matches={matchesBySong[songIndex] ?? []}
+					expanded={isSongExpanded(song)}
+					autocompleteOpen={autocompleteFor === songIndex}
+					onToggle={() => toggleSong(song)}
+					onLinkSelect={(cloudSong) => handleLinkSelect(songIndex, cloudSong)}
+					onOverrideMatch={(chartIndex, cloudChartId) =>
+						handleOverrideMatch(songIndex, chartIndex, cloudChartId)}
+					onAutocompleteToggle={() => (autocompleteFor = songIndex)}
+					onAutocompleteClose={() => (autocompleteFor = null)}
+				/>
 			{/each}
 		</div>
 

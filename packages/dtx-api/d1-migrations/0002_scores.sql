@@ -7,7 +7,8 @@
 -- backstop so a race or bypassed validator cannot corrupt the data:
 --   chart_scores: play_count >= 0, clear_count >= 0, clear_count <= play_count
 --   scores: non-negative judgment counts, score >= 0, achievement_rate 0..100,
---           display_order NULL or 1..5, boolean columns IN (0, 1)
+--           display_order NULL or 1..5, boolean columns IN (0, 1),
+--           rank_label NULL or IN (SS, S, A, B, C, D, E, F)
 --
 -- ON DELETE CASCADE foreign keys are declared as a backstop only. D1 (SQLite)
 -- does not reliably enforce FK cascade PRAGMAs across connections, so
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS scores (
     is_best INTEGER NOT NULL DEFAULT 0 CHECK (is_best IN (0, 1)),
     score INTEGER CHECK (score IS NULL OR score >= 0),
     achievement_rate REAL CHECK (achievement_rate IS NULL OR (achievement_rate >= 0 AND achievement_rate <= 100)),
-    rank_label TEXT,
+    rank_label TEXT CHECK (rank_label IS NULL OR rank_label IN ('SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F')),
     full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1)),
     cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0, 1)),
     max_combo INTEGER CHECK (max_combo IS NULL OR max_combo >= 0),

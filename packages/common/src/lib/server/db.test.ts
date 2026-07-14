@@ -993,6 +993,62 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			})
 		).rejects.toThrow('Failed to upsert chart_score');
 	});
+
+	it('scopes all batch statements to the calling user — user-1 write never binds user-2', async () => {
+		// Cross-user write isolation: the upsert's ON CONFLICT(user_id, chart_id)
+		// and the delete/insert subqueries all resolve via `WHERE user_id = ?`.
+		// A write for user-1 on chart 10 must never bind user-2, proving it
+		// cannot touch user-2's chart_scores row or scores for the same chart.
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'user-1',
+			play_count: 1,
+			clear_count: 1,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi
+			.fn()
+			.mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }, { results: [] }]);
+
+		await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'user-1',
+			playCount: 1,
+			clearCount: 1,
+			scores: [{ is_best: true, score: 900, full_combo: false, cleared: true }]
+		});
+
+		// 1 upsert + 1 delete + 1 insert = 3 statements in the batch.
+		const statements = db.batch.mock.calls[0][0] as Array<{
+			bind: { mock: { calls: unknown[][] } };
+		}>;
+		expect(statements).toHaveLength(3);
+
+		// Every statement must bind 'user-1' and never 'user-2'.
+		for (const stmt of statements) {
+			const bindArgs = stmt.bind.mock.calls[0];
+			expect(bindArgs).toContain('user-1');
+			expect(bindArgs).not.toContain('user-2');
+		}
+
+		// The upsert binds (chartId, userId, ...) — userId is the 2nd arg.
+		const upsertBinds = statements[0].bind.mock.calls[0];
+		expect(upsertBinds[0]).toBe(10);
+		expect(upsertBinds[1]).toBe('user-1');
+
+		// The delete binds (userId, chartId) — the subquery scoping.
+		const deleteBinds = statements[1].bind.mock.calls[0];
+		expect(deleteBinds[0]).toBe('user-1');
+		expect(deleteBinds[1]).toBe(10);
+
+		// The insert binds (userId, chartId, ...) — the subquery scoping.
+		const insertBinds = statements[2].bind.mock.calls[0];
+		expect(insertBinds[0]).toBe('user-1');
+		expect(insertBinds[1]).toBe(10);
+	});
 });
 
 // ---------------------------------------------------------------------------

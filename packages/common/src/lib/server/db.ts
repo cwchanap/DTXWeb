@@ -654,11 +654,16 @@ export const listUserScoredSimfiles = async (
 	if (pageIds.length === 0) return { data: [], count };
 	const placeholders = pageIds.map(() => '?').join(',');
 
+	// The simfile fetch does NOT re-apply the visibility filter: the paged ID
+	// query above already filtered by (is_published = 1 OR user_id = ?), so
+	// every ID in pageIds is already visible to the caller. Re-filtering here
+	// would be redundant (and would silently drop a simfile if it were
+	// unpublished between the two queries — but that TOCTOU window is
+	// acceptable: the simfile was visible when the page was computed, and the
+	// next page request will exclude it).
 	const { results: simfileRows } = await db
-		.prepare(
-			`SELECT * FROM simfiles WHERE id IN (${placeholders}) AND (is_published = 1 OR user_id = ?)`
-		)
-		.bind(...pageIds, options.userId)
+		.prepare(`SELECT * FROM simfiles WHERE id IN (${placeholders})`)
+		.bind(...pageIds)
 		.all<SimfileRow>();
 
 	const { results: dtxRows } = await db

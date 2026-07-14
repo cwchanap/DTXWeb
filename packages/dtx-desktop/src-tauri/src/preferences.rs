@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +26,11 @@ pub struct Preferences {
     pub detail_pane_width: f64,
     #[serde(default = "default_detail_pane_visible")]
     pub detail_pane_visible: bool,
+    /// DTXMania-song → cloud-simfile-id mappings for the Scores view (spec §5.3).
+    /// Keyed by DTXMania song identity (title + "\u{1f}" + artist). Empty by
+    /// default so older preferences files without this field load cleanly.
+    #[serde(default)]
+    pub score_links: HashMap<String, String>,
 }
 
 impl Default for Preferences {
@@ -32,6 +38,7 @@ impl Default for Preferences {
         Self {
             detail_pane_width: default_detail_pane_width(),
             detail_pane_visible: default_detail_pane_visible(),
+            score_links: HashMap::new(),
         }
     }
 }
@@ -45,9 +52,21 @@ fn preferences_path(home: &Path) -> PathBuf {
 }
 
 /// Returns defaults if the file is missing or unparseable; clamps width.
+/// A missing file is silent (first-run). A present-but-corrupt file logs a
+/// warning to stderr so the user can investigate data loss (all UI prefs +
+/// score links reset to defaults) rather than silently swallowing it.
 fn read_preferences_from(path: &Path) -> Preferences {
     let mut prefs = match fs::read_to_string(path) {
-        Ok(contents) => serde_json::from_str::<Preferences>(&contents).unwrap_or_default(),
+        Ok(contents) => match serde_json::from_str::<Preferences>(&contents) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                eprintln!(
+                    "[preferences] failed to parse {}: {err} — using defaults",
+                    path.display()
+                );
+                Preferences::default()
+            }
+        },
         Err(_) => Preferences::default(),
     };
     prefs.detail_pane_width = clamp_width(prefs.detail_pane_width);
@@ -94,11 +113,45 @@ pub fn read_preferences() -> Preferences {
 #[tauri::command]
 pub fn write_preferences(prefs: Preferences) -> Result<()> {
     match dirs::home_dir() {
-        Some(home) => write_preferences_to(&preferences_path(&home), &prefs),
+        Some(home) => {
+            let path = preferences_path(&home);
+            // Read-modify-write: the UI pref store (preferencesService) sends
+            // only detailPaneWidth/Visible — it does not carry scoreLinks. A
+            // blind replace would wipe the score_links map on every layout
+            // save. Preserve the existing score_links when the incoming prefs
+            // don't carry any (empty = not sent by the UI store). Score links
+            // are managed exclusively via write_score_song_links, which does
+            // its own read-modify-write, so this merge never fights a
+            // deliberate clear.
+            let existing = read_preferences_from(&path);
+            let mut merged = prefs;
+            if merged.score_links.is_empty() {
+                merged.score_links = existing.score_links;
+            }
+            write_preferences_to(&path, &merged)
+        }
         None => Err(DesktopError::Message(
             "Could not resolve home directory".to_string(),
         )),
     }
+}
+
+/// Returns the DTXMania-song → cloud-simfile-id link map from the preferences
+/// store (spec §5.3). Empty when preferences are missing or the score_links
+/// field is absent (serde default).
+#[tauri::command]
+pub fn read_score_song_links() -> HashMap<String, String> {
+    read_preferences().score_links
+}
+
+/// Updates the score_links map in the preferences store. Reads the current
+/// preferences, replaces the score_links field, and writes back atomically so
+/// UI prefs (detail pane width/visibility) are preserved alongside the links.
+#[tauri::command]
+pub fn write_score_song_links(links: HashMap<String, String>) -> Result<()> {
+    let mut prefs = read_preferences();
+    prefs.score_links = links;
+    write_preferences(prefs)
 }
 
 #[cfg(test)]

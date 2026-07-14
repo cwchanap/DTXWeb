@@ -7,7 +7,6 @@ mod error;
 mod filesystem;
 mod models;
 mod preferences;
-mod score_links;
 mod scores;
 mod songs;
 mod updater;
@@ -139,8 +138,8 @@ pub fn run() {
             filesystem::get_default_downloads_dir,
             preferences::read_preferences,
             preferences::write_preferences,
-            score_links::read_score_song_links,
-            score_links::write_score_song_links,
+            preferences::read_score_song_links,
+            preferences::write_score_song_links,
             songs::create_song,
             songs::export_song_to_zip,
             songs::get_skin_asset,

@@ -121,6 +121,8 @@ const UploadScoresResultRef = builder
 	});
 
 // Validates a single chart payload. Returns a skip reason string, or null when valid.
+const VALID_RANK_LABELS = ['SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F'] as const;
+
 const validateChartScores = (
 	playCount: number,
 	clearCount: number,
@@ -128,6 +130,9 @@ const validateChartScores = (
 		isBest: boolean;
 		score?: number | null;
 		achievementRate?: number | null;
+		rankLabel?: string | null;
+		fullCombo?: boolean | null;
+		cleared?: boolean | null;
 		maxCombo?: number | null;
 		perfect?: number | null;
 		great?: number | null;
@@ -186,6 +191,14 @@ const validateChartScores = (
 				s.achievementRate > 100)
 		) {
 			return 'achievementRate out of range';
+		}
+		// rankLabel, when present, must be one of the known DTXMania rank tokens.
+		// The DB CHECK constraint (0002_scores.sql) mirrors this as a backstop.
+		if (
+			s.rankLabel != null &&
+			!(VALID_RANK_LABELS as readonly string[]).includes(s.rankLabel)
+		) {
+			return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
 		}
 		// performedAt, when present, must be a parseable date string. Mirrors
 		// the publishDate check in simfile.ts so a garbage timestamp can't
@@ -279,6 +292,9 @@ builder.mutationField('uploadScores', (t) =>
 						isBest: s.isBest,
 						score: s.score,
 						achievementRate: s.achievementRate,
+						rankLabel: s.rankLabel,
+						fullCombo: s.fullCombo,
+						cleared: s.cleared,
 						maxCombo: s.maxCombo,
 						perfect: s.perfect,
 						great: s.great,

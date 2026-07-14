@@ -500,6 +500,74 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
+	it('skips a chart with a rankLabel outside the known set', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									rankLabel: 'X',
+									fullCombo: false,
+									cleared: true
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('rankLabel must be one of SS/S/A/B/C/D/E/F');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('accepts a chart with a valid rankLabel', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									rankLabel: 'SS',
+									fullCombo: false,
+									cleared: true
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			skipped: unknown[];
+		};
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.skipped).toEqual([]);
+	});
+
 	it('skips a chart with an invalid chart id', async () => {
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {

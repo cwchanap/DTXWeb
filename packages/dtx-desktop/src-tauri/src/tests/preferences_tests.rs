@@ -286,3 +286,27 @@ fn write_score_song_links_preserves_existing_ui_prefs() {
     assert!(!prefs.detail_pane_visible);
     assert_eq!(prefs.score_links.get("k").map(String::as_str), Some("v"));
 }
+
+#[test]
+fn write_score_song_links_clear_all_with_empty_map() {
+    let _guard = home_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let dir = TempDir::new().unwrap();
+    let _home = HomeEnvGuard::replace(dir.path());
+
+    // Seed with non-empty links.
+    let links = HashMap::from([("k1".to_string(), "v1".to_string())]);
+    write_score_song_links(links).expect("seed links");
+    assert_eq!(
+        read_score_song_links().get("k1").map(String::as_str),
+        Some("v1")
+    );
+
+    // Clear-all: write an empty map. This must actually clear, not silently
+    // restore the old links (regression: write_preferences merges empty
+    // score_links with on-disk links, turning a clear into a no-op).
+    write_score_song_links(HashMap::new()).expect("clear links");
+    assert!(
+        read_score_song_links().is_empty(),
+        "empty write must clear score_links, not restore them"
+    );
+}

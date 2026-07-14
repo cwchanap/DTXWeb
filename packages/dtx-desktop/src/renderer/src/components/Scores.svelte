@@ -325,6 +325,13 @@
 		return { charts, clientSkipped };
 	};
 
+	// Server-side cap (score.ts MAX_UPLOAD_CHARTS). The API returns a sentinel
+	// skip with chartId '*' when exceeded, so the client slices into batches
+	// of at most this size and calls uploadScores per batch, accumulating
+	// results. This lets a busy player with >100 matched charts upload in one
+	// click instead of hitting the sentinel with no recovery.
+	const MAX_UPLOAD_CHARTS = 100;
+
 	const handleUpload = async () => {
 		if (uploading) return;
 		uploading = true;
@@ -345,18 +352,31 @@
 		// Surface client-side skips (duplicate chart matches) alongside any
 		// server-side skips returned in the upload response.
 		skipped = input.clientSkipped;
+		let totalUpdated = 0;
+		let totalInserted = 0;
+		const serverSkipped: { chartId: string; reason: string }[] = [];
 		try {
-			const result = await desktopHost.uploadScores<{
-				success: boolean;
-				data?: { updatedCharts: number; insertedScores: number; skipped: typeof skipped };
-				error?: string;
-			}>({ charts: input.charts });
-			if (result.success && result.data) {
-				uploadStatus = `Uploaded ${result.data.updatedCharts} chart(s), ${result.data.insertedScores} score(s).`;
-				skipped = [...input.clientSkipped, ...(result.data.skipped ?? [])];
-			} else {
-				uploadStatus = result.error ?? 'Upload failed.';
+			for (let i = 0; i < input.charts.length; i += MAX_UPLOAD_CHARTS) {
+				const batch = input.charts.slice(i, i + MAX_UPLOAD_CHARTS);
+				const result = await desktopHost.uploadScores<{
+					success: boolean;
+					data?: {
+						updatedCharts: number;
+						insertedScores: number;
+						skipped: typeof skipped;
+					};
+					error?: string;
+				}>({ charts: batch });
+				if (!result.success || !result.data) {
+					uploadStatus = result.error ?? 'Upload failed.';
+					return;
+				}
+				totalUpdated += result.data.updatedCharts;
+				totalInserted += result.data.insertedScores;
+				serverSkipped.push(...(result.data.skipped ?? []));
 			}
+			uploadStatus = `Uploaded ${totalUpdated} chart(s), ${totalInserted} score(s).`;
+			skipped = [...input.clientSkipped, ...serverSkipped];
 		} catch (e) {
 			uploadStatus = e instanceof Error ? e.message : 'Upload failed.';
 		} finally {

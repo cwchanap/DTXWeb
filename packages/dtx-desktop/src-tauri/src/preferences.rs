@@ -27,8 +27,9 @@ pub struct Preferences {
     #[serde(default = "default_detail_pane_visible")]
     pub detail_pane_visible: bool,
     /// DTXMania-song → cloud-simfile-id mappings for the Scores view (spec §5.3).
-    /// Keyed by DTXMania song identity (title + "\u{1f}" + artist). Empty by
-    /// default so older preferences files without this field load cleanly.
+    /// Keyed by DTXMania song identity (title + "\u{0}" + artist + "\u{0}" +
+    /// genre), matching `songKey` in Scores.svelte. Empty by default so older
+    /// preferences files without this field load cleanly.
     #[serde(default)]
     pub score_links: HashMap<String, String>,
 }
@@ -147,11 +148,24 @@ pub fn read_score_song_links() -> HashMap<String, String> {
 /// Updates the score_links map in the preferences store. Reads the current
 /// preferences, replaces the score_links field, and writes back atomically so
 /// UI prefs (detail pane width/visibility) are preserved alongside the links.
+///
+/// Writes directly via `write_preferences_to` instead of `write_preferences`
+/// because the latter merges an empty `score_links` map with the on-disk map
+/// (to protect against the UI pref store, which doesn't send score_links,
+/// accidentally wiping them). That merge would turn a deliberate clear-all
+/// (`links = {}`) into a silent no-op that restores the old links. This
+/// command's contract is to set `score_links` to exactly `links`, including
+/// the empty case, so it must bypass the merge.
 #[tauri::command]
 pub fn write_score_song_links(links: HashMap<String, String>) -> Result<()> {
     let mut prefs = read_preferences();
     prefs.score_links = links;
-    write_preferences(prefs)
+    match dirs::home_dir() {
+        Some(home) => write_preferences_to(&preferences_path(&home), &prefs),
+        None => Err(DesktopError::Message(
+            "Could not resolve home directory".to_string(),
+        )),
+    }
 }
 
 #[cfg(test)]

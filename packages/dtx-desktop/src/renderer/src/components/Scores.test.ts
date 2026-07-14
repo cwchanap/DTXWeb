@@ -517,4 +517,62 @@ describe('Scores', () => {
 		expect(await screen.findByText(/Chart 10 skipped/i)).toBeInTheDocument();
 		expect(screen.getByText(/duplicate match/i)).toBeInTheDocument();
 	});
+
+	it('chunks uploads into ≤100-chart batches when the payload exceeds the server limit', async () => {
+		// 101 charts on one song, each at a unique drum level matched to a
+		// unique cloud chart, so buildUpload produces 101 chart entries —
+		// exceeding the server's MAX_UPLOAD_CHARTS=100 cap.
+		const charts = Array.from({ length: 101 }, (_, i) => ({
+			difficultyLevel: 2,
+			difficultyLabel: `LV${i}`,
+			drumLevel: (i + 1) * 10,
+			fileHash: `hash-${i}`,
+			aggregate: { playCount: 1, clearCount: 1 },
+			best: bestRow,
+			recent: []
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue([
+			{ title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+		]);
+		host.readScoreSongLinks.mockResolvedValue({
+			['Mega Song\u0000Artist A\u0000Rock']: '42'
+		});
+		host.fetchCloudSong.mockResolvedValue({
+			success: true,
+			cloudSongData: {
+				id: 42,
+				title: 'Cloud Mega Song',
+				artist: 'Artist A',
+				is_published: true
+			}
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: charts.map((c, i) => ({
+				id: `${1000 + i}`,
+				label: `LV${i}`,
+				level: (i + 1) * 1.0
+			}))
+		});
+		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => ({
+			success: true,
+			data: {
+				updatedCharts: payload.charts.length,
+				insertedScores: payload.charts.length * 2,
+				skipped: []
+			}
+		}));
+
+		render(Scores);
+		expect(await screen.findByText('Mega Song')).toBeInTheDocument();
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		// Two batches: first 100 charts, then the remaining 1.
+		await waitFor(() => expect(host.uploadScores).toHaveBeenCalledTimes(2));
+		expect(host.uploadScores.mock.calls[0][0].charts).toHaveLength(100);
+		expect(host.uploadScores.mock.calls[1][0].charts).toHaveLength(1);
+		expect(await screen.findByText(/uploaded 101 chart/i)).toBeInTheDocument();
+	});
 });

@@ -59,3 +59,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_one_best ON scores(chart_score_id) 
 -- not corrupt the recent-scores ordering.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_display_order
     ON scores(chart_score_id, display_order) WHERE display_order IS NOT NULL;
+
+-- Rollback (manual, if needed): D1 migrations are forward-only, so there is
+-- no automated down migration. To roll back this migration entirely:
+--   DROP INDEX IF EXISTS idx_scores_display_order;
+--   DROP INDEX IF EXISTS idx_scores_one_best;
+--   DROP INDEX IF EXISTS idx_scores_chart_score;
+--   DROP TABLE IF EXISTS scores;
+--   DROP INDEX IF EXISTS idx_chart_scores_chart;
+--   DROP INDEX IF EXISTS idx_chart_scores_user_chart;
+--   DROP TABLE IF EXISTS chart_scores;
+-- Order matters: scores (child) before chart_scores (parent), matching the
+-- FK cascade direction. dtx_files and simfiles are untouched by this migration.

@@ -283,6 +283,17 @@ struct JoinedRow {
     hist_display_order: Option<i64>,
 }
 
+/// Joined query fetching all Songs → SongCharts → SongScores → PerformanceHistory
+/// rows in one SELECT. The `ph.Id` tiebreaker after `ph.DisplayOrder` ensures a
+/// deterministic row order when two history rows share the same display_order.
+///
+/// NOTE: this query fetches ALL PerformanceHistory rows per chart and caps at 5
+/// in Rust (`group_joined_rows`). DTXManiaCX typically keeps a small bounded
+/// history per chart (the UI shows the last few plays), so the over-fetch is
+/// modest in practice. A SQL-level LIMIT 5 via `ROW_NUMBER() OVER (PARTITION BY
+/// ss.Id ...)` would avoid the over-fetch but depends on the SQLite version
+/// embedded in DTXManiaCX supporting window functions. The Rust cap is the
+/// safety net; if DTXManiaCX ever stores unbounded history, revisit this.
 const JOINED_QUERY: &str = "\
 SELECT s.Id, s.Title, s.Artist, s.Genre, \
        c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.FileHash, \
@@ -294,7 +305,7 @@ FROM Songs s \
 JOIN SongCharts c ON c.SongId = s.Id \
 JOIN SongScores ss ON ss.ChartId = c.Id AND ss.Instrument = 0 \
 LEFT JOIN PerformanceHistory ph ON ph.SongScoreId = ss.Id \
-ORDER BY s.Id, c.Id, ph.DisplayOrder";
+ORDER BY s.Id, c.Id, ph.DisplayOrder, ph.Id";
 
 /// Best-only fallback used when the `PerformanceHistory` table is absent from
 /// the DTXMania database (e.g. an older/other client that doesn't track

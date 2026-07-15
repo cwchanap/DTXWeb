@@ -1839,6 +1839,8 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - Produces (frontend): `desktopHost.readScoreSongLinks()`, `desktopHost.writeScoreSongLinks(links)`.
 
 > **Design note (controller-resolved ambiguity):** the spec (§5.3.6) says "via the existing preferences store." The existing `Preferences` struct is a fixed, strongly-typed UI-prefs record persisted whole by `preferencesStore`; adding a links map there would let a pane-width save silently clobber the links (serde default → empty map). This task instead uses a **dedicated sibling file** (`~/.dtxweb/score_links.json`) with the same atomic-write mechanism and directory — honoring "the existing preferences mechanism" without the clobber risk. Isolated so the whole-branch review can gate/defer it independently.
+>
+> **Implementation deviation (accepted 2026-07-14):** the implementation folded `score_links` directly into the `Preferences` struct (`preferences.rs`) rather than using a dedicated sibling file. The clobber risk the design note warned about is mitigated by: (1) a `OnceLock<Mutex>` held across the full read-modify-write in both `write_preferences` and `write_score_song_links`, so concurrent calls can't interleave; (2) an empty-means-preserve merge — `write_preferences` detects an empty incoming `score_links` map and preserves the existing on-disk map, so the UI pref store (which doesn't send `score_links`) can't wipe it; (3) `write_score_song_links` does a direct replace (not a merge) since its contract is to set the map to exactly `links`. The mitigation is covered by stress tests. This was accepted as a simpler single-file approach that avoids a second persistence path.
 
 - [ ] **Step 1: Write the failing Rust test**
 

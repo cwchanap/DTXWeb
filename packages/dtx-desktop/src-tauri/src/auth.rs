@@ -273,7 +273,18 @@ fn is_auth_callback_url(url: &Url) -> bool {
         return false;
     }
 
-    matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
+    if !matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1")) {
+        return false;
+    }
+
+    // The port must match the configured callback port. Without this check,
+    // a redirect to any loopback port would be accepted. The callback server
+    // only binds to `local_auth_callback_port()`, so a different port means
+    // no server is listening there (or a different process is).
+    match local_auth_callback_port() {
+        Some(expected) => url.port() == Some(expected),
+        None => false,
+    }
 }
 
 fn session_value_from_data(session_data: SessionData) -> Option<serde_json::Value> {

@@ -163,8 +163,17 @@
 			titleResults.push(...results);
 		}
 
+		// Build the CloudSong objects from title results, re-checking for
+		// manual links made during the async title-fetch window. Entries that
+		// were clobbered by a manual link are skipped.
+		const toApply: { i: number; song: CloudSong }[] = [];
 		for (let idx = 0; idx < entries.length; idx++) {
 			const { i, cloudId } = entries[idx];
+			// Re-check after the async title fetches: the user may have manually
+			// linked (or unlinked then re-linked) this song during the await
+			// window. Without this guard, the restore would clobber the manual
+			// link with the saved-link value.
+			if (links[i]) continue;
 			const result = titleResults[idx];
 			let song: CloudSong = {
 				id: cloudId,
@@ -184,11 +193,39 @@
 					is_published: result.value.cloudSongData.is_published
 				};
 			}
-			try {
-				await handleLinkSelect(i, song, false);
-			} catch {
-				// handleLinkSelect handles its own fetch errors; continue.
-			}
+			toApply.push({ i, song });
+		}
+
+		// Fetch cloud charts in bounded-concurrency chunks (parallelized like
+		// the title fetches above) so M saved links don't issue M sequential
+		// fetchCloudSongCharts round-trips before the first upload byte.
+		// State mutations are applied sequentially after all fetches complete
+		// to avoid races on shared state (savedLinks spread, links map).
+		const chartResults: PromiseSettledResult<FetchCloudSongChartsResult>[] = [];
+		for (let i = 0; i < toApply.length; i += RESTORE_CONCURRENCY) {
+			const chunk = toApply.slice(i, i + RESTORE_CONCURRENCY);
+			const results = await Promise.allSettled(
+				chunk.map((e) =>
+					desktopHost.fetchCloudSongCharts<FetchCloudSongChartsResult>(e.song.id)
+				)
+			);
+			chartResults.push(...results);
+		}
+
+		for (let idx = 0; idx < toApply.length; idx++) {
+			const { i, song } = toApply[idx];
+			// Final re-check: a manual link may have been made during the
+			// chart-fetch await window.
+			if (links[i]) continue;
+			links[i] = song;
+			savedLinks = { ...savedLinks, [songKey(songs[i])]: song.id };
+			const chartResult = chartResults[idx];
+			const charts =
+				chartResult.status === 'fulfilled' && chartResult.value.success
+					? (chartResult.value.data ?? [])
+					: [];
+			cloudChartsBySong[i] = charts;
+			matchesBySong[i] = matchCharts(songs[i].charts, charts);
 		}
 
 		// Persist the full restored map once, not once per link.

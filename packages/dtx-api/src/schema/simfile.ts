@@ -135,7 +135,7 @@ export const FileEncodingEnum = builder.enumType('FileEncoding', {
 // --- object types ---
 
 type DtxFileParent = {
-	id?: number;
+	id: number;
 	level: number;
 	label: string;
 	/** Row index within simfile.dtx_files. Carried so the resolver can
@@ -254,21 +254,12 @@ const requireCatalogChart = async (
 
 const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
-		id: t.id({
-			resolve: (file) => {
-				if (file.id == null) {
-					throw new GraphQLError('DtxFile missing id', {
-						extensions: { code: 'INTERNAL' }
-					});
-				}
-				return String(file.id);
-			}
-		}),
+		id: t.id({ resolve: (file) => String(file.id) }),
 		myChartScore: t.field({
 			type: ChartScoreRef,
 			nullable: true,
 			resolve: async (file, _args, ctx) => {
-				if (!ctx.user || file.id == null) return null;
+				if (!ctx.user) return null;
 				const chartId = file.id;
 				// Prefer the request-scoped batch (populated by the connection
 				// resolver when myChartScore is selected on a list). On a single
@@ -359,7 +350,18 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		durationSeconds: t.int({ nullable: true, resolve: () => null }),
 		dtxFiles: t.field({
 			type: [DtxFile],
-			resolve: (s) => s.dtx_files.map((file, index) => ({ ...file, index, simfile: s }))
+			resolve: (s, _args, ctx) =>
+				s.dtx_files
+					.map((file, index) => ({ ...file, index, simfile: s }))
+					.filter((file): file is DtxFileParent => {
+						if (file.id == null) {
+							ctx.logger.warn('DTX file row missing id, skipping', {
+								simfileId: s.id
+							});
+							return false;
+						}
+						return true;
+					})
 		}),
 		files: t.field({
 			type: [R2File],

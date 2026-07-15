@@ -5,6 +5,8 @@ import {
 	type ChartScoreRow,
 	type ScoreInsert
 } from '@dtx/common/server';
+import type { KVNamespace } from '@cloudflare/workers-types';
+import { GraphQLError } from 'graphql';
 import { builder } from './builder';
 
 export const ScoreRef = builder.objectRef<ScoreRow>('Score').implement({
@@ -88,6 +90,34 @@ const MAX_SCORES_PER_CHART = 10;
 /// waits without increasing Worker CPU time, so this is safe within the
 /// Worker CPU budget. 8 keeps concurrent D1 round-trips modest.
 const WRITE_CONCURRENCY = 8;
+
+/// Maximum number of uploadScores calls per user per hour. Each call can
+/// write up to 100 charts × ~8 D1 statements, so an unbounded call rate
+/// could exhaust D1/Worker CPU budget. Self-scoped (users write only their
+/// own scores), so this is a cost/abuse guard, not an integrity guard.
+/// Mirrors the per-user KV counter pattern from magicLink.ts.
+const MAX_UPLOADS_PER_HOUR = 10;
+
+// KV has no CAS primitive, so this read-modify-write tolerates ±1 over the
+// limit if concurrent calls land between get and put — acceptable for a
+// cost-control guard on a low-volume mutation.
+const checkUploadRateLimit = async (
+	kv: KVNamespace,
+	userId: string,
+	hourlyLimit: number
+): Promise<boolean> => {
+	const hour = Math.floor(Date.now() / 3_600_000);
+	const key = `uploadscores:${userId}:${hour}`;
+	const currentRaw = await kv.get(key);
+	const current = currentRaw ? Number(currentRaw) : 0;
+	if (Number.isFinite(current) && current >= hourlyLimit) {
+		return false;
+	}
+	await kv.put(key, String((Number.isFinite(current) ? current : 0) + 1), {
+		expirationTtl: 3600
+	});
+	return true;
+};
 
 const SkippedChartRef = builder
 	.objectRef<{ chartId: string; reason: string }>('SkippedChart')
@@ -200,11 +230,14 @@ const validateChartScores = (
 		) {
 			return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
 		}
-		// performedAt, when present, must be a parseable date string. Mirrors
-		// the publishDate check in simfile.ts so a garbage timestamp can't
-		// reach the DB's performed_at TEXT column.
-		if (s.performedAt != null && Number.isNaN(Date.parse(s.performedAt))) {
-			return 'invalid performedAt';
+		// performedAt, when present, must be a parseable date string that is
+		// not in the future. Mirrors the publishDate check in simfile.ts so a
+		// garbage timestamp can't reach the DB's performed_at TEXT column.
+		// The upper bound prevents a far-future date from skewing recency sorts.
+		if (s.performedAt != null) {
+			const parsed = Date.parse(s.performedAt);
+			if (Number.isNaN(parsed)) return 'invalid performedAt';
+			if (parsed > Date.now() + 60_000) return 'performedAt cannot be in the future';
 		}
 		// Judgment counts and maxCombo must be non-negative integers when present.
 		const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
@@ -226,6 +259,13 @@ builder.mutationField('uploadScores', (t) =>
 			const skipped: { chartId: string; reason: string }[] = [];
 			let updatedCharts = 0;
 			let insertedScores = 0;
+
+			const allowed = await checkUploadRateLimit(ctx.kv, ctx.user!.id, MAX_UPLOADS_PER_HOUR);
+			if (!allowed) {
+				throw new GraphQLError('Too Many Requests', {
+					extensions: { code: 'RATE_LIMITED' }
+				});
+			}
 
 			if (input.charts.length > MAX_UPLOAD_CHARTS) {
 				return {

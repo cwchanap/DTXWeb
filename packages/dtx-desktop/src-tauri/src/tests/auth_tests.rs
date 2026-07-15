@@ -17,6 +17,16 @@ fn auth_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Acquires the env lock and sets `DTX_DESKTOP_AUTH_CALLBACK_PORT` to 47931.
+/// The `is_auth_callback_url` port check requires this env var to be set.
+/// The lock serializes with tests that remove/change the env var, preventing
+/// races. The guard must be held for the duration of the test.
+fn with_test_callback_port() -> std::sync::MutexGuard<'static, ()> {
+    let guard = auth_env_lock().lock().unwrap();
+    std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "47931");
+    guard
+}
+
 #[test]
 fn extracts_magic_link_from_dtx_auth_callback() {
     let parsed =
@@ -31,6 +41,7 @@ fn extracts_magic_link_from_dtx_auth_callback() {
 
 #[test]
 fn extracts_magic_link_from_localhost_auth_callback() {
+    let _port_guard = with_test_callback_port();
     let parsed = parse_auth_callback(
         "http://127.0.0.1:47931/auth-callback?magic_link=https%3A%2F%2Fexample.com%2Fmagic",
     )
@@ -503,32 +514,44 @@ fn is_auth_callback_url_rejects_dtx_scheme_with_other_host() {
 
 #[test]
 fn is_auth_callback_url_accepts_http_loopback_with_callback_path() {
-    let url = Url::parse("http://127.0.0.1/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://127.0.0.1:47931/auth-callback").unwrap();
     assert!(is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_rejects_http_loopback_with_wrong_path() {
-    let url = Url::parse("http://127.0.0.1/other").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://127.0.0.1:47931/other").unwrap();
     assert!(!is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_rejects_http_non_loopback_host() {
-    let url = Url::parse("http://example.com/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://example.com:47931/auth-callback").unwrap();
     assert!(!is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_rejects_https_scheme() {
-    let url = Url::parse("https://127.0.0.1/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("https://127.0.0.1:47931/auth-callback").unwrap();
     assert!(!is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_accepts_localhost_host() {
-    let url = Url::parse("http://localhost/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://localhost:47931/auth-callback").unwrap();
     assert!(is_auth_callback_url(&url));
+}
+
+#[test]
+fn is_auth_callback_url_rejects_http_loopback_with_wrong_port() {
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://127.0.0.1:9999/auth-callback").unwrap();
+    assert!(!is_auth_callback_url(&url));
 }
 
 #[tokio::test]
@@ -1352,6 +1375,7 @@ fn route_callback_request_returns_bad_request_when_target_is_missing() {
 
 #[test]
 fn route_callback_request_returns_valid_url_for_auth_callback_target() {
+    let _port_guard = with_test_callback_port();
     let route = route_callback_request(
         Some("GET /auth-callback?magic_link=https%3A%2F%2Fexample.com HTTP/1.1"),
         47931,

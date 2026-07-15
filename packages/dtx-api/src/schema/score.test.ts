@@ -60,7 +60,10 @@ const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	env: makeEnv(),
 	db: {} as Ctx['db'],
 	r2: {} as Ctx['r2'],
-	kv: {} as Ctx['kv'],
+	kv: {
+		get: vi.fn().mockResolvedValue(null),
+		put: vi.fn().mockResolvedValue(undefined)
+	} as unknown as Ctx['kv'],
 	request: new Request('http://test'),
 	logger: workerLogger,
 	ownerByIdCache: new Map(),
@@ -232,6 +235,19 @@ describe('uploadScores', () => {
 			variables: { input: { charts: [] } }
 		});
 		expect(result.errors?.[0].extensions?.code).toBe('FORBIDDEN');
+	});
+
+	it('rejects with RATE_LIMITED when the per-user hourly cap is exceeded', async () => {
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		// Override the kv mock to simulate the user already hitting the cap.
+		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce(
+			String(10)
+		);
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: { input: { charts: [] } }
+		});
+		expect(result.errors?.[0].extensions?.code).toBe('RATE_LIMITED');
 	});
 
 	it('upserts a visible chart and replaces its scores atomically', async () => {

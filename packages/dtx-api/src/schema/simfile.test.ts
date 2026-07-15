@@ -98,7 +98,7 @@ const publishedSimfile = {
 	publish_date: '2026-05-19T00:00:00Z',
 	created_at: '2026-05-19T00:00:00Z',
 	updated_at: '2026-05-19T00:00:00Z',
-	dtx_files: [{ level: 7.5, label: 'BSC' }]
+	dtx_files: [{ id: 1, level: 7.5, label: 'BSC' }]
 };
 
 beforeEach(() => {
@@ -446,7 +446,7 @@ describe('Mutation.createSimfile', () => {
 				created_at: '2026-05-19T00:00:00Z',
 				updated_at: '2026-05-19T00:00:00Z'
 			},
-			dtxFiles: [{ label: 'BSC', level: 5.5 }]
+			dtxFiles: [{ id: 1, label: 'BSC', level: 5.5 }]
 		});
 		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
 			query: `mutation {
@@ -581,8 +581,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue({
 			...publishedSimfile,
 			dtx_files: [
-				{ label: 'ADV', level: 5.25 },
-				{ label: 'EXT', level: 8.75 }
+				{ id: 100, label: 'ADV', level: 5.25 },
+				{ id: 101, label: 'EXT', level: 8.75 }
 			]
 		});
 		mockedDiscoverCatalogFiles.mockResolvedValue({
@@ -640,8 +640,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			{
 				simfileId: 42,
 				dtxFiles: [
-					{ label: 'ADV', level: 5.25 },
-					{ label: 'EXT', level: 8.75 }
+					{ id: 100, label: 'ADV', level: 5.25 },
+					{ id: 101, label: 'EXT', level: 8.75 }
 				],
 				publicBaseUrl: 'https://cdn.example'
 			},
@@ -660,8 +660,8 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		mockedGetSimfile.mockResolvedValue({
 			...publishedSimfile,
 			dtx_files: [
-				{ label: 'BSC', level: 3 },
-				{ label: 'BSC', level: 3 }
+				{ id: 200, label: 'BSC', level: 3 },
+				{ id: 201, label: 'BSC', level: 3 }
 			]
 		});
 		mockedDiscoverCatalogFiles.mockResolvedValue({
@@ -1115,12 +1115,12 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		const sim1 = {
 			...publishedSimfile,
 			id: 1,
-			dtx_files: [{ label: 'BSC', level: 3 }]
+			dtx_files: [{ id: 10, label: 'BSC', level: 3 }]
 		};
 		const sim2 = {
 			...publishedSimfile,
 			id: 2,
-			dtx_files: [{ label: 'EXT', level: 8 }]
+			dtx_files: [{ id: 20, label: 'EXT', level: 8 }]
 		};
 		mockedList.mockResolvedValue({ data: [sim1, sim2], count: 2 });
 		mockedBatchCatalog.mockResolvedValue(
@@ -1190,12 +1190,12 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 			[
 				{
 					simfileId: 1,
-					dtxFiles: [{ label: 'BSC', level: 3 }],
+					dtxFiles: [{ id: 10, label: 'BSC', level: 3 }],
 					publicBaseUrl: 'https://bucket.example'
 				},
 				{
 					simfileId: 2,
-					dtxFiles: [{ label: 'EXT', level: 8 }],
+					dtxFiles: [{ id: 20, label: 'EXT', level: 8 }],
 					publicBaseUrl: 'https://bucket.example'
 				}
 			],
@@ -1508,7 +1508,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		const sim1 = {
 			...publishedSimfile,
 			id: 1,
-			dtx_files: [{ label: 'BSC', level: 3 }]
+			dtx_files: [{ id: 10, label: 'BSC', level: 3 }]
 		};
 		mockedList.mockResolvedValue({ data: [sim1], count: 1 });
 		mockedBatchCatalog.mockResolvedValue(

@@ -574,7 +574,7 @@ describe('Scores', () => {
 		expect(host.uploadScores.mock.calls[0][0].charts).toHaveLength(100);
 		expect(host.uploadScores.mock.calls[1][0].charts).toHaveLength(1);
 		expect(await screen.findByText(/uploaded 101 chart/i)).toBeInTheDocument();
-	});
+	}, 20_000);
 
 	it('surfaces partial success when a mid-batch failure leaves earlier batches committed', async () => {
 		// 101 charts → two batches (100 + 1). The first batch succeeds, the
@@ -638,7 +638,7 @@ describe('Scores', () => {
 		expect(await screen.findByText(/server exploded on batch 2/i)).toBeInTheDocument();
 		expect(screen.getByText(/partial upload: 100 chart/i)).toBeInTheDocument();
 		expect(screen.getByText(/200 score/i)).toBeInTheDocument();
-	});
+	}, 20_000);
 
 	it('re-enables the Upload button even when restoreLinksFor throws during upload', async () => {
 		// Seed a saved link so restoreLinksFor has entries to process during

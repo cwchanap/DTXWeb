@@ -541,13 +541,7 @@ fn non_empty_path(value: Option<&str>) -> Option<PathBuf> {
 }
 
 fn non_empty_value(value: Option<&str>) -> Option<&str> {
-    value.and_then(|value| {
-        if value.trim().is_empty() {
-            None
-        } else {
-            Some(value)
-        }
-    })
+    value.filter(|value| !value.trim().is_empty())
 }
 
 fn validate_safe_file_name(file_name: &str, description: &str) -> Result<()> {

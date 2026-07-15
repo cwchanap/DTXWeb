@@ -17,11 +17,24 @@ const getAccessToken = async (page: import('@playwright/test').Page): Promise<st
 		throw new Error('No Supabase auth cookie found. Ensure storageState has a valid session.');
 	}
 	let parsed: { access_token?: string };
+	// @supabase/ssr >=0.5 defaults to base64url encoding and prefixes the
+	// cookie value with "base64-". Older versions store URL-encoded JSON or
+	// plain base64. Try each in order so the helper survives version bumps.
 	try {
 		parsed = JSON.parse(decodeURIComponent(authCookie.value));
 	} catch {
-		// Older @supabase/ssr versions may base64-encode the value.
-		parsed = JSON.parse(atob(authCookie.value));
+		try {
+			parsed = JSON.parse(atob(authCookie.value));
+		} catch {
+			// base64url ("-" / "_" alphabet) with a "base64-" prefix, as used
+			// by @supabase/ssr 0.5+. Strip the prefix and remap to the base64
+			// alphabet that atob understands before decoding.
+			const raw = authCookie.value.startsWith('base64-')
+				? authCookie.value.slice('base64-'.length)
+				: authCookie.value;
+			const remapped = raw.replace(/-/g, '+').replace(/_/g, '/');
+			parsed = JSON.parse(atob(remapped));
+		}
 	}
 	if (!parsed.access_token) {
 		throw new Error('Supabase auth cookie has no access_token');

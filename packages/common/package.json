@@ -54,7 +54,7 @@
 		}
 	},
 	"peerDependencies": {
-		"@lucide/svelte": "^0.500.0",
+		"@lucide/svelte": "^0.511.0",
 		"@skeletonlabs/skeleton-svelte": "^1.0.0",
 		"@supabase/supabase-js": "^2.0.0",
 		"dayjs": "^1.11.0",

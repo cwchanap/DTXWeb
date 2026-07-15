@@ -390,8 +390,9 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
-	it('skips a chart whose best score carries a displayOrder', async () => {
+	it('strips displayOrder from a best score instead of dropping the chart', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -417,10 +418,22 @@ describe('uploadScores', () => {
 			}
 		});
 		const payload = result.data?.uploadScores as {
-			skipped: { chartId: string; reason: string }[];
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: unknown[];
 		};
-		expect(payload.skipped[0].reason).toBe('best score with displayOrder');
-		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+		// The best row is kept (not dropped); its displayOrder is stripped to null.
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.insertedScores).toBe(1);
+		expect(payload.skipped).toEqual([]);
+		expect(mockedUpsertReplace).toHaveBeenCalledWith(
+			{},
+			expect.objectContaining({
+				scores: expect.arrayContaining([
+					expect.objectContaining({ is_best: true, display_order: null })
+				])
+			})
+		);
 	});
 
 	it('skips a chart with a displayOrder outside the 1..5 range', async () => {
@@ -450,8 +463,9 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
-	it('skips a chart with a duplicate displayOrder', async () => {
+	it('drops a duplicate displayOrder row but keeps the first occurrence', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -477,10 +491,15 @@ describe('uploadScores', () => {
 			}
 		});
 		const payload = result.data?.uploadScores as {
-			skipped: { chartId: string; reason: string }[];
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: unknown[];
 		};
-		expect(payload.skipped[0].reason).toBe('duplicate displayOrder');
-		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+		// The first occurrence is kept; the duplicate is dropped. The chart is
+		// not skipped — only the bad row is.
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.insertedScores).toBe(1);
+		expect(payload.skipped).toEqual([]);
 	});
 
 	it('skips a chart with an achievementRate outside 0..100', async () => {
@@ -1015,6 +1034,97 @@ describe('uploadScores', () => {
 		expect(payload.updatedCharts).toBe(1);
 		expect(payload.skipped).toEqual([{ chartId: '10', reason: 'duplicate chart id' }]);
 		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
+	});
+
+	// Key new behavior: one bad recent row drops only that row, not the best
+	// or the whole chart. Previously a single invalid field in any score row
+	// caused the entire chart (best + all recent) to be skipped.
+	it('drops an invalid recent row but keeps the valid best row', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 3,
+							clearCount: 2,
+							scores: [
+								{
+									isBest: true,
+									score: 983400,
+									achievementRate: 98.34,
+									rankLabel: 'SS',
+									fullCombo: false,
+									cleared: true,
+									maxCombo: 432
+								},
+								{
+									isBest: false,
+									achievementRate: 92.1,
+									rankLabel: 'S',
+									fullCombo: false,
+									cleared: true,
+									displayOrder: 1
+								},
+								{
+									isBest: false,
+									achievementRate: 150, // invalid: > 100
+									rankLabel: 'S',
+									fullCombo: false,
+									cleared: false,
+									displayOrder: 2
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: unknown[];
+		};
+		// The chart is accepted; the bad recent row (achievementRate 150) is
+		// dropped, but the best row and the valid recent row are kept.
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.insertedScores).toBe(2);
+		expect(payload.skipped).toEqual([]);
+		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
+		expect(mockedUpsertReplace).toHaveBeenCalledWith(
+			{},
+			expect.objectContaining({
+				scores: expect.arrayContaining([
+					expect.objectContaining({ is_best: true, score: 983400 }),
+					expect.objectContaining({ is_best: false, display_order: 1 })
+				])
+			})
+		);
+	});
+
+	it('rejects an empty scores[] payload that would wipe prior scores', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [{ chartId: '10', playCount: 0, clearCount: 0, scores: [] }]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.updatedCharts).toBe(0);
+		expect(payload.skipped[0].chartId).toBe('10');
+		expect(payload.skipped[0].reason).toBe('no scores provided');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 });
 

@@ -161,51 +161,104 @@ const UploadScoresResultRef = builder
 		})
 	});
 
-// Validates a single chart payload. Returns a skip reason string, or null when valid.
+// Validates a single chart payload. Returns either a skip reason (chart-level
+// integrity violation that makes the whole chart un-uploadable) or the filtered
+// set of valid score rows (per-row issues drop only the bad row, preserving
+// valid rows including the best — so one malformed recent play no longer drops
+// the entire chart).
 const VALID_RANK_LABELS = ['SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F'] as const;
+
+type InputScore = {
+	isBest: boolean;
+	score?: number | null;
+	achievementRate?: number | null;
+	rankLabel?: string | null;
+	fullCombo: boolean;
+	cleared: boolean;
+	maxCombo?: number | null;
+	perfect?: number | null;
+	great?: number | null;
+	good?: number | null;
+	poor?: number | null;
+	miss?: number | null;
+	performedAt?: string | null;
+	displayOrder?: number | null;
+};
+
+type ValidationResult = { ok: true; scores: InputScore[] } | { ok: false; reason: string };
+
+// Per-row field validation. Returns a reason string when the row's individual
+// fields are invalid, or null when the row is field-valid. Structural checks
+// (best/non-best coupling, displayOrder range/uniqueness) are handled by the
+// caller, not here — those may warrant dropping the row or stripping a field
+// rather than a simple pass/fail.
+const validateScoreFields = (s: InputScore): string | null => {
+	if (s.score != null && (!Number.isInteger(s.score) || s.score < 0))
+		return 'score must be a non-negative integer';
+	if (
+		s.achievementRate != null &&
+		(!Number.isFinite(s.achievementRate) || s.achievementRate < 0 || s.achievementRate > 100)
+	) {
+		return 'achievementRate out of range';
+	}
+	// rankLabel, when present, must be one of the known DTXMania rank tokens.
+	// The DB CHECK constraint (0002_scores.sql) mirrors this as a backstop.
+	if (s.rankLabel != null && !(VALID_RANK_LABELS as readonly string[]).includes(s.rankLabel)) {
+		return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
+	}
+	// performedAt, when present, must be a parseable date string that is
+	// not in the future. Mirrors the publishDate check in simfile.ts so a
+	// garbage timestamp can't reach the DB's performed_at TEXT column.
+	// The upper bound prevents a far-future date from skewing recency sorts.
+	if (s.performedAt != null) {
+		const parsed = Date.parse(s.performedAt);
+		if (Number.isNaN(parsed)) return 'invalid performedAt';
+		if (parsed > Date.now() + 60_000) return 'performedAt cannot be in the future';
+	}
+	// Judgment counts and maxCombo must be non-negative integers when present.
+	const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
+	for (const c of counts) {
+		if (c != null && (!Number.isInteger(c) || c < 0)) {
+			return 'judgment counts must be non-negative integers';
+		}
+	}
+	return null;
+};
 
 const validateChartScores = (
 	playCount: number,
 	clearCount: number,
-	scores: {
-		isBest: boolean;
-		score?: number | null;
-		achievementRate?: number | null;
-		rankLabel?: string | null;
-		fullCombo?: boolean | null;
-		cleared?: boolean | null;
-		maxCombo?: number | null;
-		perfect?: number | null;
-		great?: number | null;
-		good?: number | null;
-		poor?: number | null;
-		miss?: number | null;
-		performedAt?: string | null;
-		displayOrder?: number | null;
-	}[]
-): string | null => {
+	scores: InputScore[]
+): ValidationResult => {
 	// Chart-level aggregate validation: counts must be non-negative integers
 	// and clearCount cannot exceed playCount (can't clear more times than played).
 	if (!Number.isInteger(playCount) || playCount < 0)
-		return 'playCount must be a non-negative integer';
+		return { ok: false, reason: 'playCount must be a non-negative integer' };
 	if (!Number.isInteger(clearCount) || clearCount < 0)
-		return 'clearCount must be a non-negative integer';
-	if (clearCount > playCount) return 'clearCount cannot exceed playCount';
+		return { ok: false, reason: 'clearCount must be a non-negative integer' };
+	if (clearCount > playCount) return { ok: false, reason: 'clearCount cannot exceed playCount' };
+
+	// An empty scores[] would wipe prior scores via the replace-all batch in
+	// upsertChartScoreAndReplaceScores (DELETE + INSERT none). Reject it so a
+	// bypassed/buggy client can't destroy existing data with a no-score payload.
+	if (scores.length === 0) return { ok: false, reason: 'no scores provided' };
 
 	const bestCount = scores.filter((s) => s.isBest).length;
-	if (bestCount > 1) return 'more than one best score';
-	const recentRows = scores.filter((s) => s.displayOrder != null);
-	if (recentRows.length > 5) return 'more than 5 recent scores';
-	// Non-best rows must carry a displayOrder (they are recent plays).
-	// A row with isBest=false and displayOrder=null is an orphan — reject it.
-	for (const s of scores) {
-		if (!s.isBest && s.displayOrder == null) return 'non-best score without displayOrder';
-	}
-	// Best rows must not carry a displayOrder (they are not recent plays).
-	for (const s of scores) {
-		if (s.isBest && s.displayOrder != null) return 'best score with displayOrder';
-	}
-	// Every non-null displayOrder must be a unique integer in 1..5.
+	if (bestCount > 1) return { ok: false, reason: 'more than one best score' };
+
+	// Recent-row cap: more than 5 non-best rows with displayOrder is a structural
+	// violation (the UI only shows 5 recent plays). Checked on the original count
+	// before per-row filtering so a payload with 6 valid recent rows is rejected
+	// rather than silently truncated.
+	const recentCount = scores.filter((s) => !s.isBest && s.displayOrder != null).length;
+	if (recentCount > 5) return { ok: false, reason: 'more than 5 recent scores' };
+
+	// Per-row filtering. Invalid rows are dropped individually; valid rows
+	// (including the best) are kept. The first drop reason is tracked so a
+	// chart where ALL rows are dropped reports a meaningful skip reason
+	// (preserving the old behavior for single-row charts where the one bad
+	// row = whole chart skipped).
+	//
 	// NOTE on app-validator/DB asymmetry: the DB (0002_scores.sql) enforces
 	// only `display_order IS NULL OR (1..5)` plus a partial unique index over
 	// non-null values. It does NOT enforce the best/non-best coupling below
@@ -213,52 +266,56 @@ const validateChartScores = (
 	// invariant lives only here. The DB constraints are a backstop for range
 	// and uniqueness; the app validator is the source of truth for the
 	// isBest↔displayOrder relationship.
+	let firstDropReason: string | null = null;
+	const valid: InputScore[] = [];
 	const seenOrders = new Set<number>();
-	for (const s of recentRows) {
-		const order = s.displayOrder as number;
-		if (!Number.isInteger(order) || order < 1 || order > 5) {
-			return 'displayOrder out of range (expected 1..5)';
-		}
-		if (seenOrders.has(order)) return 'duplicate displayOrder';
-		seenOrders.add(order);
-	}
+
 	for (const s of scores) {
-		if (s.score != null && (!Number.isInteger(s.score) || s.score < 0))
-			return 'score must be a non-negative integer';
+		// Best rows must not carry a displayOrder (they are not recent plays).
+		// Strip the displayOrder rather than dropping the row — the best score
+		// is the most valuable row and a stray displayOrder is a benign data
+		// error, not a reason to lose it.
+		const row: InputScore =
+			s.isBest && s.displayOrder != null ? { ...s, displayOrder: null } : s;
+
+		// Per-row field validation: drop the row if any individual field is bad.
+		const fieldError = validateScoreFields(row);
+		if (fieldError) {
+			if (firstDropReason === null) firstDropReason = fieldError;
+			continue;
+		}
+
+		// Non-best rows must carry a displayOrder (they are recent plays).
+		// A row with isBest=false and displayOrder=null is an orphan — drop it.
+		if (!row.isBest && row.displayOrder == null) {
+			if (firstDropReason === null) firstDropReason = 'non-best score without displayOrder';
+			continue;
+		}
+
+		// Every non-null displayOrder must be a unique integer in 1..5.
 		if (
-			s.achievementRate != null &&
-			(!Number.isFinite(s.achievementRate) ||
-				s.achievementRate < 0 ||
-				s.achievementRate > 100)
+			row.displayOrder != null &&
+			(!Number.isInteger(row.displayOrder) || row.displayOrder < 1 || row.displayOrder > 5)
 		) {
-			return 'achievementRate out of range';
+			if (firstDropReason === null)
+				firstDropReason = 'displayOrder out of range (expected 1..5)';
+			continue;
 		}
-		// rankLabel, when present, must be one of the known DTXMania rank tokens.
-		// The DB CHECK constraint (0002_scores.sql) mirrors this as a backstop.
-		if (
-			s.rankLabel != null &&
-			!(VALID_RANK_LABELS as readonly string[]).includes(s.rankLabel)
-		) {
-			return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
+		if (row.displayOrder != null && seenOrders.has(row.displayOrder)) {
+			// Duplicate displayOrder: drop the later occurrence, keep the first.
+			if (firstDropReason === null) firstDropReason = 'duplicate displayOrder';
+			continue;
 		}
-		// performedAt, when present, must be a parseable date string that is
-		// not in the future. Mirrors the publishDate check in simfile.ts so a
-		// garbage timestamp can't reach the DB's performed_at TEXT column.
-		// The upper bound prevents a far-future date from skewing recency sorts.
-		if (s.performedAt != null) {
-			const parsed = Date.parse(s.performedAt);
-			if (Number.isNaN(parsed)) return 'invalid performedAt';
-			if (parsed > Date.now() + 60_000) return 'performedAt cannot be in the future';
-		}
-		// Judgment counts and maxCombo must be non-negative integers when present.
-		const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
-		for (const c of counts) {
-			if (c != null && (!Number.isInteger(c) || c < 0)) {
-				return 'judgment counts must be non-negative integers';
-			}
-		}
+		if (row.displayOrder != null) seenOrders.add(row.displayOrder);
+
+		valid.push(row);
 	}
-	return null;
+
+	if (valid.length === 0) {
+		return { ok: false, reason: firstDropReason ?? 'no valid scores after filtering' };
+	}
+
+	return { ok: true, scores: valid };
 };
 
 builder.mutationField('uploadScores', (t) =>
@@ -346,7 +403,7 @@ builder.mutationField('uploadScores', (t) =>
 					continue;
 				}
 
-				const invalid = validateChartScores(
+				const result = validateChartScores(
 					chart.playCount,
 					chart.clearCount,
 					chart.scores.map((s) => ({
@@ -366,8 +423,8 @@ builder.mutationField('uploadScores', (t) =>
 						displayOrder: s.displayOrder
 					}))
 				);
-				if (invalid) {
-					skipped.push({ chartId: String(chart.chartId), reason: invalid });
+				if (!result.ok) {
+					skipped.push({ chartId: String(chart.chartId), reason: result.reason });
 					continue;
 				}
 
@@ -382,8 +439,10 @@ builder.mutationField('uploadScores', (t) =>
 
 				// Single atomic D1 batch: upsert the chart_scores aggregate, delete
 				// old scores, and insert new ones in one transaction so no partial
-				// replacement can commit.
-				const inserts: ScoreInsert[] = chart.scores.map((s) => ({
+				// replacement can commit. Inserts are built from the validated/
+				// filtered scores (result.scores), not the raw input — invalid rows
+				// were dropped and best-row displayOrder was stripped by the validator.
+				const inserts: ScoreInsert[] = result.scores.map((s) => ({
 					is_best: s.isBest,
 					score: s.score ?? null,
 					achievement_rate: s.achievementRate ?? null,

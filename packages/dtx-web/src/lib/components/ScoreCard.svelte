@@ -12,6 +12,12 @@
 	// formatting follows the UI language instead of the browser default.
 	const intlLocale = (): string => ($locale === 'jp' ? 'ja' : ($locale ?? 'en'));
 
+	// Only render charts the user has actually scored. Unscored charts
+	// (chartScore null) would render as empty shells — just the difficulty
+	// badge with no score content — adding noise for songs with many
+	// unplayed difficulties.
+	const scoredCharts = $derived(song.charts.filter((c) => c.chartScore != null));
+
 	const formatScore = (score: number | null): string =>
 		score == null ? '—' : score.toLocaleString(intlLocale());
 	const formatRate = (rate: number | null): string =>
@@ -29,7 +35,7 @@
 	</div>
 
 	<div class="space-y-4">
-		{#each song.charts as chart (chart.id)}
+		{#each scoredCharts as chart (chart.id)}
 			<div class="rounded-lg border border-purple-500/20 bg-slate-800/40 p-4">
 				<div class="mb-2 flex flex-wrap items-center justify-between gap-2">
 					<span

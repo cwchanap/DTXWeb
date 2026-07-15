@@ -15,6 +15,37 @@
 		UploadScoresResult
 	} from '../lib/scoreTypes';
 
+	// Maps technical skip reasons from the server (score.ts validateChartScores)
+	// and client (duplicate match) to user-friendly text. Unknown reasons fall
+	// back to the raw string so new server-side reasons are still visible.
+	const humanizeSkipReason = (reason: string): string => {
+		const map: Record<string, string> = {
+			'invalid chart id': 'Chart ID is not valid',
+			'duplicate chart id': 'Chart appears twice in the upload',
+			'too many scores (max 10)': 'Too many score rows for one chart',
+			'playCount must be a non-negative integer': 'Invalid play count',
+			'clearCount must be a non-negative integer': 'Invalid clear count',
+			'clearCount cannot exceed playCount': 'Clear count exceeds play count',
+			'no scores provided': 'No score rows provided',
+			'more than one best score': 'More than one best score',
+			'more than 5 recent scores': 'More than 5 recent plays',
+			'non-best score without displayOrder': 'Recent play missing order info',
+			'displayOrder out of range (expected 1..5)': 'Recent play order out of range',
+			'duplicate displayOrder': 'Duplicate recent play order',
+			'score must be a non-negative integer': 'Invalid score value',
+			'achievementRate out of range': 'Achievement rate out of range (0–100)',
+			'rankLabel must be one of SS/S/A/B/C/D/E/F': 'Unknown rank label',
+			'invalid performedAt': 'Invalid play date',
+			'performedAt cannot be in the future': 'Play date is in the future',
+			'judgment counts must be non-negative integers': 'Invalid judgment counts',
+			'no valid scores after filtering': 'All score rows were invalid',
+			'chart not found': 'Chart not found on the server',
+			'write failed': 'Server write failed — try again',
+			'too many charts (max 100)': 'Too many charts in one upload — try fewer'
+		};
+		return map[reason] ?? reason;
+	};
+
 	let dbPath = $state<string | null>(null);
 	let songs = $state<DtxmaniaSong[]>([]);
 	let loading = $state(false);
@@ -456,7 +487,7 @@
 	{#if skipped.length > 0}
 		<ul class="mb-3 text-xs text-red-300">
 			{#each skipped as row}
-				<li>Chart {row.chartId} skipped: {row.reason}</li>
+				<li>Chart {row.chartId} skipped: {humanizeSkipReason(row.reason)}</li>
 			{/each}
 		</ul>
 	{/if}

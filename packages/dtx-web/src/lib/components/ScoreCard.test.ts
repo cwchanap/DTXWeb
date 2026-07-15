@@ -92,12 +92,12 @@ describe('ScoreCard', () => {
 		expect(screen.getByText('score.no_best_score')).toBeInTheDocument();
 	});
 
-	it('does not repeat the no-best placeholder for a never-played chart', () => {
-		// A never-played chart (chartScore null) must NOT render "No best
-		// score" — otherwise a song with several unplayed charts repeats the
-		// message once per chart. The chart badge/level still render.
+	it('does not render unscored charts at all', () => {
+		// A never-played chart (chartScore null) is skipped entirely — no
+		// badge, no empty shell, no "No best score" placeholder. This avoids
+		// noise from unplayed difficulties on a song with many charts.
 		render(ScoreCard, { props: { song } });
-		expect(screen.getByText('EXTREME · score.level_short 8')).toBeInTheDocument();
+		expect(screen.queryByText('EXTREME · score.level_short 8')).not.toBeInTheDocument();
 		expect(screen.queryByText('score.no_best_score')).not.toBeInTheDocument();
 	});
 

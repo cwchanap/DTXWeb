@@ -448,6 +448,62 @@ fn parse_caps_recent_scores_at_five() {
     assert!(chart.recent.iter().all(|r| r.display_order != Some(6)));
 }
 
+/// Seed a chart with 3 PerformanceHistory rows using NON-contiguous
+/// DisplayOrder values (10, 20, 30) to verify that group_joined_rows
+/// renormalizes display_order to 1..n based on row position rather than
+/// passing the raw DTXMania values through. The app validator (score.ts)
+/// requires displayOrder in 1..5, so raw values like 10/20/30 would cause
+/// the entire chart to be rejected.
+fn seed_db_with_non_contiguous_display_order(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, SongScoreId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Non-Contiguous Song', 'Artist', 'Rock');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 3, 2, 800, 500, 30, 10, 5, 2, '2026-06-02');
+
+         -- Non-contiguous DisplayOrder values (10, 20, 30) that would fail
+         -- the app validator's 1..5 range check if passed through raw.
+         INSERT INTO PerformanceHistory VALUES (100, 10, '2026-06-02T00:00:00', '10.26/6/2 Cleared (S: 91.30)', 10);
+         INSERT INTO PerformanceHistory VALUES (101, 10, '2026-05-28T00:00:00', '9.26/5/28 Cleared (A: 88.00)', 20);
+         INSERT INTO PerformanceHistory VALUES (102, 10, '2026-05-20T00:00:00', '8.26/5/20 Failed (B: 70.00)', 30);",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_renormalizes_display_order_to_contiguous_1_to_n() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_with_non_contiguous_display_order(&db);
+
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+    let chart = &songs[0].charts[0];
+    assert_eq!(chart.recent.len(), 3);
+
+    // display_order must be renormalized to 1, 2, 3 — NOT the raw 10, 20, 30
+    // from DTXMania. The rows arrive in ORDER BY ph.DisplayOrder, so the
+    // first row (DisplayOrder 10) becomes 1, the second (20) becomes 2, etc.
+    assert_eq!(chart.recent[0].display_order, Some(1));
+    assert_eq!(chart.recent[1].display_order, Some(2));
+    assert_eq!(chart.recent[2].display_order, Some(3));
+
+    // No raw DTXMania values should leak through.
+    assert!(chart.recent.iter().all(|r| r.display_order != Some(10)));
+    assert!(chart.recent.iter().all(|r| r.display_order != Some(20)));
+    assert!(chart.recent.iter().all(|r| r.display_order != Some(30)));
+}
+
 fn seed_db_with_null_integers(path: &std::path::Path) {
     let conn = Connection::open(path).expect("open seed db");
     conn.execute_batch(

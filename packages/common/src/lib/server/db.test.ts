@@ -175,19 +175,21 @@ describe('score schema', () => {
 		expect(indexNames).toContain('idx_scores_chart_score');
 	});
 
-	// Parity check: the migration declares a partial unique index
-	// idx_scores_one_best (WHERE is_best = 1) that Drizzle's sqlite-core
-	// builder cannot express. This test documents that the Drizzle schema
-	// intentionally omits it and the migration is the source of truth.
-	// If a future Drizzle version adds partial-index support, move the
-	// declaration into schema.ts and remove this test.
-	it('documents the migration-only idx_scores_one_best partial unique index', () => {
+	// Parity check: the Drizzle schema now includes the partial unique indexes
+	// that mirror the migration (0002_scores.sql). Previously these lived only
+	// in the raw SQL migration because Drizzle's sqlite-core builder lacked
+	// partial-index support; Drizzle 0.44+ supports .where() on index builders,
+	// so the declarations were moved into schema.ts for test/production parity.
+	it('defines the idx_scores_one_best partial unique index (WHERE is_best = 1)', () => {
 		const config = getTableConfig(scores);
 		const indexNames = config.indexes.map((i) => i.config.name);
-		// The Drizzle schema does NOT include idx_scores_one_best — it lives
-		// only in 0002_scores.sql. This assertion guards against accidental
-		// removal of the migration index by making the gap explicit.
-		expect(indexNames).not.toContain('idx_scores_one_best');
+		expect(indexNames).toContain('idx_scores_one_best');
+	});
+
+	it('defines the idx_scores_display_order partial unique index (WHERE display_order IS NOT NULL)', () => {
+		const config = getTableConfig(scores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_scores_display_order');
 	});
 });
 

@@ -457,7 +457,15 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
         // meaningful recent-play ordering without display_order, and the
         // downstream app validator (score.ts) requires a non-null
         // displayOrder on every non-best row anyway.
-        if let (Some(performed_at), Some(history_line), Some(display_order)) = (
+        //
+        // The display_order sent to the API is RENORMALIZED to 1..n based on
+        // row position (the SQL ORDER BY ph.DisplayOrder, ph.Id guarantees a
+        // stable order), NOT the raw DTXMania DisplayOrder value. DTXManiaCX
+        // may use 0-based, non-contiguous, or monotonically growing values
+        // that don't satisfy the app validator's 1..5 unique constraint.
+        // Renormalizing here means the validator always sees 1, 2, 3, … for
+        // the first 5 history rows regardless of the source scheme.
+        if let (Some(performed_at), Some(history_line), Some(_display_order)) = (
             row.hist_performed_at,
             row.hist_history_line,
             row.hist_display_order,
@@ -491,7 +499,7 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
                         poor: None,
                         miss: None,
                         performed_at: Some(performed_at),
-                        display_order: Some(display_order),
+                        display_order: Some((recent_count + 1) as i64),
                     });
                 }
                 recent_count += 1;

@@ -14,13 +14,12 @@ vi.mock('$app/environment', () => ({
 
 vi.mock('$env/dynamic/public', () => publicEnvMock);
 
+const pageMock = vi.hoisted(() => ({ url: new URL('http://localhost/app?redirect=desktop') }));
+
 vi.mock('$app/stores', () => ({
 	page: {
 		subscribe: (run: (value: unknown) => void) => {
-			run({
-				url: new URL('http://localhost/app?redirect=desktop'),
-				params: {}
-			});
+			run({ url: pageMock.url, params: {} });
 			return () => {};
 		}
 	}
@@ -43,6 +42,7 @@ describe('App Home Page – desktop redirect flow', () => {
 		vi.clearAllMocks();
 		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL = '';
 		sessionStorage.clear();
+		pageMock.url = new URL('http://localhost/app?redirect=desktop');
 		Object.defineProperty(window, 'location', {
 			value: { href: '' },
 			writable: true,
@@ -122,6 +122,62 @@ describe('App Home Page – desktop redirect flow', () => {
 		const expectedHref = `http://127.0.0.1:47931/auth-callback?source=web&magic_link=${encodeURIComponent('https://example.com/magic')}`;
 		await vi.waitFor(() => {
 			expect(generateMagicLink).toHaveBeenCalledOnce();
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('reads the desktop callback from the URL param (already-authenticated server-redirect flow)', async () => {
+		pageMock.url = new URL(
+			'http://localhost/app?redirect=desktop&desktop_callback=' +
+				encodeURIComponent('http://127.0.0.1:47931/auth-callback')
+		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:47931/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+		// The URL param is not single-use (sessionStorage is), but sessionStorage
+		// must remain untouched — the URL param takes precedence.
+		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBeNull();
+	});
+
+	it('URL-param callback takes precedence over a stale sessionStorage value', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'dtx://auth-callback');
+		pageMock.url = new URL(
+			'http://localhost/app?redirect=desktop&desktop_callback=' +
+				encodeURIComponent('http://127.0.0.1:47931/auth-callback')
+		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:47931/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('rejects an invalid URL-param callback and falls back to sessionStorage', async () => {
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://127.0.0.1:47931/auth-callback');
+		pageMock.url = new URL(
+			'http://localhost/app?redirect=desktop&desktop_callback=' +
+				encodeURIComponent('https://evil.example.com/steal')
+		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:47931/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
 			expect(window.location.href).toBe(expectedHref);
 		});
 	});

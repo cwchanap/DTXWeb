@@ -716,4 +716,89 @@ describe('Scores', () => {
 		expect(screen.getByRole('button', { name: /choose songs\.db/i })).not.toBeDisabled();
 		expect(screen.getByRole('button', { name: /reparse/i })).not.toBeDisabled();
 	});
+
+	it('ignores stale cloud-chart responses when the link changes before the fetch resolves', async () => {
+		// Two cloud songs the autocomplete can suggest, so the user can link
+		// one then change to the other before the first chart fetch resolves.
+		host.searchCloudSongs.mockResolvedValue({
+			success: true,
+			data: [
+				{ id: '42', title: 'Cloud Song A', artist: 'Artist A', is_published: true },
+				{ id: '99', title: 'Cloud Song B', artist: 'Artist A', is_published: true }
+			]
+		});
+
+		// Deferred promises per song id so we can control resolution order:
+		// B resolves first, then A (the stale response).
+		const deferreds: Record<string, { resolve: (v: unknown) => void }> = {};
+		host.fetchCloudSongCharts.mockImplementation(
+			(songId: string) =>
+				new Promise((r) => {
+					deferreds[songId] = { resolve: r as (v: unknown) => void };
+				})
+		);
+
+		// CloudSongAutocomplete registers a click-outside handler on
+		// document 100ms after mount. By the time we click "change" to
+		// re-link, that handler is active and closes the autocomplete the
+		// instant it opens. Intercept document.addEventListener to suppress
+		// the click-outside handler for this test only.
+		const realAdd = document.addEventListener.bind(document);
+		const addSpy = vi.spyOn(document, 'addEventListener').mockImplementation(((
+			type: string,
+			listener: EventListenerOrEventListenerObject,
+			options?: boolean | AddEventListenerOptions
+		) => {
+			if (type === 'click') return;
+			return realAdd(type, listener, options);
+		}) as typeof document.addEventListener);
+
+		try {
+			render(Scores);
+			expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+			// Link cloud song A ('42') — fetchCloudSongCharts('42') is now pending.
+			await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+			let input = await screen.findByPlaceholderText(/search by song title or artist/i);
+			await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+			await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+			await fireEvent.click(await screen.findByText('Cloud Song A'));
+			await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+			// Change the link to cloud song B ('99') before A's charts resolve.
+			await fireEvent.click(screen.getByRole('button', { name: 'change' }));
+			input = await screen.findByPlaceholderText(/search by song title or artist/i);
+			await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+			await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalledTimes(2));
+			await fireEvent.click(await screen.findByText('Cloud Song B'));
+			await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('99'));
+
+			// Resolve B first, then A (the stale response that must be discarded).
+			deferreds['99'].resolve({
+				success: true,
+				data: [{ id: '99-chart', label: 'BASIC', level: 5.5 }]
+			});
+			deferreds['42'].resolve({
+				success: true,
+				data: [{ id: '42-chart', label: 'BASIC', level: 5.5 }]
+			});
+
+			// Upload — must use B's chart ID ('99-chart'), not A's stale '42-chart'.
+			await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+			await waitFor(() =>
+				expect(host.uploadScores).toHaveBeenCalledWith({
+					charts: [
+						{
+							chartId: '99-chart',
+							playCount: 7,
+							clearCount: 5,
+							scores: [bestRow, recentRow]
+						}
+					]
+				})
+			);
+		} finally {
+			addSpy.mockRestore();
+		}
+	});
 });

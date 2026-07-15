@@ -309,10 +309,15 @@
 			const result = await desktopHost.fetchCloudSongCharts<FetchCloudSongChartsResult>(
 				song.id
 			);
+			// Ignore stale responses: if the user changed the link to a different
+			// song before this fetch resolved, discard the result so we don't
+			// overwrite the current link's charts/matches with the prior link's.
+			if (links[songIndex]?.id !== song.id) return;
 			const charts = result.success ? (result.data ?? []) : [];
 			cloudChartsBySong[songIndex] = charts;
 			matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
 		} catch {
+			if (links[songIndex]?.id !== song.id) return;
 			cloudChartsBySong[songIndex] = [];
 			matchesBySong[songIndex] = [];
 			toastStore.error('Could not fetch cloud charts for linked song');

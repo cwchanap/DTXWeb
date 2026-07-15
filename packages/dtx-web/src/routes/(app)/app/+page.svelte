@@ -46,10 +46,17 @@
 		return null;
 	};
 
-	// The desktop app stashes its declared callback on the /login page; read it
-	// once here (single-use) and honor it over the build-time default.
+	// The desktop app declares its callback via the `desktop_callback` query
+	// param. It reaches /app through two paths: (1) the server redirects an
+	// already-authenticated browser from /login, forwarding the param in the
+	// URL; (2) the /login onMount stashes it in sessionStorage for the
+	// password-POST and Google-OAuth flows (whose redirects to /app don't
+	// carry the param). Check the URL first, then fall back to sessionStorage.
 	const readDesktopSuppliedCallbackUrl = (): string | null => {
 		if (!browser) return null;
+		const fromUrl = $page.url.searchParams.get('desktop_callback');
+		const validatedFromUrl = fromUrl ? validateDesktopCallbackUrl(fromUrl) : null;
+		if (validatedFromUrl) return validatedFromUrl;
 		try {
 			const stored = sessionStorage.getItem('dtx_desktop_auth_callback');
 			if (stored) sessionStorage.removeItem('dtx_desktop_auth_callback');

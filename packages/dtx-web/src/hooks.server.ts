@@ -130,9 +130,20 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 
 	// Handle authenticated access to login page - preserve any redirect parameter
 	if (event.locals.session && event.url.pathname === '/login') {
-		// If there's a desktop redirect parameter, preserve it
-		const redirectUrl = redirectParam === 'desktop' ? '/app?redirect=desktop' : '/app';
-		redirect(303, redirectUrl);
+		// If there's a desktop redirect parameter, preserve it. Also forward
+		// desktop_callback so the /app page can still reach the desktop's
+		// declared callback when the browser already had a web session —
+		// otherwise the /login onMount (which stashes it in sessionStorage)
+		// never runs and the app falls back to the default deep link.
+		if (redirectParam === 'desktop') {
+			const desktopCallback = url.searchParams.get('desktop_callback');
+			const redirectUrl = desktopCallback
+				? `/app?redirect=desktop&desktop_callback=${encodeURIComponent(desktopCallback)}`
+				: '/app?redirect=desktop';
+			redirect(303, redirectUrl);
+		} else {
+			redirect(303, '/app');
+		}
 	}
 
 	return resolve(event);

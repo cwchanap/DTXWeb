@@ -1081,6 +1081,13 @@ describe('upsertChartScoreAndReplaceScores', () => {
 		const upsertSql = prepareCalls[0][0] as string;
 		expect(upsertSql).toContain('FROM dtx_files WHERE id = ?');
 		expect(upsertSql).not.toContain('VALUES (');
+
+		// The DELETE and INSERT-score statements' subquery must also gate on
+		// dtx_files existence (EXISTS), so a TOCTOU chart deletion can't
+		// partially commit (replace scores while leaving a stale aggregate)
+		// when a chart_scores row already exists from a prior upload.
+		const deleteSql = prepareCalls[1][0] as string;
+		expect(deleteSql).toContain('EXISTS (SELECT 1 FROM dtx_files');
 	});
 
 	it('parallel upserts on the same chart are last-write-wins (no partial state)', async () => {

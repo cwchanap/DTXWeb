@@ -260,6 +260,119 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		expect(fetched).not.toBeNull();
 		expect(fetched!.scores).toHaveLength(0);
 	});
+
+	it('TOCTOU: chart deleted after seeding chart_scores is a true no-op (no partial write)', async () => {
+		// Simulate the production TOCTOU orphan: chart_scores exists for a
+		// chart that was deleted from dtx_files, and D1's FK cascade didn't
+		// fire (the documented production behavior — see 0002_scores.sql).
+		// Miniflare's D1 enforces FKs and doesn't support PRAGMA foreign_keys,
+		// so recreate chart_scores without the FK constraint to match the
+		// production orphan state.
+		await db.exec('DROP TABLE scores');
+		await db.exec('DROP TABLE chart_scores');
+		await db.exec(
+			'CREATE TABLE chart_scores (' +
+				'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+				'chart_id INTEGER NOT NULL, user_id TEXT NOT NULL, ' +
+				'play_count INTEGER NOT NULL DEFAULT 0 CHECK (play_count >= 0), ' +
+				'clear_count INTEGER NOT NULL DEFAULT 0 CHECK (clear_count >= 0 AND clear_count <= play_count), ' +
+				"created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), " +
+				"updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
+		);
+		await db.exec(
+			'CREATE UNIQUE INDEX idx_chart_scores_user_chart ON chart_scores(user_id, chart_id)'
+		);
+		await db.exec('CREATE INDEX idx_chart_scores_chart ON chart_scores(chart_id)');
+		await db.exec(
+			'CREATE TABLE scores (' +
+				'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+				'chart_score_id INTEGER NOT NULL, ' +
+				'is_best INTEGER NOT NULL DEFAULT 0 CHECK (is_best IN (0, 1)), ' +
+				'score INTEGER CHECK (score IS NULL OR score >= 0), ' +
+				'achievement_rate REAL CHECK (achievement_rate IS NULL OR (achievement_rate >= 0 AND achievement_rate <= 100)), ' +
+				"rank_label TEXT CHECK (rank_label IS NULL OR rank_label IN ('SS','S','A','B','C','D','E','F')), " +
+				'full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1)), ' +
+				'cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0, 1)), ' +
+				'max_combo INTEGER CHECK (max_combo IS NULL OR max_combo >= 0), ' +
+				'perfect INTEGER CHECK (perfect IS NULL OR perfect >= 0), ' +
+				'great INTEGER CHECK (great IS NULL OR great >= 0), ' +
+				'good INTEGER CHECK (good IS NULL OR good >= 0), ' +
+				'poor INTEGER CHECK (poor IS NULL OR poor >= 0), ' +
+				'miss INTEGER CHECK (miss IS NULL OR miss >= 0), ' +
+				'performed_at TEXT, ' +
+				'display_order INTEGER CHECK (display_order IS NULL OR (display_order >= 1 AND display_order <= 5)), ' +
+				"created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
+		);
+		await db.exec('CREATE INDEX idx_scores_chart_score ON scores(chart_score_id)');
+		await db.exec(
+			'CREATE UNIQUE INDEX idx_scores_one_best ON scores(chart_score_id) WHERE is_best = 1'
+		);
+		await db.exec(
+			'CREATE UNIQUE INDEX idx_scores_display_order ON scores(chart_score_id, display_order) WHERE display_order IS NOT NULL'
+		);
+
+		// Seed the orphan: chart_scores + scores for chart 1, then delete
+		// dtx_files (no cascade since chart_scores has no FK).
+		await db
+			.prepare(
+				'INSERT INTO chart_scores (chart_id, user_id, play_count, clear_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+			)
+			.bind(1, 'user-1', 5, 2, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+			.run();
+		const chartScoreRow = await db
+			.prepare('SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ?')
+			.bind('user-1', 1)
+			.first<{ id: number }>();
+		const csId = chartScoreRow!.id;
+		await db
+			.prepare(
+				'INSERT INTO scores (chart_score_id, is_best, score, achievement_rate, display_order) VALUES (?, 1, ?, ?, NULL)'
+			)
+			.bind(csId, 900000, 90.0)
+			.run();
+		await db
+			.prepare(
+				'INSERT INTO scores (chart_score_id, is_best, score, achievement_rate, display_order) VALUES (?, 0, NULL, ?, 1)'
+			)
+			.bind(csId, 80.0)
+			.run();
+		await db.prepare('DELETE FROM dtx_files WHERE id = 1').run();
+
+		// The upsert must throw (so the caller reports "write failed") AND the
+		// batch must roll back — the orphaned chart_scores row must retain its
+		// original scores, not have them replaced. The EXISTS-gated subquery
+		// yields NULL for chart_score_id (dtx_files row is gone), and D1's NOT
+		// NULL constraint rejects the INSERT, rolling back the entire batch.
+		// (With an empty scores array, the batch commits zero changes and the
+		// JS code throws "Failed to upsert chart_score" instead. Both paths
+		// produce no partial write — the caller's allSettled reports "write
+		// failed" either way.)
+		await expect(
+			upsertChartScoreAndReplaceScores(db, {
+				chartId: 1,
+				userId: 'user-1',
+				playCount: 99,
+				clearCount: 99,
+				scores: [scoreInput({ is_best: true, score: 999999, achievement_rate: 99.9 })]
+			})
+		).rejects.toThrow();
+
+		// The orphaned chart_scores aggregate must be unchanged (play_count
+		// still 5, not 99 — the upsert was a no-op).
+		const after = await db
+			.prepare('SELECT * FROM chart_scores WHERE user_id = ? AND chart_id = ?')
+			.bind('user-1', 1)
+			.first<{ play_count: number; clear_count: number }>();
+		expect(after).not.toBeNull();
+		expect(after!.play_count).toBe(5);
+		expect(after!.clear_count).toBe(2);
+
+		// The original 2 scores must still be there (DELETE was a no-op).
+		const fetched = await getUserChartScore(db, 'user-1', 1);
+		expect(fetched).not.toBeNull();
+		expect(fetched!.scores).toHaveLength(2);
+		expect(fetched!.scores[0].score).toBe(900000);
+	});
 });
 
 describe('D1 CHECK constraints (real D1)', () => {

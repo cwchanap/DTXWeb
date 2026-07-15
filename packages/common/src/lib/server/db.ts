@@ -530,7 +530,13 @@ export const upsertChartScoreAndReplaceScores = async (
 
 	// The subquery resolves the chart_score_id at execution time within the
 	// transaction, so the delete/inserts always target the upserted row.
-	const resolveChartScoreId = `(SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ?)`;
+	// The EXISTS check on dtx_files mirrors the first statement's
+	// `FROM dtx_files WHERE id = ?` gate: if the chart is deleted between
+	// the visibility check in score.ts and this batch (TOCTOU), the subquery
+	// returns NULL even when a chart_scores row already exists from a prior
+	// upload, so the DELETE and INSERT-score statements are true no-ops
+	// (not partial writes that replace scores while leaving a stale aggregate).
+	const resolveChartScoreId = `(SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ? AND EXISTS (SELECT 1 FROM dtx_files WHERE id = chart_scores.chart_id))`;
 
 	const statements = [
 		db
@@ -551,7 +557,9 @@ export const upsertChartScoreAndReplaceScores = async (
 			// — see 0002_scores.sql). If the chart was deleted, the SELECT
 			// returns 0 rows, the upsert is a no-op, RETURNING yields nothing,
 			// and the function throws — caught by the caller's allSettled as a
-			// "write failed" skip with no orphaned rows.
+			// "write failed" skip. The resolveChartScoreId subquery carries the
+			// same dtx_files EXISTS gate, so the DELETE and INSERT-score
+			// statements are also no-ops — no partial write commits.
 			.bind(chartId, userId, playCount, clearCount, now, now, chartId),
 		db
 			.prepare(`DELETE FROM scores WHERE chart_score_id = ${resolveChartScoreId}`)

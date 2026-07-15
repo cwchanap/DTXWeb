@@ -96,7 +96,18 @@ const WRITE_CONCURRENCY = 8;
 /// could exhaust D1/Worker CPU budget. Self-scoped (users write only their
 /// own scores), so this is a cost/abuse guard, not an integrity guard.
 /// Mirrors the per-user KV counter pattern from magicLink.ts.
-const MAX_UPLOADS_PER_HOUR = 10;
+/// Overridable via the `MAX_UPLOADS_PER_HOUR` env var (same pattern as
+/// `MAGIC_LINK_HOURLY_LIMIT`); falls back to the default below when unset
+/// or non-numeric.
+const DEFAULT_MAX_UPLOADS_PER_HOUR = 10;
+
+const uploadHourlyLimit = (env: { MAX_UPLOADS_PER_HOUR?: string }): number => {
+	const configured = Number(env.MAX_UPLOADS_PER_HOUR);
+	if (Number.isSafeInteger(configured) && configured > 0) {
+		return configured;
+	}
+	return DEFAULT_MAX_UPLOADS_PER_HOUR;
+};
 
 // KV has no CAS primitive, so this read-modify-write tolerates ±1 over the
 // limit if concurrent calls land between get and put — acceptable for a
@@ -260,13 +271,12 @@ builder.mutationField('uploadScores', (t) =>
 			let updatedCharts = 0;
 			let insertedScores = 0;
 
-			const allowed = await checkUploadRateLimit(ctx.kv, ctx.user!.id, MAX_UPLOADS_PER_HOUR);
-			if (!allowed) {
-				throw new GraphQLError('Too Many Requests', {
-					extensions: { code: 'RATE_LIMITED' }
-				});
-			}
-
+			// Reject an oversized payload BEFORE consuming a rate-limit token.
+			// The chart cap is a cheap pure-JS check (no I/O), so a malformed
+			// or pathologically large request is short-circuited here instead
+			// of burning the user's hourly upload allowance. Per-chart payload
+			// validation still runs after the rate-limit gate (it needs the
+			// visibility batch I/O, which we don't want to duplicate).
 			if (input.charts.length > MAX_UPLOAD_CHARTS) {
 				return {
 					updatedCharts: 0,
@@ -278,6 +288,17 @@ builder.mutationField('uploadScores', (t) =>
 						}
 					]
 				};
+			}
+
+			const allowed = await checkUploadRateLimit(
+				ctx.kv,
+				ctx.user!.id,
+				uploadHourlyLimit(ctx.env)
+			);
+			if (!allowed) {
+				throw new GraphQLError('Too Many Requests', {
+					extensions: { code: 'RATE_LIMITED' }
+				});
 			}
 
 			// Pre-fetch visibility for all charts with valid numeric IDs in a

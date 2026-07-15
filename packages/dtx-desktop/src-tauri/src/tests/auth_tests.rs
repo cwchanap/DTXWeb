@@ -17,14 +17,36 @@ fn auth_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// RAII guard that restores `DTX_DESKTOP_AUTH_CALLBACK_PORT` to its prior
+/// value when dropped. Acquires the env lock (serializing with tests that
+/// mutate the same var) and sets the port to 47931 for the duration of the
+/// test. Unlike a bare `set_var`, the restore-on-drop prevents the env var
+/// from leaking into later tests (mirrors the save/restore pattern in
+/// `rejects_loopback_when_callback_port_unset`, but automatic).
+struct CallbackPortGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    saved: Option<std::ffi::OsString>,
+}
+
+impl Drop for CallbackPortGuard {
+    fn drop(&mut self) {
+        match &self.saved {
+            Some(value) => std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", value),
+            None => std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT"),
+        }
+    }
+}
+
 /// Acquires the env lock and sets `DTX_DESKTOP_AUTH_CALLBACK_PORT` to 47931.
 /// The `is_auth_callback_url` port check requires this env var to be set.
 /// The lock serializes with tests that remove/change the env var, preventing
-/// races. The guard must be held for the duration of the test.
-fn with_test_callback_port() -> std::sync::MutexGuard<'static, ()> {
-    let guard = auth_env_lock().lock().unwrap();
+/// races. The guard must be held for the duration of the test; on drop it
+/// restores the env var to its prior value so it does not leak.
+fn with_test_callback_port() -> CallbackPortGuard {
+    let lock = auth_env_lock().lock().unwrap();
+    let saved = std::env::var_os("DTX_DESKTOP_AUTH_CALLBACK_PORT");
     std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "47931");
-    guard
+    CallbackPortGuard { _lock: lock, saved }
 }
 
 #[test]

@@ -54,6 +54,7 @@ const recentRow = {
 };
 const parsedSongs = [
 	{
+		songId: 1,
 		title: 'Played Song',
 		artist: 'Artist A',
 		genre: 'Rock',
@@ -167,7 +168,7 @@ describe('Scores', () => {
 
 		await waitFor(() =>
 			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
-				['Played Song\u0000Artist A\u0000Rock']: '42'
+				['1']: '42'
 			})
 		);
 		unmount();
@@ -175,7 +176,7 @@ describe('Scores', () => {
 		// Next mount: saved link is restored -> fetchCloudSong fetches the real
 		// title, then fetchCloudSongCharts is called for '42'.
 		host.readScoreSongLinks.mockResolvedValue({
-			['Played Song\u0000Artist A\u0000Rock']: '42'
+			['1']: '42'
 		});
 		host.fetchCloudSong.mockClear();
 		host.fetchCloudSongCharts.mockClear();
@@ -187,10 +188,11 @@ describe('Scores', () => {
 	});
 
 	it('prunes orphaned saved links for songs no longer in the database', async () => {
-		// savedLinks has one live entry (Played Song) and one orphan (Ghost Song).
+		// savedLinks has one live entry (songId 1) and one orphan (key '999',
+		// which matches no parsed song's songId).
 		host.readScoreSongLinks.mockResolvedValue({
-			['Played Song\u0000Artist A\u0000Rock']: '42',
-			['Ghost Song\u0000Ghost Artist\u0000Jazz']: '99'
+			['1']: '42',
+			['999']: '99'
 		});
 
 		render(Scores);
@@ -199,13 +201,14 @@ describe('Scores', () => {
 		// The orphan must be dropped and the pruned map persisted.
 		await waitFor(() =>
 			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
-				['Played Song\u0000Artist A\u0000Rock']: '42'
+				['1']: '42'
 			})
 		);
 	});
 
 	it('paginates the parsed songs, rendering one page at a time', async () => {
 		const manySongs = Array.from({ length: 25 }, (_, i) => ({
+			songId: i + 1,
 			title: `Song ${i + 1}`,
 			artist: 'Artist',
 			genre: 'Rock',
@@ -447,6 +450,7 @@ describe('Scores', () => {
 		// a client-side skipped duplicate.
 		const twoSongs = [
 			{
+				songId: 1,
 				title: 'First Song',
 				artist: 'Artist A',
 				genre: 'Rock',
@@ -463,6 +467,7 @@ describe('Scores', () => {
 				]
 			},
 			{
+				songId: 2,
 				title: 'Second Song',
 				artist: 'Artist B',
 				genre: 'Pop',
@@ -481,8 +486,8 @@ describe('Scores', () => {
 		];
 		host.parseDtxmaniaScores.mockResolvedValue(twoSongs);
 		host.readScoreSongLinks.mockResolvedValue({
-			['First Song\u0000Artist A\u0000Rock']: '42',
-			['Second Song\u0000Artist B\u0000Pop']: '42'
+			['1']: '42',
+			['2']: '42'
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
 			success: true,
@@ -532,10 +537,10 @@ describe('Scores', () => {
 			recent: []
 		}));
 		host.parseDtxmaniaScores.mockResolvedValue([
-			{ title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
 		]);
 		host.readScoreSongLinks.mockResolvedValue({
-			['Mega Song\u0000Artist A\u0000Rock']: '42'
+			['1']: '42'
 		});
 		host.fetchCloudSong.mockResolvedValue({
 			success: true,
@@ -590,10 +595,10 @@ describe('Scores', () => {
 			recent: []
 		}));
 		host.parseDtxmaniaScores.mockResolvedValue([
-			{ title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
 		]);
 		host.readScoreSongLinks.mockResolvedValue({
-			['Mega Song Artist A Rock']: '42'
+			['1']: '42'
 		});
 		host.fetchCloudSong.mockResolvedValue({
 			success: true,
@@ -648,7 +653,7 @@ describe('Scores', () => {
 		// scope (which only wrapped the batch loop) missed, leaving the Upload
 		// button stuck disabled forever.
 		host.readScoreSongLinks.mockResolvedValue({
-			['Played Song\u0000Artist A\u0000Rock']: '42'
+			['1']: '42'
 		});
 		host.fetchCloudSong.mockImplementation(() => {
 			throw new Error('synchronous explosion');

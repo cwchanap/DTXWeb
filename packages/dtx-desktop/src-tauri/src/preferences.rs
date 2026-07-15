@@ -46,9 +46,10 @@ pub struct Preferences {
     #[serde(default = "default_detail_pane_visible")]
     pub detail_pane_visible: bool,
     /// DTXMania-song → cloud-simfile-id mappings for the Scores view (spec §5.3).
-    /// Keyed by DTXMania song identity (title + "\u{0}" + artist + "\u{0}" +
-    /// genre), matching `songKey` in Scores.svelte. Empty by default so older
-    /// preferences files without this field load cleanly.
+    /// Keyed by the DTXMania `Songs.Id` (as a string), matching `songKey` in
+    /// Scores.svelte. (Previously keyed by title+artist+genre; links persisted
+    /// under the old key are orphaned and pruned on the next load.) Empty by
+    /// default so older preferences files without this field load cleanly.
     #[serde(default)]
     pub score_links: HashMap<String, String>,
 }

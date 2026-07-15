@@ -56,7 +56,12 @@
 	};
 
 	const handlePageChange = (event: { page: number }): void => {
-		currentPage = event.page;
+		// Clamp defensively: the Pagination component only emits in-range
+		// pages, but a stale totalPages (totalCount updates after fetch)
+		// could let an out-of-range page slip through. The stale-page guard
+		// in loadScores backstops this after fetch; this clamp avoids a
+		// wasted request for a page that can't exist.
+		currentPage = Math.min(Math.max(event.page, 1), totalPages);
 		loadScores();
 	};
 
@@ -70,7 +75,7 @@
 	     below via the {:else} branch of the second if-block. -->
 	<div class="music-card mb-4 flex items-center justify-between p-4">
 		<p class="text-sm text-slate-300">{$_('score.load_error')}</p>
-		<Button onclick={loadScores} variant="primary"
+		<Button onclick={loadScores} variant="secondary"
 			>{#snippet children()}{$_('score.retry')}{/snippet}</Button
 		>
 	</div>
@@ -78,7 +83,7 @@
 {#if loadError && songs.length === 0}
 	<div class="music-card p-8 text-center">
 		<p class="mb-4 text-slate-300">{$_('score.load_error')}</p>
-		<Button onclick={loadScores} variant="primary"
+		<Button onclick={loadScores} variant="secondary"
 			>{#snippet children()}{$_('score.retry')}{/snippet}</Button
 		>
 	</div>

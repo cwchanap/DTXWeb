@@ -687,6 +687,95 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).toHaveBeenCalledTimes(2);
 	});
 
+	// Exercises the WRITE_CONCURRENCY=8 chunk boundary: 9 writable charts span
+	// two chunks (8 + 1). Every chart must be written — the second chunk must
+	// not be dropped by an off-by-one in the slice/loop. Also pins that the
+	// chart cap is checked before the rate-limit token (a 9-chart payload is
+	// under the cap, so the token IS consumed here).
+	it('writes all charts across the WRITE_CONCURRENCY chunk boundary (9 charts, 2 chunks)', async () => {
+		const ids = Array.from({ length: 9 }, (_, i) => i + 1);
+		mockedVisibility.mockResolvedValue(visibleMap(ids));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: ids.map((id) => ({
+						chartId: String(id),
+						playCount: 1,
+						clearCount: 1,
+						scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+					}))
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.updatedCharts).toBe(9);
+		expect(payload.insertedScores).toBe(9);
+		expect(payload.skipped).toEqual([]);
+		expect(mockedUpsertReplace).toHaveBeenCalledTimes(9);
+	});
+
+	it('does not consume a rate-limit token for an oversized payload (cap checked first)', async () => {
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const kvPut = ctx.kv.put as unknown as ReturnType<typeof vi.fn>;
+		const charts = Array.from({ length: 101 }, (_v, i) => ({
+			chartId: String(i + 1),
+			playCount: 1,
+			clearCount: 1,
+			scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+		}));
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: { input: { charts } }
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].chartId).toBe('*');
+		// The rate-limit KV put (token increment) must NOT have been called —
+		// the chart cap short-circuits before checkUploadRateLimit.
+		expect(kvPut).not.toHaveBeenCalled();
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('honors the MAX_UPLOADS_PER_HOUR env override', async () => {
+		const ctx = makeCtx({
+			user: { id: 'user-1' } as never,
+			env: { ...makeEnv(), MAX_UPLOADS_PER_HOUR: '2' }
+		});
+		// Simulate the user already at the env-configured cap of 2.
+		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce('2');
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: { input: { charts: [] } }
+		});
+		expect(result.errors?.[0].extensions?.code).toBe('RATE_LIMITED');
+	});
+
+	it('falls back to the default when MAX_UPLOADS_PER_HOUR is non-numeric', async () => {
+		const ctx = makeCtx({
+			user: { id: 'user-1' } as never,
+			env: { ...makeEnv(), MAX_UPLOADS_PER_HOUR: 'not-a-number' }
+		});
+		// Default cap is 10; a counter of 9 must still be allowed through.
+		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce('9');
+		mockedVisibility.mockResolvedValue(new Map());
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: { input: { charts: [] } }
+		});
+		const payload = result.data?.uploadScores as { skipped: unknown[] };
+		// No RATE_LIMITED error — the request proceeded (empty charts → no writes).
+		expect(result.errors).toBeUndefined();
+		expect(payload.skipped).toEqual([]);
+	});
+
 	it('skips a chart with a negative playCount', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });

@@ -15,7 +15,9 @@
 	const formatScore = (score: number | null): string =>
 		score == null ? '—' : score.toLocaleString(intlLocale());
 	const formatRate = (rate: number | null): string =>
-		rate == null ? '—' : `${rate.toFixed(2)}%`;
+		rate == null
+			? '—'
+			: `${rate.toLocaleString(intlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 	const formatDate = (iso: string | null): string =>
 		iso ? new Date(iso).toLocaleDateString(intlLocale()) : '—';
 </script>
@@ -45,7 +47,7 @@
 					{/if}
 				</div>
 
-				{#if chart.chartScore && chart.chartScore.best}
+				{#if chart.chartScore?.best}
 					{@const best = chart.chartScore.best}
 					<div class="flex flex-wrap items-center gap-3 text-sm">
 						<span class="font-semibold text-slate-100">{formatScore(best.score)}</span>
@@ -79,7 +81,12 @@
 							<span>{$_('score.miss')} {best.miss ?? '—'}</span>
 						</div>
 					{/if}
-				{:else}
+				{:else if chart.chartScore}
+					<!-- A score record exists but no best row (e.g. only recent
+					     plays, no best yet). Show the placeholder only here —
+					     never-played charts (chartScore null) render nothing in
+					     this block so a song with several unplayed charts does
+					     not repeat "No best score" once per chart. -->
 					<p class="text-xs text-slate-500">{$_('score.no_best_score')}</p>
 				{/if}
 

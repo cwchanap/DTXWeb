@@ -61,6 +61,10 @@ pub struct DtxmaniaChart {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DtxmaniaSong {
+    /// DTXMania `Songs.Id` (INTEGER PRIMARY KEY). Used as the stable song
+    /// identity for the renderer's `songKey` (collapse state + persisted
+    /// score_links) so two songs sharing title+artist+genre can't collide.
+    pub song_id: i64,
     pub title: String,
     pub artist: String,
     pub genre: String,
@@ -412,6 +416,7 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
             recent_count = 0;
             cur_song_id = Some(row.song_id);
             songs.push(DtxmaniaSong {
+                song_id: row.song_id,
                 title: row.title.clone(),
                 artist: row.artist.clone(),
                 genre: row.genre.clone(),

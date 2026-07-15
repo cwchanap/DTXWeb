@@ -73,10 +73,32 @@ describe('ScoreCard', () => {
 		expect(screen.getByText('score.failed')).toBeInTheDocument();
 	});
 
-	it('shows an empty best-score message for a chart with no scores', () => {
-		render(ScoreCard, { props: { song } });
+	it('shows an empty best-score message for a chart with a score record but no best', () => {
+		// A chart that has been played (chartScore present) but has no best
+		// row yet still shows the "No best score" placeholder.
+		const songWithPlayedNoBest: ScoredSimfile = {
+			...song,
+			charts: [
+				{
+					id: 11,
+					label: 'EXTREME',
+					level: 8,
+					chartScore: { playCount: 2, clearCount: 0, best: null, recent: [] }
+				}
+			]
+		};
+		render(ScoreCard, { props: { song: songWithPlayedNoBest } });
 		expect(screen.getByText('EXTREME · score.level_short 8')).toBeInTheDocument();
 		expect(screen.getByText('score.no_best_score')).toBeInTheDocument();
+	});
+
+	it('does not repeat the no-best placeholder for a never-played chart', () => {
+		// A never-played chart (chartScore null) must NOT render "No best
+		// score" — otherwise a song with several unplayed charts repeats the
+		// message once per chart. The chart badge/level still render.
+		render(ScoreCard, { props: { song } });
+		expect(screen.getByText('EXTREME · score.level_short 8')).toBeInTheDocument();
+		expect(screen.queryByText('score.no_best_score')).not.toBeInTheDocument();
 	});
 
 	it('renders at most five recent plays even when more are provided', () => {

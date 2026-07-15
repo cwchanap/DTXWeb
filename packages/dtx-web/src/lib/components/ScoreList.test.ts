@@ -87,6 +87,35 @@ describe('ScoreList', () => {
 		await waitFor(() => expect(screen.getByText('Song 11')).toBeInTheDocument());
 	});
 
+	// Exercises the non-blocking error banner branch (ScoreList.svelte:66-77):
+	// a page-change fetch that rejects while songs from the previous page are
+	// still on screen. The list must stay visible and the error banner must
+	// appear (with a retry button), instead of the full-page error state.
+	it('shows a non-blocking error banner and keeps the list when a page change fails', async () => {
+		const page1 = Array.from({ length: 10 }, (_, i) => ({
+			...song,
+			id: i + 1,
+			title: `Song ${i + 1}`
+		}));
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page1, count: 15 });
+		// Page 2 rejects — a network blip mid-pagination.
+		myScoredSimfilesMock.mockRejectedValueOnce(new Error('boom'));
+
+		render(ScoreList);
+		await waitFor(() => expect(screen.getByText('Song 1')).toBeInTheDocument());
+		expect(screen.getByText('Song 10')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByText('2'));
+		// The banner appears...
+		await waitFor(() => expect(screen.getByText(/score\.load_error/)).toBeInTheDocument());
+		// ...and the previous page's list is still visible (not hidden by the
+		// full-page error state, which only renders when songs.length === 0).
+		expect(screen.getByText('Song 1')).toBeInTheDocument();
+		expect(screen.getByText('Song 10')).toBeInTheDocument();
+		// A retry button is rendered alongside the banner.
+		expect(screen.getByRole('button', { name: /score\.retry/i })).toBeInTheDocument();
+	});
+
 	// The loadRequestId guard in ScoreList prevents stale responses from
 	// overwriting current data when rapid page changes occur. The list stays
 	// visible during a page-change load (only the initial load shows the

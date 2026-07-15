@@ -114,4 +114,90 @@ describe('myScoredSimfiles', () => {
 		expect(vars.page).toBe(1);
 		expect(vars.pageSize).toBe(20);
 	});
+
+	// Pins the deliberate fail-loud contract: a non-numeric id (which would
+	// imply a broken API/client type contract — D1 PKs are INTEGER) makes the
+	// adapter throw rather than silently drop the row. Silently dropping would
+	// hide a real schema/type mismatch behind a missing entry. The blast radius
+	// (whole page rejects) is acceptable because the precondition is
+	// effectively unreachable in production. If you change this to per-row
+	// isolation, update this test and the decision record.
+	it('throws on a non-numeric simfile id (fail-loud contract)', async () => {
+		requestMock.mockResolvedValue({
+			myScoredSimfiles: {
+				count: 1,
+				data: [{ id: 'not-a-number', title: 'Song', artist: 'Artist', dtxFiles: [] }]
+			}
+		});
+		await expect(myScoredSimfiles({ page: 1, pageSize: 20 })).rejects.toThrow(
+			/Invalid simfile id/
+		);
+	});
+
+	it('throws on a non-numeric chart id (fail-loud contract)', async () => {
+		requestMock.mockResolvedValue({
+			myScoredSimfiles: {
+				count: 1,
+				data: [
+					{
+						id: '42',
+						title: 'Song',
+						artist: 'Artist',
+						dtxFiles: [{ id: 'NaN', label: 'BASIC', level: 5, myChartScore: null }]
+					}
+				]
+			}
+		});
+		await expect(myScoredSimfiles({ page: 1, pageSize: 20 })).rejects.toThrow(
+			/Invalid chart id/
+		);
+	});
+
+	it('throws on a non-numeric score id (fail-loud contract)', async () => {
+		requestMock.mockResolvedValue({
+			myScoredSimfiles: {
+				count: 1,
+				data: [
+					{
+						id: '42',
+						title: 'Song',
+						artist: 'Artist',
+						dtxFiles: [
+							{
+								id: '10',
+								label: 'BASIC',
+								level: 5,
+								myChartScore: {
+									playCount: 1,
+									clearCount: 1,
+									scores: [
+										{
+											id: 'bad',
+											isBest: true,
+											score: 900,
+											achievementRate: 90,
+											rankLabel: 'A',
+											fullCombo: false,
+											cleared: true,
+											maxCombo: null,
+											perfect: null,
+											great: null,
+											good: null,
+											poor: null,
+											miss: null,
+											performedAt: null,
+											displayOrder: null
+										}
+									]
+								}
+							}
+						]
+					}
+				]
+			}
+		});
+		await expect(myScoredSimfiles({ page: 1, pageSize: 20 })).rejects.toThrow(
+			/Invalid score id/
+		);
+	});
 });

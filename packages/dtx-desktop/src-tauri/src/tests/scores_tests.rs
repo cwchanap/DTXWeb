@@ -46,6 +46,42 @@ fn parse_history_line_tolerates_garbage() {
     assert_eq!(parsed.achievement_rate, None);
 }
 
+// Pins the left word-boundary rejection: "Cleared"/"Failed" must appear as a
+// standalone outcome token (at line start or preceded by a space) to be
+// detected. A token glued to a preceding word (e.g. "NotCleared") must NOT be
+// read as a clear — the `contains(" Cleared")` / `starts_with("Cleared")`
+// checks enforce the left boundary. This guards against a future regression
+// that loosens the match to a bare `contains("Cleared")`.
+#[test]
+fn parse_history_line_rejects_outcome_token_without_left_word_boundary() {
+    // "NotCleared" has no space before "Cleared" and doesn't start with it.
+    let glued_cleared = parse_history_line("10.26/6/2 NotCleared (S: 91.30)");
+    assert_eq!(glued_cleared.cleared, None);
+    // The rank/rate inside the parens still parse independently of the token.
+    assert_eq!(glued_cleared.rank_label.as_deref(), Some("S"));
+    assert_eq!(glued_cleared.achievement_rate, Some(91.30));
+
+    let glued_failed = parse_history_line("10.26/6/2 NotFailed (B: 70.10)");
+    assert_eq!(glued_failed.cleared, None);
+    assert_eq!(glued_failed.rank_label.as_deref(), Some("B"));
+}
+
+// A realistic history line with a valid date and rank/rate but NO
+// "Cleared"/"Failed" outcome token. `parse_history_line` returns
+// `cleared: None`, and `group_joined_rows` applies the safe default
+// `cleared: false` (the `unwrap_or(false)` tolerance contract): the row
+// exists in the user's DTXMania DB so a play happened, but the outcome is
+// unknown — render the safe default without overclaiming a clear. This
+// complements `parse_maps_best_recent_and_ignores_non_drums` (which pins the
+// same default for a fully garbage line) with a realistic partial-parse case.
+#[test]
+fn parse_history_line_without_outcome_token_yields_cleared_none() {
+    let parsed = parse_history_line("10.26/6/2 (S: 91.30)");
+    assert_eq!(parsed.cleared, None);
+    assert_eq!(parsed.rank_label.as_deref(), Some("S"));
+    assert_eq!(parsed.achievement_rate, Some(91.30));
+}
+
 #[test]
 fn default_path_present_when_db_exists() {
     let dir = tempdir().expect("tempdir");
@@ -122,6 +158,7 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     assert_eq!(songs.len(), 2);
 
     let played = &songs[0];
+    assert_eq!(played.song_id, 1); // DTXMania Songs.Id, used as the renderer songKey
     assert_eq!(played.title, "Played Song");
     // Chart 2 (guitar-only) is dropped; only the played drums chart remains.
     assert_eq!(played.charts.len(), 1);
@@ -165,6 +202,7 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
 
     // Never-played chart: present, best null, recent empty.
     let never = &songs[1];
+    assert_eq!(never.song_id, 2); // distinct from song 1 — songKey can't collide
     assert_eq!(never.charts.len(), 1);
     assert!(never.charts[0].best.is_none());
     assert!(never.charts[0].recent.is_empty());

@@ -51,11 +51,13 @@
 	let skipped = $state<{ chartId: string; reason: string }[]>([]);
 	let uploading = $state(false);
 
-	// Key includes genre to reduce collision risk for duplicate DTXMania
-	// titles with the same artist. The DTXMania Songs table has a Genre column
-	// that further disambiguates entries.
-	const songKey = (song: DtxmaniaSong): string =>
-		`${song.title}\u0000${song.artist}\u0000${song.genre}`;
+	// Stable song identity is the DTXMania `Songs.Id` (songId), so two songs
+	// that share title+artist+genre can't collide on collapse state or
+	// persisted score_links. NOTE: this key format changed from
+	// title+artist+genre to songId — links persisted under the old key in
+	// preferences.json are orphaned and pruned on the next load (users re-link
+	// once). The DTXMania song id is stable for the lifetime of the DB.
+	const songKey = (song: DtxmaniaSong): string => String(song.songId);
 	let savedLinks = $state<Record<string, string>>({});
 
 	// Per-song collapse state, keyed by song identity so it survives paging.

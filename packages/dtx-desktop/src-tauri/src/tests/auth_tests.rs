@@ -554,6 +554,25 @@ fn is_auth_callback_url_rejects_http_loopback_with_wrong_port() {
     assert!(!is_auth_callback_url(&url));
 }
 
+#[test]
+fn is_auth_callback_url_rejects_loopback_when_callback_port_unset() {
+    // When `DTX_DESKTOP_AUTH_CALLBACK_PORT` is unset (or unparseable),
+    // `local_auth_callback_port()` returns None and the port-match guard must
+    // reject every loopback URL — without this, a redirect to any loopback
+    // port would be accepted because no server is configured to listen there.
+    let _guard = auth_env_lock().lock().unwrap();
+    let saved = std::env::var_os("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+    std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+
+    let url = Url::parse("http://127.0.0.1:47931/auth-callback").unwrap();
+    assert!(!is_auth_callback_url(&url));
+
+    // Restore so a later test's `with_test_callback_port` isn't affected.
+    if let Some(value) = saved {
+        std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", value);
+    }
+}
+
 #[tokio::test]
 async fn verify_magic_link_rejects_invalid_url() {
     let state = AuthState::default();

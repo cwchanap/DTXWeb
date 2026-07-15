@@ -496,3 +496,66 @@ fn parse_degrades_to_best_only_when_performance_history_missing() {
     // No PerformanceHistory rows -> recent is empty, but the chart still loads.
     assert!(chart.recent.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// DtxmaniaDbState (Tauri-managed state for the dialog-selected DB path)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dtxmania_db_state_defaults_to_none() {
+    let state = DtxmaniaDbState::default();
+    assert!(state.get().is_none());
+}
+
+#[test]
+fn dtxmania_db_state_set_then_get_round_trips() {
+    let state = DtxmaniaDbState::default();
+    let path = PathBuf::from("/tmp/dtxmania/songs.db");
+    state.set(path.clone());
+    assert_eq!(state.get(), Some(path));
+}
+
+#[test]
+fn dtxmania_db_state_set_overwrites_previous_path() {
+    let state = DtxmaniaDbState::default();
+    state.set(PathBuf::from("/tmp/first.db"));
+    state.set(PathBuf::from("/tmp/second.db"));
+    assert_eq!(state.get(), Some(PathBuf::from("/tmp/second.db")));
+}
+
+// ---------------------------------------------------------------------------
+// paths_equal (canonicalizing path comparison used by the DB path guard)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn paths_equal_returns_true_for_identical_strings() {
+    // The fast path: raw string equality short-circuits before touching the
+    // filesystem, so a non-existent path still compares equal to itself.
+    assert!(paths_equal("/this/does/not/exist", "/this/does/not/exist"));
+}
+
+#[test]
+fn paths_equal_returns_false_when_neither_path_exists() {
+    // Two different non-existent paths: canonicalization fails for both, so
+    // the `_ => false` arm fires. This is the guard that stops a compromised
+    // renderer from opening an arbitrary SQLite file by claiming it matches
+    // an allowed path that doesn't exist on disk.
+    assert!(!paths_equal("/nonexistent/a.db", "/nonexistent/b.db"));
+}
+
+#[test]
+fn paths_equal_returns_false_when_one_path_exists_and_other_does_not() {
+    let dir = tempdir().expect("tempdir");
+    let real = dir.path().join("songs.db");
+    std::fs::write(&real, b"x").expect("write");
+    // The existing path canonicalizes; the missing one does not, so the
+    // mismatched (Ok, Err) / (Err, Ok) arms resolve to false.
+    assert!(!paths_equal(
+        real.to_str().unwrap(),
+        "/nonexistent/other.db"
+    ));
+    assert!(!paths_equal(
+        "/nonexistent/other.db",
+        real.to_str().unwrap()
+    ));
+}

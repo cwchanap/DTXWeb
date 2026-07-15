@@ -1801,3 +1801,102 @@ async fn upload_scores_rejects_excessive_chart_count() {
         .unwrap()
         .contains("too many charts"));
 }
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_id_with_invalid_type() {
+    // chartId must be a string or number. A boolean is neither, so the
+    // defense-in-depth guard rejects it before the network round-trip.
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": true, "playCount": 1, "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("chartId' must be a string or number"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_missing_play_count() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("missing 'playCount'"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_non_integer_play_count() {
+    // A non-numeric string can't be parsed as an integer.
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": "abc", "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("playCount' must be an integer"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_negative_clear_count() {
+    // The negative-check runs for both playCount and clearCount. playCount=0
+    // passes, so the loop reaches clearCount=-1 and rejects it — covering
+    // the clearCount half of the non-negative guard.
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": 0, "clearCount": -1, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("clearCount' must be non-negative"));
+}
+
+#[tokio::test]
+async fn fetch_cloud_song_charts_returns_empty_when_dtx_files_absent() {
+    // A simfile whose `dtxFiles` field is missing or non-array degrades to an
+    // empty chart list (success, not an error) rather than aborting the parse.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfile": {} }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token", serde_json::json!("42"))
+        .await
+        .expect("charts");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    assert_eq!(result["data"], serde_json::json!([]));
+}

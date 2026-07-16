@@ -7,11 +7,20 @@ export interface LocalChart {
 export interface CloudChart {
 	id: string;
 	label: string;
-	/** Server dtx_files.level (e.g. 5.5). */
+	/** Raw server dtx_files.level — encoded integer (×10 or ×100 scale). */
 	level: number;
 }
 
 const EPSILON = 1e-9;
+
+/**
+ * Decode a raw `dtx_files.level` integer to the display scale used by local
+ * `drumLevel / 10`. The D1 column is `INTEGER` and stores levels on either the
+ * ×10 scale (e.g. 55 == 5.5, the e2e seed uses 50 for 5.0) or the ×100 scale
+ * (values > 100, e.g. 550 == 5.5). This mirrors the heuristic in the web
+ * `formatLevelDisplay` so cloud and local levels are compared on the same scale.
+ */
+const normalizeCloudLevel = (level: number): number => (level > 100 ? level / 100 : level / 10);
 
 /**
  * Pair local DTXMania charts to a linked simfile's cloud charts by difficulty.
@@ -28,7 +37,7 @@ export const matchCharts = (local: LocalChart[], cloud: CloudChart[]): (string |
 		if (candidates.length === 0) return null;
 
 		const target = lc.drumLevel / 10;
-		const diffs = candidates.map((c) => Math.abs(c.level - target));
+		const diffs = candidates.map((c) => Math.abs(normalizeCloudLevel(c.level) - target));
 		const minDiff = Math.min(...diffs);
 		const tied = candidates.filter((_, i) => diffs[i] - minDiff < EPSILON);
 

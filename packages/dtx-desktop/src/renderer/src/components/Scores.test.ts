@@ -86,7 +86,7 @@ beforeEach(() => {
 	});
 	host.fetchCloudSongCharts.mockResolvedValue({
 		success: true,
-		data: [{ id: '10', label: 'BASIC', level: 5.5 }]
+		data: [{ id: '10', label: 'BASIC', level: 55 }]
 	});
 	host.uploadScores.mockResolvedValue({
 		success: true,
@@ -414,8 +414,8 @@ describe('Scores', () => {
 		host.fetchCloudSongCharts.mockResolvedValue({
 			success: true,
 			data: [
-				{ id: '10', label: 'BASIC', level: 5.5 },
-				{ id: '11', label: 'EXTREME', level: 8.8 }
+				{ id: '10', label: 'BASIC', level: 55 },
+				{ id: '11', label: 'EXTREME', level: 88 }
 			]
 		});
 
@@ -496,7 +496,7 @@ describe('Scores', () => {
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
 			success: true,
-			data: [{ id: '10', label: 'BASIC', level: 5.5 }]
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
 		});
 
 		render(Scores);
@@ -526,6 +526,81 @@ describe('Scores', () => {
 		// The skipped duplicate is surfaced to the user.
 		expect(await screen.findByText(/Chart 10 skipped/i)).toBeInTheDocument();
 		expect(screen.getByText(/duplicate match/i)).toBeInTheDocument();
+	});
+
+	it('does not skip a chart with scores when an empty chart reserved the same cloud ID first', async () => {
+		// Two songs linked to the same cloud chart '10'. The first song has
+		// no best/recent rows (empty), the second has scores. The empty chart
+		// must NOT reserve the cloud chart ID — otherwise the second chart's
+		// scores are silently dropped as a "duplicate".
+		const twoSongs = [
+			{
+				songId: 1,
+				title: 'Empty Song',
+				artist: 'Artist A',
+				genre: 'Rock',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-empty',
+						aggregate: { playCount: 0, clearCount: 0 },
+						best: null,
+						recent: []
+					}
+				]
+			},
+			{
+				songId: 2,
+				title: 'Played Song',
+				artist: 'Artist B',
+				genre: 'Pop',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-played',
+						aggregate: { playCount: 3, clearCount: 1 },
+						best: bestRow,
+						recent: []
+					}
+				]
+			}
+		];
+		host.parseDtxmaniaScores.mockResolvedValue(twoSongs);
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42',
+			['/path/songs.db\u001f2']: '42'
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Empty Song')).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText('Played Song')).toBeInTheDocument());
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledTimes(2));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		// The played chart's scores must be uploaded — not skipped as a
+		// duplicate of the empty chart.
+		await waitFor(() =>
+			expect(host.uploadScores).toHaveBeenCalledWith({
+				charts: [
+					{
+						chartId: '10',
+						playCount: 3,
+						clearCount: 1,
+						scores: [bestRow]
+					}
+				]
+			})
+		);
+		expect(screen.queryByText(/duplicate match/i)).not.toBeInTheDocument();
 	});
 
 	it('chunks uploads into ≤100-chart batches when the payload exceeds the server limit', async () => {
@@ -561,7 +636,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 1.0
+				level: (i + 1) * 10
 			}))
 		});
 		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => ({
@@ -619,7 +694,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 1.0
+				level: (i + 1) * 10
 			}))
 		});
 		let callCount = 0;
@@ -684,7 +759,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 1.0
+				level: (i + 1) * 10
 			}))
 		});
 		let callCount = 0;
@@ -851,11 +926,11 @@ describe('Scores', () => {
 			// Resolve B first, then A (the stale response that must be discarded).
 			deferreds['99'].resolve({
 				success: true,
-				data: [{ id: '99-chart', label: 'BASIC', level: 5.5 }]
+				data: [{ id: '99-chart', label: 'BASIC', level: 55 }]
 			});
 			deferreds['42'].resolve({
 				success: true,
-				data: [{ id: '42-chart', label: 'BASIC', level: 5.5 }]
+				data: [{ id: '42-chart', label: 'BASIC', level: 55 }]
 			});
 
 			// Upload — must use B's chart ID ('99-chart'), not A's stale '42-chart'.
@@ -875,5 +950,40 @@ describe('Scores', () => {
 		} finally {
 			addSpy.mockRestore();
 		}
+	});
+
+	it('clears a failed manual link so restoreLinksFor can retry on the next upload', async () => {
+		// When fetchCloudSongCharts returns { success: false } after a manual
+		// link, the link must be rolled back — otherwise restoreLinksFor
+		// skips the song (it's already in `links`) and the fetch is never
+		// retried, leaving the song silently un-uploadable.
+		host.fetchCloudSongCharts.mockResolvedValueOnce({ success: false }).mockResolvedValueOnce({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		// Manually link the song — the first chart fetch fails.
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledTimes(1));
+
+		// The failed link must be rolled back: the persisted link is cleared
+		// so restoreLinksFor can retry during upload.
+		await waitFor(() => expect(host.writeScoreSongLinks).toHaveBeenCalledWith({}));
+
+		// Upload triggers restoreLinksFor, which retries the chart fetch
+		// (the link was saved before the fetch, so savedLinks has it — but
+		// the rollback removed it, so restoreLinksFor re-fetches from the
+		// saved-link entry that no longer exists). Since the link was
+		// cleared, there's nothing to restore, and upload reports nothing
+		// to upload. The user can re-link manually.
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		expect(await screen.findByText(/Nothing to upload/i)).toBeInTheDocument();
 	});
 });

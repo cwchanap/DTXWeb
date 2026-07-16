@@ -359,11 +359,36 @@
 			// song before this fetch resolved, discard the result so we don't
 			// overwrite the current link's charts/matches with the prior link's.
 			if (links[songIndex]?.id !== song.id) return;
-			const charts = result.success ? (result.data ?? []) : [];
+			if (!result.success) {
+				// Roll back the link so restoreLinksFor retries on the next
+				// page/upload. Keeping the link with empty charts would leave
+				// the song visibly linked but silently un-uploadable, and
+				// restoreLinksFor skips songs already in `links` so the fetch
+				// would never be retried. This mirrors restoreLinksFor's own
+				// guard which does not commit a link when the chart fetch fails.
+				delete links[songIndex];
+				const key = songKey(songs[songIndex]);
+				const nextSaved = { ...savedLinks };
+				delete nextSaved[key];
+				savedLinks = nextSaved;
+				if (persist) schedulePersist();
+				cloudChartsBySong[songIndex] = [];
+				matchesBySong[songIndex] = [];
+				toastStore.error('Could not fetch cloud charts for linked song');
+				return;
+			}
+			const charts = result.data ?? [];
 			cloudChartsBySong[songIndex] = charts;
 			matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
 		} catch {
 			if (links[songIndex]?.id !== song.id) return;
+			// Same rollback as the !result.success branch above.
+			delete links[songIndex];
+			const key = songKey(songs[songIndex]);
+			const nextSaved = { ...savedLinks };
+			delete nextSaved[key];
+			savedLinks = nextSaved;
+			if (persist) schedulePersist();
 			cloudChartsBySong[songIndex] = [];
 			matchesBySong[songIndex] = [];
 			toastStore.error('Could not fetch cloud charts for linked song');
@@ -409,6 +434,12 @@
 			song.charts.forEach((chart, chartIndex) => {
 				const chartId = matches[chartIndex];
 				if (!chartId) return;
+				const scores = [...(chart.best ? [chart.best] : []), ...chart.recent];
+				// Skip empty charts before reserving the chart ID. A chart with
+				// no best/recent rows produces no upload, so it must not block a
+				// later chart that links to the same cloud chart ID but actually
+				// has scores to send.
+				if (scores.length === 0) return;
 				// Deduplicate: never send the same cloud chart ID twice. Surface
 				// the dropped match so the user knows a chart was skipped, not
 				// silently lost.
@@ -421,8 +452,6 @@
 					return;
 				}
 				seenChartIds.add(chartId);
-				const scores = [...(chart.best ? [chart.best] : []), ...chart.recent];
-				if (scores.length === 0) return;
 				charts.push({
 					chartId,
 					playCount: chart.aggregate.playCount,

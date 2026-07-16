@@ -1036,23 +1036,29 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			expect(bindArgs).not.toContain('user-2');
 		}
 
-		// The upsert binds (chartId, userId, ..., chartId) — userId is the
-		// 2nd arg, and the trailing 7th arg is the chartId for the
-		// `FROM dtx_files WHERE id = ?` existence gate (TOCTOU fix).
+		// The upsert binds (chartId, userId, ..., chartId, userId) — userId is
+		// the 2nd arg, the 7th arg is the chartId for the `WHERE d.id = ?`
+		// existence gate, and the trailing 8th arg is the userId for the
+		// `(s.is_published = 1 OR s.user_id = ?)` visibility gate (TOCTOU fix).
 		const upsertBinds = statements[0].bind.mock.calls[0];
 		expect(upsertBinds[0]).toBe(10);
 		expect(upsertBinds[1]).toBe('user-1');
 		expect(upsertBinds[6]).toBe(10);
+		expect(upsertBinds[7]).toBe('user-1');
 
-		// The delete binds (userId, chartId) — the subquery scoping.
+		// The delete binds (userId, chartId, userId) — the subquery scoping,
+		// with the trailing userId for the visibility gate in resolveChartScoreId.
 		const deleteBinds = statements[1].bind.mock.calls[0];
 		expect(deleteBinds[0]).toBe('user-1');
 		expect(deleteBinds[1]).toBe(10);
+		expect(deleteBinds[2]).toBe('user-1');
 
-		// The insert binds (userId, chartId, ...) — the subquery scoping.
+		// The insert binds (userId, chartId, userId, ...) — the subquery
+		// scoping, with the trailing userId for the visibility gate.
 		const insertBinds = statements[2].bind.mock.calls[0];
 		expect(insertBinds[0]).toBe('user-1');
 		expect(insertBinds[1]).toBe(10);
+		expect(insertBinds[2]).toBe('user-1');
 	});
 
 	it('gates the upsert INSERT on dtx_files existence (TOCTOU defense)', async () => {
@@ -1081,15 +1087,23 @@ describe('upsertChartScoreAndReplaceScores', () => {
 
 		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls;
 		const upsertSql = prepareCalls[0][0] as string;
-		expect(upsertSql).toContain('FROM dtx_files WHERE id = ?');
+		// The upsert must SELECT FROM dtx_files joined to simfiles and gate on
+		// both chart existence AND visibility (published OR owned by the
+		// caller), so a chart deleted or hidden between the visibility check
+		// and the write can't orphan/alter a chart_scores row.
+		expect(upsertSql).toContain('FROM dtx_files');
+		expect(upsertSql).toContain('JOIN simfiles');
+		expect(upsertSql).toContain('WHERE d.id = ?');
+		expect(upsertSql).toContain('(s.is_published = 1 OR s.user_id = ?)');
 		expect(upsertSql).not.toContain('VALUES (');
 
 		// The DELETE and INSERT-score statements' subquery must also gate on
-		// dtx_files existence (EXISTS), so a TOCTOU chart deletion can't
-		// partially commit (replace scores while leaving a stale aggregate)
-		// when a chart_scores row already exists from a prior upload.
+		// chart visibility (EXISTS), so a TOCTOU chart deletion/unpublish
+		// can't partially commit (replace scores while leaving a stale
+		// aggregate) when a chart_scores row already exists from a prior upload.
 		const deleteSql = prepareCalls[1][0] as string;
 		expect(deleteSql).toContain('EXISTS (SELECT 1 FROM dtx_files');
+		expect(deleteSql).toContain('(s.is_published = 1 OR s.user_id = ?)');
 	});
 
 	it('parallel upserts on the same chart are last-write-wins (no partial state)', async () => {

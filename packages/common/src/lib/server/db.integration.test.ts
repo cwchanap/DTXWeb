@@ -373,6 +373,57 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		expect(fetched!.scores).toHaveLength(2);
 		expect(fetched!.scores[0].score).toBe(900000);
 	});
+
+	it('TOCTOU: unpublished chart owned by another user rejects the write (visibility gate)', async () => {
+		// Seed a second chart owned by user-2, unpublished. The caller
+		// (user-1) is neither the owner nor is the chart published, so the
+		// visibility predicate threaded into the write transaction must reject
+		// it — mirroring the pre-write visibility check in score.ts so a chart
+		// unpublished between that check and this batch cannot be scored by a
+		// non-owner.
+		await db
+			.prepare(
+				'INSERT INTO simfiles (title, artist, bpm, user_id, is_published) VALUES (?, ?, ?, ?, ?)'
+			)
+			.bind('Other User Song', 'Artist', 120, 'user-2', 0)
+			.run();
+		await db
+			.prepare('INSERT INTO dtx_files (label, level, simfile_id) VALUES (?, ?, ?)')
+			.bind('BASIC', 5, 2)
+			.run();
+
+		await expect(
+			upsertChartScoreAndReplaceScores(db, {
+				chartId: 2,
+				userId: 'user-1',
+				playCount: 1,
+				clearCount: 1,
+				scores: [scoreInput({ is_best: true, score: 900000, achievement_rate: 90.0 })]
+			})
+		).rejects.toThrow();
+
+		// No chart_scores row was created for the non-owner caller.
+		const row = await db
+			.prepare('SELECT * FROM chart_scores WHERE user_id = ? AND chart_id = ?')
+			.bind('user-1', 2)
+			.first();
+		expect(row).toBeNull();
+	});
+
+	it('still writes for the OWNER of an unpublished chart (ownership satisfies visibility)', async () => {
+		// The seeded simfile is owned by user-1 and defaults to unpublished.
+		// The owner must still be able to score their own unpublished chart.
+		const result = await upsertChartScoreAndReplaceScores(db, {
+			chartId: 1,
+			userId: 'user-1',
+			playCount: 3,
+			clearCount: 1,
+			scores: [scoreInput({ is_best: true, score: 700000, achievement_rate: 70.0 })]
+		});
+		expect(result.user_id).toBe('user-1');
+		const fetched = await getUserChartScore(db, 'user-1', 1);
+		expect(fetched!.scores).toHaveLength(1);
+	});
 });
 
 describe('D1 CHECK constraints (real D1)', () => {

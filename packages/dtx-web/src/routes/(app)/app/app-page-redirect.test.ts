@@ -297,6 +297,47 @@ describe('App Home Page – desktop redirect flow', () => {
 		});
 	});
 
+	it('rejects a loopback http callback on an unexpected port and falls back to the default', async () => {
+		// The magic link carries an auth token. A desktop_callback pointing at
+		// an arbitrary loopback port (a process the user runs there, or a
+		// malicious local app) must not receive it — only the configured
+		// callback port is trusted (47931 here, since
+		// PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL is unset).
+		pageMock.url = new URL(
+			'http://localhost/app?redirect=desktop&desktop_callback=' +
+				encodeURIComponent('http://127.0.0.1:9999/auth-callback')
+		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `dtx://auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
+	it('accepts a loopback callback on the port configured via PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL', async () => {
+		publicEnvMock.env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL =
+			'http://127.0.0.1:5599/auth-callback';
+		pageMock.url = new URL(
+			'http://localhost/app?redirect=desktop&desktop_callback=' +
+				encodeURIComponent('http://127.0.0.1:5599/auth-callback')
+		);
+		vi.mocked(generateMagicLink).mockResolvedValue({
+			magicLinkUrl: 'https://example.com/magic'
+		});
+
+		render(AppPage);
+
+		const expectedHref = `http://127.0.0.1:5599/auth-callback?magic_link=${encodeURIComponent('https://example.com/magic')}`;
+		await vi.waitFor(() => {
+			expect(window.location.href).toBe(expectedHref);
+		});
+	});
+
 	it('rejects a disallowed scheme (external https) and falls back to the default', async () => {
 		sessionStorage.setItem('dtx_desktop_auth_callback', 'https://evil.example.com/steal');
 		vi.mocked(generateMagicLink).mockResolvedValue({

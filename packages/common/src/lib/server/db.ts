@@ -529,41 +529,47 @@ export const upsertChartScoreAndReplaceScores = async (
 	const { chartId, userId, playCount, clearCount, scores } = params;
 
 	// The subquery resolves the chart_score_id at execution time within the
-	// transaction, so the delete/inserts always target the upserted row.
-	// The EXISTS check on dtx_files mirrors the first statement's
-	// `FROM dtx_files WHERE id = ?` gate: if the chart is deleted between
-	// the visibility check in score.ts and this batch (TOCTOU), the subquery
-	// returns NULL even when a chart_scores row already exists from a prior
-	// upload, so the DELETE and INSERT-score statements are true no-ops
-	// (not partial writes that replace scores while leaving a stale aggregate).
-	const resolveChartScoreId = `(SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ? AND EXISTS (SELECT 1 FROM dtx_files WHERE id = chart_scores.chart_id))`;
+	// transaction, so the delete/inserts always target the upserted row. The
+	// EXISTS check mirrors the first statement's visibility gate: it requires
+	// the chart to still exist in dtx_files AND remain visible to the caller
+	// (published OR owned by them). If the chart is deleted — or unpublished
+	// by its owner and the caller is a non-owner — between the visibility
+	// check in score.ts and this batch (TOCTOU), the subquery returns NULL
+	// even when a chart_scores row already exists from a prior upload, so the
+	// DELETE and INSERT-score statements are true no-ops (not partial writes
+	// that replace scores while leaving a stale aggregate).
+	const resolveChartScoreId = `(SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ? AND EXISTS (SELECT 1 FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id WHERE d.id = chart_scores.chart_id AND (s.is_published = 1 OR s.user_id = ?)))`;
 
 	const statements = [
 		db
 			.prepare(
 				`INSERT INTO chart_scores
 					(chart_id, user_id, play_count, clear_count, created_at, updated_at)
-				 SELECT ?, ?, ?, ?, ?, ? FROM dtx_files WHERE id = ?
+				 SELECT ?, ?, ?, ?, ?, ?
+				 FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id
+				 WHERE d.id = ? AND (s.is_published = 1 OR s.user_id = ?)
 				 ON CONFLICT(user_id, chart_id) DO UPDATE SET
 					play_count = excluded.play_count,
 					clear_count = excluded.clear_count,
 					updated_at = excluded.updated_at
 				 RETURNING *`
 			)
-			// The trailing chartId gates the INSERT on the chart still existing
-			// in dtx_files at write time (TOCTOU: a chart deleted between the
-			// visibility check in score.ts and this batch would otherwise orphan
-			// a chart_scores row, since D1 does not reliably enforce FK cascades
-			// — see 0002_scores.sql). If the chart was deleted, the SELECT
-			// returns 0 rows, the upsert is a no-op, RETURNING yields nothing,
-			// and the function throws — caught by the caller's allSettled as a
-			// "write failed" skip. The resolveChartScoreId subquery carries the
-			// same dtx_files EXISTS gate, so the DELETE and INSERT-score
-			// statements are also no-ops — no partial write commits.
-			.bind(chartId, userId, playCount, clearCount, now, now, chartId),
+			// The trailing chartId + userId gate the upsert on the chart still
+			// being VISIBLE to the caller at write time (TOCTOU: a chart
+			// deleted, or unpublished by its owner while the caller is a
+			// non-owner, between the visibility check in score.ts and this
+			// batch would otherwise orphan/alter a chart_scores row, since D1
+			// does not reliably enforce FK cascades — see 0002_scores.sql). If
+			// the chart is no longer visible, the SELECT returns 0 rows, the
+			// upsert is a no-op, RETURNING yields nothing, and the function
+			// throws — caught by the caller's allSettled as a "write failed"
+			// skip. The resolveChartScoreId subquery carries the same
+			// visibility gate, so the DELETE and INSERT-score statements are
+			// also no-ops — no partial write commits.
+			.bind(chartId, userId, playCount, clearCount, now, now, chartId, userId),
 		db
 			.prepare(`DELETE FROM scores WHERE chart_score_id = ${resolveChartScoreId}`)
-			.bind(userId, chartId),
+			.bind(userId, chartId, userId),
 		...scores.map((s) =>
 			db
 				.prepare(
@@ -576,6 +582,7 @@ export const upsertChartScoreAndReplaceScores = async (
 				.bind(
 					userId,
 					chartId,
+					userId,
 					s.is_best ? 1 : 0,
 					s.score ?? null,
 					s.achievement_rate ?? null,

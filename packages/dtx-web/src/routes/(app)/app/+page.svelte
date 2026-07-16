@@ -21,10 +21,39 @@
 	// as `[::1]` here to match `new URL('http://[::1]:...').hostname`.
 	const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '[::1]'];
 
+	// The Rust auth callback server listens on a single loopback port
+	// (DTX_DESKTOP_AUTH_CALLBACK_PORT, default 47931). The magic link carries
+	// an auth token, so a caller-injected desktop_callback pointing at an
+	// ARBITRARY loopback port must not be honored: a process the user is
+	// running on that port (or a malicious local app) would receive the
+	// token. Derive the one allowed port from the server-configured callback
+	// URL (PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL, set to the loopback URL in
+	// dev), falling back to the documented default.
+	const DEFAULT_LOOPBACK_CALLBACK_PORT = '47931';
+	const allowedLoopbackCallbackPort = (): string => {
+		const configured = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
+		if (configured) {
+			try {
+				const parsed = new URL(configured);
+				if (
+					parsed.protocol === 'http:' &&
+					LOOPBACK_HOSTNAMES.includes(parsed.hostname) &&
+					parsed.port
+				) {
+					return parsed.port;
+				}
+			} catch {
+				// fall through to the default
+			}
+		}
+		return DEFAULT_LOOPBACK_CALLBACK_PORT;
+	};
+
 	// The magic link carries an auth token, so the redirect target must be
-	// strictly validated: either a loopback HTTP callback (a `tauri dev`
-	// instance) or one of our own deep-link schemes. Anything else is rejected
-	// to prevent an open redirect from leaking the token to another origin.
+	// strictly validated: either a loopback HTTP callback on the configured
+	// port (a `tauri dev` instance) or one of our own deep-link schemes.
+	// Anything else is rejected to prevent an open redirect from leaking the
+	// token to another origin.
 	const validateDesktopCallbackUrl = (raw: string | null | undefined): string | null => {
 		if (!raw) return null;
 		let parsed: URL;
@@ -39,7 +68,8 @@
 		if (parsed.protocol === 'http:') {
 			if (
 				LOOPBACK_HOSTNAMES.includes(parsed.hostname) &&
-				parsed.pathname === '/auth-callback'
+				parsed.pathname === '/auth-callback' &&
+				parsed.port === allowedLoopbackCallbackPort()
 			)
 				return raw;
 		}

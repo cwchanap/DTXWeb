@@ -75,10 +75,9 @@ export default defineConfig({
 			name: 'chromium',
 			use: { ...devices['Desktop Chrome'] },
 			testIgnore: [
-				/global\.setup\.ts/,
-				/auth-lifecycle\.spec\.ts/,
-				/score-upload\.spec\.ts/,
-				/score-page\.spec\.ts/
+				'/global\\.setup\\.ts/',
+				'/auth-lifecycle\\.spec\\.ts/',
+				'/score\\.spec\\.ts/'
 			]
 		},
 		// Auth-dependent projects are included only when credentials are configured.
@@ -88,8 +87,7 @@ export default defineConfig({
 					{
 						name: 'chromium-auth',
 						use: { ...devices['Desktop Chrome'] },
-						testMatch:
-							/auth-lifecycle\.spec\.ts|score-upload\.spec\.ts|score-page\.spec\.ts/,
+						testMatch: /auth-lifecycle\.spec\.ts|score\.spec\.ts/,
 						dependencies: ['setup']
 					}
 				]

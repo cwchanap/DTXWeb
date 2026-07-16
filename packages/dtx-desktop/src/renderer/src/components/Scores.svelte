@@ -305,6 +305,15 @@
 		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
 		if (persist) schedulePersist();
 		autocompleteFor = null;
+		// Drop the prior link's charts/matches immediately. Until the new
+		// link's chart fetch resolves there must be no stale cloud chart IDs
+		// for this song: restoreLinksFor skips songs already present in
+		// `links`, so an Upload during that window would otherwise pair the
+		// new link with the old link's chart IDs and write scores to the
+		// wrong cloud charts. An empty match makes buildUpload skip the song
+		// (no chartId) until the fresh fetch lands.
+		cloudChartsBySong[songIndex] = [];
+		matchesBySong[songIndex] = [];
 		try {
 			const result = await desktopHost.fetchCloudSongCharts<FetchCloudSongChartsResult>(
 				song.id

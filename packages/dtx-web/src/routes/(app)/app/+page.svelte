@@ -12,7 +12,11 @@
 	let redirectAttempted = $state(false);
 
 	// Deep-link schemes a bundled desktop app may register for the callback.
-	const ALLOWED_DESKTOP_CALLBACK_SCHEMES = ['dtx:', 'dtx-dev:'];
+	// `dtx-dev:` is only registered by `tauri dev` (tauri.dev.conf.json) and must
+	// never be honored by a production web deploy — a caller-supplied
+	// desktop_callback of `dtx-dev://...` would otherwise leak the magic-link
+	// token to whatever local process claimed that scheme.
+	const ALLOWED_DESKTOP_CALLBACK_SCHEMES = import.meta.env.DEV ? ['dtx:', 'dtx-dev:'] : ['dtx:'];
 
 	// Loopback hostnames the Rust auth callback server binds on (auth.rs
 	// matches the same set). `localhost` is included for browser-resolved

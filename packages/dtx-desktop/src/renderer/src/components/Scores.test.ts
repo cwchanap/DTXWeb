@@ -168,7 +168,7 @@ describe('Scores', () => {
 
 		await waitFor(() =>
 			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
-				['1']: '42'
+				['/path/songs.db\u001f1']: '42'
 			})
 		);
 		unmount();
@@ -176,7 +176,7 @@ describe('Scores', () => {
 		// Next mount: saved link is restored -> fetchCloudSong fetches the real
 		// title, then fetchCloudSongCharts is called for '42'.
 		host.readScoreSongLinks.mockResolvedValue({
-			['1']: '42'
+			['/path/songs.db\u001f1']: '42'
 		});
 		host.fetchCloudSong.mockClear();
 		host.fetchCloudSongCharts.mockClear();
@@ -188,20 +188,25 @@ describe('Scores', () => {
 	});
 
 	it('prunes orphaned saved links for songs no longer in the database', async () => {
-		// savedLinks has one live entry (songId 1) and one orphan (key '999',
-		// which matches no parsed song's songId).
+		// savedLinks has one live entry for this db, one orphan for this db,
+		// one legacy unscoped key, and one link scoped to a different db
+		// (which must be preserved).
 		host.readScoreSongLinks.mockResolvedValue({
-			['1']: '42',
-			['999']: '99'
+			['/path/songs.db\u001f1']: '42',
+			['/path/songs.db\u001f999']: '99',
+			['1']: 'legacy',
+			['/other/songs.db\u001f1']: '77'
 		});
 
 		render(Scores);
 		expect(await screen.findByText('Played Song')).toBeInTheDocument();
 
-		// The orphan must be dropped and the pruned map persisted.
+		// Orphans for this db and legacy unscoped keys are dropped; other-db
+		// links are kept.
 		await waitFor(() =>
 			expect(host.writeScoreSongLinks).toHaveBeenCalledWith({
-				['1']: '42'
+				['/path/songs.db\u001f1']: '42',
+				['/other/songs.db\u001f1']: '77'
 			})
 		);
 	});
@@ -486,8 +491,8 @@ describe('Scores', () => {
 		];
 		host.parseDtxmaniaScores.mockResolvedValue(twoSongs);
 		host.readScoreSongLinks.mockResolvedValue({
-			['1']: '42',
-			['2']: '42'
+			['/path/songs.db\u001f1']: '42',
+			['/path/songs.db\u001f2']: '42'
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
 			success: true,
@@ -540,7 +545,7 @@ describe('Scores', () => {
 			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
 		]);
 		host.readScoreSongLinks.mockResolvedValue({
-			['1']: '42'
+			['/path/songs.db\u001f1']: '42'
 		});
 		host.fetchCloudSong.mockResolvedValue({
 			success: true,
@@ -598,7 +603,7 @@ describe('Scores', () => {
 			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
 		]);
 		host.readScoreSongLinks.mockResolvedValue({
-			['1']: '42'
+			['/path/songs.db\u001f1']: '42'
 		});
 		host.fetchCloudSong.mockResolvedValue({
 			success: true,
@@ -653,7 +658,7 @@ describe('Scores', () => {
 		// scope (which only wrapped the batch loop) missed, leaving the Upload
 		// button stuck disabled forever.
 		host.readScoreSongLinks.mockResolvedValue({
-			['1']: '42'
+			['/path/songs.db\u001f1']: '42'
 		});
 		host.fetchCloudSong.mockImplementation(() => {
 			throw new Error('synchronous explosion');

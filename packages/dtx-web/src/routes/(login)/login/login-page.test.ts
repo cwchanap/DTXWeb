@@ -101,6 +101,28 @@ describe('Login Page', () => {
 		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBeNull();
 	});
 
+	it('preserves the stashed desktop callback across an OAuth error retry', async () => {
+		// Failed Google OAuth redirects to /login?redirect=desktop&error=...
+		// without desktop_callback. The loopback URL stashed from the original
+		// tauri-dev login must survive so a retry still reaches the running app.
+		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://127.0.0.1:47931/auth-callback');
+		envMock.browser = true;
+		pageMock.url = new URL(
+			'http://localhost/login?redirect=desktop&error=' +
+				encodeURIComponent('Google authentication failed. Please try again.')
+		);
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole('heading', { name: 'Login to Desktop App' })
+			).toBeInTheDocument();
+		});
+		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBe(
+			'http://127.0.0.1:47931/auth-callback'
+		);
+	});
+
 	it('shows email and password inputs after auth check (browser:true)', async () => {
 		envMock.browser = true;
 		render(LoginPage);

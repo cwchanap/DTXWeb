@@ -46,12 +46,19 @@
 			// survives both the password POST redirect and the Google OAuth
 			// round-trip within this browser tab. The /app page validates it
 			// before use, so storing the raw value here is safe.
+			//
+			// On a failed/cancelled Google OAuth round-trip the error redirect
+			// is `/login?redirect=desktop&error=...` without `desktop_callback`.
+			// Keep the already-stashed loopback URL in that case so a retry
+			// still reaches the running `tauri dev` app. Only clear the stash
+			// on a fresh desktop login that intentionally omits the param
+			// (bundled app falling back to `dtx://`).
 			if (redirectToDesktop) {
 				const desktopCallback = params.get('desktop_callback');
 				try {
 					if (desktopCallback) {
 						sessionStorage.setItem('dtx_desktop_auth_callback', desktopCallback);
-					} else {
+					} else if (!params.has('error')) {
 						sessionStorage.removeItem('dtx_desktop_auth_callback');
 					}
 				} catch {

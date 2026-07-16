@@ -70,7 +70,7 @@
 		currentPage = event.page;
 		// Restore cloud links for the newly visible page. Songs already linked
 		// are skipped inside restoreLinksFor, so paging back is a no-op.
-		restoreLinksForPage();
+		restoreLinksForPage(loadGeneration);
 	};
 
 	let links = $state<Record<number, CloudSong>>({});
@@ -82,14 +82,22 @@
 	let skipped = $state<{ chartId: string; reason: string }[]>([]);
 	let uploading = $state(false);
 
-	// Stable song identity is the DTXMania `Songs.Id` (songId), so two songs
-	// that share title+artist+genre can't collide on collapse state or
-	// persisted score_links. NOTE: this key format changed from
-	// title+artist+genre to songId — links persisted under the old key in
-	// preferences.json are orphaned and pruned on the next load (users re-link
-	// once). The DTXMania song id is stable for the lifetime of the DB.
-	const songKey = (song: DtxmaniaSong): string => String(song.songId);
+	// Stable song identity is the DTXMania `Songs.Id` (songId) scoped to the
+	// selected songs.db path. `Songs.Id` is only unique within one database
+	// file, so an unscoped key would restore DB A's cloud links onto DB B's
+	// local songs when the user switches files. Collapse state uses the same
+	// scoped key. Separator is U+001F (unit separator) so it cannot appear in
+	// a filesystem path. Legacy unscoped keys (bare songId / title+artist) are
+	// orphaned and pruned on the next load.
+	const SCORE_LINK_KEY_SEP = '\u001f';
+	const songKey = (song: DtxmaniaSong): string =>
+		dbPath ? `${dbPath}${SCORE_LINK_KEY_SEP}${song.songId}` : String(song.songId);
 	let savedLinks = $state<Record<string, string>>({});
+
+	// Monotonically increasing load generation: discard in-flight parse/restore
+	// results when the user reloads or switches databases mid-flight so DB A's
+	// cloud links cannot be applied to DB B's local songs.
+	let loadGeneration = 0;
 
 	// Per-song collapse state, keyed by song identity so it survives paging.
 	// Absent key = expanded (default), so songs start open until collapsed.
@@ -135,22 +143,29 @@
 		}
 	});
 
-	// Drops saved links whose song no longer appears in the parsed DTXMania
-	// database, so the score_links map in preferences.json can't grow unbounded
-	// or renamed. Persists only when entries were actually dropped (avoids
-	// spurious writes on a stable song set). Best-effort: a persist failure is
-	// non-fatal — the in-memory map is still pruned for this session.
+	// Drops saved links whose song no longer appears in the *current* database,
+	// while preserving links scoped to other songs.db paths. Also drops legacy
+	// unscoped keys (no path separator) that can collide across databases.
+	// Persists only when entries were actually dropped. Best-effort: a persist
+	// failure is non-fatal — the in-memory map is still pruned for this session.
 	const pruneSavedLinks = () => {
 		if (Object.keys(savedLinks).length === 0) return;
 		// Guard against a transient parse failure (corrupt/locked songs.db):
-		// songs = [] would classify every saved link as orphaned and persist
-		// an empty map, silently wiping all persisted links. Skip pruning when
-		// no songs were parsed — the links are almost certainly still valid.
-		if (songs.length === 0) return;
+		// songs = [] would classify every current-db link as orphaned. Skip
+		// pruning when no songs were parsed — the links are almost certainly
+		// still valid.
+		if (songs.length === 0 || !dbPath) return;
 		const currentKeys = new Set(songs.map(songKey));
+		const currentPrefix = `${dbPath}${SCORE_LINK_KEY_SEP}`;
 		let dropped = 0;
 		const pruned: Record<string, string> = {};
 		for (const [key, cloudId] of Object.entries(savedLinks)) {
+			// Keep links belonging to other databases intact.
+			if (key.includes(SCORE_LINK_KEY_SEP) && !key.startsWith(currentPrefix)) {
+				pruned[key] = cloudId;
+				continue;
+			}
+			// Drop legacy unscoped keys and orphans for this database.
 			if (currentKeys.has(key)) {
 				pruned[key] = cloudId;
 			} else {
@@ -176,7 +191,7 @@
 	// (manual link or prior restore) are skipped to avoid re-fetching on
 	// page-back or repeated restores.
 	const RESTORE_CONCURRENCY = 8;
-	const restoreLinksFor = async (indices: number[]) => {
+	const restoreLinksFor = async (indices: number[], generation = loadGeneration) => {
 		const entries = indices
 			.map((i) => ({ i, cloudId: savedLinks[songKey(songs[i])] }))
 			.filter((e): e is { i: number; cloudId: string } => !!e.cloudId)
@@ -189,12 +204,14 @@
 		// to the placeholder so one bad link doesn't block the rest.
 		const titleResults: PromiseSettledResult<FetchCloudSongResult>[] = [];
 		for (let i = 0; i < entries.length; i += RESTORE_CONCURRENCY) {
+			if (generation !== loadGeneration) return;
 			const chunk = entries.slice(i, i + RESTORE_CONCURRENCY);
 			const results = await Promise.allSettled(
 				chunk.map((e) => desktopHost.fetchCloudSong<FetchCloudSongResult>(e.cloudId))
 			);
 			titleResults.push(...results);
 		}
+		if (generation !== loadGeneration) return;
 
 		// Build the CloudSong objects from title results, re-checking for
 		// manual links made during the async title-fetch window. Entries that
@@ -207,11 +224,13 @@
 			// window. Without this guard, the restore would clobber the manual
 			// link with the saved-link value.
 			if (links[i]) continue;
+			const songRow = songs[i];
+			if (!songRow) continue;
 			const result = titleResults[idx];
 			let song: CloudSong = {
 				id: cloudId,
 				title: `Simfile #${cloudId}`,
-				artist: songs[i].artist,
+				artist: songRow.artist,
 				is_published: false
 			};
 			if (
@@ -236,6 +255,7 @@
 		// to avoid races on shared state (savedLinks spread, links map).
 		const chartResults: PromiseSettledResult<FetchCloudSongChartsResult>[] = [];
 		for (let i = 0; i < toApply.length; i += RESTORE_CONCURRENCY) {
+			if (generation !== loadGeneration) return;
 			const chunk = toApply.slice(i, i + RESTORE_CONCURRENCY);
 			const results = await Promise.allSettled(
 				chunk.map((e) =>
@@ -244,51 +264,67 @@
 			);
 			chartResults.push(...results);
 		}
+		if (generation !== loadGeneration) return;
 
+		let applied = 0;
 		for (let idx = 0; idx < toApply.length; idx++) {
 			const { i, song } = toApply[idx];
 			// Final re-check: a manual link may have been made during the
 			// chart-fetch await window.
 			if (links[i]) continue;
-			links[i] = song;
-			savedLinks = { ...savedLinks, [songKey(songs[i])]: song.id };
+			const songRow = songs[i];
+			if (!songRow) continue;
 			const chartResult = chartResults[idx];
-			const charts =
-				chartResult.status === 'fulfilled' && chartResult.value.success
-					? (chartResult.value.data ?? [])
-					: [];
+			// Only commit the link when charts loaded successfully. A failed
+			// fetch must leave the index unlinked so a later page/upload
+			// restore retries instead of permanently storing an empty match
+			// set that filters the entry out of future restores.
+			if (chartResult.status !== 'fulfilled' || !chartResult.value.success) {
+				continue;
+			}
+			const charts = chartResult.value.data ?? [];
+			links[i] = song;
+			savedLinks = { ...savedLinks, [songKey(songRow)]: song.id };
 			cloudChartsBySong[i] = charts;
-			matchesBySong[i] = matchCharts(songs[i].charts, charts);
+			matchesBySong[i] = matchCharts(songRow.charts, charts);
+			applied += 1;
 		}
 
 		// Persist the full restored map once, not once per link.
-		schedulePersist();
+		if (applied > 0) schedulePersist();
 	};
 
-	const restoreLinksForPage = () => restoreLinksFor(pagedIndices);
+	const restoreLinksForPage = (generation = loadGeneration) =>
+		restoreLinksFor(pagedIndices, generation);
 
 	const loadScores = async (path: string) => {
+		const generation = ++loadGeneration;
 		loading = true;
 		error = null;
 		currentPage = 1;
 		try {
-			songs = await desktopHost.parseDtxmaniaScores<DtxmaniaSong[]>(path);
+			const parsed = await desktopHost.parseDtxmaniaScores<DtxmaniaSong[]>(path);
+			if (generation !== loadGeneration) return;
+			songs = parsed;
 			links = {};
 			cloudChartsBySong = {};
 			matchesBySong = {};
 			uploadStatus = null;
 			skipped = [];
+			pruneSavedLinks();
+			try {
+				await restoreLinksForPage(generation);
+			} catch {
+				// restoreLinksFor handles per-link errors internally; swallow unexpected errors.
+			}
 		} catch (e) {
+			if (generation !== loadGeneration) return;
 			error = e instanceof Error ? e.message : 'Failed to read songs.db';
 			songs = [];
 		} finally {
-			loading = false;
-		}
-		pruneSavedLinks();
-		try {
-			await restoreLinksForPage();
-		} catch {
-			// restoreLinksFor handles per-link errors internally; swallow unexpected errors.
+			if (generation === loadGeneration) {
+				loading = false;
+			}
 		}
 	};
 
@@ -405,7 +441,7 @@
 	const MAX_UPLOAD_CHARTS = 100;
 
 	const handleUpload = async () => {
-		if (uploading) return;
+		if (uploading || loading) return;
 		uploading = true;
 		uploadStatus = 'Uploading…';
 		skipped = [];
@@ -421,7 +457,10 @@
 			// an explicit user action, so the burst of fetches is expected and the
 			// user is already waiting on the result. Songs already linked are
 			// skipped inside restoreLinksFor.
-			await restoreLinksFor(songs.map((_, i) => i));
+			await restoreLinksFor(
+				songs.map((_, i) => i),
+				loadGeneration
+			);
 			const input = buildUpload();
 			if (input.charts.length === 0) {
 				uploadStatus =
@@ -472,7 +511,7 @@
 			<button
 				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 				onclick={handleChooseDb}
-				disabled={uploading}
+				disabled={uploading || loading}
 			>
 				<FolderOpen size={16} /> Choose songs.db
 			</button>
@@ -480,14 +519,14 @@
 				<button
 					class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 					onclick={() => dbPath && loadScores(dbPath)}
-					disabled={uploading}
+					disabled={uploading || loading}
 				>
 					<RefreshCw size={16} /> Reparse
 				</button>
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
 					onclick={handleUpload}
-					disabled={uploading}
+					disabled={uploading || loading}
 				>
 					<Upload size={16} /> Upload
 				</button>

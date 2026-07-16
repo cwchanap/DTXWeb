@@ -125,7 +125,17 @@ pub fn parse_history_line(line: &str) -> ParsedHistory {
                     } else {
                         Some(rank.to_string())
                     };
-                    (rank_label, rate.trim().parse::<f64>().ok())
+                    // `parse::<f64>()` accepts "NaN"/"inf" as Ok; non-finite
+                    // values are not valid JSON and would abort ScorePayload
+                    // serialization across the Tauri IPC boundary. Reject them
+                    // the same as unparseable input so one bad history line
+                    // cannot fail the whole database parse.
+                    let achievement_rate = rate
+                        .trim()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|value| value.is_finite());
+                    (rank_label, achievement_rate)
                 }
                 None => (None, None),
             }

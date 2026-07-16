@@ -46,6 +46,24 @@ fn parse_history_line_tolerates_garbage() {
     assert_eq!(parsed.achievement_rate, None);
 }
 
+#[test]
+fn parse_history_line_rejects_non_finite_rates() {
+    // "NaN" and "inf" parse as f64 but are not JSON-serializable; treat them
+    // as missing so a malformed history line never aborts the whole parse.
+    let nan = parse_history_line("Cleared (S: NaN)");
+    assert_eq!(nan.cleared, Some(true));
+    assert_eq!(nan.rank_label.as_deref(), Some("S"));
+    assert_eq!(nan.achievement_rate, None);
+
+    let inf = parse_history_line("Cleared (A: inf)");
+    assert_eq!(inf.rank_label.as_deref(), Some("A"));
+    assert_eq!(inf.achievement_rate, None);
+
+    let neg_inf = parse_history_line("Failed (B: -inf)");
+    assert_eq!(neg_inf.cleared, Some(false));
+    assert_eq!(neg_inf.achievement_rate, None);
+}
+
 // Pins the left word-boundary rejection: "Cleared"/"Failed" must appear as a
 // standalone outcome token (at line start or preceded by a space) to be
 // detected. A token glued to a preceding word (e.g. "NotCleared") must NOT be

@@ -28,7 +28,7 @@ export interface LocalChartData {
 }
 
 export interface DtxmaniaSong {
-	/** DTXMania `Songs.Id` — stable identity for songKey (collapse state + persisted score_links). */
+	/** DTXMania `Songs.Id` — combined with the songs.db path for songKey (collapse + score_links). */
 	songId: number;
 	title: string;
 	artist: string;

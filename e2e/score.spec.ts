@@ -22,23 +22,40 @@ const API_URL = `http://localhost:${DTX_API_LOCAL_PORT}/graphql`;
  */
 const getAccessToken = async (page: import('@playwright/test').Page): Promise<string> => {
 	const cookies = await page.context().cookies();
-	const authCookie = cookies.find((c) => /^sb-.+-auth-token$/.test(c.name));
-	if (!authCookie) {
-		throw new Error('No Supabase auth cookie found. Ensure storageState has a valid session.');
+	// @supabase/ssr stores the session as a single cookie when it fits, or as
+	// chunked cookies (`sb-...-auth-token.0`, `.1`, ...) when the value exceeds
+	// the ~3180-byte chunk limit. Prefer the single cookie; otherwise reassemble
+	// chunks in index order.
+	const single = cookies.find((c) => /^sb-.+-auth-token$/.test(c.name));
+	let rawValue = single?.value;
+	if (!rawValue) {
+		const chunks = cookies
+			.filter((c) => /^sb-.+-auth-token\.\d+$/.test(c.name))
+			.sort((a, b) => {
+				const aIndex = Number(a.name.slice(a.name.lastIndexOf('.') + 1));
+				const bIndex = Number(b.name.slice(b.name.lastIndexOf('.') + 1));
+				return aIndex - bIndex;
+			});
+		if (chunks.length === 0) {
+			throw new Error(
+				'No Supabase auth cookie found. Ensure storageState has a valid session.'
+			);
+		}
+		rawValue = chunks.map((c) => c.value).join('');
 	}
 	let parsed: { access_token?: string };
 	try {
-		parsed = JSON.parse(decodeURIComponent(authCookie.value));
+		parsed = JSON.parse(decodeURIComponent(rawValue));
 	} catch {
 		try {
-			parsed = JSON.parse(atob(authCookie.value));
+			parsed = JSON.parse(atob(rawValue));
 		} catch {
 			// base64url ("-" / "_" alphabet) with a "base64-" prefix, as used
 			// by @supabase/ssr 0.5+. Strip the prefix and remap to the base64
 			// alphabet that atob understands before decoding.
-			const raw = authCookie.value.startsWith('base64-')
-				? authCookie.value.slice('base64-'.length)
-				: authCookie.value;
+			const raw = rawValue.startsWith('base64-')
+				? rawValue.slice('base64-'.length)
+				: rawValue;
 			const remapped = raw.replace(/-/g, '+').replace(/_/g, '/');
 			parsed = JSON.parse(atob(remapped));
 		}
@@ -405,8 +422,8 @@ test.describe('Score page UI (/app/score)', () => {
 		await page.goto('/app/score');
 		await page.waitForSelector('html[data-e2e-hydrated="true"]');
 
-		// The page heading is always present.
-		await expect(page.getByRole('heading', { name: 'score.my_scores' })).toBeVisible();
+		// The page heading is always present (localized English locale).
+		await expect(page.getByRole('heading', { name: 'My Scores' })).toBeVisible();
 
 		// The seeded chart title should appear in a ScoreCard.
 		await expect(page.getByText('E2E Download Chart')).toBeVisible();
@@ -431,6 +448,6 @@ test.describe('Score page UI (/app/score)', () => {
 		// but the page must not crash either way.
 		await page.goto('/app/score');
 		await page.waitForSelector('html[data-e2e-hydrated="true"]');
-		await expect(page.getByRole('heading', { name: 'score.my_scores' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'My Scores' })).toBeVisible();
 	});
 });

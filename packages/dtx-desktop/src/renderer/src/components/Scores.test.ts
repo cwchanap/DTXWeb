@@ -14,7 +14,7 @@ const host = vi.hoisted(() => ({
 	readScoreSongLinks: vi.fn(),
 	writeScoreSongLinks: vi.fn()
 }));
-vi.mock('../services/desktopHost', () => ({ desktopHost: host }));
+vi.mock('@/services/desktopHost', () => ({ desktopHost: host }));
 
 import Scores from './Scores.svelte';
 
@@ -287,15 +287,11 @@ describe('Scores', () => {
 		render(Scores);
 		expect(await screen.findByText('database is locked')).toBeInTheDocument();
 
-		// writeScoreSongLinks must NOT be called with an empty object — that
-		// would wipe all persisted links on a transient parse failure.
-		await waitFor(() => {
-			const calls = host.writeScoreSongLinks.mock.calls;
-			for (const [arg] of calls) {
-				expect(Object.keys(arg as Record<string, string>).length).toBeGreaterThan(0);
-			}
-		});
-		expect(host.writeScoreSongLinks).not.toHaveBeenCalledWith({});
+		// On a parse failure `loadScores` sets songs=[] and never reaches the
+		// prune/restore path, so NO persistence write may occur — not even an
+		// empty or partial link set, which would wipe saved links on a
+		// transient DB lock.
+		expect(host.writeScoreSongLinks).not.toHaveBeenCalled();
 	});
 
 	it('shows the empty state when the database has no drum scores', async () => {

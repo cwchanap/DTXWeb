@@ -7,14 +7,14 @@
  * can arrive even though the canonical form is encoded; a non-integer is already
  * on the display scale and is returned as-is rather than divided again.
  */
-export function formatLevel(level: string | number | undefined | null): string {
+export const formatLevel = (level: string | number | undefined | null): string => {
 	const parsed = typeof level === 'string' ? parseFloat(level) : (level ?? 0);
 	const n = Number.isFinite(parsed) ? parsed : 0;
 	const display = Number.isInteger(n) ? (n > 100 ? n / 100 : n / 10) : n;
 	return display.toFixed(2);
-}
+};
 
-export function formatLevelDisplay(dtx_files: Array<{ level?: string | number }>) {
+export const formatLevelDisplay = (dtx_files: Array<{ level?: string | number }>): string => {
 	return (
 		dtx_files
 			?.slice()
@@ -28,7 +28,7 @@ export function formatLevelDisplay(dtx_files: Array<{ level?: string | number }>
 			.map((file) => formatLevel(file.level))
 			.join(' / ') || 'N/A'
 	);
-}
+};
 
 export function filterFiles(files: FileList | File[], filters: string[]) {
 	return Array.from(files).filter((file) =>

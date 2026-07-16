@@ -64,15 +64,17 @@ fn parse_history_line_rejects_non_finite_rates() {
     assert_eq!(neg_inf.achievement_rate, None);
 }
 
-// Pins the left word-boundary rejection: "Cleared"/"Failed" must appear as a
-// standalone outcome token (at line start or preceded by a space) to be
-// detected. A token glued to a preceding word (e.g. "NotCleared") must NOT be
-// read as a clear — the `contains(" Cleared")` / `starts_with("Cleared")`
-// checks enforce the left boundary. This guards against a future regression
-// that loosens the match to a bare `contains("Cleared")`.
+// Pins the word-boundary rejection on BOTH sides: "Cleared"/"Failed" must
+// appear as a standalone outcome token (at a line edge or adjacent to a
+// non-alphanumeric character) to be detected. A token glued to a neighboring
+// word on either side — a preceding word (e.g. "NotCleared") or a trailing
+// suffix (e.g. "ClearedExtra") — must NOT be read as a clear. The
+// `contains_outcome_token` helper enforces both boundaries. This guards
+// against a future regression that loosens the match to a bare
+// `contains("Cleared")`.
 #[test]
 fn parse_history_line_rejects_outcome_token_without_left_word_boundary() {
-    // "NotCleared" has no space before "Cleared" and doesn't start with it.
+    // "NotCleared" has no left boundary before "Cleared".
     let glued_cleared = parse_history_line("10.26/6/2 NotCleared (S: 91.30)");
     assert_eq!(glued_cleared.cleared, None);
     // The rank/rate inside the parens still parse independently of the token.
@@ -82,6 +84,17 @@ fn parse_history_line_rejects_outcome_token_without_left_word_boundary() {
     let glued_failed = parse_history_line("10.26/6/2 NotFailed (B: 70.10)");
     assert_eq!(glued_failed.cleared, None);
     assert_eq!(glued_failed.rank_label.as_deref(), Some("B"));
+
+    // "ClearedExtra" / "FailedExtra" have no right boundary after the token.
+    let suffixed_cleared = parse_history_line("10.26/6/2 ClearedExtra (S: 91.30)");
+    assert_eq!(suffixed_cleared.cleared, None);
+    assert_eq!(suffixed_cleared.rank_label.as_deref(), Some("S"));
+    assert_eq!(suffixed_cleared.achievement_rate, Some(91.30));
+
+    let suffixed_failed = parse_history_line("10.26/6/2 FailedExtra (B: 70.10)");
+    assert_eq!(suffixed_failed.cleared, None);
+    assert_eq!(suffixed_failed.rank_label.as_deref(), Some("B"));
+    assert_eq!(suffixed_failed.achievement_rate, Some(70.10));
 }
 
 // A realistic history line with a valid date and rank/rate but NO

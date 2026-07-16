@@ -1,5 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { DTX_API_LOCAL_PORT, CHART_B_ID } from './test-config';
+import type { UploadScoresInput } from '../packages/dtx-web/src/lib/api/generated/graphql';
 
 // Both describe blocks destructively REPLACE the test user's scores on the
 // same seeded chart (CHART_B_ID). Running them as separate files let
@@ -20,7 +21,7 @@ const API_URL = `http://localhost:${DTX_API_LOCAL_PORT}/graphql`;
  * (URL-encoded JSON, plain base64, or base64url with a "base64-" prefix), so
  * each form is tried in order.
  */
-const getAccessToken = async (page: import('@playwright/test').Page): Promise<string> => {
+const getAccessToken = async (page: Page): Promise<string> => {
 	const cookies = await page.context().cookies();
 	// @supabase/ssr stores the session as a single cookie when it fits, or as
 	// chunked cookies (`sb-...-auth-token.0`, `.1`, ...) when the value exceeds
@@ -70,7 +71,7 @@ const getAccessToken = async (page: import('@playwright/test').Page): Promise<st
  * Make an authenticated GraphQL request to the local dtx-api worker.
  */
 const graphqlRequest = async <T>(
-	page: import('@playwright/test').Page,
+	page: Page,
 	token: string,
 	query: string,
 	variables?: Record<string, unknown>
@@ -157,7 +158,7 @@ const ROUND_TRIP_PAYLOAD = {
 };
 
 // One best row + one recent row, matching the buildUpload() shape.
-const scorePagePayload = (chartId: string) => ({
+const scorePagePayload = (chartId: string): UploadScoresInput => ({
 	charts: [
 		{
 			chartId,

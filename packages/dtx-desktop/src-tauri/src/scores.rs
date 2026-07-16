@@ -101,14 +101,36 @@ pub struct ParsedHistory {
     pub achievement_rate: Option<f64>,
 }
 
+/// `true` if `token` appears in `line` as a standalone word: at a line edge
+/// or adjacent to a non-alphanumeric character on each side. This enforces
+/// both the left and right word boundaries, so a token glued to a neighboring
+/// word on either side (e.g. "NotCleared", "ClearedExtra") is NOT detected.
+/// The `token` is ASCII, so byte indexing is safe and a leading byte of a
+/// multibyte UTF-8 char (>= 0x80) is correctly treated as a boundary.
+fn contains_outcome_token(line: &str, token: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut search = 0;
+    while let Some(rel) = line[search..].find(token) {
+        let start = search + rel;
+        let end = start + token.len();
+        let left_ok = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+        let right_ok = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+        if left_ok && right_ok {
+            return true;
+        }
+        search = start + 1;
+    }
+    false
+}
+
 /// Tolerant parser for a DTXMania `HistoryLine`, e.g. `10.26/6/2 Cleared (S: 91.30)`.
 /// Any field that cannot be read is left `None`; the parser never fails.
 ///
 /// Called by `group_joined_rows`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn parse_history_line(line: &str) -> ParsedHistory {
-    let cleared = if line.contains(" Cleared") || line.starts_with("Cleared") {
+    let cleared = if contains_outcome_token(line, "Cleared") {
         Some(true)
-    } else if line.contains(" Failed") || line.starts_with("Failed") {
+    } else if contains_outcome_token(line, "Failed") {
         Some(false)
     } else {
         None

@@ -673,6 +673,56 @@ describe('read-path SQL (real D1)', () => {
 			expect(page2.data.map((s) => s.id)).toEqual([4]);
 		});
 
+		it('uses simfile_id as a stable tie-breaker when updated_at ties', async () => {
+			// Add sim5 (published, user-2) with a chart_score whose updated_at
+			// TIES sim1's (2026-07-10). Without a secondary sort key, SQLite
+			// could return sim1 and sim5 in either order — and swap them
+			// between page requests, causing duplicates/omissions. The
+			// d.simfile_id DESC tie-breaker makes the order deterministic.
+			await db
+				.prepare(
+					`INSERT INTO simfiles (id, title, artist, bpm, user_id, is_published, publish_date, created_at, updated_at)
+					 VALUES (5, 'Tied Pub', 'E', 160, 'user-2', 1, '2026-01-05T00:00:00Z', '2026-01-05T00:00:00Z', '2026-01-05T00:00:00Z')`
+				)
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO dtx_files (id, label, level, simfile_id) VALUES (14, 'ADV', 7, 5)"
+				)
+				.run();
+			await db
+				.prepare(
+					`INSERT INTO chart_scores (id, chart_id, user_id, play_count, clear_count, created_at, updated_at)
+					 VALUES (104, 14, 'user-1', 1, 1, '2026-07-01T00:00:00Z', '2026-07-10T00:00:00Z')`
+				)
+				.run();
+
+			// Tied updated_at (07-10) -> sim5 (id 5) before sim1 (id 1) under
+			// d.simfile_id DESC. Full visible order: 5, 1, 2, 4.
+			const { data } = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 1,
+				pageSize: 20
+			});
+			expect(data.map((s) => s.id)).toEqual([5, 1, 2, 4]);
+
+			// Page boundary right at the tie: page 1 size 1 -> [5], page 2 -> [1].
+			// A non-deterministic tie would risk returning [1] then [1] (dup) or
+			// skipping sim5. The tie-breaker keeps both pages stable.
+			const p1 = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 1,
+				pageSize: 1
+			});
+			const p2 = await listUserScoredSimfiles(db, {
+				userId: 'user-1',
+				page: 2,
+				pageSize: 1
+			});
+			expect(p1.data.map((s) => s.id)).toEqual([5]);
+			expect(p2.data.map((s) => s.id)).toEqual([1]);
+		});
+
 		it('joins dtx_files for each returned simfile', async () => {
 			const { data } = await listUserScoredSimfiles(db, {
 				userId: 'user-1',

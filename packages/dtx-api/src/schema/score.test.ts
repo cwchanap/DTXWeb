@@ -1106,6 +1106,56 @@ describe('uploadScores', () => {
 		);
 	});
 
+	// Regression: an invalid best row must reject the whole chart, not
+	// silently drop the best and accept only the recent rows. The replace-all
+	// batch (DELETE + INSERT) would otherwise erase the stored best score.
+	it('rejects a chart when the best row is invalid, preserving stored scores', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 3,
+							clearCount: 2,
+							scores: [
+								{
+									isBest: true,
+									score: -1, // invalid: negative
+									fullCombo: false,
+									cleared: true
+								},
+								{
+									isBest: false,
+									achievementRate: 92.1,
+									rankLabel: 'S',
+									fullCombo: false,
+									cleared: true,
+									displayOrder: 1
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		// The chart is skipped (not accepted) so the destructive replace-all
+		// never runs — the stored best score is preserved.
+		expect(payload.updatedCharts).toBe(0);
+		expect(payload.insertedScores).toBe(0);
+		expect(payload.skipped).toEqual([{ chartId: '10', reason: 'best score row invalid' }]);
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
 	it('rejects an empty scores[] payload that would wipe prior scores', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });

@@ -269,6 +269,12 @@ const validateChartScores = (
 	let firstDropReason: string | null = null;
 	const valid: InputScore[] = [];
 	const seenOrders = new Set<number>();
+	// Track whether a best (isBest: true) row was dropped during filtering.
+	// If so, the chart is rejected rather than accepted with only recent
+	// rows — upsertChartScoreAndReplaceScores DELETE+INSERTs the validated
+	// set, so accepting a chart whose best row was dropped would erase the
+	// stored best score. Rejecting preserves it.
+	let bestDropped = false;
 
 	for (const s of scores) {
 		// Best rows must not carry a displayOrder (they are not recent plays).
@@ -281,6 +287,7 @@ const validateChartScores = (
 		// Per-row field validation: drop the row if any individual field is bad.
 		const fieldError = validateScoreFields(row);
 		if (fieldError) {
+			if (row.isBest) bestDropped = true;
 			if (firstDropReason === null) firstDropReason = fieldError;
 			continue;
 		}
@@ -313,6 +320,13 @@ const validateChartScores = (
 
 	if (valid.length === 0) {
 		return { ok: false, reason: firstDropReason ?? 'no valid scores after filtering' };
+	}
+
+	// A best row was present in the input but dropped during filtering.
+	// Reject the whole chart so the destructive replace-all does not
+	// erase the stored best score with only recent rows.
+	if (bestDropped) {
+		return { ok: false, reason: 'best score row invalid' };
 	}
 
 	return { ok: true, scores: valid };

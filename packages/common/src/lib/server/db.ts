@@ -667,7 +667,7 @@ export const listUserScoredSimfiles = async (
 			 JOIN simfiles s ON s.id = d.simfile_id
 			 WHERE cs.user_id = ? AND (s.is_published = 1 OR s.user_id = ?)
 			 GROUP BY d.simfile_id
-			 ORDER BY MAX(cs.updated_at) DESC
+			 ORDER BY MAX(cs.updated_at) DESC, d.simfile_id DESC
 			 LIMIT ? OFFSET ?`
 		)
 		.bind(options.userId, options.userId, pageSize, offset)

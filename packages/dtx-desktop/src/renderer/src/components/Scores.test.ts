@@ -650,6 +650,76 @@ describe('Scores', () => {
 		expect(screen.getByText(/200 score/i)).toBeInTheDocument();
 	}, 20_000);
 
+	it('retains server skips from earlier batches when a later batch fails', async () => {
+		// 101 charts -> two batches (100 + 1). The first batch succeeds but
+		// returns server-side skips (e.g. "chart not found"). The second batch
+		// fails. The skipped charts from the committed first batch must still
+		// be surfaced — previously the early return dropped them.
+		const charts = Array.from({ length: 101 }, (_, i) => ({
+			difficultyLevel: 2,
+			difficultyLabel: `LV${i}`,
+			drumLevel: (i + 1) * 10,
+			fileHash: `hash-${i}`,
+			aggregate: { playCount: 1, clearCount: 1 },
+			best: bestRow,
+			recent: []
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue([
+			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+		]);
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42'
+		});
+		host.fetchCloudSong.mockResolvedValue({
+			success: true,
+			cloudSongData: {
+				id: 42,
+				title: 'Cloud Mega Song',
+				artist: 'Artist A',
+				is_published: true
+			}
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: charts.map((c, i) => ({
+				id: `${1000 + i}`,
+				label: `LV${i}`,
+				level: (i + 1) * 1.0
+			}))
+		});
+		let callCount = 0;
+		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => {
+			callCount++;
+			if (callCount === 1) {
+				return {
+					success: true,
+					data: {
+						updatedCharts: payload.charts.length - 2,
+						insertedScores: (payload.charts.length - 2) * 2,
+						skipped: [
+							{ chartId: '1000', reason: 'chart not found' },
+							{ chartId: '1001', reason: 'chart not found' }
+						]
+					}
+				};
+			}
+			return { success: false, error: 'Server exploded on batch 2' };
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Mega Song')).toBeInTheDocument();
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		await waitFor(() => expect(host.uploadScores).toHaveBeenCalledTimes(2));
+		expect(await screen.findByText(/server exploded on batch 2/i)).toBeInTheDocument();
+		// The two server-skipped charts from the committed first batch are
+		// retained and rendered, not lost to the early return.
+		expect(screen.getByText(/Chart 1000 skipped/i)).toBeInTheDocument();
+		expect(screen.getByText(/Chart 1001 skipped/i)).toBeInTheDocument();
+	}, 20_000);
+
 	it('re-enables the Upload button even when restoreLinksFor throws during upload', async () => {
 		// Seed a saved link so restoreLinksFor has entries to process during
 		// upload. fetchCloudSong throws synchronously so the .map() inside

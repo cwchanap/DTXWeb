@@ -39,6 +39,7 @@
 			'performedAt cannot be in the future': 'Play date is in the future',
 			'judgment counts must be non-negative integers': 'Invalid judgment counts',
 			'no valid scores after filtering': 'All score rows were invalid',
+			'best score row invalid': 'Best score row was invalid — stored best preserved',
 			'chart not found': 'Chart not found on the server',
 			'write failed': 'Server write failed — try again',
 			'too many charts (max 100)': 'Too many charts in one upload — try fewer'
@@ -487,6 +488,10 @@
 							? ` Partial upload: ${totalUpdated} chart(s), ${totalInserted} score(s) committed before failure.`
 							: '';
 					uploadStatus = `${result.error ?? 'Upload failed.'}${partial}`;
+					// Merge accumulated server skips from already-committed batches
+					// before returning — otherwise rejected charts (e.g. "chart not
+					// found") from successful earlier batches are lost.
+					skipped = [...input.clientSkipped, ...serverSkipped];
 					return;
 				}
 				totalUpdated += result.data.updatedCharts;

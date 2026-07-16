@@ -53,7 +53,7 @@
 				<span class="text-dim block truncate text-sm">{song.artist}</span>
 			</span>
 		</button>
-		<div class="relative ml-auto">
+		<div class="relative ml-auto" data-cloud-song-autocomplete-trigger>
 			{#if link}
 				<span class="text-cyan text-sm">Linked: {link.title}</span>
 				<button

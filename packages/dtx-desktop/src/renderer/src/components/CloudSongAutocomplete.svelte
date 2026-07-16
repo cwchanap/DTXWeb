@@ -117,32 +117,42 @@
 
 	const handleClickOutside = (event: MouseEvent) => {
 		const target = event.target as Element;
-		if (!target.closest('.autocomplete-popup')) {
+		// Include the trigger (e.g. ScoreSongCard "Link to cloud song" / "change")
+		// so reopening or interacting with the button does not immediately close.
+		if (
+			!target.closest('.autocomplete-popup') &&
+			!target.closest('[data-cloud-song-autocomplete-trigger]')
+		) {
 			handleClose();
 		}
 	};
 
 	onMount(() => {
-		if (isOpen && searchInputRef) {
-			searchInputRef.focus();
-		}
-
-		// Add click outside listener with a small delay to prevent immediate closure
-		const timeoutId = setTimeout(() => {
-			document.addEventListener('click', handleClickOutside);
-		}, 100);
-
 		return () => {
-			clearTimeout(timeoutId);
 			document.removeEventListener('click', handleClickOutside);
 			clearTimeout(searchTimeout);
 		};
 	});
 
+	// Only listen for outside clicks while open. The component stays mounted
+	// when closed (ScoreSongCard always renders it), so a permanent document
+	// listener would close the popup on the same click that opens it.
 	$effect(() => {
-		if (isOpen && searchInputRef) {
+		if (!isOpen) {
+			document.removeEventListener('click', handleClickOutside);
+			return;
+		}
+		if (searchInputRef) {
 			searchInputRef.focus();
 		}
+		// Defer so the opening click does not immediately fire this handler.
+		const timeoutId = setTimeout(() => {
+			document.addEventListener('click', handleClickOutside);
+		}, 0);
+		return () => {
+			clearTimeout(timeoutId);
+			document.removeEventListener('click', handleClickOutside);
+		};
 	});
 </script>
 

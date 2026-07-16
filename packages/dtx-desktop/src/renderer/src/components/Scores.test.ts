@@ -884,69 +884,164 @@ describe('Scores', () => {
 				})
 		);
 
-		// CloudSongAutocomplete registers a click-outside handler on
-		// document 100ms after mount. By the time we click "change" to
-		// re-link, that handler is active and closes the autocomplete the
-		// instant it opens. Intercept document.addEventListener to suppress
-		// the click-outside handler for this test only.
-		const realAdd = document.addEventListener.bind(document);
-		const addSpy = vi.spyOn(document, 'addEventListener').mockImplementation(((
-			type: string,
-			listener: EventListenerOrEventListenerObject,
-			options?: boolean | AddEventListenerOptions
-		) => {
-			if (type === 'click') return;
-			return realAdd(type, listener, options);
-		}) as typeof document.addEventListener);
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
 
-		try {
-			render(Scores);
-			expect(await screen.findByText('Played Song')).toBeInTheDocument();
+		// Link cloud song A ('42') — fetchCloudSongCharts('42') is now pending.
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		let input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song A'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
 
-			// Link cloud song A ('42') — fetchCloudSongCharts('42') is now pending.
-			await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
-			let input = await screen.findByPlaceholderText(/search by song title or artist/i);
-			await fireEvent.input(input, { target: { value: 'Cloud Song' } });
-			await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
-			await fireEvent.click(await screen.findByText('Cloud Song A'));
-			await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+		// Change the link to cloud song B ('99') before A's charts resolve.
+		// Outside-click only listens while open and ignores the trigger region,
+		// so "change" keeps the dialog open for a new search.
+		await fireEvent.click(screen.getByRole('button', { name: 'change' }));
+		input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalledTimes(2));
+		await fireEvent.click(await screen.findByText('Cloud Song B'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('99'));
 
-			// Change the link to cloud song B ('99') before A's charts resolve.
-			await fireEvent.click(screen.getByRole('button', { name: 'change' }));
-			input = await screen.findByPlaceholderText(/search by song title or artist/i);
-			await fireEvent.input(input, { target: { value: 'Cloud Song' } });
-			await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalledTimes(2));
-			await fireEvent.click(await screen.findByText('Cloud Song B'));
-			await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('99'));
+		// Resolve B first, then A (the stale response that must be discarded).
+		deferreds['99'].resolve({
+			success: true,
+			data: [{ id: '99-chart', label: 'BASIC', level: 55 }]
+		});
+		deferreds['42'].resolve({
+			success: true,
+			data: [{ id: '42-chart', label: 'BASIC', level: 55 }]
+		});
 
-			// Resolve B first, then A (the stale response that must be discarded).
-			deferreds['99'].resolve({
-				success: true,
-				data: [{ id: '99-chart', label: 'BASIC', level: 55 }]
-			});
-			deferreds['42'].resolve({
-				success: true,
-				data: [{ id: '42-chart', label: 'BASIC', level: 55 }]
-			});
-
-			// Upload — must use B's chart ID ('99-chart'), not A's stale '42-chart'.
-			await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
-			await waitFor(() =>
-				expect(host.uploadScores).toHaveBeenCalledWith({
-					charts: [
-						{
-							chartId: '99-chart',
-							playCount: 7,
-							clearCount: 5,
-							scores: [bestRow, recentRow]
-						}
-					]
-				})
-			);
-		} finally {
-			addSpy.mockRestore();
-		}
+		// Upload — must use B's chart ID ('99-chart'), not A's stale '42-chart'.
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: /^upload/i })).not.toBeDisabled()
+		);
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		await waitFor(() =>
+			expect(host.uploadScores).toHaveBeenCalledWith({
+				charts: [
+					{
+						chartId: '99-chart',
+						playCount: 7,
+						clearCount: 5,
+						scores: [bestRow, recentRow]
+					}
+				]
+			})
+		);
 	});
+
+	it('waits for in-flight chart matching before building the upload payload', async () => {
+		// After selecting a cloud song, matchesBySong is empty until
+		// fetchCloudSongCharts resolves. Upload must wait rather than
+		// immediately reporting "Nothing to upload".
+		let resolveCharts: (v: unknown) => void = () => {};
+		host.fetchCloudSongCharts.mockImplementation(
+			() =>
+				new Promise((r) => {
+					resolveCharts = r as (v: unknown) => void;
+				})
+		);
+
+		render(Scores);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		// Upload is disabled while the chart fetch is in flight.
+		expect(screen.getByRole('button', { name: /^upload/i })).toBeDisabled();
+
+		resolveCharts({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: /^upload/i })).not.toBeDisabled()
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		await waitFor(() =>
+			expect(host.uploadScores).toHaveBeenCalledWith({
+				charts: [
+					{
+						chartId: '10',
+						playCount: 7,
+						clearCount: 5,
+						scores: [bestRow, recentRow]
+					}
+				]
+			})
+		);
+		expect(screen.queryByText(/Nothing to upload/i)).not.toBeInTheDocument();
+	});
+
+	it('preserves partial progress when a later batch throws', async () => {
+		// 101 charts → two batches. First succeeds; second rejects. Status and
+		// skipped list must still reflect the committed first batch.
+		const charts = Array.from({ length: 101 }, (_, i) => ({
+			difficultyLevel: 2,
+			difficultyLabel: `LV${i}`,
+			drumLevel: (i + 1) * 10,
+			fileHash: `hash-${i}`,
+			aggregate: { playCount: 1, clearCount: 1 },
+			best: bestRow,
+			recent: [] as (typeof recentRow)[]
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue([
+			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+		]);
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42'
+		});
+		host.fetchCloudSong.mockResolvedValue({
+			success: true,
+			cloudSongData: {
+				id: 42,
+				title: 'Cloud Mega Song',
+				artist: 'Artist A',
+				is_published: true
+			}
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: charts.map((c, i) => ({
+				id: `${1000 + i}`,
+				label: `LV${i}`,
+				level: (i + 1) * 10
+			}))
+		});
+		host.uploadScores
+			.mockResolvedValueOnce({
+				success: true,
+				data: {
+					updatedCharts: 100,
+					insertedScores: 200,
+					skipped: [{ chartId: '1007', reason: 'chart not found' }]
+				}
+			})
+			.mockRejectedValueOnce(new Error('network dropped'));
+
+		render(Scores);
+		expect(await screen.findByText('Mega Song')).toBeInTheDocument();
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		expect(await screen.findByText(/network dropped/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/Partial upload: 100 chart\(s\), 200 score\(s\) committed before failure/i
+			)
+		).toBeInTheDocument();
+		expect(screen.getByText(/Chart 1007 skipped/i)).toBeInTheDocument();
+	}, 20_000);
 
 	it('clears a failed manual link so restoreLinksFor can retry on the next upload', async () => {
 		// When fetchCloudSongCharts returns { success: false } after a manual

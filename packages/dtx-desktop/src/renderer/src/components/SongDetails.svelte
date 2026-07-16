@@ -1068,6 +1068,7 @@
 							<button
 								class="bg-magenta flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 								style="box-shadow:0 0 22px -6px var(--color-magenta)"
+								data-cloud-song-autocomplete-trigger
 								onclick={handleShowAutocomplete}
 								disabled={isLinking}
 							>

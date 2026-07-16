@@ -77,6 +77,50 @@ describe('CloudSongAutocomplete – close behavior', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /close popup/i }));
 		expect(onclose).toHaveBeenCalledOnce();
 	});
+
+	it('does not close on document clicks while closed', async () => {
+		const onclose = vi.fn();
+		render(CloudSongAutocomplete, { props: { isOpen: false, onclose } });
+		await fireEvent.click(document.body);
+		expect(onclose).not.toHaveBeenCalled();
+	});
+
+	it('closes on outside document clicks only when open', async () => {
+		vi.useFakeTimers();
+		const onclose = vi.fn();
+		render(CloudSongAutocomplete, { props: { isOpen: true, onclose } });
+		// Install the deferred outside-click listener.
+		await vi.advanceTimersByTimeAsync(0);
+
+		const outside = document.createElement('button');
+		document.body.appendChild(outside);
+		try {
+			await fireEvent.click(outside);
+			expect(onclose).toHaveBeenCalledOnce();
+		} finally {
+			outside.remove();
+			vi.useRealTimers();
+		}
+	});
+
+	it('ignores outside clicks on the autocomplete trigger region', async () => {
+		vi.useFakeTimers();
+		const onclose = vi.fn();
+		render(CloudSongAutocomplete, { props: { isOpen: true, onclose } });
+		// Install the deferred outside-click listener.
+		await vi.advanceTimersByTimeAsync(0);
+
+		const trigger = document.createElement('button');
+		trigger.setAttribute('data-cloud-song-autocomplete-trigger', '');
+		document.body.appendChild(trigger);
+		try {
+			await fireEvent.click(trigger);
+			expect(onclose).not.toHaveBeenCalled();
+		} finally {
+			trigger.remove();
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('CloudSongAutocomplete – search behavior', () => {

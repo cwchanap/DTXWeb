@@ -82,6 +82,12 @@
 	let uploadStatus = $state<string | null>(null);
 	let skipped = $state<{ chartId: string; reason: string }[]>([]);
 	let uploading = $state(false);
+	// In-flight chart fetches after a manual link. Upload must wait for these
+	// because restoreLinksFor skips songs already present in `links`, so a
+	// fast click before matchesBySong is populated would report "Nothing to
+	// upload" even though matching is still running.
+	const inflightLinkFetches = new Set<Promise<void>>();
+	let linkingCharts = $state(false);
 
 	// Stable song identity is the DTXMania `Songs.Id` (songId) scoped to the
 	// selected songs.db path. `Songs.Id` is only unique within one database
@@ -351,21 +357,39 @@
 		// (no chartId) until the fresh fetch lands.
 		cloudChartsBySong[songIndex] = [];
 		matchesBySong[songIndex] = [];
-		try {
-			const result = await desktopHost.fetchCloudSongCharts<FetchCloudSongChartsResult>(
-				song.id
-			);
-			// Ignore stale responses: if the user changed the link to a different
-			// song before this fetch resolved, discard the result so we don't
-			// overwrite the current link's charts/matches with the prior link's.
-			if (links[songIndex]?.id !== song.id) return;
-			if (!result.success) {
-				// Roll back the link so restoreLinksFor retries on the next
-				// page/upload. Keeping the link with empty charts would leave
-				// the song visibly linked but silently un-uploadable, and
-				// restoreLinksFor skips songs already in `links` so the fetch
-				// would never be retried. This mirrors restoreLinksFor's own
-				// guard which does not commit a link when the chart fetch fails.
+		const fetchWork = (async () => {
+			try {
+				const result = await desktopHost.fetchCloudSongCharts<FetchCloudSongChartsResult>(
+					song.id
+				);
+				// Ignore stale responses: if the user changed the link to a different
+				// song before this fetch resolved, discard the result so we don't
+				// overwrite the current link's charts/matches with the prior link's.
+				if (links[songIndex]?.id !== song.id) return;
+				if (!result.success) {
+					// Roll back the link so restoreLinksFor retries on the next
+					// page/upload. Keeping the link with empty charts would leave
+					// the song visibly linked but silently un-uploadable, and
+					// restoreLinksFor skips songs already in `links` so the fetch
+					// would never be retried. This mirrors restoreLinksFor's own
+					// guard which does not commit a link when the chart fetch fails.
+					delete links[songIndex];
+					const key = songKey(songs[songIndex]);
+					const nextSaved = { ...savedLinks };
+					delete nextSaved[key];
+					savedLinks = nextSaved;
+					if (persist) schedulePersist();
+					cloudChartsBySong[songIndex] = [];
+					matchesBySong[songIndex] = [];
+					toastStore.error('Could not fetch cloud charts for linked song');
+					return;
+				}
+				const charts = result.data ?? [];
+				cloudChartsBySong[songIndex] = charts;
+				matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
+			} catch {
+				if (links[songIndex]?.id !== song.id) return;
+				// Same rollback as the !result.success branch above.
 				delete links[songIndex];
 				const key = songKey(songs[songIndex]);
 				const nextSaved = { ...savedLinks };
@@ -375,23 +399,15 @@
 				cloudChartsBySong[songIndex] = [];
 				matchesBySong[songIndex] = [];
 				toastStore.error('Could not fetch cloud charts for linked song');
-				return;
 			}
-			const charts = result.data ?? [];
-			cloudChartsBySong[songIndex] = charts;
-			matchesBySong[songIndex] = matchCharts(songs[songIndex].charts, charts);
-		} catch {
-			if (links[songIndex]?.id !== song.id) return;
-			// Same rollback as the !result.success branch above.
-			delete links[songIndex];
-			const key = songKey(songs[songIndex]);
-			const nextSaved = { ...savedLinks };
-			delete nextSaved[key];
-			savedLinks = nextSaved;
-			if (persist) schedulePersist();
-			cloudChartsBySong[songIndex] = [];
-			matchesBySong[songIndex] = [];
-			toastStore.error('Could not fetch cloud charts for linked song');
+		})();
+		inflightLinkFetches.add(fetchWork);
+		linkingCharts = true;
+		try {
+			await fetchWork;
+		} finally {
+			inflightLinkFetches.delete(fetchWork);
+			linkingCharts = inflightLinkFetches.size > 0;
 		}
 	};
 
@@ -475,6 +491,13 @@
 		uploading = true;
 		uploadStatus = 'Uploading…';
 		skipped = [];
+		// Counters live outside the try so a thrown batch rejection still
+		// reports how many charts/scores already committed, and so server
+		// skips from earlier successful batches are not lost.
+		let totalUpdated = 0;
+		let totalInserted = 0;
+		const serverSkipped: { chartId: string; reason: string }[] = [];
+		let clientSkipped: { chartId: string; reason: string }[] = [];
 		// The try/finally wraps the ENTIRE post-guard body (restore + build +
 		// batch loop) so a throw anywhere resets `uploading`. Previously
 		// restoreLinksFor/buildUpload ran before the try, so a mid-upload
@@ -482,6 +505,12 @@
 		// restoreLinksFor read songs[i] undefined → threw → finally never ran
 		// → Upload button stuck disabled forever.
 		try {
+			// Wait for any in-flight manual link chart fetches. restoreLinksFor
+			// skips songs already in `links`, so without this a fast Upload
+			// after linking would build an empty payload.
+			if (inflightLinkFetches.size > 0) {
+				await Promise.allSettled([...inflightLinkFetches]);
+			}
 			// Paging only restores cloud links for the visible page. Upload walks
 			// the full `songs` array, so restore every saved link first — upload is
 			// an explicit user action, so the burst of fetches is expected and the
@@ -499,10 +528,8 @@
 			}
 			// Surface client-side skips (duplicate chart matches) alongside any
 			// server-side skips returned in the upload response.
-			skipped = input.clientSkipped;
-			let totalUpdated = 0;
-			let totalInserted = 0;
-			const serverSkipped: { chartId: string; reason: string }[] = [];
+			clientSkipped = input.clientSkipped;
+			skipped = clientSkipped;
 			for (let i = 0; i < input.charts.length; i += MAX_UPLOAD_CHARTS) {
 				const batch = input.charts.slice(i, i + MAX_UPLOAD_CHARTS);
 				const result = await desktopHost.uploadScores<UploadScoresResult>({
@@ -520,7 +547,7 @@
 					// Merge accumulated server skips from already-committed batches
 					// before returning — otherwise rejected charts (e.g. "chart not
 					// found") from successful earlier batches are lost.
-					skipped = [...input.clientSkipped, ...serverSkipped];
+					skipped = [...clientSkipped, ...serverSkipped];
 					return;
 				}
 				totalUpdated += result.data.updatedCharts;
@@ -528,9 +555,14 @@
 				serverSkipped.push(...(result.data.skipped ?? []));
 			}
 			uploadStatus = `Uploaded ${totalUpdated} chart(s), ${totalInserted} score(s).`;
-			skipped = [...input.clientSkipped, ...serverSkipped];
+			skipped = [...clientSkipped, ...serverSkipped];
 		} catch (e) {
-			uploadStatus = e instanceof Error ? e.message : 'Upload failed.';
+			const partial =
+				totalUpdated > 0 || totalInserted > 0
+					? ` Partial upload: ${totalUpdated} chart(s), ${totalInserted} score(s) committed before failure.`
+					: '';
+			uploadStatus = `${e instanceof Error ? e.message : 'Upload failed.'}${partial}`;
+			skipped = [...clientSkipped, ...serverSkipped];
 		} finally {
 			uploading = false;
 		}
@@ -545,7 +577,7 @@
 			<button
 				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 				onclick={handleChooseDb}
-				disabled={uploading || loading}
+				disabled={uploading || loading || linkingCharts}
 			>
 				<FolderOpen size={16} /> Choose songs.db
 			</button>
@@ -553,14 +585,14 @@
 				<button
 					class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 					onclick={() => dbPath && loadScores(dbPath)}
-					disabled={uploading || loading}
+					disabled={uploading || loading || linkingCharts}
 				>
 					<RefreshCw size={16} /> Reparse
 				</button>
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
 					onclick={handleUpload}
-					disabled={uploading || loading}
+					disabled={uploading || loading || linkingCharts}
 				>
 					<Upload size={16} /> Upload
 				</button>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { _, locale } from 'svelte-i18n';
 	import type { ScoredSimfile } from '$lib/api/score';
+	import { formatLevel } from '$lib/utils';
 
 	interface Props {
 		song: ScoredSimfile;
@@ -42,7 +43,7 @@
 						class="rounded-full border border-purple-500/30 bg-purple-600/20 px-2 py-1 text-xs font-medium text-purple-200"
 					>
 						{chart.label} · {$_('score.level_short')}
-						{chart.level}
+						{formatLevel(chart.level)}
 					</span>
 					{#if chart.chartScore}
 						<span class="text-xs text-slate-400">

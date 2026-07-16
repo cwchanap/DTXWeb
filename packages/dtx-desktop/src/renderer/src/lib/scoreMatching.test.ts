@@ -54,4 +54,19 @@ describe('matchCharts', () => {
 		const result = matchCharts([local(50)], [cloud('seed', 50, 'BASIC')]);
 		expect(result).toEqual(['seed']);
 	});
+
+	it('treats a stray decimal cloud level as already display-scale (not ÷10)', () => {
+		// The GraphQL schema exposes `level` as Float, so a decimal like 5.5 can
+		// reach us even though the canonical form is the encoded integer 55.
+		// Dividing 5.5 by 10 would yield 0.55 and match the wrong local chart.
+		const result = matchCharts([local(55)], [cloud('a', 5.5)]);
+		expect(result).toEqual(['a']);
+	});
+
+	it('does not cross-match decimal and encoded levels for different charts', () => {
+		// 5.5 (display) and 55 (encoded == 5.5) both decode to 5.5; local 55 and 88
+		// must still pair to their own cloud chart, not get swapped by the heuristic.
+		const result = matchCharts([local(55), local(88)], [cloud('a', 5.5), cloud('b', 88)]);
+		expect(result).toEqual(['a', 'b']);
+	});
 });

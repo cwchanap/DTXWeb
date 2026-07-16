@@ -13,7 +13,7 @@ const song: ScoredSimfile = {
 		{
 			id: 10,
 			label: 'BASIC',
-			level: 5,
+			level: 50,
 			chartScore: {
 				playCount: 10,
 				clearCount: 4,
@@ -55,7 +55,7 @@ const song: ScoredSimfile = {
 				]
 			}
 		},
-		{ id: 11, label: 'EXTREME', level: 8, chartScore: null }
+		{ id: 11, label: 'EXTREME', level: 80, chartScore: null }
 	]
 };
 
@@ -64,7 +64,7 @@ describe('ScoreCard', () => {
 		render(ScoreCard, { props: { song } });
 		expect(screen.getByText('Test Song')).toBeInTheDocument();
 		expect(screen.getByText('Test Artist')).toBeInTheDocument();
-		expect(screen.getByText('BASIC · score.level_short 5')).toBeInTheDocument();
+		expect(screen.getByText('BASIC · score.level_short 5.00')).toBeInTheDocument();
 		expect(screen.getByText('912,380')).toBeInTheDocument();
 		expect(screen.getByText('91.30%')).toBeInTheDocument();
 		expect(screen.getByText('S')).toBeInTheDocument();
@@ -82,13 +82,13 @@ describe('ScoreCard', () => {
 				{
 					id: 11,
 					label: 'EXTREME',
-					level: 8,
+					level: 80,
 					chartScore: { playCount: 2, clearCount: 0, best: null, recent: [] }
 				}
 			]
 		};
 		render(ScoreCard, { props: { song: songWithPlayedNoBest } });
-		expect(screen.getByText('EXTREME · score.level_short 8')).toBeInTheDocument();
+		expect(screen.getByText('EXTREME · score.level_short 8.00')).toBeInTheDocument();
 		expect(screen.getByText('score.no_best_score')).toBeInTheDocument();
 	});
 
@@ -97,7 +97,7 @@ describe('ScoreCard', () => {
 		// badge, no empty shell, no "No best score" placeholder. This avoids
 		// noise from unplayed difficulties on a song with many charts.
 		render(ScoreCard, { props: { song } });
-		expect(screen.queryByText('EXTREME · score.level_short 8')).not.toBeInTheDocument();
+		expect(screen.queryByText('EXTREME · score.level_short 8.00')).not.toBeInTheDocument();
 		expect(screen.queryByText('score.no_best_score')).not.toBeInTheDocument();
 	});
 
@@ -125,7 +125,7 @@ describe('ScoreCard', () => {
 				{
 					id: 10,
 					label: 'BASIC',
-					level: 5,
+					level: 50,
 					chartScore: {
 						playCount: 6,
 						clearCount: 6,

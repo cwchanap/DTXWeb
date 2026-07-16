@@ -14,13 +14,27 @@ export interface CloudChart {
 const EPSILON = 1e-9;
 
 /**
- * Decode a raw `dtx_files.level` integer to the display scale used by local
- * `drumLevel / 10`. The D1 column is `INTEGER` and stores levels on either the
- * ×10 scale (e.g. 55 == 5.5, the e2e seed uses 50 for 5.0) or the ×100 scale
- * (values > 100, e.g. 550 == 5.5). This mirrors the heuristic in the web
- * `formatLevelDisplay` so cloud and local levels are compared on the same scale.
+ * Decode a raw `dtx_files.level` value to the display scale used by local
+ * `drumLevel / 10`. The canonical storage contract is an encoded integer on
+ * either the ×10 scale (e.g. 55 == 5.5, the e2e seed uses 50 for 5.0) or the
+ * ×100 scale (values > 100, e.g. 550 == 5.5). This mirrors the heuristic in the
+ * web `formatLevelDisplay` so cloud and local levels are compared on the same
+ * scale.
+ *
+ * The GraphQL schema exposes `level` as a `Float`, so a stray decimal value
+ * (e.g. 5.5) can reach us even though the canonical form is encoded. A
+ * non-integer is already on the display scale — dividing it again would yield
+ * 0.55 and match it against the wrong local chart — so it is returned as-is.
  */
-const normalizeCloudLevel = (level: number): number => (level > 100 ? level / 100 : level / 10);
+const normalizeCloudLevel = (level: number): number =>
+	Number.isInteger(level) ? (level > 100 ? level / 100 : level / 10) : level;
+
+/**
+ * Format a raw `dtx_files.level` for display (e.g. the manual-target dropdown),
+ * applying the same encoded-integer decode as `normalizeCloudLevel` and rendering
+ * to two decimal places, matching the web `formatLevelDisplay` output.
+ */
+export const formatCloudLevel = (level: number): string => normalizeCloudLevel(level).toFixed(2);
 
 /**
  * Pair local DTXMania charts to a linked simfile's cloud charts by difficulty.

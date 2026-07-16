@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { AlertTriangle } from '@lucide/svelte';
 	import type { LocalChartData } from '../lib/scoreTypes';
-	import type { CloudChart } from '../lib/scoreMatching';
+	import { formatCloudLevel, type CloudChart } from '../lib/scoreMatching';
 
 	interface Props {
 		chart: LocalChartData;
@@ -47,7 +47,9 @@
 			>
 				<option value="">— none —</option>
 				{#each cloudCharts as cc}
-					<option value={cc.id}>{cc.label || 'chart'} (Lv {cc.level})</option>
+					<option value={cc.id}
+						>{cc.label || 'chart'} (Lv {formatCloudLevel(cc.level)})</option
+					>
 				{/each}
 			</select>
 		</label>

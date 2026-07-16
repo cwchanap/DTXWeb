@@ -1,8 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
+import { formatLevel, formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
 import type { DtxFileRow } from '@dtx/common';
 
 describe('utils', () => {
+	describe('formatLevel', () => {
+		it('decodes an encoded ×10 integer to two decimals', () => {
+			expect(formatLevel(50)).toBe('5.00');
+			expect(formatLevel(55)).toBe('5.50');
+		});
+
+		it('decodes an encoded ×100 integer (values > 100)', () => {
+			expect(formatLevel(550)).toBe('5.50');
+			expect(formatLevel(880)).toBe('8.80');
+		});
+
+		it('treats a stray decimal as already display-scale (not ÷10)', () => {
+			// The GraphQL schema exposes `level` as Float, so 5.5 can arrive even
+			// though the canonical form is the encoded integer 55. Dividing again
+			// would yield 0.55 — the ScoreCard/ChartListItem P2 bug.
+			expect(formatLevel(5.5)).toBe('5.50');
+			expect(formatLevel(8.75)).toBe('8.75');
+		});
+
+		it('parses string levels and treats non-finite as zero', () => {
+			expect(formatLevel('20')).toBe('2.00');
+			expect(formatLevel('invalid')).toBe('0.00');
+			expect(formatLevel(undefined)).toBe('0.00');
+			expect(formatLevel(null)).toBe('0.00');
+		});
+	});
+
 	describe('formatLevelDisplay', () => {
 		it('should format level display for normal levels', () => {
 			const dtxFiles: DtxFileRow[] = [

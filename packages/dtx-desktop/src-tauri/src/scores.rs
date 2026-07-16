@@ -282,11 +282,19 @@ fn build_best(score: &DrumsScoreRow) -> Option<ScorePayload> {
     if score.play_count == 0 {
         return None;
     }
+    // `best_achievement_rate` is read straight from songs.db (BestAchievementRate
+    // REAL). A corrupt NaN/Inf is not JSON-serializable and would abort the
+    // whole ScorePayload across the Tauri IPC boundary, failing the entire
+    // database parse for one bad row. Mirror `parse_history_line`'s finiteness
+    // guard: drop both `achievement_rate` and the derived `rank_label` (a rank
+    // derived from NaN/Inf would be misleading) instead of propagating it.
+    let achievement_rate = Some(score.best_achievement_rate).filter(|v| v.is_finite());
+    let rank_label = achievement_rate.map(|r| derive_rank_label(r).to_string());
     Some(ScorePayload {
         is_best: true,
         score: Some(score.best_score),
-        achievement_rate: Some(score.best_achievement_rate),
-        rank_label: Some(derive_rank_label(score.best_achievement_rate).to_string()),
+        achievement_rate,
+        rank_label,
         full_combo: score.full_combo != 0,
         cleared: score.clear_count > 0,
         max_combo: Some(score.max_combo),

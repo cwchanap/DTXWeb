@@ -18,6 +18,63 @@ fn derive_rank_label_covers_all_bands() {
     assert_eq!(derive_rank_label(0.0), "D");
 }
 
+/// `build_best` reads `best_achievement_rate` straight from songs.db
+/// (BestAchievementRate REAL). A corrupt NaN/Inf is not JSON-serializable and
+/// would abort the whole ScorePayload across the Tauri IPC boundary, failing
+/// the entire database parse for one bad row. Mirror `parse_history_line`'s
+/// finiteness guard: drop both `achievement_rate` and the derived `rank_label`
+/// (a rank derived from NaN/Inf would be misleading) instead of propagating
+/// the non-finite value.
+#[test]
+fn build_best_drops_non_finite_achievement_rate() {
+    let mut row = DrumsScoreRow {
+        best_score: 950000,
+        best_achievement_rate: 91.3,
+        full_combo: 0,
+        play_count: 7,
+        clear_count: 5,
+        max_combo: 800,
+        best_perfect: 500,
+        best_great: 30,
+        best_good: 10,
+        best_poor: 5,
+        best_miss: 2,
+        last_played_at: Some("2026-06-02".to_string()),
+    };
+
+    // Sanity: a finite rate round-trips with a derived rank label.
+    let finite = build_best(&row).expect("best present");
+    assert_eq!(finite.achievement_rate, Some(91.3));
+    assert_eq!(finite.rank_label.as_deref(), Some("S"));
+
+    // NaN: must NOT propagate as Some(NaN); both rate and rank drop to None.
+    row.best_achievement_rate = f64::NAN;
+    let nan = build_best(&row).expect("best present");
+    assert_eq!(nan.achievement_rate, None);
+    assert_eq!(nan.rank_label, None);
+    // Other fields are unaffected — the row still loads.
+    assert_eq!(nan.score, Some(950000));
+    assert!(nan.cleared);
+    assert_eq!(nan.max_combo, Some(800));
+
+    // +Inf: same guard.
+    row.best_achievement_rate = f64::INFINITY;
+    let inf = build_best(&row).expect("best present");
+    assert_eq!(inf.achievement_rate, None);
+    assert_eq!(inf.rank_label, None);
+
+    // -Inf: same guard.
+    row.best_achievement_rate = f64::NEG_INFINITY;
+    let neg_inf = build_best(&row).expect("best present");
+    assert_eq!(neg_inf.achievement_rate, None);
+    assert_eq!(neg_inf.rank_label, None);
+
+    // play_count == 0 still short-circuits to None regardless of rate.
+    row.play_count = 0;
+    row.best_achievement_rate = f64::NAN;
+    assert!(build_best(&row).is_none());
+}
+
 #[test]
 fn parse_history_line_reads_cleared_rank_and_rate() {
     let parsed = parse_history_line("10.26/6/2 Cleared (S: 91.30)");

@@ -36,9 +36,27 @@ describe('matchCharts', () => {
 	it('breaks an equidistant tie by matching difficulty label', () => {
 		const result = matchCharts(
 			[local(50, 'ADVANCED')],
-			[cloud('a', 40, 'BASIC'), cloud('b', 60, 'ADVANCED')]
+			[cloud('a', 48, 'BASIC'), cloud('b', 52, 'ADVANCED')]
 		);
 		expect(result).toEqual(['b']);
+	});
+
+	it('rejects a uniquely nearest candidate whose level is beyond MAX_LEVEL_DELTA', () => {
+		// target 5.0; the only cloud chart is at 6.0 (diff 1.0 > 0.5) — even
+		// though it's uniquely nearest, it's too far away to auto-match.
+		const result = matchCharts([local(50)], [cloud('a', 60)]);
+		expect(result).toEqual([null]);
+	});
+
+	it('rejects a label-disambiguated tie winner beyond MAX_LEVEL_DELTA', () => {
+		// Both candidates are 1.0 away (tie); label breaks the tie toward 'b',
+		// but 'b' is still beyond the threshold so it's rejected for manual
+		// selection.
+		const result = matchCharts(
+			[local(50, 'ADVANCED')],
+			[cloud('a', 40, 'BASIC'), cloud('b', 60, 'ADVANCED')]
+		);
+		expect(result).toEqual([null]);
 	});
 
 	it('returns null for every local chart when there are no cloud charts', () => {

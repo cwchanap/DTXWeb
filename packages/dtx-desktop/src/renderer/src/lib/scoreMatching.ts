@@ -14,6 +14,15 @@ export interface CloudChart {
 const EPSILON = 1e-9;
 
 /**
+ * Maximum normalized-level difference allowed for an auto-matched chart. A
+ * uniquely selected candidate whose level is farther than this from the local
+ * target is rejected (returns null for manual selection) — a "nearest" match
+ * that's still multiple levels away is likely the wrong chart. Levels are on
+ * the 0-10 display scale (e.g. 5.5), so 0.5 == half a level.
+ */
+const MAX_LEVEL_DELTA = 0.5;
+
+/**
  * Decode a raw `dtx_files.level` value to the display scale used by local
  * `drumLevel / 10`. The canonical storage contract is an encoded integer on
  * either the ×10 scale (e.g. 55 == 5.5, the e2e seed uses 50 for 5.0) or the
@@ -41,7 +50,10 @@ export const formatCloudLevel = (level: number): string => normalizeCloudLevel(l
  * Returns, aligned to `local` by index, the matched cloud chart id or null.
  * Each cloud chart is used at most once (greedy, in local order); an equidistant
  * tie is broken by a non-empty, case-insensitive label match, and an unbroken
- * tie (or exhausted cloud charts) yields null for manual selection.
+ * tie (or exhausted cloud charts) yields null for manual selection. A selected
+ * chart whose normalized level differs from the local target by more than
+ * `MAX_LEVEL_DELTA` is also rejected — a distant "nearest" match is likely the
+ * wrong chart and is left for manual selection.
  */
 export const matchCharts = (local: LocalChart[], cloud: CloudChart[]): (string | null)[] => {
 	const used = new Set<string>();
@@ -67,6 +79,12 @@ export const matchCharts = (local: LocalChart[], cloud: CloudChart[]): (string |
 		}
 
 		if (!chosen) return null;
+		// Reject any selected chart whose normalized level is too far from the
+		// target — whether uniquely nearest or label-disambiguated — so a
+		// distant "match" is left for manual selection instead of silently
+		// pairing the wrong chart.
+		const chosenDiff = Math.abs(normalizeCloudLevel(chosen.level) - target);
+		if (chosenDiff - MAX_LEVEL_DELTA > EPSILON) return null;
 		used.add(chosen.id);
 		return chosen.id;
 	});

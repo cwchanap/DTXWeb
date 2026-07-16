@@ -606,7 +606,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: (i + 1) * 10,
+			drumLevel: i,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -632,7 +632,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 10
+				level: i
 			}))
 		});
 		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => ({
@@ -664,7 +664,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: (i + 1) * 10,
+			drumLevel: i,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -690,7 +690,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 10
+				level: i
 			}))
 		});
 		let callCount = 0;
@@ -729,7 +729,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: (i + 1) * 10,
+			drumLevel: i,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -755,7 +755,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 10
+				level: i
 			}))
 		});
 		let callCount = 0;
@@ -989,7 +989,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: (i + 1) * 10,
+			drumLevel: i,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -1015,7 +1015,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: (i + 1) * 10
+				level: i
 			}))
 		});
 		host.uploadScores

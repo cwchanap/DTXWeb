@@ -119,6 +119,19 @@ const checkUploadRateLimit = async (
 	return true;
 };
 
+// Refund the hourly token when every write failed (e.g. D1 outage) so a
+// user is not locked out for an hour with zero scores landed. Same ±1 race
+// tolerance as checkUploadRateLimit — acceptable for a cost-control guard.
+const refundUploadToken = async (kv: KVNamespace, userId: string): Promise<void> => {
+	const hour = Math.floor(Date.now() / 3_600_000);
+	const key = `uploadscores:${userId}:${hour}`;
+	const currentRaw = await kv.get(key);
+	const current = currentRaw ? Number(currentRaw) : 0;
+	if (Number.isFinite(current) && current > 0) {
+		await kv.put(key, String(current - 1), { expirationTtl: 3600 });
+	}
+};
+
 const SkippedChartRef = builder
 	.objectRef<{ chartId: string; reason: string }>('SkippedChart')
 	.implement({
@@ -224,6 +237,12 @@ const validateChartScores = (
 	if (scores.length === 0) return { ok: false, reason: 'no scores provided' };
 
 	const bestCount = scores.filter((s) => s.isBest).length;
+	// A payload with zero best rows would erase the stored best via the
+	// replace-all batch (DELETE + INSERT only recent rows) — the same data
+	// loss the empty-scores guard above prevents. Require exactly one best
+	// row, matching the desktop client contract (build_best always emits a
+	// best row when play_count > 0).
+	if (bestCount === 0) return { ok: false, reason: 'no best score' };
 	if (bestCount > 1) return { ok: false, reason: 'more than one best score' };
 
 	// Recent-row cap checked before per-row filtering so 6 valid recent rows
@@ -478,6 +497,14 @@ builder.mutationField('uploadScores', (t) =>
 						skipped.push({ chartId: w.chartId, reason: 'write failed' });
 					}
 				}
+			}
+
+			// If every write failed (e.g. D1 outage), refund the hourly token so
+			// the user isn't locked out for an hour with zero scores landed.
+			// Partial success (some charts wrote) still consumes the token —
+			// those scores are persisted.
+			if (updatedCharts === 0) {
+				await refundUploadToken(ctx.kv, ctx.user!.id);
 			}
 
 			return { updatedCharts, insertedScores, skipped };

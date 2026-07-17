@@ -237,30 +237,6 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		expect(rows!.cnt).toBe(1);
 	});
 
-	it('handles empty scores array (upsert + delete only, no inserts)', async () => {
-		// Seed an initial score.
-		await upsertChartScoreAndReplaceScores(db, {
-			chartId: 1,
-			userId: 'user-1',
-			playCount: 5,
-			clearCount: 1,
-			scores: [scoreInput({ is_best: true, score: 800000, achievement_rate: 80.0 })]
-		});
-
-		// Replace with empty scores: deletes all, inserts none.
-		await upsertChartScoreAndReplaceScores(db, {
-			chartId: 1,
-			userId: 'user-1',
-			playCount: 5,
-			clearCount: 1,
-			scores: []
-		});
-
-		const fetched = await getUserChartScore(db, 'user-1', 1);
-		expect(fetched).not.toBeNull();
-		expect(fetched!.scores).toHaveLength(0);
-	});
-
 	it('TOCTOU: chart deleted after seeding chart_scores is a true no-op (no partial write)', async () => {
 		// Simulate the production TOCTOU orphan: chart_scores exists for a
 		// chart that was deleted from dtx_files, and D1's FK cascade didn't

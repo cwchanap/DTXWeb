@@ -382,6 +382,7 @@ describe('uploadScores', () => {
 	it('skips a chart with more than 5 recent scores', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const best = { isBest: true, score: 900, fullCombo: false, cleared: true };
 		const recent = Array.from({ length: 6 }, (_v, i) => ({
 			isBest: false,
 			achievementRate: 50,
@@ -393,7 +394,11 @@ describe('uploadScores', () => {
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
 			variables: {
-				input: { charts: [{ chartId: '10', playCount: 6, clearCount: 0, scores: recent }] }
+				input: {
+					charts: [
+						{ chartId: '10', playCount: 7, clearCount: 0, scores: [best, ...recent] }
+					]
+				}
 			}
 		});
 		const payload = result.data?.uploadScores as {
@@ -428,6 +433,39 @@ describe('uploadScores', () => {
 			skipped: { chartId: string; reason: string }[];
 		};
 		expect(payload.skipped[0].reason).toBe('more than one best score');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('skips a chart with no best score (would erase the stored best via replace)', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 0,
+							scores: [
+								{
+									isBest: false,
+									achievementRate: 80,
+									fullCombo: false,
+									cleared: true,
+									displayOrder: 1
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.skipped[0].reason).toBe('no best score');
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
@@ -477,34 +515,7 @@ describe('uploadScores', () => {
 		);
 	});
 
-	it('skips a chart with a displayOrder outside the 1..5 range', async () => {
-		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
-		const ctx = makeCtx({ user: { id: 'user-1' } as never });
-		const result = await runQuery(ctx, {
-			query: uploadMutation,
-			variables: {
-				input: {
-					charts: [
-						{
-							chartId: '10',
-							playCount: 1,
-							clearCount: 0,
-							scores: [
-								{ isBest: false, fullCombo: false, cleared: false, displayOrder: 6 }
-							]
-						}
-					]
-				}
-			}
-		});
-		const payload = result.data?.uploadScores as {
-			skipped: { chartId: string; reason: string }[];
-		};
-		expect(payload.skipped[0].reason).toBe('displayOrder out of range (expected 1..5)');
-		expect(mockedUpsertReplace).not.toHaveBeenCalled();
-	});
-
-	it('drops a duplicate displayOrder row but keeps the first occurrence', async () => {
+	it('drops a displayOrder-out-of-range recent row but keeps the best', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
@@ -518,6 +529,40 @@ describe('uploadScores', () => {
 							playCount: 2,
 							clearCount: 0,
 							scores: [
+								{ isBest: true, score: 900, fullCombo: false, cleared: true },
+								{ isBest: false, fullCombo: false, cleared: false, displayOrder: 6 }
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: unknown[];
+		};
+		// The out-of-range recent row is dropped; the best is kept.
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.insertedScores).toBe(1);
+		expect(payload.skipped).toEqual([]);
+	});
+
+	it('drops a duplicate displayOrder row but keeps the first occurrence', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 3,
+							clearCount: 0,
+							scores: [
+								{ isBest: true, score: 900, fullCombo: false, cleared: true },
 								{
 									isBest: false,
 									fullCombo: false,
@@ -539,7 +584,7 @@ describe('uploadScores', () => {
 		// The first occurrence is kept; the duplicate is dropped. The chart is
 		// not skipped — only the bad row is.
 		expect(payload.updatedCharts).toBe(1);
-		expect(payload.insertedScores).toBe(1);
+		expect(payload.insertedScores).toBe(2);
 		expect(payload.skipped).toEqual([]);
 	});
 
@@ -753,6 +798,47 @@ describe('uploadScores', () => {
 		expect(payload.insertedScores).toBe(1);
 		expect(payload.skipped).toEqual([{ chartId: '11', reason: 'write failed' }]);
 		expect(mockedUpsertReplace).toHaveBeenCalledTimes(2);
+	});
+
+	it('refunds the hourly token when every write fails (D1 outage)', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10]));
+		mockedUpsertReplace.mockRejectedValue(new Error('D1 batch failed'));
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const kvGet = ctx.kv.get as unknown as ReturnType<typeof vi.fn>;
+		const kvPut = ctx.kv.put as unknown as ReturnType<typeof vi.fn>;
+		// First get: rate-limit check (counter at 0 → allowed, increments to 1).
+		// Second get: refund check (counter at 1 → decrements back to 0).
+		kvGet.mockResolvedValueOnce(null).mockResolvedValueOnce('1');
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.updatedCharts).toBe(0);
+		expect(payload.skipped).toEqual([{ chartId: '10', reason: 'write failed' }]);
+		// Two puts: first increments (rate-limit), second decrements (refund).
+		expect(kvPut).toHaveBeenCalledTimes(2);
+		// The refund put writes the decremented value (0).
+		expect(kvPut).toHaveBeenNthCalledWith(
+			2,
+			expect.stringContaining('uploadscores:user-1:'),
+			'0',
+			{ expirationTtl: 3600 }
+		);
 	});
 
 	// Exercises the WRITE_CONCURRENCY=8 chunk boundary: 9 writable charts span

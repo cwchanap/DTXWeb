@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { _ } from 'svelte-i18n';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { Button } from '@dtx/ui-components';
@@ -24,6 +25,35 @@
 	// the loading state prematurely.
 	let loadRequestId = 0;
 
+	// myScoredSimfiles is user-scoped: FORBIDDEN/401 means the session expired
+	// (or never existed). Spec §8 requires routing to /login rather than a
+	// dead-end Retry that will keep failing with the same auth error.
+	const isAuthError = (error: unknown): boolean => {
+		if (!(error instanceof Error)) return false;
+		const msg = error.message.toLowerCase();
+		if (
+			msg.includes('forbidden') ||
+			msg.includes('unauthorized') ||
+			msg.includes('not authenticated')
+		) {
+			return true;
+		}
+		const response = (
+			error as {
+				response?: {
+					status?: number;
+					errors?: Array<{ extensions?: { code?: string } }>;
+				};
+			}
+		).response;
+		if (response?.status === 401) return true;
+		return (
+			response?.errors?.some(
+				(e) => e.extensions?.code === 'FORBIDDEN' || e.extensions?.code === 'UNAUTHORIZED'
+			) ?? false
+		);
+	};
+
 	const loadScores = async (): Promise<void> => {
 		const requestId = ++loadRequestId;
 		loading = true;
@@ -46,6 +76,10 @@
 			}
 		} catch (error) {
 			if (requestId !== loadRequestId) return;
+			if (isAuthError(error)) {
+				goto('/login');
+				return;
+			}
 			console.error('Failed to load scores:', error);
 			loadError = true;
 		} finally {

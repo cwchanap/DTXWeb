@@ -793,15 +793,21 @@ describe('Scores', () => {
 
 	it('re-enables the Upload button even when restoreLinksFor throws during upload', async () => {
 		// Seed a saved link so restoreLinksFor has entries to process during
-		// upload. fetchCloudSong throws synchronously so the .map() inside
-		// restoreLinksFor throws before Promise.allSettled can catch it —
+		// upload. Upload restore skips title lookup (cosmetic) and only fetches
+		// charts — throw synchronously from fetchCloudSongCharts so the .map()
+		// inside restoreLinksFor throws before Promise.allSettled can catch it,
 		// simulating the kind of unexpected error that the old try/finally
 		// scope (which only wrapped the batch loop) missed, leaving the Upload
 		// button stuck disabled forever.
 		host.readScoreSongLinks.mockResolvedValue({
 			['/path/songs.db\u001f1']: '42'
 		});
+		// Page restore (fetchTitles:true) fails on title lookup so the link is
+		// not committed; upload restore then retries with charts only.
 		host.fetchCloudSong.mockImplementation(() => {
+			throw new Error('title explosion');
+		});
+		host.fetchCloudSongCharts.mockImplementation(() => {
 			throw new Error('synchronous explosion');
 		});
 

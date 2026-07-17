@@ -8,8 +8,12 @@ vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 	return { Pagination: PaginationStub };
 });
 
-const { myScoredSimfilesMock } = vi.hoisted(() => ({ myScoredSimfilesMock: vi.fn() }));
+const { myScoredSimfilesMock, gotoMock } = vi.hoisted(() => ({
+	myScoredSimfilesMock: vi.fn(),
+	gotoMock: vi.fn()
+}));
 vi.mock('$lib/api', () => ({ myScoredSimfiles: myScoredSimfilesMock }));
+vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 
 import ScoreList from './ScoreList.svelte';
 import type { ScoredSimfile } from '$lib/api/score';
@@ -30,6 +34,7 @@ const song: ScoredSimfile = {
 
 beforeEach(() => {
 	myScoredSimfilesMock.mockReset();
+	gotoMock.mockReset();
 });
 
 describe('ScoreList', () => {
@@ -50,6 +55,23 @@ describe('ScoreList', () => {
 		myScoredSimfilesMock.mockRejectedValue(new Error('boom'));
 		render(ScoreList);
 		await waitFor(() => expect(screen.getByText(/score\.load_error/)).toBeInTheDocument());
+		expect(gotoMock).not.toHaveBeenCalled();
+	});
+
+	it('redirects to /login when the session has expired (FORBIDDEN)', async () => {
+		myScoredSimfilesMock.mockRejectedValue(new Error('Forbidden'));
+		render(ScoreList);
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
+		expect(screen.queryByText(/score\.load_error/)).not.toBeInTheDocument();
+	});
+
+	it('redirects to /login when the GraphQL response carries FORBIDDEN', async () => {
+		const err = Object.assign(new Error('Forbidden'), {
+			response: { errors: [{ extensions: { code: 'FORBIDDEN' } }] }
+		});
+		myScoredSimfilesMock.mockRejectedValue(err);
+		render(ScoreList);
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
 	});
 
 	it('retries the load when the retry button is clicked', async () => {

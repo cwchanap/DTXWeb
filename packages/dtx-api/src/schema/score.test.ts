@@ -237,7 +237,8 @@ describe('uploadScores', () => {
 		expect(result.errors?.[0].extensions?.code).toBe('FORBIDDEN');
 	});
 
-	it('rejects with RATE_LIMITED when the per-user hourly cap is exceeded', async () => {
+	it('rejects with RATE_LIMITED when the per-user hourly cap is exceeded on a writable upload', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		// Override the kv mock to simulate the user already hitting the cap.
 		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce(
@@ -245,9 +246,49 @@ describe('uploadScores', () => {
 		);
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
-			variables: { input: { charts: [] } }
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
 		});
 		expect(result.errors?.[0].extensions?.code).toBe('RATE_LIMITED');
+		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+	});
+
+	it('does not consume a rate-limit token when every chart is skipped', async () => {
+		mockedVisibility.mockResolvedValue(new Map());
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const kvPut = ctx.kv.put as unknown as ReturnType<typeof vi.fn>;
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			skipped: { chartId: string; reason: string }[];
+			updatedCharts: number;
+		};
+		expect(payload.updatedCharts).toBe(0);
+		expect(payload.skipped[0].reason).toBe('chart not found');
+		expect(kvPut).not.toHaveBeenCalled();
 	});
 
 	it('upserts a visible chart and replaces its scores atomically', async () => {
@@ -535,8 +576,9 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
-	it('skips a chart with a rankLabel outside the known set', async () => {
+	it('strips an unknown rankLabel and still accepts the chart', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -562,10 +604,17 @@ describe('uploadScores', () => {
 			}
 		});
 		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
 			skipped: { chartId: string; reason: string }[];
 		};
-		expect(payload.skipped[0].reason).toBe('rankLabel must be one of SS/S/A/B/C/D/E/F');
-		expect(mockedUpsertReplace).not.toHaveBeenCalled();
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.skipped).toEqual([]);
+		expect(mockedUpsertReplace).toHaveBeenCalledWith(
+			ctx.db,
+			expect.objectContaining({
+				scores: [expect.objectContaining({ rank_label: null, score: 900 })]
+			})
+		);
 	});
 
 	it('accepts a chart with a valid rankLabel', async () => {
@@ -763,7 +812,8 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
-	it('honors the MAX_UPLOADS_PER_HOUR env override', async () => {
+	it('honors the MAX_UPLOADS_PER_HOUR env override on a writable upload', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10]));
 		const ctx = makeCtx({
 			user: { id: 'user-1' } as never,
 			env: { ...makeEnv(), MAX_UPLOADS_PER_HOUR: '2' }
@@ -772,27 +822,64 @@ describe('uploadScores', () => {
 		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce('2');
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
-			variables: { input: { charts: [] } }
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
 		});
 		expect(result.errors?.[0].extensions?.code).toBe('RATE_LIMITED');
 	});
 
 	it('falls back to the default when MAX_UPLOADS_PER_HOUR is non-numeric', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 		const ctx = makeCtx({
 			user: { id: 'user-1' } as never,
 			env: { ...makeEnv(), MAX_UPLOADS_PER_HOUR: 'not-a-number' }
 		});
 		// Default cap is 10; a counter of 9 must still be allowed through.
 		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce('9');
-		mockedVisibility.mockResolvedValue(new Map());
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		// No RATE_LIMITED error — default cap of 10 allows a counter of 9.
+		expect(result.errors).toBeUndefined();
+		expect(mockedUpsertReplace).toHaveBeenCalledOnce();
+	});
+
+	it('does not rate-limit an empty charts payload', async () => {
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const kvPut = ctx.kv.put as unknown as ReturnType<typeof vi.fn>;
+		// Cap already exhausted — empty still succeeds without consuming.
+		(ctx.kv as unknown as { get: ReturnType<typeof vi.fn> }).get.mockResolvedValueOnce(
+			String(10)
+		);
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
 			variables: { input: { charts: [] } }
 		});
-		const payload = result.data?.uploadScores as { skipped: unknown[] };
-		// No RATE_LIMITED error — the request proceeded (empty charts → no writes).
 		expect(result.errors).toBeUndefined();
-		expect(payload.skipped).toEqual([]);
+		expect(kvPut).not.toHaveBeenCalled();
 	});
 
 	it('skips a chart with a negative playCount', async () => {

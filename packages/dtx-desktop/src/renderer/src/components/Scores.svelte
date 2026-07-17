@@ -186,19 +186,24 @@
 		});
 	};
 
-	// Restore cloud links for the given song indices: fetch the real cloud
-	// song title (so a restored link shows the actual title instead of a
-	// "Simfile #<id>" placeholder) and the cloud charts for auto-matching.
-	// `indices` is gated to the visible page by restoreLinksForPage so opening
-	// the view no longer fires N GraphQL requests for the whole library;
-	// handleUpload passes every index so the full library is restored before
-	// building the upload payload (an explicit user action justifies the
-	// full restore, but the fetches are still capped to avoid overwhelming
-	// the API/D1 with hundreds of concurrent requests). Songs already linked
-	// (manual link or prior restore) are skipped to avoid re-fetching on
-	// page-back or repeated restores.
+	// Restore cloud links for the given song indices: optionally fetch the
+	// real cloud song title (so a restored link shows the actual title instead
+	// of a "Simfile #<id>" placeholder) and always fetch cloud charts for
+	// auto-matching. `indices` is gated to the visible page by
+	// restoreLinksForPage so opening the view no longer fires N GraphQL
+	// requests for the whole library; handleUpload passes every index so the
+	// full library is restored before building the upload payload. Title
+	// lookup is cosmetic for upload, so handleUpload sets fetchTitles:false
+	// and only pays for chart fetches. Songs already linked (manual link or
+	// prior restore) are skipped to avoid re-fetching on page-back or
+	// repeated restores.
 	const RESTORE_CONCURRENCY = 8;
-	const restoreLinksFor = async (indices: number[], generation = loadGeneration) => {
+	const restoreLinksFor = async (
+		indices: number[],
+		generation = loadGeneration,
+		options: { fetchTitles?: boolean } = {}
+	) => {
+		const fetchTitles = options.fetchTitles !== false;
 		const entries = indices
 			.map((i) => ({ i, cloudId: savedLinks[songKey(songs[i])] }))
 			.filter((e): e is { i: number; cloudId: string } => !!e.cloudId)
@@ -208,17 +213,20 @@
 		// Fetch real cloud song titles in bounded-concurrency chunks so a
 		// large library (hundreds of saved links) doesn't fire hundreds of
 		// concurrent GraphQL/D1 requests at once. A fetch failure falls back
-		// to the placeholder so one bad link doesn't block the rest.
+		// to the placeholder so one bad link doesn't block the rest. Skipped
+		// entirely when fetchTitles is false (upload restore path).
 		const titleResults: PromiseSettledResult<FetchCloudSongResult>[] = [];
-		for (let i = 0; i < entries.length; i += RESTORE_CONCURRENCY) {
+		if (fetchTitles) {
+			for (let i = 0; i < entries.length; i += RESTORE_CONCURRENCY) {
+				if (generation !== loadGeneration) return;
+				const chunk = entries.slice(i, i + RESTORE_CONCURRENCY);
+				const results = await Promise.allSettled(
+					chunk.map((e) => desktopHost.fetchCloudSong<FetchCloudSongResult>(e.cloudId))
+				);
+				titleResults.push(...results);
+			}
 			if (generation !== loadGeneration) return;
-			const chunk = entries.slice(i, i + RESTORE_CONCURRENCY);
-			const results = await Promise.allSettled(
-				chunk.map((e) => desktopHost.fetchCloudSong<FetchCloudSongResult>(e.cloudId))
-			);
-			titleResults.push(...results);
 		}
-		if (generation !== loadGeneration) return;
 
 		// Build the CloudSong objects from title results, re-checking for
 		// manual links made during the async title-fetch window. Entries that
@@ -233,24 +241,26 @@
 			if (links[i]) continue;
 			const songRow = songs[i];
 			if (!songRow) continue;
-			const result = titleResults[idx];
 			let song: CloudSong = {
 				id: cloudId,
 				title: `Simfile #${cloudId}`,
 				artist: songRow.artist,
 				is_published: false
 			};
-			if (
-				result.status === 'fulfilled' &&
-				result.value.success &&
-				result.value.cloudSongData
-			) {
-				song = {
-					id: cloudId,
-					title: result.value.cloudSongData.title,
-					artist: result.value.cloudSongData.artist,
-					is_published: result.value.cloudSongData.is_published
-				};
+			if (fetchTitles) {
+				const result = titleResults[idx];
+				if (
+					result.status === 'fulfilled' &&
+					result.value.success &&
+					result.value.cloudSongData
+				) {
+					song = {
+						id: cloudId,
+						title: result.value.cloudSongData.title,
+						artist: result.value.cloudSongData.artist,
+						is_published: result.value.cloudSongData.is_published
+					};
+				}
 			}
 			toApply.push({ i, song });
 		}
@@ -513,12 +523,15 @@
 			}
 			// Paging only restores cloud links for the visible page. Upload walks
 			// the full `songs` array, so restore every saved link first — upload is
-			// an explicit user action, so the burst of fetches is expected and the
-			// user is already waiting on the result. Songs already linked are
+			// an explicit user action, so the burst of chart fetches is expected
+			// and the user is already waiting on the result. Title lookup is
+			// cosmetic on this path (matching only needs charts), so skip it to
+			// roughly halve the restore requests. Songs already linked are
 			// skipped inside restoreLinksFor.
 			await restoreLinksFor(
 				songs.map((_, i) => i),
-				loadGeneration
+				loadGeneration,
+				{ fetchTitles: false }
 			);
 			const input = buildUpload();
 			if (input.charts.length === 0) {

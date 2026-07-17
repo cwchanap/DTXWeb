@@ -201,7 +201,8 @@ const validateScoreFields = (s: InputScore): string | null => {
 	) {
 		return 'achievementRate out of range';
 	}
-	// rankLabel, when present, must be one of the known DTXMania rank tokens.
+	// rankLabel is stripped to null before this runs when unknown (see
+	// validateChartScores); remaining non-null values must be known tokens.
 	// The DB CHECK constraint (0002_scores.sql) mirrors this as a backstop.
 	if (s.rankLabel != null && !(VALID_RANK_LABELS as readonly string[]).includes(s.rankLabel)) {
 		return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
@@ -281,8 +282,17 @@ const validateChartScores = (
 		// Strip the displayOrder rather than dropping the row — the best score
 		// is the most valuable row and a stray displayOrder is a benign data
 		// error, not a reason to lose it.
-		const row: InputScore =
-			s.isBest && s.displayOrder != null ? { ...s, displayOrder: null } : s;
+		let row: InputScore = s.isBest && s.displayOrder != null ? { ...s, displayOrder: null } : s;
+
+		// Unknown rankLabel (e.g. a stray HistoryLine token) is cosmetic —
+		// strip to null rather than dropping the row / rejecting the chart.
+		// Mirrors the displayOrder strip above: keep the score, drop the field.
+		if (
+			row.rankLabel != null &&
+			!(VALID_RANK_LABELS as readonly string[]).includes(row.rankLabel)
+		) {
+			row = { ...row, rankLabel: null };
+		}
 
 		// Per-row field validation: drop the row if any individual field is bad.
 		const fieldError = validateScoreFields(row);
@@ -342,12 +352,10 @@ builder.mutationField('uploadScores', (t) =>
 			let updatedCharts = 0;
 			let insertedScores = 0;
 
-			// Reject an oversized payload BEFORE consuming a rate-limit token.
-			// The chart cap is a cheap pure-JS check (no I/O), so a malformed
-			// or pathologically large request is short-circuited here instead
-			// of burning the user's hourly upload allowance. Per-chart payload
-			// validation still runs after the rate-limit gate (it needs the
-			// visibility batch I/O, which we don't want to duplicate).
+			// Reject an oversized payload before any I/O. The chart cap is a
+			// cheap pure-JS check, so a malformed or pathologically large
+			// request is short-circuited without burning the hourly token or
+			// hitting D1 for visibility.
 			if (input.charts.length > MAX_UPLOAD_CHARTS) {
 				return {
 					updatedCharts: 0,
@@ -359,17 +367,6 @@ builder.mutationField('uploadScores', (t) =>
 						}
 					]
 				};
-			}
-
-			const allowed = await checkUploadRateLimit(
-				ctx.kv,
-				ctx.user!.id,
-				uploadHourlyLimit(ctx.env)
-			);
-			if (!allowed) {
-				throw new GraphQLError('Too Many Requests', {
-					extensions: { code: 'RATE_LIMITED' }
-				});
 			}
 
 			// Pre-fetch visibility for all charts with valid numeric IDs in a
@@ -478,6 +475,24 @@ builder.mutationField('uploadScores', (t) =>
 					playCount: chart.playCount,
 					clearCount: chart.clearCount,
 					inserts
+				});
+			}
+
+			// Rate-limit only when there is something to write. An all-skipped
+			// (or empty) payload must not burn an hourly token — validation
+			// failures are free, writes are not.
+			if (writable.length === 0) {
+				return { updatedCharts: 0, insertedScores: 0, skipped };
+			}
+
+			const allowed = await checkUploadRateLimit(
+				ctx.kv,
+				ctx.user!.id,
+				uploadHourlyLimit(ctx.env)
+			);
+			if (!allowed) {
+				throw new GraphQLError('Too Many Requests', {
+					extensions: { code: 'RATE_LIMITED' }
 				});
 			}
 

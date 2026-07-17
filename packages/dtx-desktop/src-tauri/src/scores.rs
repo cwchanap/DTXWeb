@@ -101,6 +101,23 @@ pub struct ParsedHistory {
     pub achievement_rate: Option<f64>,
 }
 
+/// Rank tokens accepted by the GraphQL upload validator / DB CHECK constraint.
+/// History lines with any other token keep the play but drop the rank so a
+/// stray label does not cause the whole chart to be rejected server-side.
+const VALID_RANK_LABELS: &[&str] = &["SS", "S", "A", "B", "C", "D", "E", "F"];
+
+fn sanitize_rank_label(rank: &str) -> Option<String> {
+    let trimmed = rank.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if VALID_RANK_LABELS.contains(&trimmed) {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
 /// `true` if `token` appears in `line` as a standalone word: at a line edge
 /// or adjacent to a non-alphanumeric character on each side. This enforces
 /// both the left and right word boundaries, so a token glued to a neighboring
@@ -141,12 +158,10 @@ pub fn parse_history_line(line: &str) -> ParsedHistory {
             let inner = &line[open + 1..close];
             match inner.split_once(':') {
                 Some((rank, rate)) => {
-                    let rank = rank.trim();
-                    let rank_label = if rank.is_empty() {
-                        None
-                    } else {
-                        Some(rank.to_string())
-                    };
+                    // Only forward ranks the API/DB accept; unknown tokens
+                    // (e.g. "EX", locale variants) become None so the row
+                    // still uploads without skipping the whole chart.
+                    let rank_label = sanitize_rank_label(rank);
                     // `parse::<f64>()` accepts "NaN"/"inf" as Ok; non-finite
                     // values are not valid JSON and would abort ScorePayload
                     // serialization across the Tauri IPC boundary. Reject them

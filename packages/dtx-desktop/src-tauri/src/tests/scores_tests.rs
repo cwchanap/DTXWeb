@@ -104,6 +104,19 @@ fn parse_history_line_tolerates_garbage() {
 }
 
 #[test]
+fn parse_history_line_drops_unknown_rank_tokens() {
+    // Keep the play (cleared + rate) but drop a rank the API would reject.
+    let parsed = parse_history_line("10.26/6/2 Cleared (EX: 91.30)");
+    assert_eq!(parsed.cleared, Some(true));
+    assert_eq!(parsed.rank_label, None);
+    assert_eq!(parsed.achievement_rate, Some(91.30));
+
+    let e = parse_history_line("Failed (E: 40.00)");
+    assert_eq!(e.rank_label.as_deref(), Some("E"));
+    assert_eq!(e.achievement_rate, Some(40.00));
+}
+
+#[test]
 fn parse_history_line_rejects_non_finite_rates() {
     // "NaN" and "inf" parse as f64 but are not JSON-serializable; treat them
     // as missing so a malformed history line never aborts the whole parse.

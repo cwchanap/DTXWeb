@@ -74,7 +74,7 @@ CREATE UNIQUE INDEX idx_scores_one_best ON scores(chart_score_id) WHERE is_best 
 
 ### Semantics
 
-- **`is_best`**: exactly one row per `chart_scores` (enforced by the partial unique index). Carries full best-play detail (`score`, `achievement_rate`, `rank_label`, `full_combo`, `max_combo`, judgement breakdown). `display_order` is NULL.
+- **`is_best`**: zero or one row per `chart_scores` (enforced by the partial unique index — at most one best; charts with only recent plays or never-played aggregates may have none). When present, carries full best-play detail (`score`, `achievement_rate`, `rank_label`, `full_combo`, `max_combo`, judgement breakdown). `display_order` is NULL.
 - **Recent rows**: `is_best = 0`, `display_order` 1–5 (1 = most recent). Carry `performed_at`, `achievement_rate`, `rank_label`, `cleared`; `score`/`max_combo`/judgement columns may be NULL (not available from DTXMania history — see §5.2).
 - **Aggregates** (`play_count`, `clear_count`) live on `chart_scores`, never duplicated onto individual rows.
 
@@ -97,11 +97,10 @@ All new DB functions live in `packages/common/src/lib/server/db.ts`, with Drizzl
 - **Drizzle schema**: add `chartScores` and `scores` tables mirroring §2.
 - **Row types**: `ChartScoreRow`, `ChartScoreInsert`, `ScoreRow`, `ScoreInsert`.
 - **New functions**:
-    - `upsertChartScore(db, { chartId, userId, playCount, clearCount })` → `ChartScoreRow`.
-    - `replaceScores(db, chartScoreId, scores: ScoreInsert[])` → deletes existing + inserts new (steps 2–3 above).
+    - `upsertChartScoreAndReplaceScores(db, { chartId, userId, playCount, clearCount, scores })` → `ChartScoreRow`. Single D1 `batch` transaction: upserts the `chart_scores` aggregate and replaces all score rows (DELETE + INSERT). Visibility-gated inside the batch (TOCTOU-safe). Prefer this over separate upsert/replace steps so no partial replacement can commit.
     - `getUserChartScore(db, userId, chartId)` → `{ chartScore, scores } | null`, scores ordered best-first then `display_order`.
     - `listUserScoredSimfiles(db, { userId, page, pageSize })` → `{ data: SimfileWithDtxFiles[]; count }` — simfiles the user has at least one `chart_scores` row on.
-    - `getChartVisibility(db, chartId)` → owning simfile's `{ user_id, is_published }`, for the upload auth check. (Reuses `getSimfileOwner` semantics joined through `dtx_files.simfile_id`.)
+    - `getChartVisibilityBatch(db, chartIds)` → `Map<chartId, { user_id, is_published }>` for the upload auth check (one query for the whole batch).
 - **Change to existing selects**: `getSimfile` and `listSimfiles` currently select only `level` + `label` from `dtx_files`. Add `id` to those selects so the GraphQL `DtxFile` can expose a stable chart id and resolve scores. `SimfileWithDtxFiles.dtx_files` is already `Partial<DtxFileRow>[]`, so carrying `id` is type-compatible.
 
 All new functions get unit tests in `db.test.ts` (miniflare/D1 test harness already used there), covering upsert, replace/idempotency, best-row uniqueness, and the scored-simfiles listing.
@@ -125,9 +124,10 @@ New schema module `packages/dtx-api/src/schema/score.ts`, registered in `schema/
 ### Mutation
 
 - **`uploadScores(input: UploadScoresInput!): UploadScoresResult!`** — scope `user`.
-    - For each chart: verify the chart exists and is **visible** to the caller (`is_published = 1` or owned by the caller) via `getChartVisibility`; charts failing this are collected into `skipped` rather than aborting the batch.
-    - Validate each chart's `scores`: at most one `isBest = true`; at most five rows with a non-null `displayOrder`; numeric fields finite; `achievementRate` within 0–100. Invalid chart payloads are skipped (with reason).
-    - For valid charts, run the §2 replace transaction (`upsertChartScore` + `replaceScores`).
+    - For each chart: verify the chart exists and is **visible** to the caller (`is_published = 1` or owned by the caller) via `getChartVisibilityBatch`; charts failing this are collected into `skipped` rather than aborting the batch.
+    - Validate each chart's `scores`: at most one `isBest = true` (zero best is allowed); at most five rows with a non-null `displayOrder`; numeric fields finite; `achievementRate` within 0–100. Unknown `rankLabel` tokens are stripped to null (not a skip). Other invalid chart payloads are skipped (with reason).
+    - Consume the per-user hourly rate-limit token only when at least one chart is writable after validation; empty/all-skipped uploads do not burn a token.
+    - For valid charts, run the §2 replace transaction (`upsertChartScoreAndReplaceScores`).
     - **Result** `UploadScoresResult { updatedCharts: Int!, insertedScores: Int!, skipped: [SkippedChart!]! }` where `SkippedChart { chartId: ID!, reason: String! }`.
 
 ### Query

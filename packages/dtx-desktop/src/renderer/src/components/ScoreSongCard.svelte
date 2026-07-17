@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
 	import { ChevronDown, ChevronRight } from '@lucide/svelte';
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import ScoreChartRow from './ScoreChartRow.svelte';
@@ -41,7 +42,7 @@
 			class="hover:text-hi flex min-w-0 flex-1 items-center gap-2 text-left"
 			onclick={onToggle}
 			aria-expanded={expanded}
-			aria-label="Toggle {song.title}"
+			aria-label={$_('score.link.toggle', { values: { title: song.title } })}
 		>
 			{#if expanded}
 				<ChevronDown size={16} class="text-faint shrink-0" />
@@ -55,18 +56,20 @@
 		</button>
 		<div class="relative ml-auto" data-cloud-song-autocomplete-trigger>
 			{#if link}
-				<span class="text-cyan text-sm">Linked: {link.title}</span>
+				<span class="text-cyan text-sm"
+					>{$_('score.link.linked', { values: { title: link.title } })}</span
+				>
 				<button
 					class="text-faint hover:text-hi ml-2 text-xs underline"
-					onclick={onAutocompleteToggle}>change</button
+					onclick={onAutocompleteToggle}>{$_('score.link.change')}</button
 				>
 			{:else}
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-lg border px-3 py-1.5 text-sm"
 					onclick={onAutocompleteToggle}
-					aria-label="Link to cloud song"
+					aria-label={$_('score.link.to_cloud')}
 				>
-					Link to cloud song
+					{$_('score.link.to_cloud')}
 				</button>
 			{/if}
 			<CloudSongAutocomplete

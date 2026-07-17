@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
 	import { Search, X, Music, User, Link } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { desktopHost } from '../services/desktopHost';
@@ -164,7 +165,7 @@
 		onkeydown={(e) => e.key === 'Escape' && handleClose()}
 		role="button"
 		tabindex="-1"
-		aria-label="Close popup"
+		aria-label={$_('score.link.close_popup')}
 	></div>
 
 	<!-- Popup -->
@@ -176,11 +177,11 @@
 		<!-- Header -->
 		<div class="border-hairline flex items-center gap-2 border-b p-4">
 			<Link size={18} class="text-cyan" />
-			<h3 class="font-display text-hi font-semibold">Link to Cloud Song</h3>
+			<h3 class="font-display text-hi font-semibold">{$_('score.link.title')}</h3>
 			<button
 				class="text-faint hover:bg-surface-2 hover:text-base-text ml-auto rounded-lg p-1"
 				onclick={handleClose}
-				aria-label="Close"
+				aria-label={$_('score.link.close')}
 			>
 				<X size={16} />
 			</button>
@@ -196,7 +197,7 @@
 					bind:this={searchInputRef}
 					type="text"
 					bind:value={searchQuery}
-					placeholder="Search by song title or artist..."
+					placeholder={$_('score.link.search_placeholder')}
 					class="border-hairline bg-surface-2 text-hi placeholder-faint focus:border-cyan w-full rounded-lg border py-2 pr-4 pl-10 focus:ring-1 focus:outline-none"
 					oninput={handleSearchInput}
 					onkeydown={handleKeydown}
@@ -209,7 +210,7 @@
 							selectedIndex = -1;
 						}}
 						class="text-faint hover:text-base-text absolute inset-y-0 right-0 flex items-center pr-3"
-						aria-label="Clear search"
+						aria-label={$_('score.link.clear_search')}
 					>
 						<X size={16} />
 					</button>
@@ -224,7 +225,7 @@
 					<div
 						class="border-cyan h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
 					></div>
-					<span class="text-dim ml-2 text-sm">Searching...</span>
+					<span class="text-dim ml-2 text-sm">{$_('score.link.searching')}</span>
 				</div>
 			{:else if searchQuery.trim().length >= 2}
 				{#if suggestions.length > 0}
@@ -257,7 +258,9 @@
 												? 'border-green/40 bg-green/10 text-green'
 												: 'bg-surface-2 text-dim'}"
 										>
-											{song.is_published ? 'Published' : 'Draft'}
+											{song.is_published
+												? $_('score.link.published')
+												: $_('score.link.draft')}
 										</span>
 									</div>
 								</div>
@@ -267,16 +270,16 @@
 				{:else}
 					<div class="border-hairline border-t p-6 text-center">
 						<Music size={24} class="text-faint mx-auto mb-2" />
-						<p class="text-dim text-sm font-medium">No songs found</p>
-						<p class="text-faint text-xs">Try a different search term</p>
+						<p class="text-dim text-sm font-medium">{$_('score.link.no_results')}</p>
+						<p class="text-faint text-xs">{$_('score.link.no_results_hint')}</p>
 					</div>
 				{/if}
 			{:else}
 				<div class="border-hairline border-t p-6 text-center">
 					<Search size={24} class="text-faint mx-auto mb-2" />
-					<p class="text-dim text-sm font-medium">Start typing to search</p>
+					<p class="text-dim text-sm font-medium">{$_('score.link.start_typing')}</p>
 					<p class="text-faint text-xs">
-						Enter at least 2 characters to search for cloud songs
+						{$_('score.link.min_chars')}
 					</p>
 				</div>
 			{/if}

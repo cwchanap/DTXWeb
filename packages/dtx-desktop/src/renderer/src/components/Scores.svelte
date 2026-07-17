@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { _ } from 'svelte-i18n';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { RefreshCw, FolderOpen, Trophy, Upload } from '@lucide/svelte';
 	import { desktopHost } from '../services/desktopHost';
@@ -23,38 +24,39 @@
 	// carries a volatile numeric parameter (e.g. "too many scores (max 10)")
 	// are matched by prefix so a cap change on the server doesn't silently
 	// drop the friendly text. Prefixes are checked after the exact map and
-	// are specific enough to avoid false positives.
+	// are specific enough to avoid false positives. Friendly text is sourced
+	// from the `score.skip.*` i18n namespace so it localizes with the locale.
 	const humanizeSkipReason = (reason: string): string => {
 		const exact: Record<string, string> = {
-			'invalid chart id': 'Chart ID is not valid',
-			'duplicate chart id': 'Chart appears twice in the upload',
-			'playCount must be a non-negative integer': 'Invalid play count',
-			'clearCount must be a non-negative integer': 'Invalid clear count',
-			'clearCount cannot exceed playCount': 'Clear count exceeds play count',
-			'no scores provided': 'No score rows provided',
-			'more than one best score': 'More than one best score',
-			'non-best score without displayOrder': 'Recent play missing order info',
-			'duplicate displayOrder': 'Duplicate recent play order',
-			'score must be a non-negative integer': 'Invalid score value',
-			'achievementRate out of range': 'Achievement rate out of range (0–100)',
-			'invalid performedAt': 'Invalid play date',
-			'performedAt cannot be in the future': 'Play date is in the future',
-			'judgment counts must be non-negative integers': 'Invalid judgment counts',
-			'no valid scores after filtering': 'All score rows were invalid',
-			'best score row invalid': 'Best score row was invalid — stored best preserved',
-			'chart not found': 'Chart not found on the server',
-			'write failed': 'Server write failed — try again'
+			'invalid chart id': 'score.skip.invalid_chart_id',
+			'duplicate chart id': 'score.skip.duplicate_chart_id',
+			'playCount must be a non-negative integer': 'score.skip.invalid_play_count',
+			'clearCount must be a non-negative integer': 'score.skip.invalid_clear_count',
+			'clearCount cannot exceed playCount': 'score.skip.clear_exceeds_play',
+			'no scores provided': 'score.skip.no_scores',
+			'more than one best score': 'score.skip.multiple_best',
+			'non-best score without displayOrder': 'score.skip.missing_order',
+			'duplicate displayOrder': 'score.skip.duplicate_order',
+			'score must be a non-negative integer': 'score.skip.invalid_score',
+			'achievementRate out of range': 'score.skip.achievement_out_of_range',
+			'invalid performedAt': 'score.skip.invalid_performed_at',
+			'performedAt cannot be in the future': 'score.skip.performed_at_future',
+			'judgment counts must be non-negative integers': 'score.skip.invalid_judgments',
+			'no valid scores after filtering': 'score.skip.no_valid_scores',
+			'best score row invalid': 'score.skip.best_invalid',
+			'chart not found': 'score.skip.chart_not_found',
+			'write failed': 'score.skip.write_failed'
 		};
 		const prefixes: [string, string][] = [
-			['too many scores', 'Too many score rows for one chart'],
-			['too many charts', 'Too many charts in one upload — try fewer'],
-			['more than', 'More than the allowed number of recent plays'],
-			['displayOrder out of range', 'Recent play order out of range'],
-			['rankLabel must be one of', 'Unknown rank label']
+			['too many scores', 'score.skip.too_many_scores'],
+			['too many charts', 'score.skip.too_many_charts'],
+			['more than', 'score.skip.more_than'],
+			['displayOrder out of range', 'score.skip.order_out_of_range'],
+			['rankLabel must be one of', 'score.skip.unknown_rank']
 		];
-		if (exact[reason]) return exact[reason];
-		for (const [prefix, label] of prefixes) {
-			if (reason.startsWith(prefix)) return label;
+		if (exact[reason]) return $_(exact[reason]);
+		for (const [prefix, key] of prefixes) {
+			if (reason.startsWith(prefix)) return $_(key);
 		}
 		return reason;
 	};
@@ -136,7 +138,7 @@
 		persistTimer = setTimeout(() => {
 			persistTimer = null;
 			desktopHost.writeScoreSongLinks(savedLinks).catch(() => {
-				toastStore.error('Could not save song links');
+				toastStore.error($_('score.save_links_failed'));
 			});
 		}, 300);
 	};
@@ -348,7 +350,7 @@
 			}
 		} catch (e) {
 			if (generation !== loadGeneration) return;
-			error = e instanceof Error ? e.message : 'Failed to read songs.db';
+			error = e instanceof Error ? e.message : $_('score.read_failed');
 			songs = [];
 		} finally {
 			if (generation === loadGeneration) {
@@ -403,7 +405,7 @@
 					if (persist) schedulePersist();
 					cloudChartsBySong[songIndex] = [];
 					matchesBySong[songIndex] = [];
-					toastStore.error('Could not fetch cloud charts for linked song');
+					toastStore.error($_('score.fetch_charts_failed'));
 					return;
 				}
 				const charts = result.data ?? [];
@@ -420,7 +422,7 @@
 				if (persist) schedulePersist();
 				cloudChartsBySong[songIndex] = [];
 				matchesBySong[songIndex] = [];
-				toastStore.error('Could not fetch cloud charts for linked song');
+				toastStore.error($_('score.fetch_charts_failed'));
 			}
 		})();
 		inflightLinkFetches.add(fetchWork);
@@ -482,10 +484,12 @@
 				// the dropped match so the user knows a chart was skipped, not
 				// silently lost.
 				if (seenChartIds.has(chartId)) {
-					const label = chart.difficultyLabel || 'DRUMS';
+					const label = chart.difficultyLabel || $_('score.drums_fallback');
 					clientSkipped.push({
 						chartId,
-						reason: `duplicate match — "${song.title}" ${label} already linked from another song`
+						reason: $_('score.duplicate_match', {
+							values: { title: song.title, label }
+						})
 					});
 					return;
 				}
@@ -547,8 +551,7 @@
 			);
 			const input = buildUpload();
 			if (input.charts.length === 0) {
-				uploadStatus =
-					'Nothing to upload — link a song and match at least one chart first.';
+				uploadStatus = $_('score.nothing_to_upload');
 				return;
 			}
 			// Surface client-side skips (duplicate chart matches) alongside any
@@ -566,9 +569,12 @@
 					// before the failure, instead of a bare "Upload failed."
 					const partial =
 						totalUpdated > 0 || totalInserted > 0
-							? ` Partial upload: ${totalUpdated} chart(s), ${totalInserted} score(s) committed before failure.`
+							? ' ' +
+								$_('score.partial_upload', {
+									values: { updated: totalUpdated, inserted: totalInserted }
+								})
 							: '';
-					uploadStatus = `${result.error ?? 'Upload failed.'}${partial}`;
+					uploadStatus = `${result.error ?? $_('score.upload_failed')}${partial}`;
 					// Merge accumulated server skips from already-committed batches
 					// before returning — otherwise rejected charts (e.g. "chart not
 					// found") from successful earlier batches are lost.
@@ -579,14 +585,16 @@
 				totalInserted += result.data.insertedScores;
 				serverSkipped.push(...(result.data.skipped ?? []));
 			}
-			uploadStatus = `Uploaded ${totalUpdated} chart(s), ${totalInserted} score(s).`;
+			uploadStatus = $_('score.uploaded', {
+				values: { updated: totalUpdated, inserted: totalInserted }
+			});
 			skipped = [...clientSkipped, ...serverSkipped];
 		} catch (e) {
 			const partial =
 				totalUpdated > 0 || totalInserted > 0
 					? ` Partial upload: ${totalUpdated} chart(s), ${totalInserted} score(s) committed before failure.`
 					: '';
-			uploadStatus = `${e instanceof Error ? e.message : 'Upload failed.'}${partial}`;
+			uploadStatus = `${e instanceof Error ? e.message : $_('score.upload_failed')}${partial}`;
 			skipped = [...clientSkipped, ...serverSkipped];
 		} finally {
 			uploading = false;
@@ -597,14 +605,15 @@
 <div class="bg-base text-base-text min-w-0 flex-1 overflow-auto p-6">
 	<div class="mb-4 flex items-center gap-3">
 		<Trophy size={22} class="text-cyan" />
-		<h1 class="font-display text-hi text-xl font-semibold">Scores</h1>
+		<h1 class="font-display text-hi text-xl font-semibold">{$_('score.title')}</h1>
 		<div class="ml-auto flex items-center gap-2">
 			<button
 				class="border-hairline bg-surface-1 hover:bg-surface-2 text-dim inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
 				onclick={handleChooseDb}
 				disabled={uploading || loading || linkingCharts}
 			>
-				<FolderOpen size={16} /> Choose songs.db
+				<FolderOpen size={16} />
+				{$_('score.choose_db')}
 			</button>
 			{#if dbPath}
 				<button
@@ -612,14 +621,16 @@
 					onclick={() => dbPath && loadScores(dbPath)}
 					disabled={uploading || loading || linkingCharts}
 				>
-					<RefreshCw size={16} /> Reparse
+					<RefreshCw size={16} />
+					{$_('score.reparse')}
 				</button>
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
 					onclick={handleUpload}
 					disabled={uploading || loading || linkingCharts}
 				>
-					<Upload size={16} /> Upload
+					<Upload size={16} />
+					{$_('score.upload')}
 				</button>
 			{/if}
 		</div>
@@ -631,21 +642,25 @@
 	{#if skipped.length > 0}
 		<ul class="mb-3 text-xs text-red-300">
 			{#each skipped as row}
-				<li>Chart {row.chartId} skipped: {humanizeSkipReason(row.reason)}</li>
+				<li>
+					{$_('score.chart_skipped', {
+						values: { chartId: row.chartId, reason: humanizeSkipReason(row.reason) }
+					})}
+				</li>
 			{/each}
 		</ul>
 	{/if}
 
 	{#if loading}
-		<p class="text-dim text-sm">Reading songs.db…</p>
+		<p class="text-dim text-sm">{$_('score.reading')}</p>
 	{:else if error}
 		<p class="text-sm text-red-300">{error}</p>
 	{:else if !dbPath}
 		<p class="text-dim text-sm">
-			No DTXManiaCX <code>songs.db</code> found. Use “Choose songs.db” to locate it.
+			{$_('score.no_db')}
 		</p>
 	{:else if songs.length === 0}
-		<p class="text-dim text-sm">No drum scores found in this database.</p>
+		<p class="text-dim text-sm">{$_('score.empty')}</p>
 	{:else}
 		<div class="flex flex-col gap-4">
 			{#each pagedSongs as song, i (songKey(song) + (pageStart + i))}

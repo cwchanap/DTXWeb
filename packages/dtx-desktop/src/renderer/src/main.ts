@@ -2,6 +2,7 @@ import { mount } from 'svelte';
 import init from 'xa_decoder';
 
 import './assets/main.css';
+import './lib/i18n';
 
 // Self-hosted fonts (bundled woff2 — CSP-safe, no Google CDN)
 import '@fontsource/chakra-petch/500.css';

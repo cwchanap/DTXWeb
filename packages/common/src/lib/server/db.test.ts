@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { toSimfileWithDtx } from '../types/d1.types';
 import { simfiles, dtxFiles, userProfiles, chartScores, scores } from './db/schema';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
@@ -190,6 +192,191 @@ describe('score schema', () => {
 		const config = getTableConfig(scores);
 		const indexNames = config.indexes.map((i) => i.config.name);
 		expect(indexNames).toContain('idx_scores_display_order');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// CHECK constraint parity: 0002_scores.sql vs Drizzle schema.ts
+//
+// The migration SQL and the Drizzle schema both define CHECK constraints on
+// chart_scores and scores. They can drift when one is updated without the
+// other. This test parses both sources, normalizes the SQL expressions, and
+// asserts they define the same set of constraints.
+// ---------------------------------------------------------------------------
+describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
+	const MIGRATIONS_DIR = join(
+		__dirname,
+		'..',
+		'..',
+		'..',
+		'..',
+		'..',
+		'packages',
+		'dtx-api',
+		'd1-migrations'
+	);
+	const SCHEMA_PATH = join(__dirname, 'db', 'schema.ts');
+
+	// Normalize a SQL expression for comparison: lowercase, collapse whitespace,
+	// strip surrounding parens, and remove redundant spacing around operators.
+	const normalize = (expr: string): string =>
+		expr
+			.toLowerCase()
+			.replace(/\s+/g, ' ')
+			.replace(/\s*([()])\s*/g, '$1')
+			.replace(/\s*(>=|<=|!=|<>|=|<|>|AND|OR|IN|IS NULL|IS NOT NULL)\s*/gi, (_, op) => {
+				const upper = op.toUpperCase();
+				if (
+					upper === 'AND' ||
+					upper === 'OR' ||
+					upper === 'IN' ||
+					upper === 'IS NULL' ||
+					upper === 'IS NOT NULL'
+				) {
+					return ` ${upper} `;
+				}
+				return op;
+			})
+			.trim();
+
+	// Parse inline CHECK constraints from CREATE TABLE statements in the
+	// migration SQL. Returns a map of column-name → normalized expression.
+	const parseMigrationChecks = (sql: string): Map<string, string> => {
+		const checks = new Map<string, string>();
+		// Match: column_name TYPE ... CHECK (expression)
+		// The expression may contain nested parens (e.g. IN (...)).
+		const lines = sql.split('\n');
+		for (const line of lines) {
+			const trimmed = line.trim();
+			// Skip comment-only lines
+			if (trimmed.startsWith('--')) continue;
+			// Find CHECK (...) — handle nested parens by counting depth.
+			const checkIdx = trimmed.indexOf('CHECK');
+			if (checkIdx === -1) continue;
+			// Extract the column name: the first token on the line (before any
+			// TYPE keyword). For inline constraints the column name precedes
+			// the type definition.
+			const beforeCheck = trimmed.slice(0, checkIdx).trim();
+			const colName = beforeCheck.split(/\s+/)[0];
+			// Extract the parenthesized expression after CHECK, handling nesting.
+			let depth = 0;
+			let start = -1;
+			let end = -1;
+			for (let i = checkIdx + 5; i < trimmed.length; i++) {
+				if (trimmed[i] === '(') {
+					if (depth === 0) start = i;
+					depth++;
+				} else if (trimmed[i] === ')') {
+					depth--;
+					if (depth === 0) {
+						end = i;
+						break;
+					}
+				}
+			}
+			if (start !== -1 && end !== -1 && colName) {
+				const expr = trimmed.slice(start + 1, end);
+				checks.set(colName, normalize(expr));
+			}
+		}
+		return checks;
+	};
+
+	// Parse check() definitions from schema.ts source text. Returns a map of
+	// column-name → normalized expression. The Drizzle check() calls use
+	// sql`${table.X} OP Y` template literals; we extract the expression text,
+	// replace `${table.X}` with the snake_case column name, and normalize.
+	const parseSchemaChecks = (source: string): Map<string, string> => {
+		const checks = new Map<string, string>();
+		// Drizzle property-name → SQL column-name mapping. Derived from the
+		// table definitions in schema.ts (camelCase → snake_case).
+		const propToColumn: Record<string, string> = {
+			playCount: 'play_count',
+			clearCount: 'clear_count',
+			isBest: 'is_best',
+			score: 'score',
+			achievementRate: 'achievement_rate',
+			rankLabel: 'rank_label',
+			fullCombo: 'full_combo',
+			cleared: 'cleared',
+			maxCombo: 'max_combo',
+			perfect: 'perfect',
+			great: 'great',
+			good: 'good',
+			poor: 'poor',
+			miss: 'miss',
+			displayOrder: 'display_order'
+		};
+		// Match: check('name', sql`expression`)
+		// The expression contains ${table.X} references and literal SQL.
+		const checkRegex = /check\s*\(\s*['"][^'"]+['"]\s*,\s*sql`([^`]+)`/g;
+		let match;
+		while ((match = checkRegex.exec(source)) !== null) {
+			let expr = match[1];
+			// Replace ${table.X} with the snake_case column name.
+			expr = expr.replace(/\$\{table\.(\w+)\}/g, (_, prop) => propToColumn[prop] ?? prop);
+			// The check name encodes the column (e.g. 'scores_is_best_check').
+			// Extract the column from the check name to use as the key.
+			const nameMatch = match[0].match(/['"](\w+)_(\w+)_check['"]/);
+			// We key by the normalized expression itself, not the column name,
+			// because the migration uses column names inline and the schema
+			// uses check names — the expression is the common ground.
+			checks.set(normalize(expr), normalize(expr));
+		}
+		return checks;
+	};
+
+	it('chart_scores CHECK constraints match between migration and Drizzle schema', () => {
+		const migrationSql = readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8');
+		const schemaSource = readFileSync(SCHEMA_PATH, 'utf8');
+
+		// Extract the chart_scores CREATE TABLE block from the migration.
+		const chartScoresBlock =
+			migrationSql.match(/CREATE TABLE IF NOT EXISTS chart_scores \([\s\S]*?\);/)?.[0] ?? '';
+		const migrationChecks = parseMigrationChecks(chartScoresBlock);
+
+		// Extract chart_scores check() calls from the Drizzle schema.
+		// The chartScores table definition is between 'export const chartScores'
+		// and the next 'export const' (or end of table).
+		const chartScoresSchema =
+			schemaSource.match(/export const chartScores = sqliteTable\([\s\S]*?\);\s*/)?.[0] ?? '';
+		const schemaChecks = parseSchemaChecks(chartScoresSchema);
+
+		// Both should define the same set of normalized expressions.
+		const migrationExprs = [...migrationChecks.values()].sort();
+		const schemaExprs = [...schemaChecks.keys()].sort();
+
+		expect(migrationExprs).toHaveLength(schemaExprs.length);
+		for (const expr of schemaExprs) {
+			expect(migrationExprs).toContain(expr);
+		}
+	});
+
+	it('scores CHECK constraints match between migration and Drizzle schema', () => {
+		const migrationSql = readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8');
+		const schemaSource = readFileSync(SCHEMA_PATH, 'utf8');
+
+		// Extract the scores CREATE TABLE block from the migration.
+		const scoresBlock =
+			migrationSql.match(
+				/CREATE TABLE IF NOT EXISTS scores \([\s\S]*?\);\s*\nCREATE INDEX/
+			)?.[0] ??
+			migrationSql.match(/CREATE TABLE IF NOT EXISTS scores \([\s\S]*?\);/)?.[0] ??
+			'';
+		const migrationChecks = parseMigrationChecks(scoresBlock);
+
+		// Extract scores check() calls from the Drizzle schema.
+		const scoresSchema =
+			schemaSource.match(/export const scores = sqliteTable\([\s\S]*?\);\s*$/m)?.[0] ?? '';
+		const schemaChecks = parseSchemaChecks(scoresSchema);
+
+		const migrationExprs = [...migrationChecks.values()].sort();
+		const schemaExprs = [...schemaChecks.keys()].sort();
+
+		expect(migrationExprs).toHaveLength(schemaExprs.length);
+		for (const expr of schemaExprs) {
+			expect(migrationExprs).toContain(expr);
+		}
 	});
 });
 

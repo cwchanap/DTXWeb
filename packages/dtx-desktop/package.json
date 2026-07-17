@@ -34,6 +34,7 @@
 		"@tauri-apps/plugin-updater": "^2",
 		"dayjs": "^1.11.13",
 		"phaser": "^3.88.0",
+		"svelte-i18n": "^4.0.1",
 		"xa_decoder": "^0.1.2"
 	},
 	"type": "module",

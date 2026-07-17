@@ -1789,6 +1789,36 @@ async fn upload_scores_rejects_chart_missing_scores_array() {
 }
 
 #[tokio::test]
+async fn upload_scores_rejects_chart_with_excessive_scores() {
+    // 1001 score entries on a single chart exceeds the IPC sanity cap
+    // (IPC_MAX_CHARTS, reused for per-chart scores). No mock needed.
+    let scores: Vec<serde_json::Value> = (0..1001)
+        .map(|_| {
+            serde_json::json!({
+                "score": 800000,
+                "isBest": 0,
+                "cleared": 1,
+                "fullCombo": 0
+            })
+        })
+        .collect();
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": 1, "clearCount": 0, "scores": scores }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("too many scores"));
+}
+
+#[tokio::test]
 async fn upload_scores_rejects_excessive_chart_count() {
     // 1001 charts exceeds the IPC sanity cap (1000). No mock needed.
     let charts: Vec<serde_json::Value> = (0..1001)

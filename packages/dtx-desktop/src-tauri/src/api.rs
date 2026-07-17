@@ -942,10 +942,20 @@ fn validate_upload_payload(payload: &Value) -> Result<()> {
             }
         }
         // scores must be an array (the server validates contents).
-        if chart.get("scores").and_then(|s| s.as_array()).is_none() {
-            return Err(DesktopError::Message(
-                "chart payload missing 'scores' array".to_string(),
-            ));
+        let scores = chart
+            .get("scores")
+            .and_then(|s| s.as_array())
+            .ok_or_else(|| {
+                DesktopError::Message("chart payload missing 'scores' array".to_string())
+            })?;
+        // Sanity cap on per-chart score entries, reusing the chart-size limit
+        // (IPC_MAX_CHARTS). The server enforces the real MAX_SCORES_PER_CHART
+        // (10); this only catches a runaway/compromised renderer.
+        if scores.len() > IPC_MAX_CHARTS {
+            return Err(DesktopError::Message(format!(
+                "chart has too many scores ({} > {IPC_MAX_CHARTS})",
+                scores.len()
+            )));
         }
     }
     Ok(())

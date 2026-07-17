@@ -182,16 +182,51 @@ describe('score schema', () => {
 	// in the raw SQL migration because Drizzle's sqlite-core builder lacked
 	// partial-index support; Drizzle 0.44+ supports .where() on index builders,
 	// so the declarations were moved into schema.ts for test/production parity.
+	const serializeWherePredicate = (where: unknown): string => {
+		const walk = (chunk: unknown): string => {
+			if (chunk === null || chunk === undefined) return '';
+			if (typeof chunk === 'object' && 'queryChunks' in chunk) {
+				return ((chunk as { queryChunks: unknown[] }).queryChunks ?? []).map(walk).join('');
+			}
+			if (
+				typeof chunk === 'object' &&
+				'value' in chunk &&
+				Array.isArray((chunk as { value: unknown[] }).value)
+			) {
+				return (chunk as { value: string[] }).value.join('');
+			}
+			if (typeof chunk === 'object' && 'name' in chunk) {
+				return String((chunk as { name: string }).name);
+			}
+			return '';
+		};
+		return walk(where).replace(/\s+/g, ' ').trim();
+	};
+
 	it('defines the idx_scores_one_best partial unique index (WHERE is_best = 1)', () => {
 		const config = getTableConfig(scores);
 		const indexNames = config.indexes.map((i) => i.config.name);
 		expect(indexNames).toContain('idx_scores_one_best');
+
+		const oneBestIdx = config.indexes.find((i) => i.config.name === 'idx_scores_one_best');
+		expect(oneBestIdx).toBeDefined();
+		expect(oneBestIdx?.config.unique).toBe(true);
+		expect(serializeWherePredicate(oneBestIdx?.config.where)).toBe('is_best = 1');
 	});
 
 	it('defines the idx_scores_display_order partial unique index (WHERE display_order IS NOT NULL)', () => {
 		const config = getTableConfig(scores);
 		const indexNames = config.indexes.map((i) => i.config.name);
 		expect(indexNames).toContain('idx_scores_display_order');
+
+		const displayOrderIdx = config.indexes.find(
+			(i) => i.config.name === 'idx_scores_display_order'
+		);
+		expect(displayOrderIdx).toBeDefined();
+		expect(displayOrderIdx?.config.unique).toBe(true);
+		expect(serializeWherePredicate(displayOrderIdx?.config.where)).toBe(
+			'display_order IS NOT NULL'
+		);
 	});
 });
 

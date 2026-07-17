@@ -515,7 +515,7 @@
 	const handleUpload = async () => {
 		if (uploading || loading) return;
 		uploading = true;
-		uploadStatus = 'Uploading…';
+		uploadStatus = $_('score.uploading');
 		skipped = [];
 		// Counters live outside the try so a thrown batch rejection still
 		// reports how many charts/scores already committed, and so server
@@ -592,7 +592,10 @@
 		} catch (e) {
 			const partial =
 				totalUpdated > 0 || totalInserted > 0
-					? ` Partial upload: ${totalUpdated} chart(s), ${totalInserted} score(s) committed before failure.`
+					? ' ' +
+						$_('score.partial_upload', {
+							values: { updated: totalUpdated, inserted: totalInserted }
+						})
 					: '';
 			uploadStatus = `${e instanceof Error ? e.message : $_('score.upload_failed')}${partial}`;
 			skipped = [...clientSkipped, ...serverSkipped];

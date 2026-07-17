@@ -1791,7 +1791,7 @@ async fn upload_scores_rejects_chart_missing_scores_array() {
 #[tokio::test]
 async fn upload_scores_rejects_chart_with_excessive_scores() {
     // 1001 score entries on a single chart exceeds the IPC sanity cap
-    // (IPC_MAX_CHARTS, reused for per-chart scores). No mock needed.
+    // (IPC_MAX_SCORES_PER_CHART). No mock needed.
     let scores: Vec<serde_json::Value> = (0..1001)
         .map(|_| {
             serde_json::json!({

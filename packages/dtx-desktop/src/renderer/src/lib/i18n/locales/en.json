@@ -4,6 +4,7 @@
 		"choose_db": "Choose songs.db",
 		"reparse": "Reparse",
 		"upload": "Upload",
+		"uploading": "Uploading\u2026",
 		"upload_failed": "Upload failed.",
 		"reading": "Reading songs.db…",
 		"no_db": "No DTXManiaCX songs.db found. Use \u201cChoose songs.db\u201d to locate it.",

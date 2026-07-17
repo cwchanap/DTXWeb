@@ -196,4 +196,53 @@ describe('ScoreList', () => {
 		expect(screen.getByText('Song 21')).toBeInTheDocument();
 		expect(screen.queryByText('Song 11')).not.toBeInTheDocument();
 	});
+
+	// Exercises the stale-page guard (ScoreList.svelte:71-76): if scores are
+	// deleted and the current page now exceeds the total page count, the guard
+	// clamps currentPage to the last valid page and reloads instead of leaving
+	// the user stranded on an empty page with no pagination control.
+	it('clamps to the last valid page and reloads when the current page exceeds the total', async () => {
+		const page1 = Array.from({ length: 10 }, (_, i) => ({
+			...song,
+			id: i + 1,
+			title: `Song ${i + 1}`
+		}));
+		const page3 = Array.from({ length: 5 }, (_, i) => ({
+			...song,
+			id: i + 21,
+			title: `Song ${i + 21}`
+		}));
+		// After deletion: only 5 songs remain (1 page).
+		const shrunkPage1 = Array.from({ length: 5 }, (_, i) => ({
+			...song,
+			id: i + 1,
+			title: `Shrunk Song ${i + 1}`
+		}));
+
+		// 1. Initial mount → page 1, 25 songs (3 pages).
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page1, count: 25 });
+		render(ScoreList);
+		await waitFor(() => expect(screen.getByText('Song 1')).toBeInTheDocument());
+
+		// 2. Navigate to page 3.
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page3, count: 25 });
+		await fireEvent.click(screen.getByText('3'));
+		await waitFor(() => expect(screen.getByText('Song 21')).toBeInTheDocument());
+
+		// 3. Trigger another load while still on page 3, but now the count has
+		//    shrunk to 5 (1 page). The guard must detect currentPage(3) >
+		//    fetchedTotalPages(1), clamp to 1, and reload.
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: [], count: 5 });
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: shrunkPage1, count: 5 });
+
+		await fireEvent.click(screen.getByText('3'));
+
+		// The guard fired a recursive reload for page 1 — 4 total calls.
+		await waitFor(() => expect(myScoredSimfilesMock).toHaveBeenCalledTimes(4));
+		// The last call was for page 1 (the clamped reload).
+		expect(myScoredSimfilesMock).toHaveBeenLastCalledWith({ page: 1, pageSize: 10 });
+		// The shrunk page 1 data is rendered, not the stale page 3 data.
+		await waitFor(() => expect(screen.getByText('Shrunk Song 1')).toBeInTheDocument());
+		expect(screen.queryByText('Song 21')).not.toBeInTheDocument();
+	});
 });

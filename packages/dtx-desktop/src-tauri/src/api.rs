@@ -916,6 +916,12 @@ fn validate_upload_payload(payload: &Value) -> Result<()> {
         )));
     }
 
+    // Sanity cap on per-chart score entries. The server enforces the real
+    // MAX_SCORES_PER_CHART (10); this only catches a runaway/compromised
+    // renderer before the network round-trip. Kept separate from
+    // IPC_MAX_CHARTS so the two caps can evolve independently.
+    const IPC_MAX_SCORES_PER_CHART: usize = 1000;
+
     for chart in charts {
         // chartId must be a string or number (the server parses it as a number).
         let chart_id = chart
@@ -948,12 +954,12 @@ fn validate_upload_payload(payload: &Value) -> Result<()> {
             .ok_or_else(|| {
                 DesktopError::Message("chart payload missing 'scores' array".to_string())
             })?;
-        // Sanity cap on per-chart score entries, reusing the chart-size limit
-        // (IPC_MAX_CHARTS). The server enforces the real MAX_SCORES_PER_CHART
-        // (10); this only catches a runaway/compromised renderer.
-        if scores.len() > IPC_MAX_CHARTS {
+        // Sanity cap on per-chart score entries (IPC_MAX_SCORES_PER_CHART).
+        // The server enforces the real MAX_SCORES_PER_CHART (10); this only
+        // catches a runaway/compromised renderer.
+        if scores.len() > IPC_MAX_SCORES_PER_CHART {
             return Err(DesktopError::Message(format!(
-                "chart has too many scores ({} > {IPC_MAX_CHARTS})",
+                "chart has too many scores ({} > {IPC_MAX_SCORES_PER_CHART})",
                 scores.len()
             )));
         }

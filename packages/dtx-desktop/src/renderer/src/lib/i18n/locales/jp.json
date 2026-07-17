@@ -4,6 +4,7 @@
 		"choose_db": "songs.db を選択",
 		"reparse": "再解析",
 		"upload": "アップロード",
+		"uploading": "アップロード中\u2026",
 		"upload_failed": "アップロードに失敗しました。",
 		"reading": "songs.db を読み込み中…",
 		"no_db": "DTXManiaCX の songs.db が見つかりません。\u201csongs.db を選択\u201dから指定してください。",

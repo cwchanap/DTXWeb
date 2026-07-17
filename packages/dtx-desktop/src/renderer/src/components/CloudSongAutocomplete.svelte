@@ -199,6 +199,13 @@
 					bind:value={searchQuery}
 					placeholder={$_('score.link.search_placeholder')}
 					class="border-hairline bg-surface-2 text-hi placeholder-faint focus:border-cyan w-full rounded-lg border py-2 pr-4 pl-10 focus:ring-1 focus:outline-none"
+					role="combobox"
+					aria-autocomplete="list"
+					aria-expanded={suggestions.length > 0}
+					aria-controls="cloud-song-results"
+					aria-activedescendant={selectedIndex >= 0
+						? `cloud-song-option-${selectedIndex}`
+						: undefined}
 					oninput={handleSearchInput}
 					onkeydown={handleKeydown}
 				/>
@@ -229,9 +236,17 @@
 				</div>
 			{:else if searchQuery.trim().length >= 2}
 				{#if suggestions.length > 0}
-					<div class="border-hairline border-t">
+					<div
+						id="cloud-song-results"
+						role="listbox"
+						aria-label={$_('score.link.title')}
+						class="border-hairline border-t"
+					>
 						{#each suggestions as song, index}
 							<button
+								role="option"
+								id={`cloud-song-option-${index}`}
+								aria-selected={selectedIndex === index}
 								class="border-hairline hover:bg-surface-2 focus:bg-surface-2 flex w-full items-center gap-3 border-b p-4 text-left transition-colors focus:outline-none"
 								class:bg-surface-2={selectedIndex === index}
 								onclick={() => selectSong(song)}

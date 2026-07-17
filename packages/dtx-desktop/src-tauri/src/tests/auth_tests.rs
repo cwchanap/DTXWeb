@@ -43,7 +43,14 @@ impl Drop for CallbackPortGuard {
 /// races. The guard must be held for the duration of the test; on drop it
 /// restores the env var to its prior value so it does not leak.
 fn with_test_callback_port() -> CallbackPortGuard {
-    let lock = auth_env_lock().lock().unwrap();
+    // Use poison-recovery (into_inner) to match the codebase's production
+    // style (preferences.rs, auth.rs, scores.rs). A panicking test would
+    // poison the mutex; bare .unwrap() would then cascade-fail every later
+    // env-mutating test, masking the real failure. into_inner lets subsequent
+    // tests run and report their own failures cleanly.
+    let lock = auth_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let saved = std::env::var_os("DTX_DESKTOP_AUTH_CALLBACK_PORT");
     std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "47931");
     CallbackPortGuard { _lock: lock, saved }

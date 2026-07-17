@@ -24,6 +24,7 @@ fragment SimfileFull on Simfile {
   createdAt
   updatedAt
   dtxFiles {
+    id
     level
     label
   }
@@ -47,6 +48,7 @@ query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize
       videoPreviewUrl
       publishDate
       dtxFiles {
+        id
         level
         label
       }
@@ -357,8 +359,21 @@ pub fn renderer_simfile_from_graphql(simfile: &Value) -> Result<Value> {
                 .iter()
                 .enumerate()
                 .map(|(index, file)| {
+                    // Pass through the real GraphQL `dtxFiles.id` (the D1
+                    // dtx_files primary key, also the chart id used by
+                    // `uploadScores`). Fall back to a positional id only when
+                    // the field is absent — older cached records from before
+                    // the fragment requested `id` may lack it, and the
+                    // renderer's `normalizeSimfile` has its own `?? index + 1`
+                    // fallback for the same reason. The positional fallback is
+                    // display-only and must never flow into an upload payload.
+                    let id = file
+                        .get("id")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .unwrap_or_else(|| json!(index + 1));
                     json!({
-                        "id": index + 1,
+                        "id": id,
                         "level": file["level"],
                         "label": file["label"],
                     })

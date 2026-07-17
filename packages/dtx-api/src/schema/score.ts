@@ -74,31 +74,20 @@ const UploadScoresInput = builder.inputType('UploadScoresInput', {
 	})
 });
 
-/// Maximum number of charts accepted in a single uploadScores mutation. Each
-/// chart triggers a D1 batch (upsert + delete + inserts), so an unbounded
-/// charts[] could exhaust Worker CPU/D1 budget. 100 charts × ~8 statements
-/// per batch stays well within the Worker CPU time limit.
+/// Max charts per uploadScores call. Each chart triggers a D1 batch
+/// (upsert + delete + inserts); 100 × ~8 statements stays within Worker CPU.
 const MAX_UPLOAD_CHARTS = 100;
-/// Maximum number of score rows per chart. The invariant validator already
-/// rejects >5 recent + >1 best, but this cap short-circuits before validation
-/// to prevent a pathologically large scores[] from consuming CPU.
+/// Max score rows per chart. Short-circuits before validation to prevent a
+/// pathologically large scores[] from consuming CPU.
 const MAX_SCORES_PER_CHART = 10;
-/// Maximum number of concurrent D1 batch writes. Each chart's upsert is an
-/// independent atomic batch, so bounded concurrency preserves per-chart write
-/// isolation (a failure in one chart does not abort others) while cutting
-/// wall-clock time for large imports. D1 concurrent operations overlap I/O
-/// waits without increasing Worker CPU time, so this is safe within the
-/// Worker CPU budget. 8 keeps concurrent D1 round-trips modest.
+/// Concurrent D1 batch writes. Each chart's upsert is an independent atomic
+/// batch, so bounded concurrency preserves per-chart write isolation while
+/// overlapping I/O waits (no extra Worker CPU time).
 const WRITE_CONCURRENCY = 8;
 
-/// Maximum number of uploadScores calls per user per hour. Each call can
-/// write up to 100 charts × ~8 D1 statements, so an unbounded call rate
-/// could exhaust D1/Worker CPU budget. Self-scoped (users write only their
-/// own scores), so this is a cost/abuse guard, not an integrity guard.
-/// Mirrors the per-user KV counter pattern from magicLink.ts.
-/// Overridable via the `MAX_UPLOADS_PER_HOUR` env var (same pattern as
-/// `MAGIC_LINK_HOURLY_LIMIT`); falls back to the default below when unset
-/// or non-numeric.
+/// Max uploadScores calls per user per hour. Self-scoped (users write only
+/// their own scores), so this is a cost/abuse guard, not an integrity guard.
+/// Overridable via `MAX_UPLOADS_PER_HOUR` env var; falls back to default.
 const DEFAULT_MAX_UPLOADS_PER_HOUR = 10;
 
 const uploadHourlyLimit = (env: { MAX_UPLOADS_PER_HOUR?: string }): number => {
@@ -161,11 +150,9 @@ const UploadScoresResultRef = builder
 		})
 	});
 
-// Validates a single chart payload. Returns either a skip reason (chart-level
-// integrity violation that makes the whole chart un-uploadable) or the filtered
-// set of valid score rows (per-row issues drop only the bad row, preserving
-// valid rows including the best — so one malformed recent play no longer drops
-// the entire chart).
+// Validates a single chart payload. Returns a skip reason (chart-level
+// violation) or the filtered valid score rows (per-row issues drop only the
+// bad row, preserving valid rows including the best).
 const VALID_RANK_LABELS = ['SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F'] as const;
 
 type InputScore = {
@@ -187,11 +174,9 @@ type InputScore = {
 
 type ValidationResult = { ok: true; scores: InputScore[] } | { ok: false; reason: string };
 
-// Per-row field validation. Returns a reason string when the row's individual
-// fields are invalid, or null when the row is field-valid. Structural checks
-// (best/non-best coupling, displayOrder range/uniqueness) are handled by the
-// caller, not here — those may warrant dropping the row or stripping a field
-// rather than a simple pass/fail.
+// Per-row field validation. Returns a reason string for an invalid row, or
+// null when valid. Structural checks (best/non-best coupling, displayOrder
+// range/uniqueness) are handled by the caller.
 const validateScoreFields = (s: InputScore): string | null => {
 	if (s.score != null && (!Number.isInteger(s.score) || s.score < 0))
 		return 'score must be a non-negative integer';
@@ -201,22 +186,18 @@ const validateScoreFields = (s: InputScore): string | null => {
 	) {
 		return 'achievementRate out of range';
 	}
-	// rankLabel is stripped to null before this runs when unknown (see
-	// validateChartScores); remaining non-null values must be known tokens.
-	// The DB CHECK constraint (0002_scores.sql) mirrors this as a backstop.
+	// rankLabel is stripped to null before this runs when unknown; remaining
+	// non-null values must be known tokens. DB CHECK constraint mirrors this.
 	if (s.rankLabel != null && !(VALID_RANK_LABELS as readonly string[]).includes(s.rankLabel)) {
 		return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
 	}
-	// performedAt, when present, must be a parseable date string that is
-	// not in the future. Mirrors the publishDate check in simfile.ts so a
-	// garbage timestamp can't reach the DB's performed_at TEXT column.
-	// The upper bound prevents a far-future date from skewing recency sorts.
+	// performedAt must be parseable and not in the future (prevents skewing
+	// recency sorts). Mirrors the publishDate check in simfile.ts.
 	if (s.performedAt != null) {
 		const parsed = Date.parse(s.performedAt);
 		if (Number.isNaN(parsed)) return 'invalid performedAt';
 		if (parsed > Date.now() + 60_000) return 'performedAt cannot be in the future';
 	}
-	// Judgment counts and maxCombo must be non-negative integers when present.
 	const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
 	for (const c of counts) {
 		if (c != null && (!Number.isInteger(c) || c < 0)) {
@@ -231,62 +212,47 @@ const validateChartScores = (
 	clearCount: number,
 	scores: InputScore[]
 ): ValidationResult => {
-	// Chart-level aggregate validation: counts must be non-negative integers
-	// and clearCount cannot exceed playCount (can't clear more times than played).
+	// Chart-level aggregate validation.
 	if (!Number.isInteger(playCount) || playCount < 0)
 		return { ok: false, reason: 'playCount must be a non-negative integer' };
 	if (!Number.isInteger(clearCount) || clearCount < 0)
 		return { ok: false, reason: 'clearCount must be a non-negative integer' };
 	if (clearCount > playCount) return { ok: false, reason: 'clearCount cannot exceed playCount' };
 
-	// An empty scores[] would wipe prior scores via the replace-all batch in
-	// upsertChartScoreAndReplaceScores (DELETE + INSERT none). Reject it so a
-	// bypassed/buggy client can't destroy existing data with a no-score payload.
+	// An empty scores[] would wipe prior scores via the replace-all batch
+	// (DELETE + INSERT none). Reject so a buggy client can't destroy data.
 	if (scores.length === 0) return { ok: false, reason: 'no scores provided' };
 
 	const bestCount = scores.filter((s) => s.isBest).length;
 	if (bestCount > 1) return { ok: false, reason: 'more than one best score' };
 
-	// Recent-row cap: more than 5 non-best rows with displayOrder is a structural
-	// violation (the UI only shows 5 recent plays). Checked on the original count
-	// before per-row filtering so a payload with 6 valid recent rows is rejected
-	// rather than silently truncated.
+	// Recent-row cap checked before per-row filtering so 6 valid recent rows
+	// are rejected rather than silently truncated.
 	const recentCount = scores.filter((s) => !s.isBest && s.displayOrder != null).length;
 	if (recentCount > 5) return { ok: false, reason: 'more than 5 recent scores' };
 
-	// Per-row filtering. Invalid rows are dropped individually; valid rows
-	// (including the best) are kept. The first drop reason is tracked so a
-	// chart where ALL rows are dropped reports a meaningful skip reason
-	// (preserving the old behavior for single-row charts where the one bad
-	// row = whole chart skipped).
+	// Per-row filtering: invalid rows are dropped individually, valid rows
+	// (including the best) are kept. The first drop reason is tracked so an
+	// all-dropped chart reports a meaningful skip reason.
 	//
-	// NOTE on app-validator/DB asymmetry: the DB (0002_scores.sql) enforces
-	// only `display_order IS NULL OR (1..5)` plus a partial unique index over
-	// non-null values. It does NOT enforce the best/non-best coupling below
-	// (best rows must be NULL, non-best rows must be non-null) — that stricter
-	// invariant lives only here. The DB constraints are a backstop for range
-	// and uniqueness; the app validator is the source of truth for the
-	// isBest↔displayOrder relationship.
+	// DB asymmetry: 0002_scores.sql enforces only `display_order IS NULL OR
+	// (1..5)` + a partial unique index. The best/non-best coupling (best rows
+	// must be NULL, non-best must be non-null) lives only here — the app
+	// validator is the source of truth for isBest↔displayOrder.
 	let firstDropReason: string | null = null;
 	const valid: InputScore[] = [];
 	const seenOrders = new Set<number>();
-	// Track whether a best (isBest: true) row was dropped during filtering.
-	// If so, the chart is rejected rather than accepted with only recent
-	// rows — upsertChartScoreAndReplaceScores DELETE+INSERTs the validated
-	// set, so accepting a chart whose best row was dropped would erase the
-	// stored best score. Rejecting preserves it.
+	// If a best row is dropped, reject the whole chart — the replace-all
+	// batch would erase the stored best score with only recent rows.
 	let bestDropped = false;
 
 	for (const s of scores) {
-		// Best rows must not carry a displayOrder (they are not recent plays).
-		// Strip the displayOrder rather than dropping the row — the best score
-		// is the most valuable row and a stray displayOrder is a benign data
-		// error, not a reason to lose it.
+		// Best rows must not carry a displayOrder. Strip it rather than
+		// dropping the row — a stray displayOrder is benign, the best score
+		// is the most valuable row.
 		let row: InputScore = s.isBest && s.displayOrder != null ? { ...s, displayOrder: null } : s;
 
-		// Unknown rankLabel (e.g. a stray HistoryLine token) is cosmetic —
-		// strip to null rather than dropping the row / rejecting the chart.
-		// Mirrors the displayOrder strip above: keep the score, drop the field.
+		// Unknown rankLabel is cosmetic — strip to null, keep the row.
 		if (
 			row.rankLabel != null &&
 			!(VALID_RANK_LABELS as readonly string[]).includes(row.rankLabel)
@@ -294,7 +260,6 @@ const validateChartScores = (
 			row = { ...row, rankLabel: null };
 		}
 
-		// Per-row field validation: drop the row if any individual field is bad.
 		const fieldError = validateScoreFields(row);
 		if (fieldError) {
 			if (row.isBest) bestDropped = true;
@@ -302,14 +267,12 @@ const validateChartScores = (
 			continue;
 		}
 
-		// Non-best rows must carry a displayOrder (they are recent plays).
-		// A row with isBest=false and displayOrder=null is an orphan — drop it.
+		// Non-best rows must carry a displayOrder; an orphan is dropped.
 		if (!row.isBest && row.displayOrder == null) {
 			if (firstDropReason === null) firstDropReason = 'non-best score without displayOrder';
 			continue;
 		}
 
-		// Every non-null displayOrder must be a unique integer in 1..5.
 		if (
 			row.displayOrder != null &&
 			(!Number.isInteger(row.displayOrder) || row.displayOrder < 1 || row.displayOrder > 5)
@@ -319,7 +282,6 @@ const validateChartScores = (
 			continue;
 		}
 		if (row.displayOrder != null && seenOrders.has(row.displayOrder)) {
-			// Duplicate displayOrder: drop the later occurrence, keep the first.
 			if (firstDropReason === null) firstDropReason = 'duplicate displayOrder';
 			continue;
 		}
@@ -332,9 +294,6 @@ const validateChartScores = (
 		return { ok: false, reason: firstDropReason ?? 'no valid scores after filtering' };
 	}
 
-	// A best row was present in the input but dropped during filtering.
-	// Reject the whole chart so the destructive replace-all does not
-	// erase the stored best score with only recent rows.
 	if (bestDropped) {
 		return { ok: false, reason: 'best score row invalid' };
 	}
@@ -352,10 +311,8 @@ builder.mutationField('uploadScores', (t) =>
 			let updatedCharts = 0;
 			let insertedScores = 0;
 
-			// Reject an oversized payload before any I/O. The chart cap is a
-			// cheap pure-JS check, so a malformed or pathologically large
-			// request is short-circuited without burning the hourly token or
-			// hitting D1 for visibility.
+			// Reject oversized payload before any I/O — cheap pure-JS check
+			// that short-circuits without burning the hourly token or D1.
 			if (input.charts.length > MAX_UPLOAD_CHARTS) {
 				return {
 					updatedCharts: 0,
@@ -369,20 +326,15 @@ builder.mutationField('uploadScores', (t) =>
 				};
 			}
 
-			// Pre-fetch visibility for all charts with valid numeric IDs in a
-			// single batched D1 query, so the loop below does not issue one
-			// round-trip per chart. Charts that fail later validation are
-			// harmless extra rows in the batch.
+			// Batch visibility fetch so the loop doesn't issue one D1 round-trip
+			// per chart. Charts that fail later validation are harmless extras.
 			const validNumericIds = input.charts
 				.map((c) => Number(c.chartId))
 				.filter((id) => Number.isSafeInteger(id) && id > 0);
 			const visibilityMap = await getChartVisibilityBatch(ctx.db, validNumericIds);
 			const seenChartIds = new Set<number>();
 
-			// Phase 1 — validate all charts sequentially. Validation is cheap
-			// (pure JS, no I/O) and builds the `seenChartIds` dedup set, so it
-			// must run in order. Charts that pass are collected for the write
-			// phase; charts that fail are recorded in `skipped`.
+			// Phase 1 — validate sequentially (builds the dedup set in order).
 			const writable: {
 				chartId: string;
 				numericId: number;
@@ -397,9 +349,8 @@ builder.mutationField('uploadScores', (t) =>
 					skipped.push({ chartId: String(chart.chartId), reason: 'invalid chart id' });
 					continue;
 				}
-				// Defense-in-depth: the client (buildUpload) already dedupes chart
-				// matches, but reject a duplicate chartId at the server too so a
-				// bypassed/malformed payload can't double-upsert one chart.
+				// Defense-in-depth: client dedupes, but reject duplicates at the
+				// server too so a bypassed payload can't double-upsert.
 				if (seenChartIds.has(numericId)) {
 					skipped.push({ chartId: String(chart.chartId), reason: 'duplicate chart id' });
 					continue;
@@ -448,11 +399,9 @@ builder.mutationField('uploadScores', (t) =>
 					continue;
 				}
 
-				// Single atomic D1 batch: upsert the chart_scores aggregate, delete
-				// old scores, and insert new ones in one transaction so no partial
-				// replacement can commit. Inserts are built from the validated/
-				// filtered scores (result.scores), not the raw input — invalid rows
-				// were dropped and best-row displayOrder was stripped by the validator.
+				// Inserts are built from validated/filtered scores (result.scores),
+				// not raw input. The actual D1 batch (upsert + delete + insert) is
+				// atomic per chart — see upsertChartScoreAndReplaceScores.
 				const inserts: ScoreInsert[] = result.scores.map((s) => ({
 					is_best: s.isBest,
 					score: s.score ?? null,
@@ -478,9 +427,8 @@ builder.mutationField('uploadScores', (t) =>
 				});
 			}
 
-			// Rate-limit only when there is something to write. An all-skipped
-			// (or empty) payload must not burn an hourly token — validation
-			// failures are free, writes are not.
+			// Rate-limit only when there is something to write — validation
+			// failures must not burn an hourly token.
 			if (writable.length === 0) {
 				return { updatedCharts: 0, insertedScores: 0, skipped };
 			}
@@ -496,12 +444,9 @@ builder.mutationField('uploadScores', (t) =>
 				});
 			}
 
-			// Phase 2 — write validated charts in bounded-concurrency chunks.
-			// Per-chart write isolation is preserved: each chart's batch is
-			// independent, and Promise.allSettled ensures one failure does not
-			// abort the chunk. Overlapping the D1 I/O waits cuts wall-clock time
-			// for large imports (up to 100 charts) without increasing Worker
-			// CPU time.
+			// Phase 2 — write in bounded-concurrency chunks. Each chart's batch
+			// is independent; Promise.allSettled ensures one failure doesn't
+			// abort the chunk.
 			for (let i = 0; i < writable.length; i += WRITE_CONCURRENCY) {
 				const chunk = writable.slice(i, i + WRITE_CONCURRENCY);
 				const results = await Promise.allSettled(

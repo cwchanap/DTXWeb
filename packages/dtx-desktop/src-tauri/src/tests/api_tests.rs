@@ -29,7 +29,7 @@ fn gql_simfile() -> Value {
         "publishDate": "2024-01-01",
         "createdAt": "2024-01-02",
         "updatedAt": "2024-01-03",
-        "dtxFiles": [{ "level": 9.2, "label": "EXT" }]
+        "dtxFiles": [{ "id": "101", "level": 9.2, "label": "EXT" }]
     })
 }
 
@@ -67,8 +67,21 @@ fn renderer_simfile_maps_graphql_camel_case_to_snake_case() {
     assert_eq!(mapped["publish_date"], "2024-01-01");
     assert_eq!(mapped["created_at"], "2024-01-02");
     assert_eq!(mapped["updated_at"], "2024-01-03");
-    assert_eq!(mapped["dtx_files"][0]["id"], 1);
+    assert_eq!(mapped["dtx_files"][0]["id"], "101");
     assert_eq!(mapped["dtx_files"][0]["label"], "EXT");
+}
+
+#[test]
+fn renderer_simfile_falls_back_to_positional_id_when_graphql_id_absent() {
+    // Older cached records (from before the fragment requested `id`) may lack
+    // the field. The positional fallback keeps display working, but must never
+    // flow into an upload payload — upload chart ids come from
+    // `fetch_cloud_song_charts`, which always requests `id`.
+    let mut simfile = gql_simfile();
+    simfile["dtxFiles"] = json!([{ "level": 5.5, "label": "BSC" }]);
+    let mapped = renderer_simfile_from_graphql(&simfile).expect("mapped");
+    assert_eq!(mapped["dtx_files"][0]["id"], 1);
+    assert_eq!(mapped["dtx_files"][0]["label"], "BSC");
 }
 
 #[test]

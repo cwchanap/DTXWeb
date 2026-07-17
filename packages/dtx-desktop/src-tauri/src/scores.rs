@@ -75,6 +75,9 @@ pub struct DtxmaniaSong {
 /// Recent rows keep the RANK token parsed from the history line instead.
 ///
 /// Thresholds match DTXManiaCX: SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 62, C ≥ 50, D < 50.
+/// Only SS…D are ever returned here; E/F are history-only labels (accepted by
+/// `VALID_RANK_LABELS` / `sanitize_rank_label` for recent-row tokens parsed
+/// from `HistoryLine`, but never produced from an achievement rate).
 ///
 /// Called by `build_best`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn derive_rank_label(rate: f64) -> &'static str {

@@ -125,7 +125,7 @@ New schema module `packages/dtx-api/src/schema/score.ts`, registered in `schema/
 
 - **`uploadScores(input: UploadScoresInput!): UploadScoresResult!`** — scope `user`.
     - For each chart: verify the chart exists and is **visible** to the caller (`is_published = 1` or owned by the caller) via `getChartVisibilityBatch`; charts failing this are collected into `skipped` rather than aborting the batch.
-    - Validate each chart's `scores`: at most one `isBest = true` (zero best is allowed); at most five rows with a non-null `displayOrder`; numeric fields finite; `achievementRate` within 0–100. Unknown `rankLabel` tokens are stripped to null (not a skip). Other invalid chart payloads are skipped (with reason).
+    - Validate each chart's `scores`: exactly one `isBest = true` (zero best is rejected — a zero-best payload would erase the stored best via the DELETE+INSERT replace batch, the same data loss the empty-scores guard prevents); at most five rows with a non-null `displayOrder`; numeric fields finite; `achievementRate` within 0–100. Unknown `rankLabel` tokens are stripped to null (not a skip). Other invalid chart payloads are skipped (with reason). (The DB partial unique index in §2 permits zero best at the schema level; the API validator is intentionally stricter to protect the replace-all transaction.)
     - Consume the per-user hourly rate-limit token only when at least one chart is writable after validation; empty/all-skipped uploads do not burn a token.
     - For valid charts, run the §2 replace transaction (`upsertChartScoreAndReplaceScores`).
     - **Result** `UploadScoresResult { updatedCharts: Int!, insertedScores: Int!, skipped: [SkippedChart!]! }` where `SkippedChart { chartId: ID!, reason: String! }`.

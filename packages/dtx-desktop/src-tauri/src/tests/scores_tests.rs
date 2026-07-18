@@ -318,6 +318,23 @@ fn parse_missing_db_errors() {
 }
 
 #[test]
+fn parse_opens_db_read_only() {
+    // Pin SQLITE_OPEN_READ_ONLY (scores.rs). A behavioral file-permission
+    // test cannot distinguish READ_ONLY from READWRITE: SQLite's unixOpen
+    // (sqlite3.c ~line 44757) silently falls back to O_RDONLY when an O_RDWR
+    // open fails, so a chmod-444 file opens fine under either flag. The only
+    // reliable guard against a silent READ_ONLY→READWRITE refactor is to pin
+    // the source text — if the flag is removed or changed, this assertion
+    // fails CI instead of letting the desktop app mutate the user's
+    // DTXMania library.
+    let src = include_str!("../scores.rs");
+    assert!(
+        src.contains("OpenFlags::SQLITE_OPEN_READ_ONLY"),
+        "scores.rs must open songs.db with SQLITE_OPEN_READ_ONLY; the flag was removed or changed"
+    );
+}
+
+#[test]
 fn parse_dtxmania_scores_command_delegates_to_impl() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("songs.db");

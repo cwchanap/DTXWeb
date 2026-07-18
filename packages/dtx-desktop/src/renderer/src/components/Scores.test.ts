@@ -396,6 +396,42 @@ describe('Scores', () => {
 		expect(host.parseDtxmaniaScores).not.toHaveBeenCalled();
 	});
 
+	it('does not let a late default-db resolution overwrite a manually chosen db', async () => {
+		// The default-path lookup resolves slowly; the user picks a DB before
+		// it lands. The onMount continuation must not overwrite dbPath or
+		// start a competing parse against the default path. Regression guard
+		// for the startup race where the chooser is enabled (loading=false)
+		// during the onMount awaits.
+		let resolveDefault!: (v: string | null) => void;
+		host.defaultDtxmaniaDbPath.mockReturnValue(
+			new Promise<string | null>((resolve) => {
+				resolveDefault = resolve;
+			})
+		);
+		host.selectDtxmaniaDb.mockResolvedValue({
+			canceled: false,
+			filePaths: ['/custom/songs.db']
+		});
+		host.parseDtxmaniaScores.mockResolvedValue(parsedSongs);
+
+		render(Scores);
+
+		// readScoreSongLinks resolves synchronously, so the chooser is
+		// clickable while defaultDtxmaniaDbPath is still pending.
+		await fireEvent.click(await screen.findByRole('button', { name: /choose songs\.db/i }));
+		await waitFor(() =>
+			expect(host.parseDtxmaniaScores).toHaveBeenCalledWith('/custom/songs.db')
+		);
+
+		// Release the late default-path resolution. It must NOT trigger a
+		// second parse against the default path.
+		resolveDefault('/default/songs.db');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(host.parseDtxmaniaScores).not.toHaveBeenCalledWith('/default/songs.db');
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+	});
+
 	it('shows nothing-to-upload when no songs are linked', async () => {
 		render(Scores);
 		expect(await screen.findByText('Played Song')).toBeInTheDocument();

@@ -156,8 +156,18 @@
 	});
 
 	onMount(async () => {
+		// Guard against a manual DB selection during these startup awaits:
+		// the chooser is enabled while `loading` is still false, so a user
+		// picking a database before the default-path lookup resolves would
+		// otherwise have this continuation overwrite `dbPath` with the
+		// default and start a competing parse against the wrong file.
+		// `handleChooseDb` -> `loadScores` increments `loadGeneration`, so if
+		// it advanced past `startGeneration` during either await, bail.
+		const startGeneration = loadGeneration;
 		savedLinks = await desktopHost.readScoreSongLinks();
+		if (startGeneration !== loadGeneration) return;
 		const path = await desktopHost.defaultDtxmaniaDbPath();
+		if (startGeneration !== loadGeneration) return;
 		if (path) {
 			dbPath = path;
 			await loadScores(path);

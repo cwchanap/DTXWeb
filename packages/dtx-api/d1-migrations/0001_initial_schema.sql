@@ -17,9 +17,15 @@ CREATE TABLE IF NOT EXISTS simfiles (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE INDEX idx_simfiles_user_id ON simfiles(user_id);
-CREATE INDEX idx_simfiles_is_published ON simfiles(is_published);
-CREATE INDEX idx_simfiles_publish_date ON simfiles(publish_date);
+-- IF NOT EXISTS on every index so the migration is reapply-safe: a D1
+-- initialized before this migration system existed (old deploy path only
+-- ran `wrangler deploy`, leaving no migration-history row for 0001) would
+-- otherwise fail with "index ... already exists" when `migrations apply`
+-- replays 0001, blocking 0002 and the worker deploy. Matches the idempotent
+-- pattern already used in 0002_scores.sql.
+CREATE INDEX IF NOT EXISTS idx_simfiles_user_id ON simfiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_simfiles_is_published ON simfiles(is_published);
+CREATE INDEX IF NOT EXISTS idx_simfiles_publish_date ON simfiles(publish_date);
 
 CREATE TABLE IF NOT EXISTS dtx_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +35,7 @@ CREATE TABLE IF NOT EXISTS dtx_files (
     FOREIGN KEY (simfile_id) REFERENCES simfiles(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_dtx_files_simfile_id ON dtx_files(simfile_id);
+CREATE INDEX IF NOT EXISTS idx_dtx_files_simfile_id ON dtx_files(simfile_id);
 
 CREATE TABLE IF NOT EXISTS user_profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

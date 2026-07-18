@@ -173,7 +173,7 @@ Per DTXMania chart (`SongCharts` row) with a drums `SongScores` row:
 Per recent play (`PerformanceHistory` row, up to 5 by `DisplayOrder`):
 
 - `HistoryLine` format observed: `` `<counter>.<YY>/<M>/<D> <Cleared|Failed> (<RANK>: <achievement>)` `` — e.g. `10.26/6/2 Cleared (S: 91.30)`.
-- Parse → `cleared` (`"Cleared"` vs `"Failed"`), `rankLabel` (`RANK` token), `achievementRate` (float). `performedAt` comes from `PerformanceHistory.PerformedAt` (fuller timestamp than the abbreviated date in the line). `score` is **NULL** for recent rows (not present in the history line). `displayOrder` = `PerformanceHistory.DisplayOrder`.
+- Parse → `cleared` (`"Cleared"` vs `"Failed"`), `rankLabel` (`RANK` token), `achievementRate` (float). `performedAt` comes from `PerformanceHistory.PerformedAt` (fuller timestamp than the abbreviated date in the line). `score` is **NULL** for recent rows (not present in the history line). `displayOrder` is renormalized to a contiguous `1..n` sequence (1 = most recent) from the DTXMania `PerformanceHistory.DisplayOrder` ordering, rather than forwarding the raw `DisplayOrder` value — DTXMania `DisplayOrder` can carry gaps or values outside the server's 1–5 validation range, so the desktop parser rebuilds the ordinal from the row order before upload.
 - Parsing is tolerant: a line that doesn't match keeps `performedAt` and leaves the parsed fields null rather than failing the whole song.
 
 **Rank table (validated against DTXManiaCX source):** SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 62, C ≥ 50, D < 50. Recent rows use the `RANK` token from the line verbatim; only the best row derives its label from the table. See [DTXManiaCX](https://github.com/cwchanap/DTXManiaCX) for the source scoring bands.
@@ -242,7 +242,7 @@ Component test (`Scores.test.ts`) mocks `@tauri-apps/api` `invoke` for `default_
 
 Each phase is independently testable; phase 2 and phase 3 both depend on phase 1's schema.
 
-**Migrations are manual** (per project convention — no CI/CD for Worker/D1). Apply `0002_scores.sql` to local, preprod, and prod D1 via `wrangler d1` as part of deploying the API. `gen-schema` + web `codegen` outputs must be committed (CI `lint:codegen` fails on staleness).
+**Migrations auto-apply on deploy** (no CI/CD for Worker/D1). The `dtx-api` `deploy:*` scripts chain `wrangler d1 migrations apply` before `wrangler deploy`, so `0002_scores.sql` (and any later migration) is applied to the target D1 as part of each API deploy. `wrangler d1 migrations apply` prompts for confirmation in an interactive terminal (the prompt is skipped in non-interactive/CI environments); there is no `--yes` flag, so a manual `bun run deploy:api` from a terminal will ask the operator to confirm pending migrations before they land. Standalone `migrate:prod` / `migrate:preprod` / `migrate:preprod:prod-data` scripts are also available for applying migrations without deploying the Worker. `gen-schema` + web `codegen` outputs must be committed (CI `lint:codegen` fails on staleness).
 
 ## 11. Future extensions (not in scope)
 

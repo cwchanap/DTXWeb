@@ -127,9 +127,14 @@ fn extract_deep_link_args_accepts_case_insensitive_scheme() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 fn extract_deep_link_args_accepts_dtx_dev_scheme() {
     // The dev build registers `dtx-dev://` (tauri.dev.conf.json) so deep
     // links route to the dev app instead of an installed production copy.
+    // The production code only accepts `dtx-dev://` under
+    // cfg!(debug_assertions), so this test is gated to debug builds — under
+    // `cargo test --release` the scheme is rejected and the assertion would
+    // fail (filtered would contain only the `dtx://` entry).
     let argv = [
         "dtx-dev://auth-callback?magic_link=dev-token",
         "dtx://auth-callback?magic_link=prod-token",
@@ -140,4 +145,21 @@ fn extract_deep_link_args_accepts_dtx_dev_scheme() {
     assert_eq!(filtered.len(), 2);
     assert_eq!(filtered[0], "dtx-dev://auth-callback?magic_link=dev-token");
     assert_eq!(filtered[1], "dtx://auth-callback?magic_link=prod-token");
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn extract_deep_link_args_rejects_dtx_dev_scheme_in_release() {
+    // In release builds cfg!(debug_assertions) is false, so `dtx-dev://`
+    // is NOT accepted — only the production `dtx://` scheme passes. This
+    // complements the debug-gated test above so both paths are covered.
+    let argv = [
+        "dtx-dev://auth-callback?magic_link=dev-token",
+        "dtx://auth-callback?magic_link=prod-token",
+        "noise",
+    ];
+
+    let filtered = extract_deep_link_args(argv);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0], "dtx://auth-callback?magic_link=prod-token");
 }

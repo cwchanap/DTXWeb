@@ -247,6 +247,73 @@ describe('Scores', () => {
 		expect(screen.queryByText('Song 21')).not.toBeInTheDocument();
 	});
 
+	it('refreshes placeholder titles for off-page songs after an upload-time restore', async () => {
+		// 11 songs (2 pages). Song 11 is on page 2 and has a saved link to
+		// cloudId '42'. The initial load only restores page 1, so song 11 has
+		// no link yet. Upload restores ALL songs with fetchTitles:false, which
+		// commits a placeholder "Simfile #42" link for song 11 (charts are
+		// fetched, titles are not). Navigating to page 2 must then refresh
+		// the placeholder title via fetchCloudSong without re-fetching charts.
+		const songs = Array.from({ length: 11 }, (_, i) => ({
+			songId: i + 1,
+			title: `Song ${i + 1}`,
+			artist: 'Artist',
+			genre: 'Rock',
+			charts: [
+				{
+					difficultyLevel: 2,
+					difficultyLabel: 'BASIC',
+					drumLevel: 55,
+					fileHash: `hash-${i}`,
+					aggregate: { playCount: 1, clearCount: 1 },
+					best: bestRow,
+					recent: []
+				}
+			]
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue(songs);
+		// Saved link for song 11 (page 2) only.
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f11']: '42'
+		});
+		host.fetchCloudSong.mockResolvedValue({
+			success: true,
+			cloudSongData: {
+				id: 42,
+				title: 'Cloud Song 11',
+				artist: 'Artist',
+				is_published: true
+			}
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Song 1')).toBeInTheDocument();
+		// Page 1 restore must not have fetched the title for song 11's link.
+		expect(host.fetchCloudSong).not.toHaveBeenCalledWith('42');
+
+		// Upload restores all songs with fetchTitles:false → song 11 gets a
+		// placeholder link (charts fetched, title not).
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+		// fetchCloudSong must still NOT have been called — upload skips titles.
+		expect(host.fetchCloudSong).not.toHaveBeenCalledWith('42');
+
+		// Clear chart fetch calls so we can assert no re-fetch on page nav.
+		host.fetchCloudSongCharts.mockClear();
+
+		// Navigate to page 2 — the placeholder title must be refreshed.
+		await fireEvent.click(screen.getByText('2'));
+		await waitFor(() => expect(host.fetchCloudSong).toHaveBeenCalledWith('42'));
+		// Charts must NOT be re-fetched (they were loaded during upload).
+		expect(host.fetchCloudSongCharts).not.toHaveBeenCalled();
+		// The real title is now shown, not the "Simfile #42" placeholder.
+		expect(await screen.findByText('Linked: Cloud Song 11')).toBeInTheDocument();
+	});
+
 	it('collapses and expands a song to hide and show its charts', async () => {
 		render(Scores);
 		expect(await screen.findByText('Played Song')).toBeInTheDocument();
@@ -654,6 +721,82 @@ describe('Scores', () => {
 		await waitFor(() => expect(host.uploadScores).toHaveBeenCalledTimes(2));
 		expect(host.uploadScores.mock.calls[0][0].charts).toHaveLength(100);
 		expect(host.uploadScores.mock.calls[1][0].charts).toHaveLength(1);
+		expect(await screen.findByText(/uploaded 101 chart/i)).toBeInTheDocument();
+	}, 20_000);
+
+	it('halves the batch size and retries when the server returns the "too many charts" sentinel', async () => {
+		// 101 charts. The server rejects the first 100-chart batch with the
+		// sentinel skip (chartId: '*'), meaning the server cap is lower than
+		// the client's initial batch size. The client must halve to 50 and
+		// retry — not silently drop the batch. The 50-chart batch succeeds,
+		// then 50, then 1.
+		const charts = Array.from({ length: 101 }, (_, i) => ({
+			difficultyLevel: 2,
+			difficultyLabel: `LV${i}`,
+			drumLevel: i,
+			fileHash: `hash-${i}`,
+			aggregate: { playCount: 1, clearCount: 1 },
+			best: bestRow,
+			recent: []
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue([
+			{ songId: 1, title: 'Mega Song', artist: 'Artist A', genre: 'Rock', charts }
+		]);
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42'
+		});
+		host.fetchCloudSong.mockResolvedValue({
+			success: true,
+			cloudSongData: {
+				id: 42,
+				title: 'Cloud Mega Song',
+				artist: 'Artist A',
+				is_published: true
+			}
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: charts.map((c, i) => ({
+				id: `${1000 + i}`,
+				label: `LV${i}`,
+				level: i
+			}))
+		});
+		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => {
+			// First call (100 charts) → sentinel skip (server cap < 100).
+			if (payload.charts.length > 50) {
+				return {
+					success: true,
+					data: {
+						updatedCharts: 0,
+						insertedScores: 0,
+						skipped: [{ chartId: '*', reason: 'too many charts (max 50)' }]
+					}
+				};
+			}
+			return {
+				success: true,
+				data: {
+					updatedCharts: payload.charts.length,
+					insertedScores: payload.charts.length * 2,
+					skipped: []
+				}
+			};
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Mega Song')).toBeInTheDocument();
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		// The first 100-chart batch hits the sentinel; the client halves to
+		// 50 and retries. Three successful batches: 50 + 50 + 1 = 101.
+		await waitFor(() => expect(host.uploadScores).toHaveBeenCalledTimes(4));
+		expect(host.uploadScores.mock.calls[0][0].charts).toHaveLength(100);
+		expect(host.uploadScores.mock.calls[1][0].charts).toHaveLength(50);
+		expect(host.uploadScores.mock.calls[2][0].charts).toHaveLength(50);
+		expect(host.uploadScores.mock.calls[3][0].charts).toHaveLength(1);
 		expect(await screen.findByText(/uploaded 101 chart/i)).toBeInTheDocument();
 	}, 20_000);
 

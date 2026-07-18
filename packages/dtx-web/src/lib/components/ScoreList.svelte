@@ -25,19 +25,16 @@
 	// the loading state prematurely.
 	let loadRequestId = 0;
 
-	// myScoredSimfiles is user-scoped: FORBIDDEN/401 means the session expired
-	// (or never existed). Spec §8 requires routing to /login rather than a
-	// dead-end Retry that will keep failing with the same auth error.
+	// myScoredSimfiles is user-scoped: FORBIDDEN/UNAUTHORIZED means the session
+	// expired (or never existed). Spec §8 requires routing to /login rather
+	// than a dead-end Retry that will keep failing with the same auth error.
+	// We check the structured error shape (HTTP status + GraphQL
+	// extensions.code) rather than substring-matching the error message,
+	// which is fragile against wording changes. graphql-request attaches a
+	// `response` with `status` and `errors` to its ClientError; a bare Error
+	// without that shape is treated as a non-auth load failure (Retry path).
 	const isAuthError = (error: unknown): boolean => {
 		if (!(error instanceof Error)) return false;
-		const msg = error.message.toLowerCase();
-		if (
-			msg.includes('forbidden') ||
-			msg.includes('unauthorized') ||
-			msg.includes('not authenticated')
-		) {
-			return true;
-		}
 		const response = (
 			error as {
 				response?: {
@@ -46,7 +43,7 @@
 				};
 			}
 		).response;
-		if (response?.status === 401) return true;
+		if (response?.status === 401 || response?.status === 403) return true;
 		return (
 			response?.errors?.some(
 				(e) => e.extensions?.code === 'FORBIDDEN' || e.extensions?.code === 'UNAUTHORIZED'

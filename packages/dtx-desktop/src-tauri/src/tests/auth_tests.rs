@@ -530,9 +530,21 @@ fn is_auth_callback_url_accepts_dtx_scheme_with_auth_callback_host() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 fn is_auth_callback_url_accepts_dtx_dev_scheme_with_auth_callback_host() {
+    // `dtx-dev://` is only accepted under cfg!(debug_assertions) (auth.rs),
+    // so this test is gated to debug builds — under `cargo test --release`
+    // the scheme is rejected.
     let url = Url::parse("dtx-dev://auth-callback?magic_link=x").unwrap();
     assert!(is_auth_callback_url(&url));
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn is_auth_callback_url_rejects_dtx_dev_scheme_in_release() {
+    // In release builds `dtx-dev://` is NOT accepted — only `dtx://`.
+    let url = Url::parse("dtx-dev://auth-callback?magic_link=x").unwrap();
+    assert!(!is_auth_callback_url(&url));
 }
 
 #[test]

@@ -34,6 +34,15 @@ const MAX_LEVEL_DELTA = 0.5;
  * (e.g. 5.5) can reach us even though the canonical form is encoded. A
  * non-integer is already on the display scale — dividing it again would yield
  * 0.55 and match it against the wrong local chart — so it is returned as-is.
+ *
+ * Edge case: a bare single-digit integer (1–9) decodes to 0.1–0.9 on the ×10
+ * scale. Per the encoding contract this is correct (level 0.5 == 5), but such
+ * low levels are unlikely in practice and the value will silently fail to
+ * match any real local chart (typically 1.0–10.0) — the MAX_LEVEL_DELTA guard
+ * rejects it for manual selection. This is accepted: the encoding contract is
+ * the source of truth, and a bare 1–9 is far more likely a data-entry error
+ * than an intentional sub-1.0 level. Mirrors the web `formatLevel` heuristic
+ * so cloud and local levels are always compared on the same scale.
  */
 const normalizeCloudLevel = (level: number): number =>
 	Number.isInteger(level) ? (level > 100 ? level / 100 : level / 10) : level;

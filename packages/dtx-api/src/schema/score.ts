@@ -189,7 +189,10 @@ type ValidationResult = { ok: true; scores: InputScore[] } | { ok: false; reason
 
 // Per-row field validation. Returns a reason string for an invalid row, or
 // null when valid. Structural checks (best/non-best coupling, displayOrder
-// range/uniqueness) are handled by the caller.
+// range/uniqueness) are handled by the caller. rankLabel is NOT checked here
+// — the caller strips unknown tokens to null before invoking this function,
+// so any non-null rankLabel reaching here is already a known token. The DB
+// CHECK constraint (0002_scores.sql) is the backstop for direct DB writes.
 const validateScoreFields = (s: InputScore): string | null => {
 	if (s.score != null && (!Number.isInteger(s.score) || s.score < 0))
 		return 'score must be a non-negative integer';
@@ -198,11 +201,6 @@ const validateScoreFields = (s: InputScore): string | null => {
 		(!Number.isFinite(s.achievementRate) || s.achievementRate < 0 || s.achievementRate > 100)
 	) {
 		return 'achievementRate out of range';
-	}
-	// rankLabel is stripped to null before this runs when unknown; remaining
-	// non-null values must be known tokens. DB CHECK constraint mirrors this.
-	if (s.rankLabel != null && !(VALID_RANK_LABELS as readonly string[]).includes(s.rankLabel)) {
-		return 'rankLabel must be one of SS/S/A/B/C/D/E/F';
 	}
 	// performedAt must be parseable and not in the future (prevents skewing
 	// recency sorts). Mirrors the publishDate check in simfile.ts.
@@ -325,6 +323,16 @@ builder.mutationField('uploadScores', (t) =>
 		type: UploadScoresResultRef,
 		args: { input: t.arg({ type: UploadScoresInput, required: true }) },
 		authScopes: { user: true },
+		// Concurrency caveat: each chart's upsert is an independent atomic D1
+		// batch (see upsertChartScoreAndReplaceScores), and Phase 2 writes
+		// charts in bounded-concurrency chunks. Two concurrent uploadScores
+		// calls from the same user targeting the SAME chart are NOT isolated
+		// across calls — both issue DELETE+INSERT replace batches and the
+		// last commit wins, potentially erasing the other call's scores. This
+		// is acceptable because the desktop client is the only caller and
+		// serializes uploads behind a single Upload button (uploading=true
+		// guard). A multi-client or parallel-upload scenario would need a
+		// per-chart advisory lock or compare-and-set at the D1 level.
 		resolve: async (_root, { input }, ctx) => {
 			const skipped: { chartId: string; reason: string }[] = [];
 			let updatedCharts = 0;

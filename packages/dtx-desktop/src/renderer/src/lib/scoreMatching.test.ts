@@ -87,4 +87,14 @@ describe('matchCharts', () => {
 		const result = matchCharts([local(55), local(88)], [cloud('a', 5.5), cloud('b', 88)]);
 		expect(result).toEqual(['a', 'b']);
 	});
+
+	it('decodes a bare single-digit cloud level as ×10 (0.5), which silently fails to match a real local chart', () => {
+		// A bare integer 5 decodes to 0.5 per the ×10 encoding contract. A
+		// real local chart at level 5.0 (drumLevel 50) is 4.5 away — well
+		// beyond MAX_LEVEL_DELTA — so the match is rejected for manual
+		// selection. This pins the documented edge case: bare single-digit
+		// levels are unlikely sub-1.0 values, not display-scale 1–9.
+		const result = matchCharts([local(50)], [cloud('a', 5)]);
+		expect(result).toEqual([null]);
+	});
 });

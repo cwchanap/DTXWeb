@@ -58,8 +58,15 @@ describe('ScoreList', () => {
 		expect(gotoMock).not.toHaveBeenCalled();
 	});
 
-	it('redirects to /login when the session has expired (FORBIDDEN)', async () => {
-		myScoredSimfilesMock.mockRejectedValue(new Error('Forbidden'));
+	it('redirects to /login when the HTTP response is 403 (FORBIDDEN)', async () => {
+		// graphql-request attaches a `response` with the HTTP status to its
+		// ClientError. A 403 means the session expired — route to /login
+		// instead of a dead-end Retry. This tests the structured status check
+		// (not substring matching on the message, which is fragile).
+		const err = Object.assign(new Error('Forbidden'), {
+			response: { status: 403 }
+		});
+		myScoredSimfilesMock.mockRejectedValue(err);
 		render(ScoreList);
 		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
 		expect(screen.queryByText(/score\.load_error/)).not.toBeInTheDocument();
@@ -72,6 +79,17 @@ describe('ScoreList', () => {
 		myScoredSimfilesMock.mockRejectedValue(err);
 		render(ScoreList);
 		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
+	});
+
+	it('treats a bare error without a response shape as a non-auth load failure', async () => {
+		// A bare Error (no response.status / response.errors) must NOT be
+		// treated as an auth error — it should show the Retry path, not
+		// redirect to /login. This guards against false positives from
+		// substring matching on arbitrary error messages.
+		myScoredSimfilesMock.mockRejectedValue(new Error('Forbidden'));
+		render(ScoreList);
+		await waitFor(() => expect(screen.getByText(/score\.load_error/)).toBeInTheDocument());
+		expect(gotoMock).not.toHaveBeenCalled();
 	});
 
 	it('retries the load when the retry button is clicked', async () => {

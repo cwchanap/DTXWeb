@@ -1693,6 +1693,45 @@ async fn upload_scores_returns_result() {
 }
 
 #[tokio::test]
+async fn upload_scores_wraps_payload_as_graphql_input_variable() {
+    // Pin the request body shape: upload_scores_impl must wrap the IPC
+    // payload as { "variables": { "input": { "charts": [...] } } } — the
+    // GraphQL mutation variable is `input`, not the bare payload. A
+    // regression that drops the wrapping (e.g. sending { "variables": {
+    // "charts": [...] } }) would silently send an empty/null input to the
+    // server and produce confusing "no scores" skips.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(body_partial_json(serde_json::json!({
+            "variables": {
+                "input": {
+                    "charts": [
+                        { "chartId": "10", "playCount": 7, "clearCount": 5 }
+                    ]
+                }
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "uploadScores": { "updatedCharts": 1, "insertedScores": 1, "skipped": [] } }
+        })))
+        .mount(&server)
+        .await;
+
+    let payload = serde_json::json!({ "charts": [
+        { "chartId": "10", "playCount": 7, "clearCount": 5, "scores": [
+            { "isBest": true, "cleared": true, "fullCombo": false, "score": 950000 }
+        ] }
+    ] });
+    let result = upload_scores_impl(&server.uri(), "token", payload)
+        .await
+        .expect("upload");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    assert_eq!(result["data"]["updatedCharts"], serde_json::json!(1));
+}
+
+#[tokio::test]
 async fn upload_scores_surfaces_graphql_error() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

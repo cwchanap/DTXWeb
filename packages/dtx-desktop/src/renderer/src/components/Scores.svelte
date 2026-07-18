@@ -210,7 +210,13 @@
 	// lookup is cosmetic for upload, so handleUpload sets fetchTitles:false
 	// and only pays for chart fetches. Songs already linked (manual link or
 	// prior restore) are skipped to avoid re-fetching on page-back or
-	// repeated restores.
+	// repeated restores — EXCEPT placeholder links (title "Simfile #<id>")
+	// left by an upload-time fetchTitles:false restore: those have charts
+	// loaded but a placeholder title, so when fetchTitles is true (paging
+	// path) only the title is refreshed without re-fetching charts.
+	const PLACEHOLDER_PREFIX = 'Simfile #';
+	const isPlaceholderLink = (song: CloudSong): boolean =>
+		song.title === `${PLACEHOLDER_PREFIX}${song.id}`;
 	const RESTORE_CONCURRENCY = 8;
 	const restoreLinksFor = async (
 		indices: number[],
@@ -218,22 +224,35 @@
 		options: { fetchTitles?: boolean } = {}
 	) => {
 		const fetchTitles = options.fetchTitles !== false;
-		const entries = indices
-			.map((i) => ({ i, cloudId: savedLinks[songKey(songs[i])] }))
-			.filter((e): e is { i: number; cloudId: string } => !!e.cloudId)
-			.filter((e) => !links[e.i]);
-		if (entries.length === 0) return;
+		// Partition into new entries (no link yet — need title + charts) and
+		// placeholder entries (linked with a placeholder title — need title
+		// refresh only). Placeholder refresh only runs when fetchTitles is
+		// true; handleUpload's fetchTitles:false path must not touch them.
+		const newEntries: { i: number; cloudId: string }[] = [];
+		const placeholderEntries: { i: number; cloudId: string }[] = [];
+		for (const i of indices) {
+			const cloudId = savedLinks[songKey(songs[i])];
+			if (!cloudId) continue;
+			const existing = links[i];
+			if (!existing) {
+				newEntries.push({ i, cloudId });
+			} else if (fetchTitles && isPlaceholderLink(existing) && existing.id === cloudId) {
+				placeholderEntries.push({ i, cloudId });
+			}
+		}
+		if (newEntries.length === 0 && placeholderEntries.length === 0) return;
 
-		// Fetch real cloud song titles in bounded-concurrency chunks so a
-		// large library (hundreds of saved links) doesn't fire hundreds of
-		// concurrent GraphQL/D1 requests at once. A fetch failure falls back
-		// to the placeholder so one bad link doesn't block the rest. Skipped
-		// entirely when fetchTitles is false (upload restore path).
+		// Fetch real cloud song titles for both groups in bounded-concurrency
+		// chunks so a large library (hundreds of saved links) doesn't fire
+		// hundreds of concurrent GraphQL/D1 requests at once. A fetch failure
+		// falls back to the placeholder so one bad link doesn't block the
+		// rest. Skipped entirely when fetchTitles is false (upload restore).
+		const allTitleEntries = [...newEntries, ...placeholderEntries];
 		const titleResults: PromiseSettledResult<FetchCloudSongResult>[] = [];
 		if (fetchTitles) {
-			for (let i = 0; i < entries.length; i += RESTORE_CONCURRENCY) {
+			for (let i = 0; i < allTitleEntries.length; i += RESTORE_CONCURRENCY) {
 				if (generation !== loadGeneration) return;
-				const chunk = entries.slice(i, i + RESTORE_CONCURRENCY);
+				const chunk = allTitleEntries.slice(i, i + RESTORE_CONCURRENCY);
 				const results = await Promise.allSettled(
 					chunk.map((e) => desktopHost.fetchCloudSong<FetchCloudSongResult>(e.cloudId))
 				);
@@ -242,12 +261,38 @@
 			if (generation !== loadGeneration) return;
 		}
 
-		// Build the CloudSong objects from title results, re-checking for
-		// manual links made during the async title-fetch window. Entries that
-		// were clobbered by a manual link are skipped.
+		// Refresh placeholder titles in place. Charts/matches are already
+		// loaded from the upload-time restore, so only the title/artist/
+		// is_published fields are updated — no chart re-fetch needed.
+		let applied = 0;
+		for (let idx = 0; idx < placeholderEntries.length; idx++) {
+			const { i, cloudId } = placeholderEntries[idx];
+			// Re-check after the async title fetch: the user may have manually
+			// re-linked (or unlinked) this song during the await window.
+			const existing = links[i];
+			if (!existing || !isPlaceholderLink(existing) || existing.id !== cloudId) continue;
+			const result = titleResults[newEntries.length + idx];
+			if (
+				result?.status === 'fulfilled' &&
+				result.value.success &&
+				result.value.cloudSongData
+			) {
+				links[i] = {
+					id: cloudId,
+					title: result.value.cloudSongData.title,
+					artist: result.value.cloudSongData.artist,
+					is_published: result.value.cloudSongData.is_published
+				};
+				applied += 1;
+			}
+		}
+
+		// Build the CloudSong objects for new entries from title results,
+		// re-checking for manual links made during the async title-fetch
+		// window. Entries that were clobbered by a manual link are skipped.
 		const toApply: { i: number; song: CloudSong }[] = [];
-		for (let idx = 0; idx < entries.length; idx++) {
-			const { i, cloudId } = entries[idx];
+		for (let idx = 0; idx < newEntries.length; idx++) {
+			const { i, cloudId } = newEntries[idx];
 			// Re-check after the async title fetches: the user may have manually
 			// linked (or unlinked then re-linked) this song during the await
 			// window. Without this guard, the restore would clobber the manual
@@ -257,7 +302,7 @@
 			if (!songRow) continue;
 			let song: CloudSong = {
 				id: cloudId,
-				title: `Simfile #${cloudId}`,
+				title: `${PLACEHOLDER_PREFIX}${cloudId}`,
 				artist: songRow.artist,
 				is_published: false
 			};
@@ -297,7 +342,6 @@
 		}
 		if (generation !== loadGeneration) return;
 
-		let applied = 0;
 		for (let idx = 0; idx < toApply.length; idx++) {
 			const { i, song } = toApply[idx];
 			// Final re-check: a manual link may have been made during the
@@ -367,10 +411,10 @@
 		}
 	};
 
-	const handleLinkSelect = async (songIndex: number, song: CloudSong, persist = true) => {
+	const handleLinkSelect = async (songIndex: number, song: CloudSong) => {
 		links[songIndex] = song;
 		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
-		if (persist) schedulePersist();
+		schedulePersist();
 		autocompleteFor = null;
 		// Drop the prior link's charts/matches immediately. Until the new
 		// link's chart fetch resolves there must be no stale cloud chart IDs
@@ -402,7 +446,7 @@
 					const nextSaved = { ...savedLinks };
 					delete nextSaved[key];
 					savedLinks = nextSaved;
-					if (persist) schedulePersist();
+					schedulePersist();
 					cloudChartsBySong[songIndex] = [];
 					matchesBySong[songIndex] = [];
 					toastStore.error($_('score.fetch_charts_failed'));
@@ -419,7 +463,7 @@
 				const nextSaved = { ...savedLinks };
 				delete nextSaved[key];
 				savedLinks = nextSaved;
-				if (persist) schedulePersist();
+				schedulePersist();
 				cloudChartsBySong[songIndex] = [];
 				matchesBySong[songIndex] = [];
 				toastStore.error($_('score.fetch_charts_failed'));
@@ -505,12 +549,13 @@
 		return { charts, clientSkipped };
 	};
 
-	// Server-side cap (score.ts MAX_UPLOAD_CHARTS). The API returns a sentinel
-	// skip with chartId '*' when exceeded, so the client slices into batches
-	// of at most this size and calls uploadScores per batch, accumulating
-	// results. This lets a busy player with >100 matched charts upload in one
-	// click instead of hitting the sentinel with no recovery.
-	const MAX_UPLOAD_CHARTS = 100;
+	// Initial batch size for uploadScores. The server (score.ts) returns a
+	// sentinel skip with chartId '*' when a batch exceeds its MAX_UPLOAD_CHARTS
+	// cap; the client detects that sentinel and halves the batch size,
+	// retrying without advancing — so this value is a starting hint, not a
+	// hard coupling to the server cap. If the server cap is lowered, the
+	// client adapts automatically instead of silently dropping batches.
+	const INITIAL_BATCH_SIZE = 100;
 
 	const handleUpload = async () => {
 		if (uploading || loading) return;
@@ -558,8 +603,16 @@
 			// server-side skips returned in the upload response.
 			clientSkipped = input.clientSkipped;
 			skipped = clientSkipped;
-			for (let i = 0; i < input.charts.length; i += MAX_UPLOAD_CHARTS) {
-				const batch = input.charts.slice(i, i + MAX_UPLOAD_CHARTS);
+			// Adaptive batching: start at INITIAL_BATCH_SIZE and halve whenever
+			// the server returns the "too many charts" sentinel (chartId '*'),
+			// retrying the same charts without advancing. This decouples the
+			// client from the server's exact MAX_UPLOAD_CHARTS cap — if the cap
+			// is lowered server-side, the client shrinks its batches instead of
+			// silently dropping them.
+			let batchSize = INITIAL_BATCH_SIZE;
+			let i = 0;
+			while (i < input.charts.length) {
+				const batch = input.charts.slice(i, i + batchSize);
 				const result = await desktopHost.uploadScores<UploadScoresResult>({
 					charts: batch
 				});
@@ -581,9 +634,21 @@
 					skipped = [...clientSkipped, ...serverSkipped];
 					return;
 				}
+				// Detect the sentinel "too many charts" skip. The server returns
+				// it as a successful response with 0 updated/inserted — without
+				// this guard the batch would be silently dropped. Halve the batch
+				// size and retry the same charts. A single-chart batch that still
+				// hits the sentinel means the server cap is 0 (or broken) —
+				// surface the sentinel skip and give up on this chart.
+				const sentinel = (result.data.skipped ?? []).find((s) => s.chartId === '*');
+				if (sentinel && batch.length > 1) {
+					batchSize = Math.max(1, Math.floor(batchSize / 2));
+					continue;
+				}
 				totalUpdated += result.data.updatedCharts;
 				totalInserted += result.data.insertedScores;
 				serverSkipped.push(...(result.data.skipped ?? []));
+				i += batch.length;
 			}
 			uploadStatus = $_('score.uploaded', {
 				values: { updated: totalUpdated, inserted: totalInserted }

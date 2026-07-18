@@ -133,7 +133,12 @@
 	// (or a page restore followed by a manual change) coalesces into one disk
 	// write instead of one write per selection.
 	let persistTimer: ReturnType<typeof setTimeout> | null = null;
+	// Set by onDestroy so a stale restore continuation (its generation check
+	// may have passed before destruction) cannot schedule a post-unmount
+	// write that would overwrite a newer instance's persisted links.
+	let destroyed = false;
 	const schedulePersist = (): void => {
+		if (destroyed) return;
 		if (persistTimer) clearTimeout(persistTimer);
 		persistTimer = setTimeout(() => {
 			persistTimer = null;
@@ -143,6 +148,15 @@
 		}, 300);
 	};
 	onDestroy(() => {
+		// Invalidate any in-flight restore continuations so they bail at their
+		// next generation check instead of mutating state and calling
+		// schedulePersist after unmount. Without this, a restore suspended at
+		// an IPC await would pass its generation check (loadGeneration was
+		// unchanged), commit links, and schedule a 300ms write whose callback
+		// closes over this instance's savedLinks — potentially overwriting a
+		// newly mounted Scores view's fresher persisted map.
+		destroyed = true;
+		loadGeneration += 1;
 		// Flush any pending debounced write so a link change made within the
 		// 300ms window is not lost when the component unmounts. Clearing the
 		// timer alone would silently drop the last edit.
@@ -164,8 +178,15 @@
 		// `handleChooseDb` -> `loadScores` increments `loadGeneration`, so if
 		// it advanced past `startGeneration` during either await, bail.
 		const startGeneration = loadGeneration;
-		savedLinks = await desktopHost.readScoreSongLinks();
+		// Read the persisted link map BEFORE assigning it: a manual DB
+		// selection during the await increments loadGeneration (via
+		// loadScores), and assigning the stale disk map after that would
+		// overwrite any manual link the user made in the meantime. The
+		// generation check must gate the assignment, not just the subsequent
+		// loadScores call.
+		const loadedLinks = await desktopHost.readScoreSongLinks();
 		if (startGeneration !== loadGeneration) return;
+		savedLinks = loadedLinks;
 		const path = await desktopHost.defaultDtxmaniaDbPath();
 		if (startGeneration !== loadGeneration) return;
 		if (path) {

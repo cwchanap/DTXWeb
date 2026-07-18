@@ -1228,6 +1228,98 @@ describe('Scores', () => {
 		expect(screen.getByText(/Chart 1007 skipped/i)).toBeInTheDocument();
 	}, 20_000);
 
+	it('does not overwrite a manual link with a late readScoreSongLinks resolution', async () => {
+		// readScoreSongLinks is slow; the user picks a DB and makes a manual
+		// link before it resolves. The late disk read must not overwrite the
+		// in-memory savedLinks with stale disk data — the generation guard
+		// must run BEFORE the assignment, not after.
+		let resolveLinks!: (v: Record<string, string>) => void;
+		host.readScoreSongLinks.mockReturnValue(
+			new Promise<Record<string, string>>((resolve) => {
+				resolveLinks = resolve;
+			})
+		);
+		host.defaultDtxmaniaDbPath.mockResolvedValue(null);
+		host.selectDtxmaniaDb.mockResolvedValue({
+			canceled: false,
+			filePaths: ['/custom/songs.db']
+		});
+		host.parseDtxmaniaScores.mockResolvedValue(parsedSongs);
+
+		render(Scores);
+		// Chooser is clickable while readScoreSongLinks is still pending.
+		await fireEvent.click(await screen.findByRole('button', { name: /choose songs\.db/i }));
+		await waitFor(() =>
+			expect(host.parseDtxmaniaScores).toHaveBeenCalledWith('/custom/songs.db')
+		);
+		expect(await screen.findByText('Played Song')).toBeInTheDocument();
+
+		// Manually link the song — this populates savedLinks in memory.
+		await fireEvent.click(screen.getByRole('button', { name: /link to cloud song/i }));
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		// Now the late readScoreSongLinks resolves with stale disk data that
+		// does NOT contain the manual link. Without the fix, this overwrites
+		// savedLinks and the manual link is lost from the in-memory map.
+		resolveLinks({ ['/other/songs.db\u001f1']: '99' });
+		// Drain microtasks + the 300ms persist debounce so any stale write
+		// would have landed.
+		await new Promise((r) => setTimeout(r, 400));
+
+		// Re-parse: loadScores resets links={} and re-restores from savedLinks.
+		// If the manual link survived the late resolve, restoreLinksForPage
+		// re-fetches its charts. If savedLinks was overwritten, the link is
+		// gone and no chart fetch happens for '42'.
+		host.fetchCloudSongCharts.mockClear();
+		host.fetchCloudSong.mockClear();
+		await fireEvent.click(screen.getByRole('button', { name: /reparse/i }));
+		await waitFor(() => expect(host.parseDtxmaniaScores).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+	});
+
+	it('does not persist saved links from a stale restore continuation after unmount', async () => {
+		// Seed a saved link so restoreLinksFor has work to do on mount. Hold
+		// the chart fetch pending so the restore continuation is in flight
+		// when we unmount. After unmount, resolving the chart fetch must NOT
+		// trigger a persist write — onDestroy must invalidate the load
+		// generation so the continuation bails before schedulePersist.
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42'
+		});
+		let resolveCharts!: (v: unknown) => void;
+		host.fetchCloudSongCharts.mockImplementation(
+			() =>
+				new Promise((r) => {
+					resolveCharts = r as (v: unknown) => void;
+				})
+		);
+
+		const { unmount } = render(Scores);
+		// Wait for the title fetch to complete and the chart fetch to be
+		// pending (restoreLinksFor is now suspended at the chart-fetch await).
+		await waitFor(() => expect(host.fetchCloudSong).toHaveBeenCalledWith('42'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		// No persist write should have landed yet (restore hasn't completed).
+		host.writeScoreSongLinks.mockClear();
+
+		unmount();
+
+		// Resolve the chart fetch — the stale continuation must NOT persist.
+		resolveCharts({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+		// Wait beyond the 300ms persist debounce so a stale timer would fire.
+		await new Promise((r) => setTimeout(r, 400));
+
+		expect(host.writeScoreSongLinks).not.toHaveBeenCalled();
+	});
+
 	it('clears a failed manual link so restoreLinksFor can retry on the next upload', async () => {
 		// When fetchCloudSongCharts returns { success: false } after a manual
 		// link, the link must be rolled back — otherwise restoreLinksFor

@@ -442,7 +442,7 @@ test.describe('Score page UI (/app/score)', () => {
 		await expect(card.getByText(/987.?650/)).toBeVisible();
 
 		// The SS rank badge should appear.
-		await expect(card.getByText('SS')).toBeVisible();
+		await expect(card.getByText('SS', { exact: true })).toBeVisible();
 
 		// The FC (full combo) badge should appear.
 		await expect(card.getByText('FC')).toBeVisible();

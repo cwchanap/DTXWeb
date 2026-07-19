@@ -173,6 +173,22 @@ describe('utils', () => {
 
 			expect(result).toBe('0.00 / 0.00 / 2.00');
 		});
+
+		// Regression guard: the GraphQL schema exposes `level` as a Float, so a
+		// stray decimal (e.g. 5.5) can arrive even though the canonical form is
+		// the encoded integer 55. formatLevel treats a non-integer as already
+		// display-scale (returns it as-is rather than ÷10). This pins that
+		// formatLevelDisplay inherits that passthrough — a future "fix" to
+		// formatLevel that always divides must not silently regress
+		// ChartListItem/ScoreCard rendering. Without this assertion, all other
+		// formatLevelDisplay tests use integer levels and would still pass.
+		it('passes stray decimal levels through as display-scale (not ÷10)', () => {
+			const dtxFiles: Array<{ level?: string | number }> = [{ level: 5.5 }, { level: 8.75 }];
+
+			const result = formatLevelDisplay(dtxFiles);
+
+			expect(result).toBe('5.50 / 8.75');
+		});
 	});
 
 	describe('filterFiles', () => {

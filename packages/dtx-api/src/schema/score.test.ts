@@ -841,6 +841,61 @@ describe('uploadScores', () => {
 		);
 	});
 
+	// If the refund KV put itself rejects (KV outage on top of D1 outage), the
+	// mutation must NOT throw — that would surface as a GraphQL error after all
+	// the write work already completed, leaving the caller with neither scores
+	// nor a result payload. The refund is best-effort: log a warning and return
+	// the normal result so the client sees skipped charts + updatedCharts=0.
+	it('does not throw when the refund KV put rejects (best-effort refund)', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10]));
+		mockedUpsertReplace.mockRejectedValue(new Error('D1 batch failed'));
+		const warn = vi.fn();
+		const ctx = makeCtx({
+			user: { id: 'user-1' } as never,
+			logger: {
+				info: vi.fn(),
+				warn,
+				error: vi.fn(),
+				debug: vi.fn()
+			} as unknown as Ctx['logger']
+		});
+		const kvGet = ctx.kv.get as unknown as ReturnType<typeof vi.fn>;
+		const kvPut = ctx.kv.put as unknown as ReturnType<typeof vi.fn>;
+		// First get: rate-limit check (counter at 0 → allowed, increments to 1).
+		// Second get: refund check (counter at 1 → attempts decrement).
+		kvGet.mockResolvedValueOnce(null).mockResolvedValueOnce('1');
+		// The refund put rejects — the safety net itself is broken.
+		kvPut.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('KV put failed'));
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						}
+					]
+				}
+			}
+		});
+		// Mutation resolves normally — no GraphQL error surfaced.
+		expect(result.errors).toBeUndefined();
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			skipped: { chartId: string; reason: string }[];
+		};
+		expect(payload.updatedCharts).toBe(0);
+		expect(payload.skipped).toEqual([{ chartId: '10', reason: 'write failed' }]);
+		// The refund failure is logged as a warning, not swallowed silently.
+		expect(warn).toHaveBeenCalledWith(
+			'Failed to refund upload token after total write failure',
+			expect.objectContaining({ userId: 'user-1', error: 'KV put failed' })
+		);
+	});
+
 	// Exercises the WRITE_CONCURRENCY=8 chunk boundary: 9 writable charts span
 	// two chunks (8 + 1). Every chart must be written — the second chunk must
 	// not be dropped by an off-by-one in the slice/loop. Also pins that the

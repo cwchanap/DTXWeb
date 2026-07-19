@@ -13,6 +13,7 @@
 		matches: (string | null)[];
 		expanded: boolean;
 		autocompleteOpen: boolean;
+		uploading?: boolean;
 		onToggle: () => void;
 		onLinkSelect: (song: CloudSong) => void;
 		onOverrideMatch: (chartIndex: number, cloudChartId: string) => void;
@@ -27,6 +28,7 @@
 		matches,
 		expanded,
 		autocompleteOpen,
+		uploading = false,
 		onToggle,
 		onLinkSelect,
 		onOverrideMatch,
@@ -61,12 +63,20 @@
 				>
 				<button
 					class="text-faint hover:text-hi ml-2 text-xs underline"
-					onclick={onAutocompleteToggle}>{$_('score.link.change')}</button
+					onclick={onAutocompleteToggle}
+					disabled={uploading}
+					aria-disabled={uploading}
+				>
+					{$_('score.link.change')}</button
 				>
 			{:else}
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-lg border px-3 py-1.5 text-sm"
+					class:opacity-50={uploading}
+					class:cursor-not-allowed={uploading}
 					onclick={onAutocompleteToggle}
+					disabled={uploading}
+					aria-disabled={uploading}
 					aria-label={$_('score.link.to_cloud')}
 				>
 					{$_('score.link.to_cloud')}

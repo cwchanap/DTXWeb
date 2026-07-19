@@ -515,9 +515,21 @@ builder.mutationField('uploadScores', (t) =>
 			// If every write failed (e.g. D1 outage), refund the hourly token so
 			// the user isn't locked out for an hour with zero scores landed.
 			// Partial success (some charts wrote) still consumes the token —
-			// those scores are persisted.
+			// those scores are persisted. The refund is best-effort: if the KV
+			// put itself rejects (KV outage), we must not throw — that would
+			// surface as a mutation error after all the write work already
+			// completed, leaving the caller with neither scores nor a result
+			// payload. Log and move on; the token stays consumed for this hour.
 			if (updatedCharts === 0) {
-				await refundUploadToken(ctx.kv, ctx.user!.id);
+				try {
+					await refundUploadToken(ctx.kv, ctx.user!.id);
+				} catch (refundError) {
+					ctx.logger.warn('Failed to refund upload token after total write failure', {
+						userId: ctx.user!.id,
+						error:
+							refundError instanceof Error ? refundError.message : String(refundError)
+					});
+				}
 			}
 
 			return { updatedCharts, insertedScores, skipped };

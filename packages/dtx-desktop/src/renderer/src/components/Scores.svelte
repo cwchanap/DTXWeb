@@ -771,6 +771,7 @@
 					matches={matchesBySong[songIndex] ?? []}
 					expanded={isSongExpanded(song)}
 					autocompleteOpen={autocompleteFor === songIndex}
+					{uploading}
 					onToggle={() => toggleSong(song)}
 					onLinkSelect={(cloudSong) => handleLinkSelect(songIndex, cloudSong)}
 					onOverrideMatch={(chartIndex, cloudChartId) =>

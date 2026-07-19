@@ -72,6 +72,25 @@ describe('ScoreList', () => {
 		expect(screen.queryByText(/score\.load_error/)).not.toBeInTheDocument();
 	});
 
+	// Regression: goto('/login') is async and returns before the route
+	// changes. Without the redirecting flag, the finally block sets
+	// loading=false while songs is still [] and loadError is false, so the
+	// "no scores" empty state flashes briefly before /login navigation
+	// completes. The redirecting flag keeps loading=true so the spinner
+	// shows instead.
+	it('does not flash the "no scores" empty state while redirecting to /login', async () => {
+		const err = Object.assign(new Error('Forbidden'), {
+			response: { status: 403 }
+		});
+		myScoredSimfilesMock.mockRejectedValue(err);
+		render(ScoreList);
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
+		// The "no scores" empty state must NOT appear during the redirect.
+		expect(screen.queryByText(/score\.no_scores/)).not.toBeInTheDocument();
+		// The loading spinner stays visible (loading was not cleared).
+		expect(screen.getByText(/score\.loading/)).toBeInTheDocument();
+	});
+
 	it('redirects to /login when the GraphQL response carries FORBIDDEN', async () => {
 		const err = Object.assign(new Error('Forbidden'), {
 			response: { errors: [{ extensions: { code: 'FORBIDDEN' } }] }

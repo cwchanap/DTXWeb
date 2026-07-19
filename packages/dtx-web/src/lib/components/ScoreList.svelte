@@ -20,6 +20,11 @@
 	const totalPages = $derived(Math.max(1, Math.ceil(totalCount / pageSize)));
 	let loading = $state(true);
 	let loadError = $state(false);
+	// Set when an auth error triggers a redirect to /login. While true, the
+	// finally block keeps `loading` true so the loading spinner stays visible
+	// instead of flashing the "no scores" empty state before /login navigation
+	// completes (goto is async and returns before the route changes).
+	let redirecting = $state(false);
 	// Monotonically increasing request ID: only the latest page load's response
 	// is applied, so rapid page changes can't overwrite the current page or hide
 	// the loading state prematurely.
@@ -80,13 +85,17 @@
 		} catch (error) {
 			if (requestId !== loadRequestId) return;
 			if (isAuthError(error)) {
+				// Gate the empty state: keep `loading` true so the spinner
+				// shows while /login navigation is in flight, rather than
+				// flashing "no scores" (loadError stays false, songs is []).
+				redirecting = true;
 				goto('/login');
 				return;
 			}
 			console.error('Failed to load scores:', error);
 			loadError = true;
 		} finally {
-			if (requestId === loadRequestId) {
+			if (requestId === loadRequestId && !redirecting) {
 				loading = false;
 			}
 		}

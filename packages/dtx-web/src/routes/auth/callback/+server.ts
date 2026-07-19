@@ -29,7 +29,14 @@ const buildCallbackErrorRedirect = (
 
 export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 	const intent = callbackIntent(url);
-	const nextPath = safeAppRedirectPath(url.searchParams.get('next'));
+	// Account-link callbacks always carry `next=/app/account` (set by
+	// buildAccountCallbackUrl), so safeAppRedirectPath yields /app/account.
+	// For normal logins, `next` is absent unless the login flow preserved a
+	// return path (e.g. /app/score); default to /app to preserve the
+	// pre-existing behavior. safeAppRedirectPath still validates any
+	// present value against the /app* allow-list.
+	const nextParam = url.searchParams.get('next');
+	const nextPath = nextParam ? safeAppRedirectPath(nextParam) : '/app';
 	const accountLink = isAccountLinkCallback(url);
 	const providerError =
 		url.searchParams.get('error_description') ?? url.searchParams.get('error');
@@ -102,5 +109,9 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 		redirect(303, buildLinkedAccountRedirect(nextPath, 'connected'));
 	}
 
-	redirect(303, intent === 'desktop' ? '/app?redirect=desktop' : '/app');
+	// Desktop logins redirect to /app?redirect=desktop to trigger the
+	// desktop deep-link handoff; `next` is a web-route concept and is never
+	// set for desktop intent. Web logins honor the validated `nextPath`
+	// (defaults to /app when no return path was preserved).
+	redirect(303, intent === 'desktop' ? '/app?redirect=desktop' : nextPath);
 };

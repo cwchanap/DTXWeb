@@ -212,4 +212,73 @@ describe('Login Page', () => {
 		});
 		expect(screen.queryByText('Click here to reset your password')).not.toBeInTheDocument();
 	});
+
+	// The `next` param threads the post-login return path through both forms
+	// so the server action can redirect back to the originating page (e.g.
+	// /app/score) instead of the default /app.
+	it('threads the next param into the password form as a hidden input', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?next=' + encodeURIComponent('/app/score'));
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+		});
+		const passwordForm = screen.getByRole('button', { name: 'Login' }).closest('form');
+		expect(passwordForm).not.toBeNull();
+		const nextInput = passwordForm!.querySelector('input[name="next"]') as HTMLInputElement;
+		expect(nextInput).not.toBeNull();
+		expect(nextInput.value).toBe('/app/score');
+	});
+
+	it('threads the next param into the Google form as a hidden input', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?next=' + encodeURIComponent('/app/score'));
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole('button', { name: 'Continue with Google' })
+			).toBeInTheDocument();
+		});
+		const googleForm = screen
+			.getByRole('button', { name: 'Continue with Google' })
+			.closest('form');
+		expect(googleForm).not.toBeNull();
+		const nextInput = googleForm!.querySelector('input[name="next"]') as HTMLInputElement;
+		expect(nextInput).not.toBeNull();
+		expect(nextInput.value).toBe('/app/score');
+	});
+
+	it('does not emit a next hidden input when next is absent', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login');
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+		});
+		const passwordForm = screen.getByRole('button', { name: 'Login' }).closest('form');
+		expect(passwordForm!.querySelector('input[name="next"]')).toBeNull();
+	});
+
+	// Desktop logins redirect back to the desktop app via deep link, not to
+	// a web route, so `next` must be ignored even if present in the URL.
+	it('does not thread next when redirect=desktop is set', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL(
+			'http://localhost/login?redirect=desktop&next=' + encodeURIComponent('/app/score')
+		);
+		render(LoginPage);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole('heading', { name: 'Login to Desktop App' })
+			).toBeInTheDocument();
+		});
+		const passwordForm = screen.getByRole('button', { name: 'Login' }).closest('form');
+		expect(passwordForm!.querySelector('input[name="next"]')).toBeNull();
+		const desktopRedirect = passwordForm!.querySelector('input[name="redirect"]');
+		expect(desktopRedirect).not.toBeNull();
+	});
 });

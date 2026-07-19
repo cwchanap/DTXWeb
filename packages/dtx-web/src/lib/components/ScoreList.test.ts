@@ -8,12 +8,21 @@ vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 	return { Pagination: PaginationStub };
 });
 
-const { myScoredSimfilesMock, gotoMock } = vi.hoisted(() => ({
+const { myScoredSimfilesMock, gotoMock, pageMock } = vi.hoisted(() => ({
 	myScoredSimfilesMock: vi.fn(),
-	gotoMock: vi.fn()
+	gotoMock: vi.fn(),
+	pageMock: { url: new URL('http://localhost/app/score') }
 }));
 vi.mock('$lib/api', () => ({ myScoredSimfiles: myScoredSimfilesMock }));
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+vi.mock('$app/stores', () => ({
+	page: {
+		subscribe: (run: (value: unknown) => void) => {
+			run({ url: pageMock.url });
+			return () => {};
+		}
+	}
+}));
 
 import ScoreList from './ScoreList.svelte';
 import type { ScoredSimfile } from '$lib/api/score';
@@ -35,7 +44,11 @@ const song: ScoredSimfile = {
 beforeEach(() => {
 	myScoredSimfilesMock.mockReset();
 	gotoMock.mockReset();
+	pageMock.url = new URL('http://localhost/app/score');
 });
+
+// Expected /login target with the current path preserved via `next`.
+const loginWithNext = (path = '/app/score') => `/login?next=${encodeURIComponent(path)}`;
 
 describe('ScoreList', () => {
 	it('fetches and renders scored songs', async () => {
@@ -68,7 +81,7 @@ describe('ScoreList', () => {
 		});
 		myScoredSimfilesMock.mockRejectedValue(err);
 		render(ScoreList);
-		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith(loginWithNext()));
 		expect(screen.queryByText(/score\.load_error/)).not.toBeInTheDocument();
 	});
 
@@ -84,7 +97,7 @@ describe('ScoreList', () => {
 		});
 		myScoredSimfilesMock.mockRejectedValue(err);
 		render(ScoreList);
-		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith(loginWithNext()));
 		// The "no scores" empty state must NOT appear during the redirect.
 		expect(screen.queryByText(/score\.no_scores/)).not.toBeInTheDocument();
 		// The loading spinner stays visible (loading was not cleared).
@@ -97,7 +110,19 @@ describe('ScoreList', () => {
 		});
 		myScoredSimfilesMock.mockRejectedValue(err);
 		render(ScoreList);
-		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login'));
+		await waitFor(() => expect(gotoMock).toHaveBeenCalledWith(loginWithNext()));
+	});
+
+	// The `next` param must reflect the current route so the login flow can
+	// return the user to the page they were on, not a hardcoded path.
+	it('preserves the current path (including query string) in the next param', async () => {
+		pageMock.url = new URL('http://localhost/app/score?page=3');
+		const err = Object.assign(new Error('Forbidden'), { response: { status: 403 } });
+		myScoredSimfilesMock.mockRejectedValue(err);
+		render(ScoreList);
+		await waitFor(() =>
+			expect(gotoMock).toHaveBeenCalledWith(loginWithNext('/app/score?page=3'))
+		);
 	});
 
 	it('treats a bare error without a response shape as a non-auth load failure', async () => {

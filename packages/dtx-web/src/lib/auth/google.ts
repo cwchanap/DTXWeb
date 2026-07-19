@@ -20,11 +20,18 @@ export type GoogleRedirectIntent = 'web' | 'desktop';
 
 export const buildAuthCallbackUrl = (
 	origin: string,
-	intent: GoogleRedirectIntent = 'web'
+	intent: GoogleRedirectIntent = 'web',
+	next?: string | null
 ): string => {
 	const callbackUrl = new URL('/auth/callback', origin);
 	if (intent === 'desktop') {
 		callbackUrl.searchParams.set('redirect', 'desktop');
+	}
+	// `next` is only meaningful for web logins (desktop redirects back to
+	// the desktop app, not a web route). Callers validate via
+	// safeAppRedirectPath before passing; the callback re-validates too.
+	if (intent === 'web' && next) {
+		callbackUrl.searchParams.set('next', next);
 	}
 	return callbackUrl.toString();
 };

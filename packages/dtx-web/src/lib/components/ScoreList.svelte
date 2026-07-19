@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { Button } from '@dtx/ui-components';
@@ -88,8 +89,15 @@
 				// Gate the empty state: keep `loading` true so the spinner
 				// shows while /login navigation is in flight, rather than
 				// flashing "no scores" (loadError stays false, songs is []).
+				// Preserve the current path via `next` so the login flow
+				// can return here after re-authentication instead of
+				// dropping the user on /app. The login server action
+				// validates `next` against an /app* allow-list
+				// (safeAppRedirectPath), so an arbitrary value can't pivot
+				// the post-login destination.
 				redirecting = true;
-				goto('/login');
+				const next = `${$page.url.pathname}${$page.url.search}`;
+				goto(`/login?next=${encodeURIComponent(next)}`);
 				return;
 			}
 			console.error('Failed to load scores:', error);

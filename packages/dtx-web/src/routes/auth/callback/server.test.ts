@@ -119,6 +119,46 @@ describe('/auth/callback', () => {
 		});
 	});
 
+	// `next` preserves the post-login return path (e.g. /app/score) through
+	// the Google OAuth round-trip. The callback honors it on success so a
+	// user whose session expired on /app/score returns there, not /app.
+	it('redirects to the next path on successful login when next is an /app route', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&next=' + encodeURIComponent('/app/score')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: '/app/score'
+		});
+	});
+
+	// safeAppRedirectPath rejects anything outside /app* — a crafted `next`
+	// can't pivot the post-login destination to an external URL.
+	it('rejects a non-/app next and falls back to /app/account on success', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&next=' +
+				encodeURIComponent('https://evil.example')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: '/app/account'
+		});
+	});
+
+	// Desktop intent keeps its own /app?redirect=desktop target; `next` is a
+	// web-route concept and is never set for desktop (buildAuthCallbackUrl
+	// guards this), but defend-in-depth: even if present, desktop wins.
+	it('ignores next when redirect=desktop is set', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&redirect=desktop&next=' +
+				encodeURIComponent('/app/score')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: '/app?redirect=desktop'
+		});
+	});
+
 	it('redirects exchange errors to login', async () => {
 		const event = makeEvent('http://localhost/auth/callback?code=abc', {
 			exchangeError: new Error('Signups not allowed')

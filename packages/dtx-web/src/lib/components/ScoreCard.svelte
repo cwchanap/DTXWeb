@@ -70,7 +70,7 @@
 							<span
 								class="rounded bg-green-500/20 px-2 py-0.5 text-xs font-bold text-green-300"
 							>
-								FC
+								{$_('score.full_combo')}
 							</span>
 						{/if}
 						{#if best.maxCombo != null}

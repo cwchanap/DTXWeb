@@ -429,18 +429,23 @@ test.describe('Score page UI (/app/score)', () => {
 		// The seeded chart title should appear in a ScoreCard.
 		await expect(page.getByText('E2E Download Chart')).toBeVisible();
 
+		// Scope subsequent assertions to the seeded card so rank/FC badges
+		// don't accidentally match a different card's badges (the previous
+		// getByText('SS').first() was fragile if multiple cards rendered).
+		const card = page.locator('.music-card', { hasText: 'E2E Download Chart' });
+
 		// The chart label badge should render (e.g. "BASIC · score.level_short N").
-		await expect(page.getByText(new RegExp(chartLabel))).toBeVisible();
+		await expect(card.getByText(new RegExp(chartLabel))).toBeVisible();
 
 		// The best score value should be visible (987,650 formatted by locale).
 		// Use a flexible matcher since locale formatting varies.
-		await expect(page.getByText(/987.?650/)).toBeVisible();
+		await expect(card.getByText(/987.?650/)).toBeVisible();
 
 		// The SS rank badge should appear.
-		await expect(page.getByText('SS').first()).toBeVisible();
+		await expect(card.getByText('SS')).toBeVisible();
 
 		// The FC (full combo) badge should appear.
-		await expect(page.getByText('FC')).toBeVisible();
+		await expect(card.getByText('FC')).toBeVisible();
 	});
 
 	test('loads the score page without crashing when there are scores', async ({ page }) => {

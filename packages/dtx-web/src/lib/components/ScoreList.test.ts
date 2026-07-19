@@ -102,6 +102,38 @@ describe('ScoreList', () => {
 		expect(myScoredSimfilesMock).toHaveBeenCalledTimes(2);
 	});
 
+	// Regression: the retry button used to vanish the instant it was clicked
+	// because loadScores() cleared loadError at the start of the call, hiding
+	// the banner (gated on loadError) before the fetch resolved. The user got
+	// no feedback that the retry was in flight. The banner must stay visible
+	// while the retry load is pending, then clear on success.
+	it('keeps the error banner visible while a retry is in flight', async () => {
+		myScoredSimfilesMock.mockRejectedValueOnce(new Error('boom'));
+		render(ScoreList);
+		const retry = await screen.findByRole('button', { name: /score\.retry/i });
+
+		// Hold the retry load pending so we can assert the banner state
+		// mid-flight (before success/failure resolves).
+		let resolveRetry!: (value: { data: ScoredSimfile[]; count: number }) => void;
+		myScoredSimfilesMock.mockReturnValueOnce(
+			new Promise<{ data: ScoredSimfile[]; count: number }>((resolve) => {
+				resolveRetry = resolve;
+			})
+		);
+
+		await fireEvent.click(retry);
+
+		// The banner + retry button are still visible while the load is pending.
+		await waitFor(() => expect(myScoredSimfilesMock).toHaveBeenCalledTimes(2));
+		expect(screen.getByText(/score\.load_error/)).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /score\.retry/i })).toBeInTheDocument();
+
+		// Now resolve the retry — the banner must clear on success.
+		resolveRetry({ data: [song], count: 1 });
+		await waitFor(() => expect(screen.getByText('Song A')).toBeInTheDocument());
+		expect(screen.queryByText(/score\.load_error/)).not.toBeInTheDocument();
+	});
+
 	it('renders pagination and loads the next page on click', async () => {
 		const page1 = Array.from({ length: 10 }, (_, i) => ({
 			...song,

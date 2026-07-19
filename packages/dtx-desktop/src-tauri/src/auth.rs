@@ -477,13 +477,20 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
     // spawned task and released when the handler returns.
     let concurrency = Arc::new(Semaphore::new(LOCAL_AUTH_CALLBACK_MAX_CONCURRENT));
 
+    // Track each listener independently so a transient accept() error on one
+    // (EMFILE, ECONNABORTED) drops only that listener instead of aborting the
+    // whole callback server for the app lifetime. The loop continues serving
+    // the survivor; when both are gone the server returns an error.
+    let mut v4 = Some(v4_listener);
+    let mut v6 = v6_listener;
+
     loop {
-        let (stream, _) = match &v6_listener {
-            Some(v6) => tokio::select! {
-                result = v4_listener.accept() => result?,
-                result = v6.accept() => result?,
-            },
-            None => v4_listener.accept().await?,
+        let stream = match accept_from_listeners(&mut v4, &mut v6).await {
+            Ok(Some(stream)) => stream,
+            // A listener failed accept and was dropped — try the survivor.
+            Ok(None) => continue,
+            // Both listeners are gone; the callback server can no longer run.
+            Err(error) => return Err(error),
         };
         // Hold a permit for the lifetime of the spawned task. Acquiring before
         // spawning (rather than inside the task) bounds the queue of accepted
@@ -498,6 +505,64 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
             let _permit = permit;
             let _ = handle_local_auth_callback_connection(handle, stream, port).await;
         });
+    }
+}
+
+/// One attempt to accept a connection from whichever listeners remain.
+/// On a transient accept error (EMFILE, ECONNABORTED, etc.) the failing
+/// listener is dropped (set to `None`) and `Ok(None)` is returned so the
+/// caller loops and tries the survivor — a transient error no longer
+/// permanently breaks deep-link sign-in. Returns `Err` only when both
+/// listeners have been dropped, meaning the callback server can no longer
+/// accept any connection.
+async fn accept_from_listeners(
+    v4: &mut Option<TcpListener>,
+    v6: &mut Option<TcpListener>,
+) -> Result<Option<TcpStream>> {
+    match (v4.as_mut(), v6.as_mut()) {
+        (Some(v4l), Some(v6l)) => {
+            tokio::select! {
+                result = v4l.accept() => match result {
+                    Ok((stream, _)) => Ok(Some(stream)),
+                    Err(error) => {
+                        eprintln!(
+                            "IPv4 auth callback accept failed, dropping listener: {error}"
+                        );
+                        *v4 = None;
+                        Ok(None)
+                    }
+                },
+                result = v6l.accept() => match result {
+                    Ok((stream, _)) => Ok(Some(stream)),
+                    Err(error) => {
+                        eprintln!(
+                            "IPv6 auth callback accept failed, dropping listener: {error}"
+                        );
+                        *v6 = None;
+                        Ok(None)
+                    }
+                },
+            }
+        }
+        (Some(v4l), None) => match v4l.accept().await {
+            Ok((stream, _)) => Ok(Some(stream)),
+            Err(error) => {
+                eprintln!("IPv4 auth callback accept failed, dropping listener: {error}");
+                *v4 = None;
+                Ok(None)
+            }
+        },
+        (None, Some(v6l)) => match v6l.accept().await {
+            Ok((stream, _)) => Ok(Some(stream)),
+            Err(error) => {
+                eprintln!("IPv6 auth callback accept failed, dropping listener: {error}");
+                *v6 = None;
+                Ok(None)
+            }
+        },
+        (None, None) => Err(DesktopError::Message(
+            "both auth callback listeners failed".to_string(),
+        )),
     }
 }
 

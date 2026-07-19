@@ -17,6 +17,19 @@
 
 	const formatScore = (value: number | null): string =>
 		value === null ? '—' : value.toLocaleString('en-US');
+
+	// Build the best-score summary as a joined list so optional segments
+	// (rankLabel, maxCombo, fullCombo) don't leave stray/doubled `·`
+	// separators when they're absent. Mirrors the join pattern used in the
+	// recent-plays list below.
+	const bestParts = (best: NonNullable<LocalChartData['best']>): string[] => {
+		const parts: string[] = [`${$_('score.best')}: ${formatScore(best.score)}`];
+		if (best.rankLabel) parts.push(best.rankLabel);
+		parts.push(best.achievementRate != null ? `${best.achievementRate}%` : '—');
+		if (best.maxCombo != null) parts.push(`${$_('score.combo')} ${best.maxCombo}`);
+		if (best.fullCombo) parts.push($_('score.full_combo'));
+		return parts;
+	};
 </script>
 
 <div class="border-hairline rounded-lg border p-3">
@@ -66,12 +79,7 @@
 
 	{#if chart.best}
 		<div class="text-dim text-xs">
-			{$_('score.best')}: {formatScore(chart.best.score)} ·
-			{#if chart.best.rankLabel}{chart.best.rankLabel} ·
-			{/if}
-			{chart.best.achievementRate != null ? `${chart.best.achievementRate}%` : '—'} ·
-			{#if chart.best.maxCombo != null}{$_('score.combo')} {chart.best.maxCombo}{/if}
-			{#if chart.best.fullCombo}· {$_('score.full_combo')}{/if}
+			{bestParts(chart.best).join(' · ')}
 		</div>
 	{:else}
 		<div class="text-faint text-xs">{$_('score.no_best_score')}</div>

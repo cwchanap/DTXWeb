@@ -1702,3 +1702,97 @@ async fn revoke_session_clears_local_state_when_server_rejects_revocation() {
 
     assert!(state.current_session().await.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// accept_from_listeners — the per-listener accept loop in
+// run_local_auth_callback_server. A transient accept error must drop only the
+// failing listener (not abort the server), and the server returns an error
+// only when both listeners are gone.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn accept_from_listeners_returns_error_when_both_listeners_are_none() {
+    let mut v4: Option<TcpListener> = None;
+    let mut v6: Option<TcpListener> = None;
+    let result = accept_from_listeners(&mut v4, &mut v6).await;
+    assert!(result.is_err(), "both-None must return Err");
+}
+
+#[tokio::test]
+async fn accept_from_listeners_accepts_from_v4_when_v6_is_none() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind v4");
+    let addr = listener.local_addr().expect("addr");
+    let mut v4: Option<TcpListener> = Some(listener);
+    let mut v6: Option<TcpListener> = None;
+
+    // Connect so accept() has a pending connection to return.
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    // v4 must still be present (successful accept does not drop the listener).
+    assert!(v4.is_some());
+    let _ = connector.await;
+}
+
+#[tokio::test]
+async fn accept_from_listeners_accepts_from_v6_when_v4_is_none() {
+    // IPv6 loopback may be unavailable in some CI sandboxes; skip gracefully.
+    let listener = match TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Skipping v6-only test: IPv6 loopback unavailable: {e}");
+            return;
+        }
+    };
+    let addr = listener.local_addr().expect("addr");
+    let mut v4: Option<TcpListener> = None;
+    let mut v6: Option<TcpListener> = Some(listener);
+
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    assert!(v6.is_some());
+    let _ = connector.await;
+}
+
+#[tokio::test]
+async fn accept_from_listeners_serves_survivor_after_one_is_dropped() {
+    // Simulate the post-error state: v4 was dropped by a prior accept error,
+    // v6 survives. The server must keep serving the survivor rather than
+    // aborting — the core regression this fix prevents.
+    let v6_listener = match TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Skipping survivor test: IPv6 loopback unavailable: {e}");
+            return;
+        }
+    };
+    let v6_addr = v6_listener.local_addr().expect("addr");
+    let mut v4: Option<TcpListener> = None; // already dropped by a prior error
+    let mut v6: Option<TcpListener> = Some(v6_listener);
+
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(v6_addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept from survivor")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    // Survivor must still be present for the next iteration.
+    assert!(v6.is_some(), "surviving listener must not be dropped");
+    let _ = connector.await;
+}

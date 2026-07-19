@@ -194,7 +194,12 @@ type ValidationResult = { ok: true; scores: InputScore[] } | { ok: false; reason
 // so any non-null rankLabel reaching here is already a known token. The DB
 // CHECK constraint (0002_scores.sql) is the backstop for direct DB writes.
 const validateScoreFields = (s: InputScore): string | null => {
-	if (s.score != null && (!Number.isInteger(s.score) || s.score < 0))
+	// Number.isSafeInteger (not Number.isInteger) for consistency with the
+	// chartId check below — both reject values beyond 2^53 where integer
+	// arithmetic loses precision. The GraphQL Int scalar (32-bit) already
+	// caps these fields before they reach the validator, so this is a
+	// defense-in-depth consistency guard, not a runtime behavior change.
+	if (s.score != null && (!Number.isSafeInteger(s.score) || s.score < 0))
 		return 'score must be a non-negative integer';
 	if (
 		s.achievementRate != null &&
@@ -211,7 +216,7 @@ const validateScoreFields = (s: InputScore): string | null => {
 	}
 	const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
 	for (const c of counts) {
-		if (c != null && (!Number.isInteger(c) || c < 0)) {
+		if (c != null && (!Number.isSafeInteger(c) || c < 0)) {
 			return 'judgment counts must be non-negative integers';
 		}
 	}

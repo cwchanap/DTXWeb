@@ -68,7 +68,7 @@ describe('ScoreCard', () => {
 		expect(screen.getByText('912,380')).toBeInTheDocument();
 		expect(screen.getByText('91.30%')).toBeInTheDocument();
 		expect(screen.getByText('S')).toBeInTheDocument();
-		expect(screen.getByText('FC')).toBeInTheDocument();
+		expect(screen.getByText('score.full_combo')).toBeInTheDocument();
 		// The single recent play was a failure.
 		expect(screen.getByText('score.failed')).toBeInTheDocument();
 	});

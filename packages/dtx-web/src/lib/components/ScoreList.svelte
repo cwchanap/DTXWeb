@@ -54,12 +54,18 @@
 	const loadScores = async (): Promise<void> => {
 		const requestId = ++loadRequestId;
 		loading = true;
-		loadError = false;
+		// NOTE: loadError is NOT cleared here. Clearing it at the start would
+		// hide the error banner (gated on loadError) the instant a retry is
+		// clicked, leaving the user with no feedback that the retry is in
+		// flight. Instead it is cleared only after a successful fetch below,
+		// so the banner stays visible during the retry load and disappears
+		// once the new data arrives.
 		try {
 			const result = await myScoredSimfiles({ page: currentPage, pageSize });
 			if (requestId !== loadRequestId) return;
 			songs = result.data;
 			totalCount = result.count;
+			loadError = false;
 			// Stale-page guard: if scores were deleted and the current page now
 			// exceeds the total page count, clamp to the last valid page and
 			// reload instead of leaving the user stranded on an empty page with

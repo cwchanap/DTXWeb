@@ -509,18 +509,28 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
 }
 
 /// One attempt to accept a connection from whichever listeners remain.
-/// On a transient accept error (EMFILE, ECONNABORTED, etc.) the failing
-/// listener is dropped (set to `None`) and `Ok(None)` is returned so the
-/// caller loops and tries the survivor — a transient error no longer
-/// permanently breaks deep-link sign-in. Returns `Err` only when both
-/// listeners have been dropped, meaning the callback server can no longer
-/// accept any connection.
+/// On a transient accept error (EMFILE, ECONNABORTED, etc.) in the
+/// dual-listener case the failing listener is dropped (set to `None`) and
+/// `Ok(None)` is returned so the caller loops and tries the survivor — a
+/// transient error no longer permanently breaks deep-link sign-in. When
+/// only one listener remains, a transient error is retried in-place with
+/// exponential backoff (capped) so the sole survivor is NOT dropped and
+/// the callback server keeps serving; only an unrecoverable error retires
+/// it. Returns `Err` only when both listeners have been dropped, meaning
+/// the callback server can no longer accept any connection.
 async fn accept_from_listeners(
     v4: &mut Option<TcpListener>,
     v6: &mut Option<TcpListener>,
 ) -> Result<Option<TcpStream>> {
-    match (v4.as_mut(), v6.as_mut()) {
-        (Some(v4l), Some(v6l)) => {
+    // Match on is_some() (immutable borrows) rather than as_mut() so the
+    // single-listener arms can pass the &mut Option<TcpListener> into
+    // accept_from_sole_listener without conflicting with a scrutinee borrow.
+    match (v4.is_some(), v6.is_some()) {
+        (true, true) => {
+            // Both present — safe to unwrap after the is_some() checks, and
+            // we hold unique &mut access to each slot (no concurrent mutation).
+            let v4l = v4.as_mut().expect("v4 present");
+            let v6l = v6.as_mut().expect("v6 present");
             tokio::select! {
                 result = v4l.accept() => match result {
                     Ok((stream, _)) => Ok(Some(stream)),
@@ -544,25 +554,75 @@ async fn accept_from_listeners(
                 },
             }
         }
-        (Some(v4l), None) => match v4l.accept().await {
-            Ok((stream, _)) => Ok(Some(stream)),
-            Err(error) => {
-                eprintln!("IPv4 auth callback accept failed, dropping listener: {error}");
-                *v4 = None;
-                Ok(None)
-            }
-        },
-        (None, Some(v6l)) => match v6l.accept().await {
-            Ok((stream, _)) => Ok(Some(stream)),
-            Err(error) => {
-                eprintln!("IPv6 auth callback accept failed, dropping listener: {error}");
-                *v6 = None;
-                Ok(None)
-            }
-        },
-        (None, None) => Err(DesktopError::Message(
+        (true, false) => accept_from_sole_listener(v4, "IPv4").await,
+        (false, true) => accept_from_sole_listener(v6, "IPv6").await,
+        (false, false) => Err(DesktopError::Message(
             "both auth callback listeners failed".to_string(),
         )),
+    }
+}
+
+/// Initial backoff for a transient accept() error on the sole remaining
+/// listener. Doubles on each consecutive transient failure up to
+/// `ACCEPT_RETRY_MAX_BACKOFF_MS`.
+const ACCEPT_RETRY_INITIAL_BACKOFF_MS: u64 = 50;
+const ACCEPT_RETRY_MAX_BACKOFF_MS: u64 = 1_000;
+
+/// Classify an accept() error as unrecoverable (retire the listener) vs
+/// transient (keep the listener alive and retry with backoff). A working
+/// TcpListener almost never returns unrecoverable errors; the ones we
+/// treat as fatal indicate the socket/permission state is fundamentally
+/// broken (e.g. the fd was closed, the address is no longer available, or
+/// the operation is unsupported). Everything else — EMFILE, ENFILE,
+/// ENOMEM, ECONNABORTED, ETIMEDOUT, EINTR — is transient and should not
+/// permanently break deep-link sign-in on the sole remaining listener.
+fn is_unrecoverable_accept_error(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    matches!(
+        error.kind(),
+        ErrorKind::NotFound
+            | ErrorKind::InvalidInput
+            | ErrorKind::Unsupported
+            | ErrorKind::AddrNotAvailable
+            | ErrorKind::PermissionDenied
+    )
+}
+
+/// Drive the sole remaining listener: retry transient accept() failures
+/// in-place with exponential backoff so a temporary resource exhaustion
+/// (EMFILE, etc.) doesn't kill the callback server for the app lifetime.
+/// Only an unrecoverable error retires the listener (sets `*listener_slot`
+/// to `None` and returns `Ok(None)`); a successful accept returns the
+/// stream. The inner `&mut TcpListener` is re-acquired from the slot each
+/// iteration so the borrow is not held across the accept() await, allowing
+/// `*listener_slot = None` on the unrecoverable path.
+async fn accept_from_sole_listener(
+    listener_slot: &mut Option<TcpListener>,
+    label: &str,
+) -> Result<Option<TcpStream>> {
+    let mut backoff_ms = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    loop {
+        let listener = match listener_slot.as_mut() {
+            Some(l) => l,
+            None => return Ok(None),
+        };
+        match listener.accept().await {
+            Ok((stream, _)) => return Ok(Some(stream)),
+            Err(error) if is_unrecoverable_accept_error(&error) => {
+                eprintln!(
+                    "{label} auth callback accept failed (unrecoverable), dropping listener: {error}"
+                );
+                *listener_slot = None;
+                return Ok(None);
+            }
+            Err(error) => {
+                eprintln!(
+                    "{label} auth callback accept failed (transient), retrying in {backoff_ms}ms: {error}"
+                );
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
+            }
+        }
     }
 }
 

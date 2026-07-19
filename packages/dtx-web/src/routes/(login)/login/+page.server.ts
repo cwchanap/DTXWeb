@@ -18,7 +18,11 @@ export const actions: Actions = {
 		// but defend-in-depth: ignore it whenever desktop is set. Validate
 		// via safeAppRedirectPath so a crafted value can't pivot outside
 		// /app*. Empty/null falls back to /app (the pre-existing default).
-		const nextRaw = redirectToDesktop ? null : (formData.get('next') as string | null);
+		// formData.get() can also return a File (e.g. if a crafted payload
+		// uploads a file under the `next` field); treat any non-string value
+		// like a missing one rather than letting a File reach safeAppRedirectPath.
+		const nextEntry = redirectToDesktop ? null : formData.get('next');
+		const nextRaw = typeof nextEntry === 'string' ? nextEntry : null;
 		const nextPath = nextRaw ? safeAppRedirectPath(nextRaw) : '/app';
 
 		const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -45,8 +49,10 @@ export const actions: Actions = {
 		// Thread `next` into the OAuth callback URL so the callback can
 		// honor it after the Google round-trip. Only for web logins; desktop
 		// logins redirect back to the desktop app, not a web route. The
-		// callback re-validates with safeAppRedirectPath before use.
-		const nextRaw = redirectToDesktop ? null : (formData.get('next') as string | null);
+		// callback re-validates with safeAppRedirectPath before use. As in
+		// the login action, reject File/non-string `next` values defensively.
+		const nextEntry = redirectToDesktop ? null : formData.get('next');
+		const nextRaw = typeof nextEntry === 'string' ? nextEntry : null;
 		const nextPath = nextRaw ? safeAppRedirectPath(nextRaw) : null;
 		const redirectTo = buildAuthCallbackUrl(
 			url.origin,

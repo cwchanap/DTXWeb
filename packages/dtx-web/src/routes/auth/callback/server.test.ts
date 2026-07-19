@@ -317,4 +317,90 @@ describe('/auth/callback', () => {
 		});
 		expect(event.locals.supabase.auth.signOut).not.toHaveBeenCalled();
 	});
+
+	// Regression: web login error retries must preserve the original /app/*
+	// return path so re-authentication returns the user to where they came
+	// from (e.g. /app/score), not /app. The login page reads `next` from the
+	// URL and threads it back into the login/google actions.
+	it('preserves next on provider-error login retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?error=access_denied&next=' +
+				encodeURIComponent('/app/score')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}&next=%2Fapp%2Fscore`
+		});
+	});
+
+	it('preserves next on missing-code login retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?next=' + encodeURIComponent('/app/score')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}&next=%2Fapp%2Fscore`
+		});
+	});
+
+	it('preserves next on exchange-error login retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&next=' + encodeURIComponent('/app/score'),
+			{ exchangeError: new Error('Signups not allowed') }
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}&next=%2Fapp%2Fscore`
+		});
+	});
+
+	it('preserves next on identity-check-failure login retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&next=' + encodeURIComponent('/app/score'),
+			{ identities: [{ provider: 'google' }] }
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_UNAVAILABLE_MESSAGE.replaceAll(' ', '+')}&next=%2Fapp%2Fscore`
+		});
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
+	});
+
+	it('preserves next on identity-lookup-throw login retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?code=abc&next=' + encodeURIComponent('/app/score'),
+			{ identitiesThrow: new Error('network failure') }
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}&next=%2Fapp%2Fscore`
+		});
+		expect(event.locals.supabase.auth.signOut).toHaveBeenCalled();
+	});
+
+	// A crafted non-/app `next` is re-validated by safeAppRedirectPath and
+	// falls back to /app/account on the retry URL — the allow-list still
+	// holds through the error path.
+	it('falls back to /app/account when next is a non-/app value on login retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?error=access_denied&next=' +
+				encodeURIComponent('https://evil.example')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}&next=%2Fapp%2Faccount`
+		});
+	});
+
+	// Desktop intent must not gain a `next` param through the error path.
+	it('does not add next to desktop login error retries', async () => {
+		const event = makeEvent(
+			'http://localhost/auth/callback?redirect=desktop&error=access_denied&next=' +
+				encodeURIComponent('/app/score')
+		);
+
+		await expect(GET(event as any)).rejects.toMatchObject({
+			location: `/login?redirect=desktop&error=${GOOGLE_AUTH_GENERIC_MESSAGE.replaceAll(' ', '+')}`
+		});
+	});
 });

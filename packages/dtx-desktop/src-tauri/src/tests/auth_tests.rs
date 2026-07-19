@@ -1796,3 +1796,64 @@ async fn accept_from_listeners_serves_survivor_after_one_is_dropped() {
     assert!(v6.is_some(), "surviving listener must not be dropped");
     let _ = connector.await;
 }
+
+// ---------------------------------------------------------------------------
+// is_unrecoverable_accept_error — the classifier that decides whether the
+// sole remaining listener is retired (set to None) or retried with backoff.
+// A transient accept error (EMFILE, ECONNABORTED, ENOMEM, ETIMEDOUT, EINTR)
+// must NOT retire the listener; only fundamentally broken socket state
+// (NotFound, InvalidInput, Unsupported, AddrNotAvailable, PermissionDenied)
+// is unrecoverable.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_unrecoverable_accept_error_classifies_fatal_kinds_as_unrecoverable() {
+    use std::io::ErrorKind;
+    let fatal = [
+        ErrorKind::NotFound,
+        ErrorKind::InvalidInput,
+        ErrorKind::Unsupported,
+        ErrorKind::AddrNotAvailable,
+        ErrorKind::PermissionDenied,
+    ];
+    for kind in fatal {
+        let err = std::io::Error::from(kind);
+        assert!(
+            is_unrecoverable_accept_error(&err),
+            "{kind:?} must be unrecoverable"
+        );
+    }
+}
+
+#[test]
+fn is_unrecoverable_accept_error_classifies_transient_kinds_as_retryable() {
+    use std::io::ErrorKind;
+    // These are the kinds a real TcpListener::accept() can return under
+    // temporary resource pressure. None of them should retire the sole
+    // listener.
+    let transient = [
+        ErrorKind::Interrupted,
+        ErrorKind::TimedOut,
+        ErrorKind::ConnectionAborted,
+        ErrorKind::OutOfMemory,
+        ErrorKind::WouldBlock,
+        ErrorKind::Other,
+    ];
+    for kind in transient {
+        let err = std::io::Error::from(kind);
+        assert!(
+            !is_unrecoverable_accept_error(&err),
+            "{kind:?} must be retryable, not unrecoverable"
+        );
+    }
+}
+
+// The sole-listener happy path (accept_from_sole_listener via
+// accept_from_listeners with one slot None) is already covered by
+// `accept_from_listeners_accepts_from_v4_when_v6_is_none` and
+// `accept_from_listeners_accepts_from_v6_when_v4_is_none` above — those
+// now route through accept_from_sole_listener and confirm the listener
+// is not dropped on success. Forcing a real transient accept() error on
+// a TcpListener isn't practical in-unit, so the classifier tests above
+// pin the retry/retire decision and the existing tests pin the happy
+// path.

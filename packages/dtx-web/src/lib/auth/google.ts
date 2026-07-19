@@ -67,13 +67,23 @@ export const appendSearchParam = (path: string, key: string, value: string): str
 
 export const buildLoginErrorRedirect = (
 	message: string,
-	intent: GoogleRedirectIntent = 'web'
+	intent: GoogleRedirectIntent = 'web',
+	nextPath?: string
 ): string => {
 	const params = new URLSearchParams();
 	if (intent === 'desktop') {
 		params.set('redirect', 'desktop');
 	}
 	params.set('error', message);
+	// Preserve the validated return path for web logins so error retries
+	// (provider error, exchange failure, identity check failure) return the
+	// user to their original /app* destination after re-authentication. The
+	// login page reads `next` from the URL and threads it back into the
+	// login/google actions. `nextPath` must already be safeAppRedirectPath-
+	// validated by the caller; desktop intent ignores it (no web `next`).
+	if (intent === 'web' && nextPath) {
+		params.set('next', nextPath);
+	}
 	return `/login?${params.toString()}`;
 };
 

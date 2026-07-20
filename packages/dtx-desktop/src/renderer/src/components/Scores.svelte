@@ -35,12 +35,12 @@
 			'clearCount cannot exceed playCount': 'score.skip.clear_exceeds_play',
 			'no scores provided': 'score.skip.no_scores',
 			'more than one best score': 'score.skip.multiple_best',
+			'more than 5 recent scores': 'score.skip.too_many_recent',
 			'non-best score without displayOrder': 'score.skip.missing_order',
 			'duplicate displayOrder': 'score.skip.duplicate_order',
 			'score must be a non-negative integer': 'score.skip.invalid_score',
 			'achievementRate out of range': 'score.skip.achievement_out_of_range',
 			'invalid performedAt': 'score.skip.invalid_performed_at',
-			'performedAt cannot be in the future': 'score.skip.performed_at_future',
 			'judgment counts must be non-negative integers': 'score.skip.invalid_judgments',
 			'no valid scores after filtering': 'score.skip.no_valid_scores',
 			'best score row invalid': 'score.skip.best_invalid',
@@ -50,7 +50,6 @@
 		const prefixes: [string, string][] = [
 			['too many scores', 'score.skip.too_many_scores'],
 			['too many charts', 'score.skip.too_many_charts'],
-			['more than', 'score.skip.more_than'],
 			['displayOrder out of range', 'score.skip.order_out_of_range'],
 			['rankLabel must be one of', 'score.skip.unknown_rank']
 		];

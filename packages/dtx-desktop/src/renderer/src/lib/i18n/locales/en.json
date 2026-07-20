@@ -63,7 +63,6 @@
 			"invalid_score": "Invalid score value",
 			"achievement_out_of_range": "Achievement rate out of range (0\u2013100)",
 			"invalid_performed_at": "Invalid play date",
-			"performed_at_future": "Play date is in the future",
 			"invalid_judgments": "Invalid judgment counts",
 			"no_valid_scores": "All score rows were invalid",
 			"best_invalid": "Best score row was invalid \u2014 stored best preserved",
@@ -71,7 +70,7 @@
 			"write_failed": "Server write failed \u2014 try again",
 			"too_many_scores": "Too many score rows for one chart",
 			"too_many_charts": "Too many charts in one upload \u2014 try fewer",
-			"more_than": "More than the allowed number of recent plays",
+			"too_many_recent": "More than the allowed number of recent plays",
 			"order_out_of_range": "Recent play order out of range",
 			"unknown_rank": "Unknown rank label"
 		}

@@ -32,9 +32,10 @@ const MIGRATIONS_DIR = join(
 	'd1-migrations'
 );
 
-// Read the two migration files once. They create the full schema including
+// Read the migration files once. They create the full schema including
 // CHECK constraints and partial unique indexes that Drizzle's schema.ts cannot
-// express (idx_scores_one_best, idx_scores_display_order).
+// express (idx_scores_one_best, idx_scores_display_order), plus the
+// (user_id, updated_at) recency-sort index from 0003.
 // Strip `--` comment lines and split on `;` because D1's exec() rejects
 // multi-line statements and standalone comment lines.
 const stripComments = (sql: string): string =>
@@ -54,6 +55,11 @@ const MIGRATION_0001_STMTS = splitStatements(
 );
 const MIGRATION_0002_STMTS = splitStatements(
 	stripComments(readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8'))
+);
+const MIGRATION_0003_STMTS = splitStatements(
+	stripComments(
+		readFileSync(join(MIGRATIONS_DIR, '0003_chart_scores_user_updated_index.sql'), 'utf8')
+	)
 );
 
 let mf: Miniflare;
@@ -96,6 +102,7 @@ beforeEach(async () => {
 
 	await runMigration(MIGRATION_0001_STMTS);
 	await runMigration(MIGRATION_0002_STMTS);
+	await runMigration(MIGRATION_0003_STMTS);
 
 	await db
 		.prepare('INSERT INTO simfiles (title, artist, bpm, user_id) VALUES (?, ?, ?, ?)')

@@ -120,17 +120,20 @@ fn parse_history_line_drops_unknown_rank_tokens() {
 fn parse_history_line_rejects_non_finite_rates() {
     // "NaN" and "inf" parse as f64 but are not JSON-serializable; treat them
     // as missing so a malformed history line never aborts the whole parse.
+    // Rank is derived from the rate in DTXMania, so a non-parseable rate
+    // also drops the rank token — a rank without a rate is meaningless.
     let nan = parse_history_line("Cleared (S: NaN)");
     assert_eq!(nan.cleared, Some(true));
-    assert_eq!(nan.rank_label.as_deref(), Some("S"));
+    assert_eq!(nan.rank_label, None);
     assert_eq!(nan.achievement_rate, None);
 
     let inf = parse_history_line("Cleared (A: inf)");
-    assert_eq!(inf.rank_label.as_deref(), Some("A"));
+    assert_eq!(inf.rank_label, None);
     assert_eq!(inf.achievement_rate, None);
 
     let neg_inf = parse_history_line("Failed (B: -inf)");
     assert_eq!(neg_inf.cleared, Some(false));
+    assert_eq!(neg_inf.rank_label, None);
     assert_eq!(neg_inf.achievement_rate, None);
 }
 

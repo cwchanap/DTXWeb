@@ -72,7 +72,7 @@ fn write_creates_dtxweb_directory_and_file() {
     assert!(!path.exists());
     write_preferences_to(&path, &Preferences::default()).unwrap();
     assert!(path.exists());
-    assert_eq!(dir.path().join(".dtxweb").join("preferences.json"), path);
+    assert_eq!(dir.path().join("dtxweb").join("preferences.json"), path);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn write_is_atomic_no_temp_file_left_behind() {
     let path = preferences_path(dir.path());
     write_preferences_to(&path, &Preferences::default()).unwrap();
     // A successful write must rename the temp file into place, leaving no .tmp.
-    let tmp = dir.path().join(".dtxweb").join("preferences.json.tmp");
+    let tmp = dir.path().join("dtxweb").join("preferences.json.tmp");
     assert!(
         !tmp.exists(),
         "temp file should not linger after a clean write"
@@ -256,12 +256,17 @@ fn write_score_song_links_command_creates_dtxweb_dir() {
     let dir = TempDir::new().unwrap();
     let _home = HomeEnvGuard::replace(dir.path());
 
-    assert!(!dir.path().join(".dtxweb").exists());
+    // Under the temp HOME, dirs::data_dir() resolves to
+    // $HOME/Library/Application Support (macOS) / $HOME/.local/share (Linux).
+    // The command writes to <data_dir>/dtxweb/preferences.json.
+    let data_dir = dirs::data_dir().expect("dirs::data_dir under temp HOME");
+    let prefs_path = data_dir.join("dtxweb").join("preferences.json");
+    assert!(!prefs_path.exists());
 
     let links = HashMap::from([("k".to_string(), "v".to_string())]);
     write_score_song_links(links).expect("write command");
 
-    assert!(dir.path().join(".dtxweb").join("preferences.json").exists());
+    assert!(prefs_path.exists());
 }
 
 #[test]
@@ -411,5 +416,165 @@ fn concurrent_write_preferences_and_score_links_no_lost_updates() {
         !links.contains_key("seed"),
         "stale seed link survived — a write_preferences RMW read before the first write_score_song_links and wrote back the stale snapshot: {:?}",
         links
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Path migration: ~/.dtxweb/ (pre-Tauri) → <data_dir>/dtxweb/ (Tauri)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_read_path_prefers_new_path_over_legacy() {
+    let new_dir = TempDir::new().unwrap();
+    let legacy_dir = TempDir::new().unwrap();
+    let new_path = preferences_path(new_dir.path());
+    let legacy_path = legacy_preferences_path(legacy_dir.path());
+
+    // Seed both paths with distinguishable widths.
+    fs::create_dir_all(new_path.parent().unwrap()).unwrap();
+    fs::write(
+        &new_path,
+        r#"{"detailPaneWidth": 500, "detailPaneVisible": true}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+    fs::write(
+        &legacy_path,
+        r#"{"detailPaneWidth": 300, "detailPaneVisible": true}"#,
+    )
+    .unwrap();
+
+    // When both exist, the new path wins.
+    let resolved = resolve_read_path_from(Some(new_dir.path()), Some(legacy_dir.path()));
+    assert_eq!(resolved, Some(new_path));
+    let prefs = read_preferences_from(&resolved.unwrap());
+    assert_eq!(prefs.detail_pane_width, 500.0);
+}
+
+#[test]
+fn resolve_read_path_falls_back_to_legacy_when_new_missing() {
+    let new_dir = TempDir::new().unwrap();
+    let legacy_dir = TempDir::new().unwrap();
+    let legacy_path = legacy_preferences_path(legacy_dir.path());
+
+    // Only the legacy path exists.
+    fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+    fs::write(
+        &legacy_path,
+        r#"{"detailPaneWidth": 350, "detailPaneVisible": false}"#,
+    )
+    .unwrap();
+
+    let resolved = resolve_read_path_from(Some(new_dir.path()), Some(legacy_dir.path()));
+    assert_eq!(resolved, Some(legacy_path));
+    let prefs = read_preferences_from(&resolved.unwrap());
+    assert_eq!(prefs.detail_pane_width, 350.0);
+    assert!(!prefs.detail_pane_visible);
+}
+
+#[test]
+fn resolve_read_path_returns_none_when_neither_exists() {
+    let new_dir = TempDir::new().unwrap();
+    let legacy_dir = TempDir::new().unwrap();
+    assert_eq!(
+        resolve_read_path_from(Some(new_dir.path()), Some(legacy_dir.path())),
+        None
+    );
+}
+
+#[test]
+fn resolve_write_path_uses_data_dir_when_available() {
+    let data_dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let path = resolve_write_path_from(Some(data_dir.path()), Some(home.path())).unwrap();
+    assert_eq!(path, preferences_path(data_dir.path()));
+    // Legacy path is NOT used when data_dir is available.
+    assert_ne!(path, legacy_preferences_path(home.path()));
+}
+
+#[test]
+fn resolve_write_path_falls_back_to_legacy_when_data_dir_missing() {
+    let home = TempDir::new().unwrap();
+    let path = resolve_write_path_from(None, Some(home.path())).unwrap();
+    assert_eq!(path, legacy_preferences_path(home.path()));
+}
+
+#[test]
+fn resolve_write_path_errors_when_both_missing() {
+    let result = resolve_write_path_from(None, None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn try_remove_legacy_silently_skips_when_no_legacy_file() {
+    let home = TempDir::new().unwrap();
+    // No legacy file exists — should be a no-op, not an error.
+    try_remove_legacy(Some(home.path()));
+    assert!(!legacy_preferences_path(home.path()).exists());
+}
+
+#[test]
+fn try_remove_legacy_removes_existing_legacy_file() {
+    let home = TempDir::new().unwrap();
+    let legacy = legacy_preferences_path(home.path());
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    fs::write(&legacy, r#"{"detailPaneWidth": 400}"#).unwrap();
+    assert!(legacy.exists());
+
+    try_remove_legacy(Some(home.path()));
+
+    assert!(!legacy.exists(), "legacy file should be removed");
+    // The ~/.dtxweb/ directory itself is NOT removed (user may have other files).
+    assert!(home.path().join(".dtxweb").exists());
+}
+
+/// End-to-end migration: a legacy ~/.dtxweb/preferences.json exists, the new
+/// path doesn't. `read_preferences` returns the legacy data. After
+/// `write_preferences`, the new path exists, the legacy file is removed, and
+/// the data is preserved.
+#[test]
+fn write_migrates_legacy_to_new_path_and_removes_legacy() {
+    let _guard = home_env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let dir = TempDir::new().unwrap();
+    let _home = HomeEnvGuard::replace(dir.path());
+
+    // Seed the legacy path with preferences.
+    let home = dirs::home_dir().expect("home_dir under temp HOME");
+    let legacy = legacy_preferences_path(&home);
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    fs::write(
+        &legacy,
+        r#"{"detailPaneWidth": 480, "detailPaneVisible": true, "scoreLinks": {"old": "1"}}"#,
+    )
+    .unwrap();
+
+    // Read should fall back to the legacy path.
+    let prefs = read_preferences();
+    assert_eq!(prefs.detail_pane_width, 480.0);
+    assert_eq!(prefs.score_links.get("old").map(String::as_str), Some("1"));
+
+    // Write should go to the new path and remove the legacy file.
+    write_preferences(Preferences {
+        detail_pane_width: 500.0,
+        detail_pane_visible: true,
+        score_links: HashMap::new(), // empty → merge preserves legacy links
+    })
+    .expect("write preferences");
+
+    let data_dir = dirs::data_dir().expect("data_dir under temp HOME");
+    let new_path = preferences_path(&data_dir);
+    assert!(new_path.exists(), "new path should exist after write");
+    assert!(
+        !legacy.exists(),
+        "legacy file should be removed after write"
+    );
+
+    // Data preserved: the merged score_links from the legacy file survive.
+    let migrated = read_preferences();
+    assert_eq!(migrated.detail_pane_width, 500.0);
+    assert_eq!(
+        migrated.score_links.get("old").map(String::as_str),
+        Some("1"),
+        "score_links should migrate from legacy to new path"
     );
 }

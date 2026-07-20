@@ -207,12 +207,14 @@ const validateScoreFields = (s: InputScore): string | null => {
 	) {
 		return 'achievementRate out of range';
 	}
-	// performedAt must be parseable and not in the future (prevents skewing
-	// recency sorts). Mirrors the publishDate check in simfile.ts.
+	// performedAt must be parseable. Future values are NOT rejected here —
+	// the caller clamps them to the Worker's wall time so a desktop clock
+	// ahead of the server cannot drop the best row (and thus skip the entire
+	// chart). Rejecting would lose data; clamping keeps the score with a
+	// meaningful "now" timestamp for recency sorts.
 	if (s.performedAt != null) {
 		const parsed = Date.parse(s.performedAt);
 		if (Number.isNaN(parsed)) return 'invalid performedAt';
-		if (parsed > Date.now() + 60_000) return 'performedAt cannot be in the future';
 	}
 	const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
 	for (const c of counts) {
@@ -280,6 +282,17 @@ const validateChartScores = (
 			!(VALID_RANK_LABELS as readonly string[]).includes(row.rankLabel)
 		) {
 			row = { ...row, rankLabel: null };
+		}
+
+		// Clamp future performedAt to the Worker's wall time. A desktop clock
+		// ahead of the server would otherwise drop this row (and if it's the
+		// best row, skip the entire chart). Using the server's "now" keeps the
+		// score and preserves recency-sort ordering.
+		if (row.performedAt != null) {
+			const parsed = Date.parse(row.performedAt);
+			if (!Number.isNaN(parsed) && parsed > Date.now()) {
+				row = { ...row, performedAt: new Date().toISOString() };
+			}
 		}
 
 		const fieldError = validateScoreFields(row);

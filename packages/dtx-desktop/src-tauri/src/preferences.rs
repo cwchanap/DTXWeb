@@ -36,8 +36,14 @@ fn default_detail_pane_visible() -> bool {
     true
 }
 
-/// UI preferences persisted to `~/.dtxweb/preferences.json`. Every field has a
-/// serde default so older/partial files load cleanly as the schema grows.
+/// UI preferences persisted to `<data_dir>/dtxweb/preferences.json`, where
+/// `data_dir` is the platform-appropriate per-user data directory
+/// (`~/Library/Application Support` on macOS, `%APPDATA%` on Windows,
+/// `$XDG_DATA_HOME`/`~/.local/share` on Linux). Pre-Tauri builds used
+/// `~/.dtxweb/preferences.json` (a home-dir dotfile); that path is kept as a
+/// read fallback so existing users' preferences migrate on the first write.
+/// Every field has a serde default so older/partial files load cleanly as the
+/// schema grows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preferences {
@@ -70,8 +76,68 @@ fn clamp_width(width: f64) -> f64 {
     width.clamp(MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH)
 }
 
-fn preferences_path(home: &Path) -> PathBuf {
+/// New platform-appropriate preferences path: `<data_dir>/dtxweb/preferences.json`.
+/// `data_dir` is expected to come from `dirs::data_dir()` (or a temp dir in tests).
+fn preferences_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("dtxweb").join("preferences.json")
+}
+
+/// Legacy pre-Tauri path: `~/.dtxweb/preferences.json`. Kept as a read
+/// fallback so existing desktop users' preferences survive the path
+/// migration. Writes always go to the new path; after a successful write,
+/// the legacy file is best-effort removed so the migration is one-way.
+fn legacy_preferences_path(home: &Path) -> PathBuf {
     home.join(".dtxweb").join("preferences.json")
+}
+
+/// Resolves the read path: tries the new `<data_dir>/dtxweb/...` path first,
+/// then falls back to the legacy `~/.dtxweb/...` path. Returns `None` when
+/// neither exists (first-run or fresh install). Pure function for testability
+/// — the Tauri commands pass `dirs::data_dir()` / `dirs::home_dir()`.
+fn resolve_read_path_from(data_dir: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(dir) = data_dir {
+        let new_path = preferences_path(dir);
+        if new_path.exists() {
+            return Some(new_path);
+        }
+    }
+    if let Some(home) = home {
+        let legacy = legacy_preferences_path(home);
+        if legacy.exists() {
+            return Some(legacy);
+        }
+    }
+    None
+}
+
+/// Resolves the write path: `<data_dir>/dtxweb/...` when `data_dir` is
+/// available, else falls back to the legacy `~/.dtxweb/...` path so a
+/// missing data dir (rare, but possible in headless/sandboxed envs) doesn't
+/// prevent writes entirely.
+fn resolve_write_path_from(data_dir: Option<&Path>, home: Option<&Path>) -> Result<PathBuf> {
+    if let Some(dir) = data_dir {
+        return Ok(preferences_path(dir));
+    }
+    match home {
+        Some(home) => Ok(legacy_preferences_path(home)),
+        None => Err(DesktopError::Message(
+            "Could not resolve data or home directory".to_string(),
+        )),
+    }
+}
+
+/// Best-effort cleanup of the legacy `~/.dtxweb/preferences.json` after a
+/// successful write to the new path. Failure is silent — the read path
+/// checks the new path first, so a lingering legacy file is harmless (just
+/// dead data). Only removes the file, not the `~/.dtxweb/` directory (the
+/// user may have other files there from pre-Tauri builds).
+fn try_remove_legacy(home: Option<&Path>) {
+    if let Some(home) = home {
+        let legacy = legacy_preferences_path(home);
+        if legacy.exists() {
+            let _ = fs::remove_file(&legacy);
+        }
+    }
 }
 
 /// Returns defaults if the file is missing or unparseable; clamps width.
@@ -96,7 +162,7 @@ fn read_preferences_from(path: &Path) -> Preferences {
     prefs
 }
 
-/// Creates `~/.dtxweb/` if absent, then writes pretty JSON atomically.
+/// Creates the parent directory if absent, then writes pretty JSON atomically.
 ///
 /// Writes to a sibling temp file and renames it into place, so a crash mid-write
 /// cannot leave `preferences.json` truncated/corrupt. (The read path already
@@ -115,7 +181,8 @@ fn write_preferences_to(path: &Path, prefs: &Preferences) -> Result<()> {
     tmp.set_extension("json.tmp");
     fs::write(&tmp, json)?;
     // Rename is atomic when source and destination share a filesystem (they do:
-    // both live in ~/.dtxweb/). On Windows, std::fs::rename replaces the target.
+    // both live in the same `dtxweb/` directory). On Windows, std::fs::rename
+    // replaces the target.
     let rename_result = fs::rename(&tmp, path);
     if rename_result.is_err() {
         // Best-effort cleanup of the temp file so it doesn't linger on failure.
@@ -127,44 +194,51 @@ fn write_preferences_to(path: &Path, prefs: &Preferences) -> Result<()> {
 
 #[tauri::command]
 pub fn read_preferences() -> Preferences {
-    match dirs::home_dir() {
-        Some(home) => read_preferences_from(&preferences_path(&home)),
+    match resolve_read_path_from(dirs::data_dir().as_deref(), dirs::home_dir().as_deref()) {
+        Some(path) => read_preferences_from(&path),
         None => Preferences::default(),
     }
 }
 
 #[tauri::command]
 pub fn write_preferences(prefs: Preferences) -> Result<()> {
-    match dirs::home_dir() {
-        Some(home) => {
-            let path = preferences_path(&home);
-            // Hold the write lock across the full read-modify-write so a
-            // concurrent write_score_song_links call can't interleave: without
-            // the guard, one caller's read could observe the file before the
-            // other's rename, and the second rename would silently discard the
-            // first's score_links update (or vice versa).
-            let _guard = preferences_write_lock()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            // Read-modify-write: the UI pref store (preferencesService) sends
-            // only detailPaneWidth/Visible — it does not carry scoreLinks. A
-            // blind replace would wipe the score_links map on every layout
-            // save. Preserve the existing score_links when the incoming prefs
-            // don't carry any (empty = not sent by the UI store). Score links
-            // are managed exclusively via write_score_song_links, which does
-            // its own read-modify-write, so this merge never fights a
-            // deliberate clear.
-            let existing = read_preferences_from(&path);
-            let mut merged = prefs;
-            if merged.score_links.is_empty() {
-                merged.score_links = existing.score_links;
-            }
-            write_preferences_to(&path, &merged)
-        }
-        None => Err(DesktopError::Message(
-            "Could not resolve home directory".to_string(),
-        )),
+    let data_dir = dirs::data_dir();
+    let home = dirs::home_dir();
+    let path = resolve_write_path_from(data_dir.as_deref(), home.as_deref())?;
+    // Hold the write lock across the full read-modify-write so a
+    // concurrent write_score_song_links call can't interleave: without
+    // the guard, one caller's read could observe the file before the
+    // other's rename, and the second rename would silently discard the
+    // first's score_links update (or vice versa).
+    let _guard = preferences_write_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Read-modify-write: the UI pref store (preferencesService) sends
+    // only detailPaneWidth/Visible — it does not carry scoreLinks. A
+    // blind replace would wipe the score_links map on every layout
+    // save. Preserve the existing score_links when the incoming prefs
+    // don't carry any (empty = not sent by the UI store). Score links
+    // are managed exclusively via write_score_song_links, which does
+    // its own read-modify-write, so this merge never fights a
+    // deliberate clear.
+    //
+    // Read via the full resolution path (not just the write path) so a
+    // legacy ~/.dtxweb/preferences.json is picked up during the first
+    // write after migration — reading only the write path would miss
+    // the legacy file and drop score_links that haven't been migrated yet.
+    let existing = read_preferences();
+    let mut merged = prefs;
+    if merged.score_links.is_empty() {
+        merged.score_links = existing.score_links;
     }
+    write_preferences_to(&path, &merged)?;
+    // Migration: if the write went to the new path, best-effort remove the
+    // legacy ~/.dtxweb/preferences.json so the next read doesn't see a stale
+    // copy. Silent on failure — a lingering legacy file is harmless.
+    if data_dir.is_some() {
+        try_remove_legacy(home.as_deref());
+    }
+    Ok(())
 }
 
 /// Returns the DTXMania-song → cloud-simfile-id link map from the preferences
@@ -194,14 +268,18 @@ pub fn write_score_song_links(links: HashMap<String, String>) -> Result<()> {
     let _guard = preferences_write_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let data_dir = dirs::data_dir();
+    let home = dirs::home_dir();
+    let path = resolve_write_path_from(data_dir.as_deref(), home.as_deref())?;
     let mut prefs = read_preferences();
     prefs.score_links = links;
-    match dirs::home_dir() {
-        Some(home) => write_preferences_to(&preferences_path(&home), &prefs),
-        None => Err(DesktopError::Message(
-            "Could not resolve home directory".to_string(),
-        )),
+    write_preferences_to(&path, &prefs)?;
+    // Migration: best-effort remove the legacy file after writing to the new
+    // path. See write_preferences for the rationale.
+    if data_dir.is_some() {
+        try_remove_legacy(home.as_deref());
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1229,6 +1229,52 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
+	it('clamps a future performedAt to now instead of dropping the row', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		// A desktop clock 1 hour ahead of the Worker. The old 60s tolerance
+		// would drop this best row → "no best score" → entire chart skipped.
+		const future = new Date(Date.now() + 3_600_000).toISOString();
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 1,
+							clearCount: 1,
+							scores: [
+								{
+									isBest: true,
+									score: 900,
+									fullCombo: false,
+									cleared: true,
+									performedAt: future
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: unknown[];
+		};
+		expect(payload.skipped).toEqual([]);
+		expect(payload.updatedCharts).toBe(1);
+		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
+		// The clamped performedAt should be <= now (within test slack).
+		const call = mockedUpsertReplace.mock.calls[0][1] as {
+			scores: { performed_at: string | null }[];
+		};
+		expect(call.scores[0].performed_at).not.toBe(future);
+		expect(Date.parse(call.scores[0].performed_at!)).toBeLessThanOrEqual(Date.now());
+	});
+
 	it('skips a duplicate chartId within one payload (defense-in-depth)', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		mockedUpsertReplace.mockResolvedValue(chartScoreRow);

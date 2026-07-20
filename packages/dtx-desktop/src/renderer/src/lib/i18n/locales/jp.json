@@ -63,7 +63,6 @@
 			"invalid_score": "無効なスコア値",
 			"achievement_out_of_range": "達成率が範囲外です (0\u2013100)",
 			"invalid_performed_at": "無効なプレイ日付",
-			"performed_at_future": "プレイ日付が未来です",
 			"invalid_judgments": "無効なジャッジカウント",
 			"no_valid_scores": "すべてのスコア行が無効でした",
 			"best_invalid": "ベストスコア行が無効です \u2014 保存済みのベストは維持されました",
@@ -71,7 +70,7 @@
 			"write_failed": "サーバー書き込みに失敗しました \u2014 再試行してください",
 			"too_many_scores": "1チャートのスコア行が多すぎます",
 			"too_many_charts": "1回のアップロードのチャート数が多すぎます \u2014 減らしてください",
-			"more_than": "許可された数を超える最近のプレイがあります",
+			"too_many_recent": "許可された数を超える最近のプレイがあります",
 			"order_out_of_range": "最近のプレイの順序が範囲外です",
 			"unknown_rank": "不明なランクラベル"
 		}

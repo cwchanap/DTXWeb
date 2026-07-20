@@ -161,10 +161,6 @@ pub fn parse_history_line(line: &str) -> ParsedHistory {
             let inner = &line[open + 1..close];
             match inner.split_once(':') {
                 Some((rank, rate)) => {
-                    // Only forward ranks the API/DB accept; unknown tokens
-                    // (e.g. "EX", locale variants) become None so the row
-                    // still uploads without skipping the whole chart.
-                    let rank_label = sanitize_rank_label(rank);
                     // `parse::<f64>()` accepts "NaN"/"inf" as Ok; non-finite
                     // values are not valid JSON and would abort ScorePayload
                     // serialization across the Tauri IPC boundary. Reject them
@@ -175,6 +171,16 @@ pub fn parse_history_line(line: &str) -> ParsedHistory {
                         .parse::<f64>()
                         .ok()
                         .filter(|value| value.is_finite());
+                    // Rank is derived from the achievement rate in DTXMania, so
+                    // a rank token without a parseable rate is meaningless —
+                    // drop both together. Only forward ranks the API/DB accept
+                    // (e.g. "EX", locale variants) become None so the row
+                    // still uploads without skipping the whole chart.
+                    let rank_label = if achievement_rate.is_some() {
+                        sanitize_rank_label(rank)
+                    } else {
+                        None
+                    };
                     (rank_label, achievement_rate)
                 }
                 None => (None, None),

@@ -454,10 +454,6 @@ fn local_auth_callback_port() -> Option<u16> {
         .filter(|port| *port > 0)
 }
 
-fn local_auth_callback_success_html() -> &'static str {
-    LOCAL_AUTH_CALLBACK_SUCCESS_HTML
-}
-
 async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()> {
     let v4_listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
 
@@ -667,7 +663,7 @@ async fn handle_local_auth_callback_connection(
             write_local_auth_callback_html_response(
                 &mut stream,
                 200,
-                local_auth_callback_success_html(),
+                LOCAL_AUTH_CALLBACK_SUCCESS_HTML,
             )
             .await?;
         }

@@ -339,4 +339,59 @@ describe('ScoreList', () => {
 		await waitFor(() => expect(screen.getByText('Shrunk Song 1')).toBeInTheDocument());
 		expect(screen.queryByText('Song 21')).not.toBeInTheDocument();
 	});
+
+	// Depth guard on the stale-page clamp: a pathological API that returns an
+	// ever-shrinking count would recurse unbounded without the cap. The guard
+	// allows exactly one recursive reload; if the page is still stale after
+	// that, the component renders with the clamped currentPage instead of
+	// looping. This test would hang or stack-overflow without the cap.
+	it('caps the stale-page recursive reload at one hop', async () => {
+		const page1 = Array.from({ length: 10 }, (_, i) => ({
+			...song,
+			id: i + 1,
+			title: `Song ${i + 1}`
+		}));
+		const page3 = Array.from({ length: 5 }, (_, i) => ({
+			...song,
+			id: i + 21,
+			title: `Song ${i + 21}`
+		}));
+		const shrunkPage1 = Array.from({ length: 5 }, (_, i) => ({
+			...song,
+			id: i + 1,
+			title: `Shrunk Song ${i + 1}`
+		}));
+
+		// Initial mount → page 1, 25 songs (3 pages).
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page1, count: 25 });
+		render(ScoreList);
+		await waitFor(() => expect(screen.getByText('Song 1')).toBeInTheDocument());
+
+		// Navigate to page 3.
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page3, count: 25 });
+		await fireEvent.click(screen.getByText('3'));
+		await waitFor(() => expect(screen.getByText('Song 21')).toBeInTheDocument());
+
+		// First stale fetch: currentPage=3, count=15 → fetchedTotalPages=2,
+		// clamp to 2, recursive reload (isStaleClampRetry=false → true).
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: [], count: 15 });
+		// Second fetch (the one allowed recursive reload): STILL stale.
+		// currentPage=2, count=5 → fetchedTotalPages=1, 2>1. Without the cap
+		// this would recurse again; with the cap, clamp to 1 and stop.
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: shrunkPage1, count: 5 });
+		// A third fetch would only happen if the cap were missing. Provide a
+		// resolver so the test fails loudly (vi.fn() returns undefined →
+		// myScoredSimfiles throws → test errors) instead of silently passing.
+		myScoredSimfilesMock.mockResolvedValueOnce({ data: page1, count: 25 });
+
+		await fireEvent.click(screen.getByText('3'));
+
+		// Exactly 4 calls: initial + page 3 + stale fetch + one recursive
+		// reload. The fifth mock is NEVER consumed — the depth cap held.
+		await waitFor(() => expect(myScoredSimfilesMock).toHaveBeenCalledTimes(4));
+		expect(myScoredSimfilesMock).toHaveBeenLastCalledWith({ page: 2, pageSize: 10 });
+		// The recursive reload's data (shrunkPage1) is rendered; currentPage
+		// was clamped to 1 after the second stale detection.
+		await waitFor(() => expect(screen.getByText('Shrunk Song 1')).toBeInTheDocument());
+	});
 });

@@ -57,7 +57,7 @@
 		);
 	};
 
-	const loadScores = async (): Promise<void> => {
+	const loadScores = async (isStaleClampRetry = false): Promise<void> => {
 		const requestId = ++loadRequestId;
 		loading = true;
 		// NOTE: loadError is NOT cleared here. Clearing it at the start would
@@ -77,10 +77,19 @@
 			// reload instead of leaving the user stranded on an empty page with
 			// no pagination control (the Pagination component only renders when
 			// totalPages > 1, so a high empty page has no way back without this).
+			// Cap the recursive reload at one hop: in practice the count can
+			// only shrink a bounded number of times, but a pathological API
+			// returning ever-smaller counts could recurse unbounded. One retry
+			// covers the legitimate case (a single concurrent delete during
+			// navigation); if the page is still stale after that, render with
+			// the clamped currentPage and let the next user-triggered load
+			// re-sync rather than looping.
 			const fetchedTotalPages = Math.max(1, Math.ceil(result.count / pageSize));
 			if (currentPage > fetchedTotalPages) {
 				currentPage = fetchedTotalPages;
-				await loadScores();
+				if (!isStaleClampRetry) {
+					await loadScores(true);
+				}
 				return;
 			}
 		} catch (error) {

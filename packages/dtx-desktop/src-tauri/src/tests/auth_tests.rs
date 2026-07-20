@@ -432,7 +432,7 @@ fn pending_urls_are_queued_and_drained_synchronously() {
 
 #[test]
 fn local_auth_callback_success_page_uses_app_layout_copy() {
-    let body = local_auth_callback_success_html();
+    let body = LOCAL_AUTH_CALLBACK_SUCCESS_HTML;
 
     assert!(body.contains("<!doctype html>"));
     assert!(body.contains("Return to Drumery"));

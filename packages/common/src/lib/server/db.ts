@@ -410,20 +410,44 @@ export const deleteSimfile = async (db: D1Database, id: number): Promise<void> =
 	// Explicitly delete children first since D1 doesn't guarantee FK cascade PRAGMA applies.
 	// Order matters: scores -> chart_scores (both keyed off dtx_files via subqueries) must
 	// run before dtx_files is deleted, since they resolve simfile -> chart via dtx_files.id.
-	const [, , , simfileResult] = await db.batch([
-		db
-			.prepare(
-				'DELETE FROM scores WHERE chart_score_id IN (SELECT id FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?))'
-			)
-			.bind(id),
-		db
-			.prepare(
-				'DELETE FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?)'
-			)
-			.bind(id),
-		db.prepare('DELETE FROM dtx_files WHERE simfile_id = ?').bind(id),
-		db.prepare('DELETE FROM simfiles WHERE id = ?').bind(id)
-	]);
+	//
+	// Compatibility: scores and chart_scores are introduced by 0002_scores.sql. A D1
+	// that only has 0001_initial_schema.sql applied (e.g. a fresh local `wrangler dev`
+	// database before `wrangler d1 migrations apply` has run) would fail the batch with
+	// "no such table: scores", breaking both direct simfile deletion and the
+	// createSimfileWithDtx rollback path. Probe sqlite_master once and only include the
+	// child DELETEs when their tables exist; the dtx_files/simfiles DELETEs always run.
+	const tableCheck = await db
+		.prepare(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name IN ('scores', 'chart_scores')"
+		)
+		.all<{ name: string }>();
+	const existing = new Set(tableCheck.results.map((r) => r.name));
+
+	const statements: ReturnType<D1Database['prepare']>[] = [];
+	if (existing.has('scores')) {
+		statements.push(
+			db
+				.prepare(
+					'DELETE FROM scores WHERE chart_score_id IN (SELECT id FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?))'
+				)
+				.bind(id)
+		);
+	}
+	if (existing.has('chart_scores')) {
+		statements.push(
+			db
+				.prepare(
+					'DELETE FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?)'
+				)
+				.bind(id)
+		);
+	}
+	statements.push(db.prepare('DELETE FROM dtx_files WHERE simfile_id = ?').bind(id));
+	statements.push(db.prepare('DELETE FROM simfiles WHERE id = ?').bind(id));
+
+	const results = await db.batch(statements);
+	const simfileResult = results[results.length - 1];
 	if (simfileResult.meta.changes === 0) throw new Error('Simfile not found');
 };
 

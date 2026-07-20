@@ -979,8 +979,21 @@ describe('updateSimfile', () => {
 // deleteSimfile
 // ---------------------------------------------------------------------------
 describe('deleteSimfile', () => {
+	// sqlite_master probe helper: returns a prepare impl that answers the
+	// table-existence check with the given table names, and a default stmt
+	// otherwise. The probe is the first prepare call deleteSimfile makes.
+	const prepareWithTables = (tables: string[]) => (sql: string) => {
+		if (sql.includes('sqlite_master')) {
+			return createMockStmt(
+				null,
+				tables.map((name) => ({ name }))
+			);
+		}
+		return createMockStmt();
+	};
+
 	it('deletes without error when found', async () => {
-		const db = createMockDb();
+		const db = createMockDb(prepareWithTables(['scores', 'chart_scores']));
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ meta: { changes: 0 } },
 			{ meta: { changes: 0 } },
@@ -991,7 +1004,7 @@ describe('deleteSimfile', () => {
 	});
 
 	it('throws when simfile not found', async () => {
-		const db = createMockDb();
+		const db = createMockDb(prepareWithTables(['scores', 'chart_scores']));
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ meta: { changes: 0 } },
 			{ meta: { changes: 0 } },
@@ -1004,7 +1017,7 @@ describe('deleteSimfile', () => {
 	});
 
 	it('deletes scores and chart_scores for the simfile before dtx_files and simfiles', async () => {
-		const db = createMockDb();
+		const db = createMockDb(prepareWithTables(['scores', 'chart_scores']));
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ meta: { changes: 2 } },
 			{ meta: { changes: 1 } },
@@ -1014,28 +1027,57 @@ describe('deleteSimfile', () => {
 
 		await deleteSimfile(db as unknown as D1Database, 1);
 
-		// Would fail against the old 2-statement batch: only 4 prepared
-		// statements, in this exact order, gate the new children being deleted.
+		// The sqlite_master probe is the first prepare call; the four DELETEs
+		// follow in the required order (scores -> chart_scores -> dtx_files -> simfiles).
 		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls.map(
 			(call) => call[0]
 		);
-		expect(prepareCalls).toHaveLength(4);
-		expect(prepareCalls[0]).toBe(
+		expect(prepareCalls).toHaveLength(5);
+		expect(prepareCalls[0]).toContain('sqlite_master');
+		expect(prepareCalls[1]).toBe(
 			'DELETE FROM scores WHERE chart_score_id IN (SELECT id FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?))'
 		);
-		expect(prepareCalls[1]).toBe(
+		expect(prepareCalls[2]).toBe(
 			'DELETE FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?)'
 		);
-		expect(prepareCalls[2]).toBe('DELETE FROM dtx_files WHERE simfile_id = ?');
-		expect(prepareCalls[3]).toBe('DELETE FROM simfiles WHERE id = ?');
+		expect(prepareCalls[3]).toBe('DELETE FROM dtx_files WHERE simfile_id = ?');
+		expect(prepareCalls[4]).toBe('DELETE FROM simfiles WHERE id = ?');
 
-		// Each statement must be parameterized with the simfile id, not string-interpolated.
+		// Each DELETE statement must be parameterized with the simfile id, not
+		// string-interpolated. The sqlite_master probe has no bind call.
 		const stmts = (db.prepare as ReturnType<typeof vi.fn>).mock.results.map(
 			(result) => result.value
 		);
-		for (const stmt of stmts) {
-			expect(stmt.bind).toHaveBeenCalledWith(1);
+		for (let i = 1; i < stmts.length; i++) {
+			expect(stmts[i].bind).toHaveBeenCalledWith(1);
 		}
+	});
+
+	it('skips scores/chart_scores DELETEs on a 0001-only D1 (no 0002_scores.sql applied)', async () => {
+		// A fresh local D1 used by `wrangler dev` before `wrangler d1 migrations apply`
+		// has only the 0001 schema: no `scores` or `chart_scores` tables. The batch
+		// must not include DELETEs against missing tables (D1 batch is atomic and
+		// would fail with "no such table"), while dtx_files/simfiles deletion still
+		// works — this also protects the createSimfileWithDtx rollback path.
+		const db = createMockDb(prepareWithTables([]));
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ meta: { changes: 1 } },
+			{ meta: { changes: 1 } }
+		]);
+
+		await deleteSimfile(db as unknown as D1Database, 1);
+
+		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls.map(
+			(call) => call[0]
+		);
+		expect(prepareCalls).toHaveLength(3);
+		expect(prepareCalls[0]).toContain('sqlite_master');
+		expect(prepareCalls[1]).toBe('DELETE FROM dtx_files WHERE simfile_id = ?');
+		expect(prepareCalls[2]).toBe('DELETE FROM simfiles WHERE id = ?');
+		expect(db.batch).toHaveBeenCalledTimes(1);
+		// Only the two always-on DELETEs are batched.
+		const batchArg = (db.batch as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(batchArg).toHaveLength(2);
 	});
 });
 

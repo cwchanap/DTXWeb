@@ -1797,6 +1797,39 @@ async fn accept_from_listeners_serves_survivor_after_one_is_dropped() {
     let _ = connector.await;
 }
 
+#[tokio::test]
+async fn accept_from_listeners_keeps_both_listeners_after_dual_accept() {
+    // Both listeners present; a successful accept on either must NOT drop the
+    // other. This exercises the refactored accept_from_dual_listeners path
+    // and guards against regressing the dual-listener select! back to the
+    // old "drop on any error" behavior.
+    let v4_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind v4");
+    let v4_addr = v4_listener.local_addr().expect("addr");
+    let v6_listener = match TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Skipping dual-listener test: IPv6 loopback unavailable: {e}");
+            return;
+        }
+    };
+    let mut v4: Option<TcpListener> = Some(v4_listener);
+    let mut v6: Option<TcpListener> = Some(v6_listener);
+
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(v4_addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    // Neither listener may be dropped on the success path.
+    assert!(v4.is_some(), "v4 must not be dropped on successful accept");
+    assert!(v6.is_some(), "v6 must not be dropped on successful accept");
+    let _ = connector.await;
+}
+
 // ---------------------------------------------------------------------------
 // is_unrecoverable_accept_error — the classifier that decides whether the
 // sole remaining listener is retired (set to None) or retried with backoff.

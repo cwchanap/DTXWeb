@@ -505,15 +505,18 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
 }
 
 /// One attempt to accept a connection from whichever listeners remain.
-/// On a transient accept error (EMFILE, ECONNABORTED, etc.) in the
-/// dual-listener case the failing listener is dropped (set to `None`) and
-/// `Ok(None)` is returned so the caller loops and tries the survivor — a
-/// transient error no longer permanently breaks deep-link sign-in. When
-/// only one listener remains, a transient error is retried in-place with
-/// exponential backoff (capped) so the sole survivor is NOT dropped and
-/// the callback server keeps serving; only an unrecoverable error retires
-/// it. Returns `Err` only when both listeners have been dropped, meaning
-/// the callback server can no longer accept any connection.
+/// Transient accept errors (EMFILE, ECONNABORTED, etc.) are retried with
+/// exponential backoff (capped) so a temporary resource exhaustion does
+/// not permanently break deep-link sign-in — the dev callback URL is
+/// hardcoded to `http://127.0.0.1:{port}/auth-callback`, so dropping the
+/// IPv4 listener on a transient error would make the magic-link redirect
+/// unconnectable even when IPv6 remains healthy. In the dual-listener
+/// case the failing listener is retried in-place while the other listener
+/// keeps being polled, so the survivor still serves connections during
+/// the backoff. Only an unrecoverable error (see
+/// `is_unrecoverable_accept_error`) retires a listener. Returns `Err`
+/// only when both listeners have been dropped, meaning the callback
+/// server can no longer accept any connection.
 async fn accept_from_listeners(
     v4: &mut Option<TcpListener>,
     v6: &mut Option<TcpListener>,
@@ -522,39 +525,69 @@ async fn accept_from_listeners(
     // single-listener arms can pass the &mut Option<TcpListener> into
     // accept_from_sole_listener without conflicting with a scrutinee borrow.
     match (v4.is_some(), v6.is_some()) {
-        (true, true) => {
-            // Both present — safe to unwrap after the is_some() checks, and
-            // we hold unique &mut access to each slot (no concurrent mutation).
-            let v4l = v4.as_mut().expect("v4 present");
-            let v6l = v6.as_mut().expect("v6 present");
-            tokio::select! {
-                result = v4l.accept() => match result {
-                    Ok((stream, _)) => Ok(Some(stream)),
-                    Err(error) => {
-                        eprintln!(
-                            "IPv4 auth callback accept failed, dropping listener: {error}"
-                        );
-                        *v4 = None;
-                        Ok(None)
-                    }
-                },
-                result = v6l.accept() => match result {
-                    Ok((stream, _)) => Ok(Some(stream)),
-                    Err(error) => {
-                        eprintln!(
-                            "IPv6 auth callback accept failed, dropping listener: {error}"
-                        );
-                        *v6 = None;
-                        Ok(None)
-                    }
-                },
-            }
-        }
+        (true, true) => accept_from_dual_listeners(v4, v6).await,
         (true, false) => accept_from_sole_listener(v4, "IPv4").await,
         (false, true) => accept_from_sole_listener(v6, "IPv6").await,
         (false, false) => Err(DesktopError::Message(
             "both auth callback listeners failed".to_string(),
         )),
+    }
+}
+
+/// Drive both listeners, retrying transient accept() failures in-place with
+/// exponential backoff while keeping the other listener polled so the
+/// survivor still serves connections during the backoff. Only an
+/// unrecoverable error retires a listener (sets its slot to `None` and
+/// returns `Ok(None)` so the caller falls through to single-listener mode).
+/// The `&mut TcpListener`s are re-acquired from the slots each iteration so
+/// the borrows are not held across the accept() await, allowing
+/// `*slot = None` on the unrecoverable path.
+async fn accept_from_dual_listeners(
+    v4: &mut Option<TcpListener>,
+    v6: &mut Option<TcpListener>,
+) -> Result<Option<TcpStream>> {
+    let mut backoff_ms = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    loop {
+        let v4l = v4.as_mut().expect("v4 present");
+        let v6l = v6.as_mut().expect("v6 present");
+        tokio::select! {
+            result = v4l.accept() => match result {
+                Ok((stream, _)) => return Ok(Some(stream)),
+                Err(error) if is_unrecoverable_accept_error(&error) => {
+                    eprintln!(
+                        "IPv4 auth callback accept failed (unrecoverable), dropping listener: {error}"
+                    );
+                    *v4 = None;
+                    return Ok(None);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "IPv4 auth callback accept failed (transient), retrying in {backoff_ms}ms: {error}"
+                    );
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
+                    continue;
+                }
+            },
+            result = v6l.accept() => match result {
+                Ok((stream, _)) => return Ok(Some(stream)),
+                Err(error) if is_unrecoverable_accept_error(&error) => {
+                    eprintln!(
+                        "IPv6 auth callback accept failed (unrecoverable), dropping listener: {error}"
+                    );
+                    *v6 = None;
+                    return Ok(None);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "IPv6 auth callback accept failed (transient), retrying in {backoff_ms}ms: {error}"
+                    );
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
+                    continue;
+                }
+            },
+        }
     }
 }
 

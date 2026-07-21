@@ -43,6 +43,14 @@ const MAX_LEVEL_DELTA = 0.5;
  * the source of truth, and a bare 1–9 is far more likely a data-entry error
  * than an intentional sub-1.0 level. Mirrors the web `formatLevel` heuristic
  * so cloud and local levels are always compared on the same scale.
+ *
+ * Legacy data note: before commit b2ccaaab the desktop uploader stored raw
+ * #DLEVEL display-scale values (e.g. 5) instead of encoding them ×10 (50), so
+ * production dtx_files rows for simfiles uploaded via the old desktop app held
+ * bare 1–9 integers and decoded to 0.1–0.9 here. D1 migration
+ * 0004_normalize_legacy_dtx_file_levels.sql multiplies those legacy rows by 10
+ * so they decode correctly; after it runs, a bare 1–9 reaching this function is
+ * unambiguously a data-entry error, not a legacy display-scale value.
  */
 const normalizeCloudLevel = (level: number): number =>
 	Number.isInteger(level) ? (level > 100 ? level / 100 : level / 10) : level;

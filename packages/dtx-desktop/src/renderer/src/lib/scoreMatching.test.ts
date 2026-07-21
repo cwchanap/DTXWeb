@@ -94,6 +94,10 @@ describe('matchCharts', () => {
 		// beyond MAX_LEVEL_DELTA — so the match is rejected for manual
 		// selection. This pins the documented edge case: bare single-digit
 		// levels are unlikely sub-1.0 values, not display-scale 1–9.
+		// Legacy desktop-uploaded rows that held bare 1–9 display-scale
+		// values are normalized by D1 migration
+		// 0004_normalize_legacy_dtx_file_levels.sql (×10), so a bare 1–9
+		// reaching the matcher post-migration is a data-entry error.
 		const result = matchCharts([local(50)], [cloud('a', 5)]);
 		expect(result).toEqual([null]);
 	});

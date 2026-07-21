@@ -542,16 +542,35 @@ async fn accept_from_listeners(
 /// The `&mut TcpListener`s are re-acquired from the slots each iteration so
 /// the borrows are not held across the accept() await, allowing
 /// `*slot = None` on the unrecoverable path.
+///
+/// Backoff is per-listener: each listener tracks a remaining wait (counts
+/// down while the shared timer elapses; 0 = ready to poll again) and a
+/// next-failure duration (starts at `ACCEPT_RETRY_INITIAL_BACKOFF_MS`,
+/// doubles up to `ACCEPT_RETRY_MAX_BACKOFF_MS`, never resets — matching the
+/// original single-listener semantics). When one listener is in backoff its
+/// `accept()` branch is gated off and the select races the backoff timer
+/// against the survivor's `accept()`, so a callback arriving on the healthy
+/// listener is served immediately rather than waiting out the failing
+/// listener's backoff. When both are in backoff only the timer is polled.
 async fn accept_from_dual_listeners(
     v4: &mut Option<TcpListener>,
     v6: &mut Option<TcpListener>,
 ) -> Result<Option<TcpStream>> {
-    let mut backoff_ms = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    let mut v4_remaining: u64 = 0;
+    let mut v4_next: u64 = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    let mut v6_remaining: u64 = 0;
+    let mut v6_next: u64 = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
     loop {
         let v4l = v4.as_mut().expect("v4 present");
         let v6l = v6.as_mut().expect("v6 present");
+        let sleep_ms = match (v4_remaining, v6_remaining) {
+            (0, 0) => 0,
+            (a, 0) => a,
+            (0, b) => b,
+            (a, b) => a.min(b),
+        };
         tokio::select! {
-            result = v4l.accept() => match result {
+            result = v4l.accept(), if v4_remaining == 0 => match result {
                 Ok((stream, _)) => return Ok(Some(stream)),
                 Err(error) if is_unrecoverable_accept_error(&error) => {
                     eprintln!(
@@ -561,15 +580,15 @@ async fn accept_from_dual_listeners(
                     return Ok(None);
                 }
                 Err(error) => {
+                    v4_remaining = v4_next;
+                    v4_next = (v4_next.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
                     eprintln!(
-                        "IPv4 auth callback accept failed (transient), retrying in {backoff_ms}ms: {error}"
+                        "IPv4 auth callback accept failed (transient), retrying in {v4_remaining}ms: {error}"
                     );
-                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                    backoff_ms = (backoff_ms.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
                     continue;
                 }
             },
-            result = v6l.accept() => match result {
+            result = v6l.accept(), if v6_remaining == 0 => match result {
                 Ok((stream, _)) => return Ok(Some(stream)),
                 Err(error) if is_unrecoverable_accept_error(&error) => {
                     eprintln!(
@@ -579,13 +598,18 @@ async fn accept_from_dual_listeners(
                     return Ok(None);
                 }
                 Err(error) => {
+                    v6_remaining = v6_next;
+                    v6_next = (v6_next.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
                     eprintln!(
-                        "IPv6 auth callback accept failed (transient), retrying in {backoff_ms}ms: {error}"
+                        "IPv6 auth callback accept failed (transient), retrying in {v6_remaining}ms: {error}"
                     );
-                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                    backoff_ms = (backoff_ms.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
                     continue;
                 }
+            },
+            _ = tokio::time::sleep(Duration::from_millis(sleep_ms)), if sleep_ms > 0 => {
+                v4_remaining = v4_remaining.saturating_sub(sleep_ms);
+                v6_remaining = v6_remaining.saturating_sub(sleep_ms);
+                continue;
             },
         }
     }

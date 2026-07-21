@@ -397,7 +397,15 @@
 					levels: Array.isArray(parsedLocalData.levels)
 						? parsedLocalData.levels.map((l) => ({
 								label: String(l.label || ''),
-								level: Number(l.level || 0)
+								// Encode to the ×10 cloud storage contract (50 == 5.0,
+								// 55 == 5.5) — parsedLocalData.levels holds the raw
+								// #DLEVEL value (display scale, e.g. 5), and the cloud
+								// dtx_files.level column expects the encoded integer so
+								// normalizeCloudLevel / web formatLevel decode it back
+								// to the display scale. Storing the raw value (5) makes
+								// the matcher decode it to 0.5 and reject ordinary
+								// level-5 charts as too far from the local DrumLevel.
+								level: Math.round(Number(l.level || 0) * 10)
 							}))
 						: [],
 					// Pass the song path so the Rust backend can find and read preview files

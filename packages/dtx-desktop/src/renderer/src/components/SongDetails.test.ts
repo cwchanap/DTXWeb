@@ -1055,6 +1055,18 @@ describe('SongDetails', () => {
 					expect.objectContaining({ workspaceRoot: '/test/workspace' })
 				);
 			});
+			// The uploader must encode raw #DLEVEL (display scale, e.g. 9) to the
+			// x10 cloud storage contract (90 == 9.0) so normalizeCloudLevel / web
+			// formatLevel decode it back correctly. Storing the raw 9 would make
+			// the matcher decode it to 0.9 and reject ordinary level-9 charts.
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'create-simfile-record',
+					expect.objectContaining({
+						levels: [{ label: 'EXT', level: 90 }]
+					})
+				);
+			});
 		});
 
 		it('uploads and publishes when triggerSave(true) is invoked', async () => {

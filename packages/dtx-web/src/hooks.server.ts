@@ -133,7 +133,7 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 		// outside /app*; here the value is server-derived from the actual
 		// request path, so it is already a /app* path.
 		if (redirectParam) {
-			redirect(303, `/login?redirect=${redirectParam}`);
+			redirect(303, `/login?redirect=${encodeURIComponent(redirectParam)}`);
 		} else {
 			const next = `${event.url.pathname}${event.url.search}`;
 			redirect(303, `/login?next=${encodeURIComponent(next)}`);

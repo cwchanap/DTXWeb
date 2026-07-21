@@ -712,6 +712,57 @@ fn parse_degrades_to_best_only_when_performance_history_missing() {
     assert!(chart.recent.is_empty());
 }
 
+/// Seed a DTXMania-shaped DB whose `PerformanceHistory` table predates the
+/// `SongScoreId` column (legacy schema). JOINED_QUERY joins on `ph.SongScoreId`,
+/// so without the column-scope pre-check the parse would abort with
+/// `no such column: ph.SongScoreId`. The best-only fallback must keep the
+/// song + best score importable.
+fn seed_db_with_legacy_performance_history(path: &std::path::Path) {
+    let conn = Connection::open(path).expect("open seed db");
+    conn.execute_batch(
+        "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
+         CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
+             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+         CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
+             BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
+             ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
+             BestGood INTEGER, BestPoor INTEGER, BestMiss INTEGER, LastPlayedAt TEXT);
+         -- Legacy PerformanceHistory schema: no SongScoreId column. Older builds
+         -- keyed history by chart id directly; JOINED_QUERY cannot join on this.
+         CREATE TABLE PerformanceHistory (Id INTEGER PRIMARY KEY, ChartId INTEGER,
+             PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
+
+         INSERT INTO Songs VALUES (1, 'Legacy Song', 'Artist', 'Rock');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
+         INSERT INTO PerformanceHistory VALUES (100, 1, '2026-06-02T00:00:00', '10.26/6/2 Cleared (S: 91.30)', 1);",
+    )
+    .expect("seed");
+}
+
+#[test]
+fn parse_degrades_to_best_only_when_performance_history_lacks_song_score_id() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("songs.db");
+    seed_db_with_legacy_performance_history(&db);
+
+    // Without the column-scope pre-check, JOINED_QUERY would fail with
+    // "no such column: ph.SongScoreId" and abort the whole parse. With the
+    // pre-check, the best-only fallback runs and the song loads with its best
+    // score intact and an empty recent list (the legacy history rows are
+    // unreachable via BEST_ONLY_QUERY, which is the intended trade-off).
+    let songs = parse_dtxmania_scores_impl(db.to_str().unwrap()).expect("parse");
+    assert_eq!(songs.len(), 1);
+    let chart = &songs[0].charts[0];
+    assert_eq!(chart.aggregate.play_count, 7);
+    let best = chart.best.as_ref().expect("best present");
+    assert_eq!(best.score, Some(950000));
+    assert_eq!(best.rank_label.as_deref(), Some("S"));
+    // Legacy history rows are not joined -> recent is empty, but the chart
+    // still loads with its best score.
+    assert!(chart.recent.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // DtxmaniaDbState (Tauri-managed state for the dialog-selected DB path)
 // ---------------------------------------------------------------------------

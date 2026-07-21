@@ -196,11 +196,13 @@ pub fn parse_history_line(line: &str) -> ParsedHistory {
     }
 }
 
-/// Pure resolver: `<data_dir>/DTXManiaCX/songs.db` when it exists. `dirs::data_dir()`
-/// maps to `~/Library/Application Support` (macOS), `%APPDATA%` (Windows), and
-/// `$XDG_DATA_HOME`/`~/.local/share` (Linux) — the three platform paths in the spec.
-fn default_dtxmania_db_path_from(data_dir: Option<PathBuf>) -> Option<String> {
-    let path = data_dir?.join("DTXManiaCX").join("songs.db");
+/// Pure resolver: `<base>/DTXManiaCX/songs.db` when it exists. The base dir is
+/// supplied by `default_dtxmania_db_path`, which picks the platform directory
+/// DTXManiaCX actually writes to (verified against `AppPaths.GetAppDataRoot()`
+/// in the DTXManiaCX source): `%LOCALAPPDATA%` (Windows), `~/Library/Application
+/// Support` (macOS), `$XDG_CONFIG_HOME`/`~/.config` (Linux).
+fn default_dtxmania_db_path_from(base_dir: Option<PathBuf>) -> Option<String> {
+    let path = base_dir?.join("DTXManiaCX").join("songs.db");
     if path.exists() {
         path.to_str().map(|value| value.to_string())
     } else {
@@ -208,9 +210,32 @@ fn default_dtxmania_db_path_from(data_dir: Option<PathBuf>) -> Option<String> {
     }
 }
 
+/// Resolves the platform-specific base directory DTXManiaCX stores `songs.db`
+/// under, mirroring `AppPaths.GetAppDataRoot()` in the DTXManiaCX source:
+///
+/// - Windows: `%LOCALAPPDATA%` (`dirs::data_local_dir`) — NOT `%APPDATA%`
+///   (roaming); DTXManiaCX uses `Environment.SpecialFolder.LocalApplicationData`.
+/// - macOS: `~/Library/Application Support` (`dirs::data_dir`).
+/// - Linux/other: `$XDG_CONFIG_HOME` or `~/.config` (`dirs::config_dir`) — NOT
+///   `~/.local/share`; DTXManiaCX uses `Environment.SpecialFolder.ApplicationData`,
+///   which on Linux maps to the XDG config dir, not the data dir.
+///
+/// Mismatched base dirs silently failed auto-discovery on Windows/Linux, forcing
+/// users to pick the database manually — see the review note on the previous
+/// `dirs::data_dir()`-only implementation.
+fn dtxmania_platform_base_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        dirs::data_local_dir()
+    } else if cfg!(target_os = "macos") {
+        dirs::data_dir()
+    } else {
+        dirs::config_dir()
+    }
+}
+
 #[tauri::command]
 pub fn default_dtxmania_db_path() -> Option<String> {
-    default_dtxmania_db_path_from(dirs::data_dir())
+    default_dtxmania_db_path_from(dtxmania_platform_base_dir())
 }
 
 /// Tauri-managed state tracking the last database path selected via the OS
@@ -413,10 +438,33 @@ fn has_table(conn: &Connection, name: &str) -> Result<bool> {
     Ok(exists > 0)
 }
 
+/// Returns true if the `PerformanceHistory` table exists AND has a `SongScoreId`
+/// column (the column `JOINED_QUERY` joins on). Some legacy DTXManiaCX builds
+/// created `PerformanceHistory` without `SongScoreId`; running `JOINED_QUERY`
+/// against those fails with `no such column: ph.SongScoreId` and aborts the
+/// entire parse. Callers fall back to `BEST_ONLY_QUERY` when this returns
+/// false, preserving best-score import for older databases.
+///
+/// `PRAGMA table_info` does not accept bound parameters for the table name, so
+/// the table name is a hardcoded literal (not user input) — no injection risk.
+/// A query error is propagated for the same reason as `has_table`: masking it
+/// would hide a genuinely corrupt database behind a silent partial result.
+fn has_performance_history_score_scope(conn: &Connection) -> Result<bool> {
+    if !has_table(conn, "PerformanceHistory")? {
+        return Ok(false);
+    }
+    let mut stmt = conn.prepare("PRAGMA table_info(PerformanceHistory)")?;
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(names.iter().any(|n| n == "SongScoreId"))
+}
+
 fn read_joined_rows(conn: &Connection) -> Result<Vec<JoinedRow>> {
-    // Degrade to the best-only query when PerformanceHistory is missing so a
-    // schema mismatch (e.g. an older DTXManiaCX build) doesn't abort the parse.
-    let query = if has_table(conn, "PerformanceHistory")? {
+    // Degrade to the best-only query when PerformanceHistory is missing OR lacks
+    // the SongScoreId column JOINED_QUERY joins on. Either schema mismatch would
+    // otherwise abort the whole parse with a SQLite error.
+    let query = if has_performance_history_score_scope(conn)? {
         JOINED_QUERY
     } else {
         BEST_ONLY_QUERY

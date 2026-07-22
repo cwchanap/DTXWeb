@@ -21,24 +21,26 @@ export type CreateSimfileResult = {
 };
 
 /**
- * Normalize a raw incoming `dtx_files.level` to the ×10 storage contract.
+ * Normalize a raw incoming `dtx_files.level` to the encoded storage contract.
  *
  * The canonical storage form is an encoded integer on the ×10 scale (e.g. 50 ==
  * 5.0) or ×100 scale (> 100, e.g. 550 == 5.5). Pre-b2ccaaab desktop clients
  * stored the raw #DLEVEL display-scale value (e.g. 5) directly, and those rows
- * are decoded by `normalizeCloudLevel` / `formatLevel` as 0.5 — failing
- * auto-matching and displaying "0.50" for a real level-5 chart. D1 migration
- * 0004 multiplies legacy rows by 10, but already-installed old clients keep
- * writing raw values after the migration runs; this guard at the API write
- * boundary normalizes such legacy inputs so old clients cannot reintroduce
- * charts that the new matchers/formatters misinterpret.
+ * are decoded by `normalizeCloudLevel` / `formatLevel` as 0.05 (×100 scale) —
+ * failing auto-matching and displaying "0.05" for a real level-5 chart. D1
+ * migration 0004 multiplies legacy rows by 100, but already-installed old
+ * clients keep writing raw values after the migration runs; this guard at the
+ * API write boundary normalizes such legacy inputs so old clients cannot
+ * reintroduce charts that the new matchers/formatters misinterpret.
  *
- * - Bare integer 1–9 → ×10 (legacy display-scale value).
+ * - Bare integer 1–9 → ×100 (legacy display-scale value; 5 → 500 → 5.0).
+ *   DTX levels range 0.1–9.99, so 1–9 on the ×100 scale (0.01–0.09) is below
+ *   the minimum — unambiguously legacy, not an intentional sub-0.1 level.
  * - Integer ≥ 10, 0, or non-integer → left as-is (already encoded, the column
  *   default, or a stray display-scale decimal that `formatLevel` handles).
  */
 const normalizeLegacyLevel = (level: number): number =>
-	Number.isInteger(level) && level >= 1 && level <= 9 ? level * 10 : level;
+	Number.isInteger(level) && level >= 1 && level <= 9 ? level * 100 : level;
 
 export const createSimfileWithDtx = async (
 	db: D1Database,

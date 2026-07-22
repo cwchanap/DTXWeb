@@ -109,14 +109,16 @@ describe('createSimfileWithDtx', () => {
 		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 7);
 	});
 
-	it('normalizes legacy bare 1–9 levels to the ×10 storage contract', async () => {
+	it('normalizes legacy bare 1–9 levels to the ×100 storage contract', async () => {
 		// Old desktop clients (pre-b2ccaaab) send the raw #DLEVEL display-scale
-		// value (e.g. 5). The API boundary must encode it to 50 so downstream
-		// matchers/formatters decode it as 5.0, not 0.5.
+		// value (e.g. 5). The API boundary must encode it to 500 (×100) so
+		// downstream matchers/formatters decode it as 5.0, not 0.05. DTX
+		// levels range 0.1–9.99, so 1–9 on the ×100 scale (0.01–0.09) is
+		// below the minimum — unambiguously legacy, not intentional.
 		mockedCreate.mockResolvedValue(baseRow);
 		mockedCreateDtx.mockResolvedValue([
-			{ id: 1, label: 'BSC', level: 50, simfile_id: 7 },
-			{ id: 2, label: 'ADV', level: 90, simfile_id: 7 }
+			{ id: 1, label: 'BSC', level: 500, simfile_id: 7 },
+			{ id: 2, label: 'ADV', level: 900, simfile_id: 7 }
 		]);
 		const result = await createSimfileWithDtx({} as never, {
 			...baseArgs,
@@ -126,12 +128,12 @@ describe('createSimfileWithDtx', () => {
 			]
 		});
 		expect(mockedCreateDtx).toHaveBeenCalledWith(expect.anything(), [
-			{ label: 'BSC', level: 50, simfile_id: 7 },
-			{ label: 'ADV', level: 90, simfile_id: 7 }
+			{ label: 'BSC', level: 500, simfile_id: 7 },
+			{ label: 'ADV', level: 900, simfile_id: 7 }
 		]);
 		expect(result.dtxFiles).toEqual([
-			{ id: 1, label: 'BSC', level: 50 },
-			{ id: 2, label: 'ADV', level: 90 }
+			{ id: 1, label: 'BSC', level: 500 },
+			{ id: 2, label: 'ADV', level: 900 }
 		]);
 	});
 

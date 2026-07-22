@@ -2,7 +2,7 @@
 // Migrate + seed the local Miniflare backend (dtx-api), BEFORE the dev server
 // starts. Run by the Playwright webServer command.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -15,9 +15,15 @@ const pkg = 'dtx-api';
 const pkgDir = join(repoRoot, 'packages', pkg);
 const persist = '.wrangler/state';
 const absPersist = join(pkgDir, persist);
-const migrations = ['0001_initial_schema.sql', '0002_scores.sql'].map((name) =>
-	join(repoRoot, 'packages/dtx-api/d1-migrations', name)
-);
+// Discover every SQL migration in lexicographic order so CI applies the same
+// set that `wrangler d1 migrations apply` would deploy. Hardcoding the list
+// silently skips new migrations (0003 index, 0004 data migration, etc.) and
+// lets schema/transform failures slip past e2e.
+const migrationsDir = join(repoRoot, 'packages/dtx-api/d1-migrations');
+const migrations = readdirSync(migrationsDir)
+	.filter((name) => name.endsWith('.sql'))
+	.sort()
+	.map((name) => join(migrationsDir, name));
 const seedFile = join(here, 'seed.sql');
 const fixture = join(repoRoot, 'e2e/fixtures/test-sample.dtx');
 

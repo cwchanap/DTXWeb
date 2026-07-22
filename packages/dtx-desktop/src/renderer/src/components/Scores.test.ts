@@ -709,7 +709,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: i,
+			drumLevel: (i + 1) * 10,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -735,7 +735,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: i
+				level: (i + 1) * 100 + 1
 			}))
 		});
 		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => ({
@@ -769,7 +769,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: i,
+			drumLevel: (i + 1) * 10,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -795,7 +795,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: i
+				level: (i + 1) * 100 + 1
 			}))
 		});
 		host.uploadScores.mockImplementation(async (payload: { charts: unknown[] }) => {
@@ -843,7 +843,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: i,
+			drumLevel: (i + 1) * 10,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -869,7 +869,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: i
+				level: (i + 1) * 100 + 1
 			}))
 		});
 		let callCount = 0;
@@ -908,7 +908,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: i,
+			drumLevel: (i + 1) * 10,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -934,7 +934,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: i
+				level: (i + 1) * 100 + 1
 			}))
 		});
 		let callCount = 0;
@@ -1174,7 +1174,7 @@ describe('Scores', () => {
 		const charts = Array.from({ length: 101 }, (_, i) => ({
 			difficultyLevel: 2,
 			difficultyLabel: `LV${i}`,
-			drumLevel: i,
+			drumLevel: (i + 1) * 10,
 			fileHash: `hash-${i}`,
 			aggregate: { playCount: 1, clearCount: 1 },
 			best: bestRow,
@@ -1200,7 +1200,7 @@ describe('Scores', () => {
 			data: charts.map((c, i) => ({
 				id: `${1000 + i}`,
 				label: `LV${i}`,
-				level: i
+				level: (i + 1) * 100 + 1
 			}))
 		});
 		host.uploadScores

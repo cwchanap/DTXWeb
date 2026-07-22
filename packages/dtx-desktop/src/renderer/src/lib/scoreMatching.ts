@@ -35,25 +35,27 @@ const MAX_LEVEL_DELTA = 0.5;
  * non-integer is already on the display scale — dividing it again would yield
  * 0.55 and match it against the wrong local chart — so it is returned as-is.
  *
- * Edge case: a bare single-digit integer (1–9) decodes to 0.1–0.9 on the ×10
- * scale. Per the encoding contract this is correct (level 0.5 == 5), but such
- * low levels are unlikely in practice and the value will silently fail to
- * match any real local chart (typically 1.0–10.0) — the MAX_LEVEL_DELTA guard
- * rejects it for manual selection. This is accepted: the encoding contract is
- * the source of truth, and a bare 1–9 is far more likely a data-entry error
- * than an intentional sub-1.0 level. Mirrors the web `formatLevel` heuristic
- * so cloud and local levels are always compared on the same scale.
+ * Edge case: a bare single-digit integer (1–9) decodes to 0.01–0.09 on the
+ * ×100 scale. DTX levels range 0.1–9.99, so 0.01–0.09 is below the minimum —
+ * a bare 1–9 is unambiguously a legacy display-scale value (pre-b2ccaaab
+ * desktop uploader), not an intentional sub-0.1 level. It will silently fail
+ * to match any real local chart (typically 1.0–10.0) — the MAX_LEVEL_DELTA
+ * guard rejects it for manual selection. This is accepted: the encoding
+ * contract is the source of truth, and a bare 1–9 is far more likely a
+ * data-entry error than an intentional sub-0.1 level. Mirrors the web
+ * `formatLevel` heuristic so cloud and local levels are always compared on
+ * the same scale.
  *
  * Legacy data note: before commit b2ccaaab the desktop uploader stored raw
  * #DLEVEL display-scale values (e.g. 5) instead of encoding them ×10 (50), so
  * production dtx_files rows for simfiles uploaded via the old desktop app held
- * bare 1–9 integers and decoded to 0.1–0.9 here. D1 migration
- * 0004_normalize_legacy_dtx_file_levels.sql multiplies those legacy rows by 10
- * so they decode correctly; after it runs, a bare 1–9 reaching this function is
+ * bare 1–9 integers. D1 migration 0004_normalize_legacy_dtx_file_levels.sql
+ * multiplies those legacy rows by 100 to put them on the ×100 scale
+ * (5 → 500 → 5.0); after it runs, a bare 1–9 reaching this function is
  * unambiguously a data-entry error, not a legacy display-scale value.
  */
 const normalizeCloudLevel = (level: number): number =>
-	Number.isInteger(level) ? (level > 100 ? level / 100 : level / 10) : level;
+	Number.isInteger(level) ? (level >= 10 && level <= 100 ? level / 10 : level / 100) : level;
 
 /**
  * Format a raw `dtx_files.level` for display (e.g. the manual-target dropdown),

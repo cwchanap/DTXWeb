@@ -88,15 +88,15 @@ describe('matchCharts', () => {
 		expect(result).toEqual(['a', 'b']);
 	});
 
-	it('decodes a bare single-digit cloud level as ×10 (0.5), which silently fails to match a real local chart', () => {
-		// A bare integer 5 decodes to 0.5 per the ×10 encoding contract. A
-		// real local chart at level 5.0 (drumLevel 50) is 4.5 away — well
+	it('decodes a bare single-digit cloud level as ×100 (0.05), which silently fails to match a real local chart', () => {
+		// A bare integer 5 decodes to 0.05 on the ×100 scale. DTX levels range
+		// 0.1–9.99, so 0.05 is below the minimum — a bare 1–9 is unambiguously
+		// a legacy display-scale value, not an intentional sub-0.1 level. A
+		// real local chart at level 5.0 (drumLevel 50) is 4.95 away — well
 		// beyond MAX_LEVEL_DELTA — so the match is rejected for manual
-		// selection. This pins the documented edge case: bare single-digit
-		// levels are unlikely sub-1.0 values, not display-scale 1–9.
-		// Legacy desktop-uploaded rows that held bare 1–9 display-scale
-		// values are normalized by D1 migration
-		// 0004_normalize_legacy_dtx_file_levels.sql (×10), so a bare 1–9
+		// selection. Legacy desktop-uploaded rows that held bare 1–9
+		// display-scale values are normalized by D1 migration
+		// 0004_normalize_legacy_dtx_file_levels.sql (×100), so a bare 1–9
 		// reaching the matcher post-migration is a data-entry error.
 		const result = matchCharts([local(50)], [cloud('a', 5)]);
 		expect(result).toEqual([null]);

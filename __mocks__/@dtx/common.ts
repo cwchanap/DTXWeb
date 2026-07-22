@@ -149,7 +149,7 @@ export const normalizePosition = vi.fn((cellOffset: number, cellsPerMeasure: num
 export const formatLevel = (level: string | number | undefined | null): string => {
 	const parsed = typeof level === 'string' ? parseFloat(level) : (level ?? 0);
 	const n = Number.isFinite(parsed) ? parsed : 0;
-	const display = Number.isInteger(n) ? (n > 100 ? n / 100 : n / 10) : n;
+	const display = Number.isInteger(n) ? (n >= 10 && n <= 100 ? n / 10 : n / 100) : n;
 	return display.toFixed(2);
 };
 

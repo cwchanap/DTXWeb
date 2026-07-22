@@ -133,7 +133,22 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 		// outside /app*; here the value is server-derived from the actual
 		// request path, so it is already a /app* path.
 		if (redirectParam) {
-			redirect(303, `/login?redirect=${encodeURIComponent(redirectParam)}`);
+			// Forward desktop_callback alongside redirect=desktop so the login
+			// page can stash the desktop instance's declared callback before
+			// the post-login flow runs — otherwise the /app page falls back to
+			// the web deployment's default deep link and the magic link lands
+			// at the wrong place (e.g. a `tauri dev` loopback port that the
+			// web deployment doesn't know about). Mirrors the authenticated
+			// branch below.
+			if (redirectParam === 'desktop') {
+				const desktopCallback = url.searchParams.get('desktop_callback');
+				const target = desktopCallback
+					? `/login?redirect=desktop&desktop_callback=${encodeURIComponent(desktopCallback)}`
+					: '/login?redirect=desktop';
+				redirect(303, target);
+			} else {
+				redirect(303, `/login?redirect=${encodeURIComponent(redirectParam)}`);
+			}
 		} else {
 			const next = `${event.url.pathname}${event.url.search}`;
 			redirect(303, `/login?next=${encodeURIComponent(next)}`);

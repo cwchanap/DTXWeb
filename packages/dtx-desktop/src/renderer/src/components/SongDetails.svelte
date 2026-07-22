@@ -741,7 +741,13 @@
 			? parsedLocalData.levels.map((l, index) => ({
 					id: index + 1,
 					label: l.label || 'Unknown',
-					level: Number(l.level || 0),
+					// Encode to the ×10 cloud storage contract (50 == 5.0, 55 == 5.5)
+					// — parsedLocalData.levels holds the raw #DLEVEL value (display
+					// scale, e.g. 5), and ChartDetail renders levels via formatLevel,
+					// which decodes integers ÷10. Passing the raw value makes a
+					// level-5 chart render as 0.50. Mirrors the encoding used at the
+					// upload site below.
+					level: Math.round(Number(l.level || 0) * 10),
 					simfile_id: 0
 				}))
 			: [];

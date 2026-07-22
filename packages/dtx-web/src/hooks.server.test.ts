@@ -76,6 +76,22 @@ describe('authGuard', () => {
 		expect(resolve).not.toHaveBeenCalled();
 	});
 
+	it('preserves desktop_callback through the unauthenticated /app redirect', async () => {
+		const callback = 'http://127.0.0.1:47931/auth/callback';
+		const event = makeEvent({
+			url: new URL(
+				`https://example.com/app?redirect=desktop&desktop_callback=${encodeURIComponent(callback)}`
+			)
+		});
+		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
+
+		await expectRedirect(
+			authGuard({ event, resolve }),
+			`/login?redirect=desktop&desktop_callback=${encodeURIComponent(callback)}`
+		);
+		expect(resolve).not.toHaveBeenCalled();
+	});
+
 	it('redirects authenticated user from /login to /app', async () => {
 		const mockSession = { access_token: 'tok' } as unknown as App.Locals['session'];
 		const mockUser = { id: 'u1' } as unknown as App.Locals['user'];

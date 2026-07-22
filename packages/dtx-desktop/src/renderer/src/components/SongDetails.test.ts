@@ -162,7 +162,10 @@ const getLastProps = <T>(mockFn: ReturnType<typeof vi.fn>): T | undefined => {
 };
 
 type ChartDetailTestProps = {
-	simfile?: { display_id?: number | null };
+	simfile?: {
+		display_id?: number | null;
+		dtx_files?: Array<{ id: number; label: string; level: number; simfile_id: number }>;
+	};
 	$$events?: {
 		onSave?: (event: { detail: Record<string, unknown> }) => Promise<void> | void;
 	};
@@ -402,6 +405,41 @@ describe('SongDetails', () => {
 				linkedSimFileId: '1'
 			});
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
+		});
+
+		it('encodes fallback #DLEVEL values x10 before passing them to ChartDetail', async () => {
+			// parsedLocalData.levels holds raw #DLEVEL display values (e.g. 5),
+			// but ChartDetail renders levels via formatLevel, which decodes
+			// integers ÷10. The fallback must encode ×10 (50 == 5.0) so an
+			// unlinked level-5 chart renders as 5.00, not 0.50.
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'parse-dtx-files') {
+						return {
+							bpm: 140,
+							artist: 'Test Artist',
+							levels: [
+								{ label: 'BASIC', level: 5 },
+								{ label: 'EXT', level: 9 }
+							]
+						};
+					}
+					return null;
+				});
+			}
+			// Unlinked song (no linkedSimFile) so the fallback path is exercised
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.dtx_files).toEqual([
+					{ id: 1, label: 'BASIC', level: 50, simfile_id: 0 },
+					{ id: 2, label: 'EXT', level: 90, simfile_id: 0 }
+				]);
+			});
 		});
 
 		it('handles null parse-dtx-files response', async () => {

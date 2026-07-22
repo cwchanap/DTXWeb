@@ -1,23 +1,34 @@
 /**
- * Decode a single raw `dtx_files.level` to its two-decimal display string.
+ * Normalize a raw `dtx_files.level` (and optional `levelDec`) to the display
+ * scale, matching DTXManiaCX's canonical encoding:
  *
- * The canonical storage contract is an encoded integer on the ×10 scale
- * (e.g. 50 == 5.0, 55 == 5.5) or the ×100 scale (values > 100, e.g. 550 == 5.5).
- * The GraphQL schema exposes `level` as a `Float`, so a stray decimal (e.g. 5.5)
- * can arrive even though the canonical form is encoded; a non-integer is already
- * on the display scale and is returned as-is rather than divided again.
+ *   level >= 100 → level / 100                    (e.g. 850 → 8.50)
+ *   level <  100 → level / 10 + levelDec / 100    (e.g. 78 + 33 → 8.13)
  *
- * Bare single-digit integers (1–9) are decoded on the ×100 scale (0.01–0.09),
- * not the ×10 scale. DTX levels range 0.1–9.99, so 0.01–0.09 is below the
- * minimum — a bare 1–9 is therefore unambiguously a legacy display-scale value
- * (pre-b2ccaaab desktop uploader) that was never encoded, not an intentional
- * sub-0.1 level. D1 migration 0004 multiplies such rows by 100 to put them on
- * the ×100 scale (5 → 500 → 5.0); after it runs, a bare 1–9 reaching this
- * function is a data-entry error or a pre-migration row that escaped the fix.
+ * The cloud `dtx_files.level` column stores a single encoded integer with no
+ * separate decimal component, so `levelDec` defaults to 0 — the ×10 branch
+ * (level < 100, levelDec = 0) decodes 55 → 5.50, matching the ×10 contract.
+ *
+ * The GraphQL schema exposes `level` as a `Float`, so a stray decimal (e.g.
+ * 5.5) can arrive even though the canonical form is encoded; a non-integer is
+ * already on the display scale and is returned as-is rather than divided
+ * again.
+ *
+ * Reference: DTXManiaCX `SongScore.CalculateGameSkill` / `SkillPanelDisplay.
+ * FormatLevelText` — `level >= 100 ? level / 100.0 : level / 10.0 + levelDec
+ * / 100.0`.
  */
-export const formatLevel = (level: string | number | undefined | null): string => {
+export const normalizeLevel = (level: string | number | undefined | null, levelDec = 0): number => {
 	const parsed = typeof level === 'string' ? parseFloat(level) : (level ?? 0);
 	const n = Number.isFinite(parsed) ? parsed : 0;
-	const display = Number.isInteger(n) ? (n >= 10 && n <= 100 ? n / 10 : n / 100) : n;
-	return display.toFixed(2);
+	if (!Number.isInteger(n)) return n;
+	return n >= 100 ? n / 100 : n / 10 + levelDec / 100;
+};
+
+/**
+ * Decode a single raw `dtx_files.level` to its two-decimal display string.
+ * Uses `normalizeLevel` (levelDec = 0 for the cloud single-column case).
+ */
+export const formatLevel = (level: string | number | undefined | null): string => {
+	return normalizeLevel(level).toFixed(2);
 };

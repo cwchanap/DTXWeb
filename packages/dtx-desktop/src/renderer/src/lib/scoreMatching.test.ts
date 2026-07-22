@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { matchCharts, type CloudChart, type LocalChart } from './scoreMatching';
 
 const cloud = (id: string, level: number, label = ''): CloudChart => ({ id, level, label });
-const local = (drumLevel: number, difficultyLabel = ''): LocalChart => ({
+const local = (drumLevel: number, difficultyLabel = '', drumLevelDec = 0): LocalChart => ({
 	drumLevel,
+	drumLevelDec,
 	difficultyLabel
 });
 
@@ -21,6 +22,21 @@ describe('matchCharts', () => {
 	it('matches mixed ×10 and ×100 encoded cloud levels', () => {
 		const result = matchCharts([local(55), local(88)], [cloud('a', 55), cloud('b', 880)]);
 		expect(result).toEqual(['a', 'b']);
+	});
+
+	it('uses DrumLevelDec for local chart level (DTXManiaCX formula)', () => {
+		// DrumLevel=78 + DrumLevelDec=33 → 7.8 + 0.33 = 8.13
+		// Cloud level 813 (×100) → 8.13
+		const result = matchCharts([local(78, '', 33)], [cloud('a', 813)]);
+		expect(result).toEqual(['a']);
+	});
+
+	it('matches a local chart with DrumLevelDec to the nearest ×10 cloud level', () => {
+		// DrumLevel=78 + DrumLevelDec=33 → 8.13
+		// Cloud level 81 (×10) → 8.1, cloud level 82 (×10) → 8.2
+		// 8.13 is closer to 8.1 (diff 0.03) than 8.2 (diff 0.07)
+		const result = matchCharts([local(78, '', 33)], [cloud('a', 81), cloud('b', 82)]);
+		expect(result).toEqual(['a']);
 	});
 
 	it('assigns each cloud chart at most once (greedy in local order)', () => {
@@ -88,16 +104,16 @@ describe('matchCharts', () => {
 		expect(result).toEqual(['a', 'b']);
 	});
 
-	it('decodes a bare single-digit cloud level as ×100 (0.05), which silently fails to match a real local chart', () => {
-		// A bare integer 5 decodes to 0.05 on the ×100 scale. DTX levels range
-		// 0.1–9.99, so 0.05 is below the minimum — a bare 1–9 is unambiguously
-		// a legacy display-scale value, not an intentional sub-0.1 level. A
-		// real local chart at level 5.0 (drumLevel 50) is 4.95 away — well
-		// beyond MAX_LEVEL_DELTA — so the match is rejected for manual
-		// selection. Legacy desktop-uploaded rows that held bare 1–9
-		// display-scale values are normalized by D1 migration
-		// 0004_normalize_legacy_dtx_file_levels.sql (×100), so a bare 1–9
-		// reaching the matcher post-migration is a data-entry error.
+	it('decodes a bare single-digit cloud level as ×10 (0.5), which fails to match a real local chart', () => {
+		// With the DTXManiaCX formula, a bare 5 decodes as 0.5 (×10 branch:
+		// 5 / 10 + 0 / 100 = 0.5). DTX levels range 0.1–9.99, so 0.5 is a
+		// valid but very low level. A real local chart at level 5.0
+		// (drumLevel 50) is 4.5 away — well beyond MAX_LEVEL_DELTA — so the
+		// match is rejected for manual selection. Legacy desktop-uploaded
+		// rows that held bare 1–9 display-scale values are normalized by
+		// D1 migration 0004 (×100) and normalizeLegacyLevel at the API
+		// boundary, so a bare 1–9 reaching the matcher post-migration is a
+		// data-entry error.
 		const result = matchCharts([local(50)], [cloud('a', 5)]);
 		expect(result).toEqual([null]);
 	});

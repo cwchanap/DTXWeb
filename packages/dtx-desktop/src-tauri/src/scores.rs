@@ -50,6 +50,7 @@ pub struct DtxmaniaChart {
     pub difficulty_level: i64,
     pub difficulty_label: String,
     pub drum_level: i64,
+    pub drum_level_dec: i64,
     pub file_hash: String,
     pub aggregate: ChartAggregate,
     pub best: Option<ScorePayload>,
@@ -74,10 +75,12 @@ pub struct DtxmaniaSong {
 /// Rank label for the best row, derived from the achievement rate (0–100).
 /// Recent rows keep the RANK token parsed from the history line instead.
 ///
-/// Thresholds match DTXManiaCX: SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 62, C ≥ 50, D < 50.
-/// Only SS…D are ever returned here; E/F are history-only labels (accepted by
-/// `VALID_RANK_LABELS` / `sanitize_rank_label` for recent-row tokens parsed
-/// from `HistoryLine`, but never produced from an achievement rate).
+/// Thresholds match DTXManiaCX `ResultScreenModel.ComputeRank` (verified
+/// against the DTXManiaCX source code):
+///   SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 63, C ≥ 53, D ≥ 45, E < 45.
+/// There is no "F" rank in DTXManiaCX. `E` is produced from an achievement
+/// rate below 45, so it is included in `VALID_RANK_LABELS` and returned here
+/// (unlike the previous implementation which only produced SS…D).
 ///
 /// Called by `build_best`. Unit-tested directly (see `tests/scores_tests.rs`).
 pub fn derive_rank_label(rate: f64) -> &'static str {
@@ -87,12 +90,14 @@ pub fn derive_rank_label(rate: f64) -> &'static str {
         "S"
     } else if rate >= 73.0 {
         "A"
-    } else if rate >= 62.0 {
+    } else if rate >= 63.0 {
         "B"
-    } else if rate >= 50.0 {
+    } else if rate >= 53.0 {
         "C"
-    } else {
+    } else if rate >= 45.0 {
         "D"
+    } else {
+        "E"
     }
 }
 
@@ -369,6 +374,7 @@ struct JoinedRow {
     difficulty_level: i64,
     difficulty_label: String,
     drum_level: i64,
+    drum_level_dec: i64,
     file_hash: String,
     score: DrumsScoreRow,
     hist_performed_at: Option<String>,
@@ -389,7 +395,7 @@ struct JoinedRow {
 /// safety net; if DTXManiaCX ever stores unbounded history, revisit this.
 const JOINED_QUERY: &str = "\
 SELECT s.Id, s.Title, s.Artist, s.Genre, \
-       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.FileHash, \
+       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.DrumLevelDec, c.FileHash, \
        ss.BestScore, ss.BestAchievementRate, ss.FullCombo, ss.PlayCount, \
        ss.ClearCount, ss.MaxCombo, ss.BestPerfect, ss.BestGreat, ss.BestGood, \
        ss.BestPoor, ss.BestMiss, ss.LastPlayedAt, \
@@ -410,7 +416,7 @@ ORDER BY s.Id, c.Id, ph.DisplayOrder, ph.Id";
 /// generic SQLite error.
 const BEST_ONLY_QUERY: &str = "\
 SELECT s.Id, s.Title, s.Artist, s.Genre, \
-       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.FileHash, \
+       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.DrumLevelDec, c.FileHash, \
        ss.BestScore, ss.BestAchievementRate, ss.FullCombo, ss.PlayCount, \
        ss.ClearCount, ss.MaxCombo, ss.BestPerfect, ss.BestGreat, ss.BestGood, \
        ss.BestPoor, ss.BestMiss, ss.LastPlayedAt, \
@@ -481,24 +487,25 @@ fn read_joined_rows(conn: &Connection) -> Result<Vec<JoinedRow>> {
                 difficulty_level: row.get::<_, Option<i64>>(5)?.unwrap_or(0),
                 difficulty_label: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
                 drum_level: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
-                file_hash: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+                drum_level_dec: row.get::<_, Option<i64>>(8)?.unwrap_or(0),
+                file_hash: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
                 score: DrumsScoreRow {
-                    best_score: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
-                    best_achievement_rate: row.get::<_, Option<f64>>(10)?.unwrap_or(0.0),
-                    full_combo: row.get::<_, Option<i64>>(11)?.unwrap_or(0),
-                    play_count: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
-                    clear_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
-                    max_combo: row.get::<_, Option<i64>>(14)?.unwrap_or(0),
-                    best_perfect: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
-                    best_great: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
-                    best_good: row.get::<_, Option<i64>>(17)?.unwrap_or(0),
-                    best_poor: row.get::<_, Option<i64>>(18)?.unwrap_or(0),
-                    best_miss: row.get::<_, Option<i64>>(19)?.unwrap_or(0),
-                    last_played_at: row.get(20)?,
+                    best_score: row.get::<_, Option<i64>>(10)?.unwrap_or(0),
+                    best_achievement_rate: row.get::<_, Option<f64>>(11)?.unwrap_or(0.0),
+                    full_combo: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
+                    play_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
+                    clear_count: row.get::<_, Option<i64>>(14)?.unwrap_or(0),
+                    max_combo: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
+                    best_perfect: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
+                    best_great: row.get::<_, Option<i64>>(17)?.unwrap_or(0),
+                    best_good: row.get::<_, Option<i64>>(18)?.unwrap_or(0),
+                    best_poor: row.get::<_, Option<i64>>(19)?.unwrap_or(0),
+                    best_miss: row.get::<_, Option<i64>>(20)?.unwrap_or(0),
+                    last_played_at: row.get(21)?,
                 },
-                hist_performed_at: row.get(21)?,
-                hist_history_line: row.get(22)?,
-                hist_display_order: row.get(23)?,
+                hist_performed_at: row.get(22)?,
+                hist_history_line: row.get(23)?,
+                hist_display_order: row.get(24)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -550,6 +557,7 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
                 difficulty_level: row.difficulty_level,
                 difficulty_label: row.difficulty_label.clone(),
                 drum_level: row.drum_level,
+                drum_level_dec: row.drum_level_dec,
                 file_hash: row.file_hash.clone(),
                 aggregate: ChartAggregate {
                     play_count: row.score.play_count,

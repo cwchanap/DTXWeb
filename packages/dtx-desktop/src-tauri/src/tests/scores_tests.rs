@@ -3,7 +3,8 @@ use tempfile::tempdir;
 
 #[test]
 fn derive_rank_label_covers_all_bands() {
-    // DTXManiaCX thresholds: SS >= 95, S >= 80, A >= 73, B >= 62, C >= 50, D < 50.
+    // DTXManiaCX thresholds (verified against ResultScreenModel.ComputeRank):
+    // SS >= 95, S >= 80, A >= 73, B >= 63, C >= 53, D >= 45, E < 45.
     assert_eq!(derive_rank_label(100.0), "SS");
     assert_eq!(derive_rank_label(95.0), "SS");
     assert_eq!(derive_rank_label(94.99), "S");
@@ -11,11 +12,13 @@ fn derive_rank_label_covers_all_bands() {
     assert_eq!(derive_rank_label(79.99), "A");
     assert_eq!(derive_rank_label(73.0), "A");
     assert_eq!(derive_rank_label(72.99), "B");
-    assert_eq!(derive_rank_label(62.0), "B");
-    assert_eq!(derive_rank_label(61.99), "C");
-    assert_eq!(derive_rank_label(50.0), "C");
-    assert_eq!(derive_rank_label(49.99), "D");
-    assert_eq!(derive_rank_label(0.0), "D");
+    assert_eq!(derive_rank_label(63.0), "B");
+    assert_eq!(derive_rank_label(62.99), "C");
+    assert_eq!(derive_rank_label(53.0), "C");
+    assert_eq!(derive_rank_label(52.99), "D");
+    assert_eq!(derive_rank_label(45.0), "D");
+    assert_eq!(derive_rank_label(44.99), "E");
+    assert_eq!(derive_rank_label(0.0), "E");
 }
 
 /// `build_best` reads `best_achievement_rate` straight from songs.db
@@ -218,7 +221,7 @@ fn seed_db(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -230,10 +233,10 @@ fn seed_db(path: &std::path::Path) {
          INSERT INTO Songs VALUES (2, 'Never Played', 'Artist B', 'Pop');
 
          -- Song 1: chart 1 played (with history), chart 2 has a NON-drums score only.
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
-         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 'hash-extreme');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
+         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 0, 'hash-extreme');
          -- Song 2: chart 3 never played (drums score exists, all zero).
-         INSERT INTO SongCharts VALUES (3, 2, 1, '', 33, 'hash-np');
+         INSERT INTO SongCharts VALUES (3, 2, 1, '', 33, 0, 'hash-np');
 
          -- Drums score for chart 1 (played), with judgement breakdown.
          INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
@@ -268,6 +271,7 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     assert_eq!(played.charts.len(), 1);
     let chart = &played.charts[0];
     assert_eq!(chart.drum_level, 55);
+    assert_eq!(chart.drum_level_dec, 0);
     assert_eq!(chart.difficulty_label, "BASIC");
     assert_eq!(chart.aggregate.play_count, 7);
     assert_eq!(chart.aggregate.clear_count, 5);
@@ -401,7 +405,7 @@ fn seed_db_with_scoreless_chart(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -412,9 +416,9 @@ fn seed_db_with_scoreless_chart(path: &std::path::Path) {
          INSERT INTO Songs VALUES (1, 'Mixed Song', 'Artist', 'Rock');
 
          -- Chart 1: has a drums score row (played).
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
          -- Chart 2: NO drums score row at all -> must be skipped.
-         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 'hash-extreme');
+         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 0, 'hash-extreme');
 
          INSERT INTO SongScores VALUES (20, 1, 0, 880000, 88.0, 0, 3, 2, 700, 400, 50, 20, 10, 5, '2026-06-01');",
     )
@@ -455,7 +459,7 @@ fn seed_db_with_two_drums_charts(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -466,10 +470,10 @@ fn seed_db_with_two_drums_charts(path: &std::path::Path) {
          INSERT INTO Songs VALUES (1, 'Two-Chart Song', 'Artist', 'Rock');
 
          -- Chart 1: BASIC, drums score (played).
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
          -- Chart 2: EXTREME, drums score (played) — a SECOND drums-scored chart
          -- for the same song, which the other seeds never produce.
-         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 'hash-extreme');
+         INSERT INTO SongCharts VALUES (2, 1, 5, 'EXTREME', 88, 0, 'hash-extreme');
 
          INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
          INSERT INTO SongScores VALUES (11, 2, 0, 880000, 88.0, 0, 3, 2, 700, 400, 50, 20, 10, 5, '2026-06-01');
@@ -522,7 +526,7 @@ fn seed_db_with_six_history_rows(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -531,7 +535,7 @@ fn seed_db_with_six_history_rows(path: &std::path::Path) {
              PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
 
          INSERT INTO Songs VALUES (1, 'Capped Song', 'Artist', 'Rock');
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
          INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
 
          -- 6 history rows (DisplayOrder 1..6); the cap at recent_count < 5 must
@@ -580,7 +584,7 @@ fn seed_db_with_non_contiguous_display_order(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -589,7 +593,7 @@ fn seed_db_with_non_contiguous_display_order(path: &std::path::Path) {
              PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
 
          INSERT INTO Songs VALUES (1, 'Non-Contiguous Song', 'Artist', 'Rock');
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
          INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 3, 2, 800, 500, 30, 10, 5, 2, '2026-06-02');
 
          -- Non-contiguous DisplayOrder values (10, 20, 30) that would fail
@@ -630,7 +634,7 @@ fn seed_db_with_null_integers(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -639,7 +643,7 @@ fn seed_db_with_null_integers(path: &std::path::Path) {
              PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
 
          INSERT INTO Songs VALUES (1, 'Null Song', 'Artist', 'Rock');
-         INSERT INTO SongCharts VALUES (1, 1, NULL, 'BASIC', NULL, 'hash');
+         INSERT INTO SongCharts VALUES (1, 1, NULL, 'BASIC', NULL, NULL, 'hash');
          INSERT INTO SongScores VALUES (10, 1, 0, NULL, NULL, NULL, 5, 2, NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
     )
     .expect("seed");
@@ -658,6 +662,7 @@ fn parse_tolerates_null_integer_columns() {
     let chart = &songs[0].charts[0];
     assert_eq!(chart.difficulty_level, 0);
     assert_eq!(chart.drum_level, 0);
+    assert_eq!(chart.drum_level_dec, 0);
     assert_eq!(chart.aggregate.play_count, 5);
     assert_eq!(chart.aggregate.clear_count, 2);
     let best = chart.best.as_ref().expect("best present");
@@ -677,7 +682,7 @@ fn seed_db_without_performance_history(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -685,7 +690,7 @@ fn seed_db_without_performance_history(path: &std::path::Path) {
          -- No PerformanceHistory table: simulates a schema-drift build.
 
          INSERT INTO Songs VALUES (1, 'Drift Song', 'Artist', 'Rock');
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
          INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');",
     )
     .expect("seed");
@@ -722,7 +727,7 @@ fn seed_db_with_legacy_performance_history(path: &std::path::Path) {
     conn.execute_batch(
         "CREATE TABLE Songs (Id INTEGER PRIMARY KEY, Title TEXT, Artist TEXT, Genre TEXT);
          CREATE TABLE SongCharts (Id INTEGER PRIMARY KEY, SongId INTEGER, DifficultyLevel INTEGER,
-             DifficultyLabel TEXT, DrumLevel INTEGER, FileHash TEXT);
+             DifficultyLabel TEXT, DrumLevel INTEGER, DrumLevelDec INTEGER, FileHash TEXT);
          CREATE TABLE SongScores (Id INTEGER PRIMARY KEY, ChartId INTEGER, Instrument INTEGER,
              BestScore INTEGER, BestAchievementRate REAL, FullCombo INTEGER, PlayCount INTEGER,
              ClearCount INTEGER, MaxCombo INTEGER, BestPerfect INTEGER, BestGreat INTEGER,
@@ -733,7 +738,7 @@ fn seed_db_with_legacy_performance_history(path: &std::path::Path) {
              PerformedAt TEXT, HistoryLine TEXT, DisplayOrder INTEGER);
 
          INSERT INTO Songs VALUES (1, 'Legacy Song', 'Artist', 'Rock');
-         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 'hash-basic');
+         INSERT INTO SongCharts VALUES (1, 1, 2, 'BASIC', 55, 0, 'hash-basic');
          INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
          INSERT INTO PerformanceHistory VALUES (100, 1, '2026-06-02T00:00:00', '10.26/6/2 Cleared (S: 91.30)', 1);",
     )

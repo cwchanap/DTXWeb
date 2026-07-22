@@ -1,0 +1,26 @@
+-- 0005_fix_level_decoding_formula.sql
+-- No data changes required. The level decoding formula in formatLevel
+-- (packages/common/src/lib/utils/level.ts) and normalizeCloudLevel
+-- (packages/dtx-desktop/src/renderer/src/lib/scoreMatching.ts) has been
+-- updated to match DTXManiaCX's canonical encoding:
+--
+--   level >= 100 → level / 100
+--   level <  100 → level / 10 + levelDec / 100
+--
+-- This replaces the previous heuristic (n >= 10 && n <= 100 ? n / 10 : n / 100)
+-- which had a boundary error: level = 100 (produced by migration 0004 from the
+-- legacy value 1) was decoded as 10.00 instead of 1.00, because 100 fell in
+-- the ×10 branch.
+--
+-- Under the new formula, 100 → 100/100 = 1.00 (correct). All other values
+-- produced by 0004 (200–900) were already correct and remain correct:
+--   200 → 2.00, 500 → 5.00, 900 → 9.00 (all via level >= 100 → level/100).
+--
+-- The formula also adds DrumLevelDec support for local DTXMania charts,
+-- fixing the case where DrumLevel=78 + DrumLevelDec=33 (actual level 8.13)
+-- was treated as 7.80 because DrumLevelDec was discarded.
+--
+-- This migration is a no-op (SELECT 1) because the fix is in the decoding
+-- logic, not in the stored data. All existing dtx_files.level values decode
+-- correctly under the new formula.
+SELECT 1;

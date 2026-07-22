@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
 	import { AlertTriangle } from '@lucide/svelte';
+	import { normalizeLevel } from '@dtx/common';
 	import type { LocalChartData } from '../lib/scoreTypes';
 	import { formatCloudLevel, type CloudChart } from '../lib/scoreMatching';
 
@@ -38,7 +39,9 @@
 			>{chart.difficultyLabel || $_('score.drums_fallback')}</span
 		>
 		<span class="text-faint"
-			>{$_('score.level_value', { values: { value: chart.drumLevel / 10 } })}</span
+			>{$_('score.level_value', {
+				values: { value: normalizeLevel(chart.drumLevel, chart.drumLevelDec) }
+			})}</span
 		>
 		<span class="text-dim"
 			>{$_('score.plays_clears', {

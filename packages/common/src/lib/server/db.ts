@@ -292,7 +292,15 @@ export const searchSimfiles = async (
 	}
 
 	if (opts.excludeIds && opts.excludeIds.length > 0) {
-		conditions.push(notInArray(simfiles.id, opts.excludeIds));
+		// Cloudflare D1 limits bound parameters to 100 per statement. The LIKE
+		// pattern consumes 1 bound parameter (the pattern is reused for both
+		// title and artist), so up to 99 exclude IDs are safe. Cap at 90 to
+		// leave headroom for future conditions. The caller (CloudSongAutocomplete)
+		// also filters client-side, so excluded IDs beyond this cap are still
+		// removed from the visible results — they just aren't filtered at the
+		// SQL level.
+		const cappedExcludeIds = opts.excludeIds.slice(0, 90);
+		conditions.push(notInArray(simfiles.id, cappedExcludeIds));
 	}
 
 	const limitRaw = opts.limit ?? 8;

@@ -14,13 +14,21 @@ describe('utils', () => {
 			expect(formatLevel(880)).toBe('8.80');
 		});
 
-		it('decodes a bare single-digit integer on the ×100 scale (legacy display-scale signal)', () => {
-			// DTX levels range 0.1–9.99, so 0.01–0.09 is below the minimum —
-			// a bare 1–9 is unambiguously a legacy display-scale value that
-			// was never encoded, not an intentional sub-0.1 level.
-			expect(formatLevel(1)).toBe('0.01');
-			expect(formatLevel(5)).toBe('0.05');
-			expect(formatLevel(9)).toBe('0.09');
+		it('decodes a bare single-digit integer on the ×10 scale', () => {
+			// With the DTXManiaCX formula, 1–9 decode as 0.1–0.9 (×10 branch:
+			// level < 100 → level/10 + 0/100). Migration 0004 and
+			// normalizeLegacyLevel convert bare 1–9 to ×100 (100–900) at the
+			// DB/API boundary, so bare 1–9 reaching this function are
+			// un-migrated legacy rows or data-entry errors.
+			expect(formatLevel(1)).toBe('0.10');
+			expect(formatLevel(5)).toBe('0.50');
+			expect(formatLevel(9)).toBe('0.90');
+		});
+
+		it('decodes level = 100 as ×100 scale (1.00), not ×10 scale (10.00)', () => {
+			// DTXManiaCX formula: level >= 100 → level / 100.
+			// Fixes the migration 0004 boundary error.
+			expect(formatLevel(100)).toBe('1.00');
 		});
 
 		it('treats a stray decimal as already display-scale (not ÷10)', () => {

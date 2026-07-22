@@ -10,6 +10,7 @@ const makeChart = (overrides: Partial<LocalChartData> = {}): LocalChartData => (
 	difficultyLevel: 2,
 	difficultyLabel: 'BASIC',
 	drumLevel: 55,
+	drumLevelDec: 0,
 	fileHash: 'hash-basic',
 	aggregate: { playCount: 7, clearCount: 5 },
 	best: {

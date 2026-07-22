@@ -34,12 +34,20 @@
 	let isLoading = $state(false);
 	let searchTimeout: ReturnType<typeof setTimeout>;
 	let searchInputRef = $state<HTMLInputElement>();
+	// Monotonic generation counter so a slow earlier search cannot overwrite a
+	// newer search's results. Each searchCloudSongs call increments this and
+	// captures its generation; only the response matching the current
+	// generation writes to `suggestions`.
+	let searchGeneration = 0;
 
 	const handleClose = () => {
 		onclose?.();
 		searchQuery = '';
 		suggestions = [];
 		selectedIndex = -1;
+		// Invalidate any in-flight search so its response doesn't repopulate
+		// `suggestions` after the popup has closed.
+		searchGeneration++;
 	};
 
 	const handleSearchInput = () => {
@@ -57,6 +65,7 @@
 	const searchCloudSongs = async () => {
 		if (!searchQuery.trim()) return;
 
+		const generation = ++searchGeneration;
 		isLoading = true;
 		try {
 			const result = await desktopHost.searchCloudSongs<{
@@ -68,6 +77,11 @@
 				limit: 20, // Increase limit to account for filtering
 				excludeLinkedSongIds
 			});
+
+			// Discard stale responses: a newer search may have started while
+			// this request was in flight. Only the latest generation's result
+			// should populate `suggestions`.
+			if (generation !== searchGeneration) return;
 
 			if (result.success) {
 				// Filter out already linked songs on the client side as well (double protection)
@@ -82,9 +96,9 @@
 			}
 		} catch (error) {
 			console.error('Error searching cloud songs:', error);
-			suggestions = [];
+			if (generation === searchGeneration) suggestions = [];
 		} finally {
-			isLoading = false;
+			if (generation === searchGeneration) isLoading = false;
 		}
 	};
 

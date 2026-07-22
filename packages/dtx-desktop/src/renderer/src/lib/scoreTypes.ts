@@ -21,6 +21,8 @@ export interface LocalChartData {
 	difficultyLevel: number;
 	difficultyLabel: string;
 	drumLevel: number;
+	/** DTXMania DrumLevelDec — decimal part (0-99). Combined with drumLevel for display/matching. */
+	drumLevelDec: number;
 	fileHash: string;
 	aggregate: { playCount: number; clearCount: number };
 	best: ScorePayload | null;

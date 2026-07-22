@@ -15,6 +15,13 @@
 
 	let songs: ScoredSimfile[] = $state([]);
 	let currentPage = $state(1);
+	// The page whose data is currently rendered in `songs`. Updated only on a
+	// successful fetch, so a failed page-change load leaves the pagination
+	// pointing at the page actually displayed (the prior page's retained
+	// `songs`) instead of the requested page whose data never landed. Without
+	// this, `currentPage` (the fetch target) would mark the requested page
+	// active while the list still shows the previous page's scores.
+	let displayedPage = $state(1);
 	let totalCount = $state(0);
 	// Derived from totalCount so it can't drift out of sync with the latest
 	// fetch result. Recomputes reactively when totalCount changes.
@@ -71,6 +78,7 @@
 			if (requestId !== loadRequestId) return;
 			songs = result.data;
 			totalCount = result.count;
+			displayedPage = currentPage;
 			loadError = false;
 			// Stale-page guard: if scores were deleted and the current page now
 			// exceeds the total page count, clamp to the last valid page and
@@ -176,7 +184,7 @@
 				<Pagination
 					data={songs}
 					count={totalCount}
-					page={currentPage}
+					page={displayedPage}
 					{pageSize}
 					onPageChange={handlePageChange}
 					siblingCount={1}

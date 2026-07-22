@@ -230,6 +230,12 @@ describe('ScoreList', () => {
 		expect(screen.getByText('Song 10')).toBeInTheDocument();
 		// A retry button is rendered alongside the banner.
 		expect(screen.getByRole('button', { name: /score\.retry/i })).toBeInTheDocument();
+		// The pagination must still mark page 1 active: the failed page-2
+		// fetch retained the prior `songs` (page 1's data), so the active
+		// page must match the rendered data, not the requested page whose
+		// data never landed. Regression guard for the displayedPage fix.
+		expect(screen.getByText('1')).toHaveAttribute('aria-current', 'page');
+		expect(screen.getByText('2')).not.toHaveAttribute('aria-current', 'page');
 	});
 
 	// The loadRequestId guard in ScoreList prevents stale responses from

@@ -453,6 +453,25 @@
 		for (const [i, existing] of Object.entries(links)) {
 			if (Number(i) !== songIndex && existing) ids.push(existing.id);
 		}
+		// Also exclude cloud song IDs persisted for songs on unopened pages.
+		// `links` only holds restored/loaded links for the visible page plus any
+		// manually linked songs; saved links for songs on later pages live solely
+		// in `savedLinks`. Without this, the autocomplete would permit linking a
+		// visible song to a cloud simfile already persisted for an unopened page,
+		// and buildUpload's per-chart-ID dedup would silently drop one song's
+		// scores. Scope by the current dbPath prefix so links belonging to other
+		// databases (kept in savedLinks for cross-DB persistence) don't false-
+		// exclude a cloud song that a different database legitimately links to.
+		const currentPrefix = dbPath ? `${dbPath}${SCORE_LINK_KEY_SEP}` : '';
+		const ownKey = songs[songIndex] ? songKey(songs[songIndex]) : null;
+		for (const [key, cloudId] of Object.entries(savedLinks)) {
+			if (currentPrefix && !key.startsWith(currentPrefix)) continue;
+			// Exclude the current song's own persisted link so the user can
+			// still see and re-pick it when changing links, mirroring the
+			// `links` loop's Number(i) !== songIndex guard above.
+			if (ownKey && key === ownKey) continue;
+			if (cloudId && !ids.includes(cloudId)) ids.push(cloudId);
+		}
 		return ids;
 	};
 

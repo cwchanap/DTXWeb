@@ -1426,4 +1426,52 @@ describe('Scores', () => {
 		const lastCall = host.searchCloudSongs.mock.calls.at(-1)?.[0];
 		expect(lastCall).toMatchObject({ excludeLinkedSongIds: ['42'] });
 	});
+
+	it('excludes cloud song IDs persisted for songs on unopened pages', async () => {
+		// 11 songs → song 11 lands on page 2 (pageSize = 10). A saved link
+		// persists for song 11 → cloud '99', but page 1 is the visible page,
+		// so restoreLinksForPage never restores song 11's link into `links`.
+		// The autocomplete for a page-1 song must still exclude '99' (from
+		// savedLinks) so the user can't link a visible song to the same cloud
+		// simfile already persisted for an unopened page — buildUpload dedups
+		// by cloud chart ID and would silently drop one song's scores.
+		const elevenSongs = Array.from({ length: 11 }, (_, i) => ({
+			songId: i + 1,
+			title: `Song ${i + 1}`,
+			artist: 'Artist',
+			genre: 'Rock',
+			charts: [
+				{
+					difficultyLevel: 2,
+					difficultyLabel: 'BASIC',
+					drumLevel: 55,
+					fileHash: `hash-${i}`,
+					aggregate: { playCount: 1, clearCount: 1 },
+					best: bestRow,
+					recent: []
+				}
+			]
+		}));
+		host.parseDtxmaniaScores.mockResolvedValue(elevenSongs);
+		// Persisted link for song 11 (page 2) only — no page-1 saved links,
+		// so restoreLinksForPage is a no-op and `links` stays empty.
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f11']: '99'
+		});
+
+		render(Scores);
+		expect(await screen.findByText('Song 1')).toBeInTheDocument();
+
+		// Open the autocomplete for the first page-1 song and search.
+		const linkButtons = screen.getAllByRole('button', { name: /link to cloud song/i });
+		await fireEvent.click(linkButtons[0]);
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+
+		// '99' is not in `links` (song 11 is on an unopened page) but IS in
+		// savedLinks, so it must appear in excludeLinkedSongIds.
+		const lastCall = host.searchCloudSongs.mock.calls.at(-1)?.[0];
+		expect(lastCall?.excludeLinkedSongIds).toContain('99');
+	});
 });

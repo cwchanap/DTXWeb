@@ -441,6 +441,21 @@
 		}
 	};
 
+	// Cloud song IDs already linked to other local songs. Passed to each
+	// card's autocomplete so already-linked cloud songs are hidden from
+	// search results, preventing two local songs from linking to the same
+	// cloud simfile (which would leave the second song's scores unuploaded
+	// — buildUpload dedups by cloud chart ID). The current song's own link
+	// is excluded from the list so the user can still see and re-pick it
+	// when changing links.
+	const excludeIdsFor = (songIndex: number): string[] => {
+		const ids: string[] = [];
+		for (const [i, existing] of Object.entries(links)) {
+			if (Number(i) !== songIndex && existing) ids.push(existing.id);
+		}
+		return ids;
+	};
+
 	const handleLinkSelect = async (songIndex: number, song: CloudSong) => {
 		links[songIndex] = song;
 		savedLinks = { ...savedLinks, [songKey(songs[songIndex])]: song.id };
@@ -771,6 +786,7 @@
 					expanded={isSongExpanded(song)}
 					autocompleteOpen={autocompleteFor === songIndex}
 					{uploading}
+					excludeLinkedSongIds={excludeIdsFor(songIndex)}
 					onToggle={() => toggleSong(song)}
 					onLinkSelect={(cloudSong) => handleLinkSelect(songIndex, cloudSong)}
 					onOverrideMatch={(chartIndex, cloudChartId) =>

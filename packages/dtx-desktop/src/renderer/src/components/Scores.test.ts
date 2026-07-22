@@ -1354,4 +1354,76 @@ describe('Scores', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
 		expect(await screen.findByText(/Nothing to upload/i)).toBeInTheDocument();
 	});
+
+	it('excludes already-linked cloud song IDs from the autocomplete search', async () => {
+		// Two local songs. Link the first to cloud song '42'. Opening the
+		// autocomplete for the second song must pass '42' as
+		// excludeLinkedSongIds so the server (and client filter) hides it
+		// from the results — preventing a second link to the same cloud
+		// simfile, which would leave the second song's scores unuploaded
+		// (buildUpload dedups by cloud chart ID).
+		const twoSongs = [
+			{
+				songId: 1,
+				title: 'First Song',
+				artist: 'Artist A',
+				genre: 'Rock',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-a',
+						aggregate: { playCount: 7, clearCount: 5 },
+						best: bestRow,
+						recent: [recentRow]
+					}
+				]
+			},
+			{
+				songId: 2,
+				title: 'Second Song',
+				artist: 'Artist B',
+				genre: 'Pop',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-b',
+						aggregate: { playCount: 3, clearCount: 1 },
+						best: bestRow,
+						recent: []
+					}
+				]
+			}
+		];
+		host.parseDtxmaniaScores.mockResolvedValue(twoSongs);
+
+		render(Scores);
+		expect(await screen.findByText('First Song')).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText('Second Song')).toBeInTheDocument());
+
+		// Link the first song to cloud song '42'.
+		const linkButtons = screen.getAllByRole('button', { name: /link to cloud song/i });
+		await fireEvent.click(linkButtons[0]);
+		const input = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+		await fireEvent.click(await screen.findByText('Cloud Song'));
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledWith('42'));
+
+		// Open the autocomplete for the second song and search again.
+		host.searchCloudSongs.mockClear();
+		const linkButtons2 = screen.getAllByRole('button', { name: /link to cloud song/i });
+		await fireEvent.click(linkButtons2[0]);
+		const input2 = await screen.findByPlaceholderText(/search by song title or artist/i);
+		await fireEvent.input(input2, { target: { value: 'Cloud Song' } });
+		await waitFor(() => expect(host.searchCloudSongs).toHaveBeenCalled());
+
+		// The search call for the second song must exclude the cloud ID
+		// already linked to the first song.
+		const lastCall = host.searchCloudSongs.mock.calls.at(-1)?.[0];
+		expect(lastCall).toMatchObject({ excludeLinkedSongIds: ['42'] });
+	});
 });

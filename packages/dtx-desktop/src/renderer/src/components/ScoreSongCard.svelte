@@ -14,6 +14,7 @@
 		expanded: boolean;
 		autocompleteOpen: boolean;
 		uploading?: boolean;
+		excludeLinkedSongIds?: string[];
 		onToggle: () => void;
 		onLinkSelect: (song: CloudSong) => void;
 		onOverrideMatch: (chartIndex: number, cloudChartId: string) => void;
@@ -29,6 +30,7 @@
 		expanded,
 		autocompleteOpen,
 		uploading = false,
+		excludeLinkedSongIds = [],
 		onToggle,
 		onLinkSelect,
 		onOverrideMatch,
@@ -84,6 +86,7 @@
 			{/if}
 			<CloudSongAutocomplete
 				isOpen={autocompleteOpen}
+				{excludeLinkedSongIds}
 				onclose={onAutocompleteClose}
 				onselect={onLinkSelect}
 			/>

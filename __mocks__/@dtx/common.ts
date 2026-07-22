@@ -144,5 +144,14 @@ export const normalizePosition = vi.fn((cellOffset: number, cellsPerMeasure: num
 	return rounded / cellsPerMeasure;
 });
 
+// Mirror the real formatLevel from @dtx/common (utils/level.ts) so callers
+// (e.g. web's formatLevelDisplay) exercise the actual decode contract in tests.
+export const formatLevel = (level: string | number | undefined | null): string => {
+	const parsed = typeof level === 'string' ? parseFloat(level) : (level ?? 0);
+	const n = Number.isFinite(parsed) ? parsed : 0;
+	const display = Number.isInteger(n) ? (n > 100 ? n / 100 : n / 10) : n;
+	return display.toFixed(2);
+};
+
 // UploadedAssetFiles component is now exported from @dtx/common/components
 // This mock is no longer needed here since the component is in a separate export

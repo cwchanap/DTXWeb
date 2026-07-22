@@ -108,4 +108,52 @@ describe('createSimfileWithDtx', () => {
 		).rejects.toThrow('dtx insert failed');
 		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 7);
 	});
+
+	it('normalizes legacy bare 1–9 levels to the ×10 storage contract', async () => {
+		// Old desktop clients (pre-b2ccaaab) send the raw #DLEVEL display-scale
+		// value (e.g. 5). The API boundary must encode it to 50 so downstream
+		// matchers/formatters decode it as 5.0, not 0.5.
+		mockedCreate.mockResolvedValue(baseRow);
+		mockedCreateDtx.mockResolvedValue([
+			{ id: 1, label: 'BSC', level: 50, simfile_id: 7 },
+			{ id: 2, label: 'ADV', level: 90, simfile_id: 7 }
+		]);
+		const result = await createSimfileWithDtx({} as never, {
+			...baseArgs,
+			dtxFiles: [
+				{ label: 'BSC', level: 5 },
+				{ label: 'ADV', level: 9 }
+			]
+		});
+		expect(mockedCreateDtx).toHaveBeenCalledWith(expect.anything(), [
+			{ label: 'BSC', level: 50, simfile_id: 7 },
+			{ label: 'ADV', level: 90, simfile_id: 7 }
+		]);
+		expect(result.dtxFiles).toEqual([
+			{ id: 1, label: 'BSC', level: 50 },
+			{ id: 2, label: 'ADV', level: 90 }
+		]);
+	});
+
+	it('leaves already-encoded, zero, and decimal levels untouched', async () => {
+		mockedCreate.mockResolvedValue(baseRow);
+		mockedCreateDtx.mockResolvedValue([
+			{ id: 1, label: 'BSC', level: 55, simfile_id: 7 },
+			{ id: 2, label: 'ADV', level: 0, simfile_id: 7 },
+			{ id: 3, label: 'EXT', level: 5.5, simfile_id: 7 }
+		]);
+		await createSimfileWithDtx({} as never, {
+			...baseArgs,
+			dtxFiles: [
+				{ label: 'BSC', level: 55 },
+				{ label: 'ADV', level: 0 },
+				{ label: 'EXT', level: 5.5 }
+			]
+		});
+		expect(mockedCreateDtx).toHaveBeenCalledWith(expect.anything(), [
+			{ label: 'BSC', level: 55, simfile_id: 7 },
+			{ label: 'ADV', level: 0, simfile_id: 7 },
+			{ label: 'EXT', level: 5.5, simfile_id: 7 }
+		]);
+	});
 });

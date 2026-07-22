@@ -20,6 +20,26 @@ export type CreateSimfileResult = {
 	dtxFiles: { id?: number; label: string; level: number }[];
 };
 
+/**
+ * Normalize a raw incoming `dtx_files.level` to the ×10 storage contract.
+ *
+ * The canonical storage form is an encoded integer on the ×10 scale (e.g. 50 ==
+ * 5.0) or ×100 scale (> 100, e.g. 550 == 5.5). Pre-b2ccaaab desktop clients
+ * stored the raw #DLEVEL display-scale value (e.g. 5) directly, and those rows
+ * are decoded by `normalizeCloudLevel` / `formatLevel` as 0.5 — failing
+ * auto-matching and displaying "0.50" for a real level-5 chart. D1 migration
+ * 0004 multiplies legacy rows by 10, but already-installed old clients keep
+ * writing raw values after the migration runs; this guard at the API write
+ * boundary normalizes such legacy inputs so old clients cannot reintroduce
+ * charts that the new matchers/formatters misinterpret.
+ *
+ * - Bare integer 1–9 → ×10 (legacy display-scale value).
+ * - Integer ≥ 10, 0, or non-integer → left as-is (already encoded, the column
+ *   default, or a stray display-scale decimal that `formatLevel` handles).
+ */
+const normalizeLegacyLevel = (level: number): number =>
+	Number.isInteger(level) && level >= 1 && level <= 9 ? level * 10 : level;
+
 export const createSimfileWithDtx = async (
 	db: D1Database,
 	args: CreateSimfileArgs
@@ -44,7 +64,11 @@ export const createSimfileWithDtx = async (
 	try {
 		const created = await createDtxFiles(
 			db,
-			args.dtxFiles.map((f) => ({ label: f.label, level: f.level, simfile_id: simfile.id }))
+			args.dtxFiles.map((f) => ({
+				label: f.label,
+				level: normalizeLegacyLevel(f.level),
+				simfile_id: simfile.id
+			}))
 		);
 		return {
 			simfile,

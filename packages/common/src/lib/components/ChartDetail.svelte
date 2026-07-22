@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
 	import type { SimfileWithDtx } from '../types/d1.types';
+	import { formatLevel } from '../utils/level';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
 	import IconX from '@lucide/svelte/icons/x';
@@ -136,7 +137,9 @@
 							<h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">
 								{level.label}
 							</h4>
-							<p class="text-xs text-slate-600 dark:text-slate-400">{level.level}</p>
+							<p class="text-xs text-slate-600 dark:text-slate-400">
+								{formatLevel(level.level)}
+							</p>
 						</div>
 					{/if}
 				{/each}

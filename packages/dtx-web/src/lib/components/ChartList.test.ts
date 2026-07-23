@@ -669,8 +669,7 @@ describe('ChartList – handlePageChange via Pagination prop', () => {
 		const paginationCalls = vi.mocked(Pagination).mock.calls;
 		const lastCall = paginationCalls[paginationCalls.length - 1];
 		const paginationProps = (lastCall?.[1] ?? lastCall?.[0]) as unknown as
-			| Record<string, unknown>
-			| undefined;
+			Record<string, unknown> | undefined;
 
 		expect(lastCall).toBeDefined();
 		const onPageChange = paginationProps?.onPageChange as (e: { page: number }) => void;
@@ -823,8 +822,7 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 
 		const props = getLastTableItemProps();
 		const togglePublishChart = props?.togglePublishChart as
-			| ((id: number, published: boolean) => Promise<void>)
-			| undefined;
+			((id: number, published: boolean) => Promise<void>) | undefined;
 
 		if (togglePublishChart) {
 			await togglePublishChart(10, true);
@@ -849,8 +847,7 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 
 		const props = getLastTableItemProps();
 		const togglePublishChart = props?.togglePublishChart as
-			| ((id: number, published: boolean) => Promise<void>)
-			| undefined;
+			((id: number, published: boolean) => Promise<void>) | undefined;
 
 		if (togglePublishChart) {
 			await togglePublishChart(10, false);

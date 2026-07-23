@@ -1069,8 +1069,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		});
 
 		const simfilesResult = result.data?.simfiles as
-			| { data: Array<{ hasUploadedFiles: boolean }> }
-			| undefined;
+			{ data: Array<{ hasUploadedFiles: boolean }> } | undefined;
 		expect(simfilesResult?.data).toEqual([
 			{ hasUploadedFiles: true },
 			{ hasUploadedFiles: false }

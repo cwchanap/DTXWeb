@@ -163,7 +163,7 @@ wide widths.
 
 ### 5.3 Window sizing
 
-`tauri.conf.json`: raise defaults to ~`1200×800`, set `minWidth`/`minHeight` (~`640×560`)
+`tauri.conf.json`: raise defaults to ~~`1200×800`, set `minWidth`/`minHeight` (~~`640×560`)
 so the narrow fallback remains usable. (Current default is 900×670.)
 
 ## 6. Window Chrome & Top Toolbar

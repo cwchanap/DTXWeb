@@ -1,0 +1,15 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ES2022",
+		"moduleResolution": "Bundler",
+		"lib": ["ES2022", "DOM"],
+		"types": ["node", "@playwright/test"],
+		"noEmit": true,
+		"isolatedModules": true,
+		"allowSyntheticDefaultImports": true
+	},
+	"include": ["*.ts", "setup/**/*.ts", "fixtures/**/*.ts", "desktop/**/*.ts"],
+	"exclude": ["node_modules", "logs", "playwright-report", "test-results"]
+}

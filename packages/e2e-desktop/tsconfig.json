@@ -1,0 +1,15 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ES2022",
+		"moduleResolution": "Bundler",
+		"lib": ["ES2022", "DOM"],
+		"types": ["node", "@wdio/globals", "@wdio/types", "@wdio/native-types", "@types/mocha"],
+		"noEmit": true,
+		"isolatedModules": true,
+		"allowSyntheticDefaultImports": true
+	},
+	"include": ["specs/**/*.ts", "support/**/*.ts"],
+	"exclude": ["node_modules", "logs", "wdio.conf.ts"]
+}

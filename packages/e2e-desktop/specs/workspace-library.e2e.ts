@@ -18,7 +18,7 @@ describe('Desktop workspace library', () => {
 	});
 
 	after(async () => {
-		await fixture.cleanup();
+		await fixture?.cleanup();
 	});
 
 	beforeEach(async () => {

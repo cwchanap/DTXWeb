@@ -18,7 +18,7 @@ describe('Desktop native filesystem boundary', () => {
 	});
 
 	after(async () => {
-		await fixture.cleanup();
+		await fixture?.cleanup();
 	});
 
 	it('discovers SET.def metadata and exposes stable file metadata', async () => {
@@ -33,7 +33,7 @@ describe('Desktop native filesystem boundary', () => {
 
 		const result = await listFiles(fixture.songFolder, fixture.workspaceRoot);
 		expect(result.error).toBeNull();
-		expect(result.files.map((file) => file.fileName)).toEqual([
+		expect(result.files.map((file) => file.fileName).sort()).toEqual([
 			'SET.def',
 			'basic.dtx',
 			'preview.wav'

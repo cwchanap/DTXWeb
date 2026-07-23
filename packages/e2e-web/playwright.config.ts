@@ -22,6 +22,12 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const apiURL = `http://localhost:${DTX_API_LOCAL_PORT}`;
 const packageRoot = fileURLToPath(new URL('.', import.meta.url));
 
+// Playwright's TestConfigWebServer.env requires Record<string, string>, but
+// process.env types values as string | undefined. Strip undefined entries.
+const processEnv = Object.fromEntries(
+	Object.entries(process.env).filter(([, value]) => value !== undefined)
+) as Record<string, string>;
+
 // Shared Supabase env for the dtx-web dev server (cookie auth + client bearer).
 const webSupabaseEnv = {
 	PUBLIC_SUPABASE_URL: TEST_SUPABASE_URL,
@@ -39,7 +45,7 @@ const webServers = [
 		reuseExistingServer: false,
 		timeout: 180_000,
 		env: {
-			...process.env,
+			...processEnv,
 			VITE_E2E: 'true',
 			PUBLIC_DTX_API_URL: apiURL,
 			PUBLIC_SIMFILE_BUCKET_URL: process.env.PUBLIC_SIMFILE_BUCKET_URL ?? baseURL,
@@ -61,7 +67,7 @@ const webServers = [
 		url: `${apiURL}/graphql?query=%7B__typename%7D`,
 		reuseExistingServer: false,
 		timeout: 180_000,
-		env: { ...process.env }
+		env: { ...processEnv }
 	}
 ];
 

@@ -11,7 +11,7 @@ const appBinaryPath =
 
 export const config: Options.Testrunner = {
 	runner: 'local',
-	specs: ['./desktop/**/*.e2e.ts'],
+	specs: ['./specs/**/*.e2e.ts'],
 	maxInstances: 1,
 	services: [
 		[

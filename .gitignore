@@ -17,9 +17,9 @@ static/skin/
 # Playwright
 /test-results/
 /playwright-report/
-/packages/e2e/test-results/
-/packages/e2e/playwright-report/
-/packages/e2e/logs/
+/packages/e2e-web/test-results/
+/packages/e2e-web/playwright-report/
+/packages/e2e-desktop/logs/
 /blob-report/
 /playwright/.cache/
 
@@ -27,7 +27,7 @@ static/skin/
 .wrangler/state
 packages/*/.wrangler/state
 packages/dtx-api/.wrangler/
-packages/e2e/.auth
+packages/e2e-web/.auth
 packages/dtx-desktop/src-tauri/target/
 
 # Coverage reports

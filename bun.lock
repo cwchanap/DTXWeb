@@ -179,11 +179,10 @@
         "lightningcss-linux-x64-gnu": "^1.30.1",
       },
     },
-    "packages/e2e": {
-      "name": "dtx-e2e",
+    "packages/e2e-desktop": {
+      "name": "dtx-e2e-desktop",
       "version": "0.0.1",
       "devDependencies": {
-        "@playwright/test": "^1.52.0",
         "@wdio/cli": "^9.30.0",
         "@wdio/globals": "^9.29.1",
         "@wdio/local-runner": "^9.30.0",
@@ -192,6 +191,13 @@
         "@wdio/tauri-service": "^1.2.0",
         "@wdio/types": "^9.29.1",
         "cross-env": "^10.0.0",
+      },
+    },
+    "packages/e2e-web": {
+      "name": "dtx-e2e-web",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@playwright/test": "^1.52.0",
       },
     },
     "packages/ui-components": {
@@ -1367,7 +1373,9 @@
 
     "dtx-desktop": ["dtx-desktop@workspace:packages/dtx-desktop"],
 
-    "dtx-e2e": ["dtx-e2e@workspace:packages/e2e"],
+    "dtx-e2e-desktop": ["dtx-e2e-desktop@workspace:packages/e2e-desktop"],
+
+    "dtx-e2e-web": ["dtx-e2e-web@workspace:packages/e2e-web"],
 
     "dtx-web": ["dtx-web@workspace:packages/dtx-web"],
 

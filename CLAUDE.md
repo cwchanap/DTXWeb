@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-workspaces monorepo (orchestrated by Turborepo) with 5 packages:
+Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-workspaces monorepo (orchestrated by Turborepo) with 7 packages:
 
 - `packages/common` (`@dtx/common`) - Shared Svelte component library and DTX file parsing
 - `packages/dtx-web` (`dtx-web`) - SvelteKit web application (main app), deployed to Cloudflare Workers
 - `packages/dtx-desktop` (`dtx-desktop`) - Tauri 2 desktop app: Svelte/Vite frontend (`src/`) + Rust backend (`src-tauri/`)
 - `packages/dtx-api` (`dtx-api`) - GraphQL API on Cloudflare Workers (Pothos + GraphQL Yoga), backing both web and desktop
 - `packages/ui-components` (`@dtx/ui-components`) - Shadcn-Svelte UI component library (export-only components)
+- `packages/e2e-web` (`dtx-e2e-web`) - Playwright end-to-end tests for the web application
+- `packages/e2e-desktop` (`dtx-e2e-desktop`) - WebdriverIO/Tauri end-to-end tests for the desktop application
 
 > The desktop app was migrated from Electron to Tauri. References to Electron, the "main process", or `electron-builder` elsewhere in older docs are obsolete — the native layer is now Rust under `src-tauri/`.
 >
@@ -70,9 +72,11 @@ bun run test                    # Run tests for all packages
 bun run test:coverage           # Run tests with coverage
 bun run test:web | test:desktop | test:common  # Per-package test shortcuts
 
-# E2E tests (Playwright)
-bun run e2e                     # Run all Playwright e2e tests
-bun run e2e:ui                  # Run e2e tests in interactive UI mode
+# E2E tests
+bun run e2e                     # Run all web Playwright e2e tests
+bun run e2e:web                 # Run all web Playwright e2e tests
+bun run e2e:ui                  # Run web e2e tests in interactive UI mode
+bun run e2e:desktop             # Build and run the desktop Tauri e2e tests
 bun run fixtures:generate       # Generate MIDI test fixtures for e2e tests
 bun run fixtures:verify         # Verify e2e test fixtures are valid
 
@@ -91,7 +95,7 @@ bun run gen-types              # Generate TypeScript types from Supabase schema
 bun run clean                  # Remove all node_modules
 ```
 
-> **E2E note**: `packages/e2e/playwright.config.ts` auto-starts its own servers (web on 5173 + API via `wrangler dev`) and seeds a local Supabase stack (`packages/e2e/setup/prepare-stack.ts`, `seed.sql`, `global.setup.ts` for auth storage state). Do **not** manually start dev servers before running `bun run e2e` — Playwright manages the full stack. Override the target with `PLAYWRIGHT_BASE_URL`.
+> **E2E note**: `packages/e2e-web/playwright.config.ts` auto-starts its own servers (web on 5173 + API via `wrangler dev`) and seeds a local Supabase stack (`packages/e2e-web/setup/prepare-stack.ts`, `seed.sql`, `global.setup.ts` for auth storage state). Do **not** manually start dev servers before running `bun run e2e` — Playwright manages the full stack. Override the target with `PLAYWRIGHT_BASE_URL`.
 
 > **R2 uploads**: `scripts/cli.py` is a standalone Python (Click + boto3) tool — `python scripts/cli.py upload_r2 <file> [<bucket>:<path>]` — for pushing assets to Cloudflare R2. It is independent of the Bun workspace: `pip install -r scripts/requirements.txt` and set `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ACCESS_KEY_ID` / `CLOUDFLARE_ACCESS_KEY_SECRET` in `.env`.
 

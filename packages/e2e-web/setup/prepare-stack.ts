@@ -1,4 +1,4 @@
-// packages/e2e/setup/prepare-stack.ts
+// packages/e2e-web/setup/prepare-stack.ts
 // Migrate + seed the local Miniflare backend (dtx-api), BEFORE the dev server
 // starts. Run by the Playwright webServer command.
 import { execFileSync } from 'node:child_process';
@@ -25,7 +25,7 @@ const migrations = readdirSync(migrationsDir)
 	.sort()
 	.map((name) => join(migrationsDir, name));
 const seedFile = join(here, 'seed.sql');
-const fixture = join(repoRoot, 'packages/e2e/fixtures/test-sample.dtx');
+const fixture = join(repoRoot, 'packages/e2e-web/fixtures/test-sample.dtx');
 
 // Pre-check: all required files must exist before we start, otherwise failures
 // surface as opaque Playwright "webServer timed out after 180s" errors.

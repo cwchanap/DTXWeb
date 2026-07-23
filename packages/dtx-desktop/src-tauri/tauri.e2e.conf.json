@@ -4,7 +4,7 @@
 		"withGlobalTauri": true,
 		"security": {
 			"capabilities": [
-				"capabilities/main.json",
+				"main-capability",
 				{
 					"identifier": "e2e-wdio",
 					"description": "WebdriverIO permissions for desktop integration tests",

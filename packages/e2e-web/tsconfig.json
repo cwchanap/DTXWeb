@@ -10,6 +10,6 @@
 		"isolatedModules": true,
 		"allowSyntheticDefaultImports": true
 	},
-	"include": ["*.ts", "setup/**/*.ts", "fixtures/**/*.ts", "desktop/**/*.ts"],
+	"include": ["*.ts", "setup/**/*.ts", "fixtures/**/*.ts"],
 	"exclude": ["node_modules", "logs", "playwright-report", "test-results"]
 }

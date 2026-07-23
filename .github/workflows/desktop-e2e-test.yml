@@ -5,10 +5,18 @@ on:
     branches:
       - main
       - master
+    paths:
+      - 'packages/dtx-desktop/**'
+      - 'packages/e2e-desktop/**'
+      - '.github/workflows/desktop-e2e-test.yml'
   pull_request:
     branches:
       - main
       - master
+    paths:
+      - 'packages/dtx-desktop/**'
+      - 'packages/e2e-desktop/**'
+      - '.github/workflows/desktop-e2e-test.yml'
 
 permissions:
   contents: read
@@ -61,3 +69,11 @@ jobs:
 
       - name: Run desktop integration test
         run: xvfb-run -a bun run --filter=dtx-e2e-desktop e2e:run
+
+      - name: Upload desktop e2e logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-e2e-logs
+          path: packages/e2e-desktop/logs/
+          if-no-files-found: warn

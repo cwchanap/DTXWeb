@@ -314,9 +314,9 @@ export const searchSimfiles = async (
 		.limit(sqlLimit);
 
 	if (excludeIds.length > 0) {
-		return rows.filter((r) => !excludeSet.has(r.id));
+		return rows.filter((r) => !excludeSet.has(r.id)).slice(0, limit);
 	}
-	return rows;
+	return rows.slice(0, limit);
 };
 
 export const getNextDisplayId = async (db: D1Database, userId: string): Promise<number> => {

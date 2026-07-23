@@ -945,6 +945,46 @@ describe('searchSimfiles', () => {
 		expect(query?.limit).toHaveBeenCalledWith(145);
 	});
 
+	it('trims the filtered result back to `limit` rows (does not return the full over-fetch)', async () => {
+		// Reproduces the P2 bug: limit=8, excludeIds has 20 entries, SQL
+		// over-fetches to 28 rows, but only 2 of those are excluded. The
+		// caller must receive at most `limit` (8) rows — not the 26 that
+		// survive the filter. The autocomplete caller masks this with its
+		// own .slice(0, 8), but the shared helper's contract is to bound
+		// the result by `limit`.
+		const excludeIds = Array.from({ length: 20 }, (_, i) => i + 1);
+		const rows = [
+			// 2 rows match the exclude set (will be filtered out).
+			{ id: 1, title: 'Linked 1', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 2, title: 'Linked 2', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			// 26 valid rows survive the filter — must be trimmed to `limit`.
+			...Array.from({ length: 26 }, (_, i) => ({
+				id: 100 + i,
+				title: `Valid ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			}))
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 8,
+			excludeIds
+		});
+		expect(result).toHaveLength(8);
+		expect(result.every((r) => !excludeIds.includes(r.id))).toBe(true);
+		// SQL LIMIT = limit(8) + excludeIds.length(20) = 28 (under the 200 cap).
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(28);
+	});
+
 	it('defaults limit to 8 when non-finite limit value provided', async () => {
 		drizzleSelectResults.push([]);
 		const db = createMockDb();

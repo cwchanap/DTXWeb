@@ -36,11 +36,12 @@
 		"test:coverage:desktop": "bun run --filter=dtx-desktop test:coverage",
 		"test:coverage:common": "bun run --filter=@dtx/common test:coverage",
 		"format:root": "prettier --write .",
-		"fixtures:generate": "bun run --filter=dtx-e2e fixtures:generate",
-		"fixtures:verify": "bun run --filter=dtx-e2e fixtures:verify",
-		"e2e": "bun run --filter=dtx-e2e e2e",
-		"e2e:ui": "bun run --filter=dtx-e2e e2e:ui",
-		"e2e:desktop": "bun run --filter=dtx-e2e e2e:desktop"
+		"fixtures:generate": "bun run --filter=dtx-e2e-web fixtures:generate",
+		"fixtures:verify": "bun run --filter=dtx-e2e-web fixtures:verify",
+		"e2e": "bun run --filter=dtx-e2e-web e2e",
+		"e2e:web": "bun run --filter=dtx-e2e-web e2e",
+		"e2e:ui": "bun run --filter=dtx-e2e-web e2e:ui",
+		"e2e:desktop": "bun run --filter=dtx-e2e-desktop e2e"
 	},
 	"lint-staged": {
 		"*.{js,ts,svelte}": "eslint",
@@ -79,7 +80,8 @@
 		"packages/common",
 		"packages/ui-components",
 		"packages/dtx-api",
-		"packages/e2e"
+		"packages/e2e-web",
+		"packages/e2e-desktop"
 	],
 	"dependencies": {
 		"jszip": "^3.10.1"

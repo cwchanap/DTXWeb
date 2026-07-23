@@ -14,6 +14,11 @@
 	let isLoading = $state(false);
 	let redirectToDesktop = $state(false);
 	let isCheckingAuthState = $state(true);
+	// Allow-listed post-login destination (/app*), validated again server-side
+	// by safeAppRedirectPath. Empty means "default to /app". Only threaded for
+	// web logins — desktop logins redirect back to the desktop app, not to a
+	// web route, so `next` is irrelevant there.
+	let nextPath = $state('');
 
 	// Capture the allow-listed URL error once on mount so we can clear the
 	// query param (preventing it from persisting on refresh) without losing
@@ -39,6 +44,44 @@
 			// Check if we're redirecting from desktop app
 			const redirectParam = params.get('redirect');
 			redirectToDesktop = redirectParam === 'desktop';
+
+			// Preserve a web return path (e.g. /app/score) through the login
+			// flow. Only read when not a desktop login — desktop redirects back
+			// to the app via deep link, so a web `next` would be ignored and
+			// could mislead. The server action re-validates with
+			// safeAppRedirectPath, so a crafted value can't pivot the
+			// destination outside /app*.
+			if (!redirectToDesktop) {
+				nextPath = params.get('next') ?? '';
+			}
+
+			// The desktop app declares where it wants the magic link sent back
+			// (a loopback URL under `tauri dev`, or its `dtx://` deep link when
+			// bundled). Stash it so the /app page can honor it after login — this
+			// survives both the password POST redirect and the Google OAuth
+			// round-trip within this browser tab. The /app page validates it
+			// before use, so storing the raw value here is safe.
+			//
+			// On a failed/cancelled Google OAuth round-trip the error redirect
+			// is `/login?redirect=desktop&error=...` without `desktop_callback`.
+			// Keep the already-stashed loopback URL in that case so a retry
+			// still reaches the running `tauri dev` app. Only clear the stash
+			// on a fresh desktop login that intentionally omits the param
+			// (bundled app falling back to `dtx://`).
+			if (redirectToDesktop) {
+				const desktopCallback = params.get('desktop_callback');
+				try {
+					if (desktopCallback) {
+						sessionStorage.setItem('dtx_desktop_auth_callback', desktopCallback);
+					} else if (!params.has('error')) {
+						sessionStorage.removeItem('dtx_desktop_auth_callback');
+					}
+				} catch {
+					// sessionStorage may be unavailable (private mode); the /app
+					// page falls back to the configured/default deep-link callback.
+				}
+			}
+
 			isCheckingAuthState = false;
 		}
 	});
@@ -102,6 +145,8 @@
 
 				{#if redirectToDesktop}
 					<input type="hidden" name="redirect" value="desktop" />
+				{:else if nextPath}
+					<input type="hidden" name="next" value={nextPath} />
 				{/if}
 
 				<div>
@@ -131,6 +176,8 @@
 			<form action="?/google" method="POST" onsubmit={handleSubmit}>
 				{#if redirectToDesktop}
 					<input type="hidden" name="redirect" value="desktop" />
+				{:else if nextPath}
+					<input type="hidden" name="next" value={nextPath} />
 				{/if}
 				<button
 					type="submit"

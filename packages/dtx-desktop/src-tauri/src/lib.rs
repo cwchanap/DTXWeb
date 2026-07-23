@@ -7,10 +7,12 @@ mod error;
 mod filesystem;
 mod models;
 mod preferences;
+mod scores;
 mod songs;
 mod updater;
 
 use auth::AuthState;
+use scores::DtxmaniaDbState;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -31,10 +33,14 @@ fn queue_deep_link_handler(app: &AppHandle, raw_url: String) {
     let _ = crate::auth::queue_deep_link(app, &raw_url);
 }
 
-/// Filters a second-instance launch's argv for `dtx://` deep-link URLs. Any
-/// non-`dtx://` argument (executable path, file-open arguments, flags) is
-/// ignored. Extracted from the single-instance handler closure so the filter
-/// can be unit-tested without a real second-launch event.
+/// Filters a second-instance launch's argv for deep-link URLs. The production
+/// `dtx://` scheme is always accepted; the dev `dtx-dev://` scheme is accepted
+/// only in debug builds (the dev build registers `dtx-dev` in
+/// `tauri.dev.conf.json` to avoid colliding with an installed production app,
+/// and a release build must never honor it). Any non-matching argument
+/// (executable path, file-open arguments, flags) is ignored. Extracted from
+/// the single-instance handler closure so the filter can be unit-tested
+/// without a real second-launch event.
 fn extract_deep_link_args<I, S>(argv: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -43,16 +49,23 @@ where
     argv.into_iter()
         .map(|arg| arg.as_ref().to_string())
         // Per RFC 3986 the URI scheme is case-insensitive, so an OS-delivered
-        // `DTX://` launch argument is just as valid as `dtx://`. Compare against
-        // a lowercase copy while keeping the original casing in the captured
-        // URL (the auth handler normalizes the scheme itself).
-        .filter(|arg| arg.to_ascii_lowercase().starts_with("dtx://"))
+        // `DTX://` or `DTX-DEV://` launch argument is just as valid as the
+        // lowercase form. Compare against a lowercase copy while keeping the
+        // original casing in the captured URL (the auth handler normalizes
+        // the scheme itself).
+        .filter(|arg| {
+            let lower = arg.to_ascii_lowercase();
+            lower.starts_with("dtx://")
+                || (cfg!(debug_assertions) && lower.starts_with("dtx-dev://"))
+        })
         .collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default().manage(AuthState::default());
+    let mut builder = tauri::Builder::default()
+        .manage(AuthState::default())
+        .manage(DtxmaniaDbState::default());
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
@@ -112,6 +125,8 @@ pub fn run() {
             api::get_preview_url,
             api::get_sound_preview_url,
             api::upload_file,
+            api::fetch_cloud_song_charts,
+            api::upload_scores,
             filesystem::select_folder,
             filesystem::path_exists,
             filesystem::list_directories,
@@ -123,10 +138,15 @@ pub fn run() {
             filesystem::get_default_downloads_dir,
             preferences::read_preferences,
             preferences::write_preferences,
+            preferences::read_score_song_links,
+            preferences::write_score_song_links,
             songs::create_song,
             songs::export_song_to_zip,
             songs::get_skin_asset,
             songs::parse_dtx_files,
+            filesystem::select_dtxmania_db,
+            scores::default_dtxmania_db_path,
+            scores::parse_dtxmania_scores,
             updater::check_for_update
         ])
         .run(tauri::generate_context!())

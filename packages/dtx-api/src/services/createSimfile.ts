@@ -17,7 +17,7 @@ export type CreateSimfileArgs = {
 
 export type CreateSimfileResult = {
 	simfile: SimfileRow;
-	dtxFiles: { label: string; level: number }[];
+	dtxFiles: { id?: number; label: string; level: number }[];
 };
 
 export const createSimfileWithDtx = async (
@@ -44,11 +44,15 @@ export const createSimfileWithDtx = async (
 	try {
 		const created = await createDtxFiles(
 			db,
-			args.dtxFiles.map((f) => ({ label: f.label, level: f.level, simfile_id: simfile.id }))
+			args.dtxFiles.map((f) => ({
+				label: f.label,
+				level: f.level,
+				simfile_id: simfile.id
+			}))
 		);
 		return {
 			simfile,
-			dtxFiles: created.map((d) => ({ label: d.label, level: d.level }))
+			dtxFiles: created.map((d) => ({ id: d.id, label: d.label, level: d.level }))
 		};
 	} catch (err) {
 		try {

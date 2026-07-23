@@ -4,3 +4,10 @@ export const _ = {
 		return () => {};
 	}
 };
+
+export const locale = {
+	subscribe: (cb: (value: string) => void) => {
+		cb('en');
+		return () => {};
+	}
+};

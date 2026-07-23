@@ -6,7 +6,7 @@ use encoding_rs::{Encoding, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8};
 use serde_json::json;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_opener::OpenerExt;
 use time::format_description::well_known::Rfc3339;
@@ -35,6 +35,37 @@ pub async fn select_folder(app: AppHandle) -> Result<DialogResult> {
         Some(path) => vec![file_path_to_string(path)?],
         None => Vec::new(),
     };
+
+    Ok(DialogResult {
+        canceled: file_paths.is_empty(),
+        file_paths,
+    })
+}
+
+#[tauri::command]
+pub async fn select_dtxmania_db(app: AppHandle) -> Result<DialogResult> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("DTXMania database", &["db"])
+        .pick_file(move |file_path| {
+            let _ = sender.send(file_path);
+        });
+
+    let picked = receiver
+        .await
+        .map_err(|error| DesktopError::Message(error.to_string()))?;
+    let file_paths = match picked {
+        Some(path) => vec![file_path_to_string(path)?],
+        None => Vec::new(),
+    };
+
+    // Record the dialog-selected path so `parse_dtxmania_scores` accepts it.
+    // Without this, only the default DTXMania OS data-dir path is allowed.
+    if let Some(path) = file_paths.first() {
+        app.state::<crate::scores::DtxmaniaDbState>()
+            .set(std::path::PathBuf::from(path));
+    }
 
     Ok(DialogResult {
         canceled: file_paths.is_empty(),

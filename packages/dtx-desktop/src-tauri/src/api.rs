@@ -24,6 +24,7 @@ fragment SimfileFull on Simfile {
   createdAt
   updatedAt
   dtxFiles {
+    id
     level
     label
   }
@@ -47,6 +48,7 @@ query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize
       videoPreviewUrl
       publishDate
       dtxFiles {
+        id
         level
         label
       }
@@ -106,6 +108,31 @@ const UPDATE_SIMFILE_MUTATION: &str = r#"
 mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
   updateSimfile(id: $id, input: $input) {
     ...SimfileFull
+  }
+}
+"#;
+
+const SIMFILE_CHARTS_QUERY: &str = r#"
+query SimfileCharts($id: ID!) {
+  simfile(id: $id) {
+    dtxFiles {
+      id
+      label
+      level
+    }
+  }
+}
+"#;
+
+const UPLOAD_SCORES_MUTATION: &str = r#"
+mutation UploadScores($input: UploadScoresInput!) {
+  uploadScores(input: $input) {
+    updatedCharts
+    insertedScores
+    skipped {
+      chartId
+      reason
+    }
   }
 }
 "#;
@@ -332,8 +359,21 @@ pub fn renderer_simfile_from_graphql(simfile: &Value) -> Result<Value> {
                 .iter()
                 .enumerate()
                 .map(|(index, file)| {
+                    // Pass through the real GraphQL `dtxFiles.id` (the D1
+                    // dtx_files primary key, also the chart id used by
+                    // `uploadScores`). Fall back to a positional id only when
+                    // the field is absent — older cached records from before
+                    // the fragment requested `id` may lack it, and the
+                    // renderer's `normalizeSimfile` has its own `?? index + 1`
+                    // fallback for the same reason. The positional fallback is
+                    // display-only and must never flow into an upload payload.
+                    let id = file
+                        .get("id")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .unwrap_or_else(|| json!(index + 1));
                     json!({
-                        "id": index + 1,
+                        "id": id,
                         "level": file["level"],
                         "label": file["label"],
                     })
@@ -800,6 +840,167 @@ pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Va
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     fetch_cloud_song_impl(&base_url, &token, cloud_song_id).await
+}
+
+pub(crate) async fn fetch_cloud_song_charts_impl(
+    base_url: &str,
+    token: &str,
+    cloud_song_id: Value,
+) -> Result<Value> {
+    let result = graphql_result_with_url(
+        base_url,
+        token,
+        SIMFILE_CHARTS_QUERY,
+        json!({ "id": cloud_song_id.to_string().trim_matches('"') }),
+    )
+    .await?;
+    let data = match result.success_data() {
+        Ok(data) => data,
+        Err((error, _)) => return Ok(api_failure(error)),
+    };
+    let Some(simfile) = data.get("simfile").filter(|simfile| !simfile.is_null()) else {
+        return Ok(api_failure("Simfile not found"));
+    };
+
+    let charts = simfile
+        .get("dtxFiles")
+        .and_then(Value::as_array)
+        .map(|files| {
+            files
+                .iter()
+                .map(|file| {
+                    json!({
+                        "id": file["id"],
+                        "label": file["label"],
+                        "level": file["level"],
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(api_success(Value::Array(charts)))
+}
+
+#[tauri::command]
+pub async fn fetch_cloud_song_charts(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    fetch_cloud_song_charts_impl(&base_url, &token, cloud_song_id).await
+}
+
+/// Cheap defense-in-depth validation of the upload_scores payload at the IPC
+/// boundary. The server (score.ts `validateChartScores`) is the real trust
+/// boundary and does full validation; these checks just short-circuit obviously
+/// malformed payloads before the network round-trip so a compromised renderer
+/// can't send arbitrarily large or structurally broken data to the API.
+///
+/// Returns `Ok(api_failure(...))` (not `Err`) on validation failure so the
+/// renderer sees the same `{ success: false, error }` envelope as a server-side
+/// rejection — `handleUpload` already handles that shape.
+fn validate_upload_payload(payload: &Value) -> Result<()> {
+    let charts = payload
+        .get("charts")
+        .and_then(|c| c.as_array())
+        .ok_or_else(|| {
+            DesktopError::Message("upload payload missing 'charts' array".to_string())
+        })?;
+
+    // Sanity cap well above the server's MAX_UPLOAD_CHARTS (100). Catches a
+    // runaway/compromised renderer without rejecting legitimate large imports.
+    const IPC_MAX_CHARTS: usize = 1000;
+    if charts.len() > IPC_MAX_CHARTS {
+        return Err(DesktopError::Message(format!(
+            "upload payload has too many charts ({} > {IPC_MAX_CHARTS})",
+            charts.len()
+        )));
+    }
+
+    // Sanity cap on per-chart score entries. The server enforces the real
+    // MAX_SCORES_PER_CHART (10); this only catches a runaway/compromised
+    // renderer before the network round-trip. Kept separate from
+    // IPC_MAX_CHARTS so the two caps can evolve independently.
+    const IPC_MAX_SCORES_PER_CHART: usize = 1000;
+
+    for chart in charts {
+        // chartId must be a string or number (the server parses it as a number).
+        let chart_id = chart
+            .get("chartId")
+            .ok_or_else(|| DesktopError::Message("chart payload missing 'chartId'".to_string()))?;
+        if chart_id.as_str().is_none() && chart_id.as_i64().is_none() && chart_id.as_u64().is_none()
+        {
+            return Err(DesktopError::Message(
+                "chart 'chartId' must be a string or number".to_string(),
+            ));
+        }
+        // playCount / clearCount must be non-negative integers.
+        for field in &["playCount", "clearCount"] {
+            let val = chart
+                .get(*field)
+                .ok_or_else(|| DesktopError::Message(format!("chart payload missing '{field}'")))?;
+            let n = val.as_i64().ok_or_else(|| {
+                DesktopError::Message(format!("chart '{field}' must be an integer"))
+            })?;
+            if n < 0 {
+                return Err(DesktopError::Message(format!(
+                    "chart '{field}' must be non-negative (got {n})"
+                )));
+            }
+        }
+        // scores must be an array (the server validates contents).
+        let scores = chart
+            .get("scores")
+            .and_then(|s| s.as_array())
+            .ok_or_else(|| {
+                DesktopError::Message("chart payload missing 'scores' array".to_string())
+            })?;
+        // Sanity cap on per-chart score entries (IPC_MAX_SCORES_PER_CHART).
+        // The server enforces the real MAX_SCORES_PER_CHART (10); this only
+        // catches a runaway/compromised renderer.
+        if scores.len() > IPC_MAX_SCORES_PER_CHART {
+            return Err(DesktopError::Message(format!(
+                "chart has too many scores ({} > {IPC_MAX_SCORES_PER_CHART})",
+                scores.len()
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn upload_scores_impl(
+    base_url: &str,
+    token: &str,
+    payload: Value,
+) -> Result<Value> {
+    // Defense-in-depth: validate the payload shape before the network
+    // round-trip. The server is the real trust boundary, but cheap sanity
+    // checks here catch obviously malformed data from a compromised renderer
+    // without costing a round-trip.
+    if let Err(error) = validate_upload_payload(&payload) {
+        return Ok(api_failure(error.to_string()));
+    }
+    let result = graphql_result_with_url(
+        base_url,
+        token,
+        UPLOAD_SCORES_MUTATION,
+        json!({ "input": payload }),
+    )
+    .await?;
+    let data = match result.success_data() {
+        Ok(data) => data,
+        Err((error, _)) => return Ok(api_failure(error)),
+    };
+
+    Ok(api_success(
+        data.get("uploadScores").cloned().unwrap_or(Value::Null),
+    ))
+}
+
+#[tauri::command]
+pub async fn upload_scores(app: AppHandle, payload: Value) -> Result<Value> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    upload_scores_impl(&base_url, &token, payload).await
 }
 
 pub(crate) async fn update_simfile_record_impl(

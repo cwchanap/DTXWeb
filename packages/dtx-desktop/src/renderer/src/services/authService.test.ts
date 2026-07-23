@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { authService, getDesktopLoginUrl } from './authService';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { authService, getDesktopLoginUrl, getDesktopAuthCallbackUrl } from './authService';
 import { authStore } from '../stores/authStore';
 import {
 	storeSessionData,
@@ -77,16 +77,39 @@ describe('AuthService', () => {
 		(console.error as any).mockClear();
 	});
 
+	describe('getDesktopAuthCallbackUrl', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('returns the loopback HTTP callback with the default port under tauri dev', () => {
+			// Vitest runs in dev mode (import.meta.env.DEV === true).
+			expect(getDesktopAuthCallbackUrl()).toBe('http://127.0.0.1:47931/auth-callback');
+		});
+
+		it('honors VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT for the loopback callback', () => {
+			vi.stubEnv('VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT', '5599');
+			expect(getDesktopAuthCallbackUrl()).toBe('http://127.0.0.1:5599/auth-callback');
+		});
+
+		it('returns the dtx:// deep link when bundled (not dev)', () => {
+			vi.stubEnv('DEV', false);
+			expect(getDesktopAuthCallbackUrl()).toBe('dtx://auth-callback');
+		});
+	});
+
 	describe('login', () => {
+		const expectedCallbackParam = () => encodeURIComponent(getDesktopAuthCallbackUrl());
+
 		it('builds the desktop login URL from a local web server URL', () => {
 			expect(getDesktopLoginUrl('http://localhost:5173')).toBe(
-				'http://localhost:5173/login?redirect=desktop'
+				`http://localhost:5173/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
 			);
 		});
 
 		it('builds the desktop login URL from a production server URL without duplicating slashes', () => {
 			expect(getDesktopLoginUrl('https://dtx.hapadona.com/')).toBe(
-				'https://dtx.hapadona.com/login?redirect=desktop'
+				`https://dtx.hapadona.com/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
 			);
 		});
 
@@ -97,7 +120,7 @@ describe('AuthService', () => {
 			// Assert
 			expect(authStore.setLoading).toHaveBeenCalledWith(true);
 			expect(host.openExternalUrl).toHaveBeenCalledWith(
-				'http://localhost:5173/login?redirect=desktop'
+				`http://localhost:5173/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
 			);
 			expect(authStore.setLoading).toHaveBeenCalledWith(false);
 		});
@@ -123,7 +146,7 @@ describe('AuthService', () => {
 
 			// Assert
 			expect(host.openExternalUrl).toHaveBeenCalledWith(
-				'http://localhost:5173/login?redirect=desktop'
+				`http://localhost:5173/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
 			);
 		});
 	});

@@ -162,7 +162,10 @@ const getLastProps = <T>(mockFn: ReturnType<typeof vi.fn>): T | undefined => {
 };
 
 type ChartDetailTestProps = {
-	simfile?: { display_id?: number | null };
+	simfile?: {
+		display_id?: number | null;
+		dtx_files?: Array<{ id: number; label: string; level: number; simfile_id: number }>;
+	};
 	$$events?: {
 		onSave?: (event: { detail: Record<string, unknown> }) => Promise<void> | void;
 	};
@@ -402,6 +405,41 @@ describe('SongDetails', () => {
 				linkedSimFileId: '1'
 			});
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
+		});
+
+		it('passes raw #DLEVEL values directly to ChartDetail', async () => {
+			// parsedLocalData.levels holds raw #DLEVEL values (e.g. 5),
+			// which are already in DTXManiaCX's canonical encoding.
+			// formatLevel decodes them via the ≥100/<100 formula, so the
+			// fallback passes them through unchanged.
+			const invokeMock = mockHostInvoke;
+			if (vi.isMockFunction(invokeMock)) {
+				invokeMock.mockImplementation(async (channel: string) => {
+					if (channel === 'list-files') return { files: [] };
+					if (channel === 'parse-dtx-files') {
+						return {
+							bpm: 140,
+							artist: 'Test Artist',
+							levels: [
+								{ label: 'BASIC', level: 5 },
+								{ label: 'EXT', level: 9 }
+							]
+						};
+					}
+					return null;
+				});
+			}
+			// Unlinked song (no linkedSimFile) so the fallback path is exercised
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.dtx_files).toEqual([
+					{ id: 1, label: 'BASIC', level: 5, simfile_id: 0 },
+					{ id: 2, label: 'EXT', level: 9, simfile_id: 0 }
+				]);
+			});
 		});
 
 		it('handles null parse-dtx-files response', async () => {
@@ -1053,6 +1091,17 @@ describe('SongDetails', () => {
 				expect(mockHostInvoke).toHaveBeenCalledWith(
 					'create-simfile-record',
 					expect.objectContaining({ workspaceRoot: '/test/workspace' })
+				);
+			});
+			// The uploader stores the raw #DLEVEL value directly — it is already
+			// in DTXManiaCX's canonical encoding, and normalizeLevel / formatLevel
+			// decode it correctly (9 → 0.90 via the <100 / 10 branch).
+			await waitFor(() => {
+				expect(mockHostInvoke).toHaveBeenCalledWith(
+					'create-simfile-record',
+					expect.objectContaining({
+						levels: [{ label: 'EXT', level: 9 }]
+					})
 				);
 			});
 		});

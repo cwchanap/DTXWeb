@@ -49,11 +49,22 @@ describe('authGuard', () => {
 		}
 	};
 
-	it('redirects unauthenticated user from /app to /login', async () => {
+	it('redirects unauthenticated user from /app to /login with next=/app', async () => {
 		const event = makeEvent({ url: new URL('https://example.com/app') });
 		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
 
-		await expectRedirect(authGuard({ event, resolve }), '/login');
+		await expectRedirect(authGuard({ event, resolve }), '/login?next=%2Fapp');
+		expect(resolve).not.toHaveBeenCalled();
+	});
+
+	it('preserves /app/score path+search as next for unauthenticated web users', async () => {
+		const event = makeEvent({ url: new URL('https://example.com/app/score?page=3') });
+		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
+
+		await expectRedirect(
+			authGuard({ event, resolve }),
+			'/login?next=' + encodeURIComponent('/app/score?page=3')
+		);
 		expect(resolve).not.toHaveBeenCalled();
 	});
 
@@ -62,6 +73,22 @@ describe('authGuard', () => {
 		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
 
 		await expectRedirect(authGuard({ event, resolve }), '/login?redirect=desktop');
+		expect(resolve).not.toHaveBeenCalled();
+	});
+
+	it('preserves desktop_callback through the unauthenticated /app redirect', async () => {
+		const callback = 'http://127.0.0.1:47931/auth/callback';
+		const event = makeEvent({
+			url: new URL(
+				`https://example.com/app?redirect=desktop&desktop_callback=${encodeURIComponent(callback)}`
+			)
+		});
+		event.locals.safeGetSession = vi.fn().mockResolvedValue({ session: null, user: null });
+
+		await expectRedirect(
+			authGuard({ event, resolve }),
+			`/login?redirect=desktop&desktop_callback=${encodeURIComponent(callback)}`
+		);
 		expect(resolve).not.toHaveBeenCalled();
 	});
 

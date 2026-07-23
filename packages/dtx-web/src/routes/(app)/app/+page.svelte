@@ -11,9 +11,102 @@
 	let redirectError = $state('');
 	let redirectAttempted = $state(false);
 
+	// Deep-link schemes a bundled desktop app may register for the callback.
+	// `dtx-dev:` is only registered by `tauri dev` (tauri.dev.conf.json) and must
+	// never be honored by a production web deploy — a caller-supplied
+	// desktop_callback of `dtx-dev://...` would otherwise leak the magic-link
+	// token to whatever local process claimed that scheme.
+	const ALLOWED_DESKTOP_CALLBACK_SCHEMES = import.meta.env.DEV ? ['dtx:', 'dtx-dev:'] : ['dtx:'];
+
+	// Loopback hostnames the Rust auth callback server binds on (auth.rs
+	// matches the same set). `localhost` is included for browser-resolved
+	// loopback, alongside the explicit IPv4/IPv6 addresses. Note: the URL API
+	// returns IPv6 hostnames with brackets in `.hostname`, so `::1` is listed
+	// as `[::1]` here to match `new URL('http://[::1]:...').hostname`.
+	const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '[::1]'];
+
+	// The Rust auth callback server listens on a single loopback port
+	// (DTX_DESKTOP_AUTH_CALLBACK_PORT, default 47931). The magic link carries
+	// an auth token, so a caller-injected desktop_callback pointing at an
+	// ARBITRARY loopback port must not be honored: a process the user is
+	// running on that port (or a malicious local app) would receive the
+	// token. Derive the one allowed port from the server-configured callback
+	// URL (PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL, set to the loopback URL in
+	// dev), falling back to the documented default.
+	const DEFAULT_LOOPBACK_CALLBACK_PORT = '47931';
+	const allowedLoopbackCallbackPort = (): string => {
+		const configured = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
+		if (configured) {
+			try {
+				const parsed = new URL(configured);
+				if (
+					parsed.protocol === 'http:' &&
+					LOOPBACK_HOSTNAMES.includes(parsed.hostname) &&
+					parsed.port
+				) {
+					return parsed.port;
+				}
+			} catch {
+				// fall through to the default
+			}
+		}
+		return DEFAULT_LOOPBACK_CALLBACK_PORT;
+	};
+
+	// The magic link carries an auth token, so the redirect target must be
+	// strictly validated: either a loopback HTTP callback on the configured
+	// port (a `tauri dev` instance) or one of our own deep-link schemes.
+	// Anything else is rejected to prevent an open redirect from leaking the
+	// token to another origin.
+	const validateDesktopCallbackUrl = (raw: string | null | undefined): string | null => {
+		if (!raw) return null;
+		let parsed: URL;
+		try {
+			parsed = new URL(raw);
+		} catch {
+			return null;
+		}
+		if (ALLOWED_DESKTOP_CALLBACK_SCHEMES.includes(parsed.protocol)) {
+			return parsed.hostname === 'auth-callback' ? raw : null;
+		}
+		if (parsed.protocol === 'http:') {
+			if (
+				LOOPBACK_HOSTNAMES.includes(parsed.hostname) &&
+				parsed.pathname === '/auth-callback' &&
+				parsed.port === allowedLoopbackCallbackPort()
+			)
+				return raw;
+		}
+		return null;
+	};
+
+	// The desktop app declares its callback via the `desktop_callback` query
+	// param. It reaches /app through two paths: (1) the server redirects an
+	// already-authenticated browser from /login, forwarding the param in the
+	// URL; (2) the /login onMount stashes it in sessionStorage for the
+	// password-POST and Google-OAuth flows (whose redirects to /app don't
+	// carry the param). Check the URL first, then fall back to sessionStorage.
+	const readDesktopSuppliedCallbackUrl = (): string | null => {
+		if (!browser) return null;
+		const fromUrl = $page.url.searchParams.get('desktop_callback');
+		const validatedFromUrl = fromUrl ? validateDesktopCallbackUrl(fromUrl) : null;
+		if (validatedFromUrl) return validatedFromUrl;
+		try {
+			const stored = sessionStorage.getItem('dtx_desktop_auth_callback');
+			if (stored) sessionStorage.removeItem('dtx_desktop_auth_callback');
+			return validateDesktopCallbackUrl(stored);
+		} catch {
+			return null;
+		}
+	};
+
 	const buildDesktopAuthCallbackUrl = (magicLinkUrl: string) => {
-		const configuredCallbackUrl = env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim();
-		const callbackUrl = configuredCallbackUrl || 'dtx://auth-callback';
+		const desktopSuppliedCallbackUrl = readDesktopSuppliedCallbackUrl();
+		const configuredCallbackUrl = validateDesktopCallbackUrl(
+			env.PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL?.trim()
+		);
+		const callbackUrl =
+			desktopSuppliedCallbackUrl || configuredCallbackUrl || 'dtx://auth-callback';
 		const separator = callbackUrl.includes('?') ? '&' : '?';
 		return `${callbackUrl}${separator}magic_link=${encodeURIComponent(magicLinkUrl)}`;
 	};
@@ -41,8 +134,6 @@
 			if (!magicLinkUrl) {
 				throw new Error('No magic link received');
 			}
-
-			console.log('Generated magic link for desktop authentication');
 
 			// Redirect to desktop app with magic link
 			const redirectUrl = buildDesktopAuthCallbackUrl(magicLinkUrl);

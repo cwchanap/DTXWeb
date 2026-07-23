@@ -9,6 +9,7 @@ export {
 
 // Export utilities
 export { normalizePosition } from './utils/position';
+export { formatLevel, normalizeLevel } from './utils/level';
 
 // Export constants
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';

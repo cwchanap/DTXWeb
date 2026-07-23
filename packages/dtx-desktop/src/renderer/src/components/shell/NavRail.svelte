@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { HardDrive, Cloud, FileText, Settings } from '@lucide/svelte';
+	import { HardDrive, Cloud, FileText, Settings, Trophy } from '@lucide/svelte';
 	import { authStore } from '../../stores/authStore';
 	import { workspaceStore, type ShellSection } from '../../stores/workspaceStore';
 
@@ -8,6 +8,7 @@
 	const items: Item[] = [
 		{ id: 'library', label: 'Library', icon: HardDrive },
 		{ id: 'cloud', label: 'Cloud', icon: Cloud, authOnly: true },
+		{ id: 'scores', label: 'Scores', icon: Trophy, authOnly: true },
 		{ id: 'templates', label: 'Templates', icon: FileText },
 		{ id: 'settings', label: 'Settings', icon: Settings }
 	];

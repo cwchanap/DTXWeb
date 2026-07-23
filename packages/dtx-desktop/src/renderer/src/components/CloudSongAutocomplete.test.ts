@@ -77,6 +77,50 @@ describe('CloudSongAutocomplete – close behavior', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /close popup/i }));
 		expect(onclose).toHaveBeenCalledOnce();
 	});
+
+	it('does not close on document clicks while closed', async () => {
+		const onclose = vi.fn();
+		render(CloudSongAutocomplete, { props: { isOpen: false, onclose } });
+		await fireEvent.click(document.body);
+		expect(onclose).not.toHaveBeenCalled();
+	});
+
+	it('closes on outside document clicks only when open', async () => {
+		vi.useFakeTimers();
+		const onclose = vi.fn();
+		render(CloudSongAutocomplete, { props: { isOpen: true, onclose } });
+		// Install the deferred outside-click listener.
+		await vi.advanceTimersByTimeAsync(0);
+
+		const outside = document.createElement('button');
+		document.body.appendChild(outside);
+		try {
+			await fireEvent.click(outside);
+			expect(onclose).toHaveBeenCalledOnce();
+		} finally {
+			outside.remove();
+			vi.useRealTimers();
+		}
+	});
+
+	it('ignores outside clicks on the autocomplete trigger region', async () => {
+		vi.useFakeTimers();
+		const onclose = vi.fn();
+		render(CloudSongAutocomplete, { props: { isOpen: true, onclose } });
+		// Install the deferred outside-click listener.
+		await vi.advanceTimersByTimeAsync(0);
+
+		const trigger = document.createElement('button');
+		trigger.setAttribute('data-cloud-song-autocomplete-trigger', '');
+		document.body.appendChild(trigger);
+		try {
+			await fireEvent.click(trigger);
+			expect(onclose).not.toHaveBeenCalled();
+		} finally {
+			trigger.remove();
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('CloudSongAutocomplete – search behavior', () => {
@@ -104,7 +148,7 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		vi.advanceTimersByTime(350);
 		await waitFor(() =>
 			expect(mockDesktopHost.searchCloudSongs).toHaveBeenCalledWith(
-				expect.objectContaining({ query: 'So', limit: 20 })
+				expect.objectContaining({ query: 'So', limit: 50 })
 			)
 		);
 	});
@@ -189,6 +233,25 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /clear search/i }));
 		expect(screen.queryByText('Song Alpha')).not.toBeInTheDocument();
 		expect(screen.getByText('Start typing to search')).toBeInTheDocument();
+	});
+
+	it('clears previous suggestions immediately when the query changes during the debounce window', async () => {
+		// Without an immediate clear, the previous query's results stay
+		// clickable for the 300ms debounce window because the render
+		// condition is just `query.length >= 2 && !isLoading`.
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: defaultSongs });
+		render(CloudSongAutocomplete, { props: { isOpen: true } });
+		const input = screen.getByPlaceholderText(/search by song title or artist/i);
+
+		await fireEvent.input(input, { target: { value: 'So' } });
+		vi.advanceTimersByTime(350);
+		await waitFor(() => expect(screen.getByText('Song Alpha')).toBeInTheDocument());
+
+		// Change the query but do NOT advance the debounce timer. The old
+		// suggestions must be gone immediately — no stale clickable rows.
+		await fireEvent.input(input, { target: { value: 'Son' } });
+		expect(screen.queryByText('Song Alpha')).not.toBeInTheDocument();
+		expect(screen.queryByText('Song Beta')).not.toBeInTheDocument();
 	});
 });
 

@@ -42,10 +42,10 @@ describe('CloudSongDetail', () => {
 
 	it('renders BPM and sorted levels', () => {
 		render(CloudSongDetail, {
-			simFile: makeSimFile({ bpm: 160, dtx_files: [{ level: 9 }, { level: 3 }] })
+			simFile: makeSimFile({ bpm: 160, dtx_files: [{ level: 90 }, { level: 30 }] })
 		});
 		expect(screen.getByText('160')).toBeInTheDocument();
-		expect(screen.getByText('3, 9')).toBeInTheDocument();
+		expect(screen.getByText('3.00, 9.00')).toBeInTheDocument();
 	});
 
 	it('shows a Draft badge when unpublished', () => {

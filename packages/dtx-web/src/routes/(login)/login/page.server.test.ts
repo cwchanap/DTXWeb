@@ -79,6 +79,56 @@ describe('login/+page.server actions', () => {
 				location: '/app?redirect=desktop'
 			});
 		});
+
+		// `next` preserves the post-login return path (e.g. /app/score) so
+		// re-authentication after a session expiry returns the user to the
+		// page they were on, not the default /app.
+		it('redirects to the next path when next is an /app route', async () => {
+			const event = makeEvent({
+				email: 'a@b.com',
+				password: 'correct',
+				next: '/app/score'
+			});
+
+			await expect(actions.login(event as any)).rejects.toMatchObject({
+				location: '/app/score'
+			});
+		});
+
+		it('falls back to /app when next is absent', async () => {
+			const event = makeEvent({ email: 'a@b.com', password: 'correct' });
+
+			await expect(actions.login(event as any)).rejects.toMatchObject({
+				location: '/app'
+			});
+		});
+
+		// safeAppRedirectPath rejects anything outside /app* — a crafted
+		// `next` can't pivot the post-login destination to an external URL.
+		it('rejects a non-/app next path and falls back to /app/account', async () => {
+			const event = makeEvent({
+				email: 'a@b.com',
+				password: 'correct',
+				next: 'https://evil.example/path'
+			});
+
+			await expect(actions.login(event as any)).rejects.toMatchObject({
+				location: '/app/account'
+			});
+		});
+
+		it('ignores next when redirect=desktop is set', async () => {
+			const event = makeEvent({
+				email: 'a@b.com',
+				password: 'correct',
+				redirect: 'desktop',
+				next: '/app/score'
+			});
+
+			await expect(actions.login(event as any)).rejects.toMatchObject({
+				location: '/app?redirect=desktop'
+			});
+		});
 	});
 
 	describe('google action', () => {
@@ -101,6 +151,77 @@ describe('login/+page.server actions', () => {
 
 		it('starts Google OAuth with a desktop callback when redirect=desktop is set', async () => {
 			const event = makeEvent({ redirect: 'desktop' });
+
+			await expect(actions.google(event as any)).rejects.toMatchObject({
+				location: 'https://supabase.example/auth/google'
+			});
+
+			expect(event.locals.supabase.auth.signInWithOAuth).toHaveBeenCalledWith({
+				provider: 'google',
+				options: {
+					redirectTo: 'http://localhost/auth/callback?redirect=desktop',
+					scopes: 'openid email profile',
+					skipBrowserRedirect: true
+				}
+			});
+		});
+
+		// `next` is threaded into the OAuth callback URL so the callback can
+		// honor it after the Google round-trip. Validated via
+		// safeAppRedirectPath before being attached.
+		it('threads next into the web callback URL when next is an /app route', async () => {
+			const event = makeEvent({ next: '/app/score' });
+
+			await expect(actions.google(event as any)).rejects.toMatchObject({
+				location: 'https://supabase.example/auth/google'
+			});
+
+			expect(event.locals.supabase.auth.signInWithOAuth).toHaveBeenCalledWith({
+				provider: 'google',
+				options: {
+					redirectTo: 'http://localhost/auth/callback?next=%2Fapp%2Fscore',
+					scopes: 'openid email profile',
+					skipBrowserRedirect: true
+				}
+			});
+		});
+
+		it('omits next from the callback URL when next is absent', async () => {
+			const event = makeEvent({});
+
+			await expect(actions.google(event as any)).rejects.toMatchObject({
+				location: 'https://supabase.example/auth/google'
+			});
+
+			expect(event.locals.supabase.auth.signInWithOAuth).toHaveBeenCalledWith({
+				provider: 'google',
+				options: {
+					redirectTo: 'http://localhost/auth/callback',
+					scopes: 'openid email profile',
+					skipBrowserRedirect: true
+				}
+			});
+		});
+
+		it('rejects a non-/app next and falls back to /app/account in the callback URL', async () => {
+			const event = makeEvent({ next: 'https://evil.example/path' });
+
+			await expect(actions.google(event as any)).rejects.toMatchObject({
+				location: 'https://supabase.example/auth/google'
+			});
+
+			expect(event.locals.supabase.auth.signInWithOAuth).toHaveBeenCalledWith({
+				provider: 'google',
+				options: {
+					redirectTo: 'http://localhost/auth/callback?next=%2Fapp%2Faccount',
+					scopes: 'openid email profile',
+					skipBrowserRedirect: true
+				}
+			});
+		});
+
+		it('does not thread next into the callback URL when redirect=desktop is set', async () => {
+			const event = makeEvent({ redirect: 'desktop', next: '/app/score' });
 
 			await expect(actions.google(event as any)).rejects.toMatchObject({
 				location: 'https://supabase.example/auth/google'

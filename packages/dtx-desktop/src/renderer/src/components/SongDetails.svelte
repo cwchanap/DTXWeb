@@ -11,6 +11,7 @@
 	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 	import { simFileService } from '../services/simFileService';
 	import { desktopHost } from '../services/desktopHost';
+	import type { FetchCloudSongResult } from '../lib/scoreTypes';
 
 	interface Props {
 		song: TreeNode;
@@ -33,12 +34,6 @@
 		artist: string;
 		bpm?: number;
 		is_published: boolean;
-	};
-
-	type FetchCloudSongResult = {
-		success: boolean;
-		cloudSongData?: SimfileWithDtx;
-		error?: string;
 	};
 
 	type CreateSimfileResult = {
@@ -402,6 +397,11 @@
 					levels: Array.isArray(parsedLocalData.levels)
 						? parsedLocalData.levels.map((l) => ({
 								label: String(l.label || ''),
+								// Store the raw #DLEVEL value directly — it is already
+								// in DTXManiaCX's canonical encoding (≥100 = hundredths,
+								// <100 = tenths + DrumLevelDec), and normalizeLevel /
+								// formatLevel decode it correctly. Mirrors DTXFile.level
+								// in @dtx/common which also stores the raw #DLEVEL value.
 								level: Number(l.level || 0)
 							}))
 						: [],
@@ -529,7 +529,9 @@
 			linkingSuccess = false;
 
 			try {
-				const result = await desktopHost.fetchCloudSong<FetchCloudSongResult>({
+				const result = await desktopHost.fetchCloudSong<
+					FetchCloudSongResult<SimfileWithDtx>
+				>({
 					cloudSongId: selectedSong.id
 				});
 
@@ -736,6 +738,9 @@
 			? parsedLocalData.levels.map((l, index) => ({
 					id: index + 1,
 					label: l.label || 'Unknown',
+					// Store the raw #DLEVEL value directly — formatLevel decodes it
+					// via the DTXManiaCX formula (≥100 → /100, <100 → /10).
+					// Mirrors the upload site and DTXFile.level in @dtx/common.
 					level: Number(l.level || 0),
 					simfile_id: 0
 				}))
@@ -1071,6 +1076,7 @@
 							<button
 								class="bg-magenta flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
 								style="box-shadow:0 0 22px -6px var(--color-magenta)"
+								data-cloud-song-autocomplete-trigger
 								onclick={handleShowAutocomplete}
 								disabled={isLinking}
 							>

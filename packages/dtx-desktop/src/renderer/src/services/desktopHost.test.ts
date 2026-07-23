@@ -279,6 +279,46 @@ describe('desktopHost', () => {
 				simfileId: '42'
 			}
 		);
+		await expectTauriInvoke(
+			'/path/songs.db',
+			() => desktopHost.defaultDtxmaniaDbPath(),
+			'default_dtxmania_db_path'
+		);
+		await expectTauriInvoke(
+			{ canceled: false, filePaths: ['/path/songs.db'] },
+			() => desktopHost.selectDtxmaniaDb(),
+			'select_dtxmania_db'
+		);
+		await expectTauriInvoke(
+			[],
+			() => desktopHost.parseDtxmaniaScores('/path/songs.db'),
+			'parse_dtxmania_scores',
+			{ dbPath: '/path/songs.db' }
+		);
+		await expectTauriInvoke(
+			{ success: true, data: [] },
+			() => desktopHost.fetchCloudSongCharts('42'),
+			'fetch_cloud_song_charts',
+			{ cloudSongId: '42' }
+		);
+		await expectTauriInvoke(
+			{ success: true, data: { updatedCharts: 1 } },
+			() => desktopHost.uploadScores({ charts: [] }),
+			'upload_scores',
+			{ payload: { charts: [] } }
+		);
+		await expectTauriInvoke(
+			{ ['Played SongArtist A']: '42' },
+			() => desktopHost.readScoreSongLinks(),
+			'read_score_song_links'
+		);
+	});
+
+	it('maps writeScoreSongLinks to a fire-and-forget send command', async () => {
+		await desktopHost.writeScoreSongLinks({ ['Played SongArtist A']: '42' });
+		expect(runtime.send).toHaveBeenCalledWith('write_score_song_links', {
+			links: { ['Played SongArtist A']: '42' }
+		});
 	});
 
 	it('maps multi-part pathExists arguments for Tauri', async () => {

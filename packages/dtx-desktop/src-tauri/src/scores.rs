@@ -1,0 +1,663 @@
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use serde::Serialize;
+
+use rusqlite::{Connection, OpenFlags};
+use tauri::{AppHandle, Manager};
+
+use crate::error::{DesktopError, Result};
+
+/// Individual score row destined for the GraphQL `ScoreInput`. Serializes to the
+/// exact `ScoreInput` field set (camelCase), so the renderer forwards these
+/// objects to `uploadScores` verbatim.
+///
+/// Constructed by `build_best` (best row) and `group_joined_rows` (recent rows)
+/// from the DTXMania SQLite database.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScorePayload {
+    pub is_best: bool,
+    pub score: Option<i64>,
+    pub achievement_rate: Option<f64>,
+    pub rank_label: Option<String>,
+    pub full_combo: bool,
+    pub cleared: bool,
+    pub max_combo: Option<i64>,
+    pub perfect: Option<i64>,
+    pub great: Option<i64>,
+    pub good: Option<i64>,
+    pub poor: Option<i64>,
+    pub miss: Option<i64>,
+    pub performed_at: Option<String>,
+    pub display_order: Option<i64>,
+}
+
+/// Per-chart aggregate counts. Constructed by `group_joined_rows` from the
+/// joined DTXMania `SongScores` row.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartAggregate {
+    pub play_count: i64,
+    pub clear_count: i64,
+}
+
+/// One chart within a DTXMania song. Constructed by `group_joined_rows` from
+/// the joined DTXMania `SongCharts` + `SongScores` rows.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DtxmaniaChart {
+    pub difficulty_level: i64,
+    pub difficulty_label: String,
+    pub drum_level: i64,
+    pub drum_level_dec: i64,
+    pub file_hash: String,
+    pub aggregate: ChartAggregate,
+    pub best: Option<ScorePayload>,
+    pub recent: Vec<ScorePayload>,
+}
+
+/// One song from the DTXMania library. Constructed by `group_joined_rows`
+/// from the joined DTXMania `Songs` + `SongCharts` + `SongScores` rows.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DtxmaniaSong {
+    /// DTXMania `Songs.Id` (INTEGER PRIMARY KEY). Used as the stable song
+    /// identity for the renderer's `songKey` (collapse state + persisted
+    /// score_links) so two songs sharing title+artist+genre can't collide.
+    pub song_id: i64,
+    pub title: String,
+    pub artist: String,
+    pub genre: String,
+    pub charts: Vec<DtxmaniaChart>,
+}
+
+/// Rank label for the best row, derived from the achievement rate (0–100).
+/// Recent rows keep the RANK token parsed from the history line instead.
+///
+/// Thresholds match DTXManiaCX `ResultScreenModel.ComputeRank` (verified
+/// against the DTXManiaCX source code):
+///   SS ≥ 95, S ≥ 80, A ≥ 73, B ≥ 63, C ≥ 53, D ≥ 45, E < 45.
+/// There is no "F" rank in DTXManiaCX. `E` is produced from an achievement
+/// rate below 45, so it is included in `VALID_RANK_LABELS` and returned here
+/// (unlike the previous implementation which only produced SS…D).
+///
+/// Called by `build_best`. Unit-tested directly (see `tests/scores_tests.rs`).
+pub fn derive_rank_label(rate: f64) -> &'static str {
+    if rate >= 95.0 {
+        "SS"
+    } else if rate >= 80.0 {
+        "S"
+    } else if rate >= 73.0 {
+        "A"
+    } else if rate >= 63.0 {
+        "B"
+    } else if rate >= 53.0 {
+        "C"
+    } else if rate >= 45.0 {
+        "D"
+    } else {
+        "E"
+    }
+}
+
+/// Output of `parse_history_line`. Consumed by `group_joined_rows` when
+/// building recent `ScorePayload` rows from DTXMania `PerformanceHistory`.
+pub struct ParsedHistory {
+    pub cleared: Option<bool>,
+    pub rank_label: Option<String>,
+    pub achievement_rate: Option<f64>,
+}
+
+/// Rank tokens accepted by the GraphQL upload validator / DB CHECK constraint.
+/// History lines with any other token keep the play but drop the rank so a
+/// stray label does not cause the whole chart to be rejected server-side.
+const VALID_RANK_LABELS: &[&str] = &["SS", "S", "A", "B", "C", "D", "E", "F"];
+
+fn sanitize_rank_label(rank: &str) -> Option<String> {
+    let trimmed = rank.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if VALID_RANK_LABELS.contains(&trimmed) {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+/// `true` if `token` appears in `line` as a standalone word: at a line edge
+/// or adjacent to a non-alphanumeric character on each side. This enforces
+/// both the left and right word boundaries, so a token glued to a neighboring
+/// word on either side (e.g. "NotCleared", "ClearedExtra") is NOT detected.
+/// The `token` is ASCII, so byte indexing is safe and a leading byte of a
+/// multibyte UTF-8 char (>= 0x80) is correctly treated as a boundary.
+fn contains_outcome_token(line: &str, token: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut search = 0;
+    while let Some(rel) = line[search..].find(token) {
+        let start = search + rel;
+        let end = start + token.len();
+        let left_ok = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+        let right_ok = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+        if left_ok && right_ok {
+            return true;
+        }
+        search = start + 1;
+    }
+    false
+}
+
+/// Tolerant parser for a DTXMania `HistoryLine`, e.g. `10.26/6/2 Cleared (S: 91.30)`.
+/// Any field that cannot be read is left `None`; the parser never fails.
+///
+/// Called by `group_joined_rows`. Unit-tested directly (see `tests/scores_tests.rs`).
+pub fn parse_history_line(line: &str) -> ParsedHistory {
+    let cleared = if contains_outcome_token(line, "Cleared") {
+        Some(true)
+    } else if contains_outcome_token(line, "Failed") {
+        Some(false)
+    } else {
+        None
+    };
+
+    let (rank_label, achievement_rate) = match (line.find('('), line.find(')')) {
+        (Some(open), Some(close)) if close > open + 1 => {
+            let inner = &line[open + 1..close];
+            match inner.split_once(':') {
+                Some((rank, rate)) => {
+                    // `parse::<f64>()` accepts "NaN"/"inf" as Ok; non-finite
+                    // values are not valid JSON and would abort ScorePayload
+                    // serialization across the Tauri IPC boundary. Reject them
+                    // the same as unparseable input so one bad history line
+                    // cannot fail the whole database parse.
+                    let achievement_rate = rate
+                        .trim()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|value| value.is_finite());
+                    // Rank is derived from the achievement rate in DTXMania, so
+                    // a rank token without a parseable rate is meaningless —
+                    // drop both together. Only forward ranks the API/DB accept
+                    // (e.g. "EX", locale variants) become None so the row
+                    // still uploads without skipping the whole chart.
+                    let rank_label = if achievement_rate.is_some() {
+                        sanitize_rank_label(rank)
+                    } else {
+                        None
+                    };
+                    (rank_label, achievement_rate)
+                }
+                None => (None, None),
+            }
+        }
+        _ => (None, None),
+    };
+
+    ParsedHistory {
+        cleared,
+        rank_label,
+        achievement_rate,
+    }
+}
+
+/// Pure resolver: `<base>/DTXManiaCX/songs.db` when it exists. The base dir is
+/// supplied by `default_dtxmania_db_path`, which picks the platform directory
+/// DTXManiaCX actually writes to (verified against `AppPaths.GetAppDataRoot()`
+/// in the DTXManiaCX source): `%LOCALAPPDATA%` (Windows), `~/Library/Application
+/// Support` (macOS), `$XDG_CONFIG_HOME`/`~/.config` (Linux).
+fn default_dtxmania_db_path_from(base_dir: Option<PathBuf>) -> Option<String> {
+    let path = base_dir?.join("DTXManiaCX").join("songs.db");
+    if path.exists() {
+        path.to_str().map(|value| value.to_string())
+    } else {
+        None
+    }
+}
+
+/// Resolves the platform-specific base directory DTXManiaCX stores `songs.db`
+/// under, mirroring `AppPaths.GetAppDataRoot()` in the DTXManiaCX source:
+///
+/// - Windows: `%LOCALAPPDATA%` (`dirs::data_local_dir`) — NOT `%APPDATA%`
+///   (roaming); DTXManiaCX uses `Environment.SpecialFolder.LocalApplicationData`.
+/// - macOS: `~/Library/Application Support` (`dirs::data_dir`).
+/// - Linux/other: `$XDG_CONFIG_HOME` or `~/.config` (`dirs::config_dir`) — NOT
+///   `~/.local/share`; DTXManiaCX uses `Environment.SpecialFolder.ApplicationData`,
+///   which on Linux maps to the XDG config dir, not the data dir.
+///
+/// Mismatched base dirs silently failed auto-discovery on Windows/Linux, forcing
+/// users to pick the database manually — see the review note on the previous
+/// `dirs::data_dir()`-only implementation.
+fn dtxmania_platform_base_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        dirs::data_local_dir()
+    } else if cfg!(target_os = "macos") {
+        dirs::data_dir()
+    } else {
+        dirs::config_dir()
+    }
+}
+
+#[tauri::command]
+pub fn default_dtxmania_db_path() -> Option<String> {
+    default_dtxmania_db_path_from(dtxmania_platform_base_dir())
+}
+
+/// Tauri-managed state tracking the last database path selected via the OS
+/// file dialog (`select_dtxmania_db`). `parse_dtxmania_scores` only accepts
+/// the default DTXMania path or a path stored here, so a compromised renderer
+/// cannot open an arbitrary SQLite file.
+#[derive(Default)]
+pub struct DtxmaniaDbState {
+    dialog_path: Mutex<Option<PathBuf>>,
+}
+
+impl DtxmaniaDbState {
+    pub fn set(&self, path: PathBuf) {
+        *self
+            .dialog_path
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(path);
+    }
+
+    pub fn get(&self) -> Option<PathBuf> {
+        self.dialog_path
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+/// Compares two filesystem paths by canonicalizing both and comparing the
+/// resolved forms, so a path that differs in representation (relative vs
+/// absolute, symlink, trailing slash) but points to the same file is accepted.
+/// A raw string equality check runs first (handles the common case without
+/// touching the filesystem); if the strings differ and canonicalization fails
+/// for either side (e.g. the path does not exist), the paths are treated as
+/// not equal.
+fn paths_equal(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
+}
+
+/// Validates that `db_path` is either the default DTXMania database path
+/// (resolved from the OS data directory) or a path previously selected via
+/// the OS file dialog (stored in `DtxmaniaDbState`). Any other path is
+/// rejected so a compromised renderer cannot use `parse_dtxmania_scores` to
+/// open an arbitrary SQLite database.
+fn validate_dtxmania_db_path(db_path: &str, dialog_path: Option<&std::path::Path>) -> Result<()> {
+    if let Some(default) = default_dtxmania_db_path() {
+        if paths_equal(db_path, &default) {
+            return Ok(());
+        }
+    }
+    if let Some(dialog) = dialog_path {
+        if paths_equal(db_path, &dialog.to_string_lossy()) {
+            return Ok(());
+        }
+    }
+    Err(DesktopError::Message(
+        "Database path is not allowed. Use the default DTXMania path or select a database via the file picker.".to_string(),
+    ))
+}
+
+/// Testable inner: validates the path against the allowed set, then parses.
+/// Production code passes the dialog path from `DtxmaniaDbState`; tests pass
+/// it directly.
+pub(crate) fn parse_dtxmania_scores_with_dialog_path(
+    db_path: &str,
+    dialog_path: Option<&std::path::Path>,
+) -> Result<Vec<DtxmaniaSong>> {
+    validate_dtxmania_db_path(db_path, dialog_path)?;
+    parse_dtxmania_scores_impl(db_path)
+}
+
+struct DrumsScoreRow {
+    best_score: i64,
+    best_achievement_rate: f64,
+    full_combo: i64,
+    play_count: i64,
+    clear_count: i64,
+    max_combo: i64,
+    best_perfect: i64,
+    best_great: i64,
+    best_good: i64,
+    best_poor: i64,
+    best_miss: i64,
+    last_played_at: Option<String>,
+}
+
+fn build_best(score: &DrumsScoreRow) -> Option<ScorePayload> {
+    if score.play_count == 0 {
+        return None;
+    }
+    // `best_achievement_rate` is read straight from songs.db (BestAchievementRate
+    // REAL). A corrupt NaN/Inf is not JSON-serializable and would abort the
+    // whole ScorePayload across the Tauri IPC boundary, failing the entire
+    // database parse for one bad row. Mirror `parse_history_line`'s finiteness
+    // guard: drop both `achievement_rate` and the derived `rank_label` (a rank
+    // derived from NaN/Inf would be misleading) instead of propagating it.
+    let achievement_rate = Some(score.best_achievement_rate).filter(|v| v.is_finite());
+    let rank_label = achievement_rate.map(|r| derive_rank_label(r).to_string());
+    Some(ScorePayload {
+        is_best: true,
+        score: Some(score.best_score),
+        achievement_rate,
+        rank_label,
+        full_combo: score.full_combo != 0,
+        cleared: score.clear_count > 0,
+        max_combo: Some(score.max_combo),
+        perfect: Some(score.best_perfect),
+        great: Some(score.best_great),
+        good: Some(score.best_good),
+        poor: Some(score.best_poor),
+        miss: Some(score.best_miss),
+        performed_at: score.last_played_at.clone(),
+        display_order: None,
+    })
+}
+
+/// One row from the joined SELECT. The song/chart/score columns repeat across
+/// rows for the same chart; only the history columns (`hist_*`) vary (and are
+/// `None` when the chart has no PerformanceHistory rows, via LEFT JOIN).
+struct JoinedRow {
+    song_id: i64,
+    title: String,
+    artist: String,
+    genre: String,
+    chart_id: i64,
+    difficulty_level: i64,
+    difficulty_label: String,
+    drum_level: i64,
+    drum_level_dec: i64,
+    file_hash: String,
+    score: DrumsScoreRow,
+    hist_performed_at: Option<String>,
+    hist_history_line: Option<String>,
+    hist_display_order: Option<i64>,
+}
+
+/// Joined query fetching all Songs → SongCharts → SongScores → PerformanceHistory
+/// rows in one SELECT. The `ph.Id` tiebreaker after `ph.DisplayOrder` ensures a
+/// deterministic row order when two history rows share the same display_order.
+///
+/// NOTE: this query fetches ALL PerformanceHistory rows per chart and caps at 5
+/// in Rust (`group_joined_rows`). DTXManiaCX typically keeps a small bounded
+/// history per chart (the UI shows the last few plays), so the over-fetch is
+/// modest in practice. A SQL-level LIMIT 5 via `ROW_NUMBER() OVER (PARTITION BY
+/// ss.Id ...)` would avoid the over-fetch but depends on the SQLite version
+/// embedded in DTXManiaCX supporting window functions. The Rust cap is the
+/// safety net; if DTXManiaCX ever stores unbounded history, revisit this.
+const JOINED_QUERY: &str = "\
+SELECT s.Id, s.Title, s.Artist, s.Genre, \
+       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.DrumLevelDec, c.FileHash, \
+       ss.BestScore, ss.BestAchievementRate, ss.FullCombo, ss.PlayCount, \
+       ss.ClearCount, ss.MaxCombo, ss.BestPerfect, ss.BestGreat, ss.BestGood, \
+       ss.BestPoor, ss.BestMiss, ss.LastPlayedAt, \
+       ph.PerformedAt, ph.HistoryLine, ph.DisplayOrder \
+FROM Songs s \
+JOIN SongCharts c ON c.SongId = s.Id \
+JOIN SongScores ss ON ss.ChartId = c.Id AND ss.Instrument = 0 \
+LEFT JOIN PerformanceHistory ph ON ph.SongScoreId = ss.Id \
+ORDER BY s.Id, c.Id, ph.DisplayOrder, ph.Id";
+
+/// Best-only fallback used when the `PerformanceHistory` table is absent from
+/// the DTXMania database (e.g. an older/other client that doesn't track
+/// per-play history). The three trailing `NULL` columns stand in for
+/// `ph.PerformedAt`, `ph.HistoryLine`, `ph.DisplayOrder` so the same
+/// `JoinedRow` mapper works — every history column is `None`, so
+/// `group_joined_rows` produces an empty `recent` list per chart. Best scores
+/// still load, which is strictly better than aborting the entire parse with a
+/// generic SQLite error.
+const BEST_ONLY_QUERY: &str = "\
+SELECT s.Id, s.Title, s.Artist, s.Genre, \
+       c.Id, c.DifficultyLevel, c.DifficultyLabel, c.DrumLevel, c.DrumLevelDec, c.FileHash, \
+       ss.BestScore, ss.BestAchievementRate, ss.FullCombo, ss.PlayCount, \
+       ss.ClearCount, ss.MaxCombo, ss.BestPerfect, ss.BestGreat, ss.BestGood, \
+       ss.BestPoor, ss.BestMiss, ss.LastPlayedAt, \
+       NULL, NULL, NULL \
+FROM Songs s \
+JOIN SongCharts c ON c.SongId = s.Id \
+JOIN SongScores ss ON ss.ChartId = c.Id AND ss.Instrument = 0 \
+ORDER BY s.Id, c.Id";
+
+/// Returns true if a table named `name` exists in the database's
+/// `sqlite_master`. Used to detect whether `PerformanceHistory` is present
+/// before running the joined query, so a schema mismatch degrades to the
+/// best-only fallback instead of aborting the whole parse.
+///
+/// A query error is propagated rather than silently treated as "table absent"
+/// — the `sqlite_master` query is trivial and should only fail on a genuinely
+/// unreadable/corrupt database, in which case degrading to BEST_ONLY would
+/// mask the real problem behind a silent partial result.
+fn has_table(conn: &Connection, name: &str) -> Result<bool> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        [name],
+        |row| row.get(0),
+    )?;
+    Ok(exists > 0)
+}
+
+/// Returns true if the `PerformanceHistory` table exists AND has a `SongScoreId`
+/// column (the column `JOINED_QUERY` joins on). Some legacy DTXManiaCX builds
+/// created `PerformanceHistory` without `SongScoreId`; running `JOINED_QUERY`
+/// against those fails with `no such column: ph.SongScoreId` and aborts the
+/// entire parse. Callers fall back to `BEST_ONLY_QUERY` when this returns
+/// false, preserving best-score import for older databases.
+///
+/// `PRAGMA table_info` does not accept bound parameters for the table name, so
+/// the table name is a hardcoded literal (not user input) — no injection risk.
+/// A query error is propagated for the same reason as `has_table`: masking it
+/// would hide a genuinely corrupt database behind a silent partial result.
+fn has_performance_history_score_scope(conn: &Connection) -> Result<bool> {
+    if !has_table(conn, "PerformanceHistory")? {
+        return Ok(false);
+    }
+    let mut stmt = conn.prepare("PRAGMA table_info(PerformanceHistory)")?;
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(names.iter().any(|n| n == "SongScoreId"))
+}
+
+fn read_joined_rows(conn: &Connection) -> Result<Vec<JoinedRow>> {
+    // Degrade to the best-only query when PerformanceHistory is missing OR lacks
+    // the SongScoreId column JOINED_QUERY joins on. Either schema mismatch would
+    // otherwise abort the whole parse with a SQLite error.
+    let query = if has_performance_history_score_scope(conn)? {
+        JOINED_QUERY
+    } else {
+        BEST_ONLY_QUERY
+    };
+    let mut stmt = conn.prepare(query)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(JoinedRow {
+                song_id: row.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                artist: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                genre: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                chart_id: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                difficulty_level: row.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                difficulty_label: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                drum_level: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                drum_level_dec: row.get::<_, Option<i64>>(8)?.unwrap_or(0),
+                file_hash: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+                score: DrumsScoreRow {
+                    best_score: row.get::<_, Option<i64>>(10)?.unwrap_or(0),
+                    best_achievement_rate: row.get::<_, Option<f64>>(11)?.unwrap_or(0.0),
+                    full_combo: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
+                    play_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
+                    clear_count: row.get::<_, Option<i64>>(14)?.unwrap_or(0),
+                    max_combo: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
+                    best_perfect: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
+                    best_great: row.get::<_, Option<i64>>(17)?.unwrap_or(0),
+                    best_good: row.get::<_, Option<i64>>(18)?.unwrap_or(0),
+                    best_poor: row.get::<_, Option<i64>>(19)?.unwrap_or(0),
+                    best_miss: row.get::<_, Option<i64>>(20)?.unwrap_or(0),
+                    last_played_at: row.get(21)?,
+                },
+                hist_performed_at: row.get(22)?,
+                hist_history_line: row.get(23)?,
+                hist_display_order: row.get(24)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Groups the flat joined rows into the nested `DtxmaniaSong` → `DtxmaniaChart`
+/// → best + recent structure. Rows are ordered by `s.Id, c.Id, ph.DisplayOrder`,
+/// so a sequential walk builds each song/chart in order. Recent scores are
+/// capped at 5 per chart (matching the original `LIMIT 5`).
+fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
+    let mut songs: Vec<DtxmaniaSong> = Vec::new();
+    let mut cur_song_id: Option<i64> = None;
+    let mut cur_chart_id: Option<i64> = None;
+    let mut cur_chart: Option<DtxmaniaChart> = None;
+    let mut recent_count: usize = 0;
+
+    for row in rows {
+        // Song boundary: push the in-progress chart (if any) and song, reset.
+        if cur_song_id != Some(row.song_id) {
+            if let Some(chart) = cur_chart.take() {
+                if let Some(song) = songs.last_mut() {
+                    song.charts.push(chart);
+                }
+            }
+            cur_chart_id = None;
+            recent_count = 0;
+            cur_song_id = Some(row.song_id);
+            songs.push(DtxmaniaSong {
+                song_id: row.song_id,
+                title: row.title.clone(),
+                artist: row.artist.clone(),
+                genre: row.genre.clone(),
+                charts: Vec::new(),
+            });
+        }
+
+        // Chart boundary: push the in-progress chart, start a new one.
+        if cur_chart_id != Some(row.chart_id) {
+            if let Some(chart) = cur_chart.take() {
+                if let Some(song) = songs.last_mut() {
+                    song.charts.push(chart);
+                }
+            }
+            cur_chart_id = Some(row.chart_id);
+            recent_count = 0;
+            let best = build_best(&row.score);
+            cur_chart = Some(DtxmaniaChart {
+                difficulty_level: row.difficulty_level,
+                difficulty_label: row.difficulty_label.clone(),
+                drum_level: row.drum_level,
+                drum_level_dec: row.drum_level_dec,
+                file_hash: row.file_hash.clone(),
+                aggregate: ChartAggregate {
+                    play_count: row.score.play_count,
+                    clear_count: row.score.clear_count,
+                },
+                best,
+                recent: Vec::new(),
+            });
+        }
+
+        // History row (if present): append to recent, capped at 5.
+        // NOTE: a row with any of performed_at / history_line / display_order
+        // NULL is silently dropped by this destructuring. In practice a real
+        // DTXManiaCX PerformanceHistory row carries all three, but a NULL
+        // DisplayOrder (e.g. a row written by an older/other client) is
+        // dropped here rather than partially reconstructed — there is no
+        // meaningful recent-play ordering without display_order, and the
+        // downstream app validator (score.ts) requires a non-null
+        // displayOrder on every non-best row anyway.
+        //
+        // The display_order sent to the API is RENORMALIZED to 1..n based on
+        // row position (the SQL ORDER BY ph.DisplayOrder, ph.Id guarantees a
+        // stable order), NOT the raw DTXMania DisplayOrder value. DTXManiaCX
+        // may use 0-based, non-contiguous, or monotonically growing values
+        // that don't satisfy the app validator's 1..5 unique constraint.
+        // Renormalizing here means the validator always sees 1, 2, 3, … for
+        // the first 5 history rows regardless of the source scheme.
+        if let (Some(performed_at), Some(history_line), Some(_display_order)) = (
+            row.hist_performed_at,
+            row.hist_history_line,
+            row.hist_display_order,
+        ) {
+            if recent_count < 5 {
+                let parsed = parse_history_line(&history_line);
+                if let Some(chart) = cur_chart.as_mut() {
+                    chart.recent.push(ScorePayload {
+                        is_best: false,
+                        score: None,
+                        achievement_rate: parsed.achievement_rate,
+                        rank_label: parsed.rank_label,
+                        full_combo: false,
+                        // A history row that can't be parsed (no "Cleared"/"Failed"
+                        // token) is kept rather than dropped — the row exists in the
+                        // user's DTXMania DB, so a play happened; we just can't tell
+                        // the outcome. We render the safe default (not cleared) so the
+                        // entry stays visible without overclaiming a clear. This is a
+                        // deliberate tolerance contract: an unparseable line is NOT the
+                        // same as a known failure, but the binary `cleared: bool` field
+                        // (mirrored by the GraphQL `cleared: Boolean!` schema) leaves no
+                        // room for an "unknown" state without a schema/UI change. See
+                        // `parse_maps_best_recent_and_ignores_non_drums` for the pinned
+                        // behavior and `parse_history_line_tolerates_garbage` for the
+                        // parser contract.
+                        cleared: parsed.cleared.unwrap_or(false),
+                        max_combo: None,
+                        perfect: None,
+                        great: None,
+                        good: None,
+                        poor: None,
+                        miss: None,
+                        performed_at: Some(performed_at),
+                        display_order: Some((recent_count + 1) as i64),
+                    });
+                }
+                recent_count += 1;
+            }
+        }
+    }
+
+    // Push the final in-progress chart into the last song.
+    if let Some(chart) = cur_chart {
+        if let Some(song) = songs.last_mut() {
+            song.charts.push(chart);
+        }
+    }
+
+    songs
+}
+
+pub(crate) fn parse_dtxmania_scores_impl(db_path: &str) -> Result<Vec<DtxmaniaSong>> {
+    let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| DesktopError::Message(format!("Failed to open songs.db: {error}")))?;
+    let rows = read_joined_rows(&conn)?;
+    Ok(group_joined_rows(rows))
+}
+
+#[tauri::command]
+pub async fn parse_dtxmania_scores(app: AppHandle, db_path: String) -> Result<Vec<DtxmaniaSong>> {
+    // Offload the sync SQLite work to a blocking thread so the Tauri async
+    // runtime (and the webview UI) is not frozen while parsing a large library.
+    // The dialog path is read from managed state before spawning so the
+    // blocking task can validate + parse in one shot.
+    let dialog_path = app.state::<DtxmaniaDbState>().get();
+    tokio::task::spawn_blocking(move || {
+        parse_dtxmania_scores_with_dialog_path(&db_path, dialog_path.as_deref())
+    })
+    .await
+    .map_err(|error| DesktopError::Message(format!("Parse task failed: {error}")))?
+}
+
+#[cfg(test)]
+#[path = "tests/scores_tests.rs"]
+mod tests;

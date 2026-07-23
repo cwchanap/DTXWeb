@@ -1,6 +1,11 @@
 import type { Session, User } from '@supabase/supabase-js';
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
-import { workerLogger, type WorkerLogger } from '@dtx/common/server';
+import {
+	workerLogger,
+	type WorkerLogger,
+	type ChartScoreRow,
+	type ScoreRow
+} from '@dtx/common/server';
 import { verifyToken } from './auth/verifyToken';
 import type { Env } from './env';
 import type { CatalogFileDiscovery, R2FileEntry } from './services/r2Enrichment';
@@ -23,6 +28,10 @@ export type Ctx = {
 	hasUploadedFilesCache: Map<number, Promise<boolean>>;
 	filesCache: Map<number, Promise<R2FileEntry[]>>;
 	catalogFilesCache?: Map<number, Promise<CatalogFileDiscovery>>;
+	chartScoresCache?: Map<
+		number,
+		Promise<{ chartScore: ChartScoreRow; scores: ScoreRow[] } | null>
+	>;
 };
 
 export const createContext = async (request: Request, env: Env): Promise<Ctx> => {
@@ -39,6 +48,7 @@ export const createContext = async (request: Request, env: Env): Promise<Ctx> =>
 		ownerByIdCache: new Map(),
 		hasUploadedFilesCache: new Map(),
 		filesCache: new Map(),
-		catalogFilesCache: new Map()
+		catalogFilesCache: new Map(),
+		chartScoresCache: new Map()
 	};
 };

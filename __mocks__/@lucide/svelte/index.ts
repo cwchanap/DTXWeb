@@ -36,3 +36,6 @@ export const Play = vi.fn();
 export const Square = vi.fn();
 export const PanelRight = vi.fn();
 export const Cloud = vi.fn();
+export const Trophy = vi.fn();
+export const Upload = vi.fn();
+export const AlertTriangle = vi.fn();

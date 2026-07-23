@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
 	import { Search, X, Music, User, Link } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { desktopHost } from '../services/desktopHost';
@@ -33,16 +34,37 @@
 	let isLoading = $state(false);
 	let searchTimeout: ReturnType<typeof setTimeout>;
 	let searchInputRef = $state<HTMLInputElement>();
+	// Monotonic generation counter so a slow earlier search cannot overwrite a
+	// newer search's results. Each searchCloudSongs call increments this and
+	// captures its generation; only the response matching the current
+	// generation writes to `suggestions`.
+	let searchGeneration = 0;
 
 	const handleClose = () => {
 		onclose?.();
+		clearTimeout(searchTimeout);
 		searchQuery = '';
 		suggestions = [];
 		selectedIndex = -1;
+		isLoading = false;
+		// Invalidate any in-flight search so its response doesn't repopulate
+		// `suggestions` after the popup has closed.
+		searchGeneration++;
 	};
 
 	const handleSearchInput = () => {
 		clearTimeout(searchTimeout);
+		// Invalidate any in-flight search and clear the loading indicator so
+		// a stale response from the previous query can't overwrite the
+		// suggestions during the debounce window.
+		searchGeneration++;
+		isLoading = false;
+		// Drop the previous query's suggestions immediately. Without this,
+		// the old results stay rendered (and clickable / Enter-selectable)
+		// for the 300ms debounce window because the render condition is
+		// just `query.length >= 2 && !isLoading`.
+		suggestions = [];
+		selectedIndex = -1;
 		searchTimeout = setTimeout(async () => {
 			if (searchQuery.trim().length >= 2) {
 				await searchCloudSongs();
@@ -56,6 +78,8 @@
 	const searchCloudSongs = async () => {
 		if (!searchQuery.trim()) return;
 
+		const submittedQuery = searchQuery.trim();
+		const generation = ++searchGeneration;
 		isLoading = true;
 		try {
 			const result = await desktopHost.searchCloudSongs<{
@@ -63,10 +87,18 @@
 				data?: CloudSong[];
 				error?: string;
 			}>({
-				query: searchQuery.trim(),
-				limit: 20, // Increase limit to account for filtering
+				query: submittedQuery,
+				limit: 50, // Over-fetch to compensate for client-side exclusion filtering
 				excludeLinkedSongIds
 			});
+
+			// Discard stale responses: a newer search may have started while
+			// this request was in flight. Only the latest generation's result
+			// should populate `suggestions`.
+			if (generation !== searchGeneration) return;
+			// Defense-in-depth: verify the current query still matches what was
+			// submitted, in case generation was not incremented for some path.
+			if (searchQuery.trim() !== submittedQuery) return;
 
 			if (result.success) {
 				// Filter out already linked songs on the client side as well (double protection)
@@ -81,9 +113,9 @@
 			}
 		} catch (error) {
 			console.error('Error searching cloud songs:', error);
-			suggestions = [];
+			if (generation === searchGeneration) suggestions = [];
 		} finally {
-			isLoading = false;
+			if (generation === searchGeneration) isLoading = false;
 		}
 	};
 
@@ -117,32 +149,42 @@
 
 	const handleClickOutside = (event: MouseEvent) => {
 		const target = event.target as Element;
-		if (!target.closest('.autocomplete-popup')) {
+		// Include the trigger (e.g. ScoreSongCard "Link to cloud song" / "change")
+		// so reopening or interacting with the button does not immediately close.
+		if (
+			!target.closest('.autocomplete-popup') &&
+			!target.closest('[data-cloud-song-autocomplete-trigger]')
+		) {
 			handleClose();
 		}
 	};
 
 	onMount(() => {
-		if (isOpen && searchInputRef) {
-			searchInputRef.focus();
-		}
-
-		// Add click outside listener with a small delay to prevent immediate closure
-		const timeoutId = setTimeout(() => {
-			document.addEventListener('click', handleClickOutside);
-		}, 100);
-
 		return () => {
-			clearTimeout(timeoutId);
 			document.removeEventListener('click', handleClickOutside);
 			clearTimeout(searchTimeout);
 		};
 	});
 
+	// Only listen for outside clicks while open. The component stays mounted
+	// when closed (ScoreSongCard always renders it), so a permanent document
+	// listener would close the popup on the same click that opens it.
 	$effect(() => {
-		if (isOpen && searchInputRef) {
+		if (!isOpen) {
+			document.removeEventListener('click', handleClickOutside);
+			return;
+		}
+		if (searchInputRef) {
 			searchInputRef.focus();
 		}
+		// Defer so the opening click does not immediately fire this handler.
+		const timeoutId = setTimeout(() => {
+			document.addEventListener('click', handleClickOutside);
+		}, 0);
+		return () => {
+			clearTimeout(timeoutId);
+			document.removeEventListener('click', handleClickOutside);
+		};
 	});
 </script>
 
@@ -154,7 +196,7 @@
 		onkeydown={(e) => e.key === 'Escape' && handleClose()}
 		role="button"
 		tabindex="-1"
-		aria-label="Close popup"
+		aria-label={$_('score.link.close_popup')}
 	></div>
 
 	<!-- Popup -->
@@ -166,11 +208,11 @@
 		<!-- Header -->
 		<div class="border-hairline flex items-center gap-2 border-b p-4">
 			<Link size={18} class="text-cyan" />
-			<h3 class="font-display text-hi font-semibold">Link to Cloud Song</h3>
+			<h3 class="font-display text-hi font-semibold">{$_('score.link.title')}</h3>
 			<button
 				class="text-faint hover:bg-surface-2 hover:text-base-text ml-auto rounded-lg p-1"
 				onclick={handleClose}
-				aria-label="Close"
+				aria-label={$_('score.link.close')}
 			>
 				<X size={16} />
 			</button>
@@ -186,20 +228,30 @@
 					bind:this={searchInputRef}
 					type="text"
 					bind:value={searchQuery}
-					placeholder="Search by song title or artist..."
+					placeholder={$_('score.link.search_placeholder')}
 					class="border-hairline bg-surface-2 text-hi placeholder-faint focus:border-cyan w-full rounded-lg border py-2 pr-4 pl-10 focus:ring-1 focus:outline-none"
+					role="combobox"
+					aria-autocomplete="list"
+					aria-expanded={suggestions.length > 0}
+					aria-controls="cloud-song-results"
+					aria-activedescendant={selectedIndex >= 0
+						? `cloud-song-option-${selectedIndex}`
+						: undefined}
 					oninput={handleSearchInput}
 					onkeydown={handleKeydown}
 				/>
 				{#if searchQuery}
 					<button
 						onclick={() => {
+							clearTimeout(searchTimeout);
+							searchGeneration++;
+							isLoading = false;
 							searchQuery = '';
 							suggestions = [];
 							selectedIndex = -1;
 						}}
 						class="text-faint hover:text-base-text absolute inset-y-0 right-0 flex items-center pr-3"
-						aria-label="Clear search"
+						aria-label={$_('score.link.clear_search')}
 					>
 						<X size={16} />
 					</button>
@@ -214,13 +266,21 @@
 					<div
 						class="border-cyan h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
 					></div>
-					<span class="text-dim ml-2 text-sm">Searching...</span>
+					<span class="text-dim ml-2 text-sm">{$_('score.link.searching')}</span>
 				</div>
 			{:else if searchQuery.trim().length >= 2}
 				{#if suggestions.length > 0}
-					<div class="border-hairline border-t">
+					<div
+						id="cloud-song-results"
+						role="listbox"
+						aria-label={$_('score.link.title')}
+						class="border-hairline border-t"
+					>
 						{#each suggestions as song, index}
 							<button
+								role="option"
+								id={`cloud-song-option-${index}`}
+								aria-selected={selectedIndex === index}
 								class="border-hairline hover:bg-surface-2 focus:bg-surface-2 flex w-full items-center gap-3 border-b p-4 text-left transition-colors focus:outline-none"
 								class:bg-surface-2={selectedIndex === index}
 								onclick={() => selectSong(song)}
@@ -247,7 +307,9 @@
 												? 'border-green/40 bg-green/10 text-green'
 												: 'bg-surface-2 text-dim'}"
 										>
-											{song.is_published ? 'Published' : 'Draft'}
+											{song.is_published
+												? $_('score.link.published')
+												: $_('score.link.draft')}
 										</span>
 									</div>
 								</div>
@@ -257,16 +319,16 @@
 				{:else}
 					<div class="border-hairline border-t p-6 text-center">
 						<Music size={24} class="text-faint mx-auto mb-2" />
-						<p class="text-dim text-sm font-medium">No songs found</p>
-						<p class="text-faint text-xs">Try a different search term</p>
+						<p class="text-dim text-sm font-medium">{$_('score.link.no_results')}</p>
+						<p class="text-faint text-xs">{$_('score.link.no_results_hint')}</p>
 					</div>
 				{/if}
 			{:else}
 				<div class="border-hairline border-t p-6 text-center">
 					<Search size={24} class="text-faint mx-auto mb-2" />
-					<p class="text-dim text-sm font-medium">Start typing to search</p>
+					<p class="text-dim text-sm font-medium">{$_('score.link.start_typing')}</p>
 					<p class="text-faint text-xs">
-						Enter at least 2 characters to search for cloud songs
+						{$_('score.link.min_chars')}
 					</p>
 				</div>
 			{/if}

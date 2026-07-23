@@ -4,6 +4,7 @@
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { RefreshCw, Music, Calendar, User, Link, Search, X } from '@lucide/svelte';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
+	import { formatLevel } from '@dtx/common';
 
 	// Subscribe to the simFile store
 	let simFileState = $derived($simFileStore);
@@ -239,7 +240,9 @@
 							{#if simFile.dtx_files && simFile.dtx_files.length > 0}
 								<div class="mt-2">
 									<span class="text-dim text-xs">
-										Levels: {simFile.dtx_files.map((f) => f.level).join(', ')}
+										Levels: {simFile.dtx_files
+											.map((f) => formatLevel(f.level))
+											.join(', ')}
 									</span>
 								</div>
 							{/if}

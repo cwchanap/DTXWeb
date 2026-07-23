@@ -3,13 +3,17 @@ import {
 	getSimfile,
 	getNextDisplayId,
 	listSimfiles,
+	listUserScoredSimfiles,
 	searchSimfiles,
 	toSimfileWithDtx,
 	updateSimfile,
 	deleteSimfile,
+	getUserChartScore,
+	listUserChartScores,
 	type SimfileWithDtxFiles
 } from '@dtx/common/server';
 import { builder } from './builder';
+import { ChartScoreRef } from './score';
 import {
 	enrichFiles,
 	enrichHasUploadedFiles,
@@ -131,6 +135,7 @@ export const FileEncodingEnum = builder.enumType('FileEncoding', {
 // --- object types ---
 
 type DtxFileParent = {
+	id: number;
 	level: number;
 	label: string;
 	/** Row index within simfile.dtx_files. Carried so the resolver can
@@ -249,6 +254,25 @@ const requireCatalogChart = async (
 
 const DtxFile = builder.objectRef<DtxFileParent>('DtxFile').implement({
 	fields: (t) => ({
+		id: t.id({ resolve: (file) => String(file.id) }),
+		myChartScore: t.field({
+			type: ChartScoreRef,
+			nullable: true,
+			resolve: async (file, _args, ctx) => {
+				if (!ctx.user) return null;
+				const chartId = file.id;
+				// Prefer the request-scoped batch (populated by the connection
+				// resolver when myChartScore is selected on a list). On a single
+				// simfile(id) query there is no batch, so resolve individually and
+				// memoize under the same cache.
+				const cache = ctx.chartScoresCache ?? (ctx.chartScoresCache = new Map());
+				const cached = cache.get(chartId);
+				if (cached) return cached;
+				const promise = getUserChartScore(ctx.db, ctx.user.id, chartId);
+				cache.set(chartId, promise);
+				return promise;
+			}
+		}),
 		level: t.exposeFloat('level'),
 		label: t.exposeString('label'),
 		// Nullable + non-throwing: a missing R2 object for one level returns null
@@ -326,7 +350,18 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		durationSeconds: t.int({ nullable: true, resolve: () => null }),
 		dtxFiles: t.field({
 			type: [DtxFile],
-			resolve: (s) => s.dtx_files.map((file, index) => ({ ...file, index, simfile: s }))
+			resolve: (s, _args, ctx) =>
+				s.dtx_files
+					.map((file, index) => ({ ...file, index, simfile: s }))
+					.filter((file): file is DtxFileParent => {
+						if (file.id == null) {
+							ctx.logger.warn('DTX file row missing id, skipping', {
+								simfileId: s.id
+							});
+							return false;
+						}
+						return true;
+					})
 		}),
 		files: t.field({
 			type: [R2File],
@@ -458,6 +493,32 @@ export const SimfileConnectionRef = builder
 							// to single-sim discovery, and resolvers for skipped sims
 							// short-circuit at nonBlank(...) before ever consulting the
 							// cache, so leaving them uncached has no cost in normal flow.
+						}
+
+						// Batch-load the caller's chart scores when myChartScore is selected,
+						// so a scored-simfiles page issues 2 D1 queries total instead of 2 per
+						// chart. Mirrors the hasUploadedFiles / files batch pattern above.
+						if (ctx.user && isNestedFieldSelected(info, 'dtxFiles', ['myChartScore'])) {
+							const chartIds = c.data.flatMap((s) =>
+								s.dtx_files
+									.map((d) => d.id)
+									.filter((id): id is number => id != null)
+							);
+							if (chartIds.length > 0) {
+								const cache =
+									ctx.chartScoresCache ?? (ctx.chartScoresCache = new Map());
+								const batchPromise = listUserChartScores(
+									ctx.db,
+									ctx.user.id,
+									chartIds
+								);
+								for (const chartId of chartIds) {
+									cache.set(
+										chartId,
+										batchPromise.then((map) => map.get(chartId) ?? null)
+									);
+								}
+							}
 						}
 					}
 					return c.data;
@@ -602,6 +663,25 @@ builder.queryField('simfiles', (t) =>
 				pageSize: args.pageSize ?? 20 // defaultValue may not narrow to non-null in this Pothos version
 			});
 		}
+	})
+);
+
+// --- Query.myScoredSimfiles ---
+
+builder.queryField('myScoredSimfiles', (t) =>
+	t.field({
+		type: SimfileConnectionRef,
+		args: {
+			page: t.arg.int({ required: false, defaultValue: 1 }),
+			pageSize: t.arg.int({ required: false, defaultValue: 20 })
+		},
+		authScopes: { user: true },
+		resolve: async (_root, args, ctx) =>
+			listUserScoredSimfiles(ctx.db, {
+				userId: ctx.user!.id,
+				page: args.page ?? 1,
+				pageSize: args.pageSize ?? 20
+			})
 	})
 );
 

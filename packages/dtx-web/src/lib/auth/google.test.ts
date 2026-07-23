@@ -59,6 +59,20 @@ describe('google auth helpers', () => {
 		);
 	});
 
+	it('builds login error redirects with a preserved web return path', () => {
+		expect(buildLoginErrorRedirect('Sign-in failed', 'web', '/app/score')).toBe(
+			'/login?error=Sign-in+failed&next=%2Fapp%2Fscore'
+		);
+		// Desktop intent ignores nextPath (no web `next` for desktop).
+		expect(buildLoginErrorRedirect('Sign-in failed', 'desktop', '/app/score')).toBe(
+			'/login?redirect=desktop&error=Sign-in+failed'
+		);
+		// Omitting nextPath keeps the pre-existing URL shape.
+		expect(buildLoginErrorRedirect('Sign-in failed', 'web')).toBe(
+			'/login?error=Sign-in+failed'
+		);
+	});
+
 	it('builds linked account redirects with success and error messages', () => {
 		expect(buildLinkedAccountRedirect('/app/account', 'connected')).toBe(
 			'/app/account?linked=google'

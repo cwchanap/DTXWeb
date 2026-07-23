@@ -17,6 +17,45 @@ fn auth_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// RAII guard that restores `DTX_DESKTOP_AUTH_CALLBACK_PORT` to its prior
+/// value when dropped. Acquires the env lock (serializing with tests that
+/// mutate the same var) and sets the port to 47931 for the duration of the
+/// test. Unlike a bare `set_var`, the restore-on-drop prevents the env var
+/// from leaking into later tests (mirrors the save/restore pattern in
+/// `rejects_loopback_when_callback_port_unset`, but automatic).
+struct CallbackPortGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    saved: Option<std::ffi::OsString>,
+}
+
+impl Drop for CallbackPortGuard {
+    fn drop(&mut self) {
+        match &self.saved {
+            Some(value) => std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", value),
+            None => std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT"),
+        }
+    }
+}
+
+/// Acquires the env lock and sets `DTX_DESKTOP_AUTH_CALLBACK_PORT` to 47931.
+/// The `is_auth_callback_url` port check requires this env var to be set.
+/// The lock serializes with tests that remove/change the env var, preventing
+/// races. The guard must be held for the duration of the test; on drop it
+/// restores the env var to its prior value so it does not leak.
+fn with_test_callback_port() -> CallbackPortGuard {
+    // Use poison-recovery (into_inner) to match the codebase's production
+    // style (preferences.rs, auth.rs, scores.rs). A panicking test would
+    // poison the mutex; bare .unwrap() would then cascade-fail every later
+    // env-mutating test, masking the real failure. into_inner lets subsequent
+    // tests run and report their own failures cleanly.
+    let lock = auth_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let saved = std::env::var_os("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+    std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", "47931");
+    CallbackPortGuard { _lock: lock, saved }
+}
+
 #[test]
 fn extracts_magic_link_from_dtx_auth_callback() {
     let parsed =
@@ -31,6 +70,7 @@ fn extracts_magic_link_from_dtx_auth_callback() {
 
 #[test]
 fn extracts_magic_link_from_localhost_auth_callback() {
+    let _port_guard = with_test_callback_port();
     let parsed = parse_auth_callback(
         "http://127.0.0.1:47931/auth-callback?magic_link=https%3A%2F%2Fexample.com%2Fmagic",
     )
@@ -392,7 +432,7 @@ fn pending_urls_are_queued_and_drained_synchronously() {
 
 #[test]
 fn local_auth_callback_success_page_uses_app_layout_copy() {
-    let body = local_auth_callback_success_html();
+    let body = LOCAL_AUTH_CALLBACK_SUCCESS_HTML;
 
     assert!(body.contains("<!doctype html>"));
     assert!(body.contains("Return to Drumery"));
@@ -490,6 +530,24 @@ fn is_auth_callback_url_accepts_dtx_scheme_with_auth_callback_host() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
+fn is_auth_callback_url_accepts_dtx_dev_scheme_with_auth_callback_host() {
+    // `dtx-dev://` is only accepted under cfg!(debug_assertions) (auth.rs),
+    // so this test is gated to debug builds — under `cargo test --release`
+    // the scheme is rejected.
+    let url = Url::parse("dtx-dev://auth-callback?magic_link=x").unwrap();
+    assert!(is_auth_callback_url(&url));
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn is_auth_callback_url_rejects_dtx_dev_scheme_in_release() {
+    // In release builds `dtx-dev://` is NOT accepted — only `dtx://`.
+    let url = Url::parse("dtx-dev://auth-callback?magic_link=x").unwrap();
+    assert!(!is_auth_callback_url(&url));
+}
+
+#[test]
 fn is_auth_callback_url_rejects_dtx_scheme_with_other_host() {
     let url = Url::parse("dtx://other?magic_link=x").unwrap();
     assert!(!is_auth_callback_url(&url));
@@ -497,32 +555,63 @@ fn is_auth_callback_url_rejects_dtx_scheme_with_other_host() {
 
 #[test]
 fn is_auth_callback_url_accepts_http_loopback_with_callback_path() {
-    let url = Url::parse("http://127.0.0.1/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://127.0.0.1:47931/auth-callback").unwrap();
     assert!(is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_rejects_http_loopback_with_wrong_path() {
-    let url = Url::parse("http://127.0.0.1/other").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://127.0.0.1:47931/other").unwrap();
     assert!(!is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_rejects_http_non_loopback_host() {
-    let url = Url::parse("http://example.com/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://example.com:47931/auth-callback").unwrap();
     assert!(!is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_rejects_https_scheme() {
-    let url = Url::parse("https://127.0.0.1/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("https://127.0.0.1:47931/auth-callback").unwrap();
     assert!(!is_auth_callback_url(&url));
 }
 
 #[test]
 fn is_auth_callback_url_accepts_localhost_host() {
-    let url = Url::parse("http://localhost/auth-callback").unwrap();
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://localhost:47931/auth-callback").unwrap();
     assert!(is_auth_callback_url(&url));
+}
+
+#[test]
+fn is_auth_callback_url_rejects_http_loopback_with_wrong_port() {
+    let _port_guard = with_test_callback_port();
+    let url = Url::parse("http://127.0.0.1:9999/auth-callback").unwrap();
+    assert!(!is_auth_callback_url(&url));
+}
+
+#[test]
+fn is_auth_callback_url_rejects_loopback_when_callback_port_unset() {
+    // When `DTX_DESKTOP_AUTH_CALLBACK_PORT` is unset (or unparseable),
+    // `local_auth_callback_port()` returns None and the port-match guard must
+    // reject every loopback URL — without this, a redirect to any loopback
+    // port would be accepted because no server is configured to listen there.
+    let _guard = auth_env_lock().lock().unwrap();
+    let saved = std::env::var_os("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+    std::env::remove_var("DTX_DESKTOP_AUTH_CALLBACK_PORT");
+
+    let url = Url::parse("http://127.0.0.1:47931/auth-callback").unwrap();
+    assert!(!is_auth_callback_url(&url));
+
+    // Restore so a later test's `with_test_callback_port` isn't affected.
+    if let Some(value) = saved {
+        std::env::set_var("DTX_DESKTOP_AUTH_CALLBACK_PORT", value);
+    }
 }
 
 #[tokio::test]
@@ -1346,6 +1435,7 @@ fn route_callback_request_returns_bad_request_when_target_is_missing() {
 
 #[test]
 fn route_callback_request_returns_valid_url_for_auth_callback_target() {
+    let _port_guard = with_test_callback_port();
     let route = route_callback_request(
         Some("GET /auth-callback?magic_link=https%3A%2F%2Fexample.com HTTP/1.1"),
         47931,
@@ -1612,3 +1702,191 @@ async fn revoke_session_clears_local_state_when_server_rejects_revocation() {
 
     assert!(state.current_session().await.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// accept_from_listeners — the per-listener accept loop in
+// run_local_auth_callback_server. A transient accept error must drop only the
+// failing listener (not abort the server), and the server returns an error
+// only when both listeners are gone.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn accept_from_listeners_returns_error_when_both_listeners_are_none() {
+    let mut v4: Option<TcpListener> = None;
+    let mut v6: Option<TcpListener> = None;
+    let result = accept_from_listeners(&mut v4, &mut v6).await;
+    assert!(result.is_err(), "both-None must return Err");
+}
+
+#[tokio::test]
+async fn accept_from_listeners_accepts_from_v4_when_v6_is_none() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind v4");
+    let addr = listener.local_addr().expect("addr");
+    let mut v4: Option<TcpListener> = Some(listener);
+    let mut v6: Option<TcpListener> = None;
+
+    // Connect so accept() has a pending connection to return.
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    // v4 must still be present (successful accept does not drop the listener).
+    assert!(v4.is_some());
+    let _ = connector.await;
+}
+
+#[tokio::test]
+async fn accept_from_listeners_accepts_from_v6_when_v4_is_none() {
+    // IPv6 loopback may be unavailable in some CI sandboxes; skip gracefully.
+    let listener = match TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Skipping v6-only test: IPv6 loopback unavailable: {e}");
+            return;
+        }
+    };
+    let addr = listener.local_addr().expect("addr");
+    let mut v4: Option<TcpListener> = None;
+    let mut v6: Option<TcpListener> = Some(listener);
+
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    assert!(v6.is_some());
+    let _ = connector.await;
+}
+
+#[tokio::test]
+async fn accept_from_listeners_serves_survivor_after_one_is_dropped() {
+    // Simulate the post-error state: v4 was dropped by a prior accept error,
+    // v6 survives. The server must keep serving the survivor rather than
+    // aborting — the core regression this fix prevents.
+    let v6_listener = match TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Skipping survivor test: IPv6 loopback unavailable: {e}");
+            return;
+        }
+    };
+    let v6_addr = v6_listener.local_addr().expect("addr");
+    let mut v4: Option<TcpListener> = None; // already dropped by a prior error
+    let mut v6: Option<TcpListener> = Some(v6_listener);
+
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(v6_addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept from survivor")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    // Survivor must still be present for the next iteration.
+    assert!(v6.is_some(), "surviving listener must not be dropped");
+    let _ = connector.await;
+}
+
+#[tokio::test]
+async fn accept_from_listeners_keeps_both_listeners_after_dual_accept() {
+    // Both listeners present; a successful accept on either must NOT drop the
+    // other. This exercises the refactored accept_from_dual_listeners path
+    // and guards against regressing the dual-listener select! back to the
+    // old "drop on any error" behavior.
+    let v4_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind v4");
+    let v4_addr = v4_listener.local_addr().expect("addr");
+    let v6_listener = match TcpListener::bind("[::1]:0").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Skipping dual-listener test: IPv6 loopback unavailable: {e}");
+            return;
+        }
+    };
+    let mut v4: Option<TcpListener> = Some(v4_listener);
+    let mut v6: Option<TcpListener> = Some(v6_listener);
+
+    let connector = tokio::spawn(async move {
+        let _ = tokio::net::TcpStream::connect(v4_addr).await;
+    });
+
+    let stream = accept_from_listeners(&mut v4, &mut v6)
+        .await
+        .expect("accept")
+        .expect("stream");
+    assert!(stream.peer_addr().is_ok());
+    // Neither listener may be dropped on the success path.
+    assert!(v4.is_some(), "v4 must not be dropped on successful accept");
+    assert!(v6.is_some(), "v6 must not be dropped on successful accept");
+    let _ = connector.await;
+}
+
+// ---------------------------------------------------------------------------
+// is_unrecoverable_accept_error — the classifier that decides whether the
+// sole remaining listener is retired (set to None) or retried with backoff.
+// A transient accept error (EMFILE, ECONNABORTED, ENOMEM, ETIMEDOUT, EINTR)
+// must NOT retire the listener; only fundamentally broken socket state
+// (NotFound, InvalidInput, Unsupported, AddrNotAvailable, PermissionDenied)
+// is unrecoverable.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_unrecoverable_accept_error_classifies_fatal_kinds_as_unrecoverable() {
+    use std::io::ErrorKind;
+    let fatal = [
+        ErrorKind::NotFound,
+        ErrorKind::InvalidInput,
+        ErrorKind::Unsupported,
+        ErrorKind::AddrNotAvailable,
+        ErrorKind::PermissionDenied,
+    ];
+    for kind in fatal {
+        let err = std::io::Error::from(kind);
+        assert!(
+            is_unrecoverable_accept_error(&err),
+            "{kind:?} must be unrecoverable"
+        );
+    }
+}
+
+#[test]
+fn is_unrecoverable_accept_error_classifies_transient_kinds_as_retryable() {
+    use std::io::ErrorKind;
+    // These are the kinds a real TcpListener::accept() can return under
+    // temporary resource pressure. None of them should retire the sole
+    // listener.
+    let transient = [
+        ErrorKind::Interrupted,
+        ErrorKind::TimedOut,
+        ErrorKind::ConnectionAborted,
+        ErrorKind::OutOfMemory,
+        ErrorKind::WouldBlock,
+        ErrorKind::Other,
+    ];
+    for kind in transient {
+        let err = std::io::Error::from(kind);
+        assert!(
+            !is_unrecoverable_accept_error(&err),
+            "{kind:?} must be retryable, not unrecoverable"
+        );
+    }
+}
+
+// The sole-listener happy path (accept_from_sole_listener via
+// accept_from_listeners with one slot None) is already covered by
+// `accept_from_listeners_accepts_from_v4_when_v6_is_none` and
+// `accept_from_listeners_accepts_from_v6_when_v4_is_none` above — those
+// now route through accept_from_sole_listener and confirm the listener
+// is not dropped on success. Forcing a real transient accept() error on
+// a TcpListener isn't practical in-unit, so the classifier tests above
+// pin the retry/retire decision and the existing tests pin the happy
+// path.

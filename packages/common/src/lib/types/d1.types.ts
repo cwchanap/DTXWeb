@@ -56,6 +56,53 @@ export interface DtxFileInsert {
 	simfile_id: number;
 }
 
+export interface ChartScoreRow {
+	id: number;
+	chart_id: number;
+	user_id: string;
+	play_count: number;
+	clear_count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ScoreRow {
+	id: number;
+	chart_score_id: number;
+	is_best: 0 | 1;
+	score: number | null;
+	achievement_rate: number | null;
+	rank_label: string | null;
+	full_combo: 0 | 1;
+	cleared: 0 | 1;
+	max_combo: number | null;
+	perfect: number | null;
+	great: number | null;
+	good: number | null;
+	poor: number | null;
+	miss: number | null;
+	performed_at: string | null;
+	display_order: number | null;
+	created_at: string;
+}
+
+export interface ScoreInsert {
+	is_best?: boolean;
+	score?: number | null;
+	achievement_rate?: number | null;
+	rank_label?: string | null;
+	full_combo?: boolean;
+	cleared?: boolean;
+	max_combo?: number | null;
+	perfect?: number | null;
+	great?: number | null;
+	good?: number | null;
+	poor?: number | null;
+	miss?: number | null;
+	performed_at?: string | null;
+	display_order?: number | null;
+}
+
 export interface UserProfileRow {
 	id: number;
 	user_id: string;
@@ -76,7 +123,7 @@ export interface UserProfileUpdate {
 export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published' | 'user_id'> {
 	is_published: boolean;
 	user_id?: string;
-	dtx_files: { level: number; label: string }[];
+	dtx_files: { id?: number; level: number; label: string }[];
 }
 
 /** Simfile with joined dtx_files — desktop-compatible shape matching old Supabase type */
@@ -96,7 +143,7 @@ export interface SimfileWithDtx extends Omit<
 /** Convert a raw D1 simfile row (integer booleans) to the API-facing shape */
 export const toSimfileWithDtx = (
 	row: Omit<SimfileRow, 'user_id'> & { user_id?: string },
-	dtxFiles: { level: number; label: string }[]
+	dtxFiles: { id?: number; level: number; label: string }[]
 ): SimfileWithDtxFiles => ({
 	...row,
 	is_published: row.is_published === 1,

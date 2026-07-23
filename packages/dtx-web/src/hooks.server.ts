@@ -123,16 +123,54 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 
 	// Handle unauthenticated access to protected pages
 	if (!event.locals.session && event.url.pathname.startsWith('/app')) {
-		// Pass any redirect parameter to the login page
-		const redirectUrl = redirectParam ? `/login?redirect=${redirectParam}` : '/login';
-		redirect(303, redirectUrl);
+		// Desktop logins redirect back to the app via deep link and ignore
+		// `next`, so preserve only the `redirect` param there. For web
+		// logins, thread the original path+search as `next` so the login
+		// flow (password action and Google OAuth callback) can return the
+		// user to the page they were trying to reach (e.g. /app/score)
+		// instead of dropping them on /app. The login action re-validates
+		// `next` via safeAppRedirectPath, so a crafted value can't pivot
+		// outside /app*; here the value is server-derived from the actual
+		// request path, so it is already a /app* path.
+		if (redirectParam) {
+			// Forward desktop_callback alongside redirect=desktop so the login
+			// page can stash the desktop instance's declared callback before
+			// the post-login flow runs — otherwise the /app page falls back to
+			// the web deployment's default deep link and the magic link lands
+			// at the wrong place (e.g. a `tauri dev` loopback port that the
+			// web deployment doesn't know about). Mirrors the authenticated
+			// branch below.
+			if (redirectParam === 'desktop') {
+				const desktopCallback = url.searchParams.get('desktop_callback');
+				const target = desktopCallback
+					? `/login?redirect=desktop&desktop_callback=${encodeURIComponent(desktopCallback)}`
+					: '/login?redirect=desktop';
+				redirect(303, target);
+			} else {
+				redirect(303, `/login?redirect=${encodeURIComponent(redirectParam)}`);
+			}
+		} else {
+			const next = `${event.url.pathname}${event.url.search}`;
+			redirect(303, `/login?next=${encodeURIComponent(next)}`);
+		}
 	}
 
 	// Handle authenticated access to login page - preserve any redirect parameter
 	if (event.locals.session && event.url.pathname === '/login') {
-		// If there's a desktop redirect parameter, preserve it
-		const redirectUrl = redirectParam === 'desktop' ? '/app?redirect=desktop' : '/app';
-		redirect(303, redirectUrl);
+		// If there's a desktop redirect parameter, preserve it. Also forward
+		// desktop_callback so the /app page can still reach the desktop's
+		// declared callback when the browser already had a web session —
+		// otherwise the /login onMount (which stashes it in sessionStorage)
+		// never runs and the app falls back to the default deep link.
+		if (redirectParam === 'desktop') {
+			const desktopCallback = url.searchParams.get('desktop_callback');
+			const redirectUrl = desktopCallback
+				? `/app?redirect=desktop&desktop_callback=${encodeURIComponent(desktopCallback)}`
+				: '/app?redirect=desktop';
+			redirect(303, redirectUrl);
+		} else {
+			redirect(303, '/app');
+		}
 	}
 
 	return resolve(event);

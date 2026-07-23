@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 import type { SimfileWithDtx } from '@dtx/common';
 import { linkageCacheService } from '../services/linkageCacheService';
 
-export type ShellSection = 'library' | 'cloud' | 'templates' | 'settings';
+export type ShellSection = 'library' | 'cloud' | 'templates' | 'settings' | 'scores';
 
 export interface TreeNode {
 	name: string;

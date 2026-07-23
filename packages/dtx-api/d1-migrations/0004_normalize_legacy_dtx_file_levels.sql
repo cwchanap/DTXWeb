@@ -1,0 +1,16 @@
+-- 0004_normalize_legacy_dtx_file_levels.sql
+-- No data changes. The raw #DLEVEL value is stored directly in dtx_files.level
+-- and is already in DTXManiaCX's canonical encoding (≥100 = hundredths, <100 =
+-- tenths + DrumLevelDec). The normalizeLevel / formatLevel decoder in
+-- @dtx/common handles both branches correctly, so no migration of existing
+-- values is needed.
+--
+-- The previous version of this migration multiplied bare 1–9 integers by 100
+-- (5 → 500 → 5.00), assuming they were legacy display-scale values from a
+-- pre-b2ccaaab desktop client. However, under the DTXManiaCX formula adopted in
+-- 0005, bare 1–9 decode as 0.10–0.90 (×10 branch), which are valid sub-1.0
+-- levels. The blanket ×100 conversion corrupted any genuine sub-1.0 charts,
+-- and a numeric value alone cannot distinguish legacy display-scale values
+-- from legitimate sub-1.0 canonical levels. Storing the raw value directly
+-- avoids the ambiguity entirely.
+SELECT 1;

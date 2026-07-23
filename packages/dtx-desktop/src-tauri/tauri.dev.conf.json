@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"identifier": "com.hapadona.drumery.dev",
+	"productName": "Drumery Dev",
+	"plugins": {
+		"deep-link": {
+			"desktop": {
+				"schemes": ["dtx-dev"]
+			}
+		}
+	}
+}

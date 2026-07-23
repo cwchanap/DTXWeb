@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Music, X, Calendar, Link, Cloud } from '@lucide/svelte';
-	import type { SimfileWithDtx } from '@dtx/common';
+	import { type SimfileWithDtx, formatLevel } from '@dtx/common';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 
 	interface Props {
@@ -81,7 +81,7 @@
 				<Music size={16} class="text-faint shrink-0" />
 				<span class="text-faint w-24 shrink-0">Levels</span>
 				<span class="text-hi font-mono">
-					{#if levels.length}{levels.join(', ')}{:else}—{/if}
+					{#if levels.length}{levels.map(formatLevel).join(', ')}{:else}—{/if}
 				</span>
 			</div>
 		</dl>

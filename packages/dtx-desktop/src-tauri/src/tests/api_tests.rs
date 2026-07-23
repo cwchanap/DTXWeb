@@ -29,7 +29,7 @@ fn gql_simfile() -> Value {
         "publishDate": "2024-01-01",
         "createdAt": "2024-01-02",
         "updatedAt": "2024-01-03",
-        "dtxFiles": [{ "level": 9.2, "label": "EXT" }]
+        "dtxFiles": [{ "id": "101", "level": 9.2, "label": "EXT" }]
     })
 }
 
@@ -67,8 +67,21 @@ fn renderer_simfile_maps_graphql_camel_case_to_snake_case() {
     assert_eq!(mapped["publish_date"], "2024-01-01");
     assert_eq!(mapped["created_at"], "2024-01-02");
     assert_eq!(mapped["updated_at"], "2024-01-03");
-    assert_eq!(mapped["dtx_files"][0]["id"], 1);
+    assert_eq!(mapped["dtx_files"][0]["id"], "101");
     assert_eq!(mapped["dtx_files"][0]["label"], "EXT");
+}
+
+#[test]
+fn renderer_simfile_falls_back_to_positional_id_when_graphql_id_absent() {
+    // Older cached records (from before the fragment requested `id`) may lack
+    // the field. The positional fallback keeps display working, but must never
+    // flow into an upload payload — upload chart ids come from
+    // `fetch_cloud_song_charts`, which always requests `id`.
+    let mut simfile = gql_simfile();
+    simfile["dtxFiles"] = json!([{ "level": 5.5, "label": "BSC" }]);
+    let mapped = renderer_simfile_from_graphql(&simfile).expect("mapped");
+    assert_eq!(mapped["dtx_files"][0]["id"], 1);
+    assert_eq!(mapped["dtx_files"][0]["label"], "BSC");
 }
 
 #[test]
@@ -1600,4 +1613,372 @@ async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
     assert!(warnings
         .iter()
         .any(|w| w.as_str().unwrap().contains("Sound preview")));
+}
+
+#[tokio::test]
+async fn fetch_cloud_song_charts_returns_real_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfile": { "dtxFiles": [
+                { "id": "10", "label": "BASIC", "level": 5.5 },
+                { "id": "11", "label": "EXTREME", "level": 8.8 }
+            ] } }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token", serde_json::json!("42"))
+        .await
+        .expect("charts");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    let charts = result["data"].as_array().expect("data array");
+    assert_eq!(charts.len(), 2);
+    assert_eq!(charts[0]["id"], serde_json::json!("10"));
+    assert_eq!(charts[0]["level"], serde_json::json!(5.5));
+    assert_eq!(charts[1]["id"], serde_json::json!("11"));
+}
+
+#[tokio::test]
+async fn fetch_cloud_song_charts_returns_failure_when_simfile_null() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfile": null }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token", serde_json::json!("42"))
+        .await
+        .expect("charts");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert_eq!(result["error"], serde_json::json!("Simfile not found"));
+}
+
+#[tokio::test]
+async fn upload_scores_returns_result() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "uploadScores": {
+                "updatedCharts": 1, "insertedScores": 3,
+                "skipped": [ { "chartId": "99", "reason": "Chart not visible" } ]
+            } }
+        })))
+        .mount(&server)
+        .await;
+
+    let payload = serde_json::json!({ "charts": [
+        { "chartId": "10", "playCount": 7, "clearCount": 5, "scores": [
+            { "isBest": true, "cleared": true, "fullCombo": false, "score": 950000 }
+        ] }
+    ] });
+    let result = upload_scores_impl(&server.uri(), "token", payload)
+        .await
+        .expect("upload");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    assert_eq!(result["data"]["updatedCharts"], serde_json::json!(1));
+    assert_eq!(result["data"]["insertedScores"], serde_json::json!(3));
+    assert_eq!(
+        result["data"]["skipped"][0]["chartId"],
+        serde_json::json!("99")
+    );
+}
+
+#[tokio::test]
+async fn upload_scores_wraps_payload_as_graphql_input_variable() {
+    // Pin the request body shape: upload_scores_impl must wrap the IPC
+    // payload as { "variables": { "input": { "charts": [...] } } } — the
+    // GraphQL mutation variable is `input`, not the bare payload. A
+    // regression that drops the wrapping (e.g. sending { "variables": {
+    // "charts": [...] } }) would silently send an empty/null input to the
+    // server and produce confusing "no scores" skips.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(body_partial_json(serde_json::json!({
+            "variables": {
+                "input": {
+                    "charts": [
+                        { "chartId": "10", "playCount": 7, "clearCount": 5 }
+                    ]
+                }
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "uploadScores": { "updatedCharts": 1, "insertedScores": 1, "skipped": [] } }
+        })))
+        .mount(&server)
+        .await;
+
+    let payload = serde_json::json!({ "charts": [
+        { "chartId": "10", "playCount": 7, "clearCount": 5, "scores": [
+            { "isBest": true, "cleared": true, "fullCombo": false, "score": 950000 }
+        ] }
+    ] });
+    let result = upload_scores_impl(&server.uri(), "token", payload)
+        .await
+        .expect("upload");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    assert_eq!(result["data"]["updatedCharts"], serde_json::json!(1));
+}
+
+#[tokio::test]
+async fn upload_scores_surfaces_graphql_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [ { "message": "Not authenticated", "extensions": { "code": "FORBIDDEN" } } ]
+        })))
+        .mount(&server)
+        .await;
+
+    let result = upload_scores_impl(&server.uri(), "token", serde_json::json!({ "charts": [] }))
+        .await
+        .expect("upload");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("Not authenticated"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_payload_missing_charts_array() {
+    // No mock server needed — validation short-circuits before the network call.
+    let result = upload_scores_impl("http://unused", "token", serde_json::json!({}))
+        .await
+        .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("missing 'charts'"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_payload_with_non_array_charts() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": "not-an-array" }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("missing 'charts'"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_missing_chart_id() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "playCount": 1, "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("chartId"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_negative_play_count() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": -1, "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("non-negative"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_missing_scores_array() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": 1, "clearCount": 0 }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("scores"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_with_excessive_scores() {
+    // 1001 score entries on a single chart exceeds the IPC sanity cap
+    // (IPC_MAX_SCORES_PER_CHART). No mock needed.
+    let scores: Vec<serde_json::Value> = (0..1001)
+        .map(|_| {
+            serde_json::json!({
+                "score": 800000,
+                "isBest": 0,
+                "cleared": 1,
+                "fullCombo": 0
+            })
+        })
+        .collect();
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": 1, "clearCount": 0, "scores": scores }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("too many scores"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_excessive_chart_count() {
+    // 1001 charts exceeds the IPC sanity cap (1000). No mock needed.
+    let charts: Vec<serde_json::Value> = (0..1001)
+        .map(|i| {
+            serde_json::json!({
+                "chartId": i.to_string(),
+                "playCount": 1,
+                "clearCount": 0,
+                "scores": []
+            })
+        })
+        .collect();
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": charts }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("too many charts"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_id_with_invalid_type() {
+    // chartId must be a string or number. A boolean is neither, so the
+    // defense-in-depth guard rejects it before the network round-trip.
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": true, "playCount": 1, "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("chartId' must be a string or number"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_chart_missing_play_count() {
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("missing 'playCount'"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_non_integer_play_count() {
+    // A non-numeric string can't be parsed as an integer.
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": "abc", "clearCount": 0, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("playCount' must be an integer"));
+}
+
+#[tokio::test]
+async fn upload_scores_rejects_negative_clear_count() {
+    // The negative-check runs for both playCount and clearCount. playCount=0
+    // passes, so the loop reaches clearCount=-1 and rejects it — covering
+    // the clearCount half of the non-negative guard.
+    let result = upload_scores_impl(
+        "http://unused",
+        "token",
+        serde_json::json!({ "charts": [
+            { "chartId": "10", "playCount": 0, "clearCount": -1, "scores": [] }
+        ] }),
+    )
+    .await
+    .expect("upload");
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("clearCount' must be non-negative"));
+}
+
+#[tokio::test]
+async fn fetch_cloud_song_charts_returns_empty_when_dtx_files_absent() {
+    // A simfile whose `dtxFiles` field is missing or non-array degrades to an
+    // empty chart list (success, not an error) rather than aborting the parse.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfile": {} }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token", serde_json::json!("42"))
+        .await
+        .expect("charts");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+    assert_eq!(result["data"], serde_json::json!([]));
 }

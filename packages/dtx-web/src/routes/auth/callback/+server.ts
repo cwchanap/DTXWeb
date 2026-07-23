@@ -20,30 +20,54 @@ const isAccountLinkCallback = (url: URL): boolean => url.searchParams.get('link'
 const buildCallbackErrorRedirect = (
 	accountLink: boolean,
 	nextPath: string,
+	loginNextPath: string | undefined,
 	message: string,
 	intent: GoogleRedirectIntent
 ): string =>
 	accountLink
 		? buildLinkedAccountRedirect(nextPath, 'error', message)
-		: buildLoginErrorRedirect(message, intent);
+		: buildLoginErrorRedirect(message, intent, loginNextPath);
 
 export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 	const intent = callbackIntent(url);
-	const nextPath = safeAppRedirectPath(url.searchParams.get('next'));
+	// Account-link callbacks always carry `next=/app/account` (set by
+	// buildAccountCallbackUrl), so safeAppRedirectPath yields /app/account.
+	// For normal logins, `next` is absent unless the login flow preserved a
+	// return path (e.g. /app/score); default to /app to preserve the
+	// pre-existing behavior. safeAppRedirectPath still validates any
+	// present value against the /app* allow-list.
+	const nextParam = url.searchParams.get('next');
+	const nextPath = nextParam ? safeAppRedirectPath(nextParam) : '/app';
 	const accountLink = isAccountLinkCallback(url);
+	// `loginNextPath` preserves the original return path through web login
+	// error retries. Only set for non-account-link web callbacks: account-
+	// link identity failures that sign out the user keep the pre-existing
+	// /login?error=... URL (when the session is preserved they route through
+	// buildLinkedAccountRedirect, which already honors next). Desktop intent
+	// is ignored by buildLoginErrorRedirect.
+	const loginNextPath = nextParam && !accountLink ? nextPath : undefined;
 	const providerError =
 		url.searchParams.get('error_description') ?? url.searchParams.get('error');
 
 	if (providerError) {
 		const message = sanitizeGoogleAuthError(providerError);
-		redirect(303, buildCallbackErrorRedirect(accountLink, nextPath, message, intent));
+		redirect(
+			303,
+			buildCallbackErrorRedirect(accountLink, nextPath, loginNextPath, message, intent)
+		);
 	}
 
 	const code = url.searchParams.get('code');
 	if (!code) {
 		redirect(
 			303,
-			buildCallbackErrorRedirect(accountLink, nextPath, GOOGLE_AUTH_GENERIC_MESSAGE, intent)
+			buildCallbackErrorRedirect(
+				accountLink,
+				nextPath,
+				loginNextPath,
+				GOOGLE_AUTH_GENERIC_MESSAGE,
+				intent
+			)
 		);
 	}
 
@@ -54,14 +78,23 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 		console.error('Auth callback exchange error:', error);
 		redirect(
 			303,
-			buildCallbackErrorRedirect(accountLink, nextPath, GOOGLE_AUTH_GENERIC_MESSAGE, intent)
+			buildCallbackErrorRedirect(
+				accountLink,
+				nextPath,
+				loginNextPath,
+				GOOGLE_AUTH_GENERIC_MESSAGE,
+				intent
+			)
 		);
 	}
 	const { error } = exchangeResult;
 	if (error) {
 		console.error('Auth callback exchange returned error:', error);
 		const message = sanitizeGoogleAuthError(error.message);
-		redirect(303, buildCallbackErrorRedirect(accountLink, nextPath, message, intent));
+		redirect(
+			303,
+			buildCallbackErrorRedirect(accountLink, nextPath, loginNextPath, message, intent)
+		);
 	}
 
 	let identitiesResult;
@@ -70,7 +103,7 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 	} catch (error) {
 		console.error('Auth callback identity lookup error:', error);
 		await supabase.auth.signOut();
-		redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_GENERIC_MESSAGE, intent));
+		redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_GENERIC_MESSAGE, intent, loginNextPath));
 	}
 	const { data: identitiesData, error: identitiesError } = identitiesResult;
 	const identities = identitiesData?.identities ?? [];
@@ -95,12 +128,19 @@ export const GET: RequestHandler = async ({ url, locals: { supabase } }) => {
 			);
 		}
 		await supabase.auth.signOut();
-		redirect(303, buildLoginErrorRedirect(GOOGLE_AUTH_UNAVAILABLE_MESSAGE, intent));
+		redirect(
+			303,
+			buildLoginErrorRedirect(GOOGLE_AUTH_UNAVAILABLE_MESSAGE, intent, loginNextPath)
+		);
 	}
 
 	if (accountLink) {
 		redirect(303, buildLinkedAccountRedirect(nextPath, 'connected'));
 	}
 
-	redirect(303, intent === 'desktop' ? '/app?redirect=desktop' : '/app');
+	// Desktop logins redirect to /app?redirect=desktop to trigger the
+	// desktop deep-link handoff; `next` is a web-route concept and is never
+	// set for desktop intent. Web logins honor the validated `nextPath`
+	// (defaults to /app when no return path was preserved).
+	redirect(303, intent === 'desktop' ? '/app?redirect=desktop' : nextPath);
 };

@@ -38,6 +38,11 @@ type SelectFolderResult = {
 	filePaths: string[];
 };
 
+type DialogResult = {
+	canceled: boolean;
+	filePaths: string[];
+};
+
 type ReadFileContent = string | ArrayBuffer | Uint8Array;
 type TauriReadFileContent = ReadFileContent | number[];
 
@@ -278,6 +283,27 @@ export const desktopHost = {
 		limit?: number;
 		excludeLinkedSongIds?: Array<string | number>;
 	}): Promise<T> => await invokeHost<T>('search_cloud_songs', params),
+
+	defaultDtxmaniaDbPath: async (): Promise<string | null> =>
+		await invokeHost<string | null>('default_dtxmania_db_path'),
+
+	selectDtxmaniaDb: async (): Promise<DialogResult> =>
+		await invokeHost<DialogResult>('select_dtxmania_db'),
+
+	parseDtxmaniaScores: async <T = unknown>(dbPath: string): Promise<T> =>
+		await invokeHost<T>('parse_dtxmania_scores', { dbPath }),
+
+	fetchCloudSongCharts: async <T = unknown>(cloudSongId: string): Promise<T> =>
+		await invokeHost<T>('fetch_cloud_song_charts', { cloudSongId }),
+
+	uploadScores: async <T = unknown>(payload: unknown): Promise<T> =>
+		await invokeHost<T>('upload_scores', { payload }),
+
+	readScoreSongLinks: async (): Promise<Record<string, string>> =>
+		await invokeHost<Record<string, string>>('read_score_song_links'),
+
+	writeScoreSongLinks: async (links: Record<string, string>): Promise<void> =>
+		await sendHost('write_score_song_links', { links }),
 
 	fetchCloudSong: async <T = unknown>(
 		params: { cloudSongId: string | number } | string | number

@@ -260,7 +260,12 @@ pub fn parse_auth_callback(raw_url: &str) -> Option<AuthCallback> {
 }
 
 fn is_auth_callback_url(url: &Url) -> bool {
-    if url.scheme() == "dtx" {
+    // The production `dtx://` scheme is always accepted. The dev `dtx-dev://`
+    // scheme is accepted only in debug builds — the dev build registers
+    // `dtx-dev` in tauri.dev.conf.json so deep links route to the dev app
+    // instead of an installed production copy, and a release build must never
+    // honor it.
+    if url.scheme() == "dtx" || (cfg!(debug_assertions) && url.scheme() == "dtx-dev") {
         return url.host_str() == Some("auth-callback");
     }
 
@@ -268,7 +273,18 @@ fn is_auth_callback_url(url: &Url) -> bool {
         return false;
     }
 
-    matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
+    if !matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1")) {
+        return false;
+    }
+
+    // The port must match the configured callback port. Without this check,
+    // a redirect to any loopback port would be accepted. The callback server
+    // only binds to `local_auth_callback_port()`, so a different port means
+    // no server is listening there (or a different process is).
+    match local_auth_callback_port() {
+        Some(expected) => url.port() == Some(expected),
+        None => false,
+    }
 }
 
 fn session_value_from_data(session_data: SessionData) -> Option<serde_json::Value> {
@@ -438,10 +454,6 @@ fn local_auth_callback_port() -> Option<u16> {
         .filter(|port| *port > 0)
 }
 
-fn local_auth_callback_success_html() -> &'static str {
-    LOCAL_AUTH_CALLBACK_SUCCESS_HTML
-}
-
 async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()> {
     let v4_listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
 
@@ -461,13 +473,20 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
     // spawned task and released when the handler returns.
     let concurrency = Arc::new(Semaphore::new(LOCAL_AUTH_CALLBACK_MAX_CONCURRENT));
 
+    // Track each listener independently so a transient accept() error on one
+    // (EMFILE, ECONNABORTED) drops only that listener instead of aborting the
+    // whole callback server for the app lifetime. The loop continues serving
+    // the survivor; when both are gone the server returns an error.
+    let mut v4 = Some(v4_listener);
+    let mut v6 = v6_listener;
+
     loop {
-        let (stream, _) = match &v6_listener {
-            Some(v6) => tokio::select! {
-                result = v4_listener.accept() => result?,
-                result = v6.accept() => result?,
-            },
-            None => v4_listener.accept().await?,
+        let stream = match accept_from_listeners(&mut v4, &mut v6).await {
+            Ok(Some(stream)) => stream,
+            // A listener failed accept and was dropped — try the survivor.
+            Ok(None) => continue,
+            // Both listeners are gone; the callback server can no longer run.
+            Err(error) => return Err(error),
         };
         // Hold a permit for the lifetime of the spawned task. Acquiring before
         // spawning (rather than inside the task) bounds the queue of accepted
@@ -482,6 +501,181 @@ async fn run_local_auth_callback_server(app: AppHandle, port: u16) -> Result<()>
             let _permit = permit;
             let _ = handle_local_auth_callback_connection(handle, stream, port).await;
         });
+    }
+}
+
+/// One attempt to accept a connection from whichever listeners remain.
+/// Transient accept errors (EMFILE, ECONNABORTED, etc.) are retried with
+/// exponential backoff (capped) so a temporary resource exhaustion does
+/// not permanently break deep-link sign-in — the dev callback URL is
+/// hardcoded to `http://127.0.0.1:{port}/auth-callback`, so dropping the
+/// IPv4 listener on a transient error would make the magic-link redirect
+/// unconnectable even when IPv6 remains healthy. In the dual-listener
+/// case the failing listener is retried in-place while the other listener
+/// keeps being polled, so the survivor still serves connections during
+/// the backoff. Only an unrecoverable error (see
+/// `is_unrecoverable_accept_error`) retires a listener. Returns `Err`
+/// only when both listeners have been dropped, meaning the callback
+/// server can no longer accept any connection.
+async fn accept_from_listeners(
+    v4: &mut Option<TcpListener>,
+    v6: &mut Option<TcpListener>,
+) -> Result<Option<TcpStream>> {
+    // Match on is_some() (immutable borrows) rather than as_mut() so the
+    // single-listener arms can pass the &mut Option<TcpListener> into
+    // accept_from_sole_listener without conflicting with a scrutinee borrow.
+    match (v4.is_some(), v6.is_some()) {
+        (true, true) => accept_from_dual_listeners(v4, v6).await,
+        (true, false) => accept_from_sole_listener(v4, "IPv4").await,
+        (false, true) => accept_from_sole_listener(v6, "IPv6").await,
+        (false, false) => Err(DesktopError::Message(
+            "both auth callback listeners failed".to_string(),
+        )),
+    }
+}
+
+/// Drive both listeners, retrying transient accept() failures in-place with
+/// exponential backoff while keeping the other listener polled so the
+/// survivor still serves connections during the backoff. Only an
+/// unrecoverable error retires a listener (sets its slot to `None` and
+/// returns `Ok(None)` so the caller falls through to single-listener mode).
+/// The `&mut TcpListener`s are re-acquired from the slots each iteration so
+/// the borrows are not held across the accept() await, allowing
+/// `*slot = None` on the unrecoverable path.
+///
+/// Backoff is per-listener: each listener tracks a remaining wait (counts
+/// down while the shared timer elapses; 0 = ready to poll again) and a
+/// next-failure duration (starts at `ACCEPT_RETRY_INITIAL_BACKOFF_MS`,
+/// doubles up to `ACCEPT_RETRY_MAX_BACKOFF_MS`, never resets — matching the
+/// original single-listener semantics). When one listener is in backoff its
+/// `accept()` branch is gated off and the select races the backoff timer
+/// against the survivor's `accept()`, so a callback arriving on the healthy
+/// listener is served immediately rather than waiting out the failing
+/// listener's backoff. When both are in backoff only the timer is polled.
+async fn accept_from_dual_listeners(
+    v4: &mut Option<TcpListener>,
+    v6: &mut Option<TcpListener>,
+) -> Result<Option<TcpStream>> {
+    let mut v4_remaining: u64 = 0;
+    let mut v4_next: u64 = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    let mut v6_remaining: u64 = 0;
+    let mut v6_next: u64 = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    loop {
+        let v4l = v4.as_mut().expect("v4 present");
+        let v6l = v6.as_mut().expect("v6 present");
+        let sleep_ms = match (v4_remaining, v6_remaining) {
+            (0, 0) => 0,
+            (a, 0) => a,
+            (0, b) => b,
+            (a, b) => a.min(b),
+        };
+        tokio::select! {
+            result = v4l.accept(), if v4_remaining == 0 => match result {
+                Ok((stream, _)) => return Ok(Some(stream)),
+                Err(error) if is_unrecoverable_accept_error(&error) => {
+                    eprintln!(
+                        "IPv4 auth callback accept failed (unrecoverable), dropping listener: {error}"
+                    );
+                    *v4 = None;
+                    return Ok(None);
+                }
+                Err(error) => {
+                    v4_remaining = v4_next;
+                    v4_next = (v4_next.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
+                    eprintln!(
+                        "IPv4 auth callback accept failed (transient), retrying in {v4_remaining}ms: {error}"
+                    );
+                    continue;
+                }
+            },
+            result = v6l.accept(), if v6_remaining == 0 => match result {
+                Ok((stream, _)) => return Ok(Some(stream)),
+                Err(error) if is_unrecoverable_accept_error(&error) => {
+                    eprintln!(
+                        "IPv6 auth callback accept failed (unrecoverable), dropping listener: {error}"
+                    );
+                    *v6 = None;
+                    return Ok(None);
+                }
+                Err(error) => {
+                    v6_remaining = v6_next;
+                    v6_next = (v6_next.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
+                    eprintln!(
+                        "IPv6 auth callback accept failed (transient), retrying in {v6_remaining}ms: {error}"
+                    );
+                    continue;
+                }
+            },
+            _ = tokio::time::sleep(Duration::from_millis(sleep_ms)), if sleep_ms > 0 => {
+                v4_remaining = v4_remaining.saturating_sub(sleep_ms);
+                v6_remaining = v6_remaining.saturating_sub(sleep_ms);
+                continue;
+            },
+        }
+    }
+}
+
+/// Initial backoff for a transient accept() error on the sole remaining
+/// listener. Doubles on each consecutive transient failure up to
+/// `ACCEPT_RETRY_MAX_BACKOFF_MS`.
+const ACCEPT_RETRY_INITIAL_BACKOFF_MS: u64 = 50;
+const ACCEPT_RETRY_MAX_BACKOFF_MS: u64 = 1_000;
+
+/// Classify an accept() error as unrecoverable (retire the listener) vs
+/// transient (keep the listener alive and retry with backoff). A working
+/// TcpListener almost never returns unrecoverable errors; the ones we
+/// treat as fatal indicate the socket/permission state is fundamentally
+/// broken (e.g. the fd was closed, the address is no longer available, or
+/// the operation is unsupported). Everything else — EMFILE, ENFILE,
+/// ENOMEM, ECONNABORTED, ETIMEDOUT, EINTR — is transient and should not
+/// permanently break deep-link sign-in on the sole remaining listener.
+fn is_unrecoverable_accept_error(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    matches!(
+        error.kind(),
+        ErrorKind::NotFound
+            | ErrorKind::InvalidInput
+            | ErrorKind::Unsupported
+            | ErrorKind::AddrNotAvailable
+            | ErrorKind::PermissionDenied
+    )
+}
+
+/// Drive the sole remaining listener: retry transient accept() failures
+/// in-place with exponential backoff so a temporary resource exhaustion
+/// (EMFILE, etc.) doesn't kill the callback server for the app lifetime.
+/// Only an unrecoverable error retires the listener (sets `*listener_slot`
+/// to `None` and returns `Ok(None)`); a successful accept returns the
+/// stream. The inner `&mut TcpListener` is re-acquired from the slot each
+/// iteration so the borrow is not held across the accept() await, allowing
+/// `*listener_slot = None` on the unrecoverable path.
+async fn accept_from_sole_listener(
+    listener_slot: &mut Option<TcpListener>,
+    label: &str,
+) -> Result<Option<TcpStream>> {
+    let mut backoff_ms = ACCEPT_RETRY_INITIAL_BACKOFF_MS;
+    loop {
+        let listener = match listener_slot.as_mut() {
+            Some(l) => l,
+            None => return Ok(None),
+        };
+        match listener.accept().await {
+            Ok((stream, _)) => return Ok(Some(stream)),
+            Err(error) if is_unrecoverable_accept_error(&error) => {
+                eprintln!(
+                    "{label} auth callback accept failed (unrecoverable), dropping listener: {error}"
+                );
+                *listener_slot = None;
+                return Ok(None);
+            }
+            Err(error) => {
+                eprintln!(
+                    "{label} auth callback accept failed (transient), retrying in {backoff_ms}ms: {error}"
+                );
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms.saturating_mul(2)).min(ACCEPT_RETRY_MAX_BACKOFF_MS);
+            }
+        }
     }
 }
 
@@ -526,7 +720,7 @@ async fn handle_local_auth_callback_connection(
             write_local_auth_callback_html_response(
                 &mut stream,
                 200,
-                local_auth_callback_success_html(),
+                LOCAL_AUTH_CALLBACK_SUCCESS_HTML,
             )
             .await?;
         }

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { toSimfileWithDtx } from '../types/d1.types';
-import { simfiles, dtxFiles, userProfiles } from './db/schema';
+import { simfiles, dtxFiles, userProfiles, chartScores, scores } from './db/schema';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import { drizzle } from 'drizzle-orm/d1';
 import {
@@ -17,7 +19,11 @@ import {
 	createDtxFiles,
 	getUserProfile,
 	upsertUserProfile,
-	updateUserProfile
+	updateUserProfile,
+	upsertChartScoreAndReplaceScores,
+	getUserChartScore,
+	listUserScoredSimfiles,
+	listUserChartScores
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
@@ -147,6 +153,268 @@ describe('db schema', () => {
 	});
 });
 
+describe('score schema', () => {
+	it('exports the chart_scores and scores tables', () => {
+		expect(chartScores).toBeDefined();
+		expect(scores).toBeDefined();
+	});
+
+	it('defines the unique (user, chart) index on chart_scores', () => {
+		const config = getTableConfig(chartScores);
+		const userChartIdx = config.indexes.find(
+			(i) => i.config.name === 'idx_chart_scores_user_chart'
+		);
+		expect(userChartIdx).toBeDefined();
+		// The index must be unique — not just a plain index — to enforce the
+		// one-chart_score-per-user-per-chart invariant from the migration.
+		expect(userChartIdx?.config.unique).toBe(true);
+		expect(config.indexes.map((i) => i.config.name)).toContain('idx_chart_scores_chart');
+	});
+
+	it('defines the chart_score index on scores', () => {
+		const config = getTableConfig(scores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_scores_chart_score');
+	});
+
+	// Parity check: the Drizzle schema now includes the partial unique indexes
+	// that mirror the migration (0002_scores.sql). Previously these lived only
+	// in the raw SQL migration because Drizzle's sqlite-core builder lacked
+	// partial-index support; Drizzle 0.44+ supports .where() on index builders,
+	// so the declarations were moved into schema.ts for test/production parity.
+	const serializeWherePredicate = (where: unknown): string => {
+		const walk = (chunk: unknown): string => {
+			if (chunk === null || chunk === undefined) return '';
+			if (typeof chunk === 'object' && 'queryChunks' in chunk) {
+				return ((chunk as { queryChunks: unknown[] }).queryChunks ?? []).map(walk).join('');
+			}
+			if (
+				typeof chunk === 'object' &&
+				'value' in chunk &&
+				Array.isArray((chunk as { value: unknown[] }).value)
+			) {
+				return (chunk as { value: string[] }).value.join('');
+			}
+			if (typeof chunk === 'object' && 'name' in chunk) {
+				return String((chunk as { name: string }).name);
+			}
+			return '';
+		};
+		return walk(where).replace(/\s+/g, ' ').trim();
+	};
+
+	it('defines the idx_scores_one_best partial unique index (WHERE is_best = 1)', () => {
+		const config = getTableConfig(scores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_scores_one_best');
+
+		const oneBestIdx = config.indexes.find((i) => i.config.name === 'idx_scores_one_best');
+		expect(oneBestIdx).toBeDefined();
+		expect(oneBestIdx?.config.unique).toBe(true);
+		expect(serializeWherePredicate(oneBestIdx?.config.where)).toBe('is_best = 1');
+	});
+
+	it('defines the idx_scores_display_order partial unique index (WHERE display_order IS NOT NULL)', () => {
+		const config = getTableConfig(scores);
+		const indexNames = config.indexes.map((i) => i.config.name);
+		expect(indexNames).toContain('idx_scores_display_order');
+
+		const displayOrderIdx = config.indexes.find(
+			(i) => i.config.name === 'idx_scores_display_order'
+		);
+		expect(displayOrderIdx).toBeDefined();
+		expect(displayOrderIdx?.config.unique).toBe(true);
+		expect(serializeWherePredicate(displayOrderIdx?.config.where)).toBe(
+			'display_order IS NOT NULL'
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// CHECK constraint parity: 0002_scores.sql vs Drizzle schema.ts
+//
+// The migration SQL and the Drizzle schema both define CHECK constraints on
+// chart_scores and scores. They can drift when one is updated without the
+// other. This test parses both sources, normalizes the SQL expressions, and
+// asserts they define the same set of constraints.
+// ---------------------------------------------------------------------------
+describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
+	const MIGRATIONS_DIR = join(
+		__dirname,
+		'..',
+		'..',
+		'..',
+		'..',
+		'..',
+		'packages',
+		'dtx-api',
+		'd1-migrations'
+	);
+	const SCHEMA_PATH = join(__dirname, 'db', 'schema.ts');
+
+	// Normalize a SQL expression for comparison: lowercase, collapse whitespace,
+	// strip surrounding parens, and remove redundant spacing around operators.
+	const normalize = (expr: string): string =>
+		expr
+			.toLowerCase()
+			.replace(/\s+/g, ' ')
+			.replace(/\s*([()])\s*/g, '$1')
+			.replace(/\s*(>=|<=|!=|<>|=|<|>|AND|OR|IN|IS NULL|IS NOT NULL)\s*/gi, (_, op) => {
+				const upper = op.toUpperCase();
+				if (
+					upper === 'AND' ||
+					upper === 'OR' ||
+					upper === 'IN' ||
+					upper === 'IS NULL' ||
+					upper === 'IS NOT NULL'
+				) {
+					return ` ${upper} `;
+				}
+				return op;
+			})
+			.trim();
+
+	// Parse inline CHECK constraints from CREATE TABLE statements in the
+	// migration SQL. Returns a map of column-name → normalized expression.
+	const parseMigrationChecks = (sql: string): Map<string, string> => {
+		const checks = new Map<string, string>();
+		// Match: column_name TYPE ... CHECK (expression)
+		// The expression may contain nested parens (e.g. IN (...)).
+		const lines = sql.split('\n');
+		for (const line of lines) {
+			const trimmed = line.trim();
+			// Skip comment-only lines
+			if (trimmed.startsWith('--')) continue;
+			// Find CHECK (...) — handle nested parens by counting depth.
+			const checkIdx = trimmed.indexOf('CHECK');
+			if (checkIdx === -1) continue;
+			// Extract the column name: the first token on the line (before any
+			// TYPE keyword). For inline constraints the column name precedes
+			// the type definition.
+			const beforeCheck = trimmed.slice(0, checkIdx).trim();
+			const colName = beforeCheck.split(/\s+/)[0];
+			// Extract the parenthesized expression after CHECK, handling nesting.
+			let depth = 0;
+			let start = -1;
+			let end = -1;
+			for (let i = checkIdx + 5; i < trimmed.length; i++) {
+				if (trimmed[i] === '(') {
+					if (depth === 0) start = i;
+					depth++;
+				} else if (trimmed[i] === ')') {
+					depth--;
+					if (depth === 0) {
+						end = i;
+						break;
+					}
+				}
+			}
+			if (start !== -1 && end !== -1 && colName) {
+				const expr = trimmed.slice(start + 1, end);
+				checks.set(colName, normalize(expr));
+			}
+		}
+		return checks;
+	};
+
+	// Parse check() definitions from schema.ts source text. Returns a map of
+	// column-name → normalized expression. The Drizzle check() calls use
+	// sql`${table.X} OP Y` template literals; we extract the expression text,
+	// replace `${table.X}` with the snake_case column name, and normalize.
+	const parseSchemaChecks = (source: string): Map<string, string> => {
+		const checks = new Map<string, string>();
+		// Drizzle property-name → SQL column-name mapping. Derived from the
+		// table definitions in schema.ts (camelCase → snake_case).
+		const propToColumn: Record<string, string> = {
+			playCount: 'play_count',
+			clearCount: 'clear_count',
+			isBest: 'is_best',
+			score: 'score',
+			achievementRate: 'achievement_rate',
+			rankLabel: 'rank_label',
+			fullCombo: 'full_combo',
+			cleared: 'cleared',
+			maxCombo: 'max_combo',
+			perfect: 'perfect',
+			great: 'great',
+			good: 'good',
+			poor: 'poor',
+			miss: 'miss',
+			displayOrder: 'display_order'
+		};
+		// Match: check('name', sql`expression`)
+		// The expression contains ${table.X} references and literal SQL.
+		const checkRegex = /check\s*\(\s*['"][^'"]+['"]\s*,\s*sql`([^`]+)`/g;
+		let match;
+		while ((match = checkRegex.exec(source)) !== null) {
+			let expr = match[1];
+			// Replace ${table.X} with the snake_case column name.
+			expr = expr.replace(/\$\{table\.(\w+)\}/g, (_, prop) => propToColumn[prop] ?? prop);
+			// The check name encodes the column (e.g. 'scores_is_best_check').
+			// Extract the column from the check name to use as the key.
+			const nameMatch = match[0].match(/['"](\w+)_(\w+)_check['"]/);
+			// We key by the normalized expression itself, not the column name,
+			// because the migration uses column names inline and the schema
+			// uses check names — the expression is the common ground.
+			checks.set(normalize(expr), normalize(expr));
+		}
+		return checks;
+	};
+
+	it('chart_scores CHECK constraints match between migration and Drizzle schema', () => {
+		const migrationSql = readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8');
+		const schemaSource = readFileSync(SCHEMA_PATH, 'utf8');
+
+		// Extract the chart_scores CREATE TABLE block from the migration.
+		const chartScoresBlock =
+			migrationSql.match(/CREATE TABLE IF NOT EXISTS chart_scores \([\s\S]*?\);/)?.[0] ?? '';
+		const migrationChecks = parseMigrationChecks(chartScoresBlock);
+
+		// Extract chart_scores check() calls from the Drizzle schema.
+		// The chartScores table definition is between 'export const chartScores'
+		// and the next 'export const' (or end of table).
+		const chartScoresSchema =
+			schemaSource.match(/export const chartScores = sqliteTable\([\s\S]*?\);\s*/)?.[0] ?? '';
+		const schemaChecks = parseSchemaChecks(chartScoresSchema);
+
+		// Both should define the same set of normalized expressions.
+		const migrationExprs = [...migrationChecks.values()].sort();
+		const schemaExprs = [...schemaChecks.keys()].sort();
+
+		expect(migrationExprs).toHaveLength(schemaExprs.length);
+		for (const expr of schemaExprs) {
+			expect(migrationExprs).toContain(expr);
+		}
+	});
+
+	it('scores CHECK constraints match between migration and Drizzle schema', () => {
+		const migrationSql = readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8');
+		const schemaSource = readFileSync(SCHEMA_PATH, 'utf8');
+
+		// Extract the scores CREATE TABLE block from the migration.
+		const scoresBlock =
+			migrationSql.match(
+				/CREATE TABLE IF NOT EXISTS scores \([\s\S]*?\);\s*\nCREATE INDEX/
+			)?.[0] ??
+			migrationSql.match(/CREATE TABLE IF NOT EXISTS scores \([\s\S]*?\);/)?.[0] ??
+			'';
+		const migrationChecks = parseMigrationChecks(scoresBlock);
+
+		// Extract scores check() calls from the Drizzle schema.
+		const scoresSchema =
+			schemaSource.match(/export const scores = sqliteTable\([\s\S]*?\);\s*$/m)?.[0] ?? '';
+		const schemaChecks = parseSchemaChecks(scoresSchema);
+
+		const migrationExprs = [...migrationChecks.values()].sort();
+		const schemaExprs = [...schemaChecks.keys()].sort();
+
+		expect(migrationExprs).toHaveLength(schemaExprs.length);
+		for (const expr of schemaExprs) {
+			expect(migrationExprs).toContain(expr);
+		}
+	});
+});
+
 describe('createDrizzleDb', () => {
 	it('wraps the provided D1 database', () => {
 		const rawDb = createMockDb() as unknown as D1Database;
@@ -207,6 +475,22 @@ describe('getSimfile', () => {
 		expect(result?.is_published).toBe(true);
 		expect(result?.dtx_files).toEqual(dtxRows);
 		expect(toSimfileWithDtx).toHaveBeenCalledWith(baseSimfileRow, dtxRows);
+	});
+});
+
+describe('getSimfile chart id', () => {
+	it('includes the dtx_files id in the joined result', async () => {
+		mockDrizzleDb.select.mockClear();
+		drizzleSelectResults.push([baseSimfileRow]); // simfile select
+		drizzleSelectResults.push([{ id: 77, level: 5, label: 'BASIC' }]); // dtx select
+		const result = await getSimfile({} as unknown as D1Database, 1);
+		expect(result?.dtx_files).toEqual([{ id: 77, level: 5, label: 'BASIC' }]);
+
+		// Guard against regressing the `id: dtxFiles.id` field in the dtx select itself:
+		// the mock replays queued rows regardless of the requested fields, so without this
+		// assertion the test above would still pass even if `id` were dropped from the select.
+		const dtxSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[1]?.[0];
+		expect(dtxSelectCall).toHaveProperty('id', dtxFiles.id);
 	});
 });
 
@@ -391,6 +675,20 @@ describe('listSimfiles', () => {
 		expect(dataQuery?.offset).toHaveBeenCalledWith(0);
 	});
 
+	it('requests the dtx_files id in the joined dtx select', async () => {
+		const dtxRow = { simfile_id: 1, id: 77, level: 5, label: 'BASIC' };
+		drizzleSelectResults.push([{ cnt: 1 }], [baseSimfileRow], [dtxRow]);
+		const db = createMockDb();
+
+		await listSimfiles(db as unknown as D1Database, {});
+
+		// Guard against regressing the `id: dtxFiles.id` field in the dtx select itself:
+		// the mock replays queued rows regardless of the requested fields, so without this
+		// assertion the test above would still pass even if `id` were dropped from the select.
+		const dtxSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[2]?.[0];
+		expect(dtxSelectCall).toHaveProperty('id', dtxFiles.id);
+	});
+
 	it('applies search condition when search option is provided', async () => {
 		drizzleSelectResults.push([{ cnt: 2 }], []);
 		const db = createMockDb();
@@ -516,20 +814,175 @@ describe('searchSimfiles', () => {
 		expect(query?.limit).toHaveBeenCalledWith(5);
 	});
 
-	it('applies excludeIds filter when provided', async () => {
+	it('filters excluded IDs in JavaScript instead of SQL NOT IN', async () => {
+		// Excluded IDs are no longer passed to SQL NOT IN (which was capped at
+		// 90 by the D1 parameter limit). Instead, the SQL query over-fetches
+		// by excludeIds.length (capped at 200) and all excluded IDs are
+		// filtered in JS so valid rows past the excluded prefix are returned.
+		const rows = [
+			{ id: 1, title: 'Linked A', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 2, title: 'Linked B', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 3, title: 'Valid C', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 4, title: 'Valid D', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 }
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 10,
+			excludeIds: [1, 2]
+		});
+		// IDs 1 and 2 are filtered out; only valid rows remain.
+		expect(result.map((r) => r.id)).toEqual([3, 4]);
+		// SQL LIMIT over-fetches by excludeIds.length to compensate for JS filtering.
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(12);
+	});
+
+	it('over-fetches SQL so valid rows past an excluded prefix are not hidden', async () => {
+		// Reproduces the false "no results" bug: 60 rows match, the first 50
+		// are already linked (excluded), and the valid unlinked row sits at
+		// position 51. With a plain LIMIT 50 the SQL page would contain only
+		// excluded rows and the JS filter would return []. Over-fetching by
+		// excludeIds.length (capped) lets the valid row surface.
+		const excludeIds = Array.from({ length: 50 }, (_, i) => i + 1);
+		const rows = [
+			...Array.from({ length: 50 }, (_, i) => ({
+				id: i + 1,
+				title: `Linked ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			})),
+			...Array.from({ length: 10 }, (_, i) => ({
+				id: 51 + i,
+				title: `Valid ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			}))
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 50,
+			excludeIds
+		});
+		// The valid rows past the excluded prefix are returned — no false negative.
+		expect(result.map((r) => r.id)).toEqual(Array.from({ length: 10 }, (_, i) => 51 + i));
+		// SQL LIMIT = limit(50) + excludeIds.length(50) = 100 (under the 200 cap).
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(100);
+	});
+
+	it('caps SQL over-fetch at 200 even with very large exclude lists', async () => {
+		const excludeIds = Array.from({ length: 300 }, (_, i) => i + 1);
 		drizzleSelectResults.push([]);
 		const db = createMockDb();
 		await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1',
-			excludeIds: [1, 2]
+			limit: 50,
+			excludeIds
 		});
 		const query = (
 			mockDrizzleDb.select.mock.results as {
 				value: Record<string, ReturnType<typeof vi.fn>>;
 			}[]
 		)[0]?.value;
-		expect(query?.where).toHaveBeenCalled();
+		expect(query?.limit).toHaveBeenCalledWith(200);
+	});
+
+	it('handles large exclude lists without SQL parameter limits', async () => {
+		// 95 exclude IDs — previously required SQL NOT IN capped at 90 plus
+		// JS over-fetch. Now all filtering is in JS, so there's no SQL
+		// parameter limit concern.
+		const excludeIds = Array.from({ length: 95 }, (_, i) => i + 1);
+		const rows = [
+			...Array.from({ length: 5 }, (_, i) => ({
+				id: 91 + i,
+				title: `Linked ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			})),
+			...Array.from({ length: 15 }, (_, i) => ({
+				id: 100 + i,
+				title: `Valid ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			}))
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 50,
+			excludeIds
+		});
+		// All 5 linked rows (IDs 91-95) are filtered out; only valid rows remain.
+		expect(result.every((r) => !excludeIds.includes(r.id))).toBe(true);
+		expect(result.map((r) => r.id)).toEqual(Array.from({ length: 15 }, (_, i) => 100 + i));
+		// SQL LIMIT over-fetches by excludeIds.length: 50 + 95 = 145 (under the 200 cap).
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(145);
+	});
+
+	it('trims the filtered result back to `limit` rows (does not return the full over-fetch)', async () => {
+		// Reproduces the P2 bug: limit=8, excludeIds has 20 entries, SQL
+		// over-fetches to 28 rows, but only 2 of those are excluded. The
+		// caller must receive at most `limit` (8) rows — not the 26 that
+		// survive the filter. The autocomplete caller masks this with its
+		// own .slice(0, 8), but the shared helper's contract is to bound
+		// the result by `limit`.
+		const excludeIds = Array.from({ length: 20 }, (_, i) => i + 1);
+		const rows = [
+			// 2 rows match the exclude set (will be filtered out).
+			{ id: 1, title: 'Linked 1', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 2, title: 'Linked 2', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			// 26 valid rows survive the filter — must be trimmed to `limit`.
+			...Array.from({ length: 26 }, (_, i) => ({
+				id: 100 + i,
+				title: `Valid ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			}))
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 8,
+			excludeIds
+		});
+		expect(result).toHaveLength(8);
+		expect(result.every((r) => !excludeIds.includes(r.id))).toBe(true);
+		// SQL LIMIT = limit(8) + excludeIds.length(20) = 28 (under the 200 cap).
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(28);
 	});
 
 	it('defaults limit to 8 when non-finite limit value provided', async () => {
@@ -681,9 +1134,24 @@ describe('updateSimfile', () => {
 // deleteSimfile
 // ---------------------------------------------------------------------------
 describe('deleteSimfile', () => {
+	// sqlite_master probe helper: returns a prepare impl that answers the
+	// table-existence check with the given table names, and a default stmt
+	// otherwise. The probe is the first prepare call deleteSimfile makes.
+	const prepareWithTables = (tables: string[]) => (sql: string) => {
+		if (sql.includes('sqlite_master')) {
+			return createMockStmt(
+				null,
+				tables.map((name) => ({ name }))
+			);
+		}
+		return createMockStmt();
+	};
+
 	it('deletes without error when found', async () => {
-		const db = createMockDb();
+		const db = createMockDb(prepareWithTables(['scores', 'chart_scores']));
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ meta: { changes: 0 } },
+			{ meta: { changes: 0 } },
 			{ meta: { changes: 0 } },
 			{ meta: { changes: 1 } }
 		]);
@@ -691,14 +1159,80 @@ describe('deleteSimfile', () => {
 	});
 
 	it('throws when simfile not found', async () => {
-		const db = createMockDb();
+		const db = createMockDb(prepareWithTables(['scores', 'chart_scores']));
 		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ meta: { changes: 0 } },
+			{ meta: { changes: 0 } },
 			{ meta: { changes: 0 } },
 			{ meta: { changes: 0 } }
 		]);
 		await expect(deleteSimfile(db as unknown as D1Database, 99)).rejects.toThrow(
 			'Simfile not found'
 		);
+	});
+
+	it('deletes scores and chart_scores for the simfile before dtx_files and simfiles', async () => {
+		const db = createMockDb(prepareWithTables(['scores', 'chart_scores']));
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ meta: { changes: 2 } },
+			{ meta: { changes: 1 } },
+			{ meta: { changes: 1 } },
+			{ meta: { changes: 1 } }
+		]);
+
+		await deleteSimfile(db as unknown as D1Database, 1);
+
+		// The sqlite_master probe is the first prepare call; the four DELETEs
+		// follow in the required order (scores -> chart_scores -> dtx_files -> simfiles).
+		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls.map(
+			(call) => call[0]
+		);
+		expect(prepareCalls).toHaveLength(5);
+		expect(prepareCalls[0]).toContain('sqlite_master');
+		expect(prepareCalls[1]).toBe(
+			'DELETE FROM scores WHERE chart_score_id IN (SELECT id FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?))'
+		);
+		expect(prepareCalls[2]).toBe(
+			'DELETE FROM chart_scores WHERE chart_id IN (SELECT id FROM dtx_files WHERE simfile_id = ?)'
+		);
+		expect(prepareCalls[3]).toBe('DELETE FROM dtx_files WHERE simfile_id = ?');
+		expect(prepareCalls[4]).toBe('DELETE FROM simfiles WHERE id = ?');
+
+		// Each DELETE statement must be parameterized with the simfile id, not
+		// string-interpolated. The sqlite_master probe has no bind call.
+		const stmts = (db.prepare as ReturnType<typeof vi.fn>).mock.results.map(
+			(result) => result.value
+		);
+		for (let i = 1; i < stmts.length; i++) {
+			expect(stmts[i].bind).toHaveBeenCalledWith(1);
+		}
+	});
+
+	it('skips scores/chart_scores DELETEs on a 0001-only D1 (no 0002_scores.sql applied)', async () => {
+		// A fresh local D1 used by `wrangler dev` before `wrangler d1 migrations apply`
+		// has only the 0001 schema: no `scores` or `chart_scores` tables. The batch
+		// must not include DELETEs against missing tables (D1 batch is atomic and
+		// would fail with "no such table"), while dtx_files/simfiles deletion still
+		// works — this also protects the createSimfileWithDtx rollback path.
+		const db = createMockDb(prepareWithTables([]));
+		(db.batch as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ meta: { changes: 1 } },
+			{ meta: { changes: 1 } }
+		]);
+
+		await deleteSimfile(db as unknown as D1Database, 1);
+
+		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls.map(
+			(call) => call[0]
+		);
+		expect(prepareCalls).toHaveLength(3);
+		expect(prepareCalls[0]).toContain('sqlite_master');
+		expect(prepareCalls[1]).toBe('DELETE FROM dtx_files WHERE simfile_id = ?');
+		expect(prepareCalls[2]).toBe('DELETE FROM simfiles WHERE id = ?');
+		expect(db.batch).toHaveBeenCalledTimes(1);
+		// Only the two always-on DELETEs are batched.
+		const batchArg = (db.batch as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(batchArg).toHaveLength(2);
 	});
 });
 
@@ -808,5 +1342,522 @@ describe('updateUserProfile', () => {
 		const db = createMockDb(() => createMockStmt(profile));
 		const result = await updateUserProfile(db as unknown as D1Database, 'user-1', {});
 		expect(result).toEqual(profile);
+	});
+});
+
+describe('upsertChartScoreAndReplaceScores', () => {
+	it('batches the upsert, delete, and inserts in one D1 batch', async () => {
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 10,
+			clear_count: 4,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi
+			.fn()
+			.mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }, { results: [] }]);
+		const result = await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'u1',
+			playCount: 10,
+			clearCount: 4,
+			scores: [
+				{ is_best: true, score: 900000, achievement_rate: 91.3 },
+				{ is_best: false, achievement_rate: 82.4, display_order: 1 }
+			]
+		});
+		// 1 upsert + 1 delete + 2 inserts = 4 statements in ONE batch
+		expect(db.prepare).toHaveBeenCalledTimes(4);
+		expect(db.batch).toHaveBeenCalledTimes(1);
+		expect(db.batch.mock.calls[0][0]).toHaveLength(4);
+		expect(result).toEqual(chartScoreRow);
+	});
+
+	it('batches only the upsert and delete when there are no scores', async () => {
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 0,
+			clear_count: 0,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi.fn().mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }]);
+		const result = await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'u1',
+			playCount: 0,
+			clearCount: 0,
+			scores: []
+		});
+		expect(db.prepare).toHaveBeenCalledTimes(2);
+		expect(db.batch.mock.calls[0][0]).toHaveLength(2);
+		expect(result).toEqual(chartScoreRow);
+	});
+
+	it('throws when the upsert returns no row', async () => {
+		const db = createMockDb();
+		db.batch = vi.fn().mockResolvedValue([{ results: [] }, { results: [] }]);
+		await expect(
+			upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+				chartId: 10,
+				userId: 'u1',
+				playCount: 0,
+				clearCount: 0,
+				scores: []
+			})
+		).rejects.toThrow('Failed to upsert chart_score');
+	});
+
+	it('scopes all batch statements to the calling user — user-1 write never binds user-2', async () => {
+		// Cross-user write isolation: the upsert's ON CONFLICT(user_id, chart_id)
+		// and the delete/insert subqueries all resolve via `WHERE user_id = ?`.
+		// A write for user-1 on chart 10 must never bind user-2, proving it
+		// cannot touch user-2's chart_scores row or scores for the same chart.
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'user-1',
+			play_count: 1,
+			clear_count: 1,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi
+			.fn()
+			.mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }, { results: [] }]);
+
+		await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'user-1',
+			playCount: 1,
+			clearCount: 1,
+			scores: [{ is_best: true, score: 900, full_combo: false, cleared: true }]
+		});
+
+		// 1 upsert + 1 delete + 1 insert = 3 statements in the batch.
+		const statements = db.batch.mock.calls[0][0] as Array<{
+			bind: { mock: { calls: unknown[][] } };
+		}>;
+		expect(statements).toHaveLength(3);
+
+		// Every statement must bind 'user-1' and never 'user-2'.
+		for (const stmt of statements) {
+			const bindArgs = stmt.bind.mock.calls[0];
+			expect(bindArgs).toContain('user-1');
+			expect(bindArgs).not.toContain('user-2');
+		}
+
+		// The upsert binds (chartId, userId, ..., chartId, userId) — userId is
+		// the 2nd arg, the 7th arg is the chartId for the `WHERE d.id = ?`
+		// existence gate, and the trailing 8th arg is the userId for the
+		// `(s.is_published = 1 OR s.user_id = ?)` visibility gate (TOCTOU fix).
+		const upsertBinds = statements[0].bind.mock.calls[0];
+		expect(upsertBinds[0]).toBe(10);
+		expect(upsertBinds[1]).toBe('user-1');
+		expect(upsertBinds[6]).toBe(10);
+		expect(upsertBinds[7]).toBe('user-1');
+
+		// The delete binds (userId, chartId, userId) — the subquery scoping,
+		// with the trailing userId for the visibility gate in resolveChartScoreId.
+		const deleteBinds = statements[1].bind.mock.calls[0];
+		expect(deleteBinds[0]).toBe('user-1');
+		expect(deleteBinds[1]).toBe(10);
+		expect(deleteBinds[2]).toBe('user-1');
+
+		// The insert binds (userId, chartId, userId, ...) — the subquery
+		// scoping, with the trailing userId for the visibility gate.
+		const insertBinds = statements[2].bind.mock.calls[0];
+		expect(insertBinds[0]).toBe('user-1');
+		expect(insertBinds[1]).toBe(10);
+		expect(insertBinds[2]).toBe('user-1');
+	});
+
+	it('gates the upsert INSERT on dtx_files existence (TOCTOU defense)', async () => {
+		// The first statement's SQL must use `SELECT ... FROM dtx_files WHERE id = ?`
+		// (not `VALUES (...)`) so a chart deleted between the visibility check and
+		// the write can't orphan a chart_scores row.
+		const chartScoreRow = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 1,
+			clear_count: 1,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const db = createMockDb();
+		db.batch = vi.fn().mockResolvedValue([{ results: [chartScoreRow] }, { results: [] }]);
+
+		await upsertChartScoreAndReplaceScores(db as unknown as D1Database, {
+			chartId: 10,
+			userId: 'u1',
+			playCount: 1,
+			clearCount: 1,
+			scores: []
+		});
+
+		const prepareCalls = (db.prepare as ReturnType<typeof vi.fn>).mock.calls;
+		const upsertSql = prepareCalls[0][0] as string;
+		// The upsert must SELECT FROM dtx_files joined to simfiles and gate on
+		// both chart existence AND visibility (published OR owned by the
+		// caller), so a chart deleted or hidden between the visibility check
+		// and the write can't orphan/alter a chart_scores row.
+		expect(upsertSql).toContain('FROM dtx_files');
+		expect(upsertSql).toContain('JOIN simfiles');
+		expect(upsertSql).toContain('WHERE d.id = ?');
+		expect(upsertSql).toContain('(s.is_published = 1 OR s.user_id = ?)');
+		expect(upsertSql).not.toContain('VALUES (');
+
+		// The DELETE and INSERT-score statements' subquery must also gate on
+		// chart visibility (EXISTS), so a TOCTOU chart deletion/unpublish
+		// can't partially commit (replace scores while leaving a stale
+		// aggregate) when a chart_scores row already exists from a prior upload.
+		const deleteSql = prepareCalls[1][0] as string;
+		expect(deleteSql).toContain('EXISTS (SELECT 1 FROM dtx_files');
+		expect(deleteSql).toContain('(s.is_published = 1 OR s.user_id = ?)');
+	});
+
+	it('parallel upserts on the same chart are last-write-wins (no partial state)', async () => {
+		// Two concurrent upserts for the same (user, chart) with different
+		// play/clear counts. D1 batches are atomic per call, so each upsert
+		// is an independent transaction. The mock resolves both; the test
+		// verifies each call gets its own batch (no statement sharing) and
+		// the last-write-wins invariant holds (the caller's allSettled in
+		// score.ts accumulates results from both, each seeing its own row).
+		const rowA = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 5,
+			clear_count: 2,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const rowB = {
+			id: 3,
+			chart_id: 10,
+			user_id: 'u1',
+			play_count: 9,
+			clear_count: 7,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const dbA = createMockDb();
+		dbA.batch = vi.fn().mockResolvedValue([{ results: [rowA] }, { results: [] }]);
+		const dbB = createMockDb();
+		dbB.batch = vi.fn().mockResolvedValue([{ results: [rowB] }, { results: [] }]);
+
+		const [resultA, resultB] = await Promise.all([
+			upsertChartScoreAndReplaceScores(dbA as unknown as D1Database, {
+				chartId: 10,
+				userId: 'u1',
+				playCount: 5,
+				clearCount: 2,
+				scores: []
+			}),
+			upsertChartScoreAndReplaceScores(dbB as unknown as D1Database, {
+				chartId: 10,
+				userId: 'u1',
+				playCount: 9,
+				clearCount: 7,
+				scores: []
+			})
+		]);
+
+		// Each upsert sees its own row — no cross-contamination of bind args.
+		expect(resultA.play_count).toBe(5);
+		expect(resultB.play_count).toBe(9);
+		// Each call issued exactly one batch (independent transactions).
+		expect(dbA.batch).toHaveBeenCalledTimes(1);
+		expect(dbB.batch).toHaveBeenCalledTimes(1);
+		// Each batch has 2 statements (upsert + delete, no scores).
+		expect(dbA.batch.mock.calls[0][0]).toHaveLength(2);
+		expect(dbB.batch.mock.calls[0][0]).toHaveLength(2);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// getUserChartScore
+// ---------------------------------------------------------------------------
+describe('getUserChartScore', () => {
+	it('returns null when there is no chart_scores row', async () => {
+		const db = createMockDb(() => createMockStmt(null));
+		const result = await getUserChartScore(db as unknown as D1Database, 'u1', 55);
+		expect(result).toBeNull();
+	});
+
+	it('returns the chart_scores row with its ordered scores', async () => {
+		const chartScore = {
+			id: 3,
+			chart_id: 55,
+			user_id: 'u1',
+			play_count: 10,
+			clear_count: 4,
+			created_at: 't',
+			updated_at: 't'
+		};
+		const scoreRows = [
+			{ id: 1, chart_score_id: 3, is_best: 1 },
+			{ id: 2, chart_score_id: 3, is_best: 0, display_order: 1 }
+		];
+		const db = createMockDb((sql: string) =>
+			sql.includes('FROM chart_scores')
+				? createMockStmt(chartScore)
+				: createMockStmt(null, scoreRows)
+		);
+		const result = await getUserChartScore(db as unknown as D1Database, 'u1', 55);
+		expect(result?.chartScore).toEqual(chartScore);
+		expect(result?.scores).toEqual(scoreRows);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// listUserScoredSimfiles
+// ---------------------------------------------------------------------------
+describe('listUserScoredSimfiles', () => {
+	it('returns empty when the user has no scores', async () => {
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 0 });
+			return createMockStmt(null, []);
+		});
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, { userId: 'u1' });
+		expect(result).toEqual({ data: [], count: 0 });
+	});
+
+	it('lists scored simfiles with their dtx_files', async () => {
+		const scoredSimfileRow = { ...baseSimfileRow, id: 42 };
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 1 });
+			if (sql.includes('GROUP BY')) return createMockStmt(null, [{ simfile_id: 42 }]);
+			if (sql.includes('FROM simfiles')) return createMockStmt(null, [scoredSimfileRow]);
+			return createMockStmt(null, [{ id: 10, label: 'BASIC', level: 5, simfile_id: 42 }]);
+		});
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
+			userId: 'user-1'
+		});
+		expect(result.count).toBe(1);
+		expect(result.data[0].id).toBe(42);
+		expect(result.data[0].dtx_files).toEqual([{ id: 10, level: 5, label: 'BASIC' }]);
+	});
+
+	it('clamps an out-of-range page to 1, returning a full page instead of an empty one', async () => {
+		// 25 scored simfile ids for the user, matching the paged query's recency ordering
+		const allIds = Array.from({ length: 25 }, (_, i) => 125 - i); // [125, 124, ..., 101]
+
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) {
+				return createMockStmt({ cnt: 25 });
+			}
+			if (sql.includes('GROUP BY')) {
+				// The paged query returns only the first page (20 ids) when page is clamped to 1
+				return createMockStmt(
+					null,
+					allIds.slice(0, 20).map((simfile_id) => ({ simfile_id }))
+				);
+			}
+			if (sql.includes('FROM simfiles')) {
+				const stmt = {
+					bind: vi.fn((...ids: number[]) => {
+						stmt.all = vi.fn().mockResolvedValue({
+							results: ids.map((id) => ({ ...baseSimfileRow, id }))
+						});
+						return stmt;
+					}),
+					first: vi.fn().mockResolvedValue(null),
+					all: vi.fn().mockResolvedValue({ results: [] })
+				};
+				return stmt;
+			}
+			return createMockStmt(null, []);
+		});
+
+		// page: 0 is out of range; unclamped this computes a negative offset
+		// which would yield an empty page even though 25 matching simfiles exist.
+		// Clamped, page 0 -> 1, so this should return the first 20 ids.
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
+			userId: 'user-1',
+			page: 0,
+			pageSize: 20
+		});
+
+		expect(result.count).toBe(25);
+		expect(result.data).toHaveLength(20);
+		expect(result.data.map((d) => d.id)).toEqual(allIds.slice(0, 20));
+	});
+
+	it('returns empty data with count when the paged id query yields no rows', async () => {
+		// count > 0 but the page is beyond the data (e.g. page 999 of 1 page).
+		// The paged id query returns [] -> pageIds.length === 0 early return.
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 5 });
+			if (sql.includes('GROUP BY')) return createMockStmt(null, []);
+			return createMockStmt(null, []);
+		});
+		const result = await listUserScoredSimfiles(db as unknown as D1Database, {
+			userId: 'user-1',
+			page: 999,
+			pageSize: 10
+		});
+		expect(result).toEqual({ data: [], count: 5 });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// listUserChartScores
+// ---------------------------------------------------------------------------
+describe('listUserChartScores', () => {
+	it('returns an empty map without querying when chartIds is empty', async () => {
+		const db = createMockDb();
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', []);
+		expect(result.size).toBe(0);
+		expect(db.prepare).not.toHaveBeenCalled();
+	});
+
+	it('batches chart_scores + scores into two queries and groups by chart_id', async () => {
+		const csRows = [
+			{
+				id: 3,
+				chart_id: 10,
+				user_id: 'u1',
+				play_count: 10,
+				clear_count: 4,
+				created_at: 't',
+				updated_at: 't'
+			},
+			{
+				id: 4,
+				chart_id: 11,
+				user_id: 'u1',
+				play_count: 2,
+				clear_count: 0,
+				created_at: 't',
+				updated_at: 't'
+			}
+		];
+		const scoreRows = [
+			{ id: 1, chart_score_id: 3, is_best: 1, display_order: null },
+			{ id: 2, chart_score_id: 3, is_best: 0, display_order: 1 },
+			{ id: 5, chart_score_id: 4, is_best: 1, display_order: null }
+		];
+		const db = createMockDb((sql: string) =>
+			sql.includes('FROM chart_scores')
+				? createMockStmt(null, csRows)
+				: createMockStmt(null, scoreRows)
+		);
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', [10, 11]);
+
+		// The whole point of this helper: two queries total, NOT two per chart.
+		expect(db.prepare).toHaveBeenCalledTimes(2);
+		expect(result.get(10)?.chartScore.id).toBe(3);
+		expect(result.get(10)?.scores.map((s) => s.id)).toEqual([1, 2]);
+		expect(result.get(11)?.chartScore.id).toBe(4);
+		expect(result.get(11)?.scores.map((s) => s.id)).toEqual([5]);
+	});
+
+	it('short-circuits before the scores query when no chart_scores match', async () => {
+		const db = createMockDb((sql: string) =>
+			sql.includes('FROM chart_scores') ? createMockStmt(null, []) : createMockStmt(null, [])
+		);
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', [10, 11]);
+		expect(result.size).toBe(0);
+		expect(db.prepare).toHaveBeenCalledTimes(1);
+	});
+
+	it('chunks more than 99 chart IDs to stay within D1 parameter limit', async () => {
+		// 150 chart IDs -> 2 chart_scores chunks (99 + 51) + 2 score chunks (99 + 51) = 4 queries
+		const chartIds = Array.from({ length: 150 }, (_, i) => i + 1);
+		const db = createMockDb((sql: string) => {
+			let boundArgs: unknown[] = [];
+			const stmt = {
+				bind: vi.fn((...args: unknown[]) => {
+					boundArgs = args;
+					return stmt;
+				}),
+				first: vi.fn().mockResolvedValue(null),
+				all: vi.fn().mockImplementation(() => {
+					if (sql.includes('FROM chart_scores')) {
+						const chunkIds = boundArgs.slice(1) as number[];
+						return Promise.resolve({
+							results: chunkIds.map((id) => ({
+								id: id + 1000,
+								chart_id: id,
+								user_id: 'u1',
+								play_count: 1,
+								clear_count: 0,
+								created_at: 't',
+								updated_at: 't'
+							}))
+						});
+					}
+					const csIds = boundArgs as number[];
+					return Promise.resolve({
+						results: csIds.map((csId) => ({
+							id: csId + 5000,
+							chart_score_id: csId,
+							is_best: 1,
+							display_order: null
+						}))
+					});
+				})
+			};
+			return stmt;
+		});
+
+		const result = await listUserChartScores(db as unknown as D1Database, 'u1', chartIds);
+
+		expect(db.prepare).toHaveBeenCalledTimes(4);
+		expect(result.size).toBe(150);
+		expect(result.get(1)?.chartScore.chart_id).toBe(1);
+		expect(result.get(150)?.chartScore.chart_id).toBe(150);
+		expect(result.get(1)?.scores).toHaveLength(1);
+	});
+
+	it('deduplicates chart IDs before chunking', async () => {
+		const db = createMockDb((sql: string) => {
+			let boundArgs: unknown[] = [];
+			const stmt = {
+				bind: vi.fn((...args: unknown[]) => {
+					boundArgs = args;
+					return stmt;
+				}),
+				first: vi.fn().mockResolvedValue(null),
+				all: vi.fn().mockImplementation(() => {
+					if (sql.includes('FROM chart_scores')) {
+						const chunkIds = boundArgs.slice(1) as number[];
+						return Promise.resolve({
+							results: chunkIds.map((id) => ({
+								id: id + 1000,
+								chart_id: id,
+								user_id: 'u1',
+								play_count: 1,
+								clear_count: 0,
+								created_at: 't',
+								updated_at: 't'
+							}))
+						});
+					}
+					return Promise.resolve({ results: [] });
+				})
+			};
+			return stmt;
+		});
+
+		const result = await listUserChartScores(
+			db as unknown as D1Database,
+			'u1',
+			[10, 10, 11, 11, 12]
+		);
+		expect(result.size).toBe(3);
+		expect(result.get(10)).toBeDefined();
+		expect(result.get(11)).toBeDefined();
+		expect(result.get(12)).toBeDefined();
 	});
 });

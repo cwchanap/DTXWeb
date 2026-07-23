@@ -1,8 +1,50 @@
 import { describe, it, expect } from 'vitest';
-import { formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
+import { formatLevel, formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
 import type { DtxFileRow } from '@dtx/common';
 
 describe('utils', () => {
+	describe('formatLevel', () => {
+		it('decodes an encoded ×10 integer to two decimals', () => {
+			expect(formatLevel(50)).toBe('5.00');
+			expect(formatLevel(55)).toBe('5.50');
+		});
+
+		it('decodes an encoded ×100 integer (values > 100)', () => {
+			expect(formatLevel(550)).toBe('5.50');
+			expect(formatLevel(880)).toBe('8.80');
+		});
+
+		it('decodes a bare single-digit integer on the ×10 scale', () => {
+			// With the DTXManiaCX formula, 1–9 decode as 0.1–0.9 (×10 branch:
+			// level < 100 → level/10 + 0/100). The raw #DLEVEL value is
+			// stored directly (no encoding), so bare 1–9 are genuine
+			// sub-1.0 levels.
+			expect(formatLevel(1)).toBe('0.10');
+			expect(formatLevel(5)).toBe('0.50');
+			expect(formatLevel(9)).toBe('0.90');
+		});
+
+		it('decodes level = 100 as ×100 scale (1.00), not ×10 scale (10.00)', () => {
+			// DTXManiaCX formula: level >= 100 → level / 100.
+			expect(formatLevel(100)).toBe('1.00');
+		});
+
+		it('treats a stray decimal as already display-scale (not ÷10)', () => {
+			// The GraphQL schema exposes `level` as Float, so 5.5 can arrive even
+			// though the canonical form is the encoded integer 55. Dividing again
+			// would yield 0.55 — the ScoreCard/ChartListItem P2 bug.
+			expect(formatLevel(5.5)).toBe('5.50');
+			expect(formatLevel(8.75)).toBe('8.75');
+		});
+
+		it('parses string levels and treats non-finite as zero', () => {
+			expect(formatLevel('20')).toBe('2.00');
+			expect(formatLevel('invalid')).toBe('0.00');
+			expect(formatLevel(undefined)).toBe('0.00');
+			expect(formatLevel(null)).toBe('0.00');
+		});
+	});
+
 	describe('formatLevelDisplay', () => {
 		it('should format level display for normal levels', () => {
 			const dtxFiles: DtxFileRow[] = [
@@ -68,8 +110,8 @@ describe('utils', () => {
 
 			const result = formatLevelDisplay(dtxFiles);
 			// level 25 -> 25/10 = 2.50, level 150 -> 150/100 = 1.50
-			// After sorting by level: 25 (2.50), 150 (1.50)
-			expect(result).toBe('2.50 / 1.50');
+			// Sorted by normalized level: 150 (1.50), 25 (2.50)
+			expect(result).toBe('1.50 / 2.50');
 		});
 
 		it('should handle zero levels', () => {
@@ -90,6 +132,17 @@ describe('utils', () => {
 
 			const result = formatLevelDisplay(dtxFiles);
 			expect(result).toBe('0.00 / 2.50');
+		});
+
+		it('should sort mixed ×10 and ×100 encodings by normalized level', () => {
+			// 55 → 5.50 (×10), 500 → 5.00 (×100). Raw sort would give
+			// 5.50 / 5.00 (55 < 500); normalized sort gives 5.00 / 5.50.
+			const dtxFiles: DtxFileRow[] = [
+				{ level: 55, id: 1, label: 'BSC', simfile_id: 1 },
+				{ level: 500, id: 2, label: 'ADV', simfile_id: 1 }
+			];
+			const result = formatLevelDisplay(dtxFiles);
+			expect(result).toBe('5.00 / 5.50');
 		});
 
 		it('should return N/A for empty or undefined array', () => {
@@ -145,6 +198,22 @@ describe('utils', () => {
 			const result = formatLevelDisplay(dtxFiles);
 
 			expect(result).toBe('0.00 / 0.00 / 2.00');
+		});
+
+		// Regression guard: the GraphQL schema exposes `level` as a Float, so a
+		// stray decimal (e.g. 5.5) can arrive even though the canonical form is
+		// the encoded integer 55. formatLevel treats a non-integer as already
+		// display-scale (returns it as-is rather than ÷10). This pins that
+		// formatLevelDisplay inherits that passthrough — a future "fix" to
+		// formatLevel that always divides must not silently regress
+		// ChartListItem/ScoreCard rendering. Without this assertion, all other
+		// formatLevelDisplay tests use integer levels and would still pass.
+		it('passes stray decimal levels through as display-scale (not ÷10)', () => {
+			const dtxFiles: Array<{ level?: string | number }> = [{ level: 5.5 }, { level: 8.75 }];
+
+			const result = formatLevelDisplay(dtxFiles);
+
+			expect(result).toBe('5.50 / 8.75');
 		});
 	});
 

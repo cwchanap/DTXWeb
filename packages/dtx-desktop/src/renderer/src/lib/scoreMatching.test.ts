@@ -40,8 +40,19 @@ describe('matchCharts', () => {
 	});
 
 	it('assigns each cloud chart at most once (greedy in local order)', () => {
-		const result = matchCharts([local(55), local(55)], [cloud('a', 55), cloud('b', 56)]);
+		// Two local charts at different levels, two cloud charts at matching
+		// levels. Each local chart has a uniquely nearest cloud chart, so the
+		// assignment is unambiguous and each cloud chart is used at most once.
+		const result = matchCharts([local(55), local(56)], [cloud('a', 55), cloud('b', 56)]);
 		expect(result).toEqual(['a', 'b']);
+	});
+
+	it('returns null for identical local charts with interchangeable cloud targets', () => {
+		// Two identical local charts (both 5.5) and two valid cloud charts
+		// (5.5 and 5.6). Both [a,b] and [b,a] are equally optimal — the local
+		// charts are indistinguishable, so the assignment is ambiguous → null.
+		const result = matchCharts([local(55), local(55)], [cloud('a', 55), cloud('b', 56)]);
+		expect(result).toEqual([null, null]);
 	});
 
 	it('finds the optimal assignment when greedy would discard a valid match', () => {
@@ -50,6 +61,25 @@ describe('matchCharts', () => {
 		// Optimal: 5.0→4.5 (diff 0.5), 5.4→5.2 (diff 0.2) — both matched.
 		const result = matchCharts([local(50), local(54)], [cloud('a', 52), cloud('b', 45)]);
 		expect(result).toEqual(['b', 'a']);
+	});
+
+	it('resolves a locally ambiguous tie via global assignment', () => {
+		// Local: 5.0, 5.6. Cloud: 4.5, 5.5.
+		// For local 5.0, both cloud 4.5 and 5.5 are equidistant (delta 0.5).
+		// The old isPairable check rejected both as an unbreakable tie.
+		// But once 5.6→5.5 is assigned (delta 0.1, the only valid pair for 5.6),
+		// the remaining 5.0→4.5 is unambiguous. The exhaustive matcher should
+		// find the globally optimal 2-match assignment.
+		const result = matchCharts([local(50), local(56)], [cloud('a', 45), cloud('b', 55)]);
+		expect(result).toEqual(['a', 'b']);
+	});
+
+	it('returns null for a genuinely ambiguous tie with no global resolution', () => {
+		// Local: 5.0. Cloud: 4.5, 5.5. Both equidistant, no labels to break
+		// the tie. Two equally optimal assignments exist (5.0→4.5 and 5.0→5.5)
+		// that disagree on the target → null.
+		const result = matchCharts([local(50)], [cloud('a', 45), cloud('b', 55)]);
+		expect(result).toEqual([null]);
 	});
 
 	it('leaves an ambiguous tie unmatched when no label breaks it', () => {
@@ -122,5 +152,15 @@ describe('matchCharts', () => {
 		// genuine sub-1.0 level, not a legacy display-scale value.
 		const result = matchCharts([local(50)], [cloud('a', 5)]);
 		expect(result).toEqual([null]);
+	});
+
+	it('falls back to greedy matching when chart sets exceed the exhaustive guard', () => {
+		// 7 local charts exceeds the ≤6 guard — the greedy fallback should be
+		// used. Each local chart has an exact cloud match, so greedy still
+		// pairs them all.
+		const localCharts = Array.from({ length: 7 }, (_, i) => local(50 + i));
+		const cloudCharts = Array.from({ length: 7 }, (_, i) => cloud(`c${i}`, 50 + i));
+		const result = matchCharts(localCharts, cloudCharts);
+		expect(result).toEqual(['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
 	});
 });

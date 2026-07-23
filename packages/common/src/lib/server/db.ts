@@ -15,17 +15,7 @@ import type {
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from '../types/d1.types';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
-import {
-	type SQL,
-	and,
-	count as countRows,
-	desc,
-	eq,
-	inArray,
-	notInArray,
-	or,
-	sql
-} from 'drizzle-orm';
+import { type SQL, and, count as countRows, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { dtxFiles, simfiles, userProfiles } from './db/schema';
 
 const drizzleSchema = {
@@ -294,28 +284,8 @@ export const searchSimfiles = async (
 	const excludeIds = opts.excludeIds ?? [];
 	const excludeSet = new Set(excludeIds);
 
-	if (excludeIds.length > 0) {
-		// Cloudflare D1 limits bound parameters to 100 per statement. The LIKE
-		// pattern consumes 1 bound parameter (the pattern is reused for both
-		// title and artist), so up to 99 exclude IDs are safe. Cap at 90 to
-		// leave headroom for future conditions. IDs beyond this cap are not
-		// filtered at the SQL level — instead, the SQL LIMIT is increased to
-		// over-fetch, and the excess IDs are filtered in JavaScript below.
-		// Without the over-fetch, non-excluded linked songs could fill the
-		// result set, leaving no room for valid unlinked matches and causing
-		// a false "no results" when the client filters them out.
-		const cappedExcludeIds = excludeIds.slice(0, 90);
-		conditions.push(notInArray(simfiles.id, cappedExcludeIds));
-	}
-
 	const limitRaw = opts.limit ?? 8;
 	const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, Math.trunc(limitRaw))) : 8;
-	// Over-fetch to compensate for IDs beyond the SQL exclusion cap (90).
-	// Each excluded ID beyond 90 could appear as a non-excluded row in the
-	// SQL result; fetch extra rows so enough non-excluded results survive
-	// the JavaScript filter below. Cap at 200 to avoid unbounded queries.
-	const overflow = Math.max(0, excludeIds.length - 90);
-	const sqlLimit = Math.min(200, limit + overflow);
 
 	const rows = await orm
 		.select({
@@ -327,16 +297,19 @@ export const searchSimfiles = async (
 		})
 		.from(simfiles)
 		.where(and(...conditions))
-		.limit(sqlLimit);
+		.limit(limit);
 
-	// Filter out IDs beyond the SQL exclusion cap, then trim to the requested
-	// limit. If the over-fetch still didn't yield enough non-excluded results
-	// (e.g., the search term matches many linked songs), the caller sees fewer
-	// results — which is correct, not a false "no results".
-	if (excludeIds.length > 90) {
-		return rows.filter((r) => !excludeSet.has(r.id)).slice(0, limit);
+	// Filter excluded IDs entirely in JavaScript. This avoids the Cloudflare
+	// D1 bound-parameter limit (100 per statement) that previously capped SQL
+	// NOT IN at 90 IDs, and ensures valid unlinked results are never hidden
+	// behind excluded rows that filled the SQL result set. The caller requests
+	// a larger limit (e.g. 50) to compensate for rows lost to JS filtering.
+	// If all returned rows are excluded, the caller sees fewer results —
+	// which is correct, not a false "no results".
+	if (excludeIds.length > 0) {
+		return rows.filter((r) => !excludeSet.has(r.id));
 	}
-	return rows.slice(0, limit);
+	return rows;
 };
 
 export const getNextDisplayId = async (db: D1Database, userId: string): Promise<number> => {

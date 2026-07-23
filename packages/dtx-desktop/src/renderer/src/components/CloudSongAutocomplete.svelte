@@ -42,9 +42,11 @@
 
 	const handleClose = () => {
 		onclose?.();
+		clearTimeout(searchTimeout);
 		searchQuery = '';
 		suggestions = [];
 		selectedIndex = -1;
+		isLoading = false;
 		// Invalidate any in-flight search so its response doesn't repopulate
 		// `suggestions` after the popup has closed.
 		searchGeneration++;
@@ -52,6 +54,11 @@
 
 	const handleSearchInput = () => {
 		clearTimeout(searchTimeout);
+		// Invalidate any in-flight search and clear the loading indicator so
+		// a stale response from the previous query can't overwrite the
+		// suggestions during the debounce window.
+		searchGeneration++;
+		isLoading = false;
 		searchTimeout = setTimeout(async () => {
 			if (searchQuery.trim().length >= 2) {
 				await searchCloudSongs();
@@ -65,6 +72,7 @@
 	const searchCloudSongs = async () => {
 		if (!searchQuery.trim()) return;
 
+		const submittedQuery = searchQuery.trim();
 		const generation = ++searchGeneration;
 		isLoading = true;
 		try {
@@ -73,8 +81,8 @@
 				data?: CloudSong[];
 				error?: string;
 			}>({
-				query: searchQuery.trim(),
-				limit: 20, // Increase limit to account for filtering
+				query: submittedQuery,
+				limit: 50, // Over-fetch to compensate for client-side exclusion filtering
 				excludeLinkedSongIds
 			});
 
@@ -82,6 +90,9 @@
 			// this request was in flight. Only the latest generation's result
 			// should populate `suggestions`.
 			if (generation !== searchGeneration) return;
+			// Defense-in-depth: verify the current query still matches what was
+			// submitted, in case generation was not incremented for some path.
+			if (searchQuery.trim() !== submittedQuery) return;
 
 			if (result.success) {
 				// Filter out already linked songs on the client side as well (double protection)
@@ -226,6 +237,9 @@
 				{#if searchQuery}
 					<button
 						onclick={() => {
+							clearTimeout(searchTimeout);
+							searchGeneration++;
+							isLoading = false;
 							searchQuery = '';
 							suggestions = [];
 							selectedIndex = -1;

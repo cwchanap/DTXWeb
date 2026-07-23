@@ -814,41 +814,40 @@ describe('searchSimfiles', () => {
 		expect(query?.limit).toHaveBeenCalledWith(5);
 	});
 
-	it('applies excludeIds filter when provided', async () => {
-		drizzleSelectResults.push([]);
+	it('filters excluded IDs in JavaScript instead of SQL NOT IN', async () => {
+		// Excluded IDs are no longer passed to SQL NOT IN (which was capped at
+		// 90 by the D1 parameter limit). Instead, the SQL query fetches up to
+		// `limit` rows and all excluded IDs are filtered in JS.
+		const rows = [
+			{ id: 1, title: 'Linked A', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 2, title: 'Linked B', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 3, title: 'Valid C', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
+			{ id: 4, title: 'Valid D', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 }
+		];
+		drizzleSelectResults.push(rows);
 		const db = createMockDb();
-		await searchSimfiles(db as unknown as D1Database, {
+		const result = await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1',
+			limit: 10,
 			excludeIds: [1, 2]
 		});
+		// IDs 1 and 2 are filtered out; only valid rows remain.
+		expect(result.map((r) => r.id)).toEqual([3, 4]);
+		// SQL LIMIT should be the requested limit (no over-fetch).
 		const query = (
 			mockDrizzleDb.select.mock.results as {
 				value: Record<string, ReturnType<typeof vi.fn>>;
 			}[]
 		)[0]?.value;
-		expect(query?.where).toHaveBeenCalled();
+		expect(query?.limit).toHaveBeenCalledWith(10);
 	});
 
-	it('defaults limit to 8 when non-finite limit value provided', async () => {
-		drizzleSelectResults.push([]);
-		const db = createMockDb();
-		await searchSimfiles(db as unknown as D1Database, { query: 'test', limit: NaN });
-		const query = (
-			mockDrizzleDb.select.mock.results as {
-				value: Record<string, ReturnType<typeof vi.fn>>;
-			}[]
-		)[0]?.value;
-		expect(query?.limit).toHaveBeenCalledWith(8);
-	});
-
-	it('over-fetches and filters in JS when excludeIds exceeds the SQL cap of 90', async () => {
-		// With 95 exclude IDs, the SQL NOT IN only covers the first 90.
-		// The remaining 5 could appear as non-excluded rows in the SQL result.
-		// The server over-fetches (limit + 5) and filters the excess IDs in JS.
+	it('handles large exclude lists without SQL parameter limits', async () => {
+		// 95 exclude IDs — previously required SQL NOT IN capped at 90 plus
+		// JS over-fetch. Now all filtering is in JS, so there's no SQL
+		// parameter limit concern.
 		const excludeIds = Array.from({ length: 95 }, (_, i) => i + 1);
-		// Simulate 20 rows: 5 with IDs 91-95 (excluded but not in SQL NOT IN),
-		// 15 with IDs 100-114 (valid, non-excluded).
 		const rows = [
 			...Array.from({ length: 5 }, (_, i) => ({
 				id: 91 + i,
@@ -870,20 +869,31 @@ describe('searchSimfiles', () => {
 		const result = await searchSimfiles(db as unknown as D1Database, {
 			query: 'test',
 			userId: 'user-1',
-			limit: 8,
+			limit: 50,
 			excludeIds
 		});
-		// The 5 linked rows (IDs 91-95) are filtered out; only valid rows remain.
-		expect(result).toHaveLength(8);
+		// All 5 linked rows (IDs 91-95) are filtered out; only valid rows remain.
 		expect(result.every((r) => !excludeIds.includes(r.id))).toBe(true);
-		expect(result.map((r) => r.id)).toEqual([100, 101, 102, 103, 104, 105, 106, 107]);
-		// SQL LIMIT should be 8 + 5 = 13 (over-fetch for 5 excess IDs).
+		expect(result.map((r) => r.id)).toEqual(Array.from({ length: 15 }, (_, i) => 100 + i));
+		// SQL LIMIT is just the requested limit — no over-fetch.
 		const query = (
 			mockDrizzleDb.select.mock.results as {
 				value: Record<string, ReturnType<typeof vi.fn>>;
 			}[]
 		)[0]?.value;
-		expect(query?.limit).toHaveBeenCalledWith(13);
+		expect(query?.limit).toHaveBeenCalledWith(50);
+	});
+
+	it('defaults limit to 8 when non-finite limit value provided', async () => {
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		await searchSimfiles(db as unknown as D1Database, { query: 'test', limit: NaN });
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(8);
 	});
 });
 

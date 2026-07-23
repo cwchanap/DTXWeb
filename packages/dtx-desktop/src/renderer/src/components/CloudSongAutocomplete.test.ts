@@ -148,7 +148,7 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		vi.advanceTimersByTime(350);
 		await waitFor(() =>
 			expect(mockDesktopHost.searchCloudSongs).toHaveBeenCalledWith(
-				expect.objectContaining({ query: 'So', limit: 20 })
+				expect.objectContaining({ query: 'So', limit: 50 })
 			)
 		);
 	});

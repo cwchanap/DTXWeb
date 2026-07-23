@@ -60,8 +60,8 @@ describe('ScoreChartRow best-score separator', () => {
 		render(ScoreChartRow, {
 			props: { ...baseProps, chart: makeChart() }
 		});
-		// Best: 950,000 · A · 75% · combo 800
-		expect(bestLine()).toBe('Best: 950,000 · A · 75% · combo 800');
+		// Chart bests: 950,000 · A · 75% · combo 800
+		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75% · combo 800');
 	});
 
 	it('does not emit a trailing · when maxCombo is null and fullCombo is false', () => {
@@ -77,8 +77,8 @@ describe('ScoreChartRow best-score separator', () => {
 				})
 			}
 		});
-		// Best: 950,000 · A · 75%  (no trailing ·)
-		expect(bestLine()).toBe('Best: 950,000 · A · 75%');
+		// Chart bests: 950,000 · A · 75%  (no trailing ·)
+		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75%');
 	});
 
 	it('does not emit a double · when maxCombo is null but fullCombo is true', () => {
@@ -94,8 +94,8 @@ describe('ScoreChartRow best-score separator', () => {
 				})
 			}
 		});
-		// Best: 950,000 · A · 75% · FC  (single · before FC, no double)
-		expect(bestLine()).toBe('Best: 950,000 · A · 75% · FC');
+		// Chart bests: 950,000 · A · 75% · FC  (single · before FC, no double)
+		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75% · FC');
 	});
 
 	it('appends fullCombo with a single · when maxCombo is also present', () => {
@@ -111,7 +111,7 @@ describe('ScoreChartRow best-score separator', () => {
 				})
 			}
 		});
-		expect(bestLine()).toBe('Best: 950,000 · A · 75% · combo 800 · FC');
+		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75% · combo 800 · FC');
 	});
 
 	it('omits the rankLabel segment when rankLabel is null', () => {
@@ -128,7 +128,7 @@ describe('ScoreChartRow best-score separator', () => {
 				})
 			}
 		});
-		expect(bestLine()).toBe('Best: 950,000 · 75%');
+		expect(bestLine()).toBe('Chart bests: 950,000 · 75%');
 	});
 
 	it('renders the placeholder when best is null', () => {

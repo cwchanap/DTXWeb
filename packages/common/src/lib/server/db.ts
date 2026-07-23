@@ -287,6 +287,20 @@ export const searchSimfiles = async (
 	const limitRaw = opts.limit ?? 8;
 	const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, Math.trunc(limitRaw))) : 8;
 
+	// Over-fetch SQL by the number of excluded IDs so that valid unlinked
+	// rows sitting just past the requested page are not hidden behind
+	// excluded rows that filled the SQL result set. Without this, a query
+	// matching 60 rows where the first 50 are already linked would return
+	// 50 excluded rows, the JS filter would drop all of them, and the
+	// caller would see a false "no results" even though row 51 is valid.
+	// The caller still gets at most `limit` usable rows after filtering;
+	// the cap keeps the result set bounded for this personal app (full
+	// pagination is unnecessary). Filtering excluded IDs in JavaScript
+	// also avoids the Cloudflare D1 bound-parameter limit (100/statement)
+	// that previously capped SQL NOT IN at 90 IDs.
+	const SQL_LIMIT_CAP = 200;
+	const sqlLimit = Math.min(SQL_LIMIT_CAP, limit + excludeIds.length);
+
 	const rows = await orm
 		.select({
 			id: simfiles.id,
@@ -297,15 +311,8 @@ export const searchSimfiles = async (
 		})
 		.from(simfiles)
 		.where(and(...conditions))
-		.limit(limit);
+		.limit(sqlLimit);
 
-	// Filter excluded IDs entirely in JavaScript. This avoids the Cloudflare
-	// D1 bound-parameter limit (100 per statement) that previously capped SQL
-	// NOT IN at 90 IDs, and ensures valid unlinked results are never hidden
-	// behind excluded rows that filled the SQL result set. The caller requests
-	// a larger limit (e.g. 50) to compensate for rows lost to JS filtering.
-	// If all returned rows are excluded, the caller sees fewer results —
-	// which is correct, not a false "no results".
 	if (excludeIds.length > 0) {
 		return rows.filter((r) => !excludeSet.has(r.id));
 	}

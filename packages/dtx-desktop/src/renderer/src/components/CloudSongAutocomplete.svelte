@@ -59,6 +59,12 @@
 		// suggestions during the debounce window.
 		searchGeneration++;
 		isLoading = false;
+		// Drop the previous query's suggestions immediately. Without this,
+		// the old results stay rendered (and clickable / Enter-selectable)
+		// for the 300ms debounce window because the render condition is
+		// just `query.length >= 2 && !isLoading`.
+		suggestions = [];
+		selectedIndex = -1;
 		searchTimeout = setTimeout(async () => {
 			if (searchQuery.trim().length >= 2) {
 				await searchCloudSongs();

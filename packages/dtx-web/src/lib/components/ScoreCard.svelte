@@ -56,6 +56,7 @@
 
 				{#if chart.chartScore?.best}
 					{@const best = chart.chartScore.best}
+					<p class="mb-1 text-xs font-medium text-slate-400">{$_('score.chart_bests')}</p>
 					<div class="flex flex-wrap items-center gap-3 text-sm">
 						<span class="font-semibold text-slate-100">{formatScore(best.score)}</span>
 						<span class="text-cyan-300">{formatRate(best.achievementRate)}</span>

@@ -234,6 +234,25 @@ describe('CloudSongAutocomplete – search behavior', () => {
 		expect(screen.queryByText('Song Alpha')).not.toBeInTheDocument();
 		expect(screen.getByText('Start typing to search')).toBeInTheDocument();
 	});
+
+	it('clears previous suggestions immediately when the query changes during the debounce window', async () => {
+		// Without an immediate clear, the previous query's results stay
+		// clickable for the 300ms debounce window because the render
+		// condition is just `query.length >= 2 && !isLoading`.
+		mockDesktopHost.searchCloudSongs.mockResolvedValue({ success: true, data: defaultSongs });
+		render(CloudSongAutocomplete, { props: { isOpen: true } });
+		const input = screen.getByPlaceholderText(/search by song title or artist/i);
+
+		await fireEvent.input(input, { target: { value: 'So' } });
+		vi.advanceTimersByTime(350);
+		await waitFor(() => expect(screen.getByText('Song Alpha')).toBeInTheDocument());
+
+		// Change the query but do NOT advance the debounce timer. The old
+		// suggestions must be gone immediately — no stale clickable rows.
+		await fireEvent.input(input, { target: { value: 'Son' } });
+		expect(screen.queryByText('Song Alpha')).not.toBeInTheDocument();
+		expect(screen.queryByText('Song Beta')).not.toBeInTheDocument();
+	});
 });
 
 describe('CloudSongAutocomplete – keyboard navigation', () => {

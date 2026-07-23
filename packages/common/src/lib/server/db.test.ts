@@ -816,8 +816,9 @@ describe('searchSimfiles', () => {
 
 	it('filters excluded IDs in JavaScript instead of SQL NOT IN', async () => {
 		// Excluded IDs are no longer passed to SQL NOT IN (which was capped at
-		// 90 by the D1 parameter limit). Instead, the SQL query fetches up to
-		// `limit` rows and all excluded IDs are filtered in JS.
+		// 90 by the D1 parameter limit). Instead, the SQL query over-fetches
+		// by excludeIds.length (capped at 200) and all excluded IDs are
+		// filtered in JS so valid rows past the excluded prefix are returned.
 		const rows = [
 			{ id: 1, title: 'Linked A', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
 			{ id: 2, title: 'Linked B', artist: 'A', bpm: 120, is_published: 1 as 0 | 1 },
@@ -834,13 +835,73 @@ describe('searchSimfiles', () => {
 		});
 		// IDs 1 and 2 are filtered out; only valid rows remain.
 		expect(result.map((r) => r.id)).toEqual([3, 4]);
-		// SQL LIMIT should be the requested limit (no over-fetch).
+		// SQL LIMIT over-fetches by excludeIds.length to compensate for JS filtering.
 		const query = (
 			mockDrizzleDb.select.mock.results as {
 				value: Record<string, ReturnType<typeof vi.fn>>;
 			}[]
 		)[0]?.value;
-		expect(query?.limit).toHaveBeenCalledWith(10);
+		expect(query?.limit).toHaveBeenCalledWith(12);
+	});
+
+	it('over-fetches SQL so valid rows past an excluded prefix are not hidden', async () => {
+		// Reproduces the false "no results" bug: 60 rows match, the first 50
+		// are already linked (excluded), and the valid unlinked row sits at
+		// position 51. With a plain LIMIT 50 the SQL page would contain only
+		// excluded rows and the JS filter would return []. Over-fetching by
+		// excludeIds.length (capped) lets the valid row surface.
+		const excludeIds = Array.from({ length: 50 }, (_, i) => i + 1);
+		const rows = [
+			...Array.from({ length: 50 }, (_, i) => ({
+				id: i + 1,
+				title: `Linked ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			})),
+			...Array.from({ length: 10 }, (_, i) => ({
+				id: 51 + i,
+				title: `Valid ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			}))
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 50,
+			excludeIds
+		});
+		// The valid rows past the excluded prefix are returned — no false negative.
+		expect(result.map((r) => r.id)).toEqual(Array.from({ length: 10 }, (_, i) => 51 + i));
+		// SQL LIMIT = limit(50) + excludeIds.length(50) = 100 (under the 200 cap).
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(100);
+	});
+
+	it('caps SQL over-fetch at 200 even with very large exclude lists', async () => {
+		const excludeIds = Array.from({ length: 300 }, (_, i) => i + 1);
+		drizzleSelectResults.push([]);
+		const db = createMockDb();
+		await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 50,
+			excludeIds
+		});
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(200);
 	});
 
 	it('handles large exclude lists without SQL parameter limits', async () => {
@@ -875,13 +936,13 @@ describe('searchSimfiles', () => {
 		// All 5 linked rows (IDs 91-95) are filtered out; only valid rows remain.
 		expect(result.every((r) => !excludeIds.includes(r.id))).toBe(true);
 		expect(result.map((r) => r.id)).toEqual(Array.from({ length: 15 }, (_, i) => 100 + i));
-		// SQL LIMIT is just the requested limit — no over-fetch.
+		// SQL LIMIT over-fetches by excludeIds.length: 50 + 95 = 145 (under the 200 cap).
 		const query = (
 			mockDrizzleDb.select.mock.results as {
 				value: Record<string, ReturnType<typeof vi.fn>>;
 			}[]
 		)[0]?.value;
-		expect(query?.limit).toHaveBeenCalledWith(50);
+		expect(query?.limit).toHaveBeenCalledWith(145);
 	});
 
 	it('defaults limit to 8 when non-finite limit value provided', async () => {

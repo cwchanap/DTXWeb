@@ -65,6 +65,8 @@ describe('ScoreCard', () => {
 		expect(screen.getByText('Test Song')).toBeInTheDocument();
 		expect(screen.getByText('Test Artist')).toBeInTheDocument();
 		expect(screen.getByText('BASIC · score.level_short 5.00')).toBeInTheDocument();
+		// The aggregate best row is labeled so it's clearly not a single play.
+		expect(screen.getByText('score.chart_bests')).toBeInTheDocument();
 		expect(screen.getByText('912,380')).toBeInTheDocument();
 		expect(screen.getByText('91.30%')).toBeInTheDocument();
 		expect(screen.getByText('S')).toBeInTheDocument();

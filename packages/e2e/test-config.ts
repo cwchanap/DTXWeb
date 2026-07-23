@@ -1,4 +1,4 @@
-// e2e/test-config.ts
+// packages/e2e/test-config.ts
 //
 // Credentials for the DEDICATED, THROWAWAY e2e Supabase project only.
 // The anon key is public by design (it ships in client bundles).

@@ -36,17 +36,16 @@
 		"test:coverage:desktop": "bun run --filter=dtx-desktop test:coverage",
 		"test:coverage:common": "bun run --filter=@dtx/common test:coverage",
 		"format:root": "prettier --write .",
-		"fixtures:generate": "bunx tsx e2e/fixtures/create-test-midi.ts",
-		"fixtures:verify": "bunx tsx e2e/fixtures/verify-fixtures.ts",
-		"e2e": "bunx playwright test",
-		"e2e:ui": "bunx playwright test --ui"
+		"fixtures:generate": "bun run --filter=dtx-e2e fixtures:generate",
+		"fixtures:verify": "bun run --filter=dtx-e2e fixtures:verify",
+		"e2e": "bun run --filter=dtx-e2e e2e",
+		"e2e:ui": "bun run --filter=dtx-e2e e2e:ui"
 	},
 	"lint-staged": {
 		"*.{js,ts,svelte}": "eslint",
 		"*.{js,ts,json,md,svelte,css,html}": "prettier --write"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.61.1",
 		"@types/eslint": "^8.56.0",
 		"@types/node": "^20.11.25",
 		"@types/uuid": "^10.0.0",
@@ -75,7 +74,8 @@
 		"packages/dtx-desktop",
 		"packages/common",
 		"packages/ui-components",
-		"packages/dtx-api"
+		"packages/dtx-api",
+		"packages/e2e"
 	],
 	"dependencies": {
 		"jszip": "^3.10.1"

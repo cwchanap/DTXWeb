@@ -1,4 +1,4 @@
--- e2e/setup/seed.sql — idempotent two-chart seed for the parity gate.
+-- packages/e2e/setup/seed.sql — idempotent two-chart seed for the parity gate.
 -- TEST_USER_ID is substituted by prepare-stack.ts before execution.
 DELETE FROM dtx_files WHERE simfile_id IN (1001, 1002);
 DELETE FROM simfiles WHERE id IN (1001, 1002);

@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { TEST_USER_EMAIL, TEST_USER_PASSWORD } from './test-config';
 
-const authFile = 'e2e/.auth/user.json';
+const authFile = '.auth/user.json';
 
 setup('authenticate test user', async ({ page }) => {
 	await page.goto('/login');

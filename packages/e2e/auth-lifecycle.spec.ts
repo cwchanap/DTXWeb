@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { CHART_A_ID, CHART_A_TITLE } from './test-config';
 
-test.use({ storageState: 'e2e/.auth/user.json' });
+test.use({ storageState: '.auth/user.json' });
 
 test.describe('authenticated chart lifecycle (dual-path)', () => {
 	// This test DELETES chart A as its terminal action. The seed runs once per leg (not

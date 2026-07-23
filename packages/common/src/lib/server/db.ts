@@ -635,8 +635,7 @@ export const upsertChartScoreAndReplaceScores = async (
 
 	const batchResults = await db.batch(statements);
 	const chartScore = (batchResults[0] as { results?: unknown[] }).results?.[0] as
-		| ChartScoreRow
-		| undefined;
+		ChartScoreRow | undefined;
 	if (!chartScore) throw new Error('Failed to upsert chart_score');
 	return chartScore;
 };

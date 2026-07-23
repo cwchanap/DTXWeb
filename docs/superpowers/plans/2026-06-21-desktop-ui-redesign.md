@@ -27,20 +27,20 @@ Every task implicitly inherits these. Copied from the spec:
 
 New files (all under `packages/dtx-desktop/src/renderer/src/`):
 
-| File                                        | Responsibility                                               |
+| File | Responsibility |
 | ------------------------------------------- | ------------------------------------------------------------ | -------- | ---------- |
-| `lib/shellMode.ts`                          | Pure `resolveShellMode(width)` → `'wide'                     | 'medium' | 'narrow'`. |
-| `lib/fuzzy.ts`                              | Pure `fuzzyScore(query, text)` + `searchItems`.              |
-| `commands/commands.ts`                      | `buildCommands(ctx)` → command registry for ⌘K.              |
-| `components/shell/AppShell.svelte`          | Top-level shell: toolbar + rail + master/detail; responsive. |
-| `components/shell/TopToolbar.svelte`        | Brand + ⌘K trigger + account menu (absorbs `Navbar`).        |
-| `components/shell/NavRail.svelte`           | Neon nav rail (Library/Cloud/Templates/Settings).            |
-| `components/shell/DetailPane.svelte`        | Wraps `SongDetails` + empty state.                           |
-| `components/shell/CommandPalette.svelte`    | ⌘K overlay.                                                  |
-| `components/editor/EditorContextBar.svelte` | Editor top bar (back/title/difficulty/dirty).                |
-| `components/editor/EditorDock.svelte`       | Collapsible Chart Info / Sounds / Playback accordion.        |
-| `components/editor/TransportBar.svelte`     | Play/stop/BPM/measures/zoom.                                 |
-| `lib/motion.css` (or in `base.css`)         | Reveal/glow keyframes + reduced-motion guards.               |
+| `lib/shellMode.ts` | Pure `resolveShellMode(width)` → `'wide'                     | 'medium' | 'narrow'`. |
+| `lib/fuzzy.ts` | Pure `fuzzyScore(query, text)` + `searchItems`. |
+| `commands/commands.ts` | `buildCommands(ctx)` → command registry for ⌘K. |
+| `components/shell/AppShell.svelte` | Top-level shell: toolbar + rail + master/detail; responsive. |
+| `components/shell/TopToolbar.svelte` | Brand + ⌘K trigger + account menu (absorbs `Navbar`). |
+| `components/shell/NavRail.svelte` | Neon nav rail (Library/Cloud/Templates/Settings). |
+| `components/shell/DetailPane.svelte` | Wraps `SongDetails` + empty state. |
+| `components/shell/CommandPalette.svelte` | ⌘K overlay. |
+| `components/editor/EditorContextBar.svelte` | Editor top bar (back/title/difficulty/dirty). |
+| `components/editor/EditorDock.svelte` | Collapsible Chart Info / Sounds / Playback accordion. |
+| `components/editor/TransportBar.svelte` | Play/stop/BPM/measures/zoom. |
+| `lib/motion.css` (or in `base.css`) | Reveal/glow keyframes + reduced-motion guards. |
 
 Modified: `stores/workspaceStore.ts`, `App.svelte`, `components/Workspace.svelte`, `components/SongDetails.svelte`, `components/DesktopEditor.svelte`, `assets/base.css`, `main.ts`, `package.json`, `src-tauri/tauri.conf.json`, plus restyle of `SimFileList`, `Templates`, `Settings`, `WorkspaceTree`, `SubWorkspaceItem`, `WorkspaceBookmarksMenu`, `Login`, `VersionsModal`, `NewSong`, `CloudSongAutocomplete`. Removed: `components/Navbar.svelte` (+ `Navbar.test.ts` → `TopToolbar.test.ts`).
 

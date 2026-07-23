@@ -16,10 +16,9 @@ describe('utils', () => {
 
 		it('decodes a bare single-digit integer on the ×10 scale', () => {
 			// With the DTXManiaCX formula, 1–9 decode as 0.1–0.9 (×10 branch:
-			// level < 100 → level/10 + 0/100). Migration 0004 and
-			// normalizeLegacyLevel convert bare 1–9 to ×100 (100–900) at the
-			// DB/API boundary, so bare 1–9 reaching this function are
-			// un-migrated legacy rows or data-entry errors.
+			// level < 100 → level/10 + 0/100). The raw #DLEVEL value is
+			// stored directly (no encoding), so bare 1–9 are genuine
+			// sub-1.0 levels.
 			expect(formatLevel(1)).toBe('0.10');
 			expect(formatLevel(5)).toBe('0.50');
 			expect(formatLevel(9)).toBe('0.90');
@@ -27,7 +26,6 @@ describe('utils', () => {
 
 		it('decodes level = 100 as ×100 scale (1.00), not ×10 scale (10.00)', () => {
 			// DTXManiaCX formula: level >= 100 → level / 100.
-			// Fixes the migration 0004 boundary error.
 			expect(formatLevel(100)).toBe('1.00');
 		});
 
@@ -112,8 +110,8 @@ describe('utils', () => {
 
 			const result = formatLevelDisplay(dtxFiles);
 			// level 25 -> 25/10 = 2.50, level 150 -> 150/100 = 1.50
-			// After sorting by level: 25 (2.50), 150 (1.50)
-			expect(result).toBe('2.50 / 1.50');
+			// Sorted by normalized level: 150 (1.50), 25 (2.50)
+			expect(result).toBe('1.50 / 2.50');
 		});
 
 		it('should handle zero levels', () => {
@@ -134,6 +132,17 @@ describe('utils', () => {
 
 			const result = formatLevelDisplay(dtxFiles);
 			expect(result).toBe('0.00 / 2.50');
+		});
+
+		it('should sort mixed ×10 and ×100 encodings by normalized level', () => {
+			// 55 → 5.50 (×10), 500 → 5.00 (×100). Raw sort would give
+			// 5.50 / 5.00 (55 < 500); normalized sort gives 5.00 / 5.50.
+			const dtxFiles: DtxFileRow[] = [
+				{ level: 55, id: 1, label: 'BSC', simfile_id: 1 },
+				{ level: 500, id: 2, label: 'ADV', simfile_id: 1 }
+			];
+			const result = formatLevelDisplay(dtxFiles);
+			expect(result).toBe('5.00 / 5.50');
 		});
 
 		it('should return N/A for empty or undefined array', () => {

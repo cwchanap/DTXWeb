@@ -291,22 +291,33 @@ export const searchSimfiles = async (
 		conditions.push(eq(simfiles.isPublished, 1));
 	}
 
-	if (opts.excludeIds && opts.excludeIds.length > 0) {
+	const excludeIds = opts.excludeIds ?? [];
+	const excludeSet = new Set(excludeIds);
+
+	if (excludeIds.length > 0) {
 		// Cloudflare D1 limits bound parameters to 100 per statement. The LIKE
 		// pattern consumes 1 bound parameter (the pattern is reused for both
 		// title and artist), so up to 99 exclude IDs are safe. Cap at 90 to
-		// leave headroom for future conditions. The caller (CloudSongAutocomplete)
-		// also filters client-side, so excluded IDs beyond this cap are still
-		// removed from the visible results — they just aren't filtered at the
-		// SQL level.
-		const cappedExcludeIds = opts.excludeIds.slice(0, 90);
+		// leave headroom for future conditions. IDs beyond this cap are not
+		// filtered at the SQL level — instead, the SQL LIMIT is increased to
+		// over-fetch, and the excess IDs are filtered in JavaScript below.
+		// Without the over-fetch, non-excluded linked songs could fill the
+		// result set, leaving no room for valid unlinked matches and causing
+		// a false "no results" when the client filters them out.
+		const cappedExcludeIds = excludeIds.slice(0, 90);
 		conditions.push(notInArray(simfiles.id, cappedExcludeIds));
 	}
 
 	const limitRaw = opts.limit ?? 8;
 	const limit = Number.isFinite(limitRaw) ? Math.min(50, Math.max(1, Math.trunc(limitRaw))) : 8;
+	// Over-fetch to compensate for IDs beyond the SQL exclusion cap (90).
+	// Each excluded ID beyond 90 could appear as a non-excluded row in the
+	// SQL result; fetch extra rows so enough non-excluded results survive
+	// the JavaScript filter below. Cap at 200 to avoid unbounded queries.
+	const overflow = Math.max(0, excludeIds.length - 90);
+	const sqlLimit = Math.min(200, limit + overflow);
 
-	return orm
+	const rows = await orm
 		.select({
 			id: simfiles.id,
 			title: simfiles.title,
@@ -316,7 +327,16 @@ export const searchSimfiles = async (
 		})
 		.from(simfiles)
 		.where(and(...conditions))
-		.limit(limit);
+		.limit(sqlLimit);
+
+	// Filter out IDs beyond the SQL exclusion cap, then trim to the requested
+	// limit. If the over-fetch still didn't yield enough non-excluded results
+	// (e.g., the search term matches many linked songs), the caller sees fewer
+	// results — which is correct, not a false "no results".
+	if (excludeIds.length > 90) {
+		return rows.filter((r) => !excludeSet.has(r.id)).slice(0, limit);
+	}
+	return rows.slice(0, limit);
 };
 
 export const getNextDisplayId = async (db: D1Database, userId: string): Promise<number> => {

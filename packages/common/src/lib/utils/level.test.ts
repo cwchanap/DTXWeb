@@ -14,16 +14,13 @@ describe('formatLevel', () => {
 
 	it('decodes level = 100 as ×100 scale (1.00), not ×10 scale (10.00)', () => {
 		// DTXManiaCX formula: level >= 100 → level / 100.
-		// This fixes the migration 0004 boundary error where legacy value 1
-		// was multiplied by 100 to 100, then decoded as 10.00 instead of 1.00.
 		expect(formatLevel(100)).toBe('1.00');
 	});
 
 	it('decodes a bare single-digit integer on the ×10 scale (level < 10, levelDec = 0)', () => {
 		// With the DTXManiaCX formula, 1–9 decode as 0.1–0.9 (×10 branch).
-		// Migration 0004 and normalizeLegacyLevel convert bare 1–9 to ×100
-		// (100–900) at the DB / API boundary, so bare 1–9 reaching this
-		// function are un-migrated legacy rows or data-entry errors.
+		// The raw #DLEVEL value is stored directly (no encoding), so bare
+		// 1–9 are genuine sub-1.0 levels.
 		expect(formatLevel(1)).toBe('0.10');
 		expect(formatLevel(5)).toBe('0.50');
 		expect(formatLevel(9)).toBe('0.90');

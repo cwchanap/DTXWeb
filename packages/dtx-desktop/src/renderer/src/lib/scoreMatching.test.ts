@@ -44,6 +44,14 @@ describe('matchCharts', () => {
 		expect(result).toEqual(['a', 'b']);
 	});
 
+	it('finds the optimal assignment when greedy would discard a valid match', () => {
+		// Local: 5.0, 5.4. Cloud: 5.2, 4.5.
+		// Greedy in source order: 5.0→5.2 (diff 0.2), 5.4→4.5 (diff 0.9 > 0.5 → null).
+		// Optimal: 5.0→4.5 (diff 0.5), 5.4→5.2 (diff 0.2) — both matched.
+		const result = matchCharts([local(50), local(54)], [cloud('a', 52), cloud('b', 45)]);
+		expect(result).toEqual(['b', 'a']);
+	});
+
 	it('leaves an ambiguous tie unmatched when no label breaks it', () => {
 		const result = matchCharts([local(50)], [cloud('a', 40), cloud('b', 60)]);
 		expect(result).toEqual([null]);
@@ -109,11 +117,9 @@ describe('matchCharts', () => {
 		// 5 / 10 + 0 / 100 = 0.5). DTX levels range 0.1–9.99, so 0.5 is a
 		// valid but very low level. A real local chart at level 5.0
 		// (drumLevel 50) is 4.5 away — well beyond MAX_LEVEL_DELTA — so the
-		// match is rejected for manual selection. Legacy desktop-uploaded
-		// rows that held bare 1–9 display-scale values are normalized by
-		// D1 migration 0004 (×100) and normalizeLegacyLevel at the API
-		// boundary, so a bare 1–9 reaching the matcher post-migration is a
-		// data-entry error.
+		// match is rejected for manual selection. The raw #DLEVEL value is
+		// stored directly (no encoding), so a bare 1–9 in the cloud is a
+		// genuine sub-1.0 level, not a legacy display-scale value.
 		const result = matchCharts([local(50)], [cloud('a', 5)]);
 		expect(result).toEqual([null]);
 	});

@@ -397,15 +397,12 @@
 					levels: Array.isArray(parsedLocalData.levels)
 						? parsedLocalData.levels.map((l) => ({
 								label: String(l.label || ''),
-								// Encode to the ×10 cloud storage contract (50 == 5.0,
-								// 55 == 5.5) — parsedLocalData.levels holds the raw
-								// #DLEVEL value (display scale, e.g. 5), and the cloud
-								// dtx_files.level column expects the encoded integer so
-								// normalizeCloudLevel / web formatLevel decode it back
-								// to the display scale. Storing the raw value (5) makes
-								// the matcher decode it to 0.5 and reject ordinary
-								// level-5 charts as too far from the local DrumLevel.
-								level: Math.round(Number(l.level || 0) * 10)
+								// Store the raw #DLEVEL value directly — it is already
+								// in DTXManiaCX's canonical encoding (≥100 = hundredths,
+								// <100 = tenths + DrumLevelDec), and normalizeLevel /
+								// formatLevel decode it correctly. Mirrors DTXFile.level
+								// in @dtx/common which also stores the raw #DLEVEL value.
+								level: Number(l.level || 0)
 							}))
 						: [],
 					// Pass the song path so the Rust backend can find and read preview files
@@ -741,13 +738,10 @@
 			? parsedLocalData.levels.map((l, index) => ({
 					id: index + 1,
 					label: l.label || 'Unknown',
-					// Encode to the ×10 cloud storage contract (50 == 5.0, 55 == 5.5)
-					// — parsedLocalData.levels holds the raw #DLEVEL value (display
-					// scale, e.g. 5), and ChartDetail renders levels via formatLevel,
-					// which decodes integers ÷10. Passing the raw value makes a
-					// level-5 chart render as 0.50. Mirrors the encoding used at the
-					// upload site below.
-					level: Math.round(Number(l.level || 0) * 10),
+					// Store the raw #DLEVEL value directly — formatLevel decodes it
+					// via the DTXManiaCX formula (≥100 → /100, <100 → /10).
+					// Mirrors the upload site and DTXFile.level in @dtx/common.
+					level: Number(l.level || 0),
 					simfile_id: 0
 				}))
 			: [];

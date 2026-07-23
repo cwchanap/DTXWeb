@@ -5,13 +5,15 @@
  *   level >= 100 → level / 100                    (e.g. 850 → 8.50)
  *   level <  100 → level / 10 + levelDec / 100    (e.g. 78 + 33 → 8.13)
  *
- * The cloud `dtx_files.level` column stores a single encoded integer with no
- * separate decimal component, so `levelDec` defaults to 0 — the ×10 branch
- * (level < 100, levelDec = 0) decodes 55 → 5.50, matching the ×10 contract.
+ * The cloud `dtx_files.level` column stores the raw #DLEVEL value directly —
+ * no encoding is applied at the API boundary or in the desktop renderer. The
+ * raw value is already in DTXManiaCX's canonical encoding, so `levelDec`
+ * defaults to 0 for cloud values (the ×10 branch decodes 55 → 5.50, and bare
+ * 5 → 0.50).
  *
  * The GraphQL schema exposes `level` as a `Float`, so a stray decimal (e.g.
- * 5.5) can arrive even though the canonical form is encoded; a non-integer is
- * already on the display scale and is returned as-is rather than divided
+ * 5.5) can arrive even though the canonical form is an integer; a non-integer
+ * is already on the display scale and is returned as-is rather than divided
  * again.
  *
  * Reference: DTXManiaCX `SongScore.CalculateGameSkill` / `SkillPanelDisplay.

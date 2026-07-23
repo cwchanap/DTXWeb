@@ -407,11 +407,11 @@ describe('SongDetails', () => {
 			expect(() => render(SongDetails, { props: { song } })).not.toThrow();
 		});
 
-		it('encodes fallback #DLEVEL values x10 before passing them to ChartDetail', async () => {
-			// parsedLocalData.levels holds raw #DLEVEL display values (e.g. 5),
-			// but ChartDetail renders levels via formatLevel, which decodes
-			// integers ÷10. The fallback must encode ×10 (50 == 5.0) so an
-			// unlinked level-5 chart renders as 5.00, not 0.50.
+		it('passes raw #DLEVEL values directly to ChartDetail', async () => {
+			// parsedLocalData.levels holds raw #DLEVEL values (e.g. 5),
+			// which are already in DTXManiaCX's canonical encoding.
+			// formatLevel decodes them via the ≥100/<100 formula, so the
+			// fallback passes them through unchanged.
 			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
 				invokeMock.mockImplementation(async (channel: string) => {
@@ -436,8 +436,8 @@ describe('SongDetails', () => {
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
 				expect(props?.simfile?.dtx_files).toEqual([
-					{ id: 1, label: 'BASIC', level: 50, simfile_id: 0 },
-					{ id: 2, label: 'EXT', level: 90, simfile_id: 0 }
+					{ id: 1, label: 'BASIC', level: 5, simfile_id: 0 },
+					{ id: 2, label: 'EXT', level: 9, simfile_id: 0 }
 				]);
 			});
 		});
@@ -1093,15 +1093,14 @@ describe('SongDetails', () => {
 					expect.objectContaining({ workspaceRoot: '/test/workspace' })
 				);
 			});
-			// The uploader must encode raw #DLEVEL (display scale, e.g. 9) to the
-			// x10 cloud storage contract (90 == 9.0) so normalizeCloudLevel / web
-			// formatLevel decode it back correctly. Storing the raw 9 would make
-			// the matcher decode it to 0.9 and reject ordinary level-9 charts.
+			// The uploader stores the raw #DLEVEL value directly — it is already
+			// in DTXManiaCX's canonical encoding, and normalizeLevel / formatLevel
+			// decode it correctly (9 → 0.90 via the <100 / 10 branch).
 			await waitFor(() => {
 				expect(mockHostInvoke).toHaveBeenCalledWith(
 					'create-simfile-record',
 					expect.objectContaining({
-						levels: [{ label: 'EXT', level: 90 }]
+						levels: [{ label: 'EXT', level: 9 }]
 					})
 				);
 			});

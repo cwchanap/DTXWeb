@@ -109,16 +109,16 @@ describe('createSimfileWithDtx', () => {
 		expect(mockedDelete).toHaveBeenCalledWith(expect.anything(), 7);
 	});
 
-	it('normalizes legacy bare 1–9 levels to the ×100 storage contract', async () => {
-		// Old desktop clients (pre-b2ccaaab) send the raw #DLEVEL display-scale
-		// value (e.g. 5). The API boundary must encode it to 500 (×100) so
-		// downstream matchers/formatters decode it as 5.0, not 0.05. DTX
-		// levels range 0.1–9.99, so 1–9 on the ×100 scale (0.01–0.09) is
-		// below the minimum — unambiguously legacy, not intentional.
+	it('passes bare 1–9 levels through unchanged (raw #DLEVEL is already canonical)', async () => {
+		// The raw #DLEVEL value is stored directly — it is already in
+		// DTXManiaCX's canonical encoding (≥100 = hundredths, <100 = tenths).
+		// A bare 5 decodes as 0.50 via the ×10 branch, which is a valid
+		// sub-1.0 level. No encoding or normalization is applied at the
+		// API boundary.
 		mockedCreate.mockResolvedValue(baseRow);
 		mockedCreateDtx.mockResolvedValue([
-			{ id: 1, label: 'BSC', level: 500, simfile_id: 7 },
-			{ id: 2, label: 'ADV', level: 900, simfile_id: 7 }
+			{ id: 1, label: 'BSC', level: 5, simfile_id: 7 },
+			{ id: 2, label: 'ADV', level: 9, simfile_id: 7 }
 		]);
 		const result = await createSimfileWithDtx({} as never, {
 			...baseArgs,
@@ -128,16 +128,16 @@ describe('createSimfileWithDtx', () => {
 			]
 		});
 		expect(mockedCreateDtx).toHaveBeenCalledWith(expect.anything(), [
-			{ label: 'BSC', level: 500, simfile_id: 7 },
-			{ label: 'ADV', level: 900, simfile_id: 7 }
+			{ label: 'BSC', level: 5, simfile_id: 7 },
+			{ label: 'ADV', level: 9, simfile_id: 7 }
 		]);
 		expect(result.dtxFiles).toEqual([
-			{ id: 1, label: 'BSC', level: 500 },
-			{ id: 2, label: 'ADV', level: 900 }
+			{ id: 1, label: 'BSC', level: 5 },
+			{ id: 2, label: 'ADV', level: 9 }
 		]);
 	});
 
-	it('leaves already-encoded, zero, and decimal levels untouched', async () => {
+	it('passes all level values through unchanged', async () => {
 		mockedCreate.mockResolvedValue(baseRow);
 		mockedCreateDtx.mockResolvedValue([
 			{ id: 1, label: 'BSC', level: 55, simfile_id: 7 },

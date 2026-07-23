@@ -1,23 +1,18 @@
-import { formatLevel } from '@dtx/common';
+import { formatLevel, normalizeLevel } from '@dtx/common';
 
 export { formatLevel };
 
 /**
- * Decode and join the `dtx_files.level` values for list display, sorted by raw
- * encoded level. See `formatLevel` (re-exported from `@dtx/common`) for the
- * per-value decode contract.
+ * Decode and join the `dtx_files.level` values for list display, sorted by
+ * normalized (display-scale) level so mixed encodings (×10 and ×100) are
+ * ordered correctly. See `formatLevel` / `normalizeLevel` (re-exported from
+ * `@dtx/common`) for the per-value decode contract.
  */
 export const formatLevelDisplay = (dtx_files: Array<{ level?: string | number }>): string => {
 	return (
 		dtx_files
 			?.slice()
-			.sort((a, b) => {
-				const parsedA = typeof a.level === 'string' ? parseFloat(a.level) : a.level || 0;
-				const parsedB = typeof b.level === 'string' ? parseFloat(b.level) : b.level || 0;
-				const levelA = Number.isFinite(parsedA) ? parsedA : 0;
-				const levelB = Number.isFinite(parsedB) ? parsedB : 0;
-				return levelA - levelB;
-			})
+			.sort((a, b) => normalizeLevel(a.level) - normalizeLevel(b.level))
 			.map((file) => formatLevel(file.level))
 			.join(' / ') || 'N/A'
 	);

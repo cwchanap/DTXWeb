@@ -841,6 +841,50 @@ describe('searchSimfiles', () => {
 		)[0]?.value;
 		expect(query?.limit).toHaveBeenCalledWith(8);
 	});
+
+	it('over-fetches and filters in JS when excludeIds exceeds the SQL cap of 90', async () => {
+		// With 95 exclude IDs, the SQL NOT IN only covers the first 90.
+		// The remaining 5 could appear as non-excluded rows in the SQL result.
+		// The server over-fetches (limit + 5) and filters the excess IDs in JS.
+		const excludeIds = Array.from({ length: 95 }, (_, i) => i + 1);
+		// Simulate 20 rows: 5 with IDs 91-95 (excluded but not in SQL NOT IN),
+		// 15 with IDs 100-114 (valid, non-excluded).
+		const rows = [
+			...Array.from({ length: 5 }, (_, i) => ({
+				id: 91 + i,
+				title: `Linked ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			})),
+			...Array.from({ length: 15 }, (_, i) => ({
+				id: 100 + i,
+				title: `Valid ${i}`,
+				artist: 'A',
+				bpm: 120,
+				is_published: 1 as 0 | 1
+			}))
+		];
+		drizzleSelectResults.push(rows);
+		const db = createMockDb();
+		const result = await searchSimfiles(db as unknown as D1Database, {
+			query: 'test',
+			userId: 'user-1',
+			limit: 8,
+			excludeIds
+		});
+		// The 5 linked rows (IDs 91-95) are filtered out; only valid rows remain.
+		expect(result).toHaveLength(8);
+		expect(result.every((r) => !excludeIds.includes(r.id))).toBe(true);
+		expect(result.map((r) => r.id)).toEqual([100, 101, 102, 103, 104, 105, 106, 107]);
+		// SQL LIMIT should be 8 + 5 = 13 (over-fetch for 5 excess IDs).
+		const query = (
+			mockDrizzleDb.select.mock.results as {
+				value: Record<string, ReturnType<typeof vi.fn>>;
+			}[]
+		)[0]?.value;
+		expect(query?.limit).toHaveBeenCalledWith(13);
+	});
 });
 
 // ---------------------------------------------------------------------------

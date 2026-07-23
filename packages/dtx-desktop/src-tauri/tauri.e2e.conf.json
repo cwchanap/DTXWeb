@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"app": {
+		"withGlobalTauri": true,
+		"security": {
+			"capabilities": [
+				"capabilities/main.json",
+				{
+					"identifier": "e2e-wdio",
+					"description": "WebdriverIO permissions for desktop integration tests",
+					"windows": ["main"],
+					"permissions": ["wdio:default", "wdio-webdriver:default"]
+				}
+			]
+		}
+	},
+	"bundle": {
+		"active": false
+	}
+}

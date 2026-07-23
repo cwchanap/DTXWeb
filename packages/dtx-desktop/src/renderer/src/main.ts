@@ -21,6 +21,10 @@ import App from './App.svelte';
 
 // Initialize XA decoder WASM module
 async function initializeApp() {
+	if (import.meta.env.VITE_WDIO === 'true') {
+		await import('@wdio/tauri-plugin');
+	}
+
 	// Ensure dark mode is enabled for TailwindCSS
 	document.documentElement.classList.add('dark');
 

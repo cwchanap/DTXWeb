@@ -1,1 +1,0 @@
-Trigger required checks for PR #146 after formatter-generated commit.

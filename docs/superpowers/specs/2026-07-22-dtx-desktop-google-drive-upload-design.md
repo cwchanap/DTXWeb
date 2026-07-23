@@ -102,13 +102,13 @@ Store the selected folder per Drumery user in desktop settings:
 
 ```ts
 interface GoogleDriveFolderSetting {
-  folderId: string;
-  folderName: string;
+	folderId: string;
+	folderName: string;
 }
 
 interface Settings {
-  exportDirectory: string;
-  googleDriveFoldersByUser: Record<string, GoogleDriveFolderSetting>;
+	exportDirectory: string;
+	googleDriveFoldersByUser: Record<string, GoogleDriveFolderSetting>;
 }
 ```
 
@@ -171,9 +171,9 @@ Rust exposes only sanitized state:
 
 ```ts
 type GoogleDriveConnectionState = {
-  connected: boolean;
-  folder?: { id: string; name: string };
-  requiresReconnect?: boolean;
+	connected: boolean;
+	folder?: { id: string; name: string };
+	requiresReconnect?: boolean;
 };
 ```
 
@@ -338,20 +338,16 @@ Google Drive upload failed. Your previous download remains available.
 Add an owner-only mutation that changes only the two Drive fields:
 
 ```graphql
-mutation UpdateSimfileDriveFile(
-  $id: ID!
-  $googleDriveFileId: String!
-  $downloadUrl: String!
-) {
-  updateSimfileDriveFile(
-    id: $id
-    googleDriveFileId: $googleDriveFileId
-    downloadUrl: $downloadUrl
-  ) {
-    id
-    googleDriveFileId
-    downloadUrl
-  }
+mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!) {
+	updateSimfileDriveFile(
+		id: $id
+		googleDriveFileId: $googleDriveFileId
+		downloadUrl: $downloadUrl
+	) {
+		id
+		googleDriveFileId
+		downloadUrl
+	}
 }
 ```
 
@@ -422,14 +418,14 @@ Representative outcome:
 
 ```ts
 type SongSaveOutcome = {
-  simfileSave: { success: boolean; error?: string };
-  driveUpload: {
-    status: 'success' | 'failed' | 'skipped';
-    fileId?: string;
-    downloadUrl?: string;
-    errorCode?: string;
-    error?: string;
-  };
+	simfileSave: { success: boolean; error?: string };
+	driveUpload: {
+		status: 'success' | 'failed' | 'skipped';
+		fileId?: string;
+		downloadUrl?: string;
+		errorCode?: string;
+		error?: string;
+	};
 };
 ```
 
@@ -440,11 +436,11 @@ type SongSaveOutcome = {
 Extend `desktopHost.ts` with typed wrappers:
 
 ```ts
-getGoogleDriveConnectionState(drumeryUserId)
-connectGoogleDriveAndChooseFolder(drumeryUserId)
-changeGoogleDriveFolder(drumeryUserId)
-disconnectGoogleDrive(drumeryUserId)
-uploadSongZipToGoogleDrive(params)
+getGoogleDriveConnectionState(drumeryUserId);
+connectGoogleDriveAndChooseFolder(drumeryUserId);
+changeGoogleDriveFolder(drumeryUserId);
+disconnectGoogleDrive(drumeryUserId);
+uploadSongZipToGoogleDrive(params);
 ```
 
 Expose no generic token or arbitrary HTTP command.
@@ -475,14 +471,14 @@ Representative input:
 
 ```ts
 type UploadSongZipToGoogleDriveInput = {
-  operationId: string;
-  drumeryUserId: string;
-  simfileId: string;
-  songPath: string;
-  workspaceRoot: string;
-  songTitle: string;
-  existingFileId?: string;
-  forceCreateReplacement?: boolean;
+	operationId: string;
+	drumeryUserId: string;
+	simfileId: string;
+	songPath: string;
+	workspaceRoot: string;
+	songTitle: string;
+	existingFileId?: string;
+	forceCreateReplacement?: boolean;
 };
 ```
 
@@ -490,24 +486,24 @@ Representative result:
 
 ```ts
 type GoogleDriveUploadResult = {
-  success: boolean;
-  fileId?: string;
-  downloadUrl?: string;
-  fileName?: string;
-  replacedExistingFile?: boolean;
-  errorCode?:
-    | 'NOT_CONNECTED'
-    | 'RECONNECT_REQUIRED'
-    | 'FOLDER_REQUIRED'
-    | 'FOLDER_UNAVAILABLE'
-    | 'FILE_NOT_FOUND'
-    | 'FILE_PERMISSION_DENIED'
-    | 'QUOTA_EXCEEDED'
-    | 'NETWORK'
-    | 'CREDENTIAL_STORE'
-    | 'INVALID_RESPONSE'
-    | 'UNKNOWN';
-  error?: string;
+	success: boolean;
+	fileId?: string;
+	downloadUrl?: string;
+	fileName?: string;
+	replacedExistingFile?: boolean;
+	errorCode?:
+		| 'NOT_CONNECTED'
+		| 'RECONNECT_REQUIRED'
+		| 'FOLDER_REQUIRED'
+		| 'FOLDER_UNAVAILABLE'
+		| 'FILE_NOT_FOUND'
+		| 'FILE_PERMISSION_DENIED'
+		| 'QUOTA_EXCEEDED'
+		| 'NETWORK'
+		| 'CREDENTIAL_STORE'
+		| 'INVALID_RESPONSE'
+		| 'UNKNOWN';
+	error?: string;
 };
 ```
 

@@ -16,7 +16,7 @@ describe('Desktop song creation', () => {
 	});
 
 	after(async () => {
-		await fixture.cleanup();
+		await fixture?.cleanup();
 	});
 
 	beforeEach(async () => {

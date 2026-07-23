@@ -13,8 +13,8 @@ describe('Drumery desktop', () => {
 		const app = await $('#app');
 		await app.waitForDisplayed();
 
-		const preferences = await browser.tauri.execute<Preferences>(({ core }) =>
-			core.invoke('read_preferences')
+		const preferences = await browser.tauri.execute<Preferences, []>(
+			({ core }) => core.invoke('read_preferences') as unknown as Preferences
 		);
 
 		expect(preferences.detailPaneWidth).toBeGreaterThanOrEqual(320);

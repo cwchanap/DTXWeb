@@ -1,10 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 import {
 	TEST_SUPABASE_URL,
 	TEST_SUPABASE_ANON_KEY,
 	DTX_API_LOCAL_PORT,
 	isAuthConfigured
-} from './e2e/test-config';
+} from './test-config';
 
 // CI guard: fail loudly when auth secrets are not provisioned. Without this,
 // Playwright exits 0 with zero auth-test coverage — the gate is then
@@ -19,6 +20,7 @@ if (process.env.CI && !isAuthConfigured) {
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const apiURL = `http://localhost:${DTX_API_LOCAL_PORT}`;
+const packageRoot = fileURLToPath(new URL('.', import.meta.url));
 
 // Shared Supabase env for the dtx-web dev server (cookie auth + client bearer).
 const webSupabaseEnv = {
@@ -32,6 +34,7 @@ const webSupabaseEnv = {
 const webServers = [
 	{
 		command: 'bun run --filter=dtx-web dev',
+		cwd: packageRoot,
 		url: 'http://localhost:5173',
 		reuseExistingServer: false,
 		timeout: 180_000,
@@ -46,14 +49,15 @@ const webServers = [
 	},
 	{
 		command:
-			'bun run e2e/setup/prepare-stack.ts && ' +
-			'cd packages/dtx-api && bunx wrangler dev --port ' +
+			'bun run setup/prepare-stack.ts && ' +
+			'cd ../dtx-api && bunx wrangler dev --port ' +
 			DTX_API_LOCAL_PORT +
 			' --persist-to .wrangler/state' +
 			` --var SUPABASE_URL:"${TEST_SUPABASE_URL}"` +
 			` --var SUPABASE_ANON_KEY:"${TEST_SUPABASE_ANON_KEY}"` +
 			' --var CORS_ALLOWED_ORIGINS:"http://localhost:5173"' +
 			' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"',
+		cwd: packageRoot,
 		url: `${apiURL}/graphql?query=%7B__typename%7D`,
 		reuseExistingServer: false,
 		timeout: 180_000,
@@ -62,7 +66,7 @@ const webServers = [
 ];
 
 export default defineConfig({
-	testDir: './e2e',
+	testDir: '.',
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,

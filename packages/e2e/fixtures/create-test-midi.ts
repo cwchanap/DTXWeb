@@ -15,24 +15,6 @@ interface MidiHeader {
 	ticksPerQuarter: number;
 }
 
-interface MidiTrackHeader {
-	chunkType: 'MTrk';
-	length: number;
-}
-
-interface MidiEvent {
-	deltaTime: number;
-	eventType: 'meta' | 'channel';
-	data: number[];
-}
-
-interface MidiNote {
-	channel: number;
-	note: number;
-	velocity: number;
-	deltaTime: number;
-}
-
 class MidiFileBuilder {
 	private header: MidiHeader;
 	private tracks: Uint8Array[] = [];

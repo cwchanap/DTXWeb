@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { DTX_API_LOCAL_PORT, CHART_B_ID } from './test-config';
-import type { UploadScoresInput } from '../packages/dtx-web/src/lib/api/generated/graphql';
+import type { UploadScoresInput } from '../dtx-web/src/lib/api/generated/graphql';
 
 // Both describe blocks destructively REPLACE the test user's scores on the
 // same seeded chart (CHART_B_ID). Running them as separate files let
@@ -9,7 +9,7 @@ import type { UploadScoresInput } from '../packages/dtx-web/src/lib/api/generate
 // playCount===12; score-page asserts the 987650 best score). Serial mode
 // runs every test in this file on a single worker, in order, so the two
 // writes can no longer interleave. retries:0 is preserved from the originals.
-test.use({ storageState: 'e2e/.auth/user.json' });
+test.use({ storageState: '.auth/user.json' });
 test.describe.configure({ mode: 'serial', retries: 0 });
 
 const API_URL = `http://localhost:${DTX_API_LOCAL_PORT}/graphql`;

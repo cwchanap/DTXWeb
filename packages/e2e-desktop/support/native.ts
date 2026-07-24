@@ -1,38 +1,18 @@
 import { browser } from '@wdio/globals';
 
-export type PathExistsResult = {
-	exists: boolean;
-	error: string | null;
-};
+import type {
+	ListFilesResult as GeneratedListFilesResult,
+	ListedFile as GeneratedListedFile,
+	PathExistsResult as GeneratedPathExistsResult,
+	ReadFileResultWire,
+	TreeNode as GeneratedTreeNode
+} from './generated/native-types';
 
-export type ReadFileResult = {
-	kind: 'binary' | 'error' | 'text';
-	error: string | null;
-	content: number[] | string;
-};
-
-export type TreeNode = {
-	name: string;
-	path: string;
-	isExpanded: boolean;
-	isLoading: boolean;
-	children: TreeNode[];
-	hasChildren: boolean;
-	containsDtxFiles: boolean;
-	songTitle: string | null;
-};
-
-export type ListedFile = {
-	fileName: string;
-	size: number;
-	lastModified: string;
-	key: string;
-};
-
-export type ListFilesResult = {
-	files: ListedFile[];
-	error: string | null;
-};
+export type PathExistsResult = GeneratedPathExistsResult;
+export type ReadFileResult = ReadFileResultWire;
+export type TreeNode = GeneratedTreeNode;
+export type ListedFile = GeneratedListedFile;
+export type ListFilesResult = GeneratedListFilesResult;
 
 export const pathExists = async (
 	workspaceRoot: string,

@@ -126,6 +126,10 @@ jobs:
       - name: Run unit tests with coverage
         run: cargo llvm-cov --locked --lcov --output-path lcov.info
 
+      - name: Verify generated TypeScript types are in sync
+        working-directory: ${{ github.workspace }}
+        run: git diff --exit-code -- packages/e2e-desktop/support/generated/native-types.ts
+
       - name: Upload coverage to Codecov
         # Codecov merges this Rust upload with the TypeScript coverage uploaded
         # by unit-test.yml for the same commit, so overall coverage spans both.

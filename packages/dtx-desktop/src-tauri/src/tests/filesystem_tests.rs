@@ -1,5 +1,5 @@
 use super::*;
-use crate::models::ReadFileResult;
+use crate::models::{ListedFile, ReadFileResult};
 use tempfile::tempdir;
 use tokio::fs;
 
@@ -57,9 +57,10 @@ async fn list_files_rejects_symlink_escape() {
     .await
     .expect("envelope");
 
-    assert_eq!(result["files"], serde_json::json!([]));
-    assert!(result["error"]
-        .as_str()
+    assert!(result.files.is_empty());
+    assert!(result
+        .error
+        .as_ref()
         .is_some_and(|error| error.contains("outside the workspace")));
 }
 
@@ -124,10 +125,8 @@ async fn list_files_returns_error_envelope_for_missing_directory() {
     .await
     .expect("envelope");
 
-    assert_eq!(result["files"], serde_json::json!([]));
-    assert!(result["error"]
-        .as_str()
-        .is_some_and(|error| !error.is_empty()));
+    assert!(result.files.is_empty());
+    assert!(result.error.as_ref().is_some_and(|error| !error.is_empty()));
 }
 
 #[tokio::test]
@@ -176,9 +175,10 @@ async fn list_files_rejects_path_outside_workspace() {
     .await
     .expect("envelope");
 
-    assert_eq!(result["files"], serde_json::json!([]));
-    assert!(result["error"]
-        .as_str()
+    assert!(result.files.is_empty());
+    assert!(result
+        .error
+        .as_ref()
         .is_some_and(|error| error.contains("outside the workspace")));
 }
 
@@ -195,9 +195,8 @@ async fn list_files_returns_real_iso_last_modified() {
     .await
     .expect("listing");
 
-    let files = result["files"].as_array().expect("files");
-    assert_eq!(files.len(), 1);
-    let last_modified = files[0]["lastModified"].as_str().expect("lastModified");
+    assert_eq!(result.files.len(), 1);
+    let last_modified = &result.files[0].last_modified;
     assert_ne!(last_modified, "1970-01-01T00:00:00.000Z");
     assert_iso_utc_timestamp(last_modified);
 }

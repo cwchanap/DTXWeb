@@ -36,6 +36,48 @@ fn read_file_binary_serializes_renderer_shape() {
     assert_eq!(json["content"], serde_json::json!([1, 2, 3]));
 }
 
+/// Verifies that `ReadFileResultWire` produces the same JSON as `ReadFileResult`
+/// for every variant, so the generated TypeScript types stay in sync with the
+/// actual wire format.
+#[test]
+fn read_file_result_wire_matches_read_file_result_serialization() {
+    let error = ReadFileResult::Error {
+        error: "boom".to_string(),
+    };
+    let wire_error = ReadFileResultWire::Error {
+        error: "boom".to_string(),
+        content: String::new(),
+    };
+    assert_eq!(
+        serde_json::to_value(error).expect("serialize"),
+        serde_json::to_value(wire_error).expect("serialize")
+    );
+
+    let text = ReadFileResult::Text {
+        content: "hello".to_string(),
+    };
+    let wire_text = ReadFileResultWire::Text {
+        error: None,
+        content: "hello".to_string(),
+    };
+    assert_eq!(
+        serde_json::to_value(text).expect("serialize"),
+        serde_json::to_value(wire_text).expect("serialize")
+    );
+
+    let binary = ReadFileResult::Binary {
+        content: vec![0, 1],
+    };
+    let wire_binary = ReadFileResultWire::Binary {
+        error: None,
+        content: vec![0, 1],
+    };
+    assert_eq!(
+        serde_json::to_value(binary).expect("serialize"),
+        serde_json::to_value(wire_binary).expect("serialize")
+    );
+}
+
 #[test]
 fn success_result_omits_absent_error() {
     let result = SuccessResult {

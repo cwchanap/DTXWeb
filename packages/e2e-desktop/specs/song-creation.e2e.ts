@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
 
 import { expect, $ } from '@wdio/globals';
 
@@ -51,6 +52,10 @@ describe('Desktop song creation', () => {
 	});
 
 	it('blocks creation when the target folder already exists', async () => {
+		// Ensure the target folder exists independently of the previous test, so
+		// this case passes whether run in isolation or after the creation test.
+		await mkdir(join(fixture.workspaceRoot, createdSongName), { recursive: true });
+
 		await $('button[aria-label="Create new song"]').click();
 		await $('#songName').setValue(createdSongName);
 

@@ -156,10 +156,12 @@ pub struct ListedFile {
     pub key: String,
 }
 
-/// Wire format for `list_files` / `list_directory` commands. Replaces the
-/// inline `json!({ "files": ..., "error": ... })` construction so the shape is
-/// a single source of truth shared by the Tauri command and the generated
-/// TypeScript types.
+/// Wire format for the `list_files` command. `list_directory` produces the
+/// same `{ files, error }` shape but still constructs it inline via `json!`,
+/// so this struct is currently the canonical definition only for `list_files`.
+/// The generated TypeScript mirror (via ts-rs) is consumed by the e2e-desktop
+/// support layer, not the production desktop frontend, which defines its own
+/// hand-written types in `desktopHost.ts`.
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
 #[ts(
     export,

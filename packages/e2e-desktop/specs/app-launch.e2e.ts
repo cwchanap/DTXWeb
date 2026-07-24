@@ -1,5 +1,7 @@
 import { browser, expect, $ } from '@wdio/globals';
 
+import { resetApp } from '../support/app';
+
 type Preferences = {
 	detailPaneWidth: number;
 	detailPaneVisible: boolean;
@@ -7,6 +9,10 @@ type Preferences = {
 };
 
 describe('Drumery desktop', () => {
+	beforeEach(async () => {
+		await resetApp();
+	});
+
 	it('launches the native shell and invokes a Rust command', async () => {
 		await expect(browser).toHaveTitle('Drumery');
 

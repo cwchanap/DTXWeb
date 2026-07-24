@@ -26,6 +26,8 @@ export const config: Options.Testrunner = {
 			}
 		]
 	],
+	// @ts-expect-error -- `capabilities` is a standard wdio config field but
+	// @wdio/types@9.29.1 omits it from the Testrunner interface.
 	capabilities: [
 		{
 			browserName: 'tauri',

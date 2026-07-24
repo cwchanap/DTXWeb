@@ -302,7 +302,7 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 - Prettier for code formatting (tabs, single quotes, width 100)
 - ESLint for TypeScript and Svelte linting
 - Supabase CLI for type generation and local development
-- CI (`.github/workflows/`): `lint-and-format`, `unit-test`, `e2e-test`, `tauri-rust-ci` (Rust fmt/clippy/test), `codeql` (security scan), and `desktop-build-deploy` run on push/PR. Worker deploys are manual.
+- CI (`.github/workflows/`): `lint-and-format`, `unit-test`, `e2e-test`, `tauri-rust-ci` (Rust fmt/clippy/test), `codeql` (security scan), `desktop-build-deploy`, and `desktop-e2e-test` (Tauri integration test on Linux via xvfb) run on push/PR. Worker deploys are manual.
 
 ## Code Maintenance
 

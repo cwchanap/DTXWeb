@@ -8,6 +8,8 @@ on:
     paths:
       - 'packages/dtx-desktop/**'
       - 'packages/e2e-desktop/**'
+      - 'packages/common/**'
+      - 'packages/ui-components/**'
       - '.github/workflows/desktop-e2e-test.yml'
   pull_request:
     branches:
@@ -16,6 +18,8 @@ on:
     paths:
       - 'packages/dtx-desktop/**'
       - 'packages/e2e-desktop/**'
+      - 'packages/common/**'
+      - 'packages/ui-components/**'
       - '.github/workflows/desktop-e2e-test.yml'
 
 permissions:

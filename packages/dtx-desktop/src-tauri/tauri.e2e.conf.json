@@ -1,5 +1,6 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
+	"identifier": "com.hapadona.drumery.e2e",
 	"app": {
 		"withGlobalTauri": true,
 		"security": {

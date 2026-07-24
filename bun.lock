@@ -235,6 +235,9 @@
       },
     },
   },
+  "overrides": {
+    "@wdio/native-utils": "^2.5.0",
+  },
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.4.4", "", {}, "sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg=="],
 
@@ -990,7 +993,7 @@
 
     "@wdio/native-types": ["@wdio/native-types@2.4.0", "", {}, "sha512-GjgPskOoTvl17Jwj8aAU3A31gpklL5M1KfbrwYffbQT16CTpJTD8A4PdoS2ZjGoCWcyLBR1CWdJI3W8T0JBLjw=="],
 
-    "@wdio/native-utils": ["@wdio/native-utils@2.4.0", "", { "dependencies": { "@wdio/logger": "9.18.0", "debug": "^4.4.3", "esbuild": "^0.28.0", "find-up-simple": "^1.0.1", "json5": "^2.2.3", "smol-toml": "^1.6.0", "yaml": "^2.9.0" }, "peerDependencies": { "tsx": "^4.22.3" }, "optionalPeers": ["tsx"] }, "sha512-wbox9Hm7Pv98E1krs6/YqbV3a7gDcBK70a/BhZbFYXmVQvtqU8o8AvQerg5aUvYVyi/bQejG0IH9yBfE8LIivQ=="],
+    "@wdio/native-utils": ["@wdio/native-utils@2.5.0", "", { "dependencies": { "@wdio/logger": "9.18.0", "debug": "^4.4.3", "esbuild": "^0.28.0", "find-up-simple": "^1.0.1", "json5": "^2.2.3", "smol-toml": "^1.6.0", "yaml": "^2.9.0" }, "peerDependencies": { "tsx": "^4.22.4" }, "optionalPeers": ["tsx"] }, "sha512-Qv0mJ2elRBZCgYbHCnKPNgE9VaqnmNJyjythTDYyOQpj8pAs6FZXXmWXGkUIdMds5cK0ux/qtxyKU0Y0tDsUUQ=="],
 
     "@wdio/protocols": ["@wdio/protocols@9.30.0", "", {}, "sha512-VDKCTw3GVdqUw1+fXAY4FUOSt+a3/r7T2O34d5HAaZLfI6QHacsU7/N0Sv3w/QgWU6yj3WkXElXq1oSWF1XcBw=="],
 

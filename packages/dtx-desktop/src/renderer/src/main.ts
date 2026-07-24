@@ -22,7 +22,10 @@ import App from './App.svelte';
 // Initialize XA decoder WASM module
 async function initializeApp() {
 	if (import.meta.env.VITE_WDIO === 'true') {
-		await import('@wdio/tauri-plugin');
+		// Side-effect import: the module installs an IPC mock proxy on
+		// `window.__TAURI__.core.invoke` so e2e tests can intercept/spy on
+		// Tauri commands. No namespace is consumed here by design.
+		void (await import('@wdio/tauri-plugin'));
 	}
 
 	// Ensure dark mode is enabled for TailwindCSS

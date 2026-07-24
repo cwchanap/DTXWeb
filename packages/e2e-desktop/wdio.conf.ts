@@ -5,9 +5,12 @@ import type { Options } from '@wdio/types';
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const executableName = process.platform === 'win32' ? 'dtx-desktop.exe' : 'dtx-desktop';
+// e2e builds use a dedicated cargo target dir (`target-e2e`, set via
+// CARGO_TARGET_DIR in the `e2e:build` script) so they don't clobber or
+// invalidate `tauri dev` artifacts in `target/debug`.
 const appBinaryPath =
 	process.env.DTX_DESKTOP_BINARY ??
-	resolve(packageRoot, '../dtx-desktop/src-tauri/target/debug', executableName);
+	resolve(packageRoot, '../dtx-desktop/src-tauri/target-e2e/debug', executableName);
 
 export const config: Options.Testrunner = {
 	runner: 'local',

@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"e2e": "bun run e2e:build && bun run e2e:run",
-		"e2e:build": "cross-env VITE_WDIO=true bun run --filter=dtx-desktop tauri build --debug --features e2e --config src-tauri/tauri.e2e.conf.json",
+		"e2e:build": "cross-env VITE_WDIO=true CARGO_TARGET_DIR=target-e2e bun run --filter=dtx-desktop tauri build --debug --features e2e --config src-tauri/tauri.e2e.conf.json",
 		"e2e:run": "wdio run wdio.conf.ts",
 		"check": "tsc --noEmit"
 	},

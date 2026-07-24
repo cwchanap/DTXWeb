@@ -69,6 +69,9 @@ jobs:
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: packages/dtx-desktop/src-tauri
+          # e2e builds emit to a dedicated target dir (CARGO_TARGET_DIR=target-e2e)
+          # to avoid invalidating `tauri dev` artifacts; cache it too.
+          cache-directories: packages/dtx-desktop/src-tauri/target-e2e
           save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Install dependencies

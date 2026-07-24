@@ -57,7 +57,11 @@ describe('Desktop native filesystem boundary', () => {
 		});
 	});
 
-	it('rejects reads outside the selected workspace', async () => {
+	// NOTE: this verifies containment only against the *caller-supplied* root.
+	// `read_file` accepts `workspaceRoot` as a renderer IPC arg, so a
+	// compromised webview could pass a different root and escape containment.
+	// The trusted-root migration is tracked in HPA-314.
+	it('rejects reads outside the caller-supplied workspace root', async () => {
 		const result = await readFile(
 			join(fixture.outsideRoot, 'private.dtx'),
 			fixture.workspaceRoot

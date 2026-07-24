@@ -1,6 +1,7 @@
 use crate::error::{DesktopError, Result};
 use crate::models::{
-    DialogResult, FileEntry, ListedFile, PathExistsResult, ReadFileResult, SuccessResult, TreeNode,
+    DialogResult, FileEntry, ListFilesResult, ListedFile, PathExistsResult, ReadFileResult,
+    SuccessResult, TreeNode,
 };
 use encoding_rs::{Encoding, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8};
 use serde_json::json;
@@ -142,15 +143,23 @@ pub async fn list_directory(
 pub async fn list_files(
     dir_path: String,
     workspace_root: Option<String>,
-) -> Result<serde_json::Value> {
+) -> Result<ListFilesResult> {
     let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await
     {
         Ok(path) => path,
-        Err(error) => return Ok(list_error_value(error)),
+        Err(error) => {
+            return Ok(ListFilesResult {
+                files: vec![],
+                error: Some(error.to_string()),
+            })
+        }
     };
     match list_file_entries(&canonical).await {
-        Ok(files) => Ok(json!({ "files": files, "error": null })),
-        Err(error) => Ok(list_error_value(error)),
+        Ok(files) => Ok(ListFilesResult { files, error: None }),
+        Err(error) => Ok(ListFilesResult {
+            files: vec![],
+            error: Some(error.to_string()),
+        }),
     }
 }
 

@@ -32,6 +32,11 @@ jobs:
       - name: Build packages
         run: bun run --filter=@dtx/common build
 
+      - name: Typecheck e2e packages
+        run: |
+          bun run --filter=dtx-e2e-web check
+          bun run --filter=dtx-e2e-desktop check
+
       - name: Run linting
         run: bun run lint
 

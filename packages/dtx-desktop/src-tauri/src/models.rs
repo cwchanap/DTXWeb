@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DialogResult {
@@ -7,7 +8,11 @@ pub struct DialogResult {
     pub file_paths: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
 pub struct PathExistsResult {
     pub exists: bool,
     pub error: Option<String>,
@@ -81,7 +86,37 @@ impl Serialize for ReadFileResult {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// TypeScript wire-format mirror of `ReadFileResult`. This enum uses
+/// `#[serde(tag = "kind")]` so its serialization matches the custom `Serialize`
+/// impl on `ReadFileResult` exactly (all three fields present in every variant).
+/// A test in `tests/models_tests.rs` verifies the two stay in sync.
+#[allow(dead_code)] // used by ts-rs codegen and tests, not runtime
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(tag = "kind")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub enum ReadFileResultWire {
+    #[serde(rename = "error")]
+    Error { error: String, content: String },
+    #[serde(rename = "text")]
+    Text {
+        error: Option<String>,
+        content: String,
+    },
+    #[serde(rename = "binary")]
+    Binary {
+        error: Option<String>,
+        content: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
 pub struct TreeNode {
     pub name: String,
     pub path: String,
@@ -106,14 +141,33 @@ pub struct FileEntry {
     pub entry_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
 pub struct ListedFile {
     #[serde(rename = "fileName")]
     pub file_name: String,
+    #[ts(type = "number")]
     pub size: u64,
     #[serde(rename = "lastModified")]
     pub last_modified: String,
     pub key: String,
+}
+
+/// Wire format for `list_files` / `list_directory` commands. Replaces the
+/// inline `json!({ "files": ..., "error": ... })` construction so the shape is
+/// a single source of truth shared by the Tauri command and the generated
+/// TypeScript types.
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct ListFilesResult {
+    pub files: Vec<ListedFile>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

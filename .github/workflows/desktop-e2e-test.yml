@@ -11,6 +11,8 @@ on:
       - 'packages/common/**'
       - 'packages/ui-components/**'
       - '.github/workflows/desktop-e2e-test.yml'
+      - 'package.json'
+      - 'bun.lock'
   pull_request:
     branches:
       - main
@@ -21,6 +23,8 @@ on:
       - 'packages/common/**'
       - 'packages/ui-components/**'
       - '.github/workflows/desktop-e2e-test.yml'
+      - 'package.json'
+      - 'bun.lock'
 
 permissions:
   contents: read
@@ -67,6 +71,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Build shared package
+        run: bun run --filter=@dtx/common build
 
       - name: Build test-enabled desktop app
         run: bun run --filter=dtx-e2e-desktop e2e:build

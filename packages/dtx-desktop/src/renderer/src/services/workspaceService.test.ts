@@ -11,6 +11,7 @@ vi.mock('./desktopHost', () => ({
 		selectFolder: vi.fn(),
 		selectWorkspaceFolder: vi.fn(),
 		clearWorkspaceRoot: vi.fn(),
+		getWorkspaceRoot: vi.fn(),
 		pathExists: vi.fn(),
 		listDirectories: vi.fn(),
 		loadTreeStructure: vi.fn()
@@ -26,6 +27,21 @@ const createDeferred = <T>() => {
 	});
 
 	return { promise, resolve };
+};
+
+const createRejectableDeferred = <T>() => {
+	let reject!: (error: Error) => void;
+	const promise = new Promise<T>((_resolve, promiseReject) => {
+		reject = promiseReject;
+	});
+
+	return { promise, reject };
+};
+
+const flushPromises = async () => {
+	await Promise.resolve();
+	await Promise.resolve();
+	await Promise.resolve();
 };
 
 // Mock the workspaceStore
@@ -219,6 +235,22 @@ describe('WorkspaceService', () => {
 				{ name: 'new', path: '/new', children: [] }
 			]);
 		});
+
+		it('disposes a pending tree request before its late response can mutate the store', async () => {
+			const tree = createDeferred<any[]>();
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: '/test/workspace', currentSubWorkspace: null });
+				return vi.fn();
+			});
+			host.loadTreeStructure.mockReturnValue(tree.promise);
+
+			const request = workspaceService.loadTreeStructure();
+			workspaceService.disposeOperations();
+			tree.resolve([{ name: 'late', path: '/late', children: [] }]);
+			await request;
+
+			expect(workspaceStore.setTreeStructure).not.toHaveBeenCalled();
+		});
 	});
 	describe('selectWorkspace', () => {
 		it('should select a workspace and update path and loading state when a path is chosen', async () => {
@@ -264,14 +296,90 @@ describe('WorkspaceService', () => {
 
 			const olderRequest = workspaceService.selectWorkspace();
 			const newerRequest = workspaceService.selectWorkspace();
-			newerSelection.resolve({ canceled: false, filePaths: ['/workspace/newer'] });
-			await newerRequest;
+			await flushPromises();
 			olderSelection.resolve({ canceled: false, filePaths: ['/workspace/older'] });
-			await olderRequest;
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
+			});
+			newerSelection.resolve({ canceled: false, filePaths: ['/workspace/newer'] });
+			await Promise.all([olderRequest, newerRequest]);
 
-			expect(workspaceStore.reset).toHaveBeenCalledTimes(1);
-			expect(workspaceStore.setPath).toHaveBeenCalledTimes(1);
-			expect(workspaceStore.setPath).toHaveBeenCalledWith('/workspace/newer');
+			expect(workspaceStore.reset).toHaveBeenCalledTimes(2);
+			expect(workspaceStore.setPath).toHaveBeenLastCalledWith('/workspace/newer');
+		});
+
+		it('serializes overlapping native selections so the final native and renderer roots agree', async () => {
+			const firstSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			const secondSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			let nativeRoot: string | null = null;
+			let rendererRoot: string | null = null;
+			(workspaceStore.setPath as any).mockImplementation((path: string) => {
+				rendererRoot = path;
+			});
+			host.getWorkspaceRoot.mockImplementation(async () => nativeRoot);
+			host.selectWorkspaceFolder
+				.mockImplementationOnce(async () => {
+					const result = await firstSelection.promise;
+					nativeRoot = result.filePaths[0] ?? null;
+					return result;
+				})
+				.mockImplementationOnce(async () => {
+					const result = await secondSelection.promise;
+					nativeRoot = result.filePaths[0] ?? null;
+					return result;
+				});
+
+			const first = workspaceService.selectWorkspace();
+			const second = workspaceService.selectWorkspace();
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(1);
+			});
+
+			firstSelection.resolve({ canceled: false, filePaths: ['/workspace/first'] });
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
+			});
+			secondSelection.resolve({ canceled: false, filePaths: ['/workspace/second'] });
+			await Promise.all([first, second]);
+
+			expect(await host.getWorkspaceRoot()).toBe('/workspace/second');
+			expect(rendererRoot).toBe('/workspace/second');
+		});
+
+		it('serializes a clear behind a pending selection so it remains the final native state', async () => {
+			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			const clear = createDeferred<void>();
+			let nativeRoot: string | null = null;
+			let rendererRoot: string | null = '/workspace/existing';
+			(workspaceStore.clearWorkspace as any).mockImplementation(() => {
+				rendererRoot = null;
+			});
+			host.getWorkspaceRoot.mockImplementation(async () => nativeRoot);
+			host.selectWorkspaceFolder.mockImplementation(async () => {
+				const result = await selection.promise;
+				nativeRoot = result.filePaths[0] ?? null;
+				return result;
+			});
+			host.clearWorkspaceRoot.mockImplementation(async () => {
+				await clear.promise;
+				nativeRoot = null;
+			});
+
+			const select = workspaceService.selectWorkspace();
+			const clearRequest = workspaceService.clearWorkspace();
+			await flushPromises();
+			expect(host.clearWorkspaceRoot).not.toHaveBeenCalled();
+
+			selection.resolve({ canceled: false, filePaths: ['/workspace/selected'] });
+			await vi.waitFor(() => {
+				expect(host.clearWorkspaceRoot).toHaveBeenCalledOnce();
+			});
+			clear.resolve();
+			await Promise.all([select, clearRequest]);
+
+			expect(await host.getWorkspaceRoot()).toBeNull();
+			expect(rendererRoot).toBeNull();
+			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
 		});
 
 		it('should handle errors during folder selection', async () => {
@@ -350,6 +458,53 @@ describe('WorkspaceService', () => {
 
 			expect(workspaceStore.setSubWorkspaces).toHaveBeenCalledTimes(1);
 			expect(workspaceStore.setSubWorkspaces).toHaveBeenCalledWith(['DTXFiles.New']);
+		});
+
+		it('rejects an older A response after an A-to-B-to-A transition', async () => {
+			const oldA = createDeferred<string[]>();
+			let state = { path: '/workspace/A', currentSubWorkspace: null };
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback(state);
+				return vi.fn();
+			});
+			host.listDirectories.mockImplementation((path) => {
+				if (path === '/workspace/A' && host.listDirectories.mock.calls.length === 1) {
+					return oldA.promise;
+				}
+				return Promise.resolve([`DTXFiles.${path!.split('/').at(-1)}`]);
+			});
+
+			const staleA = workspaceService.loadSubWorkspaces();
+			state = { path: '/workspace/B', currentSubWorkspace: null };
+			await workspaceService.loadSubWorkspaces();
+			state = { path: '/workspace/A', currentSubWorkspace: null };
+			await workspaceService.loadSubWorkspaces();
+			oldA.resolve(['DTXFiles.StaleA']);
+			await staleA;
+
+			expect(workspaceStore.setSubWorkspaces).toHaveBeenLastCalledWith(['DTXFiles.A']);
+			expect(workspaceStore.setSubWorkspaces).not.toHaveBeenCalledWith(['DTXFiles.StaleA']);
+		});
+
+		it('discards a stale loader error after a newer request takes ownership', async () => {
+			const oldFolders = createRejectableDeferred<string[]>();
+			let state = { path: '/workspace/old', currentSubWorkspace: null };
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback(state);
+				return vi.fn();
+			});
+			host.listDirectories.mockImplementation((path) => {
+				if (path === '/workspace/old') return oldFolders.promise;
+				return Promise.resolve(['DTXFiles.New']);
+			});
+
+			const oldRequest = workspaceService.loadSubWorkspaces();
+			state = { path: '/workspace/new', currentSubWorkspace: null };
+			await workspaceService.loadSubWorkspaces();
+			oldFolders.reject(new Error('stale failure'));
+			await oldRequest;
+
+			expect(workspaceStore.setError).not.toHaveBeenCalled();
 		});
 	});
 
@@ -552,6 +707,51 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.updateTreeNode).toHaveBeenCalledWith('/test/node', {
 				isLoading: false
 			});
+		});
+
+		it('only lets the latest duplicate expansion commit its result', async () => {
+			const oldChildren = createDeferred<any[]>();
+			const node = { path: '/test/node', children: [], isExpanded: false, isLoading: false };
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: '/workspace', currentSubWorkspace: null, treeStructure: [node] });
+				return vi.fn();
+			});
+			host.loadTreeStructure
+				.mockReturnValueOnce(oldChildren.promise)
+				.mockResolvedValueOnce([{ name: 'new', path: '/test/node/new', children: [] }]);
+
+			const first = workspaceService.expandTreeNode('/test/node');
+			await workspaceService.expandTreeNode('/test/node');
+			oldChildren.resolve([{ name: 'old', path: '/test/node/old', children: [] }]);
+			await first;
+
+			const childUpdates = (workspaceStore.updateTreeNode as any).mock.calls.filter(
+				(call: any[]) => call[0] === '/test/node' && call[1].children
+			);
+			expect(childUpdates).toHaveLength(1);
+			expect(childUpdates[0][1].children).toEqual([
+				{ name: 'new', path: '/test/node/new', children: [] }
+			]);
+		});
+
+		it('disposes a pending expansion without allowing a late result to mutate the tree', async () => {
+			const children = createDeferred<any[]>();
+			const node = { path: '/test/node', children: [], isExpanded: false, isLoading: false };
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: '/workspace', currentSubWorkspace: null, treeStructure: [node] });
+				return vi.fn();
+			});
+			host.loadTreeStructure.mockReturnValue(children.promise);
+
+			const request = workspaceService.expandTreeNode('/test/node');
+			workspaceService.disposeOperations();
+			children.resolve([{ name: 'late', path: '/test/node/late', children: [] }]);
+			await request;
+
+			const childUpdates = (workspaceStore.updateTreeNode as any).mock.calls.filter(
+				(call: any[]) => call[0] === '/test/node' && call[1].children
+			);
+			expect(childUpdates).toHaveLength(0);
 		});
 	});
 

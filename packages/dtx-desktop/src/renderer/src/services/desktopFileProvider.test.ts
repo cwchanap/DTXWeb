@@ -80,7 +80,7 @@ describe('DesktopFileProvider', () => {
 
 			await provider.getFile('sim1', 'test.dtx');
 
-			expect(host.readFile).toHaveBeenCalledWith('/workspace/sim1/test.dtx', '/workspace');
+			expect(host.readFile).toHaveBeenCalledWith('/workspace/sim1/test.dtx');
 		});
 
 		it('calls host with workspace root path for local files (null simfileId)', async () => {
@@ -92,7 +92,7 @@ describe('DesktopFileProvider', () => {
 
 			await provider.getFile(null, 'test.dtx');
 
-			expect(host.readFile).toHaveBeenCalledWith('/workspace/test.dtx', '/workspace');
+			expect(host.readFile).toHaveBeenCalledWith('/workspace/test.dtx');
 		});
 
 		it('normalizes DTX backslash sample paths before reading from the local filesystem', async () => {
@@ -104,7 +104,7 @@ describe('DesktopFileProvider', () => {
 
 			await provider.getFile(null, 'sound\\kick.wav');
 
-			expect(host.readFile).toHaveBeenCalledWith('/workspace/sound/kick.wav', '/workspace');
+			expect(host.readFile).toHaveBeenCalledWith('/workspace/sound/kick.wav');
 		});
 
 		it('returns undefined when host returns error', async () => {

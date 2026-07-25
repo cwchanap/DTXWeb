@@ -60,7 +60,6 @@
 			try {
 				const folderResult = await desktopHost.pathExists(
 					selectedPath,
-					selectedPath,
 					sanitizedFolderName
 				);
 
@@ -146,11 +145,7 @@
 		}
 
 		// Check if folder already exists
-		const folderResult = await desktopHost.pathExists(
-			selectedPath,
-			selectedPath,
-			sanitizedFolderName
-		);
+		const folderResult = await desktopHost.pathExists(selectedPath, sanitizedFolderName);
 		if (folderResult.exists) {
 			error = `A folder named "${sanitizedFolderName}" already exists in the selected location`;
 			return;
@@ -173,7 +168,6 @@
 			// Refresh workspace tree to show new folder
 			if (workspaceState.path) {
 				const updatedTree = await desktopHost.loadTreeStructure<TreeNode[]>(
-					workspaceState.path,
 					workspaceState.path
 				);
 				workspaceStore.setTreeStructure(updatedTree);

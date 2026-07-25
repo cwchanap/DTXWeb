@@ -10,6 +10,7 @@
 	import { simFileStore } from './stores/simFileStore';
 	import { workspaceStore, type WorkspaceState } from './stores/workspaceStore';
 	import { linkingService } from './services/linkingService';
+	import { workspaceService } from './services/workspaceService';
 	import { desktopHost } from './services/desktopHost';
 	import { storeSessionData } from './services/supabaseService';
 	import { onMount, onDestroy } from 'svelte';
@@ -80,6 +81,20 @@
 		// Set up routing
 		handleRouteChange();
 		window.addEventListener('hashchange', handleRouteChange);
+
+		try {
+			const nativeWorkspace = await desktopHost.getWorkspaceRoot();
+			workspaceStore.hydratePath(nativeWorkspace);
+			if (nativeWorkspace) {
+				await workspaceService.loadSubWorkspaces();
+				await workspaceService.loadTreeStructure();
+			}
+		} catch (error) {
+			console.error('Failed to hydrate native workspace:', error);
+			workspaceStore.hydratePath(null);
+		}
+
+		if (destroyed) return;
 
 		// Set up the magic link result handler (new approach)
 		try {

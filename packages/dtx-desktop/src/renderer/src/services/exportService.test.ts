@@ -45,8 +45,7 @@ describe('exportSelectedSong', () => {
 		expect(desktopHost.exportSongToZip).toHaveBeenCalledWith({
 			songPath: '/songs/foo',
 			songTitle: 'Foo',
-			exportDirectory: '/out',
-			workspaceRoot: ''
+			exportDirectory: '/out'
 		});
 		expect(result).toEqual({ success: true, zipPath: '/out/foo.zip', filesCount: 3 });
 	});

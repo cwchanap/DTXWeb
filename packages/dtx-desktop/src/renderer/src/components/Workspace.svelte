@@ -37,7 +37,7 @@
 
 	// Handle clearing the workspace
 	const handleClearWorkspace = () => {
-		workspaceService.clearWorkspace();
+		void workspaceService.clearWorkspace();
 	};
 
 	// Handle creating a new song

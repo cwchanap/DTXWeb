@@ -66,23 +66,14 @@ function updateTreeNodeRecursive(
 }
 
 function createWorkspaceStore() {
-	// Try to restore workspace path from localStorage
-	const storedPath = localStorage.getItem('workspace_path');
-	const initialPath = storedPath ? JSON.parse(storedPath) : null;
-
-	const initializedState = {
-		...initialState,
-		path: initialPath
-	};
-
-	const { subscribe, set, update } = writable<WorkspaceState>(initializedState);
+	const { subscribe, set, update } = writable<WorkspaceState>(initialState);
 
 	return {
 		subscribe,
 		setPath: (path: string) => {
-			// Store in localStorage
-			localStorage.setItem('workspace_path', JSON.stringify(path));
-			// Update store
+			update((state) => ({ ...state, path, error: null }));
+		},
+		hydratePath: (path: string | null) => {
 			update((state) => ({ ...state, path, error: null }));
 		},
 		setCurrentSubWorkspace: (subWorkspace: string | null) => {

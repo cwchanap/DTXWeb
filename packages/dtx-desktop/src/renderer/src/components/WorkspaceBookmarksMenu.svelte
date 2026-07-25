@@ -236,6 +236,9 @@
 			{#if bookmarks.length > 0}
 				<div class="border-hairline my-1 border-t"></div>
 				<div class="text-faint px-2 pt-2 pb-1 text-xs font-medium">Bookmarks</div>
+				<p class="text-faint px-2 pb-2 text-xs">
+					Bookmarks are labels only. Reselect the folder to use it as your workspace.
+				</p>
 				<ul class="max-h-72 overflow-auto">
 					{#each bookmarks as bookmark (bookmark.path)}
 						{@const isActive = bookmark.path === currentPath}

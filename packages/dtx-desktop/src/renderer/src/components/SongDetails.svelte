@@ -132,7 +132,7 @@
 		fileLoadError = null;
 
 		try {
-			const result = await desktopHost.listFiles<ListFilesResponse>(song.path, song.path);
+			const result = await desktopHost.listFiles<ListFilesResponse>(song.path);
 
 			if (result.error) {
 				throw new Error(result.error);
@@ -146,10 +146,7 @@
 					.map(async (fileInfo: ListedFile) => {
 						try {
 							// Read file content as buffer
-							const response = await desktopHost.readFile(
-								fileInfo.key,
-								song.path // Pass the song directory as workspace root
-							);
+							const response = await desktopHost.readFile(fileInfo.key);
 
 							// Destructure the response to get error and content
 							const { error, content } = response;
@@ -406,10 +403,7 @@
 							}))
 						: [],
 					// Pass the song path so the Rust backend can find and read preview files
-					songPath: String(song.path || ''),
-					// Pass the workspace root so the Rust backend can confine preview
-					// reads to the workspace (prevents path-traversal exfiltration)
-					workspaceRoot: String($workspaceStore?.path ?? '')
+					songPath: String(song.path || '')
 				})
 			);
 
@@ -657,8 +651,7 @@
 			const result = await desktopHost.exportSongToZip<ExportSongResult>({
 				songPath: song.path,
 				songTitle: zipFileName,
-				exportDirectory: currentSettings.exportDirectory,
-				workspaceRoot: String($workspaceStore?.path ?? '')
+				exportDirectory: currentSettings.exportDirectory
 			});
 
 			if (result.success) {
@@ -709,7 +702,7 @@
 						bpm?: number;
 						artist?: string;
 						levels?: { label: string; level: number }[];
-					} | null>(song.path, String($workspaceStore?.path ?? ''));
+					} | null>(song.path);
 
 					if (result) {
 						parsedLocalData = {
@@ -985,12 +978,7 @@
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
 							uploadFile={(fileName, songFolderPath, simfileId) =>
-								desktopHost.uploadFile(
-									fileName,
-									songFolderPath,
-									String($workspaceStore?.path ?? ''),
-									simfileId
-								)}
+								desktopHost.uploadFile(fileName, songFolderPath, simfileId)}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
 							disableUploads={!$authStore.isAuthenticated}
@@ -1268,12 +1256,7 @@
 							simfileBucketUrl=""
 							loadAssetFiles={loadAssetFilesForDesktop}
 							uploadFile={(fileName, songFolderPath, simfileId) =>
-								desktopHost.uploadFile(
-									fileName,
-									songFolderPath,
-									String($workspaceStore?.path ?? ''),
-									simfileId
-								)}
+								desktopHost.uploadFile(fileName, songFolderPath, simfileId)}
 							isDesktop={true}
 							songFolderPath={song.path || ''}
 							disableUploads={!$authStore.isAuthenticated}

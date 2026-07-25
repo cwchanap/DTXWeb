@@ -49,6 +49,16 @@ describe('workspaceStore', () => {
 		workspaceStore.reset();
 	});
 
+	it('does not hydrate a workspace path from renderer localStorage during import', async () => {
+		window.localStorage.setItem('workspace_path', JSON.stringify('/spoofed/path'));
+		vi.resetModules();
+
+		const { workspaceStore: importedStore } = await import('./workspaceStore');
+
+		expect(get(importedStore).path).toBeNull();
+		expect(window.localStorage.getItem).not.toHaveBeenCalledWith('workspace_path');
+	});
+
 	it('should initialize with default state', () => {
 		const state = get(workspaceStore);
 		expect(state.path).toBeNull();
@@ -70,13 +80,18 @@ describe('workspaceStore', () => {
 			expect(state.error).toBeNull();
 		});
 
-		it('should persist path to localStorage', () => {
+		it('keeps the path in memory without persisting it to localStorage', () => {
 			workspaceStore.setPath('/workspace/path');
 
-			expect(window.localStorage.setItem).toHaveBeenCalledWith(
-				'workspace_path',
-				JSON.stringify('/workspace/path')
-			);
+			expect(window.localStorage.setItem).not.toHaveBeenCalled();
+		});
+
+		it('replaces the display path with native hydrated state', () => {
+			workspaceStore.setPath('/stale/display/path');
+
+			workspaceStore.hydratePath('/native/canonical/path');
+
+			expect(get(workspaceStore).path).toBe('/native/canonical/path');
 		});
 	});
 
@@ -235,9 +250,11 @@ describe('workspaceStore', () => {
 			expect(state.error).toBeNull();
 		});
 
-		it('should remove workspace_path from localStorage', () => {
+		it('removes a stale legacy key as cleanup without establishing trust', () => {
+			window.localStorage.setItem('workspace_path', JSON.stringify('/spoofed/path'));
 			workspaceStore.clearWorkspace();
 			expect(window.localStorage.removeItem).toHaveBeenCalledWith('workspace_path');
+			expect(get(workspaceStore).path).toBeNull();
 		});
 
 		it('should clear the linkage cache', () => {

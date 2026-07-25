@@ -10,8 +10,13 @@ const mockDesktopHost = vi.hoisted(() => ({
 
 const mockWorkspaceService = vi.hoisted(() => ({
 	loadSubWorkspaces: vi.fn(),
-	loadTreeStructure: vi.fn()
+	loadTreeStructure: vi.fn(),
+	getTransitionGeneration: vi.fn(() => 0),
+	isTransitionCurrent: vi.fn(() => true)
 }));
+
+const mockAppShell = vi.hoisted(() => vi.fn());
+const mockDesktopEditor = vi.hoisted(() => vi.fn());
 
 const mockAuthService = vi.hoisted(() => ({
 	handleMagicLinkResult: vi.fn(),
@@ -44,8 +49,8 @@ vi.mock('./services/linkingService', () => ({
 }));
 
 vi.mock('./components/Login.svelte', () => ({ default: vi.fn() }));
-vi.mock('./components/shell/AppShell.svelte', () => ({ default: vi.fn() }));
-vi.mock('./components/DesktopEditor.svelte', () => ({ default: vi.fn() }));
+vi.mock('./components/shell/AppShell.svelte', () => ({ default: mockAppShell }));
+vi.mock('./components/DesktopEditor.svelte', () => ({ default: mockDesktopEditor }));
 vi.mock('./components/VersionsModal.svelte', () => ({ default: vi.fn() }));
 
 import App from './App.svelte';
@@ -77,6 +82,8 @@ describe('App lifecycle', () => {
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
 		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
+		mockWorkspaceService.getTransitionGeneration.mockReturnValue(0);
+		mockWorkspaceService.isTransitionCurrent.mockReturnValue(true);
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 	});
 
@@ -121,6 +128,56 @@ describe('App lifecycle', () => {
 		);
 	});
 
+	it('does not mount the editor until native workspace hydration settles', async () => {
+		const nativeWorkspace = createDeferred<string | null>();
+		window.location.hash = '#editor';
+		mockDesktopHost.getWorkspaceRoot.mockReturnValue(nativeWorkspace.promise);
+
+		render(App);
+
+		expect(mockDesktopEditor).not.toHaveBeenCalled();
+
+		nativeWorkspace.resolve(null);
+
+		await waitFor(() => {
+			expect(mockDesktopEditor).toHaveBeenCalledOnce();
+		});
+	});
+
+	it('keeps a newer workspace selection when an older native hydration resolves', async () => {
+		const nativeWorkspace = createDeferred<string | null>();
+		let hydrationIsCurrent = true;
+		mockDesktopHost.getWorkspaceRoot.mockReturnValue(nativeWorkspace.promise);
+		mockWorkspaceService.isTransitionCurrent.mockImplementation(() => hydrationIsCurrent);
+
+		render(App);
+		workspaceStore.setPath('/newer/canonical/workspace');
+		hydrationIsCurrent = false;
+		nativeWorkspace.resolve('/older/canonical/workspace');
+
+		await waitFor(() => {
+			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledOnce();
+		});
+		expect(get(workspaceStore).path).toBe('/newer/canonical/workspace');
+		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
+		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
+	});
+
+	it('does not mutate workspace state when unmounted during native hydration', async () => {
+		const nativeWorkspace = createDeferred<string | null>();
+		mockDesktopHost.getWorkspaceRoot.mockReturnValue(nativeWorkspace.promise);
+
+		const { unmount } = render(App);
+		unmount();
+		nativeWorkspace.resolve('/native/canonical/workspace');
+
+		await flushPromises();
+
+		expect(get(workspaceStore).path).toBeNull();
+		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
+		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
+	});
+
 	it('leaves workspace selection empty when the native managed root is absent', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
@@ -128,9 +185,8 @@ describe('App lifecycle', () => {
 		render(App);
 
 		await waitFor(() => {
-			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledOnce();
+			expect(get(workspaceStore).path).toBeNull();
 		});
-		expect(get(workspaceStore).path).toBeNull();
 		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
 		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
 	});
@@ -143,9 +199,8 @@ describe('App lifecycle', () => {
 		render(App);
 
 		await waitFor(() => {
-			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledOnce();
+			expect(get(workspaceStore).path).toBeNull();
 		});
-		expect(get(workspaceStore).path).toBeNull();
 		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
 		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
 	});

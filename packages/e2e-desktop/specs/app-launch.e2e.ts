@@ -1,6 +1,7 @@
 import { browser, expect, $ } from '@wdio/globals';
 
 import { resetApp } from '../support/app';
+import { SENTINEL_PREFERENCES } from '../wdio.conf';
 
 type Preferences = {
 	detailPaneWidth: number;
@@ -21,9 +22,15 @@ describe('Drumery desktop', () => {
 			({ core }) => core.invoke('read_preferences') as unknown as Preferences
 		);
 
-		expect(preferences.detailPaneWidth).toBeGreaterThanOrEqual(320);
-		expect(preferences.detailPaneWidth).toBeLessThanOrEqual(640);
-		expect(typeof preferences.detailPaneVisible).toBe('boolean');
-		expect(preferences.scoreLinks).toBeDefined();
+		// Assert the exact sentinel values seeded in wdio.conf.ts. This proves
+		// the WDIO tauri-service forwards DTX_E2E_DATA_DIR to the spawned app
+		// and the Rust resolve_dirs() branch (preferences.rs, `e2e` feature)
+		// reads from the isolated data dir — not the developer's real
+		// preferences. If either regressed, read_preferences would return
+		// defaults (clean CI) or real user data (local) instead of these
+		// distinctive values.
+		expect(preferences.detailPaneWidth).toBe(SENTINEL_PREFERENCES.detailPaneWidth);
+		expect(preferences.detailPaneVisible).toBe(SENTINEL_PREFERENCES.detailPaneVisible);
+		expect(preferences.scoreLinks).toEqual(SENTINEL_PREFERENCES.scoreLinks);
 	});
 });

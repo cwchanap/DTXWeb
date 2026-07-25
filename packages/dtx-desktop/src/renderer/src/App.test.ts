@@ -213,6 +213,20 @@ describe('App lifecycle', () => {
 		expect(mockWorkspaceService.disposeOperations).toHaveBeenCalledOnce();
 	});
 
+	it('can mount again after disposing a previous workspace lifecycle', async () => {
+		const first = render(App);
+		await waitFor(() => {
+			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledOnce();
+		});
+		first.unmount();
+
+		render(App);
+		await waitFor(() => {
+			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledTimes(2);
+		});
+		expect(mockWorkspaceService.disposeOperations).toHaveBeenCalledOnce();
+	});
+
 	it('leaves workspace selection empty when the native managed root is absent', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);

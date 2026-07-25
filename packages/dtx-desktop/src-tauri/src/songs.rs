@@ -1,4 +1,5 @@
 use crate::error::{DesktopError, Result};
+use crate::workspace::WorkspaceRootState;
 use async_recursion::async_recursion;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -8,7 +9,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::io::{copy, ErrorKind};
 use std::path::{Component, Path, PathBuf};
-use tauri::{path::BaseDirectory, AppHandle, Manager};
+use tauri::{path::BaseDirectory, AppHandle, Manager, State};
 use tokio::{fs, task};
 use zip::write::SimpleFileOptions;
 
@@ -106,22 +107,45 @@ pub async fn export_song_to_zip(
     song_path: String,
     song_title: Option<String>,
     export_directory: Option<String>,
-    workspace_root: String,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<ExportSongResult> {
+    export_song_to_zip_with_workspace_state(song_path, song_title, export_directory, &state).await
+}
+
+pub(crate) async fn export_song_to_zip_with_workspace_state(
+    song_path: String,
+    song_title: Option<String>,
+    export_directory: Option<String>,
+    state: &WorkspaceRootState,
+) -> Result<ExportSongResult> {
+    let workspace_root = state.current()?;
+    export_song_to_zip_with_workspace_root(song_path, song_title, export_directory, &workspace_root)
+        .await
+}
+
+pub(crate) async fn export_song_to_zip_with_workspace_root(
+    song_path: String,
+    song_title: Option<String>,
+    export_directory: Option<String>,
+    workspace_root: &Path,
 ) -> Result<ExportSongResult> {
     // Workspace containment is mandatory: refuse to read a song folder outside
     // the workspace — mirroring every other file-access command so export can't
     // be used to zip arbitrary paths the user never selected in-tree. Routes
     // through the single canonical containment primitive
     // (`canonicalize_within_workspace`) so the symlink-safe invariant isn't
-    // re-implemented here. The renderer always has the workspace path in
-    // workspaceStore, so a missing root is a caller bug, not a supported state.
+    // re-implemented here. The root comes from managed native state, never a
+    // renderer-supplied parameter.
     //
     // Use the returned canonical path (symlinks resolved at validation time)
     // for the export itself — passing the original `song_path` here would
     // re-introduce a TOCTOU window where a symlink could be repointed outside
     // the workspace between validation and use.
-    let canonical_song_path =
-        crate::filesystem::canonicalize_within_workspace(&song_path, Some(&workspace_root)).await?;
+    let canonical_song_path = crate::filesystem::canonicalize_within_workspace(
+        &song_path,
+        Some(&workspace_root.to_string_lossy()),
+    )
+    .await?;
     let export_directory = resolve_export_directory(export_directory.as_deref());
     let song_title = song_title
         .as_deref()
@@ -183,15 +207,32 @@ pub async fn get_skin_asset(app: AppHandle, asset_path: String) -> Result<serde_
 #[tauri::command]
 pub async fn parse_dtx_files(
     folder_path: String,
-    workspace_root: String,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<DtxParseResult> {
+    parse_dtx_files_with_workspace_state(folder_path, &state).await
+}
+
+pub(crate) async fn parse_dtx_files_with_workspace_state(
+    folder_path: String,
+    state: &WorkspaceRootState,
+) -> Result<DtxParseResult> {
+    let workspace_root = state.current()?;
+    parse_dtx_files_with_workspace_root(folder_path, &workspace_root).await
+}
+
+pub(crate) async fn parse_dtx_files_with_workspace_root(
+    folder_path: String,
+    workspace_root: &Path,
 ) -> Result<DtxParseResult> {
     // Enforce workspace containment at the IPC boundary so a compromised
     // renderer can't enumerate metadata (titles/levels/artists) for arbitrary
     // folders outside the workspace. Routes through the canonical containment
     // primitive; the inner helper still accepts a canonical path for tests.
-    let canonical =
-        crate::filesystem::canonicalize_within_workspace(&folder_path, Some(&workspace_root))
-            .await?;
+    let canonical = crate::filesystem::canonicalize_within_workspace(
+        &folder_path,
+        Some(&workspace_root.to_string_lossy()),
+    )
+    .await?;
     // Propagate I/O errors (non-existent path, permission denied, etc.) to the
     // caller instead of silently returning an empty result. The renderer's
     // caller already catches errors and degrades gracefully. Genuinely empty

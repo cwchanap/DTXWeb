@@ -1,4 +1,5 @@
 use super::*;
+use crate::workspace::{test_support::managed_workspace_state, WorkspaceRootState};
 use std::fs::File;
 use std::io::Read;
 use tempfile::tempdir;
@@ -184,13 +185,14 @@ async fn export_song_to_zip_rejects_song_path_outside_workspace() {
     fs::write(song.join("main.dtx"), "#TITLE: Song")
         .await
         .expect("dtx");
+    let state = managed_workspace_state(workspace.path());
 
     // Path outside the workspace is rejected with an error (not zipped).
-    let rejected = export_song_to_zip(
+    let rejected = export_song_to_zip_with_workspace_state(
         outside.path().to_string_lossy().to_string(),
         Some("Song".to_string()),
         Some(export.to_string_lossy().to_string()),
-        workspace.path().to_string_lossy().to_string(),
+        &state,
     )
     .await;
     assert!(
@@ -199,11 +201,11 @@ async fn export_song_to_zip_rejects_song_path_outside_workspace() {
     );
 
     // An in-workspace path proceeds normally (containment passes, export runs).
-    let accepted = export_song_to_zip(
+    let accepted = export_song_to_zip_with_workspace_state(
         song.to_string_lossy().to_string(),
         Some("Song".to_string()),
         Some(export.to_string_lossy().to_string()),
-        workspace.path().to_string_lossy().to_string(),
+        &state,
     )
     .await
     .expect("in-workspace export should proceed");
@@ -211,9 +213,9 @@ async fn export_song_to_zip_rejects_song_path_outside_workspace() {
 }
 
 #[tokio::test]
-async fn export_song_to_zip_rejects_missing_workspace_root() {
-    // The workspace root is now mandatory (the renderer always has it in
-    // workspaceStore). A missing root is a caller bug, not a supported state.
+async fn export_song_to_zip_rejects_when_managed_workspace_is_unset() {
+    // Removing `state.current()` would let a command export arbitrary files
+    // before the trusted workspace is selected.
     let root = tempdir().expect("root");
     let song = root.path().join("Song");
     let export = root.path().join("Export");
@@ -223,16 +225,17 @@ async fn export_song_to_zip_rejects_missing_workspace_root() {
         .await
         .expect("dtx");
 
-    let result = export_song_to_zip(
+    let state = WorkspaceRootState::default();
+    let result = export_song_to_zip_with_workspace_state(
         song.to_string_lossy().to_string(),
         Some("Song".to_string()),
         Some(export.to_string_lossy().to_string()),
-        String::new(),
+        &state,
     )
     .await;
     assert!(
         result.is_err(),
-        "export with empty workspace root must be rejected"
+        "export with no managed workspace must be rejected"
     );
 }
 
@@ -289,9 +292,10 @@ async fn parse_dtx_files_does_not_emit_set_def_label_without_dlevel() {
 #[tokio::test]
 async fn parse_dtx_files_propagates_io_error_for_nonexistent_folder() {
     let root = tempdir().expect("tempdir");
-    let result = parse_dtx_files(
+    let state = managed_workspace_state(root.path());
+    let result = parse_dtx_files_with_workspace_state(
         "/nonexistent/path/that/does/not/exist".to_string(),
-        root.path().to_string_lossy().to_string(),
+        &state,
     )
     .await;
     assert!(result.is_err());
@@ -304,12 +308,11 @@ async fn parse_dtx_files_rejects_path_outside_workspace() {
     fs::write(outside.path().join("main.dtx"), "#TITLE: Song")
         .await
         .expect("dtx");
+    let state = managed_workspace_state(root.path());
 
-    let result = parse_dtx_files(
-        outside.path().to_string_lossy().to_string(),
-        root.path().to_string_lossy().to_string(),
-    )
-    .await;
+    let result =
+        parse_dtx_files_with_workspace_state(outside.path().to_string_lossy().to_string(), &state)
+            .await;
 
     assert!(result.is_err());
     assert!(result
@@ -319,13 +322,16 @@ async fn parse_dtx_files_rejects_path_outside_workspace() {
 }
 
 #[tokio::test]
-async fn parse_dtx_files_rejects_missing_workspace_root() {
+async fn parse_dtx_files_rejects_when_managed_workspace_is_unset() {
     let root = tempdir().expect("tempdir");
     fs::write(root.path().join("main.dtx"), "#TITLE: Song")
         .await
         .expect("dtx");
 
-    let result = parse_dtx_files(root.path().to_string_lossy().to_string(), String::new()).await;
+    let state = WorkspaceRootState::default();
+    let result =
+        parse_dtx_files_with_workspace_state(root.path().to_string_lossy().to_string(), &state)
+            .await;
     assert!(result.is_err());
     assert!(result
         .expect_err("error")

@@ -1,9 +1,11 @@
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
+use crate::workspace::WorkspaceRootState;
 use reqwest::multipart::{Form, Part};
 use serde_json::{json, Map, Value};
+use std::path::Path;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tokio::fs;
 
 const API_REQUEST_TIMEOUT_MS: u64 = 30_000;
@@ -1045,6 +1047,7 @@ pub(crate) async fn create_simfile_record_impl(
     base_url: &str,
     token: &str,
     simfile_data: Value,
+    workspace_root: &Path,
 ) -> Result<Value> {
     let input = create_input_from_renderer(&simfile_data);
     let result = run_graphql_value(
@@ -1063,17 +1066,14 @@ pub(crate) async fn create_simfile_record_impl(
     let simfile_id = number_id(&simfile["id"])?.to_string();
     let mut warnings = Vec::new();
 
-    let workspace_root = simfile_data
-        .get("workspaceRoot")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let workspace_root = workspace_root.to_string_lossy();
     if let Some(song_path) = simfile_data.get("songPath").and_then(Value::as_str) {
         if !song_path.is_empty() {
             if let Some(error) = upload_preview_if_present(
                 base_url,
                 token,
                 song_path,
-                workspace_root,
+                &workspace_root,
                 &simfile_id,
                 "preview.jpg",
                 "image/jpeg",
@@ -1086,7 +1086,7 @@ pub(crate) async fn create_simfile_record_impl(
                 base_url,
                 token,
                 song_path,
-                workspace_root,
+                &workspace_root,
                 &simfile_id,
                 "preview.mp3",
                 "audio/mpeg",
@@ -1110,10 +1110,25 @@ pub(crate) async fn create_simfile_record_impl(
 }
 
 #[tauri::command]
-pub async fn create_simfile_record(app: AppHandle, simfile_data: Value) -> Result<Value> {
+pub async fn create_simfile_record(
+    app: AppHandle,
+    simfile_data: Value,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<Value> {
+    let workspace_root = state.current()?;
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
-    create_simfile_record_impl(&base_url, &token, simfile_data).await
+    create_simfile_record_impl(&base_url, &token, simfile_data, &workspace_root).await
+}
+
+pub(crate) async fn create_simfile_record_with_workspace_state(
+    base_url: &str,
+    token: &str,
+    simfile_data: Value,
+    state: &WorkspaceRootState,
+) -> Result<Value> {
+    let workspace_root = state.current()?;
+    create_simfile_record_impl(base_url, token, simfile_data, &workspace_root).await
 }
 
 pub(crate) async fn load_asset_files_impl(
@@ -1201,9 +1216,10 @@ pub async fn upload_file(
     app: AppHandle,
     file_name: String,
     song_folder_path: String,
-    workspace_root: String,
     simfile_id: String,
+    state: State<'_, WorkspaceRootState>,
 ) -> Result<Value> {
+    let workspace_root = state.current()?;
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     Ok(upload_file_to_api(
@@ -1211,7 +1227,27 @@ pub async fn upload_file(
         &token,
         &file_name,
         &song_folder_path,
-        &workspace_root,
+        &workspace_root.to_string_lossy(),
+        &simfile_id,
+    )
+    .await)
+}
+
+pub(crate) async fn upload_file_with_workspace_state(
+    base_url: &str,
+    token: &str,
+    file_name: String,
+    song_folder_path: String,
+    simfile_id: String,
+    state: &WorkspaceRootState,
+) -> Result<Value> {
+    let workspace_root = state.current()?;
+    Ok(upload_file_to_api(
+        base_url,
+        token,
+        &file_name,
+        &song_folder_path,
+        &workspace_root.to_string_lossy(),
         &simfile_id,
     )
     .await)

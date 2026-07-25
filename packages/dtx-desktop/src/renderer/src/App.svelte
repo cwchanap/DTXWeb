@@ -40,6 +40,7 @@
 	// Routing state
 	let currentRoute = $state('workspace');
 	let routeParams = $state<{ simFileId?: string }>({});
+	let workspaceHydrationSettled = $state(false);
 	const hostUnlisteners: Array<() => void> = [];
 	let destroyed = false;
 
@@ -82,16 +83,26 @@
 		handleRouteChange();
 		window.addEventListener('hashchange', handleRouteChange);
 
+		const hydrationTransition = workspaceService.getTransitionGeneration();
 		try {
 			const nativeWorkspace = await desktopHost.getWorkspaceRoot();
+			if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
+
 			workspaceStore.hydratePath(nativeWorkspace);
 			if (nativeWorkspace) {
 				await workspaceService.loadSubWorkspaces();
+				if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
 				await workspaceService.loadTreeStructure();
 			}
 		} catch (error) {
 			console.error('Failed to hydrate native workspace:', error);
-			workspaceStore.hydratePath(null);
+			if (!destroyed && workspaceService.isTransitionCurrent(hydrationTransition)) {
+				workspaceStore.hydratePath(null);
+			}
+		} finally {
+			if (!destroyed) {
+				workspaceHydrationSettled = true;
+			}
 		}
 
 		if (destroyed) return;
@@ -210,18 +221,24 @@
 	});
 </script>
 
-{#if currentRoute === 'login'}
-	<div class="bg-base flex min-h-screen items-center justify-center p-8">
-		<div
-			class="border-hairline bg-surface-1 w-full max-w-3xl overflow-hidden rounded-2xl border"
-		>
-			<Login />
+{#if workspaceHydrationSettled}
+	{#if currentRoute === 'login'}
+		<div class="bg-base flex min-h-screen items-center justify-center p-8">
+			<div
+				class="border-hairline bg-surface-1 w-full max-w-3xl overflow-hidden rounded-2xl border"
+			>
+				<Login />
+			</div>
 		</div>
-	</div>
-{:else if currentRoute === 'editor'}
-	<DesktopEditor simFileId={routeParams.simFileId} />
+	{:else if currentRoute === 'editor'}
+		<DesktopEditor simFileId={routeParams.simFileId} />
+	{:else}
+		<AppShell />
+	{/if}
 {:else}
-	<AppShell />
+	<div class="bg-base flex min-h-screen items-center justify-center" role="status">
+		Loading workspace…
+	</div>
 {/if}
 
 {#if $authStore.isAuthenticated}

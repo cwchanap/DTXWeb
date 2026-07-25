@@ -19,6 +19,15 @@ vi.mock('./desktopHost', () => ({
 
 const host = vi.mocked(desktopHost);
 
+const createDeferred = <T>() => {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+
+	return { promise, resolve };
+};
+
 // Mock the workspaceStore
 vi.mock('../stores/workspaceStore', () => ({
 	workspaceStore: {
@@ -182,6 +191,34 @@ describe('WorkspaceService', () => {
 			// Verify that setError was called
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
 		});
+
+		it('does not apply an older sub-workspace tree after the current sub-workspace changes', async () => {
+			const oldTree = createDeferred<any[]>();
+			let state = {
+				path: '/test/workspace',
+				currentSubWorkspace: 'DTXFiles.Old',
+				subWorkspaces: ['DTXFiles.Old', 'DTXFiles.New']
+			};
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback(state);
+				return vi.fn();
+			});
+			host.loadTreeStructure.mockImplementation((_path, subWorkspace) => {
+				if (subWorkspace === 'DTXFiles.Old') return oldTree.promise;
+				return Promise.resolve([{ name: 'new', path: '/new', children: [] }]);
+			});
+
+			const oldRequest = workspaceService.loadTreeStructure();
+			state = { ...state, currentSubWorkspace: 'DTXFiles.New' };
+			await workspaceService.loadTreeStructure();
+			oldTree.resolve([{ name: 'old', path: '/old', children: [] }]);
+			await oldRequest;
+
+			expect(workspaceStore.setTreeStructure).toHaveBeenCalledTimes(1);
+			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([
+				{ name: 'new', path: '/new', children: [] }
+			]);
+		});
 	});
 	describe('selectWorkspace', () => {
 		it('should select a workspace and update path and loading state when a path is chosen', async () => {
@@ -199,7 +236,11 @@ describe('WorkspaceService', () => {
 			await workspaceService.selectWorkspace();
 
 			expect(workspaceStore.setLoading).toHaveBeenCalledWith(true);
+			expect(workspaceStore.reset).toHaveBeenCalledOnce();
 			expect(workspaceStore.setPath).toHaveBeenCalledWith('/new/workspace');
+			expect(workspaceStore.reset.mock.invocationCallOrder[0]).toBeLessThan(
+				workspaceStore.setPath.mock.invocationCallOrder[0]
+			);
 			expect(host.selectFolder).not.toHaveBeenCalled();
 			expect(workspaceStore.setLoading).toHaveBeenCalledWith(false);
 		});
@@ -210,7 +251,27 @@ describe('WorkspaceService', () => {
 			await workspaceService.selectWorkspace();
 
 			expect(workspaceStore.setPath).not.toHaveBeenCalled();
+			expect(workspaceStore.reset).not.toHaveBeenCalled();
 			expect(workspaceStore.setLoading).toHaveBeenCalledWith(false);
+		});
+
+		it('keeps the newer workspace selection when an older dialog resolves later', async () => {
+			const olderSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			const newerSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			host.selectWorkspaceFolder
+				.mockReturnValueOnce(olderSelection.promise)
+				.mockReturnValueOnce(newerSelection.promise);
+
+			const olderRequest = workspaceService.selectWorkspace();
+			const newerRequest = workspaceService.selectWorkspace();
+			newerSelection.resolve({ canceled: false, filePaths: ['/workspace/newer'] });
+			await newerRequest;
+			olderSelection.resolve({ canceled: false, filePaths: ['/workspace/older'] });
+			await olderRequest;
+
+			expect(workspaceStore.reset).toHaveBeenCalledTimes(1);
+			expect(workspaceStore.setPath).toHaveBeenCalledTimes(1);
+			expect(workspaceStore.setPath).toHaveBeenCalledWith('/workspace/newer');
 		});
 
 		it('should handle errors during folder selection', async () => {
@@ -267,6 +328,28 @@ describe('WorkspaceService', () => {
 			await workspaceService.loadSubWorkspaces();
 
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load sub-workspaces');
+		});
+
+		it('does not apply an older root response after the workspace changes', async () => {
+			const oldFolders = createDeferred<string[]>();
+			let state = { path: '/workspace/old' };
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback(state);
+				return vi.fn();
+			});
+			host.listDirectories.mockImplementation((path) => {
+				if (path === '/workspace/old') return oldFolders.promise;
+				return Promise.resolve(['DTXFiles.New']);
+			});
+
+			const oldRequest = workspaceService.loadSubWorkspaces();
+			state = { path: '/workspace/new' };
+			await workspaceService.loadSubWorkspaces();
+			oldFolders.resolve(['DTXFiles.Old']);
+			await oldRequest;
+
+			expect(workspaceStore.setSubWorkspaces).toHaveBeenCalledTimes(1);
+			expect(workspaceStore.setSubWorkspaces).toHaveBeenCalledWith(['DTXFiles.New']);
 		});
 	});
 

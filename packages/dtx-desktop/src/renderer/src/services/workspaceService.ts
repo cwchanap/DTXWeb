@@ -6,12 +6,44 @@ import type { WorkspaceBookmark } from '../stores/bookmarkStore';
 import { desktopHost } from './desktopHost';
 
 let switchInProgress = false;
+let workspaceTransitionGeneration = 0;
+
+const beginWorkspaceTransition = (): number => {
+	workspaceTransitionGeneration += 1;
+	return workspaceTransitionGeneration;
+};
+
+const getWorkspaceSnapshot = (): Pick<WorkspaceState, 'path' | 'currentSubWorkspace'> => {
+	let snapshot: Pick<WorkspaceState, 'path' | 'currentSubWorkspace'> = {
+		path: null,
+		currentSubWorkspace: null
+	};
+	const unsubscribe = workspaceStore.subscribe((state) => {
+		snapshot = {
+			path: state.path,
+			currentSubWorkspace: state.currentSubWorkspace
+		};
+	});
+	unsubscribe();
+	return snapshot;
+};
+
+const isWorkspaceSnapshotCurrent = (
+	snapshot: Pick<WorkspaceState, 'path' | 'currentSubWorkspace'>
+): boolean => {
+	const current = getWorkspaceSnapshot();
+	return (
+		current.path === snapshot.path &&
+		current.currentSubWorkspace === snapshot.currentSubWorkspace
+	);
+};
 
 export const workspaceService = {
 	/**
 	 * Opens a folder selection dialog and sets the selected path as the workspace
 	 */
 	selectWorkspace: async (): Promise<void> => {
+		const transition = beginWorkspaceTransition();
 		try {
 			workspaceStore.setLoading(true);
 
@@ -19,6 +51,7 @@ export const workspaceService = {
 			console.log('Invoking select-workspace-folder dialog');
 			const result = await desktopHost.selectWorkspaceFolder();
 			console.log('Dialog result:', result);
+			if (!workspaceService.isTransitionCurrent(transition)) return;
 
 			if (result.canceled) {
 				console.log('Dialog was canceled');
@@ -27,6 +60,7 @@ export const workspaceService = {
 
 			const selectedPath = result.filePaths[0];
 			console.log('Selected path:', selectedPath);
+			workspaceStore.reset();
 			workspaceStore.setPath(selectedPath);
 
 			// Load sub-workspaces and tree structure in the selected directory
@@ -34,9 +68,13 @@ export const workspaceService = {
 			await workspaceService.loadTreeStructure();
 		} catch (error) {
 			console.error('Failed to select workspace:', error);
-			workspaceStore.setError('Failed to select workspace directory');
+			if (workspaceService.isTransitionCurrent(transition)) {
+				workspaceStore.setError('Failed to select workspace directory');
+			}
 		} finally {
-			workspaceStore.setLoading(false);
+			if (workspaceService.isTransitionCurrent(transition)) {
+				workspaceStore.setLoading(false);
+			}
 		}
 	},
 
@@ -56,10 +94,14 @@ export const workspaceService = {
 			return { ok: false, error: 'A workspace switch is already in progress' };
 		}
 		switchInProgress = true;
+		const transition = beginWorkspaceTransition();
 
 		try {
 			try {
 				const selection = await desktopHost.selectWorkspaceFolder();
+				if (!workspaceService.isTransitionCurrent(transition)) {
+					return { ok: false, error: 'Workspace selection was superseded' };
+				}
 				if (selection.canceled || !selection.filePaths[0]) {
 					return { ok: false, error: 'Workspace selection was canceled' };
 				}
@@ -97,20 +139,17 @@ export const workspaceService = {
 	 * Loads the list of sub-workspaces (folders with DTXFiles. prefix) in the current workspace
 	 */
 	loadSubWorkspaces: async (): Promise<void> => {
+		const snapshot = getWorkspaceSnapshot();
 		try {
-			// Get the current path from the store
-			let currentPath: string | null = null;
-			const unsubscribe = workspaceStore.subscribe((state) => {
-				currentPath = state.path;
-			});
-			unsubscribe();
-
-			if (!currentPath) {
-				workspaceStore.setSubWorkspaces([]);
+			if (!snapshot.path) {
+				if (isWorkspaceSnapshotCurrent(snapshot)) {
+					workspaceStore.setSubWorkspaces([]);
+				}
 				return;
 			}
 
-			const folders = await desktopHost.listDirectories(currentPath);
+			const folders = await desktopHost.listDirectories(snapshot.path);
+			if (!isWorkspaceSnapshotCurrent(snapshot)) return;
 
 			// Filter only sub-workspaces (folders with DTXFiles. prefix)
 			const subWorkspaces = folders.filter((folder: string) =>
@@ -119,7 +158,9 @@ export const workspaceService = {
 			workspaceStore.setSubWorkspaces(subWorkspaces);
 		} catch (error) {
 			console.error('Failed to load sub-workspaces:', error);
-			workspaceStore.setError('Failed to load sub-workspaces');
+			if (isWorkspaceSnapshotCurrent(snapshot)) {
+				workspaceStore.setError('Failed to load sub-workspaces');
+			}
 		}
 	},
 
@@ -128,34 +169,30 @@ export const workspaceService = {
 	 * Shows all folders in workspace, or contents of selected sub-workspace
 	 */
 	loadTreeStructure: async (): Promise<void> => {
+		const snapshot = getWorkspaceSnapshot();
 		try {
-			// Get the current path from the store
-			let currentPath: string | null = null;
-			let currentSubWorkspace: string | null = null;
-			const unsubscribe = workspaceStore.subscribe((state) => {
-				currentPath = state.path;
-				currentSubWorkspace = state.currentSubWorkspace;
-			});
-			unsubscribe();
-
-			if (!currentPath) {
-				workspaceStore.setTreeStructure([]);
+			if (!snapshot.path) {
+				if (isWorkspaceSnapshotCurrent(snapshot)) {
+					workspaceStore.setTreeStructure([]);
+				}
 				return;
 			}
 
-			if (currentSubWorkspace) {
+			if (snapshot.currentSubWorkspace) {
 				// If a sub-workspace is selected, show its contents
 				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(
-					currentPath,
-					currentSubWorkspace
+					snapshot.path,
+					snapshot.currentSubWorkspace
 				);
+				if (!isWorkspaceSnapshotCurrent(snapshot)) return;
 				workspaceStore.setTreeStructure(treeData);
 
 				// Trigger auto-linking after tree structure is loaded
 				workspaceService.triggerAutoLinking();
 			} else {
 				// If no sub-workspace is selected, show all folders in the workspace
-				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(currentPath);
+				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(snapshot.path);
+				if (!isWorkspaceSnapshotCurrent(snapshot)) return;
 				workspaceStore.setTreeStructure(treeData);
 
 				// Trigger auto-linking after tree structure is loaded
@@ -163,7 +200,9 @@ export const workspaceService = {
 			}
 		} catch (error) {
 			console.error('Failed to load tree structure:', error);
-			workspaceStore.setError('Failed to load tree structure');
+			if (isWorkspaceSnapshotCurrent(snapshot)) {
+				workspaceStore.setError('Failed to load tree structure');
+			}
 		}
 	},
 
@@ -300,6 +339,7 @@ export const workspaceService = {
 	 * Sets the current sub-workspace
 	 */
 	setCurrentSubWorkspace: async (subWorkspace: string | null): Promise<void> => {
+		beginWorkspaceTransition();
 		workspaceStore.setCurrentSubWorkspace(subWorkspace);
 		await workspaceService.loadTreeStructure();
 		// Note: loadTreeStructure already triggers auto-linking, so no need to call it again here
@@ -309,12 +349,17 @@ export const workspaceService = {
 	 * Clears the current workspace selection
 	 */
 	clearWorkspace: async (): Promise<void> => {
+		const transition = beginWorkspaceTransition();
 		try {
 			await desktopHost.clearWorkspaceRoot();
-			workspaceStore.clearWorkspace();
+			if (workspaceService.isTransitionCurrent(transition)) {
+				workspaceStore.clearWorkspace();
+			}
 		} catch (error) {
 			console.error('Failed to clear workspace:', error);
-			workspaceStore.setError('Failed to clear workspace directory');
+			if (workspaceService.isTransitionCurrent(transition)) {
+				workspaceStore.setError('Failed to clear workspace directory');
+			}
 		}
 	},
 
@@ -330,5 +375,10 @@ export const workspaceService = {
 	 */
 	closeSongDetails: (): void => {
 		workspaceStore.closeSongDetails();
-	}
+	},
+
+	getTransitionGeneration: (): number => workspaceTransitionGeneration,
+
+	isTransitionCurrent: (transition: number): boolean =>
+		transition === workspaceTransitionGeneration
 };

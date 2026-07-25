@@ -260,6 +260,7 @@ export const workspaceService = {
 	loadTreeStructure: async (): Promise<void> => {
 		const transition = workspaceTransitionGeneration;
 		const request = ++treeRequest;
+		expandRequests.clear();
 		const snapshot = getWorkspaceSnapshot();
 		const canCommit = () =>
 			workspaceService.isTransitionCurrent(transition) &&
@@ -495,5 +496,7 @@ export const workspaceService = {
 		operationLifecycle += 1;
 		beginWorkspaceTransition();
 		loadingOwner = null;
+		switchInProgress = false;
+		workspaceStore.setLoading(false);
 	}
 };

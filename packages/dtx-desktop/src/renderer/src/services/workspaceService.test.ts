@@ -251,6 +251,38 @@ describe('WorkspaceService', () => {
 
 			expect(workspaceStore.setTreeStructure).not.toHaveBeenCalled();
 		});
+
+		it('invalidates an in-flight expansion before applying a refreshed whole tree', async () => {
+			const expansion = createDeferred<any[]>();
+			const node = {
+				path: '/workspace/song',
+				children: [],
+				isExpanded: false,
+				isLoading: false
+			};
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: '/workspace', currentSubWorkspace: null, treeStructure: [node] });
+				return vi.fn();
+			});
+			host.loadTreeStructure
+				.mockReturnValueOnce(expansion.promise)
+				.mockResolvedValueOnce([
+					{ name: 'fresh', path: '/workspace/song', children: [], isExpanded: false }
+				]);
+
+			const expand = workspaceService.expandTreeNode('/workspace/song');
+			await workspaceService.loadTreeStructure();
+			expansion.resolve([{ name: 'stale', path: '/workspace/song/stale', children: [] }]);
+			await expand;
+
+			expect(workspaceStore.setTreeStructure).toHaveBeenCalledWith([
+				{ name: 'fresh', path: '/workspace/song', children: [], isExpanded: false }
+			]);
+			const staleUpdates = (workspaceStore.updateTreeNode as any).mock.calls.filter(
+				(call: any[]) => call[0] === '/workspace/song' && call[1].children
+			);
+			expect(staleUpdates).toHaveLength(0);
+		});
 	});
 	describe('selectWorkspace', () => {
 		it('should select a workspace and update path and loading state when a path is chosen', async () => {
@@ -832,6 +864,52 @@ describe('WorkspaceService', () => {
 
 			expect(host.clearWorkspaceRoot).toHaveBeenCalledOnce();
 			expect(workspaceStore.clearWorkspace).toHaveBeenCalled();
+		});
+	});
+
+	describe('disposeOperations', () => {
+		it('clears loading after a pending selection and lets a new selection run', async () => {
+			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			host.selectWorkspaceFolder
+				.mockReturnValueOnce(selection.promise)
+				.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+			const pending = workspaceService.selectWorkspace();
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
+			});
+			workspaceService.disposeOperations();
+			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
+
+			selection.resolve({ canceled: true, filePaths: [] });
+			await pending;
+			await workspaceService.selectWorkspace();
+
+			expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
+			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
+		});
+
+		it('releases a disposed bookmark switch so a new bookmark switch can run', async () => {
+			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			host.selectWorkspaceFolder
+				.mockReturnValueOnce(selection.promise)
+				.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+			const pending = workspaceService.switchToBookmark({ path: '/old', name: 'Old' });
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
+			});
+			workspaceService.disposeOperations();
+			const replacement = workspaceService.switchToBookmark({ path: '/new', name: 'New' });
+			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
+
+			selection.resolve({ canceled: true, filePaths: [] });
+			await pending;
+			const result = await replacement;
+
+			expect(result).toEqual({ ok: false, error: 'Workspace selection was canceled' });
+			expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
+			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
 		});
 	});
 

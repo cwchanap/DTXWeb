@@ -1,7 +1,7 @@
 import { browser, expect, $ } from '@wdio/globals';
 
 import { resetApp } from '../support/app';
-import { SENTINEL_PREFERENCES } from '../wdio.conf';
+import { SENTINEL_PREFERENCES } from '../support/sentinel-preferences';
 
 type Preferences = {
 	detailPaneWidth: number;
@@ -9,12 +9,12 @@ type Preferences = {
 	scoreLinks: Record<string, string>;
 };
 
-describe('Drumery desktop', () => {
-	beforeEach(async () => {
+describe('Drumery desktop', (): void => {
+	beforeEach(async (): Promise<void> => {
 		await resetApp();
 	});
 
-	it('launches the native shell and invokes a Rust command', async () => {
+	it('launches the native shell and invokes a Rust command', async (): Promise<void> => {
 		const app = await $('#app');
 		await app.waitForDisplayed();
 
@@ -22,15 +22,8 @@ describe('Drumery desktop', () => {
 			({ core }) => core.invoke('read_preferences') as unknown as Preferences
 		);
 
-		// Assert the exact sentinel values seeded in wdio.conf.ts. This proves
-		// the WDIO tauri-service forwards DTX_E2E_DATA_DIR to the spawned app
-		// and the Rust resolve_dirs() branch (preferences.rs, `e2e` feature)
-		// reads from the isolated data dir — not the developer's real
-		// preferences. If either regressed, read_preferences would return
-		// defaults (clean CI) or real user data (local) instead of these
-		// distinctive values.
-		expect(preferences.detailPaneWidth).toBe(SENTINEL_PREFERENCES.detailPaneWidth);
-		expect(preferences.detailPaneVisible).toBe(SENTINEL_PREFERENCES.detailPaneVisible);
-		expect(preferences.scoreLinks).toEqual(SENTINEL_PREFERENCES.scoreLinks);
+		// A single object assertion prints the complete received preferences when
+		// isolation regresses, making CI failures immediately diagnostic.
+		expect(preferences).toEqual(SENTINEL_PREFERENCES);
 	});
 });

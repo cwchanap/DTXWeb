@@ -1,5 +1,5 @@
 use super::*;
-use crate::models::{ListedFile, ReadFileResult};
+use crate::models::ReadFileResult;
 use tempfile::tempdir;
 use tokio::fs;
 

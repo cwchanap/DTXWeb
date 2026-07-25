@@ -5,7 +5,8 @@ import { linkageCacheService } from './linkageCacheService';
 import type { WorkspaceBookmark } from '../stores/bookmarkStore';
 import { desktopHost } from './desktopHost';
 
-let switchInProgress = false;
+let switchOwner: number | null = null;
+let nextSwitchOwner = 0;
 let workspaceTransitionGeneration = 0;
 let operationLifecycle = 0;
 let trustTransitionQueue: Promise<void> = Promise.resolve();
@@ -14,11 +15,19 @@ let subWorkspaceRequest = 0;
 let treeRequest = 0;
 const expandRequests = new Map<string, number>();
 
+const invalidateExpansionRequests = (): void => {
+	const pendingNodes = [...expandRequests.keys()];
+	expandRequests.clear();
+	for (const nodePath of pendingNodes) {
+		workspaceStore.updateTreeNode(nodePath, { isLoading: false });
+	}
+};
+
 const beginWorkspaceTransition = (): number => {
 	workspaceTransitionGeneration += 1;
 	subWorkspaceRequest += 1;
 	treeRequest += 1;
-	expandRequests.clear();
+	invalidateExpansionRequests();
 	return workspaceTransitionGeneration;
 };
 
@@ -42,17 +51,20 @@ const finishLoading = (generation: number): void => {
 	}
 };
 
-const queueTrustTransition = <T>(operation: (generation: number) => Promise<T>): Promise<T> => {
+const queueTrustTransition = <T>(
+	operation: (generation: number) => Promise<T>,
+	onDiscarded: () => T
+): Promise<T> => {
 	const lifecycle = operationLifecycle;
 	const queued = trustTransitionQueue.then(
 		() => {
-			if (lifecycle !== operationLifecycle) return undefined as T;
+			if (lifecycle !== operationLifecycle) return onDiscarded();
 			const generation = beginWorkspaceTransition();
 			beginLoading(generation);
 			return operation(generation);
 		},
 		() => {
-			if (lifecycle !== operationLifecycle) return undefined as T;
+			if (lifecycle !== operationLifecycle) return onDiscarded();
 			const generation = beginWorkspaceTransition();
 			beginLoading(generation);
 			return operation(generation);
@@ -65,15 +77,18 @@ const queueTrustTransition = <T>(operation: (generation: number) => Promise<T>):
 	return queued;
 };
 
-const queueViewTransition = <T>(operation: (generation: number) => Promise<T>): Promise<T> => {
+const queueViewTransition = <T>(
+	operation: (generation: number) => Promise<T>,
+	onDiscarded: () => T
+): Promise<T> => {
 	const lifecycle = operationLifecycle;
 	const queued = trustTransitionQueue.then(
 		() => {
-			if (lifecycle !== operationLifecycle) return undefined as T;
+			if (lifecycle !== operationLifecycle) return onDiscarded();
 			return operation(beginWorkspaceTransition());
 		},
 		() => {
-			if (lifecycle !== operationLifecycle) return undefined as T;
+			if (lifecycle !== operationLifecycle) return onDiscarded();
 			return operation(beginWorkspaceTransition());
 		}
 	);
@@ -114,38 +129,41 @@ export const workspaceService = {
 	 * Opens a folder selection dialog and sets the selected path as the workspace
 	 */
 	selectWorkspace: (): Promise<void> =>
-		queueTrustTransition(async (transition) => {
-			try {
-				// This dialog establishes the native managed workspace root.
-				console.log('Invoking select-workspace-folder dialog');
-				const result = await desktopHost.selectWorkspaceFolder();
-				console.log('Dialog result:', result);
-				if (!workspaceService.isTransitionCurrent(transition)) return;
+		queueTrustTransition(
+			async (transition) => {
+				try {
+					// This dialog establishes the native managed workspace root.
+					console.log('Invoking select-workspace-folder dialog');
+					const result = await desktopHost.selectWorkspaceFolder();
+					console.log('Dialog result:', result);
+					if (!workspaceService.isTransitionCurrent(transition)) return;
 
-				if (result.canceled) {
-					console.log('Dialog was canceled');
-					return;
+					if (result.canceled) {
+						console.log('Dialog was canceled');
+						return;
+					}
+
+					const selectedPath = result.filePaths[0];
+					console.log('Selected path:', selectedPath);
+					workspaceStore.reset();
+					restoreLoading(transition);
+					workspaceStore.setPath(selectedPath);
+
+					// Load sub-workspaces and tree structure in the selected directory
+					await workspaceService.loadSubWorkspaces();
+					if (!workspaceService.isTransitionCurrent(transition)) return;
+					await workspaceService.loadTreeStructure();
+				} catch (error) {
+					console.error('Failed to select workspace:', error);
+					if (workspaceService.isTransitionCurrent(transition)) {
+						workspaceStore.setError('Failed to select workspace directory');
+					}
+				} finally {
+					finishLoading(transition);
 				}
-
-				const selectedPath = result.filePaths[0];
-				console.log('Selected path:', selectedPath);
-				workspaceStore.reset();
-				restoreLoading(transition);
-				workspaceStore.setPath(selectedPath);
-
-				// Load sub-workspaces and tree structure in the selected directory
-				await workspaceService.loadSubWorkspaces();
-				if (!workspaceService.isTransitionCurrent(transition)) return;
-				await workspaceService.loadTreeStructure();
-			} catch (error) {
-				console.error('Failed to select workspace:', error);
-				if (workspaceService.isTransitionCurrent(transition)) {
-					workspaceStore.setError('Failed to select workspace directory');
-				}
-			} finally {
-				finishLoading(transition);
-			}
-		}),
+			},
+			() => undefined
+		),
 
 	/**
 	 * Re-selects a saved workspace bookmark through the native trust-establishing dialog.
@@ -159,54 +177,65 @@ export const workspaceService = {
 		// The bookmark remains part of the UI contract, but its stored path is never trusted.
 		void bookmark;
 		// Guard against concurrent switches
-		if (switchInProgress) {
+		if (switchOwner !== null) {
 			return { ok: false, error: 'A workspace switch is already in progress' };
 		}
-		switchInProgress = true;
-		return queueTrustTransition(async (transition) => {
-			try {
+		const owner = ++nextSwitchOwner;
+		switchOwner = owner;
+		const releaseSwitch = () => {
+			if (switchOwner !== owner) return;
+			switchOwner = null;
+		};
+		return queueTrustTransition(
+			async (transition) => {
 				try {
-					const selection = await desktopHost.selectWorkspaceFolder();
-					if (!workspaceService.isTransitionCurrent(transition)) {
-						return { ok: false, error: 'Workspace selection was superseded' };
-					}
-					if (selection.canceled || !selection.filePaths[0]) {
-						return { ok: false, error: 'Workspace selection was canceled' };
+					try {
+						const selection = await desktopHost.selectWorkspaceFolder();
+						if (!workspaceService.isTransitionCurrent(transition)) {
+							return { ok: false, error: 'Workspace selection was superseded' };
+						}
+						if (selection.canceled || !selection.filePaths[0]) {
+							return { ok: false, error: 'Workspace selection was canceled' };
+						}
+
+						const selectedPath = selection.filePaths[0];
+						workspaceStore.reset();
+						restoreLoading(transition);
+						workspaceStore.setPath(selectedPath);
+						await workspaceService.loadSubWorkspaces();
+						if (!workspaceService.isTransitionCurrent(transition)) {
+							return { ok: false, error: 'Workspace selection was superseded' };
+						}
+						await workspaceService.loadTreeStructure();
+					} catch {
+						return {
+							ok: false,
+							error: 'Failed to select workspace directory'
+						};
 					}
 
-					const selectedPath = selection.filePaths[0];
-					workspaceStore.reset();
-					restoreLoading(transition);
-					workspaceStore.setPath(selectedPath);
-					await workspaceService.loadSubWorkspaces();
-					if (!workspaceService.isTransitionCurrent(transition)) {
-						return { ok: false, error: 'Workspace selection was superseded' };
+					// Check if any loader set an error during loading
+					let loadError: string | null = null;
+					const unsubscribe = workspaceStore.subscribe((s) => {
+						loadError = s.error;
+					});
+					unsubscribe();
+
+					if (loadError) {
+						return { ok: false, error: loadError };
 					}
-					await workspaceService.loadTreeStructure();
-				} catch {
-					return {
-						ok: false,
-						error: 'Failed to select workspace directory'
-					};
+
+					return { ok: true };
+				} finally {
+					finishLoading(transition);
+					releaseSwitch();
 				}
-
-				// Check if any loader set an error during loading
-				let loadError: string | null = null;
-				const unsubscribe = workspaceStore.subscribe((s) => {
-					loadError = s.error;
-				});
-				unsubscribe();
-
-				if (loadError) {
-					return { ok: false, error: loadError };
-				}
-
-				return { ok: true };
-			} finally {
-				finishLoading(transition);
-				switchInProgress = false;
+			},
+			() => {
+				releaseSwitch();
+				return { ok: false, error: 'Workspace selection was superseded' };
 			}
-		});
+		);
 	},
 
 	/**
@@ -260,7 +289,7 @@ export const workspaceService = {
 	loadTreeStructure: async (): Promise<void> => {
 		const transition = workspaceTransitionGeneration;
 		const request = ++treeRequest;
-		expandRequests.clear();
+		invalidateExpansionRequests();
 		const snapshot = getWorkspaceSnapshot();
 		const canCommit = () =>
 			workspaceService.isTransitionCurrent(transition) &&
@@ -446,32 +475,38 @@ export const workspaceService = {
 	 * Sets the current sub-workspace
 	 */
 	setCurrentSubWorkspace: async (subWorkspace: string | null): Promise<void> => {
-		await queueViewTransition(async () => {
-			workspaceStore.setCurrentSubWorkspace(subWorkspace);
-			await workspaceService.loadTreeStructure();
-			// Note: loadTreeStructure already triggers auto-linking, so no need to call it again here
-		});
+		await queueViewTransition(
+			async () => {
+				workspaceStore.setCurrentSubWorkspace(subWorkspace);
+				await workspaceService.loadTreeStructure();
+				// Note: loadTreeStructure already triggers auto-linking, so no need to call it again here
+			},
+			() => undefined
+		);
 	},
 
 	/**
 	 * Clears the current workspace selection
 	 */
 	clearWorkspace: (): Promise<void> =>
-		queueTrustTransition(async (transition) => {
-			try {
-				await desktopHost.clearWorkspaceRoot();
-				if (workspaceService.isTransitionCurrent(transition)) {
-					workspaceStore.clearWorkspace();
+		queueTrustTransition(
+			async (transition) => {
+				try {
+					await desktopHost.clearWorkspaceRoot();
+					if (workspaceService.isTransitionCurrent(transition)) {
+						workspaceStore.clearWorkspace();
+					}
+				} catch (error) {
+					console.error('Failed to clear workspace:', error);
+					if (workspaceService.isTransitionCurrent(transition)) {
+						workspaceStore.setError('Failed to clear workspace directory');
+					}
+				} finally {
+					finishLoading(transition);
 				}
-			} catch (error) {
-				console.error('Failed to clear workspace:', error);
-				if (workspaceService.isTransitionCurrent(transition)) {
-					workspaceStore.setError('Failed to clear workspace directory');
-				}
-			} finally {
-				finishLoading(transition);
-			}
-		}),
+			},
+			() => undefined
+		),
 
 	/**
 	 * Selects a song and shows song details
@@ -496,7 +531,7 @@ export const workspaceService = {
 		operationLifecycle += 1;
 		beginWorkspaceTransition();
 		loadingOwner = null;
-		switchInProgress = false;
+		switchOwner = null;
 		workspaceStore.setLoading(false);
 	}
 };

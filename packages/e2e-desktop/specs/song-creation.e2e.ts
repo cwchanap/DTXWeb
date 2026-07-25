@@ -5,23 +5,19 @@ import { expect, $ } from '@wdio/globals';
 
 import { openWorkspace } from '../support/app';
 import { pathExists, readFile } from '../support/native';
-import { createWorkspaceFixture, type WorkspaceFixture } from '../support/workspace-fixture';
+import { getPreseededWorkspaceFixture, type WorkspaceFixture } from '../support/workspace-fixture';
 
 const createdSongName = 'E2E Created Song';
 
 describe('Desktop song creation', () => {
 	let fixture: WorkspaceFixture;
 
-	before(async () => {
-		fixture = await createWorkspaceFixture({ includeSong: false });
-	});
-
-	after(async () => {
-		await fixture?.cleanup();
+	before(() => {
+		fixture = getPreseededWorkspaceFixture();
 	});
 
 	beforeEach(async () => {
-		await openWorkspace(fixture.workspaceRoot);
+		await openWorkspace();
 	});
 
 	it('creates a song and persists its generated SET.def through Rust', async () => {
@@ -41,10 +37,7 @@ describe('Desktop song creation', () => {
 			error: null
 		});
 
-		const setDef = await readFile(
-			join(fixture.workspaceRoot, createdSongName, 'SET.def'),
-			fixture.workspaceRoot
-		);
+		const setDef = await readFile(join(fixture.workspaceRoot, createdSongName, 'SET.def'));
 		expect(setDef.kind).toBe('text');
 		expect(setDef.error).toBeNull();
 		expect(setDef.content).toContain(`#TITLE ${createdSongName}`);

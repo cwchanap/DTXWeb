@@ -1,7 +1,9 @@
 import { browser, expect, $ } from '@wdio/globals';
 
 import { resetApp } from '../support/app';
+import { getWorkspaceRoot } from '../support/native';
 import { SENTINEL_PREFERENCES } from '../support/sentinel-preferences';
+import { getPreseededWorkspaceFixture } from '../support/workspace-fixture';
 
 type Preferences = {
 	detailPaneWidth: number;
@@ -25,5 +27,6 @@ describe('Drumery desktop', (): void => {
 		// A single object assertion prints the complete received preferences when
 		// isolation regresses, making CI failures immediately diagnostic.
 		expect(preferences).toEqual(SENTINEL_PREFERENCES);
+		expect(await getWorkspaceRoot()).toBe(getPreseededWorkspaceFixture().workspaceRoot);
 	});
 });

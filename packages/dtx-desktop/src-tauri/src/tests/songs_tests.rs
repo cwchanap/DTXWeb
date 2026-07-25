@@ -2,6 +2,8 @@ use super::*;
 use crate::workspace::{test_support::managed_workspace_state, WorkspaceRootState};
 use std::fs::File;
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use tempfile::tempdir;
 use tokio::fs;
 use zip::ZipArchive;
@@ -32,6 +34,144 @@ async fn create_song_writes_utf16le_set_def_with_bom() {
     assert!(content.contains("#TITLE Song Title"));
     assert!(content.contains("#L1LABEL BASIC"));
     assert!(content.contains("#L1FILE bas.dtx"));
+}
+
+#[tokio::test]
+async fn create_song_uses_the_managed_workspace_for_successful_writes() {
+    // Replacing managed state with the renderer's selectedPath would make this
+    // command write to a caller-controlled directory.
+    let root = tempdir().expect("workspace");
+    let selected = root.path().join("Songs");
+    fs::create_dir(&selected).await.expect("selected directory");
+    let state = managed_workspace_state(root.path());
+
+    let result = create_song_with_workspace_state(
+        CreateSongOptions {
+            selected_path: selected.to_string_lossy().into_owned(),
+            sanitized_folder_name: "DTXFiles.Song".to_string(),
+            sanitized_song_name: "Song Title".to_string(),
+            template_folder_path: None,
+        },
+        &state,
+    )
+    .await
+    .expect("create within managed workspace");
+
+    assert!(result.success);
+    assert_eq!(
+        result.song_folder_path,
+        std::fs::canonicalize(&selected)
+            .expect("canonical selected path")
+            .join("DTXFiles.Song")
+            .to_string_lossy()
+    );
+    assert!(selected.join("DTXFiles.Song/SET.def").is_file());
+}
+
+#[tokio::test]
+async fn create_song_rejects_an_unset_managed_workspace_before_mutation() {
+    // If state.current() moves below create_song_folder, SET.def creation can
+    // mutate a directory before the command rejects the missing trust root.
+    let root = tempdir().expect("root");
+    let selected = root.path().join("Songs");
+    fs::create_dir(&selected).await.expect("selected directory");
+    let state = WorkspaceRootState::default();
+
+    let result = create_song_with_workspace_state(
+        CreateSongOptions {
+            selected_path: selected.to_string_lossy().into_owned(),
+            sanitized_folder_name: "DTXFiles.Song".to_string(),
+            sanitized_song_name: "Song Title".to_string(),
+            template_folder_path: None,
+        },
+        &state,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("managed workspace required")
+        .to_string()
+        .contains("workspace root is required"));
+    assert!(!selected.join("DTXFiles.Song").exists());
+}
+
+#[tokio::test]
+async fn create_song_rejects_selected_and_template_paths_outside_the_managed_workspace() {
+    // Removing either canonical containment check lets renderer-controlled
+    // selectedPath/templateFolderPath write or copy outside the workspace.
+    let workspace = tempdir().expect("workspace");
+    let selected = workspace.path().join("Songs");
+    fs::create_dir(&selected).await.expect("selected directory");
+    let outside = tempdir().expect("outside");
+    let outside_selected = outside.path().join("Songs");
+    let outside_template = outside.path().join("Template");
+    fs::create_dir(&outside_selected)
+        .await
+        .expect("outside selected directory");
+    fs::create_dir(&outside_template)
+        .await
+        .expect("outside template directory");
+    fs::write(outside_template.join("template.dtx"), "#TITLE: Template")
+        .await
+        .expect("template file");
+    let state = managed_workspace_state(workspace.path());
+
+    let outside_selected_result = create_song_with_workspace_state(
+        CreateSongOptions {
+            selected_path: outside_selected.to_string_lossy().into_owned(),
+            sanitized_folder_name: "DTXFiles.Outside".to_string(),
+            sanitized_song_name: "Outside".to_string(),
+            template_folder_path: None,
+        },
+        &state,
+    )
+    .await;
+    assert!(outside_selected_result.is_err());
+    assert!(!outside_selected.join("DTXFiles.Outside").exists());
+
+    let outside_template_result = create_song_with_workspace_state(
+        CreateSongOptions {
+            selected_path: selected.to_string_lossy().into_owned(),
+            sanitized_folder_name: "DTXFiles.Template".to_string(),
+            sanitized_song_name: "Template".to_string(),
+            template_folder_path: Some(outside_template.to_string_lossy().into_owned()),
+        },
+        &state,
+    )
+    .await;
+    assert!(outside_template_result.is_err());
+    assert!(!selected.join("DTXFiles.Template").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn create_song_rejects_a_selected_path_symlink_that_escapes_the_managed_workspace() {
+    // Replacing canonical containment with lexical prefix checks would follow
+    // this in-workspace-looking link and create files in the outside directory.
+    let workspace = tempdir().expect("workspace");
+    let outside = tempdir().expect("outside");
+    let outside_selected = outside.path().join("Songs");
+    fs::create_dir(&outside_selected)
+        .await
+        .expect("outside selected directory");
+    let link = workspace.path().join("linked-songs");
+    symlink(&outside_selected, &link).expect("symlink");
+    let state = managed_workspace_state(workspace.path());
+
+    let result = create_song_with_workspace_state(
+        CreateSongOptions {
+            selected_path: link.to_string_lossy().into_owned(),
+            sanitized_folder_name: "DTXFiles.Escape".to_string(),
+            sanitized_song_name: "Escape".to_string(),
+            template_folder_path: None,
+        },
+        &state,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(!outside_selected.join("DTXFiles.Escape").exists());
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 use super::*;
 use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::{Arc, Barrier};
+use std::sync::{mpsc, Arc, Barrier, TryLockError};
 use tempfile::TempDir;
 
 fn settings_path(data_dir: &std::path::Path) -> std::path::PathBuf {
@@ -206,39 +206,57 @@ fn state_recovers_after_its_lock_is_poisoned() {
 }
 
 #[test]
-fn concurrent_trust_transitions_keep_memory_in_sync_with_persisted_root() {
+fn concurrent_clear_cannot_interleave_after_a_selector_persists() {
     let data_dir = TempDir::new().expect("data dir");
     let root = data_dir.path().join("workspace");
     fs::create_dir(&root).expect("workspace directory");
     let path = settings_path(data_dir.path());
     let state = Arc::new(WorkspaceRootState::load_from_path(path.clone()));
-    let start = Arc::new(Barrier::new(3));
+    let hook = Arc::new(PostPersistHook {
+        arrived: Arc::new(Barrier::new(2)),
+        release: Arc::new(Barrier::new(2)),
+    });
+    *state
+        .post_persist_hook
+        .lock()
+        .expect("post-persist hook lock") = Some(Arc::clone(&hook));
 
     let selecting_state = Arc::clone(&state);
     let selecting_root = root.clone();
-    let selecting_start = Arc::clone(&start);
     let selecting = std::thread::spawn(move || {
-        selecting_start.wait();
-        for _ in 0..200 {
-            selecting_state
-                .set_from_dialog_selection(&selecting_root)
-                .expect("select workspace");
-            std::thread::yield_now();
-        }
+        selecting_state
+            .set_from_dialog_selection(&selecting_root)
+            .expect("select workspace");
     });
 
+    hook.arrived.wait();
+    let canonical_root = fs::canonicalize(&root).expect("canonical root");
+    let persisted: WorkspaceSettings = read_json_or_default(&path, "workspace interleaving test");
+    assert_eq!(
+        persisted.workspace_root,
+        Some(canonical_root.display().to_string())
+    );
+    assert_eq!(state.current_optional(), None);
+    assert!(matches!(
+        state.operation_lock.try_lock(),
+        Err(TryLockError::WouldBlock)
+    ));
+
+    let (clear_started_sender, clear_started_receiver) = mpsc::channel();
+    let (clear_finished_sender, clear_finished_receiver) = mpsc::channel();
     let clearing_state = Arc::clone(&state);
-    let clearing_start = Arc::clone(&start);
     let clearing = std::thread::spawn(move || {
-        clearing_start.wait();
-        for _ in 0..200 {
-            clearing_state.clear().expect("clear workspace");
-            std::thread::yield_now();
-        }
+        clear_started_sender.send(()).expect("clear start signal");
+        clearing_state.clear().expect("clear workspace");
+        clear_finished_sender.send(()).expect("clear finish signal");
     });
 
-    start.wait();
+    clear_started_receiver.recv().expect("clear worker started");
+    hook.release.wait();
     selecting.join().expect("selecting worker");
+    clear_finished_receiver
+        .recv()
+        .expect("clear worker finished");
     clearing.join().expect("clearing worker");
 
     let persisted: WorkspaceSettings = read_json_or_default(&path, "workspace concurrency test");

@@ -6,6 +6,7 @@ mod auth;
 mod error;
 mod filesystem;
 mod models;
+mod native_persistence;
 mod preferences;
 mod scores;
 mod songs;

@@ -1126,6 +1126,7 @@ dependencies = [
  "tokio",
  "ts-rs",
  "url",
+ "windows-sys 0.59.0",
  "wiremock",
  "zip 8.6.0",
 ]

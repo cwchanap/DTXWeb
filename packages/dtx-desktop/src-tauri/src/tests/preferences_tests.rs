@@ -80,12 +80,18 @@ fn write_is_atomic_no_temp_file_left_behind() {
     let dir = TempDir::new().unwrap();
     let path = preferences_path(dir.path());
     write_preferences_to(&path, &Preferences::default()).unwrap();
-    // A successful write must rename the temp file into place, leaving no .tmp.
-    let tmp = dir.path().join("dtxweb").join("preferences.json.tmp");
-    assert!(
-        !tmp.exists(),
-        "temp file should not linger after a clean write"
-    );
+    // A successful write must rename its uniquely named sibling temp file into
+    // place, leaving no temporary file with the persistence-layer prefix.
+    let has_temp = fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".preferences.json.tmp-")
+        });
+    assert!(!has_temp, "temp file should not linger after a clean write");
     assert!(path.exists());
     // And the resulting file must be valid JSON (round-trips).
     let read = read_preferences_from(&path);

@@ -1,15 +1,15 @@
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const fixtureFolderName = 'FixtureSong';
 export const fixtureSongTitle = 'Critical Workspace Song';
+export const fixtureEscapeLinkName = 'outside-link';
 
 export type WorkspaceFixture = {
 	workspaceRoot: string;
 	outsideRoot: string;
 	songFolder: string;
-	cleanup: () => Promise<void>;
+	escapeLinkPath: string;
 };
 
 const encodeUtf16Le = (value: string): Uint8Array => {
@@ -26,28 +26,31 @@ const encodeUtf16Le = (value: string): Uint8Array => {
 	return bytes;
 };
 
-export const createWorkspaceFixture = async ({
+export const createWorkspaceFixture = ({
+	parentPath,
 	includeSong = true
 }: {
+	parentPath: string;
 	includeSong?: boolean;
-} = {}): Promise<WorkspaceFixture> => {
-	const workspaceRoot = await realpath(
-		await mkdtemp(join(tmpdir(), 'drumery-desktop-e2e-workspace-'))
-	);
-	const outsideRoot = await realpath(
-		await mkdtemp(join(tmpdir(), 'drumery-desktop-e2e-outside-'))
-	);
+}): WorkspaceFixture => {
+	mkdirSync(parentPath, { recursive: true });
+	const fixtureParent = realpathSync(parentPath);
+	const workspaceRoot = join(fixtureParent, 'workspace');
+	const outsideRoot = join(fixtureParent, 'outside');
+	mkdirSync(workspaceRoot);
+	mkdirSync(outsideRoot);
 	const songFolder = join(workspaceRoot, fixtureFolderName);
+	const escapeLinkPath = join(workspaceRoot, fixtureEscapeLinkName);
 
 	if (includeSong) {
-		await mkdir(songFolder);
-		await writeFile(
+		mkdirSync(songFolder);
+		writeFileSync(
 			join(songFolder, 'SET.def'),
 			encodeUtf16Le(
 				[`#TITLE ${fixtureSongTitle}`, '#L1LABEL BASIC', '#L1FILE basic.dtx'].join('\n')
 			)
 		);
-		await writeFile(
+		writeFileSync(
 			join(songFolder, 'basic.dtx'),
 			[
 				`#TITLE:${fixtureSongTitle}`,
@@ -56,18 +59,38 @@ export const createWorkspaceFixture = async ({
 				'#DLEVEL:50'
 			].join('\n')
 		);
-		await writeFile(join(songFolder, 'preview.wav'), new Uint8Array([0, 1, 2, 127, 255]));
+		writeFileSync(join(songFolder, 'preview.wav'), new Uint8Array([0, 1, 2, 127, 255]));
 	}
 
-	await writeFile(join(outsideRoot, 'private.dtx'), '#TITLE:Outside Workspace');
+	writeFileSync(join(outsideRoot, 'private.dtx'), '#TITLE:Outside Workspace');
+	symlinkSync(outsideRoot, escapeLinkPath, process.platform === 'win32' ? 'junction' : 'dir');
+
+	return {
+		workspaceRoot: realpathSync(workspaceRoot),
+		outsideRoot: realpathSync(outsideRoot),
+		songFolder,
+		escapeLinkPath
+	};
+};
+
+const requiredEnvironmentPath = (
+	name: 'DTX_E2E_WORKSPACE_ROOT' | 'DTX_E2E_OUTSIDE_ROOT'
+): string => {
+	const value = process.env[name];
+	if (!value) {
+		throw new Error(`${name} must be set by the WDIO configuration`);
+	}
+	return value;
+};
+
+export const getPreseededWorkspaceFixture = (): WorkspaceFixture => {
+	const workspaceRoot = requiredEnvironmentPath('DTX_E2E_WORKSPACE_ROOT');
+	const outsideRoot = requiredEnvironmentPath('DTX_E2E_OUTSIDE_ROOT');
 
 	return {
 		workspaceRoot,
 		outsideRoot,
-		songFolder,
-		cleanup: async () => {
-			await rm(workspaceRoot, { recursive: true, force: true });
-			await rm(outsideRoot, { recursive: true, force: true });
-		}
+		songFolder: join(workspaceRoot, fixtureFolderName),
+		escapeLinkPath: join(workspaceRoot, fixtureEscapeLinkName)
 	};
 };

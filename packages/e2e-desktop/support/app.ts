@@ -1,18 +1,15 @@
 import { browser, $ } from '@wdio/globals';
 
-export const resetApp = async (workspacePath?: string): Promise<void> => {
-	await browser.execute((path) => {
+export const resetApp = async (): Promise<void> => {
+	await browser.execute(() => {
 		localStorage.clear();
-		if (path) {
-			localStorage.setItem('workspace_path', JSON.stringify(path));
-		}
 		window.location.hash = '';
-	}, workspacePath);
+	});
 	await browser.refresh();
 	await $('#app').waitForDisplayed();
 };
 
-export const openWorkspace = async (workspacePath: string): Promise<void> => {
-	await resetApp(workspacePath);
+export const openWorkspace = async (): Promise<void> => {
+	await resetApp();
 	await $('input[placeholder="Search songs and folders..."]').waitForDisplayed();
 };

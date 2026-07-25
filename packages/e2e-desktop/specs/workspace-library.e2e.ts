@@ -4,25 +4,21 @@ import { browser, expect, $ } from '@wdio/globals';
 
 import { openWorkspace } from '../support/app';
 import {
-	createWorkspaceFixture,
 	fixtureFolderName,
 	fixtureSongTitle,
+	getPreseededWorkspaceFixture,
 	type WorkspaceFixture
 } from '../support/workspace-fixture';
 
 describe('Desktop workspace library', () => {
 	let fixture: WorkspaceFixture;
 
-	before(async () => {
-		fixture = await createWorkspaceFixture();
-	});
-
-	after(async () => {
-		await fixture?.cleanup();
+	before(() => {
+		fixture = getPreseededWorkspaceFixture();
 	});
 
 	beforeEach(async () => {
-		await openWorkspace(fixture.workspaceRoot);
+		await openWorkspace();
 	});
 
 	it('restores a workspace and filters its DTX songs', async () => {

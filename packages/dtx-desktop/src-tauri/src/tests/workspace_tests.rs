@@ -1,6 +1,7 @@
 use super::*;
 use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{Arc, Barrier};
 use tempfile::TempDir;
 
 fn settings_path(data_dir: &std::path::Path) -> std::path::PathBuf {
@@ -201,5 +202,65 @@ fn state_recovers_after_its_lock_is_poisoned() {
         panic!("poison workspace state lock");
     }));
 
+    assert_eq!(state.current_optional(), None);
+}
+
+#[test]
+fn concurrent_trust_transitions_keep_memory_in_sync_with_persisted_root() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let path = settings_path(data_dir.path());
+    let state = Arc::new(WorkspaceRootState::load_from_path(path.clone()));
+    let start = Arc::new(Barrier::new(3));
+
+    let selecting_state = Arc::clone(&state);
+    let selecting_root = root.clone();
+    let selecting_start = Arc::clone(&start);
+    let selecting = std::thread::spawn(move || {
+        selecting_start.wait();
+        for _ in 0..200 {
+            selecting_state
+                .set_from_dialog_selection(&selecting_root)
+                .expect("select workspace");
+            std::thread::yield_now();
+        }
+    });
+
+    let clearing_state = Arc::clone(&state);
+    let clearing_start = Arc::clone(&start);
+    let clearing = std::thread::spawn(move || {
+        clearing_start.wait();
+        for _ in 0..200 {
+            clearing_state.clear().expect("clear workspace");
+            std::thread::yield_now();
+        }
+    });
+
+    start.wait();
+    selecting.join().expect("selecting worker");
+    clearing.join().expect("clearing worker");
+
+    let persisted: WorkspaceSettings = read_json_or_default(&path, "workspace concurrency test");
+    assert_eq!(
+        state.current_optional(),
+        persisted.workspace_root.map(std::path::PathBuf::from),
+        "the in-memory trusted root must reflect the final persisted setting"
+    );
+}
+
+#[test]
+fn concurrent_trust_transitions_recover_when_the_operation_lock_is_poisoned() {
+    let data_dir = TempDir::new().expect("data dir");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let _guard = state
+            .operation_lock
+            .lock()
+            .expect("workspace operation lock");
+        panic!("poison workspace operation lock");
+    }));
+
+    state.clear().expect("clear after poisoned operation lock");
     assert_eq!(state.current_optional(), None);
 }

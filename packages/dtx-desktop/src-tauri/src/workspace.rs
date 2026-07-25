@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -24,6 +24,7 @@ struct WorkspaceSettings {
 pub struct WorkspaceRootState {
     root: RwLock<Option<PathBuf>>,
     settings_path: Option<PathBuf>,
+    operation_lock: Mutex<()>,
 }
 
 impl WorkspaceRootState {
@@ -45,6 +46,7 @@ impl WorkspaceRootState {
         Self {
             root: RwLock::new(root),
             settings_path: Some(settings_path),
+            operation_lock: Mutex::new(()),
         }
     }
 
@@ -66,20 +68,24 @@ impl WorkspaceRootState {
                 "The selected workspace must be an accessible directory".to_string(),
             )
         })?;
-        self.persist(Some(&canonical))?;
-        *self
-            .root
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(canonical.clone());
+        self.commit_transition(Some(canonical.clone()))?;
         Ok(canonical)
     }
 
     pub(crate) fn clear(&self) -> Result<()> {
-        self.persist(None)?;
+        self.commit_transition(None)
+    }
+
+    fn commit_transition(&self, next_root: Option<PathBuf>) -> Result<()> {
+        let _operation = self
+            .operation_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.persist(next_root.as_deref())?;
         *self
             .root
             .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = next_root;
         Ok(())
     }
 

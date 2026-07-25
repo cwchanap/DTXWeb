@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22  
 **Last amended:** 2026-07-25  
-**Status:** Amended design approved; awaiting implementation planning
+**Status:** Amended design approved; review feedback incorporated; awaiting implementation planning
 
 ## Goal
 
@@ -15,6 +15,9 @@ Google Drive is a best-effort secondary operation. A Drive failure must never pr
 ## Approved Product Decisions
 
 - Google Drive authorization is local to each DTX Desktop installation.
+- `drive.file` access follows Google's authorization for the requesting app, account, and file. A
+  second installation must connect Drive locally; an existing file remains replaceable only when
+  that connected account/app is authorized for it.
 - Refresh tokens are stored only in the operating system credential store.
 - Access tokens remain in Rust memory and are never exposed to the renderer.
 - Each authenticated Drumery user selects one default Drive folder per installation.
@@ -27,6 +30,7 @@ Google Drive is a best-effort secondary operation. A Drive failure must never pr
 - Linked songs also expose **Upload ZIP to Drive** or **Re-upload ZIP to Drive**.
 - Drive failure does not block draft save or publishing.
 - Failed replacement preserves the previous Drive file ID and URL.
+- `downloadUrl` is a browser-facing Google Drive link, not a guaranteed direct byte stream.
 - Changing the default folder affects newly created or explicitly replaced files only; existing files are not moved.
 - Disconnecting Google Drive or deleting a Drumery simfile does not delete Drive files.
 
@@ -79,6 +83,12 @@ Before Drive work, replace the renderer-supplied workspace-root contract tracked
 
 Add a Rust-owned `WorkspaceRootState` and atomically persisted `workspace.json` under the platform app-data directory. Load and canonicalize the saved root during Tauri startup. A missing, malformed, or inaccessible saved path produces an empty state instead of falling back to a renderer value.
 
+Native JSON settings use the same persistence primitive: create the app-data directory with mode
+`0700` on Unix, write a uniquely named temporary file in the destination directory with mode
+`0600`, flush and sync it, atomically replace the destination, then sync the parent directory where
+the platform supports it. Windows uses the platform's atomic replacement semantics and the
+current user's app-data ACLs. Never fall back to a cross-directory move.
+
 The native folder dialog is the only operation that may establish or replace the trusted root. Expose narrow commands to read and clear the root. Remove `workspaceRoot` from every existing IPC command that currently accepts it; filesystem, parsing, export, preview-upload, and Drive-upload commands read the managed state instead. Target paths may still cross IPC, but Rust canonicalizes them against the managed root before use.
 
 Stop persisting `workspace_path` in renderer `localStorage`. Hydrate `workspaceStore` from Rust on startup. The old renderer value cannot be silently imported because trusting it once would preserve the vulnerability; existing installations require one native folder re-selection after upgrading. Canceling the dialog retains an already trusted root but establishes nothing on a first run.
@@ -101,6 +111,10 @@ The desktop OAuth client ID is public configuration, not a secret. It may be emb
 
 Production, pre-production, and local development builds must use intentionally configured client IDs and callback behavior. CI must fail clearly when a release build enables Drive integration without a client ID. Tokens, authorization codes, and refresh tokens must never be placed in GitHub Actions variables, build artifacts, source files, or Tauri configuration.
 
+Configuration coverage consists of a parser unit test for enabled/disabled/client-ID combinations
+and a CI/release guard that fails with a named `GOOGLE_DRIVE_OAUTH_CLIENT_ID` diagnostic when Drive
+is enabled without the value. Debug and E2E fake-provider builds remain independently gated.
+
 ## Data Ownership and Persistence
 
 ### Local secret data
@@ -113,7 +127,21 @@ Account: <drumery-user-id>
 Secret: <google-refresh-token>
 ```
 
-Use a maintained Rust credential-store abstraction backed by the platform's secure facility, such as macOS Keychain, Windows Credential Manager, and the supported Linux secret service where applicable.
+Use `keyring` 3.6.3, whose Rust 1.75 minimum is compatible with the desktop crate's Rust 1.77
+baseline. Disable default features and select the platform backend explicitly: `apple-native` on
+macOS, `windows-native` on Windows, and `sync-secret-service` plus `crypto-rust` on Linux.
+
+Keep the crate behind a narrow, mockable interface:
+
+```rust
+trait GoogleDriveCredentialStore {
+    fn get_refresh_token(&self, user_id: &str) -> Result<Option<String>, CredentialStoreError>;
+    fn set_refresh_token(&self, user_id: &str, token: &str) -> Result<(), CredentialStoreError>;
+    fn delete_refresh_token(&self, user_id: &str) -> Result<(), CredentialStoreError>;
+}
+```
+
+Production uses the platform keyring implementation and tests inject an in-memory implementation.
 
 The refresh token must never be stored in renderer local storage, workspace metadata, D1, application logs, plaintext configuration, Svelte state, or Tauri IPC responses.
 
@@ -136,7 +164,10 @@ interface GoogleDriveSettings {
 }
 ```
 
-Write this file atomically. Missing or malformed Drive configuration becomes an empty map. The renderer settings store may display a sanitized copy, but Rust is the source of truth and upload commands do not accept a folder ID from the renderer.
+Write this file with the native atomic persistence primitive defined for `workspace.json`. Missing
+or malformed Drive configuration becomes an empty map. The renderer settings store may display a
+sanitized copy, but Rust is the source of truth and upload commands do not accept a folder ID from
+the renderer.
 
 Folder metadata is installation-local because it is paired with the Google account authorized on that installation. A second computer must connect Drive once before uploading, although cloud simfile metadata is already synchronized.
 
@@ -156,6 +187,8 @@ Visibility rules:
 - `googleDriveFileId` is returned only to the authenticated owner.
 - Anonymous users and non-owners receive `null` for `googleDriveFileId`.
 - Only owner-authorized mutations may set or replace it.
+- Staff/admin visibility or mutation bypass is out of scope for the first release; staff receive
+  the same non-owner result unless a separate policy is designed later.
 
 ## Google Authorization and Folder Selection
 
@@ -174,6 +207,12 @@ Validate that the callback belongs to the active loopback listener, the state ma
 
 The installed desktop client is a public OAuth client. Its client identifier may be bundled; no bundled client secret is considered confidential.
 
+Refresh-token storage is installation-local, but `drive.file` file authorization is not inherently
+device-scoped. A second installation using the same Google account and OAuth app/project can access
+files already authorized for that app; a different account or app configuration may not. Always
+handle Google not-found/permission responses through the explicit existing-file failure UX instead
+of assuming either cross-install success or failure.
+
 ### Folder picker
 
 Settings exposes **Connect Google Drive and Choose Folder**. The system browser opens the supported Google desktop Picker flow configured for folder selection. Validate the returned folder through the Drive API before persistence.
@@ -188,12 +227,18 @@ Use the current desktop Picker authorization parameters:
 
 On first connection, persist the refresh token and native folder setting only after token exchange and folder validation both succeed. Failure or cancellation stores neither. When changing a folder for an existing connection, leave the current credential and folder untouched until the replacement selection validates.
 
-The selected item must:
+Validate the selected item with `files.get`, requesting
+`id,name,mimeType,trashed,capabilities(canAddChildren)` and setting
+`supportsAllDrives=true`. The selected item must:
 
 - exist and be accessible to the connected account;
 - have MIME type `application/vnd.google-apps.folder`;
 - not be trashed;
 - be capable of accepting child files.
+
+`supportsAllDrives=true` declares that the caller handles shared-drive semantics; it does not grant
+access or guarantee that a shared-drive role can upload. `capabilities.canAddChildren` is the
+authoritative per-user check.
 
 The first release requests only `drive.file`, not broad Drive or profile scopes. The UI says **Google Drive connected** rather than claiming a Google email address it did not request permission to read.
 
@@ -240,6 +285,7 @@ Google Drive
 Connected
 Destination folder: Public DTX Downloads
 Uploads inherit this folder's sharing settings.
+Existing Drive files can be replaced only when this Google account has access to them.
 [Change Folder] [Disconnect]
 ```
 
@@ -280,17 +326,28 @@ write_song_zip(output_path, files)
 
 Manual export and Drive upload use the same supported extensions, top-level selection behavior, deterministic ordering, safe filename rules, canonical workspace containment, and symlink-safe paths.
 
-Manual export continues writing to the configured export directory. Drive upload writes to a unique application temporary path.
+Manual export continues writing to the configured export directory. Drive upload writes beneath
+the Tauri application cache directory at
+`<app-cache>/google-drive-uploads/<native-random-id>/`. Rust generates that directory identifier;
+the renderer operation ID is never used as a filesystem path component.
 
-Remove temporary archives after success, failure, cancellation, or unrecoverable metadata-sync failure. At startup, perform best-effort cleanup only within the application's own Drive-upload temporary namespace.
+Remove temporary archives after success, failure, cancellation, or unrecoverable metadata-sync
+failure. At startup, perform best-effort cleanup only of validated descendants of the fixed
+`<app-cache>/google-drive-uploads/` namespace; never scan or delete other cache or operating-system
+temporary paths.
 
 ## Drive Upload Behavior
 
-Use resumable uploads for creation and replacement. Upload chunks must comply with Drive requirements and report progress after each accepted chunk.
+Use resumable uploads for creation and replacement. Production uses an 8 MiB chunk size
+(`8 * 1024 * 1024`), which is a multiple of Drive's required 256 KiB unit. Keep the value as one
+Rust constant with a test-only override for boundary and retry tests, not a user-facing runtime
+setting. Report progress after each accepted chunk.
 
 The Drive client supports resumable `files.create`, resumable `files.update`, session-status reconciliation after uncertain failures, continuation from the confirmed byte, final `id`/`webContentLink` retrieval, and stable error classification.
 
-Set `supportsAllDrives=true` on folder and file operations that support it so selected folders in My Drive and shared drives follow the same flow.
+Set `supportsAllDrives=true` on current Drive v3 folder and file methods that accept it. This lets
+one implementation handle My Drive and shared-drive resources, but actual access remains governed
+by the connected account's scope, file authorization, and role capabilities.
 
 ### First upload
 
@@ -304,6 +361,9 @@ When no `googleDriveFileId` exists:
 
 Derive the filename from the song title using existing safe filename rules and append `.zip`.
 
+Google Drive permits duplicate names. Do not list the folder or invent collision-avoidance suffixes;
+stable replacement is based exclusively on `googleDriveFileId`.
+
 Where supported, pre-generate a Drive file ID to make uncertain create retries idempotent. Otherwise, treat the active resumable session URI as the idempotency boundary for that operation.
 
 ### Replacement
@@ -312,7 +372,8 @@ When `googleDriveFileId` exists:
 
 1. build a fresh ZIP;
 2. initiate resumable `files.update` for that ID;
-3. replace content without changing identity;
+3. replace content and set the Drive filename to the latest safe saved title plus `.zip`, without
+   changing identity or parent;
 4. retrieve final metadata;
 5. patch the URL only after Drive success.
 
@@ -322,12 +383,19 @@ The file remains in its current Drive folder. The default folder is not applied 
 
 Store Drive's `webContentLink` as `downloadUrl` for ZIP files. Updating the same object preserves identity and normally preserves the public link; still write the returned link so Drumery reflects Drive's authoritative metadata.
 
+This is intentionally a browser-facing Drive download link, not a direct byte-stream contract.
+Google may redirect it, show a large-file virus-scan warning/interstitial, or block flagged content.
+`files.get?alt=media` requires an authorized API request and therefore cannot serve as a public
+stored URL without adding a Drumery download proxy or exposing credentials; both are out of scope.
+The UI and public API must not describe `downloadUrl` as a direct-download endpoint.
+
 ### Missing or inaccessible file
 
 On permanent not-found or permission failure:
 
 - preserve the stored ID and URL;
-- explain that the connected account cannot update the file;
+- explain that the connected Google account/app is not authorized to update that existing file and
+  that this can occur after connecting a different account or differently configured build;
 - offer **Reconnect Google Drive**;
 - offer **Create Replacement Drive File**.
 
@@ -417,6 +485,7 @@ Linked songs expose a separate action beside **Export to ZIP**:
 - **Upload ZIP to Drive** when no file ID exists;
 - **Re-upload ZIP to Drive** when an ID exists;
 - **Uploading to Drive… 42%** while active;
+- **Cancel Upload** while queued, preparing, or transferring;
 - **Create Replacement Drive File** after a permanent existing-file access error.
 
 Manual re-upload does not save unrelated form data. It builds the ZIP, creates or updates the Drive file, patches only Drive metadata after success, and leaves the cloud simfile unchanged after failure.
@@ -425,10 +494,18 @@ The action remains available after automatic failure so the user can retry witho
 
 ## Concurrency and Progress
 
-Only one Drive upload may run for a song at a time. Give each operation a unique ID. Rust progress events include that operation ID and song/simfile identity; the renderer ignores stale or unrelated events.
+Only one Drive upload may run for a song at a time. A process-wide semaphore permits at most two
+Drive upload operations across all songs. Acquire it before ZIP creation or resumable-session initiation,
+so queued work holds neither a ZIP, session URI, nor chunk buffer. Additional songs queue
+first-in/first-out and report **Waiting for upload slot**; another operation for the same song
+returns `UPLOAD_IN_PROGRESS`.
+
+Give each operation a unique ID. Rust progress events include that operation ID and song/simfile
+identity; the renderer ignores stale or unrelated events.
 
 Stages include:
 
+- Waiting for upload slot
 - Preparing ZIP
 - Connecting to Google Drive
 - Uploading — percentage
@@ -437,9 +514,17 @@ Stages include:
 - Upload complete
 - Upload failed; Drumery save succeeded
 
-While automatic upload belongs to a save/publish orchestration, duplicate save/publish actions for that song remain disabled until orchestration ends. Unrelated navigation remains available. Closing Song Details must not corrupt the Rust task; the store may receive completion while the component is unmounted.
+While automatic upload belongs to a save/publish orchestration, duplicate save/publish actions for
+that song remain disabled until orchestration ends. The status UI exposes **Cancel Upload** while
+the operation is queued, preparing, or transferring, which releases that lock without rolling back
+the successful Drumery save. Cancellation uses a Rust cancellation token, abandons the in-memory
+session, removes temporary files, and leaves existing cloud Drive metadata unchanged. Once Drive
+has finalized the file, cancellation is no longer accepted; metadata synchronization and any
+required compensation complete as one native transaction.
 
-The first version does not require a user-facing cancel button. Internal abort and shutdown paths must still clean up temporary archives.
+Unrelated navigation remains available. Closing Song Details must not corrupt the Rust task; the
+store may receive completion while the component is unmounted. Shutdown paths follow the same
+cleanup rules as cancellation.
 
 ## Renderer Boundaries
 
@@ -473,7 +558,9 @@ type SongSaveOutcome = {
 
 `googleDriveStore.ts` contains only non-secret state: connection/folder status, reconnect requirement, active progress, and sanitized errors.
 
-`GoogleDriveSettings.svelte` renders settings actions. `GoogleDriveUploadStatus.svelte` renders progress, success, retryable failure, permanent file-access failure, and replacement actions.
+`GoogleDriveSettings.svelte` renders settings actions. `GoogleDriveUploadStatus.svelte` renders
+queued/progress state, cancel, success, retryable failure, permanent file-access failure, and
+replacement actions.
 
 Extend `desktopHost.ts` with typed wrappers:
 
@@ -483,6 +570,7 @@ connectGoogleDriveAndChooseFolder();
 changeGoogleDriveFolder();
 disconnectGoogleDrive();
 uploadSongZipToGoogleDrive(params);
+cancelGoogleDriveUpload(operationId);
 ```
 
 Expose no generic token or arbitrary HTTP command.
@@ -506,10 +594,12 @@ src-tauri/src/google_drive/
 - `workspace.rs`: Rust-owned workspace state, atomic native persistence, startup hydration, native selection, and trusted containment access.
 - `commands.rs`: narrow Tauri commands, parameter validation, local user namespace, and sanitized error mapping.
 - `oauth.rs`: PKCE, authorization URL, loopback callback, state validation, exchange, refresh, and revocation.
-- `credential_store.rs`: small trait; production OS store and in-memory test fake.
+- `credential_store.rs`: `GoogleDriveCredentialStore`; `keyring` 3.6.3 production adapter and
+  in-memory test fake.
 - `settings.rs`: atomic non-secret folder settings keyed by the Rust-authenticated Drumery user.
 - `drive_client.rs`: folder validation, create/update, compensation delete, resumable session/status, final metadata, and error classification.
-- `upload.rs`: temporary ZIP, chunk streaming, progress, retry/resume, cleanup, and operation state machine.
+- `upload.rs`: global semaphore, cancellation, temporary ZIP, chunk streaming, progress,
+  retry/resume, metadata synchronization, compensation, cleanup, and operation state machine.
 
 Register the commands in the centralized Tauri invoke handler.
 
@@ -519,10 +609,15 @@ Representative input:
 type UploadSongZipToGoogleDriveInput = {
 	operationId: string;
 	simfileId: string;
-	songPath: string;
+	songRelativePath: string;
 	forceCreateReplacement?: boolean;
 };
 ```
+
+`operationId` must parse as a UUIDv4 and is used only for event correlation, cancellation, and
+same-song operation tracking. It is never treated as a path, URL, credential key, or authorization
+value. Cancellation derives the current Drumery user from `AuthState` and refuses an operation
+owned by another authenticated user.
 
 Representative result:
 
@@ -543,7 +638,9 @@ type GoogleDriveUploadResult = {
 		| 'FILE_NOT_FOUND'
 		| 'FILE_PERMISSION_DENIED'
 		| 'UPLOAD_IN_PROGRESS'
+		| 'CANCELED'
 		| 'METADATA_SYNC_FAILED'
+		| 'RATE_LIMITED'
 		| 'QUOTA_EXCEEDED'
 		| 'NETWORK'
 		| 'CREDENTIAL_STORE'
@@ -553,7 +650,16 @@ type GoogleDriveUploadResult = {
 };
 ```
 
-Rust derives the trusted workspace root from `WorkspaceRootState`, the Drumery user from `AuthState`, the destination folder from native Drive settings, and the existing file ID plus saved title from a fresh owner-authorized API query. It canonically verifies `songPath` against the managed root before reading files.
+`songRelativePath` must be a normalized workspace-relative path. Reject absolute paths, empty
+components, `.`/`..` traversal, platform prefixes, and alternate separators before joining it to
+the managed root. Rust then canonicalizes the joined target and verifies containment and symlink
+safety before reading files. The renderer cannot supply a root or absolute target. Rust cannot
+derive the local folder from `simfileId` alone because that cloud record does not own a local
+workspace mapping.
+
+Rust derives the trusted workspace root from `WorkspaceRootState`, the Drumery user from
+`AuthState`, the destination folder from native Drive settings, and the existing file ID plus saved
+title from a fresh owner-authorized API query.
 
 ## DTX API and GraphQL
 
@@ -581,7 +687,12 @@ When unavailable, skip Drive upload, continue save/publish, preserve Drive metad
 
 ### Upload
 
-Retry temporary network/session errors with bounded exponential backoff and status reconciliation. Stop on permanent quota, authorization, validation, permission, or unsupported-response errors and return a sanitized code.
+Retry temporary network/session errors and Drive `rateLimitExceeded`/`userRateLimitExceeded`
+responses with bounded exponential backoff, status reconciliation, and a valid `Retry-After` value
+when present. Exhausted transient throttling returns `RATE_LIMITED` and offers retry. Storage,
+daily, or other non-transient quota exhaustion returns `QUOTA_EXCEEDED` without automatic retry.
+Stop on permanent authorization, validation, permission, or unsupported-response errors and return
+a sanitized code.
 
 Never log or return raw Google bodies, tokens, authorization codes, resumable-session URIs, or credential-store internals.
 
@@ -615,6 +726,8 @@ A future explicit **Delete associated Drive file** flow is separate scope. Disco
 - Fetch the existing Drive file ID from fresh owner-authorized cloud metadata; never accept it in upload IPC.
 - Store refresh tokens only in the OS credential store.
 - Keep access tokens in Rust memory only.
+- Keep each resumable-session URI only in Rust memory for one operation. Never persist it; abandon
+  it after success, failure, cancellation, or shutdown.
 - Never expose tokens or raw authorization artifacts over IPC.
 - Never log tokens, codes, session URIs, or raw credential errors.
 - Validate selected folders before persistence.
@@ -628,15 +741,32 @@ A future explicit **Delete associated Drive file** flow is separate scope. Disco
 
 ### Rust
 
-Use an in-memory credential-store fake and mocked Google endpoints. Cover workspace-state persistence and malformed-path fallback, native Drive-settings migration and per-user isolation, PKCE/state, callback cancellation/malformed data, token exchange/refresh/revocation, credential-store failure, folder validation, create/update, final metadata parsing, progress IDs, compliant chunks, resumable reconciliation, bounded retry, permanent error classification, explicit replacement, path/symlink rejection, export filtering, temporary cleanup, compensation deletion for new files only, and sanitized IPC/logging.
+Use an in-memory credential-store fake and mocked Google endpoints. Cover workspace-state atomic
+persistence/permissions and malformed-path fallback, native Drive-settings atomic persistence and
+per-user isolation, PKCE/state, callback cancellation/malformed data, token
+exchange/refresh/revocation, credential-store failure, `canAddChildren` folder validation,
+create/update including replacement rename, final metadata parsing, operation IDs, the two-operation
+global bound and queue, cancellation, 8 MiB compliant chunks, in-memory session lifecycle,
+resumable reconciliation, `Retry-After` and bounded retry, rate-limit versus hard-quota
+classification, explicit replacement, relative-path/symlink rejection, export filtering,
+namespace-limited temporary cleanup, compensation deletion for new files only, and sanitized
+IPC/logging.
 
 ### Renderer
 
-Extend existing Settings, desktop-host, auth-service, workspace-store, and SongDetails tests. Cover native workspace hydration and clearing, connect/change/cancel/disconnect, logout persistence, automatic upload only after save success, publish success despite Drive failure, preservation of old fields, manual re-upload isolation, explicit replacement, concurrency prevention, stale-event rejection, manual-URL warning, and reconnect/folder-unavailable actions.
+Extend existing Settings, desktop-host, auth-service, workspace-store, and SongDetails tests. Cover
+native workspace hydration and clearing, connect/change/cancel/disconnect, logout persistence,
+automatic upload only after save success, publish success despite Drive failure, preservation of old
+fields, manual re-upload isolation, explicit replacement, queue/progress and same-song concurrency,
+user cancellation releasing the save lock, stale-event rejection, manual-URL warning, browser-link
+caveat, and reconnect/folder-unavailable/file-authorization actions.
 
 ### API
 
-Cover migration compatibility, nullable column persistence, owner-only ID visibility, public URL visibility, dedicated atomic Drive metadata mutation, blank/invalid input rejection, unauthenticated/cross-user rejection, immediate ownership re-check, null compatibility, and generated-client mappings.
+Cover migration compatibility, nullable column persistence, owner-only ID visibility including
+staff-as-non-owner behavior, public URL visibility, dedicated atomic Drive metadata mutation,
+blank/invalid input rejection, unauthenticated/cross-user rejection, immediate ownership re-check,
+null compatibility, and generated-client mappings.
 
 ### Native Tauri E2E
 
@@ -646,7 +776,9 @@ The native E2E build uses deterministic test implementations gated by both `feat
 
 Cover:
 
-1. restore a pre-seeded native workspace root from `DTX_E2E_DATA_DIR`, overwrite renderer `workspace_path` with `/`, and prove reads and ZIP operations outside the Rust root remain rejected;
+1. restore a pre-seeded native workspace root from `DTX_E2E_DATA_DIR`, overwrite renderer
+   `workspace_path` with `/`, and prove absolute/traversing upload paths plus reads and ZIP
+   operations outside the Rust root remain rejected;
 2. upload a fixture song through Tauri IPC and assert ZIP contents, ordered operation-scoped progress, and deterministic file ID/download URL;
 3. upload the same simfile again and prove replacement keeps the file identity;
 4. inject a permanent existing-file failure and prove no automatic replacement or metadata clearing occurs;
@@ -674,13 +806,26 @@ The implementation plan must list targeted renderer, Rust, API, common, migratio
 12. Failed replacement preserves the previous ID and URL.
 13. Missing/inaccessible existing files require explicit replacement.
 14. Changing the default folder does not move existing files.
-15. Another installation using the same app authorization can replace a file when Google grants that installation access to the existing file; otherwise the explicit replacement flow is used.
+15. Another installation can replace an existing file after connecting an account/app that Google
+    authorizes for that file; the UI explains the limitation and requires explicit replacement
+    otherwise.
 16. Public users can read `downloadUrl` but not `googleDriveFileId`.
 17. Disconnect and simfile deletion leave Drive files and links untouched.
 18. ZIP contents match manual export rules and temporary files are cleaned up.
 19. Progress and warnings distinguish Drumery save success from Drive failure.
-20. Targeted security, renderer, Rust, API, common, migration, generated-code, and configuration tests pass.
-21. The full native `packages/e2e-desktop` Tauri/WebDriver suite proves trusted-root enforcement plus create, re-upload, failure, and explicit replacement flows.
+20. At most two Drive operations allocate ZIP/upload resources at once; same-song duplicates are
+    rejected and other songs queue without allocating those resources.
+21. A queued or transferring upload can be canceled without rolling back the successful Drumery
+    save or clearing prior Drive metadata.
+22. The upload IPC accepts only a validated workspace-relative song path, never a renderer root or
+    absolute path.
+23. Drive replacement updates the file's content and filename while preserving its ID and parent.
+24. Public `downloadUrl` is documented as a Drive browser link that may redirect or show Google's
+    interstitial, not a guaranteed byte stream.
+25. Targeted security, renderer, Rust, API, common, migration, generated-code, and configuration
+    tests pass, including the release guard for a missing `GOOGLE_DRIVE_OAUTH_CLIENT_ID`.
+26. The full native `packages/e2e-desktop` Tauri/WebDriver suite proves trusted-root enforcement
+    plus create, re-upload, failure, and explicit replacement flows.
 
 ## Out of Scope
 
@@ -691,6 +836,8 @@ The implementation plan must list targeted renderer, Rust, API, common, migratio
 - Moving existing files on folder change.
 - Per-file sharing changes.
 - Broad Drive scopes or displaying Google email.
+- Staff/admin access to owner-only `googleDriveFileId`.
+- A Drumery proxy that converts Drive API media responses into public direct downloads.
 - Deleting Drive files on disconnect or simfile deletion.
 - Automatic background synchronization of all songs.
 - Uploading arbitrary ZIPs outside the active workspace song folder.

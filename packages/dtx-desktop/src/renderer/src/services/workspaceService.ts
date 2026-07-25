@@ -13,7 +13,8 @@ let trustTransitionQueue: Promise<void> = Promise.resolve();
 let loadingOwner: number | null = null;
 let subWorkspaceRequest = 0;
 let treeRequest = 0;
-const expandRequests = new Map<string, number>();
+let nextExpansionRequest = 0n;
+const expandRequests = new Map<string, bigint>();
 
 const invalidateExpansionRequests = (): void => {
 	const pendingNodes = [...expandRequests.keys()];
@@ -396,7 +397,7 @@ export const workspaceService = {
 	 */
 	expandTreeNode: async (nodePath: string): Promise<void> => {
 		const transition = workspaceTransitionGeneration;
-		const request = (expandRequests.get(nodePath) ?? 0) + 1;
+		const request = ++nextExpansionRequest;
 		const snapshot = getWorkspaceSnapshot();
 		expandRequests.set(nodePath, request);
 		const canCommit = () =>

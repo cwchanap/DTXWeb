@@ -314,6 +314,52 @@ describe('WorkspaceService', () => {
 			expect(staleUpdates).toHaveLength(0);
 			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
 		});
+
+		it('does not reuse an expansion token after refresh for the same node path', async () => {
+			const firstExpansion = createDeferred<any[]>();
+			const secondExpansion = createDeferred<any[]>();
+			const node = {
+				path: '/workspace/song',
+				children: [],
+				isExpanded: false,
+				isLoading: false
+			};
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: '/workspace', currentSubWorkspace: null, treeStructure: [node] });
+				return vi.fn();
+			});
+			host.loadTreeStructure
+				.mockReturnValueOnce(firstExpansion.promise)
+				.mockResolvedValueOnce([
+					{ name: 'fresh', path: '/workspace/song', children: [], isExpanded: false }
+				])
+				.mockReturnValueOnce(secondExpansion.promise);
+
+			const first = workspaceService.expandTreeNode('/workspace/song');
+			await workspaceService.loadTreeStructure();
+			const second = workspaceService.expandTreeNode('/workspace/song');
+			firstExpansion.resolve([
+				{ name: 'stale', path: '/workspace/song/stale', children: [] }
+			]);
+			await first;
+
+			const childUpdatesBeforeSecond = (
+				workspaceStore.updateTreeNode as any
+			).mock.calls.filter((call: any[]) => call[0] === '/workspace/song' && call[1].children);
+			expect(childUpdatesBeforeSecond).toHaveLength(0);
+
+			secondExpansion.resolve([
+				{ name: 'current', path: '/workspace/song/current', children: [] }
+			]);
+			await second;
+			const childUpdates = (workspaceStore.updateTreeNode as any).mock.calls.filter(
+				(call: any[]) => call[0] === '/workspace/song' && call[1].children
+			);
+			expect(childUpdates).toHaveLength(1);
+			expect(childUpdates[0][1].children).toEqual([
+				{ name: 'current', path: '/workspace/song/current', children: [] }
+			]);
+		});
 	});
 	describe('selectWorkspace', () => {
 		it('should select a workspace and update path and loading state when a path is chosen', async () => {

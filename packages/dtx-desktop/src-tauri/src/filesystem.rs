@@ -3,11 +3,12 @@ use crate::models::{
     DialogResult, FileEntry, ListFilesResult, ListedFile, PathExistsResult, ReadFileResult,
     SuccessResult, TreeNode,
 };
+use crate::workspace::WorkspaceRootState;
 use encoding_rs::{Encoding, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8};
 use serde_json::json;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_opener::OpenerExt;
 use time::format_description::well_known::Rfc3339;
@@ -79,10 +80,27 @@ pub async fn select_dtxmania_db(app: AppHandle) -> Result<DialogResult> {
 
 #[tauri::command]
 pub async fn path_exists(
+    state: State<'_, WorkspaceRootState>,
     base_path: String,
     path_parts: Vec<String>,
-    workspace_root: Option<String>,
+) -> std::result::Result<PathExistsResult, String> {
+    Ok(path_exists_with_workspace_state(&state, base_path, path_parts).await)
+}
+
+async fn path_exists_with_workspace_state(
+    state: &WorkspaceRootState,
+    base_path: String,
+    path_parts: Vec<String>,
 ) -> PathExistsResult {
+    let workspace_root = match state.current() {
+        Ok(root) => root.to_string_lossy().into_owned(),
+        Err(error) => {
+            return PathExistsResult {
+                exists: false,
+                error: Some(error.to_string()),
+            }
+        }
+    };
     let full_path = join_path_parts(base_path, path_parts);
     // Route through the canonical containment primitive so a compromised
     // renderer can't use path_exists as an info-disclosure oracle to probe
@@ -91,7 +109,7 @@ pub async fn path_exists(
     // the renderer already matches on; containment failures surface their own
     // message so the renderer can distinguish "missing" from "forbidden".
     let full_path_string = full_path.to_string_lossy().into_owned();
-    match canonicalize_within_workspace(&full_path_string, workspace_root.as_deref()).await {
+    match canonicalize_within_workspace(&full_path_string, Some(&workspace_root)).await {
         Ok(_) => PathExistsResult {
             exists: true,
             error: None,
@@ -109,10 +127,18 @@ pub async fn path_exists(
 
 #[tauri::command]
 pub async fn list_directories(
+    state: State<'_, WorkspaceRootState>,
     dir_path: String,
-    workspace_root: Option<String>,
 ) -> Result<Vec<String>> {
-    let canonical = canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await?;
+    list_directories_with_workspace_state(&state, dir_path).await
+}
+
+async fn list_directories_with_workspace_state(
+    state: &WorkspaceRootState,
+    dir_path: String,
+) -> Result<Vec<String>> {
+    let workspace_root = state.current()?.to_string_lossy().into_owned();
+    let canonical = canonicalize_within_workspace(&dir_path, Some(&workspace_root)).await?;
     let mut directories = Vec::new();
     let mut entries = fs::read_dir(&canonical).await?;
 
@@ -128,11 +154,21 @@ pub async fn list_directories(
 
 #[tauri::command]
 pub async fn list_directory(
+    state: State<'_, WorkspaceRootState>,
     dir_path: String,
-    workspace_root: Option<String>,
 ) -> Result<serde_json::Value> {
-    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await
-    {
+    list_directory_with_workspace_state(&state, dir_path).await
+}
+
+async fn list_directory_with_workspace_state(
+    state: &WorkspaceRootState,
+    dir_path: String,
+) -> Result<serde_json::Value> {
+    let workspace_root = match state.current() {
+        Ok(root) => root.to_string_lossy().into_owned(),
+        Err(error) => return Ok(list_error_value(error)),
+    };
+    let canonical = match canonicalize_within_workspace(&dir_path, Some(&workspace_root)).await {
         Ok(path) => path,
         Err(error) => return Ok(list_error_value(error)),
     };
@@ -144,11 +180,26 @@ pub async fn list_directory(
 
 #[tauri::command]
 pub async fn list_files(
+    state: State<'_, WorkspaceRootState>,
     dir_path: String,
-    workspace_root: Option<String>,
 ) -> Result<ListFilesResult> {
-    let canonical = match canonicalize_within_workspace(&dir_path, workspace_root.as_deref()).await
-    {
+    list_files_with_workspace_state(&state, dir_path).await
+}
+
+async fn list_files_with_workspace_state(
+    state: &WorkspaceRootState,
+    dir_path: String,
+) -> Result<ListFilesResult> {
+    let workspace_root = match state.current() {
+        Ok(root) => root.to_string_lossy().into_owned(),
+        Err(error) => {
+            return Ok(ListFilesResult {
+                files: vec![],
+                error: Some(error.to_string()),
+            })
+        }
+    };
+    let canonical = match canonicalize_within_workspace(&dir_path, Some(&workspace_root)).await {
         Ok(path) => path,
         Err(error) => {
             return Ok(ListFilesResult {
@@ -292,9 +343,23 @@ async fn list_file_entries(dir_path: &Path) -> Result<Vec<ListedFile>> {
 }
 
 #[tauri::command]
-pub async fn read_file(file_path: String, workspace_root: Option<String>) -> ReadFileResult {
-    let workspace_root = workspace_root.as_deref().map(Path::new);
-    read_file_path(Path::new(&file_path), workspace_root).await
+pub async fn read_file(
+    state: State<'_, WorkspaceRootState>,
+    file_path: String,
+) -> std::result::Result<ReadFileResult, String> {
+    Ok(read_file_with_workspace_state(&state, file_path).await)
+}
+
+async fn read_file_with_workspace_state(
+    state: &WorkspaceRootState,
+    file_path: String,
+) -> ReadFileResult {
+    match state.current() {
+        Ok(root) => read_file_path(Path::new(&file_path), Some(&root)).await,
+        Err(error) => ReadFileResult::Error {
+            error: error.to_string(),
+        },
+    }
 }
 
 pub async fn read_file_path(file_path: &Path, workspace_root: Option<&Path>) -> ReadFileResult {
@@ -308,18 +373,26 @@ pub async fn read_file_path(file_path: &Path, workspace_root: Option<&Path>) -> 
 
 #[tauri::command]
 pub async fn load_tree_structure(
+    state: State<'_, WorkspaceRootState>,
     base_path: String,
     path_parts: Vec<String>,
-    workspace_root: Option<String>,
 ) -> Result<Vec<TreeNode>> {
+    load_tree_structure_with_workspace_state(&state, base_path, path_parts).await
+}
+
+async fn load_tree_structure_with_workspace_state(
+    state: &WorkspaceRootState,
+    base_path: String,
+    path_parts: Vec<String>,
+) -> Result<Vec<TreeNode>> {
+    let workspace_root = state.current()?.to_string_lossy().into_owned();
     let full_path = join_path_parts(base_path, path_parts);
     // Enforce workspace containment at the IPC boundary so a compromised
     // renderer can't enumerate arbitrary directory structures or read SET.def
     // titles outside the workspace. The inner helper still accepts a
     // canonicalized path for internal reuse and tests.
     let full_path_string = full_path.to_string_lossy().into_owned();
-    let canonical =
-        canonicalize_within_workspace(&full_path_string, workspace_root.as_deref()).await?;
+    let canonical = canonicalize_within_workspace(&full_path_string, Some(&workspace_root)).await?;
     load_tree_structure_path(&canonical).await
 }
 

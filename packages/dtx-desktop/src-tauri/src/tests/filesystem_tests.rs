@@ -1,7 +1,168 @@
 use super::*;
 use crate::models::ReadFileResult;
+use crate::workspace::{test_support::managed_workspace_state, WorkspaceRootState};
 use tempfile::tempdir;
 use tokio::fs;
+
+#[tokio::test]
+async fn filesystem_command_wrappers_use_the_managed_workspace_root() {
+    // A regression that replaces managed state with any IPC-supplied root makes
+    // these wrappers fail once their caller no longer owns a trusted root.
+    let root = tempdir().expect("workspace");
+    let file = root.path().join("song.dtx");
+    let song_dir = root.path().join("DTXFiles.Test");
+    fs::write(&file, "#TITLE: Song").await.expect("song");
+    fs::create_dir(&song_dir).await.expect("song directory");
+    let state = managed_workspace_state(root.path());
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let exists =
+        path_exists_with_workspace_state(&state, root_path.clone(), vec!["song.dtx".to_string()])
+            .await;
+    assert!(exists.exists);
+
+    assert_eq!(
+        list_directories_with_workspace_state(&state, root_path.clone())
+            .await
+            .expect("directories"),
+        vec!["DTXFiles.Test"]
+    );
+
+    let directory = list_directory_with_workspace_state(&state, root_path.clone())
+        .await
+        .expect("directory envelope");
+    assert_eq!(directory["error"], serde_json::Value::Null);
+
+    let files = list_files_with_workspace_state(&state, root_path.clone())
+        .await
+        .expect("files envelope");
+    assert_eq!(files.files.len(), 1);
+    assert_eq!(files.files[0].file_name, "song.dtx");
+
+    assert!(matches!(
+        read_file_with_workspace_state(&state, file.to_string_lossy().into_owned()).await,
+        ReadFileResult::Text { .. }
+    ));
+
+    let tree = load_tree_structure_with_workspace_state(&state, root_path, vec![])
+        .await
+        .expect("tree");
+    assert_eq!(tree.len(), 1);
+    assert_eq!(tree[0].name, "DTXFiles.Test");
+}
+
+#[tokio::test]
+async fn filesystem_command_wrappers_reject_an_empty_managed_workspace() {
+    // This fails if a command falls back to a caller-controlled root, rather
+    // than obtaining its root from WorkspaceRootState.
+    let root = tempdir().expect("workspace");
+    let file = root.path().join("song.dtx");
+    fs::write(&file, "#TITLE: Song").await.expect("song");
+    let state = WorkspaceRootState::default();
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let exists =
+        path_exists_with_workspace_state(&state, root_path.clone(), vec!["song.dtx".to_string()])
+            .await;
+    assert!(!exists.exists);
+    assert!(exists
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("workspace root is required")));
+
+    for result in [
+        list_directories_with_workspace_state(&state, root_path.clone())
+            .await
+            .map(|_| ()),
+        load_tree_structure_with_workspace_state(&state, root_path.clone(), vec![])
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(result
+            .expect_err("missing workspace")
+            .to_string()
+            .contains("workspace root is required"));
+    }
+
+    for error in [
+        list_directory_with_workspace_state(&state, root_path.clone())
+            .await
+            .expect("directory envelope")["error"]
+            .as_str()
+            .expect("directory error"),
+        list_files_with_workspace_state(&state, root_path.clone())
+            .await
+            .expect("files envelope")
+            .error
+            .as_deref()
+            .expect("files error"),
+        serde_json::to_value(
+            read_file_with_workspace_state(&state, file.to_string_lossy().into_owned()).await,
+        )
+        .expect("read envelope")["error"]
+            .as_str()
+            .expect("read error"),
+    ] {
+        assert!(error.contains("workspace root is required"));
+    }
+}
+
+#[tokio::test]
+async fn filesystem_command_wrappers_reject_outside_targets_from_managed_workspace() {
+    // The equivalent raw IPC payload may still contain a stale workspaceRoot,
+    // but these command wrappers have no caller-supplied root argument to use.
+    let root = tempdir().expect("workspace");
+    let outside = tempdir().expect("outside");
+    let file = outside.path().join("secret.dtx");
+    fs::write(&file, "#TITLE: Secret").await.expect("secret");
+    let state = managed_workspace_state(root.path());
+    let outside_path = outside.path().to_string_lossy().into_owned();
+
+    let exists = path_exists_with_workspace_state(
+        &state,
+        outside_path.clone(),
+        vec!["secret.dtx".to_string()],
+    )
+    .await;
+    assert!(!exists.exists);
+    assert!(exists
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("outside the workspace")));
+
+    assert!(
+        list_directories_with_workspace_state(&state, outside_path.clone())
+            .await
+            .expect_err("outside directories")
+            .to_string()
+            .contains("outside the workspace")
+    );
+    assert!(
+        load_tree_structure_with_workspace_state(&state, outside_path.clone(), vec![])
+            .await
+            .expect_err("outside tree")
+            .to_string()
+            .contains("outside the workspace")
+    );
+
+    let directory = list_directory_with_workspace_state(&state, outside_path.clone())
+        .await
+        .expect("directory envelope");
+    assert!(directory["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("outside the workspace")));
+
+    let files = list_files_with_workspace_state(&state, outside_path.clone())
+        .await
+        .expect("files envelope");
+    assert!(files
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("outside the workspace")));
+
+    let read = read_file_with_workspace_state(&state, file.to_string_lossy().into_owned()).await;
+    assert!(matches!(read, ReadFileResult::Error { .. }));
+}
 
 #[tokio::test]
 async fn read_file_rejects_path_outside_workspace() {
@@ -50,12 +211,10 @@ async fn list_files_rejects_symlink_escape() {
     let link = root.path().join("escape_dir");
     symlink(outside.path(), &link).expect("symlink");
 
-    let result = list_files(
-        link.to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("envelope");
+    let state = managed_workspace_state(root.path());
+    let result = list_files_with_workspace_state(&state, link.to_string_lossy().into_owned())
+        .await
+        .expect("envelope");
 
     assert!(result.files.is_empty());
     assert!(result
@@ -100,12 +259,11 @@ async fn list_directory_returns_error_envelope_for_missing_directory() {
     let root = tempdir().expect("tempdir");
     let missing = root.path().join("missing");
 
-    let result = list_directory(
-        missing.to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("envelope");
+    let state = managed_workspace_state(root.path());
+    let result =
+        list_directory_with_workspace_state(&state, missing.to_string_lossy().into_owned())
+            .await
+            .expect("envelope");
 
     assert_eq!(result["files"], serde_json::json!([]));
     assert!(result["error"]
@@ -118,12 +276,10 @@ async fn list_files_returns_error_envelope_for_missing_directory() {
     let root = tempdir().expect("tempdir");
     let missing = root.path().join("missing");
 
-    let result = list_files(
-        missing.to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("envelope");
+    let state = managed_workspace_state(root.path());
+    let result = list_files_with_workspace_state(&state, missing.to_string_lossy().into_owned())
+        .await
+        .expect("envelope");
 
     assert!(result.files.is_empty());
     assert!(result.error.as_ref().is_some_and(|error| !error.is_empty()));
@@ -133,7 +289,11 @@ async fn list_files_returns_error_envelope_for_missing_directory() {
 async fn list_directories_rejects_missing_workspace_root() {
     let root = tempdir().expect("tempdir");
 
-    let result = list_directories(root.path().to_string_lossy().into_owned(), None).await;
+    let result = list_directories_with_workspace_state(
+        &WorkspaceRootState::default(),
+        root.path().to_string_lossy().into_owned(),
+    )
+    .await;
 
     assert!(result.is_err());
     assert!(result
@@ -147,9 +307,10 @@ async fn list_directories_rejects_path_outside_workspace() {
     let root = tempdir().expect("root");
     let outside = tempdir().expect("outside");
 
-    let result = list_directories(
+    let state = managed_workspace_state(root.path());
+    let result = list_directories_with_workspace_state(
+        &state,
         outside.path().to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -168,12 +329,11 @@ async fn list_files_rejects_path_outside_workspace() {
         .await
         .expect("write");
 
-    let result = list_files(
-        outside.path().to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("envelope");
+    let state = managed_workspace_state(root.path());
+    let result =
+        list_files_with_workspace_state(&state, outside.path().to_string_lossy().into_owned())
+            .await
+            .expect("envelope");
 
     assert!(result.files.is_empty());
     assert!(result
@@ -188,12 +348,11 @@ async fn list_files_returns_real_iso_last_modified() {
     let file = root.path().join("main.dtx");
     fs::write(&file, "#TITLE: Chart").await.expect("write");
 
-    let result = list_files(
-        root.path().to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("listing");
+    let state = managed_workspace_state(root.path());
+    let result =
+        list_files_with_workspace_state(&state, root.path().to_string_lossy().into_owned())
+            .await
+            .expect("listing");
 
     assert_eq!(result.files.len(), 1);
     let last_modified = &result.files[0].last_modified;
@@ -266,10 +425,11 @@ async fn path_exists_confirms_existing_file() {
     let file = root.path().join("song.dtx");
     fs::write(&file, "#TITLE: Song").await.expect("write");
 
-    let result = path_exists(
+    let state = managed_workspace_state(root.path());
+    let result = path_exists_with_workspace_state(
+        &state,
         root.path().to_string_lossy().into_owned(),
         vec!["song.dtx".to_string()],
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -281,10 +441,11 @@ async fn path_exists_confirms_existing_file() {
 async fn path_exists_reports_missing_file() {
     let root = tempdir().expect("tempdir");
 
-    let result = path_exists(
+    let state = managed_workspace_state(root.path());
+    let result = path_exists_with_workspace_state(
+        &state,
         root.path().to_string_lossy().into_owned(),
         vec!["missing.dtx".to_string()],
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -298,10 +459,11 @@ async fn path_exists_rejects_missing_workspace_root() {
     let file = root.path().join("song.dtx");
     fs::write(&file, "#TITLE: Song").await.expect("write");
 
-    let result = path_exists(
+    let state = WorkspaceRootState::default();
+    let result = path_exists_with_workspace_state(
+        &state,
         root.path().to_string_lossy().into_owned(),
         vec!["song.dtx".to_string()],
-        None,
     )
     .await;
 
@@ -319,10 +481,11 @@ async fn path_exists_rejects_path_outside_workspace() {
     let file = outside.path().join("secret.dtx");
     fs::write(&file, "#TITLE: Secret").await.expect("write");
 
-    let result = path_exists(
+    let state = managed_workspace_state(root.path());
+    let result = path_exists_with_workspace_state(
+        &state,
         outside.path().to_string_lossy().into_owned(),
         vec!["secret.dtx".to_string()],
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -373,12 +536,11 @@ async fn list_directory_returns_entries_with_types() {
         .await
         .expect("write");
 
-    let result = list_directory(
-        root.path().to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("envelope");
+    let state = managed_workspace_state(root.path());
+    let result =
+        list_directory_with_workspace_state(&state, root.path().to_string_lossy().into_owned())
+            .await
+            .expect("envelope");
 
     let files = result["files"].as_array().expect("files array");
     assert_eq!(files.len(), 2);
@@ -405,12 +567,11 @@ async fn list_directories_returns_sorted_directory_names() {
         .await
         .expect("write");
 
-    let result = list_directories(
-        root.path().to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("directories");
+    let state = managed_workspace_state(root.path());
+    let result =
+        list_directories_with_workspace_state(&state, root.path().to_string_lossy().into_owned())
+            .await
+            .expect("directories");
 
     assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
 }
@@ -450,8 +611,13 @@ async fn load_tree_structure_rejects_missing_workspace_root() {
     let song = root.path().join("DTXFiles.Test");
     fs::create_dir(&song).await.expect("mkdir");
 
-    let result =
-        load_tree_structure(root.path().to_string_lossy().into_owned(), vec![], None).await;
+    let state = WorkspaceRootState::default();
+    let result = load_tree_structure_with_workspace_state(
+        &state,
+        root.path().to_string_lossy().into_owned(),
+        vec![],
+    )
+    .await;
 
     assert!(result.is_err());
     assert!(result
@@ -467,10 +633,11 @@ async fn load_tree_structure_rejects_path_outside_workspace() {
     let song = outside.path().join("DTXFiles.Test");
     fs::create_dir(&song).await.expect("mkdir");
 
-    let result = load_tree_structure(
+    let state = managed_workspace_state(root.path());
+    let result = load_tree_structure_with_workspace_state(
+        &state,
         outside.path().to_string_lossy().into_owned(),
         vec![],
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -492,12 +659,11 @@ async fn list_directory_labels_symlinks_as_symlink_type() {
         .expect("write");
     symlink("real.dtx", root.path().join("link.dtx")).expect("symlink");
 
-    let result = list_directory(
-        root.path().to_string_lossy().into_owned(),
-        Some(root.path().to_string_lossy().into_owned()),
-    )
-    .await
-    .expect("envelope");
+    let state = managed_workspace_state(root.path());
+    let result =
+        list_directory_with_workspace_state(&state, root.path().to_string_lossy().into_owned())
+            .await
+            .expect("envelope");
 
     let files = result["files"].as_array().expect("files array");
     let by_name: std::collections::HashMap<&str, &serde_json::Value> = files
@@ -911,10 +1077,11 @@ async fn path_exists_reports_not_found_for_missing_in_workspace_path() {
     // token the renderer matches on.
     let root = tempdir().expect("tempdir");
 
-    let result = path_exists(
+    let state = managed_workspace_state(root.path());
+    let result = path_exists_with_workspace_state(
+        &state,
         root.path().to_string_lossy().into_owned(),
         vec!["missing.dtx".to_string()],
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 
@@ -931,10 +1098,11 @@ async fn path_exists_reports_outside_workspace_for_missing_out_of_workspace_path
     let root = tempdir().expect("tempdir");
     let outside = tempdir().expect("outside");
 
-    let result = path_exists(
+    let state = managed_workspace_state(root.path());
+    let result = path_exists_with_workspace_state(
+        &state,
         outside.path().to_string_lossy().into_owned(),
         vec!["never-created.dtx".to_string()],
-        Some(root.path().to_string_lossy().into_owned()),
     )
     .await;
 

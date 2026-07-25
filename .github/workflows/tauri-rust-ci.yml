@@ -128,7 +128,9 @@ jobs:
 
       - name: Verify generated TypeScript types are in sync
         working-directory: ${{ github.workspace }}
-        run: git diff --exit-code -- packages/e2e-desktop/support/generated/native-types.ts
+        run: |
+          git ls-files --error-unmatch -- packages/e2e-desktop/support/generated/native-types.ts
+          git diff --exit-code -- packages/e2e-desktop/support/generated/native-types.ts
 
       - name: Upload coverage to Codecov
         # Codecov merges this Rust upload with the TypeScript coverage uploaded

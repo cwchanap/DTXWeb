@@ -14,7 +14,7 @@ describe('Drumery desktop', () => {
 	});
 
 	it('launches the native shell and invokes a Rust command', async () => {
-		await expect(browser).toHaveTitle('Drumery');
+		await expect(browser).toHaveTitle('Drumery (E2E)');
 
 		const app = await $('#app');
 		await app.waitForDisplayed();

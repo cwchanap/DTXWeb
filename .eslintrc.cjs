@@ -21,7 +21,13 @@ module.exports = {
 	},
 	overrides: [
 		{
-			files: ['**/__mocks__/**', '**/*.test.*', '**/*.spec.*', 'e2e/**/*'],
+			files: [
+				'**/__mocks__/**',
+				'**/*.test.*',
+				'**/*.spec.*',
+				'packages/e2e-web/**/*',
+				'packages/e2e-desktop/**/*'
+			],
 			rules: {
 				'@typescript-eslint/no-explicit-any': 'off',
 				'@typescript-eslint/no-unused-vars': 'off'

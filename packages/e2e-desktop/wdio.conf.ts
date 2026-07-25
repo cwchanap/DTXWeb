@@ -92,6 +92,9 @@ export const config: Options.Testrunner = {
 	before: (): void => {
 		process.env.DTX_E2E_WORKSPACE_ROOT = fixture.workspaceRoot;
 		process.env.DTX_E2E_OUTSIDE_ROOT = fixture.outsideRoot;
+		process.env.DTX_E2E_ESCAPE_LINK_PATH = fixture.escapeLinkPath ?? '';
+		process.env.DTX_E2E_ESCAPE_LINK_UNAVAILABLE_REASON =
+			fixture.escapeLinkUnavailableReason ?? '';
 	},
 	// Cleanup is best-effort: a browser/runtime process may still briefly hold
 	// or recreate files while shutting down. Optional temp cleanup must never

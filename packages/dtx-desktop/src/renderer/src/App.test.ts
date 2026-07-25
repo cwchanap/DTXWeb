@@ -12,7 +12,8 @@ const mockWorkspaceService = vi.hoisted(() => ({
 	loadSubWorkspaces: vi.fn(),
 	loadTreeStructure: vi.fn(),
 	getTransitionGeneration: vi.fn(() => 0),
-	isTransitionCurrent: vi.fn(() => true)
+	isTransitionCurrent: vi.fn(() => true),
+	disposeOperations: vi.fn()
 }));
 
 const mockAppShell = vi.hoisted(() => vi.fn());
@@ -176,6 +177,40 @@ describe('App lifecycle', () => {
 		expect(get(workspaceStore).path).toBeNull();
 		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
 		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
+		expect(mockWorkspaceService.disposeOperations).toHaveBeenCalledOnce();
+	});
+
+	it('invalidates pending workspace loaders when unmounted after hydration', async () => {
+		const subWorkspaces = createDeferred<void>();
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
+		mockWorkspaceService.loadSubWorkspaces.mockReturnValue(subWorkspaces.promise);
+
+		const { unmount } = render(App);
+		await waitFor(() => {
+			expect(mockWorkspaceService.loadSubWorkspaces).toHaveBeenCalledOnce();
+		});
+		unmount();
+		subWorkspaces.resolve();
+		await flushPromises();
+
+		expect(mockWorkspaceService.disposeOperations).toHaveBeenCalledOnce();
+		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
+	});
+
+	it('invalidates a pending workspace tree load when unmounted after hydration', async () => {
+		const tree = createDeferred<void>();
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
+		mockWorkspaceService.loadTreeStructure.mockReturnValue(tree.promise);
+
+		const { unmount } = render(App);
+		await waitFor(() => {
+			expect(mockWorkspaceService.loadTreeStructure).toHaveBeenCalledOnce();
+		});
+		unmount();
+		tree.resolve();
+		await flushPromises();
+
+		expect(mockWorkspaceService.disposeOperations).toHaveBeenCalledOnce();
 	});
 
 	it('leaves workspace selection empty when the native managed root is absent', async () => {

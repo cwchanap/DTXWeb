@@ -214,6 +214,7 @@
 	// Clean up listeners when component is destroyed
 	onDestroy(() => {
 		destroyed = true;
+		workspaceService.disposeOperations();
 		for (const unlisten of hostUnlisteners.splice(0)) {
 			unlisten();
 		}

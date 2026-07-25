@@ -1,4 +1,5 @@
 use super::*;
+use crate::workspace::{test_support::managed_workspace_state, WorkspaceRootState};
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -201,15 +202,17 @@ async fn upload_file_to_api_posts_multipart_with_desktop_headers_and_strips_firs
         .mount(&server)
         .await;
 
-    let result = upload_file_to_api(
+    let state = managed_workspace_state(temp.path());
+    let result = upload_file_with_workspace_state(
         &server.uri(),
         "token-1",
-        "dir/kick.wav",
-        song_folder.to_str().expect("utf8 path"),
-        temp.path().to_str().expect("utf8 workspace"),
-        "42",
+        "dir/kick.wav".to_string(),
+        song_folder.to_str().expect("utf8 path").to_string(),
+        "42".to_string(),
+        &state,
     )
-    .await;
+    .await
+    .expect("managed workspace upload");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["data"]["file"]["fileName"], "kick.wav");
@@ -620,6 +623,35 @@ async fn upload_file_to_api_fails_when_song_folder_is_missing() {
     assert!(result["error"]
         .as_str()
         .is_some_and(|error| !error.is_empty()));
+}
+
+#[tokio::test]
+async fn upload_file_rejects_when_managed_workspace_is_unset_before_request() {
+    // Moving the root lookup after upload_file_to_api would allow an HTTP
+    // upload attempt even though the desktop has no trusted workspace.
+    let server = MockServer::start().await;
+    let state = WorkspaceRootState::default();
+
+    let result = upload_file_with_workspace_state(
+        &server.uri(),
+        "token-1",
+        "kick.wav".to_string(),
+        "/untrusted/song".to_string(),
+        "42".to_string(),
+        &state,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("managed workspace is required")
+        .to_string()
+        .contains("workspace root is required"));
+    assert!(server
+        .received_requests()
+        .await
+        .expect("received requests")
+        .is_empty());
 }
 
 #[tokio::test]
@@ -1057,6 +1089,7 @@ async fn load_asset_files_impl_returns_empty_when_no_files_array() {
 #[tokio::test]
 async fn create_simfile_record_impl_creates_without_previews_when_no_song_path() {
     let server = MockServer::start().await;
+    let workspace = tempfile::tempdir().expect("workspace");
     Mock::given(method("POST"))
         .and(path("/graphql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -1065,10 +1098,12 @@ async fn create_simfile_record_impl_creates_without_previews_when_no_song_path()
         .mount(&server)
         .await;
 
-    let result = create_simfile_record_impl(
+    let state = managed_workspace_state(workspace.path());
+    let result = create_simfile_record_with_workspace_state(
         &server.uri(),
         "token-1",
         json!({ "title": "Song", "artist": "Artist" }),
+        &state,
     )
     .await
     .expect("result");
@@ -1100,8 +1135,9 @@ async fn create_simfile_record_impl_skips_previews_when_files_absent() {
         json!({
             "title": "Song",
             "songPath": song.to_str().unwrap(),
-            "workspaceRoot": workspace.path().to_str().unwrap()
+            "workspaceRoot": "/legacy-root-that-must-be-ignored"
         }),
+        workspace.path(),
     )
     .await
     .expect("result");
@@ -1597,10 +1633,10 @@ async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
     let simfile_data = json!({
         "title": "Song",
         "songPath": song.to_str().unwrap(),
-        "workspaceRoot": workspace.path().to_str().unwrap(),
+        "workspaceRoot": "/legacy-root-that-must-be-ignored",
     });
 
-    let result = create_simfile_record_impl(&server.uri(), "tok", simfile_data)
+    let result = create_simfile_record_impl(&server.uri(), "tok", simfile_data, workspace.path())
         .await
         .unwrap();
 
@@ -1613,6 +1649,33 @@ async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
     assert!(warnings
         .iter()
         .any(|w| w.as_str().unwrap().contains("Sound preview")));
+}
+
+#[tokio::test]
+async fn create_simfile_record_rejects_when_managed_workspace_is_unset_before_request() {
+    // Moving the root lookup below the GraphQL mutation would create a remote
+    // simfile even though preview file access is not authorized.
+    let server = MockServer::start().await;
+    let state = WorkspaceRootState::default();
+
+    let result = create_simfile_record_with_workspace_state(
+        &server.uri(),
+        "token-1",
+        json!({ "title": "Song", "songPath": "/untrusted/song" }),
+        &state,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("managed workspace is required")
+        .to_string()
+        .contains("workspace root is required"));
+    assert!(server
+        .received_requests()
+        .await
+        .expect("received requests")
+        .is_empty());
 }
 
 #[tokio::test]

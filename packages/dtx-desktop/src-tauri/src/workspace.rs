@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
 #[cfg(test)]
-use std::sync::{Arc, Barrier};
+use std::sync::{mpsc, Arc};
+#[cfg(test)]
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -25,9 +27,28 @@ struct WorkspaceSettings {
 
 #[cfg(test)]
 #[derive(Debug)]
-struct PostPersistHook {
-    arrived: Arc<Barrier>,
-    release: Arc<Barrier>,
+struct TestRendezvous {
+    arrived: mpsc::Sender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+}
+
+#[cfg(test)]
+impl TestRendezvous {
+    fn new(arrived: mpsc::Sender<()>, release: mpsc::Receiver<()>) -> Self {
+        Self {
+            arrived,
+            release: Mutex::new(release),
+        }
+    }
+
+    fn wait(&self, label: &str) {
+        self.arrived.send(()).expect("test rendezvous receiver");
+        self.release
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap_or_else(|error| panic!("{label} was not released: {error}"));
+    }
 }
 
 #[derive(Debug, Default)]
@@ -36,7 +57,9 @@ pub struct WorkspaceRootState {
     settings_path: Option<PathBuf>,
     operation_lock: Mutex<()>,
     #[cfg(test)]
-    post_persist_hook: Mutex<Option<Arc<PostPersistHook>>>,
+    post_persist_hook: Mutex<Option<Arc<TestRendezvous>>>,
+    #[cfg(test)]
+    before_operation_lock_hook: Mutex<Option<Arc<TestRendezvous>>>,
 }
 
 impl WorkspaceRootState {
@@ -61,6 +84,8 @@ impl WorkspaceRootState {
             operation_lock: Mutex::new(()),
             #[cfg(test)]
             post_persist_hook: Mutex::new(None),
+            #[cfg(test)]
+            before_operation_lock_hook: Mutex::new(None),
         }
     }
 
@@ -91,13 +116,18 @@ impl WorkspaceRootState {
     }
 
     fn commit_transition(&self, next_root: Option<PathBuf>) -> Result<()> {
+        #[cfg(test)]
+        self.run_test_hook(
+            &self.before_operation_lock_hook,
+            "operation-lock acquisition rendezvous",
+        );
         let _operation = self
             .operation_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         self.persist(next_root.as_deref())?;
         #[cfg(test)]
-        self.run_post_persist_hook();
+        self.run_test_hook(&self.post_persist_hook, "post-persist rendezvous");
         *self
             .root
             .write()
@@ -106,15 +136,13 @@ impl WorkspaceRootState {
     }
 
     #[cfg(test)]
-    fn run_post_persist_hook(&self) {
-        let hook = self
-            .post_persist_hook
+    fn run_test_hook(&self, hook: &Mutex<Option<Arc<TestRendezvous>>>, label: &str) {
+        let rendezvous = hook
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
-        if let Some(hook) = hook {
-            hook.arrived.wait();
-            hook.release.wait();
+        if let Some(rendezvous) = rendezvous {
+            rendezvous.wait(label);
         }
     }
 

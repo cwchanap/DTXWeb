@@ -1,8 +1,48 @@
 use super::*;
 use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::{mpsc, Arc, Barrier, TryLockError};
+use std::sync::{mpsc, Arc, TryLockError};
+use std::thread::JoinHandle;
+use std::time::Duration;
 use tempfile::TempDir;
+
+const TEST_COORDINATION_TIMEOUT: Duration = Duration::from_secs(1);
+
+struct TransitionWorkers {
+    releases: Vec<mpsc::Sender<()>>,
+    selector: Option<JoinHandle<()>>,
+    clearer: Option<JoinHandle<()>>,
+}
+
+impl TransitionWorkers {
+    fn release_all(&self) {
+        for release in &self.releases {
+            let _ = release.send(());
+        }
+    }
+
+    fn join(&mut self) {
+        self.release_all();
+        if let Some(selector) = self.selector.take() {
+            selector.join().expect("selector worker");
+        }
+        if let Some(clearer) = self.clearer.take() {
+            clearer.join().expect("clear worker");
+        }
+    }
+}
+
+impl Drop for TransitionWorkers {
+    fn drop(&mut self) {
+        self.release_all();
+        if let Some(selector) = self.selector.take() {
+            let _ = selector.join();
+        }
+        if let Some(clearer) = self.clearer.take() {
+            let _ = clearer.join();
+        }
+    }
+}
 
 fn settings_path(data_dir: &std::path::Path) -> std::path::PathBuf {
     data_dir.join("dtxweb").join("workspace.json")
@@ -212,24 +252,33 @@ fn concurrent_clear_cannot_interleave_after_a_selector_persists() {
     fs::create_dir(&root).expect("workspace directory");
     let path = settings_path(data_dir.path());
     let state = Arc::new(WorkspaceRootState::load_from_path(path.clone()));
-    let hook = Arc::new(PostPersistHook {
-        arrived: Arc::new(Barrier::new(2)),
-        release: Arc::new(Barrier::new(2)),
-    });
+    let (selector_arrived_sender, selector_arrived_receiver) = mpsc::channel();
+    let (selector_release_sender, selector_release_receiver) = mpsc::channel();
+    let hook = Arc::new(TestRendezvous::new(
+        selector_arrived_sender,
+        selector_release_receiver,
+    ));
     *state
         .post_persist_hook
         .lock()
         .expect("post-persist hook lock") = Some(Arc::clone(&hook));
 
+    let mut workers = TransitionWorkers {
+        releases: vec![selector_release_sender.clone()],
+        selector: None,
+        clearer: None,
+    };
     let selecting_state = Arc::clone(&state);
     let selecting_root = root.clone();
-    let selecting = std::thread::spawn(move || {
+    workers.selector = Some(std::thread::spawn(move || {
         selecting_state
             .set_from_dialog_selection(&selecting_root)
             .expect("select workspace");
-    });
+    }));
 
-    hook.arrived.wait();
+    selector_arrived_receiver
+        .recv_timeout(TEST_COORDINATION_TIMEOUT)
+        .expect("selector post-persist rendezvous");
     let canonical_root = fs::canonicalize(&root).expect("canonical root");
     let persisted: WorkspaceSettings = read_json_or_default(&path, "workspace interleaving test");
     assert_eq!(
@@ -242,22 +291,35 @@ fn concurrent_clear_cannot_interleave_after_a_selector_persists() {
         Err(TryLockError::WouldBlock)
     ));
 
-    let (clear_started_sender, clear_started_receiver) = mpsc::channel();
-    let (clear_finished_sender, clear_finished_receiver) = mpsc::channel();
+    let (clear_arrived_sender, clear_arrived_receiver) = mpsc::channel();
+    let (clear_release_sender, clear_release_receiver) = mpsc::channel();
+    *state
+        .before_operation_lock_hook
+        .lock()
+        .expect("before-operation-lock hook lock") = Some(Arc::new(TestRendezvous::new(
+        clear_arrived_sender,
+        clear_release_receiver,
+    )));
+    workers.releases.push(clear_release_sender.clone());
     let clearing_state = Arc::clone(&state);
-    let clearing = std::thread::spawn(move || {
-        clear_started_sender.send(()).expect("clear start signal");
+    workers.clearer = Some(std::thread::spawn(move || {
         clearing_state.clear().expect("clear workspace");
-        clear_finished_sender.send(()).expect("clear finish signal");
-    });
+    }));
 
-    clear_started_receiver.recv().expect("clear worker started");
-    hook.release.wait();
-    selecting.join().expect("selecting worker");
-    clear_finished_receiver
-        .recv()
-        .expect("clear worker finished");
-    clearing.join().expect("clearing worker");
+    clear_arrived_receiver
+        .recv_timeout(TEST_COORDINATION_TIMEOUT)
+        .expect("clear lock-acquisition rendezvous");
+    assert!(matches!(
+        state.operation_lock.try_lock(),
+        Err(TryLockError::WouldBlock)
+    ));
+    clear_release_sender
+        .send(())
+        .expect("release clear lock attempt");
+    selector_release_sender
+        .send(())
+        .expect("release selector root replacement");
+    workers.join();
 
     let persisted: WorkspaceSettings = read_json_or_default(&path, "workspace concurrency test");
     assert_eq!(

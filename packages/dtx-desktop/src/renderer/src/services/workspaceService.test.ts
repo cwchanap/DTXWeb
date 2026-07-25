@@ -283,6 +283,37 @@ describe('WorkspaceService', () => {
 			);
 			expect(staleUpdates).toHaveLength(0);
 		});
+
+		it('clears expansion loading when a whole-tree refresh fails', async () => {
+			const expansion = createDeferred<any[]>();
+			const node = {
+				path: '/workspace/song',
+				children: [],
+				isExpanded: false,
+				isLoading: false
+			};
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback({ path: '/workspace', currentSubWorkspace: null, treeStructure: [node] });
+				return vi.fn();
+			});
+			host.loadTreeStructure
+				.mockReturnValueOnce(expansion.promise)
+				.mockRejectedValueOnce(new Error('refresh failed'));
+
+			const expand = workspaceService.expandTreeNode('/workspace/song');
+			await workspaceService.loadTreeStructure();
+			expect(workspaceStore.updateTreeNode).toHaveBeenCalledWith('/workspace/song', {
+				isLoading: false
+			});
+
+			expansion.resolve([{ name: 'stale', path: '/workspace/song/stale', children: [] }]);
+			await expand;
+			const staleUpdates = (workspaceStore.updateTreeNode as any).mock.calls.filter(
+				(call: any[]) => call[0] === '/workspace/song' && call[1].children
+			);
+			expect(staleUpdates).toHaveLength(0);
+			expect(workspaceStore.setError).toHaveBeenCalledWith('Failed to load tree structure');
+		});
 	});
 	describe('selectWorkspace', () => {
 		it('should select a workspace and update path and loading state when a path is chosen', async () => {
@@ -910,6 +941,68 @@ describe('WorkspaceService', () => {
 			expect(result).toEqual({ ok: false, error: 'Workspace selection was canceled' });
 			expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
 			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
+		});
+
+		it('keeps a replacement bookmark switch owned when the disposed switch settles', async () => {
+			const firstSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			const secondSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			host.selectWorkspaceFolder
+				.mockReturnValueOnce(firstSelection.promise)
+				.mockReturnValueOnce(secondSelection.promise);
+
+			const first = workspaceService.switchToBookmark({ path: '/first', name: 'First' });
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
+			});
+			workspaceService.disposeOperations();
+			const replacement = workspaceService.switchToBookmark({
+				path: '/second',
+				name: 'Second'
+			});
+
+			firstSelection.resolve({ canceled: true, filePaths: [] });
+			await first;
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
+			});
+			const third = await workspaceService.switchToBookmark({
+				path: '/third',
+				name: 'Third'
+			});
+			expect(third).toEqual({
+				ok: false,
+				error: 'A workspace switch is already in progress'
+			});
+			expect(host.selectWorkspaceFolder).toHaveBeenCalledTimes(2);
+
+			secondSelection.resolve({ canceled: true, filePaths: [] });
+			expect(await replacement).toEqual({
+				ok: false,
+				error: 'Workspace selection was canceled'
+			});
+		});
+
+		it('returns a safe result when a queued bookmark switch is disposed before it starts', async () => {
+			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			host.selectWorkspaceFolder.mockReturnValueOnce(selection.promise);
+
+			const pendingSelection = workspaceService.selectWorkspace();
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
+			});
+			const menuResult = workspaceService.switchToBookmark({
+				path: '/bookmark',
+				name: 'Bookmark'
+			});
+			workspaceService.disposeOperations();
+			selection.resolve({ canceled: true, filePaths: [] });
+			await pendingSelection;
+
+			expect(await menuResult).toEqual({
+				ok: false,
+				error: 'Workspace selection was superseded'
+			});
+			expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
 		});
 	});
 

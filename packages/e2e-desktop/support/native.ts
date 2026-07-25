@@ -13,6 +13,16 @@ export type ReadFileResult = ReadFileResultWire;
 export type TreeNode = GeneratedTreeNode;
 export type ListedFile = GeneratedListedFile;
 export type ListFilesResult = GeneratedListFilesResult;
+export type DtxParseResult = {
+	bpm: number | null;
+	artist: string | null;
+	levels: Array<{ label: string; level: number }>;
+	parseFailures?: number;
+};
+export type CreateSongResult = {
+	success: boolean;
+	songFolderPath: string;
+};
 export type ExportSongResult = {
 	success: boolean;
 	zipPath?: string;
@@ -67,11 +77,40 @@ export const listFiles = async (folderPath: string): Promise<ListFilesResult> =>
 		folderPath
 	);
 
-export const parseDtxFiles = async (folderPath: string): Promise<unknown> =>
-	await browser.tauri.execute<unknown, [string]>(
+export const parseDtxFiles = async (folderPath: string): Promise<DtxParseResult> =>
+	await browser.tauri.execute<DtxParseResult, [string]>(
 		({ core }, requestedPath: string) =>
-			core.invoke('parse_dtx_files', { folderPath: requestedPath }) as unknown,
+			core.invoke('parse_dtx_files', {
+				folderPath: requestedPath
+			}) as unknown as DtxParseResult,
 		folderPath
+	);
+
+export const createSong = async ({
+	selectedPath,
+	sanitizedFolderName,
+	sanitizedSongName,
+	templateFolderPath
+}: {
+	selectedPath: string;
+	sanitizedFolderName: string;
+	sanitizedSongName: string;
+	templateFolderPath?: string;
+}): Promise<CreateSongResult> =>
+	await browser.tauri.execute<
+		CreateSongResult,
+		[
+			{
+				selectedPath: string;
+				sanitizedFolderName: string;
+				sanitizedSongName: string;
+				templateFolderPath?: string;
+			}
+		]
+	>(
+		({ core }, options) =>
+			core.invoke('create_song', { options }) as unknown as CreateSongResult,
+		{ selectedPath, sanitizedFolderName, sanitizedSongName, templateFolderPath }
 	);
 
 export const exportSongToZip = async ({

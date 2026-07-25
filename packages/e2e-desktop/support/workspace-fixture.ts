@@ -9,7 +9,9 @@ export type WorkspaceFixture = {
 	workspaceRoot: string;
 	outsideRoot: string;
 	songFolder: string;
-	escapeLinkPath: string;
+	exportRoot: string;
+	escapeLinkPath: string | null;
+	escapeLinkUnavailableReason?: string;
 };
 
 const encodeUtf16Le = (value: string): Uint8Array => {
@@ -40,7 +42,11 @@ export const createWorkspaceFixture = ({
 	mkdirSync(workspaceRoot);
 	mkdirSync(outsideRoot);
 	const songFolder = join(workspaceRoot, fixtureFolderName);
+	const exportRoot = join(workspaceRoot, 'exports');
 	const escapeLinkPath = join(workspaceRoot, fixtureEscapeLinkName);
+	let resolvedEscapeLinkPath: string | null = escapeLinkPath;
+	let escapeLinkUnavailableReason: string | undefined;
+	mkdirSync(exportRoot);
 
 	if (includeSong) {
 		mkdirSync(songFolder);
@@ -63,13 +69,24 @@ export const createWorkspaceFixture = ({
 	}
 
 	writeFileSync(join(outsideRoot, 'private.dtx'), '#TITLE:Outside Workspace');
-	symlinkSync(outsideRoot, escapeLinkPath, process.platform === 'win32' ? 'junction' : 'dir');
+	try {
+		symlinkSync(outsideRoot, escapeLinkPath, process.platform === 'win32' ? 'junction' : 'dir');
+	} catch (error) {
+		const code = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
+		if (!['EPERM', 'EOPNOTSUPP', 'ENOTSUP'].includes(code)) {
+			throw error;
+		}
+		resolvedEscapeLinkPath = null;
+		escapeLinkUnavailableReason = code;
+	}
 
 	return {
 		workspaceRoot: realpathSync(workspaceRoot),
 		outsideRoot: realpathSync(outsideRoot),
 		songFolder,
-		escapeLinkPath
+		exportRoot,
+		escapeLinkPath: resolvedEscapeLinkPath,
+		escapeLinkUnavailableReason
 	};
 };
 
@@ -86,11 +103,16 @@ const requiredEnvironmentPath = (
 export const getPreseededWorkspaceFixture = (): WorkspaceFixture => {
 	const workspaceRoot = requiredEnvironmentPath('DTX_E2E_WORKSPACE_ROOT');
 	const outsideRoot = requiredEnvironmentPath('DTX_E2E_OUTSIDE_ROOT');
+	const escapeLinkPath = process.env.DTX_E2E_ESCAPE_LINK_PATH || null;
+	const escapeLinkUnavailableReason =
+		process.env.DTX_E2E_ESCAPE_LINK_UNAVAILABLE_REASON || undefined;
 
 	return {
 		workspaceRoot,
 		outsideRoot,
 		songFolder: join(workspaceRoot, fixtureFolderName),
-		escapeLinkPath: join(workspaceRoot, fixtureEscapeLinkName)
+		exportRoot: join(workspaceRoot, 'exports'),
+		escapeLinkPath,
+		escapeLinkUnavailableReason
 	};
 };

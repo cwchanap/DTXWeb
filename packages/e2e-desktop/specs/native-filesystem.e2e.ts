@@ -1,8 +1,10 @@
 import { join } from 'node:path';
+import { lstat } from 'node:fs/promises';
 
 import { browser, expect } from '@wdio/globals';
 
 import {
+	createSong,
 	exportSongToZip,
 	getWorkspaceRoot,
 	listFiles,
@@ -17,6 +19,28 @@ import {
 	getPreseededWorkspaceFixture,
 	type WorkspaceFixture
 } from '../support/workspace-fixture';
+
+const outsideWorkspaceError = 'Path is outside the workspace';
+const rejectedCreateFolderName = 'Must Not Create Outside Workspace';
+
+const expectOutsideWorkspaceRead = async (filePath: string): Promise<void> => {
+	expect(await readFile(filePath)).toEqual({
+		kind: 'error',
+		content: '',
+		error: outsideWorkspaceError
+	});
+};
+
+const pathDoesNotExist = async (path: string): Promise<boolean> => {
+	try {
+		await lstat(path);
+		return false;
+	} catch (error) {
+		const code = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
+		if (code === 'ENOENT') return true;
+		throw error;
+	}
+};
 
 describe('Desktop native filesystem boundary', () => {
 	let fixture: WorkspaceFixture;
@@ -61,6 +85,26 @@ describe('Desktop native filesystem boundary', () => {
 		});
 	});
 
+	it('parses and exports an in-root fixture through real IPC', async () => {
+		const parsed = await parseDtxFiles(fixture.songFolder);
+		expect(parsed).toMatchObject({ bpm: 120, artist: 'Integration Test' });
+
+		const exported = await exportSongToZip({
+			songPath: fixture.songFolder,
+			songTitle: 'Fixture Export',
+			exportDirectory: fixture.exportRoot
+		});
+		expect(exported).toEqual({
+			success: true,
+			zipPath: join(fixture.exportRoot, 'Fixture Export.zip'),
+			filesCount: 3
+		});
+		expect(await pathExists(fixture.exportRoot, 'Fixture Export.zip')).toEqual({
+			exists: true,
+			error: null
+		});
+	});
+
 	it('keeps the Rust-owned workspace root after renderer storage is spoofed', async () => {
 		expect(await getWorkspaceRoot()).toBe(fixture.workspaceRoot);
 
@@ -75,34 +119,163 @@ describe('Desktop native filesystem boundary', () => {
 	it('rejects every native filesystem escape from the Rust-owned workspace root', async () => {
 		const outsideFile = join(fixture.outsideRoot, 'private.dtx');
 		const traversalFile = join(fixture.workspaceRoot, '..', 'outside', 'private.dtx');
-		const alternateSeparatorFile = join(
-			fixture.workspaceRoot,
-			'FixtureSong',
-			'..\\..\\outside',
-			'private.dtx'
-		);
-		const symlinkFile = join(fixture.escapeLinkPath, 'private.dtx');
 
-		for (const filePath of [outsideFile, traversalFile, alternateSeparatorFile, symlinkFile]) {
-			const result = await readFile(filePath);
-			expect(result.kind).toBe('error');
-			expect(result.content).toBe('');
-			expect(result.error).not.toBe('');
+		for (const filePath of [outsideFile, traversalFile]) {
+			await expectOutsideWorkspaceRead(filePath);
 		}
 
-		for (const basePath of [fixture.outsideRoot, fixture.escapeLinkPath]) {
-			expect(await pathExists(basePath)).toMatchObject({ exists: false });
+		expect(await pathExists(fixture.outsideRoot)).toEqual({
+			exists: false,
+			error: outsideWorkspaceError
+		});
 
-			const files = await listFiles(basePath);
-			expect(files.files).toEqual([]);
-			expect(files.error).not.toBeNull();
+		expect(await listFiles(fixture.outsideRoot)).toEqual({
+			files: [],
+			error: outsideWorkspaceError
+		});
 
-			await expect(loadTree(basePath)).rejects.toThrow();
-			await expect(parseDtxFiles(basePath)).rejects.toThrow();
-		}
+		await expect(loadTree(fixture.outsideRoot)).rejects.toThrow(outsideWorkspaceError);
+		await expect(parseDtxFiles(fixture.outsideRoot)).rejects.toThrow(outsideWorkspaceError);
 
 		await expect(
 			exportSongToZip({ songPath: fixture.outsideRoot, songTitle: 'Outside Workspace Song' })
-		).rejects.toThrow();
+		).rejects.toThrow(outsideWorkspaceError);
+	});
+
+	it('rejects alternate-separator traversal on Windows', async function () {
+		// The WDIO runner and the native Tauri process share an OS. Backslashes
+		// become traversal separators only on Windows; elsewhere they are literal
+		// filename characters and would exercise a missing-file path instead.
+		if (process.platform !== 'win32') {
+			return this.skip();
+		}
+
+		await expectOutsideWorkspaceRead(
+			join(fixture.workspaceRoot, 'FixtureSong', '..\\..\\outside', 'private.dtx')
+		);
+	});
+
+	it('rejects symlink escapes from every native filesystem command', async function () {
+		if (!fixture.escapeLinkPath) {
+			expect(fixture.escapeLinkUnavailableReason).toMatch(/^(EPERM|EOPNOTSUPP|ENOTSUP)$/);
+			return this.skip();
+		}
+
+		const symlinkFile = join(fixture.escapeLinkPath, 'private.dtx');
+		await expectOutsideWorkspaceRead(symlinkFile);
+		expect(await pathExists(fixture.escapeLinkPath)).toEqual({
+			exists: false,
+			error: outsideWorkspaceError
+		});
+		expect(await listFiles(fixture.escapeLinkPath)).toEqual({
+			files: [],
+			error: outsideWorkspaceError
+		});
+		await expect(loadTree(fixture.escapeLinkPath)).rejects.toThrow(outsideWorkspaceError);
+		await expect(parseDtxFiles(fixture.escapeLinkPath)).rejects.toThrow(outsideWorkspaceError);
+		await expect(
+			exportSongToZip({ songPath: fixture.escapeLinkPath, songTitle: 'Symlink Escape' })
+		).rejects.toThrow(outsideWorkspaceError);
+	});
+
+	it('does not let forged legacy workspaceRoot fields redirect native authority', async () => {
+		const outsideFile = join(fixture.outsideRoot, 'private.dtx');
+		const forgedRead = await browser.tauri.execute<
+			Awaited<ReturnType<typeof readFile>>,
+			[string, string]
+		>(
+			({ core }, filePath: string, forgedWorkspaceRoot: string) =>
+				core.invoke('read_file', {
+					filePath,
+					workspaceRoot: forgedWorkspaceRoot
+				}) as unknown as Awaited<ReturnType<typeof readFile>>,
+			outsideFile,
+			fixture.outsideRoot
+		);
+		expect(forgedRead).toEqual({
+			kind: 'error',
+			content: '',
+			error: outsideWorkspaceError
+		});
+
+		const forgedExists = await browser.tauri.execute<
+			Awaited<ReturnType<typeof pathExists>>,
+			[string, string]
+		>(
+			({ core }, basePath: string, forgedWorkspaceRoot: string) =>
+				core.invoke('path_exists', {
+					basePath,
+					pathParts: [],
+					workspaceRoot: forgedWorkspaceRoot
+				}) as unknown as Awaited<ReturnType<typeof pathExists>>,
+			fixture.outsideRoot,
+			fixture.outsideRoot
+		);
+		expect(forgedExists).toEqual({ exists: false, error: outsideWorkspaceError });
+		expect(await getWorkspaceRoot()).toBe(fixture.workspaceRoot);
+	});
+
+	it('rejects out-of-root create targets without creating anything', async () => {
+		const outsideCreateTarget = join(fixture.outsideRoot, rejectedCreateFolderName);
+		const forgedCreateFolderName = `${rejectedCreateFolderName} Forged`;
+		const forgedCreateTarget = join(fixture.outsideRoot, forgedCreateFolderName);
+		await expect(
+			createSong({
+				selectedPath: fixture.outsideRoot,
+				sanitizedFolderName: rejectedCreateFolderName,
+				sanitizedSongName: rejectedCreateFolderName
+			})
+		).rejects.toThrow(outsideWorkspaceError);
+
+		expect(await pathDoesNotExist(outsideCreateTarget)).toBe(true);
+		await expect(
+			browser.tauri.execute<
+				unknown,
+				[
+					{
+						selectedPath: string;
+						sanitizedFolderName: string;
+						sanitizedSongName: string;
+					},
+					string
+				]
+			>(
+				({ core }, options, forgedWorkspaceRoot: string) =>
+					core.invoke('create_song', {
+						options,
+						workspaceRoot: forgedWorkspaceRoot
+					}) as unknown,
+				{
+					selectedPath: fixture.outsideRoot,
+					sanitizedFolderName: forgedCreateFolderName,
+					sanitizedSongName: forgedCreateFolderName
+				},
+				fixture.outsideRoot
+			)
+		).rejects.toThrow(outsideWorkspaceError);
+
+		expect(await pathDoesNotExist(forgedCreateTarget)).toBe(true);
+		expect(await getWorkspaceRoot()).toBe(fixture.workspaceRoot);
+	});
+
+	it('rejects symlink create targets without creating outside directories', async function () {
+		if (!fixture.escapeLinkPath) {
+			expect(fixture.escapeLinkUnavailableReason).toMatch(/^(EPERM|EOPNOTSUPP|ENOTSUP)$/);
+			return this.skip();
+		}
+
+		const symlinkCreateFolderName = `${rejectedCreateFolderName} Symlink`;
+		await expect(
+			createSong({
+				selectedPath: fixture.escapeLinkPath,
+				sanitizedFolderName: symlinkCreateFolderName,
+				sanitizedSongName: symlinkCreateFolderName
+			})
+		).rejects.toThrow(outsideWorkspaceError);
+
+		expect(await pathDoesNotExist(join(fixture.outsideRoot, symlinkCreateFolderName))).toBe(
+			true
+		);
+		expect(await getWorkspaceRoot()).toBe(fixture.workspaceRoot);
 	});
 });

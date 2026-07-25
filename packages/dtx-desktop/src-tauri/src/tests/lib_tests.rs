@@ -3,6 +3,16 @@ use png::ColorType;
 use std::io::Cursor;
 
 #[test]
+fn workspace_state_persists_under_the_native_data_directory() {
+    let data_dir = tempfile::tempdir().expect("data dir");
+
+    assert_eq!(
+        crate::workspace::workspace_settings_path(data_dir.path()),
+        data_dir.path().join("dtxweb").join("workspace.json")
+    );
+}
+
+#[test]
 fn app_icon_decodes_to_non_empty_rgba_pixels() {
     let decoder = png::Decoder::new(Cursor::new(include_bytes!("../../icons/icon.png")));
     let mut reader = decoder.read_info().expect("app icon should decode");

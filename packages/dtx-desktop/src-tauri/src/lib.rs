@@ -11,11 +11,13 @@ mod preferences;
 mod scores;
 mod songs;
 mod updater;
+mod workspace;
 
 use auth::AuthState;
 use scores::DtxmaniaDbState;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
+use workspace::WorkspaceRootState;
 
 fn spawn_deep_link_handler(app: &AppHandle, raw_url: String) {
     let handle = app.clone();
@@ -64,9 +66,11 @@ where
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let workspace_state = WorkspaceRootState::load();
     let mut builder = tauri::Builder::default()
         .manage(AuthState::default())
-        .manage(DtxmaniaDbState::default());
+        .manage(DtxmaniaDbState::default())
+        .manage(workspace_state);
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
@@ -150,6 +154,9 @@ pub fn run() {
             api::fetch_cloud_song_charts,
             api::upload_scores,
             filesystem::select_folder,
+            workspace::select_workspace_folder,
+            workspace::get_workspace_root,
+            workspace::clear_workspace_root,
             filesystem::path_exists,
             filesystem::list_directories,
             filesystem::list_directory,

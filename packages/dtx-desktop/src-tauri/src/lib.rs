@@ -84,7 +84,21 @@ pub fn run() {
         }));
     }
 
-    #[cfg(feature = "e2e")]
+    // The WDIO plugins expose an automation surface (in-process WebDriver
+    // server, IPC commands) that must never ship in a release binary. Gate on
+    // `debug_assertions` in addition to the `e2e` Cargo feature so
+    // `cargo build --release --features e2e` compiles the plugins out. The
+    // compile_error below makes a mismatch (e2e without debug) a hard build
+    // failure instead of a silent no-op, so CI can't accidentally produce an
+    // e2e-capable release artifact.
+    #[cfg(all(feature = "e2e", not(debug_assertions)))]
+    compile_error!(
+        "The `e2e` feature enables WebDriver automation plugins and must not \
+         be enabled in release builds (debug_assertions is off). Build with \
+         `--debug` or remove `--features e2e`."
+    );
+
+    #[cfg(all(feature = "e2e", debug_assertions))]
     {
         builder = builder
             .plugin(tauri_plugin_wdio::init())

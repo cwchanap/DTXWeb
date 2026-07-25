@@ -23,6 +23,9 @@ const DTX_DECODING_PRIORITY: [&Encoding; 4] = [SHIFT_JIS, UTF_8, UTF_16LE, UTF_1
 const DEF_DECODING_PRIORITY: [&Encoding; 4] = [UTF_16LE, UTF_16BE, UTF_8, SHIFT_JIS];
 
 #[tauri::command]
+/// Opens the generic folder chooser used by Export Settings. Selecting a
+/// folder here does not establish or change the trusted workspace root; that
+/// responsibility belongs to `workspace::select_workspace_folder`.
 pub async fn select_folder(app: AppHandle) -> Result<DialogResult> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog().file().pick_folder(move |folder_path| {

@@ -71,7 +71,49 @@ pub struct DtxLevel {
 }
 
 #[tauri::command]
-pub async fn create_song(options: CreateSongOptions) -> Result<CreateSongResult> {
+pub async fn create_song(
+    options: CreateSongOptions,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<CreateSongResult> {
+    create_song_with_workspace_state(options, &state).await
+}
+
+pub(crate) async fn create_song_with_workspace_state(
+    options: CreateSongOptions,
+    state: &WorkspaceRootState,
+) -> Result<CreateSongResult> {
+    let workspace_root = state.current()?;
+    create_song_with_workspace_root(options, &workspace_root).await
+}
+
+pub(crate) async fn create_song_with_workspace_root(
+    mut options: CreateSongOptions,
+    workspace_root: &Path,
+) -> Result<CreateSongResult> {
+    // Resolve all caller-controlled source/destination roots before mutation.
+    // `create_song_folder` receives canonical paths, so a selected-path or
+    // template symlink cannot redirect mkdir, copy, or SET.def writes outside
+    // the trusted workspace after this boundary check.
+    let workspace_root = workspace_root.to_string_lossy();
+    let selected_path = crate::filesystem::canonicalize_within_workspace(
+        &options.selected_path,
+        Some(&workspace_root),
+    )
+    .await?;
+    let template_folder_path = match options.template_folder_path.as_deref() {
+        Some(template_folder_path) => Some(
+            crate::filesystem::canonicalize_within_workspace(
+                template_folder_path,
+                Some(&workspace_root),
+            )
+            .await?,
+        ),
+        None => None,
+    };
+
+    options.selected_path = selected_path.to_string_lossy().into_owned();
+    options.template_folder_path = template_folder_path
+        .map(|template_folder_path| template_folder_path.to_string_lossy().into_owned());
     create_song_folder(options).await
 }
 

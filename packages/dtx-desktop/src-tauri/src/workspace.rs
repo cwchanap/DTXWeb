@@ -235,5 +235,22 @@ fn dialog_file_path_into_path(file_path: FilePath) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    pub(crate) fn managed_workspace_state(root: &Path) -> WorkspaceRootState {
+        WorkspaceRootState {
+            root: RwLock::new(Some(
+                fs::canonicalize(root).expect("canonical workspace root"),
+            )),
+            settings_path: None,
+            operation_lock: Mutex::new(()),
+            post_persist_hook: Mutex::new(None),
+            before_operation_lock_hook: Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(test)]
 #[path = "tests/workspace_tests.rs"]
 mod tests;

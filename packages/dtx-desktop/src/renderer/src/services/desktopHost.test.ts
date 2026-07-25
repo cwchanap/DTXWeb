@@ -52,6 +52,26 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenCalledWith('select_folder');
 	});
 
+	it('keeps workspace selection separate from generic folder selection', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ canceled: false, filePaths: ['/songs'] });
+
+		await desktopHost.selectWorkspaceFolder();
+		expect(runtime.invoke).toHaveBeenLastCalledWith('select_workspace_folder');
+
+		await desktopHost.selectFolder();
+		expect(runtime.invoke).toHaveBeenLastCalledWith('select_folder');
+	});
+
+	it('maps managed workspace state commands to Tauri', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValueOnce('/songs').mockResolvedValueOnce(undefined);
+
+		await expect(desktopHost.getWorkspaceRoot()).resolves.toBe('/songs');
+		await expect(desktopHost.clearWorkspaceRoot()).resolves.toBeUndefined();
+
+		expect(runtime.invoke).toHaveBeenNthCalledWith(1, 'get_workspace_root');
+		expect(runtime.invoke).toHaveBeenNthCalledWith(2, 'clear_workspace_root');
+	});
+
 	it('maps checkForUpdate to the Tauri command and returns an update when available', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({
 			success: true,
@@ -124,41 +144,27 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			[],
-			() => desktopHost.listDirectories('/songs', '/songs'),
+			() => desktopHost.listDirectories('/songs'),
 			'list_directories',
 			{
-				dirPath: '/songs',
-				workspaceRoot: '/songs'
+				dirPath: '/songs'
 			}
 		);
+		await expectTauriInvoke({}, () => desktopHost.listDirectory('/songs'), 'list_directory', {
+			dirPath: '/songs'
+		});
 		await expectTauriInvoke(
 			{},
-			() => desktopHost.listDirectory('/songs', '/songs'),
-			'list_directory',
-			{
-				dirPath: '/songs',
-				workspaceRoot: '/songs'
-			}
-		);
-		await expectTauriInvoke(
-			{},
-			() => desktopHost.loadTreeStructure('/songs', '/songs', 'DTXFiles.A'),
+			() => desktopHost.loadTreeStructure('/songs', 'DTXFiles.A'),
 			'load_tree_structure',
 			{
 				basePath: '/songs',
-				pathParts: ['DTXFiles.A'],
-				workspaceRoot: '/songs'
+				pathParts: ['DTXFiles.A']
 			}
 		);
-		await expectTauriInvoke(
-			{},
-			() => desktopHost.listFiles('/songs/A', '/songs/A'),
-			'list_files',
-			{
-				dirPath: '/songs/A',
-				workspaceRoot: '/songs/A'
-			}
-		);
+		await expectTauriInvoke({}, () => desktopHost.listFiles('/songs/A'), 'list_files', {
+			dirPath: '/songs/A'
+		});
 		await expectTauriInvoke(
 			{},
 			() => desktopHost.getSkinAsset('default/Graphics/7_pads.png'),
@@ -169,11 +175,10 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{},
-			() => desktopHost.parseDtxFiles('/songs/A', '/songs'),
+			() => desktopHost.parseDtxFiles('/songs/A'),
 			'parse_dtx_files',
 			{
-				folderPath: '/songs/A',
-				workspaceRoot: '/songs'
+				folderPath: '/songs/A'
 			}
 		);
 		await expectTauriInvoke(
@@ -261,21 +266,19 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{ success: true },
-			() => desktopHost.exportSongToZip({ songPath: '/songs/A', workspaceRoot: '/songs' }),
+			() => desktopHost.exportSongToZip({ songPath: '/songs/A' }),
 			'export_song_to_zip',
 			{
-				songPath: '/songs/A',
-				workspaceRoot: '/songs'
+				songPath: '/songs/A'
 			}
 		);
 		await expectTauriInvoke(
 			{ success: true },
-			() => desktopHost.uploadFile('main.dtx', '/songs/A', '/songs', '42'),
+			() => desktopHost.uploadFile('main.dtx', '/songs/A', '42'),
 			'upload_file',
 			{
 				fileName: 'main.dtx',
 				songFolderPath: '/songs/A',
-				workspaceRoot: '/songs',
 				simfileId: '42'
 			}
 		);
@@ -324,32 +327,30 @@ describe('desktopHost', () => {
 	it('maps multi-part pathExists arguments for Tauri', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
 
-		await expect(desktopHost.pathExists('/songs', '/songs', 'DTXFiles.foo')).resolves.toEqual({
+		await expect(desktopHost.pathExists('/songs', 'DTXFiles.foo')).resolves.toEqual({
 			exists: true,
 			error: null
 		});
 		expect(runtime.invoke).toHaveBeenCalledWith('path_exists', {
 			basePath: '/songs',
-			pathParts: ['DTXFiles.foo'],
-			workspaceRoot: '/songs'
+			pathParts: ['DTXFiles.foo']
 		});
 	});
 
-	it('maps readFile to the host command with workspaceRoot', async () => {
+	it('maps readFile to the host command without renderer trust state', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({
 			kind: 'text',
 			error: null,
 			content: '#TITLE: Song'
 		});
 
-		await expect(desktopHost.readFile('/songs/a.dtx', '/songs')).resolves.toEqual({
+		await expect(desktopHost.readFile('/songs/a.dtx')).resolves.toEqual({
 			kind: 'text',
 			error: null,
 			content: '#TITLE: Song'
 		});
 		expect(runtime.invoke).toHaveBeenCalledWith('read_file', {
-			filePath: '/songs/a.dtx',
-			workspaceRoot: '/songs'
+			filePath: '/songs/a.dtx'
 		});
 	});
 
@@ -360,16 +361,26 @@ describe('desktopHost', () => {
 			content: [1, 2, 3]
 		});
 
-		const result = await desktopHost.readFile('/songs/snare.wav', '/songs');
+		const result = await desktopHost.readFile('/songs/snare.wav');
 
 		expect(result.kind).toBe('binary');
 		expect(result.error).toBeNull();
 		expect(result.content).toBeInstanceOf(Uint8Array);
 		expect([...result.content]).toEqual([1, 2, 3]);
 		expect(runtime.invoke).toHaveBeenCalledWith('read_file', {
-			filePath: '/songs/snare.wav',
-			workspaceRoot: '/songs'
+			filePath: '/songs/snare.wav'
 		});
+	});
+
+	it('never includes a renderer-controlled root in an IPC payload', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
+
+		await desktopHost.pathExists('/songs', 'song');
+
+		for (const call of vi.mocked(runtime.invoke).mock.calls) {
+			const payload = call[1] as Record<string, unknown> | undefined;
+			expect(Object.keys(payload ?? {})).not.toContain('workspace' + 'Root');
+		}
 	});
 
 	it('uses send for external URLs', async () => {

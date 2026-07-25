@@ -29,6 +29,7 @@
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
 	import { desktopHost } from '../services/desktopHost';
 	import { editorMappingStore } from '../stores/editorMappingStore';
+	import { workspaceStore } from '../stores/workspaceStore';
 
 	// Local type definitions
 	interface SoundChipData {
@@ -254,12 +255,8 @@
 				await tick();
 				if (!mounted) return;
 
-				// Initialize file provider
-				let workspacePath = localStorage.getItem('workspace_path') || '';
-				// Remove extra quotes if present
-				if (workspacePath.startsWith('"') && workspacePath.endsWith('"')) {
-					workspacePath = workspacePath.slice(1, -1);
-				}
+				// Native workspace state is hydrated into this display-only store at app startup.
+				const workspacePath = $workspaceStore.path ?? '';
 				fileProvider = new DesktopFileProvider(workspacePath);
 				setFileProvider(fileProvider);
 
@@ -467,7 +464,7 @@
 
 		try {
 			// Read SET.def directly from folder path
-			const setDefResult = await desktopHost.readFile(`${folderPath}/SET.def`, folderPath);
+			const setDefResult = await desktopHost.readFile(`${folderPath}/SET.def`);
 			if (!setDefResult.error) {
 				const blob = new Blob([toBlobPart(setDefResult.content)], {
 					type: 'text/plain'
@@ -475,10 +472,7 @@
 				setDefFile = new File([blob], 'SET.def');
 			} else {
 				// Try lowercase
-				const setDefLowerResult = await desktopHost.readFile(
-					`${folderPath}/set.def`,
-					folderPath
-				);
+				const setDefLowerResult = await desktopHost.readFile(`${folderPath}/set.def`);
 				if (!setDefLowerResult.error) {
 					const blob = new Blob([toBlobPart(setDefLowerResult.content)], {
 						type: 'text/plain'
@@ -505,10 +499,7 @@
 		try {
 			const dtxFiles = ['ext.dtx', 'mas.dtx', 'bas.dtx', 'adv.dtx', 'nov.dtx'];
 			for (const dtxFileName of dtxFiles) {
-				const dtxResult = await desktopHost.readFile(
-					`${folderPath}/${dtxFileName}`,
-					folderPath
-				);
+				const dtxResult = await desktopHost.readFile(`${folderPath}/${dtxFileName}`);
 				if (!dtxResult.error) {
 					// Use the pre-decoded content directly since the Rust backend already handled encoding
 					if (dtxResult.kind === 'text') {
@@ -577,7 +568,7 @@
 			const folderContents = await desktopHost.listFiles<{
 				files: Array<{ fileName: string }>;
 				error?: string;
-			}>(folderPath, folderPath);
+			}>(folderPath);
 
 			if (folderContents.error) {
 				// Surface the failure (containment/permission/missing-dir) instead
@@ -636,10 +627,7 @@
 			let bpmNotes: Record<string, number> = {};
 			let soundChips: SoundChip[] = [];
 
-			const dtxResult = await desktopHost.readFile(
-				`${folderPath}/${dtxFileName}`,
-				folderPath
-			);
+			const dtxResult = await desktopHost.readFile(`${folderPath}/${dtxFileName}`);
 
 			if (!dtxResult.error) {
 				dtxFile = new DTXFile(toUtf8String(dtxResult.content));

@@ -17,7 +17,7 @@ export interface ExportResult {
  * Returns `{ success: false }` when no local song is selected (no-op).
  */
 export const exportSelectedSong = async (): Promise<ExportResult> => {
-	const { selectedSong, path: workspaceRoot } = get(workspaceStore);
+	const { selectedSong } = get(workspaceStore);
 	if (!selectedSong?.path) {
 		return { success: false, error: 'No song selected' };
 	}
@@ -25,8 +25,7 @@ export const exportSelectedSong = async (): Promise<ExportResult> => {
 		const result = await desktopHost.exportSongToZip<ExportResult>({
 			songPath: selectedSong.path,
 			songTitle: selectedSong.name || 'song',
-			exportDirectory: get(settingsStore).exportDirectory,
-			workspaceRoot: String(workspaceRoot ?? '')
+			exportDirectory: get(settingsStore).exportDirectory
 		});
 		return result;
 	} catch (error) {

@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
 const mockDesktopHost = vi.hoisted(() => ({
 	onMagicLinkResult: vi.fn(),
-	drainPendingAuthEvents: vi.fn()
+	drainPendingAuthEvents: vi.fn(),
+	getWorkspaceRoot: vi.fn()
+}));
+
+const mockWorkspaceService = vi.hoisted(() => ({
+	loadSubWorkspaces: vi.fn(),
+	loadTreeStructure: vi.fn()
 }));
 
 const mockAuthService = vi.hoisted(() => ({
@@ -17,6 +24,10 @@ vi.mock('./services/desktopHost', () => ({
 
 vi.mock('./services/authService', () => ({
 	authService: mockAuthService
+}));
+
+vi.mock('./services/workspaceService', () => ({
+	workspaceService: mockWorkspaceService
 }));
 
 vi.mock('./services/simFileService', () => ({
@@ -65,6 +76,7 @@ describe('App lifecycle', () => {
 		window.location.hash = '';
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
 		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
 	});
 
@@ -80,7 +92,9 @@ describe('App lifecycle', () => {
 
 		const { unmount } = render(App);
 
-		expect(mockDesktopHost.onMagicLinkResult).toHaveBeenCalled();
+		await waitFor(() => {
+			expect(mockDesktopHost.onMagicLinkResult).toHaveBeenCalledOnce();
+		});
 		unmount();
 
 		magicLinkRegistration.resolve(magicLinkUnlisten);
@@ -89,6 +103,51 @@ describe('App lifecycle', () => {
 		expect(magicLinkUnlisten).toHaveBeenCalledOnce();
 		expect(mockDesktopHost.drainPendingAuthEvents).not.toHaveBeenCalled();
 		expect(mockAuthService.restoreSession).not.toHaveBeenCalled();
+	});
+
+	it('hydrates the workspace display path from the native managed root before loading it', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockWorkspaceService.loadSubWorkspaces).toHaveBeenCalledOnce();
+			expect(mockWorkspaceService.loadTreeStructure).toHaveBeenCalledOnce();
+		});
+		expect(get(workspaceStore).path).toBe('/native/canonical/workspace');
+		expect(mockDesktopHost.getWorkspaceRoot.mock.invocationCallOrder[0]).toBeLessThan(
+			mockWorkspaceService.loadSubWorkspaces.mock.invocationCallOrder[0]
+		);
+	});
+
+	it('leaves workspace selection empty when the native managed root is absent', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledOnce();
+		});
+		expect(get(workspaceStore).path).toBeNull();
+		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
+		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
+	});
+
+	it('leaves workspace selection empty when native hydration rejects', async () => {
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.getWorkspaceRoot.mockRejectedValue(new Error('IPC unavailable'));
+		workspaceStore.setPath('/stale/renderer/path');
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockDesktopHost.getWorkspaceRoot).toHaveBeenCalledOnce();
+		});
+		expect(get(workspaceStore).path).toBeNull();
+		expect(mockWorkspaceService.loadSubWorkspaces).not.toHaveBeenCalled();
+		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
 	});
 
 	it('drains pending auth events before restoring the session', async () => {

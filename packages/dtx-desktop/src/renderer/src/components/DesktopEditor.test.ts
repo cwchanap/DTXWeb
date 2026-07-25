@@ -166,10 +166,10 @@ vi.mock('@dtx/common', () => ({
 }));
 
 const mockFileProvider = vi.hoisted(() => ({
-	DesktopFileProvider: vi.fn(function (this: object, workspaceRoot?: string) {
+	DesktopFileProvider: vi.fn(function (this: object, displayPath?: string) {
 		Object.assign(this, {
 			setWorkspaceRoot: vi.fn(),
-			getWorkspaceRoot: vi.fn(() => workspaceRoot || '')
+			getWorkspaceRoot: vi.fn(() => displayPath || '')
 		});
 	})
 }));
@@ -186,6 +186,7 @@ vi.mock('../stores/editorMappingStore', () => ({
 import DesktopEditor from './DesktopEditor.svelte';
 import { __resetPendingTeardownForTests } from './DesktopEditor.svelte';
 import { editorMappingStore } from '../stores/editorMappingStore';
+import { workspaceStore } from '../stores/workspaceStore';
 import Phaser from 'phaser';
 
 const createDeferred = <T>() => {
@@ -215,6 +216,7 @@ describe('DesktopEditor', () => {
 		});
 		mockDesktopHost.readFile.mockResolvedValue({ error: 'not found', content: '' });
 		mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: null });
+		workspaceStore.reset();
 		vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
 	});
 
@@ -282,16 +284,13 @@ describe('DesktopEditor', () => {
 	});
 
 	it('does not finish a stale editor initialization after unmount', async () => {
-		vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+		workspaceStore.setPath('/test/workspace');
 		const pendingWorkspaceLoad = createDeferred<{ files: []; error: null }>();
 		mockDesktopHost.listFiles.mockReturnValueOnce(pendingWorkspaceLoad.promise);
 
 		const { unmount } = render(DesktopEditor);
 		await waitFor(() => {
-			expect(mockDesktopHost.listFiles).toHaveBeenCalledWith(
-				'/test/workspace',
-				'/test/workspace'
-			);
+			expect(mockDesktopHost.listFiles).toHaveBeenCalledWith('/test/workspace');
 		});
 
 		unmount();
@@ -470,10 +469,8 @@ describe('DesktopEditor', () => {
 	});
 
 	it('surfaces a visible chart load error when list-files returns an error', async () => {
-		// A workspace path in storage triggers loadChartFromPath on mount.
-		// Spy on the localStorage instance (not the prototype) so it shadows
-		// the beforeEach prototype spy cleanly.
-		vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+		// The hydrated workspace display path triggers loadChartFromPath on mount.
+		workspaceStore.setPath('/test/workspace');
 		mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: 'permission-denied' });
 		render(DesktopEditor);
 
@@ -514,10 +511,7 @@ describe('DesktopEditor', () => {
 			render(DesktopEditor, { props: { simFileId: 'test-song-42' } });
 
 			await waitFor(() => {
-				expect(mockDesktopHost.readFile).toHaveBeenCalledWith(
-					'/songs/test-song/SET.def',
-					'/songs/test-song'
-				);
+				expect(mockDesktopHost.readFile).toHaveBeenCalledWith('/songs/test-song/SET.def');
 			});
 			await waitFor(() => {
 				expect(mockEventBus.emit).toHaveBeenCalledWith(
@@ -552,10 +546,7 @@ describe('DesktopEditor', () => {
 			render(DesktopEditor, { props: { simFileId: 'test-song-42' } });
 
 			await waitFor(() => {
-				expect(mockDesktopHost.readFile).toHaveBeenCalledWith(
-					'/songs/test-song/set.def',
-					'/songs/test-song'
-				);
+				expect(mockDesktopHost.readFile).toHaveBeenCalledWith('/songs/test-song/set.def');
 			});
 		});
 
@@ -720,7 +711,7 @@ describe('DesktopEditor', () => {
 
 	describe('loadChartFromPath error handling', () => {
 		it('surfaces error when listFiles returns an error', async () => {
-			vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+			workspaceStore.setPath('/test/workspace');
 			mockDesktopHost.listFiles.mockResolvedValue({ files: [], error: 'access-denied' });
 
 			render(DesktopEditor);
@@ -731,7 +722,7 @@ describe('DesktopEditor', () => {
 		});
 
 		it('catches errors from listFiles rejection gracefully', async () => {
-			vi.spyOn(localStorage, 'getItem').mockReturnValue('/test/workspace');
+			workspaceStore.setPath('/test/workspace');
 			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 			mockDesktopHost.listFiles.mockRejectedValue(new Error('network failure'));
 

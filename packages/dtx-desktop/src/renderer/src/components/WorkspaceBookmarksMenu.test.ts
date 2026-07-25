@@ -158,6 +158,16 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(screen.getByText('/b')).toBeInTheDocument();
 		});
 
+		it('explains that bookmarks must be reselected before they become the active workspace', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+
+			expect(screen.getByText(/reselect the folder to use it/i)).toBeInTheDocument();
+		});
+
 		it('clicking a non-active bookmark calls switchToBookmark and closes the dropdown', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');

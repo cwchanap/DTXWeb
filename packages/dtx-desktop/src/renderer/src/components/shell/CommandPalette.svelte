@@ -40,7 +40,7 @@
 			void workspaceService.loadSubWorkspaces();
 			void workspaceService.loadTreeStructure();
 		},
-		clearWorkspace: () => workspaceService.clearWorkspace(),
+		clearWorkspace: () => void workspaceService.clearWorkspace(),
 		clearCache: () => {
 			simFileService.clearCache();
 			localStorage.removeItem('song_templates');

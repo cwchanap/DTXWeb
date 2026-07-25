@@ -22,12 +22,8 @@ const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
 	return {
 		mockHostInvoke: hostInvoke,
 		mockDesktopHost: {
-			listFiles: vi.fn((dirPath: string, workspaceRoot: string | null = null) =>
-				hostInvoke('list-files', dirPath, workspaceRoot)
-			),
-			readFile: vi.fn((filePath: string, workspaceRoot: string | null = null) =>
-				hostInvoke('read-file', filePath, workspaceRoot)
-			),
+			listFiles: vi.fn((dirPath: string) => hostInvoke('list-files', dirPath)),
+			readFile: vi.fn((filePath: string) => hostInvoke('read-file', filePath)),
 			loadAssetFiles: vi.fn((simfileId: string) => hostInvoke('load-asset-files', simfileId)),
 			createSimfileRecord: vi.fn((simfileData: unknown) =>
 				hostInvoke('create-simfile-record', simfileData)
@@ -38,16 +34,9 @@ const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
 				hostInvoke('update-simfile-record', params)
 			),
 			exportSongToZip: vi.fn((params: unknown) => hostInvoke('export-song-to-zip', params)),
-			parseDtxFiles: vi.fn((folderPath: string, workspaceRoot: string) =>
-				hostInvoke('parse-dtx-files', folderPath, workspaceRoot)
-			),
-			uploadFile: vi.fn(
-				(
-					fileName: string,
-					songFolderPath: string,
-					workspaceRoot: string,
-					simfileId: string
-				) => hostInvoke('upload-file', fileName, songFolderPath, workspaceRoot, simfileId)
+			parseDtxFiles: vi.fn((folderPath: string) => hostInvoke('parse-dtx-files', folderPath)),
+			uploadFile: vi.fn((fileName: string, songFolderPath: string, simfileId: string) =>
+				hostInvoke('upload-file', fileName, songFolderPath, simfileId)
 			)
 		}
 	};
@@ -203,11 +192,7 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/my/songs/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'list-files',
-					'/my/songs/TestSong',
-					'/my/songs/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/my/songs/TestSong');
 			});
 		});
 
@@ -243,11 +228,7 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'list-files',
-					'/test/TestSong',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
 			});
 		});
 
@@ -258,11 +239,7 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'parse-dtx-files',
-					'/test/TestSong',
-					''
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('parse-dtx-files', '/test/TestSong');
 			});
 		});
 	});
@@ -374,11 +351,7 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'parse-dtx-files',
-					'/test/TestSong',
-					''
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('parse-dtx-files', '/test/TestSong');
 			});
 		});
 	});
@@ -591,11 +564,7 @@ describe('SongDetails', () => {
 			});
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'list-files',
-					'/test/TestSong',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
 			});
 			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
@@ -619,11 +588,7 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong');
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'list-files',
-					'/test/TestSong',
-					'/test/TestSong'
-				);
+				expect(mockHostInvoke).toHaveBeenCalledWith('list-files', '/test/TestSong');
 			});
 			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
@@ -1034,7 +999,7 @@ describe('SongDetails', () => {
 	});
 
 	describe('loadAssetFilesForDesktop', () => {
-		it('includes workspaceRoot when uploading a new song', async () => {
+		it('does not forward a workspace root when uploading a new song', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			workspaceState = { ...workspaceState, path: '/test/workspace' };
 			const invokeMock = mockHostInvoke;
@@ -1088,10 +1053,10 @@ describe('SongDetails', () => {
 			});
 
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'create-simfile-record',
-					expect.objectContaining({ workspaceRoot: '/test/workspace' })
-				);
+				const payload = mockHostInvoke.mock.calls.find(
+					([command]) => command === 'create-simfile-record'
+				)?.[1] as Record<string, unknown>;
+				expect(Object.keys(payload)).not.toContain('workspace' + 'Root');
 			});
 			// The uploader stores the raw #DLEVEL value directly — it is already
 			// in DTXManiaCX's canonical encoding, and normalizeLevel / formatLevel
@@ -1512,10 +1477,10 @@ describe('SongDetails', () => {
 			// The IPC was called and the response (with warnings) didn't
 			// throw — the upload is considered successful even with warnings.
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith(
-					'create-simfile-record',
-					expect.objectContaining({ workspaceRoot: '/test/workspace' })
-				);
+				const payload = mockHostInvoke.mock.calls.find(
+					([command]) => command === 'create-simfile-record'
+				)?.[1] as Record<string, unknown>;
+				expect(Object.keys(payload)).not.toContain('workspace' + 'Root');
 			});
 		});
 	});

@@ -15,9 +15,9 @@ export const workspaceService = {
 		try {
 			workspaceStore.setLoading(true);
 
-			// Use host adapter to open folder selection dialog
-			console.log('Invoking select-folder dialog');
-			const result = await desktopHost.selectFolder();
+			// This dialog establishes the native managed workspace root.
+			console.log('Invoking select-workspace-folder dialog');
+			const result = await desktopHost.selectWorkspaceFolder();
 			console.log('Dialog result:', result);
 
 			if (result.canceled) {
@@ -41,14 +41,16 @@ export const workspaceService = {
 	},
 
 	/**
-	 * Switches to a saved workspace bookmark: resets workspace state, sets the new path,
-	 * and reloads sub-workspaces and tree.
+	 * Re-selects a saved workspace bookmark through the native trust-establishing dialog.
+	 * A bookmark is only a convenience label; its stored path is never trusted directly.
 	 */
 	switchToBookmark: async (
 		bookmark: WorkspaceBookmark
 	): Promise<
 		{ ok: true } | { ok: false; error: string; path: string } | { ok: false; error: string }
 	> => {
+		// The bookmark remains part of the UI contract, but its stored path is never trusted.
+		void bookmark;
 		// Guard against concurrent switches
 		if (switchInProgress) {
 			return { ok: false, error: 'A workspace switch is already in progress' };
@@ -56,33 +58,23 @@ export const workspaceService = {
 		switchInProgress = true;
 
 		try {
-			// Validate the bookmark path still exists before resetting workspace state
-			let pathResult: { exists: boolean; error: string | null };
 			try {
-				pathResult = await desktopHost.pathExists(bookmark.path, bookmark.path);
+				const selection = await desktopHost.selectWorkspaceFolder();
+				if (selection.canceled || !selection.filePaths[0]) {
+					return { ok: false, error: 'Workspace selection was canceled' };
+				}
+
+				const selectedPath = selection.filePaths[0];
+				workspaceStore.reset();
+				workspaceStore.setPath(selectedPath);
+				await workspaceService.loadSubWorkspaces();
+				await workspaceService.loadTreeStructure();
 			} catch {
 				return {
 					ok: false,
-					error: `Unable to verify workspace path: ${bookmark.path}`,
-					path: bookmark.path
+					error: 'Failed to select workspace directory'
 				};
 			}
-			if (!pathResult.exists) {
-				const message =
-					pathResult.error === 'permission-denied'
-						? `Permission denied accessing workspace path: ${bookmark.path}`
-						: `Workspace path no longer exists: ${bookmark.path}. It may have been moved or deleted.`;
-				return {
-					ok: false,
-					error: message,
-					path: bookmark.path
-				};
-			}
-
-			workspaceStore.reset();
-			workspaceStore.setPath(bookmark.path);
-			await workspaceService.loadSubWorkspaces();
-			await workspaceService.loadTreeStructure();
 
 			// Check if any loader set an error during loading
 			let loadError: string | null = null;
@@ -118,9 +110,7 @@ export const workspaceService = {
 				return;
 			}
 
-			// Use host adapter to get folders in the workspace. Pass the workspace
-			// root so the Rust backend can enforce path containment.
-			const folders = await desktopHost.listDirectories(currentPath, currentPath);
+			const folders = await desktopHost.listDirectories(currentPath);
 
 			// Filter only sub-workspaces (folders with DTXFiles. prefix)
 			const subWorkspaces = folders.filter((folder: string) =>
@@ -157,7 +147,6 @@ export const workspaceService = {
 				// If a sub-workspace is selected, show its contents
 				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(
 					currentPath,
-					currentPath,
 					currentSubWorkspace
 				);
 				workspaceStore.setTreeStructure(treeData);
@@ -166,10 +155,7 @@ export const workspaceService = {
 				workspaceService.triggerAutoLinking();
 			} else {
 				// If no sub-workspace is selected, show all folders in the workspace
-				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(
-					currentPath,
-					currentPath
-				);
+				const treeData = await desktopHost.loadTreeStructure<TreeNode[]>(currentPath);
 				workspaceStore.setTreeStructure(treeData);
 
 				// Trigger auto-linking after tree structure is loaded
@@ -248,7 +234,6 @@ export const workspaceService = {
 		try {
 			// Get current node state to check if children are already loaded
 			let currentNode: TreeNode | null = null;
-			let workspaceRoot: string | null = null;
 			const unsubscribe = workspaceStore.subscribe((state) => {
 				const findNode = (nodes: TreeNode[], path: string): TreeNode | null => {
 					for (const node of nodes) {
@@ -258,7 +243,6 @@ export const workspaceService = {
 					}
 					return null;
 				};
-				workspaceRoot = state.path;
 				currentNode = findNode(state.treeStructure, nodePath);
 			});
 			unsubscribe();
@@ -274,10 +258,7 @@ export const workspaceService = {
 			// Set loading state for the node
 			workspaceStore.updateTreeNode(nodePath, { isLoading: true });
 
-			const children = await desktopHost.loadTreeStructure<TreeNode[]>(
-				nodePath,
-				workspaceRoot ?? nodePath
-			);
+			const children = await desktopHost.loadTreeStructure<TreeNode[]>(nodePath);
 
 			// Apply cached linkage to newly loaded children
 			const enrichedChildren = children.map((child: TreeNode) => {
@@ -327,8 +308,14 @@ export const workspaceService = {
 	/**
 	 * Clears the current workspace selection
 	 */
-	clearWorkspace: (): void => {
-		workspaceStore.clearWorkspace();
+	clearWorkspace: async (): Promise<void> => {
+		try {
+			await desktopHost.clearWorkspaceRoot();
+			workspaceStore.clearWorkspace();
+		} catch (error) {
+			console.error('Failed to clear workspace:', error);
+			workspaceStore.setError('Failed to clear workspace directory');
+		}
 	},
 
 	/**

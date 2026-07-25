@@ -193,12 +193,16 @@ export const desktopHost = {
 	selectFolder: async (): Promise<SelectFolderResult> =>
 		await invokeHost<SelectFolderResult>('select_folder'),
 
-	pathExists: async (
-		basePath: string,
-		workspaceRoot: string,
-		...pathParts: string[]
-	): Promise<PathExistsResult> =>
-		await invokeHost<PathExistsResult>('path_exists', { basePath, pathParts, workspaceRoot }),
+	selectWorkspaceFolder: async (): Promise<SelectFolderResult> =>
+		await invokeHost<SelectFolderResult>('select_workspace_folder'),
+
+	getWorkspaceRoot: async (): Promise<string | null> =>
+		await invokeHost<string | null>('get_workspace_root'),
+
+	clearWorkspaceRoot: async (): Promise<void> => await invokeHost<void>('clear_workspace_root'),
+
+	pathExists: async (basePath: string, ...pathParts: string[]): Promise<PathExistsResult> =>
+		await invokeHost<PathExistsResult>('path_exists', { basePath, pathParts }),
 
 	openExternalUrl: async (url: string): Promise<void> =>
 		await sendHost('open_external_url', { url }),
@@ -206,46 +210,29 @@ export const desktopHost = {
 	openFolder: async (folderPath: string): Promise<OpenFolderResult> =>
 		await invokeHost<OpenFolderResult>('open_folder', { folderPath }),
 
-	listDirectories: async (
-		dirPath: string,
-		workspaceRoot: string | null = null
-	): Promise<string[]> =>
-		await invokeHost<string[]>('list_directories', { dirPath, workspaceRoot }),
+	listDirectories: async (dirPath: string): Promise<string[]> =>
+		await invokeHost<string[]>('list_directories', { dirPath }),
 
-	listDirectory: async <T = unknown>(
-		dirPath: string,
-		workspaceRoot: string | null = null
-	): Promise<T> => await invokeHost<T>('list_directory', { dirPath, workspaceRoot }),
+	listDirectory: async <T = unknown>(dirPath: string): Promise<T> =>
+		await invokeHost<T>('list_directory', { dirPath }),
 
-	loadTreeStructure: async <T = unknown>(
-		basePath: string,
-		workspaceRoot: string,
-		...pathParts: string[]
-	): Promise<T> =>
-		await invokeHost<T>('load_tree_structure', { basePath, pathParts, workspaceRoot }),
+	loadTreeStructure: async <T = unknown>(basePath: string, ...pathParts: string[]): Promise<T> =>
+		await invokeHost<T>('load_tree_structure', { basePath, pathParts }),
 
-	listFiles: async <T = unknown>(
-		dirPath: string,
-		workspaceRoot: string | null = null
-	): Promise<T> => await invokeHost<T>('list_files', { dirPath, workspaceRoot }),
+	listFiles: async <T = unknown>(dirPath: string): Promise<T> =>
+		await invokeHost<T>('list_files', { dirPath }),
 
-	readFile: async (
-		filePath: string,
-		workspaceRoot: string | null = null
-	): Promise<ReadFileResult> => {
+	readFile: async (filePath: string): Promise<ReadFileResult> => {
 		const runtime = getRuntime();
-		const result = await runtime.invoke<HostReadFileResult>('read_file', {
-			filePath,
-			workspaceRoot
-		});
+		const result = await runtime.invoke<HostReadFileResult>('read_file', { filePath });
 		return normalizeTauriReadFileResult(result);
 	},
 
 	getSkinAsset: async <T = unknown>(assetPath: string): Promise<T> =>
 		await invokeHost<T>('get_skin_asset', { assetPath }),
 
-	parseDtxFiles: async <T = unknown>(folderPath: string, workspaceRoot: string): Promise<T> =>
-		await invokeHost<T>('parse_dtx_files', { folderPath, workspaceRoot }),
+	parseDtxFiles: async <T = unknown>(folderPath: string): Promise<T> =>
+		await invokeHost<T>('parse_dtx_files', { folderPath }),
 
 	validateSession: async <T = unknown>(sessionData: unknown): Promise<T> =>
 		await invokeHost<T>('validate_session', { sessionData }),
@@ -321,16 +308,13 @@ export const desktopHost = {
 		songPath: string;
 		songTitle?: string;
 		exportDirectory?: string;
-		workspaceRoot: string;
 	}): Promise<T> => await invokeHost<T>('export_song_to_zip', params),
 
 	uploadFile: async <T = unknown>(
 		fileName: string,
 		songFolderPath: string,
-		workspaceRoot: string,
 		simfileId: string
-	): Promise<T> =>
-		await invokeHost<T>('upload_file', { fileName, songFolderPath, workspaceRoot, simfileId }),
+	): Promise<T> => await invokeHost<T>('upload_file', { fileName, songFolderPath, simfileId }),
 
 	checkForUpdate: async (): Promise<UpdateCheckResult> =>
 		await invokeHost<UpdateCheckResult>('check_for_update'),

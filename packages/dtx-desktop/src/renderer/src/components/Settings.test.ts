@@ -6,6 +6,7 @@ vi.mock('@lucide/svelte');
 
 const mockDesktopHost = vi.hoisted(() => ({
 	selectFolder: vi.fn(),
+	selectWorkspaceFolder: vi.fn(),
 	getDefaultDownloadsDir: vi.fn(async () => '/Users/Test/Downloads')
 }));
 
@@ -97,6 +98,7 @@ describe('Settings', () => {
 		await waitFor(() => {
 			expect(mockDesktopHost.selectFolder).toHaveBeenCalled();
 		});
+		expect(mockDesktopHost.selectWorkspaceFolder).not.toHaveBeenCalled();
 	});
 
 	it('updates export directory when folder is selected', async () => {

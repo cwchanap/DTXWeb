@@ -65,7 +65,7 @@ export class DesktopFileProvider implements IFileProvider {
 			}
 
 			// Ask host process to read the local file
-			const result = await desktopHost.readFile(filePath, this._workspaceRoot);
+			const result = await desktopHost.readFile(filePath);
 
 			if (result.error) {
 				return undefined;

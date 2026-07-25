@@ -62,10 +62,7 @@
 
 		try {
 			// Verify that the selected folder exists
-			const folderResult = await desktopHost.pathExists(
-				selectedTemplateFolder,
-				selectedTemplateFolder
-			);
+			const folderResult = await desktopHost.pathExists(selectedTemplateFolder);
 			if (!folderResult.exists) {
 				templateStore.setError('Selected folder does not exist');
 				return;

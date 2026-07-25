@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
+#[cfg(test)]
+use std::sync::{Arc, Barrier};
+
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
@@ -20,11 +23,20 @@ struct WorkspaceSettings {
     workspace_root: Option<String>,
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+struct PostPersistHook {
+    arrived: Arc<Barrier>,
+    release: Arc<Barrier>,
+}
+
 #[derive(Debug, Default)]
 pub struct WorkspaceRootState {
     root: RwLock<Option<PathBuf>>,
     settings_path: Option<PathBuf>,
     operation_lock: Mutex<()>,
+    #[cfg(test)]
+    post_persist_hook: Mutex<Option<Arc<PostPersistHook>>>,
 }
 
 impl WorkspaceRootState {
@@ -47,6 +59,8 @@ impl WorkspaceRootState {
             root: RwLock::new(root),
             settings_path: Some(settings_path),
             operation_lock: Mutex::new(()),
+            #[cfg(test)]
+            post_persist_hook: Mutex::new(None),
         }
     }
 
@@ -82,11 +96,26 @@ impl WorkspaceRootState {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         self.persist(next_root.as_deref())?;
+        #[cfg(test)]
+        self.run_post_persist_hook();
         *self
             .root
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = next_root;
         Ok(())
+    }
+
+    #[cfg(test)]
+    fn run_post_persist_hook(&self) {
+        let hook = self
+            .post_persist_hook
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        if let Some(hook) = hook {
+            hook.arrived.wait();
+            hook.release.wait();
+        }
     }
 
     fn persist(&self, root: Option<&Path>) -> Result<()> {

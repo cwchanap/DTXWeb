@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import type { Options } from '@wdio/types';
 
+import { SENTINEL_PREFERENCES } from './support/sentinel-preferences';
+
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const executableName = process.platform === 'win32' ? 'dtx-desktop.exe' : 'dtx-desktop';
 // e2e builds use a dedicated cargo target dir (`target-e2e`, set via
@@ -21,25 +23,9 @@ const appBinaryPath =
 // locations instead of inside the temporary preferences directory.
 const isolatedDataDir = mkdtempSync(join(tmpdir(), 'dtx-e2e-data-'));
 
-// Seed a distinctive preferences file in the isolated data dir so the
-// app-launch e2e test can prove (a) the WDIO tauri-service forwards
-// DTX_E2E_DATA_DIR to the spawned app, and (b) the Rust resolve_dirs()
-// branch in preferences.rs (gated on the `e2e` Cargo feature) selects the
-// isolated path. Without this, read_preferences returns defaults on a clean
-// CI runner regardless of whether isolation is wired up — the safety
-// invariant (never reading the developer's real preferences) would be
-// untested. `detailPaneWidth: 537` is within the Rust clamp range
-// [320, 640] so it survives read_preferences_from unchanged.
-type PreferencesShape = {
-	detailPaneWidth: number;
-	detailPaneVisible: boolean;
-	scoreLinks: Record<string, string>;
-};
-export const SENTINEL_PREFERENCES = {
-	detailPaneWidth: 537,
-	detailPaneVisible: false,
-	scoreLinks: { 'e2e-sentinel': 'isolated' }
-} as const satisfies PreferencesShape;
+// Seed distinctive, valid preferences so the launch spec proves that the
+// WDIO service forwards DTX_E2E_DATA_DIR and Rust reads the isolated path.
+// Empty scoreLinks avoids introducing an invalid unscoped production key.
 mkdirSync(join(isolatedDataDir, 'dtxweb'), { recursive: true });
 writeFileSync(
 	join(isolatedDataDir, 'dtxweb', 'preferences.json'),

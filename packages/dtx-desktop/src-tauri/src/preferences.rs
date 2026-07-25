@@ -25,6 +25,34 @@ fn preferences_write_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Resolves the data and home directories for the preferences commands.
+///
+/// When the `e2e` Cargo feature is active and `DTX_E2E_DATA_DIR` is set, both
+/// directories are overridden to that path so e2e tests read/write preferences
+/// inside an isolated temp directory instead of the developer's real per-user
+/// data directory. This is necessary on Windows, where `dirs::data_dir()` uses
+/// `SHGetKnownFolderPath` and ignores `APPDATA`/`USERPROFILE` env vars —
+/// without this override, `bun run e2e:desktop` on Windows would touch the
+/// user's real `%APPDATA%/dtxweb/preferences.json`.
+///
+/// When the env var is unset (normal app runs, or e2e builds without the
+/// feature), falls through to `dirs::data_dir()` / `dirs::home_dir()`.
+#[cfg(feature = "e2e")]
+fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>) {
+    match std::env::var("DTX_E2E_DATA_DIR") {
+        Ok(dir) if !dir.is_empty() => {
+            let path = PathBuf::from(dir);
+            (Some(path.clone()), Some(path))
+        }
+        _ => (dirs::data_dir(), dirs::home_dir()),
+    }
+}
+
+#[cfg(not(feature = "e2e"))]
+fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>) {
+    (dirs::data_dir(), dirs::home_dir())
+}
+
 const MIN_DETAIL_WIDTH: f64 = 320.0;
 const MAX_DETAIL_WIDTH: f64 = 640.0;
 
@@ -194,7 +222,8 @@ fn write_preferences_to(path: &Path, prefs: &Preferences) -> Result<()> {
 
 #[tauri::command]
 pub fn read_preferences() -> Preferences {
-    match resolve_read_path_from(dirs::data_dir().as_deref(), dirs::home_dir().as_deref()) {
+    let (data_dir, home) = resolve_dirs();
+    match resolve_read_path_from(data_dir.as_deref(), home.as_deref()) {
         Some(path) => read_preferences_from(&path),
         None => Preferences::default(),
     }
@@ -202,8 +231,7 @@ pub fn read_preferences() -> Preferences {
 
 #[tauri::command]
 pub fn write_preferences(prefs: Preferences) -> Result<()> {
-    let data_dir = dirs::data_dir();
-    let home = dirs::home_dir();
+    let (data_dir, home) = resolve_dirs();
     let path = resolve_write_path_from(data_dir.as_deref(), home.as_deref())?;
     // Hold the write lock across the full read-modify-write so a
     // concurrent write_score_song_links call can't interleave: without
@@ -268,8 +296,7 @@ pub fn write_score_song_links(links: HashMap<String, String>) -> Result<()> {
     let _guard = preferences_write_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let data_dir = dirs::data_dir();
-    let home = dirs::home_dir();
+    let (data_dir, home) = resolve_dirs();
     let path = resolve_write_path_from(data_dir.as_deref(), home.as_deref())?;
     let mut prefs = read_preferences();
     prefs.score_links = links;

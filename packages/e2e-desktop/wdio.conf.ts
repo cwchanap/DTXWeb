@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,13 +22,17 @@ const appBinaryPath =
 // vars, `bun run e2e:desktop` reads (and could overwrite) the developer's real
 // `dtxweb/preferences.json` and legacy `~/.dtxweb/preferences.json`.
 //
-// `dirs` v6 respects env vars on Linux (`$XDG_DATA_HOME`, `$HOME`) and macOS
-// (`$HOME`), so the isolation is effective on both platforms where E2E runs
-// (Linux in CI, macOS locally). On Windows, `dirs` v6 uses
-// `SHGetKnownFolderPath` which ignores env vars — the vars are set anyway
-// (harmless) but Windows E2E isolation would require a Rust-side config flag.
+// `DTX_E2E_DATA_DIR` is consumed directly by the Rust preferences layer (gated
+// on the `e2e` Cargo feature — see `resolve_dirs()` in preferences.rs) so
+// isolation is effective on ALL platforms, including Windows where `dirs` v6
+// uses `SHGetKnownFolderPath` and ignores `APPDATA`/`USERPROFILE`. The
+// platform env vars below are kept as defense-in-depth for Linux/macOS and any
+// other consumers that read them.
 const isolatedDataDir = mkdtempSync(join(tmpdir(), 'dtx-e2e-data-'));
 const isolatedAppEnv: Record<string, string> = {
+	// Rust-side override (preferences.rs `resolve_dirs()` when e2e feature is
+	// active). Works on all platforms — the primary isolation mechanism.
+	DTX_E2E_DATA_DIR: isolatedDataDir,
 	// Linux: dirs::data_dir() → $XDG_DATA_HOME || $HOME/.local/share
 	XDG_DATA_HOME: isolatedDataDir,
 	// macOS: dirs::data_dir() → $HOME/Library/Application Support
@@ -83,5 +87,11 @@ export const config: Options.Testrunner = {
 	mochaOpts: {
 		ui: 'bdd',
 		timeout: 60_000
+	},
+	// Remove the isolated data dir after the run so repeated local executions
+	// don't accumulate abandoned `dtx-e2e-data-*` directories in the system
+	// temp dir. `force: true` ignores ENOENT if the dir was already removed.
+	onComplete: () => {
+		rmSync(isolatedDataDir, { recursive: true, force: true });
 	}
 };

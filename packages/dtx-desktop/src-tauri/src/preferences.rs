@@ -6,6 +6,9 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{DesktopError, Result};
+use crate::native_persistence::{
+    app_data_file, lock_unpoisoned, read_json_or_default, resolve_dirs, write_json_atomic,
+};
 
 /// Serializes read-modify-write cycles on `preferences.json`. Both
 /// `write_preferences` (UI layout saves, which merge to preserve score_links)
@@ -20,37 +23,9 @@ use crate::error::{DesktopError, Result};
 /// holding the lock is non-fatal — the next caller takes the inner value and
 /// proceeds, since a stale preferences file is recoverable (defaults fallback)
 /// and not worth poisoning the whole app over.
-fn preferences_write_lock() -> &'static Mutex<()> {
+fn preferences_write_lock() -> &'static OnceLock<Mutex<()>> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-/// Resolves the data and home directories for the preferences commands.
-///
-/// When the `e2e` Cargo feature is active and `DTX_E2E_DATA_DIR` is set, both
-/// directories are overridden to that path so e2e tests read/write preferences
-/// inside an isolated temp directory instead of the developer's real per-user
-/// data directory. This is necessary on Windows, where `dirs::data_dir()` uses
-/// `SHGetKnownFolderPath` and ignores `APPDATA`/`USERPROFILE` env vars —
-/// without this override, `bun run e2e:desktop` on Windows would touch the
-/// user's real `%APPDATA%/dtxweb/preferences.json`.
-///
-/// When the env var is unset (normal app runs, or e2e builds without the
-/// feature), falls through to `dirs::data_dir()` / `dirs::home_dir()`.
-#[cfg(feature = "e2e")]
-fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>) {
-    match std::env::var("DTX_E2E_DATA_DIR") {
-        Ok(dir) if !dir.is_empty() => {
-            let path = PathBuf::from(dir);
-            (Some(path.clone()), Some(path))
-        }
-        _ => (dirs::data_dir(), dirs::home_dir()),
-    }
-}
-
-#[cfg(not(feature = "e2e"))]
-fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>) {
-    (dirs::data_dir(), dirs::home_dir())
+    &LOCK
 }
 
 const MIN_DETAIL_WIDTH: f64 = 320.0;
@@ -107,7 +82,7 @@ fn clamp_width(width: f64) -> f64 {
 /// New platform-appropriate preferences path: `<data_dir>/dtxweb/preferences.json`.
 /// `data_dir` is expected to come from `dirs::data_dir()` (or a temp dir in tests).
 fn preferences_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("dtxweb").join("preferences.json")
+    app_data_file(data_dir, "preferences.json")
 }
 
 /// Legacy pre-Tauri path: `~/.dtxweb/preferences.json`. Kept as a read
@@ -173,19 +148,7 @@ fn try_remove_legacy(home: Option<&Path>) {
 /// warning to stderr so the user can investigate data loss (all UI prefs +
 /// score links reset to defaults) rather than silently swallowing it.
 fn read_preferences_from(path: &Path) -> Preferences {
-    let mut prefs = match fs::read_to_string(path) {
-        Ok(contents) => match serde_json::from_str::<Preferences>(&contents) {
-            Ok(parsed) => parsed,
-            Err(err) => {
-                eprintln!(
-                    "[preferences] failed to parse {}: {err} — using defaults",
-                    path.display()
-                );
-                Preferences::default()
-            }
-        },
-        Err(_) => Preferences::default(),
-    };
+    let mut prefs: Preferences = read_json_or_default(path, "preferences");
     prefs.detail_pane_width = clamp_width(prefs.detail_pane_width);
     prefs
 }
@@ -197,27 +160,11 @@ fn read_preferences_from(path: &Path) -> Preferences {
 /// falls back to defaults on a parse error, but losing the user's prefs on a
 /// crash is still worth avoiding.)
 fn write_preferences_to(path: &Path, prefs: &Preferences) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     // Mirror read_preferences_from and clamp on write so the on-disk invariant
     // (MIN_DETAIL_WIDTH..=MAX_DETAIL_WIDTH) holds regardless of the caller.
     let mut sanitized = prefs.clone();
     sanitized.detail_pane_width = clamp_width(sanitized.detail_pane_width);
-    let json = serde_json::to_string_pretty(&sanitized)?;
-    let mut tmp = path.to_path_buf();
-    tmp.set_extension("json.tmp");
-    fs::write(&tmp, json)?;
-    // Rename is atomic when source and destination share a filesystem (they do:
-    // both live in the same `dtxweb/` directory). On Windows, std::fs::rename
-    // replaces the target.
-    let rename_result = fs::rename(&tmp, path);
-    if rename_result.is_err() {
-        // Best-effort cleanup of the temp file so it doesn't linger on failure.
-        let _ = fs::remove_file(&tmp);
-    }
-    rename_result?;
-    Ok(())
+    write_json_atomic(path, &sanitized)
 }
 
 #[tauri::command]
@@ -238,9 +185,7 @@ pub fn write_preferences(prefs: Preferences) -> Result<()> {
     // the guard, one caller's read could observe the file before the
     // other's rename, and the second rename would silently discard the
     // first's score_links update (or vice versa).
-    let _guard = preferences_write_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = lock_unpoisoned(preferences_write_lock());
     // Read-modify-write: the UI pref store (preferencesService) sends
     // only detailPaneWidth/Visible — it does not carry scoreLinks. A
     // blind replace would wipe the score_links map on every layout
@@ -293,9 +238,7 @@ pub fn write_score_song_links(links: HashMap<String, String>) -> Result<()> {
     // Hold the write lock across the full read-modify-write so a concurrent
     // write_preferences call can't interleave and clobber this update (or
     // vice versa). See write_preferences for the race rationale.
-    let _guard = preferences_write_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = lock_unpoisoned(preferences_write_lock());
     let (data_dir, home) = resolve_dirs();
     let path = resolve_write_path_from(data_dir.as_deref(), home.as_deref())?;
     let mut prefs = read_preferences();

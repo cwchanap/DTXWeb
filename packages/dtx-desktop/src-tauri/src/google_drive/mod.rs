@@ -28,6 +28,7 @@ use self::oauth::{
 };
 #[cfg(feature = "google-drive")]
 use self::oauth::{ReqwestGoogleOAuthProvider, TauriPickerBrowser};
+use self::pending_bindings::GoogleDrivePendingBindingStore;
 use self::settings::GoogleDriveSettingsAccess;
 #[cfg(any(feature = "google-drive", feature = "e2e"))]
 use self::settings::GoogleDriveSettingsStore;
@@ -95,6 +96,7 @@ pub(crate) mod commands;
 pub(crate) mod credential_store;
 pub(crate) mod drive_client;
 pub(crate) mod oauth;
+pub(crate) mod pending_bindings;
 pub(crate) mod settings;
 pub(crate) mod upload;
 
@@ -122,8 +124,10 @@ pub(crate) struct GoogleDriveState {
     requires_reconnect_by_user: AsyncMutex<HashSet<String>>,
     pub(crate) folder_validation_cache_by_user: AsyncMutex<HashMap<String, PublicPermissionStatus>>,
     pub(crate) active_picker_attempt: Arc<AsyncMutex<Option<PickerAttempt>>>,
-    /// Replaced by the persistent keyed binding store in Task 10.
-    pub(crate) pending_bindings_by_user: AsyncMutex<HashMap<String, ()>>,
+    /// Native crash-recovery state. Adapter-only unit-test construction leaves
+    /// this unavailable; production/E2E constructors always install the
+    /// exact app-data-backed store.
+    pub(crate) pending_bindings: Option<GoogleDrivePendingBindingStore>,
     /// Replaced by the bounded upload operation manager in Task 11.
     pub(crate) operation_manager: AsyncMutex<()>,
 }
@@ -169,7 +173,7 @@ impl GoogleDriveState {
             requires_reconnect_by_user: AsyncMutex::new(HashSet::new()),
             folder_validation_cache_by_user: AsyncMutex::new(HashMap::new()),
             active_picker_attempt: Arc::new(AsyncMutex::new(None)),
-            pending_bindings_by_user: AsyncMutex::new(HashMap::new()),
+            pending_bindings: None,
             operation_manager: AsyncMutex::new(()),
         }
     }
@@ -195,15 +199,17 @@ impl GoogleDriveState {
             GoogleDriveClient::production()
                 .map_err(|error| DesktopError::Message(error.code().to_string()))?,
         );
-        Ok(Self::with_oauth_adapters(
+        let mut state = Self::with_oauth_adapters(
             credential_store,
             Arc::new(ApiDriveMetadataClient::new(app.clone())),
-            Arc::new(GoogleDriveSettingsStore::new(data_dir)),
+            Arc::new(GoogleDriveSettingsStore::new(data_dir.clone())),
             oauth_provider,
             drive_client,
             Arc::new(TauriPickerBrowser::new(app)),
             picker_config,
-        ))
+        );
+        state.pending_bindings = Some(GoogleDrivePendingBindingStore::new(data_dir));
+        Ok(state)
     }
 
     #[cfg(feature = "e2e")]
@@ -211,15 +217,17 @@ impl GoogleDriveState {
         let data_dir = resolve_dirs().0.ok_or_else(|| {
             DesktopError::Message("Could not resolve application data directory".to_string())
         })?;
-        Ok(Self::with_oauth_adapters(
+        let mut state = Self::with_oauth_adapters(
             Arc::new(InMemoryGoogleDriveCredentialStore::default()),
             Arc::new(UnavailableDriveMetadataClient),
-            Arc::new(GoogleDriveSettingsStore::new(data_dir)),
+            Arc::new(GoogleDriveSettingsStore::new(data_dir.clone())),
             Arc::new(UnavailableOAuthProvider),
             Arc::new(DeferredPickerFolderValidator),
             Arc::new(UnavailablePickerBrowser),
             PickerProtocolConfig::new(String::new(), Duration::from_secs(5 * 60)),
-        ))
+        );
+        state.pending_bindings = Some(GoogleDrivePendingBindingStore::new(data_dir));
+        Ok(state)
     }
 
     pub(crate) async fn cache_access_token(&self, user_id: &str, token: &str) {

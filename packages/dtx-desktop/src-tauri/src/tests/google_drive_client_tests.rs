@@ -570,6 +570,65 @@ async fn resumable_create_uses_generated_id_parent_zip_metadata_and_session_loca
 }
 
 #[tokio::test]
+async fn resumable_create_classifies_a_definitive_invalid_generated_id_without_reclassifying_updates(
+) {
+    // Break caught: treating the create-specific invalid-ID response as a
+    // generic error (so reconciliation cannot perform its required 404 probe),
+    // or applying the rotation signal to an existing-file update.
+    let create_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {
+                "errors": [{ "reason": "invalidArgument" }]
+            }
+        })))
+        .mount(&create_server)
+        .await;
+    let create_metadata = DriveCreateMetadata {
+        id: "expired-generated-id".to_string(),
+        parent_id: "folder-42".to_string(),
+        name: "Song.zip".to_string(),
+    };
+    assert_eq!(
+        GoogleDriveApi::start_resumable_create(
+            &client(&create_server),
+            ACCESS_TOKEN,
+            &create_metadata,
+            3,
+        )
+        .await
+        .expect_err("definitive invalid generated ID"),
+        DriveApiError::InvalidGeneratedId
+    );
+
+    let update_server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/existing-file"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {
+                "errors": [{ "reason": "invalidArgument" }]
+            }
+        })))
+        .mount(&update_server)
+        .await;
+    assert_eq!(
+        GoogleDriveApi::start_resumable_update(
+            &client(&update_server),
+            ACCESS_TOKEN,
+            "existing-file",
+            &DriveUpdateMetadata {
+                name: "Song.zip".to_string()
+            },
+            3,
+        )
+        .await
+        .expect_err("update error"),
+        DriveApiError::InvalidResponse
+    );
+}
+
+#[tokio::test]
 async fn resumable_update_renames_existing_file_without_parent_mutation() {
     let server = MockServer::start().await;
     let session_url = format!("{}/upload-session/update", server.uri());

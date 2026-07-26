@@ -150,7 +150,11 @@ pub(crate) enum DriveApiError {
     TokenExpired,
     Network,
     InvalidResponse,
+    InvalidGeneratedId,
     LocalState,
+    InsufficientDiskSpace,
+    MetadataSync,
+    SimfileUnavailable,
     FolderUnavailable,
     DownloadNotPublic,
     SharingCheckUnavailable,
@@ -612,7 +616,7 @@ impl GoogleDriveApi for GoogleDriveClient {
             .await
             .map_err(|_| DriveApiError::Network)?;
         if !response.status().is_success() {
-            return Err(classify_drive_response(response, false).await);
+            return Err(classify_drive_response(response, false, false).await);
         }
         let generated = response
             .json::<GeneratedIdsResponse>()
@@ -694,7 +698,7 @@ impl GoogleDriveApi for GoogleDriveClient {
             .send()
             .await
             .map_err(|_| DriveApiError::Network)?;
-        decode_resumable_session_api(response, self.allow_insecure_session_url).await
+        decode_resumable_session_api(response, self.allow_insecure_session_url, true).await
     }
 
     async fn start_resumable_update(
@@ -724,7 +728,7 @@ impl GoogleDriveApi for GoogleDriveClient {
             .send()
             .await
             .map_err(|_| DriveApiError::Network)?;
-        decode_resumable_session_api(response, self.allow_insecure_session_url).await
+        decode_resumable_session_api(response, self.allow_insecure_session_url, false).await
     }
 
     async fn upload_chunk(
@@ -793,7 +797,7 @@ impl GoogleDriveApi for GoogleDriveClient {
         if response.status().is_success() {
             return Ok(());
         }
-        Err(classify_drive_response(response, false).await)
+        Err(classify_drive_response(response, false, false).await)
     }
 }
 
@@ -965,9 +969,10 @@ fn usable_generated_id(ids: Vec<String>) -> Result<String, GoogleDriveValidation
 async fn decode_resumable_session_api(
     response: reqwest::Response,
     allow_insecure_loopback: bool,
+    invalid_generated_id_context: bool,
 ) -> Result<ResumableUploadSession, DriveApiError> {
     if !response.status().is_success() {
-        return Err(classify_drive_response(response, false).await);
+        return Err(classify_drive_response(response, false, invalid_generated_id_context).await);
     }
     let location = response
         .headers()
@@ -982,7 +987,7 @@ async fn decode_drive_file_response(
     response: reqwest::Response,
 ) -> Result<DriveFile, DriveApiError> {
     if !response.status().is_success() {
-        return Err(classify_drive_response(response, false).await);
+        return Err(classify_drive_response(response, false, false).await);
     }
     response
         .json::<DriveFileResponse>()
@@ -1011,7 +1016,7 @@ async fn decode_chunk_response(
             Ok(DriveChunkResult::Accepted(confirmed))
         }
         404 if status_probe => Err(DriveApiError::SessionExpired),
-        _ => Err(classify_drive_response(response, false).await),
+        _ => Err(classify_drive_response(response, false, false).await),
     }
 }
 
@@ -1047,6 +1052,7 @@ struct GoogleErrorDetail {
 async fn classify_drive_response(
     response: reqwest::Response,
     session_not_found: bool,
+    invalid_generated_id_context: bool,
 ) -> DriveApiError {
     let status = response.status();
     let retry_after = response
@@ -1076,6 +1082,14 @@ async fn classify_drive_response(
         .await
         .map(|body| body.error.errors)
         .unwrap_or_default();
+    if invalid_generated_id_context
+        && status == StatusCode::BAD_REQUEST
+        && reasons
+            .iter()
+            .any(|detail| matches!(detail.reason.as_str(), "invalid" | "invalidArgument"))
+    {
+        return DriveApiError::InvalidGeneratedId;
+    }
     if reasons.iter().any(|detail| {
         matches!(
             detail.reason.as_str(),

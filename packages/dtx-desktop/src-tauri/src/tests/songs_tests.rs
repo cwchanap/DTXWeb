@@ -311,6 +311,34 @@ async fn export_zip_rejects_unsafe_song_title_without_writing_outside_export_dir
 }
 
 #[tokio::test]
+async fn export_song_command_returns_failure_envelope_for_an_invalid_local_title() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    let export = workspace.path().join("Export");
+    fs::create_dir(&song).await.expect("song");
+    fs::create_dir(&export).await.expect("export");
+    fs::write(song.join("main.dtx"), "#TITLE: Song")
+        .await
+        .expect("dtx");
+
+    let result = export_song_to_zip_with_workspace_root(
+        song.to_string_lossy().into_owned(),
+        Some("../escape".to_string()),
+        Some(export.to_string_lossy().into_owned()),
+        workspace.path(),
+    )
+    .await
+    .expect("command must preserve the export failure envelope");
+
+    assert!(!result.success);
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("Invalid zip file name")));
+    assert!(!workspace.path().join("escape.zip").exists());
+}
+
+#[tokio::test]
 async fn export_song_to_zip_rejects_song_path_outside_workspace() {
     // When a workspace root is supplied, the command must refuse to read a song
     // folder outside it (defense-in-depth: even though the renderer only passes

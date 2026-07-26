@@ -194,13 +194,20 @@ pub(crate) async fn export_song_to_zip_with_workspace_root(
         .filter(|title| !title.trim().is_empty())
         .unwrap_or("song");
 
-    export_song_folder_to_zip_in_workspace(
+    match export_song_folder_to_zip_in_workspace(
         &canonical_song_path,
         song_title,
         &export_directory,
         workspace_root,
     )
     .await
+    {
+        // Keep the established IPC contract: once the managed workspace path
+        // has passed its security boundary, export failures are returned as a
+        // structured result for the renderer rather than rejected commands.
+        Ok(result) => Ok(result),
+        Err(error) => Ok(ExportSongResult::failure(error.to_string())),
+    }
 }
 
 pub async fn export_song_folder_to_zip(

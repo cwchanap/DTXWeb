@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
@@ -15,6 +16,17 @@ use self::credential_store::InMemoryGoogleDriveCredentialStore;
 use self::credential_store::{GoogleDriveCredentialAccess, GoogleDriveCredentialStore};
 #[cfg(feature = "google-drive")]
 use self::credential_store::{KeyringGoogleDriveCredentialStore, PlatformKeyringEntryFactory};
+use self::oauth::{
+    access_token_is_reusable, AuthorizedDriveRequest, AuthorizedDriveRequestError,
+    DeferredPickerFolderValidator, GoogleDriveConnectionState, GoogleDriveDisconnectResult,
+    GoogleDriveOAuthError, GoogleOAuthProvider, OAuthProviderError, PickerAttempt, PickerBrowser,
+    PickerFolderValidator, PickerProtocolConfig, UnavailableOAuthProvider,
+    UnavailablePickerBrowser, GOOGLE_DRIVE_FILE_SCOPE,
+};
+#[cfg(feature = "google-drive")]
+use self::oauth::{ReqwestGoogleOAuthProvider, TauriPickerBrowser};
+use self::settings::GoogleDriveSettingsAccess;
+#[cfg(any(feature = "google-drive", feature = "e2e"))]
 use self::settings::GoogleDriveSettingsStore;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,24 +88,35 @@ impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
 }
 
 pub(crate) mod build_config;
+pub(crate) mod commands;
 pub(crate) mod credential_store;
+pub(crate) mod oauth;
 pub(crate) mod settings;
 pub(crate) mod upload;
+
+struct CachedAccessToken {
+    token: Zeroizing<String>,
+    expires_at: Instant,
+}
 
 /// Rust-owned cross-command Drive state. Every adapter enters through this
 /// constructor so production can use the platform keyring while E2E supplies
 /// deterministic fakes without exposing credentials to the renderer.
 pub(crate) struct GoogleDriveState {
+    #[allow(dead_code)]
     credential_store: Arc<dyn GoogleDriveCredentialStore>,
     pub(crate) credentials: GoogleDriveCredentialAccess,
     pub(crate) metadata_client: Arc<dyn DriveMetadataClient>,
-    pub(crate) settings: Arc<GoogleDriveSettingsStore>,
-    access_tokens_by_user: AsyncMutex<HashMap<String, Zeroizing<String>>>,
+    pub(crate) settings: Arc<dyn GoogleDriveSettingsAccess>,
+    oauth_provider: Arc<dyn GoogleOAuthProvider>,
+    folder_validator: Arc<dyn PickerFolderValidator>,
+    picker_browser: Arc<dyn PickerBrowser>,
+    picker_config: PickerProtocolConfig,
+    access_tokens_by_user: AsyncMutex<HashMap<String, CachedAccessToken>>,
+    requires_reconnect_by_user: AsyncMutex<HashSet<String>>,
     /// Filled by Task 8 after it validates the selected Drive folder.
     pub(crate) folder_validation_cache_by_user: AsyncMutex<HashMap<String, ()>>,
-    /// Replaced with the full PKCE attempt in Task 7. Until then it is only a
-    /// native ownership slot; no OAuth material is stored here.
-    pub(crate) active_picker_attempt: AsyncMutex<Option<()>>,
+    pub(crate) active_picker_attempt: Arc<AsyncMutex<Option<PickerAttempt>>>,
     /// Replaced by the persistent keyed binding store in Task 10.
     pub(crate) pending_bindings_by_user: AsyncMutex<HashMap<String, ()>>,
     /// Replaced by the bounded upload operation manager in Task 11.
@@ -104,16 +127,41 @@ impl GoogleDriveState {
     pub(crate) fn with_adapters(
         credential_store: Arc<dyn GoogleDriveCredentialStore>,
         metadata_client: Arc<dyn DriveMetadataClient>,
-        settings: Arc<GoogleDriveSettingsStore>,
+        settings: Arc<dyn GoogleDriveSettingsAccess>,
+    ) -> Self {
+        Self::with_oauth_adapters(
+            credential_store,
+            metadata_client,
+            settings,
+            Arc::new(UnavailableOAuthProvider),
+            Arc::new(DeferredPickerFolderValidator),
+            Arc::new(UnavailablePickerBrowser),
+            PickerProtocolConfig::new(String::new(), Duration::from_secs(5 * 60)),
+        )
+    }
+
+    pub(crate) fn with_oauth_adapters(
+        credential_store: Arc<dyn GoogleDriveCredentialStore>,
+        metadata_client: Arc<dyn DriveMetadataClient>,
+        settings: Arc<dyn GoogleDriveSettingsAccess>,
+        oauth_provider: Arc<dyn GoogleOAuthProvider>,
+        folder_validator: Arc<dyn PickerFolderValidator>,
+        picker_browser: Arc<dyn PickerBrowser>,
+        picker_config: PickerProtocolConfig,
     ) -> Self {
         Self {
             credentials: GoogleDriveCredentialAccess::new(credential_store.clone()),
             credential_store,
             metadata_client,
             settings,
+            oauth_provider,
+            folder_validator,
+            picker_browser,
+            picker_config,
             access_tokens_by_user: AsyncMutex::new(HashMap::new()),
+            requires_reconnect_by_user: AsyncMutex::new(HashSet::new()),
             folder_validation_cache_by_user: AsyncMutex::new(HashMap::new()),
-            active_picker_attempt: AsyncMutex::new(None),
+            active_picker_attempt: Arc::new(AsyncMutex::new(None)),
             pending_bindings_by_user: AsyncMutex::new(HashMap::new()),
             operation_manager: AsyncMutex::new(()),
         }
@@ -127,10 +175,23 @@ impl GoogleDriveState {
         let credential_store: Arc<dyn GoogleDriveCredentialStore> = Arc::new(
             KeyringGoogleDriveCredentialStore::with_factory(Arc::new(PlatformKeyringEntryFactory)),
         );
-        Ok(Self::with_adapters(
+        let picker_config = PickerProtocolConfig::production();
+        let oauth_provider: Arc<dyn GoogleOAuthProvider> = if picker_config.client_id.is_empty() {
+            Arc::new(UnavailableOAuthProvider)
+        } else {
+            Arc::new(
+                ReqwestGoogleOAuthProvider::new(picker_config.client_id.clone())
+                    .map_err(|error| DesktopError::Message(error.code().to_string()))?,
+            )
+        };
+        Ok(Self::with_oauth_adapters(
             credential_store,
-            Arc::new(ApiDriveMetadataClient::new(app)),
+            Arc::new(ApiDriveMetadataClient::new(app.clone())),
             Arc::new(GoogleDriveSettingsStore::new(data_dir)),
+            oauth_provider,
+            Arc::new(DeferredPickerFolderValidator),
+            Arc::new(TauriPickerBrowser::new(app)),
+            picker_config,
         ))
     }
 
@@ -139,18 +200,35 @@ impl GoogleDriveState {
         let data_dir = resolve_dirs().0.ok_or_else(|| {
             DesktopError::Message("Could not resolve application data directory".to_string())
         })?;
-        Ok(Self::with_adapters(
+        Ok(Self::with_oauth_adapters(
             Arc::new(InMemoryGoogleDriveCredentialStore::default()),
             Arc::new(UnavailableDriveMetadataClient),
             Arc::new(GoogleDriveSettingsStore::new(data_dir)),
+            Arc::new(UnavailableOAuthProvider),
+            Arc::new(DeferredPickerFolderValidator),
+            Arc::new(UnavailablePickerBrowser),
+            PickerProtocolConfig::new(String::new(), Duration::from_secs(5 * 60)),
         ))
     }
 
     pub(crate) async fn cache_access_token(&self, user_id: &str, token: &str) {
+        let expires_at = Instant::now()
+            .checked_add(Duration::from_secs(60 * 60))
+            .unwrap_or_else(Instant::now);
+        self.cache_access_token_until(user_id, Zeroizing::new(token.to_string()), expires_at)
+            .await;
+    }
+
+    pub(crate) async fn cache_access_token_until(
+        &self,
+        user_id: &str,
+        token: Zeroizing<String>,
+        expires_at: Instant,
+    ) {
         self.access_tokens_by_user
             .lock()
             .await
-            .insert(user_id.to_string(), Zeroizing::new(token.to_string()));
+            .insert(user_id.to_string(), CachedAccessToken { token, expires_at });
     }
 
     pub(crate) async fn cached_access_token(&self, user_id: &str) -> Option<Zeroizing<String>> {
@@ -158,7 +236,172 @@ impl GoogleDriveState {
             .lock()
             .await
             .get(user_id)
-            .map(|token| Zeroizing::new(token.to_string()))
+            .map(|cached| Zeroizing::new(cached.token.to_string()))
+    }
+
+    pub(crate) async fn access_token_for_user(
+        &self,
+        user_id: &str,
+    ) -> std::result::Result<Zeroizing<String>, GoogleDriveOAuthError> {
+        {
+            let cache = self.access_tokens_by_user.lock().await;
+            if let Some(cached) = cache.get(user_id) {
+                if access_token_is_reusable(cached.expires_at, Instant::now()) {
+                    return Ok(Zeroizing::new(cached.token.to_string()));
+                }
+            }
+        }
+
+        let refresh_token = self
+            .credentials
+            .get_refresh_token(user_id)
+            .await
+            .map_err(|_| GoogleDriveOAuthError::CredentialStore)?
+            .ok_or(GoogleDriveOAuthError::NotConnected)?;
+        let response = match self
+            .oauth_provider
+            .refresh_access_token(&refresh_token)
+            .await
+        {
+            Ok(response) => response,
+            Err(OAuthProviderError::InvalidGrant) => {
+                self.set_requires_reconnect(user_id, true).await;
+                return Err(GoogleDriveOAuthError::ReconnectRequired);
+            }
+            Err(OAuthProviderError::Network) => return Err(GoogleDriveOAuthError::Network),
+            Err(OAuthProviderError::InvalidResponse) => {
+                return Err(GoogleDriveOAuthError::InvalidResponse)
+            }
+        };
+
+        let access_token = Zeroizing::new(response.access_token);
+        let replacement_refresh_token = response.refresh_token.map(Zeroizing::new);
+        let scope_is_valid = match response.scope.as_deref() {
+            None => true,
+            Some(scope) => scope
+                .split_ascii_whitespace()
+                .any(|candidate| candidate == GOOGLE_DRIVE_FILE_SCOPE),
+        };
+        if access_token.trim().is_empty()
+            || response.expires_in == 0
+            || !scope_is_valid
+            || replacement_refresh_token
+                .as_deref()
+                .is_some_and(|token| token.trim().is_empty())
+        {
+            return Err(GoogleDriveOAuthError::InvalidResponse);
+        }
+
+        if let Some(replacement) = replacement_refresh_token {
+            self.credentials
+                .set_refresh_token(user_id, Zeroizing::new(replacement.trim().to_string()))
+                .await
+                .map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
+        }
+        let expires_at = Instant::now()
+            .checked_add(Duration::from_secs(response.expires_in))
+            .ok_or(GoogleDriveOAuthError::InvalidResponse)?;
+        self.cache_access_token_until(
+            user_id,
+            Zeroizing::new(access_token.to_string()),
+            expires_at,
+        )
+        .await;
+        self.set_requires_reconnect(user_id, false).await;
+        Ok(access_token)
+    }
+
+    pub(crate) async fn connection_state_for_user(
+        &self,
+        user_id: &str,
+    ) -> GoogleDriveConnectionState {
+        let credential = self.credentials.get_refresh_token(user_id).await;
+        let credential_store_unavailable = credential.is_err();
+        let has_credential = credential.ok().flatten().is_some();
+        let folder = self.settings.folder_for_user(user_id);
+        let requires_reconnect = self
+            .requires_reconnect_by_user
+            .lock()
+            .await
+            .contains(user_id);
+        GoogleDriveConnectionState {
+            connected: has_credential && folder.is_some() && !requires_reconnect,
+            folder,
+            requires_reconnect,
+            requires_public_sharing: false,
+            sharing_check_unavailable: false,
+            credential_store_unavailable,
+        }
+    }
+
+    pub(crate) async fn execute_authorized_request<T, R>(
+        &self,
+        user_id: &str,
+        request: &R,
+    ) -> std::result::Result<T, GoogleDriveOAuthError>
+    where
+        T: Send,
+        R: AuthorizedDriveRequest<T>,
+    {
+        let access_token = self.access_token_for_user(user_id).await?;
+        match request.execute(&access_token).await {
+            Ok(value) => Ok(value),
+            Err(AuthorizedDriveRequestError::Request(error)) => Err(error),
+            Err(AuthorizedDriveRequestError::TokenExpired) => {
+                self.access_tokens_by_user.lock().await.remove(user_id);
+                let replacement = self.access_token_for_user(user_id).await?;
+                match request.execute(&replacement).await {
+                    Ok(value) => Ok(value),
+                    Err(AuthorizedDriveRequestError::Request(error)) => Err(error),
+                    Err(AuthorizedDriveRequestError::TokenExpired) => {
+                        Err(GoogleDriveOAuthError::InvalidResponse)
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) async fn set_requires_reconnect(&self, user_id: &str, required: bool) {
+        let mut reconnect = self.requires_reconnect_by_user.lock().await;
+        if required {
+            reconnect.insert(user_id.to_string());
+        } else {
+            reconnect.remove(user_id);
+        }
+    }
+
+    pub(crate) async fn disconnect_user(
+        &self,
+        user_id: &str,
+    ) -> std::result::Result<GoogleDriveDisconnectResult, GoogleDriveOAuthError> {
+        let refresh_token = self.credentials.get_refresh_token(user_id).await;
+        let mut revocation_unconfirmed = false;
+        match refresh_token.as_ref() {
+            Ok(Some(token)) => {
+                if self
+                    .oauth_provider
+                    .revoke_refresh_token(token)
+                    .await
+                    .is_err()
+                {
+                    revocation_unconfirmed = true;
+                }
+            }
+            Ok(None) => {}
+            Err(_) => revocation_unconfirmed = true,
+        }
+
+        let delete_result = self.credentials.delete_refresh_token(user_id).await;
+        let settings_result = self.settings.clear_folder_for_user(user_id);
+        self.clear_user_memory(user_id).await;
+        self.set_requires_reconnect(user_id, false).await;
+        delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
+        settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
+
+        Ok(GoogleDriveDisconnectResult {
+            connection: self.connection_state_for_user(user_id).await,
+            revocation_unconfirmed,
+        })
     }
 
     pub(crate) async fn clear_user_memory(&self, user_id: &str) {

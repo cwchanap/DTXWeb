@@ -31,6 +31,12 @@ pub(crate) fn google_drive_settings_path(data_dir: &Path) -> PathBuf {
     app_data_file(data_dir, "google-drive-settings.json")
 }
 
+pub(crate) trait GoogleDriveSettingsAccess: Send + Sync {
+    fn folder_for_user(&self, user_id: &str) -> Option<GoogleDriveFolderSetting>;
+    fn set_folder_for_user(&self, user_id: &str, folder: GoogleDriveFolderSetting) -> Result<()>;
+    fn clear_folder_for_user(&self, user_id: &str) -> Result<()>;
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct GoogleDriveSettingsStore {
     data_dir: PathBuf,
@@ -73,6 +79,20 @@ impl GoogleDriveSettingsStore {
             &google_drive_settings_path(&self.data_dir),
             "google-drive-settings",
         )
+    }
+}
+
+impl GoogleDriveSettingsAccess for GoogleDriveSettingsStore {
+    fn folder_for_user(&self, user_id: &str) -> Option<GoogleDriveFolderSetting> {
+        Self::folder_for_user(self, user_id)
+    }
+
+    fn set_folder_for_user(&self, user_id: &str, folder: GoogleDriveFolderSetting) -> Result<()> {
+        Self::set_folder_for_user(self, user_id, folder)
+    }
+
+    fn clear_folder_for_user(&self, user_id: &str) -> Result<()> {
+        Self::clear_folder_for_user(self, user_id)
     }
 }
 

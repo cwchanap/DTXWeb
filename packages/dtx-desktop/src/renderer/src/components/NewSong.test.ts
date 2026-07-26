@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 import { workspaceStore } from '../stores/workspaceStore';
+import { workspaceService } from '../services/workspaceService';
 
 vi.mock('@lucide/svelte');
 
@@ -16,6 +18,24 @@ vi.mock('../services/desktopHost', () => ({
 }));
 
 import NewSong from './NewSong.svelte';
+
+const createDeferred = <T>() => {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+
+	return { promise, resolve };
+};
+
+const treeNode = (name: string, path: string) => ({
+	name,
+	path,
+	isExpanded: false,
+	isLoading: false,
+	children: [],
+	hasChildren: false
+});
 
 describe('NewSong', () => {
 	beforeEach(() => {
@@ -186,6 +206,63 @@ describe('NewSong', () => {
 			await waitFor(() => {
 				expect(closeSpy).toHaveBeenCalled();
 			});
+		});
+
+		it('does not let an old-root post-create refresh overwrite a switched workspace', async () => {
+			const oldTree = [treeNode('Old song', '/workspace/a/old')];
+			const newTree = [treeNode('New root song', '/workspace/b/new')];
+			const refresh = createDeferred<typeof oldTree>();
+			const refreshSpy = vi.spyOn(workspaceService, 'loadTreeStructure');
+			workspaceStore.setPath('/workspace/a');
+			mockDesktopHost.loadTreeStructure.mockReturnValue(refresh.promise);
+			render(NewSong);
+			await waitFor(() => screen.getByText('Full path:'));
+			await fireEvent.input(screen.getByLabelText(/Song Name/i), {
+				target: { value: 'Created Song' }
+			});
+			const form = screen.getByRole('button', { name: /Create Song/i }).closest('form');
+
+			await fireEvent.submit(form!);
+			await waitFor(() => {
+				expect(refreshSpy).toHaveBeenCalledOnce();
+				expect(mockDesktopHost.loadTreeStructure).toHaveBeenCalledWith('/workspace/a');
+			});
+
+			workspaceStore.setPath('/workspace/b');
+			workspaceStore.setTreeStructure(newTree);
+			refresh.resolve(oldTree);
+			await refreshSpy.mock.results[0].value;
+
+			expect(get(workspaceStore).path).toBe('/workspace/b');
+			expect(get(workspaceStore).treeStructure).toEqual(newTree);
+		});
+
+		it('does not let an unmounted post-create refresh overwrite replacement tree state', async () => {
+			const staleTree = [treeNode('Stale song', '/workspace/a/stale')];
+			const replacementTree = [treeNode('Replacement song', '/workspace/a/replacement')];
+			const refresh = createDeferred<typeof staleTree>();
+			const refreshSpy = vi.spyOn(workspaceService, 'loadTreeStructure');
+			workspaceStore.setPath('/workspace/a');
+			mockDesktopHost.loadTreeStructure.mockReturnValue(refresh.promise);
+			const view = render(NewSong);
+			await waitFor(() => screen.getByText('Full path:'));
+			await fireEvent.input(screen.getByLabelText(/Song Name/i), {
+				target: { value: 'Created Song' }
+			});
+			const form = screen.getByRole('button', { name: /Create Song/i }).closest('form');
+
+			await fireEvent.submit(form!);
+			await waitFor(() => {
+				expect(refreshSpy).toHaveBeenCalledOnce();
+				expect(mockDesktopHost.loadTreeStructure).toHaveBeenCalledWith('/workspace/a');
+			});
+
+			view.unmount();
+			workspaceStore.setTreeStructure(replacementTree);
+			refresh.resolve(staleTree);
+			await refreshSpy.mock.results[0].value;
+
+			expect(get(workspaceStore).treeStructure).toEqual(replacementTree);
 		});
 
 		it('shows error message when create-song throws', async () => {

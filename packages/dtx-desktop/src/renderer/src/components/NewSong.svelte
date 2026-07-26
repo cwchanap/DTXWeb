@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
+	import { workspaceStore } from '../stores/workspaceStore';
 	import { templateStore, type Template } from '../stores/templateStore';
 	import { Folder, ArrowLeft, Music, FileText, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { desktopHost } from '../services/desktopHost';
+	import { workspaceService } from '../services/workspaceService';
 	import { sanitizeName } from '../lib/sanitizeName';
 
 	let songName = $state('');
@@ -16,6 +17,7 @@
 	let showTemplateSelection = $state(false);
 	let templates = $state<Template[]>([]);
 	let folderExistsWarning = $state('');
+	let componentMounted = false;
 
 	// Subscribe to workspace store to get available folders
 	let workspaceState = $derived($workspaceStore);
@@ -94,12 +96,14 @@
 	});
 
 	onMount(() => {
+		componentMounted = true;
 		// Get list of available folders from workspace state
 		// The default selectedPath is set to the current workspace path.
 		if (workspaceState.path) {
 			selectedPath = workspaceState.path;
 		}
 		return () => {
+			componentMounted = false;
 			unsubscribeTemplate();
 		};
 	});
@@ -167,11 +171,9 @@
 
 			// Refresh workspace tree to show new folder
 			if (workspaceState.path) {
-				const updatedTree = await desktopHost.loadTreeStructure<TreeNode[]>(
-					workspaceState.path
-				);
-				workspaceStore.setTreeStructure(updatedTree);
+				await workspaceService.loadTreeStructure(() => componentMounted);
 			}
+			if (!componentMounted) return;
 
 			// Navigate back to workspace
 			workspaceStore.closeNewSongForm();

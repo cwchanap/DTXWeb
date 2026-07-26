@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { Options } from '@wdio/types';
 
 import { SENTINEL_PREFERENCES } from './support/sentinel-preferences';
+import { allocateWdioDataDirectory, cleanupWdioDataDirectory } from './support/wdio-data-dir';
 import { getOrCreatePreseededWorkspaceFixture } from './support/workspace-fixture';
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -22,8 +22,8 @@ const appBinaryPath =
 // on the `e2e` Cargo feature — see `resolve_dirs()` in preferences.rs), so it
 // works on all platforms while leaving WebKit/Mesa caches in their normal
 // locations instead of inside the temporary preferences directory.
-const isolatedDataDir =
-	process.env.DTX_E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'dtx-e2e-data-'));
+const dataDirectory = allocateWdioDataDirectory();
+const isolatedDataDir = dataDirectory.path;
 process.env.DTX_E2E_DATA_DIR = isolatedDataDir;
 const fixture = getOrCreatePreseededWorkspaceFixture({ parentPath: isolatedDataDir });
 
@@ -92,15 +92,6 @@ export const config: Options.Testrunner = {
 	// or recreate files while shutting down. Optional temp cleanup must never
 	// turn an otherwise successful E2E run into a failure.
 	onComplete: (): void => {
-		try {
-			rmSync(isolatedDataDir, {
-				recursive: true,
-				force: true,
-				maxRetries: 5,
-				retryDelay: 200
-			});
-		} catch {
-			// CI runners are ephemeral; a local abandoned temp directory is harmless.
-		}
+		cleanupWdioDataDirectory(dataDirectory);
 	}
 };

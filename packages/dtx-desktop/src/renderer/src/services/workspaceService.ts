@@ -125,6 +125,37 @@ const isWorkspaceSnapshotCurrent = (
 	);
 };
 
+const queueAuthoritativeWorkspaceReconciliation = (): void => {
+	void queueTrustTransition(
+		async (transition) => {
+			try {
+				const authoritativeRoot = await desktopHost.getWorkspaceRoot();
+				if (!workspaceService.isTransitionCurrent(transition)) return;
+
+				workspaceStore.reset();
+				restoreLoading(transition);
+				if (!authoritativeRoot) {
+					workspaceStore.clearWorkspace();
+					return;
+				}
+
+				workspaceStore.setPath(authoritativeRoot);
+				await workspaceService.loadSubWorkspaces();
+				if (!workspaceService.isTransitionCurrent(transition)) return;
+				await workspaceService.loadTreeStructure();
+			} catch (error) {
+				console.error('Failed to reconcile authoritative workspace:', error);
+				if (workspaceService.isTransitionCurrent(transition)) {
+					workspaceStore.setError('Failed to load workspace directory');
+				}
+			} finally {
+				finishLoading(transition);
+			}
+		},
+		() => undefined
+	);
+};
+
 export const workspaceService = {
 	/**
 	 * Opens a folder selection dialog and sets the selected path as the workspace
@@ -132,11 +163,13 @@ export const workspaceService = {
 	selectWorkspace: (): Promise<void> =>
 		queueTrustTransition(
 			async (transition) => {
+				let nativeMutationCommitted = false;
 				try {
 					// This dialog establishes the native managed workspace root.
 					console.log('Invoking select-workspace-folder dialog');
 					const result = await desktopHost.selectWorkspaceFolder();
 					console.log('Dialog result:', result);
+					nativeMutationCommitted = !result.canceled && Boolean(result.filePaths[0]);
 					if (!workspaceService.isTransitionCurrent(transition)) return;
 
 					if (result.canceled) {
@@ -160,6 +193,12 @@ export const workspaceService = {
 						workspaceStore.setError('Failed to select workspace directory');
 					}
 				} finally {
+					if (
+						nativeMutationCommitted &&
+						!workspaceService.isTransitionCurrent(transition)
+					) {
+						queueAuthoritativeWorkspaceReconciliation();
+					}
 					finishLoading(transition);
 				}
 			},
@@ -189,9 +228,12 @@ export const workspaceService = {
 		};
 		return queueTrustTransition(
 			async (transition) => {
+				let nativeMutationCommitted = false;
 				try {
 					try {
 						const selection = await desktopHost.selectWorkspaceFolder();
+						nativeMutationCommitted =
+							!selection.canceled && Boolean(selection.filePaths[0]);
 						if (!workspaceService.isTransitionCurrent(transition)) {
 							return { ok: false, error: 'Workspace selection was superseded' };
 						}
@@ -228,6 +270,12 @@ export const workspaceService = {
 
 					return { ok: true };
 				} finally {
+					if (
+						nativeMutationCommitted &&
+						!workspaceService.isTransitionCurrent(transition)
+					) {
+						queueAuthoritativeWorkspaceReconciliation();
+					}
 					finishLoading(transition);
 					releaseSwitch();
 				}
@@ -287,12 +335,13 @@ export const workspaceService = {
 	 * Loads the tree structure for the current workspace or sub-workspace
 	 * Shows all folders in workspace, or contents of selected sub-workspace
 	 */
-	loadTreeStructure: async (): Promise<void> => {
+	loadTreeStructure: async (isCallerCurrent: () => boolean = () => true): Promise<void> => {
 		const transition = workspaceTransitionGeneration;
 		const request = ++treeRequest;
 		invalidateExpansionRequests();
 		const snapshot = getWorkspaceSnapshot();
 		const canCommit = () =>
+			isCallerCurrent() &&
 			workspaceService.isTransitionCurrent(transition) &&
 			request === treeRequest &&
 			isWorkspaceSnapshotCurrent(snapshot);
@@ -492,8 +541,10 @@ export const workspaceService = {
 	clearWorkspace: (): Promise<void> =>
 		queueTrustTransition(
 			async (transition) => {
+				let nativeMutationCommitted = false;
 				try {
 					await desktopHost.clearWorkspaceRoot();
+					nativeMutationCommitted = true;
 					if (workspaceService.isTransitionCurrent(transition)) {
 						workspaceStore.clearWorkspace();
 					}
@@ -503,6 +554,12 @@ export const workspaceService = {
 						workspaceStore.setError('Failed to clear workspace directory');
 					}
 				} finally {
+					if (
+						nativeMutationCommitted &&
+						!workspaceService.isTransitionCurrent(transition)
+					) {
+						queueAuthoritativeWorkspaceReconciliation();
+					}
 					finishLoading(transition);
 				}
 			},

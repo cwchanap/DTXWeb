@@ -2576,14 +2576,77 @@ describe('SongDetails', () => {
 				}
 			});
 
-			// The IPC was called and the response (with warnings) didn't
-			// throw — the upload is considered successful even with warnings.
+			await waitFor(() => {
+				expect(song.linkedSimFileId).toBe('99');
+				expect(
+					screen.getByText('Song uploaded, but some preview files could not be uploaded:')
+				).toBeInTheDocument();
+				expect(screen.getByText('Preview image: file not found')).toBeInTheDocument();
+				expect(screen.getByText('Sound preview: too large')).toBeInTheDocument();
+			});
+
+			// The IPC payload remains workspace-root free while the successful
+			// response renders its preview warnings in the linked-song view.
 			await waitFor(() => {
 				const payload = mockHostInvoke.mock.calls.find(
 					([command]) => command === 'create-simfile-record'
 				)?.[1] as Record<string, unknown>;
 				expect(Object.keys(payload)).not.toContain('workspace' + 'Root');
 			});
+		});
+
+		it('restores song A create warnings when revisiting it', async () => {
+			authState = { ...authState, isAuthenticated: true };
+			workspaceState = { ...workspaceState, path: '/test' };
+			googleDriveStore.setConnection({ connected: false });
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') {
+					return {
+						success: true,
+						simfileId: '99',
+						data: { ...makeLinkedSimFile(), id: 99, title: 'Song A' },
+						warnings: ['Song A preview missing']
+					};
+				}
+				return { files: [] };
+			});
+			const songA = makeNode('SongA', '/test/SongA', { containsDtxFiles: true });
+			const songB = makeNode('SongB', '/test/SongB', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 42 },
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			const view = render(SongDetails, { props: { song: songA } });
+
+			await waitFor(() => {
+				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+				expect(props?.simfile?.display_id).toBe(42);
+			});
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: false,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(songA.linkedSimFileId).toBe('99');
+				expect(screen.getByText('Song A preview missing')).toBeInTheDocument();
+			});
+
+			await view.rerender({ props: { song: songB } });
+			expect(screen.queryByText('Song A preview missing')).toBeNull();
+
+			await view.rerender({ props: { song: songA } });
+			expect(screen.getByText('Song A preview missing')).toBeInTheDocument();
 		});
 	});
 

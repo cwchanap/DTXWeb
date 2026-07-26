@@ -75,33 +75,70 @@ describe('GoogleDriveSettings', () => {
 		expect(screen.getByText('フォルダーを変更')).toBeInTheDocument();
 		expect(screen.getByText(/Exports/)).toBeInTheDocument();
 		expect(screen.queryByText('googleDrive.warning.privateSharing')).not.toBeInTheDocument();
-		expect(
-			screen.queryByText('googleDrive.warning.existingFileAccess')
-		).not.toBeInTheDocument();
+		expect(screen.getByText(/同意画面/)).toBeInTheDocument();
+		expect(screen.getByText(/置き換えられるのは/)).toBeInTheDocument();
 	});
 
-	it('renders verified public-folder and unconfirmed revocation state without identity claims', () => {
-		googleDriveStore.setConnection({
+	it('keeps refreshed cached state unverified and displays verification only after a validated recheck', () => {
+		const connection = {
 			connected: true,
 			folder: { id: 'folder-id', name: 'Exports' }
-		});
+		};
+		googleDriveStore.setConnection(connection, 'refresh');
+		render(GoogleDriveSettings);
+		expect(screen.getByRole('button', { name: 'Re-check sharing' })).toBeInTheDocument();
+		expect(
+			screen.queryByText('The selected folder is verified for public download links.')
+		).not.toBeInTheDocument();
+		cleanup();
+
+		googleDriveStore.setConnection(connection, 'recheck-sharing');
 		render(GoogleDriveSettings);
 		expect(
 			screen.getByText('The selected folder is verified for public download links.')
 		).toBeInTheDocument();
 		expect(screen.queryByText(/@/)).not.toBeInTheDocument();
-		cleanup();
+	});
 
+	it('keeps revocation uncertainty through remount refresh and clears it after reconnecting', () => {
 		const generation = googleDriveStore.captureGeneration();
 		googleDriveStore.setDisconnectIfCurrent(generation, {
 			connection: { connected: false },
 			revocationUnconfirmed: true
 		});
+		googleDriveStore.setConnection({ connected: false }, 'refresh');
 		render(GoogleDriveSettings);
 		expect(
 			screen.getByText(
 				'Google Account access may still need to be removed from Google Account settings.'
 			)
+		).toBeInTheDocument();
+		cleanup();
+
+		googleDriveStore.setConnection({ connected: true }, 'connect');
+		render(GoogleDriveSettings);
+		expect(
+			screen.queryByText('Google Account access may still need to be removed')
+		).not.toBeInTheDocument();
+	});
+
+	it('keeps consent and existing-file guidance visible for a connected private folder', () => {
+		googleDriveStore.setConnection(
+			{
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' },
+				requiresPublicSharing: true
+			},
+			'recheck-sharing'
+		);
+		render(GoogleDriveSettings);
+		expect(
+			screen.getByText(
+				'Changing the folder opens Google Drive consent again and does not move existing linked files.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/An existing linked file can be replaced only/)
 		).toBeInTheDocument();
 	});
 

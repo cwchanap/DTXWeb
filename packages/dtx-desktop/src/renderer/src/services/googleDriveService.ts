@@ -110,7 +110,7 @@ export const googleDriveService = {
 		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.getGoogleDriveConnectionState();
-			googleDriveStore.setConnectionIfCurrent(generation, connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection, 'refresh');
 			return connection;
 		} catch {
 			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
@@ -121,7 +121,7 @@ export const googleDriveService = {
 		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.connectGoogleDriveAndChooseFolder();
-			googleDriveStore.setConnectionIfCurrent(generation, connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection, 'connect');
 			return connection;
 		} catch {
 			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
@@ -132,7 +132,7 @@ export const googleDriveService = {
 		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.changeGoogleDriveFolder();
-			googleDriveStore.setConnectionIfCurrent(generation, connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection, 'change-folder');
 			return connection;
 		} catch {
 			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
@@ -143,7 +143,7 @@ export const googleDriveService = {
 		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.recheckGoogleDriveSharing();
-			googleDriveStore.setConnectionIfCurrent(generation, connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection, 'recheck-sharing');
 			return connection;
 		} catch {
 			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');

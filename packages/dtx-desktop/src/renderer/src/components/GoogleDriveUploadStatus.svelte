@@ -2,6 +2,7 @@
 	import { _ } from 'svelte-i18n';
 	import { googleDriveService, type SongSaveOutcome } from '../services/googleDriveService';
 	import { googleDriveStore, type GoogleDriveOperation } from '../stores/googleDriveStore';
+	import { authStore } from '../stores/authStore';
 
 	let {
 		outcome,
@@ -56,7 +57,13 @@
 		| 'UNKNOWN';
 
 	type Remediation =
-		'retry' | 'reconnect' | 'changeFolder' | 'recheckSharing' | 'none' | 'replace';
+		| 'retry'
+		| 'reconnect'
+		| 'refreshConnection'
+		| 'changeFolder'
+		| 'recheckSharing'
+		| 'none'
+		| 'replace';
 
 	const errorRemediation: Record<NativeErrorCode, Remediation[]> = {
 		WORKSPACE_REQUIRED: ['none'],
@@ -78,7 +85,7 @@
 		RATE_LIMITED: ['retry'],
 		QUOTA_EXCEEDED: ['retry'],
 		NETWORK: ['retry'],
-		CREDENTIAL_STORE: ['reconnect'],
+		CREDENTIAL_STORE: ['refreshConnection'],
 		INVALID_RESPONSE: ['none'],
 		UNKNOWN: ['none']
 	};
@@ -98,6 +105,9 @@
 	const handleReconnect = async () => {
 		await googleDriveService.connectAndChooseFolder();
 	};
+	const handleRefreshConnection = async () => {
+		await googleDriveService.refreshConnection();
+	};
 	const handleChangeFolder = async () => {
 		await googleDriveService.changeFolder();
 	};
@@ -106,67 +116,76 @@
 	};
 </script>
 
-{#each Object.values($googleDriveStore.operations) as operation (operation.operationId)}
-	<section
-		class="border-hairline bg-surface-1 space-y-2 rounded-lg border p-4"
-		aria-live="polite"
-	>
-		<p class="text-base-text text-sm">{$_(stageKey[operation.stage])}</p>
-		{#if operation.percentage !== undefined}
-			<p class="text-dim text-sm">{operation.percentage}%</p>
-		{/if}
-		{#if operation.errorCode}
-			<p class="text-yellow text-sm">{$_(errorMessageKey(operation.errorCode))}</p>
-		{/if}
-		{#if cancelableStages.has(operation.stage)}
-			<button class="text-dim text-sm" onclick={() => handleCancel(operation.operationId)}
-				>{$_('googleDrive.upload.cancel')}</button
-			>
-		{/if}
-	</section>
-{/each}
-
-{#if outcome?.status === 'success'}
-	<section class="border-green/40 bg-green/10 space-y-2 rounded-lg border p-4" aria-live="polite">
-		<p class="text-green text-sm">{$_('googleDrive.upload.complete')}</p>
-		{#if outcome.downloadUrl}
-			<a
-				class="text-cyan text-sm underline"
-				href={outcome.downloadUrl}
-				target="_blank"
-				rel="noreferrer">{$_('googleDrive.upload.openLink')}</a
-			>
-			<p class="text-dim text-sm">{$_('googleDrive.upload.browserLink')}</p>
-		{/if}
-	</section>
-{:else if outcome?.status === 'failed'}
-	<section
-		class="border-yellow/40 bg-yellow/10 space-y-2 rounded-lg border p-4"
-		aria-live="polite"
-	>
-		<p class="text-yellow text-sm">{$_(errorMessageKey(outcome.errorCode))}</p>
-		{#each actionsFor(outcome.errorCode) as action}
-			{#if action === 'retry'}
-				<button class="text-dim text-sm" onclick={onRetry}
-					>{$_('googleDrive.upload.retry')}</button
-				>
-			{:else if action === 'reconnect'}
-				<button class="text-dim text-sm" onclick={handleReconnect}
-					>{$_('googleDrive.action.reconnect')}</button
-				>
-			{:else if action === 'changeFolder'}
-				<button class="text-dim text-sm" onclick={handleChangeFolder}
-					>{$_('googleDrive.changeFolder')}</button
-				>
-			{:else if action === 'recheckSharing'}
-				<button class="text-dim text-sm" onclick={handleRecheckSharing}
-					>{$_('googleDrive.recheckSharing')}</button
-				>
-			{:else if action === 'replace'}
-				<button class="text-dim text-sm" onclick={onCreateReplacement}
-					>{$_('googleDrive.upload.replace')}</button
+{#if $authStore.isAuthenticated}
+	{#each Object.values($googleDriveStore.operations) as operation (operation.operationId)}
+		<section
+			class="border-hairline bg-surface-1 space-y-2 rounded-lg border p-4"
+			aria-live="polite"
+		>
+			<p class="text-base-text text-sm">{$_(stageKey[operation.stage])}</p>
+			{#if operation.percentage !== undefined}
+				<p class="text-dim text-sm">{operation.percentage}%</p>
+			{/if}
+			{#if operation.errorCode}
+				<p class="text-yellow text-sm">{$_(errorMessageKey(operation.errorCode))}</p>
+			{/if}
+			{#if cancelableStages.has(operation.stage)}
+				<button class="text-dim text-sm" onclick={() => handleCancel(operation.operationId)}
+					>{$_('googleDrive.upload.cancel')}</button
 				>
 			{/if}
-		{/each}
-	</section>
+		</section>
+	{/each}
+
+	{#if outcome?.status === 'success'}
+		<section
+			class="border-green/40 bg-green/10 space-y-2 rounded-lg border p-4"
+			aria-live="polite"
+		>
+			<p class="text-green text-sm">{$_('googleDrive.upload.complete')}</p>
+			{#if outcome.downloadUrl}
+				<a
+					class="text-cyan text-sm underline"
+					href={outcome.downloadUrl}
+					target="_blank"
+					rel="noreferrer">{$_('googleDrive.upload.openLink')}</a
+				>
+				<p class="text-dim text-sm">{$_('googleDrive.upload.browserLink')}</p>
+			{/if}
+		</section>
+	{:else if outcome?.status === 'failed'}
+		<section
+			class="border-yellow/40 bg-yellow/10 space-y-2 rounded-lg border p-4"
+			aria-live="polite"
+		>
+			<p class="text-yellow text-sm">{$_(errorMessageKey(outcome.errorCode))}</p>
+			{#each actionsFor(outcome.errorCode) as action}
+				{#if action === 'retry'}
+					<button class="text-dim text-sm" onclick={onRetry}
+						>{$_('googleDrive.upload.retry')}</button
+					>
+				{:else if action === 'reconnect'}
+					<button class="text-dim text-sm" onclick={handleReconnect}
+						>{$_('googleDrive.action.reconnect')}</button
+					>
+				{:else if action === 'refreshConnection'}
+					<button class="text-dim text-sm" onclick={handleRefreshConnection}
+						>{$_('googleDrive.action.refresh')}</button
+					>
+				{:else if action === 'changeFolder'}
+					<button class="text-dim text-sm" onclick={handleChangeFolder}
+						>{$_('googleDrive.changeFolder')}</button
+					>
+				{:else if action === 'recheckSharing'}
+					<button class="text-dim text-sm" onclick={handleRecheckSharing}
+						>{$_('googleDrive.recheckSharing')}</button
+					>
+				{:else if action === 'replace'}
+					<button class="text-dim text-sm" onclick={onCreateReplacement}
+						>{$_('googleDrive.upload.replace')}</button
+					>
+				{/if}
+			{/each}
+		</section>
+	{/if}
 {/if}

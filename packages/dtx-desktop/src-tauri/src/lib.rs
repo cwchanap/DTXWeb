@@ -122,6 +122,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Interrupted Drive uploads may leave a native-only staging
+            // directory behind. Cleanup is best-effort and restricted by the
+            // helper to the dedicated cache namespace.
+            if let Ok(cache_dir) = app.path().app_cache_dir() {
+                google_drive::upload::cleanup_stale_upload_archives(&cache_dir);
+            }
             let handle = app.handle().clone();
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 for url in urls {

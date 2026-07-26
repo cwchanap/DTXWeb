@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { browser, expect, $ } from '@wdio/globals';
 
-import { openWorkspace } from '../support/app';
+import { openWorkspace, waitForUiDisplayed } from '../support/app';
 import {
 	fixtureFolderName,
 	fixtureSongTitle,
@@ -22,8 +22,7 @@ describe('Desktop workspace library', () => {
 	});
 
 	it('restores a workspace and filters its DTX songs', async () => {
-		const songButton = await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`);
-		await songButton.waitForDisplayed();
+		await waitForUiDisplayed('span', { text: fixtureSongTitle });
 
 		const search = await $('input[placeholder="Search songs and folders..."]');
 		await search.setValue('does-not-exist');
@@ -32,14 +31,14 @@ describe('Desktop workspace library', () => {
 		).toBeDisplayed();
 
 		await $('button[aria-label="Clear search"]').click();
-		await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).waitForDisplayed();
+		await waitForUiDisplayed('span', { text: fixtureSongTitle });
 	});
 
 	it('opens a local song in the editor with its folder mapping', async () => {
 		await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).click();
 
+		await waitForUiDisplayed('button[aria-label="Open Editor"]');
 		const openEditor = await $('button[aria-label="Open Editor"]');
-		await openEditor.waitForDisplayed();
 		await openEditor.click();
 
 		await browser.waitUntil(

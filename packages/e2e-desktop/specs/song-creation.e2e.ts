@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 
 import { expect, $ } from '@wdio/globals';
 
-import { openWorkspace } from '../support/app';
+import { openWorkspace, waitForUiDisplayed } from '../support/app';
 import { pathExists, readFile } from '../support/native';
 import { getPreseededWorkspaceFixture, type WorkspaceFixture } from '../support/workspace-fixture';
 
@@ -23,15 +23,15 @@ describe('Desktop song creation', () => {
 	it('creates a song and persists its generated SET.def through Rust', async () => {
 		await $('button[aria-label="Create new song"]').click();
 
+		await waitForUiDisplayed('#songName');
 		const songName = await $('#songName');
-		await songName.waitForDisplayed();
 		await songName.setValue(createdSongName);
 
 		const createSong = await $('button[type="submit"]');
 		await createSong.waitForEnabled();
 		await createSong.click();
 
-		await expect($('h2=Library')).toBeDisplayed();
+		await waitForUiDisplayed('h2', { text: 'Library' });
 		expect(await pathExists(fixture.workspaceRoot, createdSongName)).toEqual({
 			exists: true,
 			error: null

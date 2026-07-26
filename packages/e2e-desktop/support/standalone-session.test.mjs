@@ -293,6 +293,24 @@ test('accepts the expected driver disconnect only after the owned child has exit
 	}
 });
 
+test('accepts WebdriverIO ConnectionRefused cleanup after the owned child has exited', async () => {
+	const port = 46_017;
+	const dependencies = makeDependencies({ port });
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		browser.deleteSession.mockImplementationOnce(async () => {
+			throw Object.assign(
+				new Error('WebDriverError: Request failed with error code ConnectionRefused'),
+				{ code: 'ConnectionRefused' }
+			);
+		});
+		await expect(terminateStandaloneTauriSession(browser)).resolves.toBeUndefined();
+		expect(existsSync(leasePathFor(port))).toBeFalse();
+	} finally {
+		cleanupLease(port);
+	}
+});
+
 test('accepts a controlled-exit disconnect after the owned child has exited', async () => {
 	const port = 46_014;
 	const dependencies = makeDependencies({

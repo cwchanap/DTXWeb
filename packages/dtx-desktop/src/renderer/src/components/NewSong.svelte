@@ -170,6 +170,7 @@
 			console.log('Song created successfully:', result);
 
 			// Refresh workspace tree to show new folder
+			if (!componentMounted) return;
 			if (workspaceState.path) {
 				await workspaceService.loadTreeStructure(() => componentMounted);
 			}

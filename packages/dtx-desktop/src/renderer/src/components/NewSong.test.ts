@@ -265,6 +265,42 @@ describe('NewSong', () => {
 			expect(get(workspaceStore).treeStructure).toEqual(replacementTree);
 		});
 
+		it('does not start a post-create refresh after unmounting', async () => {
+			const replacementTree = [treeNode('Replacement song', '/workspace/a/replacement')];
+			const create = createDeferred<{ success: boolean }>();
+			const replacementLoad = createDeferred<typeof replacementTree>();
+			const refreshSpy = vi.spyOn(workspaceService, 'loadTreeStructure');
+			workspaceStore.setPath('/workspace/a');
+			mockDesktopHost.createSong.mockReturnValue(create.promise);
+			mockDesktopHost.loadTreeStructure.mockReturnValue(replacementLoad.promise);
+			const view = render(NewSong);
+			await waitFor(() => screen.getByText('Full path:'));
+			await fireEvent.input(screen.getByLabelText(/Song Name/i), {
+				target: { value: 'Created Song' }
+			});
+			const form = screen.getByRole('button', { name: /Create Song/i }).closest('form');
+
+			await fireEvent.submit(form!);
+			await waitFor(() => {
+				expect(mockDesktopHost.createSong).toHaveBeenCalledOnce();
+			});
+
+			view.unmount();
+			const replacementRequest = workspaceService.loadTreeStructure();
+			await waitFor(() => {
+				expect(refreshSpy).toHaveBeenCalledOnce();
+				expect(mockDesktopHost.loadTreeStructure).toHaveBeenCalledOnce();
+			});
+
+			create.resolve({ success: true });
+			replacementLoad.resolve(replacementTree);
+			await replacementRequest;
+
+			expect(refreshSpy).toHaveBeenCalledOnce();
+			expect(mockDesktopHost.loadTreeStructure).toHaveBeenCalledOnce();
+			expect(get(workspaceStore).treeStructure).toEqual(replacementTree);
+		});
+
 		it('shows error message when create-song throws', async () => {
 			workspaceStore.setPath('/test/workspace');
 			mockDesktopHost.pathExists.mockResolvedValue({ exists: false, error: 'not-found' });

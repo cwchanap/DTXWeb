@@ -122,6 +122,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            #[cfg(feature = "google-drive")]
+            app.manage(google_drive::GoogleDriveState::production(
+                app.handle().clone(),
+            )?);
+            #[cfg(all(feature = "e2e", not(feature = "google-drive")))]
+            app.manage(google_drive::GoogleDriveState::e2e()?);
+
             // Interrupted Drive uploads may leave a native-only staging
             // directory behind. Cleanup is best-effort and restricted by the
             // helper to the dedicated cache namespace.

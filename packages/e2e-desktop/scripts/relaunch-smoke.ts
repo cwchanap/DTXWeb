@@ -1,19 +1,17 @@
 import {
-	closeSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
-	openSync,
 	readFileSync,
 	readdirSync,
+	renameSync,
 	rmSync,
 	statSync,
-	unlinkSync,
 	writeFileSync
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -54,9 +52,9 @@ type RunLease = {
 };
 
 type PruneLock = {
-	fileDescriptor: number;
 	nonce: string;
 	path: string;
+	record: RunLease;
 };
 
 const isPidAlive = (pid: number): boolean => {
@@ -93,9 +91,64 @@ const writeRunLease = (path: string, nonce: string): void => {
 	writeFileSync(path, JSON.stringify({ pid: process.pid, nonce, createdAt: Date.now() }));
 };
 
-const removeOwnedLease = (path: string, nonce: string): void => {
+const sameRunLease = (left: RunLease | null, right: RunLease | null): boolean =>
+	left !== null &&
+	right !== null &&
+	left.pid === right.pid &&
+	left.nonce === right.nonce &&
+	left.createdAt === right.createdAt;
+
+const ownershipFile = 'owner.json';
+
+const readPublishedLease = (directory: string): RunLease | null =>
+	readRunLease(join(directory, ownershipFile));
+
+const privateLockDirectory = (path: string, nonce: string, phase: string): string =>
+	join(dirname(path), `.${basename(path)}.${phase}.${nonce}`);
+
+const removeDirectory = (path: string): void => {
+	rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+};
+
+const createPrivateLock = (path: string, record: RunLease): string => {
+	const pending = privateLockDirectory(path, record.nonce, 'pending');
+	mkdirSync(pending, { mode: 0o700 });
+	writeFileSync(join(pending, ownershipFile), JSON.stringify(record), { mode: 0o600 });
+	return pending;
+};
+
+const moveLockToQuarantine = (
+	path: string,
+	expected: RunLease | null,
+	nonce: string
+): 'missing' | 'mismatch' | 'moved' => {
+	const quarantine = privateLockDirectory(path, nonce, 'quarantine');
 	try {
-		if (readRunLease(path)?.nonce === nonce) unlinkSync(path);
+		renameSync(path, quarantine);
+	} catch (error) {
+		if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return 'missing';
+		throw error;
+	}
+
+	if (
+		expected === null
+			? readPublishedLease(quarantine) !== null
+			: !sameRunLease(readPublishedLease(quarantine), expected)
+	) {
+		try {
+			renameSync(quarantine, path);
+		} catch (restoreError) {
+			throw new AggregateError([restoreError], `Prune lock ownership changed: ${path}`);
+		}
+		return 'mismatch';
+	}
+	removeDirectory(quarantine);
+	return 'moved';
+};
+
+const removeOwnedActiveMarker = (path: string, nonce: string): void => {
+	try {
+		if (readRunLease(path)?.nonce === nonce) rmSync(path, { force: true });
 	} catch {
 		// A concurrent cleanup can only make this run less eligible for pruning.
 	}
@@ -103,32 +156,37 @@ const removeOwnedLease = (path: string, nonce: string): void => {
 
 const acquirePruneLock = (diagnosticsRoot: string): PruneLock | null => {
 	const path = join(diagnosticsRoot, PRUNE_LOCK_FILE);
-	for (let attempt = 0; attempt < 2; attempt += 1) {
+	for (let attempt = 0; attempt < 3; attempt += 1) {
 		const nonce = randomBytes(16).toString('hex');
+		const record = { pid: process.pid, nonce, createdAt: Date.now() };
+		const pending = createPrivateLock(path, record);
 		try {
-			const fileDescriptor = openSync(path, 'wx', 0o600);
-			writeRunLease(path, nonce);
-			return { fileDescriptor, nonce, path };
+			renameSync(pending, path);
+			return { nonce, path, record };
 		} catch (error) {
-			if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+			removeDirectory(pending);
+			if (!(
+				error instanceof Error &&
+				'code' in error &&
+				typeof error.code === 'string' &&
+				['EEXIST', 'ENOTEMPTY'].includes(error.code)
+			)) {
 				return null;
 			}
-			if (isRunLeaseActive(readRunLease(path), PRUNE_LOCK_MAX_AGE_MS)) return null;
-			try {
-				unlinkSync(path);
-			} catch {
+			const observed = readPublishedLease(path);
+			if (isRunLeaseActive(observed, PRUNE_LOCK_MAX_AGE_MS)) return null;
+			if (moveLockToQuarantine(path, observed, `${nonce}-reclaim-${attempt}`) !== 'moved')
 				return null;
-			}
 		}
 	}
 	return null;
 };
 
 const releasePruneLock = (lock: PruneLock): void => {
-	try {
-		closeSync(lock.fileDescriptor);
-	} finally {
-		removeOwnedLease(lock.path, lock.nonce);
+	if (moveLockToQuarantine(lock.path, lock.record, `${lock.nonce}-release`) === 'mismatch') {
+		throw new Error(
+			`Refusing to release a prune lock now owned by another process: ${lock.path}`
+		);
 	}
 };
 
@@ -172,6 +230,9 @@ const pruneRelaunchDiagnostics = (diagnosticsRoot: string): void => {
 		releasePruneLock(lock);
 	}
 };
+
+export const __acquireRelaunchPruneLockForTests = acquirePruneLock;
+export const __releaseRelaunchPruneLockForTests = releasePruneLock;
 
 export const runRelaunchSmoke = async ({
 	appBinaryPath = defaultAppBinaryPath,
@@ -230,7 +291,7 @@ export const runRelaunchSmoke = async ({
 				cleanupErrors.push(error);
 			}
 		}
-		removeOwnedLease(activeMarker, activeNonce);
+		removeOwnedActiveMarker(activeMarker, activeNonce);
 		try {
 			rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 		} catch {

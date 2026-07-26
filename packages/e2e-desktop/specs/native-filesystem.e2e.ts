@@ -35,7 +35,11 @@ const expectOutsideWorkspaceRejection = async (operation: Promise<unknown>): Pro
 	try {
 		await operation;
 	} catch (error) {
-		expect(error instanceof Error ? error.message : String(error)).toBe(outsideWorkspaceError);
+		if (!(error instanceof Error)) {
+			throw new Error(`Expected native IPC to reject with Error, received: ${String(error)}`);
+		}
+
+		expect(error.message).toBe(outsideWorkspaceError);
 		return;
 	}
 

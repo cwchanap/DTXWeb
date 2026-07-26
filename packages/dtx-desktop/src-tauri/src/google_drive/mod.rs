@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use crate::auth::AuthState;
@@ -112,6 +112,8 @@ pub(crate) struct GoogleDriveState {
     folder_validator: Arc<dyn PickerFolderValidator>,
     picker_browser: Arc<dyn PickerBrowser>,
     picker_config: PickerProtocolConfig,
+    lifecycle_locks_by_user: StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    lifecycle_generations_by_user: StdMutex<HashMap<String, u64>>,
     access_tokens_by_user: AsyncMutex<HashMap<String, CachedAccessToken>>,
     requires_reconnect_by_user: AsyncMutex<HashSet<String>>,
     /// Filled by Task 8 after it validates the selected Drive folder.
@@ -158,6 +160,8 @@ impl GoogleDriveState {
             folder_validator,
             picker_browser,
             picker_config,
+            lifecycle_locks_by_user: StdMutex::new(HashMap::new()),
+            lifecycle_generations_by_user: StdMutex::new(HashMap::new()),
             access_tokens_by_user: AsyncMutex::new(HashMap::new()),
             requires_reconnect_by_user: AsyncMutex::new(HashSet::new()),
             folder_validation_cache_by_user: AsyncMutex::new(HashMap::new()),
@@ -225,6 +229,18 @@ impl GoogleDriveState {
         token: Zeroizing<String>,
         expires_at: Instant,
     ) {
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        self.cache_access_token_until_locked(user_id, token, expires_at)
+            .await;
+    }
+
+    async fn cache_access_token_until_locked(
+        &self,
+        user_id: &str,
+        token: Zeroizing<String>,
+        expires_at: Instant,
+    ) {
         self.access_tokens_by_user
             .lock()
             .await
@@ -240,6 +256,15 @@ impl GoogleDriveState {
     }
 
     pub(crate) async fn access_token_for_user(
+        &self,
+        user_id: &str,
+    ) -> std::result::Result<Zeroizing<String>, GoogleDriveOAuthError> {
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        self.access_token_for_user_locked(user_id).await
+    }
+
+    async fn access_token_for_user_locked(
         &self,
         user_id: &str,
     ) -> std::result::Result<Zeroizing<String>, GoogleDriveOAuthError> {
@@ -265,12 +290,14 @@ impl GoogleDriveState {
         {
             Ok(response) => response,
             Err(OAuthProviderError::InvalidGrant) => {
+                self.access_tokens_by_user.lock().await.remove(user_id);
                 self.set_requires_reconnect(user_id, true).await;
                 return Err(GoogleDriveOAuthError::ReconnectRequired);
             }
             Err(OAuthProviderError::Network) => return Err(GoogleDriveOAuthError::Network),
             Err(OAuthProviderError::InvalidResponse) => {
-                return Err(GoogleDriveOAuthError::InvalidResponse)
+                self.access_tokens_by_user.lock().await.remove(user_id);
+                return Err(GoogleDriveOAuthError::InvalidResponse);
             }
         };
 
@@ -289,19 +316,22 @@ impl GoogleDriveState {
                 .as_deref()
                 .is_some_and(|token| token.trim().is_empty())
         {
+            self.access_tokens_by_user.lock().await.remove(user_id);
             return Err(GoogleDriveOAuthError::InvalidResponse);
         }
 
+        let Some(expires_at) = Instant::now().checked_add(Duration::from_secs(response.expires_in))
+        else {
+            self.access_tokens_by_user.lock().await.remove(user_id);
+            return Err(GoogleDriveOAuthError::InvalidResponse);
+        };
         if let Some(replacement) = replacement_refresh_token {
             self.credentials
                 .set_refresh_token(user_id, Zeroizing::new(replacement.trim().to_string()))
                 .await
                 .map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
         }
-        let expires_at = Instant::now()
-            .checked_add(Duration::from_secs(response.expires_in))
-            .ok_or(GoogleDriveOAuthError::InvalidResponse)?;
-        self.cache_access_token_until(
+        self.cache_access_token_until_locked(
             user_id,
             Zeroizing::new(access_token.to_string()),
             expires_at,
@@ -343,17 +373,20 @@ impl GoogleDriveState {
         T: Send,
         R: AuthorizedDriveRequest<T>,
     {
-        let access_token = self.access_token_for_user(user_id).await?;
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        let access_token = self.access_token_for_user_locked(user_id).await?;
         match request.execute(&access_token).await {
             Ok(value) => Ok(value),
             Err(AuthorizedDriveRequestError::Request(error)) => Err(error),
             Err(AuthorizedDriveRequestError::TokenExpired) => {
                 self.access_tokens_by_user.lock().await.remove(user_id);
-                let replacement = self.access_token_for_user(user_id).await?;
+                let replacement = self.access_token_for_user_locked(user_id).await?;
                 match request.execute(&replacement).await {
                     Ok(value) => Ok(value),
                     Err(AuthorizedDriveRequestError::Request(error)) => Err(error),
                     Err(AuthorizedDriveRequestError::TokenExpired) => {
+                        self.access_tokens_by_user.lock().await.remove(user_id);
                         Err(GoogleDriveOAuthError::InvalidResponse)
                     }
                 }
@@ -374,6 +407,9 @@ impl GoogleDriveState {
         &self,
         user_id: &str,
     ) -> std::result::Result<GoogleDriveDisconnectResult, GoogleDriveOAuthError> {
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        self.invalidate_user_lifecycle(user_id);
         let refresh_token = self.credentials.get_refresh_token(user_id).await;
         let mut revocation_unconfirmed = false;
         match refresh_token.as_ref() {
@@ -393,7 +429,7 @@ impl GoogleDriveState {
 
         let delete_result = self.credentials.delete_refresh_token(user_id).await;
         let settings_result = self.settings.clear_folder_for_user(user_id);
-        self.clear_user_memory(user_id).await;
+        self.clear_user_memory_locked(user_id).await;
         self.set_requires_reconnect(user_id, false).await;
         delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
         settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
@@ -405,11 +441,45 @@ impl GoogleDriveState {
     }
 
     pub(crate) async fn clear_user_memory(&self, user_id: &str) {
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        self.invalidate_user_lifecycle(user_id);
+        self.clear_user_memory_locked(user_id).await;
+    }
+
+    async fn clear_user_memory_locked(&self, user_id: &str) {
         self.access_tokens_by_user.lock().await.remove(user_id);
         self.folder_validation_cache_by_user
             .lock()
             .await
             .remove(user_id);
+    }
+
+    fn lifecycle_lock_for_user(&self, user_id: &str) -> Arc<AsyncMutex<()>> {
+        self.lifecycle_locks_by_user
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .entry(user_id.to_string())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
+    }
+
+    fn user_lifecycle_generation(&self, user_id: &str) -> u64 {
+        *self
+            .lifecycle_generations_by_user
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(user_id)
+            .unwrap_or(&0)
+    }
+
+    fn invalidate_user_lifecycle(&self, user_id: &str) {
+        let mut generations = self
+            .lifecycle_generations_by_user
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let generation = generations.entry(user_id.to_string()).or_insert(0);
+        *generation = generation.wrapping_add(1);
     }
 }
 

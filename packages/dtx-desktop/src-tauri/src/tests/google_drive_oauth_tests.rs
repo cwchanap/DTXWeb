@@ -570,6 +570,65 @@ impl PickerFolderValidator for AcceptFolder {
     }
 }
 
+struct QueuedFolderValidator {
+    results: Mutex<VecDeque<Result<GoogleDriveFolderSetting, GoogleDriveOAuthError>>>,
+}
+
+impl QueuedFolderValidator {
+    fn new(results: Vec<Result<GoogleDriveFolderSetting, GoogleDriveOAuthError>>) -> Self {
+        Self {
+            results: Mutex::new(results.into()),
+        }
+    }
+}
+
+#[async_trait]
+impl PickerFolderValidator for QueuedFolderValidator {
+    async fn validate_folder(
+        &self,
+        _access_token: &str,
+        _folder_id: &str,
+    ) -> Result<GoogleDriveFolderSetting, GoogleDriveOAuthError> {
+        self.results
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pop_front()
+            .unwrap_or(Err(GoogleDriveOAuthError::InvalidResponse))
+    }
+}
+
+struct ExpireOnceFolderValidator {
+    calls: Mutex<Vec<String>>,
+}
+
+#[async_trait]
+impl PickerFolderValidator for ExpireOnceFolderValidator {
+    async fn validate_folder(
+        &self,
+        _access_token: &str,
+        _folder_id: &str,
+    ) -> Result<GoogleDriveFolderSetting, GoogleDriveOAuthError> {
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    }
+
+    async fn execute_validation(
+        &self,
+        access_token: &str,
+        folder_id: &str,
+    ) -> Result<GoogleDriveFolderSetting, AuthorizedDriveRequestError> {
+        let mut calls = self
+            .calls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        calls.push(access_token.to_string());
+        if calls.len() == 1 {
+            Err(AuthorizedDriveRequestError::TokenExpired)
+        } else {
+            Ok(folder(folder_id, "Uploads"))
+        }
+    }
+}
+
 #[tokio::test]
 async fn picker_binds_loopback_before_browser_open_and_replaces_refresh_token() {
     let auth = AuthState::default();
@@ -611,6 +670,159 @@ async fn picker_binds_loopback_before_browser_open_and_replaces_refresh_token() 
             .expect("read credential")
             .as_deref(),
         Some("replacement-refresh-token")
+    );
+}
+
+#[tokio::test]
+async fn picker_public_sharing_rejection_preserves_prior_credential_and_folder() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "prior-refresh-token")
+        .expect("seed credential");
+    let settings = Arc::new(FakeSettings::with_folder("old-folder", "Old folder"));
+    let state = GoogleDriveState::with_oauth_adapters(
+        credential_store.clone(),
+        Arc::new(UnavailableDriveMetadataClient),
+        settings.clone(),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![token_response(
+            "new-access-token",
+            Some("replacement-refresh-token"),
+        )])),
+        Arc::new(QueuedFolderValidator::new(vec![Err(
+            GoogleDriveOAuthError::DownloadNotPublic,
+        )])),
+        Arc::new(CallbackBrowser::new("private-folder")),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(1),
+        ),
+    );
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::DownloadNotPublic)
+    ));
+    assert_eq!(
+        credential_store
+            .get_refresh_token("user-42")
+            .expect("read credential")
+            .as_deref(),
+        Some("prior-refresh-token")
+    );
+    assert_eq!(
+        settings.folder_for_user("user-42"),
+        Some(folder("old-folder", "Old folder"))
+    );
+}
+
+#[tokio::test]
+async fn explicit_sharing_recheck_updates_only_sanitized_connection_flags() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let state = GoogleDriveState::with_oauth_adapters(
+        credential_store,
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(QueuedFolderValidator::new(vec![
+            Err(GoogleDriveOAuthError::DownloadNotPublic),
+            Err(GoogleDriveOAuthError::SharingCheckUnavailable),
+            Ok(folder("folder-42", "Uploads")),
+        ])),
+        Arc::new(CallbackBrowser::new("unused")),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(1),
+        ),
+    );
+    state.cache_access_token("user-42", "access-token").await;
+
+    let private = state
+        .recheck_google_drive_sharing(&auth)
+        .await
+        .expect("private is a sanitized state");
+    assert!(private.connected);
+    assert!(private.requires_public_sharing);
+    assert!(!private.sharing_check_unavailable);
+
+    let unavailable = state
+        .recheck_google_drive_sharing(&auth)
+        .await
+        .expect("ACL 403 is a sanitized state");
+    assert!(unavailable.connected);
+    assert!(!unavailable.requires_public_sharing);
+    assert!(unavailable.sharing_check_unavailable);
+
+    let public = state
+        .recheck_google_drive_sharing(&auth)
+        .await
+        .expect("public recheck succeeds");
+    assert!(public.connected);
+    assert!(!public.requires_public_sharing);
+    assert!(!public.sharing_check_unavailable);
+    assert_eq!(public.folder, Some(folder("folder-42", "Uploads")));
+}
+
+#[tokio::test]
+async fn sharing_recheck_refreshes_and_retries_once_after_drive_rejects_access_token() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let validator = Arc::new(ExpireOnceFolderValidator {
+        calls: Mutex::new(Vec::new()),
+    });
+    let state = GoogleDriveState::with_oauth_adapters(
+        credential_store,
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        Arc::new(FakeOAuthProvider::with_refreshes(vec![Ok(token_response(
+            "fresh-access-token",
+            None,
+        ))])),
+        validator.clone(),
+        Arc::new(CallbackBrowser::new("unused")),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(1),
+        ),
+    );
+    state
+        .cache_access_token("user-42", "rejected-access-token")
+        .await;
+
+    let connection = state
+        .recheck_google_drive_sharing(&auth)
+        .await
+        .expect("retry succeeds");
+
+    assert!(connection.connected);
+    assert_eq!(
+        *validator
+            .calls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        vec![
+            "rejected-access-token".to_string(),
+            "fresh-access-token".to_string()
+        ]
     );
 }
 

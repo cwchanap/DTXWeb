@@ -39,6 +39,16 @@ pub(crate) async fn change_google_drive_folder(
 }
 
 #[tauri::command]
+pub(crate) async fn recheck_google_drive_sharing(
+    app: AppHandle,
+) -> Result<GoogleDriveConnectionState> {
+    app.state::<GoogleDriveState>()
+        .recheck_google_drive_sharing(&app.state::<AuthState>())
+        .await
+        .map_err(sanitized_oauth_error)
+}
+
+#[tauri::command]
 pub(crate) async fn disconnect_google_drive(app: AppHandle) -> Result<GoogleDriveDisconnectResult> {
     let user_id = current_user_id(&app).await?;
     app.state::<GoogleDriveState>()

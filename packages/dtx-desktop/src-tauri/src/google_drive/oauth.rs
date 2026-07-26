@@ -215,6 +215,11 @@ pub(crate) enum GoogleDriveOAuthError {
     CredentialStore,
     LocalState,
     AlreadyInProgress,
+    FolderUnavailable,
+    DownloadNotPublic,
+    SharingCheckUnavailable,
+    FileNotFound,
+    FilePermissionDenied,
 }
 
 impl GoogleDriveOAuthError {
@@ -228,6 +233,11 @@ impl GoogleDriveOAuthError {
             Self::CredentialStore => "CREDENTIAL_STORE",
             Self::LocalState => "LOCAL_STATE",
             Self::AlreadyInProgress => "UPLOAD_IN_PROGRESS",
+            Self::FolderUnavailable => "FOLDER_UNAVAILABLE",
+            Self::DownloadNotPublic => "DOWNLOAD_NOT_PUBLIC",
+            Self::SharingCheckUnavailable => "SHARING_CHECK_UNAVAILABLE",
+            Self::FileNotFound => "FILE_NOT_FOUND",
+            Self::FilePermissionDenied => "FILE_PERMISSION_DENIED",
         }
     }
 }
@@ -330,6 +340,16 @@ pub(crate) trait PickerFolderValidator: Send + Sync {
         access_token: &str,
         folder_id: &str,
     ) -> Result<GoogleDriveFolderSetting, GoogleDriveOAuthError>;
+
+    async fn execute_validation(
+        &self,
+        access_token: &str,
+        folder_id: &str,
+    ) -> Result<GoogleDriveFolderSetting, AuthorizedDriveRequestError> {
+        self.validate_folder(access_token, folder_id)
+            .await
+            .map_err(AuthorizedDriveRequestError::Request)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -344,6 +364,32 @@ where
     T: Send,
 {
     async fn execute(&self, access_token: &str) -> Result<T, AuthorizedDriveRequestError>;
+}
+
+pub(crate) struct PickerFolderValidationRequest<'a> {
+    validator: &'a dyn PickerFolderValidator,
+    folder_id: &'a str,
+}
+
+impl<'a> PickerFolderValidationRequest<'a> {
+    pub(crate) fn new(validator: &'a dyn PickerFolderValidator, folder_id: &'a str) -> Self {
+        Self {
+            validator,
+            folder_id,
+        }
+    }
+}
+
+#[async_trait]
+impl AuthorizedDriveRequest<GoogleDriveFolderSetting> for PickerFolderValidationRequest<'_> {
+    async fn execute(
+        &self,
+        access_token: &str,
+    ) -> Result<GoogleDriveFolderSetting, AuthorizedDriveRequestError> {
+        self.validator
+            .execute_validation(access_token, self.folder_id)
+            .await
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -707,6 +753,10 @@ impl GoogleDriveState {
             folder,
         )
         .await?;
+        self.folder_validation_cache_by_user.lock().await.insert(
+            user_id.to_string(),
+            super::drive_client::PublicPermissionStatus::Public,
+        );
         self.cache_access_token_until_locked(user_id, tokens.access_token, expires_at)
             .await;
         self.set_requires_reconnect(user_id, false).await;

@@ -16,12 +16,15 @@ use self::credential_store::InMemoryGoogleDriveCredentialStore;
 use self::credential_store::{GoogleDriveCredentialAccess, GoogleDriveCredentialStore};
 #[cfg(feature = "google-drive")]
 use self::credential_store::{KeyringGoogleDriveCredentialStore, PlatformKeyringEntryFactory};
+#[cfg(feature = "google-drive")]
+use self::drive_client::GoogleDriveClient;
+use self::drive_client::PublicPermissionStatus;
 use self::oauth::{
     access_token_is_reusable, AuthorizedDriveRequest, AuthorizedDriveRequestError,
     DeferredPickerFolderValidator, GoogleDriveConnectionState, GoogleDriveDisconnectResult,
     GoogleDriveOAuthError, GoogleOAuthProvider, OAuthProviderError, PickerAttempt, PickerBrowser,
-    PickerFolderValidator, PickerProtocolConfig, UnavailableOAuthProvider,
-    UnavailablePickerBrowser, GOOGLE_DRIVE_FILE_SCOPE,
+    PickerFolderValidationRequest, PickerFolderValidator, PickerProtocolConfig,
+    UnavailableOAuthProvider, UnavailablePickerBrowser, GOOGLE_DRIVE_FILE_SCOPE,
 };
 #[cfg(feature = "google-drive")]
 use self::oauth::{ReqwestGoogleOAuthProvider, TauriPickerBrowser};
@@ -90,6 +93,7 @@ impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
 pub(crate) mod build_config;
 pub(crate) mod commands;
 pub(crate) mod credential_store;
+pub(crate) mod drive_client;
 pub(crate) mod oauth;
 pub(crate) mod settings;
 pub(crate) mod upload;
@@ -116,8 +120,7 @@ pub(crate) struct GoogleDriveState {
     lifecycle_generations_by_user: StdMutex<HashMap<String, u64>>,
     access_tokens_by_user: AsyncMutex<HashMap<String, CachedAccessToken>>,
     requires_reconnect_by_user: AsyncMutex<HashSet<String>>,
-    /// Filled by Task 8 after it validates the selected Drive folder.
-    pub(crate) folder_validation_cache_by_user: AsyncMutex<HashMap<String, ()>>,
+    pub(crate) folder_validation_cache_by_user: AsyncMutex<HashMap<String, PublicPermissionStatus>>,
     pub(crate) active_picker_attempt: Arc<AsyncMutex<Option<PickerAttempt>>>,
     /// Replaced by the persistent keyed binding store in Task 10.
     pub(crate) pending_bindings_by_user: AsyncMutex<HashMap<String, ()>>,
@@ -188,12 +191,16 @@ impl GoogleDriveState {
                     .map_err(|error| DesktopError::Message(error.code().to_string()))?,
             )
         };
+        let drive_client = Arc::new(
+            GoogleDriveClient::production()
+                .map_err(|error| DesktopError::Message(error.code().to_string()))?,
+        );
         Ok(Self::with_oauth_adapters(
             credential_store,
             Arc::new(ApiDriveMetadataClient::new(app.clone())),
             Arc::new(GoogleDriveSettingsStore::new(data_dir)),
             oauth_provider,
-            Arc::new(DeferredPickerFolderValidator),
+            drive_client,
             Arc::new(TauriPickerBrowser::new(app)),
             picker_config,
         ))
@@ -354,14 +361,65 @@ impl GoogleDriveState {
             .lock()
             .await
             .contains(user_id);
+        let permission_status = self
+            .folder_validation_cache_by_user
+            .lock()
+            .await
+            .get(user_id)
+            .copied();
         GoogleDriveConnectionState {
             connected: has_credential && folder.is_some() && !requires_reconnect,
             folder,
             requires_reconnect,
-            requires_public_sharing: false,
-            sharing_check_unavailable: false,
+            requires_public_sharing: permission_status == Some(PublicPermissionStatus::NotPublic),
+            sharing_check_unavailable: permission_status
+                == Some(PublicPermissionStatus::CheckUnavailable),
             credential_store_unavailable,
         }
+    }
+
+    pub(crate) async fn recheck_google_drive_sharing(
+        &self,
+        auth: &AuthState,
+    ) -> std::result::Result<GoogleDriveConnectionState, GoogleDriveOAuthError> {
+        let user_id = auth
+            .current_user_id()
+            .await
+            .ok_or(GoogleDriveOAuthError::NotConnected)?;
+        let lifecycle_generation = self.user_lifecycle_generation(&user_id);
+        let folder = self
+            .settings
+            .folder_for_user(&user_id)
+            .ok_or(GoogleDriveOAuthError::NotConnected)?;
+        let request =
+            PickerFolderValidationRequest::new(self.folder_validator.as_ref(), &folder.id);
+        let validation = self.execute_authorized_request(&user_id, &request).await;
+
+        let lifecycle = self.lifecycle_lock_for_user(&user_id);
+        let _guard = lifecycle.lock().await;
+        if auth.current_user_id().await.as_deref() != Some(user_id.as_str()) {
+            return Err(GoogleDriveOAuthError::Canceled);
+        }
+        if self.user_lifecycle_generation(&user_id) != lifecycle_generation
+            || self.settings.folder_for_user(&user_id).as_ref() != Some(&folder)
+        {
+            return Err(GoogleDriveOAuthError::Canceled);
+        }
+
+        let permission_status = match validation {
+            Ok(validated) if validated.id == folder.id => PublicPermissionStatus::Public,
+            Ok(_) => return Err(GoogleDriveOAuthError::InvalidResponse),
+            Err(GoogleDriveOAuthError::DownloadNotPublic) => PublicPermissionStatus::NotPublic,
+            Err(GoogleDriveOAuthError::SharingCheckUnavailable) => {
+                PublicPermissionStatus::CheckUnavailable
+            }
+            Err(error) => return Err(error),
+        };
+        self.folder_validation_cache_by_user
+            .lock()
+            .await
+            .insert(user_id.clone(), permission_status);
+        Ok(self.connection_state_for_user(&user_id).await)
     }
 
     pub(crate) async fn execute_authorized_request<T, R>(

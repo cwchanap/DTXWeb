@@ -202,6 +202,8 @@ pub fn run() {
             #[cfg(any(feature = "google-drive", feature = "e2e"))]
             google_drive::commands::change_google_drive_folder,
             #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::recheck_google_drive_sharing,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
             google_drive::commands::disconnect_google_drive,
             #[cfg(feature = "e2e")]
             e2e::read_e2e_session_nonce

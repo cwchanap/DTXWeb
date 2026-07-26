@@ -20,6 +20,7 @@ export const simfiles = sqliteTable(
 		isPublished: integer('is_published').$type<0 | 1>().notNull().default(0),
 		displayId: integer('display_id'),
 		downloadUrl: text('download_url'),
+		googleDriveFileId: text('google_drive_file_id'),
 		previewUrl: text('preview_url'),
 		videoPreviewUrl: text('video_preview_url'),
 		publishDate: text('publish_date')

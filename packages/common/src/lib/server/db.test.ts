@@ -15,6 +15,7 @@ import {
 	getNextDisplayId,
 	createSimfile,
 	updateSimfile,
+	updateSimfileDriveFile,
 	deleteSimfile,
 	createDtxFiles,
 	getUserProfile,
@@ -26,6 +27,7 @@ import {
 	listUserChartScores
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
+import type { SimfileInsert, SimfileUpdate } from '../types/d1.types';
 
 const drizzleSelectResults = vi.hoisted(() => [] as unknown[]);
 const createMockDrizzleQuery = vi.hoisted(() => {
@@ -89,6 +91,7 @@ const baseSimfileRow = {
 	is_published: 1 as 0 | 1,
 	display_id: null,
 	download_url: null,
+	google_drive_file_id: null,
 	preview_url: null,
 	video_preview_url: null,
 	publish_date: '2024-01-01T00:00:00.000Z',
@@ -476,6 +479,20 @@ describe('getSimfile', () => {
 		expect(result?.dtx_files).toEqual(dtxRows);
 		expect(toSimfileWithDtx).toHaveBeenCalledWith(baseSimfileRow, dtxRows);
 	});
+
+	it('maps nullable Google Drive metadata from the simfile select', async () => {
+		const row = { ...baseSimfileRow, google_drive_file_id: 'drive-file-123' };
+		drizzleSelectResults.push([row], []);
+
+		const result = await getSimfile(createMockDb() as unknown as D1Database, 1);
+
+		expect(result?.google_drive_file_id).toBe('drive-file-123');
+		const simfileSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[0]?.[0];
+		expect(simfileSelectCall).toHaveProperty(
+			'google_drive_file_id',
+			simfiles.googleDriveFileId
+		);
+	});
 });
 
 describe('getSimfile chart id', () => {
@@ -590,17 +607,21 @@ describe('listSimfiles', () => {
 
 		const secondSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[1]?.[0];
 		expect(secondSelectCall).not.toHaveProperty('user_id');
+		expect(secondSelectCall).not.toHaveProperty('google_drive_file_id');
 	});
 
-	it('includes user_id in result when not publishedOnly', async () => {
-		drizzleSelectResults.push([{ cnt: 1 }], [baseSimfileRow], []);
+	it('includes owner-only Google Drive metadata when not publishedOnly', async () => {
+		const row = { ...baseSimfileRow, google_drive_file_id: 'drive-file-123' };
+		drizzleSelectResults.push([{ cnt: 1 }], [row], []);
 		const db = createMockDb();
 
 		const result = await listSimfiles(db as unknown as D1Database, { userId: 'user-1' });
 		expect(result.data[0]).toHaveProperty('user_id', 'user-1');
+		expect(result.data[0]).toHaveProperty('google_drive_file_id', 'drive-file-123');
 
 		const secondSelectCall = (mockDrizzleDb.select.mock.calls as unknown[][])[1]?.[0];
 		expect(secondSelectCall).toHaveProperty('user_id');
+		expect(secondSelectCall).toHaveProperty('google_drive_file_id', simfiles.googleDriveFileId);
 	});
 
 	it('uses default page (1) and pageSize (20) for limit and offset', async () => {
@@ -1127,6 +1148,70 @@ describe('updateSimfile', () => {
 		await expect(
 			updateSimfile(db as unknown as D1Database, 99, { title: 'X' })
 		).rejects.toThrow('Simfile not found');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// updateSimfileDriveFile
+// ---------------------------------------------------------------------------
+describe('updateSimfileDriveFile', () => {
+	it('updates Google Drive ID and download URL in one owner-constrained statement', async () => {
+		const updated = {
+			...baseSimfileRow,
+			google_drive_file_id: 'drive-file-123',
+			download_url: 'https://drive.google.com/uc?id=drive-file-123'
+		};
+		const stmt = createMockStmt(updated);
+		const db = createMockDb(() => stmt);
+
+		const result = await updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+			googleDriveFileId: 'drive-file-123',
+			downloadUrl: 'https://drive.google.com/uc?id=drive-file-123'
+		});
+
+		expect(result).toEqual(updated);
+		expect(db.prepare).toHaveBeenCalledTimes(1);
+		expect(db.prepare).toHaveBeenCalledWith(
+			expect.stringMatching(
+				/^UPDATE simfiles\s+SET google_drive_file_id = \?, download_url = \?, updated_at = \?\s+WHERE id = \? AND user_id = \?\s+RETURNING \*$/s
+			)
+		);
+		expect(stmt.bind).toHaveBeenCalledWith(
+			'drive-file-123',
+			'https://drive.google.com/uc?id=drive-file-123',
+			expect.any(String),
+			1,
+			'user-1'
+		);
+	});
+
+	it.each([
+		['wrong owner', 1, 'user-2'],
+		['missing simfile', 99, 'user-1']
+	])('returns the same neutral not-found failure for a %s', async (_case, id, ownerUserId) => {
+		const db = createMockDb(() => createMockStmt(null));
+
+		await expect(
+			updateSimfileDriveFile(db as unknown as D1Database, id, ownerUserId, {
+				googleDriveFileId: 'drive-file-123',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-file-123'
+			})
+		).rejects.toThrow('Simfile not found');
+	});
+});
+
+describe('general simfile write types', () => {
+	it('do not allow general insert or update payloads to write Google Drive metadata', () => {
+		// @ts-expect-error Google Drive ownership metadata is only writable by updateSimfileDriveFile.
+		const insert: SimfileInsert = {
+			bpm: 120,
+			user_id: 'user-1',
+			google_drive_file_id: 'forbidden'
+		};
+		// @ts-expect-error Google Drive ownership metadata is only writable by updateSimfileDriveFile.
+		const update: SimfileUpdate = { google_drive_file_id: 'forbidden' };
+		expect(insert).toBeDefined();
+		expect(update).toBeDefined();
 	});
 });
 

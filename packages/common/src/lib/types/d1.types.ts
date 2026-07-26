@@ -11,6 +11,7 @@ export interface SimfileRow {
 	is_published: 0 | 1; // SQLite boolean
 	display_id: number | null;
 	download_url: string | null;
+	google_drive_file_id: string | null;
 	preview_url: string | null;
 	video_preview_url: string | null;
 	publish_date: string;
@@ -119,10 +120,14 @@ export interface UserProfileUpdate {
 }
 
 /** Simfile with joined dtx_files — the API-facing shape with boolean is_published.
- * user_id is optional because publishedOnly queries intentionally omit it. */
-export interface SimfileWithDtxFiles extends Omit<SimfileRow, 'is_published' | 'user_id'> {
+ * Owner-only fields are optional because publishedOnly queries intentionally omit them. */
+export interface SimfileWithDtxFiles extends Omit<
+	SimfileRow,
+	'is_published' | 'user_id' | 'google_drive_file_id'
+> {
 	is_published: boolean;
 	user_id?: string;
+	google_drive_file_id?: string | null;
 	dtx_files: { id?: number; level: number; label: string }[];
 }
 
@@ -142,7 +147,10 @@ export interface SimfileWithDtx extends Omit<
 
 /** Convert a raw D1 simfile row (integer booleans) to the API-facing shape */
 export const toSimfileWithDtx = (
-	row: Omit<SimfileRow, 'user_id'> & { user_id?: string },
+	row: Omit<SimfileRow, 'user_id' | 'google_drive_file_id'> & {
+		user_id?: string;
+		google_drive_file_id?: string | null;
+	},
 	dtxFiles: { id?: number; level: number; label: string }[]
 ): SimfileWithDtxFiles => ({
 	...row,

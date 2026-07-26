@@ -12,6 +12,7 @@ describe('toSimfileWithDtx', () => {
 		is_published: 0,
 		display_id: null,
 		download_url: null,
+		google_drive_file_id: null,
 		preview_url: null,
 		video_preview_url: null,
 		publish_date: '2024-01-01',

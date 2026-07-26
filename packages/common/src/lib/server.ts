@@ -65,6 +65,7 @@ export {
 	getNextDisplayId,
 	createSimfile,
 	updateSimfile,
+	updateSimfileDriveFile,
 	deleteSimfile,
 	createDtxFiles,
 	getUserProfile,

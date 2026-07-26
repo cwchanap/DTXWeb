@@ -9,14 +9,15 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Miniflare } from 'miniflare';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	upsertChartScoreAndReplaceScores,
 	getUserChartScore,
 	listUserScoredSimfiles,
 	listUserChartScores,
-	getChartVisibilityBatch
+	getChartVisibilityBatch,
+	updateSimfileDriveFile
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
 
@@ -50,17 +51,15 @@ const splitStatements = (sql: string): string[] =>
 		.map((s) => s.trim())
 		.filter((s) => s.length > 0);
 
-const MIGRATION_0001_STMTS = splitStatements(
-	stripComments(readFileSync(join(MIGRATIONS_DIR, '0001_initial_schema.sql'), 'utf8'))
-);
-const MIGRATION_0002_STMTS = splitStatements(
-	stripComments(readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8'))
-);
-const MIGRATION_0003_STMTS = splitStatements(
-	stripComments(
-		readFileSync(join(MIGRATIONS_DIR, '0003_chart_scores_user_updated_index.sql'), 'utf8')
-	)
-);
+const MIGRATIONS = readdirSync(MIGRATIONS_DIR)
+	.filter((fileName) => /^\d{4}_.+\.sql$/.test(fileName))
+	.sort()
+	.map((fileName) => ({
+		fileName,
+		statements: splitStatements(
+			stripComments(readFileSync(join(MIGRATIONS_DIR, fileName), 'utf8'))
+		)
+	}));
 
 let mf: Miniflare;
 let db: D1Database;
@@ -92,6 +91,12 @@ const runMigration = async (statements: string[]) => {
 	}
 };
 
+const runMigrations = async () => {
+	for (const migration of MIGRATIONS) {
+		await runMigration(migration.statements);
+	}
+};
+
 beforeEach(async () => {
 	// Drop tables so each test starts clean.
 	await db.prepare('DROP TABLE IF EXISTS scores').run();
@@ -100,9 +105,7 @@ beforeEach(async () => {
 	await db.prepare('DROP TABLE IF EXISTS user_profiles').run();
 	await db.prepare('DROP TABLE IF EXISTS simfiles').run();
 
-	await runMigration(MIGRATION_0001_STMTS);
-	await runMigration(MIGRATION_0002_STMTS);
-	await runMigration(MIGRATION_0003_STMTS);
+	await runMigrations();
 
 	await db
 		.prepare('INSERT INTO simfiles (title, artist, bpm, user_id) VALUES (?, ?, ?, ?)')
@@ -147,6 +150,72 @@ const scoreInput = (
 	performed_at: null,
 	display_order: null,
 	...overrides
+});
+
+describe('Google Drive file migration and owner-constrained update (real D1)', () => {
+	it('applies every numbered migration through 0006 once and starts the Drive ID as NULL', async () => {
+		expect(MIGRATIONS.map((migration) => migration.fileName)).toEqual([
+			'0001_initial_schema.sql',
+			'0002_scores.sql',
+			'0003_chart_scores_user_updated_index.sql',
+			'0004_normalize_legacy_dtx_file_levels.sql',
+			'0005_fix_level_decoding_formula.sql',
+			'0006_google_drive_file_id.sql'
+		]);
+
+		const row = await db
+			.prepare('SELECT google_drive_file_id FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{ google_drive_file_id: string | null }>();
+		expect(row?.google_drive_file_id).toBeNull();
+	});
+
+	it('persists the Drive ID and download URL for the owner', async () => {
+		const updated = await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'drive-file-123',
+			downloadUrl: 'https://drive.google.com/uc?id=drive-file-123'
+		});
+		expect(updated.google_drive_file_id).toBe('drive-file-123');
+		expect(updated.download_url).toBe('https://drive.google.com/uc?id=drive-file-123');
+
+		const persisted = await db
+			.prepare('SELECT google_drive_file_id, download_url FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{ google_drive_file_id: string | null; download_url: string | null }>();
+		expect(persisted).toEqual({
+			google_drive_file_id: 'drive-file-123',
+			download_url: 'https://drive.google.com/uc?id=drive-file-123'
+		});
+	});
+
+	it('rejects a wrong owner and missing row without changing the original metadata', async () => {
+		await expect(
+			updateSimfileDriveFile(db, 1, 'user-2', {
+				googleDriveFileId: 'other-users-file',
+				downloadUrl: 'https://drive.google.com/uc?id=other-users-file'
+			})
+		).rejects.toThrow('Simfile not found');
+		await expect(
+			updateSimfileDriveFile(db, 99, 'user-1', {
+				googleDriveFileId: 'missing-file',
+				downloadUrl: 'https://drive.google.com/uc?id=missing-file'
+			})
+		).rejects.toThrow('Simfile not found');
+
+		const row = await db
+			.prepare('SELECT google_drive_file_id, download_url FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{ google_drive_file_id: string | null; download_url: string | null }>();
+		expect(row).toEqual({ google_drive_file_id: null, download_url: null });
+	});
+
+	it('rejects a second direct application of 0006 because Wrangler records applied migrations', async () => {
+		const migration = MIGRATIONS.find(
+			(candidate) => candidate.fileName === '0006_google_drive_file_id.sql'
+		);
+		expect(migration).toBeDefined();
+		await expect(runMigration(migration!.statements)).rejects.toThrow(/duplicate column name/);
+	});
 });
 
 describe('upsertChartScoreAndReplaceScores (real D1)', () => {

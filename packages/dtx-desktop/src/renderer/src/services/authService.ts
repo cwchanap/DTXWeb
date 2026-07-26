@@ -11,6 +11,8 @@ import { workspaceStore, type WorkspaceState, type TreeNode } from '../stores/wo
 import { linkageCacheService } from './linkageCacheService';
 import type { Session } from '@supabase/supabase-js';
 import { desktopHost } from './desktopHost';
+import { googleDriveService } from './googleDriveService';
+import { googleDriveStore } from '../stores/googleDriveStore';
 
 // Get server URL from environment variable or fallback to default
 const DEFAULT_SERVER_URL = 'http://localhost:5173';
@@ -196,6 +198,9 @@ export const authService = {
 			};
 
 			authStore.setUser(userData);
+			// Session validation already triggers native pending-binding
+			// reconciliation best-effort. Refresh only the renderer-safe summary.
+			void googleDriveService.refreshConnection();
 			return true;
 		} catch (error) {
 			console.error('Failed to restore session:', error);
@@ -207,6 +212,10 @@ export const authService = {
 	 * Logs out the current user
 	 */
 	logout: async (): Promise<void> => {
+		// Native logout intentionally retains installation-local Drive
+		// credentials/settings for this user. The renderer still must hide any
+		// old connection or upload state immediately.
+		googleDriveStore.reset();
 		try {
 			// Clear session in host process
 			await desktopHost.logoutSession();

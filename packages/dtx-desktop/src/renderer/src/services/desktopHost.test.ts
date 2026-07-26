@@ -324,6 +324,80 @@ describe('desktopHost', () => {
 		});
 	});
 
+	it('maps the bounded Drive connection commands without renderer-controlled identity data', async () => {
+		vi.mocked(runtime.invoke)
+			.mockResolvedValueOnce({ connected: false })
+			.mockResolvedValueOnce({
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' }
+			})
+			.mockResolvedValueOnce({
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' }
+			})
+			.mockResolvedValueOnce({
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' }
+			})
+			.mockResolvedValueOnce({
+				connection: { connected: false },
+				revocationUnconfirmed: false
+			});
+
+		await desktopHost.getGoogleDriveConnectionState();
+		await desktopHost.connectGoogleDriveAndChooseFolder();
+		await desktopHost.changeGoogleDriveFolder();
+		await desktopHost.recheckGoogleDriveSharing();
+		await desktopHost.disconnectGoogleDrive();
+
+		expect(runtime.invoke.mock.calls).toEqual([
+			['get_google_drive_connection_state'],
+			['connect_google_drive_and_choose_folder'],
+			['change_google_drive_folder'],
+			['recheck_google_drive_sharing'],
+			['disconnect_google_drive']
+		]);
+	});
+
+	it('serializes only the bounded Drive upload transaction input', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ success: false, errorCode: 'CANCELED' });
+
+		await desktopHost.uploadSongZipToGoogleDrive({
+			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+			simfileId: 'simfile-42',
+			songRelativePath: 'songs/alpha',
+			forceCreateReplacement: true
+		});
+		await desktopHost.cancelGoogleDriveUpload('f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8');
+
+		expect(runtime.invoke).toHaveBeenNthCalledWith(1, 'upload_song_zip_to_google_drive', {
+			input: {
+				operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+				simfileId: 'simfile-42',
+				songRelativePath: 'songs/alpha',
+				forceCreateReplacement: true
+			}
+		});
+		expect(runtime.invoke).toHaveBeenNthCalledWith(2, 'cancel_google_drive_upload', {
+			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8'
+		});
+
+		for (const [, payload] of runtime.invoke.mock.calls) {
+			expect(Object.keys((payload as Record<string, unknown>) ?? {})).not.toEqual(
+				expect.arrayContaining([
+					'userId',
+					'workspaceRoot',
+					'absolutePath',
+					'folderId',
+					'title',
+					'existingDriveId',
+					'downloadUrl',
+					'credential'
+				])
+			);
+		}
+	});
+
 	it('maps multi-part pathExists arguments for Tauri', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ exists: true, error: null });
 

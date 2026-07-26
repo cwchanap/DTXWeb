@@ -74,5 +74,46 @@
 			"order_out_of_range": "最近のプレイの順序が範囲外です",
 			"unknown_rank": "不明なランクラベル"
 		}
+	},
+	"googleDrive": {
+		"title": "Google Drive アップロード",
+		"connect": "Google Drive を接続",
+		"connected": "Google Drive は接続されています",
+		"folder": "アップロード先フォルダー: {name}",
+		"changeFolder": "フォルダーを変更",
+		"recheckSharing": "共有設定を再確認",
+		"disconnect": "Google Drive を切断",
+		"connecting": "Google Drive に接続中…",
+		"disconnectWarning": "切断すると、このインストールに保存された Drive 接続が削除されます。ファイルやダウンロードリンクは削除されません。",
+		"folderDoesNotMoveFiles": "既定のフォルダーを変更しても、すでにリンク済みのファイルは移動されません。",
+		"warning": {
+			"reconnect": "アップロードする前に Google Drive を再接続してください。",
+			"credentialStore": "このインストールでは安全な認証情報ストレージを利用できません。",
+			"privateSharing": "選択したフォルダーでは公開ダウンロードリンクを許可する必要があります。",
+			"sharingCheck": "Google Drive の共有設定を確認できませんでした。アップロード前に再確認してください。",
+			"existingFileAccess": "既存のリンク済みファイルを置き換えられるのは、この Google アカウントと OAuth アプリに権限がある場合のみです。別のインストールでは再接続または明示的な置換が必要になることがあります。"
+		},
+		"upload": {
+			"queued": "Google Drive アップロードは待機中です",
+			"preparing": "Google Drive 用 ZIP を準備中",
+			"connecting": "Google Drive に接続中",
+			"uploading": "Google Drive にアップロード中",
+			"finalizing": "Google Drive アップロードを完了処理中",
+			"synchronizing": "ダウンロードリンクを保存中",
+			"complete": "Google Drive アップロードが完了しました",
+			"failedSaveSucceeded": "Google Drive アップロードに失敗しました。Drumery への保存は完了しています。",
+			"cancel": "アップロードをキャンセル",
+			"retry": "Google Drive アップロードを再試行",
+			"replace": "置換用アップロードを作成",
+			"browserLink": "ダウンロードリンクは Google Drive で開き、リダイレクトまたは中間画面が表示される場合があります。",
+			"openLink": "Google Drive のダウンロードを開く"
+		},
+		"error": {
+			"FILE_NOT_FOUND": "以前にリンクされた Google Drive ファイルは利用できなくなりました。",
+			"FILE_PERMISSION_DENIED": "この Google アカウントには、以前にリンクされたファイルを置き換える権限がありません。",
+			"CANCELED": "Google Drive アップロードはキャンセルされました。",
+			"UNKNOWN": "Google Drive アップロードを完了できませんでした。",
+			"INVALID_RESPONSE": "Google Drive アップロードを安全に開始できませんでした。"
+		}
 	}
 }

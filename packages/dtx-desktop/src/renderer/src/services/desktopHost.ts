@@ -7,6 +7,55 @@ export type DesktopHostVersions = {
 	tauri: string | null;
 };
 
+export type GoogleDriveConnectionState = {
+	connected: boolean;
+	folder?: { id: string; name: string };
+	requiresReconnect?: boolean;
+	requiresPublicSharing?: boolean;
+	sharingCheckUnavailable?: boolean;
+	credentialStoreUnavailable?: boolean;
+};
+
+export type GoogleDriveDisconnectResult = {
+	connection: GoogleDriveConnectionState;
+	revocationUnconfirmed: boolean;
+};
+
+export type GoogleDriveUploadInput = {
+	operationId: string;
+	simfileId: string;
+	songRelativePath: string;
+	forceCreateReplacement?: boolean;
+};
+
+export type GoogleDriveUploadResult = {
+	success: boolean;
+	fileId?: string;
+	downloadUrl?: string;
+	fileName?: string;
+	replacedExistingFile?: boolean;
+	errorCode?: string;
+	error?: string;
+};
+
+export type GoogleDriveUploadProgress = {
+	operationId: string;
+	simfileId: string;
+	stage:
+		| 'waiting-for-upload-slot'
+		| 'preparing-zip'
+		| 'connecting-to-google-drive'
+		| 'uploading'
+		| 'finalizing'
+		| 'synchronizing-download-metadata'
+		| 'upload-complete'
+		| 'upload-failed-save-succeeded';
+	bytesUploaded?: number;
+	totalBytes?: number;
+	percentage?: number;
+	errorCode?: string;
+};
+
 /**
  * Shape returned by the Rust `check_for_update` command (`updater.rs`).
  * - `success: true, available: true`  -> `version`/`body`/`date` populated
@@ -324,6 +373,37 @@ export const desktopHost = {
 	getDefaultDownloadsDir: (): Promise<string | null> => getRuntime().getDefaultDownloadsDir(),
 
 	getVersions: (): Promise<DesktopHostVersions> => getRuntime().getVersions(),
+
+	getGoogleDriveConnectionState: async (): Promise<GoogleDriveConnectionState> =>
+		await invokeHost<GoogleDriveConnectionState>('get_google_drive_connection_state'),
+
+	connectGoogleDriveAndChooseFolder: async (): Promise<GoogleDriveConnectionState> =>
+		await invokeHost<GoogleDriveConnectionState>('connect_google_drive_and_choose_folder'),
+
+	changeGoogleDriveFolder: async (): Promise<GoogleDriveConnectionState> =>
+		await invokeHost<GoogleDriveConnectionState>('change_google_drive_folder'),
+
+	recheckGoogleDriveSharing: async (): Promise<GoogleDriveConnectionState> =>
+		await invokeHost<GoogleDriveConnectionState>('recheck_google_drive_sharing'),
+
+	disconnectGoogleDrive: async (): Promise<GoogleDriveDisconnectResult> =>
+		await invokeHost<GoogleDriveDisconnectResult>('disconnect_google_drive'),
+
+	uploadSongZipToGoogleDrive: async (
+		input: GoogleDriveUploadInput
+	): Promise<GoogleDriveUploadResult> =>
+		await invokeHost<GoogleDriveUploadResult>('upload_song_zip_to_google_drive', { input }),
+
+	cancelGoogleDriveUpload: async (operationId: string): Promise<boolean> =>
+		await invokeHost<boolean>('cancel_google_drive_upload', { operationId }),
+
+	onGoogleDriveUploadProgress: async (
+		callback: (progress: GoogleDriveUploadProgress) => void
+	): Promise<HostUnlisten> =>
+		await getRuntime().listen<GoogleDriveUploadProgress>(
+			'google-drive-upload-progress',
+			callback
+		),
 
 	onMagicLinkResult: async <T = unknown>(callback: (result: T) => void): Promise<HostUnlisten> =>
 		await getRuntime().listen<T>('magic-link-result', callback),

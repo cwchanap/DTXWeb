@@ -205,6 +205,10 @@ pub fn run() {
             google_drive::commands::recheck_google_drive_sharing,
             #[cfg(any(feature = "google-drive", feature = "e2e"))]
             google_drive::commands::disconnect_google_drive,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::upload_song_zip_to_google_drive,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::cancel_google_drive_upload,
             #[cfg(feature = "e2e")]
             e2e::read_e2e_session_nonce
         ])

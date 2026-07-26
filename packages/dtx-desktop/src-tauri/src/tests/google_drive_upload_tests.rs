@@ -411,6 +411,203 @@ fn update_request(bytes: &[u8]) -> UploadRequestFixture {
 }
 
 #[test]
+fn operation_manager_rejects_same_song_duplicates_and_releases_key_on_drop() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let first = manager
+        .register("user-1", Uuid::new_v4(), "sim-1")
+        .expect("first operation");
+    assert_eq!(
+        manager.register("user-1", Uuid::new_v4(), "sim-1").err(),
+        Some(DriveApiError::UploadInProgress)
+    );
+    assert!(manager.register("user-1", Uuid::new_v4(), "sim-2").is_ok());
+    assert!(manager.register("user-2", Uuid::new_v4(), "sim-1").is_ok());
+
+    drop(first);
+    assert!(manager.register("user-1", Uuid::new_v4(), "sim-1").is_ok());
+}
+
+#[tokio::test]
+async fn operation_manager_admits_two_resource_users_and_queues_fifo_without_allocating_a_slot() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let first = manager
+        .register("user", Uuid::new_v4(), "sim-1")
+        .expect("first");
+    let second = manager
+        .register("user", Uuid::new_v4(), "sim-2")
+        .expect("second");
+    let third = manager
+        .register("user", Uuid::new_v4(), "sim-3")
+        .expect("third");
+    let fourth = manager
+        .register("user", Uuid::new_v4(), "sim-4")
+        .expect("fourth");
+    let first_permit = first.acquire_resource_slot().await.expect("first permit");
+    let second_permit = second.acquire_resource_slot().await.expect("second permit");
+    assert_eq!(manager.available_resource_slots(), 0);
+    let cache = tempdir().expect("cache");
+    let cache_path = cache.path().to_path_buf();
+
+    let (admitted_tx, mut admitted_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (third_release_tx, third_release_rx) = tokio::sync::oneshot::channel();
+    let third_task = tokio::spawn({
+        let admitted_tx = admitted_tx.clone();
+        let cache_path = cache_path.clone();
+        async move {
+            let permit = third.acquire_resource_slot().await.expect("third permit");
+            let _archive = create_upload_archive(&cache_path).expect("post-admission archive");
+            admitted_tx.send(3).unwrap();
+            let _ = third_release_rx.await;
+            drop(permit);
+        }
+    });
+    tokio::task::yield_now().await;
+    let fourth_task = tokio::spawn(async move {
+        let _permit = fourth.acquire_resource_slot().await.expect("fourth permit");
+        admitted_tx.send(4).unwrap();
+    });
+    tokio::task::yield_now().await;
+    assert!(
+        admitted_rx.try_recv().is_err(),
+        "queued work consumed no slot"
+    );
+    assert!(
+        !cache.path().join("google-drive-uploads").exists(),
+        "queued work allocated no temp namespace or directory"
+    );
+
+    drop(first_permit);
+    assert_eq!(admitted_rx.recv().await, Some(3));
+    assert!(admitted_rx.try_recv().is_err(), "FIFO keeps fourth queued");
+    third_release_tx.send(()).unwrap();
+    assert_eq!(admitted_rx.recv().await, Some(4));
+
+    drop(second_permit);
+    third_task.await.unwrap();
+    fourth_task.await.unwrap();
+}
+
+#[tokio::test]
+async fn queued_cancellation_releases_song_and_operation_state_without_consuming_resources() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let first = manager
+        .register("user", Uuid::new_v4(), "sim-1")
+        .expect("first");
+    let second = manager
+        .register("user", Uuid::new_v4(), "sim-2")
+        .expect("second");
+    let queued_id = Uuid::new_v4();
+    let queued = manager
+        .register("user", queued_id, "sim-3")
+        .expect("queued");
+    let _first_permit = first.acquire_resource_slot().await.expect("first permit");
+    let _second_permit = second.acquire_resource_slot().await.expect("second permit");
+    assert_eq!(manager.available_resource_slots(), 0);
+
+    let task = tokio::spawn(async move { queued.acquire_resource_slot().await });
+    tokio::task::yield_now().await;
+    assert!(manager.cancel("user", queued_id));
+    assert_eq!(task.await.unwrap().err(), Some(DriveApiError::Canceled));
+    assert_eq!(manager.active_count(), 2);
+    assert_eq!(manager.available_resource_slots(), 0);
+    assert!(manager.register("user", Uuid::new_v4(), "sim-3").is_ok());
+}
+
+#[tokio::test]
+async fn preparing_cancellation_cleans_staging_and_releases_resource_and_song_locks() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let operation = manager
+        .register("user", operation_id, "sim-prepare")
+        .expect("operation");
+    let permit = operation
+        .acquire_resource_slot()
+        .await
+        .expect("resource permit");
+    operation.set_phase(DriveOperationPhase::Preparing);
+    let cache = tempdir().expect("cache");
+    let archive = create_upload_archive(cache.path()).expect("archive");
+    let zip_path = archive.zip_path().to_path_buf();
+    std::fs::write(&zip_path, b"partial").expect("partial archive");
+
+    assert!(manager.cancel("user", operation_id));
+    drop(archive);
+    drop(permit);
+    drop(operation);
+
+    assert!(!zip_path.exists());
+    assert_eq!(manager.available_resource_slots(), 2);
+    assert_eq!(manager.active_count(), 0);
+    assert!(manager
+        .register("user", Uuid::new_v4(), "sim-prepare")
+        .is_ok());
+}
+
+#[test]
+fn cancellation_is_refused_after_drive_finalization_and_logout_hides_visible_operations() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let finalizing_id = Uuid::new_v4();
+    let finalizing = manager
+        .register("user", finalizing_id, "sim-final")
+        .expect("finalizing");
+    finalizing.set_phase(DriveOperationPhase::Finalizing);
+    assert!(!manager.cancel("user", finalizing_id));
+
+    let transferring_id = Uuid::new_v4();
+    let transferring = manager
+        .register("user", transferring_id, "sim-transfer")
+        .expect("transferring");
+    transferring.set_phase(DriveOperationPhase::Transferring);
+    manager.clear_user_visible_state("user");
+    assert!(transferring.cancellation().is_cancelled());
+    assert!(!manager.cancel("user", transferring_id));
+    assert!(
+        !finalizing.cancellation().is_cancelled(),
+        "finalized transaction must finish metadata sync/compensation"
+    );
+}
+
+#[tokio::test]
+async fn transferring_cancellation_aborts_session_initialization_before_any_chunk_buffer_is_used() {
+    let api = Arc::new(ScriptedDriveApi::default());
+    let gate = Arc::new(AsyncGate::default());
+    *api.start_create_gate.lock().unwrap() = Some(gate.clone());
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let fixture = create_request(b"archive");
+    let UploadRequestFixture {
+        _directory,
+        request,
+    } = fixture;
+    let task = tokio::spawn({
+        let api = api.clone();
+        let cancellation = cancellation.clone();
+        async move {
+            let _directory = _directory;
+            run_resumable_upload_cancelable(
+                api.as_ref(),
+                &RecordingSleeper::default(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    gate.entered
+        .acquire()
+        .await
+        .expect("start entered")
+        .forget();
+
+    cancellation.cancel();
+    let failure = task.await.unwrap().expect_err("canceled start");
+
+    assert_eq!(failure.error, DriveApiError::Canceled);
+    assert!(api.uploaded_ranges.lock().unwrap().is_empty());
+}
+
+#[test]
 fn drive_name_sanitizes_metadata_without_using_local_filename_rules() {
     assert_eq!(sanitize_drive_zip_name("AC/DC", "sim-42"), "AC-DC.zip");
     assert_eq!(
@@ -710,6 +907,72 @@ async fn missing_final_link_retries_with_bounded_backoff_and_never_synthesizes_a
     assert_eq!(
         sleeper.delays.lock().unwrap().as_slice(),
         &[Duration::from_millis(100), Duration::from_millis(200)]
+    );
+}
+
+#[tokio::test]
+async fn existing_file_metadata_patch_retries_once_only_for_transient_failure() {
+    let metadata = ScriptedMetadataClient::default();
+    let prior =
+        ScriptedMetadataClient::owner(Some("existing-file"), Some("https://drive.google.com/old"));
+    metadata.patches.lock().unwrap().extend([
+        Err(DriveMetadataError::Network),
+        Ok(ScriptedMetadataClient::owner(
+            Some("existing-file"),
+            Some("https://drive.google.com/new"),
+        )),
+    ]);
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(prior.clone()));
+    let outcome = DriveUploadOutcome {
+        file_id: "existing-file".to_string(),
+        file_name: "Saved.zip".to_string(),
+        download_url: "https://drive.google.com/new".to_string(),
+    };
+
+    let result = patch_existing_upload(&metadata, &AuthState::default(), &prior, outcome.clone())
+        .await
+        .expect("transient retry");
+
+    assert_eq!(result, outcome);
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn existing_file_metadata_patch_failure_preserves_prior_binding_and_does_not_over_retry() {
+    let metadata = ScriptedMetadataClient::default();
+    let prior = ScriptedMetadataClient::owner(
+        Some("existing-file"),
+        Some("https://drive.google.com/still-working"),
+    );
+    metadata
+        .patches
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveMetadataError::InvalidResponse));
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(prior.clone()));
+    let outcome = DriveUploadOutcome {
+        file_id: "existing-file".to_string(),
+        file_name: "Saved.zip".to_string(),
+        download_url: "https://drive.google.com/new".to_string(),
+    };
+
+    let failure = patch_existing_upload(&metadata, &AuthState::default(), &prior, outcome)
+        .await
+        .expect_err("permanent metadata failure");
+
+    assert_eq!(failure.error, DriveApiError::MetadataSync);
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
+    assert_eq!(
+        prior.download_url.as_deref(),
+        Some("https://drive.google.com/still-working")
     );
 }
 

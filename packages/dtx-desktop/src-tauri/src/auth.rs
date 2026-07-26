@@ -395,6 +395,9 @@ pub async fn validate_session(
         Some(&app),
     )
     .await;
+    if is_valid {
+        spawn_drive_reconciliation_if_available(&app);
+    }
 
     Ok(if is_valid {
         SessionValidationStatus::Valid
@@ -412,6 +415,16 @@ pub async fn get_current_session(app: AppHandle) -> Result<Option<serde_json::Va
 pub async fn logout_session(app: AppHandle) -> Result<bool> {
     let state = app.state::<AuthState>();
     let user_id = state.current_user_id().await;
+    if let (Some(user_id), Some(drive)) = (
+        user_id.as_deref(),
+        app.try_state::<crate::google_drive::GoogleDriveState>(),
+    ) {
+        // Hide/cancel renderer-visible Drive work and clear volatile Google
+        // state immediately; remote Supabase logout may be slow or fail.
+        // Refresh credentials, folder settings, Drive objects, metadata, and
+        // pending crash bindings intentionally remain durable.
+        drive.clear_user_memory(user_id).await;
+    }
     // Best-effort server-side revocation: if we have config + a working HTTP
     // client, POST to Supabase's /logout endpoint to invalidate the refresh
     // token before clearing local state. If config/client is unavailable we
@@ -420,22 +433,10 @@ pub async fn logout_session(app: AppHandle) -> Result<bool> {
     if let Some((supabase_url, anon_key)) = resolve_auth_config() {
         if let Ok(client) = auth_client() {
             revoke_session_with_client(client, &state, &supabase_url, &anon_key).await;
-            if let (Some(user_id), Some(drive)) = (
-                user_id.as_deref(),
-                app.try_state::<crate::google_drive::GoogleDriveState>(),
-            ) {
-                drive.clear_user_memory(user_id).await;
-            }
             return Ok(true);
         }
     }
     state.set_current_session(None).await;
-    if let (Some(user_id), Some(drive)) = (
-        user_id.as_deref(),
-        app.try_state::<crate::google_drive::GoogleDriveState>(),
-    ) {
-        drive.clear_user_memory(user_id).await;
-    }
     Ok(true)
 }
 
@@ -451,6 +452,7 @@ pub async fn open_external_url(app: AppHandle, url: String) -> Result<()> {
 pub async fn handle_deep_link(app: &AppHandle, raw_url: &str) -> Result<()> {
     if let Some(event) = auth_event_from_url_with_state(&app.state::<AuthState>(), raw_url).await {
         emit_auth_event(app, &event)?;
+        spawn_drive_reconciliation_if_available(app);
     }
 
     Ok(())
@@ -868,11 +870,21 @@ pub async fn drain_pending_auth_events(app: AppHandle) -> Result<usize> {
             auth_event_from_url_with_state(&app.state::<AuthState>(), &raw_url).await
         {
             emit_auth_event(&app, &event)?;
+            spawn_drive_reconciliation_if_available(&app);
             count += 1;
         }
     }
 
     Ok(count)
+}
+
+fn spawn_drive_reconciliation_if_available(app: &AppHandle) {
+    if app
+        .try_state::<crate::google_drive::GoogleDriveState>()
+        .is_some()
+    {
+        crate::google_drive::GoogleDriveState::spawn_current_user_reconciliation(app.clone());
+    }
 }
 
 async fn auth_event_from_url_with_state(state: &AuthState, raw_url: &str) -> Option<AuthEvent> {

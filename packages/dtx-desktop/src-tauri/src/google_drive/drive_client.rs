@@ -147,11 +147,18 @@ impl ResumableUploadSession {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DriveApiError {
+    Canceled,
+    UploadInProgress,
+    WorkspaceRequired,
+    NotConnected,
+    FolderRequired,
     TokenExpired,
     Network,
     InvalidResponse,
     InvalidGeneratedId,
     LocalState,
+    CredentialStore,
+    NoValidSongFiles,
     InsufficientDiskSpace,
     MetadataSync,
     SimfileUnavailable,

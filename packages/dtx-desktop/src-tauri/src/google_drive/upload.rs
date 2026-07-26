@@ -1,9 +1,14 @@
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
 use async_trait::async_trait;
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::drive_client::{
@@ -25,6 +30,215 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
 const MAX_DOWNLOAD_URL_BYTES: usize = 8 * 1024;
 
 pub(crate) const DRIVE_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+const MAX_RESOURCE_USING_OPERATIONS: usize = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DriveOperationPhase {
+    Waiting,
+    Preparing,
+    Connecting,
+    Transferring,
+    Finalizing,
+    Synchronizing,
+}
+
+impl DriveOperationPhase {
+    fn cancellation_is_allowed(self) -> bool {
+        matches!(
+            self,
+            Self::Waiting | Self::Preparing | Self::Connecting | Self::Transferring
+        )
+    }
+}
+
+struct ActiveDriveOperation {
+    user_id: String,
+    simfile_id: String,
+    cancellation: CancellationToken,
+    phase: DriveOperationPhase,
+    visible: bool,
+}
+
+#[derive(Default)]
+struct DriveOperationRegistry {
+    by_id: HashMap<Uuid, ActiveDriveOperation>,
+    songs: HashSet<(String, String)>,
+}
+
+/// Process-wide upload admission and cancellation state. `Semaphore`'s queued
+/// acquisition is FIFO, and the permit is acquired before any temp directory,
+/// resumable session, or chunk buffer is allocated.
+pub(crate) struct DriveOperationManager {
+    registry: StdMutex<DriveOperationRegistry>,
+    resource_slots: Arc<Semaphore>,
+}
+
+impl Default for DriveOperationManager {
+    fn default() -> Self {
+        Self {
+            registry: StdMutex::new(DriveOperationRegistry::default()),
+            resource_slots: Arc::new(Semaphore::new(MAX_RESOURCE_USING_OPERATIONS)),
+        }
+    }
+}
+
+pub(crate) struct DriveOperationLease {
+    manager: Arc<DriveOperationManager>,
+    operation_id: Uuid,
+    cancellation: CancellationToken,
+}
+
+impl DriveOperationLease {
+    pub(crate) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+
+    pub(crate) fn cancellation(&self) -> &CancellationToken {
+        &self.cancellation
+    }
+
+    pub(crate) fn set_phase(&self, phase: DriveOperationPhase) {
+        self.manager.set_phase(self.operation_id, phase);
+    }
+
+    pub(crate) fn is_visible(&self) -> bool {
+        self.manager.is_visible(self.operation_id)
+    }
+
+    pub(crate) async fn acquire_resource_slot(
+        &self,
+    ) -> std::result::Result<OwnedSemaphorePermit, DriveApiError> {
+        tokio::select! {
+            permit = self.manager.resource_slots.clone().acquire_owned() => {
+                permit.map_err(|_| DriveApiError::LocalState)
+            }
+            _ = self.cancellation.cancelled() => Err(DriveApiError::Canceled),
+        }
+    }
+}
+
+impl Drop for DriveOperationLease {
+    fn drop(&mut self) {
+        self.manager.finish(self.operation_id);
+    }
+}
+
+impl DriveOperationManager {
+    pub(crate) fn register(
+        self: &Arc<Self>,
+        user_id: &str,
+        operation_id: Uuid,
+        simfile_id: &str,
+    ) -> std::result::Result<DriveOperationLease, DriveApiError> {
+        let mut registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let song_key = (user_id.to_string(), simfile_id.to_string());
+        if registry.by_id.contains_key(&operation_id) || registry.songs.contains(&song_key) {
+            return Err(DriveApiError::UploadInProgress);
+        }
+        let cancellation = CancellationToken::new();
+        registry.songs.insert(song_key);
+        registry.by_id.insert(
+            operation_id,
+            ActiveDriveOperation {
+                user_id: user_id.to_string(),
+                simfile_id: simfile_id.to_string(),
+                cancellation: cancellation.clone(),
+                phase: DriveOperationPhase::Waiting,
+                visible: true,
+            },
+        );
+        Ok(DriveOperationLease {
+            manager: self.clone(),
+            operation_id,
+            cancellation,
+        })
+    }
+
+    pub(crate) fn cancel(&self, user_id: &str, operation_id: Uuid) -> bool {
+        let registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(operation) = registry.by_id.get(&operation_id) else {
+            return false;
+        };
+        if !operation.visible
+            || operation.user_id != user_id
+            || !operation.phase.cancellation_is_allowed()
+        {
+            return false;
+        }
+        operation.cancellation.cancel();
+        true
+    }
+
+    pub(crate) fn clear_user_visible_state(&self, user_id: &str) {
+        let mut registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for operation in registry
+            .by_id
+            .values_mut()
+            .filter(|operation| operation.user_id == user_id)
+        {
+            operation.visible = false;
+            if operation.phase.cancellation_is_allowed() {
+                operation.cancellation.cancel();
+            }
+        }
+    }
+
+    fn set_phase(&self, operation_id: Uuid, phase: DriveOperationPhase) {
+        if let Some(operation) = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .by_id
+            .get_mut(&operation_id)
+        {
+            operation.phase = phase;
+        }
+    }
+
+    fn is_visible(&self, operation_id: Uuid) -> bool {
+        self.registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .by_id
+            .get(&operation_id)
+            .is_some_and(|operation| operation.visible)
+    }
+
+    fn finish(&self, operation_id: Uuid) {
+        let mut registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(operation) = registry.by_id.remove(&operation_id) {
+            registry
+                .songs
+                .remove(&(operation.user_id, operation.simfile_id));
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_count(&self) -> usize {
+        self.registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .by_id
+            .len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn available_resource_slots(&self) -> usize {
+        self.resource_slots.available_permits()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DriveUploadTarget {
@@ -176,6 +390,65 @@ where
         access_token,
         request,
         DRIVE_UPLOAD_CHUNK_SIZE,
+        None,
+        on_progress,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_crash_safe_create_cancelable<A, S, F>(
+    api: &A,
+    sleeper: &S,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    request: CrashSafeCreateRequest,
+    cancellation: &CancellationToken,
+    on_progress: F,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+    S: DriveSleeper + ?Sized,
+    F: FnMut(u64, u64),
+{
+    run_crash_safe_create_with_chunk_size(
+        api,
+        sleeper,
+        pending_store,
+        metadata_client,
+        auth,
+        access_token,
+        request,
+        DRIVE_UPLOAD_CHUNK_SIZE,
+        None,
+        Some(cancellation),
+        on_progress,
+    )
+    .await
+}
+
+pub(crate) async fn run_resumable_upload_cancelable<A, S, F>(
+    api: &A,
+    sleeper: &S,
+    access_token: &str,
+    request: DriveUploadRequest,
+    cancellation: &CancellationToken,
+    on_progress: F,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+    S: DriveSleeper + ?Sized,
+    F: FnMut(u64, u64),
+{
+    run_resumable_upload_with_chunk_size(
+        api,
+        sleeper,
+        access_token,
+        request,
+        DRIVE_UPLOAD_CHUNK_SIZE,
+        Some(cancellation),
         on_progress,
     )
     .await
@@ -201,6 +474,7 @@ where
         access_token,
         request,
         chunk_size,
+        None,
         on_progress,
     )
     .await
@@ -232,6 +506,7 @@ where
         access_token,
         request,
         DRIVE_UPLOAD_CHUNK_SIZE,
+        None,
         None,
         on_progress,
     )
@@ -267,6 +542,7 @@ where
         request,
         chunk_size,
         crash_at,
+        None,
         on_progress,
     )
     .await
@@ -352,6 +628,7 @@ async fn run_crash_safe_create_with_chunk_size<A, S, F>(
     request: CrashSafeCreateRequest,
     chunk_size: usize,
     crash_at: Option<CreateCrashPoint>,
+    cancellation: Option<&CancellationToken>,
     mut on_progress: F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -359,6 +636,7 @@ where
     S: DriveSleeper + ?Sized,
     F: FnMut(u64, u64),
 {
+    ensure_not_canceled(cancellation).map_err(create_failure)?;
     let user_id = auth
         .current_user_id()
         .await
@@ -382,6 +660,7 @@ where
         }
         Err(error) => return Err(create_failure(metadata_error(error))),
     };
+    ensure_not_canceled(cancellation).map_err(create_failure)?;
 
     let pending = match pending {
         Some(pending) => pending,
@@ -398,6 +677,7 @@ where
                 .generate_id(access_token)
                 .await
                 .map_err(create_failure)?;
+            ensure_not_canceled(cancellation).map_err(create_failure)?;
             let pending = PendingGoogleDriveBinding {
                 user_id: user_id.clone(),
                 simfile_id: request.simfile_id.clone(),
@@ -414,6 +694,7 @@ where
     };
 
     if had_pending_binding {
+        ensure_not_canceled(cancellation).map_err(create_failure)?;
         if owner.google_drive_file_id.as_deref() == Some(pending.drive_file_id.as_str()) {
             if let Ok(Some(download_url)) = validated_download_url(owner.download_url.as_deref()) {
                 remove_pending_binding(pending_store, &pending)?;
@@ -458,6 +739,7 @@ where
         owner,
         chunk_size,
         crash_at,
+        cancellation,
         &mut on_progress,
     )
     .await
@@ -476,6 +758,7 @@ async fn create_from_pending<A, S, F>(
     owner: OwnerDriveSimfile,
     chunk_size: usize,
     crash_at: Option<CreateCrashPoint>,
+    cancellation: Option<&CancellationToken>,
     on_progress: &mut F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -485,6 +768,7 @@ where
 {
     let mut rotated = false;
     loop {
+        ensure_not_canceled(cancellation).map_err(create_failure)?;
         let upload = run_resumable_upload_with_chunk_size(
             api,
             sleeper,
@@ -499,6 +783,7 @@ where
                 },
             },
             chunk_size,
+            cancellation,
             &mut *on_progress,
         )
         .await;
@@ -686,6 +971,80 @@ where
     .await
 }
 
+pub(crate) async fn patch_existing_upload(
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    prior_owner: &OwnerDriveSimfile,
+    outcome: DriveUploadOutcome,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure> {
+    for attempt in 0..2 {
+        let patch = metadata_client
+            .update_drive_file(
+                auth,
+                &prior_owner.id,
+                &outcome.file_id,
+                &outcome.download_url,
+            )
+            .await;
+        if patch.as_ref().is_ok_and(|updated| {
+            owner_has_drive_binding(
+                updated,
+                &prior_owner.id,
+                &outcome.file_id,
+                &outcome.download_url,
+            )
+        }) {
+            return Ok(outcome);
+        }
+
+        match metadata_client
+            .fetch_owner_simfile(auth, &prior_owner.id)
+            .await
+        {
+            Ok(current)
+                if owner_has_drive_binding(
+                    &current,
+                    &prior_owner.id,
+                    &outcome.file_id,
+                    &outcome.download_url,
+                ) =>
+            {
+                return Ok(outcome);
+            }
+            Ok(current) if owner_binding_matches(&current, prior_owner) => {}
+            Ok(_) | Err(DriveMetadataError::DefinitiveUnavailable) => {
+                return Err(upload_failure(
+                    DriveApiError::MetadataSync,
+                    &DriveUploadTarget::Update {
+                        file_id: outcome.file_id.clone(),
+                    },
+                ));
+            }
+            Err(_) => {}
+        }
+
+        let transient = matches!(
+            patch,
+            Err(DriveMetadataError::Network | DriveMetadataError::ServiceUnavailable)
+        );
+        if attempt == 0 && transient {
+            continue;
+        }
+        return Err(upload_failure(
+            DriveApiError::MetadataSync,
+            &DriveUploadTarget::Update {
+                file_id: outcome.file_id.clone(),
+            },
+        ));
+    }
+    Err(upload_failure(
+        DriveApiError::MetadataSync,
+        &DriveUploadTarget::Update {
+            file_id: outcome.file_id.clone(),
+        },
+    ))
+}
+
 fn owner_references_pending_file(
     owner: &OwnerDriveSimfile,
     pending: &PendingGoogleDriveBinding,
@@ -818,6 +1177,7 @@ async fn run_resumable_upload_with_chunk_size<A, S, F>(
     access_token: &str,
     request: DriveUploadRequest,
     chunk_size: usize,
+    cancellation: Option<&CancellationToken>,
     mut on_progress: F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -825,6 +1185,7 @@ where
     S: DriveSleeper + ?Sized,
     F: FnMut(u64, u64),
 {
+    ensure_not_canceled(cancellation).map_err(|error| upload_failure(error, &request.target))?;
     if chunk_size == 0
         || request.simfile_id.trim().is_empty()
         || request.saved_title.trim().is_empty()
@@ -851,10 +1212,10 @@ where
                     &request.target,
                 ));
             }
-            let folder = api
-                .validate_folder(access_token, folder_id)
-                .await
-                .map_err(|error| upload_failure(error, &request.target))?;
+            let folder =
+                await_cancelable(api.validate_folder(access_token, folder_id), cancellation)
+                    .await
+                    .map_err(|error| upload_failure(error, &request.target))?;
             if folder.id != *folder_id {
                 return Err(upload_failure(
                     DriveApiError::FolderUnavailable,
@@ -866,26 +1227,35 @@ where
                 parent_id: folder_id.clone(),
                 name: file_name.clone(),
             };
-            let session =
-                start_create_with_retry(api, sleeper, access_token, &metadata, total_bytes)
-                    .await
-                    .map_err(|error| upload_failure(error, &request.target))?;
+            let session = start_create_with_retry(
+                api,
+                sleeper,
+                access_token,
+                &metadata,
+                total_bytes,
+                cancellation,
+            )
+            .await
+            .map_err(|error| upload_failure(error, &request.target))?;
             (generated_id.clone(), session)
         }
         DriveUploadTarget::Update { file_id } => {
-            let existing = api
-                .get_file_for_update(access_token, file_id)
-                .await
-                .map_err(|error| upload_failure(error, &request.target))?;
+            let existing =
+                await_cancelable(api.get_file_for_update(access_token, file_id), cancellation)
+                    .await
+                    .map_err(|error| upload_failure(error, &request.target))?;
             if existing.id != *file_id || existing.trashed || !existing.can_edit {
                 return Err(upload_failure(
                     DriveApiError::PermissionDenied,
                     &request.target,
                 ));
             }
-            require_public_permission(api, access_token, file_id)
-                .await
-                .map_err(|error| upload_failure(error, &request.target))?;
+            await_cancelable(
+                require_public_permission(api, access_token, file_id),
+                cancellation,
+            )
+            .await
+            .map_err(|error| upload_failure(error, &request.target))?;
             let metadata = DriveUpdateMetadata {
                 name: file_name.clone(),
             };
@@ -896,6 +1266,7 @@ where
                 file_id,
                 &metadata,
                 total_bytes,
+                cancellation,
             )
             .await
             .map_err(|error| upload_failure(error, &request.target))?;
@@ -910,6 +1281,7 @@ where
         &session,
         &mut archive,
         chunk_size,
+        cancellation,
         &mut on_progress,
     )
     .await;
@@ -945,15 +1317,18 @@ async fn start_create_with_retry<A, S>(
     access_token: &str,
     metadata: &DriveCreateMetadata,
     total_bytes: u64,
+    cancellation: Option<&CancellationToken>,
 ) -> std::result::Result<super::drive_client::ResumableUploadSession, DriveApiError>
 where
     A: GoogleDriveApi + ?Sized,
     S: DriveSleeper + ?Sized,
 {
     for attempt in 0..=MAX_UPLOAD_RETRIES {
-        match api
-            .start_resumable_create(access_token, metadata, total_bytes)
-            .await
+        match await_cancelable(
+            api.start_resumable_create(access_token, metadata, total_bytes),
+            cancellation,
+        )
+        .await
         {
             Ok(session) => return Ok(session),
             Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
@@ -982,15 +1357,18 @@ async fn start_update_with_retry<A, S>(
     file_id: &str,
     metadata: &DriveUpdateMetadata,
     total_bytes: u64,
+    cancellation: Option<&CancellationToken>,
 ) -> std::result::Result<super::drive_client::ResumableUploadSession, DriveApiError>
 where
     A: GoogleDriveApi + ?Sized,
     S: DriveSleeper + ?Sized,
 {
     for attempt in 0..=MAX_UPLOAD_RETRIES {
-        match api
-            .start_resumable_update(access_token, file_id, metadata, total_bytes)
-            .await
+        match await_cancelable(
+            api.start_resumable_update(access_token, file_id, metadata, total_bytes),
+            cancellation,
+        )
+        .await
         {
             Ok(session) => return Ok(session),
             Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
@@ -1012,6 +1390,7 @@ where
     Err(DriveApiError::Network)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn transfer_archive<A, S, F>(
     api: &A,
     sleeper: &S,
@@ -1019,6 +1398,7 @@ async fn transfer_archive<A, S, F>(
     session: &super::drive_client::ResumableUploadSession,
     archive: &mut DiskArchiveSource,
     chunk_size: usize,
+    cancellation: Option<&CancellationToken>,
     on_progress: &mut F,
 ) -> std::result::Result<(), DriveApiError>
 where
@@ -1034,6 +1414,7 @@ where
     let mut chunk = Vec::new();
 
     while accepted < total_bytes {
+        ensure_not_canceled(cancellation)?;
         if loaded_offset != Some(accepted) {
             chunk = archive.read_chunk(accepted, chunk_size).await?;
             loaded_offset = Some(accepted);
@@ -1044,9 +1425,15 @@ where
         if attempted_end > total_bytes || attempted_end <= accepted {
             return Err(DriveApiError::LocalState);
         }
-        let result = api
-            .upload_chunk(access_token, session, accepted, &chunk, total_bytes)
-            .await;
+        let result = if let Some(cancellation) = cancellation {
+            tokio::select! {
+                result = api.upload_chunk(access_token, session, accepted, &chunk, total_bytes) => result,
+                _ = cancellation.cancelled() => return Err(DriveApiError::Canceled),
+            }
+        } else {
+            api.upload_chunk(access_token, session, accepted, &chunk, total_bytes)
+                .await
+        };
         let acknowledgement = match result {
             Ok(acknowledgement) => acknowledgement,
             Err(DriveApiError::Network) => {
@@ -1097,6 +1484,33 @@ where
         }
     }
     Ok(())
+}
+
+fn ensure_not_canceled(
+    cancellation: Option<&CancellationToken>,
+) -> std::result::Result<(), DriveApiError> {
+    if cancellation.is_some_and(CancellationToken::is_cancelled) {
+        Err(DriveApiError::Canceled)
+    } else {
+        Ok(())
+    }
+}
+
+async fn await_cancelable<T, F>(
+    future: F,
+    cancellation: Option<&CancellationToken>,
+) -> std::result::Result<T, DriveApiError>
+where
+    F: Future<Output = std::result::Result<T, DriveApiError>>,
+{
+    if let Some(cancellation) = cancellation {
+        tokio::select! {
+            result = future => result,
+            _ = cancellation.cancelled() => Err(DriveApiError::Canceled),
+        }
+    } else {
+        future.await
+    }
 }
 
 enum Acknowledgement {

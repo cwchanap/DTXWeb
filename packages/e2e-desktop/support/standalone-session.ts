@@ -428,7 +428,8 @@ const waitForEmbeddedReadiness = async (
 
 const isExpectedDriverDisconnect = (error: unknown): boolean => {
 	const code = errorCode(error);
-	if (code === 'ECONNREFUSED' || code === 'ECONNRESET') return true;
+	if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ConnectionRefused')
+		return true;
 	const message = error instanceof Error ? error.message : String(error);
 	return /ECONNREFUSED|ECONNRESET|connection refused|socket hang up|invalid session id|disconnected/i.test(
 		message

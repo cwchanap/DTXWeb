@@ -1,6 +1,6 @@
 import { expect, $ } from '@wdio/globals';
 
-import { resetApp } from '../support/app';
+import { resetApp, waitForUiDisplayed } from '../support/app';
 
 describe('Desktop shell navigation', () => {
 	beforeEach(async () => {
@@ -17,7 +17,10 @@ describe('Desktop shell navigation', () => {
 		await expect($('button[aria-label="Templates"]')).toHaveAttribute('aria-current', 'page');
 
 		await $('button[aria-label="Library"]').click();
-		await expect($('h2=Library')).toBeDisplayed();
+		await waitForUiDisplayed('h2', {
+			text: 'Library',
+			timeoutMsg: 'Expected Library to become ready after navigation'
+		});
 		await expect($('button[aria-label="Library"]')).toHaveAttribute('aria-current', 'page');
 	});
 

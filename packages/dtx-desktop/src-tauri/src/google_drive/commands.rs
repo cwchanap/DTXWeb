@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -12,9 +13,9 @@ use super::oauth::{
 use super::pending_bindings::PendingBindingKind;
 use super::upload::{
     create_upload_archive, patch_existing_upload, run_crash_safe_create_cancelable,
-    run_resumable_upload_cancelable, CrashSafeCreateRequest, DriveOperationLease,
-    DriveOperationPhase, DriveUploadFailure, DriveUploadOutcome, DriveUploadRequest,
-    DriveUploadTarget, TokioDriveSleeper,
+    run_resumable_upload_cancelable, run_with_single_access_token_refresh, CrashSafeCreateRequest,
+    DriveOperationLease, DriveOperationPhase, DriveUploadFailure, DriveUploadOutcome,
+    DriveUploadRequest, DriveUploadTarget, MonotonicDriveProgress, TokioDriveSleeper,
 };
 use super::GoogleDriveState;
 use crate::auth::AuthState;
@@ -374,25 +375,65 @@ async fn run_upload_transaction(
     let mut replaced_existing_file = false;
     let outcome = if let Some(existing_id) = existing_id {
         let finalization_gate = lease.finalization_gate();
-        let update = run_resumable_upload_cancelable(
-            api,
-            &TokioDriveSleeper,
-            &access_token,
-            DriveUploadRequest {
-                simfile_id: input.simfile_id.clone(),
-                saved_title: owner.title.clone(),
-                archive_path: archive.zip_path().to_path_buf(),
-                target: DriveUploadTarget::Update {
-                    file_id: existing_id.to_string(),
-                },
+        let request = DriveUploadRequest {
+            simfile_id: input.simfile_id.clone(),
+            saved_title: owner.title.clone(),
+            archive_path: archive.zip_path().to_path_buf(),
+            target: DriveUploadTarget::Update {
+                file_id: existing_id.to_string(),
             },
-            lease.cancellation(),
-            &finalization_gate,
-            |accepted, total| {
-                emit_transfer_progress(app, lease, &input.simfile_id, accepted, total)
+        };
+        let progress = StdMutex::new(MonotonicDriveProgress::default());
+        let update = run_with_single_access_token_refresh(
+            access_token,
+            |access_token| {
+                let request = request.clone();
+                let progress = &progress;
+                let finalization_gate = &finalization_gate;
+                async move {
+                    run_resumable_upload_cancelable(
+                        api,
+                        &TokioDriveSleeper,
+                        &access_token,
+                        request,
+                        lease.cancellation(),
+                        finalization_gate,
+                        |accepted, total| {
+                            if progress
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .should_emit(accepted, total)
+                            {
+                                emit_transfer_progress(
+                                    app,
+                                    lease,
+                                    &input.simfile_id,
+                                    accepted,
+                                    total,
+                                );
+                            }
+                        },
+                    )
+                    .await
+                }
+            },
+            |expired_access_token| async move {
+                if lease.cancellation().is_cancelled() {
+                    return Err(DriveApiError::Canceled);
+                }
+                drive
+                    .refresh_access_token_after_expiry(user_id, &expired_access_token)
+                    .await
+                    .map_err(|_| DriveApiError::TokenExpired)
             },
         )
         .await;
+        if update
+            .as_ref()
+            .is_err_and(|failure| failure.error == DriveApiError::TokenExpired)
+        {
+            drive.set_requires_reconnect(user_id, true).await;
+        }
         match update {
             Ok(outcome) => {
                 lease.set_phase(DriveOperationPhase::Synchronizing);
@@ -452,42 +493,78 @@ async fn create_and_bind(
         .as_ref()
         .ok_or_else(|| upload_failure(DriveApiError::LocalState))?;
     let finalization_gate = lease.finalization_gate();
-    run_crash_safe_create_cancelable(
-        api,
-        &TokioDriveSleeper,
-        pending_store,
-        drive.metadata_client.as_ref(),
-        &app.state::<AuthState>(),
-        &access_token,
-        CrashSafeCreateRequest {
-            simfile_id: input.simfile_id.clone(),
-            archive_path: archive_path.to_path_buf(),
-            folder_id: folder.id,
-            kind: if replacement {
-                PendingBindingKind::ExplicitReplacement
-            } else {
-                PendingBindingKind::FirstUpload
-            },
+    let request = CrashSafeCreateRequest {
+        simfile_id: input.simfile_id.clone(),
+        archive_path: archive_path.to_path_buf(),
+        folder_id: folder.id,
+        kind: if replacement {
+            PendingBindingKind::ExplicitReplacement
+        } else {
+            PendingBindingKind::FirstUpload
         },
-        lease.cancellation(),
-        &finalization_gate,
-        |accepted, total| {
-            emit_transfer_progress(app, lease, &input.simfile_id, accepted, total);
-            if total > 0 && accepted >= total {
-                lease.set_phase(DriveOperationPhase::Synchronizing);
-                emit_progress(
-                    app,
-                    lease,
-                    &input.simfile_id,
-                    GoogleDriveUploadStage::SynchronizingDownloadMetadata,
-                    None,
-                    None,
-                    None,
-                );
+    };
+    let progress = StdMutex::new(MonotonicDriveProgress::default());
+    let result = run_with_single_access_token_refresh(
+        access_token,
+        |access_token| {
+            let request = request.clone();
+            let progress = &progress;
+            let finalization_gate = &finalization_gate;
+            async move {
+                run_crash_safe_create_cancelable(
+                    api,
+                    &TokioDriveSleeper,
+                    pending_store,
+                    drive.metadata_client.as_ref(),
+                    &app.state::<AuthState>(),
+                    &access_token,
+                    request,
+                    lease.cancellation(),
+                    finalization_gate,
+                    |accepted, total| {
+                        if !progress
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .should_emit(accepted, total)
+                        {
+                            return;
+                        }
+                        emit_transfer_progress(app, lease, &input.simfile_id, accepted, total);
+                        if total > 0 && accepted >= total {
+                            lease.set_phase(DriveOperationPhase::Synchronizing);
+                            emit_progress(
+                                app,
+                                lease,
+                                &input.simfile_id,
+                                GoogleDriveUploadStage::SynchronizingDownloadMetadata,
+                                None,
+                                None,
+                                None,
+                            );
+                        }
+                    },
+                )
+                .await
             }
         },
+        |expired_access_token| async move {
+            if lease.cancellation().is_cancelled() {
+                return Err(DriveApiError::Canceled);
+            }
+            drive
+                .refresh_access_token_after_expiry(user_id, &expired_access_token)
+                .await
+                .map_err(|_| DriveApiError::TokenExpired)
+        },
     )
-    .await
+    .await;
+    if result
+        .as_ref()
+        .is_err_and(|failure| failure.error == DriveApiError::TokenExpired)
+    {
+        drive.set_requires_reconnect(user_id, true).await;
+    }
+    result
 }
 
 fn validate_song_relative_path(value: &str) -> std::result::Result<PathBuf, GoogleDriveErrorCode> {

@@ -340,6 +340,27 @@ impl GoogleDriveState {
         self.access_token_for_user_locked(user_id).await
     }
 
+    pub(crate) async fn refresh_access_token_after_expiry(
+        &self,
+        user_id: &str,
+        expired_access_token: &str,
+    ) -> std::result::Result<Zeroizing<String>, GoogleDriveOAuthError> {
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        {
+            let mut cache = self.access_tokens_by_user.lock().await;
+            if let Some(cached) = cache.get(user_id) {
+                if cached.token.as_str() != expired_access_token
+                    && access_token_is_reusable(cached.expires_at, Instant::now())
+                {
+                    return Ok(Zeroizing::new(cached.token.to_string()));
+                }
+            }
+            cache.remove(user_id);
+        }
+        self.access_token_for_user_locked(user_id).await
+    }
+
     async fn access_token_for_user_locked(
         &self,
         user_id: &str,

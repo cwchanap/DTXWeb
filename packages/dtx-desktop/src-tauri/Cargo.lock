@@ -1098,6 +1098,7 @@ dependencies = [
  "rand 0.8.7",
  "reqwest 0.12.15",
  "rusqlite",
+ "same-file",
  "security-framework 3.6.0",
  "serde",
  "serde_json",

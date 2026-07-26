@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{copy, ErrorKind, Read, Write};
+use std::ops::Deref;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use tauri::{path::BaseDirectory, AppHandle, Manager, State};
 use tokio::{fs, task};
 use tokio_util::sync::CancellationToken;
@@ -520,10 +522,56 @@ async fn export_song_folder_to_zip_inner(
 /// upload. The caller supplies the managed workspace root so a symlinked song
 /// directory cannot escape it. Symlink entries are deliberately excluded,
 /// matching the historic manual export behavior.
+#[derive(Debug)]
+pub(crate) struct ValidatedSongFile {
+    canonical_path: PathBuf,
+    archive_name: String,
+    source: Arc<std::fs::File>,
+}
+
+impl ValidatedSongFile {
+    fn open_reader(&self) -> Result<std::fs::File> {
+        Ok(self.source.try_clone()?)
+    }
+}
+
+impl Deref for ValidatedSongFile {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.canonical_path
+    }
+}
+
+impl PartialEq for ValidatedSongFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.canonical_path == other.canonical_path
+    }
+}
+
+impl Eq for ValidatedSongFile {}
+
+impl PartialEq<PathBuf> for ValidatedSongFile {
+    fn eq(&self, other: &PathBuf) -> bool {
+        self.canonical_path == *other
+    }
+}
+
 pub(crate) async fn collect_valid_song_files(
     song_path: &Path,
     workspace_root: &Path,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Vec<ValidatedSongFile>> {
+    collect_valid_song_files_with_open_hook(song_path, workspace_root, |_| {}).await
+}
+
+async fn collect_valid_song_files_with_open_hook<F>(
+    song_path: &Path,
+    workspace_root: &Path,
+    mut after_open: F,
+) -> Result<Vec<ValidatedSongFile>>
+where
+    F: FnMut(&Path),
+{
     let canonical_song_path = crate::filesystem::canonicalize_within_workspace(
         &song_path.to_string_lossy(),
         Some(&workspace_root.to_string_lossy()),
@@ -544,10 +592,21 @@ pub(crate) async fn collect_valid_song_files(
             continue;
         }
 
-        // Re-canonicalize the entry before handing it to the blocking ZIP
-        // writer. This keeps an entry that was swapped for an escaping link
-        // between directory enumeration and collection out of the archive.
-        let canonical_file = match fs::canonicalize(entry.path()).await {
+        // Open first, then prove that the retained handle still identifies the
+        // canonical in-workspace path. The ZIP writer consumes a clone of this
+        // handle instead of reopening the pathname, closing both sides of the
+        // validation-to-write symlink race.
+        let entry_path = entry.path();
+        let source = match fs::File::open(&entry_path).await {
+            Ok(source) => source.into_std().await,
+            Err(_) => continue,
+        };
+        let _opened_metadata = match source.metadata() {
+            Ok(metadata) if metadata.is_file() => metadata,
+            Ok(_) | Err(_) => continue,
+        };
+        after_open(&entry_path);
+        let canonical_file = match fs::canonicalize(&entry_path).await {
             Ok(file) => file,
             Err(_) => continue,
         };
@@ -556,14 +615,29 @@ pub(crate) async fn collect_valid_song_files(
         {
             continue;
         }
-        files.push(canonical_file);
+        let opened_identity = match source
+            .try_clone()
+            .map_err(DesktopError::from)
+            .and_then(|source| same_file::Handle::from_file(source).map_err(DesktopError::from))
+        {
+            Ok(identity) => identity,
+            Err(_) => continue,
+        };
+        let path_identity = match same_file::Handle::from_path(&canonical_file) {
+            Ok(identity) => identity,
+            Err(_) => continue,
+        };
+        if opened_identity != path_identity {
+            continue;
+        }
+        files.push(ValidatedSongFile {
+            canonical_path: canonical_file,
+            archive_name: file_name,
+            source: Arc::new(source),
+        });
     }
 
-    files.sort_by(|left, right| {
-        left.file_name()
-            .map(|name| name.to_string_lossy())
-            .cmp(&right.file_name().map(|name| name.to_string_lossy()))
-    });
+    files.sort_by(|left, right| left.archive_name.cmp(&right.archive_name));
     if files.is_empty() {
         return Err(DesktopError::Message("NO_VALID_SONG_FILES".to_string()));
     }
@@ -573,9 +647,9 @@ pub(crate) async fn collect_valid_song_files(
 /// Creates a ZIP from already validated, top-level files. If any write fails,
 /// remove the incomplete destination so neither manual export nor a future
 /// upload can accidentally consume a partial archive.
-pub(crate) fn write_song_zip(output_path: &Path, files: &[PathBuf]) -> Result<usize> {
-    write_song_zip_with_copy(output_path, files, |file_path, zip| {
-        let mut source = std::fs::File::open(file_path)?;
+pub(crate) fn write_song_zip(output_path: &Path, files: &[ValidatedSongFile]) -> Result<usize> {
+    write_song_zip_with_copy(output_path, files, |validated_file, zip| {
+        let mut source = validated_file.open_reader()?;
         copy(&mut source, zip)?;
         Ok(())
     })
@@ -583,7 +657,7 @@ pub(crate) fn write_song_zip(output_path: &Path, files: &[PathBuf]) -> Result<us
 
 pub(crate) fn write_song_zip_cancelable(
     output_path: &Path,
-    files: &[PathBuf],
+    files: &[ValidatedSongFile],
     cancellation: &CancellationToken,
 ) -> Result<usize> {
     write_song_zip_cancelable_with_chunk_hook(output_path, files, cancellation, || {})
@@ -591,7 +665,7 @@ pub(crate) fn write_song_zip_cancelable(
 
 pub(crate) fn write_song_zip_cancelable_with_chunk_hook<F>(
     output_path: &Path,
-    files: &[PathBuf],
+    files: &[ValidatedSongFile],
     cancellation: &CancellationToken,
     mut on_chunk_written: F,
 ) -> Result<usize>
@@ -601,9 +675,9 @@ where
     write_song_zip_with_copy_and_finish_check(
         output_path,
         files,
-        |file_path, zip| {
+        |validated_file, zip| {
             ensure_zip_not_canceled(cancellation)?;
-            let mut source = std::fs::File::open(file_path)?;
+            let mut source = validated_file.open_reader()?;
             let mut buffer = [0_u8; 64 * 1024];
             loop {
                 ensure_zip_not_canceled(cancellation)?;
@@ -628,34 +702,34 @@ fn ensure_zip_not_canceled(cancellation: &CancellationToken) -> Result<()> {
     }
 }
 
-fn write_song_zip_with_copy<F>(output_path: &Path, files: &[PathBuf], copy_file: F) -> Result<usize>
+fn write_song_zip_with_copy<F>(
+    output_path: &Path,
+    files: &[ValidatedSongFile],
+    copy_file: F,
+) -> Result<usize>
 where
-    F: FnMut(&Path, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
+    F: FnMut(&ValidatedSongFile, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
 {
     write_song_zip_with_copy_and_finish_check(output_path, files, copy_file, || Ok(()))
 }
 
 fn write_song_zip_with_copy_and_finish_check<F, G>(
     output_path: &Path,
-    files: &[PathBuf],
+    files: &[ValidatedSongFile],
     mut copy_file: F,
     mut before_finish: G,
 ) -> Result<usize>
 where
-    F: FnMut(&Path, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
+    F: FnMut(&ValidatedSongFile, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
     G: FnMut() -> Result<()>,
 {
     let result = (|| -> Result<usize> {
         let file = std::fs::File::create(output_path)?;
         let mut zip = zip::ZipWriter::new(file);
 
-        for file_path in files {
-            let file_name = file_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| DesktopError::Message("Invalid song file name".to_string()))?;
-            zip.start_file(file_name, SimpleFileOptions::default())?;
-            copy_file(file_path, &mut zip)?;
+        for validated_file in files {
+            zip.start_file(&validated_file.archive_name, SimpleFileOptions::default())?;
+            copy_file(validated_file, &mut zip)?;
         }
 
         before_finish()?;
@@ -701,7 +775,7 @@ async fn valid_export_files(song_path: &Path) -> Result<Vec<(String, PathBuf)>> 
         .into_iter()
         .filter_map(|path| {
             let file_name = path.file_name()?.to_string_lossy().into_owned();
-            Some((file_name, path))
+            Some((file_name, path.canonical_path.clone()))
         })
         .collect())
 }

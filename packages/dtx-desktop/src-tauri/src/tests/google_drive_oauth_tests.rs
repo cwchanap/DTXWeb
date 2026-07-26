@@ -1100,6 +1100,56 @@ async fn authorized_request_refreshes_and_retries_exactly_once_after_token_expir
     );
 }
 
+#[tokio::test]
+async fn upload_expiry_refresh_is_single_flight_and_reuses_the_secure_store_result() {
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let provider = Arc::new(BlockingRefreshProvider::new(token_response(
+        "replacement-access-token",
+        None,
+    )));
+    let state = Arc::new(oauth_state(
+        credential_store,
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        provider.clone(),
+        Arc::new(CallbackBrowser::new("unused")),
+    ));
+    state
+        .cache_access_token("user-42", "expired-access-token")
+        .await;
+
+    let first = tokio::spawn({
+        let state = state.clone();
+        async move {
+            state
+                .refresh_access_token_after_expiry("user-42", "expired-access-token")
+                .await
+        }
+    });
+    provider.wait_until_refresh_started().await;
+    let second = tokio::spawn({
+        let state = state.clone();
+        async move {
+            state
+                .refresh_access_token_after_expiry("user-42", "expired-access-token")
+                .await
+        }
+    });
+    provider.release_refresh.add_permits(1);
+
+    assert_eq!(
+        first.await.unwrap().unwrap().as_str(),
+        "replacement-access-token"
+    );
+    assert_eq!(
+        second.await.unwrap().unwrap().as_str(),
+        "replacement-access-token"
+    );
+    assert_eq!(provider.refresh_calls.load(Ordering::SeqCst), 1);
+}
+
 struct AlwaysExpiredRequest;
 
 #[async_trait]

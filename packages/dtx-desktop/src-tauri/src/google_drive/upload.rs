@@ -1,13 +1,14 @@
-use crate::auth::AuthState;
+use crate::auth::{AuthSessionEpoch, AuthState};
 use crate::error::{DesktopError, Result};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -57,6 +58,42 @@ struct ActiveDriveOperation {
     cancellation: CancellationToken,
     phase: DriveOperationPhase,
     visible: bool,
+    completion: Arc<DriveOperationCompletion>,
+}
+
+struct DriveOperationCompletion {
+    finished: AtomicBool,
+    notify: Notify,
+}
+
+impl Default for DriveOperationCompletion {
+    fn default() -> Self {
+        Self {
+            finished: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+}
+
+impl DriveOperationCompletion {
+    fn finish(&self) {
+        self.finished.store(true, Ordering::Release);
+        self.notify.notify_waiters();
+    }
+
+    async fn wait(&self, timeout: Duration) -> bool {
+        if self.finished.load(Ordering::Acquire) {
+            return true;
+        }
+        let notified = self.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self.finished.load(Ordering::Acquire) {
+            return true;
+        }
+        tokio::time::timeout(timeout, notified).await.is_ok()
+            && self.finished.load(Ordering::Acquire)
+    }
 }
 
 #[derive(Default)]
@@ -88,6 +125,11 @@ pub(crate) struct DriveOperationLease {
     cancellation: CancellationToken,
 }
 
+pub(crate) struct DriveFinalizationGate {
+    manager: Arc<DriveOperationManager>,
+    operation_id: Uuid,
+}
+
 impl DriveOperationLease {
     pub(crate) fn operation_id(&self) -> Uuid {
         self.operation_id
@@ -103,6 +145,13 @@ impl DriveOperationLease {
 
     pub(crate) fn is_visible(&self) -> bool {
         self.manager.is_visible(self.operation_id)
+    }
+
+    pub(crate) fn finalization_gate(&self) -> DriveFinalizationGate {
+        DriveFinalizationGate {
+            manager: self.manager.clone(),
+            operation_id: self.operation_id,
+        }
     }
 
     pub(crate) async fn acquire_resource_slot(
@@ -139,6 +188,7 @@ impl DriveOperationManager {
             return Err(DriveApiError::UploadInProgress);
         }
         let cancellation = CancellationToken::new();
+        let completion = Arc::new(DriveOperationCompletion::default());
         registry.songs.insert(song_key);
         registry.by_id.insert(
             operation_id,
@@ -148,6 +198,7 @@ impl DriveOperationManager {
                 cancellation: cancellation.clone(),
                 phase: DriveOperationPhase::Waiting,
                 visible: true,
+                completion,
             },
         );
         Ok(DriveOperationLease {
@@ -173,6 +224,32 @@ impl DriveOperationManager {
         }
         operation.cancellation.cancel();
         true
+    }
+
+    pub(crate) async fn cancel_and_wait(
+        &self,
+        user_id: &str,
+        operation_id: Uuid,
+        timeout: Duration,
+    ) -> bool {
+        let completion = {
+            let registry = self
+                .registry
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(operation) = registry.by_id.get(&operation_id) else {
+                return false;
+            };
+            if !operation.visible
+                || operation.user_id != user_id
+                || !operation.phase.cancellation_is_allowed()
+            {
+                return false;
+            }
+            operation.cancellation.cancel();
+            operation.completion.clone()
+        };
+        completion.wait(timeout).await
     }
 
     pub(crate) fn clear_user_visible_state(&self, user_id: &str) {
@@ -213,6 +290,27 @@ impl DriveOperationManager {
             .is_some_and(|operation| operation.visible)
     }
 
+    fn begin_finalization(&self, operation_id: Uuid) -> bool {
+        let mut registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(operation) = registry.by_id.get_mut(&operation_id) else {
+            return false;
+        };
+        if matches!(
+            operation.phase,
+            DriveOperationPhase::Finalizing | DriveOperationPhase::Synchronizing
+        ) {
+            return true;
+        }
+        if operation.cancellation.is_cancelled() {
+            return false;
+        }
+        operation.phase = DriveOperationPhase::Finalizing;
+        true
+    }
+
     fn finish(&self, operation_id: Uuid) {
         let mut registry = self
             .registry
@@ -222,6 +320,7 @@ impl DriveOperationManager {
             registry
                 .songs
                 .remove(&(operation.user_id, operation.simfile_id));
+            operation.completion.finish();
         }
     }
 
@@ -237,6 +336,12 @@ impl DriveOperationManager {
     #[cfg(test)]
     pub(crate) fn available_resource_slots(&self) -> usize {
         self.resource_slots.available_permits()
+    }
+}
+
+impl DriveFinalizationGate {
+    fn try_enter(&self) -> bool {
+        self.manager.begin_finalization(self.operation_id)
     }
 }
 
@@ -391,6 +496,7 @@ where
         request,
         DRIVE_UPLOAD_CHUNK_SIZE,
         None,
+        None,
         on_progress,
     )
     .await
@@ -406,6 +512,7 @@ pub(crate) async fn run_crash_safe_create_cancelable<A, S, F>(
     access_token: &str,
     request: CrashSafeCreateRequest,
     cancellation: &CancellationToken,
+    finalization_gate: &DriveFinalizationGate,
     on_progress: F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -424,6 +531,7 @@ where
         DRIVE_UPLOAD_CHUNK_SIZE,
         None,
         Some(cancellation),
+        Some(finalization_gate),
         on_progress,
     )
     .await
@@ -435,6 +543,7 @@ pub(crate) async fn run_resumable_upload_cancelable<A, S, F>(
     access_token: &str,
     request: DriveUploadRequest,
     cancellation: &CancellationToken,
+    finalization_gate: &DriveFinalizationGate,
     on_progress: F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -449,6 +558,7 @@ where
         request,
         DRIVE_UPLOAD_CHUNK_SIZE,
         Some(cancellation),
+        Some(finalization_gate),
         on_progress,
     )
     .await
@@ -474,6 +584,7 @@ where
         access_token,
         request,
         chunk_size,
+        None,
         None,
         on_progress,
     )
@@ -506,6 +617,7 @@ where
         access_token,
         request,
         DRIVE_UPLOAD_CHUNK_SIZE,
+        None,
         None,
         None,
         on_progress,
@@ -543,6 +655,7 @@ where
         chunk_size,
         crash_at,
         None,
+        None,
         on_progress,
     )
     .await
@@ -558,9 +671,34 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
 ) where
     A: GoogleDriveApi + ?Sized,
 {
-    let Some(user_id) = auth.current_user_id().await else {
+    let Some(expected_epoch) = auth.current_session_epoch().await else {
         return;
     };
+    reconcile_pending_bindings_for_session(
+        api,
+        pending_store,
+        metadata_client,
+        auth,
+        &expected_epoch,
+        access_token,
+    )
+    .await;
+}
+
+pub(crate) async fn reconcile_pending_bindings_for_session<A>(
+    api: &A,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    expected_epoch: &AuthSessionEpoch,
+    access_token: &str,
+) where
+    A: GoogleDriveApi + ?Sized,
+{
+    if !auth.matches_session_epoch(expected_epoch).await {
+        return;
+    }
+    let user_id = expected_epoch.user_id();
     let Ok(bindings) = pending_store.all() else {
         return;
     };
@@ -571,19 +709,34 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
         let transaction_lock =
             pending_store.transaction_lock(&pending.user_id, &pending.simfile_id);
         let _transaction_guard = transaction_lock.lock().await;
+        if !auth.matches_session_epoch(expected_epoch).await {
+            return;
+        }
         let pending = match pending_store.get(&pending.user_id, &pending.simfile_id) {
             Ok(Some(pending)) => pending,
             Ok(None) | Err(_) => continue,
         };
-        let owner = match metadata_client
+        let owner_result = metadata_client
             .fetch_owner_simfile(auth, &pending.simfile_id)
-            .await
-        {
+            .await;
+        if !auth.matches_session_epoch(expected_epoch).await {
+            return;
+        }
+        let owner = match owner_result {
             Ok(owner) if owner.id == pending.simfile_id => owner,
             Ok(_) => continue,
             Err(DriveMetadataError::DefinitiveUnavailable) => {
-                let _ =
-                    compensate_lost_owner(api, pending_store, access_token, Some(&pending)).await;
+                let _ = compensate_lost_owner(
+                    api,
+                    pending_store,
+                    access_token,
+                    Some(&pending),
+                    Some((auth, expected_epoch)),
+                )
+                .await;
+                if !auth.matches_session_epoch(expected_epoch).await {
+                    return;
+                }
                 continue;
             }
             Err(_) => continue,
@@ -593,11 +746,18 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
             && validated_download_url(owner.download_url.as_deref())
                 .is_ok_and(|value| value.is_some())
         {
+            if !auth.matches_session_epoch(expected_epoch).await {
+                return;
+            }
             let _ = remove_pending_binding(pending_store, &pending);
             continue;
         }
 
-        let file = match api.get_file(access_token, &pending.drive_file_id).await {
+        let file_result = api.get_file(access_token, &pending.drive_file_id).await;
+        if !auth.matches_session_epoch(expected_epoch).await {
+            return;
+        }
+        let file = match file_result {
             Ok(file) => file,
             Err(_) => continue,
         };
@@ -612,8 +772,12 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
             &owner,
             file,
             None,
+            Some((auth, expected_epoch)),
         )
         .await;
+        if !auth.matches_session_epoch(expected_epoch).await {
+            return;
+        }
     }
 }
 
@@ -629,6 +793,7 @@ async fn run_crash_safe_create_with_chunk_size<A, S, F>(
     chunk_size: usize,
     crash_at: Option<CreateCrashPoint>,
     cancellation: Option<&CancellationToken>,
+    finalization_gate: Option<&DriveFinalizationGate>,
     mut on_progress: F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -656,7 +821,8 @@ where
         Ok(owner) if owner.id == request.simfile_id => owner,
         Ok(_) => return Err(create_failure(DriveApiError::InvalidResponse)),
         Err(DriveMetadataError::DefinitiveUnavailable) => {
-            return compensate_lost_owner(api, pending_store, access_token, pending.as_ref()).await;
+            return compensate_lost_owner(api, pending_store, access_token, pending.as_ref(), None)
+                .await;
         }
         Err(error) => return Err(create_failure(metadata_error(error))),
     };
@@ -673,8 +839,7 @@ where
             {
                 return Err(create_failure(DriveApiError::InvalidResponse));
             }
-            let generated_id = api
-                .generate_id(access_token)
+            let generated_id = await_cancelable(api.generate_id(access_token), cancellation)
                 .await
                 .map_err(create_failure)?;
             ensure_not_canceled(cancellation).map_err(create_failure)?;
@@ -697,6 +862,7 @@ where
         ensure_not_canceled(cancellation).map_err(create_failure)?;
         if owner.google_drive_file_id.as_deref() == Some(pending.drive_file_id.as_str()) {
             if let Ok(Some(download_url)) = validated_download_url(owner.download_url.as_deref()) {
+                enter_finalization(finalization_gate, cancellation).map_err(create_failure)?;
                 remove_pending_binding(pending_store, &pending)?;
                 return Ok(DriveUploadOutcome {
                     file_id: pending.drive_file_id,
@@ -706,8 +872,14 @@ where
             }
         }
 
-        match api.get_file(access_token, &pending.drive_file_id).await {
+        match await_cancelable(
+            api.get_file(access_token, &pending.drive_file_id),
+            cancellation,
+        )
+        .await
+        {
             Ok(file) => {
+                enter_finalization(finalization_gate, cancellation).map_err(create_failure)?;
                 return finish_existing_pending_file(
                     api,
                     pending_store,
@@ -719,6 +891,7 @@ where
                     &owner,
                     file,
                     crash_at,
+                    None,
                 )
                 .await;
             }
@@ -740,6 +913,7 @@ where
         chunk_size,
         crash_at,
         cancellation,
+        finalization_gate,
         &mut on_progress,
     )
     .await
@@ -759,6 +933,7 @@ async fn create_from_pending<A, S, F>(
     chunk_size: usize,
     crash_at: Option<CreateCrashPoint>,
     cancellation: Option<&CancellationToken>,
+    finalization_gate: Option<&DriveFinalizationGate>,
     on_progress: &mut F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -784,14 +959,22 @@ where
             },
             chunk_size,
             cancellation,
+            finalization_gate,
             &mut *on_progress,
         )
         .await;
         let outcome = match upload {
             Ok(outcome) => outcome,
             Err(failure) if failure.error == DriveApiError::InvalidGeneratedId && !rotated => {
-                match api.get_file(access_token, &pending.drive_file_id).await {
+                match await_cancelable(
+                    api.get_file(access_token, &pending.drive_file_id),
+                    cancellation,
+                )
+                .await
+                {
                     Ok(file) => {
+                        enter_finalization(finalization_gate, cancellation)
+                            .map_err(create_failure)?;
                         return finish_existing_pending_file(
                             api,
                             pending_store,
@@ -803,14 +986,16 @@ where
                             &owner,
                             file,
                             crash_at,
+                            None,
                         )
                         .await;
                     }
                     Err(DriveApiError::NotFound) => {
-                        let fresh_id = api
-                            .generate_id(access_token)
-                            .await
-                            .map_err(create_failure)?;
+                        let fresh_id =
+                            await_cancelable(api.generate_id(access_token), cancellation)
+                                .await
+                                .map_err(create_failure)?;
+                        ensure_not_canceled(cancellation).map_err(create_failure)?;
                         pending.drive_file_id = fresh_id;
                         pending.created_at = pending_created_at();
                         pending_store
@@ -843,6 +1028,7 @@ where
             &owner,
             outcome,
             crash_at,
+            None,
         )
         .await;
     }
@@ -860,26 +1046,37 @@ async fn finish_existing_pending_file<A>(
     prior_owner: &OwnerDriveSimfile,
     file: DriveFile,
     crash_at: Option<CreateCrashPoint>,
+    reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
     A: GoogleDriveApi + ?Sized,
 {
-    let validation = async {
-        validate_final_file_shape(&file, &pending.drive_file_id)?;
-        let download_url = validated_download_url(file.web_content_link.as_deref())?
-            .ok_or(DriveApiError::InvalidResponse)?;
-        require_public_permission(api, access_token, &pending.drive_file_id).await?;
-        Ok::<_, DriveApiError>(download_url)
-    }
-    .await;
+    ensure_reconciliation_session(reconciliation_session).await?;
+    let validation = match validate_final_file_shape(&file, &pending.drive_file_id).and_then(|()| {
+        validated_download_url(file.web_content_link.as_deref())?
+            .ok_or(DriveApiError::InvalidResponse)
+    }) {
+        Ok(download_url) => require_public_permission(api, access_token, &pending.drive_file_id)
+            .await
+            .map(|()| download_url),
+        Err(error) => Err(error),
+    };
+    ensure_reconciliation_session(reconciliation_session).await?;
     let download_url = match validation {
         Ok(download_url) => download_url,
         Err(error) => {
             if owner_references_pending_file(prior_owner, pending) {
                 return Err(create_failure(error));
             }
-            return compensate_pending_failure(api, pending_store, access_token, pending, error)
-                .await;
+            return compensate_pending_failure(
+                api,
+                pending_store,
+                access_token,
+                pending,
+                error,
+                reconciliation_session,
+            )
+            .await;
         }
     };
     patch_and_finish(
@@ -897,6 +1094,7 @@ where
             download_url,
         },
         crash_at,
+        reconciliation_session,
     )
     .await
 }
@@ -913,23 +1111,29 @@ async fn patch_and_finish<A>(
     prior_owner: &OwnerDriveSimfile,
     outcome: DriveUploadOutcome,
     crash_at: Option<CreateCrashPoint>,
+    reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
     A: GoogleDriveApi + ?Sized,
 {
     for attempt in 0..2 {
+        ensure_reconciliation_session(reconciliation_session).await?;
         let patch_result = metadata_client
             .update_drive_file(auth, simfile_id, &outcome.file_id, &outcome.download_url)
             .await;
+        ensure_reconciliation_session(reconciliation_session).await?;
         if patch_result.as_ref().is_ok_and(|updated| {
             owner_has_drive_binding(updated, simfile_id, &outcome.file_id, &outcome.download_url)
         }) {
             maybe_inject_crash(crash_at, CreateCrashPoint::AfterMetadataPatch)?;
+            ensure_reconciliation_session(reconciliation_session).await?;
             remove_pending_binding(pending_store, pending)?;
             return Ok(outcome);
         }
 
-        match metadata_client.fetch_owner_simfile(auth, simfile_id).await {
+        let current_owner = metadata_client.fetch_owner_simfile(auth, simfile_id).await;
+        ensure_reconciliation_session(reconciliation_session).await?;
+        match current_owner {
             Ok(current)
                 if owner_has_drive_binding(
                     &current,
@@ -939,6 +1143,7 @@ where
                 ) =>
             {
                 maybe_inject_crash(crash_at, CreateCrashPoint::AfterMetadataPatch)?;
+                ensure_reconciliation_session(reconciliation_session).await?;
                 remove_pending_binding(pending_store, pending)?;
                 return Ok(outcome);
             }
@@ -948,8 +1153,14 @@ where
                 if owner_references_pending_file(prior_owner, pending) {
                     return Err(create_failure(DriveApiError::SimfileUnavailable));
                 }
-                return compensate_lost_owner(api, pending_store, access_token, Some(pending))
-                    .await;
+                return compensate_lost_owner(
+                    api,
+                    pending_store,
+                    access_token,
+                    Some(pending),
+                    reconciliation_session,
+                )
+                .await;
             }
             Err(_) => return Err(create_failure(DriveApiError::MetadataSync)),
         }
@@ -967,6 +1178,7 @@ where
         access_token,
         pending,
         DriveApiError::MetadataSync,
+        reconciliation_session,
     )
     .await
 }
@@ -1074,10 +1286,12 @@ async fn compensate_lost_owner<A>(
     pending_store: &GoogleDrivePendingBindingStore,
     access_token: &str,
     pending: Option<&PendingGoogleDriveBinding>,
+    reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
     A: GoogleDriveApi + ?Sized,
 {
+    ensure_reconciliation_session(reconciliation_session).await?;
     let Some(pending) = pending else {
         return Err(create_failure(DriveApiError::SimfileUnavailable));
     };
@@ -1087,6 +1301,7 @@ where
         access_token,
         pending,
         DriveApiError::SimfileUnavailable,
+        reconciliation_session,
     )
     .await
 }
@@ -1097,12 +1312,17 @@ async fn compensate_pending_failure<A>(
     access_token: &str,
     pending: &PendingGoogleDriveBinding,
     error: DriveApiError,
+    reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
     A: GoogleDriveApi + ?Sized,
 {
-    let disposition = match api.delete_file(access_token, &pending.drive_file_id).await {
+    ensure_reconciliation_session(reconciliation_session).await?;
+    let delete_result = api.delete_file(access_token, &pending.drive_file_id).await;
+    ensure_reconciliation_session(reconciliation_session).await?;
+    let disposition = match delete_result {
         Ok(()) | Err(DriveApiError::NotFound) => {
+            ensure_reconciliation_session(reconciliation_session).await?;
             remove_pending_binding(pending_store, pending)?;
             PendingBindingDisposition::DeleteConfirmed
         }
@@ -1112,6 +1332,19 @@ where
         error,
         pending_binding: disposition,
     })
+}
+
+async fn ensure_reconciliation_session(
+    reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
+) -> std::result::Result<(), DriveUploadFailure> {
+    let Some((auth, expected_epoch)) = reconciliation_session else {
+        return Ok(());
+    };
+    if auth.matches_session_epoch(expected_epoch).await {
+        Ok(())
+    } else {
+        Err(create_failure(DriveApiError::LocalState))
+    }
 }
 
 fn remove_pending_binding(
@@ -1171,6 +1404,7 @@ fn pending_created_at() -> String {
         .unwrap_or_else(|_| "0".to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_resumable_upload_with_chunk_size<A, S, F>(
     api: &A,
     sleeper: &S,
@@ -1178,6 +1412,7 @@ async fn run_resumable_upload_with_chunk_size<A, S, F>(
     request: DriveUploadRequest,
     chunk_size: usize,
     cancellation: Option<&CancellationToken>,
+    finalization_gate: Option<&DriveFinalizationGate>,
     mut on_progress: F,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
@@ -1282,6 +1517,7 @@ where
         &mut archive,
         chunk_size,
         cancellation,
+        finalization_gate,
         &mut on_progress,
     )
     .await;
@@ -1332,17 +1568,23 @@ where
         {
             Ok(session) => return Ok(session),
             Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper.sleep(bounded_retry_delay(attempt, None)).await;
+                sleep_cancelable(sleeper, bounded_retry_delay(attempt, None), cancellation).await?;
             }
             Err(DriveApiError::Transient(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper
-                    .sleep(bounded_retry_delay(attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
             }
             Err(DriveApiError::RateLimited(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper
-                    .sleep(bounded_retry_delay(attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
             }
             Err(error) => return Err(error),
         }
@@ -1372,17 +1614,23 @@ where
         {
             Ok(session) => return Ok(session),
             Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper.sleep(bounded_retry_delay(attempt, None)).await;
+                sleep_cancelable(sleeper, bounded_retry_delay(attempt, None), cancellation).await?;
             }
             Err(DriveApiError::Transient(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper
-                    .sleep(bounded_retry_delay(attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
             }
             Err(DriveApiError::RateLimited(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper
-                    .sleep(bounded_retry_delay(attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
             }
             Err(error) => return Err(error),
         }
@@ -1399,6 +1647,7 @@ async fn transfer_archive<A, S, F>(
     archive: &mut DiskArchiveSource,
     chunk_size: usize,
     cancellation: Option<&CancellationToken>,
+    finalization_gate: Option<&DriveFinalizationGate>,
     on_progress: &mut F,
 ) -> std::result::Result<(), DriveApiError>
 where
@@ -1437,23 +1686,45 @@ where
         let acknowledgement = match result {
             Ok(acknowledgement) => acknowledgement,
             Err(DriveApiError::Network) => {
-                query_status_with_retry(api, sleeper, access_token, session, total_bytes).await?
+                query_status_with_retry(
+                    api,
+                    sleeper,
+                    access_token,
+                    session,
+                    total_bytes,
+                    cancellation,
+                )
+                .await?
             }
             Err(DriveApiError::Transient(retry_after)) => {
                 if let Some(retry_after) = retry_after {
-                    sleeper
-                        .sleep(bounded_retry_delay(0, Some(retry_after)))
-                        .await;
+                    sleep_cancelable(
+                        sleeper,
+                        bounded_retry_delay(0, Some(retry_after)),
+                        cancellation,
+                    )
+                    .await?;
                 }
-                query_status_with_retry(api, sleeper, access_token, session, total_bytes).await?
+                query_status_with_retry(
+                    api,
+                    sleeper,
+                    access_token,
+                    session,
+                    total_bytes,
+                    cancellation,
+                )
+                .await?
             }
             Err(DriveApiError::RateLimited(retry_after)) => {
                 if rate_retry_attempt >= MAX_UPLOAD_RETRIES {
                     return Err(DriveApiError::RateLimited(retry_after));
                 }
-                sleeper
-                    .sleep(bounded_retry_delay(rate_retry_attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(rate_retry_attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
                 rate_retry_attempt += 1;
                 continue;
             }
@@ -1462,6 +1733,9 @@ where
 
         match validate_acknowledgement(accepted, attempted_end, total_bytes, acknowledgement)? {
             Acknowledgement::Progress(confirmed) => {
+                if confirmed == total_bytes {
+                    enter_finalization(finalization_gate, cancellation)?;
+                }
                 accepted = confirmed;
                 loaded_offset = None;
                 stalled_recovery_attempts = 0;
@@ -1472,12 +1746,16 @@ where
                 if stalled_recovery_attempts >= MAX_UPLOAD_RETRIES {
                     return Err(DriveApiError::InvalidResponse);
                 }
-                sleeper
-                    .sleep(bounded_retry_delay(stalled_recovery_attempts, None))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(stalled_recovery_attempts, None),
+                    cancellation,
+                )
+                .await?;
                 stalled_recovery_attempts += 1;
             }
             Acknowledgement::Complete => {
+                enter_finalization(finalization_gate, cancellation)?;
                 accepted = total_bytes;
                 on_progress(accepted, total_bytes);
             }
@@ -1496,6 +1774,21 @@ fn ensure_not_canceled(
     }
 }
 
+fn enter_finalization(
+    finalization_gate: Option<&DriveFinalizationGate>,
+    cancellation: Option<&CancellationToken>,
+) -> std::result::Result<(), DriveApiError> {
+    if let Some(finalization_gate) = finalization_gate {
+        if finalization_gate.try_enter() {
+            Ok(())
+        } else {
+            Err(DriveApiError::Canceled)
+        }
+    } else {
+        ensure_not_canceled(cancellation)
+    }
+}
+
 async fn await_cancelable<T, F>(
     future: F,
     cancellation: Option<&CancellationToken>,
@@ -1510,6 +1803,25 @@ where
         }
     } else {
         future.await
+    }
+}
+
+async fn sleep_cancelable<S>(
+    sleeper: &S,
+    duration: Duration,
+    cancellation: Option<&CancellationToken>,
+) -> std::result::Result<(), DriveApiError>
+where
+    S: DriveSleeper + ?Sized,
+{
+    if let Some(cancellation) = cancellation {
+        tokio::select! {
+            _ = sleeper.sleep(duration) => Ok(()),
+            _ = cancellation.cancelled() => Err(DriveApiError::Canceled),
+        }
+    } else {
+        sleeper.sleep(duration).await;
+        Ok(())
     }
 }
 
@@ -1549,29 +1861,38 @@ async fn query_status_with_retry<A, S>(
     access_token: &str,
     session: &super::drive_client::ResumableUploadSession,
     total_bytes: u64,
+    cancellation: Option<&CancellationToken>,
 ) -> std::result::Result<DriveChunkResult, DriveApiError>
 where
     A: GoogleDriveApi + ?Sized,
     S: DriveSleeper + ?Sized,
 {
     for attempt in 0..=MAX_UPLOAD_RETRIES {
-        match api
-            .query_session_status(access_token, session, total_bytes)
-            .await
+        match await_cancelable(
+            api.query_session_status(access_token, session, total_bytes),
+            cancellation,
+        )
+        .await
         {
             Ok(status) => return Ok(status),
             Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper.sleep(bounded_retry_delay(attempt, None)).await;
+                sleep_cancelable(sleeper, bounded_retry_delay(attempt, None), cancellation).await?;
             }
             Err(DriveApiError::Transient(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper
-                    .sleep(bounded_retry_delay(attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
             }
             Err(DriveApiError::RateLimited(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
-                sleeper
-                    .sleep(bounded_retry_delay(attempt, retry_after))
-                    .await;
+                sleep_cancelable(
+                    sleeper,
+                    bounded_retry_delay(attempt, retry_after),
+                    cancellation,
+                )
+                .await?;
             }
             Err(error) => return Err(error),
         }

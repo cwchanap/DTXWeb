@@ -36,10 +36,15 @@ struct ScriptedDriveApi {
     update_metadata: Mutex<Vec<(String, DriveUpdateMetadata)>>,
     generated_count: Mutex<usize>,
     get_file_ids: Mutex<Vec<String>>,
+    get_file_requests: Mutex<Vec<(String, String)>>,
     delete_count: Mutex<usize>,
     delete_ids: Mutex<Vec<String>>,
     truncate_after_first_chunk: Mutex<Option<PathBuf>>,
     start_create_gate: Mutex<Option<Arc<AsyncGate>>>,
+    get_file_gate: Mutex<Option<Arc<AsyncGate>>>,
+    permission_gate: Mutex<Option<Arc<AsyncGate>>>,
+    upload_chunk_gate: Mutex<Option<Arc<AsyncGate>>>,
+    query_status_gate: Mutex<Option<Arc<AsyncGate>>>,
 }
 
 struct AsyncGate {
@@ -85,11 +90,24 @@ impl GoogleDriveApi for ScriptedDriveApi {
         Self::take(&self.generated_ids)
     }
 
-    async fn get_file(&self, _access_token: &str, file_id: &str) -> DriveResult<DriveFile> {
+    async fn get_file(&self, access_token: &str, file_id: &str) -> DriveResult<DriveFile> {
         self.get_file_ids
             .lock()
             .expect("get file ids")
             .push(file_id.to_string());
+        self.get_file_requests
+            .lock()
+            .expect("get file requests")
+            .push((access_token.to_string(), file_id.to_string()));
+        let gate = self.get_file_gate.lock().expect("get file gate").take();
+        if let Some(gate) = gate {
+            gate.entered.add_permits(1);
+            gate.release
+                .acquire()
+                .await
+                .expect("get file release")
+                .forget();
+        }
         Self::take(&self.files)
     }
 
@@ -109,6 +127,15 @@ impl GoogleDriveApi for ScriptedDriveApi {
         _access_token: &str,
         _item_id: &str,
     ) -> DriveResult<PublicPermissionStatus> {
+        let gate = self.permission_gate.lock().expect("permission gate").take();
+        if let Some(gate) = gate {
+            gate.entered.add_permits(1);
+            gate.release
+                .acquire()
+                .await
+                .expect("permission release")
+                .forget();
+        }
         Self::take(&self.permissions)
     }
 
@@ -189,6 +216,19 @@ impl GoogleDriveApi for ScriptedDriveApi {
                     .expect("truncate archive");
             }
         }
+        let gate = self
+            .upload_chunk_gate
+            .lock()
+            .expect("upload chunk gate")
+            .take();
+        if let Some(gate) = gate {
+            gate.entered.add_permits(1);
+            gate.release
+                .acquire()
+                .await
+                .expect("upload chunk release")
+                .forget();
+        }
         Self::take(&self.chunks)
     }
 
@@ -198,6 +238,19 @@ impl GoogleDriveApi for ScriptedDriveApi {
         _session: &ResumableUploadSession,
         _total_bytes: u64,
     ) -> DriveResult<DriveChunkResult> {
+        let gate = self
+            .query_status_gate
+            .lock()
+            .expect("query status gate")
+            .take();
+        if let Some(gate) = gate {
+            gate.entered.add_permits(1);
+            gate.release
+                .acquire()
+                .await
+                .expect("query status release")
+                .forget();
+        }
         Self::take(&self.statuses)
     }
 
@@ -366,6 +419,24 @@ struct RecordingSleeper {
 impl DriveSleeper for RecordingSleeper {
     async fn sleep(&self, duration: Duration) {
         self.delays.lock().expect("delays").push(duration);
+    }
+}
+
+#[derive(Default)]
+struct BlockingSleeper {
+    gate: AsyncGate,
+}
+
+#[async_trait]
+impl DriveSleeper for BlockingSleeper {
+    async fn sleep(&self, _duration: Duration) {
+        self.gate.entered.add_permits(1);
+        self.gate
+            .release
+            .acquire()
+            .await
+            .expect("sleep release")
+            .forget();
     }
 }
 
@@ -570,9 +641,16 @@ fn cancellation_is_refused_after_drive_finalization_and_logout_hides_visible_ope
 #[tokio::test]
 async fn transferring_cancellation_aborts_session_initialization_before_any_chunk_buffer_is_used() {
     let api = Arc::new(ScriptedDriveApi::default());
-    let gate = Arc::new(AsyncGate::default());
-    *api.start_create_gate.lock().unwrap() = Some(gate.clone());
-    let cancellation = tokio_util::sync::CancellationToken::new();
+    let start_gate = Arc::new(AsyncGate::default());
+    *api.start_create_gate.lock().unwrap() = Some(start_gate.clone());
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user", operation_id, "sim-cancel-start")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
     let fixture = create_request(b"archive");
     let UploadRequestFixture {
         _directory,
@@ -583,24 +661,27 @@ async fn transferring_cancellation_aborts_session_initialization_before_any_chun
         let cancellation = cancellation.clone();
         async move {
             let _directory = _directory;
+            let _lease = lease;
             run_resumable_upload_cancelable(
                 api.as_ref(),
                 &RecordingSleeper::default(),
                 ACCESS_TOKEN,
                 request,
                 &cancellation,
+                &finalization_gate,
                 |_, _| {},
             )
             .await
         }
     });
-    gate.entered
+    start_gate
+        .entered
         .acquire()
         .await
         .expect("start entered")
         .forget();
 
-    cancellation.cancel();
+    assert!(manager.cancel("user", operation_id));
     let failure = task.await.unwrap().expect_err("canceled start");
 
     assert_eq!(failure.error, DriveApiError::Canceled);
@@ -1565,11 +1646,21 @@ fn seed_pending_binding(
     drive_file_id: &str,
     kind: PendingBindingKind,
 ) {
+    seed_pending_binding_for(store, "user-42", "42", drive_file_id, kind);
+}
+
+fn seed_pending_binding_for(
+    store: &GoogleDrivePendingBindingStore,
+    user_id: &str,
+    simfile_id: &str,
+    drive_file_id: &str,
+    kind: PendingBindingKind,
+) {
     store
         .replace(
             crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
-                user_id: "user-42".to_string(),
-                simfile_id: "42".to_string(),
+                user_id: user_id.to_string(),
+                simfile_id: simfile_id.to_string(),
                 drive_file_id: drive_file_id.to_string(),
                 kind,
                 created_at: "2026-07-26T00:00:00Z".to_string(),
@@ -3242,4 +3333,607 @@ async fn reconciliation_auth_restore_sweeps_only_the_current_user_without_creati
         api.get_file_ids.lock().unwrap().as_slice(),
         &["created-41".to_string(), "unused-42".to_string()]
     );
+}
+
+#[tokio::test]
+async fn reconciliation_aborts_after_blocked_owner_fetch_when_user_switches() {
+    let data_dir = tempdir().expect("data dir");
+    let store = Arc::new(pending_store(&data_dir));
+    seed_pending_binding_for(
+        store.as_ref(),
+        "user-42",
+        "42",
+        "user-a-file",
+        PendingBindingKind::FirstUpload,
+    );
+    seed_pending_binding_for(
+        store.as_ref(),
+        "user-b",
+        "99",
+        "user-b-file",
+        PendingBindingKind::FirstUpload,
+    );
+    let api = Arc::new(ScriptedDriveApi::default());
+    let metadata = Arc::new(BlockingStatefulMetadataClient::unbound());
+    let auth = Arc::new(authenticated_user("user-42").await);
+    let epoch = auth.current_session_epoch().await.expect("session epoch");
+
+    let sweep = {
+        let api = Arc::clone(&api);
+        let store = Arc::clone(&store);
+        let metadata = Arc::clone(&metadata);
+        let auth = Arc::clone(&auth);
+        tokio::spawn(async move {
+            reconcile_pending_bindings_for_session(
+                api.as_ref(),
+                store.as_ref(),
+                metadata.as_ref(),
+                auth.as_ref(),
+                &epoch,
+                "access-token-a",
+            )
+            .await;
+        })
+    };
+    metadata
+        .first_fetch_entered
+        .acquire()
+        .await
+        .expect("owner fetch entered")
+        .forget();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-b" },
+        "access_token": "supabase-token-b"
+    })))
+    .await;
+    metadata.first_fetch_release.add_permits(1);
+    sweep.await.expect("sweep task");
+
+    assert_eq!(metadata.patch_count.load(Ordering::SeqCst), 0);
+    assert!(api.get_file_requests.lock().unwrap().is_empty());
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert!(store.get("user-42", "42").unwrap().is_some());
+    assert!(store.get("user-b", "99").unwrap().is_some());
+}
+
+#[tokio::test]
+async fn reconciliation_aborts_after_blocked_drive_fetch_on_same_user_relogin() {
+    let data_dir = tempdir().expect("data dir");
+    let store = Arc::new(pending_store(&data_dir));
+    seed_pending_binding_for(
+        store.as_ref(),
+        "user-42",
+        "42",
+        "old-session-file",
+        PendingBindingKind::FirstUpload,
+    );
+    seed_pending_binding_for(
+        store.as_ref(),
+        "user-b",
+        "99",
+        "user-b-file",
+        PendingBindingKind::FirstUpload,
+    );
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "old-session-file",
+            Some("https://drive.google.com/old-session-file"),
+        )));
+    let get_file_gate = Arc::new(AsyncGate::default());
+    *api.get_file_gate.lock().unwrap() = Some(Arc::clone(&get_file_gate));
+    let metadata = Arc::new(ScriptedMetadataClient::default());
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    let auth = Arc::new(authenticated_user("user-42").await);
+    let epoch = auth.current_session_epoch().await.expect("session epoch");
+
+    let sweep = {
+        let api = Arc::clone(&api);
+        let store = Arc::clone(&store);
+        let metadata = Arc::clone(&metadata);
+        let auth = Arc::clone(&auth);
+        tokio::spawn(async move {
+            reconcile_pending_bindings_for_session(
+                api.as_ref(),
+                store.as_ref(),
+                metadata.as_ref(),
+                auth.as_ref(),
+                &epoch,
+                "access-token-a",
+            )
+            .await;
+        })
+    };
+    get_file_gate
+        .entered
+        .acquire()
+        .await
+        .expect("Drive fetch entered")
+        .forget();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" },
+        "access_token": "new-supabase-token-a"
+    })))
+    .await;
+    get_file_gate.release.add_permits(1);
+    sweep.await.expect("sweep task");
+
+    assert_eq!(
+        api.get_file_requests.lock().unwrap().as_slice(),
+        &[("access-token-a".to_string(), "old-session-file".to_string())]
+    );
+    assert!(metadata.patch_inputs.lock().unwrap().is_empty());
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert!(store.get("user-42", "42").unwrap().is_some());
+    assert!(store.get("user-b", "99").unwrap().is_some());
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_blocked_status_recovery_and_waits_for_cleanup() {
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::Network));
+    api.statuses
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Accepted(0)));
+    let status_gate = Arc::new(AsyncGate::default());
+    *api.query_status_gate.lock().unwrap() = Some(Arc::clone(&status_gate));
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user", operation_id, "sim-status")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
+    let fixture = create_request(b"status recovery");
+    let UploadRequestFixture {
+        _directory,
+        request,
+    } = fixture;
+    let task = tokio::spawn({
+        let api = Arc::clone(&api);
+        async move {
+            let _directory = _directory;
+            let _lease = lease;
+            run_resumable_upload_cancelable(
+                api.as_ref(),
+                &RecordingSleeper::default(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                &finalization_gate,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    status_gate
+        .entered
+        .acquire()
+        .await
+        .expect("status recovery entered")
+        .forget();
+
+    assert!(
+        manager
+            .cancel_and_wait("user", operation_id, Duration::from_secs(1))
+            .await
+    );
+    let failure = task.await.unwrap().expect_err("canceled status recovery");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+    assert_eq!(manager.active_count(), 0);
+    assert_eq!(manager.available_resource_slots(), 2);
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_retry_backoff_sleep() {
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.starts
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::Network));
+    let sleeper = Arc::new(BlockingSleeper::default());
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user", operation_id, "sim-sleep")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
+    let fixture = create_request(b"retry sleep");
+    let UploadRequestFixture {
+        _directory,
+        request,
+    } = fixture;
+    let task = tokio::spawn({
+        let api = Arc::clone(&api);
+        let sleeper = Arc::clone(&sleeper);
+        async move {
+            let _directory = _directory;
+            let _lease = lease;
+            run_resumable_upload_cancelable(
+                api.as_ref(),
+                sleeper.as_ref(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                &finalization_gate,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    sleeper
+        .gate
+        .entered
+        .acquire()
+        .await
+        .expect("retry sleep entered")
+        .forget();
+
+    assert!(
+        manager
+            .cancel_and_wait("user", operation_id, Duration::from_secs(1))
+            .await
+    );
+    let failure = task.await.unwrap().expect_err("canceled retry sleep");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+}
+
+#[tokio::test]
+async fn cancellation_wins_before_complete_acknowledgement_is_observed() {
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    let chunk_gate = Arc::new(AsyncGate::default());
+    *api.upload_chunk_gate.lock().unwrap() = Some(Arc::clone(&chunk_gate));
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user", operation_id, "sim-before-complete")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
+    let fixture = create_request(b"complete race");
+    let UploadRequestFixture {
+        _directory,
+        request,
+    } = fixture;
+    let task = tokio::spawn({
+        let api = Arc::clone(&api);
+        async move {
+            let _directory = _directory;
+            let _lease = lease;
+            run_resumable_upload_cancelable(
+                api.as_ref(),
+                &RecordingSleeper::default(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                &finalization_gate,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    chunk_gate
+        .entered
+        .acquire()
+        .await
+        .expect("chunk entered")
+        .forget();
+
+    assert!(
+        manager
+            .cancel_and_wait("user", operation_id, Duration::from_secs(1))
+            .await
+    );
+    let failure = task.await.unwrap().expect_err("cancellation wins");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+}
+
+#[tokio::test]
+async fn complete_acknowledgement_wins_finalization_before_late_cancellation() {
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "generated-file-id",
+            Some("https://drive.google.com/complete"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let final_file_gate = Arc::new(AsyncGate::default());
+    *api.get_file_gate.lock().unwrap() = Some(Arc::clone(&final_file_gate));
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user", operation_id, "sim-after-complete")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
+    let fixture = create_request(b"complete race");
+    let UploadRequestFixture {
+        _directory,
+        request,
+    } = fixture;
+    let task = tokio::spawn({
+        let api = Arc::clone(&api);
+        async move {
+            let _directory = _directory;
+            let _lease = lease;
+            run_resumable_upload_cancelable(
+                api.as_ref(),
+                &RecordingSleeper::default(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                &finalization_gate,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    final_file_gate
+        .entered
+        .acquire()
+        .await
+        .expect("final file validation entered")
+        .forget();
+
+    assert!(!manager.cancel("user", operation_id));
+    final_file_gate.release.add_permits(1);
+    let outcome = task.await.unwrap().expect("finalization completes");
+    assert_eq!(outcome.file_id, "generated-file-id");
+}
+
+#[tokio::test]
+async fn recovered_pending_file_cancel_before_gate_retains_binding_without_patch_or_delete() {
+    let data_dir = tempdir().expect("data dir");
+    let store = Arc::new(pending_store(&data_dir));
+    seed_pending_binding(
+        store.as_ref(),
+        "recovered-before-gate",
+        PendingBindingKind::FirstUpload,
+    );
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "recovered-before-gate",
+            Some("https://drive.google.com/recovered-before"),
+        )));
+    let get_file_gate = Arc::new(AsyncGate::default());
+    *api.get_file_gate.lock().unwrap() = Some(Arc::clone(&get_file_gate));
+    let metadata = Arc::new(ScriptedMetadataClient::default());
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    let auth = Arc::new(authenticated_user("user-42").await);
+    let archive = create_request(b"unused archive");
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user-42", operation_id, "42")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
+    let task = tokio::spawn({
+        let api = Arc::clone(&api);
+        let store = Arc::clone(&store);
+        let metadata = Arc::clone(&metadata);
+        let auth = Arc::clone(&auth);
+        async move {
+            let _archive = archive;
+            let _lease = lease;
+            run_crash_safe_create_cancelable(
+                api.as_ref(),
+                &RecordingSleeper::default(),
+                store.as_ref(),
+                metadata.as_ref(),
+                auth.as_ref(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                &finalization_gate,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    get_file_gate
+        .entered
+        .acquire()
+        .await
+        .expect("recovered Drive fetch entered")
+        .forget();
+
+    assert!(
+        manager
+            .cancel_and_wait("user-42", operation_id, Duration::from_secs(1))
+            .await
+    );
+    let failure = task.await.unwrap().expect_err("canceled recovery");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+    assert!(store.get("user-42", "42").unwrap().is_some());
+    assert!(metadata.patch_inputs.lock().unwrap().is_empty());
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn recovered_pending_file_after_gate_refuses_cancel_and_finishes_patch() {
+    let data_dir = tempdir().expect("data dir");
+    let store = Arc::new(pending_store(&data_dir));
+    seed_pending_binding(
+        store.as_ref(),
+        "recovered-after-gate",
+        PendingBindingKind::FirstUpload,
+    );
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "recovered-after-gate",
+            Some("https://drive.google.com/recovered-after"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let permission_gate = Arc::new(AsyncGate::default());
+    *api.permission_gate.lock().unwrap() = Some(Arc::clone(&permission_gate));
+    let metadata = Arc::new(ScriptedMetadataClient::default());
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    script_successful_patch(
+        metadata.as_ref(),
+        "recovered-after-gate",
+        "https://drive.google.com/recovered-after",
+    );
+    let auth = Arc::new(authenticated_user("user-42").await);
+    let archive = create_request(b"unused archive");
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user-42", operation_id, "42")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let cancellation = lease.cancellation().clone();
+    let finalization_gate = lease.finalization_gate();
+    let task = tokio::spawn({
+        let api = Arc::clone(&api);
+        let store = Arc::clone(&store);
+        let metadata = Arc::clone(&metadata);
+        let auth = Arc::clone(&auth);
+        async move {
+            let _archive = archive;
+            let _lease = lease;
+            run_crash_safe_create_cancelable(
+                api.as_ref(),
+                &RecordingSleeper::default(),
+                store.as_ref(),
+                metadata.as_ref(),
+                auth.as_ref(),
+                ACCESS_TOKEN,
+                request,
+                &cancellation,
+                &finalization_gate,
+                |_, _| {},
+            )
+            .await
+        }
+    });
+    permission_gate
+        .entered
+        .acquire()
+        .await
+        .expect("permission validation entered")
+        .forget();
+
+    assert!(!manager.cancel("user-42", operation_id));
+    permission_gate.release.add_permits(1);
+    let outcome = task.await.unwrap().expect("recovery completes");
+    assert_eq!(outcome.file_id, "recovered-after-gate");
+    assert_eq!(store.get("user-42", "42").unwrap(), None);
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn cancel_ack_waits_for_real_zip_cleanup_and_resource_release() {
+    let song_dir = tempdir().expect("song dir");
+    let source_path = song_dir.path().join("large-audio.ogg");
+    std::fs::File::create(&source_path)
+        .expect("large source")
+        .set_len(8 * 1024 * 1024)
+        .expect("large source size");
+    let cache_dir = tempdir().expect("cache dir");
+    let archive = create_upload_archive(cache_dir.path()).expect("upload archive");
+    let zip_path = archive.zip_path().to_path_buf();
+    let task_zip_path = zip_path.clone();
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = manager
+        .register("user", operation_id, "sim-large-zip")
+        .expect("operation");
+    lease.set_phase(DriveOperationPhase::Preparing);
+    let cancellation = lease.cancellation().clone();
+    let hook_cancellation = cancellation.clone();
+    let (chunk_written_tx, chunk_written_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let _permit = lease.acquire_resource_slot().await.expect("resource slot");
+        let mut chunk_written_tx = Some(chunk_written_tx);
+        let zip_result = tokio::task::spawn_blocking(move || {
+            crate::songs::write_song_zip_cancelable_with_chunk_hook(
+                &task_zip_path,
+                &[source_path],
+                &cancellation,
+                || {
+                    if let Some(sender) = chunk_written_tx.take() {
+                        let _ = sender.send(());
+                        while !hook_cancellation.is_cancelled() {
+                            std::thread::yield_now();
+                        }
+                    }
+                },
+            )
+        })
+        .await
+        .expect("ZIP worker");
+        drop(archive);
+        zip_result
+    });
+    chunk_written_rx.await.expect("real ZIP chunk written");
+
+    assert!(
+        manager
+            .cancel_and_wait("user", operation_id, Duration::from_secs(2))
+            .await
+    );
+    let error = task.await.unwrap().expect_err("ZIP canceled");
+    assert!(matches!(error, crate::error::DesktopError::Message(message) if message == "CANCELED"));
+    assert!(!zip_path.exists());
+    assert_eq!(manager.active_count(), 0);
+    assert_eq!(manager.available_resource_slots(), 2);
+    assert!(manager
+        .register("user", Uuid::new_v4(), "sim-large-zip")
+        .is_ok());
 }

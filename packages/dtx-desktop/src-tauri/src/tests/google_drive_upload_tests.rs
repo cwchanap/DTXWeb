@@ -4843,3 +4843,114 @@ async fn cancel_ack_waits_for_real_zip_cleanup_and_resource_release() {
         .register("user", Uuid::new_v4(), "sim-large-zip")
         .is_ok());
 }
+
+#[tokio::test]
+async fn run_resumable_upload_delegates_to_chunk_size_variant_with_default_chunk_size() {
+    let api = ScriptedDriveApi::default();
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "generated-file-id",
+            Some("https://drive.google.com/uc?id=generated-file-id"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"archive");
+
+    let result = run_resumable_upload(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        fixture.request.clone(),
+        |_, _| {},
+    )
+    .await
+    .expect("default chunk-size create upload");
+
+    assert_eq!(result.file_id, "generated-file-id");
+    assert_eq!(result.file_name, "AC-DC.zip");
+    assert_eq!(
+        result.download_url,
+        "https://drive.google.com/uc?id=generated-file-id"
+    );
+    assert_eq!(
+        api.create_metadata.lock().unwrap().as_slice(),
+        &[DriveCreateMetadata {
+            id: "generated-file-id".to_string(),
+            parent_id: "folder-42".to_string(),
+            name: "AC-DC.zip".to_string(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn run_crash_safe_create_delegates_to_chunk_size_variant_with_default_chunk_size() {
+    let data_dir = tempdir().expect("data dir");
+    let archive_dir = tempdir().expect("archive dir");
+    let archive_path = archive_dir.path().join("upload.zip");
+    std::fs::write(&archive_path, b"archive").expect("archive");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("generated-file-id".to_string()));
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "generated-file-id",
+            Some("https://drive.google.com/uc?id=generated-file-id"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    script_successful_patch(
+        &metadata,
+        "generated-file-id",
+        "https://drive.google.com/uc?id=generated-file-id",
+    );
+    let auth = authenticated_user("user-42").await;
+    let request = crash_safe_request(archive_path, PendingBindingKind::FirstUpload);
+
+    let outcome = run_crash_safe_create(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request,
+        |_, _| {},
+    )
+    .await
+    .expect("default chunk-size crash-safe create");
+
+    assert_eq!(outcome.file_id, "generated-file-id");
+    assert_eq!(outcome.file_name, "Saved cloud title 42.zip");
+    assert_eq!(
+        outcome.download_url,
+        "https://drive.google.com/uc?id=generated-file-id"
+    );
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(store.get("user-42", "42").unwrap(), None);
+}

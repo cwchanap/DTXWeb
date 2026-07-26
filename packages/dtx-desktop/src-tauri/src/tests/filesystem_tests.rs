@@ -1326,3 +1326,91 @@ fn file_path_to_string_converts_path_to_string() {
     let result = file_path_to_string(file_path).unwrap();
     assert_eq!(result, "/some/path/to/file.dtx");
 }
+
+// ---------------------------------------------------------------------------
+// list_directory / list_files: read_dir fails after successful canonicalize
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_directory_returns_error_envelope_when_path_is_a_file() {
+    // canonicalize_within_workspace succeeds for an existing file inside the
+    // workspace, but read_dir on a file (not a directory) fails — the error
+    // must surface in the envelope rather than panicking.
+    let root = tempdir().expect("tempdir");
+    let file = root.path().join("song.dtx");
+    fs::write(&file, "#TITLE: Song").await.expect("write");
+
+    let state = managed_workspace_state(root.path());
+    let result = list_directory_with_workspace_state(&state, file.to_string_lossy().into_owned())
+        .await
+        .expect("envelope");
+
+    assert_eq!(result["files"], serde_json::json!([]));
+    assert!(result["error"]
+        .as_str()
+        .is_some_and(|error| !error.is_empty()));
+}
+
+#[tokio::test]
+async fn list_files_returns_error_envelope_when_path_is_a_file() {
+    // Same containment-pass / read_dir-fails path for list_files: passing a
+    // file (not a directory) canonicalizes cleanly but read_dir errors.
+    let root = tempdir().expect("tempdir");
+    let file = root.path().join("song.dtx");
+    fs::write(&file, "#TITLE: Song").await.expect("write");
+
+    let state = managed_workspace_state(root.path());
+    let result = list_files_with_workspace_state(&state, file.to_string_lossy().into_owned())
+        .await
+        .expect("envelope");
+
+    assert!(result.files.is_empty());
+    assert!(result.error.as_ref().is_some_and(|error| !error.is_empty()));
+}
+
+// ---------------------------------------------------------------------------
+// directive_value: separator handling
+// ---------------------------------------------------------------------------
+
+#[test]
+fn directive_value_returns_none_when_rest_has_no_separator() {
+    // "#TITLEX" shares the "#TITLE" prefix, but the remaining character is
+    // neither ':' nor whitespace, so it must not be mistaken for a value.
+    assert_eq!(directive_value("#TITLEX", "#TITLE"), None);
+}
+
+#[test]
+fn directive_value_returns_none_when_line_shorter_than_directive() {
+    assert_eq!(directive_value("#T", "#TITLE"), None);
+}
+
+#[test]
+fn directive_value_extracts_value_after_whitespace_separator() {
+    // The whitespace-separated form ("#TITLE Song") is used by some SET.def
+    // files; the first whitespace char is consumed as the separator.
+    assert_eq!(directive_value("#TITLE My Song", "#TITLE"), Some("My Song"));
+}
+
+#[test]
+fn directive_value_extracts_value_after_colon_separator() {
+    assert_eq!(
+        directive_value("#TITLE: My Song", "#TITLE"),
+        Some(" My Song")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// canonicalize_existing_ancestor: no parent exists
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn canonicalize_existing_ancestor_returns_not_found_when_path_has_no_parent() {
+    // An empty path does not canonicalize and has no parent, so the helper
+    // must surface NotFound (via the `parent() == None` branch) rather than
+    // looping forever.
+    let result = canonicalize_existing_ancestor("").await;
+    assert!(
+        matches!(result, Err(DesktopError::Io(ref io)) if io.kind() == std::io::ErrorKind::NotFound),
+        "expected NotFound, got {result:?}"
+    );
+}

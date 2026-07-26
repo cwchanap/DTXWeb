@@ -1225,6 +1225,463 @@ async fn disconnect_deletes_local_state_even_when_revocation_fails() {
     assert_eq!(state.cached_access_token("user-42").await, None);
 }
 
+#[test]
+fn oauth_error_codes_are_stable_renderer_contract() {
+    use crate::google_drive::oauth::GoogleDriveOAuthError;
+    assert_eq!(GoogleDriveOAuthError::Canceled.code(), "CANCELED");
+    assert_eq!(
+        GoogleDriveOAuthError::InvalidResponse.code(),
+        "INVALID_RESPONSE"
+    );
+    assert_eq!(GoogleDriveOAuthError::Network.code(), "NETWORK");
+    assert_eq!(
+        GoogleDriveOAuthError::ReconnectRequired.code(),
+        "RECONNECT_REQUIRED"
+    );
+    assert_eq!(GoogleDriveOAuthError::NotConnected.code(), "NOT_CONNECTED");
+    assert_eq!(
+        GoogleDriveOAuthError::CredentialStore.code(),
+        "CREDENTIAL_STORE"
+    );
+    assert_eq!(GoogleDriveOAuthError::LocalState.code(), "LOCAL_STATE");
+    assert_eq!(
+        GoogleDriveOAuthError::AlreadyInProgress.code(),
+        "UPLOAD_IN_PROGRESS"
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::FolderUnavailable.code(),
+        "FOLDER_UNAVAILABLE"
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::DownloadNotPublic.code(),
+        "DOWNLOAD_NOT_PUBLIC"
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::SharingCheckUnavailable.code(),
+        "SHARING_CHECK_UNAVAILABLE"
+    );
+    assert_eq!(GoogleDriveOAuthError::FileNotFound.code(), "FILE_NOT_FOUND");
+    assert_eq!(
+        GoogleDriveOAuthError::FilePermissionDenied.code(),
+        "FILE_PERMISSION_DENIED"
+    );
+}
+
+#[tokio::test]
+async fn unavailable_oauth_provider_always_fails() {
+    use crate::google_drive::oauth::{TokenExchangeRequest, UnavailableOAuthProvider};
+    let provider = UnavailableOAuthProvider;
+    assert!(matches!(
+        provider
+            .exchange_code(TokenExchangeRequest {
+                code: Zeroizing::new("code".to_string()),
+                pkce_verifier: Zeroizing::new("verifier".to_string()),
+                redirect_uri: "http://127.0.0.1/cb".to_string(),
+            })
+            .await,
+        Err(OAuthProviderError::InvalidResponse)
+    ));
+    assert!(matches!(
+        provider.refresh_access_token("refresh").await,
+        Err(OAuthProviderError::InvalidResponse)
+    ));
+    assert!(matches!(
+        provider.revoke_refresh_token("refresh").await,
+        Err(OAuthProviderError::Network)
+    ));
+}
+
+#[test]
+fn unavailable_picker_browser_always_fails() {
+    use crate::google_drive::oauth::UnavailablePickerBrowser;
+    let browser = UnavailablePickerBrowser;
+    assert_eq!(
+        browser.open("https://accounts.google.com/auth"),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn deferred_picker_folder_validator_always_fails() {
+    use crate::google_drive::oauth::DeferredPickerFolderValidator;
+    let validator = DeferredPickerFolderValidator;
+    assert_eq!(
+        validator.validate_folder("token", "folder-42").await,
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+}
+
+#[test]
+fn picker_protocol_config_new_stores_values_verbatim() {
+    let config = PickerProtocolConfig::new("client-id-42".to_string(), Duration::from_secs(99));
+    assert_eq!(config.client_id, "client-id-42");
+    assert_eq!(config.timeout, Duration::from_secs(99));
+}
+
+#[test]
+fn picker_protocol_config_production_trims_env_client_id() {
+    let config = PickerProtocolConfig::production();
+    // Whatever the env yields, production must trim whitespace.
+    assert_eq!(config.client_id, config.client_id.trim());
+    assert_eq!(config.timeout, DEFAULT_PICKER_TIMEOUT);
+}
+
+#[test]
+fn validated_picker_tokens_reject_oversized_access_token_and_zero_expiry() {
+    // Access token exceeding MAX_AUTH_ARTIFACT_BYTES is rejected.
+    let oversized = OAuthTokenResponse {
+        access_token: "a".repeat(MAX_AUTH_ARTIFACT_BYTES + 1),
+        refresh_token: Some("refresh-token".to_string()),
+        expires_in: 3600,
+        scope: Some(GOOGLE_DRIVE_FILE_SCOPE.to_string()),
+    };
+    assert_eq!(
+        ValidatedPickerTokens::try_from(oversized),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+
+    // expires_in == 0 is rejected.
+    let zero_expiry = OAuthTokenResponse {
+        access_token: "access-token".to_string(),
+        refresh_token: Some("refresh-token".to_string()),
+        expires_in: 0,
+        scope: Some(GOOGLE_DRIVE_FILE_SCOPE.to_string()),
+    };
+    assert_eq!(
+        ValidatedPickerTokens::try_from(zero_expiry),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+}
+
+#[test]
+fn map_provider_error_classifies_each_variant() {
+    assert_eq!(
+        map_provider_error(OAuthProviderError::InvalidGrant),
+        GoogleDriveOAuthError::ReconnectRequired
+    );
+    assert_eq!(
+        map_provider_error(OAuthProviderError::InvalidResponse),
+        GoogleDriveOAuthError::InvalidResponse
+    );
+    assert_eq!(
+        map_provider_error(OAuthProviderError::Network),
+        GoogleDriveOAuthError::Network
+    );
+}
+
+#[tokio::test]
+async fn write_callback_response_writes_valid_http_response_and_closes_stream() {
+    use tokio::io::AsyncReadExt;
+    let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let writer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        write_callback_response(&mut stream)
+            .await
+            .expect("write response");
+    });
+    let mut client = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect loopback");
+    let mut response = Vec::new();
+    client.read_to_end(&mut response).await.expect("read all");
+    writer.await.expect("writer task");
+    let text = String::from_utf8(response).expect("utf8");
+    assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(text.contains("content-type: text/html; charset=utf-8"));
+    assert!(text.contains("Return to Drumery"));
+}
+
+#[tokio::test]
+async fn read_callback_target_rejects_non_get_methods_and_unsupported_versions() {
+    for request in [
+        format!(
+            "POST {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+        ),
+        format!(
+            "GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/2.0\r\nHost: 127.0.0.1\r\n\r\n"
+        ),
+        format!(
+            "GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/1.1 extra\r\nHost: 127.0.0.1\r\n\r\n"
+        ),
+    ] {
+        let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind loopback");
+        let address = listener.local_addr().expect("listener address");
+        let request_bytes = request.as_bytes().to_vec();
+        let writer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            stream.write_all(&request_bytes).await.expect("write request");
+            // Keep the stream open briefly so read_callback_target sees EOF
+            // only after the full request is consumed.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+        let mut stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect loopback");
+        let result =
+            read_callback_target(&mut stream, Instant::now() + Duration::from_secs(5)).await;
+        assert_eq!(result, Err(GoogleDriveOAuthError::InvalidResponse));
+        let _ = writer.await;
+    }
+}
+
+#[tokio::test]
+async fn read_callback_target_rejects_oversized_request_body() {
+    let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let writer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        // Send a request line followed by a header that never terminates
+        // (no \r\n\r\n) and exceeds MAX_CALLBACK_REQUEST_BYTES.
+        let mut payload = format!(
+            "GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+        )
+        .into_bytes();
+        payload.extend(std::iter::repeat(b'X').take(MAX_CALLBACK_REQUEST_BYTES + 1));
+        stream.write_all(&payload).await.expect("write payload");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    });
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect loopback");
+    let result = read_callback_target(&mut stream, Instant::now() + Duration::from_secs(5)).await;
+    assert_eq!(result, Err(GoogleDriveOAuthError::InvalidResponse));
+    let _ = writer.await;
+}
+
+#[tokio::test]
+async fn read_callback_target_rejects_oversized_header_line() {
+    let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let writer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut payload = format!("GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/1.1\r\n");
+        // One header line exceeding MAX_CALLBACK_HEADER_BYTES.
+        payload.push_str(&format!(
+            "X-Big: {}\r\n",
+            "a".repeat(MAX_CALLBACK_HEADER_BYTES + 1)
+        ));
+        payload.push_str("\r\n");
+        stream.write_all(payload.as_bytes()).await.expect("write");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    });
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect loopback");
+    let result = read_callback_target(&mut stream, Instant::now() + Duration::from_secs(5)).await;
+    assert_eq!(result, Err(GoogleDriveOAuthError::InvalidResponse));
+    let _ = writer.await;
+}
+
+#[tokio::test]
+async fn read_callback_target_rejects_too_many_header_lines() {
+    let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let writer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut payload = format!("GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/1.1\r\n");
+        for i in 0..=MAX_CALLBACK_HEADER_LINES {
+            payload.push_str(&format!("X-Header-{i}: value\r\n"));
+        }
+        payload.push_str("\r\n");
+        stream.write_all(payload.as_bytes()).await.expect("write");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    });
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect loopback");
+    let result = read_callback_target(&mut stream, Instant::now() + Duration::from_secs(5)).await;
+    assert_eq!(result, Err(GoogleDriveOAuthError::InvalidResponse));
+    let _ = writer.await;
+}
+
+#[tokio::test]
+async fn read_callback_target_rejects_empty_request() {
+    let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let writer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        // Immediately close the connection without sending any data.
+        drop(stream);
+    });
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect loopback");
+    let result = read_callback_target(&mut stream, Instant::now() + Duration::from_secs(5)).await;
+    assert_eq!(result, Err(GoogleDriveOAuthError::InvalidResponse));
+    let _ = writer.await;
+}
+
+/// A credential store whose `set_refresh_token` always fails, used to exercise
+/// the rollback error path in `persist_validated_connection`.
+struct FailingWriteCredentialStore {
+    stored: Mutex<Option<String>>,
+}
+
+impl GoogleDriveCredentialStore for FailingWriteCredentialStore {
+    fn get_refresh_token(
+        &self,
+        _user_id: &str,
+    ) -> std::result::Result<
+        Option<String>,
+        crate::google_drive::credential_store::CredentialStoreError,
+    > {
+        Ok(self.stored.lock().unwrap().clone())
+    }
+
+    fn set_refresh_token(
+        &self,
+        _user_id: &str,
+        _token: &str,
+    ) -> std::result::Result<(), crate::google_drive::credential_store::CredentialStoreError> {
+        Err(crate::google_drive::credential_store::CredentialStoreError::CredentialStore)
+    }
+
+    fn delete_refresh_token(
+        &self,
+        _user_id: &str,
+    ) -> std::result::Result<(), crate::google_drive::credential_store::CredentialStoreError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn persist_validated_connection_fails_when_credential_write_fails() {
+    let store = Arc::new(FailingWriteCredentialStore {
+        stored: Mutex::new(None),
+    });
+    let credentials = GoogleDriveCredentialAccess::new(store);
+    let settings = FakeSettings::with_folder("old-folder", "Old folder");
+
+    assert_eq!(
+        persist_validated_connection(
+            &credentials,
+            &settings,
+            "user-42",
+            Zeroizing::new("new-refresh-token".to_string()),
+            folder("new-folder", "New folder"),
+        )
+        .await,
+        Err(GoogleDriveOAuthError::CredentialStore)
+    );
+    // Prior folder is untouched because the credential write failed first.
+    assert_eq!(
+        settings.folder_for_user("user-42"),
+        Some(folder("old-folder", "Old folder"))
+    );
+}
+
+/// A settings adapter whose `set_folder_for_user` always fails and which
+/// *replaces* the stored folder on failure (violating the contract that a
+/// failed atomic write must not change the stored value). This exercises the
+/// contract-violation recovery path in `persist_validated_connection`.
+struct ContractViolatingSettings {
+    folder: Mutex<Option<GoogleDriveFolderSetting>>,
+}
+
+impl GoogleDriveSettingsAccess for ContractViolatingSettings {
+    fn folder_for_user(&self, _user_id: &str) -> Option<GoogleDriveFolderSetting> {
+        self.folder.lock().unwrap().clone()
+    }
+
+    fn set_folder_for_user(
+        &self,
+        _user_id: &str,
+        folder: GoogleDriveFolderSetting,
+    ) -> DesktopResult<()> {
+        // Violate the contract: replace the stored value even though we
+        // report failure.
+        *self.folder.lock().unwrap() = Some(folder);
+        Err(DesktopError::Message(
+            "injected settings failure".to_string(),
+        ))
+    }
+
+    fn clear_folder_for_user(&self, _user_id: &str) -> DesktopResult<()> {
+        *self.folder.lock().unwrap() = None;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn persist_validated_connection_restores_prior_folder_when_settings_violate_contract() {
+    let store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    store
+        .set_refresh_token("user-42", "prior-refresh-token")
+        .expect("seed credential");
+    let credentials = GoogleDriveCredentialAccess::new(store.clone());
+    let settings = ContractViolatingSettings {
+        folder: Mutex::new(Some(folder("prior-folder", "Prior"))),
+    };
+
+    assert_eq!(
+        persist_validated_connection(
+            &credentials,
+            &settings,
+            "user-42",
+            Zeroizing::new("new-refresh-token".to_string()),
+            folder("new-folder", "New"),
+        )
+        .await,
+        Err(GoogleDriveOAuthError::LocalState)
+    );
+    // The new refresh token was written, then rolled back to the prior token.
+    assert_eq!(
+        store
+            .get_refresh_token("user-42")
+            .expect("read credential")
+            .as_deref(),
+        Some("prior-refresh-token")
+    );
+    // The contract-violating adapter replaced the folder, but
+    // persist_validated_connection detected the mismatch and restored it.
+    assert_eq!(
+        settings.folder_for_user("user-42"),
+        Some(folder("prior-folder", "Prior"))
+    );
+}
+
+#[tokio::test]
+async fn persist_validated_connection_clears_folder_when_settings_violate_contract_with_no_prior() {
+    let store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    let credentials = GoogleDriveCredentialAccess::new(store.clone());
+    let settings = ContractViolatingSettings {
+        folder: Mutex::new(None),
+    };
+
+    assert_eq!(
+        persist_validated_connection(
+            &credentials,
+            &settings,
+            "user-42",
+            Zeroizing::new("new-refresh-token".to_string()),
+            folder("new-folder", "New"),
+        )
+        .await,
+        Err(GoogleDriveOAuthError::LocalState)
+    );
+    // No prior token → the new token was written then deleted.
+    assert_eq!(
+        store.get_refresh_token("user-42").expect("read credential"),
+        None
+    );
+    // The contract-violating adapter set the folder, but
+    // persist_validated_connection detected the mismatch and cleared it.
+    assert_eq!(settings.folder_for_user("user-42"), None);
+}
+
 fn oauth_state(
     credential_store: Arc<dyn GoogleDriveCredentialStore>,
     settings: Arc<dyn GoogleDriveSettingsAccess>,
@@ -1259,4 +1716,31 @@ fn folder(id: &str, name: &str) -> GoogleDriveFolderSetting {
         id: id.to_string(),
         name: name.to_string(),
     }
+}
+
+#[test]
+fn reqwest_oauth_provider_rejects_empty_client_id() {
+    assert!(matches!(
+        ReqwestGoogleOAuthProvider::new(String::new()),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    ));
+}
+
+#[test]
+fn reqwest_oauth_provider_rejects_whitespace_only_client_id() {
+    assert!(matches!(
+        ReqwestGoogleOAuthProvider::new("   \t\n ".to_string()),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    ));
+}
+
+#[test]
+fn reqwest_oauth_provider_accepts_valid_client_id() {
+    let provider =
+        ReqwestGoogleOAuthProvider::new("client-id-42.apps.googleusercontent.com".to_string())
+            .expect("valid client id builds a provider");
+    assert_eq!(
+        provider.client_id,
+        "client-id-42.apps.googleusercontent.com"
+    );
 }

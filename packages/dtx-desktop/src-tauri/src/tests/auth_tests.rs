@@ -1965,3 +1965,415 @@ fn is_unrecoverable_accept_error_classifies_transient_kinds_as_retryable() {
 // a TcpListener isn't practical in-unit, so the classifier tests above
 // pin the retry/retire decision and the existing tests pin the happy
 // path.
+
+// ---------------------------------------------------------------------------
+// read_auth_request_line — edge cases beyond the >4 KB happy path already
+// tested above. The empty-connection and max-size-exceeded branches are
+// reachable without a real HTTP client.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn read_auth_request_line_returns_none_when_peer_closes_without_sending() {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    // Connect and immediately close without sending any bytes. The reader
+    // gets Ok(0) on the first read, leaving buf empty -> Ok(None).
+    tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        stream.shutdown().await.expect("shutdown");
+    });
+
+    let (mut stream, _) = listener.accept().await.expect("accept");
+    let result = read_auth_request_line(&mut stream)
+        .await
+        .expect("read should not error");
+    assert!(result.is_none(), "empty connection must yield None");
+}
+
+#[tokio::test]
+async fn read_auth_request_line_errors_when_request_exceeds_max_size() {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    // Send >MAX_AUTH_REQUEST_BYTES without a newline to trigger the size
+    // guard. The writer stays open briefly so the reader doesn't see Ok(0)
+    // before accumulating enough bytes.
+    let payload = vec![b'x'; MAX_AUTH_REQUEST_BYTES + 1024];
+    tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        stream.write_all(&payload).await.expect("write");
+        // Hold the connection open so the reader can drain the kernel buffer
+        // before observing a peer-close.
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    });
+
+    let (mut stream, _) = listener.accept().await.expect("accept");
+    let result = read_auth_request_line(&mut stream).await;
+
+    assert!(
+        result.is_err(),
+        "request exceeding max size must return an error"
+    );
+}
+
+#[tokio::test]
+async fn read_auth_request_line_returns_only_first_line_when_multiple_present() {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    let request = "GET /auth-callback?magic_link=x HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+    tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        stream.write_all(request.as_bytes()).await.expect("write");
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    });
+
+    let (mut stream, _) = listener.accept().await.expect("accept");
+    let line = read_auth_request_line(&mut stream)
+        .await
+        .expect("read")
+        .expect("request line");
+
+    assert_eq!(line, "GET /auth-callback?magic_link=x HTTP/1.1");
+}
+
+// ---------------------------------------------------------------------------
+// write_local_auth_callback_text_response / write_local_auth_callback_html_response
+// — exercise the full TCP write path (headers + body + shutdown) by reading
+// the raw bytes back from the client side.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn write_local_auth_callback_text_response_writes_plain_text_http_response() {
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    let writer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        write_local_auth_callback_text_response(&mut stream, 400, "Bad Request")
+            .await
+            .expect("write");
+    });
+
+    let mut client = tokio::net::TcpStream::connect(addr).await.expect("connect");
+    let mut response = String::new();
+    client.read_to_string(&mut response).await.expect("read");
+
+    writer.await.expect("writer task");
+    assert!(response.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    assert!(response.contains("content-type: text/plain; charset=utf-8\r\n"));
+    assert!(response.contains("connection: close\r\n"));
+    assert!(response.ends_with("Bad Request"));
+}
+
+#[tokio::test]
+async fn write_local_auth_callback_html_response_writes_html_http_response() {
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    let body = "<html><body>ok</body></html>";
+    let body_clone = body.to_string();
+    let writer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        write_local_auth_callback_html_response(&mut stream, 200, &body_clone)
+            .await
+            .expect("write");
+    });
+
+    let mut client = tokio::net::TcpStream::connect(addr).await.expect("connect");
+    let mut response = String::new();
+    client.read_to_string(&mut response).await.expect("read");
+
+    writer.await.expect("writer task");
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(response.contains("content-type: text/html; charset=utf-8\r\n"));
+    assert!(response.ends_with(body));
+}
+
+// ---------------------------------------------------------------------------
+// accept_from_sole_listener — the None-slot early return. In production this
+// is reached after an unrecoverable accept() error retires the listener
+// mid-loop; calling directly with a None slot exercises the guard without
+// needing to force a real socket error.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn accept_from_sole_listener_returns_none_when_slot_is_already_none() {
+    let mut slot: Option<TcpListener> = None;
+    let result = accept_from_sole_listener(&mut slot, "IPv4")
+        .await
+        .expect("accept should not error");
+    assert!(result.is_none(), "None slot must return Ok(None)");
+}
+
+// ---------------------------------------------------------------------------
+// try_refresh_session — the two early-return guards (config = None, and no
+// refresh token in the stored session). Both must leave the session untouched
+// and make no network call.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn try_refresh_session_returns_early_when_config_is_none() {
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": "tok",
+            "refresh_token": "refresh-1",
+        })))
+        .await;
+
+    // config = None: early return before any HTTP call. Session is unchanged.
+    try_refresh_session(&state, None, &reqwest::Client::new(), None::<&AppHandle>).await;
+
+    let session = state.current_session().await.expect("session preserved");
+    assert_eq!(session["access_token"], "tok");
+    assert_eq!(session["refresh_token"], "refresh-1");
+}
+
+#[tokio::test]
+async fn try_refresh_session_returns_early_when_session_has_no_refresh_token() {
+    // Even with config present, a session lacking a refresh token cannot
+    // refresh and must return early without touching the network.
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::any())
+        .respond_with(wiremock::ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": "tok",
+        })))
+        .await;
+
+    try_refresh_session(
+        &state,
+        Some((server.uri(), "anon".to_string())),
+        &reqwest::Client::new(),
+        None::<&AppHandle>,
+    )
+    .await;
+
+    let session = state.current_session().await.expect("session preserved");
+    assert_eq!(session["access_token"], "tok");
+}
+
+#[tokio::test]
+async fn try_refresh_session_refreshes_and_stores_new_session_on_success() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .and(wiremock::matchers::body_json(serde_json::json!({
+            "refresh_token": "refresh-old"
+        })))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "access-new",
+                "refresh_token": "refresh-new",
+                "user": { "id": "user-1" }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "access_token": "access-old",
+            "refresh_token": "refresh-old",
+        })))
+        .await;
+
+    try_refresh_session(
+        &state,
+        Some((server.uri(), "anon".to_string())),
+        &reqwest::Client::new(),
+        None::<&AppHandle>,
+    )
+    .await;
+
+    let session = state.current_session().await.expect("refreshed session");
+    assert_eq!(session["access_token"], "access-new");
+    assert_eq!(session["refresh_token"], "refresh-new");
+}
+
+// ---------------------------------------------------------------------------
+// resolve_auth_config — the "env vars present" branch. The test/CI binary
+// does not bake in PUBLIC_SUPABASE_URL at compile time, so the runtime
+// std::env::var fallback is exercised. Serialized via auth_config_env_lock
+// to avoid races with resolve_auth_config_returns_none_in_test_environment.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_auth_config_returns_some_when_env_vars_are_set() {
+    let _guard = crate::auth::auth_config_env_lock()
+        .lock()
+        .expect("auth config env lock");
+    let saved_url = std::env::var_os("PUBLIC_SUPABASE_URL");
+    let saved_key = std::env::var_os("PUBLIC_SUPABASE_ANON_KEY");
+    std::env::set_var("PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    std::env::set_var("PUBLIC_SUPABASE_ANON_KEY", "anon-key");
+
+    let config = resolve_auth_config();
+
+    // Restore env vars so other tests see the original (unset) state.
+    match saved_url {
+        Some(v) => std::env::set_var("PUBLIC_SUPABASE_URL", v),
+        None => std::env::remove_var("PUBLIC_SUPABASE_URL"),
+    }
+    match saved_key {
+        Some(v) => std::env::set_var("PUBLIC_SUPABASE_ANON_KEY", v),
+        None => std::env::remove_var("PUBLIC_SUPABASE_ANON_KEY"),
+    }
+
+    let (url, key) = config.expect("config should be resolved");
+    assert_eq!(url, "https://example.supabase.co");
+    assert_eq!(key, "anon-key");
+}
+
+#[test]
+fn resolve_auth_config_returns_none_when_env_vars_are_blank() {
+    let _guard = crate::auth::auth_config_env_lock()
+        .lock()
+        .expect("auth config env lock");
+    let saved_url = std::env::var_os("PUBLIC_SUPABASE_URL");
+    let saved_key = std::env::var_os("PUBLIC_SUPABASE_ANON_KEY");
+    std::env::set_var("PUBLIC_SUPABASE_URL", "   ");
+    std::env::set_var("PUBLIC_SUPABASE_ANON_KEY", "");
+
+    let config = resolve_auth_config();
+
+    match saved_url {
+        Some(v) => std::env::set_var("PUBLIC_SUPABASE_URL", v),
+        None => std::env::remove_var("PUBLIC_SUPABASE_URL"),
+    }
+    match saved_key {
+        Some(v) => std::env::set_var("PUBLIC_SUPABASE_ANON_KEY", v),
+        None => std::env::remove_var("PUBLIC_SUPABASE_ANON_KEY"),
+    }
+
+    assert!(config.is_none(), "blank values must be treated as missing");
+}
+
+// ---------------------------------------------------------------------------
+// magic_link_result_from_verify_response — the failure branch when the verify
+// response has no usable access/refresh tokens. This exercises the
+// early-return Ok(MagicLinkResult { success: false, ... }) path.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn magic_link_result_from_verify_response_fails_when_response_has_no_tokens() {
+    let response = serde_json::json!({
+        "user": { "id": "user-1" }
+    });
+
+    let result = magic_link_result_from_verify_response(response).expect("ok result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error.as_deref(),
+        Some("No session created from magic link")
+    );
+    assert!(result.session.is_none());
+    // The user is still surfaced even on failure so the renderer can show
+    // context if desired.
+    assert_eq!(result.user.as_ref().unwrap()["id"], "user-1");
+}
+
+#[test]
+fn magic_link_result_from_verify_response_includes_user_from_session_when_absent_at_top_level() {
+    // When the verify response nests the user inside `session` and has no
+    // top-level `user`, the user is pulled from the session object.
+    let response = serde_json::json!({
+        "session": {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "user": { "id": "user-from-session" }
+        }
+    });
+
+    let result = magic_link_result_from_verify_response(response).expect("ok result");
+
+    assert!(result.success);
+    assert_eq!(
+        result.user.as_ref().expect("user")["id"],
+        "user-from-session"
+    );
+    assert_eq!(
+        result.session.as_ref().expect("session")["user"]["id"],
+        "user-from-session"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// verify_magic_link (the config-resolving wrapper) — the "configured + success"
+// path. By setting runtime env vars (the config_env! fallback) and pointing
+// at a wiremock server, the full wrapper is exercised end-to-end without a
+// Tauri AppHandle. Serialized via auth_config_env_lock.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn verify_magic_link_succeeds_when_configured_and_server_responds() {
+    let _guard = crate::auth::auth_config_env_lock()
+        .lock()
+        .expect("auth config env lock");
+    let saved_url = std::env::var_os("PUBLIC_SUPABASE_URL");
+    let saved_key = std::env::var_os("PUBLIC_SUPABASE_ANON_KEY");
+
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/verify"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "user": { "id": "user-1" }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    std::env::set_var("PUBLIC_SUPABASE_URL", server.uri());
+    std::env::set_var("PUBLIC_SUPABASE_ANON_KEY", "anon");
+
+    let state = AuthState::default();
+    let result = verify_magic_link(&state, "https://example.com/auth?token_hash=hash-1").await;
+
+    // Restore env vars.
+    match saved_url {
+        Some(v) => std::env::set_var("PUBLIC_SUPABASE_URL", v),
+        None => std::env::remove_var("PUBLIC_SUPABASE_URL"),
+    }
+    match saved_key {
+        Some(v) => std::env::set_var("PUBLIC_SUPABASE_ANON_KEY", v),
+        None => std::env::remove_var("PUBLIC_SUPABASE_ANON_KEY"),
+    }
+
+    assert!(result.success);
+    assert_eq!(
+        state.current_session().await.expect("stored session")["access_token"],
+        "access"
+    );
+}

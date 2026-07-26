@@ -905,3 +905,845 @@ fn resumable_session_rejects_insecure_provider_location_outside_local_test_endpo
         "deterministic local test endpoint"
     );
 }
+
+// ---------------------------------------------------------------------------
+// GoogleDriveValidationError::code() – every variant must produce a stable
+// machine-readable string consumed by the frontend.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn validation_error_code_covers_every_variant() {
+    assert_eq!(
+        GoogleDriveValidationError::FolderUnavailable.code(),
+        "FOLDER_UNAVAILABLE"
+    );
+    assert_eq!(
+        GoogleDriveValidationError::DownloadNotPublic.code(),
+        "DOWNLOAD_NOT_PUBLIC"
+    );
+    assert_eq!(
+        GoogleDriveValidationError::SharingCheckUnavailable.code(),
+        "SHARING_CHECK_UNAVAILABLE"
+    );
+    assert_eq!(
+        GoogleDriveValidationError::FileNotFound.code(),
+        "FILE_NOT_FOUND"
+    );
+    assert_eq!(
+        GoogleDriveValidationError::FilePermissionDenied.code(),
+        "FILE_PERMISSION_DENIED"
+    );
+    assert_eq!(
+        GoogleDriveValidationError::TokenExpired.code(),
+        "RECONNECT_REQUIRED"
+    );
+    assert_eq!(GoogleDriveValidationError::Network.code(), "NETWORK");
+    assert_eq!(
+        GoogleDriveValidationError::InvalidResponse.code(),
+        "INVALID_RESPONSE"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// From<GoogleDriveValidationError> conversions – both target enums must map
+// every variant without loss.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn validation_error_converts_to_oauth_error_for_every_variant() {
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::FolderUnavailable),
+        GoogleDriveOAuthError::FolderUnavailable
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::DownloadNotPublic),
+        GoogleDriveOAuthError::DownloadNotPublic
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::SharingCheckUnavailable),
+        GoogleDriveOAuthError::SharingCheckUnavailable
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::FileNotFound),
+        GoogleDriveOAuthError::FileNotFound
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::FilePermissionDenied),
+        GoogleDriveOAuthError::FilePermissionDenied
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::TokenExpired),
+        GoogleDriveOAuthError::ReconnectRequired
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::Network),
+        GoogleDriveOAuthError::Network
+    );
+    assert_eq!(
+        GoogleDriveOAuthError::from(GoogleDriveValidationError::InvalidResponse),
+        GoogleDriveOAuthError::InvalidResponse
+    );
+}
+
+#[test]
+fn validation_error_converts_to_drive_api_error_for_every_variant() {
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::TokenExpired),
+        DriveApiError::TokenExpired
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::Network),
+        DriveApiError::Network
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::FileNotFound),
+        DriveApiError::NotFound
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::FolderUnavailable),
+        DriveApiError::FolderUnavailable
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::DownloadNotPublic),
+        DriveApiError::DownloadNotPublic
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::SharingCheckUnavailable),
+        DriveApiError::SharingCheckUnavailable
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::FilePermissionDenied),
+        DriveApiError::PermissionDenied
+    );
+    assert_eq!(
+        DriveApiError::from(GoogleDriveValidationError::InvalidResponse),
+        DriveApiError::InvalidResponse
+    );
+}
+
+// ---------------------------------------------------------------------------
+// parse_retry_after_at – seconds, http-date, invalid, past date, zero, empty.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_retry_after_handles_seconds_zero_large_and_invalid_values() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+    assert_eq!(parse_retry_after_at("0", now), Some(Duration::from_secs(0)));
+    assert_eq!(
+        parse_retry_after_at("999999999", now),
+        Some(Duration::from_secs(999_999_999))
+    );
+    // Whitespace is trimmed before parsing.
+    assert_eq!(
+        parse_retry_after_at("  5  ", now),
+        Some(Duration::from_secs(5))
+    );
+    // Empty / non-numeric / non-date strings yield None.
+    assert_eq!(parse_retry_after_at("", now), None);
+    assert_eq!(parse_retry_after_at("   ", now), None);
+    assert_eq!(parse_retry_after_at("abc", now), None);
+    assert_eq!(parse_retry_after_at("12.5", now), None);
+}
+
+#[test]
+fn parse_retry_after_http_date_in_the_past_returns_none() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let past = now - Duration::from_secs(3600);
+    let http_date = httpdate::fmt_http_date(past);
+
+    // A date already in the past produces a negative duration → None.
+    assert_eq!(parse_retry_after_at(&http_date, now), None);
+}
+
+// ---------------------------------------------------------------------------
+// ResumableUploadSession::parse – malformed URLs, missing host, wrong scheme,
+// loopback with allow_insecure=false, non-loopback with allow_insecure=true.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resumable_session_parse_rejects_malformed_and_unsupported_schemes() {
+    // Malformed URL.
+    assert_eq!(
+        ResumableUploadSession::parse("not a url", true).expect_err("malformed"),
+        DriveApiError::InvalidResponse
+    );
+    // Non-http(s) scheme.
+    assert_eq!(
+        ResumableUploadSession::parse("ftp://example.com/session", true).expect_err("ftp scheme"),
+        DriveApiError::InvalidResponse
+    );
+    // HTTPS with no host.
+    assert_eq!(
+        ResumableUploadSession::parse("https://", true).expect_err("no host"),
+        DriveApiError::InvalidResponse
+    );
+    // HTTP loopback but allow_insecure=false.
+    assert_eq!(
+        ResumableUploadSession::parse("http://127.0.0.1/session", false).expect_err("insecure off"),
+        DriveApiError::InvalidResponse
+    );
+    // HTTP non-loopback even when allow_insecure=true.
+    assert_eq!(
+        ResumableUploadSession::parse("http://example.com/session", true)
+            .expect_err("non-loopback"),
+        DriveApiError::InvalidResponse
+    );
+    // HTTP localhost variant is accepted when allow_insecure=true.
+    assert!(ResumableUploadSession::parse("http://localhost/session", true).is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// GoogleDriveClient::with_base_url – invalid URL, bad scheme, missing
+// /drive/v3 suffix, and trailing-slash normalisation.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn with_base_url_rejects_invalid_urls_and_non_http_schemes() {
+    assert_eq!(
+        GoogleDriveClient::with_base_url("not a url").expect_err("invalid url"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+    assert_eq!(
+        GoogleDriveClient::with_base_url("ftp://example.com/drive/v3")
+            .expect_err("non-http scheme"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+}
+
+#[test]
+fn with_base_url_rejects_paths_without_drive_v3_suffix() {
+    assert_eq!(
+        GoogleDriveClient::with_base_url("https://example.com/api/v1").expect_err("wrong api path"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+    assert_eq!(
+        GoogleDriveClient::with_base_url("https://example.com/drive/v2")
+            .expect_err("wrong drive version"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+}
+
+#[tokio::test]
+async fn with_base_url_normalises_missing_trailing_slash_and_derives_upload_path() {
+    let server = MockServer::start().await;
+    // Provide a URL without a trailing slash; the client should normalise it.
+    let c = GoogleDriveClient::with_base_url(format!("{}/drive/v3", server.uri()))
+        .expect("valid base url");
+
+    // The upload base URL should replace /drive/v3 with /upload/drive/v3/.
+    let session_url = format!("{}/upload-session/test", server.uri());
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).insert_header("location", session_url.as_str()))
+        .mount(&server)
+        .await;
+
+    let session = c
+        .start_resumable_create(
+            ACCESS_TOKEN,
+            &DriveCreateMetadata {
+                id: "gen-id".to_string(),
+                parent_id: "folder-1".to_string(),
+                name: "song.zip".to_string(),
+            },
+            4,
+        )
+        .await
+        .expect("create session");
+    assert_eq!(session.as_str(), session_url);
+}
+
+// ---------------------------------------------------------------------------
+// url_with_segments – empty or whitespace-only segments are rejected.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn url_with_segments_rejects_empty_or_whitespace_segments() {
+    let base = Url::parse("https://example.com/drive/v3/").unwrap();
+    assert_eq!(
+        url_with_segments(&base, &["files", ""]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    assert_eq!(
+        url_with_segments(&base, &["files", "  "]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    assert_eq!(
+        url_with_segments(&base, &["", "files"]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    // Valid segments produce a correct URL.
+    let url = url_with_segments(&base, &["files", "abc"]).expect("valid url");
+    assert_eq!(url.as_str(), "https://example.com/drive/v3/files/abc");
+}
+
+// ---------------------------------------------------------------------------
+// usable_generated_id – empty, multiple, whitespace, oversized, valid.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn usable_generated_id_validates_count_and_content() {
+    assert_eq!(
+        usable_generated_id(vec![]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    assert_eq!(
+        usable_generated_id(vec!["a".to_string(), "b".to_string()]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    assert_eq!(
+        usable_generated_id(vec!["   ".to_string()]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    let oversized = "x".repeat(MAX_PAGE_TOKEN_BYTES + 1);
+    assert_eq!(
+        usable_generated_id(vec![oversized]),
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+    // Valid id is trimmed and returned.
+    assert_eq!(
+        usable_generated_id(vec!["  gen-id  ".to_string()]),
+        Ok("gen-id".to_string())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// parse_confirmed_range – valid, missing prefix, non-numeric, overflow.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_confirmed_range_parses_valid_byte_range() {
+    let value = reqwest::header::HeaderValue::from_static("bytes=0-99");
+    assert_eq!(parse_confirmed_range(&value), Ok(100));
+}
+
+#[test]
+fn parse_confirmed_range_rejects_missing_prefix_and_non_numeric() {
+    let missing_prefix = reqwest::header::HeaderValue::from_static("0-99");
+    assert_eq!(
+        parse_confirmed_range(&missing_prefix),
+        Err(DriveApiError::InvalidResponse)
+    );
+
+    let non_numeric = reqwest::header::HeaderValue::from_static("bytes=0-abc");
+    assert_eq!(
+        parse_confirmed_range(&non_numeric),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn parse_confirmed_range_rejects_u64_overflow_on_increment() {
+    // u64::MAX + 1 overflows → Err.
+    let value = reqwest::header::HeaderValue::from_static("bytes=0-18446744073709551615");
+    assert_eq!(
+        parse_confirmed_range(&value),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: decode_chunk_response – 200/201 Complete, 404 status probe,
+// 308 with confirmed range exceeding total.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn chunk_response_200_and_201_signal_completion() {
+    for status in [200u16, 201] {
+        let server = MockServer::start().await;
+        let session = ResumableUploadSession::for_test(&format!("{}/session", server.uri()))
+            .expect("session");
+        Mock::given(method("PUT"))
+            .and(path("/session"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            GoogleDriveApi::upload_chunk(&client(&server), ACCESS_TOKEN, &session, 0, b"zip", 3,)
+                .await,
+            Ok(DriveChunkResult::Complete),
+            "status {status}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn chunk_status_probe_404_maps_to_session_expired() {
+    let server = MockServer::start().await;
+    let session =
+        ResumableUploadSession::for_test(&format!("{}/session", server.uri())).expect("session");
+    Mock::given(method("PUT"))
+        .and(path("/session"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::query_session_status(&client(&server), ACCESS_TOKEN, &session, 10).await,
+        Err(DriveApiError::SessionExpired)
+    );
+}
+
+#[tokio::test]
+async fn chunk_308_with_confirmed_range_exceeding_total_is_invalid() {
+    let server = MockServer::start().await;
+    let session =
+        ResumableUploadSession::for_test(&format!("{}/session", server.uri())).expect("session");
+    Mock::given(method("PUT"))
+        .and(path("/session"))
+        .respond_with(
+            ResponseTemplate::new(308)
+                // confirmed = 101 (bytes 0-100), but total is only 10
+                .insert_header("range", "bytes=0-100"),
+        )
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::upload_chunk(&client(&server), ACCESS_TOKEN, &session, 0, b"zip", 10).await,
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: decode_resumable_session (validation-error variant used by the
+// inherent impl) – 401, 403, 404, missing/empty/oversized location.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn resumable_create_inherent_maps_http_errors_to_validation_errors() {
+    for (status, expected) in [
+        (401u16, GoogleDriveValidationError::TokenExpired),
+        (403, GoogleDriveValidationError::FilePermissionDenied),
+        (404, GoogleDriveValidationError::FileNotFound),
+        (500, GoogleDriveValidationError::InvalidResponse),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/upload/drive/v3/files"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+
+        let error = client(&server)
+            .start_resumable_create(
+                ACCESS_TOKEN,
+                &DriveCreateMetadata {
+                    id: "gen-id".to_string(),
+                    parent_id: "folder-1".to_string(),
+                    name: "song.zip".to_string(),
+                },
+                4,
+            )
+            .await
+            .expect_err("should error");
+        assert_eq!(error, expected, "status {status}");
+    }
+}
+
+#[tokio::test]
+async fn resumable_create_inherent_rejects_missing_empty_or_oversized_location() {
+    let metadata = DriveCreateMetadata {
+        id: "gen-id".to_string(),
+        parent_id: "folder-1".to_string(),
+        name: "song.zip".to_string(),
+    };
+
+    // Missing Location header on a 200.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    assert_eq!(
+        client(&server)
+            .start_resumable_create(ACCESS_TOKEN, &metadata, 4)
+            .await
+            .expect_err("missing location"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+
+    // Empty / whitespace-only Location header.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).insert_header("location", "   "))
+        .mount(&server)
+        .await;
+    assert_eq!(
+        client(&server)
+            .start_resumable_create(ACCESS_TOKEN, &metadata, 4)
+            .await
+            .expect_err("empty location"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+
+    // Oversized Location header (> 16 KiB).
+    let server = MockServer::start().await;
+    let oversized = format!(
+        "https://upload.example/s/{}",
+        "x".repeat(MAX_SESSION_URI_BYTES)
+    );
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).insert_header("location", oversized.as_str()))
+        .mount(&server)
+        .await;
+    assert_eq!(
+        client(&server)
+            .start_resumable_create(ACCESS_TOKEN, &metadata, 4)
+            .await
+            .expect_err("oversized location"),
+        GoogleDriveValidationError::InvalidResponse
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: resumable_create / resumable_update inherent impl rejects
+// empty metadata fields before making any network request.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn resumable_create_inherent_rejects_empty_metadata_without_network() {
+    let server = MockServer::start().await;
+    // No mocks mounted – any request would fail.  The client must short-circuit.
+    for (id, parent_id, name) in [
+        ("", "folder-1", "song.zip"),
+        ("gen-id", "", "song.zip"),
+        ("gen-id", "folder-1", ""),
+        ("  ", "folder-1", "song.zip"),
+        ("gen-id", "  ", "song.zip"),
+        ("gen-id", "folder-1", "  "),
+    ] {
+        let error = client(&server)
+            .start_resumable_create(
+                ACCESS_TOKEN,
+                &DriveCreateMetadata {
+                    id: id.to_string(),
+                    parent_id: parent_id.to_string(),
+                    name: name.to_string(),
+                },
+                4,
+            )
+            .await
+            .expect_err("should error");
+        assert_eq!(
+            error,
+            GoogleDriveValidationError::InvalidResponse,
+            "id={id:?} parent={parent_id:?} name={name:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn resumable_update_inherent_rejects_empty_fields_without_network() {
+    let server = MockServer::start().await;
+    for (file_id, name) in [
+        ("", "song.zip"),
+        ("file-1", ""),
+        ("  ", "song.zip"),
+        ("file-1", "  "),
+    ] {
+        let error = client(&server)
+            .start_resumable_update(
+                ACCESS_TOKEN,
+                file_id,
+                &DriveUpdateMetadata {
+                    name: name.to_string(),
+                },
+                4,
+            )
+            .await
+            .expect_err("should error");
+        assert_eq!(
+            error,
+            GoogleDriveValidationError::InvalidResponse,
+            "file_id={file_id:?} name={name:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: classify_drive_response via trait get_file / delete_file –
+// 404 NotFound, 500 Transient, 403 PermissionDenied, quota reasons.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_file_maps_404_to_not_found_and_500_to_transient() {
+    for (status, expected) in [
+        (404u16, DriveApiError::NotFound),
+        (500, DriveApiError::Transient(None)),
+        (502, DriveApiError::Transient(None)),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/drive/v3/files/file-1"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            GoogleDriveApi::get_file(&client(&server), ACCESS_TOKEN, "file-1").await,
+            Err(expected),
+            "status {status}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn get_file_maps_403_without_special_reason_to_permission_denied() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+            "error": { "errors": [{ "reason": "insufficientFilePermissions" }] }
+        })))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::get_file(&client(&server), ACCESS_TOKEN, "file-1").await,
+        Err(DriveApiError::PermissionDenied)
+    );
+}
+
+#[tokio::test]
+async fn classify_drive_response_maps_quota_reasons_to_quota_exceeded() {
+    for reason in [
+        "dailyLimitExceeded",
+        "activeItemCreationLimitExceeded",
+        "teamDriveFileLimitExceeded",
+        "teamDriveHierarchyTooDeep",
+        "quotaExceeded",
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/drive/v3/files/file-1"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+                "error": { "errors": [{ "reason": reason }] }
+            })))
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            GoogleDriveApi::get_file(&client(&server), ACCESS_TOKEN, "file-1").await,
+            Err(DriveApiError::QuotaExceeded),
+            "reason {reason}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn delete_file_maps_404_to_not_found_and_500_to_transient() {
+    for (status, expected) in [
+        (404u16, DriveApiError::NotFound),
+        (503, DriveApiError::Transient(None)),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/drive/v3/files/file-1"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            GoogleDriveApi::delete_file(&client(&server), ACCESS_TOKEN, "file-1").await,
+            Err(expected),
+            "status {status}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn delete_file_succeeds_on_204_no_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/file-1"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::delete_file(&client(&server), ACCESS_TOKEN, "file-1").await,
+        Ok(())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: classify_drive_response 429 with retry-after header.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_file_429_maps_to_rate_limited_with_retry_after() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "7")
+                .set_body_json(json!({ "error": { "errors": [{ "reason": "quotaExceeded" }] } })),
+        )
+        .mount(&server)
+        .await;
+
+    // 429 short-circuits before inspecting the error body.
+    assert_eq!(
+        GoogleDriveApi::get_file(&client(&server), ACCESS_TOKEN, "file-1").await,
+        Err(DriveApiError::RateLimited(Some(Duration::from_secs(7))))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: validate_file_before_update – trashed file → FileNotFound.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn validate_file_before_update_treats_trashed_file_as_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/trashed-file"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "trashed-file",
+            "trashed": true
+        })))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_file_before_update(ACCESS_TOKEN, "trashed-file")
+            .await,
+        Err(GoogleDriveValidationError::FileNotFound)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: permission pagination – repeated page token → InvalidResponse.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn permission_pagination_repeated_page_token_is_invalid_response() {
+    let server = MockServer::start().await;
+    mount_valid_folder(&server, "folder-42").await;
+    // Both pages return the same nextPageToken, which the dedup guard must catch.
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/folder-42/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "permissions": [],
+            "nextPageToken": "repeated-token"
+        })))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_folder(ACCESS_TOKEN, "folder-42")
+            .await,
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: upload_chunk / query_session_status reject invalid byte ranges
+// (empty bytes, start >= total, start + len > total).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn upload_chunk_rejects_invalid_byte_ranges_without_network() {
+    let server = MockServer::start().await;
+    let session =
+        ResumableUploadSession::for_test(&format!("{}/session", server.uri())).expect("session");
+
+    // Empty bytes.
+    assert_eq!(
+        GoogleDriveApi::upload_chunk(&client(&server), ACCESS_TOKEN, &session, 0, b"", 10).await,
+        Err(DriveApiError::InvalidResponse)
+    );
+    // start >= total.
+    assert_eq!(
+        GoogleDriveApi::upload_chunk(&client(&server), ACCESS_TOKEN, &session, 10, b"zip", 10)
+            .await,
+        Err(DriveApiError::InvalidResponse)
+    );
+    // start + len > total.
+    assert_eq!(
+        GoogleDriveApi::upload_chunk(&client(&server), ACCESS_TOKEN, &session, 8, b"zip", 10).await,
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: get_file_for_update requests the update-specific field set.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_file_for_update_requests_can_edit_capability_fields() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .and(query_param(
+            "fields",
+            "id,name,mimeType,trashed,capabilities(canEdit)",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "file-1",
+            "name": "song.zip",
+            "mimeType": "application/zip",
+            "trashed": false,
+            "capabilities": { "canEdit": true }
+        })))
+        .mount(&server)
+        .await;
+
+    let file = GoogleDriveApi::get_file_for_update(&client(&server), ACCESS_TOKEN, "file-1")
+        .await
+        .expect("update file");
+    assert_eq!(file.id, "file-1");
+    assert!(file.can_edit);
+}
+
+// ---------------------------------------------------------------------------
+// HTTP-mocked: validate_public_permission (trait method) returns the raw
+// PublicPermissionStatus for an existing file.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn validate_public_permission_trait_returns_status_for_existing_file() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "permissions": [{
+                "id": "perm-1",
+                "type": "anyone",
+                "role": "reader",
+                "view": null,
+                "allowFileDiscovery": false
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::validate_public_permission(&client(&server), ACCESS_TOKEN, "file-1").await,
+        Ok(PublicPermissionStatus::Public)
+    );
+}
+
+#[tokio::test]
+async fn validate_public_permission_trait_403_is_check_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1/permissions"))
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::validate_public_permission(&client(&server), ACCESS_TOKEN, "file-1").await,
+        Ok(PublicPermissionStatus::CheckUnavailable)
+    );
+}

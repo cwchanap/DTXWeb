@@ -5,14 +5,28 @@
 	import { authStore } from '../stores/authStore';
 
 	let {
+		simfileId,
 		outcome,
 		onRetry,
 		onCreateReplacement
 	}: {
-		outcome?: SongSaveOutcome['driveUpload'];
+		simfileId?: string;
+		outcome?: { simfileId: string; result: SongSaveOutcome['driveUpload'] };
 		onRetry?: () => void;
 		onCreateReplacement?: () => void;
 	} = $props();
+
+	const visibleOperations = $derived(
+		Object.values($googleDriveStore.operations).filter(
+			(operation) => simfileId === undefined || operation.simfileId === simfileId
+		)
+	);
+	const visibleOutcome = $derived.by(() => {
+		if (!outcome) return undefined;
+		return simfileId === undefined || outcome.simfileId === simfileId
+			? outcome.result
+			: undefined;
+	});
 
 	const stageKey: Record<GoogleDriveOperation['stage'], string> = {
 		'waiting-for-upload-slot': 'googleDrive.upload.queued',
@@ -103,21 +117,25 @@
 		await googleDriveService.cancelUpload(operationId);
 	};
 	const handleReconnect = async () => {
+		if (!visibleOutcome) return;
 		await googleDriveService.connectAndChooseFolder();
 	};
 	const handleRefreshConnection = async () => {
+		if (!visibleOutcome) return;
 		await googleDriveService.refreshConnection();
 	};
 	const handleChangeFolder = async () => {
+		if (!visibleOutcome) return;
 		await googleDriveService.changeFolder();
 	};
 	const handleRecheckSharing = async () => {
+		if (!visibleOutcome) return;
 		await googleDriveService.recheckSharing();
 	};
 </script>
 
 {#if $authStore.isAuthenticated}
-	{#each Object.values($googleDriveStore.operations) as operation (operation.operationId)}
+	{#each visibleOperations as operation (operation.operationId)}
 		<section
 			class="border-hairline bg-surface-1 space-y-2 rounded-lg border p-4"
 			aria-live="polite"
@@ -137,29 +155,29 @@
 		</section>
 	{/each}
 
-	{#if outcome?.status === 'success'}
+	{#if visibleOutcome?.status === 'success'}
 		<section
 			class="border-green/40 bg-green/10 space-y-2 rounded-lg border p-4"
 			aria-live="polite"
 		>
 			<p class="text-green text-sm">{$_('googleDrive.upload.complete')}</p>
-			{#if outcome.downloadUrl}
+			{#if visibleOutcome.downloadUrl}
 				<a
 					class="text-cyan text-sm underline"
-					href={outcome.downloadUrl}
+					href={visibleOutcome.downloadUrl}
 					target="_blank"
 					rel="noreferrer">{$_('googleDrive.upload.openLink')}</a
 				>
 				<p class="text-dim text-sm">{$_('googleDrive.upload.browserLink')}</p>
 			{/if}
 		</section>
-	{:else if outcome?.status === 'failed'}
+	{:else if visibleOutcome?.status === 'failed'}
 		<section
 			class="border-yellow/40 bg-yellow/10 space-y-2 rounded-lg border p-4"
 			aria-live="polite"
 		>
-			<p class="text-yellow text-sm">{$_(errorMessageKey(outcome.errorCode))}</p>
-			{#each actionsFor(outcome.errorCode) as action}
+			<p class="text-yellow text-sm">{$_(errorMessageKey(visibleOutcome.errorCode))}</p>
+			{#each actionsFor(visibleOutcome.errorCode) as action}
 				{#if action === 'retry'}
 					<button class="text-dim text-sm" onclick={onRetry}
 						>{$_('googleDrive.upload.retry')}</button

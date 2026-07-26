@@ -41,6 +41,16 @@ const terminalStages = new Set<GoogleDriveUploadProgress['stage']>([
 	'upload-failed-save-succeeded'
 ]);
 
+export const getActiveGoogleDriveOperationForSimfile = (
+	state: GoogleDriveStoreState,
+	simfileId: string | null | undefined
+): GoogleDriveOperation | undefined => {
+	if (!simfileId) return undefined;
+	return Object.values(state.operations).find(
+		(operation) => operation.simfileId === simfileId && !terminalStages.has(operation.stage)
+	);
+};
+
 export const createGoogleDriveStore = () => {
 	const { subscribe, set, update } = writable<GoogleDriveStoreState>(initialState());
 	let generation = 0;

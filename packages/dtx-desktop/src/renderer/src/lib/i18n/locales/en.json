@@ -113,6 +113,14 @@
 			"browserLink": "The download link opens in Google Drive and may redirect or show an interstitial.",
 			"openLink": "Open Google Drive download"
 		},
+		"songDetails": {
+			"upload": "Upload ZIP to Drive",
+			"reupload": "Re-upload ZIP to Drive",
+			"linkedWarning": "This song is linked to a Google Drive file. The next successful Drive upload will replace the download URL with Google's current download link.",
+			"draftSaved": "Song saved successfully.",
+			"published": "Song published successfully.",
+			"previousDownloadPreserved": "Google Drive upload failed. Your previous download remains available."
+		},
 		"error": {
 			"FILE_NOT_FOUND": "The previously linked Google Drive file is no longer available.",
 			"FILE_PERMISSION_DENIED": "This Google account cannot replace the previously linked file.",

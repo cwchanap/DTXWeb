@@ -1,293 +1,229 @@
 import { expect, mock, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-const randomBytes = mock(() => ({ toString: () => 'launch-nonce-123' }));
-const availablePorts = [];
-const portReservations = [];
-const createServer = mock(() => ({
-	once: () => undefined,
-	listen: (port, hostname, onListening) => {
-		portReservations.push({ port, hostname });
-		onListening();
-	},
-	address: () => ({ port: availablePorts.shift() }),
-	close: (callback) => callback()
-}));
-const createTauriCapabilities = mock((appBinaryPath, options) => ({
-	'tauri:options': { application: appBinaryPath },
-	'wdio:tauriServiceOptions': options
-}));
-const startResponses = [];
-const cleanupResponses = [];
-let observedNonce = 'launch-nonce-123';
-const createBrowser = () => ({
-	tauri: {
-		execute: async (callback, ...args) =>
-			await callback(
-				{
-					core: {
-						invoke: async (command) => {
-							if (command === 'read_e2e_session_nonce') return observedNonce;
-							throw new Error('socket hang up');
-						}
-					}
-				},
-				...args
-			)
-	}
-});
-const startWdioSession = mock(async (...args) => {
-	const response = startResponses.shift() ?? createBrowser();
-	if (response instanceof Error) throw response;
-	return response;
-});
-const cleanupWdioSession = mock(async () => {
-	const response = cleanupResponses.shift();
-	if (response instanceof Error) throw response;
-});
-
-mock.module('node:crypto', () => ({ randomBytes }));
-mock.module('node:net', () => ({ createServer }));
-mock.module('@wdio/tauri-service', () => ({
-	createTauriCapabilities,
-	startWdioSession,
-	cleanupWdioSession
-}));
 
 const { startStandaloneTauriSession, terminateStandaloneTauriSession } =
 	await import('./standalone-session.ts');
 
-test('forwards the isolated data directory and allocated port to the native standalone session', async () => {
-	availablePorts.push(46_001);
-	const startCallCount = startWdioSession.mock.calls.length;
-	const browser = await startStandaloneTauriSession({
-		appBinaryPath: '/tmp/dtx-desktop',
-		dataDir: '/tmp/dtx-e2e-data',
-		logDir: '/tmp/dtx-e2e-logs'
-	});
+class FakeChild extends EventEmitter {
+	exitCode = null;
+	pid = 41_001;
+	signalCode = null;
+	killSignals = [];
+	exitOnSignal = new Set();
 
-	expect(createTauriCapabilities).toHaveBeenCalledWith('/tmp/dtx-desktop', {
-		driverProvider: 'embedded',
-		startTimeout: 60_000
-	});
-	expect(startWdioSession).toHaveBeenCalledWith(
-		expect.objectContaining({
-			'wdio:tauriServiceOptions': expect.objectContaining({
-				captureBackendLogs: true,
-				captureFrontendLogs: true,
-				embeddedPort: 46_001,
-				logDir: '/tmp/dtx-e2e-logs'
-			})
-		}),
-		expect.objectContaining({
-			env: {
-				DTX_E2E_DATA_DIR: '/tmp/dtx-e2e-data',
-				DTX_E2E_SESSION_NONCE: 'launch-nonce-123'
-			}
-		})
-	);
-	expect(portReservations.at(-1)).toEqual({ port: 0, hostname: '127.0.0.1' });
-	expect(startWdioSession.mock.calls.slice(startCallCount)[0][0]).not.toEqual(
-		expect.objectContaining({
-			'wdio:tauriServiceOptions': expect.objectContaining({ embeddedPort: 4445 })
-		})
-	);
-	await terminateStandaloneTauriSession(browser);
-});
-
-test('uses distinct allocated ports for separate standalone launches', async () => {
-	availablePorts.push(46_051, 46_052);
-	const startCallCount = startWdioSession.mock.calls.length;
-	const input = {
-		appBinaryPath: '/tmp/dtx-desktop',
-		dataDir: '/tmp/dtx-e2e-data',
-		logDir: '/tmp/dtx-e2e-logs'
-	};
-
-	const firstBrowser = await startStandaloneTauriSession(input);
-	const secondBrowser = await startStandaloneTauriSession(input);
-
-	const launchedCapabilities = startWdioSession.mock.calls
-		.slice(startCallCount)
-		.map(([capabilities]) => capabilities['wdio:tauriServiceOptions']);
-	expect(launchedCapabilities.map(({ embeddedPort }) => embeddedPort)).toEqual([46_051, 46_052]);
-	expect(launchedCapabilities.map(({ embeddedPort }) => embeddedPort)).not.toContain(4445);
-	await terminateStandaloneTauriSession(firstBrowser);
-	await terminateStandaloneTauriSession(secondBrowser);
-});
-
-test('fails a real embedded-driver readiness timeout without launching a second app', async () => {
-	availablePorts.push(46_101);
-	startResponses.push(
-		new Error('Embedded WebDriver did not become ready on port 46101 within 60000ms')
-	);
-	const startCallCount = startWdioSession.mock.calls.length;
-
-	await expect(
-		startStandaloneTauriSession({
-			appBinaryPath: '/tmp/dtx-desktop',
-			dataDir: '/tmp/dtx-e2e-data',
-			logDir: '/tmp/dtx-e2e-logs'
-		})
-	).rejects.toThrow('did not become ready on port');
-
-	const launchedCapabilities = startWdioSession.mock.calls
-		.slice(startCallCount)
-		.map(([capabilities]) => capabilities['wdio:tauriServiceOptions']);
-	expect(launchedCapabilities.map(({ embeddedPort }) => embeddedPort)).toEqual([46_101]);
-	availablePorts.push(46_101);
-	const reusedPortBrowser = await startStandaloneTauriSession({
-		appBinaryPath: '/tmp/dtx-desktop',
-		dataDir: '/tmp/dtx-e2e-data',
-		logDir: '/tmp/dtx-e2e-logs'
-	});
-	expect(startWdioSession.mock.calls.at(-1)[0]['wdio:tauriServiceOptions'].embeddedPort).toBe(
-		46_101
-	);
-	await terminateStandaloneTauriSession(reusedPortBrowser);
-});
-
-test('cleans the provider and rejects when the remote session reports another app nonce', async () => {
-	availablePorts.push(46_125);
-	observedNonce = 'unrelated-driver-nonce';
-	const cleanupCallCount = cleanupWdioSession.mock.calls.length;
-
-	try {
-		await expect(
-			startStandaloneTauriSession({
-				appBinaryPath: '/tmp/dtx-desktop',
-				dataDir: '/tmp/dtx-e2e-data',
-				logDir: '/tmp/dtx-e2e-logs'
-			})
-		).rejects.toThrow('nonce mismatch');
-		expect(cleanupWdioSession.mock.calls.slice(cleanupCallCount)).toHaveLength(1);
-	} finally {
-		observedNonce = 'launch-nonce-123';
+	kill(signal) {
+		this.killSignals.push(signal);
+		if (this.exitOnSignal.has(signal)) this.exit(0, signal);
+		return true;
 	}
-});
 
-test('holds an exclusive lease until standalone cleanup releases it', async () => {
-	availablePorts.push(46_151, 46_151, 46_152, 46_151);
-	const startCallCount = startWdioSession.mock.calls.length;
-	const input = {
-		appBinaryPath: '/tmp/dtx-desktop',
-		dataDir: '/tmp/dtx-e2e-data',
-		logDir: '/tmp/dtx-e2e-logs'
-	};
-
-	const firstBrowser = await startStandaloneTauriSession(input);
-	const contendedBrowser = await startStandaloneTauriSession(input);
-	const launchedCapabilities = startWdioSession.mock.calls
-		.slice(startCallCount)
-		.map(([capabilities]) => capabilities['wdio:tauriServiceOptions']);
-	expect(launchedCapabilities.map(({ embeddedPort }) => embeddedPort)).toEqual([46_151, 46_152]);
-
-	await terminateStandaloneTauriSession(firstBrowser);
-	const releasedLeaseBrowser = await startStandaloneTauriSession(input);
-	expect(startWdioSession.mock.calls.at(-1)[0]['wdio:tauriServiceOptions'].embeddedPort).toBe(
-		46_151
-	);
-
-	await terminateStandaloneTauriSession(contendedBrowser);
-	await terminateStandaloneTauriSession(releasedLeaseBrowser);
-});
-
-test('recovers a stale lease record before starting the only native app', async () => {
-	const port = 46_160;
-	const leasePath = join(tmpdir(), 'dtx-e2e-embedded-port-leases', `${port}.lock`);
-	mkdirSync(join(tmpdir(), 'dtx-e2e-embedded-port-leases'), { recursive: true });
-	writeFileSync(
-		leasePath,
-		JSON.stringify({
-			pid: process.pid,
-			nonce: 'future-corrupted-lease',
-			createdAt: Date.now() + 60 * 60 * 1000
-		})
-	);
-	availablePorts.push(port);
-
-	try {
-		const browser = await startStandaloneTauriSession({
-			appBinaryPath: '/tmp/dtx-desktop',
-			dataDir: '/tmp/dtx-e2e-data',
-			logDir: '/tmp/dtx-e2e-logs'
-		});
-		expect(existsSync(leasePath)).toBe(true);
-		await terminateStandaloneTauriSession(browser);
-		expect(existsSync(leasePath)).toBe(false);
-	} finally {
-		rmSync(leasePath, { force: true });
+	exit(code = 0, signal = null) {
+		this.exitCode = code;
+		this.signalCode = signal;
+		this.emit('exit', code, signal);
 	}
+}
+
+const leasePathFor = (port) => join(tmpdir(), 'dtx-e2e-embedded-port-leases', `${port}.lease`);
+
+const makeClock = () => ({
+	now: () => Date.now(),
+	setTimeout: (callback) => {
+		queueMicrotask(callback);
+		return 0;
+	},
+	clearTimeout: () => undefined
 });
 
-test('never releases a lease that a different harness nonce now owns', async () => {
-	const port = 46_161;
-	const leasePath = join(tmpdir(), 'dtx-e2e-embedded-port-leases', `${port}.lock`);
-	availablePorts.push(port);
+const makeReservePort = (...ports) =>
+	mock(async () => ({ port: ports.shift(), release: async () => undefined }));
 
+const makeBrowser = () => ({ deleteSession: mock(async () => undefined) });
+
+const makeDependencies = ({
+	child = new FakeChild(),
+	port = 46_001,
+	observedNonce = 'launch-nonce-123',
+	remoteError,
+	onExit = () => child.exit()
+} = {}) => {
+	const spawn = mock(() => child);
+	const remote = mock(async () => {
+		if (remoteError) throw remoteError;
+		return makeBrowser();
+	});
+	const evaluate = mock(async (_port, script) => {
+		if (script.includes('read_e2e_session_nonce')) return observedNonce;
+		if (script.includes('plugin:process|exit')) {
+			onExit();
+			return undefined;
+		}
+		throw new Error(`Unexpected direct-eval script: ${script}`);
+	});
+	return {
+		child,
+		spawn,
+		remote,
+		evaluate,
+		clock: makeClock(),
+		nonce: () => 'launch-nonce-123',
+		reservePort: makeReservePort(port)
+	};
+};
+
+const input = {
+	appBinaryPath: '/tmp/dtx-desktop',
+	dataDir: '/tmp/dtx-e2e-data',
+	logDir: '/tmp/dtx-e2e-logs'
+};
+
+const cleanupLease = (port) => rmSync(leasePathFor(port), { recursive: true, force: true });
+
+test('spawns exactly one owned app and connects remote directly with the embedded protocol', async () => {
+	const dependencies = makeDependencies({ port: 46_001 });
 	try {
-		const browser = await startStandaloneTauriSession({
-			appBinaryPath: '/tmp/dtx-desktop',
-			dataDir: '/tmp/dtx-e2e-data',
-			logDir: '/tmp/dtx-e2e-logs'
-		});
-		writeFileSync(
-			leasePath,
-			JSON.stringify({ pid: process.pid, nonce: 'new-harness-owner', createdAt: Date.now() })
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		expect(dependencies.spawn).toHaveBeenCalledTimes(1);
+		expect(dependencies.spawn).toHaveBeenCalledWith(
+			'/tmp/dtx-desktop',
+			[],
+			expect.objectContaining({
+				shell: false,
+				env: expect.objectContaining({
+					DTX_E2E_DATA_DIR: '/tmp/dtx-e2e-data',
+					DTX_E2E_SESSION_NONCE: 'launch-nonce-123',
+					TAURI_WEBDRIVER_PORT: '46001',
+					WDIO_EMBEDDED_SERVER: 'true'
+				})
+			})
 		);
-
+		expect(dependencies.remote).toHaveBeenCalledWith(
+			expect.objectContaining({
+				hostname: '127.0.0.1',
+				port: 46_001,
+				connectionRetryCount: 0
+			})
+		);
 		await terminateStandaloneTauriSession(browser);
-		expect(existsSync(leasePath)).toBe(true);
 	} finally {
-		rmSync(leasePath, { force: true });
+		cleanupLease(46_001);
 	}
 });
 
-test('cleans the native session after the expected process-exit disconnect', async () => {
-	const invoke = mock(async () => undefined);
-	const browser = {
-		tauri: {
-			execute: async (callback, code) => {
-				await callback({ core: { invoke } }, code);
-				throw new Error('socket hang up');
-			}
-		}
-	};
-
-	await expect(terminateStandaloneTauriSession(browser, 86)).resolves.toBeUndefined();
-	expect(invoke).toHaveBeenCalledWith('plugin:process|exit', { code: 86 });
-	expect(cleanupWdioSession).toHaveBeenCalledWith(browser);
+test('cleans the owned child and WebDriver session when the nonce proves another app answered', async () => {
+	const dependencies = makeDependencies({ port: 46_002, observedNonce: 'other-app-nonce' });
+	try {
+		await expect(startStandaloneTauriSession(input, dependencies)).rejects.toThrow(
+			'nonce mismatch'
+		);
+		expect(dependencies.child.exitCode).toBe(0);
+		expect(dependencies.remote).toHaveBeenCalledTimes(1);
+	} finally {
+		cleanupLease(46_002);
+	}
 });
 
-test('keeps unexpected exit failures visible after cleanup', async () => {
-	const browser = {
-		tauri: {
-			execute: async () => {
-				throw new Error('process command denied');
-			}
-		}
-	};
-
-	await expect(terminateStandaloneTauriSession(browser)).rejects.toThrow(
-		'process command denied'
-	);
-	expect(cleanupWdioSession).toHaveBeenCalledWith(browser);
+test('cleans startup failure without launching a replacement app', async () => {
+	const child = new FakeChild();
+	child.exitOnSignal.add('SIGTERM');
+	const dependencies = makeDependencies({
+		child,
+		port: 46_003,
+		remoteError: new Error('driver connection failed')
+	});
+	try {
+		await expect(startStandaloneTauriSession(input, dependencies)).rejects.toThrow(
+			'driver connection failed'
+		);
+		expect(dependencies.spawn).toHaveBeenCalledTimes(1);
+		expect(child.killSignals).toEqual(['SIGTERM']);
+	} finally {
+		cleanupLease(46_003);
+	}
 });
 
-test('keeps provider cleanup failures visible after terminating the native app', async () => {
-	cleanupResponses.push(new Error('provider cleanup failed'));
-	const browser = {
-		tauri: {
-			execute: async (callback, code) => {
-				await callback({ core: { invoke: async () => undefined } }, code);
-				throw new Error('socket hang up');
-			}
-		}
-	};
+test('escalates from controlled exit through TERM to KILL and waits for exit', async () => {
+	const child = new FakeChild();
+	child.exitOnSignal.add('SIGKILL');
+	const dependencies = makeDependencies({ child, port: 46_004, onExit: () => undefined });
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		await terminateStandaloneTauriSession(browser, 86);
+		expect(child.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+		expect(child.exitCode).toBe(0);
+	} finally {
+		cleanupLease(46_004);
+	}
+});
 
-	await expect(terminateStandaloneTauriSession(browser)).rejects.toThrow(
-		'provider cleanup failed'
+test('does not release the lease before the child exits and propagates WebDriver cleanup failures', async () => {
+	const child = new FakeChild();
+	let leaseExistedAtExit = false;
+	const port = 46_005;
+	const dependencies = makeDependencies({
+		child,
+		port,
+		onExit: () => {
+			leaseExistedAtExit = existsSync(leasePathFor(port));
+			child.exit();
+		}
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		browser.deleteSession.mockImplementationOnce(async () => {
+			throw new Error('delete session failed');
+		});
+		await expect(terminateStandaloneTauriSession(browser)).rejects.toThrow(
+			'delete session failed'
+		);
+		expect(leaseExistedAtExit).toBe(true);
+		expect(existsSync(leasePathFor(port))).toBe(true);
+	} finally {
+		cleanupLease(port);
+	}
+});
+
+test('atomically reclaims a stale lease for one concurrent starter only', async () => {
+	const port = 46_006;
+	const path = leasePathFor(port);
+	mkdirSync(path, { recursive: true });
+	writeFileSync(
+		join(path, 'owner.json'),
+		JSON.stringify({ pid: 999_999, nonce: 'stale-owner', createdAt: 0 })
 	);
+	const first = makeDependencies({ port });
+	const second = makeDependencies({ port });
+	second.reservePort = makeReservePort(port, port, port);
+	try {
+		const results = await Promise.allSettled([
+			startStandaloneTauriSession(input, first),
+			startStandaloneTauriSession(input, second)
+		]);
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		expect(first.spawn.mock.calls.length + second.spawn.mock.calls.length).toBe(1);
+		const winner = results.find((result) => result.status === 'fulfilled');
+		await terminateStandaloneTauriSession(winner.value);
+	} finally {
+		cleanupLease(port);
+	}
+});
+
+test('restores a foreign replacement instead of deleting it during release', async () => {
+	const port = 46_007;
+	const dependencies = makeDependencies({ port });
+	const path = leasePathFor(port);
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		writeFileSync(
+			join(path, 'owner.json'),
+			JSON.stringify({ pid: process.pid, nonce: 'foreign-owner', createdAt: Date.now() })
+		);
+		await expect(terminateStandaloneTauriSession(browser)).rejects.toThrow('another harness');
+		expect(existsSync(path)).toBe(true);
+	} finally {
+		cleanupLease(port);
+	}
 });

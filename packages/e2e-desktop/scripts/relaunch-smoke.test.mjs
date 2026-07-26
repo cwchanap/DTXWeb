@@ -59,7 +59,8 @@ mock.module('../support/standalone-session.ts', () => ({
 	}
 }));
 
-const { runRelaunchSmoke } = await import('./relaunch-smoke.ts');
+const { __acquireRelaunchPruneLockForTests, __releaseRelaunchPruneLockForTests, runRelaunchSmoke } =
+	await import('./relaunch-smoke.ts');
 
 const createBinary = () => {
 	const root = mkdtempSync(join(tmpdir(), 'dtx-relaunch-test-'));
@@ -185,6 +186,44 @@ test('retains diagnostics when final native cleanup fails', async () => {
 		);
 
 		expect(existsSync(starts[1].input.logDir)).toBeTrue();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('atomically reclaims one stale prune lock while a concurrent acquirer observes the new owner', () => {
+	const root = mkdtempSync(join(tmpdir(), 'dtx-relaunch-lock-test-'));
+	const diagnosticsRoot = createDiagnosticsRoot(root);
+	const lockPath = join(diagnosticsRoot, 'relaunch-prune.lock');
+	mkdirSync(lockPath);
+	writeFileSync(
+		join(lockPath, 'owner.json'),
+		JSON.stringify({ pid: 999_999, nonce: 'stale-pruner', createdAt: 0 })
+	);
+	try {
+		const first = __acquireRelaunchPruneLockForTests(diagnosticsRoot);
+		const second = __acquireRelaunchPruneLockForTests(diagnosticsRoot);
+		expect(first).not.toBeNull();
+		expect(second).toBeNull();
+		__releaseRelaunchPruneLockForTests(first);
+		expect(existsSync(lockPath)).toBeFalse();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('restores a foreign prune-lock replacement instead of deleting it', () => {
+	const root = mkdtempSync(join(tmpdir(), 'dtx-relaunch-lock-test-'));
+	const diagnosticsRoot = createDiagnosticsRoot(root);
+	const lockPath = join(diagnosticsRoot, 'relaunch-prune.lock');
+	try {
+		const lock = __acquireRelaunchPruneLockForTests(diagnosticsRoot);
+		writeFileSync(
+			join(lockPath, 'owner.json'),
+			JSON.stringify({ pid: process.pid, nonce: 'foreign-pruner', createdAt: Date.now() })
+		);
+		expect(() => __releaseRelaunchPruneLockForTests(lock)).toThrow('another process');
+		expect(existsSync(lockPath)).toBeTrue();
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

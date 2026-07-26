@@ -1,5 +1,6 @@
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
+use crate::google_drive::OwnerDriveSimfile;
 use crate::workspace::WorkspaceRootState;
 use reqwest::multipart::{Form, Part};
 use serde_json::{json, Map, Value};
@@ -9,6 +10,7 @@ use tauri::{AppHandle, Manager, State};
 use tokio::fs;
 
 const API_REQUEST_TIMEOUT_MS: u64 = 30_000;
+const SIMFILE_UNAVAILABLE: &str = "SIMFILE_UNAVAILABLE";
 
 const SIMFILE_FULL_FRAGMENT: &str = r#"
 fragment SimfileFull on Simfile {
@@ -18,6 +20,7 @@ fragment SimfileFull on Simfile {
   artist
   bpm
   userId
+  googleDriveFileId
   isPublished
   downloadUrl
   previewUrl
@@ -44,6 +47,7 @@ query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize
       artist
       bpm
       userId
+      googleDriveFileId
       isPublished
       downloadUrl
       previewUrl
@@ -110,6 +114,32 @@ const UPDATE_SIMFILE_MUTATION: &str = r#"
 mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
   updateSimfile(id: $id, input: $input) {
     ...SimfileFull
+  }
+}
+"#;
+
+const OWNER_DRIVE_SIMFILE_QUERY: &str = r#"
+query OwnerDriveSimfile($id: ID!) {
+  simfile(id: $id) {
+    id
+    title
+    googleDriveFileId
+    downloadUrl
+  }
+}
+"#;
+
+const UPDATE_SIMFILE_DRIVE_FILE_MUTATION: &str = r#"
+mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!) {
+  updateSimfileDriveFile(
+    id: $id
+    googleDriveFileId: $googleDriveFileId
+    downloadUrl: $downloadUrl
+  ) {
+    id
+    title
+    googleDriveFileId
+    downloadUrl
   }
 }
 "#;
@@ -341,6 +371,10 @@ pub fn renderer_simfile_from_graphql(simfile: &Value) -> Result<Value> {
     mapped.insert("artist".to_string(), simfile["artist"].clone());
     mapped.insert("bpm".to_string(), simfile["bpm"].clone());
     mapped.insert("user_id".to_string(), simfile["userId"].clone());
+    mapped.insert(
+        "google_drive_file_id".to_string(),
+        simfile["googleDriveFileId"].clone(),
+    );
     mapped.insert("is_published".to_string(), simfile["isPublished"].clone());
     mapped.insert("display_id".to_string(), simfile["displayId"].clone());
     mapped.insert("download_url".to_string(), simfile["downloadUrl"].clone());
@@ -402,11 +436,109 @@ pub fn update_input_from_renderer(update_data: Value) -> Value {
             "download_url" => "downloadUrl",
             "video_preview_url" => "videoPreviewUrl",
             "preview_url" => "previewUrl",
+            "google_drive_file_id" | "googleDriveFileId" => continue,
             _ => key,
         };
         mapped.insert(mapped_key.to_string(), value.clone());
     }
     Value::Object(mapped)
+}
+
+fn simfile_unavailable() -> DesktopError {
+    DesktopError::Message(SIMFILE_UNAVAILABLE.to_string())
+}
+
+fn owner_drive_simfile_from_graphql(simfile: &Value) -> Result<OwnerDriveSimfile> {
+    let id = simfile
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(simfile_unavailable)?;
+    let title = simfile
+        .get("title")
+        .and_then(Value::as_str)
+        .ok_or_else(simfile_unavailable)?;
+
+    Ok(OwnerDriveSimfile {
+        id: id.to_string(),
+        title: title.to_string(),
+        google_drive_file_id: simfile
+            .get("googleDriveFileId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        download_url: simfile
+            .get("downloadUrl")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    })
+}
+
+pub(crate) async fn fetch_owner_drive_simfile_impl(
+    base_url: &str,
+    token: &str,
+    simfile_id: &str,
+) -> Result<OwnerDriveSimfile> {
+    let result = graphql_result_with_url(
+        base_url,
+        token,
+        OWNER_DRIVE_SIMFILE_QUERY,
+        json!({ "id": simfile_id }),
+    )
+    .await?;
+    let data = result.success_data().map_err(|_| simfile_unavailable())?;
+
+    owner_drive_simfile_from_graphql(&data["simfile"])
+}
+
+pub(crate) async fn update_drive_file_impl(
+    base_url: &str,
+    token: &str,
+    simfile_id: &str,
+    drive_file_id: &str,
+    download_url: &str,
+) -> Result<OwnerDriveSimfile> {
+    let result = graphql_result_with_url(
+        base_url,
+        token,
+        UPDATE_SIMFILE_DRIVE_FILE_MUTATION,
+        json!({
+            "id": simfile_id,
+            "googleDriveFileId": drive_file_id,
+            "downloadUrl": download_url,
+        }),
+    )
+    .await?;
+    let data = result.success_data().map_err(|_| simfile_unavailable())?;
+    let simfile = owner_drive_simfile_from_graphql(&data["updateSimfileDriveFile"])?;
+
+    if simfile.id != simfile_id
+        || simfile.google_drive_file_id.as_deref() != Some(drive_file_id)
+        || simfile.download_url.as_deref() != Some(download_url)
+    {
+        return Err(simfile_unavailable());
+    }
+
+    Ok(simfile)
+}
+
+pub(crate) async fn fetch_owner_drive_simfile(
+    auth: &AuthState,
+    simfile_id: &str,
+) -> Result<OwnerDriveSimfile> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(auth, None).await?;
+    fetch_owner_drive_simfile_impl(&base_url, &token, simfile_id).await
+}
+
+pub(crate) async fn update_drive_file(
+    auth: &AuthState,
+    simfile_id: &str,
+    drive_file_id: &str,
+    download_url: &str,
+) -> Result<OwnerDriveSimfile> {
+    let base_url = api_base_url_from_env()?;
+    let token = access_token_from_auth_state(auth, None).await?;
+    update_drive_file_impl(&base_url, &token, simfile_id, drive_file_id, download_url).await
 }
 
 fn create_input_from_renderer(simfile_data: &Value) -> Value {

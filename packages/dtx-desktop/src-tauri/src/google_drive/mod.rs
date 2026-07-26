@@ -8,7 +8,7 @@ use crate::error::{DesktopError, Result};
 #[cfg(any(feature = "google-drive", feature = "e2e"))]
 use crate::native_persistence::resolve_dirs;
 use async_trait::async_trait;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::Mutex as AsyncMutex;
 use zeroize::Zeroizing;
 
@@ -17,6 +17,7 @@ use self::credential_store::InMemoryGoogleDriveCredentialStore;
 use self::credential_store::{GoogleDriveCredentialAccess, GoogleDriveCredentialStore};
 #[cfg(feature = "google-drive")]
 use self::credential_store::{KeyringGoogleDriveCredentialStore, PlatformKeyringEntryFactory};
+use self::drive_client::GoogleDriveApi;
 #[cfg(feature = "google-drive")]
 use self::drive_client::GoogleDriveClient;
 use self::drive_client::PublicPermissionStatus;
@@ -160,8 +161,8 @@ pub(crate) struct GoogleDriveState {
     /// this unavailable; production/E2E constructors always install the
     /// exact app-data-backed store.
     pub(crate) pending_bindings: Option<GoogleDrivePendingBindingStore>,
-    /// Replaced by the bounded upload operation manager in Task 11.
-    pub(crate) operation_manager: AsyncMutex<()>,
+    pub(crate) upload_api: Option<Arc<dyn GoogleDriveApi>>,
+    pub(crate) operation_manager: Arc<upload::DriveOperationManager>,
 }
 
 impl GoogleDriveState {
@@ -206,7 +207,8 @@ impl GoogleDriveState {
             folder_validation_cache_by_user: AsyncMutex::new(HashMap::new()),
             active_picker_attempt: Arc::new(AsyncMutex::new(None)),
             pending_bindings: None,
-            operation_manager: AsyncMutex::new(()),
+            upload_api: None,
+            operation_manager: Arc::new(upload::DriveOperationManager::default()),
         }
     }
 
@@ -236,11 +238,12 @@ impl GoogleDriveState {
             Arc::new(ApiDriveMetadataClient::new(app.clone())),
             Arc::new(GoogleDriveSettingsStore::new(data_dir.clone())),
             oauth_provider,
-            drive_client,
+            drive_client.clone(),
             Arc::new(TauriPickerBrowser::new(app)),
             picker_config,
         );
         state.pending_bindings = Some(GoogleDrivePendingBindingStore::new(data_dir));
+        state.upload_api = Some(drive_client);
         Ok(state)
     }
 
@@ -528,6 +531,7 @@ impl GoogleDriveState {
         let delete_result = self.credentials.delete_refresh_token(user_id).await;
         let settings_result = self.settings.clear_folder_for_user(user_id);
         self.clear_user_memory_locked(user_id).await;
+        self.operation_manager.clear_user_visible_state(user_id);
         self.set_requires_reconnect(user_id, false).await;
         delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
         settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
@@ -543,6 +547,37 @@ impl GoogleDriveState {
         let _guard = lifecycle.lock().await;
         self.invalidate_user_lifecycle(user_id);
         self.clear_user_memory_locked(user_id).await;
+        self.operation_manager.clear_user_visible_state(user_id);
+    }
+
+    /// Reconciliation is deliberately detached from session restoration. It
+    /// is owner-scoped, best effort, and never delays the renderer becoming
+    /// authenticated.
+    pub(crate) fn spawn_current_user_reconciliation(app: AppHandle) {
+        tauri::async_runtime::spawn(async move {
+            let drive = app.state::<GoogleDriveState>();
+            let auth = app.state::<AuthState>();
+            let Some(user_id) = auth.current_user_id().await else {
+                return;
+            };
+            let Some(api) = drive.upload_api.as_deref() else {
+                return;
+            };
+            let Some(pending_store) = drive.pending_bindings.as_ref() else {
+                return;
+            };
+            let Ok(access_token) = drive.access_token_for_user(&user_id).await else {
+                return;
+            };
+            upload::reconcile_pending_bindings_for_current_user(
+                api,
+                pending_store,
+                drive.metadata_client.as_ref(),
+                &auth,
+                &access_token,
+            )
+            .await;
+        });
     }
 
     async fn clear_user_memory_locked(&self, user_id: &str) {

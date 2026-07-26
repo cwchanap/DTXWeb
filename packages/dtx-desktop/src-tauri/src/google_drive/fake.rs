@@ -106,26 +106,20 @@ struct PersistentDriveObject {
     creation_count: u64,
 }
 
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PersistentTransactionKind {
-    GenerateId,
-    CompleteSession,
+struct PersistentStateTransaction<'a> {
+    current: tokio::sync::MutexGuard<'a, PersistentDriveState>,
+    next: PersistentDriveState,
 }
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PersistentTransactionEvent {
-    Entered {
-        kind: PersistentTransactionKind,
-        ordinal: usize,
-    },
-    Blocked(PersistentTransactionKind),
+    Entered { ordinal: usize },
+    Blocked,
 }
 
 #[cfg(test)]
 struct PersistentTransactionProbe {
-    target: PersistentTransactionKind,
     events_tx: tokio::sync::mpsc::UnboundedSender<PersistentTransactionEvent>,
     events_rx: AsyncMutex<tokio::sync::mpsc::UnboundedReceiver<PersistentTransactionEvent>>,
     first_release: tokio::sync::Semaphore,
@@ -135,10 +129,9 @@ struct PersistentTransactionProbe {
 
 #[cfg(test)]
 impl PersistentTransactionProbe {
-    fn new(target: PersistentTransactionKind) -> std::sync::Arc<Self> {
+    fn new() -> std::sync::Arc<Self> {
         let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
         std::sync::Arc::new(Self {
-            target,
             events_tx,
             events_rx: AsyncMutex::new(events_rx),
             first_release: tokio::sync::Semaphore::new(0),
@@ -147,24 +140,18 @@ impl PersistentTransactionProbe {
         })
     }
 
-    fn targets(&self, kind: PersistentTransactionKind) -> bool {
-        self.target == kind
+    fn record_blocked(&self) {
+        let _ = self.events_tx.send(PersistentTransactionEvent::Blocked);
     }
 
-    fn record_blocked(&self, kind: PersistentTransactionKind) {
-        let _ = self
-            .events_tx
-            .send(PersistentTransactionEvent::Blocked(kind));
-    }
-
-    async fn enter_after_read(&self, kind: PersistentTransactionKind) {
+    async fn enter_after_read(&self) {
         let ordinal = self
             .entered
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
             .saturating_add(1);
         let _ = self
             .events_tx
-            .send(PersistentTransactionEvent::Entered { kind, ordinal });
+            .send(PersistentTransactionEvent::Entered { ordinal });
         if ordinal == 1 {
             let permit = self
                 .first_release
@@ -245,16 +232,6 @@ impl E2eGoogleDriveFake {
         })
     }
 
-    #[cfg(test)]
-    fn new_with_transaction_probe(
-        data_dir: PathBuf,
-        transaction_probe: std::sync::Arc<PersistentTransactionProbe>,
-    ) -> Result<Self> {
-        let mut fake = Self::new(data_dir)?;
-        fake.transaction_probe = Some(transaction_probe);
-        Ok(fake)
-    }
-
     pub(crate) async fn configure(&self, control: E2eDriveControl) -> Result<()> {
         let owner = control.owner.map(owner_from_seed);
         if control.reset {
@@ -286,18 +263,18 @@ impl E2eGoogleDriveFake {
     }
 
     pub(crate) async fn reset(&self, scenario: E2eDriveScenario) -> Result<()> {
-        let mut persistent = self.persistent.lock().await;
+        let mut transaction = self.persistent_transaction().await;
         let namespace = self.namespace();
         match fs::remove_dir_all(&namespace) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        let next = PersistentDriveState {
+        transaction.next = PersistentDriveState {
             next_id: 1,
             objects: HashMap::new(),
         };
-        self.commit_persistent_state(&mut persistent, next)?;
+        self.commit_persistent_transaction(transaction)?;
         *self.lock_runtime() = RuntimeState {
             scenario,
             ..RuntimeState::default()
@@ -306,9 +283,10 @@ impl E2eGoogleDriveFake {
     }
 
     pub(crate) async fn snapshot(&self) -> Result<E2eDriveSnapshot> {
-        let persistent = self.persistent.lock().await;
+        let transaction = self.persistent_transaction().await;
         let runtime = self.lock_runtime();
-        let mut objects = persistent
+        let mut objects = transaction
+            .next
             .objects
             .values()
             .map(|object| {
@@ -356,9 +334,8 @@ impl E2eGoogleDriveFake {
         bytes: Vec<u8>,
     ) -> Result<()> {
         validate_e2e_identifier(file_id)?;
-        let mut persistent = self.persistent.lock().await;
-        let mut next = persistent.clone();
-        next.objects.insert(
+        let mut transaction = self.persistent_transaction().await;
+        transaction.next.objects.insert(
             file_id.to_string(),
             PersistentDriveObject {
                 file_id: file_id.to_string(),
@@ -370,7 +347,7 @@ impl E2eGoogleDriveFake {
             },
         );
         self.write_object_bytes(file_id, &bytes)?;
-        self.commit_persistent_state(&mut persistent, next)
+        self.commit_persistent_transaction(transaction)
     }
 
     fn namespace(&self) -> PathBuf {
@@ -391,46 +368,32 @@ impl E2eGoogleDriveFake {
         write_json_atomic(&self.state_path(), state)
     }
 
-    fn commit_persistent_state(
+    fn commit_persistent_transaction(
         &self,
-        current: &mut PersistentDriveState,
-        next: PersistentDriveState,
+        mut transaction: PersistentStateTransaction<'_>,
     ) -> Result<()> {
-        self.write_persistent_state(&next)?;
-        *current = next;
+        self.write_persistent_state(&transaction.next)?;
+        *transaction.current = transaction.next;
         Ok(())
     }
 
-    #[cfg(test)]
-    async fn lock_probed_persistent_transaction(
-        &self,
-        kind: PersistentTransactionKind,
-    ) -> tokio::sync::MutexGuard<'_, PersistentDriveState> {
-        let Some(probe) = self
-            .transaction_probe
-            .as_ref()
-            .filter(|probe| probe.targets(kind))
-        else {
-            return self.persistent.lock().await;
-        };
-        match self.persistent.try_lock() {
-            Ok(persistent) => persistent,
-            Err(_) => {
-                probe.record_blocked(kind);
-                self.persistent.lock().await
+    async fn persistent_transaction(&self) -> PersistentStateTransaction<'_> {
+        #[cfg(test)]
+        if let Some(probe) = self.transaction_probe.as_ref() {
+            if self.persistent.try_lock().is_err() {
+                probe.record_blocked();
             }
         }
-    }
 
-    #[cfg(test)]
-    async fn pause_probed_transaction_after_read(&self, kind: PersistentTransactionKind) {
-        if let Some(probe) = self
-            .transaction_probe
-            .as_ref()
-            .filter(|probe| probe.targets(kind))
-        {
-            probe.enter_after_read(kind).await;
+        let current = self.persistent.lock().await;
+        let next = current.clone();
+
+        #[cfg(test)]
+        if let Some(probe) = self.transaction_probe.as_ref() {
+            probe.enter_after_read().await;
         }
+
+        PersistentStateTransaction { current, next }
     }
 
     fn write_object_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<()> {
@@ -506,28 +469,21 @@ impl E2eGoogleDriveFake {
             .sessions
             .remove(session)
             .ok_or(DriveApiError::SessionExpired)?;
-        #[cfg(test)]
-        let mut persistent = self
-            .lock_probed_persistent_transaction(PersistentTransactionKind::CompleteSession)
-            .await;
-        #[cfg(not(test))]
-        let mut persistent = self.persistent.lock().await;
-        let mut next = persistent.clone();
-        #[cfg(test)]
-        self.pause_probed_transaction_after_read(PersistentTransactionKind::CompleteSession)
-            .await;
-        if upload.create && next.objects.contains_key(&upload.file_id) {
+        let mut transaction = self.persistent_transaction().await;
+        if upload.create && transaction.next.objects.contains_key(&upload.file_id) {
             return Err(DriveApiError::InvalidGeneratedId);
         }
         let creation_count = if upload.create {
             1
         } else {
-            next.objects
+            transaction
+                .next
+                .objects
                 .get(&upload.file_id)
                 .map(|object| object.creation_count)
                 .ok_or(DriveApiError::NotFound)?
         };
-        next.objects.insert(
+        transaction.next.objects.insert(
             upload.file_id.clone(),
             PersistentDriveObject {
                 file_id: upload.file_id.clone(),
@@ -539,13 +495,14 @@ impl E2eGoogleDriveFake {
         );
         self.write_object_bytes(&upload.file_id, &upload.bytes)
             .map_err(|_| DriveApiError::LocalState)?;
-        self.commit_persistent_state(&mut persistent, next)
+        self.commit_persistent_transaction(transaction)
             .map_err(|_| DriveApiError::LocalState)
     }
 
     async fn drive_file(&self, file_id: &str) -> std::result::Result<DriveFile, DriveApiError> {
-        let persistent = self.persistent.lock().await;
-        let object = persistent
+        let transaction = self.persistent_transaction().await;
+        let object = transaction
+            .next
             .objects
             .get(file_id)
             .ok_or(DriveApiError::NotFound)?;
@@ -564,21 +521,11 @@ impl E2eGoogleDriveFake {
 #[async_trait]
 impl GoogleDriveApi for E2eGoogleDriveFake {
     async fn generate_id(&self, _access_token: &str) -> std::result::Result<String, DriveApiError> {
-        #[cfg(test)]
-        let mut persistent = self
-            .lock_probed_persistent_transaction(PersistentTransactionKind::GenerateId)
-            .await;
-        #[cfg(not(test))]
-        let mut persistent = self.persistent.lock().await;
-        let mut next = persistent.clone();
-        #[cfg(test)]
-        self.pause_probed_transaction_after_read(PersistentTransactionKind::GenerateId)
-            .await;
-        let sequence = next.next_id.max(1);
-        next.next_id = sequence.saturating_add(1);
-        self.commit_persistent_state(&mut persistent, next)
+        let mut transaction = self.persistent_transaction().await;
+        let sequence = transaction.next.next_id.max(1);
+        transaction.next.next_id = sequence.saturating_add(1);
+        self.commit_persistent_transaction(transaction)
             .map_err(|_| DriveApiError::LocalState)?;
-        drop(persistent);
         let id = format!("e2e-drive-file-{sequence:04}");
         let mut runtime = self.lock_runtime();
         runtime.generate_count = runtime.generate_count.saturating_add(1);
@@ -730,15 +677,13 @@ impl GoogleDriveApi for E2eGoogleDriveFake {
         file_id: &str,
     ) -> std::result::Result<(), DriveApiError> {
         self.record_call("deleteFile", Some(file_id), None);
-        let mut persistent = self.persistent.lock().await;
-        let mut next = persistent.clone();
-        if next.objects.remove(file_id).is_none() {
+        let mut transaction = self.persistent_transaction().await;
+        if transaction.next.objects.remove(file_id).is_none() {
             return Err(DriveApiError::NotFound);
         }
         let _ = fs::remove_file(self.object_path(file_id));
-        self.commit_persistent_state(&mut persistent, next)
+        self.commit_persistent_transaction(transaction)
             .map_err(|_| DriveApiError::LocalState)?;
-        drop(persistent);
         let mut runtime = self.lock_runtime();
         runtime.delete_count = runtime.delete_count.saturating_add(1);
         Ok(())
@@ -1103,20 +1048,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn snapshot_uses_the_same_observed_persistent_transaction_entry_as_writes() {
+        let data = tempfile::tempdir().unwrap();
+        let probe = PersistentTransactionProbe::new();
+        let first_release = probe.first_release_guard();
+        let mut fake = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
+        fake.transaction_probe = Some(probe.clone());
+        let fake = Arc::new(fake);
+        let snapshot = {
+            let fake = fake.clone();
+            tokio::spawn(async move { fake.snapshot().await.unwrap() })
+        };
+
+        assert_eq!(
+            probe.next_event().await,
+            PersistentTransactionEvent::Entered { ordinal: 1 }
+        );
+        first_release.release();
+        let snapshot = tokio::time::timeout(Duration::from_secs(5), snapshot)
+            .await
+            .expect("snapshot must finish after releasing the observed transaction")
+            .unwrap();
+
+        assert!(snapshot.objects.is_empty());
+    }
+
+    #[tokio::test]
     async fn capacity_two_generate_id_transactions_enter_persistence_one_at_a_time() {
         let data = tempfile::tempdir().unwrap();
-        let probe = PersistentTransactionProbe::new(PersistentTransactionKind::GenerateId);
+        let probe = PersistentTransactionProbe::new();
         let first_release = probe.first_release_guard();
-        let fake = Arc::new(
-            E2eGoogleDriveFake::new_with_transaction_probe(
-                data.path().to_path_buf(),
-                probe.clone(),
-            )
-            .unwrap(),
-        );
+        let mut fake = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
         fake.reset(E2eDriveScenario::new(owner(None, None)))
             .await
             .unwrap();
+        fake.transaction_probe = Some(probe.clone());
+        let fake = Arc::new(fake);
         let manager = Arc::new(DriveOperationManager::default());
         let first_lease = manager
             .register(USER_ID, Uuid::new_v4(), "first-generate")
@@ -1134,10 +1101,7 @@ mod tests {
 
         assert_eq!(
             probe.next_event().await,
-            PersistentTransactionEvent::Entered {
-                kind: PersistentTransactionKind::GenerateId,
-                ordinal: 1,
-            }
+            PersistentTransactionEvent::Entered { ordinal: 1 }
         );
 
         let second = {
@@ -1149,9 +1113,7 @@ mod tests {
         };
         let second_before_release = probe.next_event().await;
         first_release.release();
-        let second_after_release = if second_before_release
-            == PersistentTransactionEvent::Blocked(PersistentTransactionKind::GenerateId)
-        {
+        let second_after_release = if second_before_release == PersistentTransactionEvent::Blocked {
             Some(probe.next_event().await)
         } else {
             None
@@ -1162,16 +1124,10 @@ mod tests {
         .await
         .expect("both capacity-two operations must finish after releasing the first transaction");
 
-        assert_eq!(
-            second_before_release,
-            PersistentTransactionEvent::Blocked(PersistentTransactionKind::GenerateId)
-        );
+        assert_eq!(second_before_release, PersistentTransactionEvent::Blocked);
         assert_eq!(
             second_after_release,
-            Some(PersistentTransactionEvent::Entered {
-                kind: PersistentTransactionKind::GenerateId,
-                ordinal: 2,
-            })
+            Some(PersistentTransactionEvent::Entered { ordinal: 2 })
         );
         assert_eq!(first, "e2e-drive-file-0001");
         assert_eq!(second, "e2e-drive-file-0002");
@@ -1199,18 +1155,14 @@ mod tests {
     #[tokio::test]
     async fn capacity_two_completions_enter_persistence_one_at_a_time() {
         let data = tempfile::tempdir().unwrap();
-        let probe = PersistentTransactionProbe::new(PersistentTransactionKind::CompleteSession);
+        let probe = PersistentTransactionProbe::new();
         let first_release = probe.first_release_guard();
-        let fake = Arc::new(
-            E2eGoogleDriveFake::new_with_transaction_probe(
-                data.path().to_path_buf(),
-                probe.clone(),
-            )
-            .unwrap(),
-        );
+        let mut fake = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
         fake.reset(E2eDriveScenario::new(owner(None, None)))
             .await
             .unwrap();
+        fake.transaction_probe = Some(probe.clone());
+        let fake = Arc::new(fake);
         let first_bytes = b"PK-A".to_vec();
         let second_bytes = b"PK-B".to_vec();
         let first_session = fake
@@ -1262,10 +1214,7 @@ mod tests {
 
         assert_eq!(
             probe.next_event().await,
-            PersistentTransactionEvent::Entered {
-                kind: PersistentTransactionKind::CompleteSession,
-                ordinal: 1,
-            }
+            PersistentTransactionEvent::Entered { ordinal: 1 }
         );
 
         let second = {
@@ -1285,9 +1234,7 @@ mod tests {
         };
         let second_before_release = probe.next_event().await;
         first_release.release();
-        let second_after_release = if second_before_release
-            == PersistentTransactionEvent::Blocked(PersistentTransactionKind::CompleteSession)
-        {
+        let second_after_release = if second_before_release == PersistentTransactionEvent::Blocked {
             Some(probe.next_event().await)
         } else {
             None
@@ -1297,16 +1244,10 @@ mod tests {
         })
         .await
         .expect("both capacity-two operations must finish after releasing the first transaction");
-        assert_eq!(
-            second_before_release,
-            PersistentTransactionEvent::Blocked(PersistentTransactionKind::CompleteSession)
-        );
+        assert_eq!(second_before_release, PersistentTransactionEvent::Blocked);
         assert_eq!(
             second_after_release,
-            Some(PersistentTransactionEvent::Entered {
-                kind: PersistentTransactionKind::CompleteSession,
-                ordinal: 2,
-            })
+            Some(PersistentTransactionEvent::Entered { ordinal: 2 })
         );
         assert_eq!(first_result, DriveChunkResult::Complete);
         assert_eq!(second_result, DriveChunkResult::Complete);

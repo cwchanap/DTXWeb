@@ -63,9 +63,6 @@ jobs:
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
       PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
-      DTX_DESKTOP_BUILD_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
-      GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
-      GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION || vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
 
     steps:
       - name: Checkout Repository
@@ -90,6 +87,20 @@ jobs:
 
       - name: Build Shared Package
         run: bun run --filter=@dtx/common build
+
+      - name: Configure Google Drive build for preproduction
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/preview'
+        shell: bash
+        env:
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION }}
+        run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh preproduction
+
+      - name: Configure Google Drive build for production
+        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/preview'
+        shell: bash
+        env:
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
+        run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh production
 
       - name: Set Release Version
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
@@ -188,9 +199,6 @@ jobs:
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
       PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
-      DTX_DESKTOP_BUILD_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
-      GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
-      GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION || vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
 
     steps:
       - name: Checkout Repository
@@ -215,6 +223,20 @@ jobs:
 
       - name: Build Shared Package
         run: bun run --filter=@dtx/common build
+
+      - name: Configure Google Drive build for preproduction
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/preview'
+        shell: bash
+        env:
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION }}
+        run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh preproduction
+
+      - name: Configure Google Drive build for production
+        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/preview'
+        shell: bash
+        env:
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
+        run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh production
 
       - name: Set Release Version
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'

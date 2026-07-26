@@ -29,6 +29,11 @@ pub(crate) struct DriveBuildConfigInput<'a> {
 pub(crate) fn parse_drive_build_mode(
     input: DriveBuildConfigInput<'_>,
 ) -> Result<DriveBuildMode, String> {
+    if input.google_drive_feature && input.e2e_feature {
+        return Err(drive_configuration_error(
+            "the e2e build must use --no-default-features --features e2e",
+        ));
+    }
     if !input.google_drive_feature {
         return parse_without_google_drive(input);
     }

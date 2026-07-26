@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::Mutex as StdMutex;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::sync::Mutex as AsyncMutex;
 
 use super::drive_client::{
     DriveApiError, DriveChunkResult, DriveCreateMetadata, DriveFile, DriveUpdateMetadata,
@@ -88,7 +89,7 @@ struct InFlightUpload {
     create: bool,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PersistentDriveState {
     next_id: u64,
@@ -107,25 +108,26 @@ struct PersistentDriveObject {
 
 pub(crate) struct E2eGoogleDriveFake {
     data_dir: PathBuf,
-    runtime: Mutex<RuntimeState>,
+    persistent: AsyncMutex<PersistentDriveState>,
+    runtime: StdMutex<RuntimeState>,
 }
 
 impl E2eGoogleDriveFake {
     pub(crate) fn new(data_dir: PathBuf) -> Result<Self> {
-        let fake = Self {
+        // Restore before sharing the fake. Every transaction after
+        // construction is serialized through this one async mutex.
+        let persistent = restore_persistent_state(&data_dir)?;
+        Ok(Self {
             data_dir,
-            runtime: Mutex::new(RuntimeState {
+            persistent: AsyncMutex::new(persistent),
+            runtime: StdMutex::new(RuntimeState {
                 scenario: E2eDriveScenario::default(),
                 ..RuntimeState::default()
             }),
-        };
-        // Reject corrupt persisted fake state instead of silently creating a
-        // second object. The file is scoped to the E2E data directory.
-        let _ = fake.read_persistent_state()?;
-        Ok(fake)
+        })
     }
 
-    pub(crate) fn configure(&self, control: E2eDriveControl) -> Result<()> {
+    pub(crate) async fn configure(&self, control: E2eDriveControl) -> Result<()> {
         let owner = control.owner.map(owner_from_seed);
         if control.reset {
             let mut scenario = E2eDriveScenario::default();
@@ -138,7 +140,7 @@ impl E2eGoogleDriveFake {
             }
             scenario.terminate_before_metadata_patch =
                 control.terminate_before_metadata_patch.unwrap_or(false);
-            return self.reset(scenario);
+            return self.reset(scenario).await;
         }
 
         let mut runtime = self.lock_runtime();
@@ -155,25 +157,28 @@ impl E2eGoogleDriveFake {
         Ok(())
     }
 
-    pub(crate) fn reset(&self, scenario: E2eDriveScenario) -> Result<()> {
+    pub(crate) async fn reset(&self, scenario: E2eDriveScenario) -> Result<()> {
+        let mut persistent = self.persistent.lock().await;
         let namespace = self.namespace();
         match fs::remove_dir_all(&namespace) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
+        let next = PersistentDriveState {
+            next_id: 1,
+            objects: HashMap::new(),
+        };
+        self.commit_persistent_state(&mut persistent, next)?;
         *self.lock_runtime() = RuntimeState {
             scenario,
             ..RuntimeState::default()
         };
-        self.write_persistent_state(&PersistentDriveState {
-            next_id: 1,
-            objects: HashMap::new(),
-        })
+        Ok(())
     }
 
-    pub(crate) fn snapshot(&self) -> Result<E2eDriveSnapshot> {
-        let persistent = self.read_persistent_state()?;
+    pub(crate) async fn snapshot(&self) -> Result<E2eDriveSnapshot> {
+        let persistent = self.persistent.lock().await;
         let runtime = self.lock_runtime();
         let mut objects = persistent
             .objects
@@ -216,10 +221,16 @@ impl E2eGoogleDriveFake {
             .join(format!("{file_id}.zip"))
     }
 
-    pub(crate) fn seed_object(&self, file_id: &str, name: &str, bytes: Vec<u8>) -> Result<()> {
+    pub(crate) async fn seed_object(
+        &self,
+        file_id: &str,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
         validate_e2e_identifier(file_id)?;
-        let mut persistent = self.read_persistent_state()?;
-        persistent.objects.insert(
+        let mut persistent = self.persistent.lock().await;
+        let mut next = persistent.clone();
+        next.objects.insert(
             file_id.to_string(),
             PersistentDriveObject {
                 file_id: file_id.to_string(),
@@ -231,7 +242,7 @@ impl E2eGoogleDriveFake {
             },
         );
         self.write_object_bytes(file_id, &bytes)?;
-        self.write_persistent_state(&persistent)
+        self.commit_persistent_state(&mut persistent, next)
     }
 
     fn namespace(&self) -> PathBuf {
@@ -248,22 +259,18 @@ impl E2eGoogleDriveFake {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn read_persistent_state(&self) -> Result<PersistentDriveState> {
-        match fs::read_to_string(self.state_path()) {
-            Ok(contents) => serde_json::from_str(&contents)
-                .map_err(|_| DesktopError::Message("LOCAL_STATE".to_string())),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Ok(PersistentDriveState {
-                    next_id: 1,
-                    objects: HashMap::new(),
-                })
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
     fn write_persistent_state(&self, state: &PersistentDriveState) -> Result<()> {
         write_json_atomic(&self.state_path(), state)
+    }
+
+    fn commit_persistent_state(
+        &self,
+        current: &mut PersistentDriveState,
+        next: PersistentDriveState,
+    ) -> Result<()> {
+        self.write_persistent_state(&next)?;
+        *current = next;
+        Ok(())
     }
 
     fn write_object_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<()> {
@@ -333,28 +340,26 @@ impl E2eGoogleDriveFake {
         Ok(session)
     }
 
-    fn complete_session(&self, session: &str) -> std::result::Result<(), DriveApiError> {
+    async fn complete_session(&self, session: &str) -> std::result::Result<(), DriveApiError> {
         let upload = self
             .lock_runtime()
             .sessions
             .remove(session)
             .ok_or(DriveApiError::SessionExpired)?;
-        let mut persistent = self
-            .read_persistent_state()
-            .map_err(|_| DriveApiError::LocalState)?;
-        if upload.create && persistent.objects.contains_key(&upload.file_id) {
+        let mut persistent = self.persistent.lock().await;
+        let mut next = persistent.clone();
+        if upload.create && next.objects.contains_key(&upload.file_id) {
             return Err(DriveApiError::InvalidGeneratedId);
         }
         let creation_count = if upload.create {
             1
         } else {
-            persistent
-                .objects
+            next.objects
                 .get(&upload.file_id)
                 .map(|object| object.creation_count)
                 .ok_or(DriveApiError::NotFound)?
         };
-        persistent.objects.insert(
+        next.objects.insert(
             upload.file_id.clone(),
             PersistentDriveObject {
                 file_id: upload.file_id.clone(),
@@ -366,14 +371,12 @@ impl E2eGoogleDriveFake {
         );
         self.write_object_bytes(&upload.file_id, &upload.bytes)
             .map_err(|_| DriveApiError::LocalState)?;
-        self.write_persistent_state(&persistent)
+        self.commit_persistent_state(&mut persistent, next)
             .map_err(|_| DriveApiError::LocalState)
     }
 
-    fn drive_file(&self, file_id: &str) -> std::result::Result<DriveFile, DriveApiError> {
-        let persistent = self
-            .read_persistent_state()
-            .map_err(|_| DriveApiError::LocalState)?;
+    async fn drive_file(&self, file_id: &str) -> std::result::Result<DriveFile, DriveApiError> {
+        let persistent = self.persistent.lock().await;
         let object = persistent
             .objects
             .get(file_id)
@@ -393,13 +396,13 @@ impl E2eGoogleDriveFake {
 #[async_trait]
 impl GoogleDriveApi for E2eGoogleDriveFake {
     async fn generate_id(&self, _access_token: &str) -> std::result::Result<String, DriveApiError> {
-        let mut persistent = self
-            .read_persistent_state()
+        let mut persistent = self.persistent.lock().await;
+        let mut next = persistent.clone();
+        let sequence = next.next_id.max(1);
+        next.next_id = sequence.saturating_add(1);
+        self.commit_persistent_state(&mut persistent, next)
             .map_err(|_| DriveApiError::LocalState)?;
-        let sequence = persistent.next_id.max(1);
-        persistent.next_id = sequence.saturating_add(1);
-        self.write_persistent_state(&persistent)
-            .map_err(|_| DriveApiError::LocalState)?;
+        drop(persistent);
         let id = format!("e2e-drive-file-{sequence:04}");
         let mut runtime = self.lock_runtime();
         runtime.generate_count = runtime.generate_count.saturating_add(1);
@@ -417,7 +420,7 @@ impl GoogleDriveApi for E2eGoogleDriveFake {
         file_id: &str,
     ) -> std::result::Result<DriveFile, DriveApiError> {
         self.record_call("getFile", Some(file_id), None);
-        self.drive_file(file_id)
+        self.drive_file(file_id).await
     }
 
     async fn get_file_for_update(
@@ -426,10 +429,11 @@ impl GoogleDriveApi for E2eGoogleDriveFake {
         file_id: &str,
     ) -> std::result::Result<DriveFile, DriveApiError> {
         self.record_call("getFileForUpdate", Some(file_id), None);
-        match self.lock_runtime().scenario.existing_file_failure {
+        let failure = self.lock_runtime().scenario.existing_file_failure;
+        match failure {
             Some(E2eExistingFileFailure::NotFound) => Err(DriveApiError::NotFound),
             Some(E2eExistingFileFailure::PermissionDenied) => Err(DriveApiError::PermissionDenied),
-            _ => self.drive_file(file_id),
+            _ => self.drive_file(file_id).await,
         }
     }
 
@@ -518,7 +522,7 @@ impl GoogleDriveApi for E2eGoogleDriveFake {
         };
         self.record_call("uploadChunk", None, None);
         if complete {
-            self.complete_session(session.as_str())?;
+            self.complete_session(session.as_str()).await?;
             Ok(DriveChunkResult::Complete)
         } else {
             Ok(DriveChunkResult::Accepted(
@@ -550,18 +554,34 @@ impl GoogleDriveApi for E2eGoogleDriveFake {
         file_id: &str,
     ) -> std::result::Result<(), DriveApiError> {
         self.record_call("deleteFile", Some(file_id), None);
-        let mut persistent = self
-            .read_persistent_state()
-            .map_err(|_| DriveApiError::LocalState)?;
-        if persistent.objects.remove(file_id).is_none() {
+        let mut persistent = self.persistent.lock().await;
+        let mut next = persistent.clone();
+        if next.objects.remove(file_id).is_none() {
             return Err(DriveApiError::NotFound);
         }
         let _ = fs::remove_file(self.object_path(file_id));
-        self.write_persistent_state(&persistent)
+        self.commit_persistent_state(&mut persistent, next)
             .map_err(|_| DriveApiError::LocalState)?;
+        drop(persistent);
         let mut runtime = self.lock_runtime();
         runtime.delete_count = runtime.delete_count.saturating_add(1);
         Ok(())
+    }
+}
+
+fn restore_persistent_state(data_dir: &Path) -> Result<PersistentDriveState> {
+    let state_path = data_dir
+        .join("dtxweb")
+        .join(E2E_NAMESPACE)
+        .join(E2E_STATE_FILE);
+    match fs::read_to_string(state_path) {
+        Ok(contents) => serde_json::from_str(&contents)
+            .map_err(|_| DesktopError::Message("LOCAL_STATE".to_string())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(PersistentDriveState {
+            next_id: 1,
+            objects: HashMap::new(),
+        }),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -738,7 +758,10 @@ fn zip_entries(path: &Path) -> Vec<E2eDriveZipEntrySnapshot> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::fs;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     use super::*;
     use crate::auth::AuthState;
@@ -746,7 +769,10 @@ mod tests {
         DriveChunkResult, DriveCreateMetadata, DriveUpdateMetadata, GoogleDriveApi,
         PublicPermissionStatus,
     };
+    use crate::google_drive::upload::DriveOperationManager;
     use crate::google_drive::{DriveMetadataClient, OwnerDriveSimfile};
+    use tokio::sync::Barrier;
+    use uuid::Uuid;
 
     const USER_ID: &str = "e2e-user";
     const SIMFILE_ID: &str = "sim-e2e-1";
@@ -765,6 +791,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let fake = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
         fake.reset(E2eDriveScenario::new(owner(None, None)))
+            .await
             .unwrap();
 
         let id = fake.generate_id("ignored-e2e-access-token").await.unwrap();
@@ -811,8 +838,10 @@ mod tests {
             Some("e2e-drive-file-0001"),
             Some("https://drive.google.test/download/e2e-drive-file-0001"),
         )))
+        .await
         .unwrap();
         fake.seed_object("e2e-drive-file-0001", "Old title.zip", b"old".to_vec())
+            .await
             .unwrap();
 
         let session = fake
@@ -830,7 +859,7 @@ mod tests {
             .await
             .unwrap();
 
-        let snapshot = fake.snapshot().unwrap();
+        let snapshot = fake.snapshot().await.unwrap();
         assert_eq!(snapshot.objects.len(), 1);
         assert_eq!(snapshot.objects[0].file_id, "e2e-drive-file-0001");
         assert_eq!(snapshot.objects[0].name, "Saved Cloud Title.zip");
@@ -852,7 +881,7 @@ mod tests {
         ));
         scenario.existing_file_failure = Some(E2eExistingFileFailure::NotFound);
         scenario.public_permission = false;
-        fake.reset(scenario).unwrap();
+        fake.reset(scenario).await.unwrap();
 
         assert_eq!(
             fake.get_file_for_update("ignored-e2e-access-token", "e2e-drive-file-0001")
@@ -873,6 +902,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let fake = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
         fake.reset(E2eDriveScenario::new(owner(None, None)))
+            .await
             .unwrap();
         let auth = AuthState::default();
 
@@ -892,9 +922,192 @@ mod tests {
             updated.google_drive_file_id.as_deref(),
             Some("e2e-drive-file-0001")
         );
-        let snapshot = fake.snapshot().unwrap();
+        let snapshot = fake.snapshot().await.unwrap();
         assert_eq!(snapshot.metadata_mutations.len(), 1);
         assert_eq!(snapshot.metadata_mutations[0].mutation, "updateDriveFile");
         assert_eq!(snapshot.metadata_mutations[0].simfile_id, SIMFILE_ID);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_generate_id_transactions_are_unique_and_persist_every_call() {
+        let data = tempfile::tempdir().unwrap();
+        let fake = Arc::new(E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap());
+        fake.reset(E2eDriveScenario::new(owner(None, None)))
+            .await
+            .unwrap();
+        let mut generated_ids = Vec::new();
+
+        for round in 0..64 {
+            let manager = Arc::new(DriveOperationManager::default());
+            let first_lease = manager
+                .register(USER_ID, Uuid::new_v4(), &format!("first-{round}"))
+                .unwrap();
+            let second_lease = manager
+                .register(USER_ID, Uuid::new_v4(), &format!("second-{round}"))
+                .unwrap();
+            let barrier = Arc::new(Barrier::new(2));
+
+            let first = {
+                let fake = fake.clone();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    let _permit = first_lease.acquire_resource_slot().await.unwrap();
+                    barrier.wait().await;
+                    fake.generate_id("ignored-e2e-access-token").await.unwrap()
+                })
+            };
+            let second = {
+                let fake = fake.clone();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    let _permit = second_lease.acquire_resource_slot().await.unwrap();
+                    barrier.wait().await;
+                    fake.generate_id("ignored-e2e-access-token").await.unwrap()
+                })
+            };
+
+            let (first, second) = tokio::time::timeout(Duration::from_secs(5), async {
+                (first.await.unwrap(), second.await.unwrap())
+            })
+            .await
+            .expect("the operation manager must admit its two configured resource users");
+            generated_ids.extend([first, second]);
+        }
+
+        let unique_ids = generated_ids.iter().collect::<HashSet<_>>();
+        assert_eq!(unique_ids.len(), generated_ids.len());
+        let snapshot = fake.snapshot().await.unwrap();
+        assert_eq!(snapshot.generate_count, generated_ids.len() as u64);
+        assert_eq!(
+            snapshot
+                .calls
+                .iter()
+                .filter(|call| call.operation == "generateId")
+                .count(),
+            generated_ids.len()
+        );
+
+        let restored = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
+        assert_eq!(
+            restored
+                .generate_id("ignored-e2e-access-token")
+                .await
+                .unwrap(),
+            "e2e-drive-file-0129"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn two_concurrent_completions_persist_both_objects_and_calls() {
+        let data = tempfile::tempdir().unwrap();
+        let fake = Arc::new(E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap());
+        fake.reset(E2eDriveScenario::new(owner(None, None)))
+            .await
+            .unwrap();
+        for round in 0..32 {
+            let first_id = format!("concurrent-object-a-{round}");
+            let second_id = format!("concurrent-object-b-{round}");
+            let first_bytes = vec![b'A'; 1024 * 1024];
+            let second_bytes = vec![b'B'; 1024 * 1024];
+            let first_session = fake
+                .start_resumable_create(
+                    "ignored-e2e-access-token",
+                    &DriveCreateMetadata {
+                        id: first_id,
+                        parent_id: E2E_PUBLIC_FOLDER_ID.to_string(),
+                        name: format!("Concurrent A {round}.zip"),
+                    },
+                    first_bytes.len() as u64,
+                )
+                .await
+                .unwrap();
+            let second_session = fake
+                .start_resumable_create(
+                    "ignored-e2e-access-token",
+                    &DriveCreateMetadata {
+                        id: second_id,
+                        parent_id: E2E_PUBLIC_FOLDER_ID.to_string(),
+                        name: format!("Concurrent B {round}.zip"),
+                    },
+                    second_bytes.len() as u64,
+                )
+                .await
+                .unwrap();
+
+            let manager = Arc::new(DriveOperationManager::default());
+            let first_lease = manager
+                .register(USER_ID, Uuid::new_v4(), &format!("concurrent-a-{round}"))
+                .unwrap();
+            let second_lease = manager
+                .register(USER_ID, Uuid::new_v4(), &format!("concurrent-b-{round}"))
+                .unwrap();
+            let barrier = Arc::new(Barrier::new(2));
+            let first = {
+                let fake = fake.clone();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    let _permit = first_lease.acquire_resource_slot().await.unwrap();
+                    barrier.wait().await;
+                    fake.upload_chunk(
+                        "ignored-e2e-access-token",
+                        &first_session,
+                        0,
+                        &first_bytes,
+                        first_bytes.len() as u64,
+                    )
+                    .await
+                    .unwrap()
+                })
+            };
+            let second = {
+                let fake = fake.clone();
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    let _permit = second_lease.acquire_resource_slot().await.unwrap();
+                    barrier.wait().await;
+                    fake.upload_chunk(
+                        "ignored-e2e-access-token",
+                        &second_session,
+                        0,
+                        &second_bytes,
+                        second_bytes.len() as u64,
+                    )
+                    .await
+                    .unwrap()
+                })
+            };
+
+            let (first_result, second_result) =
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    (first.await.unwrap(), second.await.unwrap())
+                })
+                .await
+                .expect("both operation-manager resource slots must complete");
+            assert_eq!(first_result, DriveChunkResult::Complete);
+            assert_eq!(second_result, DriveChunkResult::Complete);
+        }
+
+        let snapshot = fake.snapshot().await.unwrap();
+        assert_eq!(snapshot.objects.len(), 64);
+        assert_eq!(snapshot.create_count, 64);
+        assert_eq!(
+            snapshot
+                .calls
+                .iter()
+                .filter(|call| call.operation == "uploadChunk")
+                .count(),
+            64
+        );
+        assert_eq!(
+            fs::read(fake.object_path("concurrent-object-a-0")).unwrap(),
+            vec![b'A'; 1024 * 1024]
+        );
+        assert_eq!(
+            fs::read(fake.object_path("concurrent-object-b-31")).unwrap(),
+            vec![b'B'; 1024 * 1024]
+        );
+
+        let restored = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
+        assert_eq!(restored.snapshot().await.unwrap().objects.len(), 64);
     }
 }

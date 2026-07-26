@@ -20,20 +20,22 @@ pub fn read_e2e_session_nonce() -> Result<String> {
 
 #[cfg(debug_assertions)]
 #[tauri::command]
-pub fn configure_google_drive_e2e(app: AppHandle, control: E2eDriveControl) -> Result<()> {
+pub async fn configure_google_drive_e2e(app: AppHandle, control: E2eDriveControl) -> Result<()> {
     app.state::<GoogleDriveState>()
         .e2e_fake
         .as_ref()
         .ok_or_else(|| DesktopError::Message("E2E Drive fake is unavailable".to_string()))?
         .configure(control)
+        .await
 }
 
 #[cfg(debug_assertions)]
 #[tauri::command]
-pub fn snapshot_google_drive_e2e(app: AppHandle) -> Result<E2eDriveSnapshot> {
+pub async fn snapshot_google_drive_e2e(app: AppHandle) -> Result<E2eDriveSnapshot> {
     app.state::<GoogleDriveState>()
         .e2e_fake
         .as_ref()
         .ok_or_else(|| DesktopError::Message("E2E Drive fake is unavailable".to_string()))?
         .snapshot()
+        .await
 }

@@ -80,3 +80,27 @@ fn e2e_session_validation_accepts_only_the_seeded_user() {
         "fixed-e2e-user"
     ));
 }
+
+#[test]
+fn e2e_drive_state_rejects_missing_or_blank_data_dir_before_constructing_fake() {
+    for value in [
+        None,
+        Some(std::ffi::OsString::from("")),
+        Some(std::ffi::OsString::from("   ")),
+    ] {
+        let error = match crate::google_drive::GoogleDriveState::e2e_from_data_dir_value(
+            "fixed-e2e-user",
+            value,
+        ) {
+            Ok(_) => {
+                panic!("the fake Drive state must not fall back to a real platform data directory")
+            }
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "DTX_E2E_DATA_DIR is required for a desktop E2E build"
+        );
+    }
+}

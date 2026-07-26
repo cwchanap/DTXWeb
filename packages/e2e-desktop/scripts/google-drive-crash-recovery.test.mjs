@@ -76,15 +76,15 @@ test('does not accept the old document or an incomplete replacement document', a
 	let calls = 0;
 	let nativeCalls = 0;
 	const session = {
-		execute: async () => {
-			const probe = probes[Math.min(calls, probes.length - 1)];
-			calls += 1;
-			return probe;
-		},
 		tauri: {
-			execute: async () => {
-				nativeCalls += 1;
-				return recovered;
+			execute: async (script) => {
+				if (script.toString().includes('snapshot_google_drive_e2e')) {
+					nativeCalls += 1;
+					return recovered;
+				}
+				const probe = probes[Math.min(calls, probes.length - 1)];
+				calls += 1;
+				return probe;
 			}
 		}
 	};
@@ -105,14 +105,14 @@ test('retries a transient navigation-time execute failure within the reload dead
 	const outcomes = [new Error('A JavaScript exception occurred'), reloadedDocument];
 	let calls = 0;
 	const session = {
-		execute: async () => {
-			const outcome = outcomes[Math.min(calls, outcomes.length - 1)];
-			calls += 1;
-			if (outcome instanceof Error) throw outcome;
-			return outcome;
-		},
 		tauri: {
-			execute: async () => recovered
+			execute: async (script) => {
+				if (script.toString().includes('snapshot_google_drive_e2e')) return recovered;
+				const outcome = outcomes[Math.min(calls, outcomes.length - 1)];
+				calls += 1;
+				if (outcome instanceof Error) throw outcome;
+				return outcome;
+			}
 		}
 	};
 	const wait = controlledWait();
@@ -127,13 +127,41 @@ test('retries a transient navigation-time execute failure within the reload dead
 	expect(calls).toBe(2);
 });
 
+test('uses the standalone direct evaluator for reload probes after navigation', async () => {
+	let directCalls = 0;
+	const session = {
+		execute: async () => {
+			throw new Error('standard WebDriver execute must not probe a reloading document');
+		},
+		tauri: {
+			execute: async (script) => {
+				if (script.toString().includes('snapshot_google_drive_e2e')) return recovered;
+				directCalls += 1;
+				return reloadedDocument;
+			}
+		}
+	};
+	const wait = controlledWait();
+
+	const result = await waitForReloadedWorkspace(session, oldDocument.documentToken, {
+		...wait,
+		intervalMs: 1,
+		timeoutMs: 10
+	});
+
+	expect(result).toEqual(reloadedDocument);
+	expect(directCalls).toBe(1);
+});
+
 test('retries a callable native bridge that rejects before accepting live IPC', async () => {
 	const nativeOutcomes = [new Error('native bridge is still loading'), recovered];
 	let nativeCalls = 0;
 	const session = {
-		execute: async () => reloadedDocument,
 		tauri: {
-			execute: async () => {
+			execute: async (script) => {
+				if (!script.toString().includes('snapshot_google_drive_e2e')) {
+					return reloadedDocument;
+				}
 				const outcome = nativeOutcomes[Math.min(nativeCalls, nativeOutcomes.length - 1)];
 				nativeCalls += 1;
 				if (outcome instanceof Error) throw outcome;
@@ -155,9 +183,11 @@ test('retries a callable native bridge that rejects before accepting live IPC', 
 
 test('times out with the last native error when a callable bridge keeps rejecting', async () => {
 	const session = {
-		execute: async () => reloadedDocument,
 		tauri: {
-			execute: async () => {
+			execute: async (script) => {
+				if (!script.toString().includes('snapshot_google_drive_e2e')) {
+					return reloadedDocument;
+				}
 				throw new Error('snapshot IPC rejected');
 			}
 		}
@@ -175,9 +205,13 @@ test('times out with the last native error when a callable bridge keeps rejectin
 
 test('bounds a native bridge probe that never settles', async () => {
 	const session = {
-		execute: async () => reloadedDocument,
 		tauri: {
-			execute: async () => await new Promise(() => {})
+			execute: async (script) => {
+				if (!script.toString().includes('snapshot_google_drive_e2e')) {
+					return reloadedDocument;
+				}
+				return await new Promise(() => {});
+			}
 		}
 	};
 
@@ -192,15 +226,17 @@ test('bounds a native bridge probe that never settles', async () => {
 test('times out with workspace diagnostics instead of accepting a replacement without content', async () => {
 	let nativeCalls = 0;
 	const session = {
-		execute: async () => ({
-			...reloadedDocument,
-			workspacePresent: false,
-			workspaceVisible: false
-		}),
 		tauri: {
-			execute: async () => {
-				nativeCalls += 1;
-				return recovered;
+			execute: async (script) => {
+				if (script.toString().includes('snapshot_google_drive_e2e')) {
+					nativeCalls += 1;
+					return recovered;
+				}
+				return {
+					...reloadedDocument,
+					workspacePresent: false,
+					workspaceVisible: false
+				};
 			}
 		}
 	};

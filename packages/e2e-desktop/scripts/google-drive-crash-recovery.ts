@@ -110,7 +110,7 @@ const reloadProbe = (): ReloadReadinessProbe => {
 };
 
 const isRetryableReloadProbeError = (error: unknown): boolean =>
-	/A JavaScript exception occurred|Script execution timed out|browsing context|navigation|page load|document.*unload|no such window|stale element reference|disconnected/i.test(
+	/Tauri core\.invoke is unavailable|A JavaScript exception occurred|Script execution timed out|browsing context|navigation|page load|document.*unload|no such window|stale element reference|disconnected/i.test(
 		error instanceof Error ? error.message : String(error)
 	);
 
@@ -172,7 +172,7 @@ export const waitForReloadedWorkspace = async (
 
 	while (now() < deadline) {
 		const outcome = await runBeforeDeadline(
-			async () => await session.execute(reloadProbe),
+			async () => await session.tauri.execute<ReloadReadinessProbe, []>(reloadProbe),
 			Math.max(1, deadline - now())
 		);
 

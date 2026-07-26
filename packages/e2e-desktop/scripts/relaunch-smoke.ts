@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,9 @@ const executableName = process.platform === 'win32' ? 'dtx-desktop.exe' : 'dtx-d
 const defaultAppBinaryPath =
 	process.env.DTX_DESKTOP_BINARY ??
 	resolve(packageRoot, '../dtx-desktop/src-tauri/target-e2e/debug', executableName);
+const defaultDiagnosticsRoot = join(packageRoot, 'logs');
+const MAX_RETAINED_RELAUNCH_LOGS = 10;
+const MAX_RELAUNCH_LOG_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const RELAUNCH_SENTINEL = {
 	detailPaneWidth: 613,
@@ -24,6 +27,27 @@ const RELAUNCH_SENTINEL = {
 
 type RelaunchSmokeInput = {
 	appBinaryPath?: string;
+	diagnosticsRoot?: string;
+};
+
+const pruneRelaunchDiagnostics = (diagnosticsRoot: string): void => {
+	const cutoff = Date.now() - MAX_RELAUNCH_LOG_AGE_MS;
+	const entries = readdirSync(diagnosticsRoot, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory() && entry.name.startsWith('relaunch-'))
+		.map((entry) => {
+			const path = join(diagnosticsRoot, entry.name);
+			return { path, modifiedAt: statSync(path).mtimeMs };
+		})
+		.sort((left, right) => right.modifiedAt - left.modifiedAt);
+	let retainedCount = 0;
+
+	for (const entry of entries) {
+		if (entry.modifiedAt < cutoff || retainedCount >= MAX_RETAINED_RELAUNCH_LOGS - 1) {
+			rmSync(entry.path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+			continue;
+		}
+		retainedCount += 1;
+	}
 };
 
 const cleanSession = async (browser: WebdriverIO.Browser, code: number): Promise<void> => {
@@ -35,18 +59,20 @@ const cleanSession = async (browser: WebdriverIO.Browser, code: number): Promise
 };
 
 export const runRelaunchSmoke = async ({
-	appBinaryPath = defaultAppBinaryPath
+	appBinaryPath = defaultAppBinaryPath,
+	diagnosticsRoot = defaultDiagnosticsRoot
 }: RelaunchSmokeInput = {}): Promise<void> => {
 	if (!existsSync(appBinaryPath)) {
 		throw new Error(`Desktop E2E binary not found at ${appBinaryPath}. Run e2e:build first.`);
 	}
 
 	const dataDir = mkdtempSync(join(tmpdir(), 'dtx-e2e-relaunch-'));
-	const diagnosticsRoot = join(packageRoot, 'logs');
 	mkdirSync(diagnosticsRoot, { recursive: true });
+	pruneRelaunchDiagnostics(diagnosticsRoot);
 	const logDir = mkdtempSync(join(diagnosticsRoot, 'relaunch-'));
 	let firstSession: WebdriverIO.Browser | undefined;
 	let secondSession: WebdriverIO.Browser | undefined;
+	let passed = false;
 
 	try {
 		firstSession = await startStandaloneTauriSession({ appBinaryPath, dataDir, logDir });
@@ -65,6 +91,7 @@ export const runRelaunchSmoke = async ({
 			throw new Error('Preferences sentinel did not survive native relaunch');
 		}
 
+		passed = true;
 		console.log('Desktop native terminate/relaunch persistence smoke passed.');
 	} finally {
 		if (secondSession) {
@@ -77,6 +104,13 @@ export const runRelaunchSmoke = async ({
 			rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 		} catch {
 			// CI runners are ephemeral; a local abandoned temp directory is harmless.
+		}
+		if (passed) {
+			try {
+				rmSync(logDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+			} catch {
+				// Retained success diagnostics are harmless if another process holds them briefly.
+			}
 		}
 	}
 };

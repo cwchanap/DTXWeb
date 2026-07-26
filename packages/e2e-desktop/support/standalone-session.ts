@@ -1,4 +1,5 @@
-import { closeSync, mkdirSync, openSync, unlinkSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +13,7 @@ type StandaloneTauriSessionInput = {
 };
 
 const EMBEDDED_PORT_ATTEMPTS = 3;
+const MAX_LEASE_AGE_MS = 15 * 60 * 1000;
 
 type PortReservation = {
 	port: number;
@@ -20,7 +22,14 @@ type PortReservation = {
 
 type PortLease = {
 	fileDescriptor: number;
+	nonce: string;
 	path: string;
+};
+
+type LeaseRecord = {
+	createdAt: number;
+	nonce: string;
+	pid: number;
 };
 
 const activePortLeases = new WeakMap<WebdriverIO.Browser, PortLease>();
@@ -54,17 +63,62 @@ const reserveEmbeddedPort = async (): Promise<PortReservation> =>
 		});
 	});
 
-const acquirePortLease = (port: number): PortLease | null => {
-	mkdirSync(leaseDirectory, { recursive: true });
-	const path = join(leaseDirectory, `${port}.lock`);
+const isPidAlive = (pid: number): boolean => {
+	if (!Number.isInteger(pid) || pid <= 0) return false;
 	try {
-		return { fileDescriptor: openSync(path, 'wx', 0o600), path };
+		process.kill(pid, 0);
+		return true;
 	} catch (error) {
-		if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+		return !(error instanceof Error && 'code' in error && error.code === 'ESRCH');
+	}
+};
+
+const readLeaseRecord = (path: string): LeaseRecord | null => {
+	try {
+		const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<LeaseRecord>;
+		if (
+			!Number.isFinite(value.createdAt) ||
+			typeof value.nonce !== 'string' ||
+			value.nonce.length === 0 ||
+			!Number.isInteger(value.pid)
+		) {
 			return null;
 		}
-		throw error;
+		return value as LeaseRecord;
+	} catch {
+		return null;
 	}
+};
+
+const isLeaseStale = (record: LeaseRecord | null): boolean =>
+	record === null ||
+	Math.abs(Date.now() - record.createdAt) > MAX_LEASE_AGE_MS ||
+	!isPidAlive(record.pid);
+
+const acquirePortLease = (port: number, nonce: string): PortLease | null => {
+	mkdirSync(leaseDirectory, { recursive: true });
+	const path = join(leaseDirectory, `${port}.lock`);
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			const fileDescriptor = openSync(path, 'wx', 0o600);
+			writeFileSync(
+				fileDescriptor,
+				JSON.stringify({ pid: process.pid, nonce, createdAt: Date.now() })
+			);
+			return { fileDescriptor, nonce, path };
+		} catch (error) {
+			if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+				throw error;
+			}
+			if (!isLeaseStale(readLeaseRecord(path))) return null;
+			try {
+				unlinkSync(path);
+			} catch {
+				return null;
+			}
+		}
+	}
+	return null;
 };
 
 const releasePortLease = (lease: PortLease): void => {
@@ -72,18 +126,13 @@ const releasePortLease = (lease: PortLease): void => {
 		closeSync(lease.fileDescriptor);
 	} finally {
 		try {
-			unlinkSync(lease.path);
+			if (readLeaseRecord(lease.path)?.nonce === lease.nonce) {
+				unlinkSync(lease.path);
+			}
 		} catch {
 			// A cleanup race cannot leave the session's file descriptor open.
 		}
 	}
-};
-
-const isEmbeddedPortCollision = (error: unknown): boolean => {
-	const message = error instanceof Error ? error.message : String(error);
-	return /EADDRINUSE|address already in use|port may already be in use|did not become ready on port/i.test(
-		message
-	);
 };
 
 const isExpectedDisconnect = (error: unknown): boolean => {
@@ -98,11 +147,12 @@ export const startStandaloneTauriSession = async ({
 	dataDir,
 	logDir
 }: StandaloneTauriSessionInput): Promise<WebdriverIO.Browser> => {
+	const sessionNonce = randomBytes(32).toString('hex');
 	for (let attempt = 0; attempt < EMBEDDED_PORT_ATTEMPTS; attempt += 1) {
 		const reservation = await reserveEmbeddedPort();
 		let lease: PortLease | null;
 		try {
-			lease = acquirePortLease(reservation.port);
+			lease = acquirePortLease(reservation.port, sessionNonce);
 		} catch (error) {
 			await reservation.release().catch(() => undefined);
 			throw error;
@@ -127,21 +177,35 @@ export const startStandaloneTauriSession = async ({
 			logDir
 		};
 
+		let browser: WebdriverIO.Browser | undefined;
 		try {
-			const browser = await startWdioSession(capabilities, {
-				env: { DTX_E2E_DATA_DIR: dataDir }
+			browser = await startWdioSession(capabilities, {
+				env: {
+					DTX_E2E_DATA_DIR: dataDir,
+					DTX_E2E_SESSION_NONCE: sessionNonce
+				}
 			});
+			const observedNonce = await browser.tauri.execute<string, []>(
+				({ core }) => core.invoke('read_e2e_session_nonce') as unknown as string
+			);
+			if (observedNonce !== sessionNonce) {
+				throw new Error('Standalone Tauri session nonce mismatch');
+			}
 			activePortLeases.set(browser, lease);
 			return browser;
 		} catch (error) {
-			releasePortLease(lease);
-			if (!isEmbeddedPortCollision(error) || attempt === EMBEDDED_PORT_ATTEMPTS - 1) {
-				throw error;
+			if (browser) {
+				try {
+					await cleanupWdioSession(browser);
+				} finally {
+					releasePortLease(lease);
+				}
+			} else {
+				// @wdio/tauri-service tears down its child/driver before rejecting a
+				// failed standalone startup. Do not launch a second app in this process.
+				releasePortLease(lease);
 			}
-			// The service does not accept port 0, so reserving then releasing a
-			// localhost port has an unavoidable external-process bind-close race.
-			// The lease prevents another harness from reusing it; retry a fresh port
-			// when the embedded service reports a collision or readiness timeout.
+			throw error;
 		}
 	}
 
@@ -163,11 +227,14 @@ export const terminateStandaloneTauriSession = async (
 			throw error;
 		}
 	} finally {
-		await cleanupWdioSession(browser).catch(() => undefined);
-		const lease = activePortLeases.get(browser);
-		if (lease) {
-			activePortLeases.delete(browser);
-			releasePortLease(lease);
+		try {
+			await cleanupWdioSession(browser);
+		} finally {
+			const lease = activePortLeases.get(browser);
+			if (lease) {
+				activePortLeases.delete(browser);
+				releasePortLease(lease);
+			}
 		}
 	}
 };

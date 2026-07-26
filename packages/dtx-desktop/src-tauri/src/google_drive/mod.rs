@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use crate::auth::AuthState;
+#[cfg(any(feature = "google-drive", feature = "e2e"))]
 use crate::error::{DesktopError, Result};
 #[cfg(any(feature = "google-drive", feature = "e2e"))]
 use crate::native_persistence::resolve_dirs;
@@ -41,13 +42,44 @@ pub(crate) struct OwnerDriveSimfile {
     pub download_url: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DriveMetadataError {
+    DefinitiveUnavailable,
+    Authentication,
+    Network,
+    ServiceUnavailable,
+    InvalidResponse,
+    LocalState,
+}
+
+impl DriveMetadataError {
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::DefinitiveUnavailable => "SIMFILE_UNAVAILABLE",
+            Self::Authentication => "AUTHENTICATION",
+            Self::Network => "NETWORK",
+            Self::ServiceUnavailable => "SERVICE_UNAVAILABLE",
+            Self::InvalidResponse => "INVALID_RESPONSE",
+            Self::LocalState => "LOCAL_STATE",
+        }
+    }
+}
+
+impl std::fmt::Display for DriveMetadataError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.code())
+    }
+}
+
+impl std::error::Error for DriveMetadataError {}
+
 #[async_trait]
 pub(crate) trait DriveMetadataClient: Send + Sync {
     async fn fetch_owner_simfile(
         &self,
         auth: &AuthState,
         simfile_id: &str,
-    ) -> Result<OwnerDriveSimfile>;
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError>;
 
     async fn update_drive_file(
         &self,
@@ -55,7 +87,7 @@ pub(crate) trait DriveMetadataClient: Send + Sync {
         simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
-    ) -> Result<OwnerDriveSimfile>;
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError>;
 }
 
 #[derive(Debug)]
@@ -75,7 +107,7 @@ impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
         &self,
         auth: &AuthState,
         simfile_id: &str,
-    ) -> Result<OwnerDriveSimfile> {
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         crate::api::fetch_owner_drive_simfile(auth, &self.app, simfile_id).await
     }
 
@@ -85,7 +117,7 @@ impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
         simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
-    ) -> Result<OwnerDriveSimfile> {
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         crate::api::update_drive_file(auth, &self.app, simfile_id, drive_file_id, download_url)
             .await
     }
@@ -559,10 +591,8 @@ impl DriveMetadataClient for UnavailableDriveMetadataClient {
         &self,
         _auth: &AuthState,
         _simfile_id: &str,
-    ) -> Result<OwnerDriveSimfile> {
-        Err(DesktopError::Message(
-            "Google Drive metadata is unavailable".to_string(),
-        ))
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+        Err(DriveMetadataError::ServiceUnavailable)
     }
 
     async fn update_drive_file(
@@ -571,10 +601,8 @@ impl DriveMetadataClient for UnavailableDriveMetadataClient {
         _simfile_id: &str,
         _drive_file_id: &str,
         _download_url: &str,
-    ) -> Result<OwnerDriveSimfile> {
-        Err(DesktopError::Message(
-            "Google Drive metadata is unavailable".to_string(),
-        ))
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+        Err(DriveMetadataError::ServiceUnavailable)
     }
 }
 

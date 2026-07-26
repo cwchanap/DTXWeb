@@ -14,7 +14,7 @@ use super::pending_bindings::{
     GoogleDrivePendingBindingStore, PendingBindingKind, PendingBindingStoreError,
     PendingGoogleDriveBinding,
 };
-use super::{DriveMetadataClient, OwnerDriveSimfile};
+use super::{DriveMetadataClient, DriveMetadataError, OwnerDriveSimfile};
 
 const UPLOAD_CACHE_NAMESPACE: &str = "google-drive-uploads";
 const UPLOAD_ARCHIVE_NAME: &str = "upload.zip";
@@ -292,17 +292,20 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
         .into_iter()
         .filter(|pending| pending.user_id == user_id)
     {
+        let transaction_lock =
+            pending_store.transaction_lock(&pending.user_id, &pending.simfile_id);
+        let _transaction_guard = transaction_lock.lock().await;
+        let pending = match pending_store.get(&pending.user_id, &pending.simfile_id) {
+            Ok(Some(pending)) => pending,
+            Ok(None) | Err(_) => continue,
+        };
         let owner = match metadata_client
             .fetch_owner_simfile(auth, &pending.simfile_id)
             .await
         {
             Ok(owner) if owner.id == pending.simfile_id => owner,
-            Ok(_) => {
-                let _ =
-                    compensate_lost_owner(api, pending_store, access_token, Some(&pending)).await;
-                continue;
-            }
-            Err(error) if metadata_error(&error) == DriveApiError::SimfileUnavailable => {
+            Ok(_) => continue,
+            Err(DriveMetadataError::DefinitiveUnavailable) => {
                 let _ =
                     compensate_lost_owner(api, pending_store, access_token, Some(&pending)).await;
                 continue;
@@ -330,6 +333,7 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
             access_token,
             &pending.simfile_id,
             &pending,
+            &owner,
             file,
             None,
         )
@@ -360,6 +364,8 @@ where
         .await
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| create_failure(DriveApiError::SimfileUnavailable))?;
+    let transaction_lock = pending_store.transaction_lock(&user_id, &request.simfile_id);
+    let _transaction_guard = transaction_lock.lock().await;
     let pending = pending_store
         .get(&user_id, &request.simfile_id)
         .map_err(pending_store_failure)?;
@@ -370,13 +376,11 @@ where
         .await
     {
         Ok(owner) if owner.id == request.simfile_id => owner,
-        Ok(_) => {
+        Ok(_) => return Err(create_failure(DriveApiError::InvalidResponse)),
+        Err(DriveMetadataError::DefinitiveUnavailable) => {
             return compensate_lost_owner(api, pending_store, access_token, pending.as_ref()).await;
         }
-        Err(error) if metadata_error(&error) == DriveApiError::SimfileUnavailable => {
-            return compensate_lost_owner(api, pending_store, access_token, pending.as_ref()).await;
-        }
-        Err(error) => return Err(create_failure(metadata_error(&error))),
+        Err(error) => return Err(create_failure(metadata_error(error))),
     };
 
     let pending = match pending {
@@ -431,6 +435,7 @@ where
                     access_token,
                     &request.simfile_id,
                     &pending,
+                    &owner,
                     file,
                     crash_at,
                 )
@@ -510,6 +515,7 @@ where
                             access_token,
                             &request.simfile_id,
                             &pending,
+                            &owner,
                             file,
                             crash_at,
                         )
@@ -549,6 +555,7 @@ where
             access_token,
             &request.simfile_id,
             &pending,
+            &owner,
             outcome,
             crash_at,
         )
@@ -565,6 +572,7 @@ async fn finish_existing_pending_file<A>(
     access_token: &str,
     simfile_id: &str,
     pending: &PendingGoogleDriveBinding,
+    prior_owner: &OwnerDriveSimfile,
     file: DriveFile,
     crash_at: Option<CreateCrashPoint>,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
@@ -594,6 +602,7 @@ where
         access_token,
         simfile_id,
         pending,
+        prior_owner,
         DriveUploadOutcome {
             file_id: pending.drive_file_id.clone(),
             file_name: file.name,
@@ -613,30 +622,45 @@ async fn patch_and_finish<A>(
     access_token: &str,
     simfile_id: &str,
     pending: &PendingGoogleDriveBinding,
+    prior_owner: &OwnerDriveSimfile,
     outcome: DriveUploadOutcome,
     crash_at: Option<CreateCrashPoint>,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
 where
     A: GoogleDriveApi + ?Sized,
 {
-    let mut last_error = None;
     for attempt in 0..2 {
-        match metadata_client
+        let patch_result = metadata_client
             .update_drive_file(auth, simfile_id, &outcome.file_id, &outcome.download_url)
-            .await
-        {
-            Ok(updated)
-                if updated.id == simfile_id
-                    && updated.google_drive_file_id.as_deref()
-                        == Some(outcome.file_id.as_str())
-                    && updated.download_url.as_deref() == Some(outcome.download_url.as_str()) =>
+            .await;
+        if patch_result.as_ref().is_ok_and(|updated| {
+            owner_has_drive_binding(updated, simfile_id, &outcome.file_id, &outcome.download_url)
+        }) {
+            maybe_inject_crash(crash_at, CreateCrashPoint::AfterMetadataPatch)?;
+            remove_pending_binding(pending_store, pending)?;
+            return Ok(outcome);
+        }
+
+        match metadata_client.fetch_owner_simfile(auth, simfile_id).await {
+            Ok(current)
+                if owner_has_drive_binding(
+                    &current,
+                    simfile_id,
+                    &outcome.file_id,
+                    &outcome.download_url,
+                ) =>
             {
                 maybe_inject_crash(crash_at, CreateCrashPoint::AfterMetadataPatch)?;
                 remove_pending_binding(pending_store, pending)?;
                 return Ok(outcome);
             }
-            Ok(_) => last_error = Some(DriveApiError::MetadataSync),
-            Err(_) => last_error = Some(DriveApiError::MetadataSync),
+            Ok(current) if owner_binding_matches(&current, prior_owner) => {}
+            Ok(_) => return Err(create_failure(DriveApiError::MetadataSync)),
+            Err(DriveMetadataError::DefinitiveUnavailable) => {
+                return compensate_lost_owner(api, pending_store, access_token, Some(pending))
+                    .await;
+            }
+            Err(_) => return Err(create_failure(DriveApiError::MetadataSync)),
         }
         if attempt == 0 {
             maybe_inject_crash(crash_at, CreateCrashPoint::BeforeMetadataPatchRetry)?;
@@ -648,9 +672,26 @@ where
         pending_store,
         access_token,
         pending,
-        last_error.unwrap_or(DriveApiError::MetadataSync),
+        DriveApiError::MetadataSync,
     )
     .await
+}
+
+fn owner_has_drive_binding(
+    owner: &OwnerDriveSimfile,
+    simfile_id: &str,
+    drive_file_id: &str,
+    download_url: &str,
+) -> bool {
+    owner.id == simfile_id
+        && owner.google_drive_file_id.as_deref() == Some(drive_file_id)
+        && owner.download_url.as_deref() == Some(download_url)
+}
+
+fn owner_binding_matches(current: &OwnerDriveSimfile, prior_owner: &OwnerDriveSimfile) -> bool {
+    current.id == prior_owner.id
+        && current.google_drive_file_id == prior_owner.google_drive_file_id
+        && current.download_url == prior_owner.download_url
 }
 
 async fn compensate_lost_owner<A>(
@@ -720,12 +761,14 @@ fn pending_store_failure(error: PendingBindingStoreError) -> DriveUploadFailure 
     })
 }
 
-fn metadata_error(error: &DesktopError) -> DriveApiError {
-    match error.to_string().as_str() {
-        "SIMFILE_UNAVAILABLE" => DriveApiError::SimfileUnavailable,
-        "NETWORK" => DriveApiError::Network,
-        "RECONNECT_REQUIRED" => DriveApiError::TokenExpired,
-        _ => DriveApiError::MetadataSync,
+fn metadata_error(error: DriveMetadataError) -> DriveApiError {
+    match error {
+        DriveMetadataError::DefinitiveUnavailable => DriveApiError::SimfileUnavailable,
+        DriveMetadataError::Authentication => DriveApiError::TokenExpired,
+        DriveMetadataError::Network => DriveApiError::Network,
+        DriveMetadataError::ServiceUnavailable => DriveApiError::MetadataSync,
+        DriveMetadataError::InvalidResponse => DriveApiError::InvalidResponse,
+        DriveMetadataError::LocalState => DriveApiError::LocalState,
     }
 }
 

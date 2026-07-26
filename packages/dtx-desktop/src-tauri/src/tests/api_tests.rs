@@ -221,7 +221,16 @@ async fn google_drive_fetch_owner_simfile_returns_fresh_owner_metadata() {
 
 #[tokio::test]
 async fn google_drive_fetch_owner_simfile_sanitizes_missing_or_null_records() {
-    for simfile in [Value::Null, json!({})] {
+    for (simfile, expected) in [
+        (
+            Value::Null,
+            crate::google_drive::DriveMetadataError::DefinitiveUnavailable,
+        ),
+        (
+            json!({}),
+            crate::google_drive::DriveMetadataError::InvalidResponse,
+        ),
+    ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/graphql"))
@@ -235,7 +244,7 @@ async fn google_drive_fetch_owner_simfile_sanitizes_missing_or_null_records() {
             .await
             .expect_err("missing owner simfile must be unavailable");
 
-        assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+        assert_eq!(error, expected);
     }
 }
 
@@ -254,7 +263,10 @@ async fn google_drive_fetch_owner_simfile_sanitizes_graphql_auth_errors() {
         .await
         .expect_err("auth details must not cross the native boundary");
 
-    assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::Authentication
+    );
 }
 
 #[tokio::test]
@@ -277,6 +289,61 @@ async fn google_drive_fetch_owner_simfile_rejects_a_published_row_owned_by_anoth
         .expect_err("a published cross-user row must not become a Drive upload target");
 
     assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+}
+
+#[tokio::test]
+async fn google_drive_owner_metadata_classifies_ambiguous_failures_without_claiming_absence() {
+    // Break caught: collapsing auth, service, malformed-response, and network
+    // failures into definitive absence, which lets reconciliation delete a
+    // recoverable Drive object.
+    for (template, expected) in [
+        (
+            ResponseTemplate::new(401).set_body_json(json!({
+                "error": "expired session"
+            })),
+            crate::google_drive::DriveMetadataError::Authentication,
+        ),
+        (
+            ResponseTemplate::new(500).set_body_json(json!({
+                "error": "temporary outage"
+            })),
+            crate::google_drive::DriveMetadataError::ServiceUnavailable,
+        ),
+        (
+            ResponseTemplate::new(200).set_body_string("not-json"),
+            crate::google_drive::DriveMetadataError::InvalidResponse,
+        ),
+        (
+            ResponseTemplate::new(200).set_body_json(json!({
+                "errors": [{
+                    "message": "owner forbidden",
+                    "extensions": { "code": "FORBIDDEN" }
+                }]
+            })),
+            crate::google_drive::DriveMetadataError::Authentication,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(template)
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+                .await
+                .expect_err("typed metadata failure"),
+            expected
+        );
+    }
+
+    assert_eq!(
+        fetch_owner_drive_simfile_impl("http://127.0.0.1:9", "token-1", "42", "user-1",)
+            .await
+            .expect_err("connection refusal"),
+        crate::google_drive::DriveMetadataError::Network
+    );
 }
 
 #[tokio::test]
@@ -440,7 +507,10 @@ async fn google_drive_update_rejects_a_mismatched_server_binding_response() {
         .await
         .expect_err("server response must match the requested Drive binding");
 
-        assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+        assert_eq!(
+            error,
+            crate::google_drive::DriveMetadataError::InvalidResponse
+        );
     }
 }
 

@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::error::DesktopError;
 use crate::native_persistence::{app_data_file, lock_unpoisoned, write_json_atomic};
@@ -12,6 +13,8 @@ const PENDING_BINDINGS_FILE_NAME: &str = "google-drive-pending-bindings.json";
 const PENDING_BINDINGS_SCHEMA_VERSION: u8 = 1;
 const MAX_NATIVE_ID_BYTES: usize = 512;
 const MAX_CREATED_AT_BYTES: usize = 128;
+type BindingTransactionKey = (String, String);
+type BindingTransactionLock = AsyncMutex<()>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -64,11 +67,40 @@ pub(crate) fn google_drive_pending_bindings_path(data_dir: &Path) -> PathBuf {
 #[derive(Debug, Clone)]
 pub(crate) struct GoogleDrivePendingBindingStore {
     data_dir: PathBuf,
+    transaction_locks: Arc<BindingTransactionLockRegistry>,
+}
+
+#[derive(Debug, Default)]
+struct BindingTransactionLockRegistry {
+    by_key: Mutex<HashMap<BindingTransactionKey, Weak<BindingTransactionLock>>>,
 }
 
 impl GoogleDrivePendingBindingStore {
     pub(crate) fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir }
+        Self {
+            data_dir,
+            transaction_locks: Arc::new(BindingTransactionLockRegistry::default()),
+        }
+    }
+
+    pub(crate) fn transaction_lock(
+        &self,
+        user_id: &str,
+        simfile_id: &str,
+    ) -> Arc<BindingTransactionLock> {
+        let key = (user_id.to_string(), simfile_id.to_string());
+        let mut locks = self
+            .transaction_locks
+            .by_key
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+            return lock;
+        }
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        let lock = Arc::new(BindingTransactionLock::new(()));
+        locks.insert(key, Arc::downgrade(&lock));
+        lock
     }
 
     pub(crate) fn get(

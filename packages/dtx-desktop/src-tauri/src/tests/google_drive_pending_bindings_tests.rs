@@ -227,6 +227,26 @@ fn pending_store_removal_is_identity_guarded() {
     assert_eq!(store.get("user-42", "42").expect("read"), None);
 }
 
+#[tokio::test]
+async fn transaction_locks_are_shared_by_clones_and_independent_across_keys() {
+    let data_dir = tempdir().expect("data dir");
+    let store = GoogleDrivePendingBindingStore::new(data_dir.path().to_path_buf());
+    let same_key = store.transaction_lock("user-42", "42");
+    let same_key_from_clone = store.clone().transaction_lock("user-42", "42");
+    let other_simfile = store.transaction_lock("user-42", "43");
+
+    assert!(Arc::ptr_eq(&same_key, &same_key_from_clone));
+    let _same_key_guard = same_key.lock().await;
+    assert!(
+        same_key_from_clone.try_lock().is_err(),
+        "the same user/simfile lifecycle must serialize"
+    );
+    assert!(
+        other_simfile.try_lock().is_ok(),
+        "a different lifecycle must remain concurrent"
+    );
+}
+
 #[test]
 fn pending_store_maps_disk_full_separately_from_other_local_failures() {
     // Break caught: collapsing ENOSPC into LOCAL_STATE, which hides the

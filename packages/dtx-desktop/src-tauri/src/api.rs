@@ -1,6 +1,6 @@
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
-use crate::google_drive::OwnerDriveSimfile;
+use crate::google_drive::{DriveMetadataError, OwnerDriveSimfile};
 use crate::workspace::WorkspaceRootState;
 use reqwest::multipart::{Form, Part};
 use serde_json::{json, Map, Value};
@@ -10,7 +10,6 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use tokio::fs;
 
 const API_REQUEST_TIMEOUT_MS: u64 = 30_000;
-const SIMFILE_UNAVAILABLE: &str = "SIMFILE_UNAVAILABLE";
 
 const SIMFILE_FULL_FRAGMENT: &str = r#"
 fragment SimfileFull on Simfile {
@@ -446,31 +445,27 @@ pub fn update_input_from_renderer(update_data: Value) -> Value {
     Value::Object(mapped)
 }
 
-fn simfile_unavailable() -> DesktopError {
-    DesktopError::Message(SIMFILE_UNAVAILABLE.to_string())
-}
-
 fn owner_drive_simfile_from_graphql(
     simfile: &Value,
     authenticated_user_id: &str,
-) -> Result<OwnerDriveSimfile> {
+) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
     let id = simfile
         .get("id")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(simfile_unavailable)?;
+        .ok_or(DriveMetadataError::InvalidResponse)?;
     let title = simfile
         .get("title")
         .and_then(Value::as_str)
-        .ok_or_else(simfile_unavailable)?;
+        .ok_or(DriveMetadataError::InvalidResponse)?;
     let owner_id = simfile
         .get("userId")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(simfile_unavailable)?;
+        .ok_or(DriveMetadataError::InvalidResponse)?;
 
     if owner_id != authenticated_user_id {
-        return Err(simfile_unavailable());
+        return Err(DriveMetadataError::DefinitiveUnavailable);
     }
 
     Ok(OwnerDriveSimfile {
@@ -492,17 +487,25 @@ pub(crate) async fn fetch_owner_drive_simfile_impl(
     token: &str,
     simfile_id: &str,
     authenticated_user_id: &str,
-) -> Result<OwnerDriveSimfile> {
-    let result = graphql_result_with_url(
+) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+    let data = drive_metadata_graphql_data(
         base_url,
         token,
         OWNER_DRIVE_SIMFILE_QUERY,
         json!({ "id": simfile_id }),
     )
     .await?;
-    let data = result.success_data().map_err(|_| simfile_unavailable())?;
-
-    owner_drive_simfile_from_graphql(&data["simfile"], authenticated_user_id)
+    let simfile = data
+        .get("simfile")
+        .ok_or(DriveMetadataError::InvalidResponse)?;
+    if simfile.is_null() {
+        return Err(DriveMetadataError::DefinitiveUnavailable);
+    }
+    let simfile = owner_drive_simfile_from_graphql(simfile, authenticated_user_id)?;
+    if simfile.id != simfile_id {
+        return Err(DriveMetadataError::InvalidResponse);
+    }
+    Ok(simfile)
 }
 
 pub(crate) async fn update_drive_file_impl(
@@ -512,8 +515,8 @@ pub(crate) async fn update_drive_file_impl(
     drive_file_id: &str,
     download_url: &str,
     authenticated_user_id: &str,
-) -> Result<OwnerDriveSimfile> {
-    let result = graphql_result_with_url(
+) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+    let data = drive_metadata_graphql_data(
         base_url,
         token,
         UPDATE_SIMFILE_DRIVE_FILE_MUTATION,
@@ -524,21 +527,27 @@ pub(crate) async fn update_drive_file_impl(
         }),
     )
     .await?;
-    let data = result.success_data().map_err(|_| simfile_unavailable())?;
-    let simfile =
-        owner_drive_simfile_from_graphql(&data["updateSimfileDriveFile"], authenticated_user_id)?;
+    let value = data
+        .get("updateSimfileDriveFile")
+        .ok_or(DriveMetadataError::InvalidResponse)?;
+    if value.is_null() {
+        return Err(DriveMetadataError::DefinitiveUnavailable);
+    }
+    let simfile = owner_drive_simfile_from_graphql(value, authenticated_user_id)?;
 
     if simfile.id != simfile_id
         || simfile.google_drive_file_id.as_deref() != Some(drive_file_id)
         || simfile.download_url.as_deref() != Some(download_url)
     {
-        return Err(simfile_unavailable());
+        return Err(DriveMetadataError::InvalidResponse);
     }
 
     Ok(simfile)
 }
 
-async fn authenticated_user_id(auth: &AuthState) -> Result<String> {
+async fn authenticated_user_id(
+    auth: &AuthState,
+) -> std::result::Result<String, DriveMetadataError> {
     auth.current_session()
         .await
         .as_ref()
@@ -546,16 +555,18 @@ async fn authenticated_user_id(auth: &AuthState) -> Result<String> {
         .and_then(Value::as_str)
         .filter(|user_id| !user_id.is_empty())
         .map(str::to_string)
-        .ok_or_else(simfile_unavailable)
+        .ok_or(DriveMetadataError::Authentication)
 }
 
 pub(crate) async fn fetch_owner_drive_simfile<R: Runtime>(
     auth: &AuthState,
     app: &AppHandle<R>,
     simfile_id: &str,
-) -> Result<OwnerDriveSimfile> {
-    let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(auth, Some(app)).await?;
+) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+    let base_url = api_base_url_from_env().map_err(|_| DriveMetadataError::LocalState)?;
+    let token = access_token_from_auth_state(auth, Some(app))
+        .await
+        .map_err(classify_metadata_auth_error)?;
     let user_id = authenticated_user_id(auth).await?;
     fetch_owner_drive_simfile_impl(&base_url, &token, simfile_id, &user_id).await
 }
@@ -566,9 +577,11 @@ pub(crate) async fn update_drive_file<R: Runtime>(
     simfile_id: &str,
     drive_file_id: &str,
     download_url: &str,
-) -> Result<OwnerDriveSimfile> {
-    let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(auth, Some(app)).await?;
+) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+    let base_url = api_base_url_from_env().map_err(|_| DriveMetadataError::LocalState)?;
+    let token = access_token_from_auth_state(auth, Some(app))
+        .await
+        .map_err(classify_metadata_auth_error)?;
     let user_id = authenticated_user_id(auth).await?;
     update_drive_file_impl(
         &base_url,
@@ -579,6 +592,70 @@ pub(crate) async fn update_drive_file<R: Runtime>(
         &user_id,
     )
     .await
+}
+
+fn classify_metadata_auth_error(error: DesktopError) -> DriveMetadataError {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("network") || message.contains("timed out") || message.contains("timeout") {
+        DriveMetadataError::Network
+    } else {
+        DriveMetadataError::Authentication
+    }
+}
+
+async fn drive_metadata_graphql_data(
+    base_url: &str,
+    token: &str,
+    query: &str,
+    variables: Value,
+) -> std::result::Result<Value, DriveMetadataError> {
+    let client = reqwest_client().map_err(|_| DriveMetadataError::LocalState)?;
+    let endpoint = format!("{}/graphql", base_url.trim_end_matches('/'));
+    let response = client
+        .post(endpoint)
+        .bearer_auth(token)
+        .header(reqwest::header::USER_AGENT, "DTXDesktopApp")
+        .header("X-Requested-With", "DTXDesktopApp")
+        .json(&json!({ "query": query, "variables": variables }))
+        .send()
+        .await
+        .map_err(|_| DriveMetadataError::Network)?;
+    let status = response.status();
+    if matches!(status.as_u16(), 401 | 403) {
+        return Err(DriveMetadataError::Authentication);
+    }
+    if status.is_server_error() {
+        return Err(DriveMetadataError::ServiceUnavailable);
+    }
+    if !status.is_success() {
+        return Err(DriveMetadataError::InvalidResponse);
+    }
+    let body = response
+        .json::<Value>()
+        .await
+        .map_err(|_| DriveMetadataError::InvalidResponse)?;
+    if let Some(error) = body
+        .get("errors")
+        .and_then(Value::as_array)
+        .and_then(|errors| errors.first())
+    {
+        let code = error
+            .pointer("/extensions/code")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        return Err(match code {
+            "NOT_FOUND" => DriveMetadataError::DefinitiveUnavailable,
+            "FORBIDDEN" | "UNAUTHENTICATED" => DriveMetadataError::Authentication,
+            "INTERNAL_SERVER_ERROR" | "SERVICE_UNAVAILABLE" => {
+                DriveMetadataError::ServiceUnavailable
+            }
+            _ => DriveMetadataError::InvalidResponse,
+        });
+    }
+    body.get("data")
+        .cloned()
+        .filter(Value::is_object)
+        .ok_or(DriveMetadataError::InvalidResponse)
 }
 
 fn create_input_from_renderer(simfile_data: &Value) -> Value {

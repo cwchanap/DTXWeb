@@ -27,6 +27,7 @@ describe('googleDriveStore', () => {
 
 		expect(get(store)).toEqual({
 			connection: { connected: true, folder: { id: 'folder-id', name: 'Exports' } },
+			publicDownloadVerified: false,
 			revocationUnconfirmed: false,
 			operations: {
 				'op-current': {
@@ -47,6 +48,7 @@ describe('googleDriveStore', () => {
 
 		expect(get(store)).toEqual({
 			connection: null,
+			publicDownloadVerified: false,
 			revocationUnconfirmed: false,
 			operations: {},
 			error: null
@@ -99,5 +101,35 @@ describe('googleDriveStore', () => {
 		});
 
 		expect(get(store).connection).toBeNull();
+	});
+
+	it('keeps public-link verification unknown for refreshes and marks only successful validation actions', () => {
+		const store = createGoogleDriveStore();
+		const generation = store.captureGeneration();
+		const connection = { connected: true, folder: { id: 'folder-id', name: 'Exports' } };
+
+		store.setConnectionIfCurrent(generation, connection, 'refresh');
+		expect(get(store).publicDownloadVerified).toBe(false);
+
+		store.setConnectionIfCurrent(generation, connection, 'recheck-sharing');
+		expect(get(store).publicDownloadVerified).toBe(true);
+	});
+
+	it('preserves revocation uncertainty through refresh and clears it only after reconnection', () => {
+		const store = createGoogleDriveStore();
+		const generation = store.captureGeneration();
+		store.setConnectionIfCurrent(generation, { connected: true }, 'recheck-sharing');
+		expect(get(store).publicDownloadVerified).toBe(true);
+		store.setDisconnectIfCurrent(generation, {
+			connection: { connected: false },
+			revocationUnconfirmed: true
+		});
+		expect(get(store).publicDownloadVerified).toBe(false);
+
+		store.setConnectionIfCurrent(generation, { connected: false }, 'refresh');
+		expect(get(store).revocationUnconfirmed).toBe(true);
+
+		store.setConnectionIfCurrent(generation, { connected: true }, 'connect');
+		expect(get(store).revocationUnconfirmed).toBe(false);
 	});
 });

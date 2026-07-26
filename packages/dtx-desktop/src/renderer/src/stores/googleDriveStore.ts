@@ -6,9 +6,12 @@ import type {
 } from '../services/desktopHost';
 
 export type GoogleDriveOperation = GoogleDriveUploadProgress;
+export type GoogleDriveConnectionSource =
+	'refresh' | 'connect' | 'change-folder' | 'recheck-sharing';
 
 export type GoogleDriveStoreState = {
 	connection: GoogleDriveConnectionState | null;
+	publicDownloadVerified: boolean;
 	revocationUnconfirmed: boolean;
 	operations: Record<string, GoogleDriveOperation>;
 	error: string | null;
@@ -16,6 +19,7 @@ export type GoogleDriveStoreState = {
 
 const initialState = (): GoogleDriveStoreState => ({
 	connection: null,
+	publicDownloadVerified: false,
 	revocationUnconfirmed: false,
 	operations: {},
 	error: null
@@ -41,31 +45,50 @@ export const createGoogleDriveStore = () => {
 	const { subscribe, set, update } = writable<GoogleDriveStoreState>(initialState());
 	let generation = 0;
 	const isCurrent = (candidate: number) => candidate === generation;
+	const applyConnection = (
+		state: GoogleDriveStoreState,
+		connection: GoogleDriveConnectionState,
+		source: GoogleDriveConnectionSource
+	): GoogleDriveStoreState => ({
+		...state,
+		connection,
+		// The native summary alone is deliberately not proof of public access.
+		// Only an explicit connect, folder-change, or sharing recheck result is
+		// treated as a fresh validation, and that renderer-only fact is never
+		// persisted across reset/restart.
+		publicDownloadVerified:
+			connection.connected &&
+			source !== 'refresh' &&
+			!connection.requiresPublicSharing &&
+			!connection.sharingCheckUnavailable,
+		// A normal cache/refresh read has no authority to dismiss a warning that
+		// OAuth revocation was not confirmed. A fresh successful connect does.
+		revocationUnconfirmed:
+			source === 'connect' && connection.connected ? false : state.revocationUnconfirmed,
+		error: null
+	});
 
 	return {
 		subscribe,
 		captureGeneration: (): number => generation,
-		setConnection: (connection: GoogleDriveConnectionState) =>
-			update((state) => ({
-				...state,
-				connection,
-				revocationUnconfirmed: false,
-				error: null
-			})),
-		setConnectionIfCurrent: (candidate: number, connection: GoogleDriveConnectionState) => {
+		setConnection: (
+			connection: GoogleDriveConnectionState,
+			source: GoogleDriveConnectionSource = 'refresh'
+		) => update((state) => applyConnection(state, connection, source)),
+		setConnectionIfCurrent: (
+			candidate: number,
+			connection: GoogleDriveConnectionState,
+			source: GoogleDriveConnectionSource = 'refresh'
+		) => {
 			if (!isCurrent(candidate)) return;
-			update((state) => ({
-				...state,
-				connection,
-				revocationUnconfirmed: false,
-				error: null
-			}));
+			update((state) => applyConnection(state, connection, source));
 		},
 		setDisconnectIfCurrent: (candidate: number, result: GoogleDriveDisconnectResult) => {
 			if (!isCurrent(candidate)) return;
 			update((state) => ({
 				...state,
 				connection: result.connection,
+				publicDownloadVerified: false,
 				revocationUnconfirmed: result.revocationUnconfirmed,
 				error: null
 			}));

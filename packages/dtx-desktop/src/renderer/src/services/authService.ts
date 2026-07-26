@@ -217,6 +217,7 @@ export const authService = {
 		// Native logout intentionally retains installation-local Drive
 		// credentials/settings for this user. The renderer still must hide any
 		// old connection or upload state immediately.
+		authStore.logout();
 		googleDriveStore.reset();
 		try {
 			// Clear session in host process
@@ -231,9 +232,6 @@ export const authService = {
 
 			// Clear local-cloud file linkages
 			clearCloudLinkages();
-
-			// Update auth store
-			authStore.logout();
 		} catch (error) {
 			console.error('Failed to logout:', error);
 			// Still clear local state even if Rust backend logout fails
@@ -245,8 +243,6 @@ export const authService = {
 
 			// Clear local-cloud file linkages even if logout fails
 			clearCloudLinkages();
-
-			authStore.logout();
 		}
 	}
 };

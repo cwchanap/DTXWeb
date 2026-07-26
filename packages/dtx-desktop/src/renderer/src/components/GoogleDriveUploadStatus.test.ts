@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import en from '../lib/i18n/locales/en.json';
 import jp from '../lib/i18n/locales/jp.json';
 
@@ -20,17 +20,25 @@ vi.mock('svelte-i18n', () => ({
 	}
 }));
 
-const mockService = vi.hoisted(() => ({ cancelUpload: vi.fn() }));
+const mockService = vi.hoisted(() => ({
+	cancelUpload: vi.fn(),
+	connectAndChooseFolder: vi.fn(),
+	changeFolder: vi.fn(),
+	recheckSharing: vi.fn(),
+	refreshConnection: vi.fn()
+}));
 vi.mock('../services/googleDriveService', () => ({ googleDriveService: mockService }));
 
 import GoogleDriveUploadStatus from './GoogleDriveUploadStatus.svelte';
 import { googleDriveStore } from '../stores/googleDriveStore';
+import { authStore } from '../stores/authStore';
 
 describe('GoogleDriveUploadStatus', () => {
 	beforeEach(() => {
 		messages = en;
 		vi.clearAllMocks();
 		googleDriveStore.reset();
+		authStore.setUser({ id: 'user-id', email: 'user@example.com' });
 	});
 
 	afterEach(() => cleanup());
@@ -76,6 +84,28 @@ describe('GoogleDriveUploadStatus', () => {
 
 		expect(screen.getByText('Google Drive upload could not be completed.')).toBeInTheDocument();
 		expect(screen.queryByText(/UNSAFE_NATIVE_DETAIL/)).not.toBeInTheDocument();
+	});
+
+	it('hides outcome links and recovery actions after logout while mounted', async () => {
+		googleDriveStore.beginOperation('operation-id', 'simfile-id');
+		render(GoogleDriveUploadStatus, {
+			props: {
+				outcome: {
+					status: 'failed',
+					errorCode: 'NOT_CONNECTED'
+				}
+			}
+		});
+		expect(screen.getByRole('button', { name: 'Reconnect Google Drive' })).toBeInTheDocument();
+
+		authStore.logout();
+
+		await waitFor(() => {
+			expect(
+				screen.queryByRole('button', { name: 'Reconnect Google Drive' })
+			).not.toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: 'Cancel upload' })).not.toBeInTheDocument();
+		});
 	});
 
 	it.each([
@@ -144,7 +174,7 @@ describe('GoogleDriveUploadStatus', () => {
 		['RATE_LIMITED', ['Retry Google Drive upload']],
 		['QUOTA_EXCEEDED', ['Retry Google Drive upload']],
 		['NETWORK', ['Retry Google Drive upload']],
-		['CREDENTIAL_STORE', ['Reconnect Google Drive']],
+		['CREDENTIAL_STORE', ['Refresh connection']],
 		['INVALID_RESPONSE', []],
 		['UNKNOWN', []]
 	] as const)('renders sanitized remediation for native %s', (errorCode, actionNames) => {
@@ -156,5 +186,15 @@ describe('GoogleDriveUploadStatus', () => {
 		for (const actionName of actionNames) {
 			expect(screen.getByRole('button', { name: actionName })).toBeInTheDocument();
 		}
+	});
+
+	it('refreshes the connection after keychain recovery without opening OAuth reconnect', async () => {
+		render(GoogleDriveUploadStatus, {
+			props: { outcome: { status: 'failed', errorCode: 'CREDENTIAL_STORE' } }
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Refresh connection' }));
+		expect(mockService.refreshConnection).toHaveBeenCalledOnce();
+		expect(mockService.connectAndChooseFolder).not.toHaveBeenCalled();
 	});
 });

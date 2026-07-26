@@ -373,6 +373,7 @@ describe('AuthService', () => {
 			const logout = authService.logout();
 
 			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
+			expect(authStore.logout).toHaveBeenCalledOnce();
 			resolveLogout!(true);
 			await logout;
 		});

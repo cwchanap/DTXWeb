@@ -167,4 +167,16 @@ describe('googleDriveService', () => {
 
 		expect(get(googleDriveStore).revocationUnconfirmed).toBe(false);
 	});
+
+	it('keeps ordinary refresh results unverified but records a successful sharing recheck as verified', async () => {
+		const connection = { connected: true, folder: { id: 'folder-id', name: 'Exports' } };
+		mockHost.getGoogleDriveConnectionState.mockResolvedValue(connection);
+		mockHost.recheckGoogleDriveSharing.mockResolvedValue(connection);
+
+		await googleDriveService.refreshConnection();
+		expect(get(googleDriveStore).publicDownloadVerified).toBe(false);
+
+		await googleDriveService.recheckSharing();
+		expect(get(googleDriveStore).publicDownloadVerified).toBe(true);
+	});
 });

@@ -56,8 +56,10 @@
 		{#if $googleDriveStore.connection?.sharingCheckUnavailable}
 			<p class="text-yellow text-sm">{$_('googleDrive.warning.sharingCheck')}</p>
 		{/if}
-		{#if $googleDriveStore.connection?.connected && !$googleDriveStore.connection.requiresPublicSharing && !$googleDriveStore.connection.sharingCheckUnavailable}
+		{#if $googleDriveStore.connection?.connected && $googleDriveStore.publicDownloadVerified}
 			<p class="text-green text-sm">{$_('googleDrive.verifiedPublic')}</p>
+		{/if}
+		{#if $googleDriveStore.connection?.connected && !$googleDriveStore.connection.credentialStoreUnavailable}
 			<p class="text-dim text-sm">{$_('googleDrive.warning.existingFileAccess')}</p>
 			<p class="text-dim text-sm">{$_('googleDrive.folderConsent')}</p>
 		{/if}

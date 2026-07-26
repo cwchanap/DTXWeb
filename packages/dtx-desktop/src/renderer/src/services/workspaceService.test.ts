@@ -58,6 +58,7 @@ vi.mock('../stores/workspaceStore', () => ({
 		selectSong: vi.fn(),
 		closeSongDetails: vi.fn(),
 		clearWorkspace: vi.fn(),
+		hydratePath: vi.fn(),
 		reset: vi.fn()
 	}
 }));
@@ -945,6 +946,59 @@ describe('WorkspaceService', () => {
 	});
 
 	describe('disposeOperations', () => {
+		it('reconciles a remounted renderer after the disposed native selection settles', async () => {
+			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			let nativeRoot: string | null = '/workspace/a';
+			let rendererState = {
+				path: '/workspace/a' as string | null,
+				currentSubWorkspace: null,
+				subWorkspaces: [],
+				treeStructure: []
+			};
+			(workspaceStore.subscribe as any).mockImplementation((callback: any) => {
+				callback(rendererState);
+				return vi.fn();
+			});
+			(workspaceStore.reset as any).mockImplementation(() => {
+				rendererState = {
+					...rendererState,
+					path: null,
+					currentSubWorkspace: null,
+					subWorkspaces: [],
+					treeStructure: []
+				};
+			});
+			(workspaceStore.hydratePath as any).mockImplementation((path: string | null) => {
+				rendererState = { ...rendererState, path };
+			});
+			(workspaceStore.setPath as any).mockImplementation((path: string) => {
+				rendererState = { ...rendererState, path };
+			});
+			host.getWorkspaceRoot.mockImplementation(async () => nativeRoot);
+			host.selectWorkspaceFolder.mockImplementation(async () => {
+				const result = await selection.promise;
+				nativeRoot = result.filePaths[0] ?? null;
+				return result;
+			});
+
+			const disposedSelection = workspaceService.selectWorkspace();
+			await vi.waitFor(() => {
+				expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
+			});
+
+			workspaceService.disposeOperations();
+			workspaceStore.hydratePath('/workspace/a');
+			selection.resolve({ canceled: false, filePaths: ['/workspace/b'] });
+			await disposedSelection;
+
+			await vi.waitFor(() => {
+				expect(host.getWorkspaceRoot).toHaveBeenCalledOnce();
+				expect(rendererState.path).toBe('/workspace/b');
+			});
+			expect(nativeRoot).toBe('/workspace/b');
+			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
+		});
+
 		it('clears loading after a pending selection and lets a new selection run', async () => {
 			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
 			host.selectWorkspaceFolder

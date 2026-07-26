@@ -4,7 +4,7 @@ use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use uuid::{Uuid, Version};
 
 use super::drive_client::DriveApiError;
@@ -137,8 +137,8 @@ impl GoogleDriveUploadResult {
 }
 
 #[tauri::command]
-pub(crate) async fn get_google_drive_connection_state(
-    app: AppHandle,
+pub(crate) async fn get_google_drive_connection_state<R: Runtime>(
+    app: AppHandle<R>,
 ) -> Result<GoogleDriveConnectionState> {
     let user_id = current_user_id(&app).await?;
     Ok(app
@@ -148,8 +148,8 @@ pub(crate) async fn get_google_drive_connection_state(
 }
 
 #[tauri::command]
-pub(crate) async fn connect_google_drive_and_choose_folder(
-    app: AppHandle,
+pub(crate) async fn connect_google_drive_and_choose_folder<R: Runtime>(
+    app: AppHandle<R>,
 ) -> Result<GoogleDriveConnectionState> {
     app.state::<GoogleDriveState>()
         .connect_and_choose_folder(&app.state::<AuthState>())
@@ -158,8 +158,8 @@ pub(crate) async fn connect_google_drive_and_choose_folder(
 }
 
 #[tauri::command]
-pub(crate) async fn change_google_drive_folder(
-    app: AppHandle,
+pub(crate) async fn change_google_drive_folder<R: Runtime>(
+    app: AppHandle<R>,
 ) -> Result<GoogleDriveConnectionState> {
     app.state::<GoogleDriveState>()
         .connect_and_choose_folder(&app.state::<AuthState>())
@@ -168,8 +168,8 @@ pub(crate) async fn change_google_drive_folder(
 }
 
 #[tauri::command]
-pub(crate) async fn recheck_google_drive_sharing(
-    app: AppHandle,
+pub(crate) async fn recheck_google_drive_sharing<R: Runtime>(
+    app: AppHandle<R>,
 ) -> Result<GoogleDriveConnectionState> {
     app.state::<GoogleDriveState>()
         .recheck_google_drive_sharing(&app.state::<AuthState>())
@@ -178,7 +178,9 @@ pub(crate) async fn recheck_google_drive_sharing(
 }
 
 #[tauri::command]
-pub(crate) async fn disconnect_google_drive(app: AppHandle) -> Result<GoogleDriveDisconnectResult> {
+pub(crate) async fn disconnect_google_drive<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<GoogleDriveDisconnectResult> {
     let user_id = current_user_id(&app).await?;
     app.state::<GoogleDriveState>()
         .disconnect_user(&user_id)
@@ -187,8 +189,8 @@ pub(crate) async fn disconnect_google_drive(app: AppHandle) -> Result<GoogleDriv
 }
 
 #[tauri::command]
-pub(crate) async fn upload_song_zip_to_google_drive(
-    app: AppHandle,
+pub(crate) async fn upload_song_zip_to_google_drive<R: Runtime>(
+    app: AppHandle<R>,
     input: UploadSongZipToGoogleDriveInput,
 ) -> Result<GoogleDriveUploadResult> {
     if !is_uuid_v4(input.operation_id) || input.simfile_id.trim().is_empty() {
@@ -264,7 +266,10 @@ pub(crate) async fn upload_song_zip_to_google_drive(
 }
 
 #[tauri::command]
-pub(crate) async fn cancel_google_drive_upload(app: AppHandle, operation_id: Uuid) -> Result<bool> {
+pub(crate) async fn cancel_google_drive_upload<R: Runtime>(
+    app: AppHandle<R>,
+    operation_id: Uuid,
+) -> Result<bool> {
     if !is_uuid_v4(operation_id) {
         return Ok(false);
     }
@@ -278,8 +283,8 @@ pub(crate) async fn cancel_google_drive_upload(app: AppHandle, operation_id: Uui
         .await)
 }
 
-async fn run_upload_transaction(
-    app: &AppHandle,
+async fn run_upload_transaction<R: Runtime>(
+    app: &AppHandle<R>,
     drive: &GoogleDriveState,
     lease: &DriveOperationLease,
     user_id: &str,
@@ -461,8 +466,8 @@ async fn run_upload_transaction(
     Ok((outcome, replaced_existing_file))
 }
 
-async fn create_and_bind(
-    app: &AppHandle,
+async fn create_and_bind<R: Runtime>(
+    app: &AppHandle<R>,
     drive: &GoogleDriveState,
     lease: &DriveOperationLease,
     user_id: &str,
@@ -589,8 +594,8 @@ fn replacement_is_explicitly_allowed(force: bool, failure: &DriveUploadFailure) 
         )
 }
 
-async fn ensure_current_user(
-    app: &AppHandle,
+async fn ensure_current_user<R: Runtime>(
+    app: &AppHandle<R>,
     expected_user_id: &str,
 ) -> std::result::Result<(), DriveUploadFailure> {
     if app.state::<AuthState>().current_user_id().await.as_deref() == Some(expected_user_id) {
@@ -604,8 +609,8 @@ fn is_uuid_v4(value: Uuid) -> bool {
     value.get_version() == Some(Version::Random)
 }
 
-fn emit_transfer_progress(
-    app: &AppHandle,
+fn emit_transfer_progress<R: Runtime>(
+    app: &AppHandle<R>,
     lease: &DriveOperationLease,
     simfile_id: &str,
     accepted: u64,
@@ -627,8 +632,8 @@ fn emit_transfer_progress(
     );
 }
 
-fn emit_progress(
-    app: &AppHandle,
+fn emit_progress<R: Runtime>(
+    app: &AppHandle<R>,
     lease: &DriveOperationLease,
     simfile_id: &str,
     stage: GoogleDriveUploadStage,
@@ -837,7 +842,7 @@ fn sanitized_error_message(code: GoogleDriveErrorCode) -> &'static str {
     }
 }
 
-async fn current_user_id(app: &AppHandle) -> Result<String> {
+async fn current_user_id<R: Runtime>(app: &AppHandle<R>) -> Result<String> {
     app.state::<AuthState>()
         .current_user_id()
         .await
@@ -1340,5 +1345,666 @@ mod tests {
         assert!(value.get("fileId").is_none());
         assert!(value.get("downloadUrl").is_none());
         assert!(value.get("fileName").is_none());
+    }
+
+    #[test]
+    fn completed_result_serializes_with_success_fields_and_replacement_flag() {
+        let outcome = DriveUploadOutcome {
+            file_id: "drive-file-42".to_string(),
+            file_name: "song.zip".to_string(),
+            download_url: "https://drive.google.com/uc?id=drive-file-42".to_string(),
+        };
+        let value =
+            serde_json::to_value(GoogleDriveUploadResult::completed(outcome, true)).unwrap();
+        assert_eq!(value["success"], true);
+        assert_eq!(value["fileId"], "drive-file-42");
+        assert_eq!(value["fileName"], "song.zip");
+        assert_eq!(
+            value["downloadUrl"],
+            "https://drive.google.com/uc?id=drive-file-42"
+        );
+        assert_eq!(value["replacedExistingFile"], true);
+        assert!(value.get("errorCode").is_none());
+        assert!(value.get("error").is_none());
+    }
+
+    #[test]
+    fn error_code_maps_every_drive_api_variant_to_a_renderer_code() {
+        for (api_error, expected) in [
+            (DriveApiError::Canceled, GoogleDriveErrorCode::Canceled),
+            (
+                DriveApiError::UploadInProgress,
+                GoogleDriveErrorCode::UploadInProgress,
+            ),
+            (
+                DriveApiError::WorkspaceRequired,
+                GoogleDriveErrorCode::WorkspaceRequired,
+            ),
+            (
+                DriveApiError::NotConnected,
+                GoogleDriveErrorCode::NotConnected,
+            ),
+            (
+                DriveApiError::FolderRequired,
+                GoogleDriveErrorCode::FolderRequired,
+            ),
+            (
+                DriveApiError::TokenExpired,
+                GoogleDriveErrorCode::ReconnectRequired,
+            ),
+            (DriveApiError::Network, GoogleDriveErrorCode::Network),
+            (
+                DriveApiError::Transient(None),
+                GoogleDriveErrorCode::Network,
+            ),
+            (
+                DriveApiError::Transient(Some(Duration::from_secs(1))),
+                GoogleDriveErrorCode::Network,
+            ),
+            (
+                DriveApiError::InvalidResponse,
+                GoogleDriveErrorCode::InvalidResponse,
+            ),
+            (
+                DriveApiError::InvalidGeneratedId,
+                GoogleDriveErrorCode::InvalidResponse,
+            ),
+            (
+                DriveApiError::SessionExpired,
+                GoogleDriveErrorCode::InvalidResponse,
+            ),
+            (DriveApiError::LocalState, GoogleDriveErrorCode::LocalState),
+            (
+                DriveApiError::CredentialStore,
+                GoogleDriveErrorCode::CredentialStore,
+            ),
+            (
+                DriveApiError::NoValidSongFiles,
+                GoogleDriveErrorCode::NoValidSongFiles,
+            ),
+            (
+                DriveApiError::InsufficientDiskSpace,
+                GoogleDriveErrorCode::InsufficientDiskSpace,
+            ),
+            (
+                DriveApiError::MetadataSync,
+                GoogleDriveErrorCode::MetadataSyncFailed,
+            ),
+            (
+                DriveApiError::SimfileUnavailable,
+                GoogleDriveErrorCode::SimfileUnavailable,
+            ),
+            (
+                DriveApiError::FolderUnavailable,
+                GoogleDriveErrorCode::FolderUnavailable,
+            ),
+            (
+                DriveApiError::DownloadNotPublic,
+                GoogleDriveErrorCode::DownloadNotPublic,
+            ),
+            (
+                DriveApiError::SharingCheckUnavailable,
+                GoogleDriveErrorCode::SharingCheckUnavailable,
+            ),
+            (
+                DriveApiError::RateLimited(None),
+                GoogleDriveErrorCode::RateLimited,
+            ),
+            (
+                DriveApiError::RateLimited(Some(Duration::from_secs(2))),
+                GoogleDriveErrorCode::RateLimited,
+            ),
+            (
+                DriveApiError::QuotaExceeded,
+                GoogleDriveErrorCode::QuotaExceeded,
+            ),
+            (DriveApiError::NotFound, GoogleDriveErrorCode::FileNotFound),
+            (
+                DriveApiError::PermissionDenied,
+                GoogleDriveErrorCode::FilePermissionDenied,
+            ),
+        ] {
+            assert_eq!(error_code(api_error), expected);
+        }
+    }
+
+    #[test]
+    fn sanitized_error_message_returns_non_empty_static_text_for_every_code() {
+        for code in [
+            GoogleDriveErrorCode::WorkspaceRequired,
+            GoogleDriveErrorCode::NotConnected,
+            GoogleDriveErrorCode::ReconnectRequired,
+            GoogleDriveErrorCode::FolderRequired,
+            GoogleDriveErrorCode::FolderUnavailable,
+            GoogleDriveErrorCode::SharingCheckUnavailable,
+            GoogleDriveErrorCode::DownloadNotPublic,
+            GoogleDriveErrorCode::SimfileUnavailable,
+            GoogleDriveErrorCode::FileNotFound,
+            GoogleDriveErrorCode::FilePermissionDenied,
+            GoogleDriveErrorCode::UploadInProgress,
+            GoogleDriveErrorCode::Canceled,
+            GoogleDriveErrorCode::NoValidSongFiles,
+            GoogleDriveErrorCode::InsufficientDiskSpace,
+            GoogleDriveErrorCode::LocalState,
+            GoogleDriveErrorCode::MetadataSyncFailed,
+            GoogleDriveErrorCode::RateLimited,
+            GoogleDriveErrorCode::QuotaExceeded,
+            GoogleDriveErrorCode::Network,
+            GoogleDriveErrorCode::CredentialStore,
+            GoogleDriveErrorCode::InvalidResponse,
+            GoogleDriveErrorCode::Unknown,
+        ] {
+            let message = sanitized_error_message(code);
+            assert!(!message.is_empty(), "{code:?} should have a message");
+            assert!(
+                !message.contains('{') && !message.contains('}'),
+                "{code:?} message must not contain format placeholders"
+            );
+            // Every failed result must surface the same static text.
+            assert_eq!(
+                serde_json::to_value(GoogleDriveUploadResult::failed(code)).unwrap()["error"],
+                message
+            );
+        }
+    }
+
+    #[test]
+    fn oauth_error_preserves_classification_for_every_variant() {
+        for (source, expected) in [
+            (GoogleDriveOAuthError::Canceled, DriveApiError::Canceled),
+            (
+                GoogleDriveOAuthError::InvalidResponse,
+                DriveApiError::InvalidResponse,
+            ),
+            (GoogleDriveOAuthError::Network, DriveApiError::Network),
+            (
+                GoogleDriveOAuthError::ReconnectRequired,
+                DriveApiError::TokenExpired,
+            ),
+            (
+                GoogleDriveOAuthError::NotConnected,
+                DriveApiError::NotConnected,
+            ),
+            (
+                GoogleDriveOAuthError::CredentialStore,
+                DriveApiError::CredentialStore,
+            ),
+            (GoogleDriveOAuthError::LocalState, DriveApiError::LocalState),
+            (
+                GoogleDriveOAuthError::AlreadyInProgress,
+                DriveApiError::UploadInProgress,
+            ),
+            (
+                GoogleDriveOAuthError::FolderUnavailable,
+                DriveApiError::FolderUnavailable,
+            ),
+            (
+                GoogleDriveOAuthError::DownloadNotPublic,
+                DriveApiError::DownloadNotPublic,
+            ),
+            (
+                GoogleDriveOAuthError::SharingCheckUnavailable,
+                DriveApiError::SharingCheckUnavailable,
+            ),
+            (GoogleDriveOAuthError::FileNotFound, DriveApiError::NotFound),
+            (
+                GoogleDriveOAuthError::FilePermissionDenied,
+                DriveApiError::PermissionDenied,
+            ),
+        ] {
+            assert_eq!(oauth_error(source), expected);
+        }
+    }
+
+    #[test]
+    fn metadata_error_maps_every_variant() {
+        use super::super::DriveMetadataError;
+        for (source, expected) in [
+            (
+                DriveMetadataError::DefinitiveUnavailable,
+                DriveApiError::SimfileUnavailable,
+            ),
+            (
+                DriveMetadataError::Authentication,
+                DriveApiError::TokenExpired,
+            ),
+            (DriveMetadataError::Network, DriveApiError::Network),
+            (
+                DriveMetadataError::ServiceUnavailable,
+                DriveApiError::MetadataSync,
+            ),
+            (
+                DriveMetadataError::InvalidResponse,
+                DriveApiError::InvalidResponse,
+            ),
+            (DriveMetadataError::LocalState, DriveApiError::LocalState),
+        ] {
+            assert_eq!(metadata_error(source), expected);
+        }
+    }
+
+    #[test]
+    fn map_local_upload_error_classifies_known_messages_and_io_codes() {
+        assert_eq!(
+            map_local_upload_error(DesktopError::Message("CANCELED".to_string())).error,
+            DriveApiError::Canceled
+        );
+        assert_eq!(
+            map_local_upload_error(DesktopError::Message("NO_VALID_SONG_FILES".to_string())).error,
+            DriveApiError::NoValidSongFiles
+        );
+        // ENOSPC (28) and EDQUOT (112) → InsufficientDiskSpace.
+        assert_eq!(
+            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(28))).error,
+            DriveApiError::InsufficientDiskSpace
+        );
+        assert_eq!(
+            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(112))).error,
+            DriveApiError::InsufficientDiskSpace
+        );
+        // EACCES (13) → LocalState (not disk space).
+        assert_eq!(
+            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(13))).error,
+            DriveApiError::LocalState
+        );
+        // Unrecognized message → LocalState.
+        assert_eq!(
+            map_local_upload_error(DesktopError::Message("unexpected".to_string())).error,
+            DriveApiError::LocalState
+        );
+    }
+
+    #[test]
+    fn sanitized_oauth_error_wraps_the_oauth_code_string() {
+        for oauth_error in [
+            GoogleDriveOAuthError::NotConnected,
+            GoogleDriveOAuthError::ReconnectRequired,
+            GoogleDriveOAuthError::FolderUnavailable,
+        ] {
+            let expected_code = oauth_error.code();
+            match sanitized_oauth_error(oauth_error) {
+                DesktopError::Message(message) => assert_eq!(message, expected_code),
+                other => panic!("expected DesktopError::Message, got {other:?}"),
+            }
+        }
+    }
+
+    /// Builds a mock `AppHandle` with the supplied auth and Drive state, plus a
+    /// default `WorkspaceRootState` so workspace-dependent commands can resolve
+    /// state without panicking.
+    fn build_test_app(
+        auth: AuthState,
+        drive: GoogleDriveState,
+    ) -> AppHandle<tauri::test::MockRuntime> {
+        use tauri::Manager as _;
+        let app = tauri::test::mock_app();
+        app.manage(auth);
+        app.manage(drive);
+        app.manage(WorkspaceRootState::default());
+        app.handle().clone()
+    }
+
+    async fn authenticated_state(user_id: &str) -> AuthState {
+        let auth = AuthState::default();
+        auth.set_current_session(Some(serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+            "user": { "id": user_id }
+        })))
+        .await;
+        auth
+    }
+
+    fn connected_drive() -> (Arc<InMemoryGoogleDriveCredentialStore>, GoogleDriveState) {
+        let credentials = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+        let drive = GoogleDriveState::with_adapters(
+            credentials.clone(),
+            Arc::new(UnavailableDriveMetadataClient),
+            Arc::new(ConnectedTestSettings::new()),
+        );
+        (credentials, drive)
+    }
+
+    #[tokio::test]
+    async fn get_google_drive_connection_state_errors_without_session() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(AuthState::default(), drive);
+        let result = get_google_drive_connection_state(app).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn get_google_drive_connection_state_returns_state_when_authenticated() {
+        let credentials = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+        credentials
+            .set_refresh_token("user-42", "refresh-token")
+            .expect("seed refresh token");
+        let drive = GoogleDriveState::with_adapters(
+            credentials,
+            Arc::new(UnavailableDriveMetadataClient),
+            Arc::new(ConnectedTestSettings::new()),
+        );
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let connection = get_google_drive_connection_state(app)
+            .await
+            .expect("connection state");
+        assert!(connection.connected);
+        assert_eq!(
+            connection.folder.as_ref().map(|folder| folder.id.as_str()),
+            Some("folder-42")
+        );
+        assert!(!connection.requires_reconnect);
+    }
+
+    #[tokio::test]
+    async fn disconnect_google_drive_errors_without_session() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(AuthState::default(), drive);
+        let result = disconnect_google_drive(app).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn disconnect_google_drive_clears_credentials_when_authenticated() {
+        let credentials = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+        credentials
+            .set_refresh_token("user-42", "refresh-token")
+            .expect("seed refresh token");
+        let drive = GoogleDriveState::with_adapters(
+            credentials.clone(),
+            Arc::new(UnavailableDriveMetadataClient),
+            Arc::new(ConnectedTestSettings::new()),
+        );
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let result = disconnect_google_drive(app)
+            .await
+            .expect("disconnect result");
+        // UnavailableOAuthProvider always fails revocation → unconfirmed.
+        assert!(result.revocation_unconfirmed);
+        assert!(!result.connection.connected);
+        assert!(
+            credentials
+                .get_refresh_token("user-42")
+                .expect("credential store after disconnect")
+                .is_none(),
+            "refresh token must be deleted"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_google_drive_upload_rejects_non_v4_operation_id() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        // Uuid::nil is version 0, not v4.
+        let canceled = cancel_google_drive_upload(app, Uuid::nil())
+            .await
+            .expect("cancel result");
+        assert!(!canceled);
+    }
+
+    #[tokio::test]
+    async fn cancel_google_drive_upload_returns_false_without_session() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(AuthState::default(), drive);
+        let canceled = cancel_google_drive_upload(app, Uuid::new_v4())
+            .await
+            .expect("cancel result");
+        assert!(!canceled);
+    }
+
+    #[tokio::test]
+    async fn cancel_google_drive_upload_returns_false_for_unknown_operation() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let canceled = cancel_google_drive_upload(app, Uuid::new_v4())
+            .await
+            .expect("cancel result");
+        // Operation was never registered → cancel_and_wait returns false
+        // immediately without waiting for the timeout.
+        assert!(!canceled);
+    }
+
+    #[tokio::test]
+    async fn cancel_google_drive_upload_cancels_a_registered_visible_operation() {
+        let (_credentials, drive) = connected_drive();
+        let operation_id = Uuid::new_v4();
+        // Register and hold the lease in a task that drops it once cancelled,
+        // so cancel_and_wait observes the completion signal.
+        let blocking_lease = drive
+            .operation_manager
+            .register("user-42", operation_id, "sim-42")
+            .expect("operation lease");
+        let cancellation = blocking_lease.cancellation().clone();
+        tokio::spawn(async move {
+            cancellation.cancelled().await;
+            drop(blocking_lease);
+        });
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let canceled = tokio::time::timeout(
+            Duration::from_secs(2),
+            cancel_google_drive_upload(app, operation_id),
+        )
+        .await
+        .expect("cancel must not hang")
+        .expect("cancel result");
+        assert!(canceled);
+    }
+
+    #[tokio::test]
+    async fn upload_song_zip_rejects_non_v4_operation_id() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let result = upload_song_zip_to_google_drive(
+            app,
+            UploadSongZipToGoogleDriveInput {
+                operation_id: Uuid::nil(),
+                simfile_id: "sim-42".to_string(),
+                song_relative_path: "pack/song".to_string(),
+                force_create_replacement: None,
+            },
+        )
+        .await
+        .expect("upload result");
+        assert!(!result.success);
+        assert_eq!(
+            result.error_code,
+            Some(GoogleDriveErrorCode::InvalidResponse)
+        );
+    }
+
+    #[tokio::test]
+    async fn upload_song_zip_rejects_blank_simfile_id() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let result = upload_song_zip_to_google_drive(
+            app,
+            UploadSongZipToGoogleDriveInput {
+                operation_id: Uuid::new_v4(),
+                simfile_id: "  ".to_string(),
+                song_relative_path: "pack/song".to_string(),
+                force_create_replacement: None,
+            },
+        )
+        .await
+        .expect("upload result");
+        assert!(!result.success);
+        assert_eq!(
+            result.error_code,
+            Some(GoogleDriveErrorCode::InvalidResponse)
+        );
+    }
+
+    #[tokio::test]
+    async fn upload_song_zip_rejects_invalid_relative_paths() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        for invalid in ["", "/song", "song/", "..", "songs/../chart", r"C:\songs"] {
+            let result = upload_song_zip_to_google_drive(
+                app.clone(),
+                UploadSongZipToGoogleDriveInput {
+                    operation_id: Uuid::new_v4(),
+                    simfile_id: "sim-42".to_string(),
+                    song_relative_path: invalid.to_string(),
+                    force_create_replacement: None,
+                },
+            )
+            .await
+            .expect("upload result");
+            assert!(
+                !result.success && result.error_code == Some(GoogleDriveErrorCode::InvalidResponse),
+                "{invalid:?} should be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn upload_song_zip_returns_not_connected_without_session() {
+        let (_credentials, drive) = connected_drive();
+        let app = build_test_app(AuthState::default(), drive);
+        let result = upload_song_zip_to_google_drive(
+            app,
+            UploadSongZipToGoogleDriveInput {
+                operation_id: Uuid::new_v4(),
+                simfile_id: "sim-42".to_string(),
+                song_relative_path: "pack/song".to_string(),
+                force_create_replacement: None,
+            },
+        )
+        .await
+        .expect("upload result");
+        assert!(!result.success);
+        assert_eq!(result.error_code, Some(GoogleDriveErrorCode::NotConnected));
+    }
+
+    #[tokio::test]
+    async fn upload_song_zip_returns_upload_in_progress_when_song_already_registered() {
+        let (_credentials, drive) = connected_drive();
+        // Pre-register the same (user, simfile) with a different operation id
+        // and hold the lease so the song key remains claimed.
+        let blocking_lease = drive
+            .operation_manager
+            .register("user-42", Uuid::new_v4(), "sim-42")
+            .expect("blocking lease");
+        let app = build_test_app(authenticated_state("user-42").await, drive);
+        let result = upload_song_zip_to_google_drive(
+            app,
+            UploadSongZipToGoogleDriveInput {
+                operation_id: Uuid::new_v4(),
+                simfile_id: "sim-42".to_string(),
+                song_relative_path: "pack/song".to_string(),
+                force_create_replacement: None,
+            },
+        )
+        .await
+        .expect("upload result");
+        assert!(!result.success);
+        assert_eq!(
+            result.error_code,
+            Some(GoogleDriveErrorCode::UploadInProgress)
+        );
+        drop(blocking_lease);
+    }
+
+    #[tokio::test]
+    async fn emit_progress_broadcasts_sanitized_payload_to_listeners() {
+        use tauri::Listener as _;
+        let (_credentials, drive) = connected_drive();
+        let operation_id = Uuid::new_v4();
+        let lease = drive
+            .operation_manager
+            .register("user-42", operation_id, "sim-42")
+            .expect("operation lease");
+        let app = build_test_app(AuthState::default(), drive);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.listen(GOOGLE_DRIVE_UPLOAD_PROGRESS_EVENT, move |event| {
+            let _ = sender.send(event.payload().to_string());
+        });
+        emit_progress(
+            &app,
+            &lease,
+            "sim-42",
+            GoogleDriveUploadStage::PreparingZip,
+            None,
+            None,
+            None,
+        );
+        let payload = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("progress event");
+        let value: serde_json::Value = serde_json::from_str(&payload).expect("progress JSON");
+        assert_eq!(value["operationId"], operation_id.to_string());
+        assert_eq!(value["simfileId"], "sim-42");
+        assert_eq!(value["stage"], "preparing-zip");
+        assert!(value.get("bytesUploaded").is_none());
+        assert!(value.get("errorCode").is_none());
+    }
+
+    #[tokio::test]
+    async fn emit_transfer_progress_reports_percentage_and_finalizing_at_completion() {
+        use tauri::Listener as _;
+        let (_credentials, drive) = connected_drive();
+        let operation_id = Uuid::new_v4();
+        let lease = drive
+            .operation_manager
+            .register("user-42", operation_id, "sim-42")
+            .expect("operation lease");
+        let app = build_test_app(AuthState::default(), drive);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.listen(GOOGLE_DRIVE_UPLOAD_PROGRESS_EVENT, move |event| {
+            let _ = sender.send(event.payload().to_string());
+        });
+        // Mid-transfer: accepted < total → Uploading.
+        emit_transfer_progress(&app, &lease, "sim-42", 4, 10);
+        let mid = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("mid-transfer event");
+        let mid_value: serde_json::Value = serde_json::from_str(&mid).expect("mid JSON");
+        assert_eq!(mid_value["stage"], "uploading");
+        assert_eq!(mid_value["bytesUploaded"], 4);
+        assert_eq!(mid_value["totalBytes"], 10);
+        assert_eq!(mid_value["percentage"], 40);
+        // Complete: accepted >= total → Finalizing.
+        emit_transfer_progress(&app, &lease, "sim-42", 10, 10);
+        let done = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("completion event");
+        let done_value: serde_json::Value = serde_json::from_str(&done).expect("done JSON");
+        assert_eq!(done_value["stage"], "finalizing");
+        assert_eq!(done_value["bytesUploaded"], 10);
+        assert_eq!(done_value["totalBytes"], 10);
+        assert_eq!(done_value["percentage"], 100);
+    }
+
+    #[tokio::test]
+    async fn emit_progress_skips_emission_for_non_visible_operations() {
+        use tauri::Listener as _;
+        let (_credentials, drive) = connected_drive();
+        let operation_id = Uuid::new_v4();
+        let lease = drive
+            .operation_manager
+            .register("user-42", operation_id, "sim-42")
+            .expect("operation lease");
+        // Mark the operation as not visible (e.g. after disconnect clears
+        // user-visible state). emit_progress must suppress the event.
+        drive.operation_manager.clear_user_visible_state("user-42");
+        assert!(!lease.is_visible());
+        let app = build_test_app(AuthState::default(), drive);
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        app.listen(GOOGLE_DRIVE_UPLOAD_PROGRESS_EVENT, move |event| {
+            let _ = sender.send(event.payload().to_string());
+        });
+        emit_progress(
+            &app,
+            &lease,
+            "sim-42",
+            GoogleDriveUploadStage::Uploading,
+            Some(1),
+            Some(2),
+            None,
+        );
+        assert!(
+            receiver.recv_timeout(Duration::from_millis(200)).is_err(),
+            "non-visible operations must not emit progress"
+        );
     }
 }

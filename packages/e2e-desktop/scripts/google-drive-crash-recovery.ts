@@ -37,7 +37,6 @@ type ReloadReadinessProbe = {
 	readyState: DocumentReadyState;
 	workspacePresent: boolean;
 	workspaceVisible: boolean;
-	bridgeReady: boolean;
 };
 
 type ReloadWaitOptions = {
@@ -46,6 +45,11 @@ type ReloadWaitOptions = {
 	now?: () => number;
 	sleep?: (milliseconds: number) => Promise<void>;
 };
+
+type TimedOperationOutcome<T> =
+	{ kind: 'value'; value: T } | { kind: 'error'; error: unknown } | { kind: 'deadline' };
+
+type NativeProbeState = 'not-attempted' | 'failed' | 'timed-out';
 
 const crashControl: E2eDriveControl = {
 	reset: true,
@@ -77,16 +81,18 @@ const seedNativeState = (dataDir: string, fixture: WorkspaceFixture): void => {
 	);
 };
 
+const readSnapshot = async (session: WebdriverIO.Browser): Promise<E2eDriveSnapshot> =>
+	await session.tauri.execute<E2eDriveSnapshot, []>(
+		({ core }) => core.invoke('snapshot_google_drive_e2e') as unknown as E2eDriveSnapshot
+	);
+
 const reloadProbe = (): ReloadReadinessProbe => {
 	const e2eWindow = window as typeof window & {
 		__dtxE2eReloadDocumentToken?: string;
-		__TAURI__?: { core?: { invoke?: unknown } };
-		__wdio_original_core__?: { invoke?: unknown };
 	};
 	const search = document.querySelector('input[placeholder="Search songs and folders..."]');
 	const style = search ? getComputedStyle(search) : null;
 	const rect = search?.getBoundingClientRect();
-	const invoke = e2eWindow.__wdio_original_core__?.invoke ?? e2eWindow.__TAURI__?.core?.invoke;
 
 	return {
 		documentToken: e2eWindow.__dtxE2eReloadDocumentToken ?? null,
@@ -99,8 +105,7 @@ const reloadProbe = (): ReloadReadinessProbe => {
 			style.visibility !== 'hidden' &&
 			Number.parseFloat(style.opacity) > 0 &&
 			rect.width > 0 &&
-			rect.height > 0,
-		bridgeReady: typeof invoke === 'function'
+			rect.height > 0
 	};
 };
 
@@ -109,11 +114,31 @@ const isRetryableReloadProbeError = (error: unknown): boolean =>
 		error instanceof Error ? error.message : String(error)
 	);
 
+const runBeforeDeadline = async <T>(
+	operation: () => Promise<T>,
+	remainingMs: number
+): Promise<TimedOperationOutcome<T>> => {
+	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+	const outcome = await Promise.race([
+		operation()
+			.then((value) => ({ kind: 'value' as const, value }))
+			.catch((error: unknown) => ({ kind: 'error' as const, error })),
+		new Promise<{ kind: 'deadline' }>((resolve) => {
+			deadlineTimer = setTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
+		})
+	]);
+	if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+	return outcome;
+};
+
 const reloadProbeSummary = (
 	probe: ReloadReadinessProbe | undefined,
-	previousDocumentToken: string
+	previousDocumentToken: string,
+	nativeProbeState: NativeProbeState
 ): string => {
-	if (!probe) return 'probe=unavailable';
+	if (!probe) {
+		return `probe=unavailable, native=${nativeProbeState}`;
+	}
 	const documentState = probe.documentToken === previousDocumentToken ? 'old' : 'replaced';
 	const workspaceState = !probe.workspacePresent
 		? 'missing'
@@ -124,7 +149,7 @@ const reloadProbeSummary = (
 		`document=${documentState}`,
 		`readyState=${probe.readyState}`,
 		`workspace=${workspaceState}`,
-		`bridge=${probe.bridgeReady ? 'ready' : 'missing'}`
+		`native=${nativeProbeState}`
 	].join(', ');
 };
 
@@ -142,20 +167,14 @@ export const waitForReloadedWorkspace = async (
 	const deadline = now() + timeoutMs;
 	let latest: ReloadReadinessProbe | undefined;
 	let lastTransientError: string | undefined;
+	let lastNativeError: string | undefined;
+	let nativeProbeState: NativeProbeState = 'not-attempted';
 
 	while (now() < deadline) {
-		const remainingMs = Math.max(1, deadline - now());
-		let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
-		const outcome = await Promise.race([
-			session
-				.execute(reloadProbe)
-				.then((probe) => ({ kind: 'probe' as const, probe }))
-				.catch((error: unknown) => ({ kind: 'error' as const, error })),
-			new Promise<{ kind: 'deadline' }>((resolve) => {
-				deadlineTimer = setTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
-			})
-		]);
-		if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+		const outcome = await runBeforeDeadline(
+			async () => await session.execute(reloadProbe),
+			Math.max(1, deadline - now())
+		);
 
 		if (outcome.kind === 'deadline') break;
 		if (outcome.kind === 'error') {
@@ -172,7 +191,7 @@ export const waitForReloadedWorkspace = async (
 			lastTransientError =
 				outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
 		} else {
-			latest = outcome.probe;
+			latest = outcome.value;
 			const documentReplaced = latest.documentToken !== previousDocumentToken;
 			const documentReady =
 				latest.readyState === 'interactive' || latest.readyState === 'complete';
@@ -180,10 +199,22 @@ export const waitForReloadedWorkspace = async (
 				documentReplaced &&
 				documentReady &&
 				latest.workspacePresent &&
-				latest.workspaceVisible &&
-				latest.bridgeReady
+				latest.workspaceVisible
 			) {
-				return latest;
+				const nativeOutcome = await runBeforeDeadline(
+					async () => await readSnapshot(session),
+					Math.max(1, deadline - now())
+				);
+				if (nativeOutcome.kind === 'deadline') {
+					nativeProbeState = 'timed-out';
+					break;
+				}
+				if (nativeOutcome.kind === 'value') return latest;
+				nativeProbeState = 'failed';
+				lastNativeError =
+					nativeOutcome.error instanceof Error
+						? nativeOutcome.error.message
+						: String(nativeOutcome.error);
 			}
 		}
 
@@ -197,8 +228,9 @@ export const waitForReloadedWorkspace = async (
 	throw new Error(
 		`Timed out after ${timeoutMs}ms waiting for the crash-recovery document reload: ${reloadProbeSummary(
 			latest,
-			previousDocumentToken
-		)}${transientDiagnostic}`
+			previousDocumentToken,
+			nativeProbeState
+		)}${transientDiagnostic}${lastNativeError ? `, lastNativeError=${lastNativeError}` : ''}`
 	);
 };
 
@@ -276,11 +308,6 @@ const configureCrash = async (session: WebdriverIO.Browser): Promise<void> => {
 		crashControl
 	);
 };
-
-const readSnapshot = async (session: WebdriverIO.Browser): Promise<E2eDriveSnapshot> =>
-	await session.tauri.execute<E2eDriveSnapshot, []>(
-		({ core }) => core.invoke('snapshot_google_drive_e2e') as unknown as E2eDriveSnapshot
-	);
 
 const isExpectedDisconnect = (error: unknown): boolean =>
 	/ECONNREFUSED|ECONNRESET|connection refused|socket hang up|invalid session id|disconnected/i.test(

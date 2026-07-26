@@ -57,6 +57,11 @@ type PruneLock = {
 	record: RunLease;
 };
 
+type PruneLockDependencies = {
+	platform?: NodeJS.Platform;
+	rename?: typeof renameSync;
+};
+
 const isPidAlive = (pid: number): boolean => {
 	if (!Number.isInteger(pid) || pid <= 0) return false;
 	try {
@@ -97,6 +102,24 @@ const sameRunLease = (left: RunLease | null, right: RunLease | null): boolean =>
 	left.pid === right.pid &&
 	left.nonce === right.nonce &&
 	left.createdAt === right.createdAt;
+
+const isPrunePublicationContention = (
+	error: unknown,
+	path: string,
+	platform: NodeJS.Platform
+): boolean => {
+	const code =
+		error instanceof Error && 'code' in error && typeof error.code === 'string'
+			? error.code
+			: null;
+	if (code === 'EEXIST' || code === 'ENOTEMPTY') return true;
+	return (
+		platform === 'win32' &&
+		(code === 'EACCES' || code === 'EPERM') &&
+		existsSync(path) &&
+		readPublishedLease(path) !== null
+	);
+};
 
 const ownershipFile = 'owner.json';
 
@@ -154,23 +177,23 @@ const removeOwnedActiveMarker = (path: string, nonce: string): void => {
 	}
 };
 
-const acquirePruneLock = (diagnosticsRoot: string): PruneLock | null => {
+const acquirePruneLock = (
+	diagnosticsRoot: string,
+	dependencies: PruneLockDependencies = {}
+): PruneLock | null => {
 	const path = join(diagnosticsRoot, PRUNE_LOCK_FILE);
+	const rename = dependencies.rename ?? renameSync;
+	const platform = dependencies.platform ?? process.platform;
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		const nonce = randomBytes(16).toString('hex');
 		const record = { pid: process.pid, nonce, createdAt: Date.now() };
 		const pending = createPrivateLock(path, record);
 		try {
-			renameSync(pending, path);
+			rename(pending, path);
 			return { nonce, path, record };
 		} catch (error) {
 			removeDirectory(pending);
-			if (!(
-				error instanceof Error &&
-				'code' in error &&
-				typeof error.code === 'string' &&
-				['EEXIST', 'ENOTEMPTY'].includes(error.code)
-			)) {
+			if (!isPrunePublicationContention(error, path, platform)) {
 				return null;
 			}
 			const observed = readPublishedLease(path);

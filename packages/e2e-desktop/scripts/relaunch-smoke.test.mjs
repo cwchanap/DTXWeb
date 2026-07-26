@@ -4,6 +4,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	renameSync,
 	rmSync,
 	utimesSync,
 	writeFileSync
@@ -223,6 +224,38 @@ test('restores a foreign prune-lock replacement instead of deleting it', () => {
 			JSON.stringify({ pid: process.pid, nonce: 'foreign-pruner', createdAt: Date.now() })
 		);
 		expect(() => __releaseRelaunchPruneLockForTests(lock)).toThrow('another process');
+		expect(existsSync(lockPath)).toBeTrue();
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('treats Windows access-denied prune publication as active contention when the destination has an owner', () => {
+	const root = mkdtempSync(join(tmpdir(), 'dtx-relaunch-lock-test-'));
+	const diagnosticsRoot = createDiagnosticsRoot(root);
+	const lockPath = join(diagnosticsRoot, 'relaunch-prune.lock');
+	let injected = false;
+	try {
+		const lock = __acquireRelaunchPruneLockForTests(diagnosticsRoot, {
+			platform: 'win32',
+			rename: (from, to) => {
+				if (!injected && to === lockPath) {
+					injected = true;
+					mkdirSync(to);
+					writeFileSync(
+						join(to, 'owner.json'),
+						JSON.stringify({
+							pid: process.pid,
+							nonce: 'active-pruner',
+							createdAt: Date.now()
+						})
+					);
+					throw Object.assign(new Error('access denied'), { code: 'EPERM' });
+				}
+				renameSync(from, to);
+			}
+		});
+		expect(lock).toBeNull();
 		expect(existsSync(lockPath)).toBeTrue();
 	} finally {
 		rmSync(root, { recursive: true, force: true });

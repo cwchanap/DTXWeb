@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,14 +29,20 @@ class FakeChild extends EventEmitter {
 
 const leasePathFor = (port) => join(tmpdir(), 'dtx-e2e-embedded-port-leases', `${port}.lease`);
 
-const makeClock = () => ({
-	now: () => Date.now(),
-	setTimeout: (callback) => {
-		queueMicrotask(callback);
-		return 0;
-	},
-	clearTimeout: () => undefined
-});
+const makeClock = (step = 100) => {
+	let now = 0;
+	return {
+		now: () => now,
+		setTimeout: (callback, milliseconds) => {
+			queueMicrotask(() => {
+				now += Math.max(step, milliseconds);
+				callback();
+			});
+			return 0;
+		},
+		clearTimeout: () => undefined
+	};
+};
 
 const makeReservePort = (...ports) =>
 	mock(async () => ({ port: ports.shift(), release: async () => undefined }));
@@ -48,26 +54,37 @@ const makeDependencies = ({
 	port = 46_001,
 	observedNonce = 'launch-nonce-123',
 	remoteError,
-	onExit = () => child.exit()
+	onExit = () => child.exit(),
+	statusResponses = [{ ok: true, value: { ready: true } }]
 } = {}) => {
 	const spawn = mock(() => child);
+	const browsers = [];
 	const remote = mock(async () => {
 		if (remoteError) throw remoteError;
-		return makeBrowser();
+		const browser = makeBrowser();
+		browsers.push(browser);
+		return browser;
 	});
-	const evaluate = mock(async (_port, script) => {
+	const evaluate = mock(async (_port, script, args) => {
 		if (script.includes('read_e2e_session_nonce')) return observedNonce;
 		if (script.includes('plugin:process|exit')) {
-			onExit();
+			onExit(args[0]);
 			return undefined;
 		}
 		throw new Error(`Unexpected direct-eval script: ${script}`);
 	});
+	const fetch = mock(async () => {
+		const response = statusResponses.shift() ?? { ok: true, value: { ready: true } };
+		if (response instanceof Error) throw response;
+		return { ok: response.ok, json: async () => ({ value: response.value }) };
+	});
 	return {
 		child,
+		browsers,
 		spawn,
 		remote,
 		evaluate,
+		fetch,
 		clock: makeClock(),
 		nonce: () => 'launch-nonce-123',
 		reservePort: makeReservePort(port)
@@ -83,7 +100,16 @@ const input = {
 const cleanupLease = (port) => rmSync(leasePathFor(port), { recursive: true, force: true });
 
 test('spawns exactly one owned app and connects remote directly with the embedded protocol', async () => {
-	const dependencies = makeDependencies({ port: 46_001 });
+	const exitCodes = [];
+	let child;
+	const dependencies = makeDependencies({
+		port: 46_001,
+		onExit: (code) => {
+			exitCodes.push(code);
+			child.exit();
+		}
+	});
+	child = dependencies.child;
 	try {
 		const browser = await startStandaloneTauriSession(input, dependencies);
 		expect(dependencies.spawn).toHaveBeenCalledTimes(1);
@@ -107,20 +133,33 @@ test('spawns exactly one owned app and connects remote directly with the embedde
 				connectionRetryCount: 0
 			})
 		);
-		await terminateStandaloneTauriSession(browser);
+		await terminateStandaloneTauriSession(browser, 86);
+		expect(exitCodes).toEqual([86]);
 	} finally {
 		cleanupLease(46_001);
 	}
 });
 
 test('cleans the owned child and WebDriver session when the nonce proves another app answered', async () => {
-	const dependencies = makeDependencies({ port: 46_002, observedNonce: 'other-app-nonce' });
+	const child = new FakeChild();
+	child.exitOnSignal.add('SIGTERM');
+	const dependencies = makeDependencies({
+		child,
+		port: 46_002,
+		observedNonce: 'other-app-nonce'
+	});
 	try {
 		await expect(startStandaloneTauriSession(input, dependencies)).rejects.toThrow(
 			'nonce mismatch'
 		);
 		expect(dependencies.child.exitCode).toBe(0);
 		expect(dependencies.remote).toHaveBeenCalledTimes(1);
+		expect(
+			dependencies.evaluate.mock.calls.some(([, script]) =>
+				script.includes('plugin:process|exit')
+			)
+		).toBeFalse();
+		expect(dependencies.browsers[0].deleteSession).toHaveBeenCalledTimes(1);
 	} finally {
 		cleanupLease(46_002);
 	}
@@ -142,6 +181,58 @@ test('cleans startup failure without launching a replacement app', async () => {
 		expect(child.killSignals).toEqual(['SIGTERM']);
 	} finally {
 		cleanupLease(46_003);
+	}
+});
+
+test('waits through an initial connection refusal until the embedded server reports ready', async () => {
+	const dependencies = makeDependencies({
+		port: 46_008,
+		statusResponses: [new Error('ECONNREFUSED'), { ok: true, value: { ready: true } }]
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		expect(dependencies.fetch).toHaveBeenCalledTimes(2);
+		expect(dependencies.remote).toHaveBeenCalledTimes(1);
+		await terminateStandaloneTauriSession(browser);
+	} finally {
+		cleanupLease(46_008);
+	}
+});
+
+test('fails readiness without creating a WebDriver session and cleans the owned child', async () => {
+	const child = new FakeChild();
+	child.exitOnSignal.add('SIGTERM');
+	const dependencies = makeDependencies({
+		child,
+		port: 46_009,
+		statusResponses: [
+			{ ok: true, value: { ready: false } },
+			{ ok: true, value: { ready: false } }
+		]
+	});
+	dependencies.clock = makeClock(60_000);
+	try {
+		await expect(startStandaloneTauriSession(input, dependencies)).rejects.toThrow(
+			'did not become ready'
+		);
+		expect(dependencies.remote).not.toHaveBeenCalled();
+		expect(child.killSignals).toEqual(['SIGTERM']);
+	} finally {
+		cleanupLease(46_009);
+	}
+});
+
+test('fails immediately when the owned child exits before readiness', async () => {
+	const child = new FakeChild();
+	child.exit();
+	const dependencies = makeDependencies({ child, port: 46_010 });
+	try {
+		await expect(startStandaloneTauriSession(input, dependencies)).rejects.toThrow(
+			'exited before'
+		);
+		expect(dependencies.remote).not.toHaveBeenCalled();
+	} finally {
+		cleanupLease(46_010);
 	}
 });
 
@@ -186,6 +277,20 @@ test('does not release the lease before the child exits and propagates WebDriver
 	}
 });
 
+test('accepts the expected driver disconnect only after the owned child has exited', async () => {
+	const dependencies = makeDependencies({ port: 46_011 });
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		browser.deleteSession.mockImplementationOnce(async () => {
+			throw new Error('socket hang up');
+		});
+		await expect(terminateStandaloneTauriSession(browser)).resolves.toBeUndefined();
+		expect(existsSync(leasePathFor(46_011))).toBeFalse();
+	} finally {
+		cleanupLease(46_011);
+	}
+});
+
 test('atomically reclaims a stale lease for one concurrent starter only', async () => {
 	const port = 46_006;
 	const path = leasePathFor(port);
@@ -225,5 +330,35 @@ test('restores a foreign replacement instead of deleting it during release', asy
 		expect(existsSync(path)).toBe(true);
 	} finally {
 		cleanupLease(port);
+	}
+});
+
+test('treats Windows access-denied publication as contention only when a valid owner exists', async () => {
+	const firstPort = 46_012;
+	const secondPort = 46_013;
+	let injected = false;
+	const dependencies = makeDependencies({ port: firstPort });
+	dependencies.reservePort = makeReservePort(firstPort, secondPort);
+	dependencies.platform = 'win32';
+	dependencies.rename = (from, to) => {
+		if (!injected && to === leasePathFor(firstPort)) {
+			injected = true;
+			mkdirSync(to, { recursive: true });
+			writeFileSync(
+				join(to, 'owner.json'),
+				JSON.stringify({ pid: process.pid, nonce: 'existing-owner', createdAt: 0 })
+			);
+			throw Object.assign(new Error('access denied'), { code: 'EACCES' });
+		}
+		renameSync(from, to);
+	};
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		expect(dependencies.spawn).toHaveBeenCalledTimes(1);
+		expect(dependencies.remote.mock.calls[0][0].port).toBe(secondPort);
+		await terminateStandaloneTauriSession(browser);
+	} finally {
+		cleanupLease(firstPort);
+		cleanupLease(secondPort);
 	}
 });

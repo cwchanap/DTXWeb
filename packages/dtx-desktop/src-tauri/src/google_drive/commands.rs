@@ -19,6 +19,8 @@ use super::upload::{
 use super::GoogleDriveState;
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
+#[cfg(all(feature = "e2e", debug_assertions))]
+use crate::models::E2eDriveProgressSnapshot;
 use crate::workspace::WorkspaceRootState;
 
 const GOOGLE_DRIVE_UPLOAD_PROGRESS_EVENT: &str = "google-drive-upload-progress";
@@ -578,18 +580,35 @@ fn emit_progress(
                 .checked_div(u128::from(total))
                 .map(|percentage| percentage.min(100) as u8)
         });
-    let _ = app.emit(
-        GOOGLE_DRIVE_UPLOAD_PROGRESS_EVENT,
-        GoogleDriveUploadProgress {
-            operation_id: lease.operation_id(),
-            simfile_id: simfile_id.to_string(),
-            stage,
-            bytes_uploaded,
-            total_bytes,
-            percentage,
-            error_code,
-        },
-    );
+    let progress = GoogleDriveUploadProgress {
+        operation_id: lease.operation_id(),
+        simfile_id: simfile_id.to_string(),
+        stage,
+        bytes_uploaded,
+        total_bytes,
+        percentage,
+        error_code,
+    };
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    if let Some(fake) = app.state::<GoogleDriveState>().e2e_fake.as_ref() {
+        fake.record_progress(E2eDriveProgressSnapshot {
+            operation_id: progress.operation_id.to_string(),
+            simfile_id: progress.simfile_id.clone(),
+            stage: serde_json::to_value(progress.stage)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_string))
+                .unwrap_or_else(|| "invalid".to_string()),
+            bytes_uploaded: progress.bytes_uploaded,
+            total_bytes: progress.total_bytes,
+            percentage: progress.percentage,
+            error_code: progress.error_code.and_then(|code| {
+                serde_json::to_value(code)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_string))
+            }),
+        });
+    }
+    let _ = app.emit(GOOGLE_DRIVE_UPLOAD_PROGRESS_EVENT, progress);
 }
 
 fn upload_failure(error: DriveApiError) -> DriveUploadFailure {

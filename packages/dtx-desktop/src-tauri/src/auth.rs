@@ -175,6 +175,35 @@ impl AuthSessionEpoch {
 }
 
 impl AuthState {
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    pub(crate) fn for_e2e_user(user_id: &str) -> Result<Self> {
+        if user_id.is_empty()
+            || user_id.trim() != user_id
+            || user_id.len() > 512
+            || !user_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(DesktopError::Message(
+                "DTX_E2E_DRUMERY_USER_ID is invalid".to_string(),
+            ));
+        }
+        Ok(Self {
+            current_session: Arc::new(AsyncMutex::new(Some(serde_json::json!({
+                "access_token": "e2e-supabase-access-token",
+                "refresh_token": "e2e-supabase-refresh-token",
+                "user": {
+                    "id": user_id,
+                    "email": "desktop-e2e@drumery.invalid",
+                    "user_metadata": { "name": "Desktop E2E" }
+                }
+            })))),
+            session_generation: Arc::new(AtomicU64::new(1)),
+            pending_urls: Arc::new(StdMutex::new(Vec::new())),
+            refresh_lock: Arc::new(AsyncMutex::new(())),
+        })
+    }
+
     pub async fn current_session(&self) -> Option<serde_json::Value> {
         self.current_session.lock().await.clone()
     }
@@ -244,6 +273,24 @@ pub struct SessionData {
     pub refresh_token: Option<String>,
     #[serde(default, alias = "userData")]
     pub user: Option<serde_json::Value>,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+pub(crate) fn e2e_session_matches_user(session: &SessionData, expected_user_id: &str) -> bool {
+    let user_id = session
+        .user
+        .as_ref()
+        .and_then(|user| user.get("id"))
+        .and_then(serde_json::Value::as_str);
+    user_id == Some(expected_user_id)
+        && session
+            .access_token
+            .as_deref()
+            .is_some_and(|token| !token.trim().is_empty())
+        && session
+            .refresh_token
+            .as_deref()
+            .is_some_and(|token| !token.trim().is_empty())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -408,35 +455,56 @@ pub async fn validate_session(
     app: AppHandle,
     session_data: SessionData,
 ) -> Result<SessionValidationStatus> {
-    let Some((supabase_url, anon_key)) = resolve_auth_config() else {
-        return Ok(SessionValidationStatus::NotConfigured);
-    };
-    let client = match auth_client() {
-        Ok(client) => client,
-        // A client-construction failure is not a config problem; preserve the
-        // historical "treat as invalid" behavior rather than masking it as
-        // not-configured.
-        Err(_) => return Ok(SessionValidationStatus::Invalid),
-    };
-
-    let is_valid = validate_session_with_client(
-        client,
-        &app.state::<AuthState>(),
-        &supabase_url,
-        &anon_key,
-        session_data,
-        Some(&app),
-    )
-    .await;
-    if is_valid {
-        spawn_drive_reconciliation_if_available(&app);
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    {
+        let expected_user_id = std::env::var("DTX_E2E_DRUMERY_USER_ID").ok();
+        let valid = expected_user_id
+            .as_deref()
+            .is_some_and(|expected| e2e_session_matches_user(&session_data, expected))
+            && app.state::<AuthState>().current_user_id().await.as_deref()
+                == expected_user_id.as_deref();
+        if valid {
+            spawn_drive_reconciliation_if_available(&app);
+        }
+        Ok(if valid {
+            SessionValidationStatus::Valid
+        } else {
+            SessionValidationStatus::Invalid
+        })
     }
 
-    Ok(if is_valid {
-        SessionValidationStatus::Valid
-    } else {
-        SessionValidationStatus::Invalid
-    })
+    #[cfg(not(all(feature = "e2e", debug_assertions)))]
+    {
+        let Some((supabase_url, anon_key)) = resolve_auth_config() else {
+            return Ok(SessionValidationStatus::NotConfigured);
+        };
+        let client = match auth_client() {
+            Ok(client) => client,
+            // A client-construction failure is not a config problem; preserve the
+            // historical "treat as invalid" behavior rather than masking it as
+            // not-configured.
+            Err(_) => return Ok(SessionValidationStatus::Invalid),
+        };
+
+        let is_valid = validate_session_with_client(
+            client,
+            &app.state::<AuthState>(),
+            &supabase_url,
+            &anon_key,
+            session_data,
+            Some(&app),
+        )
+        .await;
+        if is_valid {
+            spawn_drive_reconciliation_if_available(&app);
+        }
+
+        Ok(if is_valid {
+            SessionValidationStatus::Valid
+        } else {
+            SessionValidationStatus::Invalid
+        })
+    }
 }
 
 #[tauri::command]

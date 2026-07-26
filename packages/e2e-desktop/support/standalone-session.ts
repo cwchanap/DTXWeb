@@ -19,6 +19,7 @@ import { remote } from 'webdriverio';
 type StandaloneTauriSessionInput = {
 	appBinaryPath: string;
 	dataDir: string;
+	drumeryUserId: string;
 	logDir: string;
 };
 
@@ -363,7 +364,8 @@ const captureProcessLogs = (child: ChildProcess, logDir: string): (() => Promise
 const waitForChildExit = async (
 	child: ChildLike,
 	exitPromise: Promise<boolean>,
-	clock: Clock
+	clock: Clock,
+	timeoutMilliseconds = CHILD_EXIT_TIMEOUT_MS
 ): Promise<boolean> => {
 	if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null)
 		return true;
@@ -375,7 +377,7 @@ const waitForChildExit = async (
 			clock.clearTimeout(timeout);
 			resolve(exited);
 		};
-		const timeout = clock.setTimeout(() => complete(false), CHILD_EXIT_TIMEOUT_MS);
+		const timeout = clock.setTimeout(() => complete(false), timeoutMilliseconds);
 		void exitPromise.then((exited) => {
 			if (exited) complete(true);
 		});
@@ -557,7 +559,7 @@ const cleanupStartupFailure = async (
 };
 
 export const startStandaloneTauriSession = async (
-	{ appBinaryPath, dataDir, logDir }: StandaloneTauriSessionInput,
+	{ appBinaryPath, dataDir, drumeryUserId, logDir }: StandaloneTauriSessionInput,
 	dependencies: StandaloneSessionDependencies = {}
 ): Promise<WebdriverIO.Browser> => {
 	const clock = dependencies.clock ?? defaultClock;
@@ -594,6 +596,7 @@ export const startStandaloneTauriSession = async (
 			env: {
 				...process.env,
 				DTX_E2E_DATA_DIR: dataDir,
+				DTX_E2E_DRUMERY_USER_ID: drumeryUserId,
 				DTX_E2E_SESSION_NONCE: sessionNonce,
 				TAURI_WEBDRIVER_PORT: String(reservation.port),
 				WDIO_EMBEDDED_SERVER: 'true',
@@ -674,4 +677,28 @@ export const terminateStandaloneTauriSession = async (
 	const session = activeSessions.get(browser);
 	if (!session) throw new Error('Standalone Tauri session is not owned by this harness');
 	await closeOwnedSession(session, code, true);
+};
+
+export const waitForStandaloneTauriSessionExit = async (
+	browser: WebdriverIO.Browser,
+	expectedCode: number,
+	timeoutMilliseconds = 20_000
+): Promise<void> => {
+	const session = activeSessions.get(browser);
+	if (!session) throw new Error('Standalone Tauri session is not owned by this harness');
+	if (
+		!(await waitForChildExit(
+			session.child,
+			session.exitPromise,
+			session.clock,
+			timeoutMilliseconds
+		))
+	) {
+		throw new Error('Standalone Tauri app did not exit at the expected crash boundary');
+	}
+	if (session.child.exitCode !== expectedCode) {
+		throw new Error(
+			`Standalone Tauri app exited with ${session.child.exitCode ?? session.child.signalCode}, expected ${expectedCode}`
+		);
+	}
 };

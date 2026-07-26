@@ -4,8 +4,11 @@ import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { startStandaloneTauriSession, terminateStandaloneTauriSession } =
-	await import('./standalone-session.ts');
+const {
+	startStandaloneTauriSession,
+	terminateStandaloneTauriSession,
+	waitForStandaloneTauriSessionExit
+} = await import('./standalone-session.ts');
 
 class FakeChild extends EventEmitter {
 	exitCode = null;
@@ -96,6 +99,7 @@ const makeDependencies = ({
 const input = {
 	appBinaryPath: '/tmp/dtx-desktop',
 	dataDir: '/tmp/dtx-e2e-data',
+	drumeryUserId: 'fixed-e2e-user',
 	logDir: '/tmp/dtx-e2e-logs'
 };
 
@@ -122,6 +126,7 @@ test('spawns exactly one owned app and connects remote directly with the embedde
 				shell: false,
 				env: expect.objectContaining({
 					DTX_E2E_DATA_DIR: '/tmp/dtx-e2e-data',
+					DTX_E2E_DRUMERY_USER_ID: 'fixed-e2e-user',
 					DTX_E2E_SESSION_NONCE: 'launch-nonce-123',
 					TAURI_WEBDRIVER_PORT: '46001',
 					WDIO_EMBEDDED_SERVER: 'true'
@@ -139,6 +144,25 @@ test('spawns exactly one owned app and connects remote directly with the embedde
 		expect(exitCodes).toEqual([86]);
 	} finally {
 		cleanupLease(46_001);
+	}
+});
+
+test('observes the exact owned native process exit code before cleanup', async () => {
+	const connectionRefused = Object.assign(new Error('connection refused'), {
+		code: 'ECONNREFUSED'
+	});
+	const dependencies = makeDependencies({
+		port: 46_017,
+		exitError: connectionRefused,
+		onExit: () => undefined
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		dependencies.child.exit(86);
+		await expect(waitForStandaloneTauriSessionExit(browser, 86)).resolves.toBeUndefined();
+		await terminateStandaloneTauriSession(browser, 86);
+	} finally {
+		cleanupLease(46_017);
 	}
 });
 

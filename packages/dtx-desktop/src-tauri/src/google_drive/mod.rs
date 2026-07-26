@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::Mutex as AsyncMutex;
 use zeroize::Zeroizing;
 
-#[cfg(feature = "e2e")]
+#[cfg(all(feature = "e2e", debug_assertions))]
 use self::credential_store::InMemoryGoogleDriveCredentialStore;
 use self::credential_store::{GoogleDriveCredentialAccess, GoogleDriveCredentialStore};
 #[cfg(feature = "google-drive")]
@@ -128,6 +128,8 @@ pub(crate) mod build_config;
 pub(crate) mod commands;
 pub(crate) mod credential_store;
 pub(crate) mod drive_client;
+#[cfg(all(feature = "e2e", debug_assertions))]
+pub(crate) mod fake;
 pub(crate) mod oauth;
 pub(crate) mod pending_bindings;
 pub(crate) mod settings;
@@ -163,6 +165,8 @@ pub(crate) struct GoogleDriveState {
     pub(crate) pending_bindings: Option<GoogleDrivePendingBindingStore>,
     pub(crate) upload_api: Option<Arc<dyn GoogleDriveApi>>,
     pub(crate) operation_manager: Arc<upload::DriveOperationManager>,
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    pub(crate) e2e_fake: Option<Arc<fake::E2eGoogleDriveFake>>,
 }
 
 impl GoogleDriveState {
@@ -209,6 +213,8 @@ impl GoogleDriveState {
             pending_bindings: None,
             upload_api: None,
             operation_manager: Arc::new(upload::DriveOperationManager::default()),
+            #[cfg(all(feature = "e2e", debug_assertions))]
+            e2e_fake: None,
         }
     }
 
@@ -247,21 +253,28 @@ impl GoogleDriveState {
         Ok(state)
     }
 
-    #[cfg(feature = "e2e")]
-    pub(crate) fn e2e() -> Result<Self> {
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    pub(crate) fn e2e(user_id: &str) -> Result<Self> {
         let data_dir = resolve_dirs().0.ok_or_else(|| {
             DesktopError::Message("Could not resolve application data directory".to_string())
         })?;
+        let fake = Arc::new(fake::E2eGoogleDriveFake::new(data_dir.clone())?);
+        let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+        credential_store
+            .set_refresh_token(user_id, "e2e-google-drive-refresh-token")
+            .map_err(|_| DesktopError::Message("CREDENTIAL_STORE".to_string()))?;
         let mut state = Self::with_oauth_adapters(
-            Arc::new(InMemoryGoogleDriveCredentialStore::default()),
-            Arc::new(UnavailableDriveMetadataClient),
+            credential_store,
+            fake.clone(),
             Arc::new(GoogleDriveSettingsStore::new(data_dir.clone())),
-            Arc::new(UnavailableOAuthProvider),
-            Arc::new(DeferredPickerFolderValidator),
+            fake.clone(),
+            fake.clone(),
             Arc::new(UnavailablePickerBrowser),
             PickerProtocolConfig::new(String::new(), Duration::from_secs(5 * 60)),
         );
         state.pending_bindings = Some(GoogleDrivePendingBindingStore::new(data_dir));
+        state.upload_api = Some(fake.clone());
+        state.e2e_fake = Some(fake);
         Ok(state)
     }
 

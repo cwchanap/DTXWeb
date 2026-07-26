@@ -172,6 +172,150 @@ pub struct ListFilesResult {
     pub error: Option<String>,
 }
 
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub enum E2eExistingFileFailure {
+    None,
+    NotFound,
+    PermissionDenied,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveOwnerSeed {
+    pub simfile_id: String,
+    pub cloud_title: String,
+    pub google_drive_file_id: Option<String>,
+    pub download_url: Option<String>,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveControl {
+    pub reset: bool,
+    pub owner: Option<E2eDriveOwnerSeed>,
+    pub existing_file_failure: E2eExistingFileFailure,
+    pub public_permission: Option<bool>,
+    pub terminate_before_metadata_patch: Option<bool>,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveZipEntrySnapshot {
+    pub name: String,
+    #[ts(type = "number")]
+    pub size: u64,
+    pub sha256: String,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveObjectSnapshot {
+    pub file_id: String,
+    pub name: String,
+    pub web_content_link: String,
+    pub zip_entries: Vec<E2eDriveZipEntrySnapshot>,
+    #[ts(type = "number")]
+    pub creation_count: u64,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveCallSnapshot {
+    pub operation: String,
+    pub file_id: Option<String>,
+    pub name: Option<String>,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveMetadataMutationSnapshot {
+    pub mutation: String,
+    pub simfile_id: String,
+    pub drive_file_id: String,
+    pub download_url: String,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveProgressSnapshot {
+    pub operation_id: String,
+    pub simfile_id: String,
+    pub stage: String,
+    #[ts(type = "number | null")]
+    pub bytes_uploaded: Option<u64>,
+    #[ts(type = "number | null")]
+    pub total_bytes: Option<u64>,
+    pub percentage: Option<u8>,
+    pub error_code: Option<String>,
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+)]
+pub struct E2eDriveSnapshot {
+    pub owner: E2eDriveOwnerSeed,
+    pub objects: Vec<E2eDriveObjectSnapshot>,
+    pub calls: Vec<E2eDriveCallSnapshot>,
+    pub metadata_mutations: Vec<E2eDriveMetadataMutationSnapshot>,
+    pub progress: Vec<E2eDriveProgressSnapshot>,
+    #[ts(type = "number")]
+    pub generate_count: u64,
+    #[ts(type = "number")]
+    pub create_count: u64,
+    #[ts(type = "number")]
+    pub update_count: u64,
+    #[ts(type = "number")]
+    pub delete_count: u64,
+    #[ts(type = "number")]
+    pub lifetime_create_count: u64,
+    pub public_permission: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SuccessResult {
     pub success: bool,

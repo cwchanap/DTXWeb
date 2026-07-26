@@ -19,6 +19,8 @@ mod workspace;
 mod e2e;
 
 use auth::AuthState;
+#[cfg(all(feature = "e2e", debug_assertions))]
+use error::DesktopError;
 use scores::DtxmaniaDbState;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -72,8 +74,16 @@ where
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let workspace_state = WorkspaceRootState::load();
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    let auth_state = AuthState::for_e2e_user(
+        &std::env::var("DTX_E2E_DRUMERY_USER_ID")
+            .expect("DTX_E2E_DRUMERY_USER_ID is required for a desktop E2E build"),
+    )
+    .expect("DTX_E2E_DRUMERY_USER_ID must be a stable native identifier");
+    #[cfg(not(all(feature = "e2e", debug_assertions)))]
+    let auth_state = AuthState::default();
     let mut builder = tauri::Builder::default()
-        .manage(AuthState::default())
+        .manage(auth_state)
         .manage(DtxmaniaDbState::default())
         .manage(workspace_state);
 
@@ -126,8 +136,15 @@ pub fn run() {
             app.manage(google_drive::GoogleDriveState::production(
                 app.handle().clone(),
             )?);
-            #[cfg(all(feature = "e2e", not(feature = "google-drive")))]
-            app.manage(google_drive::GoogleDriveState::e2e()?);
+            #[cfg(all(feature = "e2e", not(feature = "google-drive"), debug_assertions))]
+            {
+                let user_id = std::env::var("DTX_E2E_DRUMERY_USER_ID").map_err(|_| {
+                    DesktopError::Message(
+                        "DTX_E2E_DRUMERY_USER_ID is required for a desktop E2E build".to_string(),
+                    )
+                })?;
+                app.manage(google_drive::GoogleDriveState::e2e(&user_id)?);
+            }
 
             // Interrupted Drive uploads may leave a native-only staging
             // directory behind. Cleanup is best-effort and restricted by the
@@ -210,7 +227,11 @@ pub fn run() {
             #[cfg(any(feature = "google-drive", feature = "e2e"))]
             google_drive::commands::cancel_google_drive_upload,
             #[cfg(feature = "e2e")]
-            e2e::read_e2e_session_nonce
+            e2e::read_e2e_session_nonce,
+            #[cfg(all(feature = "e2e", debug_assertions))]
+            e2e::configure_google_drive_e2e,
+            #[cfg(all(feature = "e2e", debug_assertions))]
+            e2e::snapshot_google_drive_e2e
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");

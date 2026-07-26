@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use crate::auth::AuthState;
 #[cfg(any(feature = "google-drive", feature = "e2e"))]
 use crate::error::{DesktopError, Result};
-#[cfg(any(feature = "google-drive", feature = "e2e"))]
+#[cfg(feature = "google-drive")]
 use crate::native_persistence::resolve_dirs;
 use async_trait::async_trait;
 use tauri::{AppHandle, Manager, Runtime};
@@ -255,9 +255,22 @@ impl GoogleDriveState {
 
     #[cfg(all(feature = "e2e", debug_assertions))]
     pub(crate) fn e2e(user_id: &str) -> Result<Self> {
-        let data_dir = resolve_dirs().0.ok_or_else(|| {
-            DesktopError::Message("Could not resolve application data directory".to_string())
-        })?;
+        Self::e2e_from_data_dir_value(user_id, std::env::var_os("DTX_E2E_DATA_DIR"))
+    }
+
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    pub(crate) fn e2e_from_data_dir_value(
+        user_id: &str,
+        value: Option<std::ffi::OsString>,
+    ) -> Result<Self> {
+        let data_dir = value
+            .filter(|path| !path.to_string_lossy().trim().is_empty())
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| {
+                DesktopError::Message(
+                    "DTX_E2E_DATA_DIR is required for a desktop E2E build".to_string(),
+                )
+            })?;
         let fake = Arc::new(fake::E2eGoogleDriveFake::new(data_dir.clone())?);
         let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
         credential_store

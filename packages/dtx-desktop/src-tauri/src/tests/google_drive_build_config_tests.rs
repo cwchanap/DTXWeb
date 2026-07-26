@@ -144,3 +144,17 @@ fn rejects_selecting_the_fake_alongside_the_real_drive_feature() {
 
     assert!(parse_drive_build_mode(config).is_err());
 }
+
+#[test]
+fn rejects_combined_real_and_e2e_features_for_every_real_environment() {
+    for declared_environment in ["local", "preproduction", "production"] {
+        let mut config = input();
+        config.e2e_feature = true;
+        config.declared_environment = Some(declared_environment);
+        config.oauth_client_environment = Some(declared_environment);
+
+        let error = parse_drive_build_mode(config)
+            .expect_err("real Drive and E2E providers must never compile together");
+        assert!(error.contains("--no-default-features --features e2e"));
+    }
+}

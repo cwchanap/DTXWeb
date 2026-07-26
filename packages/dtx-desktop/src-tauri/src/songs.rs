@@ -194,7 +194,13 @@ pub(crate) async fn export_song_to_zip_with_workspace_root(
         .filter(|title| !title.trim().is_empty())
         .unwrap_or("song");
 
-    export_song_folder_to_zip(&canonical_song_path, song_title, &export_directory).await
+    export_song_folder_to_zip_in_workspace(
+        &canonical_song_path,
+        song_title,
+        &export_directory,
+        workspace_root,
+    )
+    .await
 }
 
 pub async fn export_song_folder_to_zip(
@@ -202,10 +208,25 @@ pub async fn export_song_folder_to_zip(
     song_title: &str,
     export_directory: &Path,
 ) -> Result<ExportSongResult> {
-    match export_song_folder_to_zip_inner(song_path, song_title, export_directory).await {
+    // This public helper is used by local callers/tests that have no separate
+    // workspace state. The IPC command above supplies the managed workspace
+    // root. Keeping this wrapper preserves its existing behavior while all
+    // collection still flows through the same symlink-safe helper.
+    match export_song_folder_to_zip_in_workspace(song_path, song_title, export_directory, song_path)
+        .await
+    {
         Ok(result) => Ok(result),
         Err(error) => Ok(ExportSongResult::failure(error.to_string())),
     }
+}
+
+async fn export_song_folder_to_zip_in_workspace(
+    song_path: &Path,
+    song_title: &str,
+    export_directory: &Path,
+    workspace_root: &Path,
+) -> Result<ExportSongResult> {
+    export_song_folder_to_zip_inner(song_path, song_title, export_directory, workspace_root).await
 }
 
 #[tauri::command]
@@ -456,21 +477,25 @@ async fn export_song_folder_to_zip_inner(
     song_path: &Path,
     song_title: &str,
     export_directory: &Path,
+    workspace_root: &Path,
 ) -> Result<ExportSongResult> {
     ensure_export_directory(export_directory).await?;
     validate_safe_file_name(song_title, "zip file name")?;
 
-    let valid_files = valid_export_files(song_path).await?;
-    if valid_files.is_empty() {
-        return Ok(ExportSongResult::failure(
-            "No valid files found to export".to_string(),
-        ));
-    }
+    let valid_files = match collect_valid_song_files(song_path, workspace_root).await {
+        Ok(files) => files,
+        Err(DesktopError::Message(error)) if error == "NO_VALID_SONG_FILES" => {
+            return Ok(ExportSongResult::failure(
+                "No valid files found to export".to_string(),
+            ));
+        }
+        Err(error) => return Err(error),
+    };
 
     let zip_path = export_directory.join(format!("{song_title}.zip"));
     let zip_path_for_archive = zip_path.clone();
     let files_count = valid_files.len();
-    task::spawn_blocking(move || write_zip_archive(zip_path_for_archive, valid_files))
+    task::spawn_blocking(move || write_song_zip(&zip_path_for_archive, &valid_files))
         .await
         .map_err(|error| DesktopError::Message(error.to_string()))??;
 
@@ -482,18 +507,100 @@ async fn export_song_folder_to_zip_inner(
     })
 }
 
-fn write_zip_archive(zip_path: PathBuf, valid_files: Vec<(String, PathBuf)>) -> Result<()> {
-    let file = std::fs::File::create(&zip_path)?;
-    let mut zip = zip::ZipWriter::new(file);
+/// Collects the top-level DTX asset files used by both manual export and Drive
+/// upload. The caller supplies the managed workspace root so a symlinked song
+/// directory cannot escape it. Symlink entries are deliberately excluded,
+/// matching the historic manual export behavior.
+pub(crate) async fn collect_valid_song_files(
+    song_path: &Path,
+    workspace_root: &Path,
+) -> Result<Vec<PathBuf>> {
+    let canonical_song_path = crate::filesystem::canonicalize_within_workspace(
+        &song_path.to_string_lossy(),
+        Some(&workspace_root.to_string_lossy()),
+    )
+    .await?;
+    let canonical_workspace_root = fs::canonicalize(workspace_root).await?;
+    let mut files = Vec::new();
+    let mut entries = fs::read_dir(&canonical_song_path).await?;
 
-    for (file_name, file_path) in valid_files {
-        zip.start_file(file_name, SimpleFileOptions::default())?;
-        let mut source = std::fs::File::open(file_path)?;
-        copy(&mut source, &mut zip)?;
+    while let Some(entry) = entries.next_entry().await? {
+        let file_type = entry.file_type().await?;
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        if !is_valid_export_file_name(&file_name) {
+            continue;
+        }
+
+        // Re-canonicalize the entry before handing it to the blocking ZIP
+        // writer. This keeps an entry that was swapped for an escaping link
+        // between directory enumeration and collection out of the archive.
+        let canonical_file = match fs::canonicalize(entry.path()).await {
+            Ok(file) => file,
+            Err(_) => continue,
+        };
+        if !canonical_file.starts_with(&canonical_song_path)
+            || !canonical_file.starts_with(&canonical_workspace_root)
+        {
+            continue;
+        }
+        files.push(canonical_file);
     }
 
-    zip.finish()?;
-    Ok(())
+    files.sort_by(|left, right| {
+        left.file_name()
+            .map(|name| name.to_string_lossy())
+            .cmp(&right.file_name().map(|name| name.to_string_lossy()))
+    });
+    if files.is_empty() {
+        return Err(DesktopError::Message("NO_VALID_SONG_FILES".to_string()));
+    }
+    Ok(files)
+}
+
+/// Creates a ZIP from already validated, top-level files. If any write fails,
+/// remove the incomplete destination so neither manual export nor a future
+/// upload can accidentally consume a partial archive.
+pub(crate) fn write_song_zip(output_path: &Path, files: &[PathBuf]) -> Result<usize> {
+    write_song_zip_with_copy(output_path, files, |file_path, zip| {
+        let mut source = std::fs::File::open(file_path)?;
+        copy(&mut source, zip)?;
+        Ok(())
+    })
+}
+
+fn write_song_zip_with_copy<F>(
+    output_path: &Path,
+    files: &[PathBuf],
+    mut copy_file: F,
+) -> Result<usize>
+where
+    F: FnMut(&Path, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
+{
+    let result = (|| -> Result<usize> {
+        let file = std::fs::File::create(output_path)?;
+        let mut zip = zip::ZipWriter::new(file);
+
+        for file_path in files {
+            let file_name = file_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| DesktopError::Message("Invalid song file name".to_string()))?;
+            zip.start_file(file_name, SimpleFileOptions::default())?;
+            copy_file(file_path, &mut zip)?;
+        }
+
+        zip.finish()?;
+        Ok(files.len())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(output_path);
+    }
+    result
 }
 
 async fn ensure_export_directory(export_directory: &Path) -> Result<()> {
@@ -522,22 +629,14 @@ async fn ensure_export_directory(export_directory: &Path) -> Result<()> {
 }
 
 async fn valid_export_files(song_path: &Path) -> Result<Vec<(String, PathBuf)>> {
-    let mut files = Vec::new();
-    let mut entries = fs::read_dir(song_path).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        if !entry.file_type().await?.is_file() {
-            continue;
-        }
-
-        let file_name = entry.file_name().to_string_lossy().into_owned();
-        if is_valid_export_file_name(&file_name) {
-            files.push((file_name, entry.path()));
-        }
-    }
-
-    files.sort_by(|left, right| left.0.cmp(&right.0));
-    Ok(files)
+    let files = collect_valid_song_files(song_path, song_path).await?;
+    Ok(files
+        .into_iter()
+        .filter_map(|path| {
+            let file_name = path.file_name()?.to_string_lossy().into_owned();
+            Some((file_name, path))
+        })
+        .collect())
 }
 
 fn is_valid_export_file_name(file_name: &str) -> bool {

@@ -1227,3 +1227,101 @@ async fn valid_export_files_skips_directories_and_invalid_extensions() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].0, "song.dtx");
 }
+
+#[tokio::test]
+async fn collect_valid_song_files_matches_manual_export_selection_in_deterministic_order() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    fs::create_dir(&song).await.expect("song");
+    fs::write(song.join("z-last.dtx"), b"dtx")
+        .await
+        .expect("dtx");
+    fs::write(song.join("a-first.wav"), b"wav")
+        .await
+        .expect("wav");
+    fs::write(song.join("ignored.txt"), b"txt")
+        .await
+        .expect("txt");
+    fs::create_dir(song.join("nested")).await.expect("nested");
+    fs::write(song.join("nested/hidden.dtx"), b"nested")
+        .await
+        .expect("nested file");
+
+    let drive_files = collect_valid_song_files(&song, workspace.path())
+        .await
+        .expect("Drive collection");
+    let manual_files = valid_export_files(&song).await.expect("manual collection");
+
+    assert_eq!(
+        drive_files,
+        manual_files
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        drive_files
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+        vec!["a-first.wav", "z-last.dtx"]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn collect_valid_song_files_excludes_escaping_symlinks() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    let outside = tempdir().expect("outside");
+    fs::create_dir(&song).await.expect("song");
+    fs::write(song.join("inside.dtx"), b"dtx")
+        .await
+        .expect("inside file");
+    let escaped = outside.path().join("outside.dtx");
+    fs::write(&escaped, b"outside").await.expect("outside file");
+    symlink(&escaped, song.join("escaped.dtx")).expect("symlink");
+
+    let files = collect_valid_song_files(&song, workspace.path())
+        .await
+        .expect("collection");
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].file_name().unwrap(), "inside.dtx");
+    assert!(files[0].starts_with(std::fs::canonicalize(&song).expect("canonical song")));
+}
+
+#[tokio::test]
+async fn collect_valid_song_files_uses_a_stable_empty_input_error_code() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    fs::create_dir(&song).await.expect("song");
+    fs::write(song.join("ignored.txt"), b"txt")
+        .await
+        .expect("txt");
+
+    let error = collect_valid_song_files(&song, workspace.path())
+        .await
+        .expect_err("empty input must reject");
+
+    assert_eq!(error.to_string(), "NO_VALID_SONG_FILES");
+}
+
+#[test]
+fn write_song_zip_removes_a_partial_archive_when_copy_runs_out_of_space() {
+    let root = tempdir().expect("tempdir");
+    let source = root.path().join("song.dtx");
+    let archive = root.path().join("partial.zip");
+    std::fs::write(&source, b"dtx").expect("source");
+
+    let error = write_song_zip_with_copy(&archive, &[source], |_source, _zip| {
+        Err(DesktopError::Io(std::io::Error::new(
+            std::io::ErrorKind::StorageFull,
+            "injected out of space",
+        )))
+    })
+    .expect_err("injected write failure");
+
+    assert!(error.to_string().contains("injected out of space"));
+    assert!(!archive.exists(), "partial archive must be removed");
+}

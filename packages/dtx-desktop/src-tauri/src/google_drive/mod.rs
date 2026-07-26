@@ -62,3 +62,4 @@ impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
 }
 
 pub(crate) mod build_config;
+pub(crate) mod upload;

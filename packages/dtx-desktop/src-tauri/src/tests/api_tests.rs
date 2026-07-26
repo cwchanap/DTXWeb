@@ -292,6 +292,80 @@ async fn google_drive_fetch_owner_simfile_rejects_a_published_row_owned_by_anoth
 }
 
 #[tokio::test]
+async fn google_drive_owner_parser_validates_expected_id_before_foreign_owner() {
+    let mut wrong_record = owner_drive_simfile();
+    wrong_record["id"] = json!("wrong-simfile");
+    wrong_record["userId"] = json!("other-user");
+    let mut malformed_foreign_record = owner_drive_simfile();
+    malformed_foreign_record["userId"] = json!("other-user");
+    malformed_foreign_record
+        .as_object_mut()
+        .expect("owner object")
+        .remove("downloadUrl");
+
+    for record in [wrong_record, malformed_foreign_record] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "simfile": record }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+            .await
+            .expect_err("malformed foreign record is not definitive loss");
+
+        assert_eq!(
+            error,
+            crate::google_drive::DriveMetadataError::InvalidResponse
+        );
+    }
+}
+
+#[tokio::test]
+async fn google_drive_owner_parser_requires_typed_nullable_binding_fields() {
+    for field in ["googleDriveFileId", "downloadUrl"] {
+        for invalid in [
+            None,
+            Some(json!({ "unexpected": "object" })),
+            Some(json!(42)),
+            Some(json!(true)),
+        ] {
+            let server = MockServer::start().await;
+            let mut malformed = owner_drive_simfile();
+            match invalid {
+                Some(value) => malformed[field] = value,
+                None => {
+                    malformed
+                        .as_object_mut()
+                        .expect("owner object")
+                        .remove(field);
+                }
+            }
+            Mock::given(method("POST"))
+                .and(path("/graphql"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "data": { "simfile": malformed }
+                })))
+                .mount(&server)
+                .await;
+
+            let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+                .await
+                .expect_err("nullable fields must be present as null or string");
+
+            assert_eq!(
+                error,
+                crate::google_drive::DriveMetadataError::InvalidResponse,
+                "{field} accepted an invalid shape"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn google_drive_owner_metadata_classifies_ambiguous_failures_without_claiming_absence() {
     // Break caught: collapsing auth, service, malformed-response, and network
     // failures into definitive absence, which lets reconciliation delete a

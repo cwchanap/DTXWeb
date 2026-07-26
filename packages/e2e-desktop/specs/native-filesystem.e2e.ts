@@ -31,6 +31,17 @@ const expectOutsideWorkspaceRead = async (filePath: string): Promise<void> => {
 	});
 };
 
+const expectOutsideWorkspaceRejection = async (operation: Promise<unknown>): Promise<void> => {
+	try {
+		await operation;
+	} catch (error) {
+		expect(error instanceof Error ? error.message : String(error)).toBe(outsideWorkspaceError);
+		return;
+	}
+
+	throw new Error(`Expected native IPC to reject with: ${outsideWorkspaceError}`);
+};
+
 const pathDoesNotExist = async (path: string): Promise<boolean> => {
 	try {
 		await lstat(path);
@@ -134,12 +145,11 @@ describe('Desktop native filesystem boundary', () => {
 			error: outsideWorkspaceError
 		});
 
-		await expect(loadTree(fixture.outsideRoot)).rejects.toThrow(outsideWorkspaceError);
-		await expect(parseDtxFiles(fixture.outsideRoot)).rejects.toThrow(outsideWorkspaceError);
-
-		await expect(
+		await expectOutsideWorkspaceRejection(loadTree(fixture.outsideRoot));
+		await expectOutsideWorkspaceRejection(parseDtxFiles(fixture.outsideRoot));
+		await expectOutsideWorkspaceRejection(
 			exportSongToZip({ songPath: fixture.outsideRoot, songTitle: 'Outside Workspace Song' })
-		).rejects.toThrow(outsideWorkspaceError);
+		);
 	});
 
 	it('rejects alternate-separator traversal on Windows', async function () {
@@ -171,11 +181,11 @@ describe('Desktop native filesystem boundary', () => {
 			files: [],
 			error: outsideWorkspaceError
 		});
-		await expect(loadTree(fixture.escapeLinkPath)).rejects.toThrow(outsideWorkspaceError);
-		await expect(parseDtxFiles(fixture.escapeLinkPath)).rejects.toThrow(outsideWorkspaceError);
-		await expect(
+		await expectOutsideWorkspaceRejection(loadTree(fixture.escapeLinkPath));
+		await expectOutsideWorkspaceRejection(parseDtxFiles(fixture.escapeLinkPath));
+		await expectOutsideWorkspaceRejection(
 			exportSongToZip({ songPath: fixture.escapeLinkPath, songTitle: 'Symlink Escape' })
-		).rejects.toThrow(outsideWorkspaceError);
+		);
 	});
 
 	it('does not let forged legacy workspaceRoot fields redirect native authority', async () => {
@@ -219,16 +229,16 @@ describe('Desktop native filesystem boundary', () => {
 		const outsideCreateTarget = join(fixture.outsideRoot, rejectedCreateFolderName);
 		const forgedCreateFolderName = `${rejectedCreateFolderName} Forged`;
 		const forgedCreateTarget = join(fixture.outsideRoot, forgedCreateFolderName);
-		await expect(
+		await expectOutsideWorkspaceRejection(
 			createSong({
 				selectedPath: fixture.outsideRoot,
 				sanitizedFolderName: rejectedCreateFolderName,
 				sanitizedSongName: rejectedCreateFolderName
 			})
-		).rejects.toThrow(outsideWorkspaceError);
+		);
 
 		expect(await pathDoesNotExist(outsideCreateTarget)).toBe(true);
-		await expect(
+		await expectOutsideWorkspaceRejection(
 			browser.tauri.execute<
 				unknown,
 				[
@@ -252,7 +262,7 @@ describe('Desktop native filesystem boundary', () => {
 				},
 				fixture.outsideRoot
 			)
-		).rejects.toThrow(outsideWorkspaceError);
+		);
 
 		expect(await pathDoesNotExist(forgedCreateTarget)).toBe(true);
 		expect(await getWorkspaceRoot()).toBe(fixture.workspaceRoot);
@@ -265,13 +275,13 @@ describe('Desktop native filesystem boundary', () => {
 		}
 
 		const symlinkCreateFolderName = `${rejectedCreateFolderName} Symlink`;
-		await expect(
+		await expectOutsideWorkspaceRejection(
 			createSong({
 				selectedPath: fixture.escapeLinkPath,
 				sanitizedFolderName: symlinkCreateFolderName,
 				sanitizedSongName: symlinkCreateFolderName
 			})
-		).rejects.toThrow(outsideWorkspaceError);
+		);
 
 		expect(await pathDoesNotExist(join(fixture.outsideRoot, symlinkCreateFolderName))).toBe(
 			true

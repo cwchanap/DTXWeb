@@ -80,6 +80,7 @@ export const getSimfile = async (
 			is_published: simfiles.isPublished,
 			display_id: simfiles.displayId,
 			download_url: simfiles.downloadUrl,
+			google_drive_file_id: simfiles.googleDriveFileId,
 			preview_url: simfiles.previewUrl,
 			video_preview_url: simfiles.videoPreviewUrl,
 			publish_date: simfiles.publishDate,
@@ -214,7 +215,11 @@ export const listSimfiles = async (
 	};
 	const selectFields = opts.publishedOnly
 		? baseFields
-		: { ...baseFields, user_id: simfiles.userId };
+		: {
+				...baseFields,
+				user_id: simfiles.userId,
+				google_drive_file_id: simfiles.googleDriveFileId
+			};
 	const rows = await orm
 		.select(selectFields)
 		.from(simfiles)
@@ -408,6 +413,26 @@ export const updateSimfile = async (
 	const result = await db
 		.prepare(`UPDATE simfiles SET ${fields.join(', ')} WHERE id = ? RETURNING *`)
 		.bind(...params)
+		.first<SimfileRow>();
+
+	if (!result) throw new Error('Simfile not found');
+	return result;
+};
+
+export const updateSimfileDriveFile = async (
+	db: D1Database,
+	id: number,
+	ownerUserId: string,
+	data: { googleDriveFileId: string; downloadUrl: string }
+): Promise<SimfileRow> => {
+	const result = await db
+		.prepare(
+			`UPDATE simfiles
+			 SET google_drive_file_id = ?, download_url = ?, updated_at = ?
+			 WHERE id = ? AND user_id = ?
+			 RETURNING *`
+		)
+		.bind(data.googleDriveFileId, data.downloadUrl, new Date().toISOString(), id, ownerUserId)
 		.first<SimfileRow>();
 
 	if (!result) throw new Error('Simfile not found');

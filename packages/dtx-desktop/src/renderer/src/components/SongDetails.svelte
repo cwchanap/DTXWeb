@@ -1070,6 +1070,19 @@
 	/>
 {/if}
 
+{#if uploadWarnings.length > 0 && $authStore.isAuthenticated}
+	<div class="border-amber/40 bg-amber/10 m-4 rounded-lg border p-3">
+		<div class="flex flex-col gap-1">
+			<span class="text-amber text-sm font-medium">
+				Song uploaded, but some preview files could not be uploaded:
+			</span>
+			{#each uploadWarnings as warning}
+				<span class="text-amber text-xs">{warning}</span>
+			{/each}
+		</div>
+	</div>
+{/if}
+
 {#if song.linkedSimFile}
 	<!-- For linked songs, use the built-in Update button -->
 	<div class="flex h-full flex-col">
@@ -1449,19 +1462,6 @@
 							<span class="text-red text-sm">
 								Upload failed: {uploadError}
 							</span>
-						</div>
-					</div>
-				{/if}
-
-				{#if uploadWarnings.length > 0 && $authStore.isAuthenticated}
-					<div class="border-amber/40 bg-amber/10 rounded-lg border p-3">
-						<div class="flex flex-col gap-1">
-							<span class="text-amber text-sm font-medium">
-								Song uploaded, but some preview files could not be uploaded:
-							</span>
-							{#each uploadWarnings as warning}
-								<span class="text-amber text-xs">{warning}</span>
-							{/each}
 						</div>
 					</div>
 				{/if}

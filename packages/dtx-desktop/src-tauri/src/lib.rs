@@ -195,6 +195,14 @@ pub fn run() {
             scores::default_dtxmania_db_path,
             scores::parse_dtxmania_scores,
             updater::check_for_update,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::get_google_drive_connection_state,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::connect_google_drive_and_choose_folder,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::change_google_drive_folder,
+            #[cfg(any(feature = "google-drive", feature = "e2e"))]
+            google_drive::commands::disconnect_google_drive,
             #[cfg(feature = "e2e")]
             e2e::read_e2e_session_nonce
         ])

@@ -411,6 +411,7 @@ pub async fn get_current_session(app: AppHandle) -> Result<Option<serde_json::Va
 #[tauri::command]
 pub async fn logout_session(app: AppHandle) -> Result<bool> {
     let state = app.state::<AuthState>();
+    let user_id = state.current_user_id().await;
     // Best-effort server-side revocation: if we have config + a working HTTP
     // client, POST to Supabase's /logout endpoint to invalidate the refresh
     // token before clearing local state. If config/client is unavailable we
@@ -419,10 +420,22 @@ pub async fn logout_session(app: AppHandle) -> Result<bool> {
     if let Some((supabase_url, anon_key)) = resolve_auth_config() {
         if let Ok(client) = auth_client() {
             revoke_session_with_client(client, &state, &supabase_url, &anon_key).await;
+            if let (Some(user_id), Some(drive)) = (
+                user_id.as_deref(),
+                app.try_state::<crate::google_drive::GoogleDriveState>(),
+            ) {
+                drive.clear_user_memory(user_id).await;
+            }
             return Ok(true);
         }
     }
     state.set_current_session(None).await;
+    if let (Some(user_id), Some(drive)) = (
+        user_id.as_deref(),
+        app.try_state::<crate::google_drive::GoogleDriveState>(),
+    ) {
+        drive.clear_user_memory(user_id).await;
+    }
     Ok(true)
 }
 

@@ -1,6 +1,7 @@
 use crate::auth::AuthState;
 use crate::error::Result;
 use async_trait::async_trait;
+use tauri::{AppHandle, Runtime};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OwnerDriveSimfile {
@@ -27,17 +28,25 @@ pub(crate) trait DriveMetadataClient: Send + Sync {
     ) -> Result<OwnerDriveSimfile>;
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct ApiDriveMetadataClient;
+#[derive(Debug)]
+pub(crate) struct ApiDriveMetadataClient<R: Runtime = tauri::Wry> {
+    app: AppHandle<R>,
+}
+
+impl<R: Runtime> ApiDriveMetadataClient<R> {
+    pub(crate) fn new(app: AppHandle<R>) -> Self {
+        Self { app }
+    }
+}
 
 #[async_trait]
-impl DriveMetadataClient for ApiDriveMetadataClient {
+impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
     async fn fetch_owner_simfile(
         &self,
         auth: &AuthState,
         simfile_id: &str,
     ) -> Result<OwnerDriveSimfile> {
-        crate::api::fetch_owner_drive_simfile(auth, simfile_id).await
+        crate::api::fetch_owner_drive_simfile(auth, &self.app, simfile_id).await
     }
 
     async fn update_drive_file(
@@ -47,7 +56,8 @@ impl DriveMetadataClient for ApiDriveMetadataClient {
         drive_file_id: &str,
         download_url: &str,
     ) -> Result<OwnerDriveSimfile> {
-        crate::api::update_drive_file(auth, simfile_id, drive_file_id, download_url).await
+        crate::api::update_drive_file(auth, &self.app, simfile_id, drive_file_id, download_url)
+            .await
     }
 }
 

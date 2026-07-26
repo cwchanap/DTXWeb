@@ -6,7 +6,7 @@ use reqwest::multipart::{Form, Part};
 use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 use tokio::fs;
 
 const API_REQUEST_TIMEOUT_MS: u64 = 30_000;
@@ -123,6 +123,7 @@ query OwnerDriveSimfile($id: ID!) {
   simfile(id: $id) {
     id
     title
+    userId
     googleDriveFileId
     downloadUrl
   }
@@ -138,6 +139,7 @@ mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $download
   ) {
     id
     title
+    userId
     googleDriveFileId
     downloadUrl
   }
@@ -207,9 +209,9 @@ fn bucket_base_url_from_env() -> Result<String> {
     Ok(url.trim().trim_end_matches('/').to_string())
 }
 
-async fn access_token_from_auth_state(
+async fn access_token_from_auth_state<R: Runtime>(
     state: &AuthState,
-    app: Option<&AppHandle>,
+    app: Option<&AppHandle<R>>,
 ) -> Result<String> {
     // Delegates to `ensure_valid_access_token`, which proactively refreshes
     // the session when the access token is near expiry so long-running
@@ -448,7 +450,10 @@ fn simfile_unavailable() -> DesktopError {
     DesktopError::Message(SIMFILE_UNAVAILABLE.to_string())
 }
 
-fn owner_drive_simfile_from_graphql(simfile: &Value) -> Result<OwnerDriveSimfile> {
+fn owner_drive_simfile_from_graphql(
+    simfile: &Value,
+    authenticated_user_id: &str,
+) -> Result<OwnerDriveSimfile> {
     let id = simfile
         .get("id")
         .and_then(Value::as_str)
@@ -458,6 +463,15 @@ fn owner_drive_simfile_from_graphql(simfile: &Value) -> Result<OwnerDriveSimfile
         .get("title")
         .and_then(Value::as_str)
         .ok_or_else(simfile_unavailable)?;
+    let owner_id = simfile
+        .get("userId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(simfile_unavailable)?;
+
+    if owner_id != authenticated_user_id {
+        return Err(simfile_unavailable());
+    }
 
     Ok(OwnerDriveSimfile {
         id: id.to_string(),
@@ -477,6 +491,7 @@ pub(crate) async fn fetch_owner_drive_simfile_impl(
     base_url: &str,
     token: &str,
     simfile_id: &str,
+    authenticated_user_id: &str,
 ) -> Result<OwnerDriveSimfile> {
     let result = graphql_result_with_url(
         base_url,
@@ -487,7 +502,7 @@ pub(crate) async fn fetch_owner_drive_simfile_impl(
     .await?;
     let data = result.success_data().map_err(|_| simfile_unavailable())?;
 
-    owner_drive_simfile_from_graphql(&data["simfile"])
+    owner_drive_simfile_from_graphql(&data["simfile"], authenticated_user_id)
 }
 
 pub(crate) async fn update_drive_file_impl(
@@ -496,6 +511,7 @@ pub(crate) async fn update_drive_file_impl(
     simfile_id: &str,
     drive_file_id: &str,
     download_url: &str,
+    authenticated_user_id: &str,
 ) -> Result<OwnerDriveSimfile> {
     let result = graphql_result_with_url(
         base_url,
@@ -509,7 +525,8 @@ pub(crate) async fn update_drive_file_impl(
     )
     .await?;
     let data = result.success_data().map_err(|_| simfile_unavailable())?;
-    let simfile = owner_drive_simfile_from_graphql(&data["updateSimfileDriveFile"])?;
+    let simfile =
+        owner_drive_simfile_from_graphql(&data["updateSimfileDriveFile"], authenticated_user_id)?;
 
     if simfile.id != simfile_id
         || simfile.google_drive_file_id.as_deref() != Some(drive_file_id)
@@ -521,24 +538,47 @@ pub(crate) async fn update_drive_file_impl(
     Ok(simfile)
 }
 
-pub(crate) async fn fetch_owner_drive_simfile(
+async fn authenticated_user_id(auth: &AuthState) -> Result<String> {
+    auth.current_session()
+        .await
+        .as_ref()
+        .and_then(|session| session.pointer("/user/id"))
+        .and_then(Value::as_str)
+        .filter(|user_id| !user_id.is_empty())
+        .map(str::to_string)
+        .ok_or_else(simfile_unavailable)
+}
+
+pub(crate) async fn fetch_owner_drive_simfile<R: Runtime>(
     auth: &AuthState,
+    app: &AppHandle<R>,
     simfile_id: &str,
 ) -> Result<OwnerDriveSimfile> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(auth, None).await?;
-    fetch_owner_drive_simfile_impl(&base_url, &token, simfile_id).await
+    let token = access_token_from_auth_state(auth, Some(app)).await?;
+    let user_id = authenticated_user_id(auth).await?;
+    fetch_owner_drive_simfile_impl(&base_url, &token, simfile_id, &user_id).await
 }
 
-pub(crate) async fn update_drive_file(
+pub(crate) async fn update_drive_file<R: Runtime>(
     auth: &AuthState,
+    app: &AppHandle<R>,
     simfile_id: &str,
     drive_file_id: &str,
     download_url: &str,
 ) -> Result<OwnerDriveSimfile> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(auth, None).await?;
-    update_drive_file_impl(&base_url, &token, simfile_id, drive_file_id, download_url).await
+    let token = access_token_from_auth_state(auth, Some(app)).await?;
+    let user_id = authenticated_user_id(auth).await?;
+    update_drive_file_impl(
+        &base_url,
+        &token,
+        simfile_id,
+        drive_file_id,
+        download_url,
+        &user_id,
+    )
+    .await
 }
 
 fn create_input_from_renderer(simfile_data: &Value) -> Value {

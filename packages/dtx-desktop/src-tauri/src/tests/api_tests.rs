@@ -2531,3 +2531,376 @@ async fn fetch_cloud_song_charts_returns_empty_when_dtx_files_absent() {
     assert_eq!(result["success"], serde_json::json!(true));
     assert_eq!(result["data"], serde_json::json!([]));
 }
+
+// ---------------------------------------------------------------------------
+// classify_metadata_auth_error — maps DesktopError messages to the
+// coarse-grained DriveMetadataError categories reconciliation acts on.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn classify_metadata_auth_error_maps_network_messages_to_network() {
+    for message in [
+        "Network error: connection refused",
+        "Request timed out after 30000ms",
+        "timeout contacting auth server",
+    ] {
+        assert_eq!(
+            classify_metadata_auth_error(DesktopError::Message(message.to_string())),
+            crate::google_drive::DriveMetadataError::Network,
+            "expected Network for message: {message}"
+        );
+    }
+}
+
+#[test]
+fn classify_metadata_auth_error_maps_other_messages_to_authentication() {
+    // A non-network failure (e.g. a missing session) is an auth problem, not a
+    // transient outage — collapsing it into Network would let reconciliation
+    // retry forever instead of prompting re-authentication.
+    assert_eq!(
+        classify_metadata_auth_error(DesktopError::Message("No active session".to_string())),
+        crate::google_drive::DriveMetadataError::Authentication
+    );
+}
+
+// ---------------------------------------------------------------------------
+// search_cloud_songs_impl — exclude_ids coercion of non-string values.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn search_cloud_songs_impl_coerces_numeric_exclude_ids_to_strings() {
+    // The renderer may send exclude ids as numbers; the GraphQL variable is
+    // [ID!] (strings), so numeric ids must be stringified rather than dropped.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(body_partial_json(serde_json::json!({
+            "variables": {
+                "query": "Song",
+                "limit": 8,
+                "excludeIds": ["1", "2"]
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "simfileSearch": [] }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = search_cloud_songs_impl(
+        &server.uri(),
+        "token-1",
+        "Song".to_string(),
+        None,
+        Some(vec![serde_json::json!(1), serde_json::json!(2)]),
+    )
+    .await
+    .expect("result");
+
+    assert_eq!(result["success"], serde_json::json!(true));
+}
+
+// ---------------------------------------------------------------------------
+// update_drive_file_impl — null mutation response.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn update_drive_file_impl_returns_definitive_unavailable_for_null_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "updateSimfileDriveFile": null }
+        })))
+        .mount(&server)
+        .await;
+
+    let error = update_drive_file_impl(
+        &server.uri(),
+        "token-1",
+        "42",
+        "drive-file-42",
+        "https://drive.google.com/uc?id=drive-file-42",
+        "user-1",
+    )
+    .await
+    .expect_err("null mutation response is definitive loss");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::DefinitiveUnavailable
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fetch_cloud_song_impl / fetch_cloud_song_charts_impl — GraphQL error branch.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn fetch_cloud_song_impl_returns_failure_on_graphql_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{ "message": "forbidden", "extensions": { "code": "FORBIDDEN" } }]
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_impl(&server.uri(), "token-1", serde_json::json!(42))
+        .await
+        .expect("result");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("forbidden"));
+}
+
+#[tokio::test]
+async fn fetch_cloud_song_charts_impl_returns_failure_on_graphql_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{ "message": "forbidden", "extensions": { "code": "FORBIDDEN" } }]
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_cloud_song_charts_impl(&server.uri(), "token-1", serde_json::json!("42"))
+        .await
+        .expect("result");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("forbidden"));
+}
+
+// ---------------------------------------------------------------------------
+// drive_metadata_graphql_data error-code classification (via
+// fetch_owner_drive_simfile_impl). Each GraphQL error code maps to a
+// coarse-grained category so reconciliation never deletes a recoverable
+// Drive object.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn drive_metadata_classifies_not_found_code_as_definitive_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{ "message": "not found", "extensions": { "code": "NOT_FOUND" } }]
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("NOT_FOUND is definitive loss");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::DefinitiveUnavailable
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_internal_server_error_code_as_service_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{
+                "message": "boom",
+                "extensions": { "code": "INTERNAL_SERVER_ERROR" }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("INTERNAL_SERVER_ERROR is transient");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::ServiceUnavailable
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_service_unavailable_code_as_service_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{
+                "message": "down",
+                "extensions": { "code": "SERVICE_UNAVAILABLE" }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("SERVICE_UNAVAILABLE is transient");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::ServiceUnavailable
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_unauthenticated_code_as_authentication() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{
+                "message": "log in",
+                "extensions": { "code": "UNAUTHENTICATED" }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("UNAUTHENTICATED requires re-auth");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::Authentication
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_unknown_error_code_as_invalid_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{
+                "message": "weird",
+                "extensions": { "code": "SOMETHING_UNEXPECTED" }
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("unknown code is malformed, not absence");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::InvalidResponse
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_4xx_non_auth_status_as_invalid_response() {
+    // A 404/422 is neither an auth failure (401/403) nor a server outage
+    // (5xx); it surfaces as InvalidResponse so reconciliation leaves the
+    // Drive object intact rather than claiming absence.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "error": "not found"
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("4xx non-auth is invalid response");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::InvalidResponse
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_403_status_as_authentication() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+            "error": "forbidden"
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("403 is auth failure");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::Authentication
+    );
+}
+
+// ---------------------------------------------------------------------------
+// upload_bytes_to_api — invalid content-type short-circuits before the POST.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn upload_bytes_to_api_returns_failure_for_invalid_content_type() {
+    // A malformed MIME string (containing a space) is rejected by
+    // Part::mime_str before any network call. No mock server is consulted.
+    let result = upload_bytes_to_api(
+        "https://unused.example.com",
+        "token-1",
+        b"bytes".to_vec(),
+        "preview.jpg",
+        "42",
+        Some("not a valid mime"),
+    )
+    .await;
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().is_some_and(|e| !e.is_empty()));
+}
+
+// ---------------------------------------------------------------------------
+// upload_name_from_file_name — trailing-slash fallback.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn upload_name_from_file_name_falls_back_when_stripped_segment_is_empty() {
+    // "song/" splits to ["song", ""] → stripped is "" → fall back to the
+    // original so we don't upload under an empty name.
+    assert_eq!(upload_name_from_file_name("song/"), "song/");
+}
+
+// ---------------------------------------------------------------------------
+// create_simfile_record_impl — GraphQL error branch.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_simfile_record_impl_returns_failure_on_graphql_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "errors": [{ "message": "forbidden", "extensions": { "code": "FORBIDDEN" } }]
+        })))
+        .mount(&server)
+        .await;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let result = create_simfile_record_impl(
+        &server.uri(),
+        "token-1",
+        serde_json::json!({ "title": "Song" }),
+        workspace.path(),
+    )
+    .await
+    .expect("result");
+
+    assert_eq!(result["success"], serde_json::json!(false));
+    assert!(result["error"].as_str().unwrap().contains("forbidden"));
+}

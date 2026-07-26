@@ -1467,3 +1467,220 @@ fn write_song_zip_removes_a_partial_archive_when_copy_runs_out_of_space() {
     assert!(error.to_string().contains("injected out of space"));
     assert!(!archive.exists(), "partial archive must be removed");
 }
+
+// ---------------------------------------------------------------------------
+// create_song_folder with template copy (covers the successful template path)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_song_copies_template_files_into_new_song_folder() {
+    // Exercises the template-copy branch of create_song_folder (line 138) and
+    // the Ok(()) path of ensure_template_copy_allowed (line 432) — the only
+    // code path where a template is successfully copied into a new song.
+    let root = tempdir().expect("tempdir");
+    let template = root.path().join("Template");
+    fs::create_dir_all(&template).await.expect("template");
+    fs::write(template.join("chart.dtx"), b"#TITLE: Template")
+        .await
+        .expect("template dtx");
+    fs::write(template.join("kick.wav"), b"audio")
+        .await
+        .expect("template wav");
+
+    let options = CreateSongOptions {
+        selected_path: root.path().to_string_lossy().into_owned(),
+        sanitized_folder_name: "NewSong".to_string(),
+        sanitized_song_name: "My Song".to_string(),
+        template_folder_path: Some(template.to_string_lossy().into_owned()),
+    };
+
+    let result = create_song_folder(options)
+        .await
+        .expect("create song with template");
+
+    assert!(result.success);
+    let song_folder = root.path().join("NewSong");
+    assert!(song_folder.join("chart.dtx").is_file());
+    assert!(song_folder.join("kick.wav").is_file());
+    assert!(song_folder.join("SET.def").is_file());
+}
+
+// ---------------------------------------------------------------------------
+// parse_dtx_files_with_workspace_state success path (covers line 314)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn parse_dtx_files_with_workspace_state_returns_metadata_for_in_workspace_folder() {
+    // The existing workspace-state tests only cover error paths (outside
+    // workspace, unset workspace, nonexistent folder). This covers the happy
+    // path that reaches parse_dtx_folder via the canonicalized in-workspace
+    // route (line 314).
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    fs::create_dir(&song).await.expect("song dir");
+    fs::write(
+        song.join("main.dtx"),
+        "#ARTIST: Test Artist\n#BPM: 142.5\n#DLEVEL: 7\n",
+    )
+    .await
+    .expect("main.dtx");
+
+    let state = managed_workspace_state(workspace.path());
+    let result = parse_dtx_files_with_workspace_state(song.to_string_lossy().into_owned(), &state)
+        .await
+        .expect("parse in-workspace folder");
+
+    assert_eq!(result.artist.as_deref(), Some("Test Artist"));
+    assert_eq!(result.bpm, Some(142.5));
+    assert_eq!(result.levels.len(), 1);
+    assert_eq!(result.levels[0].level, 7.0);
+}
+
+// ---------------------------------------------------------------------------
+// ValidatedSongFile PartialEq (covers lines 547-549)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn validated_song_file_partial_eq_compares_canonical_paths() {
+    // The PartialEq impl compares only canonical_path, not archive_name or
+    // source handle. This directly exercises that comparison.
+    let root = tempdir().expect("tempdir");
+    let source = root.path().join("song.dtx");
+    std::fs::write(&source, b"dtx").expect("source");
+    let file = File::open(&source).expect("open");
+
+    let a = ValidatedSongFile {
+        canonical_path: source.clone(),
+        archive_name: "song.dtx".to_string(),
+        source: Arc::new(file.try_clone().expect("clone")),
+    };
+    let b = ValidatedSongFile {
+        canonical_path: source.clone(),
+        archive_name: "different.dtx".to_string(),
+        source: Arc::new(file),
+    };
+    // Same canonical path → equal despite different archive_name/source.
+    assert_eq!(a, b);
+
+    let other_source = root.path().join("other.dtx");
+    std::fs::write(&other_source, b"dtx").expect("other source");
+    let c = ValidatedSongFile {
+        canonical_path: other_source,
+        archive_name: "song.dtx".to_string(),
+        source: Arc::new(File::open(root.path().join("other.dtx")).expect("open other")),
+    };
+    // Different canonical path → not equal.
+    assert_ne!(a, c);
+}
+
+// ---------------------------------------------------------------------------
+// write_song_zip_cancelable (covers lines 704-710, 732-739)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn write_song_zip_cancelable_writes_complete_archive_when_not_canceled() {
+    let root = tempdir().expect("tempdir");
+    let source = root.path().join("song.dtx");
+    std::fs::write(&source, b"dtx content").expect("source");
+    let validated = ValidatedSongFile {
+        canonical_path: source.clone(),
+        archive_name: "song.dtx".to_string(),
+        source: Arc::new(File::open(&source).expect("open source")),
+    };
+    let zip_path = root.path().join("output.zip");
+    let token = CancellationToken::new();
+
+    let count = write_song_zip_cancelable(&zip_path, &[validated], &token)
+        .expect("successful cancelable write");
+
+    assert_eq!(count, 1);
+    assert!(zip_path.exists());
+}
+
+#[test]
+fn write_song_zip_cancelable_returns_canceled_error_for_pre_canceled_token() {
+    // A pre-canceled token must abort before any data is written and remove
+    // the partial archive so neither manual export nor upload can consume it.
+    let root = tempdir().expect("tempdir");
+    let source = root.path().join("song.dtx");
+    std::fs::write(&source, b"dtx").expect("source");
+    let validated = ValidatedSongFile {
+        canonical_path: source.clone(),
+        archive_name: "song.dtx".to_string(),
+        source: Arc::new(File::open(&source).expect("open source")),
+    };
+    let zip_path = root.path().join("canceled.zip");
+    let token = CancellationToken::new();
+    token.cancel();
+
+    let error = write_song_zip_cancelable(&zip_path, &[validated], &token)
+        .expect_err("pre-canceled write must error");
+
+    assert_eq!(error.to_string(), "CANCELED");
+    assert!(!zip_path.exists(), "partial archive must be removed");
+}
+
+#[test]
+fn write_song_zip_cancelable_aborts_mid_copy_and_removes_partial_archive() {
+    // Cancels after the first 64 KB chunk is written, exercising the in-loop
+    // cancellation check (lines 729/737) and the finish check (line 739).
+    let root = tempdir().expect("tempdir");
+    let source = root.path().join("song.dtx");
+    let content = vec![b'x'; 128 * 1024]; // > 1 chunk (64 KB)
+    std::fs::write(&source, &content).expect("source");
+    let validated = ValidatedSongFile {
+        canonical_path: source.clone(),
+        archive_name: "song.dtx".to_string(),
+        source: Arc::new(File::open(&source).expect("open source")),
+    };
+    let zip_path = root.path().join("partial.zip");
+    let token = CancellationToken::new();
+    let cancel_token = token.clone();
+
+    let error =
+        write_song_zip_cancelable_with_chunk_hook(&zip_path, &[validated], &token, move || {
+            cancel_token.cancel();
+        })
+        .expect_err("mid-copy cancellation must error");
+
+    assert_eq!(error.to_string(), "CANCELED");
+    assert!(!zip_path.exists(), "partial archive must be removed");
+}
+
+// ---------------------------------------------------------------------------
+// ensure_export_directory error branches (covers lines 793-798)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn ensure_export_directory_rejects_when_parent_path_is_a_file() {
+    // create_dir_all fails when a parent component is a regular file, hitting
+    // the map_err branch that wraps the error in a descriptive message.
+    let root = tempdir().expect("tempdir");
+    let blocker = root.path().join("blocker");
+    fs::write(&blocker, b"not a dir")
+        .await
+        .expect("blocker file");
+    let export_dir = blocker.join("subdir");
+
+    let error = ensure_export_directory(&export_dir)
+        .await
+        .expect_err("export dir under a file must reject");
+
+    assert!(error
+        .to_string()
+        .contains("Cannot access or create export directory"));
+}
+
+// ---------------------------------------------------------------------------
+// parse_set_def_labels: label without file directive (covers line 1075)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_set_def_labels_skips_label_without_matching_file_directive() {
+    // A #L{n}LABEL without a corresponding #L{n}FILE should be skipped via the
+    // `continue` at line 1075 rather than producing an orphan entry.
+    let labels = parse_set_def_labels("#L1LABEL Orphan\n#L2LABEL Real\n#L2FILE real.dtx\n");
+
+    assert!(!labels.contains_key("orphan"));
+    assert_eq!(labels.get("real.dtx"), Some(&"Real".to_string()));
+}

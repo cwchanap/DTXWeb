@@ -12,6 +12,10 @@ esac
 
 oauth_client_id="${GOOGLE_DRIVE_OAUTH_CLIENT_ID:-}"
 if [[ -z "${oauth_client_id//[[:space:]]/}" ]]; then
+	if [[ "$build_environment" == "preproduction" && "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
+		echo "::notice::GOOGLE_DRIVE_OAUTH_CLIENT_ID is not configured; building this pull request with Google Drive disabled."
+		exit 0
+	fi
 	echo "::error::GOOGLE_DRIVE_OAUTH_CLIENT_ID is required for $build_environment builds." >&2
 	exit 1
 fi

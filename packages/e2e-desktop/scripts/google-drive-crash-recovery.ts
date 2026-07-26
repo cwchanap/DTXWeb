@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -31,6 +32,21 @@ type CrashRecoveryInput = {
 	diagnosticsRoot?: string;
 };
 
+type ReloadReadinessProbe = {
+	documentToken: string | null;
+	readyState: DocumentReadyState;
+	workspacePresent: boolean;
+	workspaceVisible: boolean;
+	bridgeReady: boolean;
+};
+
+type ReloadWaitOptions = {
+	timeoutMs?: number;
+	intervalMs?: number;
+	now?: () => number;
+	sleep?: (milliseconds: number) => Promise<void>;
+};
+
 const crashControl: E2eDriveControl = {
 	reset: true,
 	owner: {
@@ -61,29 +77,128 @@ const seedNativeState = (dataDir: string, fixture: WorkspaceFixture): void => {
 	);
 };
 
-const waitForWorkspaceReady = async (session: WebdriverIO.Browser): Promise<void> => {
-	await session.waitUntil(
-		async () =>
-			await session.execute(() => {
-				const search = document.querySelector(
-					'input[placeholder="Search songs and folders..."]'
-				);
-				if (!search) return false;
+const reloadProbe = (): ReloadReadinessProbe => {
+	const e2eWindow = window as typeof window & {
+		__dtxE2eReloadDocumentToken?: string;
+		__TAURI__?: { core?: { invoke?: unknown } };
+		__wdio_original_core__?: { invoke?: unknown };
+	};
+	const search = document.querySelector('input[placeholder="Search songs and folders..."]');
+	const style = search ? getComputedStyle(search) : null;
+	const rect = search?.getBoundingClientRect();
+	const invoke = e2eWindow.__wdio_original_core__?.invoke ?? e2eWindow.__TAURI__?.core?.invoke;
 
-				const style = getComputedStyle(search);
-				const rect = search.getBoundingClientRect();
-				return (
-					style.display !== 'none' &&
-					style.visibility !== 'hidden' &&
-					Number.parseFloat(style.opacity) > 0 &&
-					rect.width > 0 &&
-					rect.height > 0
+	return {
+		documentToken: e2eWindow.__dtxE2eReloadDocumentToken ?? null,
+		readyState: document.readyState,
+		workspacePresent: search !== null,
+		workspaceVisible:
+			style !== null &&
+			rect !== undefined &&
+			style.display !== 'none' &&
+			style.visibility !== 'hidden' &&
+			Number.parseFloat(style.opacity) > 0 &&
+			rect.width > 0 &&
+			rect.height > 0,
+		bridgeReady: typeof invoke === 'function'
+	};
+};
+
+const isRetryableReloadProbeError = (error: unknown): boolean =>
+	/A JavaScript exception occurred|Script execution timed out|browsing context|navigation|page load|document.*unload|no such window|stale element reference|disconnected/i.test(
+		error instanceof Error ? error.message : String(error)
+	);
+
+const reloadProbeSummary = (
+	probe: ReloadReadinessProbe | undefined,
+	previousDocumentToken: string
+): string => {
+	if (!probe) return 'probe=unavailable';
+	const documentState = probe.documentToken === previousDocumentToken ? 'old' : 'replaced';
+	const workspaceState = !probe.workspacePresent
+		? 'missing'
+		: probe.workspaceVisible
+			? 'visible'
+			: 'hidden';
+	return [
+		`document=${documentState}`,
+		`readyState=${probe.readyState}`,
+		`workspace=${workspaceState}`,
+		`bridge=${probe.bridgeReady ? 'ready' : 'missing'}`
+	].join(', ');
+};
+
+export const waitForReloadedWorkspace = async (
+	session: WebdriverIO.Browser,
+	previousDocumentToken: string,
+	{
+		timeoutMs = 20_000,
+		intervalMs = 100,
+		now = Date.now,
+		sleep = async (milliseconds) =>
+			await new Promise((resolve) => setTimeout(resolve, milliseconds))
+	}: ReloadWaitOptions = {}
+): Promise<ReloadReadinessProbe> => {
+	const deadline = now() + timeoutMs;
+	let latest: ReloadReadinessProbe | undefined;
+	let lastTransientError: string | undefined;
+
+	while (now() < deadline) {
+		const remainingMs = Math.max(1, deadline - now());
+		let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+		const outcome = await Promise.race([
+			session
+				.execute(reloadProbe)
+				.then((probe) => ({ kind: 'probe' as const, probe }))
+				.catch((error: unknown) => ({ kind: 'error' as const, error })),
+			new Promise<{ kind: 'deadline' }>((resolve) => {
+				deadlineTimer = setTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
+			})
+		]);
+		if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+
+		if (outcome.kind === 'deadline') break;
+		if (outcome.kind === 'error') {
+			if (!isRetryableReloadProbeError(outcome.error)) {
+				throw new Error(
+					`Crash-recovery reload probe failed: ${
+						outcome.error instanceof Error
+							? outcome.error.message
+							: String(outcome.error)
+					}`,
+					{ cause: outcome.error }
 				);
-			}),
-		{
-			timeout: 20_000,
-			timeoutMsg: 'Expected crash-recovery workspace to restore'
+			}
+			lastTransientError =
+				outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+		} else {
+			latest = outcome.probe;
+			const documentReplaced = latest.documentToken !== previousDocumentToken;
+			const documentReady =
+				latest.readyState === 'interactive' || latest.readyState === 'complete';
+			if (
+				documentReplaced &&
+				documentReady &&
+				latest.workspacePresent &&
+				latest.workspaceVisible &&
+				latest.bridgeReady
+			) {
+				return latest;
+			}
 		}
+
+		const delayMs = Math.min(intervalMs, Math.max(0, deadline - now()));
+		if (delayMs > 0) await sleep(delayMs);
+	}
+
+	const transientDiagnostic = lastTransientError
+		? `, lastTransientError=${lastTransientError}`
+		: '';
+	throw new Error(
+		`Timed out after ${timeoutMs}ms waiting for the crash-recovery document reload: ${reloadProbeSummary(
+			latest,
+			previousDocumentToken
+		)}${transientDiagnostic}`
 	);
 };
 
@@ -91,8 +206,13 @@ const seedRendererState = async (
 	session: WebdriverIO.Browser,
 	fixture: WorkspaceFixture
 ): Promise<void> => {
-	await session.execute(
-		({ songPath, userId }) => {
+	const previousDocumentToken = `drive-crash-${randomUUID()}`;
+	const installedDocumentToken = await session.execute(
+		({ documentToken, songPath, userId }) => {
+			const e2eWindow = window as typeof window & {
+				__dtxE2eReloadDocumentToken?: string;
+			};
+			e2eWindow.__dtxE2eReloadDocumentToken = documentToken;
 			localStorage.clear();
 			localStorage.setItem('auth_access_token', 'renderer-e2e-access-token');
 			localStorage.setItem('auth_refresh_token', 'renderer-e2e-refresh-token');
@@ -128,15 +248,15 @@ const seedRendererState = async (
 				})
 			);
 			window.location.hash = '';
+			return e2eWindow.__dtxE2eReloadDocumentToken;
 		},
-		{ songPath: fixture.songFolder, userId: e2eUserId }
+		{ documentToken: previousDocumentToken, songPath: fixture.songFolder, userId: e2eUserId }
 	);
+	if (installedDocumentToken !== previousDocumentToken) {
+		throw new Error('Failed to install the crash-recovery pre-refresh document token');
+	}
 	await session.refresh();
-	// The embedded WebDriver reports refresh completion before WebKit has
-	// finished replacing the document. Avoid issuing executeScript into that
-	// transition; the first command can otherwise block until its script timeout.
-	await new Promise((resolve) => setTimeout(resolve, 100));
-	await waitForWorkspaceReady(session);
+	await waitForReloadedWorkspace(session, previousDocumentToken);
 };
 
 const clickUploadButton = async (session: WebdriverIO.Browser): Promise<void> => {

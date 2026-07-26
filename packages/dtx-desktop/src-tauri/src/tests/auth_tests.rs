@@ -1560,6 +1560,9 @@ fn resolve_auth_config_returns_none_in_test_environment() {
     // validate_session and verify_magic_link translate to a "not configured"
     // response. This covers the NotConfigured branch without requiring
     // process-global env mutation that could race with parallel tests.
+    let _guard = crate::auth::auth_config_env_lock()
+        .lock()
+        .expect("auth config env lock");
     assert!(resolve_auth_config().is_none());
 }
 

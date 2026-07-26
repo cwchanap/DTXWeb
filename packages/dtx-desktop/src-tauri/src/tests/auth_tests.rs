@@ -113,6 +113,37 @@ fn rejects_session_data_without_both_tokens() {
 }
 
 #[tokio::test]
+async fn current_user_id_returns_only_a_nonblank_session_user_id() {
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "user": { "id": "  drumery-user-42  " }
+        })))
+        .await;
+
+    assert_eq!(
+        state.current_user_id().await.as_deref(),
+        Some("drumery-user-42")
+    );
+}
+
+#[tokio::test]
+async fn current_user_id_rejects_absent_malformed_and_blank_user_ids() {
+    for session in [
+        serde_json::json!({}),
+        serde_json::json!({ "user": null }),
+        serde_json::json!({ "user": {} }),
+        serde_json::json!({ "user": { "id": "   " } }),
+        serde_json::json!({ "user": { "id": 42 } }),
+    ] {
+        let state = AuthState::default();
+        state.set_current_session(Some(session)).await;
+
+        assert_eq!(state.current_user_id().await, None);
+    }
+}
+
+#[tokio::test]
 async fn magic_link_failure_does_not_echo_raw_link() {
     let event = auth_event_from_url(
         "dtx://auth-callback?magic_link=https%3A%2F%2Fexample.com%2Fmagic%3Ftoken_hash%3Dsecret",

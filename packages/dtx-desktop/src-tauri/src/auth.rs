@@ -165,6 +165,24 @@ impl AuthState {
         self.current_session.lock().await.clone()
     }
 
+    /// Returns the authenticated Drumery user identifier when the stored
+    /// Supabase session contains a non-blank string at `user.id`.
+    ///
+    /// Drive commands derive ownership from this native session rather than
+    /// accepting a renderer-provided user identifier.
+    #[allow(dead_code)] // Used by the Drive command boundary added in Task 7.
+    pub async fn current_user_id(&self) -> Option<String> {
+        self.current_session()
+            .await
+            .as_ref()
+            .and_then(|session| session.get("user"))
+            .and_then(|user| user.get("id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|user_id| !user_id.is_empty())
+            .map(str::to_string)
+    }
+
     pub async fn set_current_session(&self, session: Option<serde_json::Value>) {
         *self.current_session.lock().await = session;
     }

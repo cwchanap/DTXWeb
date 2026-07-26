@@ -193,6 +193,79 @@ async fn permission_validation_paginates_and_accepts_public_commenter_or_writer(
 }
 
 #[tokio::test]
+async fn permission_pagination_preserves_opaque_page_token_byte_for_byte() {
+    let server = MockServer::start().await;
+    let opaque_token = "  opaque +/== token  ";
+    mount_valid_folder(&server, "folder-42").await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/folder-42/permissions"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(query_param("fields", PERMISSION_FIELDS))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "permissions": [],
+            "nextPageToken": opaque_token
+        })))
+        .with_priority(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/folder-42/permissions"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(query_param("fields", PERMISSION_FIELDS))
+        .and(query_param("pageToken", opaque_token))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "permissions": [{
+                "id": "permission-anyone",
+                "type": "anyone",
+                "role": "reader",
+                "view": null,
+                "allowFileDiscovery": false
+            }]
+        })))
+        .with_priority(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_folder(ACCESS_TOKEN, "folder-42")
+            .await
+            .map(|_| ()),
+        Ok(())
+    );
+}
+
+#[tokio::test]
+async fn ambiguous_page_tokens_fail_as_sharing_check_unavailable() {
+    let oversized_token = "x".repeat(8 * 1024 + 1);
+    for (name, token) in [
+        ("empty", String::new()),
+        ("whitespace", " \t\r\n ".to_string()),
+        ("oversized", oversized_token),
+    ] {
+        let server = MockServer::start().await;
+        mount_valid_folder(&server, "folder-42").await;
+        Mock::given(method("GET"))
+            .and(path("/drive/v3/files/folder-42/permissions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "permissions": [],
+                "nextPageToken": token
+            })))
+            .mount(&server)
+            .await;
+
+        assert_eq!(
+            client(&server)
+                .validate_folder(ACCESS_TOKEN, "folder-42")
+                .await,
+            Err(GoogleDriveValidationError::SharingCheckUnavailable),
+            "{name}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn permission_validation_rejects_non_anonymous_restricted_or_non_read_roles() {
     for (name, permission) in [
         (
@@ -214,6 +287,18 @@ async fn permission_validation_rejects_non_anonymous_restricted_or_non_read_role
         (
             "restricted view",
             json!({"id":"p","type":"anyone","role":"reader","view":"metadata","allowFileDiscovery":false}),
+        ),
+        (
+            "empty populated view",
+            json!({"id":"p","type":"anyone","role":"reader","view":"","allowFileDiscovery":false}),
+        ),
+        (
+            "whitespace populated view",
+            json!({"id":"p","type":"anyone","role":"reader","view":" \t ","allowFileDiscovery":false}),
+        ),
+        (
+            "unknown populated view",
+            json!({"id":"p","type":"anyone","role":"reader","view":"future-provider-value","allowFileDiscovery":false}),
         ),
         (
             "non-read role",

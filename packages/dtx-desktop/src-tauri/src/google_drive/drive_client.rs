@@ -15,6 +15,7 @@ const FOLDER_FIELDS: &str = "id,name,mimeType,trashed,capabilities(canAddChildre
 const EXISTING_FILE_FIELDS: &str = "id,trashed";
 const PERMISSION_FIELDS: &str = "permissions(id,type,role,view,allowFileDiscovery),nextPageToken";
 const MAX_PERMISSION_PAGES: usize = 100;
+const MAX_PAGE_TOKEN_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PublicPermissionStatus {
@@ -225,12 +226,12 @@ impl GoogleDriveClient {
             if page.permissions.iter().any(Permission::is_public) {
                 return Ok(PublicPermissionStatus::Public);
             }
-            let Some(next_page_token) = page
-                .next_page_token
-                .map(|token| token.trim().to_string())
-                .filter(|token| !token.is_empty())
-            else {
-                return Ok(PublicPermissionStatus::NotPublic);
+            let next_page_token = match page.next_page_token {
+                None => return Ok(PublicPermissionStatus::NotPublic),
+                Some(token) if token.trim().is_empty() || token.len() > MAX_PAGE_TOKEN_BYTES => {
+                    return Ok(PublicPermissionStatus::CheckUnavailable);
+                }
+                Some(token) => token,
             };
             if !seen_tokens.insert(next_page_token.clone()) {
                 return Err(GoogleDriveValidationError::InvalidResponse);
@@ -350,10 +351,7 @@ impl Permission {
     fn is_public(&self) -> bool {
         let _complete_response_fields = (&self.id, self.allow_file_discovery);
         self.permission_type == "anyone"
-            && self
-                .view
-                .as_deref()
-                .map_or(true, |view| view.trim().is_empty())
+            && self.view.is_none()
             && matches!(self.role.as_str(), "reader" | "commenter" | "writer")
     }
 }

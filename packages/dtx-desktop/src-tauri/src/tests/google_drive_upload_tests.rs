@@ -1264,6 +1264,24 @@ fn pending_store(data_dir: &TempDir) -> GoogleDrivePendingBindingStore {
     GoogleDrivePendingBindingStore::new(data_dir.path().to_path_buf())
 }
 
+fn seed_pending_binding(
+    store: &GoogleDrivePendingBindingStore,
+    drive_file_id: &str,
+    kind: PendingBindingKind,
+) {
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: drive_file_id.to_string(),
+                kind,
+                created_at: "2026-07-26T00:00:00Z".to_string(),
+            },
+        )
+        .expect("pending binding");
+}
+
 fn script_successful_create(api: &ScriptedDriveApi, file_id: &str, download_url: &str) {
     api.chunks
         .lock()
@@ -1646,6 +1664,151 @@ async fn reconciliation_binds_an_existing_public_zip_and_never_starts_a_duplicat
     assert!(api.create_metadata.lock().unwrap().is_empty());
     assert_eq!(*api.generated_count.lock().unwrap(), 0);
     assert_eq!(store.get("user-42", "42").expect("pending read"), None);
+}
+
+#[tokio::test]
+async fn already_referenced_pending_file_is_retained_when_drive_validation_fails() {
+    for auth_sweep in [false, true] {
+        let data_dir = tempdir().expect("data dir");
+        let store = pending_store(&data_dir);
+        seed_pending_binding(
+            &store,
+            "already-referenced-id",
+            PendingBindingKind::FirstUpload,
+        );
+        let api = ScriptedDriveApi::default();
+        api.files
+            .lock()
+            .unwrap()
+            .push_back(Ok(ScriptedDriveApi::valid_file(
+                "already-referenced-id",
+                Some("https://drive.google.com/already-referenced"),
+            )));
+        api.permissions
+            .lock()
+            .unwrap()
+            .push_back(Err(DriveApiError::PermissionDenied));
+        api.deletes.lock().unwrap().push_back(Ok(()));
+        let metadata = ScriptedMetadataClient::default();
+        metadata
+            .fetches
+            .lock()
+            .unwrap()
+            .push_back(Ok(ScriptedMetadataClient::owner(
+                Some("already-referenced-id"),
+                None,
+            )));
+        let auth = authenticated_user("user-42").await;
+
+        if auth_sweep {
+            reconcile_pending_bindings_for_current_user(
+                &api,
+                &store,
+                &metadata,
+                &auth,
+                ACCESS_TOKEN,
+            )
+            .await;
+        } else {
+            let archive = create_request(b"zip");
+            run_crash_safe_create_for_test(
+                &api,
+                &RecordingSleeper::default(),
+                &store,
+                &metadata,
+                &auth,
+                ACCESS_TOKEN,
+                crash_safe_request(
+                    archive.request.archive_path,
+                    PendingBindingKind::FirstUpload,
+                ),
+                4,
+                None,
+                |_, _| {},
+            )
+            .await
+            .expect_err("Drive validation remains repairable");
+        }
+
+        assert!(api.delete_ids.lock().unwrap().is_empty());
+        assert!(store.get("user-42", "42").expect("pending").is_some());
+        assert!(metadata.patch_inputs.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn already_referenced_pending_file_is_retained_after_repeated_patch_failure() {
+    for auth_sweep in [false, true] {
+        let data_dir = tempdir().expect("data dir");
+        let store = pending_store(&data_dir);
+        seed_pending_binding(
+            &store,
+            "already-referenced-id",
+            PendingBindingKind::ExplicitReplacement,
+        );
+        let api = ScriptedDriveApi::default();
+        api.files
+            .lock()
+            .unwrap()
+            .push_back(Ok(ScriptedDriveApi::valid_file(
+                "already-referenced-id",
+                Some("https://drive.google.com/repaired"),
+            )));
+        api.permissions
+            .lock()
+            .unwrap()
+            .push_back(Ok(PublicPermissionStatus::Public));
+        api.deletes.lock().unwrap().push_back(Ok(()));
+        let metadata = ScriptedMetadataClient::default();
+        let invalid_owner = ScriptedMetadataClient::owner(
+            Some("already-referenced-id"),
+            Some("http://invalid.example/not-stable"),
+        );
+        metadata.fetches.lock().unwrap().extend([
+            Ok(invalid_owner.clone()),
+            Ok(invalid_owner.clone()),
+            Ok(invalid_owner),
+        ]);
+        metadata.patches.lock().unwrap().extend([
+            Err(DriveMetadataError::Network),
+            Err(DriveMetadataError::Network),
+        ]);
+        let auth = authenticated_user("user-42").await;
+
+        if auth_sweep {
+            reconcile_pending_bindings_for_current_user(
+                &api,
+                &store,
+                &metadata,
+                &auth,
+                ACCESS_TOKEN,
+            )
+            .await;
+        } else {
+            let archive = create_request(b"zip");
+            run_crash_safe_create_for_test(
+                &api,
+                &RecordingSleeper::default(),
+                &store,
+                &metadata,
+                &auth,
+                ACCESS_TOKEN,
+                crash_safe_request(
+                    archive.request.archive_path,
+                    PendingBindingKind::ExplicitReplacement,
+                ),
+                4,
+                None,
+                |_, _| {},
+            )
+            .await
+            .expect_err("metadata repair remains pending");
+        }
+
+        assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 2);
+        assert!(api.delete_ids.lock().unwrap().is_empty());
+        assert!(store.get("user-42", "42").expect("pending").is_some());
+    }
 }
 
 #[tokio::test]

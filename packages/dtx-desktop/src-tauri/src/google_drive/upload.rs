@@ -590,6 +590,9 @@ where
     let download_url = match validation {
         Ok(download_url) => download_url,
         Err(error) => {
+            if owner_references_pending_file(prior_owner, pending) {
+                return Err(create_failure(error));
+            }
             return compensate_pending_failure(api, pending_store, access_token, pending, error)
                 .await;
         }
@@ -657,6 +660,9 @@ where
             Ok(current) if owner_binding_matches(&current, prior_owner) => {}
             Ok(_) => return Err(create_failure(DriveApiError::MetadataSync)),
             Err(DriveMetadataError::DefinitiveUnavailable) => {
+                if owner_references_pending_file(prior_owner, pending) {
+                    return Err(create_failure(DriveApiError::SimfileUnavailable));
+                }
                 return compensate_lost_owner(api, pending_store, access_token, Some(pending))
                     .await;
             }
@@ -667,6 +673,9 @@ where
         }
     }
 
+    if owner_references_pending_file(prior_owner, pending) {
+        return Err(create_failure(DriveApiError::MetadataSync));
+    }
     compensate_pending_failure(
         api,
         pending_store,
@@ -675,6 +684,13 @@ where
         DriveApiError::MetadataSync,
     )
     .await
+}
+
+fn owner_references_pending_file(
+    owner: &OwnerDriveSimfile,
+    pending: &PendingGoogleDriveBinding,
+) -> bool {
+    owner.google_drive_file_id.as_deref() == Some(pending.drive_file_id.as_str())
 }
 
 fn owner_has_drive_binding(

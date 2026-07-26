@@ -447,6 +447,7 @@ pub fn update_input_from_renderer(update_data: Value) -> Value {
 
 fn owner_drive_simfile_from_graphql(
     simfile: &Value,
+    expected_simfile_id: &str,
     authenticated_user_id: &str,
 ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
     let id = simfile
@@ -463,7 +464,12 @@ fn owner_drive_simfile_from_graphql(
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or(DriveMetadataError::InvalidResponse)?;
+    let google_drive_file_id = required_nullable_owner_string(simfile, "googleDriveFileId")?;
+    let download_url = required_nullable_owner_string(simfile, "downloadUrl")?;
 
+    if id != expected_simfile_id {
+        return Err(DriveMetadataError::InvalidResponse);
+    }
     if owner_id != authenticated_user_id {
         return Err(DriveMetadataError::DefinitiveUnavailable);
     }
@@ -471,15 +477,20 @@ fn owner_drive_simfile_from_graphql(
     Ok(OwnerDriveSimfile {
         id: id.to_string(),
         title: title.to_string(),
-        google_drive_file_id: simfile
-            .get("googleDriveFileId")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        download_url: simfile
-            .get("downloadUrl")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        google_drive_file_id,
+        download_url,
     })
+}
+
+fn required_nullable_owner_string(
+    simfile: &Value,
+    field: &str,
+) -> std::result::Result<Option<String>, DriveMetadataError> {
+    match simfile.get(field) {
+        Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) | None => Err(DriveMetadataError::InvalidResponse),
+    }
 }
 
 pub(crate) async fn fetch_owner_drive_simfile_impl(
@@ -501,11 +512,7 @@ pub(crate) async fn fetch_owner_drive_simfile_impl(
     if simfile.is_null() {
         return Err(DriveMetadataError::DefinitiveUnavailable);
     }
-    let simfile = owner_drive_simfile_from_graphql(simfile, authenticated_user_id)?;
-    if simfile.id != simfile_id {
-        return Err(DriveMetadataError::InvalidResponse);
-    }
-    Ok(simfile)
+    owner_drive_simfile_from_graphql(simfile, simfile_id, authenticated_user_id)
 }
 
 pub(crate) async fn update_drive_file_impl(
@@ -533,7 +540,7 @@ pub(crate) async fn update_drive_file_impl(
     if value.is_null() {
         return Err(DriveMetadataError::DefinitiveUnavailable);
     }
-    let simfile = owner_drive_simfile_from_graphql(value, authenticated_user_id)?;
+    let simfile = owner_drive_simfile_from_graphql(value, simfile_id, authenticated_user_id)?;
 
     if simfile.id != simfile_id
         || simfile.google_drive_file_id.as_deref() != Some(drive_file_id)

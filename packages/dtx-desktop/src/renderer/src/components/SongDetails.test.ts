@@ -15,6 +15,15 @@ vi.mock('@dtx/common', async (importOriginal) => {
 	};
 });
 
+vi.mock('svelte-i18n', () => ({
+	_: {
+		subscribe: (callback: (translate: (key: string) => string) => void) => {
+			callback((key) => key);
+			return () => {};
+		}
+	}
+}));
+
 vi.mock('./CloudSongAutocomplete.svelte', () => ({ default: vi.fn() }));
 
 const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
@@ -37,7 +46,10 @@ const { mockDesktopHost, mockHostInvoke } = vi.hoisted(() => {
 			parseDtxFiles: vi.fn((folderPath: string) => hostInvoke('parse-dtx-files', folderPath)),
 			uploadFile: vi.fn((fileName: string, songFolderPath: string, simfileId: string) =>
 				hostInvoke('upload-file', fileName, songFolderPath, simfileId)
-			)
+			),
+			uploadSongZipToGoogleDrive: vi.fn(),
+			cancelGoogleDriveUpload: vi.fn(),
+			onGoogleDriveUploadProgress: vi.fn()
 		}
 	};
 });
@@ -71,7 +83,8 @@ vi.mock('../stores/workspaceStore', () => ({
 			};
 		}),
 		closeSongDetails: vi.fn(),
-		linkSimFileToFolder: vi.fn()
+		linkSimFileToFolder: vi.fn(),
+		mergeGoogleDriveFields: vi.fn()
 	}
 }));
 
@@ -111,6 +124,7 @@ import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
 import { workspaceStore } from '../stores/workspaceStore';
 import { editorMappingStore } from '../stores/editorMappingStore';
 import { ChartDetail } from '@dtx/common/components';
+import { googleDriveStore } from '../stores/googleDriveStore';
 
 const makeNode = (
 	name: string,
@@ -169,11 +183,19 @@ describe('SongDetails', () => {
 		workspaceListeners.length = 0;
 		authState = { isAuthenticated: false, isLoading: false, user: null, error: null };
 		vi.clearAllMocks();
+		vi.stubGlobal('crypto', {
+			randomUUID: vi.fn(() => 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8')
+		});
+		googleDriveStore.reset();
 		mockHostInvoke.mockResolvedValue({ files: [] });
+		mockDesktopHost.onGoogleDriveUploadProgress.mockResolvedValue(vi.fn());
+		mockDesktopHost.uploadSongZipToGoogleDrive.mockResolvedValue({ success: true });
+		mockDesktopHost.cancelGoogleDriveUpload.mockResolvedValue(true);
 	});
 
 	afterEach(() => {
 		cleanup();
+		vi.unstubAllGlobals();
 	});
 
 	describe('rendering – unlinked song', () => {
@@ -995,6 +1017,415 @@ describe('SongDetails', () => {
 					updateData: expect.any(Object)
 				});
 			});
+		});
+	});
+
+	describe('Google Drive save orchestration', () => {
+		beforeEach(() => {
+			authState = { ...authState, isAuthenticated: true };
+			workspaceState = { ...workspaceState, path: '/test' };
+			googleDriveStore.setConnection({
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' }
+			});
+		});
+
+		it('stops before Drive when creating the primary simfile fails', async () => {
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') {
+					return { success: false, error: 'Primary save failed' };
+				}
+				return { files: [] };
+			});
+			const song = makeNode('TestSong', '/test/TestSong', { containsDtxFiles: true });
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+				).toBe(42);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: false,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).not.toHaveBeenCalled();
+		});
+
+		it('uses the newly returned create ID and merges only successful Drive fields', async () => {
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') {
+					return {
+						success: true,
+						simfileId: '73',
+						data: {
+							...makeLinkedSimFile(),
+							id: 73,
+							title: 'Saved server title',
+							download_url: 'https://example.com/old.zip',
+							google_drive_file_id: 'drive-old'
+						}
+					};
+				}
+				return { files: [] };
+			});
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockResolvedValue({
+				success: true,
+				fileId: 'drive-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-new'
+			});
+			const song = makeNode('Unsaved Renderer Title', '/test/TestSong', {
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+			await waitFor(() => {
+				expect(
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+				).toBe(42);
+			});
+
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: true,
+					downloadUrl: 'https://example.com/old.zip',
+					videoPreviewUrl: ''
+				}
+			});
+
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith({
+				operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+				simfileId: '73',
+				songRelativePath: 'TestSong'
+			});
+			expect(song.linkedSimFile).toMatchObject({
+				title: 'Saved server title',
+				google_drive_file_id: 'drive-new',
+				download_url: 'https://drive.google.com/uc?id=drive-new'
+			});
+			expect(workspaceStore.mergeGoogleDriveFields).toHaveBeenCalledWith(
+				'/test/TestSong',
+				'73',
+				{
+					googleDriveFileId: 'drive-new',
+					downloadUrl: 'https://drive.google.com/uc?id=drive-new'
+				}
+			);
+		});
+
+		it('updates metadata before Drive and preserves old binding fields when Drive fails', async () => {
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'update-simfile-record') {
+					return { success: true, data: { title: 'Fresh server title' } };
+				}
+				return { files: [] };
+			});
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockResolvedValue({
+				success: false,
+				errorCode: 'NETWORK'
+			});
+			const song = makeNode('Unsaved Renderer Title', '/test/TestSong', {
+				linkedSimFile: {
+					...makeLinkedSimFile(),
+					google_drive_file_id: 'drive-old',
+					download_url: 'https://example.com/old.zip'
+				},
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			googleDriveStore.setConnection({
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' }
+			});
+			await waitFor(() => {
+				expect(
+					screen.getByRole('button', { name: 'Re-upload ZIP to Drive' })
+				).not.toBeDisabled();
+			});
+
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 5,
+					publishDate: '2024-06-15',
+					isPublished: true,
+					downloadUrl: 'https://example.com/old.zip',
+					videoPreviewUrl: ''
+				}
+			});
+
+			const updateCallIndex = mockHostInvoke.mock.calls.findIndex(
+				([channel]) => channel === 'update-simfile-record'
+			);
+			expect(updateCallIndex).toBeGreaterThanOrEqual(0);
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledOnce()
+			);
+			expect(mockHostInvoke.mock.invocationCallOrder[updateCallIndex]).toBeLessThan(
+				mockDesktopHost.uploadSongZipToGoogleDrive.mock.invocationCallOrder[0]
+			);
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith({
+				operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+				simfileId: '42',
+				songRelativePath: 'TestSong'
+			});
+			expect(song.linkedSimFile).toMatchObject({
+				title: 'Fresh server title',
+				google_drive_file_id: 'drive-old',
+				download_url: 'https://example.com/old.zip'
+			});
+			expect(workspaceStore.mergeGoogleDriveFields).not.toHaveBeenCalled();
+		});
+
+		it('guards duplicate update events until Drive cancellation completes', async () => {
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'update-simfile-record') {
+					return { success: true, data: { title: 'Saved title' } };
+				}
+				return { files: [] };
+			});
+			let resolveUpload!: (result: { success: boolean; errorCode: string }) => void;
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockReturnValue(
+				new Promise((resolve) => {
+					resolveUpload = resolve;
+				})
+			);
+			mockDesktopHost.cancelGoogleDriveUpload.mockImplementation(async () => {
+				resolveUpload({ success: false, errorCode: 'CANCELED' });
+				return true;
+			});
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: makeLinkedSimFile(),
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			const event = {
+				detail: {
+					displayId: 5,
+					publishDate: '2024-06-15',
+					isPublished: true,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			};
+
+			const first = props?.$$events?.onSave?.(event);
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledOnce()
+			);
+			await props?.$$events?.onSave?.(event);
+			expect(mockDesktopHost.updateSimfileRecord).toHaveBeenCalledOnce();
+
+			await fireEvent.click(
+				await screen.findByRole('button', { name: 'googleDrive.upload.cancel' })
+			);
+			await first;
+
+			await props?.$$events?.onSave?.(event);
+			expect(mockDesktopHost.updateSimfileRecord).toHaveBeenCalledTimes(2);
+			expect(song.linkedSimFile?.title).toBe('Saved title');
+		});
+	});
+
+	describe('manual Google Drive upload', () => {
+		beforeEach(() => {
+			authState = { ...authState, isAuthenticated: true };
+			workspaceState = { ...workspaceState, path: '/test' };
+			googleDriveStore.setConnection({
+				connected: true,
+				folder: { id: 'folder-id', name: 'Exports' }
+			});
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				return { files: [] };
+			});
+		});
+
+		it('uploads directly without metadata save and offers reconnect plus explicit replacement', async () => {
+			const uuid = vi.mocked(crypto.randomUUID);
+			uuid.mockReturnValueOnce('11111111-1111-4111-8111-111111111111').mockReturnValueOnce(
+				'22222222-2222-4222-8222-222222222222'
+			);
+			mockDesktopHost.uploadSongZipToGoogleDrive
+				.mockResolvedValueOnce({ success: false, errorCode: 'FILE_NOT_FOUND' })
+				.mockResolvedValueOnce({
+					success: true,
+					fileId: 'replacement-id',
+					downloadUrl: 'https://drive.google.com/uc?id=replacement-id'
+				});
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: {
+					...makeLinkedSimFile(),
+					google_drive_file_id: 'drive-old',
+					download_url: 'https://example.com/manual.zip'
+				},
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+
+			await fireEvent.click(
+				await screen.findByRole('button', { name: 'Re-upload ZIP to Drive' })
+			);
+			expect(mockDesktopHost.createSimfileRecord).not.toHaveBeenCalled();
+			expect(mockDesktopHost.updateSimfileRecord).not.toHaveBeenCalled();
+			expect(
+				await screen.findByRole('button', { name: 'googleDrive.action.reconnect' })
+			).toBeInTheDocument();
+
+			await fireEvent.click(
+				screen.getByRole('button', { name: 'googleDrive.upload.replace' })
+			);
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledTimes(2)
+			);
+
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenNthCalledWith(1, {
+				operationId: '11111111-1111-4111-8111-111111111111',
+				simfileId: '42',
+				songRelativePath: 'TestSong'
+			});
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenNthCalledWith(2, {
+				operationId: '22222222-2222-4222-8222-222222222222',
+				simfileId: '42',
+				songRelativePath: 'TestSong',
+				forceCreateReplacement: true
+			});
+			expect(mockDesktopHost.createSimfileRecord).not.toHaveBeenCalled();
+			expect(mockDesktopHost.updateSimfileRecord).not.toHaveBeenCalled();
+			await waitFor(() => {
+				expect(workspaceStore.mergeGoogleDriveFields).toHaveBeenCalledWith(
+					'/test/TestSong',
+					'42',
+					{
+						googleDriveFileId: 'replacement-id',
+						downloadUrl: 'https://drive.google.com/uc?id=replacement-id'
+					}
+				);
+			});
+		});
+
+		it('warns that manual URL edits do not unlink the Drive file', async () => {
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: {
+					...makeLinkedSimFile(),
+					google_drive_file_id: 'drive-old',
+					download_url: 'https://example.com/manual.zip'
+				},
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			render(SongDetails, { props: { song } });
+
+			expect(
+				await screen.findByText(
+					/next successful Drive upload will replace the download URL/
+				)
+			).toBeInTheDocument();
+			expect(song.linkedSimFile?.google_drive_file_id).toBe('drive-old');
+			expect(screen.queryByRole('button', { name: /unlink|delete associated/i })).toBeNull();
+
+			googleDriveStore.setConnection({ connected: false });
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'update-simfile-record') {
+					return {
+						success: true,
+						data: {
+							google_drive_file_id: 'drive-old',
+							download_url: ''
+						}
+					};
+				}
+				return { files: [] };
+			});
+			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
+			await props?.$$events?.onSave?.({
+				detail: {
+					displayId: 5,
+					publishDate: '2024-06-15',
+					isPublished: true,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			});
+
+			await waitFor(() => {
+				expect(song.linkedSimFile?.google_drive_file_id).toBe('drive-old');
+				expect(song.linkedSimFile?.download_url).toBe('');
+			});
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).not.toHaveBeenCalled();
+		});
+
+		it('lets a native upload finish after the details component unmounts', async () => {
+			let resolveUpload!: (result: {
+				success: boolean;
+				fileId: string;
+				downloadUrl: string;
+			}) => void;
+			const unlisten = vi.fn();
+			mockDesktopHost.onGoogleDriveUploadProgress.mockResolvedValue(unlisten);
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockReturnValue(
+				new Promise((resolve) => {
+					resolveUpload = resolve;
+				})
+			);
+			const song = makeNode('TestSong', '/test/TestSong', {
+				linkedSimFile: makeLinkedSimFile(),
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			const view = render(SongDetails, { props: { song } });
+
+			await fireEvent.click(
+				await screen.findByRole('button', { name: 'Upload ZIP to Drive' })
+			);
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledOnce()
+			);
+			view.unmount();
+			resolveUpload({
+				success: true,
+				fileId: 'drive-finished',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-finished'
+			});
+
+			await waitFor(() => {
+				expect(workspaceStore.mergeGoogleDriveFields).toHaveBeenCalledWith(
+					'/test/TestSong',
+					'42',
+					{
+						googleDriveFileId: 'drive-finished',
+						downloadUrl: 'https://drive.google.com/uc?id=drive-finished'
+					}
+				);
+			});
+			expect(mockDesktopHost.cancelGoogleDriveUpload).not.toHaveBeenCalled();
+			expect(unlisten).toHaveBeenCalledOnce();
 		});
 	});
 

@@ -392,6 +392,66 @@ describe('workspaceStore', () => {
 		});
 	});
 
+	describe('mergeGoogleDriveFields', () => {
+		it('merges only returned Drive fields into the linked tree and cache', () => {
+			const old = {
+				...makeSimFile(42),
+				google_drive_file_id: 'drive-old',
+				download_url: 'https://example.com/old.zip',
+				title: 'Fresh cloud title'
+			};
+			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);
+			workspaceStore.linkSimFileToFolder('/path/Song1', old);
+			vi.clearAllMocks();
+
+			workspaceStore.mergeGoogleDriveFields('/path/Song1', '42', {
+				googleDriveFileId: 'drive-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-new'
+			});
+
+			const linked = get(workspaceStore).treeStructure[0].linkedSimFile;
+			expect(linked).toEqual({
+				...old,
+				google_drive_file_id: 'drive-new',
+				download_url: 'https://drive.google.com/uc?id=drive-new'
+			});
+			expect(linkageCacheService.saveLinkage).toHaveBeenCalledWith('/path/Song1', 42, linked);
+		});
+
+		it('does not clear an old Drive ID or URL when successful output omits a field', () => {
+			const old = {
+				...makeSimFile(42),
+				google_drive_file_id: 'drive-old',
+				download_url: 'https://example.com/old.zip'
+			};
+			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);
+			workspaceStore.linkSimFileToFolder('/path/Song1', old);
+
+			workspaceStore.mergeGoogleDriveFields('/path/Song1', '42', {});
+
+			expect(get(workspaceStore).treeStructure[0].linkedSimFile).toEqual(old);
+		});
+
+		it('ignores a stale result for a different linked simfile', () => {
+			const current = {
+				...makeSimFile(99),
+				google_drive_file_id: 'current-drive',
+				download_url: 'https://example.com/current.zip'
+			};
+			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);
+			workspaceStore.linkSimFileToFolder('/path/Song1', current);
+			vi.clearAllMocks();
+
+			workspaceStore.mergeGoogleDriveFields('/path/Song1', '42', {
+				googleDriveFileId: 'stale-drive',
+				downloadUrl: 'https://example.com/stale.zip'
+			});
+
+			expect(get(workspaceStore).treeStructure[0].linkedSimFile).toEqual(current);
+			expect(linkageCacheService.saveLinkage).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('unlinkSimFileFromFolder', () => {
 		it('should unlink a simFile from a folder', () => {
 			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);

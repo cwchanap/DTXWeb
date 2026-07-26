@@ -179,4 +179,154 @@ describe('googleDriveService', () => {
 		await googleDriveService.recheckSharing();
 		expect(get(googleDriveStore).publicDownloadVerified).toBe(true);
 	});
+
+	it('does not attempt Drive when the primary save fails', async () => {
+		googleDriveStore.setConnection({
+			connected: true,
+			folder: { id: 'folder-id', name: 'Exports' }
+		});
+
+		await expect(
+			googleDriveService.saveAndUpload({
+				save: async () => ({ success: false, error: 'Database error' }),
+				workspacePath: '/Users/test/DTX',
+				songPath: '/Users/test/DTX/songs/alpha'
+			})
+		).resolves.toEqual({
+			simfileSave: { success: false, error: 'Database error' },
+			driveUpload: { status: 'skipped' }
+		});
+		expect(mockHost.uploadSongZipToGoogleDrive).not.toHaveBeenCalled();
+	});
+
+	it('keeps a successful save and skips Drive when it is disconnected', async () => {
+		const save = vi.fn(async () => ({ success: true, simfileId: 'created-73' }));
+
+		await expect(
+			googleDriveService.saveAndUpload({
+				save,
+				workspacePath: '/Users/test/DTX',
+				songPath: '/Users/test/DTX/songs/alpha'
+			})
+		).resolves.toEqual({
+			simfileSave: { success: true },
+			driveUpload: { status: 'skipped' }
+		});
+		expect(save).toHaveBeenCalledOnce();
+		expect(mockHost.uploadSongZipToGoogleDrive).not.toHaveBeenCalled();
+	});
+
+	it('uploads only after save and uses the ID returned by a successful create', async () => {
+		const order: string[] = [];
+		googleDriveStore.setConnection({
+			connected: true,
+			folder: { id: 'folder-id', name: 'Exports' }
+		});
+		mockHost.uploadSongZipToGoogleDrive.mockImplementation(async (input) => {
+			order.push(`drive:${input.simfileId}`);
+			return {
+				success: true,
+				fileId: 'drive-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-new'
+			};
+		});
+
+		const outcome = await googleDriveService.saveAndUpload({
+			save: async () => {
+				order.push('save');
+				return { success: true, simfileId: 'created-73' };
+			},
+			workspacePath: '/Users/test/DTX',
+			songPath: '/Users/test/DTX/songs/alpha'
+		});
+
+		expect(order).toEqual(['save', 'drive:created-73']);
+		expect(outcome).toEqual({
+			simfileSave: { success: true },
+			driveUpload: {
+				status: 'success',
+				fileId: 'drive-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-new'
+			}
+		});
+		expect(mockHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith({
+			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+			simfileId: 'created-73',
+			songRelativePath: 'songs/alpha'
+		});
+	});
+
+	it('preserves primary success when Drive fails and sends no renderer title authority', async () => {
+		googleDriveStore.setConnection({
+			connected: true,
+			folder: { id: 'folder-id', name: 'Exports' }
+		});
+		mockHost.uploadSongZipToGoogleDrive.mockResolvedValue({
+			success: false,
+			errorCode: 'NETWORK'
+		});
+
+		const outcome = await googleDriveService.saveAndUpload({
+			save: async () => ({ success: true, simfileId: 'existing-42' }),
+			workspacePath: '/Users/test/DTX',
+			songPath: '/Users/test/DTX/songs/unsaved-renderer-title'
+		});
+
+		expect(outcome).toEqual({
+			simfileSave: { success: true },
+			driveUpload: { status: 'failed', errorCode: 'NETWORK' }
+		});
+		expect(mockHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith({
+			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+			simfileId: 'existing-42',
+			songRelativePath: 'songs/unsaved-renderer-title'
+		});
+	});
+
+	it('explicit replacement differs from a normal upload only by forceCreateReplacement', async () => {
+		await googleDriveService.uploadSongZip({
+			simfileId: 'simfile-42',
+			workspacePath: '/Users/test/DTX',
+			songPath: '/Users/test/DTX/songs/alpha',
+			forceCreateReplacement: true
+		});
+
+		expect(mockHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith({
+			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+			simfileId: 'simfile-42',
+			songRelativePath: 'songs/alpha',
+			forceCreateReplacement: true
+		});
+	});
+
+	it('releases save orchestration after native cancellation is accepted without rolling back save', async () => {
+		googleDriveStore.setConnection({
+			connected: true,
+			folder: { id: 'folder-id', name: 'Exports' }
+		});
+		let resolveUpload!: (result: { success: boolean; errorCode: string }) => void;
+		mockHost.uploadSongZipToGoogleDrive.mockReturnValue(
+			new Promise((resolve) => {
+				resolveUpload = resolve;
+			})
+		);
+		mockHost.cancelGoogleDriveUpload.mockImplementation(async () => {
+			resolveUpload({ success: false, errorCode: 'CANCELED' });
+			return true;
+		});
+
+		const pending = googleDriveService.saveAndUpload({
+			save: async () => ({ success: true, simfileId: 'existing-42' }),
+			workspacePath: '/Users/test/DTX',
+			songPath: '/Users/test/DTX/songs/alpha'
+		});
+		await vi.waitFor(() => expect(mockHost.uploadSongZipToGoogleDrive).toHaveBeenCalledOnce());
+
+		await googleDriveService.cancelUpload('f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8');
+
+		await expect(pending).resolves.toEqual({
+			simfileSave: { success: true },
+			driveUpload: { status: 'failed', errorCode: 'CANCELED' }
+		});
+	});
 });

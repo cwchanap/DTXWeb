@@ -5,6 +5,7 @@ import {
 	type GoogleDriveUploadProgress,
 	type GoogleDriveUploadResult
 } from './desktopHost';
+import { get } from 'svelte/store';
 import { googleDriveStore } from '../stores/googleDriveStore';
 
 export type SongSaveOutcome = {
@@ -23,6 +24,19 @@ export type GoogleDriveUploadRequest = {
 	workspacePath: string;
 	songPath: string;
 	forceCreateReplacement?: boolean;
+};
+
+export type SimfileSaveResult = {
+	success: boolean;
+	simfileId?: string;
+	error?: string;
+};
+
+export type SaveAndUploadRequest = {
+	save: () => Promise<SimfileSaveResult>;
+	workspacePath: string;
+	songPath: string;
+	driveConnected?: boolean;
 };
 
 const normalizeRelativeSongPath = (workspacePath: string, songPath: string): string | null => {
@@ -105,6 +119,48 @@ const uploadSongZip = async (
 	}
 };
 
+const saveAndUpload = async (request: SaveAndUploadRequest): Promise<SongSaveOutcome> => {
+	let saveResult: SimfileSaveResult;
+	try {
+		saveResult = await request.save();
+	} catch (error) {
+		return {
+			simfileSave: {
+				success: false,
+				error: error instanceof Error ? error.message : 'Failed to save song'
+			},
+			driveUpload: { status: 'skipped' }
+		};
+	}
+
+	if (!saveResult.success) {
+		return {
+			simfileSave: { success: false, error: saveResult.error },
+			driveUpload: { status: 'skipped' }
+		};
+	}
+
+	if (!(request.driveConnected ?? get(googleDriveStore).connection?.connected)) {
+		return {
+			simfileSave: { success: true },
+			driveUpload: { status: 'skipped' }
+		};
+	}
+
+	if (!saveResult.simfileId) {
+		return {
+			simfileSave: { success: true },
+			driveUpload: { status: 'failed', errorCode: 'INVALID_RESPONSE' }
+		};
+	}
+
+	return await uploadSongZip({
+		simfileId: saveResult.simfileId,
+		workspacePath: request.workspacePath,
+		songPath: request.songPath
+	});
+};
+
 export const googleDriveService = {
 	refreshConnection: async (): Promise<GoogleDriveConnectionState | null> => {
 		const generation = googleDriveStore.captureGeneration();
@@ -159,9 +215,10 @@ export const googleDriveService = {
 			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
 		}
 	},
+	saveAndUpload,
 	uploadSongZip,
-	cancelUpload: async (operationId: string): Promise<boolean> =>
-		await desktopHost.cancelGoogleDriveUpload(operationId)
+	cancelUpload: (operationId: string): Promise<boolean> =>
+		desktopHost.cancelGoogleDriveUpload(operationId)
 };
 
 export { normalizeRelativeSongPath };

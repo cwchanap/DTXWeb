@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Music, X, Link, Search, Download } from '@lucide/svelte';
+	import { Music, X, Link, Search, Upload } from '@lucide/svelte';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { settingsStore } from '../stores/settingsStore';
 	import { editorMappingStore } from '../stores/editorMappingStore';
@@ -12,6 +12,9 @@
 	import { simFileService } from '../services/simFileService';
 	import { desktopHost } from '../services/desktopHost';
 	import type { FetchCloudSongResult } from '../lib/scoreTypes';
+	import { googleDriveService, type SongSaveOutcome } from '../services/googleDriveService';
+	import { googleDriveStore } from '../stores/googleDriveStore';
+	import GoogleDriveUploadStatus from './GoogleDriveUploadStatus.svelte';
 
 	interface Props {
 		song: TreeNode;
@@ -240,6 +243,9 @@
 	let exportError = $state<string | null>(null);
 	let exportSuccess = $state(false);
 	let exportedFilePath = $state<string | null>(null);
+	let isDriveActionInProgress = $state(false);
+	let driveOutcome = $state<SongSaveOutcome['driveUpload'] | undefined>();
+	let driveOutcomeSource = $state<'automatic' | 'manual' | null>(null);
 
 	const isSimfileWithDtx = (data: unknown): data is SimfileWithDtx => {
 		if (!data || typeof data !== 'object') return false;
@@ -261,6 +267,30 @@
 			simfile_id: (file as { simfile_id?: number })?.simfile_id
 		}))
 	});
+
+	const mergeSuccessfulDriveFields = (
+		targetSong: TreeNode,
+		targetPath: string,
+		simfileId: string,
+		outcome: SongSaveOutcome['driveUpload']
+	) => {
+		if (outcome.status !== 'success') return;
+
+		const fields = {
+			...(outcome.fileId === undefined ? {} : { googleDriveFileId: outcome.fileId }),
+			...(outcome.downloadUrl === undefined ? {} : { downloadUrl: outcome.downloadUrl })
+		};
+		if (Object.keys(fields).length === 0) return;
+
+		if (targetSong.linkedSimFile && targetSong.linkedSimFileId === simfileId) {
+			targetSong.linkedSimFile = {
+				...targetSong.linkedSimFile,
+				...(outcome.fileId === undefined ? {} : { google_drive_file_id: outcome.fileId }),
+				...(outcome.downloadUrl === undefined ? {} : { download_url: outcome.downloadUrl })
+			};
+		}
+		workspaceStore.mergeGoogleDriveFields(targetPath, simfileId, fields);
+	};
 
 	// Settings store subscription for export directory
 	let currentSettings = $state({ exportDirectory: '~/Downloads' });
@@ -359,14 +389,19 @@
 
 	// Common upload function
 	const uploadSong = async (event: CustomEvent, isPublished: boolean) => {
-		if (!song.containsDtxFiles || song.linkedSimFile) {
+		if (!song.containsDtxFiles || song.linkedSimFile || isUploading) {
 			return;
 		}
 
+		const targetSong = song;
+		const targetPath = song.path;
+		const workspacePath = $workspaceStore.path || '';
 		isUploading = true;
 		uploadError = null;
 		uploadSuccess = false;
 		uploadWarnings = [];
+		driveOutcome = undefined;
+		driveOutcomeSource = 'automatic';
 
 		try {
 			const submittedDisplayId = Number(displayId);
@@ -407,32 +442,49 @@
 				})
 			);
 
-			// Create the cloud simfile record through the desktop host.
-			const result = await desktopHost.createSimfileRecord<CreateSimfileResult>(simfileData);
+			const outcome = await googleDriveService.saveAndUpload({
+				save: async () => {
+					const result =
+						await desktopHost.createSimfileRecord<CreateSimfileResult>(simfileData);
+					if (!result.success || !result.data || !isSimfileWithDtx(result.data)) {
+						return {
+							success: false,
+							error: result.error || 'Failed to create simfile record'
+						};
+					}
 
-			if (result.success && result.data && isSimfileWithDtx(result.data)) {
-				uploadSuccess = true;
-				const linkedSimfile = normalizeSimfile(result.data);
-				// Update the song with the new linked data
-				song.linkedSimFileId = result.simfileId || String(result.data.id);
-				song.linkedSimFile = linkedSimfile;
+					uploadSuccess = true;
+					const linkedSimfile = normalizeSimfile(result.data);
+					const savedSimfileId = result.simfileId || String(result.data.id);
+					targetSong.linkedSimFileId = savedSimfileId;
+					targetSong.linkedSimFile = linkedSimfile;
+					workspaceStore.linkSimFileToFolder(targetPath, linkedSimfile);
 
-				// Update the workspace store
-				workspaceStore.linkSimFileToFolder(song.path, linkedSimfile);
+					if (result.warnings && result.warnings.length > 0) {
+						console.warn('Preview upload warnings:', result.warnings);
+						uploadWarnings = result.warnings;
+					}
 
-				// Surface any preview upload warnings (e.g. image/audio failed to upload)
-				if (result.warnings && result.warnings.length > 0) {
-					console.warn('Preview upload warnings:', result.warnings);
-					uploadWarnings = result.warnings;
-				}
+					setTimeout(() => {
+						uploadSuccess = false;
+					}, 3000);
+					return { success: true, simfileId: savedSimfileId };
+				},
+				workspacePath,
+				songPath: targetPath,
+				driveConnected: $googleDriveStore.connection?.connected === true
+			});
 
-				// Hide success message after 3 seconds
-				setTimeout(() => {
-					uploadSuccess = false;
-				}, 3000);
-			} else {
-				throw new Error(result.error || 'Failed to create simfile record');
+			if (!outcome.simfileSave.success) {
+				throw new Error(outcome.simfileSave.error || 'Failed to create simfile record');
 			}
+			driveOutcome = outcome.driveUpload;
+			mergeSuccessfulDriveFields(
+				targetSong,
+				targetPath,
+				targetSong.linkedSimFileId || '',
+				outcome.driveUpload
+			);
 		} catch (error) {
 			console.error('Error uploading song:', error);
 			uploadError = error instanceof Error ? error.message : 'Failed to upload song';
@@ -566,14 +618,21 @@
 
 	// Handle updating linked simfile
 	const handleUpdateSimfile = async (event: CustomEvent) => {
+		if (isUpdating || isDriveActionInProgress) return;
 		if (!song.linkedSimFile || !song.linkedSimFileId) {
 			console.error('No linked simfile to update');
 			return;
 		}
 
+		const targetSong = song;
+		const targetPath = song.path;
+		const simfileId = song.linkedSimFileId;
+		const workspacePath = $workspaceStore.path || '';
 		isUpdating = true;
 		updateError = null;
 		updateSuccess = false;
+		driveOutcome = undefined;
+		driveOutcomeSource = 'automatic';
 
 		try {
 			// Build update data object
@@ -596,31 +655,42 @@
 				updateData.title = song.songTitle || song.name;
 			}
 
-			// Update the linked simfile record through the desktop host.
-			const result = await desktopHost.updateSimfileRecord<UpdateSimfileResult>({
-				simfileId: song.linkedSimFileId,
-				updateData
+			const outcome = await googleDriveService.saveAndUpload({
+				save: async () => {
+					const result = await desktopHost.updateSimfileRecord<UpdateSimfileResult>({
+						simfileId,
+						updateData
+					});
+					if (!result.success || !targetSong.linkedSimFile) {
+						return {
+							success: false,
+							error: result.error || 'Failed to update simfile'
+						};
+					}
+
+					updateSuccess = true;
+					const updatedSimfile = normalizeSimfile({
+						...targetSong.linkedSimFile,
+						...(result.data || {})
+					} as SimfileWithDtx);
+					targetSong.linkedSimFile = updatedSimfile;
+					workspaceStore.linkSimFileToFolder(targetPath, updatedSimfile);
+
+					setTimeout(() => {
+						updateSuccess = false;
+					}, 3000);
+					return { success: true, simfileId };
+				},
+				workspacePath,
+				songPath: targetPath,
+				driveConnected: $googleDriveStore.connection?.connected === true
 			});
 
-			if (result.success && song.linkedSimFile) {
-				updateSuccess = true;
-				// Update the local song data with the new information
-				const updatedSimfile = normalizeSimfile({
-					...song.linkedSimFile,
-					...(result.data || {})
-				} as SimfileWithDtx);
-				song.linkedSimFile = updatedSimfile;
-
-				// Update the workspace store
-				workspaceStore.linkSimFileToFolder(song.path, updatedSimfile);
-
-				// Hide success message after 3 seconds
-				setTimeout(() => {
-					updateSuccess = false;
-				}, 3000);
-			} else {
-				throw new Error(result.error || 'Failed to update simfile');
+			if (!outcome.simfileSave.success) {
+				throw new Error(outcome.simfileSave.error || 'Failed to update simfile');
 			}
+			driveOutcome = outcome.driveUpload;
+			mergeSuccessfulDriveFields(targetSong, targetPath, simfileId, outcome.driveUpload);
 		} catch (error) {
 			console.error('Error updating simfile:', error);
 			updateError = error instanceof Error ? error.message : 'Failed to update simfile';
@@ -680,6 +750,47 @@
 		} finally {
 			isExporting = false;
 		}
+	};
+
+	const handleDriveUpload = async (forceCreateReplacement = false) => {
+		if (
+			isDriveActionInProgress ||
+			isUpdating ||
+			!song.path ||
+			!song.linkedSimFileId ||
+			!$workspaceStore.path ||
+			!$googleDriveStore.connection?.connected
+		) {
+			return;
+		}
+
+		const targetSong = song;
+		const targetPath = song.path;
+		const simfileId = song.linkedSimFileId;
+		const workspacePath = $workspaceStore.path;
+		isDriveActionInProgress = true;
+		driveOutcome = undefined;
+		driveOutcomeSource = 'manual';
+		try {
+			const outcome = await googleDriveService.uploadSongZip({
+				simfileId,
+				workspacePath,
+				songPath: targetPath,
+				...(forceCreateReplacement ? { forceCreateReplacement: true } : {})
+			});
+			driveOutcome = outcome.driveUpload;
+			mergeSuccessfulDriveFields(targetSong, targetPath, simfileId, outcome.driveUpload);
+		} finally {
+			isDriveActionInProgress = false;
+		}
+	};
+
+	const handleRetryDriveUpload = () => {
+		void handleDriveUpload(false);
+	};
+
+	const handleCreateReplacementDriveFile = () => {
+		void handleDriveUpload(true);
 	};
 
 	// Effect to parse local DTX files when needed
@@ -791,11 +902,93 @@
 {#if song.linkedSimFile}
 	<!-- For linked songs, use the built-in Update button -->
 	<div class="flex h-full flex-col">
+		<div
+			class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
+		>
+			<div class="flex items-center gap-2">
+				<Music size={20} class="text-cyan" />
+				<h2 class="font-display text-hi text-xl">Song Details</h2>
+			</div>
+			<div class="flex items-center gap-2">
+				<button
+					class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+					style="box-shadow:0 0 22px -6px var(--color-magenta)"
+					onclick={handleOpenEditor}
+					aria-label="Open Editor"
+				>
+					<Music size={16} />
+					Open Editor
+				</button>
+				<button
+					class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+					onclick={handleExportToZip}
+					disabled={isExporting}
+					aria-label="Export to ZIP"
+				>
+					{#if isExporting}
+						<div
+							class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
+						></div>
+						Exporting...
+					{:else}
+						<Upload size={16} />
+						Export to ZIP
+					{/if}
+				</button>
+				<button
+					class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+					onclick={() => handleDriveUpload(false)}
+					disabled={isDriveActionInProgress ||
+						isUpdating ||
+						!$googleDriveStore.connection?.connected}
+					aria-label={song.linkedSimFile.google_drive_file_id
+						? 'Re-upload ZIP to Drive'
+						: 'Upload ZIP to Drive'}
+				>
+					<Upload size={16} />
+					{song.linkedSimFile.google_drive_file_id
+						? 'Re-upload ZIP to Drive'
+						: 'Upload ZIP to Drive'}
+				</button>
+				<button
+					class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
+					onclick={handleClose}
+					aria-label="Close"
+				>
+					<X size={16} />
+					Close
+				</button>
+			</div>
+		</div>
+
+		{#if song.linkedSimFile.google_drive_file_id}
+			<p class="border-amber/40 bg-amber/10 text-amber m-4 rounded-lg border p-3 text-sm">
+				This song is linked to a Google Drive file. The next successful Drive upload will
+				replace the download URL with Google's current download link.
+			</p>
+		{/if}
+
+		{#if driveOutcomeSource === 'automatic' && driveOutcome?.status === 'failed'}
+			<p class="border-yellow/40 bg-yellow/10 text-yellow m-4 rounded-lg border p-3 text-sm">
+				Google Drive upload failed. Your previous download remains available.
+			</p>
+		{/if}
+
+		<GoogleDriveUploadStatus
+			outcome={driveOutcome}
+			onRetry={handleRetryDriveUpload}
+			onCreateReplacement={handleCreateReplacementDriveFile}
+		/>
+
 		<ChartDetail
 			simfile={simfileData()}
 			showEditor={false}
-			showPublishingControls={$authStore.isAuthenticated}
-			showPublishedToggle={$authStore.isAuthenticated}
+			showPublishingControls={$authStore.isAuthenticated &&
+				!isUpdating &&
+				!isDriveActionInProgress}
+			showPublishedToggle={$authStore.isAuthenticated &&
+				!isUpdating &&
+				!isDriveActionInProgress}
 			saveButtonText={$authStore.isAuthenticated ? 'Update' : ''}
 			bind:displayId
 			bind:publishDate
@@ -804,53 +997,6 @@
 			bind:isPublished
 			on:onSave={$authStore.isAuthenticated ? handleUpdateSimfile : () => {}}
 		>
-			{#snippet header()}
-				<!-- Header -->
-				<div
-					class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"
-				>
-					<div class="flex items-center gap-2">
-						<Music size={20} class="text-cyan" />
-						<h2 class="font-display text-hi text-xl">Song Details</h2>
-					</div>
-					<div class="flex items-center gap-2">
-						<button
-							class="bg-magenta flex items-center gap-2 rounded-lg px-4 py-2 font-medium text-[#16001a] transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
-							style="box-shadow:0 0 22px -6px var(--color-magenta)"
-							onclick={handleOpenEditor}
-							aria-label="Open Editor"
-						>
-							<Music size={16} />
-							Open Editor
-						</button>
-						<button
-							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
-							onclick={handleExportToZip}
-							disabled={isExporting}
-							aria-label="Export to ZIP"
-						>
-							{#if isExporting}
-								<div
-									class="border-cyan h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
-								></div>
-								Exporting...
-							{:else}
-								<Download size={16} />
-								Export to ZIP
-							{/if}
-						</button>
-						<button
-							class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
-							onclick={handleClose}
-							aria-label="Close"
-						>
-							<X size={16} />
-							Close
-						</button>
-					</div>
-				</div>
-			{/snippet}
-
 			{#snippet desktop_info()}
 				<!-- Status Section - This will be rendered outside the grid -->
 				<div class="border-green/40 bg-green/10 rounded-lg border p-3">
@@ -1034,7 +1180,7 @@
 								></div>
 								Exporting...
 							{:else}
-								<Download size={16} />
+								<Upload size={16} />
 								Export to ZIP
 							{/if}
 						</button>

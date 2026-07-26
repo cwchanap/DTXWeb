@@ -19,11 +19,6 @@ fn bucket_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-fn drive_api_env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
 struct EnvVarGuard {
     name: &'static str,
     previous: Option<std::ffi::OsString>,
@@ -290,7 +285,12 @@ async fn google_drive_api_client_persists_a_refreshed_session_through_the_app_co
     // The production adapter resolves tokens through its AppHandle. A refresh
     // must emit the existing session-refreshed event, otherwise the renderer
     // persists the revoked refresh token and the next launch loses the session.
-    let _guard = drive_api_env_lock().lock().expect("env lock");
+    // This is the crate-wide auth-config lock. It is also held by the auth
+    // test that asserts the runtime variables are absent, so neither test can
+    // observe the other's temporary configuration.
+    let _guard = crate::auth::auth_config_env_lock()
+        .lock()
+        .expect("auth config env lock");
     let api_server = MockServer::start().await;
     let auth_server = MockServer::start().await;
     let stale_token = jwt_with_exp(1);

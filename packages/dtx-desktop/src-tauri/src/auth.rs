@@ -886,6 +886,15 @@ fn resolve_auth_config() -> Option<(String, String)> {
     Some((supabase_url, anon_key))
 }
 
+/// Serializes tests that read or replace the runtime auth configuration. The
+/// configuration is process-global, so a private lock in one test module does
+/// not protect a concurrent `resolve_auth_config` call in another module.
+#[cfg(test)]
+pub(crate) fn auth_config_env_lock() -> &'static StdMutex<()> {
+    static LOCK: std::sync::OnceLock<StdMutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| StdMutex::new(()))
+}
+
 fn supabase_auth_url(supabase_url: &str, path: &str) -> String {
     format!(
         "{}/auth/v1/{}",

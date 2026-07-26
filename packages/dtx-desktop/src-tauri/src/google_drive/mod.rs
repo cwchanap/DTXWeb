@@ -557,9 +557,10 @@ impl GoogleDriveState {
         tauri::async_runtime::spawn(async move {
             let drive = app.state::<GoogleDriveState>();
             let auth = app.state::<AuthState>();
-            let Some(user_id) = auth.current_user_id().await else {
+            let Some(session_epoch) = auth.current_session_epoch().await else {
                 return;
             };
+            let user_id = session_epoch.user_id().to_string();
             let Some(api) = drive.upload_api.as_deref() else {
                 return;
             };
@@ -569,11 +570,15 @@ impl GoogleDriveState {
             let Ok(access_token) = drive.access_token_for_user(&user_id).await else {
                 return;
             };
-            upload::reconcile_pending_bindings_for_current_user(
+            if !auth.matches_session_epoch(&session_epoch).await {
+                return;
+            }
+            upload::reconcile_pending_bindings_for_session(
                 api,
                 pending_store,
                 drive.metadata_client.as_ref(),
                 &auth,
+                &session_epoch,
                 &access_token,
             )
             .await;

@@ -144,6 +144,39 @@ async fn current_user_id_rejects_absent_malformed_and_blank_user_ids() {
 }
 
 #[tokio::test]
+async fn session_epoch_changes_for_user_switch_and_same_user_relogin() {
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "user": { "id": "user-a" },
+            "access_token": "access-a"
+        })))
+        .await;
+    let first = state.current_session_epoch().await.expect("first epoch");
+    assert_eq!(first.user_id(), "user-a");
+    assert!(state.matches_session_epoch(&first).await);
+
+    state
+        .set_current_session(Some(serde_json::json!({
+            "user": { "id": "user-b" },
+            "access_token": "access-b"
+        })))
+        .await;
+    assert!(!state.matches_session_epoch(&first).await);
+
+    state
+        .set_current_session(Some(serde_json::json!({
+            "user": { "id": "user-a" },
+            "access_token": "new-access-a"
+        })))
+        .await;
+    assert!(
+        !state.matches_session_epoch(&first).await,
+        "same-ID relogin must invalidate the old sweep"
+    );
+}
+
+#[tokio::test]
 async fn magic_link_failure_does_not_echo_raw_link() {
     let event = auth_event_from_url(
         "dtx://auth-callback?magic_link=https%3A%2F%2Fexample.com%2Fmagic%3Ftoken_hash%3Dsecret",

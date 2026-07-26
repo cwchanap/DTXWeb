@@ -4,6 +4,7 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -149,6 +150,7 @@ const LOCAL_AUTH_CALLBACK_SUCCESS_HTML: &str = r##"<!doctype html>
 #[derive(Debug, Clone, Default)]
 pub struct AuthState {
     current_session: Arc<AsyncMutex<Option<serde_json::Value>>>,
+    session_generation: Arc<AtomicU64>,
     pending_urls: Arc<StdMutex<Vec<String>>>,
     /// Single-flights proactive token refreshes. Held across the
     /// read-refresh-write in `ensure_valid_access_token_with_config` so that
@@ -158,6 +160,18 @@ pub struct AuthState {
     /// second call or, with reuse-detection enabled, revoke the whole token
     /// family — silently forcing a full re-login.
     refresh_lock: Arc<AsyncMutex<()>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AuthSessionEpoch {
+    user_id: String,
+    generation: u64,
+}
+
+impl AuthSessionEpoch {
+    pub(crate) fn user_id(&self) -> &str {
+        &self.user_id
+    }
 }
 
 impl AuthState {
@@ -172,19 +186,28 @@ impl AuthState {
     /// accepting a renderer-provided user identifier.
     #[allow(dead_code)] // Used by the Drive command boundary added in Task 7.
     pub async fn current_user_id(&self) -> Option<String> {
-        self.current_session()
-            .await
-            .as_ref()
-            .and_then(|session| session.get("user"))
-            .and_then(|user| user.get("id"))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|user_id| !user_id.is_empty())
-            .map(str::to_string)
+        session_user_id(self.current_session().await.as_ref())
     }
 
     pub async fn set_current_session(&self, session: Option<serde_json::Value>) {
-        *self.current_session.lock().await = session;
+        let mut current = self.current_session.lock().await;
+        *current = session;
+        self.session_generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub(crate) async fn current_session_epoch(&self) -> Option<AuthSessionEpoch> {
+        let current = self.current_session.lock().await;
+        let user_id = session_user_id(current.as_ref())?;
+        Some(AuthSessionEpoch {
+            user_id,
+            generation: self.session_generation.load(Ordering::SeqCst),
+        })
+    }
+
+    pub(crate) async fn matches_session_epoch(&self, expected: &AuthSessionEpoch) -> bool {
+        let current = self.current_session.lock().await;
+        self.session_generation.load(Ordering::SeqCst) == expected.generation
+            && session_user_id(current.as_ref()).as_deref() == Some(expected.user_id.as_str())
     }
 
     fn push_pending_url(&self, raw_url: String) {
@@ -201,6 +224,16 @@ impl AuthState {
             .drain(..)
             .collect()
     }
+}
+
+fn session_user_id(session: Option<&serde_json::Value>) -> Option<String> {
+    session
+        .and_then(|session| session.get("user"))
+        .and_then(|user| user.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|user_id| !user_id.is_empty())
+        .map(str::to_string)
 }
 
 #[derive(Debug, Deserialize)]

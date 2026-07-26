@@ -7,10 +7,11 @@ use encoding_rs::{Encoding, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{copy, ErrorKind};
+use std::io::{copy, ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use tauri::{path::BaseDirectory, AppHandle, Manager, State};
 use tokio::{fs, task};
+use tokio_util::sync::CancellationToken;
 use zip::write::SimpleFileOptions;
 
 const VALID_DTX_FILE_EXTENSIONS: &[&str] = &[
@@ -579,13 +580,69 @@ pub(crate) fn write_song_zip(output_path: &Path, files: &[PathBuf]) -> Result<us
     })
 }
 
-fn write_song_zip_with_copy<F>(
+pub(crate) fn write_song_zip_cancelable(
+    output_path: &Path,
+    files: &[PathBuf],
+    cancellation: &CancellationToken,
+) -> Result<usize> {
+    write_song_zip_cancelable_with_chunk_hook(output_path, files, cancellation, || {})
+}
+
+pub(crate) fn write_song_zip_cancelable_with_chunk_hook<F>(
+    output_path: &Path,
+    files: &[PathBuf],
+    cancellation: &CancellationToken,
+    mut on_chunk_written: F,
+) -> Result<usize>
+where
+    F: FnMut(),
+{
+    write_song_zip_with_copy_and_finish_check(
+        output_path,
+        files,
+        |file_path, zip| {
+            ensure_zip_not_canceled(cancellation)?;
+            let mut source = std::fs::File::open(file_path)?;
+            let mut buffer = [0_u8; 64 * 1024];
+            loop {
+                ensure_zip_not_canceled(cancellation)?;
+                let read = source.read(&mut buffer)?;
+                if read == 0 {
+                    break;
+                }
+                zip.write_all(&buffer[..read])?;
+                on_chunk_written();
+            }
+            ensure_zip_not_canceled(cancellation)
+        },
+        || ensure_zip_not_canceled(cancellation),
+    )
+}
+
+fn ensure_zip_not_canceled(cancellation: &CancellationToken) -> Result<()> {
+    if cancellation.is_cancelled() {
+        Err(DesktopError::Message("CANCELED".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn write_song_zip_with_copy<F>(output_path: &Path, files: &[PathBuf], copy_file: F) -> Result<usize>
+where
+    F: FnMut(&Path, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
+{
+    write_song_zip_with_copy_and_finish_check(output_path, files, copy_file, || Ok(()))
+}
+
+fn write_song_zip_with_copy_and_finish_check<F, G>(
     output_path: &Path,
     files: &[PathBuf],
     mut copy_file: F,
+    mut before_finish: G,
 ) -> Result<usize>
 where
     F: FnMut(&Path, &mut zip::ZipWriter<std::fs::File>) -> Result<()>,
+    G: FnMut() -> Result<()>,
 {
     let result = (|| -> Result<usize> {
         let file = std::fs::File::create(output_path)?;
@@ -600,6 +657,7 @@ where
             copy_file(file_path, &mut zip)?;
         }
 
+        before_finish()?;
         zip.finish()?;
         Ok(files.len())
     })();

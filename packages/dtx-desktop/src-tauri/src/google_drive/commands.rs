@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -269,7 +270,8 @@ pub(crate) async fn cancel_google_drive_upload(app: AppHandle, operation_id: Uui
     Ok(app
         .state::<GoogleDriveState>()
         .operation_manager
-        .cancel(&user_id, operation_id))
+        .cancel_and_wait(&user_id, operation_id, Duration::from_secs(5))
+        .await)
 }
 
 async fn run_upload_transaction(
@@ -315,10 +317,13 @@ async fn run_upload_transaction(
         .map_err(|_| upload_failure(DriveApiError::LocalState))?;
     let archive = create_upload_archive(&cache_dir).map_err(map_local_upload_error)?;
     let zip_path = archive.zip_path().to_path_buf();
-    tokio::task::spawn_blocking(move || crate::songs::write_song_zip(&zip_path, &files))
-        .await
-        .map_err(|_| upload_failure(DriveApiError::LocalState))?
-        .map_err(map_local_upload_error)?;
+    let zip_cancellation = lease.cancellation().clone();
+    tokio::task::spawn_blocking(move || {
+        crate::songs::write_song_zip_cancelable(&zip_path, &files, &zip_cancellation)
+    })
+    .await
+    .map_err(|_| upload_failure(DriveApiError::LocalState))?
+    .map_err(map_local_upload_error)?;
     if lease.cancellation().is_cancelled() {
         return Err(upload_failure(DriveApiError::Canceled));
     }
@@ -366,6 +371,7 @@ async fn run_upload_transaction(
         .filter(|id| !id.trim().is_empty());
     let mut replaced_existing_file = false;
     let outcome = if let Some(existing_id) = existing_id {
+        let finalization_gate = lease.finalization_gate();
         let update = run_resumable_upload_cancelable(
             api,
             &TokioDriveSleeper,
@@ -379,6 +385,7 @@ async fn run_upload_transaction(
                 },
             },
             lease.cancellation(),
+            &finalization_gate,
             |accepted, total| {
                 emit_transfer_progress(app, lease, &input.simfile_id, accepted, total)
             },
@@ -442,6 +449,7 @@ async fn create_and_bind(
         .pending_bindings
         .as_ref()
         .ok_or_else(|| upload_failure(DriveApiError::LocalState))?;
+    let finalization_gate = lease.finalization_gate();
     run_crash_safe_create_cancelable(
         api,
         &TokioDriveSleeper,
@@ -460,6 +468,7 @@ async fn create_and_bind(
             },
         },
         lease.cancellation(),
+        &finalization_gate,
         |accepted, total| {
             emit_transfer_progress(app, lease, &input.simfile_id, accepted, total);
             if total > 0 && accepted >= total {
@@ -535,9 +544,6 @@ fn emit_transfer_progress(
     total: u64,
 ) {
     let complete = total > 0 && accepted >= total;
-    if complete {
-        lease.set_phase(DriveOperationPhase::Finalizing);
-    }
     emit_progress(
         app,
         lease,
@@ -595,6 +601,9 @@ fn upload_failure(error: DriveApiError) -> DriveUploadFailure {
 
 fn map_local_upload_error(error: DesktopError) -> DriveUploadFailure {
     match error {
+        DesktopError::Message(message) if message == "CANCELED" => {
+            upload_failure(DriveApiError::Canceled)
+        }
         DesktopError::Message(message) if message == "NO_VALID_SONG_FILES" => {
             upload_failure(DriveApiError::NoValidSongFiles)
         }

@@ -7,9 +7,10 @@ use async_trait::async_trait;
 use std::collections::VecDeque;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 
 const ACCESS_TOKEN: &str = "drive-access-token";
 type DriveResult<T> = std::result::Result<T, DriveApiError>;
@@ -27,6 +28,7 @@ struct ScriptedDriveApi {
     create_metadata: Mutex<Vec<DriveCreateMetadata>>,
     update_metadata: Mutex<Vec<(String, DriveUpdateMetadata)>>,
     delete_count: Mutex<usize>,
+    truncate_after_first_chunk: Mutex<Option<PathBuf>>,
 }
 
 impl ScriptedDriveApi {
@@ -129,6 +131,21 @@ impl GoogleDriveApi for ScriptedDriveApi {
             .lock()
             .expect("uploaded ranges")
             .push((start, start + bytes.len() as u64));
+        if start == 0 {
+            if let Some(path) = self
+                .truncate_after_first_chunk
+                .lock()
+                .expect("truncate path")
+                .take()
+            {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(path)
+                    .expect("archive to truncate")
+                    .set_len(1)
+                    .expect("truncate archive");
+            }
+        }
         Self::take(&self.chunks)
     }
 
@@ -159,27 +176,45 @@ impl DriveSleeper for RecordingSleeper {
     }
 }
 
-fn create_request(bytes: &[u8]) -> DriveUploadRequest {
-    DriveUploadRequest {
-        simfile_id: "sim-42".to_string(),
-        saved_title: "AC/DC".to_string(),
-        archive: bytes.to_vec(),
-        target: DriveUploadTarget::Create {
-            generated_id: "generated-file-id".to_string(),
-            folder_id: "folder-42".to_string(),
+struct UploadRequestFixture {
+    _directory: TempDir,
+    request: DriveUploadRequest,
+}
+
+fn request_fixture(bytes: &[u8], target: DriveUploadTarget, title: &str) -> UploadRequestFixture {
+    let directory = tempdir().expect("archive directory");
+    let archive_path = directory.path().join("upload.zip");
+    std::fs::write(&archive_path, bytes).expect("archive fixture");
+    UploadRequestFixture {
+        _directory: directory,
+        request: DriveUploadRequest {
+            simfile_id: "sim-42".to_string(),
+            saved_title: title.to_string(),
+            archive_path,
+            target,
         },
     }
 }
 
-fn update_request(bytes: &[u8]) -> DriveUploadRequest {
-    DriveUploadRequest {
-        simfile_id: "sim-42".to_string(),
-        saved_title: "Song: Reprise".to_string(),
-        archive: bytes.to_vec(),
-        target: DriveUploadTarget::Update {
+fn create_request(bytes: &[u8]) -> UploadRequestFixture {
+    request_fixture(
+        bytes,
+        DriveUploadTarget::Create {
+            generated_id: "generated-file-id".to_string(),
+            folder_id: "folder-42".to_string(),
+        },
+        "AC/DC",
+    )
+}
+
+fn update_request(bytes: &[u8]) -> UploadRequestFixture {
+    request_fixture(
+        bytes,
+        DriveUploadTarget::Update {
             file_id: "existing-file".to_string(),
         },
-    }
+        "Song: Reprise",
+    )
 }
 
 #[test]
@@ -300,10 +335,10 @@ fn production_chunk_size_is_eight_mib_and_drive_aligned() {
 #[tokio::test]
 async fn resumable_create_validates_folder_and_uses_generated_identity_and_sanitized_name() {
     let api = ScriptedDriveApi::default();
-    api.chunks
-        .lock()
-        .unwrap()
-        .push_back(Ok(DriveChunkResult::Complete));
+    api.chunks.lock().unwrap().extend([
+        Ok(DriveChunkResult::Accepted(4)),
+        Ok(DriveChunkResult::Complete),
+    ]);
     api.files
         .lock()
         .unwrap()
@@ -317,12 +352,13 @@ async fn resumable_create_validates_folder_and_uses_generated_identity_and_sanit
         .push_back(Ok(PublicPermissionStatus::Public));
     let sleeper = RecordingSleeper::default();
     let mut progress = Vec::new();
+    let fixture = create_request(b"archive");
 
     let result = run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        create_request(b"archive"),
+        fixture.request.clone(),
         4,
         |accepted, total| progress.push((accepted, total)),
     )
@@ -343,7 +379,7 @@ async fn resumable_create_validates_folder_and_uses_generated_identity_and_sanit
             name: "AC-DC.zip".to_string(),
         }]
     );
-    assert_eq!(progress, vec![(7, 7)]);
+    assert_eq!(progress, vec![(4, 7), (7, 7)]);
 }
 
 #[tokio::test]
@@ -360,17 +396,19 @@ async fn resumable_update_requires_fresh_edit_access_and_never_changes_parent() 
         Ok(PublicPermissionStatus::Public),
         Ok(PublicPermissionStatus::Public),
     ]);
-    api.chunks
-        .lock()
-        .unwrap()
-        .push_back(Ok(DriveChunkResult::Complete));
+    api.chunks.lock().unwrap().extend([
+        Ok(DriveChunkResult::Accepted(4)),
+        Ok(DriveChunkResult::Accepted(8)),
+        Ok(DriveChunkResult::Complete),
+    ]);
     let sleeper = RecordingSleeper::default();
+    let fixture = update_request(b"replacement");
 
     let result = run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        update_request(b"replacement"),
+        fixture.request.clone(),
         4,
         |_, _| {},
     )
@@ -416,12 +454,13 @@ async fn uncertain_chunk_failure_probes_and_resumes_from_confirmed_byte() {
         .push_back(Ok(PublicPermissionStatus::Public));
     let sleeper = RecordingSleeper::default();
     let mut progress = Vec::new();
+    let fixture = create_request(b"0123456789");
 
     run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        create_request(b"0123456789"),
+        fixture.request.clone(),
         4,
         |accepted, _| progress.push(accepted),
     )
@@ -458,12 +497,13 @@ async fn missing_final_link_retries_with_bounded_backoff_and_never_synthesizes_a
         .unwrap()
         .push_back(Ok(PublicPermissionStatus::Public));
     let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"zip");
 
     let result = run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        create_request(b"zip"),
+        fixture.request.clone(),
         4,
         |_, _| {},
     )
@@ -504,12 +544,13 @@ async fn new_validation_failure_compensates_but_existing_failure_never_deletes()
             .unwrap()
             .push_back(Ok(PublicPermissionStatus::NotPublic));
         api.deletes.lock().unwrap().push_back(delete_result.clone());
+        let fixture = create_request(b"zip");
 
         let failure = run_resumable_upload_for_test(
             &api,
             &RecordingSleeper::default(),
             ACCESS_TOKEN,
-            create_request(b"zip"),
+            fixture.request.clone(),
             4,
             |_, _| {},
         )
@@ -543,12 +584,13 @@ async fn new_validation_failure_compensates_but_existing_failure_never_deletes()
         .lock()
         .unwrap()
         .push_back(Ok(DriveChunkResult::Complete));
+    let fixture = update_request(b"zip");
 
     let failure = run_resumable_upload_for_test(
         &api,
         &RecordingSleeper::default(),
         ACCESS_TOKEN,
-        update_request(b"zip"),
+        fixture.request.clone(),
         4,
         |_, _| {},
     )
@@ -583,12 +625,13 @@ async fn transient_rate_limits_use_bounded_backoff_without_reporting_unaccepted_
         .push_back(Ok(PublicPermissionStatus::Public));
     let sleeper = RecordingSleeper::default();
     let mut progress = Vec::new();
+    let fixture = create_request(b"zip");
 
     run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        create_request(b"zip"),
+        fixture.request.clone(),
         4,
         |accepted, _| progress.push(accepted),
     )
@@ -643,12 +686,13 @@ async fn final_metadata_rejects_wrong_identity_mime_download_capability_or_non_h
             .push_back(Ok(DriveChunkResult::Complete));
         api.files.lock().unwrap().push_back(Ok(file));
         api.deletes.lock().unwrap().push_back(Ok(()));
+        let fixture = create_request(b"zip");
 
         let failure = run_resumable_upload_for_test(
             &api,
             &RecordingSleeper::default(),
             ACCESS_TOKEN,
-            create_request(b"zip"),
+            fixture.request.clone(),
             4,
             |_, _| {},
         )
@@ -669,12 +713,13 @@ async fn existing_update_without_fresh_edit_capability_stops_before_resumable_se
     let mut inaccessible = ScriptedDriveApi::valid_file("existing-file", None);
     inaccessible.can_edit = false;
     api.files.lock().unwrap().push_back(Ok(inaccessible));
+    let fixture = update_request(b"replacement");
 
     let failure = run_resumable_upload_for_test(
         &api,
         &RecordingSleeper::default(),
         ACCESS_TOKEN,
-        update_request(b"replacement"),
+        fixture.request.clone(),
         4,
         |_, _| {},
     )
@@ -693,7 +738,7 @@ async fn existing_update_without_fresh_edit_capability_stops_before_resumable_se
 async fn resumable_session_initiation_retries_transient_and_rate_limited_responses() {
     let api = ScriptedDriveApi::default();
     api.starts.lock().unwrap().extend([
-        Err(DriveApiError::Transient(None)),
+        Err(DriveApiError::Transient(Some(Duration::from_secs(2)))),
         Err(DriveApiError::RateLimited(Some(Duration::from_secs(30)))),
         ResumableUploadSession::for_test("https://upload.test/create"),
     ]);
@@ -713,12 +758,13 @@ async fn resumable_session_initiation_retries_transient_and_rate_limited_respons
         .unwrap()
         .push_back(Ok(PublicPermissionStatus::Public));
     let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"zip");
 
     run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        create_request(b"zip"),
+        fixture.request.clone(),
         4,
         |_, _| {},
     )
@@ -728,7 +774,7 @@ async fn resumable_session_initiation_retries_transient_and_rate_limited_respons
     assert_eq!(api.create_metadata.lock().unwrap().len(), 3);
     assert_eq!(
         sleeper.delays.lock().unwrap().as_slice(),
-        &[Duration::from_millis(100), Duration::from_secs(5)]
+        &[Duration::from_secs(2), Duration::from_secs(5)]
     );
 }
 
@@ -755,12 +801,13 @@ async fn final_metadata_retries_transient_fetch_without_synthesizing_state() {
         .unwrap()
         .push_back(Err(DriveApiError::Network));
     let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"zip");
 
     let result = run_resumable_upload_for_test(
         &api,
         &sleeper,
         ACCESS_TOKEN,
-        create_request(b"zip"),
+        fixture.request.clone(),
         4,
         |_, _| {},
     )
@@ -774,5 +821,262 @@ async fn final_metadata_retries_transient_fetch_without_synthesizing_state() {
     assert_eq!(
         sleeper.delays.lock().unwrap().as_slice(),
         &[Duration::from_secs(2)]
+    );
+}
+
+#[tokio::test]
+async fn stalled_status_recovery_is_bounded_and_never_reports_progress() {
+    let api = ScriptedDriveApi::default();
+    api.chunks
+        .lock()
+        .unwrap()
+        .extend((0..5).map(|_| Err(DriveApiError::Network)));
+    api.statuses
+        .lock()
+        .unwrap()
+        .extend((0..5).map(|_| Ok(DriveChunkResult::Accepted(0))));
+    let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"01234567");
+    let mut progress = Vec::new();
+
+    let failure = run_resumable_upload_for_test(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        fixture.request.clone(),
+        4,
+        |accepted, _| progress.push(accepted),
+    )
+    .await
+    .expect_err("same confirmed offset must terminate");
+
+    assert_eq!(failure.error, DriveApiError::InvalidResponse);
+    assert_eq!(api.uploaded_ranges.lock().unwrap().len(), 5);
+    assert!(progress.is_empty());
+    assert_eq!(
+        sleeper.delays.lock().unwrap().as_slice(),
+        &[
+            Duration::from_millis(100),
+            Duration::from_millis(200),
+            Duration::from_millis(400),
+            Duration::from_millis(800),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn same_offset_direct_acks_are_bounded_and_reset_only_after_forward_progress() {
+    let api = ScriptedDriveApi::default();
+    api.chunks
+        .lock()
+        .unwrap()
+        .extend((0..5).map(|_| Ok(DriveChunkResult::Accepted(0))));
+    let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"01234567");
+
+    let failure = run_resumable_upload_for_test(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        fixture.request.clone(),
+        4,
+        |_, _| {},
+    )
+    .await
+    .expect_err("same-offset acknowledgements must terminate");
+
+    assert_eq!(failure.error, DriveApiError::InvalidResponse);
+    assert_eq!(api.uploaded_ranges.lock().unwrap().len(), 5);
+    assert_eq!(sleeper.delays.lock().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn chunk_acknowledgements_must_stay_inside_the_attempted_window() {
+    for (name, chunks, statuses) in [
+        (
+            "forward beyond attempted end",
+            vec![Ok(DriveChunkResult::Accepted(5))],
+            vec![],
+        ),
+        (
+            "regression behind prior confirmed offset",
+            vec![
+                Ok(DriveChunkResult::Accepted(4)),
+                Ok(DriveChunkResult::Accepted(3)),
+            ],
+            vec![],
+        ),
+        (
+            "early direct completion",
+            vec![Ok(DriveChunkResult::Complete)],
+            vec![],
+        ),
+        (
+            "early status completion",
+            vec![Err(DriveApiError::Network)],
+            vec![Ok(DriveChunkResult::Complete)],
+        ),
+    ] {
+        let api = ScriptedDriveApi::default();
+        api.chunks.lock().unwrap().extend(chunks);
+        api.statuses.lock().unwrap().extend(statuses);
+        let fixture = create_request(b"01234567");
+
+        let failure = run_resumable_upload_for_test(
+            &api,
+            &RecordingSleeper::default(),
+            ACCESS_TOKEN,
+            fixture.request.clone(),
+            4,
+            |_, _| {},
+        )
+        .await
+        .expect_err(name);
+
+        assert_eq!(failure.error, DriveApiError::InvalidResponse, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn status_retry_honors_classified_retry_after_before_resuming() {
+    let api = ScriptedDriveApi::default();
+    api.chunks
+        .lock()
+        .unwrap()
+        .extend([Err(DriveApiError::Network), Ok(DriveChunkResult::Complete)]);
+    api.statuses.lock().unwrap().extend([
+        Err(DriveApiError::Transient(Some(Duration::from_secs(3)))),
+        Ok(DriveChunkResult::Accepted(2)),
+    ]);
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "generated-file-id",
+            Some("https://drive.google.com/file.zip"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let sleeper = RecordingSleeper::default();
+    let fixture = create_request(b"zip");
+
+    run_resumable_upload_for_test(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        fixture.request.clone(),
+        4,
+        |_, _| {},
+    )
+    .await
+    .expect("status retry");
+
+    assert_eq!(
+        sleeper.delays.lock().unwrap().as_slice(),
+        &[Duration::from_secs(3)]
+    );
+}
+
+#[tokio::test]
+async fn disk_backed_upload_reads_only_bounded_chunks_from_a_large_sparse_archive() {
+    let directory = tempdir().expect("sparse directory");
+    let archive_path = directory.path().join("large.zip");
+    let total = 10 * 1024 * 1024 + 3;
+    std::fs::File::create(&archive_path)
+        .expect("sparse archive")
+        .set_len(total)
+        .expect("sparse length");
+    let request = DriveUploadRequest {
+        simfile_id: "sim-42".to_string(),
+        saved_title: "Sparse".to_string(),
+        archive_path,
+        target: DriveUploadTarget::Create {
+            generated_id: "generated-file-id".to_string(),
+            folder_id: "folder-42".to_string(),
+        },
+    };
+    let api = ScriptedDriveApi::default();
+    api.chunks.lock().unwrap().extend([
+        Ok(DriveChunkResult::Accepted(4 * 1024 * 1024)),
+        Ok(DriveChunkResult::Accepted(8 * 1024 * 1024)),
+        Ok(DriveChunkResult::Complete),
+    ]);
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "generated-file-id",
+            Some("https://drive.google.com/file.zip"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+
+    run_resumable_upload_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        ACCESS_TOKEN,
+        request,
+        4 * 1024 * 1024,
+        |_, _| {},
+    )
+    .await
+    .expect("sparse upload");
+
+    assert_eq!(
+        api.uploaded_ranges.lock().unwrap().as_slice(),
+        &[
+            (0, 4 * 1024 * 1024),
+            (4 * 1024 * 1024, 8 * 1024 * 1024),
+            (8 * 1024 * 1024, total),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn archive_open_and_short_read_fail_safely_without_loading_or_contacting_further() {
+    let missing = create_request(b"zip");
+    std::fs::remove_file(&missing.request.archive_path).expect("remove archive");
+    let missing_api = ScriptedDriveApi::default();
+    let failure = run_resumable_upload_for_test(
+        &missing_api,
+        &RecordingSleeper::default(),
+        ACCESS_TOKEN,
+        missing.request.clone(),
+        4,
+        |_, _| {},
+    )
+    .await
+    .expect_err("missing archive");
+    assert_eq!(failure.error, DriveApiError::LocalState);
+    assert!(missing_api.create_metadata.lock().unwrap().is_empty());
+
+    let shortened = create_request(b"01234567");
+    let shortened_api = ScriptedDriveApi::default();
+    shortened_api
+        .chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Accepted(4)));
+    *shortened_api.truncate_after_first_chunk.lock().unwrap() =
+        Some(shortened.request.archive_path.clone());
+
+    let failure = run_resumable_upload_for_test(
+        &shortened_api,
+        &RecordingSleeper::default(),
+        ACCESS_TOKEN,
+        shortened.request.clone(),
+        4,
+        |_, _| {},
+    )
+    .await
+    .expect_err("shortened archive");
+    assert_eq!(failure.error, DriveApiError::LocalState);
+    assert_eq!(
+        shortened_api.uploaded_ranges.lock().unwrap().as_slice(),
+        &[(0, 4)]
     );
 }

@@ -150,6 +150,7 @@ pub(crate) enum DriveApiError {
     TokenExpired,
     Network,
     InvalidResponse,
+    LocalState,
     FolderUnavailable,
     DownloadNotPublic,
     SharingCheckUnavailable,

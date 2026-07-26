@@ -655,6 +655,23 @@ async fn resumable_chunks_use_put_and_authoritative_range_then_probe_with_empty_
 }
 
 #[tokio::test]
+async fn resumable_308_without_range_confirms_zero_bytes_not_the_attempted_chunk() {
+    let server = MockServer::start().await;
+    let session =
+        ResumableUploadSession::for_test(&format!("{}/session", server.uri())).expect("session");
+    Mock::given(method("PUT"))
+        .and(path("/session"))
+        .respond_with(ResponseTemplate::new(308))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::upload_chunk(&client(&server), ACCESS_TOKEN, &session, 0, b"0123", 8).await,
+        Ok(DriveChunkResult::Accepted(0))
+    );
+}
+
+#[tokio::test]
 async fn resumable_final_get_requests_exact_fields_and_preserves_original_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

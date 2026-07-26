@@ -1202,14 +1202,16 @@ describe('updateSimfileDriveFile', () => {
 
 describe('general simfile write types', () => {
 	it('do not allow general insert or update payloads to write Google Drive metadata', () => {
-		// @ts-expect-error Google Drive ownership metadata is only writable by updateSimfileDriveFile.
 		const insert: SimfileInsert = {
 			bpm: 120,
 			user_id: 'user-1',
+			// @ts-expect-error Google Drive ownership metadata is only writable by updateSimfileDriveFile.
 			google_drive_file_id: 'forbidden'
 		};
-		// @ts-expect-error Google Drive ownership metadata is only writable by updateSimfileDriveFile.
-		const update: SimfileUpdate = { google_drive_file_id: 'forbidden' };
+		const update: SimfileUpdate = {
+			// @ts-expect-error Google Drive ownership metadata is only writable by updateSimfileDriveFile.
+			google_drive_file_id: 'forbidden'
+		};
 		expect(insert).toBeDefined();
 		expect(update).toBeDefined();
 	});

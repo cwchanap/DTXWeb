@@ -20,8 +20,8 @@ const AUDIO_FILE_SIZE_LIMIT: u64 = 10 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS: &[&str] = &["dtx", "def", "xa", "ogg", "wav", "mp3"];
 const AUDIO_EXTENSIONS: &[&str] = &["xa", "ogg", "wav", "mp3"];
-const DTX_DECODING_PRIORITY: [&Encoding; 4] = [SHIFT_JIS, UTF_8, UTF_16LE, UTF_16BE];
-const DEF_DECODING_PRIORITY: [&Encoding; 4] = [UTF_16LE, UTF_16BE, UTF_8, SHIFT_JIS];
+static DTX_DECODING_PRIORITY: [&Encoding; 4] = [SHIFT_JIS, UTF_8, UTF_16LE, UTF_16BE];
+static DEF_DECODING_PRIORITY: [&Encoding; 4] = [UTF_16LE, UTF_16BE, UTF_8, SHIFT_JIS];
 
 #[tauri::command]
 /// Opens the generic folder chooser used by Export Settings. Selecting a

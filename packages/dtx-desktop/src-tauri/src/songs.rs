@@ -17,8 +17,8 @@ const VALID_DTX_FILE_EXTENSIONS: &[&str] = &[
     ".dtx", ".def", ".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".xa", ".png", ".jpg",
     ".jpeg", ".gif", ".bmp", ".tiff", ".tga",
 ];
-const SET_DEF_DECODING_PRIORITY: [&Encoding; 4] = [UTF_8, SHIFT_JIS, UTF_16LE, UTF_16BE];
-const DTX_DECODING_PRIORITY: [&Encoding; 4] = [SHIFT_JIS, UTF_8, UTF_16LE, UTF_16BE];
+static SET_DEF_DECODING_PRIORITY: [&Encoding; 4] = [UTF_8, SHIFT_JIS, UTF_16LE, UTF_16BE];
+static DTX_DECODING_PRIORITY: [&Encoding; 4] = [SHIFT_JIS, UTF_8, UTF_16LE, UTF_16BE];
 
 #[derive(Debug, Clone, Copy)]
 enum HomeDirPlatform {

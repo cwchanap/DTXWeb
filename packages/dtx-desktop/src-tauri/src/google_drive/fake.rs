@@ -106,10 +106,126 @@ struct PersistentDriveObject {
     creation_count: u64,
 }
 
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PersistentTransactionKind {
+    GenerateId,
+    CompleteSession,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PersistentTransactionEvent {
+    Entered {
+        kind: PersistentTransactionKind,
+        ordinal: usize,
+    },
+    Blocked(PersistentTransactionKind),
+}
+
+#[cfg(test)]
+struct PersistentTransactionProbe {
+    target: PersistentTransactionKind,
+    events_tx: tokio::sync::mpsc::UnboundedSender<PersistentTransactionEvent>,
+    events_rx: AsyncMutex<tokio::sync::mpsc::UnboundedReceiver<PersistentTransactionEvent>>,
+    first_release: tokio::sync::Semaphore,
+    first_released: std::sync::atomic::AtomicBool,
+    entered: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+impl PersistentTransactionProbe {
+    fn new(target: PersistentTransactionKind) -> std::sync::Arc<Self> {
+        let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
+        std::sync::Arc::new(Self {
+            target,
+            events_tx,
+            events_rx: AsyncMutex::new(events_rx),
+            first_release: tokio::sync::Semaphore::new(0),
+            first_released: std::sync::atomic::AtomicBool::new(false),
+            entered: std::sync::atomic::AtomicUsize::new(0),
+        })
+    }
+
+    fn targets(&self, kind: PersistentTransactionKind) -> bool {
+        self.target == kind
+    }
+
+    fn record_blocked(&self, kind: PersistentTransactionKind) {
+        let _ = self
+            .events_tx
+            .send(PersistentTransactionEvent::Blocked(kind));
+    }
+
+    async fn enter_after_read(&self, kind: PersistentTransactionKind) {
+        let ordinal = self
+            .entered
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            .saturating_add(1);
+        let _ = self
+            .events_tx
+            .send(PersistentTransactionEvent::Entered { kind, ordinal });
+        if ordinal == 1 {
+            let permit = self
+                .first_release
+                .acquire()
+                .await
+                .expect("the transaction probe release semaphore must remain open");
+            permit.forget();
+        }
+    }
+
+    async fn next_event(&self) -> PersistentTransactionEvent {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.events_rx.lock().await.recv(),
+        )
+        .await
+        .expect("timed out waiting for a persistent transaction probe event")
+        .expect("the persistent transaction probe event channel closed")
+    }
+
+    fn first_release_guard(self: &std::sync::Arc<Self>) -> PersistentTransactionFirstRelease {
+        PersistentTransactionFirstRelease {
+            probe: self.clone(),
+        }
+    }
+
+    fn release_first(&self) {
+        if !self
+            .first_released
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            self.first_release.add_permits(1);
+        }
+    }
+}
+
+#[cfg(test)]
+struct PersistentTransactionFirstRelease {
+    probe: std::sync::Arc<PersistentTransactionProbe>,
+}
+
+#[cfg(test)]
+impl PersistentTransactionFirstRelease {
+    fn release(self) {
+        self.probe.release_first();
+    }
+}
+
+#[cfg(test)]
+impl Drop for PersistentTransactionFirstRelease {
+    fn drop(&mut self) {
+        self.probe.release_first();
+    }
+}
+
 pub(crate) struct E2eGoogleDriveFake {
     data_dir: PathBuf,
     persistent: AsyncMutex<PersistentDriveState>,
     runtime: StdMutex<RuntimeState>,
+    #[cfg(test)]
+    transaction_probe: Option<std::sync::Arc<PersistentTransactionProbe>>,
 }
 
 impl E2eGoogleDriveFake {
@@ -124,7 +240,19 @@ impl E2eGoogleDriveFake {
                 scenario: E2eDriveScenario::default(),
                 ..RuntimeState::default()
             }),
+            #[cfg(test)]
+            transaction_probe: None,
         })
+    }
+
+    #[cfg(test)]
+    fn new_with_transaction_probe(
+        data_dir: PathBuf,
+        transaction_probe: std::sync::Arc<PersistentTransactionProbe>,
+    ) -> Result<Self> {
+        let mut fake = Self::new(data_dir)?;
+        fake.transaction_probe = Some(transaction_probe);
+        Ok(fake)
     }
 
     pub(crate) async fn configure(&self, control: E2eDriveControl) -> Result<()> {
@@ -273,6 +401,38 @@ impl E2eGoogleDriveFake {
         Ok(())
     }
 
+    #[cfg(test)]
+    async fn lock_probed_persistent_transaction(
+        &self,
+        kind: PersistentTransactionKind,
+    ) -> tokio::sync::MutexGuard<'_, PersistentDriveState> {
+        let Some(probe) = self
+            .transaction_probe
+            .as_ref()
+            .filter(|probe| probe.targets(kind))
+        else {
+            return self.persistent.lock().await;
+        };
+        match self.persistent.try_lock() {
+            Ok(persistent) => persistent,
+            Err(_) => {
+                probe.record_blocked(kind);
+                self.persistent.lock().await
+            }
+        }
+    }
+
+    #[cfg(test)]
+    async fn pause_probed_transaction_after_read(&self, kind: PersistentTransactionKind) {
+        if let Some(probe) = self
+            .transaction_probe
+            .as_ref()
+            .filter(|probe| probe.targets(kind))
+        {
+            probe.enter_after_read(kind).await;
+        }
+    }
+
     fn write_object_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<()> {
         validate_e2e_identifier(file_id)?;
         let path = self.object_path(file_id);
@@ -346,8 +506,16 @@ impl E2eGoogleDriveFake {
             .sessions
             .remove(session)
             .ok_or(DriveApiError::SessionExpired)?;
+        #[cfg(test)]
+        let mut persistent = self
+            .lock_probed_persistent_transaction(PersistentTransactionKind::CompleteSession)
+            .await;
+        #[cfg(not(test))]
         let mut persistent = self.persistent.lock().await;
         let mut next = persistent.clone();
+        #[cfg(test)]
+        self.pause_probed_transaction_after_read(PersistentTransactionKind::CompleteSession)
+            .await;
         if upload.create && next.objects.contains_key(&upload.file_id) {
             return Err(DriveApiError::InvalidGeneratedId);
         }
@@ -396,8 +564,16 @@ impl E2eGoogleDriveFake {
 #[async_trait]
 impl GoogleDriveApi for E2eGoogleDriveFake {
     async fn generate_id(&self, _access_token: &str) -> std::result::Result<String, DriveApiError> {
+        #[cfg(test)]
+        let mut persistent = self
+            .lock_probed_persistent_transaction(PersistentTransactionKind::GenerateId)
+            .await;
+        #[cfg(not(test))]
         let mut persistent = self.persistent.lock().await;
         let mut next = persistent.clone();
+        #[cfg(test)]
+        self.pause_probed_transaction_after_read(PersistentTransactionKind::GenerateId)
+            .await;
         let sequence = next.next_id.max(1);
         next.next_id = sequence.saturating_add(1);
         self.commit_persistent_state(&mut persistent, next)
@@ -758,7 +934,6 @@ fn zip_entries(path: &Path) -> Vec<E2eDriveZipEntrySnapshot> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
     use std::fs;
     use std::sync::Arc;
     use std::time::Duration;
@@ -771,7 +946,6 @@ mod tests {
     };
     use crate::google_drive::upload::DriveOperationManager;
     use crate::google_drive::{DriveMetadataClient, OwnerDriveSimfile};
-    use tokio::sync::Barrier;
     use uuid::Uuid;
 
     const USER_ID: &str = "e2e-user";
@@ -928,63 +1102,88 @@ mod tests {
         assert_eq!(snapshot.metadata_mutations[0].simfile_id, SIMFILE_ID);
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn concurrent_generate_id_transactions_are_unique_and_persist_every_call() {
+    #[tokio::test]
+    async fn capacity_two_generate_id_transactions_enter_persistence_one_at_a_time() {
         let data = tempfile::tempdir().unwrap();
-        let fake = Arc::new(E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap());
+        let probe = PersistentTransactionProbe::new(PersistentTransactionKind::GenerateId);
+        let first_release = probe.first_release_guard();
+        let fake = Arc::new(
+            E2eGoogleDriveFake::new_with_transaction_probe(
+                data.path().to_path_buf(),
+                probe.clone(),
+            )
+            .unwrap(),
+        );
         fake.reset(E2eDriveScenario::new(owner(None, None)))
             .await
             .unwrap();
-        let mut generated_ids = Vec::new();
-
-        for round in 0..64 {
-            let manager = Arc::new(DriveOperationManager::default());
-            let first_lease = manager
-                .register(USER_ID, Uuid::new_v4(), &format!("first-{round}"))
-                .unwrap();
-            let second_lease = manager
-                .register(USER_ID, Uuid::new_v4(), &format!("second-{round}"))
-                .unwrap();
-            let barrier = Arc::new(Barrier::new(2));
-
-            let first = {
-                let fake = fake.clone();
-                let barrier = barrier.clone();
-                tokio::spawn(async move {
-                    let _permit = first_lease.acquire_resource_slot().await.unwrap();
-                    barrier.wait().await;
-                    fake.generate_id("ignored-e2e-access-token").await.unwrap()
-                })
-            };
-            let second = {
-                let fake = fake.clone();
-                let barrier = barrier.clone();
-                tokio::spawn(async move {
-                    let _permit = second_lease.acquire_resource_slot().await.unwrap();
-                    barrier.wait().await;
-                    fake.generate_id("ignored-e2e-access-token").await.unwrap()
-                })
-            };
-
-            let (first, second) = tokio::time::timeout(Duration::from_secs(5), async {
-                (first.await.unwrap(), second.await.unwrap())
+        let manager = Arc::new(DriveOperationManager::default());
+        let first_lease = manager
+            .register(USER_ID, Uuid::new_v4(), "first-generate")
+            .unwrap();
+        let second_lease = manager
+            .register(USER_ID, Uuid::new_v4(), "second-generate")
+            .unwrap();
+        let first = {
+            let fake = fake.clone();
+            tokio::spawn(async move {
+                let _permit = first_lease.acquire_resource_slot().await.unwrap();
+                fake.generate_id("ignored-e2e-access-token").await.unwrap()
             })
-            .await
-            .expect("the operation manager must admit its two configured resource users");
-            generated_ids.extend([first, second]);
-        }
+        };
 
-        let unique_ids = generated_ids.iter().collect::<HashSet<_>>();
-        assert_eq!(unique_ids.len(), generated_ids.len());
+        assert_eq!(
+            probe.next_event().await,
+            PersistentTransactionEvent::Entered {
+                kind: PersistentTransactionKind::GenerateId,
+                ordinal: 1,
+            }
+        );
+
+        let second = {
+            let fake = fake.clone();
+            tokio::spawn(async move {
+                let _permit = second_lease.acquire_resource_slot().await.unwrap();
+                fake.generate_id("ignored-e2e-access-token").await.unwrap()
+            })
+        };
+        let second_before_release = probe.next_event().await;
+        first_release.release();
+        let second_after_release = if second_before_release
+            == PersistentTransactionEvent::Blocked(PersistentTransactionKind::GenerateId)
+        {
+            Some(probe.next_event().await)
+        } else {
+            None
+        };
+        let (first, second) = tokio::time::timeout(Duration::from_secs(5), async {
+            (first.await.unwrap(), second.await.unwrap())
+        })
+        .await
+        .expect("both capacity-two operations must finish after releasing the first transaction");
+
+        assert_eq!(
+            second_before_release,
+            PersistentTransactionEvent::Blocked(PersistentTransactionKind::GenerateId)
+        );
+        assert_eq!(
+            second_after_release,
+            Some(PersistentTransactionEvent::Entered {
+                kind: PersistentTransactionKind::GenerateId,
+                ordinal: 2,
+            })
+        );
+        assert_eq!(first, "e2e-drive-file-0001");
+        assert_eq!(second, "e2e-drive-file-0002");
         let snapshot = fake.snapshot().await.unwrap();
-        assert_eq!(snapshot.generate_count, generated_ids.len() as u64);
+        assert_eq!(snapshot.generate_count, 2);
         assert_eq!(
             snapshot
                 .calls
                 .iter()
                 .filter(|call| call.operation == "generateId")
                 .count(),
-            generated_ids.len()
+            2
         );
 
         let restored = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
@@ -993,121 +1192,146 @@ mod tests {
                 .generate_id("ignored-e2e-access-token")
                 .await
                 .unwrap(),
-            "e2e-drive-file-0129"
+            "e2e-drive-file-0003"
         );
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn two_concurrent_completions_persist_both_objects_and_calls() {
+    #[tokio::test]
+    async fn capacity_two_completions_enter_persistence_one_at_a_time() {
         let data = tempfile::tempdir().unwrap();
-        let fake = Arc::new(E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap());
+        let probe = PersistentTransactionProbe::new(PersistentTransactionKind::CompleteSession);
+        let first_release = probe.first_release_guard();
+        let fake = Arc::new(
+            E2eGoogleDriveFake::new_with_transaction_probe(
+                data.path().to_path_buf(),
+                probe.clone(),
+            )
+            .unwrap(),
+        );
         fake.reset(E2eDriveScenario::new(owner(None, None)))
             .await
             .unwrap();
-        for round in 0..32 {
-            let first_id = format!("concurrent-object-a-{round}");
-            let second_id = format!("concurrent-object-b-{round}");
-            let first_bytes = vec![b'A'; 1024 * 1024];
-            let second_bytes = vec![b'B'; 1024 * 1024];
-            let first_session = fake
-                .start_resumable_create(
+        let first_bytes = b"PK-A".to_vec();
+        let second_bytes = b"PK-B".to_vec();
+        let first_session = fake
+            .start_resumable_create(
+                "ignored-e2e-access-token",
+                &DriveCreateMetadata {
+                    id: "concurrent-object-a".to_string(),
+                    parent_id: E2E_PUBLIC_FOLDER_ID.to_string(),
+                    name: "Concurrent A.zip".to_string(),
+                },
+                first_bytes.len() as u64,
+            )
+            .await
+            .unwrap();
+        let second_session = fake
+            .start_resumable_create(
+                "ignored-e2e-access-token",
+                &DriveCreateMetadata {
+                    id: "concurrent-object-b".to_string(),
+                    parent_id: E2E_PUBLIC_FOLDER_ID.to_string(),
+                    name: "Concurrent B.zip".to_string(),
+                },
+                second_bytes.len() as u64,
+            )
+            .await
+            .unwrap();
+        let manager = Arc::new(DriveOperationManager::default());
+        let first_lease = manager
+            .register(USER_ID, Uuid::new_v4(), "concurrent-a")
+            .unwrap();
+        let second_lease = manager
+            .register(USER_ID, Uuid::new_v4(), "concurrent-b")
+            .unwrap();
+        let first = {
+            let fake = fake.clone();
+            tokio::spawn(async move {
+                let _permit = first_lease.acquire_resource_slot().await.unwrap();
+                fake.upload_chunk(
                     "ignored-e2e-access-token",
-                    &DriveCreateMetadata {
-                        id: first_id,
-                        parent_id: E2E_PUBLIC_FOLDER_ID.to_string(),
-                        name: format!("Concurrent A {round}.zip"),
-                    },
+                    &first_session,
+                    0,
+                    &first_bytes,
                     first_bytes.len() as u64,
                 )
                 .await
-                .unwrap();
-            let second_session = fake
-                .start_resumable_create(
+                .unwrap()
+            })
+        };
+
+        assert_eq!(
+            probe.next_event().await,
+            PersistentTransactionEvent::Entered {
+                kind: PersistentTransactionKind::CompleteSession,
+                ordinal: 1,
+            }
+        );
+
+        let second = {
+            let fake = fake.clone();
+            tokio::spawn(async move {
+                let _permit = second_lease.acquire_resource_slot().await.unwrap();
+                fake.upload_chunk(
                     "ignored-e2e-access-token",
-                    &DriveCreateMetadata {
-                        id: second_id,
-                        parent_id: E2E_PUBLIC_FOLDER_ID.to_string(),
-                        name: format!("Concurrent B {round}.zip"),
-                    },
+                    &second_session,
+                    0,
+                    &second_bytes,
                     second_bytes.len() as u64,
                 )
                 .await
-                .unwrap();
-
-            let manager = Arc::new(DriveOperationManager::default());
-            let first_lease = manager
-                .register(USER_ID, Uuid::new_v4(), &format!("concurrent-a-{round}"))
-                .unwrap();
-            let second_lease = manager
-                .register(USER_ID, Uuid::new_v4(), &format!("concurrent-b-{round}"))
-                .unwrap();
-            let barrier = Arc::new(Barrier::new(2));
-            let first = {
-                let fake = fake.clone();
-                let barrier = barrier.clone();
-                tokio::spawn(async move {
-                    let _permit = first_lease.acquire_resource_slot().await.unwrap();
-                    barrier.wait().await;
-                    fake.upload_chunk(
-                        "ignored-e2e-access-token",
-                        &first_session,
-                        0,
-                        &first_bytes,
-                        first_bytes.len() as u64,
-                    )
-                    .await
-                    .unwrap()
-                })
-            };
-            let second = {
-                let fake = fake.clone();
-                let barrier = barrier.clone();
-                tokio::spawn(async move {
-                    let _permit = second_lease.acquire_resource_slot().await.unwrap();
-                    barrier.wait().await;
-                    fake.upload_chunk(
-                        "ignored-e2e-access-token",
-                        &second_session,
-                        0,
-                        &second_bytes,
-                        second_bytes.len() as u64,
-                    )
-                    .await
-                    .unwrap()
-                })
-            };
-
-            let (first_result, second_result) =
-                tokio::time::timeout(Duration::from_secs(5), async {
-                    (first.await.unwrap(), second.await.unwrap())
-                })
-                .await
-                .expect("both operation-manager resource slots must complete");
-            assert_eq!(first_result, DriveChunkResult::Complete);
-            assert_eq!(second_result, DriveChunkResult::Complete);
-        }
+                .unwrap()
+            })
+        };
+        let second_before_release = probe.next_event().await;
+        first_release.release();
+        let second_after_release = if second_before_release
+            == PersistentTransactionEvent::Blocked(PersistentTransactionKind::CompleteSession)
+        {
+            Some(probe.next_event().await)
+        } else {
+            None
+        };
+        let (first_result, second_result) = tokio::time::timeout(Duration::from_secs(5), async {
+            (first.await.unwrap(), second.await.unwrap())
+        })
+        .await
+        .expect("both capacity-two operations must finish after releasing the first transaction");
+        assert_eq!(
+            second_before_release,
+            PersistentTransactionEvent::Blocked(PersistentTransactionKind::CompleteSession)
+        );
+        assert_eq!(
+            second_after_release,
+            Some(PersistentTransactionEvent::Entered {
+                kind: PersistentTransactionKind::CompleteSession,
+                ordinal: 2,
+            })
+        );
+        assert_eq!(first_result, DriveChunkResult::Complete);
+        assert_eq!(second_result, DriveChunkResult::Complete);
 
         let snapshot = fake.snapshot().await.unwrap();
-        assert_eq!(snapshot.objects.len(), 64);
-        assert_eq!(snapshot.create_count, 64);
+        assert_eq!(snapshot.objects.len(), 2);
+        assert_eq!(snapshot.create_count, 2);
         assert_eq!(
             snapshot
                 .calls
                 .iter()
                 .filter(|call| call.operation == "uploadChunk")
                 .count(),
-            64
+            2
         );
         assert_eq!(
-            fs::read(fake.object_path("concurrent-object-a-0")).unwrap(),
-            vec![b'A'; 1024 * 1024]
+            fs::read(fake.object_path("concurrent-object-a")).unwrap(),
+            b"PK-A"
         );
         assert_eq!(
-            fs::read(fake.object_path("concurrent-object-b-31")).unwrap(),
-            vec![b'B'; 1024 * 1024]
+            fs::read(fake.object_path("concurrent-object-b")).unwrap(),
+            b"PK-B"
         );
 
         let restored = E2eGoogleDriveFake::new(data.path().to_path_buf()).unwrap();
-        assert_eq!(restored.snapshot().await.unwrap().objects.len(), 64);
+        assert_eq!(restored.snapshot().await.unwrap().objects.len(), 2);
     }
 }

@@ -3,6 +3,9 @@ use crate::google_drive::drive_client::{
     DriveApiError, DriveChunkResult, DriveCreateMetadata, DriveFile, DriveUpdateMetadata,
     GoogleDriveApi, PublicPermissionStatus, ResumableUploadSession, ValidatedFolder,
 };
+use crate::google_drive::pending_bindings::{GoogleDrivePendingBindingStore, PendingBindingKind};
+use crate::google_drive::{DriveMetadataClient, OwnerDriveSimfile};
+use crate::{auth::AuthState, error::DesktopError};
 use async_trait::async_trait;
 use std::collections::VecDeque;
 #[cfg(unix)]
@@ -27,7 +30,10 @@ struct ScriptedDriveApi {
     uploaded_ranges: Mutex<Vec<(u64, u64)>>,
     create_metadata: Mutex<Vec<DriveCreateMetadata>>,
     update_metadata: Mutex<Vec<(String, DriveUpdateMetadata)>>,
+    generated_count: Mutex<usize>,
+    get_file_ids: Mutex<Vec<String>>,
     delete_count: Mutex<usize>,
+    delete_ids: Mutex<Vec<String>>,
     truncate_after_first_chunk: Mutex<Option<PathBuf>>,
 }
 
@@ -56,10 +62,15 @@ impl ScriptedDriveApi {
 #[async_trait]
 impl GoogleDriveApi for ScriptedDriveApi {
     async fn generate_id(&self, _access_token: &str) -> DriveResult<String> {
+        *self.generated_count.lock().expect("generated count") += 1;
         Self::take(&self.generated_ids)
     }
 
-    async fn get_file(&self, _access_token: &str, _file_id: &str) -> DriveResult<DriveFile> {
+    async fn get_file(&self, _access_token: &str, file_id: &str) -> DriveResult<DriveFile> {
+        self.get_file_ids
+            .lock()
+            .expect("get file ids")
+            .push(file_id.to_string());
         Self::take(&self.files)
     }
 
@@ -158,9 +169,75 @@ impl GoogleDriveApi for ScriptedDriveApi {
         Self::take(&self.statuses)
     }
 
-    async fn delete_file(&self, _access_token: &str, _file_id: &str) -> DriveResult<()> {
+    async fn delete_file(&self, _access_token: &str, file_id: &str) -> DriveResult<()> {
         *self.delete_count.lock().expect("delete count") += 1;
+        self.delete_ids
+            .lock()
+            .expect("delete ids")
+            .push(file_id.to_string());
         Self::take(&self.deletes)
+    }
+}
+
+#[derive(Default)]
+struct ScriptedMetadataClient {
+    fetches: Mutex<VecDeque<std::result::Result<OwnerDriveSimfile, &'static str>>>,
+    patches: Mutex<VecDeque<std::result::Result<OwnerDriveSimfile, &'static str>>>,
+    patch_inputs: Mutex<Vec<(String, String)>>,
+}
+
+impl ScriptedMetadataClient {
+    fn owner_for(
+        simfile_id: &str,
+        file_id: Option<&str>,
+        download_url: Option<&str>,
+    ) -> OwnerDriveSimfile {
+        OwnerDriveSimfile {
+            id: simfile_id.to_string(),
+            title: format!("Saved cloud title {simfile_id}"),
+            google_drive_file_id: file_id.map(str::to_string),
+            download_url: download_url.map(str::to_string),
+        }
+    }
+
+    fn owner(file_id: Option<&str>, download_url: Option<&str>) -> OwnerDriveSimfile {
+        Self::owner_for("42", file_id, download_url)
+    }
+
+    fn take(
+        queue: &Mutex<VecDeque<std::result::Result<OwnerDriveSimfile, &'static str>>>,
+    ) -> crate::error::Result<OwnerDriveSimfile> {
+        queue
+            .lock()
+            .expect("metadata script")
+            .pop_front()
+            .expect("scripted metadata response")
+            .map_err(|code| DesktopError::Message(code.to_string()))
+    }
+}
+
+#[async_trait]
+impl DriveMetadataClient for ScriptedMetadataClient {
+    async fn fetch_owner_simfile(
+        &self,
+        _auth: &AuthState,
+        _simfile_id: &str,
+    ) -> crate::error::Result<OwnerDriveSimfile> {
+        Self::take(&self.fetches)
+    }
+
+    async fn update_drive_file(
+        &self,
+        _auth: &AuthState,
+        _simfile_id: &str,
+        drive_file_id: &str,
+        download_url: &str,
+    ) -> crate::error::Result<OwnerDriveSimfile> {
+        self.patch_inputs
+            .lock()
+            .expect("patch inputs")
+            .push((drive_file_id.to_string(), download_url.to_string()));
+        Self::take(&self.patches)
     }
 }
 
@@ -1078,5 +1155,975 @@ async fn archive_open_and_short_read_fail_safely_without_loading_or_contacting_f
     assert_eq!(
         shortened_api.uploaded_ranges.lock().unwrap().as_slice(),
         &[(0, 4)]
+    );
+}
+
+async fn authenticated_user(user_id: &str) -> AuthState {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": user_id },
+        "access_token": "supabase-token"
+    })))
+    .await;
+    auth
+}
+
+fn crash_safe_request(archive_path: PathBuf, kind: PendingBindingKind) -> CrashSafeCreateRequest {
+    CrashSafeCreateRequest {
+        simfile_id: "42".to_string(),
+        archive_path,
+        folder_id: "folder-42".to_string(),
+        kind,
+    }
+}
+
+fn pending_store(data_dir: &TempDir) -> GoogleDrivePendingBindingStore {
+    GoogleDrivePendingBindingStore::new(data_dir.path().to_path_buf())
+}
+
+fn script_successful_create(api: &ScriptedDriveApi, file_id: &str, download_url: &str) {
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            file_id,
+            Some(download_url),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+}
+
+fn script_successful_patch(metadata: &ScriptedMetadataClient, file_id: &str, download_url: &str) {
+    metadata
+        .patches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(
+            Some(file_id),
+            Some(download_url),
+        )));
+}
+
+#[tokio::test]
+async fn reconciliation_after_crash_before_create_reuses_the_persisted_identity() {
+    // Break caught: contacting files.create before committing the generated ID,
+    // or generating a second ID after a pre-create process crash.
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("generated-original".to_string()));
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    let auth = authenticated_user("user-42").await;
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let archive = request_fixture(
+        b"zip",
+        DriveUploadTarget::Create {
+            generated_id: "unused".to_string(),
+            folder_id: "unused".to_string(),
+        },
+        "renderer title must not be used",
+    );
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+
+    let failure = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request.clone(),
+        4,
+        Some(CreateCrashPoint::AfterBindingPersisted),
+        |_, _| {},
+    )
+    .await
+    .expect_err("injected process boundary");
+
+    assert_eq!(failure.error, DriveApiError::LocalState);
+    assert!(api.create_metadata.lock().unwrap().is_empty());
+    assert_eq!(
+        store
+            .get("user-42", "42")
+            .expect("pending read")
+            .expect("pending binding")
+            .drive_file_id,
+        "generated-original"
+    );
+
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::NotFound));
+    script_successful_create(
+        &api,
+        "generated-original",
+        "https://drive.google.com/original",
+    );
+    script_successful_patch(
+        &metadata,
+        "generated-original",
+        "https://drive.google.com/original",
+    );
+
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request,
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect("recovered create");
+
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["generated-original"]
+    );
+    assert_eq!(store.get("user-42", "42").expect("pending read"), None);
+}
+
+#[tokio::test]
+async fn reconciliation_binds_an_existing_public_zip_and_never_starts_a_duplicate_create() {
+    // Break caught: treating every pending record as unused instead of first
+    // probing the durable Drive identity after restart.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "generated-existing".to_string(),
+                kind: PendingBindingKind::FirstUpload,
+                created_at: "2000-01-01T00:00:00Z".to_string(),
+            },
+        )
+        .expect("old pending binding");
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "generated-existing",
+            Some("https://drive.google.com/existing"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    script_successful_patch(
+        &metadata,
+        "generated-existing",
+        "https://drive.google.com/existing",
+    );
+    let archive = create_request(b"zip");
+
+    let outcome = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect("reconciled binding");
+
+    assert_eq!(outcome.file_id, "generated-existing");
+    assert!(api.create_metadata.lock().unwrap().is_empty());
+    assert_eq!(*api.generated_count.lock().unwrap(), 0);
+    assert_eq!(store.get("user-42", "42").expect("pending read"), None);
+}
+
+#[tokio::test]
+async fn reconciliation_retains_on_403_network_and_other_indeterminate_file_probes() {
+    // Break caught: rotating or creating after a probe that does not prove the
+    // old generated identity is absent.
+    for error in [DriveApiError::PermissionDenied, DriveApiError::Network] {
+        let data_dir = tempdir().expect("data dir");
+        let store = pending_store(&data_dir);
+        store
+            .replace(
+                crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                    user_id: "user-42".to_string(),
+                    simfile_id: "42".to_string(),
+                    drive_file_id: "possibly-created".to_string(),
+                    kind: PendingBindingKind::FirstUpload,
+                    created_at: "1999-01-01T00:00:00Z".to_string(),
+                },
+            )
+            .expect("pending binding");
+        let api = ScriptedDriveApi::default();
+        api.files.lock().unwrap().push_back(Err(error.clone()));
+        let metadata = ScriptedMetadataClient::default();
+        metadata
+            .fetches
+            .lock()
+            .unwrap()
+            .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+        let archive = create_request(b"zip");
+
+        let failure = run_crash_safe_create_for_test(
+            &api,
+            &RecordingSleeper::default(),
+            &store,
+            &metadata,
+            &authenticated_user("user-42").await,
+            ACCESS_TOKEN,
+            crash_safe_request(
+                archive.request.archive_path,
+                PendingBindingKind::FirstUpload,
+            ),
+            4,
+            None,
+            |_, _| {},
+        )
+        .await
+        .expect_err("indeterminate probe");
+
+        assert_eq!(failure.error, error);
+        assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+        assert!(api.create_metadata.lock().unwrap().is_empty());
+        assert_eq!(
+            store
+                .get("user-42", "42")
+                .expect("pending read")
+                .expect("retained")
+                .drive_file_id,
+            "possibly-created"
+        );
+    }
+}
+
+#[tokio::test]
+async fn definitive_invalid_generated_id_rotates_once_only_after_a_confirmed_404() {
+    // Break caught: rotating on the create error alone, or looping through
+    // fresh IDs without a definitive files.get absence proof.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "expired-generated-id".to_string(),
+                kind: PendingBindingKind::FirstUpload,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+        )
+        .expect("pending binding");
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .extend([Err(DriveApiError::NotFound), Err(DriveApiError::NotFound)]);
+    api.starts
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::InvalidGeneratedId));
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("fresh-generated-id".to_string()));
+    script_successful_create(&api, "fresh-generated-id", "https://drive.google.com/fresh");
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    script_successful_patch(
+        &metadata,
+        "fresh-generated-id",
+        "https://drive.google.com/fresh",
+    );
+    let archive = create_request(b"zip");
+
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect("one confirmed rotation");
+
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(
+        api.get_file_ids.lock().unwrap().as_slice(),
+        &[
+            "expired-generated-id".to_string(),
+            "expired-generated-id".to_string(),
+            "fresh-generated-id".to_string(),
+        ]
+    );
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["expired-generated-id", "fresh-generated-id"]
+    );
+    assert_eq!(store.get("user-42", "42").expect("pending read"), None);
+}
+
+#[tokio::test]
+async fn fresh_id_rewrite_is_durable_before_the_replacement_create_can_start() {
+    // Break caught: beginning a create with the fresh ID while the durable key
+    // still names the definitively invalid old identity.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "expired-generated-id".to_string(),
+                kind: PendingBindingKind::ExplicitReplacement,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+        )
+        .expect("pending binding");
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .extend([Err(DriveApiError::NotFound), Err(DriveApiError::NotFound)]);
+    api.starts
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::InvalidGeneratedId));
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("fresh-generated-id".to_string()));
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(
+            Some("old-cloud-id"),
+            Some("https://drive.google.com/old"),
+        )));
+    let archive = create_request(b"zip");
+
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::ExplicitReplacement,
+        ),
+        4,
+        Some(CreateCrashPoint::AfterFreshIdPersisted),
+        |_, _| {},
+    )
+    .await
+    .expect_err("fresh-ID crash boundary");
+
+    let rewritten = store
+        .get("user-42", "42")
+        .expect("pending read")
+        .expect("rewritten binding");
+    assert_eq!(rewritten.user_id, "user-42");
+    assert_eq!(rewritten.simfile_id, "42");
+    assert_eq!(rewritten.drive_file_id, "fresh-generated-id");
+    assert_eq!(rewritten.kind, PendingBindingKind::ExplicitReplacement);
+    assert!(!rewritten.created_at.is_empty());
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["expired-generated-id"],
+        "fresh create must not begin before the rewritten key is durable"
+    );
+}
+
+#[tokio::test]
+async fn ambiguous_create_response_retains_one_identity_across_all_retries() {
+    // Break caught: generating a fresh ID for each retry after an uncertain
+    // files.create response.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("stable-generated-id".to_string()));
+    api.starts
+        .lock()
+        .unwrap()
+        .extend((0..5).map(|_| Err(DriveApiError::Network)));
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    let archive = create_request(b"zip");
+
+    let failure = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect_err("ambiguous create");
+
+    assert_eq!(failure.error, DriveApiError::Network);
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["stable-generated-id"; 5]
+    );
+    assert_eq!(
+        store
+            .get("user-42", "42")
+            .expect("pending read")
+            .expect("retained")
+            .drive_file_id,
+        "stable-generated-id"
+    );
+}
+
+#[tokio::test]
+async fn crash_after_create_validation_reconciles_without_a_second_create() {
+    // Break caught: losing the pending identity between Drive completion and
+    // the cloud metadata patch.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("created-before-crash".to_string()));
+    script_successful_create(
+        &api,
+        "created-before-crash",
+        "https://drive.google.com/crash",
+    );
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    let auth = authenticated_user("user-42").await;
+    let archive = create_request(b"zip");
+    let request = crash_safe_request(
+        archive.request.archive_path,
+        PendingBindingKind::FirstUpload,
+    );
+
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request.clone(),
+        4,
+        Some(CreateCrashPoint::AfterUploadValidated),
+        |_, _| {},
+    )
+    .await
+    .expect_err("post-create crash");
+    assert!(metadata.patch_inputs.lock().unwrap().is_empty());
+    assert!(store.get("user-42", "42").expect("pending").is_some());
+
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "created-before-crash",
+            Some("https://drive.google.com/crash"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    script_successful_patch(
+        &metadata,
+        "created-before-crash",
+        "https://drive.google.com/crash",
+    );
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request,
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect("restart reconciliation");
+
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["created-before-crash"]
+    );
+    assert_eq!(store.get("user-42", "42").expect("pending"), None);
+}
+
+#[tokio::test]
+async fn patch_retry_and_compensation_failures_never_drop_recoverable_binding() {
+    // Break caught: clearing the pending record when metadata sync and
+    // compensation deletion are both unconfirmed.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("needs-reconciliation".to_string()));
+    script_successful_create(
+        &api,
+        "needs-reconciliation",
+        "https://drive.google.com/recover",
+    );
+    api.deletes
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::Network));
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    metadata
+        .patches
+        .lock()
+        .unwrap()
+        .extend([Err("NETWORK"), Err("NETWORK")]);
+    let archive = create_request(b"zip");
+
+    let failure = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect_err("metadata sync failure");
+
+    assert_eq!(failure.error, DriveApiError::MetadataSync);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    assert_eq!(
+        api.delete_ids.lock().unwrap().as_slice(),
+        &["needs-reconciliation".to_string()]
+    );
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 2);
+    assert!(store.get("user-42", "42").expect("pending").is_some());
+}
+
+#[tokio::test]
+async fn crash_during_metadata_patch_retry_retains_binding_without_compensation() {
+    // Break caught: deleting/forgetting the created object when the process
+    // terminates between the first failed metadata patch and its retry.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("patch-retry-id".to_string()));
+    script_successful_create(
+        &api,
+        "patch-retry-id",
+        "https://drive.google.com/patch-retry",
+    );
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    metadata.patches.lock().unwrap().push_back(Err("NETWORK"));
+    let archive = create_request(b"zip");
+
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        Some(CreateCrashPoint::BeforeMetadataPatchRetry),
+        |_, _| {},
+    )
+    .await
+    .expect_err("patch retry crash");
+
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert_eq!(
+        store
+            .get("user-42", "42")
+            .expect("pending")
+            .expect("retained")
+            .drive_file_id,
+        "patch-retry-id"
+    );
+}
+
+#[tokio::test]
+async fn crash_after_patch_commit_is_cleaned_without_repatching_or_contacting_drive() {
+    // Break caught: a post-commit crash causing duplicate cloud writes or a
+    // second Drive create instead of recognizing the already-bound identity.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("bound-before-crash".to_string()));
+    script_successful_create(&api, "bound-before-crash", "https://drive.google.com/bound");
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(None, None)));
+    script_successful_patch(
+        &metadata,
+        "bound-before-crash",
+        "https://drive.google.com/bound",
+    );
+    let auth = authenticated_user("user-42").await;
+    let archive = create_request(b"zip");
+    let request = crash_safe_request(
+        archive.request.archive_path,
+        PendingBindingKind::ExplicitReplacement,
+    );
+
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request.clone(),
+        4,
+        Some(CreateCrashPoint::AfterMetadataPatch),
+        |_, _| {},
+    )
+    .await
+    .expect_err("post-patch crash");
+    assert!(store.get("user-42", "42").expect("pending").is_some());
+
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner(
+            Some("bound-before-crash"),
+            Some("https://drive.google.com/bound"),
+        )));
+    let patch_count = metadata.patch_inputs.lock().unwrap().len();
+    let get_count = api.get_file_ids.lock().unwrap().len();
+    run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        request,
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect("already-bound cleanup");
+
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), patch_count);
+    assert_eq!(api.get_file_ids.lock().unwrap().len(), get_count);
+    assert_eq!(store.get("user-42", "42").expect("pending"), None);
+}
+
+#[tokio::test]
+async fn lost_owner_is_compensated_but_never_bound_and_is_retained_until_absence_is_confirmed() {
+    // Break caught: binding a pending Drive object after the simfile was
+    // deleted/transferred, or forgetting it after an ambiguous delete.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "orphan-candidate".to_string(),
+                kind: PendingBindingKind::FirstUpload,
+                created_at: "2026-07-26T00:00:00Z".to_string(),
+            },
+        )
+        .expect("pending");
+    let api = ScriptedDriveApi::default();
+    api.deletes
+        .lock()
+        .unwrap()
+        .extend([Err(DriveApiError::Network), Err(DriveApiError::NotFound)]);
+    let metadata = ScriptedMetadataClient::default();
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .extend([Err("SIMFILE_UNAVAILABLE"), Err("SIMFILE_UNAVAILABLE")]);
+    let auth = authenticated_user("user-42").await;
+    let first_archive = create_request(b"zip");
+
+    let first = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            first_archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect_err("lost owner with ambiguous delete");
+    assert_eq!(first.error, DriveApiError::SimfileUnavailable);
+    assert!(store.get("user-42", "42").expect("pending").is_some());
+    assert!(metadata.patch_inputs.lock().unwrap().is_empty());
+
+    let second_archive = create_request(b"zip");
+    let second = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &auth,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            second_archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect_err("lost owner");
+    assert_eq!(second.error, DriveApiError::SimfileUnavailable);
+    assert_eq!(store.get("user-42", "42").expect("pending"), None);
+    assert_eq!(
+        api.delete_ids.lock().unwrap().as_slice(),
+        &[
+            "orphan-candidate".to_string(),
+            "orphan-candidate".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reconciliation_auth_restore_sweeps_only_the_current_user_without_creating_unused_ids() {
+    // Break caught: startup recovery creating files, processing another
+    // Drumery user's durable entries, or stopping after one unrelated failure.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    for binding in [
+        crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+            user_id: "user-42".to_string(),
+            simfile_id: "41".to_string(),
+            drive_file_id: "created-41".to_string(),
+            kind: PendingBindingKind::FirstUpload,
+            created_at: "2026-07-01T00:00:00Z".to_string(),
+        },
+        crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+            user_id: "user-42".to_string(),
+            simfile_id: "42".to_string(),
+            drive_file_id: "unused-42".to_string(),
+            kind: PendingBindingKind::ExplicitReplacement,
+            created_at: "2001-01-01T00:00:00Z".to_string(),
+        },
+        crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+            user_id: "other-user".to_string(),
+            simfile_id: "43".to_string(),
+            drive_file_id: "other-users-file".to_string(),
+            kind: PendingBindingKind::FirstUpload,
+            created_at: "2026-07-01T00:00:00Z".to_string(),
+        },
+    ] {
+        store.replace(binding).expect("pending binding");
+    }
+    let api = ScriptedDriveApi::default();
+    api.files.lock().unwrap().extend([
+        Ok(ScriptedDriveApi::valid_file(
+            "created-41",
+            Some("https://drive.google.com/created-41"),
+        )),
+        Err(DriveApiError::NotFound),
+    ]);
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        Ok(ScriptedMetadataClient::owner_for("41", None, None)),
+        Ok(ScriptedMetadataClient::owner_for(
+            "42",
+            Some("old-cloud-id"),
+            Some("https://drive.google.com/old"),
+        )),
+    ]);
+    metadata
+        .patches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner_for(
+            "41",
+            Some("created-41"),
+            Some("https://drive.google.com/created-41"),
+        )));
+
+    reconcile_pending_bindings_for_current_user(
+        &api,
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+    )
+    .await;
+
+    assert_eq!(store.get("user-42", "41").expect("created entry"), None);
+    assert_eq!(
+        store
+            .get("user-42", "42")
+            .expect("unused entry")
+            .expect("retained")
+            .drive_file_id,
+        "unused-42"
+    );
+    assert_eq!(
+        store
+            .get("other-user", "43")
+            .expect("other user entry")
+            .expect("untouched")
+            .drive_file_id,
+        "other-users-file"
+    );
+    assert!(api.create_metadata.lock().unwrap().is_empty());
+    assert_eq!(
+        api.get_file_ids.lock().unwrap().as_slice(),
+        &["created-41".to_string(), "unused-42".to_string()]
     );
 }

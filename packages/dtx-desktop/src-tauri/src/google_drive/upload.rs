@@ -1,7 +1,8 @@
+use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use uuid::Uuid;
 
@@ -9,6 +10,11 @@ use super::drive_client::{
     DriveApiError, DriveChunkResult, DriveCreateMetadata, DriveFile, DriveUpdateMetadata,
     GoogleDriveApi, PublicPermissionStatus,
 };
+use super::pending_bindings::{
+    GoogleDrivePendingBindingStore, PendingBindingKind, PendingBindingStoreError,
+    PendingGoogleDriveBinding,
+};
+use super::{DriveMetadataClient, OwnerDriveSimfile};
 
 const UPLOAD_CACHE_NAMESPACE: &str = "google-drive-uploads";
 const UPLOAD_ARCHIVE_NAME: &str = "upload.zip";
@@ -57,6 +63,24 @@ pub(crate) enum PendingBindingDisposition {
 pub(crate) struct DriveUploadFailure {
     pub(crate) error: DriveApiError,
     pub(crate) pending_binding: PendingBindingDisposition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CrashSafeCreateRequest {
+    pub(crate) simfile_id: String,
+    pub(crate) archive_path: PathBuf,
+    pub(crate) folder_id: String,
+    pub(crate) kind: PendingBindingKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum CreateCrashPoint {
+    AfterBindingPersisted,
+    AfterFreshIdPersisted,
+    AfterUploadValidated,
+    BeforeMetadataPatchRetry,
+    AfterMetadataPatch,
 }
 
 #[async_trait]
@@ -180,6 +204,553 @@ where
         on_progress,
     )
     .await
+}
+
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_crash_safe_create<A, S, F>(
+    api: &A,
+    sleeper: &S,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    request: CrashSafeCreateRequest,
+    on_progress: F,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+    S: DriveSleeper + ?Sized,
+    F: FnMut(u64, u64),
+{
+    run_crash_safe_create_with_chunk_size(
+        api,
+        sleeper,
+        pending_store,
+        metadata_client,
+        auth,
+        access_token,
+        request,
+        DRIVE_UPLOAD_CHUNK_SIZE,
+        None,
+        on_progress,
+    )
+    .await
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_crash_safe_create_for_test<A, S, F>(
+    api: &A,
+    sleeper: &S,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    request: CrashSafeCreateRequest,
+    chunk_size: usize,
+    crash_at: Option<CreateCrashPoint>,
+    on_progress: F,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+    S: DriveSleeper + ?Sized,
+    F: FnMut(u64, u64),
+{
+    run_crash_safe_create_with_chunk_size(
+        api,
+        sleeper,
+        pending_store,
+        metadata_client,
+        auth,
+        access_token,
+        request,
+        chunk_size,
+        crash_at,
+        on_progress,
+    )
+    .await
+}
+
+#[allow(dead_code)]
+pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
+    api: &A,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+) where
+    A: GoogleDriveApi + ?Sized,
+{
+    let Some(user_id) = auth.current_user_id().await else {
+        return;
+    };
+    let Ok(bindings) = pending_store.all() else {
+        return;
+    };
+    for pending in bindings
+        .into_iter()
+        .filter(|pending| pending.user_id == user_id)
+    {
+        let owner = match metadata_client
+            .fetch_owner_simfile(auth, &pending.simfile_id)
+            .await
+        {
+            Ok(owner) if owner.id == pending.simfile_id => owner,
+            Ok(_) => {
+                let _ =
+                    compensate_lost_owner(api, pending_store, access_token, Some(&pending)).await;
+                continue;
+            }
+            Err(error) if metadata_error(&error) == DriveApiError::SimfileUnavailable => {
+                let _ =
+                    compensate_lost_owner(api, pending_store, access_token, Some(&pending)).await;
+                continue;
+            }
+            Err(_) => continue,
+        };
+
+        if owner.google_drive_file_id.as_deref() == Some(pending.drive_file_id.as_str())
+            && validated_download_url(owner.download_url.as_deref())
+                .is_ok_and(|value| value.is_some())
+        {
+            let _ = remove_pending_binding(pending_store, &pending);
+            continue;
+        }
+
+        let file = match api.get_file(access_token, &pending.drive_file_id).await {
+            Ok(file) => file,
+            Err(_) => continue,
+        };
+        let _ = finish_existing_pending_file(
+            api,
+            pending_store,
+            metadata_client,
+            auth,
+            access_token,
+            &pending.simfile_id,
+            &pending,
+            file,
+            None,
+        )
+        .await;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_crash_safe_create_with_chunk_size<A, S, F>(
+    api: &A,
+    sleeper: &S,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    request: CrashSafeCreateRequest,
+    chunk_size: usize,
+    crash_at: Option<CreateCrashPoint>,
+    mut on_progress: F,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+    S: DriveSleeper + ?Sized,
+    F: FnMut(u64, u64),
+{
+    let user_id = auth
+        .current_user_id()
+        .await
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| create_failure(DriveApiError::SimfileUnavailable))?;
+    let pending = pending_store
+        .get(&user_id, &request.simfile_id)
+        .map_err(pending_store_failure)?;
+    let had_pending_binding = pending.is_some();
+
+    let owner = match metadata_client
+        .fetch_owner_simfile(auth, &request.simfile_id)
+        .await
+    {
+        Ok(owner) if owner.id == request.simfile_id => owner,
+        Ok(_) => {
+            return compensate_lost_owner(api, pending_store, access_token, pending.as_ref()).await;
+        }
+        Err(error) if metadata_error(&error) == DriveApiError::SimfileUnavailable => {
+            return compensate_lost_owner(api, pending_store, access_token, pending.as_ref()).await;
+        }
+        Err(error) => return Err(create_failure(metadata_error(&error))),
+    };
+
+    let pending = match pending {
+        Some(pending) => pending,
+        None => {
+            if request.kind == PendingBindingKind::FirstUpload
+                && owner
+                    .google_drive_file_id
+                    .as_deref()
+                    .is_some_and(|id| !id.trim().is_empty())
+            {
+                return Err(create_failure(DriveApiError::InvalidResponse));
+            }
+            let generated_id = api
+                .generate_id(access_token)
+                .await
+                .map_err(create_failure)?;
+            let pending = PendingGoogleDriveBinding {
+                user_id: user_id.clone(),
+                simfile_id: request.simfile_id.clone(),
+                drive_file_id: generated_id,
+                kind: request.kind,
+                created_at: pending_created_at(),
+            };
+            pending_store
+                .replace(pending.clone())
+                .map_err(pending_store_failure)?;
+            maybe_inject_crash(crash_at, CreateCrashPoint::AfterBindingPersisted)?;
+            pending
+        }
+    };
+
+    if had_pending_binding {
+        if owner.google_drive_file_id.as_deref() == Some(pending.drive_file_id.as_str()) {
+            if let Ok(Some(download_url)) = validated_download_url(owner.download_url.as_deref()) {
+                remove_pending_binding(pending_store, &pending)?;
+                return Ok(DriveUploadOutcome {
+                    file_id: pending.drive_file_id,
+                    file_name: sanitize_drive_zip_name(&owner.title, &request.simfile_id),
+                    download_url,
+                });
+            }
+        }
+
+        match api.get_file(access_token, &pending.drive_file_id).await {
+            Ok(file) => {
+                return finish_existing_pending_file(
+                    api,
+                    pending_store,
+                    metadata_client,
+                    auth,
+                    access_token,
+                    &request.simfile_id,
+                    &pending,
+                    file,
+                    crash_at,
+                )
+                .await;
+            }
+            Err(DriveApiError::NotFound) => {}
+            Err(error) => return Err(create_failure(error)),
+        }
+    }
+
+    create_from_pending(
+        api,
+        sleeper,
+        pending_store,
+        metadata_client,
+        auth,
+        access_token,
+        &request,
+        pending,
+        owner,
+        chunk_size,
+        crash_at,
+        &mut on_progress,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_from_pending<A, S, F>(
+    api: &A,
+    sleeper: &S,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    request: &CrashSafeCreateRequest,
+    mut pending: PendingGoogleDriveBinding,
+    owner: OwnerDriveSimfile,
+    chunk_size: usize,
+    crash_at: Option<CreateCrashPoint>,
+    on_progress: &mut F,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+    S: DriveSleeper + ?Sized,
+    F: FnMut(u64, u64),
+{
+    let mut rotated = false;
+    loop {
+        let upload = run_resumable_upload_with_chunk_size(
+            api,
+            sleeper,
+            access_token,
+            DriveUploadRequest {
+                simfile_id: request.simfile_id.clone(),
+                saved_title: owner.title.clone(),
+                archive_path: request.archive_path.clone(),
+                target: DriveUploadTarget::Create {
+                    generated_id: pending.drive_file_id.clone(),
+                    folder_id: request.folder_id.clone(),
+                },
+            },
+            chunk_size,
+            &mut *on_progress,
+        )
+        .await;
+        let outcome = match upload {
+            Ok(outcome) => outcome,
+            Err(failure) if failure.error == DriveApiError::InvalidGeneratedId && !rotated => {
+                match api.get_file(access_token, &pending.drive_file_id).await {
+                    Ok(file) => {
+                        return finish_existing_pending_file(
+                            api,
+                            pending_store,
+                            metadata_client,
+                            auth,
+                            access_token,
+                            &request.simfile_id,
+                            &pending,
+                            file,
+                            crash_at,
+                        )
+                        .await;
+                    }
+                    Err(DriveApiError::NotFound) => {
+                        let fresh_id = api
+                            .generate_id(access_token)
+                            .await
+                            .map_err(create_failure)?;
+                        pending.drive_file_id = fresh_id;
+                        pending.created_at = pending_created_at();
+                        pending_store
+                            .replace(pending.clone())
+                            .map_err(pending_store_failure)?;
+                        maybe_inject_crash(crash_at, CreateCrashPoint::AfterFreshIdPersisted)?;
+                        rotated = true;
+                        continue;
+                    }
+                    Err(error) => return Err(create_failure(error)),
+                }
+            }
+            Err(failure) => {
+                if failure.pending_binding == PendingBindingDisposition::DeleteConfirmed {
+                    remove_pending_binding(pending_store, &pending)?;
+                }
+                return Err(failure);
+            }
+        };
+
+        maybe_inject_crash(crash_at, CreateCrashPoint::AfterUploadValidated)?;
+        return patch_and_finish(
+            api,
+            pending_store,
+            metadata_client,
+            auth,
+            access_token,
+            &request.simfile_id,
+            &pending,
+            outcome,
+            crash_at,
+        )
+        .await;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn finish_existing_pending_file<A>(
+    api: &A,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    simfile_id: &str,
+    pending: &PendingGoogleDriveBinding,
+    file: DriveFile,
+    crash_at: Option<CreateCrashPoint>,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+{
+    let validation = async {
+        validate_final_file_shape(&file, &pending.drive_file_id)?;
+        let download_url = validated_download_url(file.web_content_link.as_deref())?
+            .ok_or(DriveApiError::InvalidResponse)?;
+        require_public_permission(api, access_token, &pending.drive_file_id).await?;
+        Ok::<_, DriveApiError>(download_url)
+    }
+    .await;
+    let download_url = match validation {
+        Ok(download_url) => download_url,
+        Err(error) => {
+            return compensate_pending_failure(api, pending_store, access_token, pending, error)
+                .await;
+        }
+    };
+    patch_and_finish(
+        api,
+        pending_store,
+        metadata_client,
+        auth,
+        access_token,
+        simfile_id,
+        pending,
+        DriveUploadOutcome {
+            file_id: pending.drive_file_id.clone(),
+            file_name: file.name,
+            download_url,
+        },
+        crash_at,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn patch_and_finish<A>(
+    api: &A,
+    pending_store: &GoogleDrivePendingBindingStore,
+    metadata_client: &dyn DriveMetadataClient,
+    auth: &AuthState,
+    access_token: &str,
+    simfile_id: &str,
+    pending: &PendingGoogleDriveBinding,
+    outcome: DriveUploadOutcome,
+    crash_at: Option<CreateCrashPoint>,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+{
+    let mut last_error = None;
+    for attempt in 0..2 {
+        match metadata_client
+            .update_drive_file(auth, simfile_id, &outcome.file_id, &outcome.download_url)
+            .await
+        {
+            Ok(updated)
+                if updated.id == simfile_id
+                    && updated.google_drive_file_id.as_deref()
+                        == Some(outcome.file_id.as_str())
+                    && updated.download_url.as_deref() == Some(outcome.download_url.as_str()) =>
+            {
+                maybe_inject_crash(crash_at, CreateCrashPoint::AfterMetadataPatch)?;
+                remove_pending_binding(pending_store, pending)?;
+                return Ok(outcome);
+            }
+            Ok(_) => last_error = Some(DriveApiError::MetadataSync),
+            Err(_) => last_error = Some(DriveApiError::MetadataSync),
+        }
+        if attempt == 0 {
+            maybe_inject_crash(crash_at, CreateCrashPoint::BeforeMetadataPatchRetry)?;
+        }
+    }
+
+    compensate_pending_failure(
+        api,
+        pending_store,
+        access_token,
+        pending,
+        last_error.unwrap_or(DriveApiError::MetadataSync),
+    )
+    .await
+}
+
+async fn compensate_lost_owner<A>(
+    api: &A,
+    pending_store: &GoogleDrivePendingBindingStore,
+    access_token: &str,
+    pending: Option<&PendingGoogleDriveBinding>,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+{
+    let Some(pending) = pending else {
+        return Err(create_failure(DriveApiError::SimfileUnavailable));
+    };
+    compensate_pending_failure(
+        api,
+        pending_store,
+        access_token,
+        pending,
+        DriveApiError::SimfileUnavailable,
+    )
+    .await
+}
+
+async fn compensate_pending_failure<A>(
+    api: &A,
+    pending_store: &GoogleDrivePendingBindingStore,
+    access_token: &str,
+    pending: &PendingGoogleDriveBinding,
+    error: DriveApiError,
+) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure>
+where
+    A: GoogleDriveApi + ?Sized,
+{
+    let disposition = match api.delete_file(access_token, &pending.drive_file_id).await {
+        Ok(()) | Err(DriveApiError::NotFound) => {
+            remove_pending_binding(pending_store, pending)?;
+            PendingBindingDisposition::DeleteConfirmed
+        }
+        Err(_) => PendingBindingDisposition::Retain,
+    };
+    Err(DriveUploadFailure {
+        error,
+        pending_binding: disposition,
+    })
+}
+
+fn remove_pending_binding(
+    pending_store: &GoogleDrivePendingBindingStore,
+    pending: &PendingGoogleDriveBinding,
+) -> std::result::Result<(), DriveUploadFailure> {
+    match pending_store.remove_if_matches(
+        &pending.user_id,
+        &pending.simfile_id,
+        &pending.drive_file_id,
+    ) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(create_failure(DriveApiError::LocalState)),
+        Err(error) => Err(pending_store_failure(error)),
+    }
+}
+
+fn pending_store_failure(error: PendingBindingStoreError) -> DriveUploadFailure {
+    create_failure(match error {
+        PendingBindingStoreError::InsufficientDiskSpace => DriveApiError::InsufficientDiskSpace,
+        PendingBindingStoreError::LocalState => DriveApiError::LocalState,
+    })
+}
+
+fn metadata_error(error: &DesktopError) -> DriveApiError {
+    match error.to_string().as_str() {
+        "SIMFILE_UNAVAILABLE" => DriveApiError::SimfileUnavailable,
+        "NETWORK" => DriveApiError::Network,
+        "RECONNECT_REQUIRED" => DriveApiError::TokenExpired,
+        _ => DriveApiError::MetadataSync,
+    }
+}
+
+fn create_failure(error: DriveApiError) -> DriveUploadFailure {
+    DriveUploadFailure {
+        error,
+        pending_binding: PendingBindingDisposition::Retain,
+    }
+}
+
+fn maybe_inject_crash(
+    crash_at: Option<CreateCrashPoint>,
+    boundary: CreateCrashPoint,
+) -> std::result::Result<(), DriveUploadFailure> {
+    if crash_at == Some(boundary) {
+        return Err(create_failure(DriveApiError::LocalState));
+    }
+    Ok(())
+}
+
+fn pending_created_at() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
 }
 
 async fn run_resumable_upload_with_chunk_size<A, S, F>(

@@ -180,6 +180,8 @@ type ChartDetailTestProps = {
 		display_id?: number | null;
 		dtx_files?: Array<{ id: number; label: string; level: number; simfile_id: number }>;
 	};
+	desktop_info?: (anchor: Node) => void;
+	save?: (anchor: Node) => void;
 	$$events?: {
 		onSave?: (event: { detail: Record<string, unknown> }) => Promise<void> | void;
 	};
@@ -1558,6 +1560,182 @@ describe('SongDetails', () => {
 					)
 				).toBeInTheDocument();
 			});
+		});
+	});
+
+	describe('primary save outcome isolation', () => {
+		beforeEach(() => {
+			authState = { ...authState, isAuthenticated: true };
+			workspaceState = { ...workspaceState, path: '/test' };
+			googleDriveStore.setConnection({ connected: false });
+			vi.mocked(ChartDetail).mockImplementation(((
+				anchor: Node,
+				props: ChartDetailTestProps
+			) => {
+				props.desktop_info?.(anchor);
+				props.save?.(anchor);
+			}) as never);
+		});
+
+		afterEach(() => {
+			vi.mocked(ChartDetail).mockImplementation(() => undefined);
+		});
+
+		const saveEvent = {
+			detail: {
+				displayId: 42,
+				publishDate: '2024-01-01',
+				isPublished: false,
+				downloadUrl: '',
+				videoPreviewUrl: ''
+			}
+		};
+
+		it('does not show song A create rejection after selecting song B', async () => {
+			const createA = deferred<{ success: boolean; error: string }>();
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') return createA.promise;
+				return { files: [] };
+			});
+			const songA = makeNode('SongA', '/test/SongA', { containsDtxFiles: true });
+			const songB = makeNode('SongB', '/test/SongB', { containsDtxFiles: true });
+			const view = render(SongDetails, { props: { song: songA } });
+			const pendingA = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(saveEvent);
+			await waitFor(() => expect(mockDesktopHost.createSimfileRecord).toHaveBeenCalledOnce());
+
+			await view.rerender({ props: { song: songB } });
+			createA.resolve({ success: false, error: 'Song A create failed' });
+			await pendingA;
+			await tick();
+
+			expect(screen.queryByText('Upload failed: Song A create failed')).toBeNull();
+			expect(screen.getByRole('button', { name: 'Upload as Draft' })).toBeInTheDocument();
+		});
+
+		it('does not show song A update rejection after selecting song B', async () => {
+			const updateA = deferred<{ success: boolean; error: string }>();
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'update-simfile-record') return updateA.promise;
+				return { files: [] };
+			});
+			const songA = makeNode('SongA', '/test/SongA', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 41 },
+				linkedSimFileId: '41',
+				containsDtxFiles: true
+			});
+			const songB = makeNode('SongB', '/test/SongB', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 42 },
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			const unlinkedSong = makeNode('Unlinked', '/test/Unlinked', {
+				containsDtxFiles: true
+			});
+			const view = render(SongDetails, { props: { song: songA } });
+			const pendingA = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(saveEvent);
+			await waitFor(() => expect(mockDesktopHost.updateSimfileRecord).toHaveBeenCalledOnce());
+
+			await view.rerender({ props: { song: songB } });
+			updateA.resolve({ success: false, error: 'Song A update failed' });
+			await pendingA;
+			await tick();
+
+			// Force the mocked ChartDetail boundary to remount its real parent-provided
+			// snippet, matching a close/reopen of song B after A's late completion.
+			await view.rerender({ props: { song: unlinkedSong } });
+			await view.rerender({ props: { song: songB } });
+			expect(screen.queryByText('Update failed: Song A update failed')).toBeNull();
+			expect(screen.getByRole('button', { name: 'Upload ZIP to Drive' })).toBeInTheDocument();
+		});
+
+		it('does not show song A create warnings after selecting song B', async () => {
+			const createA = deferred<{
+				success: boolean;
+				simfileId: string;
+				data: ReturnType<typeof makeLinkedSimFile>;
+				warnings: string[];
+			}>();
+			mockHostInvoke.mockImplementation(async (channel: string) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') return createA.promise;
+				return { files: [] };
+			});
+			const songA = makeNode('SongA', '/test/SongA', { containsDtxFiles: true });
+			const songB = makeNode('SongB', '/test/SongB', { containsDtxFiles: true });
+			const view = render(SongDetails, { props: { song: songA } });
+			const pendingA = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(saveEvent);
+			await waitFor(() => expect(mockDesktopHost.createSimfileRecord).toHaveBeenCalledOnce());
+
+			await view.rerender({ props: { song: songB } });
+			createA.resolve({
+				success: true,
+				simfileId: '41',
+				data: { ...makeLinkedSimFile(), id: 41, title: 'Saved Song A' },
+				warnings: ['Song A preview missing']
+			});
+			await pendingA;
+			await tick();
+
+			expect(screen.queryByText('Song A preview missing')).toBeNull();
+			expect(
+				screen.queryByText('Song uploaded, but some preview files could not be uploaded:')
+			).toBeNull();
+			expect(screen.getByRole('button', { name: 'Upload as Draft' })).toBeInTheDocument();
+		});
+
+		it('does not let song A timeout clear song B newer create error', async () => {
+			vi.useFakeTimers();
+			mockHostInvoke.mockImplementation(async (channel: string, params?: unknown) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') {
+					const songPath = (params as { songPath: string }).songPath;
+					return {
+						success: false,
+						error: songPath.endsWith('SongA') ? 'Song A failed' : 'Song B failed'
+					};
+				}
+				return { files: [] };
+			});
+			const songA = makeNode('SongA', '/test/SongA', { containsDtxFiles: true });
+			const songB = makeNode('SongB', '/test/SongB', { containsDtxFiles: true });
+			const view = render(SongDetails, { props: { song: songA } });
+
+			await getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.$$events?.onSave?.(
+				saveEvent
+			);
+			await tick();
+			expect(screen.getByText('Upload failed: Song A failed')).toBeInTheDocument();
+
+			await vi.advanceTimersByTimeAsync(5000);
+			await view.rerender({ props: { song: songB } });
+			await getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.$$events?.onSave?.(
+				saveEvent
+			);
+			await tick();
+			expect(screen.getByText('Upload failed: Song B failed')).toBeInTheDocument();
+
+			await vi.advanceTimersByTimeAsync(5000);
+			expect(screen.getByText('Upload failed: Song B failed')).toBeInTheDocument();
 		});
 	});
 

@@ -417,6 +417,7 @@ async fn run_upload_transaction(
                     .await
                 }
             },
+            || lease.set_phase(DriveOperationPhase::Transferring),
             |expired_access_token| async move {
                 if lease.cancellation().is_cancelled() {
                     return Err(DriveApiError::Canceled);
@@ -424,7 +425,7 @@ async fn run_upload_transaction(
                 drive
                     .refresh_access_token_after_expiry(user_id, &expired_access_token)
                     .await
-                    .map_err(|_| DriveApiError::TokenExpired)
+                    .map_err(oauth_error)
             },
         )
         .await;
@@ -547,6 +548,7 @@ async fn create_and_bind(
                 .await
             }
         },
+        || lease.set_phase(DriveOperationPhase::Transferring),
         |expired_access_token| async move {
             if lease.cancellation().is_cancelled() {
                 return Err(DriveApiError::Canceled);
@@ -554,7 +556,7 @@ async fn create_and_bind(
             drive
                 .refresh_access_token_after_expiry(user_id, &expired_access_token)
                 .await
-                .map_err(|_| DriveApiError::TokenExpired)
+                .map_err(oauth_error)
         },
     )
     .await;
@@ -884,6 +886,65 @@ mod tests {
                 true,
                 &upload_failure(error)
             ));
+        }
+    }
+
+    #[tokio::test]
+    async fn upload_refresh_preserves_oauth_classification_for_update_and_create_commands() {
+        // Break caught: rewriting every refresh failure to TokenExpired makes
+        // transient network, credential-store, and invalid-response failures
+        // falsely disconnect an otherwise connected user.
+        for pending_binding in [
+            super::super::upload::PendingBindingDisposition::NotApplicable,
+            super::super::upload::PendingBindingDisposition::Retain,
+        ] {
+            for (oauth_failure, expected_error, requires_reconnect) in [
+                (
+                    GoogleDriveOAuthError::Network,
+                    DriveApiError::Network,
+                    false,
+                ),
+                (
+                    GoogleDriveOAuthError::CredentialStore,
+                    DriveApiError::CredentialStore,
+                    false,
+                ),
+                (
+                    GoogleDriveOAuthError::InvalidResponse,
+                    DriveApiError::InvalidResponse,
+                    false,
+                ),
+                (
+                    GoogleDriveOAuthError::ReconnectRequired,
+                    DriveApiError::TokenExpired,
+                    true,
+                ),
+            ] {
+                let refresh_error = oauth_error(oauth_failure);
+                let failure = run_with_single_access_token_refresh(
+                    zeroize::Zeroizing::new("expired-token".to_string()),
+                    |_| async move {
+                        Err::<(), _>(DriveUploadFailure {
+                            error: DriveApiError::TokenExpired,
+                            pending_binding,
+                        })
+                    },
+                    || {},
+                    |_| {
+                        let refresh_error = refresh_error.clone();
+                        async move { Err(refresh_error) }
+                    },
+                )
+                .await
+                .expect_err("refresh failure");
+
+                assert_eq!(failure.error, expected_error);
+                assert_eq!(failure.pending_binding, pending_binding);
+                assert_eq!(
+                    failure.error == DriveApiError::TokenExpired,
+                    requires_reconnect
+                );
+            }
         }
     }
 

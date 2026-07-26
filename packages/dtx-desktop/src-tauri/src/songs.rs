@@ -561,9 +561,116 @@ pub(crate) async fn collect_valid_song_files(
     song_path: &Path,
     workspace_root: &Path,
 ) -> Result<Vec<ValidatedSongFile>> {
-    collect_valid_song_files_with_open_hook(song_path, workspace_root, |_| {}).await
+    let mut collector = SongFileCollector::new(song_path, workspace_root).await?;
+    let mut files = Vec::new();
+    while let Some(opened_file) = collector.open_next().await? {
+        if let Some(validated_file) = collector.validate_opened(opened_file).await {
+            files.push(validated_file);
+        }
+    }
+    finish_collected_song_files(files)
 }
 
+struct OpenedSongFile {
+    entry_path: PathBuf,
+    archive_name: String,
+    source: std::fs::File,
+}
+
+struct SongFileCollector {
+    canonical_song_path: PathBuf,
+    canonical_workspace_root: PathBuf,
+    entries: fs::ReadDir,
+}
+
+impl SongFileCollector {
+    async fn new(song_path: &Path, workspace_root: &Path) -> Result<Self> {
+        let canonical_song_path = crate::filesystem::canonicalize_within_workspace(
+            &song_path.to_string_lossy(),
+            Some(&workspace_root.to_string_lossy()),
+        )
+        .await?;
+        let canonical_workspace_root = fs::canonicalize(workspace_root).await?;
+        let entries = fs::read_dir(&canonical_song_path).await?;
+
+        Ok(Self {
+            canonical_song_path,
+            canonical_workspace_root,
+            entries,
+        })
+    }
+
+    async fn open_next(&mut self) -> Result<Option<OpenedSongFile>> {
+        while let Some(entry) = self.entries.next_entry().await? {
+            let file_type = entry.file_type().await?;
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let archive_name = entry.file_name().to_string_lossy().into_owned();
+            if !is_valid_export_file_name(&archive_name) {
+                continue;
+            }
+
+            // Retain the opened handle so later validation and ZIP writing
+            // operate on the same object rather than reopening the pathname.
+            let entry_path = entry.path();
+            let source = match fs::File::open(&entry_path).await {
+                Ok(source) => source.into_std().await,
+                Err(_) => continue,
+            };
+            match source.metadata() {
+                Ok(metadata) if metadata.is_file() => {}
+                Ok(_) | Err(_) => continue,
+            }
+
+            return Ok(Some(OpenedSongFile {
+                entry_path,
+                archive_name,
+                source,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    async fn validate_opened(&self, opened_file: OpenedSongFile) -> Option<ValidatedSongFile> {
+        let canonical_file = fs::canonicalize(&opened_file.entry_path).await.ok()?;
+        if !canonical_file.starts_with(&self.canonical_song_path)
+            || !canonical_file.starts_with(&self.canonical_workspace_root)
+        {
+            return None;
+        }
+
+        let opened_identity = opened_file
+            .source
+            .try_clone()
+            .ok()
+            .and_then(|source| same_file::Handle::from_file(source).ok())?;
+        let path_identity = same_file::Handle::from_path(&canonical_file).ok()?;
+        if opened_identity != path_identity {
+            return None;
+        }
+
+        Some(ValidatedSongFile {
+            canonical_path: canonical_file,
+            archive_name: opened_file.archive_name,
+            source: Arc::new(opened_file.source),
+        })
+    }
+}
+
+fn finish_collected_song_files(
+    mut files: Vec<ValidatedSongFile>,
+) -> Result<Vec<ValidatedSongFile>> {
+    files.sort_by(|left, right| left.archive_name.cmp(&right.archive_name));
+    if files.is_empty() {
+        return Err(DesktopError::Message("NO_VALID_SONG_FILES".to_string()));
+    }
+    Ok(files)
+}
+
+#[cfg(test)]
 async fn collect_valid_song_files_with_open_hook<F>(
     song_path: &Path,
     workspace_root: &Path,
@@ -572,76 +679,15 @@ async fn collect_valid_song_files_with_open_hook<F>(
 where
     F: FnMut(&Path),
 {
-    let canonical_song_path = crate::filesystem::canonicalize_within_workspace(
-        &song_path.to_string_lossy(),
-        Some(&workspace_root.to_string_lossy()),
-    )
-    .await?;
-    let canonical_workspace_root = fs::canonicalize(workspace_root).await?;
+    let mut collector = SongFileCollector::new(song_path, workspace_root).await?;
     let mut files = Vec::new();
-    let mut entries = fs::read_dir(&canonical_song_path).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let file_type = entry.file_type().await?;
-        if !file_type.is_file() {
-            continue;
+    while let Some(opened_file) = collector.open_next().await? {
+        after_open(&opened_file.entry_path);
+        if let Some(validated_file) = collector.validate_opened(opened_file).await {
+            files.push(validated_file);
         }
-
-        let file_name = entry.file_name().to_string_lossy().into_owned();
-        if !is_valid_export_file_name(&file_name) {
-            continue;
-        }
-
-        // Open first, then prove that the retained handle still identifies the
-        // canonical in-workspace path. The ZIP writer consumes a clone of this
-        // handle instead of reopening the pathname, closing both sides of the
-        // validation-to-write symlink race.
-        let entry_path = entry.path();
-        let source = match fs::File::open(&entry_path).await {
-            Ok(source) => source.into_std().await,
-            Err(_) => continue,
-        };
-        let _opened_metadata = match source.metadata() {
-            Ok(metadata) if metadata.is_file() => metadata,
-            Ok(_) | Err(_) => continue,
-        };
-        after_open(&entry_path);
-        let canonical_file = match fs::canonicalize(&entry_path).await {
-            Ok(file) => file,
-            Err(_) => continue,
-        };
-        if !canonical_file.starts_with(&canonical_song_path)
-            || !canonical_file.starts_with(&canonical_workspace_root)
-        {
-            continue;
-        }
-        let opened_identity = match source
-            .try_clone()
-            .map_err(DesktopError::from)
-            .and_then(|source| same_file::Handle::from_file(source).map_err(DesktopError::from))
-        {
-            Ok(identity) => identity,
-            Err(_) => continue,
-        };
-        let path_identity = match same_file::Handle::from_path(&canonical_file) {
-            Ok(identity) => identity,
-            Err(_) => continue,
-        };
-        if opened_identity != path_identity {
-            continue;
-        }
-        files.push(ValidatedSongFile {
-            canonical_path: canonical_file,
-            archive_name: file_name,
-            source: Arc::new(source),
-        });
     }
-
-    files.sort_by(|left, right| left.archive_name.cmp(&right.archive_name));
-    if files.is_empty() {
-        return Err(DesktopError::Message("NO_VALID_SONG_FILES".to_string()));
-    }
-    Ok(files)
+    finish_collected_song_files(files)
 }
 
 /// Creates a ZIP from already validated, top-level files. If any write fails,

@@ -39,6 +39,7 @@ struct ScriptedDriveApi {
     generated_count: Mutex<usize>,
     get_file_ids: Mutex<Vec<String>>,
     get_file_requests: Mutex<Vec<(String, String)>>,
+    permission_requests: Mutex<Vec<(String, String)>>,
     delete_count: Mutex<usize>,
     delete_ids: Mutex<Vec<String>>,
     truncate_after_first_chunk: Mutex<Option<PathBuf>>,
@@ -126,9 +127,13 @@ impl GoogleDriveApi for ScriptedDriveApi {
 
     async fn validate_public_permission(
         &self,
-        _access_token: &str,
-        _item_id: &str,
+        access_token: &str,
+        item_id: &str,
     ) -> DriveResult<PublicPermissionStatus> {
+        self.permission_requests
+            .lock()
+            .expect("permission requests")
+            .push((access_token.to_string(), item_id.to_string()));
         let gate = self.permission_gate.lock().expect("permission gate").take();
         if let Some(gate) = gate {
             gate.entered.add_permits(1);
@@ -1013,6 +1018,7 @@ async fn resumable_update_refreshes_once_reuses_the_file_id_and_keeps_progress_m
                 .await
             }
         },
+        || {},
         |expired_token| {
             let refreshes = refreshes.clone();
             async move {
@@ -1056,6 +1062,7 @@ async fn token_refresh_failure_and_second_expiry_stop_after_one_retry_as_reconne
                 })
             }
         },
+        || {},
         |_| {
             let refreshes = refreshes.clone();
             async move {
@@ -1084,6 +1091,7 @@ async fn token_refresh_failure_and_second_expiry_stop_after_one_retry_as_reconne
                 })
             }
         },
+        || {},
         |_| {
             let refreshes = refreshes.clone();
             async move {
@@ -1094,7 +1102,7 @@ async fn token_refresh_failure_and_second_expiry_stop_after_one_retry_as_reconne
     )
     .await
     .expect_err("refresh failure");
-    assert_eq!(failure.error, DriveApiError::TokenExpired);
+    assert_eq!(failure.error, DriveApiError::Network);
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
 
@@ -1111,10 +1119,78 @@ async fn token_refresh_failure_and_second_expiry_stop_after_one_retry_as_reconne
                 })
             }
         },
+        || {},
         |_| async { Err(DriveApiError::Canceled) },
     )
     .await
     .expect_err("cancellation preempts refresh retry");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn token_refresh_restores_a_cancellable_transfer_phase_before_refresh_starts() {
+    // Break caught: a late expiry after accepted upload progress leaves the
+    // lease in Synchronizing, which makes cancel requests fail while the
+    // credential refresh or recovered-object probe is still in flight.
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = Arc::new(
+        manager
+            .register("user-42", operation_id, "42")
+            .expect("operation"),
+    );
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let refresh_gate = Arc::new(AsyncGate::default());
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let task = tokio::spawn({
+        let lease_for_run = lease.clone();
+        let lease_for_reset = lease.clone();
+        let cancellation = lease.cancellation().clone();
+        let refresh_gate = refresh_gate.clone();
+        let attempts = attempts.clone();
+        async move {
+            run_with_single_access_token_refresh(
+                Zeroizing::new("expired-token".to_string()),
+                move |_| {
+                    let lease = lease_for_run.clone();
+                    let attempts = attempts.clone();
+                    async move {
+                        attempts.fetch_add(1, Ordering::SeqCst);
+                        lease.set_phase(DriveOperationPhase::Synchronizing);
+                        Err::<(), _>(DriveUploadFailure {
+                            error: DriveApiError::TokenExpired,
+                            pending_binding: PendingBindingDisposition::Retain,
+                        })
+                    }
+                },
+                move || lease_for_reset.set_phase(DriveOperationPhase::Transferring),
+                move |_| {
+                    let cancellation = cancellation.clone();
+                    let refresh_gate = refresh_gate.clone();
+                    async move {
+                        refresh_gate.entered.add_permits(1);
+                        cancellation.cancelled().await;
+                        Err(DriveApiError::Canceled)
+                    }
+                },
+            )
+            .await
+        }
+    });
+    refresh_gate
+        .entered
+        .acquire()
+        .await
+        .expect("refresh entered")
+        .forget();
+
+    assert!(
+        manager.cancel("user-42", operation_id),
+        "refresh must restore the cancellable transfer phase"
+    );
+    let failure = task.await.unwrap().expect_err("refresh cancellation");
     assert_eq!(failure.error, DriveApiError::Canceled);
     assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
@@ -1998,6 +2074,7 @@ async fn crash_safe_create_refreshes_once_and_reuses_one_persisted_generated_id(
                 .await
             }
         },
+        || {},
         |_| {
             let refreshes = refreshes.clone();
             async move {
@@ -2027,6 +2104,501 @@ async fn crash_safe_create_refreshes_once_and_reuses_one_persisted_generated_id(
     );
     assert_eq!(progress.lock().unwrap().as_slice(), &[(4, 7), (7, 7)]);
     assert_eq!(store.get("user-42", "42").unwrap(), None);
+}
+
+#[derive(Clone, Copy)]
+enum LateCreateExpiry {
+    FinalGetFile,
+    FinalPublicPermission,
+}
+
+async fn assert_late_create_expiry_reuses_persisted_identity(stage: LateCreateExpiry) {
+    // Break caught: compensating a late TokenExpired deletes the completed
+    // object and journal before the one allowed credential refresh can
+    // reconcile the same durable Drive identity.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let archive = create_request(b"archive");
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("stable-generated-id".to_string()));
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.deletes.lock().unwrap().push_back(Ok(()));
+    match stage {
+        LateCreateExpiry::FinalGetFile => {
+            api.files.lock().unwrap().extend([
+                Err(DriveApiError::TokenExpired),
+                Ok(ScriptedDriveApi::valid_file(
+                    "stable-generated-id",
+                    Some("https://drive.google.com/late-get"),
+                )),
+            ]);
+            api.permissions
+                .lock()
+                .unwrap()
+                .push_back(Ok(PublicPermissionStatus::Public));
+        }
+        LateCreateExpiry::FinalPublicPermission => {
+            api.files.lock().unwrap().extend([
+                Ok(ScriptedDriveApi::valid_file(
+                    "stable-generated-id",
+                    Some("https://drive.google.com/late-permission"),
+                )),
+                Ok(ScriptedDriveApi::valid_file(
+                    "stable-generated-id",
+                    Some("https://drive.google.com/late-permission"),
+                )),
+            ]);
+            api.permissions.lock().unwrap().extend([
+                Err(DriveApiError::TokenExpired),
+                Ok(PublicPermissionStatus::Public),
+            ]);
+        }
+    }
+    let expected_url = match stage {
+        LateCreateExpiry::FinalGetFile => "https://drive.google.com/late-get",
+        LateCreateExpiry::FinalPublicPermission => "https://drive.google.com/late-permission",
+    };
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        Ok(ScriptedMetadataClient::owner(None, None)),
+        Ok(ScriptedMetadataClient::owner(None, None)),
+    ]);
+    script_successful_patch(&metadata, "stable-generated-id", expected_url);
+    let auth = authenticated_user("user-42").await;
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+    let progress = Arc::new(Mutex::new(Vec::new()));
+    let monotonic = Arc::new(Mutex::new(MonotonicDriveProgress::default()));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let api_ref = &api;
+    let store_ref = &store;
+    let metadata_ref = &metadata;
+    let auth_ref = &auth;
+
+    let outcome = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |access_token| {
+            let request = request.clone();
+            let progress = progress.clone();
+            let monotonic = monotonic.clone();
+            async move {
+                run_crash_safe_create_for_test(
+                    api_ref,
+                    &RecordingSleeper::default(),
+                    store_ref,
+                    metadata_ref,
+                    auth_ref,
+                    &access_token,
+                    request,
+                    16,
+                    None,
+                    |accepted, total| {
+                        if monotonic.lock().unwrap().should_emit(accepted, total) {
+                            progress.lock().unwrap().push((accepted, total));
+                        }
+                    },
+                )
+                .await
+            }
+        },
+        || {},
+        |_| {
+            let refreshes = refreshes.clone();
+            async move {
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                let pending = store_ref
+                    .get("user-42", "42")
+                    .expect("pending read")
+                    .expect("late expiry must retain the pending binding");
+                assert_eq!(pending.drive_file_id, "stable-generated-id");
+                assert!(
+                    api_ref.delete_ids.lock().unwrap().is_empty(),
+                    "an expired credential must never be used for compensation"
+                );
+                Ok(Zeroizing::new("fresh-token".to_string()))
+            }
+        },
+    )
+    .await
+    .expect("refreshed transaction reconciles");
+
+    assert_eq!(outcome.file_id, "stable-generated-id");
+    assert_eq!(outcome.download_url, expected_url);
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        api.start_tokens.lock().unwrap().as_slice(),
+        &["expired-token"]
+    );
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|metadata| metadata.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["stable-generated-id"]
+    );
+    assert_eq!(
+        api.get_file_requests.lock().unwrap().as_slice(),
+        &[
+            (
+                "expired-token".to_string(),
+                "stable-generated-id".to_string()
+            ),
+            ("fresh-token".to_string(), "stable-generated-id".to_string())
+        ]
+    );
+    let expected_permission_requests = match stage {
+        LateCreateExpiry::FinalGetFile => {
+            vec![("fresh-token".to_string(), "stable-generated-id".to_string())]
+        }
+        LateCreateExpiry::FinalPublicPermission => vec![
+            (
+                "expired-token".to_string(),
+                "stable-generated-id".to_string(),
+            ),
+            ("fresh-token".to_string(), "stable-generated-id".to_string()),
+        ],
+    };
+    assert_eq!(
+        *api.permission_requests.lock().unwrap(),
+        expected_permission_requests
+    );
+    assert_eq!(progress.lock().unwrap().as_slice(), &[(7, 7)]);
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert_eq!(store.get("user-42", "42").unwrap(), None);
+}
+
+#[tokio::test]
+async fn final_get_file_token_expiry_refreshes_without_deleting_or_rotating_the_drive_id() {
+    assert_late_create_expiry_reuses_persisted_identity(LateCreateExpiry::FinalGetFile).await;
+}
+
+#[tokio::test]
+async fn final_public_permission_token_expiry_refreshes_without_deleting_or_rotating_the_drive_id()
+{
+    assert_late_create_expiry_reuses_persisted_identity(LateCreateExpiry::FinalPublicPermission)
+        .await;
+}
+
+#[tokio::test]
+async fn existing_pending_probe_token_expiry_refreshes_and_reconciles_the_same_drive_id() {
+    // Break caught: swallowing an expired existing-object probe or treating
+    // it as absence can start a duplicate create instead of retrying the
+    // persisted identity with the replacement credential.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    seed_pending_binding(&store, "stable-pending-id", PendingBindingKind::FirstUpload);
+    let archive = create_request(b"unused");
+    let api = ScriptedDriveApi::default();
+    api.files.lock().unwrap().extend([
+        Err(DriveApiError::TokenExpired),
+        Ok(ScriptedDriveApi::valid_file(
+            "stable-pending-id",
+            Some("https://drive.google.com/pending"),
+        )),
+    ]);
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        Ok(ScriptedMetadataClient::owner(None, None)),
+        Ok(ScriptedMetadataClient::owner(None, None)),
+    ]);
+    script_successful_patch(
+        &metadata,
+        "stable-pending-id",
+        "https://drive.google.com/pending",
+    );
+    let auth = authenticated_user("user-42").await;
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let api_ref = &api;
+    let store_ref = &store;
+    let metadata_ref = &metadata;
+    let auth_ref = &auth;
+
+    let outcome = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |access_token| {
+            let request = request.clone();
+            async move {
+                run_crash_safe_create_for_test(
+                    api_ref,
+                    &RecordingSleeper::default(),
+                    store_ref,
+                    metadata_ref,
+                    auth_ref,
+                    &access_token,
+                    request,
+                    16,
+                    None,
+                    |_, _| {},
+                )
+                .await
+            }
+        },
+        || {},
+        |_| {
+            let refreshes = refreshes.clone();
+            async move {
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(
+                    store_ref
+                        .get("user-42", "42")
+                        .unwrap()
+                        .expect("pending retained")
+                        .drive_file_id,
+                    "stable-pending-id"
+                );
+                Ok(Zeroizing::new("fresh-token".to_string()))
+            }
+        },
+    )
+    .await
+    .expect("pending reconciliation succeeds");
+
+    assert_eq!(outcome.file_id, "stable-pending-id");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(*api.generated_count.lock().unwrap(), 0);
+    assert!(api.create_metadata.lock().unwrap().is_empty());
+    assert_eq!(
+        api.get_file_requests.lock().unwrap().as_slice(),
+        &[
+            ("expired-token".to_string(), "stable-pending-id".to_string()),
+            ("fresh-token".to_string(), "stable-pending-id".to_string())
+        ]
+    );
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert_eq!(store.get("user-42", "42").unwrap(), None);
+}
+
+#[tokio::test]
+async fn late_create_second_expiry_stops_after_one_refresh_without_delete_or_identity_rotation() {
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    let archive = create_request(b"archive");
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("stable-second-expiry-id".to_string()));
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.files.lock().unwrap().extend([
+        Err(DriveApiError::TokenExpired),
+        Err(DriveApiError::TokenExpired),
+    ]);
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        Ok(ScriptedMetadataClient::owner(None, None)),
+        Ok(ScriptedMetadataClient::owner(None, None)),
+    ]);
+    let auth = authenticated_user("user-42").await;
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let api_ref = &api;
+    let store_ref = &store;
+    let metadata_ref = &metadata;
+    let auth_ref = &auth;
+
+    let failure = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |access_token| {
+            let request = request.clone();
+            async move {
+                run_crash_safe_create_for_test(
+                    api_ref,
+                    &RecordingSleeper::default(),
+                    store_ref,
+                    metadata_ref,
+                    auth_ref,
+                    &access_token,
+                    request,
+                    16,
+                    None,
+                    |_, _| {},
+                )
+                .await
+            }
+        },
+        || {},
+        |_| {
+            let refreshes = refreshes.clone();
+            async move {
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                Ok(Zeroizing::new("fresh-token".to_string()))
+            }
+        },
+    )
+    .await
+    .expect_err("second expiry is terminal");
+
+    assert_eq!(failure.error, DriveApiError::TokenExpired);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(api.get_file_requests.lock().unwrap().len(), 2);
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert_eq!(
+        store
+            .get("user-42", "42")
+            .unwrap()
+            .expect("terminal expiry retains pending")
+            .drive_file_id,
+        "stable-second-expiry-id"
+    );
+}
+
+#[tokio::test]
+async fn cancellation_during_refreshed_pending_probe_retains_identity_and_emits_no_duplicate_progress(
+) {
+    let data_dir = tempdir().expect("data dir");
+    let store = Arc::new(pending_store(&data_dir));
+    let archive = create_request(b"archive");
+    let api = Arc::new(ScriptedDriveApi::default());
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("stable-cancel-id".to_string()));
+    api.chunks
+        .lock()
+        .unwrap()
+        .push_back(Ok(DriveChunkResult::Complete));
+    api.files.lock().unwrap().extend([
+        Err(DriveApiError::TokenExpired),
+        Ok(ScriptedDriveApi::valid_file(
+            "stable-cancel-id",
+            Some("https://drive.google.com/should-not-bind"),
+        )),
+    ]);
+    let metadata = Arc::new(ScriptedMetadataClient::default());
+    metadata.fetches.lock().unwrap().extend([
+        Ok(ScriptedMetadataClient::owner(None, None)),
+        Ok(ScriptedMetadataClient::owner(None, None)),
+    ]);
+    let auth = Arc::new(authenticated_user("user-42").await);
+    let request = crash_safe_request(
+        archive.request.archive_path.clone(),
+        PendingBindingKind::FirstUpload,
+    );
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let lease = Arc::new(
+        manager
+            .register("user-42", operation_id, "42")
+            .expect("operation"),
+    );
+    lease.set_phase(DriveOperationPhase::Transferring);
+    let finalization_gate = Arc::new(lease.finalization_gate());
+    let cancellation = lease.cancellation().clone();
+    let retry_get_file_gate = Arc::new(AsyncGate::default());
+    let progress = Arc::new(Mutex::new(Vec::new()));
+    let monotonic = Arc::new(Mutex::new(MonotonicDriveProgress::default()));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+
+    let task = tokio::spawn({
+        let api = api.clone();
+        let store = store.clone();
+        let metadata = metadata.clone();
+        let auth = auth.clone();
+        let lease_for_progress = lease.clone();
+        let lease_for_reset = lease.clone();
+        let retry_get_file_gate = retry_get_file_gate.clone();
+        let progress = progress.clone();
+        let monotonic = monotonic.clone();
+        let refreshes = refreshes.clone();
+        async move {
+            let _archive = archive;
+            run_with_single_access_token_refresh(
+                Zeroizing::new("expired-token".to_string()),
+                |access_token| {
+                    let request = request.clone();
+                    let progress = progress.clone();
+                    let monotonic = monotonic.clone();
+                    let lease = lease_for_progress.clone();
+                    let api = api.clone();
+                    let store = store.clone();
+                    let metadata = metadata.clone();
+                    let auth = auth.clone();
+                    let cancellation = cancellation.clone();
+                    let finalization_gate = finalization_gate.clone();
+                    async move {
+                        run_crash_safe_create_cancelable(
+                            api.as_ref(),
+                            &RecordingSleeper::default(),
+                            store.as_ref(),
+                            metadata.as_ref(),
+                            auth.as_ref(),
+                            &access_token,
+                            request,
+                            &cancellation,
+                            finalization_gate.as_ref(),
+                            |accepted, total| {
+                                if monotonic.lock().unwrap().should_emit(accepted, total) {
+                                    progress.lock().unwrap().push((accepted, total));
+                                    if accepted >= total {
+                                        lease.set_phase(DriveOperationPhase::Synchronizing);
+                                    }
+                                }
+                            },
+                        )
+                        .await
+                    }
+                },
+                || lease_for_reset.set_phase(DriveOperationPhase::Transferring),
+                |_| {
+                    refreshes.fetch_add(1, Ordering::SeqCst);
+                    *api.get_file_gate.lock().unwrap() = Some(retry_get_file_gate.clone());
+                    async { Ok(Zeroizing::new("fresh-token".to_string())) }
+                },
+            )
+            .await
+        }
+    });
+    retry_get_file_gate
+        .entered
+        .acquire()
+        .await
+        .expect("refreshed pending probe entered")
+        .forget();
+
+    assert!(manager.cancel("user-42", operation_id));
+    let failure = task.await.unwrap().expect_err("retry cancellation");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(progress.lock().unwrap().as_slice(), &[(7, 7)]);
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert!(metadata.patch_inputs.lock().unwrap().is_empty());
+    assert_eq!(
+        store
+            .get("user-42", "42")
+            .unwrap()
+            .expect("cancellation retains pending")
+            .drive_file_id,
+        "stable-cancel-id"
+    );
 }
 
 #[tokio::test]

@@ -127,9 +127,14 @@ impl ResumableUploadSession {
         self.0.as_str()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(feature = "e2e", debug_assertions)))]
     pub(crate) fn for_test(value: &str) -> Result<Self, DriveApiError> {
         Self::parse(value, true)
+    }
+
+    #[cfg(all(feature = "e2e", debug_assertions))]
+    pub(crate) fn for_e2e(value: &str) -> Result<Self, DriveApiError> {
+        Self::parse(value, false)
     }
 
     fn parse(value: &str, allow_insecure_loopback: bool) -> Result<Self, DriveApiError> {

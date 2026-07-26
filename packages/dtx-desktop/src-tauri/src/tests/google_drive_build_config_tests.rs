@@ -133,3 +133,14 @@ fn rejects_a_real_oauth_client_in_e2e() {
 
     assert!(parse_drive_build_mode(config).is_err());
 }
+
+#[test]
+fn rejects_selecting_the_fake_alongside_the_real_drive_feature() {
+    let mut config = input();
+    config.e2e_feature = true;
+    config.declared_environment = Some("e2e");
+    config.oauth_client_id = None;
+    config.oauth_client_environment = None;
+
+    assert!(parse_drive_build_mode(config).is_err());
+}

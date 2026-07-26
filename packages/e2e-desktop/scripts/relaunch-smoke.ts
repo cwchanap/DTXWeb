@@ -278,7 +278,12 @@ export const runRelaunchSmoke = async ({
 	let primaryError: unknown;
 
 	try {
-		firstSession = await startStandaloneTauriSession({ appBinaryPath, dataDir, logDir });
+		firstSession = await startStandaloneTauriSession({
+			appBinaryPath,
+			dataDir,
+			drumeryUserId: 'dtx-e2e-user',
+			logDir
+		});
 		await firstSession.tauri.execute<void, [PreferencesShape]>(
 			({ core }, prefs) => core.invoke('write_preferences', { prefs }) as Promise<void>,
 			RELAUNCH_SENTINEL
@@ -287,7 +292,12 @@ export const runRelaunchSmoke = async ({
 		firstSession = undefined;
 		await terminateStandaloneTauriSession(first, 86);
 
-		secondSession = await startStandaloneTauriSession({ appBinaryPath, dataDir, logDir });
+		secondSession = await startStandaloneTauriSession({
+			appBinaryPath,
+			dataDir,
+			drumeryUserId: 'dtx-e2e-user',
+			logDir
+		});
 		const persistedPreferences = await secondSession.tauri.execute<PreferencesShape, []>(
 			({ core }) => core.invoke('read_preferences') as unknown as PreferencesShape
 		);

@@ -10,6 +10,7 @@ import { getOrCreatePreseededWorkspaceFixture } from './support/workspace-fixtur
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const executableName = process.platform === 'win32' ? 'dtx-desktop.exe' : 'dtx-desktop';
+const e2eDrumeryUserId = 'dtx-e2e-user';
 // e2e builds use a dedicated cargo target dir (`target-e2e`, set via
 // CARGO_TARGET_DIR in the `e2e:build` script) so they don't clobber or
 // invalidate `tauri dev` artifacts in `target/debug`.
@@ -25,6 +26,7 @@ const appBinaryPath =
 const dataDirectory = allocateWdioDataDirectory();
 const isolatedDataDir = dataDirectory.path;
 process.env.DTX_E2E_DATA_DIR = isolatedDataDir;
+process.env.DTX_E2E_DRUMERY_USER_ID = e2eDrumeryUserId;
 const fixture = getOrCreatePreseededWorkspaceFixture({ parentPath: isolatedDataDir });
 
 // Seed distinctive, valid preferences so the launch spec proves that the
@@ -39,9 +41,21 @@ writeFileSync(
 	join(isolatedDataDir, 'dtxweb', 'workspace.json'),
 	JSON.stringify({ workspaceRoot: fixture.workspaceRoot })
 );
+writeFileSync(
+	join(isolatedDataDir, 'dtxweb', 'google-drive-settings.json'),
+	JSON.stringify({
+		googleDriveFoldersByUser: {
+			[e2eDrumeryUserId]: {
+				id: 'e2e-public-folder',
+				name: 'E2E Public Folder'
+			}
+		}
+	})
+);
 
 const isolatedAppEnv: Record<string, string> = {
-	DTX_E2E_DATA_DIR: isolatedDataDir
+	DTX_E2E_DATA_DIR: isolatedDataDir,
+	DTX_E2E_DRUMERY_USER_ID: e2eDrumeryUserId
 };
 
 export const config: Options.Testrunner = {

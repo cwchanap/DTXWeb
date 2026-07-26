@@ -1,6 +1,8 @@
 import { browser } from '@wdio/globals';
 
 import type {
+	E2eDriveControl as GeneratedE2eDriveControl,
+	E2eDriveSnapshot as GeneratedE2eDriveSnapshot,
 	ListFilesResult as GeneratedListFilesResult,
 	ListedFile as GeneratedListedFile,
 	PathExistsResult as GeneratedPathExistsResult,
@@ -29,6 +31,8 @@ export type ExportSongResult = {
 	filesCount?: number;
 	error?: string;
 };
+export type E2eDriveControl = GeneratedE2eDriveControl;
+export type E2eDriveSnapshot = GeneratedE2eDriveSnapshot;
 
 export const pathExists = async (
 	basePath: string,
@@ -137,4 +141,18 @@ export const exportSongToZip = async ({
 		songPath,
 		songTitle,
 		exportDirectory
+	);
+
+export const configureGoogleDriveE2e = async (control: E2eDriveControl): Promise<void> =>
+	await browser.tauri.execute<void, [E2eDriveControl]>(
+		({ core }, requestedControl) =>
+			core.invoke('configure_google_drive_e2e', {
+				control: requestedControl
+			}) as Promise<void>,
+		control
+	);
+
+export const snapshotGoogleDriveE2e = async (): Promise<E2eDriveSnapshot> =>
+	await browser.tauri.execute<E2eDriveSnapshot, []>(
+		({ core }) => core.invoke('snapshot_google_drive_e2e') as unknown as E2eDriveSnapshot
 	);

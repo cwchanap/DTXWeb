@@ -23,6 +23,7 @@ fn gql_simfile() -> Value {
         "artist": "Artist",
         "bpm": 180.5,
         "userId": "user-1",
+        "googleDriveFileId": "drive-file-42",
         "isPublished": true,
         "downloadUrl": "https://files/song.zip",
         "previewUrl": "https://files/preview.jpg",
@@ -38,6 +39,15 @@ fn gql_simfile_with_id(id: i64) -> Value {
     let mut simfile = gql_simfile();
     simfile["id"] = json!(id.to_string());
     simfile
+}
+
+fn owner_drive_simfile() -> Value {
+    json!({
+        "id": "42",
+        "title": "Song",
+        "googleDriveFileId": "drive-file-42",
+        "downloadUrl": "https://drive.google.com/uc?id=drive-file-42"
+    })
 }
 
 #[test]
@@ -61,6 +71,7 @@ fn renderer_simfile_maps_graphql_camel_case_to_snake_case() {
     assert_eq!(mapped["id"], 42);
     assert_eq!(mapped["display_id"], 7);
     assert_eq!(mapped["user_id"], "user-1");
+    assert_eq!(mapped["google_drive_file_id"], "drive-file-42");
     assert_eq!(mapped["is_published"], true);
     assert_eq!(mapped["download_url"], "https://files/song.zip");
     assert_eq!(mapped["preview_url"], "https://files/preview.jpg");
@@ -125,6 +136,176 @@ fn update_input_maps_renderer_snake_case_to_graphql_camel_case() {
             "title": "Song"
         })
     );
+}
+
+#[test]
+fn update_input_excludes_drive_file_id_from_general_simfile_updates() {
+    // A Drive binding is owner-only state with its own mutation. If this
+    // filtering is removed, a renderer form value can accidentally reintroduce
+    // it to UpdateSimfileInput, which deliberately does not own that field.
+    let mapped = update_input_from_renderer(json!({
+        "title": "Song",
+        "google_drive_file_id": "drive-file-42",
+        "googleDriveFileId": "drive-file-42"
+    }));
+
+    assert_eq!(mapped, json!({ "title": "Song" }));
+}
+
+#[tokio::test]
+async fn google_drive_fetch_owner_simfile_returns_fresh_owner_metadata() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(header("authorization", "Bearer token-1"))
+        .and(body_partial_json(json!({ "variables": { "id": "42" } })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "simfile": owner_drive_simfile() }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42")
+        .await
+        .expect("fresh owner simfile");
+
+    assert_eq!(result.id, "42");
+    assert_eq!(result.title, "Song");
+    assert_eq!(
+        result.google_drive_file_id.as_deref(),
+        Some("drive-file-42")
+    );
+    assert_eq!(
+        result.download_url.as_deref(),
+        Some("https://drive.google.com/uc?id=drive-file-42")
+    );
+}
+
+#[tokio::test]
+async fn google_drive_fetch_owner_simfile_sanitizes_missing_or_null_records() {
+    for simfile in [Value::Null, json!({})] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "simfile": simfile }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42")
+            .await
+            .expect_err("missing owner simfile must be unavailable");
+
+        assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+    }
+}
+
+#[tokio::test]
+async fn google_drive_fetch_owner_simfile_sanitizes_graphql_auth_errors() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "errors": [{ "message": "owner account 123 is forbidden", "extensions": { "code": "FORBIDDEN" } }]
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42")
+        .await
+        .expect_err("auth details must not cross the native boundary");
+
+    assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+}
+
+#[tokio::test]
+async fn google_drive_update_sends_only_the_drive_binding_values() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "updateSimfileDriveFile": owner_drive_simfile() }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = update_drive_file_impl(
+        &server.uri(),
+        "token-1",
+        "42",
+        "drive-file-42",
+        "https://drive.google.com/uc?id=drive-file-42",
+    )
+    .await
+    .expect("updated drive metadata");
+
+    assert_eq!(result.id, "42");
+    assert_eq!(
+        result.google_drive_file_id.as_deref(),
+        Some("drive-file-42")
+    );
+
+    let requests = server.received_requests().await.expect("received request");
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
+    assert_eq!(
+        body["variables"],
+        json!({
+            "id": "42",
+            "googleDriveFileId": "drive-file-42",
+            "downloadUrl": "https://drive.google.com/uc?id=drive-file-42"
+        })
+    );
+    assert!(body["query"]
+        .as_str()
+        .expect("query")
+        .contains("updateSimfileDriveFile"));
+}
+
+#[tokio::test]
+async fn google_drive_update_rejects_a_mismatched_server_binding_response() {
+    for changed_response in [
+        json!({
+            "id": "99",
+            "title": "Song",
+            "googleDriveFileId": "drive-file-42",
+            "downloadUrl": "https://drive.google.com/uc?id=drive-file-42"
+        }),
+        json!({
+            "id": "42",
+            "title": "Song",
+            "googleDriveFileId": "drive-file-99",
+            "downloadUrl": "https://drive.google.com/uc?id=drive-file-42"
+        }),
+        json!({
+            "id": "42",
+            "title": "Song",
+            "googleDriveFileId": "drive-file-42",
+            "downloadUrl": "https://drive.google.com/uc?id=drive-file-99"
+        }),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "updateSimfileDriveFile": changed_response }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = update_drive_file_impl(
+            &server.uri(),
+            "token-1",
+            "42",
+            "drive-file-42",
+            "https://drive.google.com/uc?id=drive-file-42",
+        )
+        .await
+        .expect_err("server response must match the requested Drive binding");
+
+        assert_eq!(error.to_string(), "SIMFILE_UNAVAILABLE");
+    }
 }
 
 #[tokio::test]

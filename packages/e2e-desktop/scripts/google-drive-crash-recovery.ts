@@ -61,6 +61,32 @@ const seedNativeState = (dataDir: string, fixture: WorkspaceFixture): void => {
 	);
 };
 
+const waitForWorkspaceReady = async (session: WebdriverIO.Browser): Promise<void> => {
+	await session.waitUntil(
+		async () =>
+			await session.execute(() => {
+				const search = document.querySelector(
+					'input[placeholder="Search songs and folders..."]'
+				);
+				if (!search) return false;
+
+				const style = getComputedStyle(search);
+				const rect = search.getBoundingClientRect();
+				return (
+					style.display !== 'none' &&
+					style.visibility !== 'hidden' &&
+					Number.parseFloat(style.opacity) > 0 &&
+					rect.width > 0 &&
+					rect.height > 0
+				);
+			}),
+		{
+			timeout: 20_000,
+			timeoutMsg: 'Expected crash-recovery workspace to restore'
+		}
+	);
+};
+
 const seedRendererState = async (
 	session: WebdriverIO.Browser,
 	fixture: WorkspaceFixture
@@ -106,14 +132,14 @@ const seedRendererState = async (
 		{ songPath: fixture.songFolder, userId: e2eUserId }
 	);
 	await session.refresh();
+	// The embedded WebDriver reports refresh completion before WebKit has
+	// finished replacing the document. Avoid issuing executeScript into that
+	// transition; the first command can otherwise block until its script timeout.
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	await waitForWorkspaceReady(session);
 };
 
 const clickUploadButton = async (session: WebdriverIO.Browser): Promise<void> => {
-	const search = await session.$('input[placeholder="Search songs and folders..."]');
-	await search.waitForDisplayed({
-		timeout: 20_000,
-		timeoutMsg: 'Expected crash-recovery workspace to restore'
-	});
 	await session.$(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).click();
 	const upload = await session.$('button[aria-label="Upload ZIP to Drive"]');
 	await upload.waitForEnabled({

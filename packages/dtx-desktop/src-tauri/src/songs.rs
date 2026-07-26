@@ -211,6 +211,7 @@ pub(crate) async fn export_song_to_zip_with_workspace_root(
     }
 }
 
+#[cfg(test)]
 pub async fn export_song_folder_to_zip(
     song_path: &Path,
     song_title: &str,
@@ -693,6 +694,7 @@ async fn ensure_export_directory(export_directory: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 async fn valid_export_files(song_path: &Path) -> Result<Vec<(String, PathBuf)>> {
     let files = collect_valid_song_files(song_path, song_path).await?;
     Ok(files

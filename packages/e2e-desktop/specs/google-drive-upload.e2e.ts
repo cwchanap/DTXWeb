@@ -171,7 +171,7 @@ const expectedZipEntries = (fixture: WorkspaceFixture) =>
 				sha256: createHash('sha256').update(contents).digest('hex')
 			};
 		})
-		.sort((left, right) => left.name.localeCompare(right.name));
+		.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
 
 describe('Desktop Google Drive ZIP upload', () => {
 	let fixture: WorkspaceFixture;

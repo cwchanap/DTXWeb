@@ -848,6 +848,23 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 		expect(mockedDiscoverCatalogFiles).not.toHaveBeenCalled();
 	});
 
+	it('filters out URLs with the public bucket prefix collision', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			download_url: 'https://chart.hapadona.com.evil/file.zip'
+		});
+
+		const result = await runQuery(
+			makeCtx({
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{ query: '{ simfile(id: "42") { downloadUrl } }' }
+		);
+
+		expect(result.data?.simfile).toEqual({ downloadUrl: null });
+	});
+
 	it('preserves external download_url that does not match the R2 bucket URL', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		mockedGetSimfile.mockResolvedValue({
@@ -1831,7 +1848,8 @@ describe('Mutation.updateSimfileDriveFile', () => {
 		['blank URL', 'drive-file', '   '],
 		['non-HTTPS URL', 'drive-file', 'http://drive.google.com/uc?id=file'],
 		['overlong URL', 'drive-file', `https://drive.google.com/${'x'.repeat(2049)}`],
-		['R2 bucket URL', 'drive-file', 'https://bucket.example/42/chart.zip']
+		['R2 bucket URL', 'drive-file', 'https://bucket.example/42/chart.zip'],
+		['R2 bucket prefix collision URL', 'drive-file', 'https://bucket.example.evil/42/chart.zip']
 	])(
 		'rejects %s without changing either existing Drive field',
 		async (_case, googleDriveFileId, downloadUrl) => {

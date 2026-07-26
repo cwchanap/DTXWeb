@@ -170,7 +170,7 @@ const nonBlank = (value: string | null | undefined): string | null =>
  * This helper strips any value that starts with PUBLIC_SIMFILE_BUCKET_URL
  * so that:
  *   - the read resolver returns null (renders "download not available")
- *   - the create/update mutations refuse to persist R2 bucket URLs
+ *   - all write mutations refuse to persist R2 bucket URLs
  *
  * Genuine external links (Google Drive, etc.) are preserved.
  */
@@ -195,23 +195,6 @@ const normalizeGoogleDriveFileId = (value: string): string => {
 	return trimmed;
 };
 
-const isR2BucketUrl = (value: string, bucketUrl: string | undefined): boolean => {
-	if (!bucketUrl) return false;
-	try {
-		const candidate = new URL(value);
-		const bucket = new URL(bucketUrl);
-		if (candidate.origin !== bucket.origin) return false;
-		const bucketPath = bucket.pathname.replace(/\/$/, '');
-		return (
-			bucketPath === '' ||
-			candidate.pathname === bucketPath ||
-			candidate.pathname.startsWith(`${bucketPath}/`)
-		);
-	} catch {
-		return false;
-	}
-};
-
 const normalizeGoogleDriveDownloadUrl = (value: string, bucketUrl: string | undefined): string => {
 	const trimmed = value.trim();
 	if (!trimmed) badDriveInput('Download URL is required');
@@ -224,7 +207,7 @@ const normalizeGoogleDriveDownloadUrl = (value: string, bucketUrl: string | unde
 		if (error instanceof GraphQLError) throw error;
 		badDriveInput('Download URL must be a valid HTTPS URL');
 	}
-	if (isR2BucketUrl(trimmed, bucketUrl)) {
+	if (filterDownloadUrl(trimmed, bucketUrl) == null) {
 		badDriveInput('Download URL must not point to the simfile bucket');
 	}
 	return trimmed;

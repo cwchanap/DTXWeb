@@ -42,8 +42,9 @@ export const runRelaunchSmoke = async ({
 	}
 
 	const dataDir = mkdtempSync(join(tmpdir(), 'dtx-e2e-relaunch-'));
-	const logDir = join(dataDir, 'logs');
-	mkdirSync(logDir, { recursive: true });
+	const diagnosticsRoot = join(packageRoot, 'logs');
+	mkdirSync(diagnosticsRoot, { recursive: true });
+	const logDir = mkdtempSync(join(diagnosticsRoot, 'relaunch-'));
 	let firstSession: WebdriverIO.Browser | undefined;
 	let secondSession: WebdriverIO.Browser | undefined;
 

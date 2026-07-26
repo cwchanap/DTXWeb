@@ -34,14 +34,6 @@ pub(crate) fn app_data_file(data_dir: &Path, file_name: &str) -> PathBuf {
     data_dir.join("dtxweb").join(file_name)
 }
 
-pub(crate) fn resolve_app_data_file(file_name: &str) -> Result<PathBuf> {
-    let (data_dir, _) = resolve_dirs();
-    data_dir
-        .as_deref()
-        .map(|dir| app_data_file(dir, file_name))
-        .ok_or_else(|| DesktopError::Message("Could not resolve app data directory".to_string()))
-}
-
 pub(crate) fn read_json_or_default<T>(path: &Path, label: &str) -> T
 where
     T: DeserializeOwned + Default,

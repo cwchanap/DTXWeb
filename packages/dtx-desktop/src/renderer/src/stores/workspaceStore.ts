@@ -31,6 +31,11 @@ export interface WorkspaceState {
 	activeSection: ShellSection;
 }
 
+export type GoogleDriveFields = {
+	googleDriveFileId?: string;
+	downloadUrl?: string;
+};
+
 const initialState: WorkspaceState = {
 	path: null,
 	currentSubWorkspace: null,
@@ -202,6 +207,67 @@ function createWorkspaceStore() {
 					linkedSimFile: simFile
 				})
 			}));
+		},
+		mergeGoogleDriveFields: (
+			folderPath: string,
+			simfileId: string,
+			fields: GoogleDriveFields
+		) => {
+			const driveUpdates: Partial<SimfileWithDtx> = {};
+			if (fields.googleDriveFileId) {
+				driveUpdates.google_drive_file_id = fields.googleDriveFileId;
+			}
+			if (fields.downloadUrl) {
+				driveUpdates.download_url = fields.downloadUrl;
+			}
+			if (Object.keys(driveUpdates).length === 0) return;
+
+			update((state) => {
+				let mergedSimfile: SimfileWithDtx | null = null;
+				const mergeNode = (node: TreeNode): TreeNode => {
+					let mergedNode = node;
+					if (
+						node.path === folderPath &&
+						node.linkedSimFile &&
+						String(node.linkedSimFile.id) === simfileId
+					) {
+						mergedSimfile = { ...node.linkedSimFile, ...driveUpdates };
+						mergedNode = {
+							...node,
+							linkedSimFileId: simfileId,
+							linkedSimFile: mergedSimfile
+						};
+					}
+
+					if (node.children.length > 0) {
+						mergedNode = {
+							...mergedNode,
+							children: node.children.map(mergeNode)
+						};
+					}
+					return mergedNode;
+				};
+
+				const treeStructure = state.treeStructure.map(mergeNode);
+				let selectedSong = state.selectedSong;
+				if (
+					selectedSong?.path === folderPath &&
+					selectedSong.linkedSimFile &&
+					String(selectedSong.linkedSimFile.id) === simfileId
+				) {
+					const selectedSimfile = { ...selectedSong.linkedSimFile, ...driveUpdates };
+					selectedSong = {
+						...selectedSong,
+						linkedSimFileId: simfileId,
+						linkedSimFile: selectedSimfile
+					};
+					mergedSimfile ??= selectedSimfile;
+				}
+
+				if (!mergedSimfile) return state;
+				linkageCacheService.saveLinkage(folderPath, mergedSimfile.id, mergedSimfile);
+				return { ...state, treeStructure, selectedSong };
+			});
 		},
 		unlinkSimFileFromFolder: (folderPath: string) => {
 			// Remove from localStorage cache

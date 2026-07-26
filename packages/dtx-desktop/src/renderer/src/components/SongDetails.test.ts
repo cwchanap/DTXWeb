@@ -188,6 +188,14 @@ type ChartDetailTestProps = {
 const getNextDisplayIdCallCount = () =>
 	mockHostInvoke.mock.calls.filter(([channel]) => channel === 'get-next-display-id').length;
 
+const deferred = <T>() => {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
+};
+
 describe('SongDetails', () => {
 	beforeEach(() => {
 		messages = en;
@@ -1261,6 +1269,69 @@ describe('SongDetails', () => {
 			expect(song.linkedSimFile?.title).toBe('Saved title');
 		});
 
+		it('isolates linked automatic-save locks by originating simfile', async () => {
+			mockHostInvoke.mockImplementation(async (channel: string, params?: unknown) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'update-simfile-record') {
+					const simfileId = (params as { simfileId: string }).simfileId;
+					return { success: true, data: { title: `Saved ${simfileId}` } };
+				}
+				return { files: [] };
+			});
+			const uploadA = deferred<{ success: boolean }>();
+			const uploadB = deferred<{ success: boolean }>();
+			vi.mocked(crypto.randomUUID)
+				.mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+				.mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockImplementation(({ simfileId }) =>
+				simfileId === '41' ? uploadA.promise : uploadB.promise
+			);
+			const songA = makeNode('SongA', '/test/SongA', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 41 },
+				linkedSimFileId: '41',
+				containsDtxFiles: true
+			});
+			const songB = makeNode('SongB', '/test/SongB', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 42 },
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			const event = {
+				detail: {
+					displayId: 5,
+					publishDate: '2024-06-15',
+					isPublished: true,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			};
+			const view = render(SongDetails, { props: { song: songA } });
+
+			const pendingA = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(event);
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith(
+					expect.objectContaining({ simfileId: '41' })
+				)
+			);
+
+			await view.rerender({ props: { song: songB } });
+			const pendingB = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(event);
+			await waitFor(() => {
+				expect(mockDesktopHost.updateSimfileRecord).toHaveBeenCalledTimes(2);
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith(
+					expect.objectContaining({ simfileId: '42' })
+				);
+			});
+
+			uploadA.resolve({ success: true });
+			uploadB.resolve({ success: true });
+			await Promise.all([pendingA, pendingB]);
+		});
+
 		it('keeps a create upload locked through the linked transition', async () => {
 			mockHostInvoke.mockImplementation(async (channel: string) => {
 				if (channel === 'list-files') return { files: [] };
@@ -1326,6 +1397,91 @@ describe('SongDetails', () => {
 			resolveUpload({ success: true });
 			await pending;
 			view.unmount();
+		});
+
+		it('isolates pre-create locks and keeps each returned simfile locked across switches', async () => {
+			mockHostInvoke.mockImplementation(async (channel: string, params?: unknown) => {
+				if (channel === 'list-files') return { files: [] };
+				if (channel === 'get-next-display-id') return 42;
+				if (channel === 'parse-dtx-files') {
+					return { bpm: 120, artist: 'Artist', levels: [] };
+				}
+				if (channel === 'create-simfile-record') {
+					const songPath = (params as { songPath: string }).songPath;
+					const simfileId = songPath.endsWith('SongA') ? '41' : '42';
+					return {
+						success: true,
+						simfileId,
+						data: {
+							...makeLinkedSimFile(),
+							id: Number(simfileId),
+							title: `Saved ${simfileId}`
+						}
+					};
+				}
+				return { files: [] };
+			});
+			const uploadA = deferred<{ success: boolean }>();
+			const uploadB = deferred<{ success: boolean }>();
+			vi.mocked(crypto.randomUUID)
+				.mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+				.mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockImplementation(({ simfileId }) =>
+				simfileId === '41' ? uploadA.promise : uploadB.promise
+			);
+			const songA = makeNode('SongA', '/test/SongA', { containsDtxFiles: true });
+			const songB = makeNode('SongB', '/test/SongB', { containsDtxFiles: true });
+			const event = {
+				detail: {
+					displayId: 42,
+					publishDate: '2024-01-01',
+					isPublished: true,
+					downloadUrl: '',
+					videoPreviewUrl: ''
+				}
+			};
+			const view = render(SongDetails, { props: { song: songA } });
+			await waitFor(() =>
+				expect(
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+				).toBe(42)
+			);
+
+			const pendingA = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(event);
+			await waitFor(() => expect(songA.linkedSimFileId).toBe('41'));
+
+			await view.rerender({ props: { song: songB } });
+			const pendingB = getLastProps<ChartDetailTestProps>(
+				vi.mocked(ChartDetail)
+			)?.$$events?.onSave?.(event);
+			await waitFor(() => {
+				expect(mockDesktopHost.createSimfileRecord).toHaveBeenCalledTimes(2);
+				expect(songB.linkedSimFileId).toBe('42');
+			});
+
+			await view.rerender({ props: { song: songA } });
+			expect(screen.getByRole('button', { name: 'Upload ZIP to Drive' })).toBeDisabled();
+			await getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.$$events?.onSave?.(
+				event
+			);
+			expect(mockDesktopHost.updateSimfileRecord).not.toHaveBeenCalled();
+			expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledTimes(2);
+
+			uploadA.resolve({ success: true });
+			await pendingA;
+			await waitFor(() =>
+				expect(
+					screen.getByRole('button', { name: 'Upload ZIP to Drive' })
+				).not.toBeDisabled()
+			);
+
+			await view.rerender({ props: { song: songB } });
+			expect(screen.getByRole('button', { name: 'Upload ZIP to Drive' })).toBeDisabled();
+
+			uploadB.resolve({ success: true });
+			await pendingB;
 		});
 
 		it('keeps a reopened linked song locked while its store operation is active', async () => {
@@ -1625,6 +1781,69 @@ describe('SongDetails', () => {
 			expect(
 				screen.queryByRole('button', { name: 'Create a replacement upload' })
 			).toBeNull();
+		});
+
+		it('isolates manual Drive locks and hides song A failure while song B is pending', async () => {
+			const uploadA = deferred<{ success: boolean; errorCode: string }>();
+			const uploadB = deferred<{ success: boolean }>();
+			vi.mocked(crypto.randomUUID)
+				.mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+				.mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+			mockDesktopHost.uploadSongZipToGoogleDrive.mockImplementation(({ simfileId }) =>
+				simfileId === '41' ? uploadA.promise : uploadB.promise
+			);
+			const songA = makeNode('SongA', '/test/SongA', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 41 },
+				linkedSimFileId: '41',
+				containsDtxFiles: true
+			});
+			const songB = makeNode('SongB', '/test/SongB', {
+				linkedSimFile: { ...makeLinkedSimFile(), id: 42 },
+				linkedSimFileId: '42',
+				containsDtxFiles: true
+			});
+			const view = render(SongDetails, { props: { song: songA } });
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Upload ZIP to Drive' }));
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith(
+					expect.objectContaining({ simfileId: '41' })
+				)
+			);
+
+			await view.rerender({ props: { song: songB } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Upload ZIP to Drive' }));
+			await waitFor(() =>
+				expect(mockDesktopHost.uploadSongZipToGoogleDrive).toHaveBeenCalledWith(
+					expect.objectContaining({ simfileId: '42' })
+				)
+			);
+
+			uploadA.resolve({ success: false, errorCode: 'FILE_NOT_FOUND' });
+			await waitFor(() => {
+				expect(
+					Object.values(get(googleDriveStore).operations).some(
+						(operation) =>
+							operation.simfileId === '41' && operation.errorCode === 'FILE_NOT_FOUND'
+					)
+				).toBe(true);
+			});
+			expect(
+				screen.queryByText(
+					'The previously linked Google Drive file is no longer available.'
+				)
+			).toBeNull();
+			expect(screen.queryByRole('button', { name: 'Reconnect Google Drive' })).toBeNull();
+			expect(
+				screen.queryByRole('button', { name: 'Create a replacement upload' })
+			).toBeNull();
+
+			uploadB.resolve({ success: true });
+			await waitFor(() =>
+				expect(
+					get(googleDriveStore).operations['22222222-2222-4222-8222-222222222222']?.stage
+				).toBe('upload-complete')
+			);
 		});
 
 		it.each([

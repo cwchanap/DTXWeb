@@ -75,6 +75,10 @@
 		messageKey: 'googleDrive.songDetails.draftSaved' | 'googleDrive.songDetails.published';
 	};
 
+	type LocalSongAction = {
+		kind: 'create' | 'update' | 'drive';
+	};
+
 	type AssetFile = {
 		fileName: string;
 		size: number;
@@ -220,7 +224,6 @@
 	}>({});
 
 	// State for upload process
-	let isUploading = $state(false);
 	let uploadError = $state<string | null>(null);
 	let uploadWarnings = $state<string[]>([]);
 	let displayIdAutoPopulateError = $state<string | null>(null);
@@ -248,7 +251,6 @@
 	let linkingSuccess = $state(false);
 
 	// Update state
-	let isUpdating = $state(false);
 	let updateError = $state<string | null>(null);
 
 	// Export state
@@ -256,12 +258,23 @@
 	let exportError = $state<string | null>(null);
 	let exportSuccess = $state(false);
 	let exportedFilePath = $state<string | null>(null);
-	let isDriveActionInProgress = $state(false);
+	let localSongActions = $state<Map<string, LocalSongAction>>(new Map());
 	let driveOutcome = $state<KeyedDriveOutcome | undefined>();
 	let primarySaveSuccess = $state<PrimarySaveSuccess | undefined>();
 	let selectedSongPath = $state('');
 	let selectionGeneration = 0;
 	const currentSimfileId = $derived(song.linkedSimFileId || undefined);
+	const getLocalSongActionKey = (targetSong: TreeNode, workspacePath: string): string => {
+		if (targetSong.linkedSimFileId) return `simfile:${targetSong.linkedSimFileId}`;
+		return `workspace:${workspacePath}\u0000song:${targetSong.path || targetSong.name}`;
+	};
+	const currentLocalSongActionKey = $derived(
+		getLocalSongActionKey(song, $workspaceStore.path || '')
+	);
+	const currentLocalSongAction = $derived(localSongActions.get(currentLocalSongActionKey));
+	const isUploading = $derived(currentLocalSongAction?.kind === 'create');
+	const isUpdating = $derived(currentLocalSongAction?.kind === 'update');
+	const isDriveActionInProgress = $derived(currentLocalSongAction?.kind === 'drive');
 	const currentDriveOperation = $derived(
 		getActiveGoogleDriveOperationForSimfile($googleDriveStore, currentSimfileId)
 	);
@@ -271,6 +284,23 @@
 	const currentPrimarySaveSuccess = $derived(
 		primarySaveSuccess?.simfileId === currentSimfileId ? primarySaveSuccess : undefined
 	);
+
+	const beginLocalSongAction = (
+		key: string,
+		kind: LocalSongAction['kind']
+	): LocalSongAction | undefined => {
+		if (localSongActions.has(key)) return undefined;
+		const action = { kind };
+		localSongActions = new Map(localSongActions).set(key, action);
+		return action;
+	};
+
+	const finishLocalSongAction = (key: string, action: LocalSongAction) => {
+		if (localSongActions.get(key) !== action) return;
+		const nextActions = new Map(localSongActions);
+		nextActions.delete(key);
+		localSongActions = nextActions;
+	};
 
 	const isSimfileWithDtx = (data: unknown): data is SimfileWithDtx => {
 		if (!data || typeof data !== 'object') return false;
@@ -414,18 +444,20 @@
 
 	// Common upload function
 	const uploadSong = async (event: CustomEvent, isPublished: boolean) => {
-		if (!song.containsDtxFiles || song.linkedSimFile || isUploading) {
+		if (!song.containsDtxFiles || song.linkedSimFile) {
 			return;
 		}
 
 		const targetSong = song;
 		const targetPath = song.path;
 		const workspacePath = $workspaceStore.path || '';
+		const localActionKey = getLocalSongActionKey(targetSong, workspacePath);
+		const localAction = beginLocalSongAction(localActionKey, 'create');
+		if (!localAction) return;
 		const selectionToken = selectionGeneration;
 		const published = Boolean(
 			event.detail.isPublished !== undefined ? event.detail.isPublished : isPublished
 		);
-		isUploading = true;
 		uploadError = null;
 		uploadWarnings = [];
 		driveOutcome = undefined;
@@ -530,7 +562,7 @@
 				uploadError = null;
 			}, 10000);
 		} finally {
-			isUploading = false;
+			finishLocalSongAction(localActionKey, localAction);
 		}
 	};
 
@@ -654,7 +686,6 @@
 
 	// Handle updating linked simfile
 	const handleUpdateSimfile = async (event: CustomEvent) => {
-		if (isUpdating || isDriveActionInProgress || currentDriveOperation) return;
 		if (!song.linkedSimFile || !song.linkedSimFileId) {
 			console.error('No linked simfile to update');
 			return;
@@ -664,9 +695,12 @@
 		const targetPath = song.path;
 		const simfileId = song.linkedSimFileId;
 		const workspacePath = $workspaceStore.path || '';
+		const localActionKey = getLocalSongActionKey(targetSong, workspacePath);
+		if (currentDriveOperation) return;
+		const localAction = beginLocalSongAction(localActionKey, 'update');
+		if (!localAction) return;
 		const selectionToken = selectionGeneration;
 		const published = Boolean(event.detail.isPublished);
-		isUpdating = true;
 		updateError = null;
 		driveOutcome = undefined;
 		primarySaveSuccess = undefined;
@@ -750,7 +784,7 @@
 				updateError = null;
 			}, 10000);
 		} finally {
-			isUpdating = false;
+			finishLocalSongAction(localActionKey, localAction);
 		}
 	};
 
@@ -804,8 +838,6 @@
 
 	const handleDriveUpload = async (forceCreateReplacement = false) => {
 		if (
-			isDriveActionInProgress ||
-			isUpdating ||
 			currentDriveOperation ||
 			!song.path ||
 			!song.linkedSimFileId ||
@@ -819,8 +851,10 @@
 		const targetPath = song.path;
 		const simfileId = song.linkedSimFileId;
 		const workspacePath = $workspaceStore.path;
+		const localActionKey = getLocalSongActionKey(targetSong, workspacePath);
+		const localAction = beginLocalSongAction(localActionKey, 'drive');
+		if (!localAction) return;
 		const selectionToken = selectionGeneration;
-		isDriveActionInProgress = true;
 		driveOutcome = undefined;
 		try {
 			const outcome = await googleDriveService.uploadSongZip({
@@ -842,7 +876,7 @@
 			}
 			mergeSuccessfulDriveFields(targetSong, targetPath, simfileId, outcome.driveUpload);
 		} finally {
-			isDriveActionInProgress = false;
+			finishLocalSongAction(localActionKey, localAction);
 		}
 	};
 

@@ -57,6 +57,11 @@ vi.mock('./simFileService', () => ({
 	simFileService: { clearCache: vi.fn() }
 }));
 
+const mockGoogleDriveStore = vi.hoisted(() => ({ reset: vi.fn() }));
+const mockGoogleDriveService = vi.hoisted(() => ({ refreshConnection: vi.fn() }));
+vi.mock('../stores/googleDriveStore', () => ({ googleDriveStore: mockGoogleDriveStore }));
+vi.mock('./googleDriveService', () => ({ googleDriveService: mockGoogleDriveService }));
+
 vi.mock('../stores/simFileStore', () => ({
 	simFileStore: { reset: vi.fn() }
 }));
@@ -67,6 +72,9 @@ describe('AuthService', () => {
 		vi.clearAllMocks();
 		host.openExternalUrl.mockReset();
 		host.logoutSession.mockReset();
+		mockGoogleDriveStore.reset.mockReset();
+		mockGoogleDriveService.refreshConnection.mockReset();
+		mockGoogleDriveService.refreshConnection.mockResolvedValue(null);
 
 		// Reset localStorage mock
 		(window.localStorage.getItem as any).mockReturnValue(null);
@@ -181,6 +189,22 @@ describe('AuthService', () => {
 				name: 'test@example.com' // Falls back to email since user_metadata.name is not set
 			});
 			expect(result).toBe(true);
+		});
+
+		it('refreshes the sanitized Drive connection after restoring a valid session', async () => {
+			(getStoredSessionData as any).mockReturnValue({
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				userData: mockUserData
+			});
+			(validateSession as any).mockResolvedValue('valid');
+
+			await expect(authService.restoreSession()).resolves.toBe(true);
+
+			expect(mockGoogleDriveService.refreshConnection).toHaveBeenCalledOnce();
+			expect(authStore.setUser.mock.invocationCallOrder[0]).toBeLessThan(
+				mockGoogleDriveService.refreshConnection.mock.invocationCallOrder[0]
+			);
 		});
 
 		it('should return false when no session data is stored', async () => {
@@ -336,6 +360,21 @@ describe('AuthService', () => {
 	});
 
 	describe('logout', () => {
+		it('hides Drive state before a slow native logout completes', async () => {
+			let resolveLogout: (value: boolean) => void;
+			host.logoutSession.mockReturnValue(
+				new Promise<boolean>((resolve) => {
+					resolveLogout = resolve;
+				})
+			);
+
+			const logout = authService.logout();
+
+			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
+			resolveLogout!(true);
+			await logout;
+		});
+
 		it('should clear session and call store logout', async () => {
 			// Arrange
 			host.logoutSession.mockResolvedValue(true);

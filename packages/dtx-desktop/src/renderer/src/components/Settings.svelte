@@ -3,6 +3,7 @@
 	import { settingsStore, type Settings } from '../stores/settingsStore';
 	import { onMount } from 'svelte';
 	import { desktopHost } from '../services/desktopHost';
+	import GoogleDriveSettings from './GoogleDriveSettings.svelte';
 
 	let settings = $state<Settings>();
 	let isSelectingDirectory = $state(false);
@@ -130,6 +131,8 @@
 						<Save size={16} />
 						<span class="text-sm font-medium">Settings saved successfully!</span>
 					</div>
+
+					<GoogleDriveSettings />
 				</div>
 			{/if}
 		</div>

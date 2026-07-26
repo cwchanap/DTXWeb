@@ -74,5 +74,46 @@
 			"order_out_of_range": "Recent play order out of range",
 			"unknown_rank": "Unknown rank label"
 		}
+	},
+	"googleDrive": {
+		"title": "Google Drive uploads",
+		"connect": "Connect Google Drive",
+		"connected": "Google Drive is connected",
+		"folder": "Upload folder: {name}",
+		"changeFolder": "Change folder",
+		"recheckSharing": "Re-check sharing",
+		"disconnect": "Disconnect Google Drive",
+		"connecting": "Connecting Google Drive…",
+		"disconnectWarning": "Disconnecting removes this installation's saved Drive connection. It does not delete files or download links.",
+		"folderDoesNotMoveFiles": "Changing the default folder does not move files that are already linked.",
+		"warning": {
+			"reconnect": "Reconnect Google Drive before uploading.",
+			"credentialStore": "Secure credential storage is unavailable on this installation.",
+			"privateSharing": "The selected folder must allow public download links.",
+			"sharingCheck": "Google Drive sharing could not be verified. Re-check before uploading.",
+			"existingFileAccess": "An existing linked file can be replaced only when this Google account and OAuth app are authorized for it. Another installation may need reconnecting or explicit replacement."
+		},
+		"upload": {
+			"queued": "Google Drive upload is queued",
+			"preparing": "Preparing ZIP for Google Drive",
+			"connecting": "Connecting to Google Drive",
+			"uploading": "Uploading to Google Drive",
+			"finalizing": "Finalizing Google Drive upload",
+			"synchronizing": "Saving the download link",
+			"complete": "Google Drive upload complete",
+			"failedSaveSucceeded": "Google Drive upload failed. Your Drumery save succeeded.",
+			"cancel": "Cancel upload",
+			"retry": "Retry Google Drive upload",
+			"replace": "Create a replacement upload",
+			"browserLink": "The download link opens in Google Drive and may redirect or show an interstitial.",
+			"openLink": "Open Google Drive download"
+		},
+		"error": {
+			"FILE_NOT_FOUND": "The previously linked Google Drive file is no longer available.",
+			"FILE_PERMISSION_DENIED": "This Google account cannot replace the previously linked file.",
+			"CANCELED": "Google Drive upload was canceled.",
+			"UNKNOWN": "Google Drive upload could not be completed.",
+			"INVALID_RESPONSE": "Google Drive upload could not be started safely."
+		}
 	}
 }

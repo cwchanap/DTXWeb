@@ -32,8 +32,9 @@ impl Drop for DriveUploadArchive {
 
 /// Allocates `<app-cache>/google-drive-uploads/<native-random-id>/upload.zip`.
 pub(crate) fn create_upload_archive(app_cache_dir: &Path) -> Result<DriveUploadArchive> {
-    let namespace = app_cache_dir.join(UPLOAD_CACHE_NAMESPACE);
-    std::fs::create_dir_all(&namespace)?;
+    let namespace = validated_upload_namespace(app_cache_dir, true)?.ok_or_else(|| {
+        DesktopError::Message("Unable to allocate Google Drive upload cache".to_string())
+    })?;
 
     // UUID v4 comes from the native RNG; it has no relationship to a renderer
     // operation ID, a song title, or any other user-provided metadata.
@@ -60,7 +61,9 @@ pub(crate) fn create_upload_archive(app_cache_dir: &Path) -> Result<DriveUploadA
 /// Best-effort startup cleanup. This never walks outside the dedicated upload
 /// namespace; malformed entries are removed as entries rather than followed.
 pub(crate) fn cleanup_stale_upload_archives(app_cache_dir: &Path) {
-    let namespace = app_cache_dir.join(UPLOAD_CACHE_NAMESPACE);
+    let Ok(Some(namespace)) = validated_upload_namespace(app_cache_dir, false) else {
+        return;
+    };
     let Ok(entries) = std::fs::read_dir(&namespace) else {
         return;
     };
@@ -85,12 +88,63 @@ fn remove_upload_directory(directory: &Path) {
     let Some(namespace) = directory.parent() else {
         return;
     };
-    if namespace
-        .file_name()
-        .is_some_and(|name| name == UPLOAD_CACHE_NAMESPACE)
+    let Some(app_cache_dir) = namespace.parent() else {
+        return;
+    };
+    let Ok(Some(validated_namespace)) = validated_upload_namespace(app_cache_dir, false) else {
+        return;
+    };
+    if namespace == validated_namespace && directory.parent() == Some(validated_namespace.as_path())
     {
         let _ = std::fs::remove_dir_all(directory);
     }
+}
+
+/// Returns a namespace only when it is an ordinary directory immediately below
+/// the canonical app cache. `symlink_metadata` is deliberately non-following:
+/// a stale or malicious `google-drive-uploads` link must never redirect staging
+/// or cleanup outside of the app cache.
+fn validated_upload_namespace(
+    app_cache_dir: &Path,
+    create_if_missing: bool,
+) -> Result<Option<PathBuf>> {
+    if create_if_missing {
+        std::fs::create_dir_all(app_cache_dir)?;
+    }
+
+    let namespace = app_cache_dir.join(UPLOAD_CACHE_NAMESPACE);
+    let metadata = match std::fs::symlink_metadata(&namespace) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !create_if_missing => {
+            return Ok(None);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match std::fs::create_dir(&namespace) {
+                Ok(()) => std::fs::symlink_metadata(&namespace)?,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::fs::symlink_metadata(&namespace)?
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(DesktopError::Message(
+            "Invalid Google Drive upload cache namespace".to_string(),
+        ));
+    }
+
+    let canonical_cache = std::fs::canonicalize(app_cache_dir)?;
+    let canonical_namespace = std::fs::canonicalize(&namespace)?;
+    if canonical_namespace.parent() != Some(canonical_cache.as_path()) {
+        return Err(DesktopError::Message(
+            "Invalid Google Drive upload cache namespace".to_string(),
+        ));
+    }
+
+    Ok(Some(namespace))
 }
 
 /// Produces a Drive display name from metadata only. Unlike local manual

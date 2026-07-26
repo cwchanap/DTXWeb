@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use tempfile::tempdir;
 
 #[test]
@@ -73,4 +75,39 @@ fn drive_upload_archive_cleans_up_on_drop_and_explicit_cleanup() {
         !zip_path.exists(),
         "explicit cancellation/failure cleanup must remove it"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn drive_upload_staging_rejects_a_namespace_symlink_without_writing_outside_cache() {
+    let cache = tempdir().expect("cache");
+    let outside = tempdir().expect("outside");
+    let namespace = cache.path().join("google-drive-uploads");
+    symlink(outside.path(), &namespace).expect("namespace symlink");
+
+    let error = match create_upload_archive(cache.path()) {
+        Ok(_) => panic!("symlinked namespace must reject"),
+        Err(error) => error,
+    };
+
+    assert!(error.to_string().contains("Google Drive upload cache"));
+    assert!(std::fs::read_dir(outside.path())
+        .expect("outside entries")
+        .next()
+        .is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn drive_upload_startup_cleanup_does_not_traverse_a_namespace_symlink() {
+    let cache = tempdir().expect("cache");
+    let outside = tempdir().expect("outside");
+    let stale = outside.path().join("stale");
+    std::fs::create_dir(&stale).expect("outside stale");
+    std::fs::write(stale.join("upload.zip"), b"keep").expect("outside archive");
+    symlink(outside.path(), cache.path().join("google-drive-uploads")).expect("namespace symlink");
+
+    cleanup_stale_upload_archives(cache.path());
+
+    assert!(stale.join("upload.zip").exists());
 }

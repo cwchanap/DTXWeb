@@ -84,4 +84,5 @@ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 [dev-dependencies]
 png = "0.18"
 tempfile = "=3.15.0"
+tauri = { version = "2", features = ["test"] }
 wiremock = "0.6"

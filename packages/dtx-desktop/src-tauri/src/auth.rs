@@ -6,7 +6,7 @@ use serde_json::json;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -852,7 +852,7 @@ async fn auth_event_from_url_with_state(state: &AuthState, raw_url: &str) -> Opt
     ))
 }
 
-fn emit_auth_event(app: &AppHandle, event: &AuthEvent) -> Result<()> {
+fn emit_auth_event<R: Runtime>(app: &AppHandle<R>, event: &AuthEvent) -> Result<()> {
     app.emit(event.name(), event.payload())?;
     Ok(())
 }
@@ -1196,11 +1196,11 @@ async fn perform_refresh(
 /// mutating process-global env. `app` is `Option` so unit tests can exercise
 /// the refresh logic without a real `AppHandle` (pass `None` to skip emission);
 /// production callers pass `Some(&app)`.
-async fn try_refresh_session(
+async fn try_refresh_session<R: Runtime>(
     state: &AuthState,
     config: Option<(String, String)>,
     client: &reqwest::Client,
-    app: Option<&AppHandle>,
+    app: Option<&AppHandle<R>>,
 ) {
     let Some((supabase_url, anon_key)) = config else {
         return;
@@ -1260,9 +1260,9 @@ fn unix_now_secs() -> i64 {
 /// attempted but fails (network blip, revoked refresh token), the previous
 /// token is returned so the API call proceeds and surfaces a clear server-side
 /// error rather than masking the real cause as "not authenticated".
-pub async fn ensure_valid_access_token(
+pub async fn ensure_valid_access_token<R: Runtime>(
     state: &AuthState,
-    app: Option<&AppHandle>,
+    app: Option<&AppHandle<R>>,
 ) -> Result<String> {
     ensure_valid_access_token_with_config(state, resolve_auth_config(), app).await
 }
@@ -1274,10 +1274,10 @@ pub async fn ensure_valid_access_token(
 /// configured" case: refresh is skipped and the existing token is returned.
 /// `app = None` skips the `session-refreshed` emission (unit tests pass `None`
 /// since no `AppHandle` is available); production callers pass `Some(&app)`.
-async fn ensure_valid_access_token_with_config(
+async fn ensure_valid_access_token_with_config<R: Runtime>(
     state: &AuthState,
     config: Option<(String, String)>,
-    app: Option<&AppHandle>,
+    app: Option<&AppHandle<R>>,
 ) -> Result<String> {
     let session = state
         .current_session()

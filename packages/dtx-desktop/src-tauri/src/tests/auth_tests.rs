@@ -1066,7 +1066,9 @@ fn jwt_exp_seconds_returns_none_without_exp_claim() {
 #[tokio::test]
 async fn ensure_valid_access_token_errors_without_session() {
     let state = AuthState::default();
-    assert!(ensure_valid_access_token(&state, None).await.is_err());
+    assert!(ensure_valid_access_token(&state, None::<&AppHandle>)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -1084,7 +1086,7 @@ async fn ensure_valid_access_token_returns_fresh_token_without_refresh() {
         .await;
 
     // config = None is fine here because refresh is never attempted.
-    let result = ensure_valid_access_token_with_config(&state, None, None)
+    let result = ensure_valid_access_token_with_config(&state, None, None::<&AppHandle>)
         .await
         .expect("token");
     assert_eq!(result, token);
@@ -1123,10 +1125,13 @@ async fn ensure_valid_access_token_refreshes_near_expiry_token() {
         })))
         .await;
 
-    let result =
-        ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())), None)
-            .await
-            .expect("token");
+    let result = ensure_valid_access_token_with_config(
+        &state,
+        Some((server.uri(), "anon".into())),
+        None::<&AppHandle>,
+    )
+    .await
+    .expect("token");
 
     assert_ne!(result, expired);
     // The refreshed session must now hold the new token + rotated refresh token.
@@ -1156,7 +1161,7 @@ async fn ensure_valid_access_token_preserves_token_when_refresh_unavailable() {
         })))
         .await;
 
-    let result = ensure_valid_access_token_with_config(&state, None, None)
+    let result = ensure_valid_access_token_with_config(&state, None, None::<&AppHandle>)
         .await
         .expect("token");
     assert_eq!(result, near_expiry);
@@ -1191,10 +1196,13 @@ async fn ensure_valid_access_token_preserves_token_when_server_rejects_refresh()
         })))
         .await;
 
-    let result =
-        ensure_valid_access_token_with_config(&state, Some((server.uri(), "anon".into())), None)
-            .await
-            .expect("token");
+    let result = ensure_valid_access_token_with_config(
+        &state,
+        Some((server.uri(), "anon".into())),
+        None::<&AppHandle>,
+    )
+    .await
+    .expect("token");
 
     assert_eq!(result, near_expiry);
     // AuthState preserved — a rejected proactive refresh must not log out.
@@ -1238,8 +1246,8 @@ async fn ensure_valid_access_token_single_flights_concurrent_refreshes() {
 
     let config = Some((server.uri(), "anon".into()));
     let (a, b) = tokio::join!(
-        ensure_valid_access_token_with_config(&state, config.clone(), None),
-        ensure_valid_access_token_with_config(&state, config, None),
+        ensure_valid_access_token_with_config(&state, config.clone(), None::<&AppHandle>),
+        ensure_valid_access_token_with_config(&state, config, None::<&AppHandle>),
     );
     a.expect("first token");
     b.expect("second token");

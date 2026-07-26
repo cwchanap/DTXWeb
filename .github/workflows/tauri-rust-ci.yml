@@ -126,6 +126,9 @@ jobs:
       - name: Run unit tests with coverage
         run: cargo llvm-cov --locked --lcov --output-path lcov.info
 
+      - name: Regenerate TypeScript types with the E2E feature
+        run: cargo test --locked --no-default-features --features e2e --lib export_bindings
+
       - name: Verify generated TypeScript types are in sync
         working-directory: ${{ github.workspace }}
         run: |

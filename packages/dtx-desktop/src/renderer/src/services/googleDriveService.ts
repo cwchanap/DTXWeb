@@ -100,16 +100,20 @@ const uploadSongZip = async (
 				: { forceCreateReplacement: request.forceCreateReplacement })
 		};
 		const result = await desktopHost.uploadSongZipToGoogleDrive(input);
-		if (!result.success) {
-			googleDriveStore.setUploadError(
-				operationId,
-				request.simfileId,
-				result.errorCode ?? 'UNKNOWN'
-			);
-		}
+		googleDriveStore.applyProgress({
+			operationId,
+			simfileId: request.simfileId,
+			stage: result.success ? 'upload-complete' : 'upload-failed-save-succeeded',
+			...(result.errorCode === undefined ? {} : { errorCode: result.errorCode })
+		});
 		return outcomeFromNativeResult(result);
 	} catch {
-		googleDriveStore.setUploadError(operationId, request.simfileId, 'UNKNOWN');
+		googleDriveStore.applyProgress({
+			operationId,
+			simfileId: request.simfileId,
+			stage: 'upload-failed-save-succeeded',
+			errorCode: 'UNKNOWN'
+		});
 		return {
 			simfileSave: { success: true },
 			driveUpload: { status: 'failed', errorCode: 'UNKNOWN' }

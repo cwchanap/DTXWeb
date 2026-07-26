@@ -113,6 +113,14 @@
 			"browserLink": "ダウンロードリンクは Google Drive で開き、リダイレクトまたは中間画面が表示される場合があります。",
 			"openLink": "Google Drive のダウンロードを開く"
 		},
+		"songDetails": {
+			"upload": "ZIP を Google Drive にアップロード",
+			"reupload": "ZIP を Google Drive に再アップロード",
+			"linkedWarning": "この楽曲は Google Drive ファイルにリンクされています。次回の Drive アップロードが成功すると、ダウンロード URL は Google の最新のダウンロードリンクに置き換えられます。",
+			"draftSaved": "楽曲を保存しました。",
+			"published": "楽曲を公開しました。",
+			"previousDownloadPreserved": "Google Drive へのアップロードに失敗しました。以前のダウンロードは引き続き利用できます。"
+		},
 		"error": {
 			"FILE_NOT_FOUND": "以前にリンクされた Google Drive ファイルは利用できなくなりました。",
 			"FILE_PERMISSION_DENIED": "この Google アカウントには、以前にリンクされたファイルを置き換える権限がありません。",

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Music, X, Link, Search, Upload } from '@lucide/svelte';
+	import { _ } from 'svelte-i18n';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 	import { settingsStore } from '../stores/settingsStore';
 	import { editorMappingStore } from '../stores/editorMappingStore';
@@ -13,7 +14,10 @@
 	import { desktopHost } from '../services/desktopHost';
 	import type { FetchCloudSongResult } from '../lib/scoreTypes';
 	import { googleDriveService, type SongSaveOutcome } from '../services/googleDriveService';
-	import { googleDriveStore } from '../stores/googleDriveStore';
+	import {
+		getActiveGoogleDriveOperationForSimfile,
+		googleDriveStore
+	} from '../stores/googleDriveStore';
 	import GoogleDriveUploadStatus from './GoogleDriveUploadStatus.svelte';
 
 	interface Props {
@@ -58,6 +62,17 @@
 		zipPath?: string;
 		filesCount?: number;
 		error?: string;
+	};
+
+	type KeyedDriveOutcome = {
+		simfileId: string;
+		result: SongSaveOutcome['driveUpload'];
+		source: 'automatic' | 'manual';
+	};
+
+	type PrimarySaveSuccess = {
+		simfileId: string;
+		messageKey: 'googleDrive.songDetails.draftSaved' | 'googleDrive.songDetails.published';
 	};
 
 	type AssetFile = {
@@ -207,7 +222,6 @@
 	// State for upload process
 	let isUploading = $state(false);
 	let uploadError = $state<string | null>(null);
-	let uploadSuccess = $state(false);
 	let uploadWarnings = $state<string[]>([]);
 	let displayIdAutoPopulateError = $state<string | null>(null);
 	let autoPopulatedDisplayId = $state<{ path: string; value: number } | null>(null);
@@ -236,7 +250,6 @@
 	// Update state
 	let isUpdating = $state(false);
 	let updateError = $state<string | null>(null);
-	let updateSuccess = $state(false);
 
 	// Export state
 	let isExporting = $state(false);
@@ -244,8 +257,20 @@
 	let exportSuccess = $state(false);
 	let exportedFilePath = $state<string | null>(null);
 	let isDriveActionInProgress = $state(false);
-	let driveOutcome = $state<SongSaveOutcome['driveUpload'] | undefined>();
-	let driveOutcomeSource = $state<'automatic' | 'manual' | null>(null);
+	let driveOutcome = $state<KeyedDriveOutcome | undefined>();
+	let primarySaveSuccess = $state<PrimarySaveSuccess | undefined>();
+	let selectedSongPath = $state('');
+	let selectionGeneration = 0;
+	const currentSimfileId = $derived(song.linkedSimFileId || undefined);
+	const currentDriveOperation = $derived(
+		getActiveGoogleDriveOperationForSimfile($googleDriveStore, currentSimfileId)
+	);
+	const currentDriveOutcome = $derived(
+		driveOutcome?.simfileId === currentSimfileId ? driveOutcome : undefined
+	);
+	const currentPrimarySaveSuccess = $derived(
+		primarySaveSuccess?.simfileId === currentSimfileId ? primarySaveSuccess : undefined
+	);
 
 	const isSimfileWithDtx = (data: unknown): data is SimfileWithDtx => {
 		if (!data || typeof data !== 'object') return false;
@@ -396,12 +421,15 @@
 		const targetSong = song;
 		const targetPath = song.path;
 		const workspacePath = $workspaceStore.path || '';
+		const selectionToken = selectionGeneration;
+		const published = Boolean(
+			event.detail.isPublished !== undefined ? event.detail.isPublished : isPublished
+		);
 		isUploading = true;
 		uploadError = null;
-		uploadSuccess = false;
 		uploadWarnings = [];
 		driveOutcome = undefined;
-		driveOutcomeSource = 'automatic';
+		primarySaveSuccess = undefined;
 
 		try {
 			const submittedDisplayId = Number(displayId);
@@ -418,11 +446,7 @@
 					artist: String(parsedLocalData.artist || ''),
 					bpm: Number(parsedLocalData.bpm || 0),
 					displayId: displayIdForCreate,
-					isPublished: Boolean(
-						event.detail.isPublished !== undefined
-							? event.detail.isPublished
-							: isPublished
-					),
+					isPublished: published,
 					publishDate: String(publishDate),
 					downloadUrl: String(downloadUrl),
 					videoPreviewUrl: String(videoPreviewUrl),
@@ -453,21 +477,26 @@
 						};
 					}
 
-					uploadSuccess = true;
 					const linkedSimfile = normalizeSimfile(result.data);
 					const savedSimfileId = result.simfileId || String(result.data.id);
 					targetSong.linkedSimFileId = savedSimfileId;
 					targetSong.linkedSimFile = linkedSimfile;
 					workspaceStore.linkSimFileToFolder(targetPath, linkedSimfile);
+					if (selectionGeneration === selectionToken && song.path === targetPath) {
+						song = { ...targetSong };
+						primarySaveSuccess = {
+							simfileId: savedSimfileId,
+							messageKey: published
+								? 'googleDrive.songDetails.published'
+								: 'googleDrive.songDetails.draftSaved'
+						};
+					}
 
 					if (result.warnings && result.warnings.length > 0) {
 						console.warn('Preview upload warnings:', result.warnings);
 						uploadWarnings = result.warnings;
 					}
 
-					setTimeout(() => {
-						uploadSuccess = false;
-					}, 3000);
 					return { success: true, simfileId: savedSimfileId };
 				},
 				workspacePath,
@@ -478,13 +507,20 @@
 			if (!outcome.simfileSave.success) {
 				throw new Error(outcome.simfileSave.error || 'Failed to create simfile record');
 			}
-			driveOutcome = outcome.driveUpload;
-			mergeSuccessfulDriveFields(
-				targetSong,
-				targetPath,
-				targetSong.linkedSimFileId || '',
-				outcome.driveUpload
-			);
+			const savedSimfileId = targetSong.linkedSimFileId || '';
+			if (
+				savedSimfileId &&
+				selectionGeneration === selectionToken &&
+				song.path === targetPath &&
+				song.linkedSimFileId === savedSimfileId
+			) {
+				driveOutcome = {
+					simfileId: savedSimfileId,
+					result: outcome.driveUpload,
+					source: 'automatic'
+				};
+			}
+			mergeSuccessfulDriveFields(targetSong, targetPath, savedSimfileId, outcome.driveUpload);
 		} catch (error) {
 			console.error('Error uploading song:', error);
 			uploadError = error instanceof Error ? error.message : 'Failed to upload song';
@@ -618,7 +654,7 @@
 
 	// Handle updating linked simfile
 	const handleUpdateSimfile = async (event: CustomEvent) => {
-		if (isUpdating || isDriveActionInProgress) return;
+		if (isUpdating || isDriveActionInProgress || currentDriveOperation) return;
 		if (!song.linkedSimFile || !song.linkedSimFileId) {
 			console.error('No linked simfile to update');
 			return;
@@ -628,11 +664,12 @@
 		const targetPath = song.path;
 		const simfileId = song.linkedSimFileId;
 		const workspacePath = $workspaceStore.path || '';
+		const selectionToken = selectionGeneration;
+		const published = Boolean(event.detail.isPublished);
 		isUpdating = true;
 		updateError = null;
-		updateSuccess = false;
 		driveOutcome = undefined;
-		driveOutcomeSource = 'automatic';
+		primarySaveSuccess = undefined;
 
 		try {
 			// Build update data object
@@ -668,17 +705,20 @@
 						};
 					}
 
-					updateSuccess = true;
 					const updatedSimfile = normalizeSimfile({
 						...targetSong.linkedSimFile,
 						...(result.data || {})
 					} as SimfileWithDtx);
 					targetSong.linkedSimFile = updatedSimfile;
 					workspaceStore.linkSimFileToFolder(targetPath, updatedSimfile);
-
-					setTimeout(() => {
-						updateSuccess = false;
-					}, 3000);
+					if (selectionGeneration === selectionToken && song.path === targetPath) {
+						primarySaveSuccess = {
+							simfileId,
+							messageKey: published
+								? 'googleDrive.songDetails.published'
+								: 'googleDrive.songDetails.draftSaved'
+						};
+					}
 					return { success: true, simfileId };
 				},
 				workspacePath,
@@ -689,7 +729,17 @@
 			if (!outcome.simfileSave.success) {
 				throw new Error(outcome.simfileSave.error || 'Failed to update simfile');
 			}
-			driveOutcome = outcome.driveUpload;
+			if (
+				selectionGeneration === selectionToken &&
+				song.path === targetPath &&
+				song.linkedSimFileId === simfileId
+			) {
+				driveOutcome = {
+					simfileId,
+					result: outcome.driveUpload,
+					source: 'automatic'
+				};
+			}
 			mergeSuccessfulDriveFields(targetSong, targetPath, simfileId, outcome.driveUpload);
 		} catch (error) {
 			console.error('Error updating simfile:', error);
@@ -756,6 +806,7 @@
 		if (
 			isDriveActionInProgress ||
 			isUpdating ||
+			currentDriveOperation ||
 			!song.path ||
 			!song.linkedSimFileId ||
 			!$workspaceStore.path ||
@@ -768,9 +819,9 @@
 		const targetPath = song.path;
 		const simfileId = song.linkedSimFileId;
 		const workspacePath = $workspaceStore.path;
+		const selectionToken = selectionGeneration;
 		isDriveActionInProgress = true;
 		driveOutcome = undefined;
-		driveOutcomeSource = 'manual';
 		try {
 			const outcome = await googleDriveService.uploadSongZip({
 				simfileId,
@@ -778,7 +829,17 @@
 				songPath: targetPath,
 				...(forceCreateReplacement ? { forceCreateReplacement: true } : {})
 			});
-			driveOutcome = outcome.driveUpload;
+			if (
+				selectionGeneration === selectionToken &&
+				song.path === targetPath &&
+				song.linkedSimFileId === simfileId
+			) {
+				driveOutcome = {
+					simfileId,
+					result: outcome.driveUpload,
+					source: 'manual'
+				};
+			}
 			mergeSuccessfulDriveFields(targetSong, targetPath, simfileId, outcome.driveUpload);
 		} finally {
 			isDriveActionInProgress = false;
@@ -786,10 +847,12 @@
 	};
 
 	const handleRetryDriveUpload = () => {
+		if (!currentDriveOutcome || currentDriveOutcome.simfileId !== song.linkedSimFileId) return;
 		void handleDriveUpload(false);
 	};
 
 	const handleCreateReplacementDriveFile = () => {
+		if (!currentDriveOutcome || currentDriveOutcome.simfileId !== song.linkedSimFileId) return;
 		void handleDriveUpload(true);
 	};
 
@@ -897,7 +960,36 @@
 		if (!currentPath || song.linkedSimFile || !$authStore.isAuthenticated) return;
 		void populateNextDisplayId(currentPath);
 	});
+
+	$effect(() => {
+		if (song.path === selectedSongPath) return;
+		selectedSongPath = song.path;
+		selectionGeneration += 1;
+		primarySaveSuccess = undefined;
+		driveOutcome = undefined;
+	});
 </script>
+
+{#if currentPrimarySaveSuccess && $authStore.isAuthenticated}
+	<p class="border-green/40 bg-green/10 text-green m-4 rounded-lg border p-3 text-sm">
+		{$_(currentPrimarySaveSuccess.messageKey)}
+	</p>
+{/if}
+
+{#if currentDriveOutcome?.source === 'automatic' && currentDriveOutcome.result.status === 'failed'}
+	<p class="border-yellow/40 bg-yellow/10 text-yellow m-4 rounded-lg border p-3 text-sm">
+		{$_('googleDrive.songDetails.previousDownloadPreserved')}
+	</p>
+{/if}
+
+{#if currentSimfileId}
+	<GoogleDriveUploadStatus
+		simfileId={currentSimfileId}
+		outcome={currentDriveOutcome}
+		onRetry={handleRetryDriveUpload}
+		onCreateReplacement={handleCreateReplacementDriveFile}
+	/>
+{/if}
 
 {#if song.linkedSimFile}
 	<!-- For linked songs, use the built-in Update button -->
@@ -940,15 +1032,20 @@
 					onclick={() => handleDriveUpload(false)}
 					disabled={isDriveActionInProgress ||
 						isUpdating ||
+						currentDriveOperation !== undefined ||
 						!$googleDriveStore.connection?.connected}
-					aria-label={song.linkedSimFile.google_drive_file_id
-						? 'Re-upload ZIP to Drive'
-						: 'Upload ZIP to Drive'}
+					aria-label={$_(
+						song.linkedSimFile.google_drive_file_id
+							? 'googleDrive.songDetails.reupload'
+							: 'googleDrive.songDetails.upload'
+					)}
 				>
 					<Upload size={16} />
-					{song.linkedSimFile.google_drive_file_id
-						? 'Re-upload ZIP to Drive'
-						: 'Upload ZIP to Drive'}
+					{$_(
+						song.linkedSimFile.google_drive_file_id
+							? 'googleDrive.songDetails.reupload'
+							: 'googleDrive.songDetails.upload'
+					)}
 				</button>
 				<button
 					class="bg-surface-2 text-cyan flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition duration-150 ease-in-out hover:opacity-90 focus:outline-none"
@@ -963,32 +1060,21 @@
 
 		{#if song.linkedSimFile.google_drive_file_id}
 			<p class="border-amber/40 bg-amber/10 text-amber m-4 rounded-lg border p-3 text-sm">
-				This song is linked to a Google Drive file. The next successful Drive upload will
-				replace the download URL with Google's current download link.
+				{$_('googleDrive.songDetails.linkedWarning')}
 			</p>
 		{/if}
-
-		{#if driveOutcomeSource === 'automatic' && driveOutcome?.status === 'failed'}
-			<p class="border-yellow/40 bg-yellow/10 text-yellow m-4 rounded-lg border p-3 text-sm">
-				Google Drive upload failed. Your previous download remains available.
-			</p>
-		{/if}
-
-		<GoogleDriveUploadStatus
-			outcome={driveOutcome}
-			onRetry={handleRetryDriveUpload}
-			onCreateReplacement={handleCreateReplacementDriveFile}
-		/>
 
 		<ChartDetail
 			simfile={simfileData()}
 			showEditor={false}
 			showPublishingControls={$authStore.isAuthenticated &&
 				!isUpdating &&
-				!isDriveActionInProgress}
+				!isDriveActionInProgress &&
+				!currentDriveOperation}
 			showPublishedToggle={$authStore.isAuthenticated &&
 				!isUpdating &&
-				!isDriveActionInProgress}
+				!isDriveActionInProgress &&
+				!currentDriveOperation}
 			saveButtonText={$authStore.isAuthenticated ? 'Update' : ''}
 			bind:displayId
 			bind:publishDate
@@ -1028,16 +1114,6 @@
 						<div class="flex items-center gap-2">
 							<span class="text-red text-sm">
 								Update failed: {updateError}
-							</span>
-						</div>
-					</div>
-				{/if}
-
-				{#if updateSuccess && $authStore.isAuthenticated}
-					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
-						<div class="flex items-center gap-2">
-							<span class="text-green text-sm">
-								Cloud song updated successfully!
 							</span>
 						</div>
 					</div>
@@ -1307,16 +1383,6 @@
 							{#each uploadWarnings as warning}
 								<span class="text-amber text-xs">{warning}</span>
 							{/each}
-						</div>
-					</div>
-				{/if}
-
-				{#if uploadSuccess && $authStore.isAuthenticated}
-					<div class="border-green/40 bg-green/10 rounded-lg border p-3">
-						<div class="flex items-center gap-2">
-							<span class="text-green text-sm">
-								Song uploaded successfully! It is now linked to the cloud.
-							</span>
 						</div>
 					</div>
 				{/if}

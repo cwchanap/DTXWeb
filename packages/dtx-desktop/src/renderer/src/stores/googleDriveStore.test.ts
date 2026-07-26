@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
-import { createGoogleDriveStore } from './googleDriveStore';
+import {
+	createGoogleDriveStore,
+	getActiveGoogleDriveOperationForSimfile
+} from './googleDriveStore';
 
 describe('googleDriveStore', () => {
 	it('ignores unrelated, stale, and terminal progress without retaining sensitive native state', () => {
@@ -89,6 +92,30 @@ describe('googleDriveStore', () => {
 			'op-a': expect.objectContaining({ stage: 'uploading', percentage: 50 }),
 			'op-b': expect.objectContaining({ stage: 'preparing-zip' })
 		});
+	});
+
+	it('selects only a nonterminal operation for the requested simfile', () => {
+		const store = createGoogleDriveStore();
+		store.beginOperation('op-a', 'simfile-a');
+		store.beginOperation('op-b', 'simfile-b');
+
+		expect(getActiveGoogleDriveOperationForSimfile(get(store), 'simfile-a')?.operationId).toBe(
+			'op-a'
+		);
+		expect(getActiveGoogleDriveOperationForSimfile(get(store), 'simfile-b')?.operationId).toBe(
+			'op-b'
+		);
+
+		store.applyProgress({
+			operationId: 'op-a',
+			simfileId: 'simfile-a',
+			stage: 'upload-complete'
+		});
+
+		expect(getActiveGoogleDriveOperationForSimfile(get(store), 'simfile-a')).toBeUndefined();
+		expect(getActiveGoogleDriveOperationForSimfile(get(store), 'simfile-b')?.operationId).toBe(
+			'op-b'
+		);
 	});
 
 	it('drops an async connection result captured before an auth reset', () => {

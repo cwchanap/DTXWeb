@@ -64,8 +64,11 @@ describe('GoogleDriveUploadStatus', () => {
 		render(GoogleDriveUploadStatus, {
 			props: {
 				outcome: {
-					status: 'success',
-					downloadUrl: 'https://drive.google.com/file/d/example'
+					simfileId: 'simfile-id',
+					result: {
+						status: 'success',
+						downloadUrl: 'https://drive.google.com/file/d/example'
+					}
 				}
 			}
 		});
@@ -79,7 +82,12 @@ describe('GoogleDriveUploadStatus', () => {
 
 	it('does not expose an unknown native error code as renderer text', () => {
 		render(GoogleDriveUploadStatus, {
-			props: { outcome: { status: 'failed', errorCode: 'UNSAFE_NATIVE_DETAIL' } }
+			props: {
+				outcome: {
+					simfileId: 'simfile-id',
+					result: { status: 'failed', errorCode: 'UNSAFE_NATIVE_DETAIL' }
+				}
+			}
 		});
 
 		expect(screen.getByText('Google Drive upload could not be completed.')).toBeInTheDocument();
@@ -91,8 +99,11 @@ describe('GoogleDriveUploadStatus', () => {
 		render(GoogleDriveUploadStatus, {
 			props: {
 				outcome: {
-					status: 'failed',
-					errorCode: 'NOT_CONNECTED'
+					simfileId: 'simfile-id',
+					result: {
+						status: 'failed',
+						errorCode: 'NOT_CONNECTED'
+					}
 				}
 			}
 		});
@@ -154,6 +165,37 @@ describe('GoogleDriveUploadStatus', () => {
 		expect(mockService.cancelUpload).toHaveBeenCalledWith('operation-b');
 	});
 
+	it('shows only operations and remediation bound to the authoritative simfile', () => {
+		googleDriveStore.beginOperation('operation-a', 'simfile-a');
+		googleDriveStore.beginOperation('operation-b', 'simfile-b');
+		googleDriveStore.applyProgress({
+			operationId: 'operation-a',
+			simfileId: 'simfile-a',
+			stage: 'uploading',
+			percentage: 25
+		});
+		googleDriveStore.applyProgress({
+			operationId: 'operation-b',
+			simfileId: 'simfile-b',
+			stage: 'preparing-zip'
+		});
+
+		render(GoogleDriveUploadStatus, {
+			props: {
+				simfileId: 'simfile-b',
+				outcome: {
+					simfileId: 'simfile-a',
+					result: { status: 'failed', errorCode: 'FILE_NOT_FOUND' }
+				}
+			}
+		});
+
+		expect(screen.getByText('Preparing ZIP for Google Drive')).toBeInTheDocument();
+		expect(screen.queryByText('25%')).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Reconnect Google Drive' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Create a replacement upload' })).toBeNull();
+	});
+
 	it.each([
 		['WORKSPACE_REQUIRED', []],
 		['NOT_CONNECTED', ['Reconnect Google Drive']],
@@ -179,7 +221,12 @@ describe('GoogleDriveUploadStatus', () => {
 		['UNKNOWN', []]
 	] as const)('renders sanitized remediation for native %s', (errorCode, actionNames) => {
 		render(GoogleDriveUploadStatus, {
-			props: { outcome: { status: 'failed', errorCode } }
+			props: {
+				outcome: {
+					simfileId: 'simfile-id',
+					result: { status: 'failed', errorCode }
+				}
+			}
 		});
 
 		expect(screen.getByText(resolve(`googleDrive.error.${errorCode}`))).toBeInTheDocument();
@@ -190,7 +237,12 @@ describe('GoogleDriveUploadStatus', () => {
 
 	it('refreshes the connection after keychain recovery without opening OAuth reconnect', async () => {
 		render(GoogleDriveUploadStatus, {
-			props: { outcome: { status: 'failed', errorCode: 'CREDENTIAL_STORE' } }
+			props: {
+				outcome: {
+					simfileId: 'simfile-id',
+					result: { status: 'failed', errorCode: 'CREDENTIAL_STORE' }
+				}
+			}
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Refresh connection' }));

@@ -15,7 +15,10 @@ vi.mock('./desktopHost', () => ({ desktopHost: mockHost }));
 
 import { googleDriveService } from './googleDriveService';
 import { get } from 'svelte/store';
-import { googleDriveStore } from '../stores/googleDriveStore';
+import {
+	getActiveGoogleDriveOperationForSimfile,
+	googleDriveStore
+} from '../stores/googleDriveStore';
 
 describe('googleDriveService', () => {
 	beforeEach(() => {
@@ -100,10 +103,12 @@ describe('googleDriveService', () => {
 			'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8': {
 				operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
 				simfileId: 'simfile-42',
-				stage: 'uploading',
-				percentage: 42
+				stage: 'upload-complete'
 			}
 		});
+		expect(
+			getActiveGoogleDriveOperationForSimfile(get(googleDriveStore), 'simfile-42')
+		).toBeUndefined();
 		expect(unlisten).toHaveBeenCalledOnce();
 	});
 

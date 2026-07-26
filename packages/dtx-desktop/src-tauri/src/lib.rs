@@ -5,6 +5,8 @@ mod api;
 mod auth;
 mod error;
 mod filesystem;
+#[allow(dead_code)]
+mod google_drive;
 mod models;
 mod native_persistence;
 mod preferences;

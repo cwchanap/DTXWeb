@@ -63,6 +63,9 @@ jobs:
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
       PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
+      DTX_DESKTOP_BUILD_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
+      GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
+      GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION || vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
 
     steps:
       - name: Checkout Repository
@@ -185,6 +188,9 @@ jobs:
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
       VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
       PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
+      DTX_DESKTOP_BUILD_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
+      GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && 'preproduction' || 'production' }}
+      GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/preview') && vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION || vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
 
     steps:
       - name: Checkout Repository

@@ -82,6 +82,10 @@ impl PickerAttempt {
         format!("http://{}{}", self.callback_addr, self.callback_path)
     }
 
+    fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
     pub(crate) fn authorization_url(
         &self,
         client_id: &str,
@@ -599,6 +603,11 @@ impl GoogleDriveState {
         auth: &AuthState,
         user_id: &str,
     ) -> Result<GoogleDriveConnectionState, GoogleDriveOAuthError> {
+        let picker_generation = {
+            let lifecycle = self.lifecycle_lock_for_user(user_id);
+            let _guard = lifecycle.lock().await;
+            self.user_lifecycle_generation(user_id)
+        };
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(|_| GoogleDriveOAuthError::Network)?;
@@ -616,6 +625,7 @@ impl GoogleDriveState {
             self.picker_config.timeout,
         );
         let attempt_id = attempt.attempt_id();
+        let callback_deadline = attempt.deadline();
         let authorization_url =
             Zeroizing::new(attempt.authorization_url(&self.picker_config.client_id)?);
 
@@ -634,7 +644,7 @@ impl GoogleDriveState {
             return Err(error);
         }
 
-        let accepted = timeout(self.picker_config.timeout, listener.accept()).await;
+        let accepted = timeout(remaining_until(callback_deadline)?, listener.accept()).await;
         let (mut stream, _) = match accepted {
             Ok(Ok(accepted)) => accepted,
             _ => {
@@ -642,7 +652,7 @@ impl GoogleDriveState {
                 return Err(GoogleDriveOAuthError::Canceled);
             }
         };
-        let target = match read_callback_target(&mut stream).await {
+        let target = match read_callback_target(&mut stream, callback_deadline).await {
             Ok(target) => target,
             Err(error) => {
                 active_attempt.clear().await;
@@ -682,6 +692,13 @@ impl GoogleDriveState {
         let expires_at = Instant::now()
             .checked_add(Duration::from_secs(tokens.expires_in))
             .ok_or(GoogleDriveOAuthError::InvalidResponse)?;
+        let lifecycle = self.lifecycle_lock_for_user(user_id);
+        let _guard = lifecycle.lock().await;
+        if self.user_lifecycle_generation(user_id) != picker_generation
+            || auth.current_user_id().await.as_deref() != Some(user_id)
+        {
+            return Err(GoogleDriveOAuthError::Canceled);
+        }
         persist_validated_connection(
             &self.credentials,
             self.settings.as_ref(),
@@ -690,7 +707,7 @@ impl GoogleDriveState {
             folder,
         )
         .await?;
-        self.cache_access_token_until(user_id, tokens.access_token, expires_at)
+        self.cache_access_token_until_locked(user_id, tokens.access_token, expires_at)
             .await;
         self.set_requires_reconnect(user_id, false).await;
         Ok(self.connection_state_for_user(user_id).await)
@@ -768,13 +785,15 @@ fn map_provider_error(error: OAuthProviderError) -> GoogleDriveOAuthError {
 
 async fn read_callback_target(
     stream: &mut TcpStream,
+    deadline: Instant,
 ) -> Result<Zeroizing<String>, GoogleDriveOAuthError> {
     let mut request = Zeroizing::new(Vec::with_capacity(1024));
     let mut chunk = [0_u8; 1024];
     loop {
-        let read = timeout(CALLBACK_READ_TIMEOUT, stream.read(&mut chunk))
+        let read_timeout = remaining_until(deadline)?.min(CALLBACK_READ_TIMEOUT);
+        let read = timeout(read_timeout, stream.read(&mut chunk))
             .await
-            .map_err(|_| GoogleDriveOAuthError::InvalidResponse)?
+            .map_err(|_| GoogleDriveOAuthError::Canceled)?
             .map_err(|_| GoogleDriveOAuthError::InvalidResponse)?;
         if read == 0 {
             return Err(GoogleDriveOAuthError::InvalidResponse);
@@ -819,6 +838,13 @@ async fn read_callback_target(
         .filter(|target| target.len() <= MAX_CALLBACK_TARGET_BYTES)
         .map(|target| Zeroizing::new(target.to_string()))
         .ok_or(GoogleDriveOAuthError::InvalidResponse)
+}
+
+fn remaining_until(deadline: Instant) -> Result<Duration, GoogleDriveOAuthError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or(GoogleDriveOAuthError::Canceled)
 }
 
 async fn write_callback_response(stream: &mut TcpStream) -> std::io::Result<()> {

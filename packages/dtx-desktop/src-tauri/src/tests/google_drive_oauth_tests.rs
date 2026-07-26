@@ -13,6 +13,8 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::{Notify, Semaphore};
 use url::Url;
 use zeroize::Zeroizing;
 
@@ -240,6 +242,35 @@ fn callback_html_never_reflects_authorization_artifacts() {
     }
 }
 
+#[tokio::test]
+async fn callback_read_uses_the_attempt_deadline_not_a_fresh_timeout_per_byte() {
+    let listener = tokio::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let request = format!(
+        "GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=state&code=code&picked_file_ids=folder HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+    );
+    let writer = tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect loopback");
+        for byte in request.bytes() {
+            if stream.write_all(&[byte]).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    });
+    let (mut stream, _) = listener.accept().await.expect("accept callback");
+
+    let result =
+        read_callback_target(&mut stream, Instant::now() + Duration::from_millis(25)).await;
+
+    assert_eq!(result, Err(GoogleDriveOAuthError::Canceled));
+    writer.abort();
+}
+
 #[derive(Default)]
 struct FakeSettings {
     folder: Mutex<Option<GoogleDriveFolderSetting>>,
@@ -418,6 +449,59 @@ struct FakeOAuthProvider {
     refreshes: Mutex<VecDeque<Result<OAuthTokenResponse, OAuthProviderError>>>,
     revoke_result: Mutex<Result<(), OAuthProviderError>>,
     revoke_calls: AtomicUsize,
+}
+
+struct BlockingRefreshProvider {
+    refresh_started: Notify,
+    release_refresh: Semaphore,
+    refresh_calls: AtomicUsize,
+    response: OAuthTokenResponse,
+}
+
+impl BlockingRefreshProvider {
+    fn new(response: OAuthTokenResponse) -> Self {
+        Self {
+            refresh_started: Notify::new(),
+            release_refresh: Semaphore::new(0),
+            refresh_calls: AtomicUsize::new(0),
+            response,
+        }
+    }
+
+    async fn wait_until_refresh_started(&self) {
+        if self.refresh_calls.load(Ordering::SeqCst) == 0 {
+            self.refresh_started.notified().await;
+        }
+    }
+}
+
+#[async_trait]
+impl GoogleOAuthProvider for BlockingRefreshProvider {
+    async fn exchange_code(
+        &self,
+        _request: TokenExchangeRequest,
+    ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+        Err(OAuthProviderError::InvalidResponse)
+    }
+
+    async fn refresh_access_token(
+        &self,
+        _refresh_token: &str,
+    ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+        self.refresh_calls.fetch_add(1, Ordering::SeqCst);
+        self.refresh_started.notify_waiters();
+        let permit = self
+            .release_refresh
+            .acquire()
+            .await
+            .expect("refresh release");
+        permit.forget();
+        Ok(self.response.clone())
+    }
+
+    async fn revoke_refresh_token(&self, _refresh_token: &str) -> Result<(), OAuthProviderError> {
+        Ok(())
+    }
 }
 
 impl FakeOAuthProvider {
@@ -601,6 +685,156 @@ async fn invalid_grant_refresh_sets_reconnect_without_exposing_provider_error() 
     );
 }
 
+#[tokio::test]
+async fn concurrent_cache_misses_single_flight_one_refresh_per_user() {
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let provider = Arc::new(BlockingRefreshProvider::new(token_response(
+        "shared-access-token",
+        None,
+    )));
+    let state = Arc::new(oauth_state(
+        credential_store,
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        provider.clone(),
+        Arc::new(CallbackBrowser::new("unused")),
+    ));
+
+    let first_state = state.clone();
+    let first = tokio::spawn(async move { first_state.access_token_for_user("user-42").await });
+    provider.wait_until_refresh_started().await;
+    let second_state = state.clone();
+    let second = tokio::spawn(async move { second_state.access_token_for_user("user-42").await });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    assert_eq!(provider.refresh_calls.load(Ordering::SeqCst), 1);
+    provider.release_refresh.add_permits(2);
+    assert_eq!(
+        first.await.expect("first task").unwrap().as_str(),
+        "shared-access-token"
+    );
+    assert_eq!(
+        second.await.expect("second task").unwrap().as_str(),
+        "shared-access-token"
+    );
+    assert_eq!(provider.refresh_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn disconnect_waits_for_in_flight_refresh_then_removes_rotated_state() {
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let provider = Arc::new(BlockingRefreshProvider::new(token_response(
+        "new-access-token",
+        Some("rotated-refresh-token"),
+    )));
+    let settings = Arc::new(FakeSettings::with_folder("folder-42", "Uploads"));
+    let state = Arc::new(oauth_state(
+        credential_store.clone(),
+        settings.clone(),
+        provider.clone(),
+        Arc::new(CallbackBrowser::new("unused")),
+    ));
+
+    let refresh_state = state.clone();
+    let refresh = tokio::spawn(async move { refresh_state.access_token_for_user("user-42").await });
+    provider.wait_until_refresh_started().await;
+    let disconnect_state = state.clone();
+    let disconnect = tokio::spawn(async move { disconnect_state.disconnect_user("user-42").await });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(
+        !disconnect.is_finished(),
+        "disconnect must serialize behind the in-flight refresh"
+    );
+
+    provider.release_refresh.add_permits(1);
+    assert_eq!(
+        refresh.await.expect("refresh task").unwrap().as_str(),
+        "new-access-token"
+    );
+    disconnect
+        .await
+        .expect("disconnect task")
+        .expect("disconnect succeeds");
+    assert_eq!(
+        credential_store
+            .get_refresh_token("user-42")
+            .expect("read credential"),
+        None
+    );
+    assert_eq!(state.cached_access_token("user-42").await, None);
+    assert_eq!(settings.folder_for_user("user-42"), None);
+}
+
+#[tokio::test]
+async fn invalid_grant_clears_the_expired_cached_access_token() {
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "revoked-refresh-token")
+        .expect("seed credential");
+    let provider = Arc::new(FakeOAuthProvider::with_refreshes(vec![Err(
+        OAuthProviderError::InvalidGrant,
+    )]));
+    let state = oauth_state(
+        credential_store,
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        provider,
+        Arc::new(CallbackBrowser::new("unused")),
+    );
+    state
+        .cache_access_token_until(
+            "user-42",
+            Zeroizing::new("known-bad-access-token".to_string()),
+            Instant::now() - Duration::from_secs(1),
+        )
+        .await;
+
+    assert_eq!(
+        state.access_token_for_user("user-42").await,
+        Err(GoogleDriveOAuthError::ReconnectRequired)
+    );
+    assert_eq!(state.cached_access_token("user-42").await, None);
+}
+
+#[tokio::test]
+async fn invalid_refresh_payload_clears_the_expired_cached_access_token() {
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let provider = Arc::new(FakeOAuthProvider::with_refreshes(vec![Ok(
+        OAuthTokenResponse {
+            access_token: "new-access-token".to_string(),
+            refresh_token: None,
+            expires_in: u64::MAX,
+            scope: Some(GOOGLE_DRIVE_FILE_SCOPE.to_string()),
+        },
+    )]));
+    let state = oauth_state(
+        credential_store,
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        provider,
+        Arc::new(CallbackBrowser::new("unused")),
+    );
+    state
+        .cache_access_token_until(
+            "user-42",
+            Zeroizing::new("expired-access-token".to_string()),
+            Instant::now() - Duration::from_secs(1),
+        )
+        .await;
+
+    assert_eq!(
+        state.access_token_for_user("user-42").await,
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+    assert_eq!(state.cached_access_token("user-42").await, None);
+}
+
 struct ExpireOnceRequest {
     calls: Mutex<Vec<String>>,
 }
@@ -652,6 +886,44 @@ async fn authorized_request_refreshes_and_retries_exactly_once_after_token_expir
             .unwrap_or_else(|poisoned| poisoned.into_inner()),
         vec!["access-one".to_string(), "access-two".to_string()]
     );
+}
+
+struct AlwaysExpiredRequest;
+
+#[async_trait]
+impl AuthorizedDriveRequest<()> for AlwaysExpiredRequest {
+    async fn execute(&self, _access_token: &str) -> Result<(), AuthorizedDriveRequestError> {
+        Err(AuthorizedDriveRequestError::TokenExpired)
+    }
+}
+
+#[tokio::test]
+async fn second_token_expiry_clears_the_retried_access_token() {
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let provider = Arc::new(FakeOAuthProvider::with_refreshes(vec![Ok(token_response(
+        "replacement-access-token",
+        None,
+    ))]));
+    let state = oauth_state(
+        credential_store,
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        provider,
+        Arc::new(CallbackBrowser::new("unused")),
+    );
+    state
+        .cache_access_token("user-42", "first-access-token")
+        .await;
+
+    assert_eq!(
+        state
+            .execute_authorized_request("user-42", &AlwaysExpiredRequest)
+            .await,
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+    assert_eq!(state.cached_access_token("user-42").await, None);
 }
 
 #[tokio::test]

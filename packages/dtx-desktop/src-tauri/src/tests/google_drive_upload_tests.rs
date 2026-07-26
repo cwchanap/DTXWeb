@@ -16,6 +16,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::{tempdir, TempDir};
 use tokio::sync::Semaphore;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const ACCESS_TOKEN: &str = "drive-access-token";
 type DriveResult<T> = std::result::Result<T, DriveApiError>;
@@ -321,6 +323,37 @@ impl DriveMetadataClient for BlockingStatefulMetadataClient {
             ScriptedMetadataClient::owner_for(simfile_id, Some(drive_file_id), Some(download_url));
         *self.owner.lock().expect("owner") = updated.clone();
         Ok(updated)
+    }
+}
+
+struct ProductionOwnerMetadataClient {
+    base_url: String,
+}
+
+#[async_trait]
+impl DriveMetadataClient for ProductionOwnerMetadataClient {
+    async fn fetch_owner_simfile(
+        &self,
+        _auth: &AuthState,
+        simfile_id: &str,
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+        crate::api::fetch_owner_drive_simfile_impl(
+            &self.base_url,
+            "supabase-token",
+            simfile_id,
+            "user-42",
+        )
+        .await
+    }
+
+    async fn update_drive_file(
+        &self,
+        _auth: &AuthState,
+        _simfile_id: &str,
+        _drive_file_id: &str,
+        _download_url: &str,
+    ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+        Err(DriveMetadataError::LocalState)
     }
 }
 
@@ -2685,6 +2718,62 @@ async fn ambiguous_owner_metadata_failures_retain_direct_reconciliation_bindings
         assert!(api.create_metadata.lock().unwrap().is_empty());
         assert!(metadata.patch_inputs.lock().unwrap().is_empty());
     }
+}
+
+#[tokio::test]
+async fn whitespace_only_owner_id_from_production_parser_retains_direct_binding() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "simfile": {
+                    "id": "42",
+                    "title": "Song",
+                    "userId": " \t ",
+                    "googleDriveFileId": null,
+                    "downloadUrl": null
+                }
+            }
+        })))
+        .mount(&server)
+        .await;
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    seed_pending_binding(
+        &store,
+        "retain-blank-owner-id",
+        PendingBindingKind::FirstUpload,
+    );
+    let api = ScriptedDriveApi::default();
+    api.deletes.lock().unwrap().push_back(Ok(()));
+    let metadata = ProductionOwnerMetadataClient {
+        base_url: server.uri(),
+    };
+    let archive = create_request(b"zip");
+
+    let failure = run_crash_safe_create_for_test(
+        &api,
+        &RecordingSleeper::default(),
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+        crash_safe_request(
+            archive.request.archive_path,
+            PendingBindingKind::FirstUpload,
+        ),
+        4,
+        None,
+        |_, _| {},
+    )
+    .await
+    .expect_err("blank owner ID is an invalid response");
+
+    assert_eq!(failure.error, DriveApiError::InvalidResponse);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    assert!(api.delete_ids.lock().unwrap().is_empty());
+    assert!(store.get("user-42", "42").expect("pending").is_some());
 }
 
 #[tokio::test]

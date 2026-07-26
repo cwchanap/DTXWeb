@@ -462,7 +462,7 @@ fn owner_drive_simfile_from_graphql(
     let owner_id = simfile
         .get("userId")
         .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .ok_or(DriveMetadataError::InvalidResponse)?;
     let google_drive_file_id = required_nullable_owner_string(simfile, "googleDriveFileId")?;
     let download_url = required_nullable_owner_string(simfile, "downloadUrl")?;

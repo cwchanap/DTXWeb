@@ -325,6 +325,29 @@ async fn google_drive_owner_parser_validates_expected_id_before_foreign_owner() 
 }
 
 #[tokio::test]
+async fn google_drive_owner_parser_rejects_whitespace_only_owner_id_as_invalid() {
+    let server = MockServer::start().await;
+    let mut malformed = owner_drive_simfile();
+    malformed["userId"] = json!(" \t ");
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "simfile": malformed }
+        })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("blank owner ID is malformed, not definitive loss");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::InvalidResponse
+    );
+}
+
+#[tokio::test]
 async fn google_drive_owner_parser_requires_typed_nullable_binding_fields() {
     for field in ["googleDriveFileId", "downloadUrl"] {
         for invalid in [

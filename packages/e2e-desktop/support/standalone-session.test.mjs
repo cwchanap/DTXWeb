@@ -34,16 +34,26 @@ const leasePathFor = (port) => join(tmpdir(), 'dtx-e2e-embedded-port-leases', `$
 
 const makeClock = (step = 100) => {
 	let now = 0;
+	let nextTimer = 0;
+	const scheduledTimers = new Map();
 	return {
 		now: () => now,
 		setTimeout: (callback, milliseconds) => {
-			queueMicrotask(() => {
+			const timer = ++nextTimer;
+			const scheduled = globalThis.setTimeout(() => {
+				scheduledTimers.delete(timer);
 				now += Math.max(step, milliseconds);
 				callback();
-			});
-			return 0;
+			}, 0);
+			scheduledTimers.set(timer, scheduled);
+			return timer;
 		},
-		clearTimeout: () => undefined
+		clearTimeout: (timer) => {
+			const scheduled = scheduledTimers.get(timer);
+			if (scheduled === undefined) return;
+			globalThis.clearTimeout(scheduled);
+			scheduledTimers.delete(timer);
+		}
 	};
 };
 
@@ -222,6 +232,88 @@ test('waits through an initial connection refusal until the embedded server repo
 		await terminateStandaloneTauriSession(browser);
 	} finally {
 		cleanupLease(46_008);
+	}
+});
+
+test('waits for the Tauri invoke bridge after the embedded server reports ready', async () => {
+	const dependencies = makeDependencies({ port: 46_018 });
+	const evaluate = dependencies.evaluate;
+	let nonceAttempts = 0;
+	dependencies.evaluate = mock(async (port, script, args) => {
+		if (script.includes('read_e2e_session_nonce') && nonceAttempts++ === 0) {
+			throw new Error('Tauri core.invoke is unavailable');
+		}
+		return await evaluate(port, script, args);
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		expect(nonceAttempts).toBe(2);
+		await terminateStandaloneTauriSession(browser);
+	} finally {
+		cleanupLease(46_018);
+	}
+});
+
+test('bounds an in-flight Tauri invoke bridge probe by the readiness deadline', async () => {
+	const child = new FakeChild();
+	child.exitOnSignal.add('SIGTERM');
+	const dependencies = makeDependencies({ child, port: 46_019 });
+	const evaluate = dependencies.evaluate;
+	dependencies.evaluate = mock(async (port, script, args) => {
+		if (script.includes('read_e2e_session_nonce')) {
+			return await new Promise(() => undefined);
+		}
+		return await evaluate(port, script, args);
+	});
+	const startup = startStandaloneTauriSession(input, dependencies).then(
+		(browser) => ({ browser }),
+		(error) => ({ error })
+	);
+	let guardTimer;
+	let guardExpired = false;
+	let result = await Promise.race([
+		startup,
+		new Promise((resolve) => {
+			guardTimer = setTimeout(() => {
+				guardExpired = true;
+				child.exit();
+				resolve({ error: new Error('Test guard expired before the readiness deadline') });
+			}, 100);
+		})
+	]);
+	if (guardExpired) result = await startup;
+	try {
+		expect(result.error).toBeInstanceOf(Error);
+		expect(result.error.message).toBe('Tauri invoke bridge did not become ready');
+		expect(child.killSignals).toEqual(['SIGTERM']);
+	} finally {
+		clearTimeout(guardTimer);
+		if (result.browser) await terminateStandaloneTauriSession(result.browser);
+		cleanupLease(46_019);
+	}
+});
+
+test('does not retry a real nonce error that merely contains the bridge readiness message', async () => {
+	const child = new FakeChild();
+	child.exitOnSignal.add('SIGTERM');
+	const dependencies = makeDependencies({ child, port: 46_020 });
+	const evaluate = dependencies.evaluate;
+	let nonceAttempts = 0;
+	dependencies.evaluate = mock(async (port, script, args) => {
+		if (script.includes('read_e2e_session_nonce')) {
+			nonceAttempts += 1;
+			throw new Error('Nonce command failed: Tauri core.invoke is unavailable');
+		}
+		return await evaluate(port, script, args);
+	});
+	try {
+		await expect(startStandaloneTauriSession(input, dependencies)).rejects.toThrow(
+			'Nonce command failed: Tauri core.invoke is unavailable'
+		);
+		expect(nonceAttempts).toBe(1);
+		expect(child.killSignals).toEqual(['SIGTERM']);
+	} finally {
+		cleanupLease(46_020);
 	}
 });
 

@@ -90,6 +90,7 @@ const MAX_LEASE_AGE_MS = 15 * 60 * 1000;
 const CHILD_EXIT_TIMEOUT_MS = 5_000;
 const READINESS_POLL_MS = 100;
 const READINESS_TIMEOUT_MS = 60_000;
+const TAURI_INVOKE_UNAVAILABLE_ERROR = 'Tauri core.invoke is unavailable';
 const leaseDirectory = join(tmpdir(), 'dtx-e2e-embedded-port-leases');
 const ownerFileName = 'owner.json';
 const activeSessions = new WeakMap<WebdriverIO.Browser, OwnedSession>();
@@ -280,7 +281,7 @@ const makeDirectEvalScript = (
     const __wdio_args = ${JSON.stringify(args)};
     const __wdio_core = window.__wdio_original_core__ || window.__TAURI__?.core;
     if (!__wdio_core || typeof __wdio_core.invoke !== 'function') {
-      throw new Error('Tauri core.invoke is unavailable');
+      throw new Error(${JSON.stringify(TAURI_INVOKE_UNAVAILABLE_ERROR)});
     }
     const __tauri = { core: { invoke: __wdio_core.invoke.bind(__wdio_core) } };
     const __result = await (${script})(__tauri, ...__wdio_args);
@@ -426,6 +427,55 @@ const waitForEmbeddedReadiness = async (
 		]);
 	}
 	throw new Error(`Embedded WebDriver server did not become ready on port ${port}`);
+};
+
+const waitForTauriInvokeReadiness = async (
+	readSessionNonce: () => Promise<string>,
+	child: ChildLike,
+	exitPromise: Promise<boolean>,
+	clock: Clock
+): Promise<string> => {
+	const deadline = clock.now() + READINESS_TIMEOUT_MS;
+	const readinessTimeoutError = new Error('Tauri invoke bridge did not become ready');
+	const earlyExitError = new Error(
+		'Standalone Tauri app exited before the invoke bridge became ready'
+	);
+	const earlyExit = exitPromise.then(async (exited) => {
+		if (exited) throw earlyExitError;
+		return await new Promise<never>(() => undefined);
+	});
+	while (clock.now() <= deadline) {
+		if (child.exitCode !== null || child.signalCode !== null) throw earlyExitError;
+		const nonceResult = readSessionNonce();
+		let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+		const deadlineReached = (async (): Promise<never> => {
+			// Give an already-settled invoke result priority over the synthetic
+			// deadline clock used by unit tests while still bounding a pending probe.
+			await Promise.resolve();
+			return await new Promise<never>((_, reject) => {
+				deadlineTimer = clock.setTimeout(
+					() => reject(readinessTimeoutError),
+					Math.max(0, deadline - clock.now())
+				);
+			});
+		})();
+		try {
+			return await Promise.race([nonceResult, earlyExit, deadlineReached]);
+		} catch (error) {
+			if (error === earlyExitError) throw error;
+			if (error === readinessTimeoutError) throw error;
+			const message = error instanceof Error ? error.message : String(error);
+			if (message !== TAURI_INVOKE_UNAVAILABLE_ERROR) throw error;
+		} finally {
+			if (deadlineTimer !== undefined) clock.clearTimeout(deadlineTimer);
+		}
+		if (clock.now() >= deadline) break;
+		await Promise.race([
+			waitForTimer(clock, Math.min(READINESS_POLL_MS, deadline - clock.now())),
+			earlyExit
+		]);
+	}
+	throw readinessTimeoutError;
 };
 
 const isExpectedDriverDisconnect = (error: unknown): boolean => {
@@ -624,8 +674,14 @@ export const startStandaloneTauriSession = async (
 			connectionRetryTimeout: 60_000
 		});
 		addTauriExecute(browser, reservation.port, evaluate);
-		const observedNonce = await browser.tauri.execute<string, []>(
-			({ core }) => core.invoke('read_e2e_session_nonce') as unknown as string
+		const observedNonce = await waitForTauriInvokeReadiness(
+			async () =>
+				await browser!.tauri.execute<string, []>(
+					({ core }) => core.invoke('read_e2e_session_nonce') as unknown as string
+				),
+			child,
+			exitPromise,
+			clock
 		);
 		if (observedNonce !== sessionNonce)
 			throw new Error('Standalone Tauri session nonce mismatch');

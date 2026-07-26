@@ -18,6 +18,7 @@ use tempfile::{tempdir, TempDir};
 use tokio::sync::Semaphore;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+use zeroize::Zeroizing;
 
 const ACCESS_TOKEN: &str = "drive-access-token";
 type DriveResult<T> = std::result::Result<T, DriveApiError>;
@@ -34,6 +35,7 @@ struct ScriptedDriveApi {
     uploaded_ranges: Mutex<Vec<(u64, u64)>>,
     create_metadata: Mutex<Vec<DriveCreateMetadata>>,
     update_metadata: Mutex<Vec<(String, DriveUpdateMetadata)>>,
+    start_tokens: Mutex<Vec<String>>,
     generated_count: Mutex<usize>,
     get_file_ids: Mutex<Vec<String>>,
     get_file_requests: Mutex<Vec<(String, String)>>,
@@ -141,10 +143,14 @@ impl GoogleDriveApi for ScriptedDriveApi {
 
     async fn start_resumable_create(
         &self,
-        _access_token: &str,
+        access_token: &str,
         metadata: &DriveCreateMetadata,
         _total_bytes: u64,
     ) -> DriveResult<ResumableUploadSession> {
+        self.start_tokens
+            .lock()
+            .expect("start tokens")
+            .push(access_token.to_string());
         self.create_metadata
             .lock()
             .expect("create metadata")
@@ -172,11 +178,15 @@ impl GoogleDriveApi for ScriptedDriveApi {
 
     async fn start_resumable_update(
         &self,
-        _access_token: &str,
+        access_token: &str,
         file_id: &str,
         metadata: &DriveUpdateMetadata,
         _total_bytes: u64,
     ) -> DriveResult<ResumableUploadSession> {
+        self.start_tokens
+            .lock()
+            .expect("start tokens")
+            .push(access_token.to_string());
         self.update_metadata
             .lock()
             .expect("update metadata")
@@ -854,6 +864,59 @@ async fn resumable_create_validates_folder_and_uses_generated_identity_and_sanit
 }
 
 #[tokio::test]
+async fn resumable_create_uses_the_simfile_fallback_for_titles_without_printable_content() {
+    for (title, expected_name) in [
+        ("", "simfile-sim-42.zip"),
+        (" \t\r\n ", "simfile-sim-42.zip"),
+        ("\u{0000}\u{0007}", "simfile-sim-42.zip"),
+        ("  AC\u{0000}///DC  ", "AC-DC.zip"),
+    ] {
+        let api = ScriptedDriveApi::default();
+        api.chunks
+            .lock()
+            .unwrap()
+            .push_back(Ok(DriveChunkResult::Complete));
+        api.files
+            .lock()
+            .unwrap()
+            .push_back(Ok(ScriptedDriveApi::valid_file(
+                "generated-file-id",
+                Some("https://drive.google.com/download"),
+            )));
+        api.permissions
+            .lock()
+            .unwrap()
+            .push_back(Ok(PublicPermissionStatus::Public));
+        let fixture = request_fixture(
+            b"archive",
+            DriveUploadTarget::Create {
+                generated_id: "generated-file-id".to_string(),
+                folder_id: "folder-42".to_string(),
+            },
+            title,
+        );
+
+        let outcome = run_resumable_upload_for_test(
+            &api,
+            &RecordingSleeper::default(),
+            ACCESS_TOKEN,
+            fixture.request,
+            64,
+            |_, _| {},
+        )
+        .await
+        .expect("title fallback is a valid upload transaction");
+
+        assert_eq!(outcome.file_name, expected_name);
+        assert_eq!(
+            api.create_metadata.lock().unwrap()[0].name,
+            expected_name,
+            "Drive receives the sanitized transaction filename for {title:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn resumable_update_requires_fresh_edit_access_and_never_changes_parent() {
     let api = ScriptedDriveApi::default();
     api.files.lock().unwrap().extend([
@@ -897,6 +960,164 @@ async fn resumable_update_requires_fresh_edit_access_and_never_changes_parent() 
         )]
     );
     assert_eq!(*api.delete_count.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn resumable_update_refreshes_once_reuses_the_file_id_and_keeps_progress_monotonic() {
+    let api = ScriptedDriveApi::default();
+    api.files.lock().unwrap().extend([
+        Ok(ScriptedDriveApi::valid_file("existing-file", None)),
+        Ok(ScriptedDriveApi::valid_file("existing-file", None)),
+        Ok(ScriptedDriveApi::valid_file(
+            "existing-file",
+            Some("https://drive.google.com/download"),
+        )),
+    ]);
+    api.permissions.lock().unwrap().extend([
+        Ok(PublicPermissionStatus::Public),
+        Ok(PublicPermissionStatus::Public),
+        Ok(PublicPermissionStatus::Public),
+    ]);
+    api.chunks.lock().unwrap().extend([
+        Ok(DriveChunkResult::Accepted(4)),
+        Err(DriveApiError::TokenExpired),
+        Ok(DriveChunkResult::Accepted(4)),
+        Ok(DriveChunkResult::Complete),
+    ]);
+    let fixture = update_request(b"archive");
+    let progress = Arc::new(Mutex::new(Vec::new()));
+    let monotonic = Arc::new(Mutex::new(MonotonicDriveProgress::default()));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let api_ref = &api;
+
+    let outcome = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |access_token| {
+            let progress = progress.clone();
+            let monotonic = monotonic.clone();
+            let request = fixture.request.clone();
+            let api = api_ref;
+            async move {
+                run_resumable_upload_for_test(
+                    api,
+                    &RecordingSleeper::default(),
+                    &access_token,
+                    request,
+                    4,
+                    |accepted, total| {
+                        if monotonic.lock().unwrap().should_emit(accepted, total) {
+                            progress.lock().unwrap().push((accepted, total));
+                        }
+                    },
+                )
+                .await
+            }
+        },
+        |expired_token| {
+            let refreshes = refreshes.clone();
+            async move {
+                assert_eq!(expired_token.as_str(), "expired-token");
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                Ok(Zeroizing::new("fresh-token".to_string()))
+            }
+        },
+    )
+    .await
+    .expect("retry succeeds");
+
+    assert_eq!(outcome.file_id, "existing-file");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        api.start_tokens.lock().unwrap().as_slice(),
+        &["expired-token", "fresh-token"]
+    );
+    assert!(api
+        .update_metadata
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|(file_id, _)| file_id == "existing-file"));
+    assert_eq!(progress.lock().unwrap().as_slice(), &[(4, 7), (7, 7)]);
+}
+
+#[tokio::test]
+async fn token_refresh_failure_and_second_expiry_stop_after_one_retry_as_reconnect_required() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let failure = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |_| {
+            let attempts = attempts.clone();
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(DriveUploadFailure {
+                    error: DriveApiError::TokenExpired,
+                    pending_binding: PendingBindingDisposition::NotApplicable,
+                })
+            }
+        },
+        |_| {
+            let refreshes = refreshes.clone();
+            async move {
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                Ok(Zeroizing::new("fresh-token".to_string()))
+            }
+        },
+    )
+    .await
+    .expect_err("second expiry");
+    assert_eq!(failure.error, DriveApiError::TokenExpired);
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let failure = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |_| {
+            let attempts = attempts.clone();
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(DriveUploadFailure {
+                    error: DriveApiError::TokenExpired,
+                    pending_binding: PendingBindingDisposition::NotApplicable,
+                })
+            }
+        },
+        |_| {
+            let refreshes = refreshes.clone();
+            async move {
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                Err(DriveApiError::Network)
+            }
+        },
+    )
+    .await
+    .expect_err("refresh failure");
+    assert_eq!(failure.error, DriveApiError::TokenExpired);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let failure = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |_| {
+            let attempts = attempts.clone();
+            async move {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(DriveUploadFailure {
+                    error: DriveApiError::TokenExpired,
+                    pending_binding: PendingBindingDisposition::Retain,
+                })
+            }
+        },
+        |_| async { Err(DriveApiError::Canceled) },
+    )
+    .await
+    .expect_err("cancellation preempts refresh retry");
+    assert_eq!(failure.error, DriveApiError::Canceled);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -1696,6 +1917,116 @@ fn script_successful_patch(metadata: &ScriptedMetadataClient, file_id: &str, dow
             Some(file_id),
             Some(download_url),
         )));
+}
+
+#[tokio::test]
+async fn crash_safe_create_refreshes_once_and_reuses_one_persisted_generated_id() {
+    let data_dir = tempdir().expect("data dir");
+    let archive_dir = tempdir().expect("archive dir");
+    let archive_path = archive_dir.path().join("upload.zip");
+    std::fs::write(&archive_path, b"archive").expect("archive");
+    let store = pending_store(&data_dir);
+    let api = ScriptedDriveApi::default();
+    api.generated_ids
+        .lock()
+        .unwrap()
+        .push_back(Ok("stable-generated-id".to_string()));
+    api.files.lock().unwrap().extend([
+        Err(DriveApiError::NotFound),
+        Ok(ScriptedDriveApi::valid_file(
+            "stable-generated-id",
+            Some("https://drive.google.com/download"),
+        )),
+    ]);
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    api.chunks.lock().unwrap().extend([
+        Ok(DriveChunkResult::Accepted(4)),
+        Err(DriveApiError::TokenExpired),
+        Ok(DriveChunkResult::Accepted(4)),
+        Ok(DriveChunkResult::Complete),
+    ]);
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        Ok(ScriptedMetadataClient::owner(None, None)),
+        Ok(ScriptedMetadataClient::owner(None, None)),
+    ]);
+    script_successful_patch(
+        &metadata,
+        "stable-generated-id",
+        "https://drive.google.com/download",
+    );
+    let auth = authenticated_user("user-42").await;
+    let request = crash_safe_request(archive_path, PendingBindingKind::FirstUpload);
+    let progress = Arc::new(Mutex::new(Vec::new()));
+    let monotonic = Arc::new(Mutex::new(MonotonicDriveProgress::default()));
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let api_ref = &api;
+    let store_ref = &store;
+    let metadata_ref = &metadata;
+    let auth_ref = &auth;
+
+    let outcome = run_with_single_access_token_refresh(
+        Zeroizing::new("expired-token".to_string()),
+        |access_token| {
+            let request = request.clone();
+            let progress = progress.clone();
+            let monotonic = monotonic.clone();
+            let api = api_ref;
+            let store = store_ref;
+            let metadata = metadata_ref;
+            let auth = auth_ref;
+            async move {
+                run_crash_safe_create_for_test(
+                    api,
+                    &RecordingSleeper::default(),
+                    store,
+                    metadata,
+                    auth,
+                    &access_token,
+                    request,
+                    4,
+                    None,
+                    |accepted, total| {
+                        if monotonic.lock().unwrap().should_emit(accepted, total) {
+                            progress.lock().unwrap().push((accepted, total));
+                        }
+                    },
+                )
+                .await
+            }
+        },
+        |_| {
+            let refreshes = refreshes.clone();
+            async move {
+                refreshes.fetch_add(1, Ordering::SeqCst);
+                Ok(Zeroizing::new("fresh-token".to_string()))
+            }
+        },
+    )
+    .await
+    .expect("create retry succeeds");
+
+    assert_eq!(outcome.file_id, "stable-generated-id");
+    assert_eq!(*api.generated_count.lock().unwrap(), 1);
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        api.start_tokens.lock().unwrap().as_slice(),
+        &["expired-token", "fresh-token"]
+    );
+    assert_eq!(
+        api.create_metadata
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|metadata| metadata.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["stable-generated-id", "stable-generated-id"]
+    );
+    assert_eq!(progress.lock().unwrap().as_slice(), &[(4, 7), (7, 7)]);
+    assert_eq!(store.get("user-42", "42").unwrap(), None);
 }
 
 #[tokio::test]
@@ -3885,6 +4216,9 @@ async fn cancel_ack_waits_for_real_zip_cleanup_and_resource_release() {
         .expect("large source")
         .set_len(8 * 1024 * 1024)
         .expect("large source size");
+    let source_files = crate::songs::collect_valid_song_files(song_dir.path(), song_dir.path())
+        .await
+        .expect("validated source");
     let cache_dir = tempdir().expect("cache dir");
     let archive = create_upload_archive(cache_dir.path()).expect("upload archive");
     let zip_path = archive.zip_path().to_path_buf();
@@ -3904,7 +4238,7 @@ async fn cancel_ack_waits_for_real_zip_cleanup_and_resource_release() {
         let zip_result = tokio::task::spawn_blocking(move || {
             crate::songs::write_song_zip_cancelable_with_chunk_hook(
                 &task_zip_path,
-                &[source_path],
+                &source_files,
                 &cancellation,
                 || {
                     if let Some(sender) = chunk_written_tx.take() {

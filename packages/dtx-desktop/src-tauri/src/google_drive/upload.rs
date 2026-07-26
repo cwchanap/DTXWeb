@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use super::drive_client::{
     DriveApiError, DriveChunkResult, DriveCreateMetadata, DriveFile, DriveUpdateMetadata,
@@ -382,6 +383,62 @@ pub(crate) enum PendingBindingDisposition {
 pub(crate) struct DriveUploadFailure {
     pub(crate) error: DriveApiError,
     pub(crate) pending_binding: PendingBindingDisposition,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct MonotonicDriveProgress {
+    last_emitted: Option<(u64, u64)>,
+}
+
+impl MonotonicDriveProgress {
+    pub(crate) fn should_emit(&mut self, accepted: u64, total: u64) -> bool {
+        if total == 0 || accepted > total {
+            return false;
+        }
+        if self.last_emitted.is_some_and(|(previous, previous_total)| {
+            total != previous_total || accepted <= previous
+        }) {
+            return false;
+        }
+        self.last_emitted = Some((accepted, total));
+        true
+    }
+}
+
+pub(crate) async fn run_with_single_access_token_refresh<
+    T,
+    Run,
+    RunFuture,
+    Refresh,
+    RefreshFuture,
+>(
+    initial_access_token: Zeroizing<String>,
+    mut run: Run,
+    mut refresh: Refresh,
+) -> std::result::Result<T, DriveUploadFailure>
+where
+    Run: FnMut(Zeroizing<String>) -> RunFuture,
+    RunFuture: Future<Output = std::result::Result<T, DriveUploadFailure>>,
+    Refresh: FnMut(Zeroizing<String>) -> RefreshFuture,
+    RefreshFuture: Future<Output = std::result::Result<Zeroizing<String>, DriveApiError>>,
+{
+    let first_result = run(Zeroizing::new(initial_access_token.to_string())).await;
+    let first_failure = match first_result {
+        Ok(value) => return Ok(value),
+        Err(failure) if failure.error == DriveApiError::TokenExpired => failure,
+        Err(failure) => return Err(failure),
+    };
+    let replacement = refresh(initial_access_token)
+        .await
+        .map_err(|error| DriveUploadFailure {
+            error: if error == DriveApiError::Canceled {
+                DriveApiError::Canceled
+            } else {
+                DriveApiError::TokenExpired
+            },
+            pending_binding: first_failure.pending_binding,
+        })?;
+    run(replacement).await
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1421,10 +1478,7 @@ where
     F: FnMut(u64, u64),
 {
     ensure_not_canceled(cancellation).map_err(|error| upload_failure(error, &request.target))?;
-    if chunk_size == 0
-        || request.simfile_id.trim().is_empty()
-        || request.saved_title.trim().is_empty()
-    {
+    if chunk_size == 0 || request.simfile_id.trim().is_empty() {
         return Err(upload_failure(
             DriveApiError::InvalidResponse,
             &request.target,

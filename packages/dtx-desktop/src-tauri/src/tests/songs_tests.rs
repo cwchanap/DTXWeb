@@ -1335,14 +1335,128 @@ async fn collect_valid_song_files_uses_a_stable_empty_input_error_code() {
     assert_eq!(error.to_string(), "NO_VALID_SONG_FILES");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn validated_song_file_cannot_be_redirected_to_outside_content_before_zip_write() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    let outside = tempdir().expect("outside");
+    fs::create_dir(&song).await.expect("song");
+    let song_file = song.join("chart.dtx");
+    fs::write(&song_file, b"inside chart")
+        .await
+        .expect("inside chart");
+    let outside_file = outside.path().join("private.dtx");
+    fs::write(&outside_file, b"outside private bytes")
+        .await
+        .expect("outside file");
+
+    let files = collect_valid_song_files(&song, workspace.path())
+        .await
+        .expect("validated files");
+    std::fs::remove_file(&song_file).expect("remove original path");
+    symlink(&outside_file, &song_file).expect("swap to escaping symlink");
+
+    let zip_path = workspace.path().join("upload.zip");
+    write_song_zip(&zip_path, &files).expect("write from validated source");
+
+    let zip = File::open(zip_path).expect("zip");
+    let mut archive = ZipArchive::new(zip).expect("zip archive");
+    let mut bytes = Vec::new();
+    archive
+        .by_name("chart.dtx")
+        .expect("chart entry")
+        .read_to_end(&mut bytes)
+        .expect("chart bytes");
+    assert_eq!(bytes, b"inside chart");
+    assert!(!bytes
+        .windows(b"outside private bytes".len())
+        .any(|window| window == b"outside private bytes"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn validated_song_file_survives_an_intermediate_directory_symlink_swap_without_leaking() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    let retained_song = workspace.path().join("Song-retained");
+    let outside = tempdir().expect("outside");
+    fs::create_dir(&song).await.expect("song");
+    fs::write(song.join("chart.dtx"), b"inside chart")
+        .await
+        .expect("inside chart");
+    fs::write(outside.path().join("chart.dtx"), b"outside private bytes")
+        .await
+        .expect("outside file");
+
+    let files = collect_valid_song_files(&song, workspace.path())
+        .await
+        .expect("validated files");
+    std::fs::rename(&song, &retained_song).expect("retain original directory");
+    symlink(outside.path(), &song).expect("swap intermediate directory");
+
+    let zip_path = workspace.path().join("upload.zip");
+    write_song_zip(&zip_path, &files).expect("write from retained handle");
+
+    let zip = File::open(zip_path).expect("zip");
+    let mut archive = ZipArchive::new(zip).expect("zip archive");
+    let mut bytes = Vec::new();
+    archive
+        .by_name("chart.dtx")
+        .expect("chart entry")
+        .read_to_end(&mut bytes)
+        .expect("chart bytes");
+    assert_eq!(bytes, b"inside chart");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn collect_valid_song_files_rejects_a_swap_after_open_before_identity_validation() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    let outside = tempdir().expect("outside");
+    fs::create_dir(&song).await.expect("song");
+    let song_file = song.join("chart.dtx");
+    fs::write(&song_file, b"inside chart")
+        .await
+        .expect("inside chart");
+    let outside_file = outside.path().join("private.dtx");
+    fs::write(&outside_file, b"outside private bytes")
+        .await
+        .expect("outside file");
+    let mut swapped = false;
+
+    let error = collect_valid_song_files_with_open_hook(&song, workspace.path(), |opened_path| {
+        if !swapped
+            && opened_path
+                .file_name()
+                .is_some_and(|name| name == "chart.dtx")
+        {
+            swapped = true;
+            std::fs::remove_file(opened_path).expect("remove opened path");
+            symlink(&outside_file, opened_path).expect("escaping symlink");
+        }
+    })
+    .await
+    .expect_err("swapped path must not produce an archive input");
+
+    assert!(swapped, "test seam must run after the source handle opens");
+    assert_eq!(error.to_string(), "NO_VALID_SONG_FILES");
+}
+
 #[test]
 fn write_song_zip_removes_a_partial_archive_when_copy_runs_out_of_space() {
     let root = tempdir().expect("tempdir");
     let source = root.path().join("song.dtx");
     let archive = root.path().join("partial.zip");
     std::fs::write(&source, b"dtx").expect("source");
+    let validated_source = ValidatedSongFile {
+        canonical_path: source.clone(),
+        archive_name: "song.dtx".to_string(),
+        source: Arc::new(File::open(&source).expect("open source")),
+    };
 
-    let error = write_song_zip_with_copy(&archive, &[source], |_source, _zip| {
+    let error = write_song_zip_with_copy(&archive, &[validated_source], |_source, _zip| {
         Err(DesktopError::Io(std::io::Error::new(
             std::io::ErrorKind::StorageFull,
             "injected out of space",

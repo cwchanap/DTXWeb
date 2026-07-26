@@ -10,6 +10,6 @@
 		"isolatedModules": true,
 		"allowSyntheticDefaultImports": true
 	},
-	"include": ["specs/**/*.ts", "support/**/*.ts", "wdio.conf.ts"],
+	"include": ["scripts/**/*.ts", "specs/**/*.ts", "support/**/*.ts", "wdio.conf.ts"],
 	"exclude": ["node_modules", "logs"]
 }

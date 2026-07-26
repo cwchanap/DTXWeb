@@ -1,5 +1,9 @@
 import { expect, mock, test } from 'bun:test';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
+const randomBytes = mock(() => ({ toString: () => 'launch-nonce-123' }));
 const availablePorts = [];
 const portReservations = [];
 const createServer = mock(() => ({
@@ -16,11 +20,22 @@ const createTauriCapabilities = mock((appBinaryPath, options) => ({
 	'wdio:tauriServiceOptions': options
 }));
 const startResponses = [];
+const cleanupResponses = [];
+let observedNonce = 'launch-nonce-123';
 const createBrowser = () => ({
 	tauri: {
-		execute: async () => {
-			throw new Error('socket hang up');
-		}
+		execute: async (callback, ...args) =>
+			await callback(
+				{
+					core: {
+						invoke: async (command) => {
+							if (command === 'read_e2e_session_nonce') return observedNonce;
+							throw new Error('socket hang up');
+						}
+					}
+				},
+				...args
+			)
 	}
 });
 const startWdioSession = mock(async (...args) => {
@@ -28,8 +43,12 @@ const startWdioSession = mock(async (...args) => {
 	if (response instanceof Error) throw response;
 	return response;
 });
-const cleanupWdioSession = mock(async () => undefined);
+const cleanupWdioSession = mock(async () => {
+	const response = cleanupResponses.shift();
+	if (response instanceof Error) throw response;
+});
 
+mock.module('node:crypto', () => ({ randomBytes }));
 mock.module('node:net', () => ({ createServer }));
 mock.module('@wdio/tauri-service', () => ({
 	createTauriCapabilities,
@@ -63,7 +82,10 @@ test('forwards the isolated data directory and allocated port to the native stan
 			})
 		}),
 		expect.objectContaining({
-			env: { DTX_E2E_DATA_DIR: '/tmp/dtx-e2e-data' }
+			env: {
+				DTX_E2E_DATA_DIR: '/tmp/dtx-e2e-data',
+				DTX_E2E_SESSION_NONCE: 'launch-nonce-123'
+			}
 		})
 	);
 	expect(portReservations.at(-1)).toEqual({ port: 0, hostname: '127.0.0.1' });
@@ -96,25 +118,25 @@ test('uses distinct allocated ports for separate standalone launches', async () 
 	await terminateStandaloneTauriSession(secondBrowser);
 });
 
-test('retries a real embedded-driver readiness timeout with a different allocated port', async () => {
-	availablePorts.push(46_101, 46_102);
+test('fails a real embedded-driver readiness timeout without launching a second app', async () => {
+	availablePorts.push(46_101);
 	startResponses.push(
 		new Error('Embedded WebDriver did not become ready on port 46101 within 60000ms')
 	);
 	const startCallCount = startWdioSession.mock.calls.length;
 
-	const browser = await startStandaloneTauriSession({
-		appBinaryPath: '/tmp/dtx-desktop',
-		dataDir: '/tmp/dtx-e2e-data',
-		logDir: '/tmp/dtx-e2e-logs'
-	});
+	await expect(
+		startStandaloneTauriSession({
+			appBinaryPath: '/tmp/dtx-desktop',
+			dataDir: '/tmp/dtx-e2e-data',
+			logDir: '/tmp/dtx-e2e-logs'
+		})
+	).rejects.toThrow('did not become ready on port');
 
 	const launchedCapabilities = startWdioSession.mock.calls
 		.slice(startCallCount)
 		.map(([capabilities]) => capabilities['wdio:tauriServiceOptions']);
-	expect(launchedCapabilities.map(({ embeddedPort }) => embeddedPort)).toEqual([46_101, 46_102]);
-	await terminateStandaloneTauriSession(browser);
-
+	expect(launchedCapabilities.map(({ embeddedPort }) => embeddedPort)).toEqual([46_101]);
 	availablePorts.push(46_101);
 	const reusedPortBrowser = await startStandaloneTauriSession({
 		appBinaryPath: '/tmp/dtx-desktop',
@@ -125,6 +147,25 @@ test('retries a real embedded-driver readiness timeout with a different allocate
 		46_101
 	);
 	await terminateStandaloneTauriSession(reusedPortBrowser);
+});
+
+test('cleans the provider and rejects when the remote session reports another app nonce', async () => {
+	availablePorts.push(46_125);
+	observedNonce = 'unrelated-driver-nonce';
+	const cleanupCallCount = cleanupWdioSession.mock.calls.length;
+
+	try {
+		await expect(
+			startStandaloneTauriSession({
+				appBinaryPath: '/tmp/dtx-desktop',
+				dataDir: '/tmp/dtx-e2e-data',
+				logDir: '/tmp/dtx-e2e-logs'
+			})
+		).rejects.toThrow('nonce mismatch');
+		expect(cleanupWdioSession.mock.calls.slice(cleanupCallCount)).toHaveLength(1);
+	} finally {
+		observedNonce = 'launch-nonce-123';
+	}
 });
 
 test('holds an exclusive lease until standalone cleanup releases it', async () => {
@@ -151,6 +192,57 @@ test('holds an exclusive lease until standalone cleanup releases it', async () =
 
 	await terminateStandaloneTauriSession(contendedBrowser);
 	await terminateStandaloneTauriSession(releasedLeaseBrowser);
+});
+
+test('recovers a stale lease record before starting the only native app', async () => {
+	const port = 46_160;
+	const leasePath = join(tmpdir(), 'dtx-e2e-embedded-port-leases', `${port}.lock`);
+	mkdirSync(join(tmpdir(), 'dtx-e2e-embedded-port-leases'), { recursive: true });
+	writeFileSync(
+		leasePath,
+		JSON.stringify({
+			pid: process.pid,
+			nonce: 'future-corrupted-lease',
+			createdAt: Date.now() + 60 * 60 * 1000
+		})
+	);
+	availablePorts.push(port);
+
+	try {
+		const browser = await startStandaloneTauriSession({
+			appBinaryPath: '/tmp/dtx-desktop',
+			dataDir: '/tmp/dtx-e2e-data',
+			logDir: '/tmp/dtx-e2e-logs'
+		});
+		expect(existsSync(leasePath)).toBe(true);
+		await terminateStandaloneTauriSession(browser);
+		expect(existsSync(leasePath)).toBe(false);
+	} finally {
+		rmSync(leasePath, { force: true });
+	}
+});
+
+test('never releases a lease that a different harness nonce now owns', async () => {
+	const port = 46_161;
+	const leasePath = join(tmpdir(), 'dtx-e2e-embedded-port-leases', `${port}.lock`);
+	availablePorts.push(port);
+
+	try {
+		const browser = await startStandaloneTauriSession({
+			appBinaryPath: '/tmp/dtx-desktop',
+			dataDir: '/tmp/dtx-e2e-data',
+			logDir: '/tmp/dtx-e2e-logs'
+		});
+		writeFileSync(
+			leasePath,
+			JSON.stringify({ pid: process.pid, nonce: 'new-harness-owner', createdAt: Date.now() })
+		);
+
+		await terminateStandaloneTauriSession(browser);
+		expect(existsSync(leasePath)).toBe(true);
+	} finally {
+		rmSync(leasePath, { force: true });
+	}
 });
 
 test('cleans the native session after the expected process-exit disconnect', async () => {
@@ -182,4 +274,20 @@ test('keeps unexpected exit failures visible after cleanup', async () => {
 		'process command denied'
 	);
 	expect(cleanupWdioSession).toHaveBeenCalledWith(browser);
+});
+
+test('keeps provider cleanup failures visible after terminating the native app', async () => {
+	cleanupResponses.push(new Error('provider cleanup failed'));
+	const browser = {
+		tauri: {
+			execute: async (callback, code) => {
+				await callback({ core: { invoke: async () => undefined } }, code);
+				throw new Error('socket hang up');
+			}
+		}
+	};
+
+	await expect(terminateStandaloneTauriSession(browser)).rejects.toThrow(
+		'provider cleanup failed'
+	);
 });

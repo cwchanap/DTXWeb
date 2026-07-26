@@ -15,6 +15,7 @@ let returnStalePreferences = false;
 let persistedPreferences;
 const starts = [];
 const terminations = [];
+const terminationErrors = [];
 
 const newSession = () => ({
 	tauri: {
@@ -53,6 +54,8 @@ mock.module('../support/standalone-session.ts', () => ({
 	},
 	terminateStandaloneTauriSession: async (browser, code) => {
 		terminations.push({ browser, code });
+		const error = terminationErrors.shift();
+		if (error) throw error;
 	}
 }));
 
@@ -76,6 +79,7 @@ const resetScenario = () => {
 	persistedPreferences = undefined;
 	starts.length = 0;
 	terminations.length = 0;
+	terminationErrors.length = 0;
 };
 
 test('proves preferences survive a second native session using one data directory', async () => {
@@ -142,6 +146,46 @@ test('prunes stale and excess retained relaunch diagnostics before a failed run'
 		expect(retainedRelaunchLogs).toContain(basename(starts[0].input.logDir));
 	} finally {
 		returnStalePreferences = false;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('preserves an old active relaunch directory while pruning completed diagnostics', async () => {
+	resetScenario();
+	const { root, binary } = createBinary();
+	const diagnosticsRoot = createDiagnosticsRoot(root);
+	const activeLogDir = join(diagnosticsRoot, 'relaunch-active');
+	mkdirSync(activeLogDir);
+	writeFileSync(
+		join(activeLogDir, 'active.json'),
+		JSON.stringify({ pid: process.pid, nonce: 'active-run', createdAt: Date.now() })
+	);
+	utimesSync(activeLogDir, new Date('2020-01-01'), new Date('2020-01-01'));
+	returnStalePreferences = true;
+	try {
+		await expect(runRelaunchSmoke({ appBinaryPath: binary, diagnosticsRoot })).rejects.toThrow(
+			'Preferences sentinel did not survive native relaunch'
+		);
+
+		expect(existsSync(activeLogDir)).toBeTrue();
+	} finally {
+		returnStalePreferences = false;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('retains diagnostics when final native cleanup fails', async () => {
+	resetScenario();
+	const { root, binary } = createBinary();
+	const diagnosticsRoot = createDiagnosticsRoot(root);
+	terminationErrors.push(undefined, new Error('second session cleanup failed'));
+	try {
+		await expect(runRelaunchSmoke({ appBinaryPath: binary, diagnosticsRoot })).rejects.toThrow(
+			'second session cleanup failed'
+		);
+
+		expect(existsSync(starts[1].input.logDir)).toBeTrue();
+	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });

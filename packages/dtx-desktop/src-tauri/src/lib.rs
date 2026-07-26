@@ -13,6 +13,9 @@ mod songs;
 mod updater;
 mod workspace;
 
+#[cfg(feature = "e2e")]
+mod e2e;
+
 use auth::AuthState;
 use scores::DtxmaniaDbState;
 use tauri::{AppHandle, Manager};
@@ -176,7 +179,9 @@ pub fn run() {
             filesystem::select_dtxmania_db,
             scores::default_dtxmania_db_path,
             scores::parse_dtxmania_scores,
-            updater::check_for_update
+            updater::check_for_update,
+            #[cfg(feature = "e2e")]
+            e2e::read_e2e_session_nonce
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");
@@ -185,3 +190,7 @@ pub fn run() {
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "e2e"))]
+#[path = "tests/e2e_tests.rs"]
+mod e2e_tests;

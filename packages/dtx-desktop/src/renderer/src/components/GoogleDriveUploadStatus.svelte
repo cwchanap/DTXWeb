@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
 	import { googleDriveService, type SongSaveOutcome } from '../services/googleDriveService';
-	import { googleDriveStore } from '../stores/googleDriveStore';
+	import { googleDriveStore, type GoogleDriveOperation } from '../stores/googleDriveStore';
 
 	let {
 		outcome,
@@ -13,7 +13,7 @@
 		onCreateReplacement?: () => void;
 	} = $props();
 
-	const stageKey: Record<string, string> = {
+	const stageKey: Record<GoogleDriveOperation['stage'], string> = {
 		'waiting-for-upload-slot': 'googleDrive.upload.queued',
 		'preparing-zip': 'googleDrive.upload.preparing',
 		'connecting-to-google-drive': 'googleDrive.upload.connecting',
@@ -24,41 +24,107 @@
 		'upload-failed-save-succeeded': 'googleDrive.upload.failedSaveSucceeded'
 	};
 
-	const needsExplicitReplacement = (errorCode: string | undefined) =>
-		errorCode === 'FILE_NOT_FOUND' || errorCode === 'FILE_PERMISSION_DENIED';
-	const supportedErrorCodes = new Set([
-		'FILE_NOT_FOUND',
-		'FILE_PERMISSION_DENIED',
-		'CANCELED',
-		'INVALID_RESPONSE'
+	const cancelableStages = new Set<GoogleDriveOperation['stage']>([
+		'waiting-for-upload-slot',
+		'preparing-zip',
+		'connecting-to-google-drive',
+		'uploading'
 	]);
 
-	const errorMessageKey = (errorCode: string | undefined): string => {
-		return `googleDrive.error.${supportedErrorCodes.has(errorCode ?? '') ? errorCode : 'UNKNOWN'}`;
+	type NativeErrorCode =
+		| 'WORKSPACE_REQUIRED'
+		| 'NOT_CONNECTED'
+		| 'RECONNECT_REQUIRED'
+		| 'FOLDER_REQUIRED'
+		| 'FOLDER_UNAVAILABLE'
+		| 'SHARING_CHECK_UNAVAILABLE'
+		| 'DOWNLOAD_NOT_PUBLIC'
+		| 'SIMFILE_UNAVAILABLE'
+		| 'FILE_NOT_FOUND'
+		| 'FILE_PERMISSION_DENIED'
+		| 'UPLOAD_IN_PROGRESS'
+		| 'CANCELED'
+		| 'NO_VALID_SONG_FILES'
+		| 'INSUFFICIENT_DISK_SPACE'
+		| 'LOCAL_STATE'
+		| 'METADATA_SYNC_FAILED'
+		| 'RATE_LIMITED'
+		| 'QUOTA_EXCEEDED'
+		| 'NETWORK'
+		| 'CREDENTIAL_STORE'
+		| 'INVALID_RESPONSE'
+		| 'UNKNOWN';
+
+	type Remediation =
+		'retry' | 'reconnect' | 'changeFolder' | 'recheckSharing' | 'none' | 'replace';
+
+	const errorRemediation: Record<NativeErrorCode, Remediation[]> = {
+		WORKSPACE_REQUIRED: ['none'],
+		NOT_CONNECTED: ['reconnect'],
+		RECONNECT_REQUIRED: ['reconnect'],
+		FOLDER_REQUIRED: ['changeFolder'],
+		FOLDER_UNAVAILABLE: ['changeFolder'],
+		SHARING_CHECK_UNAVAILABLE: ['recheckSharing'],
+		DOWNLOAD_NOT_PUBLIC: ['recheckSharing'],
+		SIMFILE_UNAVAILABLE: ['none'],
+		FILE_NOT_FOUND: ['reconnect', 'replace'],
+		FILE_PERMISSION_DENIED: ['reconnect', 'replace'],
+		UPLOAD_IN_PROGRESS: ['retry'],
+		CANCELED: ['retry'],
+		NO_VALID_SONG_FILES: ['none'],
+		INSUFFICIENT_DISK_SPACE: ['none'],
+		LOCAL_STATE: ['retry'],
+		METADATA_SYNC_FAILED: ['retry'],
+		RATE_LIMITED: ['retry'],
+		QUOTA_EXCEEDED: ['retry'],
+		NETWORK: ['retry'],
+		CREDENTIAL_STORE: ['reconnect'],
+		INVALID_RESPONSE: ['none'],
+		UNKNOWN: ['none']
 	};
 
-	const handleCancel = async () => {
-		const operationId = $googleDriveStore.operation?.operationId;
-		if (operationId) await googleDriveService.cancelUpload(operationId);
+	const isNativeErrorCode = (value: string | undefined): value is NativeErrorCode =>
+		value !== undefined && value in errorRemediation;
+	const errorCodeFor = (value: string | undefined): NativeErrorCode =>
+		isNativeErrorCode(value) ? value : 'UNKNOWN';
+	const actionsFor = (value: string | undefined): Remediation[] =>
+		errorRemediation[errorCodeFor(value)];
+	const errorMessageKey = (value: string | undefined): string =>
+		`googleDrive.error.${errorCodeFor(value)}`;
+
+	const handleCancel = async (operationId: string) => {
+		await googleDriveService.cancelUpload(operationId);
+	};
+	const handleReconnect = async () => {
+		await googleDriveService.connectAndChooseFolder();
+	};
+	const handleChangeFolder = async () => {
+		await googleDriveService.changeFolder();
+	};
+	const handleRecheckSharing = async () => {
+		await googleDriveService.recheckSharing();
 	};
 </script>
 
-{#if $googleDriveStore.operation}
+{#each Object.values($googleDriveStore.operations) as operation (operation.operationId)}
 	<section
 		class="border-hairline bg-surface-1 space-y-2 rounded-lg border p-4"
 		aria-live="polite"
 	>
-		<p class="text-base-text text-sm">{$_(stageKey[$googleDriveStore.operation.stage])}</p>
-		{#if $googleDriveStore.operation.percentage !== undefined}
-			<p class="text-dim text-sm">{$googleDriveStore.operation.percentage}%</p>
+		<p class="text-base-text text-sm">{$_(stageKey[operation.stage])}</p>
+		{#if operation.percentage !== undefined}
+			<p class="text-dim text-sm">{operation.percentage}%</p>
 		{/if}
-		{#if $googleDriveStore.operation.stage !== 'upload-complete' && $googleDriveStore.operation.stage !== 'upload-failed-save-succeeded'}
-			<button class="text-dim text-sm" onclick={handleCancel}
+		{#if operation.errorCode}
+			<p class="text-yellow text-sm">{$_(errorMessageKey(operation.errorCode))}</p>
+		{/if}
+		{#if cancelableStages.has(operation.stage)}
+			<button class="text-dim text-sm" onclick={() => handleCancel(operation.operationId)}
 				>{$_('googleDrive.upload.cancel')}</button
 			>
 		{/if}
 	</section>
-{/if}
+{/each}
 
 {#if outcome?.status === 'success'}
 	<section class="border-green/40 bg-green/10 space-y-2 rounded-lg border p-4" aria-live="polite">
@@ -79,14 +145,28 @@
 		aria-live="polite"
 	>
 		<p class="text-yellow text-sm">{$_(errorMessageKey(outcome.errorCode))}</p>
-		{#if needsExplicitReplacement(outcome.errorCode)}
-			<button class="text-dim text-sm" onclick={onCreateReplacement}
-				>{$_('googleDrive.upload.replace')}</button
-			>
-		{:else}
-			<button class="text-dim text-sm" onclick={onRetry}
-				>{$_('googleDrive.upload.retry')}</button
-			>
-		{/if}
+		{#each actionsFor(outcome.errorCode) as action}
+			{#if action === 'retry'}
+				<button class="text-dim text-sm" onclick={onRetry}
+					>{$_('googleDrive.upload.retry')}</button
+				>
+			{:else if action === 'reconnect'}
+				<button class="text-dim text-sm" onclick={handleReconnect}
+					>{$_('googleDrive.action.reconnect')}</button
+				>
+			{:else if action === 'changeFolder'}
+				<button class="text-dim text-sm" onclick={handleChangeFolder}
+					>{$_('googleDrive.changeFolder')}</button
+				>
+			{:else if action === 'recheckSharing'}
+				<button class="text-dim text-sm" onclick={handleRecheckSharing}
+					>{$_('googleDrive.recheckSharing')}</button
+				>
+			{:else if action === 'replace'}
+				<button class="text-dim text-sm" onclick={onCreateReplacement}
+					>{$_('googleDrive.upload.replace')}</button
+				>
+			{/if}
+		{/each}
 	</section>
 {/if}

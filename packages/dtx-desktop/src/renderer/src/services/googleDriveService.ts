@@ -107,51 +107,56 @@ const uploadSongZip = async (
 
 export const googleDriveService = {
 	refreshConnection: async (): Promise<GoogleDriveConnectionState | null> => {
+		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.getGoogleDriveConnectionState();
-			googleDriveStore.setConnection(connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection);
 			return connection;
 		} catch {
-			googleDriveStore.reset();
+			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
 			return null;
 		}
 	},
 	connectAndChooseFolder: async (): Promise<GoogleDriveConnectionState | null> => {
+		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.connectGoogleDriveAndChooseFolder();
-			googleDriveStore.setConnection(connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection);
 			return connection;
 		} catch {
-			googleDriveStore.setError('UNKNOWN');
+			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
 			return null;
 		}
 	},
 	changeFolder: async (): Promise<GoogleDriveConnectionState | null> => {
+		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.changeGoogleDriveFolder();
-			googleDriveStore.setConnection(connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection);
 			return connection;
 		} catch {
-			googleDriveStore.setError('UNKNOWN');
+			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
 			return null;
 		}
 	},
 	recheckSharing: async (): Promise<GoogleDriveConnectionState | null> => {
+		const generation = googleDriveStore.captureGeneration();
 		try {
 			const connection = await desktopHost.recheckGoogleDriveSharing();
-			googleDriveStore.setConnection(connection);
+			googleDriveStore.setConnectionIfCurrent(generation, connection);
 			return connection;
 		} catch {
-			googleDriveStore.setError('UNKNOWN');
+			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
 			return null;
 		}
 	},
 	disconnect: async (): Promise<void> => {
+		const generation = googleDriveStore.captureGeneration();
 		try {
 			const result = await desktopHost.disconnectGoogleDrive();
-			googleDriveStore.setConnection(result.connection);
+			googleDriveStore.setDisconnectIfCurrent(generation, result);
 		} catch {
-			googleDriveStore.setError('UNKNOWN');
+			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
 		}
 	},
 	uploadSongZip,

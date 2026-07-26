@@ -79,12 +79,17 @@
 		"title": "Google Drive アップロード",
 		"connect": "Google Drive を接続",
 		"connected": "Google Drive は接続されています",
+		"disconnected": "Drumery から ZIP をアップロードするには Google Drive を接続してください。",
+		"verifiedPublic": "選択したフォルダーは公開ダウンロードリンク用に確認済みです。",
 		"folder": "アップロード先フォルダー: {name}",
 		"changeFolder": "フォルダーを変更",
 		"recheckSharing": "共有設定を再確認",
 		"disconnect": "Google Drive を切断",
+		"action": { "reconnect": "Google Drive を再接続", "refresh": "接続状態を更新" },
 		"connecting": "Google Drive に接続中…",
 		"disconnectWarning": "切断すると、このインストールに保存された Drive 接続が削除されます。ファイルやダウンロードリンクは削除されません。",
+		"revocationUnconfirmed": "Google アカウント設定でアクセスを削除する必要がある場合があります。",
+		"folderConsent": "フォルダーを変更すると Google Drive の同意画面が再度開き、既存のリンク済みファイルは移動されません。",
 		"folderDoesNotMoveFiles": "既定のフォルダーを変更しても、すでにリンク済みのファイルは移動されません。",
 		"warning": {
 			"reconnect": "アップロードする前に Google Drive を再接続してください。",
@@ -113,7 +118,24 @@
 			"FILE_PERMISSION_DENIED": "この Google アカウントには、以前にリンクされたファイルを置き換える権限がありません。",
 			"CANCELED": "Google Drive アップロードはキャンセルされました。",
 			"UNKNOWN": "Google Drive アップロードを完了できませんでした。",
-			"INVALID_RESPONSE": "Google Drive アップロードを安全に開始できませんでした。"
+			"INVALID_RESPONSE": "Google Drive アップロードを安全に開始できませんでした。",
+			"WORKSPACE_REQUIRED": "Google Drive にアップロードする前にワークスペースを選択してください。",
+			"NOT_CONNECTED": "アップロードする前に Google Drive を接続してください。",
+			"RECONNECT_REQUIRED": "アップロードする前に Google Drive を再接続してください。",
+			"FOLDER_REQUIRED": "Google Drive のアップロード先フォルダーを選択してください。",
+			"FOLDER_UNAVAILABLE": "選択した Google Drive フォルダーは利用できません。",
+			"SHARING_CHECK_UNAVAILABLE": "Google Drive の共有設定を確認できませんでした。",
+			"DOWNLOAD_NOT_PUBLIC": "Google Drive のダウンロードリンクは公開されていません。",
+			"SIMFILE_UNAVAILABLE": "この Drumery 楽曲は Drive アップロードに利用できません。",
+			"UPLOAD_IN_PROGRESS": "Google Drive アップロードはすでに進行中です。",
+			"NO_VALID_SONG_FILES": "Google Drive ZIP 用の有効な楽曲ファイルが見つかりませんでした。",
+			"INSUFFICIENT_DISK_SPACE": "Google Drive ZIP を準備するローカルディスク容量が不足しています。",
+			"LOCAL_STATE": "ローカルの Google Drive アップロード状態を保存できませんでした。",
+			"METADATA_SYNC_FAILED": "Google Drive アップロードは完了しましたが、ダウンロードメタデータを同期できませんでした。",
+			"RATE_LIMITED": "Google Drive によりこのアップロードはレート制限されています。",
+			"QUOTA_EXCEEDED": "Google Drive の保存容量上限を超えました。",
+			"NETWORK": "ネットワークエラーにより Google Drive アップロードが中断されました。",
+			"CREDENTIAL_STORE": "このインストールでは安全な Google Drive 認証情報を利用できません。"
 		}
 	}
 }

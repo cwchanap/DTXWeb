@@ -79,12 +79,17 @@
 		"title": "Google Drive uploads",
 		"connect": "Connect Google Drive",
 		"connected": "Google Drive is connected",
+		"disconnected": "Connect Google Drive to upload ZIP files from Drumery.",
+		"verifiedPublic": "The selected folder is verified for public download links.",
 		"folder": "Upload folder: {name}",
 		"changeFolder": "Change folder",
 		"recheckSharing": "Re-check sharing",
 		"disconnect": "Disconnect Google Drive",
+		"action": { "reconnect": "Reconnect Google Drive", "refresh": "Refresh connection" },
 		"connecting": "Connecting Google Drive…",
 		"disconnectWarning": "Disconnecting removes this installation's saved Drive connection. It does not delete files or download links.",
+		"revocationUnconfirmed": "Google Account access may still need to be removed from Google Account settings.",
+		"folderConsent": "Changing the folder opens Google Drive consent again and does not move existing linked files.",
 		"folderDoesNotMoveFiles": "Changing the default folder does not move files that are already linked.",
 		"warning": {
 			"reconnect": "Reconnect Google Drive before uploading.",
@@ -113,7 +118,24 @@
 			"FILE_PERMISSION_DENIED": "This Google account cannot replace the previously linked file.",
 			"CANCELED": "Google Drive upload was canceled.",
 			"UNKNOWN": "Google Drive upload could not be completed.",
-			"INVALID_RESPONSE": "Google Drive upload could not be started safely."
+			"INVALID_RESPONSE": "Google Drive upload could not be started safely.",
+			"WORKSPACE_REQUIRED": "Choose a workspace before uploading to Google Drive.",
+			"NOT_CONNECTED": "Connect Google Drive before uploading.",
+			"RECONNECT_REQUIRED": "Reconnect Google Drive before uploading.",
+			"FOLDER_REQUIRED": "Choose a Google Drive upload folder.",
+			"FOLDER_UNAVAILABLE": "The selected Google Drive folder is unavailable.",
+			"SHARING_CHECK_UNAVAILABLE": "Google Drive sharing could not be checked.",
+			"DOWNLOAD_NOT_PUBLIC": "The Google Drive download link is not public.",
+			"SIMFILE_UNAVAILABLE": "This Drumery song is unavailable for Drive upload.",
+			"UPLOAD_IN_PROGRESS": "A Google Drive upload is already in progress.",
+			"NO_VALID_SONG_FILES": "No valid song files were found for the Google Drive ZIP.",
+			"INSUFFICIENT_DISK_SPACE": "There is not enough local disk space to prepare the Google Drive ZIP.",
+			"LOCAL_STATE": "Local Google Drive upload state could not be saved.",
+			"METADATA_SYNC_FAILED": "The Google Drive upload finished but its download metadata could not be synchronized.",
+			"RATE_LIMITED": "Google Drive is rate limiting this upload.",
+			"QUOTA_EXCEEDED": "Google Drive storage quota was exceeded.",
+			"NETWORK": "A network error interrupted the Google Drive upload.",
+			"CREDENTIAL_STORE": "Secure Google Drive credentials are unavailable on this installation."
 		}
 	}
 }

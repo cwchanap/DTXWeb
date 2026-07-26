@@ -122,6 +122,8 @@
 						Reset to Default
 					</button>
 				</div>
+
+				<GoogleDriveSettings />
 			</div>
 
 			<!-- Success Message -->
@@ -131,8 +133,6 @@
 						<Save size={16} />
 						<span class="text-sm font-medium">Settings saved successfully!</span>
 					</div>
-
-					<GoogleDriveSettings />
 				</div>
 			{/if}
 		</div>

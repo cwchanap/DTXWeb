@@ -298,6 +298,8 @@ describe('AuthService', () => {
 			await authService.handleMagicLinkResult(result as any);
 
 			expect(storeSessionData).toHaveBeenCalledWith(mockSession);
+			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
+			expect(mockGoogleDriveService.refreshConnection).toHaveBeenCalledOnce();
 			expect(authStore.setUser).toHaveBeenCalledWith({
 				id: 'user-1',
 				email: 'test@example.com',

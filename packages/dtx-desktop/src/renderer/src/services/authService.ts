@@ -150,7 +150,9 @@ export const authService = {
 			};
 
 			// Update auth store
+			googleDriveStore.reset();
 			authStore.setUser(userData);
+			void googleDriveService.refreshConnection();
 		} catch (error) {
 			console.error('Failed to process magic link result:', error);
 			authStore.setError('Authentication failed');

@@ -77,4 +77,84 @@ describe('GoogleDriveUploadStatus', () => {
 		expect(screen.getByText('Google Drive upload could not be completed.')).toBeInTheDocument();
 		expect(screen.queryByText(/UNSAFE_NATIVE_DETAIL/)).not.toBeInTheDocument();
 	});
+
+	it.each([
+		['waiting-for-upload-slot', true],
+		['preparing-zip', true],
+		['connecting-to-google-drive', true],
+		['uploading', true],
+		['finalizing', false],
+		['synchronizing-download-metadata', false],
+		['upload-complete', false],
+		['upload-failed-save-succeeded', false]
+	] as const)('shows cancellation only during %s when it is safe', (stage, cancelable) => {
+		googleDriveStore.beginOperation('operation-id', 'simfile-id');
+		googleDriveStore.applyProgress({
+			operationId: 'operation-id',
+			simfileId: 'simfile-id',
+			stage
+		});
+
+		render(GoogleDriveUploadStatus);
+		if (cancelable) {
+			expect(screen.getByRole('button', { name: 'Cancel upload' })).toBeInTheDocument();
+		} else {
+			expect(screen.queryByRole('button', { name: 'Cancel upload' })).not.toBeInTheDocument();
+		}
+	});
+
+	it('renders both in-flight operations and cancels only the selected one', async () => {
+		googleDriveStore.beginOperation('operation-a', 'simfile-a');
+		googleDriveStore.beginOperation('operation-b', 'simfile-b');
+		googleDriveStore.applyProgress({
+			operationId: 'operation-a',
+			simfileId: 'simfile-a',
+			stage: 'uploading',
+			percentage: 25
+		});
+		googleDriveStore.applyProgress({
+			operationId: 'operation-b',
+			simfileId: 'simfile-b',
+			stage: 'preparing-zip'
+		});
+
+		render(GoogleDriveUploadStatus);
+		expect(screen.getAllByRole('button', { name: 'Cancel upload' })).toHaveLength(2);
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Cancel upload' })[1]);
+		expect(mockService.cancelUpload).toHaveBeenCalledWith('operation-b');
+	});
+
+	it.each([
+		['WORKSPACE_REQUIRED', []],
+		['NOT_CONNECTED', ['Reconnect Google Drive']],
+		['RECONNECT_REQUIRED', ['Reconnect Google Drive']],
+		['FOLDER_REQUIRED', ['Change folder']],
+		['FOLDER_UNAVAILABLE', ['Change folder']],
+		['SHARING_CHECK_UNAVAILABLE', ['Re-check sharing']],
+		['DOWNLOAD_NOT_PUBLIC', ['Re-check sharing']],
+		['SIMFILE_UNAVAILABLE', []],
+		['FILE_NOT_FOUND', ['Reconnect Google Drive', 'Create a replacement upload']],
+		['FILE_PERMISSION_DENIED', ['Reconnect Google Drive', 'Create a replacement upload']],
+		['UPLOAD_IN_PROGRESS', ['Retry Google Drive upload']],
+		['CANCELED', ['Retry Google Drive upload']],
+		['NO_VALID_SONG_FILES', []],
+		['INSUFFICIENT_DISK_SPACE', []],
+		['LOCAL_STATE', ['Retry Google Drive upload']],
+		['METADATA_SYNC_FAILED', ['Retry Google Drive upload']],
+		['RATE_LIMITED', ['Retry Google Drive upload']],
+		['QUOTA_EXCEEDED', ['Retry Google Drive upload']],
+		['NETWORK', ['Retry Google Drive upload']],
+		['CREDENTIAL_STORE', ['Reconnect Google Drive']],
+		['INVALID_RESPONSE', []],
+		['UNKNOWN', []]
+	] as const)('renders sanitized remediation for native %s', (errorCode, actionNames) => {
+		render(GoogleDriveUploadStatus, {
+			props: { outcome: { status: 'failed', errorCode } }
+		});
+
+		expect(screen.getByText(resolve(`googleDrive.error.${errorCode}`))).toBeInTheDocument();
+		for (const actionName of actionNames) {
+			expect(screen.getByRole('button', { name: actionName })).toBeInTheDocument();
+		}
+	});
 });

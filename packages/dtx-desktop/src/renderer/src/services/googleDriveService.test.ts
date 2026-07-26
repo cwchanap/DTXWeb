@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mockHost = vi.hoisted(() => ({
 	uploadSongZipToGoogleDrive: vi.fn(),
 	cancelGoogleDriveUpload: vi.fn(),
-	onGoogleDriveUploadProgress: vi.fn()
+	onGoogleDriveUploadProgress: vi.fn(),
+	getGoogleDriveConnectionState: vi.fn(),
+	connectGoogleDriveAndChooseFolder: vi.fn(),
+	changeGoogleDriveFolder: vi.fn(),
+	recheckGoogleDriveSharing: vi.fn(),
+	disconnectGoogleDrive: vi.fn()
 }));
 
 vi.mock('./desktopHost', () => ({ desktopHost: mockHost }));
@@ -91,11 +96,13 @@ describe('googleDriveService', () => {
 			songPath: '/Users/test/DTX/songs/alpha'
 		});
 
-		expect(get(googleDriveStore).operation).toMatchObject({
-			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
-			simfileId: 'simfile-42',
-			stage: 'uploading',
-			percentage: 42
+		expect(get(googleDriveStore).operations).toMatchObject({
+			'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8': {
+				operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8',
+				simfileId: 'simfile-42',
+				stage: 'uploading',
+				percentage: 42
+			}
 		});
 		expect(unlisten).toHaveBeenCalledOnce();
 	});
@@ -116,5 +123,48 @@ describe('googleDriveService', () => {
 			driveUpload: { status: 'failed', errorCode: 'UNKNOWN' }
 		});
 		expect(unlisten).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		['refreshConnection', 'getGoogleDriveConnectionState'],
+		['connectAndChooseFolder', 'connectGoogleDriveAndChooseFolder'],
+		['changeFolder', 'changeGoogleDriveFolder'],
+		['recheckSharing', 'recheckGoogleDriveSharing']
+	] as const)(
+		'does not apply a late %s connection result after reset',
+		async (serviceMethod, hostMethod) => {
+			let resolve!: (connection: { connected: boolean }) => void;
+			mockHost[hostMethod].mockReturnValue(
+				new Promise((promiseResolve) => {
+					resolve = promiseResolve;
+				})
+			);
+
+			const pending = googleDriveService[serviceMethod]();
+			googleDriveStore.reset();
+			resolve({ connected: true });
+			await pending;
+
+			expect(get(googleDriveStore).connection).toBeNull();
+		}
+	);
+
+	it('does not apply a late disconnect result after reset', async () => {
+		let resolve!: (result: {
+			connection: { connected: boolean };
+			revocationUnconfirmed: boolean;
+		}) => void;
+		mockHost.disconnectGoogleDrive.mockReturnValue(
+			new Promise((promiseResolve) => {
+				resolve = promiseResolve;
+			})
+		);
+
+		const pending = googleDriveService.disconnect();
+		googleDriveStore.reset();
+		resolve({ connection: { connected: false }, revocationUnconfirmed: true });
+		await pending;
+
+		expect(get(googleDriveStore).revocationUnconfirmed).toBe(false);
 	});
 });

@@ -79,6 +79,11 @@
 		kind: 'create' | 'update' | 'drive';
 	};
 
+	type TimedPrimaryError = {
+		id: number;
+		message: string;
+	};
+
 	type AssetFile = {
 		fileName: string;
 		size: number;
@@ -224,8 +229,8 @@
 	}>({});
 
 	// State for upload process
-	let uploadError = $state<string | null>(null);
-	let uploadWarnings = $state<string[]>([]);
+	let uploadErrorsBySong = $state<Map<string, TimedPrimaryError>>(new Map());
+	let uploadWarningsBySong = $state<Map<string, string[]>>(new Map());
 	let displayIdAutoPopulateError = $state<string | null>(null);
 	let autoPopulatedDisplayId = $state<{ path: string; value: number } | null>(null);
 	const autoPopulatedForPaths = new Map<string, number>();
@@ -251,7 +256,7 @@
 	let linkingSuccess = $state(false);
 
 	// Update state
-	let updateError = $state<string | null>(null);
+	let updateErrorsBySong = $state<Map<string, TimedPrimaryError>>(new Map());
 
 	// Export state
 	let isExporting = $state(false);
@@ -263,11 +268,20 @@
 	let primarySaveSuccess = $state<PrimarySaveSuccess | undefined>();
 	let selectedSongPath = $state('');
 	let selectionGeneration = 0;
+	let primaryOutcomeSequence = 0;
 	const currentSimfileId = $derived(song.linkedSimFileId || undefined);
+	const getPrimaryOutcomeKey = (targetSong: TreeNode, workspacePath: string): string =>
+		`workspace:${workspacePath}\u0000song:${targetSong.path || targetSong.name}`;
 	const getLocalSongActionKey = (targetSong: TreeNode, workspacePath: string): string => {
 		if (targetSong.linkedSimFileId) return `simfile:${targetSong.linkedSimFileId}`;
-		return `workspace:${workspacePath}\u0000song:${targetSong.path || targetSong.name}`;
+		return getPrimaryOutcomeKey(targetSong, workspacePath);
 	};
+	const currentPrimaryOutcomeKey = $derived(
+		getPrimaryOutcomeKey(song, $workspaceStore.path || '')
+	);
+	const uploadError = $derived(uploadErrorsBySong.get(currentPrimaryOutcomeKey)?.message ?? null);
+	const uploadWarnings = $derived(uploadWarningsBySong.get(currentPrimaryOutcomeKey) ?? []);
+	const updateError = $derived(updateErrorsBySong.get(currentPrimaryOutcomeKey)?.message ?? null);
 	const currentLocalSongActionKey = $derived(
 		getLocalSongActionKey(song, $workspaceStore.path || '')
 	);
@@ -300,6 +314,12 @@
 		const nextActions = new Map(localSongActions);
 		nextActions.delete(key);
 		localSongActions = nextActions;
+	};
+
+	const withoutMapKey = <T,>(source: Map<string, T>, key: string): Map<string, T> => {
+		const next = new Map(source);
+		next.delete(key);
+		return next;
 	};
 
 	const isSimfileWithDtx = (data: unknown): data is SimfileWithDtx => {
@@ -452,14 +472,15 @@
 		const targetPath = song.path;
 		const workspacePath = $workspaceStore.path || '';
 		const localActionKey = getLocalSongActionKey(targetSong, workspacePath);
+		const primaryOutcomeKey = getPrimaryOutcomeKey(targetSong, workspacePath);
 		const localAction = beginLocalSongAction(localActionKey, 'create');
 		if (!localAction) return;
 		const selectionToken = selectionGeneration;
 		const published = Boolean(
 			event.detail.isPublished !== undefined ? event.detail.isPublished : isPublished
 		);
-		uploadError = null;
-		uploadWarnings = [];
+		uploadErrorsBySong = withoutMapKey(uploadErrorsBySong, primaryOutcomeKey);
+		uploadWarningsBySong = withoutMapKey(uploadWarningsBySong, primaryOutcomeKey);
 		driveOutcome = undefined;
 		primarySaveSuccess = undefined;
 
@@ -526,7 +547,10 @@
 
 					if (result.warnings && result.warnings.length > 0) {
 						console.warn('Preview upload warnings:', result.warnings);
-						uploadWarnings = result.warnings;
+						uploadWarningsBySong = new Map(uploadWarningsBySong).set(
+							primaryOutcomeKey,
+							[...result.warnings]
+						);
 					}
 
 					return { success: true, simfileId: savedSimfileId };
@@ -555,11 +579,21 @@
 			mergeSuccessfulDriveFields(targetSong, targetPath, savedSimfileId, outcome.driveUpload);
 		} catch (error) {
 			console.error('Error uploading song:', error);
-			uploadError = error instanceof Error ? error.message : 'Failed to upload song';
+			const uploadErrorOutcome = {
+				id: ++primaryOutcomeSequence,
+				message: error instanceof Error ? error.message : 'Failed to upload song'
+			};
+			uploadErrorsBySong = new Map(uploadErrorsBySong).set(
+				primaryOutcomeKey,
+				uploadErrorOutcome
+			);
 
 			// Clear error message after 10 seconds
 			setTimeout(() => {
-				uploadError = null;
+				if (uploadErrorsBySong.get(primaryOutcomeKey)?.id !== uploadErrorOutcome.id) {
+					return;
+				}
+				uploadErrorsBySong = withoutMapKey(uploadErrorsBySong, primaryOutcomeKey);
 			}, 10000);
 		} finally {
 			finishLocalSongAction(localActionKey, localAction);
@@ -696,12 +730,13 @@
 		const simfileId = song.linkedSimFileId;
 		const workspacePath = $workspaceStore.path || '';
 		const localActionKey = getLocalSongActionKey(targetSong, workspacePath);
+		const primaryOutcomeKey = getPrimaryOutcomeKey(targetSong, workspacePath);
 		if (currentDriveOperation) return;
 		const localAction = beginLocalSongAction(localActionKey, 'update');
 		if (!localAction) return;
 		const selectionToken = selectionGeneration;
 		const published = Boolean(event.detail.isPublished);
-		updateError = null;
+		updateErrorsBySong = withoutMapKey(updateErrorsBySong, primaryOutcomeKey);
 		driveOutcome = undefined;
 		primarySaveSuccess = undefined;
 
@@ -777,11 +812,21 @@
 			mergeSuccessfulDriveFields(targetSong, targetPath, simfileId, outcome.driveUpload);
 		} catch (error) {
 			console.error('Error updating simfile:', error);
-			updateError = error instanceof Error ? error.message : 'Failed to update simfile';
+			const updateErrorOutcome = {
+				id: ++primaryOutcomeSequence,
+				message: error instanceof Error ? error.message : 'Failed to update simfile'
+			};
+			updateErrorsBySong = new Map(updateErrorsBySong).set(
+				primaryOutcomeKey,
+				updateErrorOutcome
+			);
 
 			// Clear error message after 10 seconds
 			setTimeout(() => {
-				updateError = null;
+				if (updateErrorsBySong.get(primaryOutcomeKey)?.id !== updateErrorOutcome.id) {
+					return;
+				}
+				updateErrorsBySong = withoutMapKey(updateErrorsBySong, primaryOutcomeKey);
 			}, 10000);
 		} finally {
 			finishLocalSongAction(localActionKey, localAction);

@@ -21,6 +21,7 @@ vi.mock('@dtx/common/server', async () => {
 		createSimfile: vi.fn(),
 		createDtxFiles: vi.fn(),
 		updateSimfile: vi.fn(),
+		updateSimfileDriveFile: vi.fn(),
 		deleteSimfile: vi.fn()
 	};
 });
@@ -142,6 +143,39 @@ describe('Query.simfile', () => {
 			genre: null,
 			tags: [],
 			durationSeconds: null
+		});
+	});
+
+	it('only exposes googleDriveFileId to the simfile owner while published downloadUrl stays public', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			google_drive_file_id: 'drive-file-123'
+		});
+		const query = '{ simfile(id: "42") { googleDriveFileId downloadUrl } }';
+
+		const [owner, anonymous, crossUser, staff] = await Promise.all([
+			runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), { query }),
+			runQuery(makeCtx(), { query }),
+			runQuery(makeCtx({ user: { id: 'u2' } as Ctx['user'] }), { query }),
+			runQuery(makeCtx({ user: { id: 'staff-user' } as Ctx['user'] }), { query })
+		]);
+
+		expect(owner.data?.simfile).toEqual({
+			googleDriveFileId: 'drive-file-123',
+			downloadUrl: 'https://ext.example/a'
+		});
+		expect(anonymous.data?.simfile).toEqual({
+			googleDriveFileId: null,
+			downloadUrl: 'https://ext.example/a'
+		});
+		expect(crossUser.data?.simfile).toEqual({
+			googleDriveFileId: null,
+			downloadUrl: 'https://ext.example/a'
+		});
+		expect(staff.data?.simfile).toEqual({
+			googleDriveFileId: null,
+			downloadUrl: 'https://ext.example/a'
 		});
 	});
 
@@ -415,6 +449,7 @@ describe('Mutation.createSimfile', () => {
 				is_published: 0 as const,
 				display_id: 1,
 				download_url: null,
+				google_drive_file_id: null,
 				preview_url: null,
 				video_preview_url: null,
 				publish_date: '2026-05-19T00:00:00Z',
@@ -440,6 +475,7 @@ describe('Mutation.createSimfile', () => {
 				is_published: 1 as const,
 				display_id: 7,
 				download_url: 'https://ext',
+				google_drive_file_id: null,
 				preview_url: null,
 				video_preview_url: 'https://yt',
 				publish_date: '2026-05-19T00:00:00Z',
@@ -500,6 +536,7 @@ describe('Mutation.createSimfile', () => {
 				is_published: 0 as const,
 				display_id: null,
 				download_url: null,
+				google_drive_file_id: null,
 				preview_url: null,
 				video_preview_url: null,
 				publish_date: '2026-05-19T00:00:00Z',
@@ -1701,6 +1738,176 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 
 const { updateSimfile } = await import('@dtx/common/server');
 const mockedUpdate = vi.mocked(updateSimfile);
+const { updateSimfileDriveFile } = await import('@dtx/common/server');
+const mockedUpdateDriveFile = vi.mocked(updateSimfileDriveFile);
+
+describe('Mutation.updateSimfileDriveFile', () => {
+	beforeEach(() => {
+		mockedUpdateDriveFile.mockReset();
+		mockedGetOwner.mockReset();
+		mockedGetSimfile.mockReset();
+	});
+
+	it('rejects anonymous and cross-user callers', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const mutation = `mutation {
+			updateSimfileDriveFile(
+				id: "42"
+				googleDriveFileId: "drive-file-123"
+				downloadUrl: "https://drive.google.com/uc?id=drive-file-123"
+			) { id }
+		}`;
+
+		const anonymous = await runQuery(makeCtx(), { query: mutation });
+		const crossUser = await runQuery(makeCtx({ user: { id: 'u2' } as Ctx['user'] }), {
+			query: mutation
+		});
+
+		expect(anonymous.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(crossUser.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(mockedUpdateDriveFile).not.toHaveBeenCalled();
+	});
+
+	it('rechecks ownership immediately before atomically updating the Drive binding', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedGetSimfile.mockResolvedValue({ ...publishedSimfile, user_id: 'attacker' });
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: `mutation {
+				updateSimfileDriveFile(
+					id: "42"
+					googleDriveFileId: "drive-file-123"
+					downloadUrl: "https://drive.google.com/uc?id=drive-file-123"
+				) { id }
+			}`
+		});
+
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(mockedUpdateDriveFile).not.toHaveBeenCalled();
+	});
+
+	it('trims a Drive ID and preserves the trimmed HTTPS URL query, resource key, and fragment', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const url = 'https://drive.google.com/uc?export=download&resourcekey=abc123#section';
+		mockedGetSimfile
+			.mockResolvedValueOnce({
+				...publishedSimfile,
+				google_drive_file_id: 'drive-file-123',
+				download_url: 'https://drive.google.com/old'
+			})
+			.mockResolvedValueOnce({
+				...publishedSimfile,
+				google_drive_file_id: 'drive-file-456',
+				download_url: url
+			});
+		mockedUpdateDriveFile.mockResolvedValue(
+			{} as Awaited<ReturnType<typeof updateSimfileDriveFile>>
+		);
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: `mutation {
+				updateSimfileDriveFile(
+					id: "42"
+					googleDriveFileId: "  drive-file-456  "
+					downloadUrl: "  ${url}  "
+				) { id googleDriveFileId downloadUrl }
+			}`
+		});
+
+		expect(mockedUpdateDriveFile).toHaveBeenCalledWith(expect.anything(), 42, 'u1', {
+			googleDriveFileId: 'drive-file-456',
+			downloadUrl: url
+		});
+		expect(result.data?.updateSimfileDriveFile).toEqual({
+			id: '42',
+			googleDriveFileId: 'drive-file-456',
+			downloadUrl: url
+		});
+	});
+
+	it.each([
+		['blank Drive ID', '   ', 'https://drive.google.com/uc?id=file'],
+		['overlong Drive ID', 'x'.repeat(257), 'https://drive.google.com/uc?id=file'],
+		['blank URL', 'drive-file', '   '],
+		['non-HTTPS URL', 'drive-file', 'http://drive.google.com/uc?id=file'],
+		['overlong URL', 'drive-file', `https://drive.google.com/${'x'.repeat(2049)}`],
+		['R2 bucket URL', 'drive-file', 'https://bucket.example/42/chart.zip']
+	])(
+		'rejects %s without changing either existing Drive field',
+		async (_case, googleDriveFileId, downloadUrl) => {
+			mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+			const existing = {
+				...publishedSimfile,
+				google_drive_file_id: 'old-drive-file',
+				download_url: 'https://drive.google.com/old'
+			};
+			mockedGetSimfile.mockResolvedValue(existing);
+
+			const result = await runQuery(
+				makeCtx({
+					user: { id: 'u1' } as Ctx['user'],
+					env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://bucket.example' }
+				}),
+				{
+					query: `mutation UpdateDrive($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!) {
+					updateSimfileDriveFile(
+						id: $id
+						googleDriveFileId: $googleDriveFileId
+						downloadUrl: $downloadUrl
+					) { id }
+				}`,
+					variables: { id: '42', googleDriveFileId, downloadUrl }
+				}
+			);
+
+			expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+			expect(mockedUpdateDriveFile).not.toHaveBeenCalled();
+			expect(existing.google_drive_file_id).toBe('old-drive-file');
+			expect(existing.download_url).toBe('https://drive.google.com/old');
+		}
+	);
+
+	it('leaves both fields unchanged when the atomic update fails', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		const existing = {
+			...publishedSimfile,
+			google_drive_file_id: 'old-drive-file',
+			download_url: 'https://drive.google.com/old'
+		};
+		mockedGetSimfile.mockResolvedValue(existing);
+		mockedUpdateDriveFile.mockRejectedValue(new Error('Simfile not found'));
+
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: `mutation {
+				updateSimfileDriveFile(
+					id: "42"
+					googleDriveFileId: "new-drive-file"
+					downloadUrl: "https://drive.google.com/uc?id=new-drive-file"
+				) { id }
+			}`
+		});
+
+		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+		expect(existing.google_drive_file_id).toBe('old-drive-file');
+		expect(existing.download_url).toBe('https://drive.google.com/old');
+	});
+
+	it('keeps Drive IDs out of general create and update inputs', async () => {
+		const create = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: `mutation {
+				createSimfile(input: { bpm: 120, googleDriveFileId: "drive-file" }) { id }
+			}`
+		});
+		const update = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: `mutation {
+				updateSimfile(id: "42", input: { googleDriveFileId: "drive-file" }) { id }
+			}`
+		});
+
+		expect(create.errors?.[0]?.message).toContain('googleDriveFileId');
+		expect(update.errors?.[0]?.message).toContain('googleDriveFileId');
+	});
+});
 
 describe('Mutation.updateSimfile', () => {
 	beforeEach(() => {

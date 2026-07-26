@@ -7,6 +7,7 @@ import {
 	searchSimfiles,
 	toSimfileWithDtx,
 	updateSimfile,
+	updateSimfileDriveFile,
 	deleteSimfile,
 	getUserChartScore,
 	listUserChartScores,
@@ -183,6 +184,52 @@ const filterDownloadUrl = (
 	return url;
 };
 
+const badDriveInput = (message: string): never => {
+	throw new GraphQLError(message, { extensions: { code: 'BAD_USER_INPUT' } });
+};
+
+const normalizeGoogleDriveFileId = (value: string): string => {
+	const trimmed = value.trim();
+	if (!trimmed) badDriveInput('Google Drive file ID is required');
+	if (trimmed.length > 256) badDriveInput('Google Drive file ID is too long');
+	return trimmed;
+};
+
+const isR2BucketUrl = (value: string, bucketUrl: string | undefined): boolean => {
+	if (!bucketUrl) return false;
+	try {
+		const candidate = new URL(value);
+		const bucket = new URL(bucketUrl);
+		if (candidate.origin !== bucket.origin) return false;
+		const bucketPath = bucket.pathname.replace(/\/$/, '');
+		return (
+			bucketPath === '' ||
+			candidate.pathname === bucketPath ||
+			candidate.pathname.startsWith(`${bucketPath}/`)
+		);
+	} catch {
+		return false;
+	}
+};
+
+const normalizeGoogleDriveDownloadUrl = (value: string, bucketUrl: string | undefined): string => {
+	const trimmed = value.trim();
+	if (!trimmed) badDriveInput('Download URL is required');
+	if (trimmed.length > 2048) badDriveInput('Download URL is too long');
+	try {
+		if (new URL(trimmed).protocol !== 'https:') {
+			badDriveInput('Download URL must use HTTPS');
+		}
+	} catch (error) {
+		if (error instanceof GraphQLError) throw error;
+		badDriveInput('Download URL must be a valid HTTPS URL');
+	}
+	if (isR2BucketUrl(trimmed, bucketUrl)) {
+		badDriveInput('Download URL must not point to the simfile bucket');
+	}
+	return trimmed;
+};
+
 const getCatalogDiscovery = (
 	ctx: Ctx,
 	simfile: SimfileWithDtxFiles
@@ -325,6 +372,11 @@ export const SimfileRef = builder.objectRef<SimfileWithDtxFiles>('Simfile').impl
 		userId: t.id({ nullable: true, resolve: (s) => s.user_id ?? null }),
 		isPublished: t.boolean({ resolve: (s) => s.is_published }),
 		displayId: t.int({ nullable: true, resolve: (s) => s.display_id }),
+		googleDriveFileId: t.string({
+			nullable: true,
+			resolve: (simfile, _args, ctx) =>
+				ctx.user?.id === simfile.user_id ? (simfile.google_drive_file_id ?? null) : null
+		}),
 		downloadUrl: t.string({
 			nullable: true,
 			// Only return the user-set DB download_url when it is a genuine
@@ -747,6 +799,66 @@ builder.mutationField('createSimfile', (t) =>
 			});
 
 			return toSimfileWithDtx(simfile, dtxFiles);
+		}
+	})
+);
+
+// --- Mutation.updateSimfileDriveFile ---
+
+builder.mutationField('updateSimfileDriveFile', (t) =>
+	t.field({
+		type: SimfileRef,
+		args: {
+			id: t.arg.id({ required: true }),
+			googleDriveFileId: t.arg.string({ required: true }),
+			downloadUrl: t.arg.string({ required: true })
+		},
+		authScopes: (_root, args) => ({ owner: { simfileId: String(args.id) } }),
+		resolve: async (_root, { id, googleDriveFileId, downloadUrl }, ctx) => {
+			const numeric = Number(id);
+			if (!Number.isSafeInteger(numeric)) {
+				throw new GraphQLError('Invalid simfile id', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+
+			const existing = await getSimfile(ctx.db, numeric);
+			if (!existing) {
+				throw new GraphQLError('Simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+			if (existing.user_id !== ctx.user!.id) {
+				throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
+			}
+
+			const normalizedDriveFileId = normalizeGoogleDriveFileId(googleDriveFileId);
+			const normalizedDownloadUrl = normalizeGoogleDriveDownloadUrl(
+				downloadUrl,
+				ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+			);
+
+			try {
+				await updateSimfileDriveFile(ctx.db, numeric, ctx.user!.id, {
+					googleDriveFileId: normalizedDriveFileId,
+					downloadUrl: normalizedDownloadUrl
+				});
+			} catch (error) {
+				if (error instanceof Error && error.message.includes('not found')) {
+					throw new GraphQLError('Simfile not found', {
+						extensions: { code: 'NOT_FOUND' }
+					});
+				}
+				throw error;
+			}
+
+			const full = await getSimfile(ctx.db, numeric);
+			if (!full) {
+				throw new GraphQLError('Simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+			return full;
 		}
 	})
 );

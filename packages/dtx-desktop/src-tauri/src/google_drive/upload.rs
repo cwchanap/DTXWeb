@@ -2,6 +2,7 @@ use crate::error::{DesktopError, Result};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use uuid::Uuid;
 
 use super::drive_client::{
@@ -34,7 +35,7 @@ pub(crate) enum DriveUploadTarget {
 pub(crate) struct DriveUploadRequest {
     pub(crate) simfile_id: String,
     pub(crate) saved_title: String,
-    pub(crate) archive: Vec<u8>,
+    pub(crate) archive_path: PathBuf,
     pub(crate) target: DriveUploadTarget,
 }
 
@@ -69,6 +70,67 @@ pub(crate) struct TokioDriveSleeper;
 impl DriveSleeper for TokioDriveSleeper {
     async fn sleep(&self, duration: Duration) {
         tokio::time::sleep(duration).await;
+    }
+}
+
+struct DiskArchiveSource {
+    file: tokio::fs::File,
+    total_bytes: u64,
+}
+
+impl DiskArchiveSource {
+    async fn open(path: &Path) -> std::result::Result<Self, DriveApiError> {
+        let metadata = tokio::fs::symlink_metadata(path)
+            .await
+            .map_err(|_| DriveApiError::LocalState)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(DriveApiError::LocalState);
+        }
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|_| DriveApiError::LocalState)?;
+        let opened_metadata = file
+            .metadata()
+            .await
+            .map_err(|_| DriveApiError::LocalState)?;
+        if !opened_metadata.is_file() || opened_metadata.len() == 0 {
+            return Err(DriveApiError::LocalState);
+        }
+        Ok(Self {
+            file,
+            total_bytes: opened_metadata.len(),
+        })
+    }
+
+    fn len(&self) -> u64 {
+        self.total_bytes
+    }
+
+    async fn read_chunk(
+        &mut self,
+        offset: u64,
+        chunk_size: usize,
+    ) -> std::result::Result<Vec<u8>, DriveApiError> {
+        if chunk_size == 0 || offset >= self.total_bytes {
+            return Err(DriveApiError::LocalState);
+        }
+        let remaining = self
+            .total_bytes
+            .checked_sub(offset)
+            .ok_or(DriveApiError::LocalState)?;
+        let chunk_limit = u64::try_from(chunk_size).map_err(|_| DriveApiError::LocalState)?;
+        let read_len_u64 = remaining.min(chunk_limit);
+        let read_len = usize::try_from(read_len_u64).map_err(|_| DriveApiError::LocalState)?;
+        self.file
+            .seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|_| DriveApiError::LocalState)?;
+        let mut bytes = vec![0_u8; read_len];
+        self.file
+            .read_exact(&mut bytes)
+            .await
+            .map_err(|_| DriveApiError::LocalState)?;
+        Ok(bytes)
     }
 }
 
@@ -133,8 +195,7 @@ where
     S: DriveSleeper + ?Sized,
     F: FnMut(u64, u64),
 {
-    if request.archive.is_empty()
-        || chunk_size == 0
+    if chunk_size == 0
         || request.simfile_id.trim().is_empty()
         || request.saved_title.trim().is_empty()
     {
@@ -144,7 +205,10 @@ where
         ));
     }
 
-    let total_bytes = request.archive.len() as u64;
+    let mut archive = DiskArchiveSource::open(&request.archive_path)
+        .await
+        .map_err(|error| upload_failure(error, &request.target))?;
+    let total_bytes = archive.len();
     let file_name = sanitize_drive_zip_name(&request.saved_title, &request.simfile_id);
     let (file_id, session) = match &request.target {
         DriveUploadTarget::Create {
@@ -214,7 +278,7 @@ where
         sleeper,
         access_token,
         &session,
-        &request.archive,
+        &mut archive,
         chunk_size,
         &mut on_progress,
     )
@@ -262,10 +326,13 @@ where
             .await
         {
             Ok(session) => return Ok(session),
-            Err(DriveApiError::Network) | Err(DriveApiError::Transient(_))
-                if attempt < MAX_UPLOAD_RETRIES =>
-            {
+            Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
                 sleeper.sleep(bounded_retry_delay(attempt, None)).await;
+            }
+            Err(DriveApiError::Transient(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
+                sleeper
+                    .sleep(bounded_retry_delay(attempt, retry_after))
+                    .await;
             }
             Err(DriveApiError::RateLimited(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
                 sleeper
@@ -296,10 +363,13 @@ where
             .await
         {
             Ok(session) => return Ok(session),
-            Err(DriveApiError::Network) | Err(DriveApiError::Transient(_))
-                if attempt < MAX_UPLOAD_RETRIES =>
-            {
+            Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
                 sleeper.sleep(bounded_retry_delay(attempt, None)).await;
+            }
+            Err(DriveApiError::Transient(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
+                sleeper
+                    .sleep(bounded_retry_delay(attempt, retry_after))
+                    .await;
             }
             Err(DriveApiError::RateLimited(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
                 sleeper
@@ -317,7 +387,7 @@ async fn transfer_archive<A, S, F>(
     sleeper: &S,
     access_token: &str,
     session: &super::drive_client::ResumableUploadSession,
-    archive: &[u8],
+    archive: &mut DiskArchiveSource,
     chunk_size: usize,
     on_progress: &mut F,
 ) -> std::result::Result<(), DriveApiError>
@@ -326,87 +396,107 @@ where
     S: DriveSleeper + ?Sized,
     F: FnMut(u64, u64),
 {
-    let total_bytes = archive.len() as u64;
+    let total_bytes = archive.len();
     let mut accepted = 0_u64;
-    let mut retry_attempt = 0_usize;
+    let mut rate_retry_attempt = 0_usize;
+    let mut stalled_recovery_attempts = 0_usize;
+    let mut loaded_offset = None;
+    let mut chunk = Vec::new();
 
     while accepted < total_bytes {
-        let start = accepted as usize;
-        let end = start.saturating_add(chunk_size).min(archive.len());
+        if loaded_offset != Some(accepted) {
+            chunk = archive.read_chunk(accepted, chunk_size).await?;
+            loaded_offset = Some(accepted);
+        }
+        let attempted_end = accepted
+            .checked_add(u64::try_from(chunk.len()).map_err(|_| DriveApiError::LocalState)?)
+            .ok_or(DriveApiError::LocalState)?;
+        if attempted_end > total_bytes || attempted_end <= accepted {
+            return Err(DriveApiError::LocalState);
+        }
         let result = api
-            .upload_chunk(
-                access_token,
-                session,
-                accepted,
-                &archive[start..end],
-                total_bytes,
-            )
+            .upload_chunk(access_token, session, accepted, &chunk, total_bytes)
             .await;
-        match result {
-            Ok(DriveChunkResult::Accepted(confirmed)) => {
-                accepted =
-                    accept_confirmed_progress(accepted, confirmed, total_bytes, on_progress)?;
-                retry_attempt = 0;
+        let acknowledgement = match result {
+            Ok(acknowledgement) => acknowledgement,
+            Err(DriveApiError::Network) => {
+                query_status_with_retry(api, sleeper, access_token, session, total_bytes).await?
             }
-            Ok(DriveChunkResult::Complete) => {
-                if accepted < total_bytes {
-                    accepted = total_bytes;
-                    on_progress(accepted, total_bytes);
+            Err(DriveApiError::Transient(retry_after)) => {
+                if let Some(retry_after) = retry_after {
+                    sleeper
+                        .sleep(bounded_retry_delay(0, Some(retry_after)))
+                        .await;
                 }
-            }
-            Err(DriveApiError::Network) | Err(DriveApiError::Transient(_)) => {
-                let status =
-                    query_status_with_retry(api, sleeper, access_token, session, total_bytes)
-                        .await?;
-                match status {
-                    DriveChunkResult::Accepted(confirmed) => {
-                        accepted = accept_confirmed_progress(
-                            accepted,
-                            confirmed,
-                            total_bytes,
-                            on_progress,
-                        )?;
-                    }
-                    DriveChunkResult::Complete => {
-                        if accepted < total_bytes {
-                            accepted = total_bytes;
-                            on_progress(accepted, total_bytes);
-                        }
-                    }
-                }
-                retry_attempt = 0;
+                query_status_with_retry(api, sleeper, access_token, session, total_bytes).await?
             }
             Err(DriveApiError::RateLimited(retry_after)) => {
-                if retry_attempt >= MAX_UPLOAD_RETRIES {
+                if rate_retry_attempt >= MAX_UPLOAD_RETRIES {
                     return Err(DriveApiError::RateLimited(retry_after));
                 }
                 sleeper
-                    .sleep(bounded_retry_delay(retry_attempt, retry_after))
+                    .sleep(bounded_retry_delay(rate_retry_attempt, retry_after))
                     .await;
-                retry_attempt += 1;
+                rate_retry_attempt += 1;
+                continue;
             }
             Err(error) => return Err(error),
+        };
+
+        match validate_acknowledgement(accepted, attempted_end, total_bytes, acknowledgement)? {
+            Acknowledgement::Progress(confirmed) => {
+                accepted = confirmed;
+                loaded_offset = None;
+                stalled_recovery_attempts = 0;
+                rate_retry_attempt = 0;
+                on_progress(accepted, total_bytes);
+            }
+            Acknowledgement::Stalled => {
+                if stalled_recovery_attempts >= MAX_UPLOAD_RETRIES {
+                    return Err(DriveApiError::InvalidResponse);
+                }
+                sleeper
+                    .sleep(bounded_retry_delay(stalled_recovery_attempts, None))
+                    .await;
+                stalled_recovery_attempts += 1;
+            }
+            Acknowledgement::Complete => {
+                accepted = total_bytes;
+                on_progress(accepted, total_bytes);
+            }
         }
     }
     Ok(())
 }
 
-fn accept_confirmed_progress<F>(
+enum Acknowledgement {
+    Progress(u64),
+    Stalled,
+    Complete,
+}
+
+fn validate_acknowledgement(
     previous: u64,
-    confirmed: u64,
+    attempted_end: u64,
     total: u64,
-    on_progress: &mut F,
-) -> std::result::Result<u64, DriveApiError>
-where
-    F: FnMut(u64, u64),
-{
-    if confirmed > total {
+    acknowledgement: DriveChunkResult,
+) -> std::result::Result<Acknowledgement, DriveApiError> {
+    if attempted_end <= previous || attempted_end > total {
         return Err(DriveApiError::InvalidResponse);
     }
-    if confirmed > previous {
-        on_progress(confirmed, total);
+    match acknowledgement {
+        DriveChunkResult::Accepted(confirmed)
+            if confirmed < previous || confirmed > attempted_end =>
+        {
+            Err(DriveApiError::InvalidResponse)
+        }
+        DriveChunkResult::Accepted(confirmed) if confirmed == previous => {
+            Ok(Acknowledgement::Stalled)
+        }
+        DriveChunkResult::Accepted(confirmed) => Ok(Acknowledgement::Progress(confirmed)),
+        DriveChunkResult::Complete if attempted_end == total => Ok(Acknowledgement::Complete),
+        DriveChunkResult::Complete => Err(DriveApiError::InvalidResponse),
     }
-    Ok(confirmed)
 }
 
 async fn query_status_with_retry<A, S>(
@@ -426,10 +516,13 @@ where
             .await
         {
             Ok(status) => return Ok(status),
-            Err(DriveApiError::Network) | Err(DriveApiError::Transient(_))
-                if attempt < MAX_UPLOAD_RETRIES =>
-            {
+            Err(DriveApiError::Network) if attempt < MAX_UPLOAD_RETRIES => {
                 sleeper.sleep(bounded_retry_delay(attempt, None)).await;
+            }
+            Err(DriveApiError::Transient(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
+                sleeper
+                    .sleep(bounded_retry_delay(attempt, retry_after))
+                    .await;
             }
             Err(DriveApiError::RateLimited(retry_after)) if attempt < MAX_UPLOAD_RETRIES => {
                 sleeper

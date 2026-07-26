@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
@@ -384,7 +385,10 @@ async fn run_upload_transaction(
             },
         };
         let progress = StdMutex::new(MonotonicDriveProgress::default());
-        let update = run_with_single_access_token_refresh(
+        let update = run_upload_with_single_access_token_refresh(
+            drive,
+            lease,
+            user_id,
             access_token,
             |access_token| {
                 let request = request.clone();
@@ -416,16 +420,6 @@ async fn run_upload_transaction(
                     )
                     .await
                 }
-            },
-            || lease.set_phase(DriveOperationPhase::Transferring),
-            |expired_access_token| async move {
-                if lease.cancellation().is_cancelled() {
-                    return Err(DriveApiError::Canceled);
-                }
-                drive
-                    .refresh_access_token_after_expiry(user_id, &expired_access_token)
-                    .await
-                    .map_err(oauth_error)
             },
         )
         .await;
@@ -505,7 +499,10 @@ async fn create_and_bind(
         },
     };
     let progress = StdMutex::new(MonotonicDriveProgress::default());
-    let result = run_with_single_access_token_refresh(
+    let result = run_upload_with_single_access_token_refresh(
+        drive,
+        lease,
+        user_id,
         access_token,
         |access_token| {
             let request = request.clone();
@@ -547,16 +544,6 @@ async fn create_and_bind(
                 )
                 .await
             }
-        },
-        || lease.set_phase(DriveOperationPhase::Transferring),
-        |expired_access_token| async move {
-            if lease.cancellation().is_cancelled() {
-                return Err(DriveApiError::Canceled);
-            }
-            drive
-                .refresh_access_token_after_expiry(user_id, &expired_access_token)
-                .await
-                .map_err(oauth_error)
         },
     )
     .await;
@@ -741,6 +728,44 @@ fn oauth_error(error: GoogleDriveOAuthError) -> DriveApiError {
     }
 }
 
+async fn refresh_upload_access_token(
+    drive: &GoogleDriveState,
+    user_id: &str,
+    expired_access_token: &str,
+    cancellation: &tokio_util::sync::CancellationToken,
+) -> std::result::Result<zeroize::Zeroizing<String>, DriveApiError> {
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(DriveApiError::Canceled),
+        result = drive.refresh_access_token_after_expiry(user_id, expired_access_token) => {
+            result.map_err(oauth_error)
+        }
+    }
+}
+
+async fn run_upload_with_single_access_token_refresh<T, Run, RunFuture>(
+    drive: &GoogleDriveState,
+    lease: &DriveOperationLease,
+    user_id: &str,
+    access_token: zeroize::Zeroizing<String>,
+    run: Run,
+) -> std::result::Result<T, DriveUploadFailure>
+where
+    Run: FnMut(zeroize::Zeroizing<String>) -> RunFuture,
+    RunFuture: Future<Output = std::result::Result<T, DriveUploadFailure>>,
+{
+    run_with_single_access_token_refresh(
+        access_token,
+        run,
+        || lease.set_phase(DriveOperationPhase::Transferring),
+        |expired_access_token| async move {
+            refresh_upload_access_token(drive, user_id, &expired_access_token, lease.cancellation())
+                .await
+        },
+    )
+    .await
+}
+
 fn error_code(error: DriveApiError) -> GoogleDriveErrorCode {
     match error {
         DriveApiError::Canceled => GoogleDriveErrorCode::Canceled,
@@ -828,6 +853,114 @@ fn sanitized_oauth_error(error: GoogleDriveOAuthError) -> DesktopError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use tokio::sync::Semaphore;
+
+    use super::super::credential_store::{
+        GoogleDriveCredentialStore, InMemoryGoogleDriveCredentialStore,
+    };
+    use super::super::oauth::{
+        DeferredPickerFolderValidator, GoogleOAuthProvider, OAuthProviderError, OAuthTokenResponse,
+        PickerProtocolConfig, TokenExchangeRequest, UnavailablePickerBrowser,
+    };
+    use super::super::settings::{GoogleDriveFolderSetting, GoogleDriveSettingsAccess};
+    use super::super::UnavailableDriveMetadataClient;
+
+    #[derive(Default)]
+    struct ConnectedTestSettings {
+        folder: StdMutex<Option<GoogleDriveFolderSetting>>,
+    }
+
+    impl ConnectedTestSettings {
+        fn new() -> Self {
+            Self {
+                folder: StdMutex::new(Some(GoogleDriveFolderSetting {
+                    id: "folder-42".to_string(),
+                    name: "Uploads".to_string(),
+                })),
+            }
+        }
+    }
+
+    impl GoogleDriveSettingsAccess for ConnectedTestSettings {
+        fn folder_for_user(&self, _user_id: &str) -> Option<GoogleDriveFolderSetting> {
+            self.folder
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        }
+
+        fn set_folder_for_user(
+            &self,
+            _user_id: &str,
+            folder: GoogleDriveFolderSetting,
+        ) -> Result<()> {
+            *self
+                .folder
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(folder);
+            Ok(())
+        }
+
+        fn clear_folder_for_user(&self, _user_id: &str) -> Result<()> {
+            *self
+                .folder
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+            Ok(())
+        }
+    }
+
+    struct BlockingUploadRefreshProvider {
+        started: Semaphore,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Default for BlockingUploadRefreshProvider {
+        fn default() -> Self {
+            Self {
+                started: Semaphore::new(0),
+                dropped: Arc::new(AtomicBool::new(false)),
+            }
+        }
+    }
+
+    struct RefreshDropGuard(Arc<AtomicBool>);
+
+    impl Drop for RefreshDropGuard {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait]
+    impl GoogleOAuthProvider for BlockingUploadRefreshProvider {
+        async fn exchange_code(
+            &self,
+            _request: TokenExchangeRequest,
+        ) -> std::result::Result<OAuthTokenResponse, OAuthProviderError> {
+            Err(OAuthProviderError::Network)
+        }
+
+        async fn refresh_access_token(
+            &self,
+            _refresh_token: &str,
+        ) -> std::result::Result<OAuthTokenResponse, OAuthProviderError> {
+            let _drop_guard = RefreshDropGuard(self.dropped.clone());
+            self.started.add_permits(1);
+            std::future::pending().await
+        }
+
+        async fn revoke_refresh_token(
+            &self,
+            _refresh_token: &str,
+        ) -> std::result::Result<(), OAuthProviderError> {
+            Err(OAuthProviderError::Network)
+        }
+    }
 
     #[test]
     fn operation_id_accepts_only_uuid_v4() {
@@ -945,6 +1078,137 @@ mod tests {
                     requires_reconnect
                 );
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn update_and_create_cancel_a_blocked_real_token_refresh_and_release_operation_resources()
+    {
+        // Break caught: replacing `refresh_upload_access_token` with a raw
+        // `refresh_access_token_after_expiry(...).await` leaves cancellation
+        // blocked behind the OAuth client's 30-second timeout.
+        for pending_binding in [
+            super::super::upload::PendingBindingDisposition::NotApplicable,
+            super::super::upload::PendingBindingDisposition::Retain,
+        ] {
+            let credentials = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+            credentials
+                .set_refresh_token("user-42", "refresh-token")
+                .expect("seed refresh token");
+            let provider = Arc::new(BlockingUploadRefreshProvider::default());
+            let drive = Arc::new(GoogleDriveState::with_oauth_adapters(
+                credentials.clone(),
+                Arc::new(UnavailableDriveMetadataClient),
+                Arc::new(ConnectedTestSettings::new()),
+                provider.clone(),
+                Arc::new(DeferredPickerFolderValidator),
+                Arc::new(UnavailablePickerBrowser),
+                PickerProtocolConfig::new(
+                    "desktop-client.apps.googleusercontent.com".to_string(),
+                    Duration::from_secs(1),
+                ),
+            ));
+            drive
+                .cache_access_token("user-42", "expired-access-token")
+                .await;
+
+            let operation_id = Uuid::new_v4();
+            let manager = drive.operation_manager.clone();
+            let available_resource_slots = manager.available_resource_slots();
+            let lease = manager
+                .register("user-42", operation_id, "sim-42")
+                .expect("operation lease");
+            lease.set_phase(DriveOperationPhase::Transferring);
+            let attempts = Arc::new(AtomicUsize::new(0));
+
+            let upload = tokio::spawn({
+                let drive = drive.clone();
+                let attempts = attempts.clone();
+                async move {
+                    let _resource_slot =
+                        lease.acquire_resource_slot().await.expect("resource slot");
+                    run_upload_with_single_access_token_refresh(
+                        drive.as_ref(),
+                        &lease,
+                        "user-42",
+                        zeroize::Zeroizing::new("expired-access-token".to_string()),
+                        |_| {
+                            let attempts = attempts.clone();
+                            async move {
+                                attempts.fetch_add(1, Ordering::SeqCst);
+                                Err::<(), _>(DriveUploadFailure {
+                                    error: DriveApiError::TokenExpired,
+                                    pending_binding,
+                                })
+                            }
+                        },
+                    )
+                    .await
+                }
+            });
+            provider
+                .started
+                .acquire()
+                .await
+                .expect("real refresh started")
+                .forget();
+
+            let canceled = tokio::time::timeout(
+                Duration::from_millis(500),
+                manager.cancel_and_wait("user-42", operation_id, Duration::from_secs(5)),
+            )
+            .await
+            .expect("cancel command contract must not wait for the OAuth HTTP timeout");
+            assert!(canceled);
+
+            let failure = tokio::time::timeout(Duration::from_millis(500), upload)
+                .await
+                .expect("upload task must stop promptly")
+                .expect("upload task")
+                .expect_err("canceled refresh");
+            assert_eq!(failure.error, DriveApiError::Canceled);
+            assert_eq!(failure.pending_binding, pending_binding);
+            assert_eq!(attempts.load(Ordering::SeqCst), 1);
+            assert!(provider.dropped.load(Ordering::SeqCst));
+            assert_eq!(manager.active_count(), 0);
+            assert_eq!(manager.available_resource_slots(), available_resource_slots);
+            let connection = drive.connection_state_for_user("user-42").await;
+            assert!(connection.connected);
+            assert!(!connection.requires_reconnect);
+            assert_eq!(
+                credentials
+                    .get_refresh_token("user-42")
+                    .expect("refresh token after cancellation"),
+                Some("refresh-token".to_string())
+            );
+
+            let second_cancellation = tokio_util::sync::CancellationToken::new();
+            let second_refresh = tokio::spawn({
+                let drive = drive.clone();
+                let cancellation = second_cancellation.clone();
+                async move {
+                    refresh_upload_access_token(
+                        drive.as_ref(),
+                        "user-42",
+                        "expired-access-token",
+                        &cancellation,
+                    )
+                    .await
+                }
+            });
+            tokio::time::timeout(Duration::from_millis(500), provider.started.acquire())
+                .await
+                .expect("canceled refresh must release the per-user OAuth lifecycle lock")
+                .expect("second real refresh started")
+                .forget();
+            second_cancellation.cancel();
+            assert_eq!(
+                tokio::time::timeout(Duration::from_millis(500), second_refresh)
+                    .await
+                    .expect("second refresh must cancel promptly")
+                    .expect("second refresh task"),
+                Err(DriveApiError::Canceled)
+            );
         }
     }
 

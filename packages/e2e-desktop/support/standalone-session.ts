@@ -427,8 +427,10 @@ const waitForEmbeddedReadiness = async (
 };
 
 const isExpectedDriverDisconnect = (error: unknown): boolean => {
+	const code = errorCode(error);
+	if (code === 'ECONNREFUSED' || code === 'ECONNRESET') return true;
 	const message = error instanceof Error ? error.message : String(error);
-	return /ECONNREFUSED|connection refused|socket hang up|invalid session id|disconnected/i.test(
+	return /ECONNREFUSED|ECONNRESET|connection refused|socket hang up|invalid session id|disconnected/i.test(
 		message
 	);
 };
@@ -447,6 +449,8 @@ const closeOwnedSession = async (
 	requestNativeExit: boolean
 ): Promise<void> => {
 	const errors: unknown[] = [];
+	let exitRequestFailed = false;
+	let exitRequestError: unknown;
 	let sessionClosedBeforeChildShutdown = false;
 	if (!requestNativeExit) {
 		try {
@@ -458,29 +462,39 @@ const closeOwnedSession = async (
 	}
 	if (requestNativeExit && session.ownershipVerified) {
 		const exitCode = code ?? 0;
-		await collect(errors, async () => {
+		try {
 			await session.browser.tauri.execute<void, [number]>(
 				({ core }, ownedExitCode) =>
 					core.invoke('plugin:process|exit', { code: ownedExitCode }) as Promise<void>,
 				exitCode
 			);
-		});
+		} catch (error) {
+			exitRequestFailed = true;
+			exitRequestError = error;
+		}
 	}
 
-	if (!(await waitForChildExit(session.child, session.exitPromise, session.clock))) {
+	let childExited = await waitForChildExit(session.child, session.exitPromise, session.clock);
+	if (!childExited) {
 		await collect(errors, () => {
 			if (!session.child.kill('SIGTERM'))
 				throw new Error('Failed to send SIGTERM to standalone Tauri app');
 		});
-		if (!(await waitForChildExit(session.child, session.exitPromise, session.clock))) {
+		childExited = await waitForChildExit(session.child, session.exitPromise, session.clock);
+		if (!childExited) {
 			await collect(errors, () => {
 				if (!session.child.kill('SIGKILL'))
 					throw new Error('Failed to send SIGKILL to standalone Tauri app');
 			});
-			if (!(await waitForChildExit(session.child, session.exitPromise, session.clock))) {
+			childExited = await waitForChildExit(session.child, session.exitPromise, session.clock);
+			if (!childExited) {
 				errors.push(new Error('Standalone Tauri app did not exit after SIGKILL'));
 			}
 		}
+	}
+
+	if (exitRequestFailed && (!childExited || !isExpectedDriverDisconnect(exitRequestError))) {
+		errors.unshift(exitRequestError);
 	}
 
 	if (!sessionClosedBeforeChildShutdown) {

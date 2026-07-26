@@ -6,8 +6,8 @@
 	"scripts": {
 		"typecheck": "svelte-check --tsconfig ./tsconfig.web.json",
 		"svelte-check": "svelte-check --tsconfig ./tsconfig.web.json",
-		"dev": "DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json",
-		"dev:local-web": "VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json",
+		"dev": "DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json",
+		"dev:local-web": "DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json",
 		"dev:renderer": "vite --config vite.config.ts",
 		"build": "bun run typecheck && tauri build",
 		"build:renderer": "vite build --config vite.config.ts",

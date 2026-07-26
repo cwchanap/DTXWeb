@@ -1121,6 +1121,7 @@ pub async fn create_simfile_record(
     create_simfile_record_impl(&base_url, &token, simfile_data, &workspace_root).await
 }
 
+#[cfg(test)]
 pub(crate) async fn create_simfile_record_with_workspace_state(
     base_url: &str,
     token: &str,
@@ -1233,6 +1234,7 @@ pub async fn upload_file(
     .await)
 }
 
+#[cfg(test)]
 pub(crate) async fn upload_file_with_workspace_state(
     base_url: &str,
     token: &str,

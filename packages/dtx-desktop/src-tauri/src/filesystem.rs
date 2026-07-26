@@ -483,7 +483,7 @@ async fn read_file_path_inner(
 
     if !canonical_file_path.starts_with(&allowed_root) {
         return Ok(ReadFileResult::Error {
-            error: "Invalid file path".to_string(),
+            error: "Path is outside the workspace".to_string(),
         });
     }
 

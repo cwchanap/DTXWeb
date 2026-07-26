@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { Options } from '@wdio/types';
 
 import { SENTINEL_PREFERENCES } from './support/sentinel-preferences';
-import { createWorkspaceFixture } from './support/workspace-fixture';
+import { getOrCreatePreseededWorkspaceFixture } from './support/workspace-fixture';
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const executableName = process.platform === 'win32' ? 'dtx-desktop.exe' : 'dtx-desktop';
@@ -22,8 +22,10 @@ const appBinaryPath =
 // on the `e2e` Cargo feature — see `resolve_dirs()` in preferences.rs), so it
 // works on all platforms while leaving WebKit/Mesa caches in their normal
 // locations instead of inside the temporary preferences directory.
-const isolatedDataDir = mkdtempSync(join(tmpdir(), 'dtx-e2e-data-'));
-const fixture = createWorkspaceFixture({ parentPath: isolatedDataDir });
+const isolatedDataDir =
+	process.env.DTX_E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'dtx-e2e-data-'));
+process.env.DTX_E2E_DATA_DIR = isolatedDataDir;
+const fixture = getOrCreatePreseededWorkspaceFixture({ parentPath: isolatedDataDir });
 
 // Seed distinctive, valid preferences so the launch spec proves that the
 // WDIO service forwards DTX_E2E_DATA_DIR and Rust reads the isolated path.
@@ -85,16 +87,6 @@ export const config: Options.Testrunner = {
 	mochaOpts: {
 		ui: 'bdd',
 		timeout: 60_000
-	},
-	// Populate worker-only fixture locations after the native app has launched.
-	// The Tauri service receives only `isolatedAppEnv` above, keeping these
-	// attack-input paths out of the app process environment.
-	before: (): void => {
-		process.env.DTX_E2E_WORKSPACE_ROOT = fixture.workspaceRoot;
-		process.env.DTX_E2E_OUTSIDE_ROOT = fixture.outsideRoot;
-		process.env.DTX_E2E_ESCAPE_LINK_PATH = fixture.escapeLinkPath ?? '';
-		process.env.DTX_E2E_ESCAPE_LINK_UNAVAILABLE_REASON =
-			fixture.escapeLinkUnavailableReason ?? '';
 	},
 	// Cleanup is best-effort: a browser/runtime process may still briefly hold
 	// or recreate files while shutting down. Optional temp cleanup must never

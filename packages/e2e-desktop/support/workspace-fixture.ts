@@ -116,3 +116,20 @@ export const getPreseededWorkspaceFixture = (): WorkspaceFixture => {
 		escapeLinkUnavailableReason
 	};
 };
+
+export const getOrCreatePreseededWorkspaceFixture = ({
+	parentPath
+}: {
+	parentPath: string;
+}): WorkspaceFixture => {
+	if (process.env.DTX_E2E_WORKSPACE_ROOT || process.env.DTX_E2E_OUTSIDE_ROOT) {
+		return getPreseededWorkspaceFixture();
+	}
+
+	const fixture = createWorkspaceFixture({ parentPath });
+	process.env.DTX_E2E_WORKSPACE_ROOT = fixture.workspaceRoot;
+	process.env.DTX_E2E_OUTSIDE_ROOT = fixture.outsideRoot;
+	process.env.DTX_E2E_ESCAPE_LINK_PATH = fixture.escapeLinkPath ?? '';
+	process.env.DTX_E2E_ESCAPE_LINK_UNAVAILABLE_REASON = fixture.escapeLinkUnavailableReason ?? '';
+	return fixture;
+};

@@ -173,7 +173,10 @@ async fn read_file_rejects_path_outside_workspace() {
 
     let result = read_file_path(&file, Some(root.path())).await;
 
-    assert!(matches!(result, ReadFileResult::Error { .. }));
+    assert!(matches!(
+        result,
+        ReadFileResult::Error { ref error } if error == "Path is outside the workspace"
+    ));
 }
 
 #[cfg(unix)]
@@ -193,7 +196,10 @@ async fn read_file_rejects_symlink_escape() {
 
     let result = read_file_path(&link, Some(root.path())).await;
 
-    assert!(matches!(result, ReadFileResult::Error { .. }));
+    assert!(matches!(
+        result,
+        ReadFileResult::Error { ref error } if error == "Path is outside the workspace"
+    ));
 }
 
 #[cfg(unix)]

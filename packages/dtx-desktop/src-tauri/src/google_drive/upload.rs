@@ -409,16 +409,19 @@ pub(crate) async fn run_with_single_access_token_refresh<
     T,
     Run,
     RunFuture,
+    BeforeRefresh,
     Refresh,
     RefreshFuture,
 >(
     initial_access_token: Zeroizing<String>,
     mut run: Run,
+    mut before_refresh: BeforeRefresh,
     mut refresh: Refresh,
 ) -> std::result::Result<T, DriveUploadFailure>
 where
     Run: FnMut(Zeroizing<String>) -> RunFuture,
     RunFuture: Future<Output = std::result::Result<T, DriveUploadFailure>>,
+    BeforeRefresh: FnMut(),
     Refresh: FnMut(Zeroizing<String>) -> RefreshFuture,
     RefreshFuture: Future<Output = std::result::Result<Zeroizing<String>, DriveApiError>>,
 {
@@ -428,14 +431,11 @@ where
         Err(failure) if failure.error == DriveApiError::TokenExpired => failure,
         Err(failure) => return Err(failure),
     };
+    before_refresh();
     let replacement = refresh(initial_access_token)
         .await
         .map_err(|error| DriveUploadFailure {
-            error: if error == DriveApiError::Canceled {
-                DriveApiError::Canceled
-            } else {
-                DriveApiError::TokenExpired
-            },
+            error,
             pending_binding: first_failure.pending_binding,
         })?;
     run(replacement).await
@@ -1121,6 +1121,9 @@ where
     ensure_reconciliation_session(reconciliation_session).await?;
     let download_url = match validation {
         Ok(download_url) => download_url,
+        Err(DriveApiError::TokenExpired) => {
+            return Err(create_failure(DriveApiError::TokenExpired));
+        }
         Err(error) => {
             if owner_references_pending_file(prior_owner, pending) {
                 return Err(create_failure(error));
@@ -2067,6 +2070,9 @@ async fn compensate_after_final_validation<A>(
 where
     A: GoogleDriveApi + ?Sized,
 {
+    if error == DriveApiError::TokenExpired {
+        return upload_failure(error, target);
+    }
     let DriveUploadTarget::Create { .. } = target else {
         return DriveUploadFailure {
             error,

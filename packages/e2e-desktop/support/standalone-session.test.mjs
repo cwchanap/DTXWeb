@@ -53,6 +53,7 @@ const makeDependencies = ({
 	child = new FakeChild(),
 	port = 46_001,
 	observedNonce = 'launch-nonce-123',
+	exitError,
 	remoteError,
 	onExit = () => child.exit(),
 	statusResponses = [{ ok: true, value: { ready: true } }]
@@ -69,6 +70,7 @@ const makeDependencies = ({
 		if (script.includes('read_e2e_session_nonce')) return observedNonce;
 		if (script.includes('plugin:process|exit')) {
 			onExit(args[0]);
+			if (exitError) throw exitError;
 			return undefined;
 		}
 		throw new Error(`Unexpected direct-eval script: ${script}`);
@@ -288,6 +290,75 @@ test('accepts the expected driver disconnect only after the owned child has exit
 		expect(existsSync(leasePathFor(46_011))).toBeFalse();
 	} finally {
 		cleanupLease(46_011);
+	}
+});
+
+test('accepts a controlled-exit disconnect after the owned child has exited', async () => {
+	const port = 46_014;
+	const dependencies = makeDependencies({
+		port,
+		exitError: new Error('socket hang up')
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		let leaseExistedDuringCleanup = false;
+		browser.deleteSession.mockImplementationOnce(async () => {
+			leaseExistedDuringCleanup = existsSync(leasePathFor(port));
+		});
+		await expect(terminateStandaloneTauriSession(browser, 86)).resolves.toBeUndefined();
+		expect(leaseExistedDuringCleanup).toBeTrue();
+		expect(dependencies.browsers[0].deleteSession).toHaveBeenCalledTimes(1);
+		expect(existsSync(leasePathFor(port))).toBeFalse();
+	} finally {
+		cleanupLease(port);
+	}
+});
+
+test('preserves an unexpected controlled-exit error after the owned child has exited', async () => {
+	const port = 46_015;
+	const dependencies = makeDependencies({
+		port,
+		exitError: new Error('native exit request rejected')
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		await expect(terminateStandaloneTauriSession(browser, 86)).rejects.toThrow(
+			'native exit request rejected'
+		);
+		expect(dependencies.browsers[0].deleteSession).toHaveBeenCalledTimes(1);
+		expect(existsSync(leasePathFor(port))).toBeTrue();
+	} finally {
+		cleanupLease(port);
+	}
+});
+
+test('preserves a controlled-exit disconnect when the owned child does not exit', async () => {
+	const port = 46_016;
+	const child = new FakeChild();
+	const dependencies = makeDependencies({
+		child,
+		port,
+		exitError: new Error('socket hang up'),
+		onExit: () => undefined
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		let cleanupError;
+		try {
+			await terminateStandaloneTauriSession(browser, 86);
+		} catch (error) {
+			cleanupError = error;
+		}
+		expect(cleanupError).toBeInstanceOf(AggregateError);
+		expect(cleanupError.errors.map((error) => error.message)).toEqual([
+			'socket hang up',
+			'Standalone Tauri app did not exit after SIGKILL'
+		]);
+		expect(child.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+		expect(dependencies.browsers[0].deleteSession).toHaveBeenCalledTimes(1);
+		expect(existsSync(leasePathFor(port))).toBeTrue();
+	} finally {
+		cleanupLease(port);
 	}
 });
 

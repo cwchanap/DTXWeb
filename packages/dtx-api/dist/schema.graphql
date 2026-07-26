@@ -62,6 +62,7 @@ type Mutation {
   deleteSimfile(id: ID!): DeleteResult!
   generateMagicLink: MagicLinkResult!
   updateSimfile(id: ID!, input: UpdateSimfileInput!): Simfile!
+  updateSimfileDriveFile(downloadUrl: String!, googleDriveFileId: String!, id: ID!): Simfile!
   uploadScores(input: UploadScoresInput!): UploadScoresResult!
   upsertUserProfile(input: UpsertUserProfileInput!): UserProfile!
 }
@@ -127,6 +128,7 @@ type Simfile {
   durationSeconds: Int
   files: [R2File!]!
   genre: String
+  googleDriveFileId: String
   hasUploadedFiles: Boolean!
   id: ID!
   isPublished: Boolean!

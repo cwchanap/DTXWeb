@@ -3,6 +3,7 @@ import {
 	GetSimfileDocument,
 	GetPreviewSimfileDocument,
 	UpdateSimfileDocument,
+	UpdateSimfileDriveFileDocument,
 	DeleteSimfileDocument,
 	SimfileScope,
 	type UpdateSimfileInput,
@@ -20,6 +21,7 @@ export type LegacySimfile = {
 	bpm: number;
 	user_id: string | null;
 	is_published: boolean;
+	google_drive_file_id: string | null;
 	download_url: string | null;
 	preview_url: string | null;
 	video_preview_url: string | null;
@@ -58,6 +60,7 @@ const adaptSimfile = (s: AdaptSimfileInput): LegacySimfile => {
 		bpm: s.bpm,
 		user_id: s.userId ?? null,
 		is_published: s.isPublished,
+		google_drive_file_id: s.googleDriveFileId ?? null,
 		download_url: s.downloadUrl ?? null,
 		preview_url: s.previewUrl ?? null,
 		video_preview_url: s.videoPreviewUrl ?? null,
@@ -148,6 +151,35 @@ export const updateSimfile = async (
 	const client = await getClient(ctx);
 	const result = await client.request(UpdateSimfileDocument, { id, input });
 	return adaptSimfile(result.updateSimfile);
+};
+
+export type DriveFileBinding = {
+	id: number;
+	google_drive_file_id: string | null;
+	download_url: string | null;
+};
+
+export const updateSimfileDriveFile = async (
+	id: string,
+	googleDriveFileId: string,
+	downloadUrl: string,
+	ctx?: ClientCtx
+): Promise<DriveFileBinding> => {
+	const client = await getClient(ctx);
+	const result = await client.request(UpdateSimfileDriveFileDocument, {
+		id,
+		googleDriveFileId,
+		downloadUrl
+	});
+	const numId = Number(result.updateSimfileDriveFile.id);
+	if (!Number.isFinite(numId)) {
+		throw new Error(`Invalid simfile id: ${result.updateSimfileDriveFile.id}`);
+	}
+	return {
+		id: numId,
+		google_drive_file_id: result.updateSimfileDriveFile.googleDriveFileId ?? null,
+		download_url: result.updateSimfileDriveFile.downloadUrl ?? null
+	};
 };
 
 export type DeleteResult = {

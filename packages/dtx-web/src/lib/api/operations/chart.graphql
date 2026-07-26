@@ -6,6 +6,7 @@ fragment SimfileFull on Simfile {
 	bpm
 	userId
 	isPublished
+	googleDriveFileId
 	downloadUrl
 	previewUrl
 	videoPreviewUrl
@@ -67,6 +68,18 @@ query GetSimfile($id: ID!) {
 mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
 	updateSimfile(id: $id, input: $input) {
 		...SimfileWithFiles
+	}
+}
+
+mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!) {
+	updateSimfileDriveFile(
+		id: $id
+		googleDriveFileId: $googleDriveFileId
+		downloadUrl: $downloadUrl
+	) {
+		id
+		googleDriveFileId
+		downloadUrl
 	}
 }
 

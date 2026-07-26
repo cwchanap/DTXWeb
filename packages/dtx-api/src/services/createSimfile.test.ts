@@ -44,6 +44,7 @@ const baseRow = {
 	is_published: 0 as const,
 	display_id: 1,
 	download_url: null,
+	google_drive_file_id: null,
 	preview_url: null,
 	video_preview_url: null,
 	publish_date: '2026-05-19T00:00:00Z',

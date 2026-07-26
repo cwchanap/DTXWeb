@@ -18,7 +18,13 @@ vi.mock('./transport', () => ({
 	makeServiceBindingClient: () => ({ request: requestMock })
 }));
 
-import { listSimfiles, getSimfile, updateSimfile, deleteSimfile } from './chart';
+import {
+	listSimfiles,
+	getSimfile,
+	updateSimfile,
+	updateSimfileDriveFile,
+	deleteSimfile
+} from './chart';
 
 beforeEach(() => {
 	requestMock.mockReset();
@@ -74,10 +80,17 @@ describe('listSimfiles (GraphQL path)', () => {
 describe('getSimfile', () => {
 	it('GraphQL: calls GetSimfile and unwraps', async () => {
 		requestMock.mockResolvedValue({
-			simfile: { id: '7', title: 't', files: [], hasUploadedFiles: false }
+			simfile: {
+				id: '7',
+				title: 't',
+				googleDriveFileId: 'drive-file-123',
+				files: [],
+				hasUploadedFiles: false
+			}
 		});
 		const result = await getSimfile('7');
 		expect(result.id).toBe(7);
+		expect(result.google_drive_file_id).toBe('drive-file-123');
 	});
 
 	it('throws "Simfile not found" when result.simfile is null', async () => {
@@ -101,6 +114,33 @@ describe('updateSimfile', () => {
 		expect(result.files).toHaveLength(1);
 		expect(result.files?.[0]?.key).toBe('charts/test.zip');
 		expect(result.has_uploaded_files).toBe(true);
+	});
+});
+
+describe('updateSimfileDriveFile', () => {
+	it('sends the Drive URL query, resource key, and fragment unchanged', async () => {
+		const downloadUrl =
+			'https://drive.google.com/uc?export=download&resourcekey=abc123#section';
+		requestMock.mockResolvedValue({
+			updateSimfileDriveFile: {
+				id: '9',
+				googleDriveFileId: 'drive-file-123',
+				downloadUrl
+			}
+		});
+
+		const result = await updateSimfileDriveFile('9', 'drive-file-123', downloadUrl);
+
+		expect(requestMock).toHaveBeenCalledWith(expect.anything(), {
+			id: '9',
+			googleDriveFileId: 'drive-file-123',
+			downloadUrl
+		});
+		expect(result).toEqual({
+			id: 9,
+			google_drive_file_id: 'drive-file-123',
+			download_url: downloadUrl
+		});
 	});
 });
 

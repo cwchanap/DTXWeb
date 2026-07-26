@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import {
 	createWriteStream,
+	existsSync,
 	mkdirSync,
 	readFileSync,
 	renameSync,
@@ -51,11 +52,21 @@ type Clock = {
 
 type Remote = (options: Record<string, unknown>) => Promise<WebdriverIO.Browser>;
 type Spawn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
+type StatusFetch = (
+	url: string,
+	init?: { signal?: AbortSignal }
+) => Promise<{
+	json: () => Promise<unknown>;
+	ok: boolean;
+}>;
 
 export type StandaloneSessionDependencies = {
 	clock?: Clock;
 	evaluate?: (port: number, script: string, args: unknown[]) => Promise<unknown>;
+	fetch?: StatusFetch;
 	nonce?: () => string;
+	platform?: NodeJS.Platform;
+	rename?: typeof renameSync;
 	remote?: Remote;
 	reservePort?: () => Promise<PortReservation>;
 	spawn?: Spawn;
@@ -70,11 +81,14 @@ type OwnedSession = {
 	port: number;
 	clock: Clock;
 	evaluate: (port: number, script: string, args: unknown[]) => Promise<unknown>;
+	ownershipVerified: boolean;
 };
 
 const EMBEDDED_PORT_ATTEMPTS = 3;
 const MAX_LEASE_AGE_MS = 15 * 60 * 1000;
 const CHILD_EXIT_TIMEOUT_MS = 5_000;
+const READINESS_POLL_MS = 100;
+const READINESS_TIMEOUT_MS = 60_000;
 const leaseDirectory = join(tmpdir(), 'dtx-e2e-embedded-port-leases');
 const ownerFileName = 'owner.json';
 const activeSessions = new WeakMap<WebdriverIO.Browser, OwnedSession>();
@@ -150,6 +164,24 @@ const isLeaseStale = (record: OwnershipRecord | null, now: number): boolean =>
 	Math.abs(now - record.createdAt) > MAX_LEASE_AGE_MS ||
 	!isPidAlive(record.pid);
 
+const errorCode = (error: unknown): string | null =>
+	error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : null;
+
+const isPublicationContention = (
+	error: unknown,
+	path: string,
+	platform: NodeJS.Platform
+): boolean => {
+	const code = errorCode(error);
+	if (code === 'EEXIST' || code === 'ENOTEMPTY') return true;
+	return (
+		platform === 'win32' &&
+		(code === 'EACCES' || code === 'EPERM') &&
+		existsSync(path) &&
+		readOwnershipRecord(path) !== null
+	);
+};
+
 const removeDirectory = (path: string): void => {
 	rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 };
@@ -197,7 +229,13 @@ const moveToQuarantine = (
 	return 'moved';
 };
 
-const acquirePortLease = (port: number, nonce: string, clock: Clock): PortLease | null => {
+const acquirePortLease = (
+	port: number,
+	nonce: string,
+	clock: Clock,
+	rename: typeof renameSync,
+	platform: NodeJS.Platform
+): PortLease | null => {
 	mkdirSync(leaseDirectory, { recursive: true, mode: 0o700 });
 	const path = join(leaseDirectory, `${port}.lease`);
 	const name = basename(path);
@@ -206,16 +244,11 @@ const acquirePortLease = (port: number, nonce: string, clock: Clock): PortLease 
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		const pending = createPrivateOwnershipDirectory(leaseDirectory, name, record);
 		try {
-			renameSync(pending, path);
+			rename(pending, path);
 			return { nonce, path, record };
 		} catch (error) {
 			removeDirectory(pending);
-			if (!(
-				error instanceof Error &&
-				'code' in error &&
-				typeof error.code === 'string' &&
-				['EEXIST', 'ENOTEMPTY'].includes(error.code)
-			)) {
+			if (!isPublicationContention(error, path, platform)) {
 				throw error;
 			}
 		}
@@ -349,6 +382,57 @@ const waitForChildExit = async (
 	});
 };
 
+const waitForTimer = async (clock: Clock, milliseconds: number): Promise<void> =>
+	await new Promise<void>((resolve) => {
+		clock.setTimeout(resolve, milliseconds);
+	});
+
+const waitForEmbeddedReadiness = async (
+	port: number,
+	child: ChildLike,
+	exitPromise: Promise<boolean>,
+	clock: Clock,
+	fetchStatus: StatusFetch
+): Promise<void> => {
+	const deadline = clock.now() + READINESS_TIMEOUT_MS;
+	const earlyExitError = new Error(
+		'Standalone Tauri app exited before the embedded WebDriver server became ready'
+	);
+	const earlyExit = exitPromise.then(async (exited) => {
+		if (exited) throw earlyExitError;
+		return await new Promise<never>(() => undefined);
+	});
+	while (clock.now() <= deadline) {
+		if (child.exitCode !== null || child.signalCode !== null) throw earlyExitError;
+		try {
+			const response = await Promise.race([
+				fetchStatus(`http://127.0.0.1:${port}/status`, {
+					signal: AbortSignal.timeout(Math.max(1, deadline - clock.now()))
+				}),
+				earlyExit
+			]);
+			const payload = (await response.json()) as { value?: { ready?: unknown } };
+			if (response.ok && payload.value?.ready === true) return;
+		} catch (error) {
+			if (error === earlyExitError) throw error;
+			// A pre-ready embedded server commonly rejects the first connection.
+		}
+		if (clock.now() >= deadline) break;
+		await Promise.race([
+			waitForTimer(clock, Math.min(READINESS_POLL_MS, deadline - clock.now())),
+			earlyExit
+		]);
+	}
+	throw new Error(`Embedded WebDriver server did not become ready on port ${port}`);
+};
+
+const isExpectedDriverDisconnect = (error: unknown): boolean => {
+	const message = error instanceof Error ? error.message : String(error);
+	return /ECONNREFUSED|connection refused|socket hang up|invalid session id|disconnected/i.test(
+		message
+	);
+};
+
 const collect = async (errors: unknown[], action: () => Promise<void> | void): Promise<void> => {
 	try {
 		await action();
@@ -363,10 +447,22 @@ const closeOwnedSession = async (
 	requestNativeExit: boolean
 ): Promise<void> => {
 	const errors: unknown[] = [];
-	if (requestNativeExit) {
+	let sessionClosedBeforeChildShutdown = false;
+	if (!requestNativeExit) {
+		try {
+			await session.browser.deleteSession();
+		} catch {
+			// A browser that has not proved ownership is best-effort cleanup only.
+		}
+		sessionClosedBeforeChildShutdown = true;
+	}
+	if (requestNativeExit && session.ownershipVerified) {
+		const exitCode = code ?? 0;
 		await collect(errors, async () => {
-			await session.browser.tauri.execute<void, []>(
-				({ core }) => core.invoke('plugin:process|exit', { code }) as Promise<void>
+			await session.browser.tauri.execute<void, [number]>(
+				({ core }, ownedExitCode) =>
+					core.invoke('plugin:process|exit', { code: ownedExitCode }) as Promise<void>,
+				exitCode
 			);
 		});
 	}
@@ -387,9 +483,15 @@ const closeOwnedSession = async (
 		}
 	}
 
-	await collect(errors, async () => {
-		await session.browser.deleteSession();
-	});
+	if (!sessionClosedBeforeChildShutdown) {
+		try {
+			await session.browser.deleteSession();
+		} catch (error) {
+			const childExited =
+				session.child.exitCode !== null || session.child.signalCode !== null;
+			if (!childExited || !isExpectedDriverDisconnect(error)) errors.push(error);
+		}
+	}
 	await collect(errors, session.closeLogs);
 
 	if (errors.length === 0) {
@@ -449,13 +551,16 @@ export const startStandaloneTauriSession = async (
 	const spawnProcess = dependencies.spawn ?? (spawn as Spawn);
 	const createRemote = dependencies.remote ?? (remote as unknown as Remote);
 	const evaluate = dependencies.evaluate ?? directEvaluate;
+	const fetchStatus = dependencies.fetch ?? (fetch as StatusFetch);
+	const rename = dependencies.rename ?? renameSync;
+	const platform = dependencies.platform ?? process.platform;
 	const sessionNonce = nonce();
 	let reservation: PortReservation | undefined;
 	let lease: PortLease | null = null;
 
 	for (let attempt = 0; attempt < EMBEDDED_PORT_ATTEMPTS && lease === null; attempt += 1) {
 		reservation = await reservePort();
-		lease = acquirePortLease(reservation.port, sessionNonce, clock);
+		lease = acquirePortLease(reservation.port, sessionNonce, clock, rename, platform);
 		if (lease === null) await reservation.release();
 	}
 	if (!reservation || !lease)
@@ -490,7 +595,9 @@ export const startStandaloneTauriSession = async (
 	const closeLogs = captureProcessLogs(child, logDir);
 
 	let browser: WebdriverIO.Browser | undefined;
+	let ownershipVerified = false;
 	try {
+		await waitForEmbeddedReadiness(reservation.port, child, exitPromise, clock, fetchStatus);
 		browser = await createRemote({
 			hostname: '127.0.0.1',
 			port: reservation.port,
@@ -504,6 +611,7 @@ export const startStandaloneTauriSession = async (
 		);
 		if (observedNonce !== sessionNonce)
 			throw new Error('Standalone Tauri session nonce mismatch');
+		ownershipVerified = true;
 		activeSessions.set(browser, {
 			browser,
 			child,
@@ -512,7 +620,8 @@ export const startStandaloneTauriSession = async (
 			lease,
 			port: reservation.port,
 			clock,
-			evaluate
+			evaluate,
+			ownershipVerified
 		});
 		return browser;
 	} catch (error) {
@@ -526,10 +635,11 @@ export const startStandaloneTauriSession = async (
 				lease,
 				port: reservation.port,
 				clock,
-				evaluate
+				evaluate,
+				ownershipVerified
 			};
 			try {
-				await closeOwnedSession(failedSession, 1, true);
+				await closeOwnedSession(failedSession, 1, ownershipVerified);
 			} catch (cleanupError) {
 				throw new AggregateError(
 					[error, cleanupError],

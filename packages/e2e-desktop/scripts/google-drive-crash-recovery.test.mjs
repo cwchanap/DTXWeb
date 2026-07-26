@@ -48,8 +48,7 @@ const oldDocument = {
 	documentToken: 'old-document',
 	readyState: 'complete',
 	workspacePresent: true,
-	workspaceVisible: true,
-	bridgeReady: true
+	workspaceVisible: true
 };
 
 const reloadedDocument = {
@@ -75,26 +74,31 @@ test('does not accept the old document or an incomplete replacement document', a
 		reloadedDocument
 	];
 	let calls = 0;
+	let nativeCalls = 0;
 	const session = {
 		execute: async () => {
 			const probe = probes[Math.min(calls, probes.length - 1)];
 			calls += 1;
 			return probe;
+		},
+		tauri: {
+			execute: async () => {
+				nativeCalls += 1;
+				return recovered;
+			}
 		}
 	};
 	const wait = controlledWait();
 
-	const result =
-		typeof waitForReloadedWorkspace === 'function'
-			? await waitForReloadedWorkspace(session, oldDocument.documentToken, {
-					...wait,
-					intervalMs: 1,
-					timeoutMs: 10
-				})
-			: undefined;
+	const result = await waitForReloadedWorkspace(session, oldDocument.documentToken, {
+		...wait,
+		intervalMs: 1,
+		timeoutMs: 10
+	});
 
 	expect(result).toEqual(reloadedDocument);
 	expect(calls).toBe(4);
+	expect(nativeCalls).toBe(1);
 });
 
 test('retries a transient navigation-time execute failure within the reload deadline', async () => {
@@ -106,50 +110,99 @@ test('retries a transient navigation-time execute failure within the reload dead
 			calls += 1;
 			if (outcome instanceof Error) throw outcome;
 			return outcome;
+		},
+		tauri: {
+			execute: async () => recovered
 		}
 	};
 	const wait = controlledWait();
 
-	const result =
-		typeof waitForReloadedWorkspace === 'function'
-			? await waitForReloadedWorkspace(session, oldDocument.documentToken, {
-					...wait,
-					intervalMs: 1,
-					timeoutMs: 10
-				})
-			: undefined;
+	const result = await waitForReloadedWorkspace(session, oldDocument.documentToken, {
+		...wait,
+		intervalMs: 1,
+		timeoutMs: 10
+	});
 
 	expect(result).toEqual(reloadedDocument);
 	expect(calls).toBe(2);
 });
 
-test('times out with bridge diagnostics instead of accepting a reloaded workspace without IPC', async () => {
+test('retries a callable native bridge that rejects before accepting live IPC', async () => {
+	const nativeOutcomes = [new Error('native bridge is still loading'), recovered];
+	let nativeCalls = 0;
 	const session = {
-		execute: async () => ({
-			...reloadedDocument,
-			bridgeReady: false
-		})
+		execute: async () => reloadedDocument,
+		tauri: {
+			execute: async () => {
+				const outcome = nativeOutcomes[Math.min(nativeCalls, nativeOutcomes.length - 1)];
+				nativeCalls += 1;
+				if (outcome instanceof Error) throw outcome;
+				return outcome;
+			}
+		}
 	};
 	const wait = controlledWait();
-	const result =
-		typeof waitForReloadedWorkspace === 'function'
-			? waitForReloadedWorkspace(session, oldDocument.documentToken, {
-					...wait,
-					intervalMs: 1,
-					timeoutMs: 3
-				})
-			: Promise.resolve();
 
-	await expect(result).rejects.toThrow('bridge=missing');
+	const result = await waitForReloadedWorkspace(session, oldDocument.documentToken, {
+		...wait,
+		intervalMs: 1,
+		timeoutMs: 10
+	});
+
+	expect(result).toEqual(reloadedDocument);
+	expect(nativeCalls).toBe(2);
+});
+
+test('times out with the last native error when a callable bridge keeps rejecting', async () => {
+	const session = {
+		execute: async () => reloadedDocument,
+		tauri: {
+			execute: async () => {
+				throw new Error('snapshot IPC rejected');
+			}
+		}
+	};
+	const wait = controlledWait();
+
+	await expect(
+		waitForReloadedWorkspace(session, oldDocument.documentToken, {
+			...wait,
+			intervalMs: 1,
+			timeoutMs: 3
+		})
+	).rejects.toThrow('lastNativeError=snapshot IPC rejected');
+});
+
+test('bounds a native bridge probe that never settles', async () => {
+	const session = {
+		execute: async () => reloadedDocument,
+		tauri: {
+			execute: async () => await new Promise(() => {})
+		}
+	};
+
+	await expect(
+		waitForReloadedWorkspace(session, oldDocument.documentToken, {
+			intervalMs: 1,
+			timeoutMs: 5
+		})
+	).rejects.toThrow('native=timed-out');
 });
 
 test('times out with workspace diagnostics instead of accepting a replacement without content', async () => {
+	let nativeCalls = 0;
 	const session = {
 		execute: async () => ({
 			...reloadedDocument,
 			workspacePresent: false,
 			workspaceVisible: false
-		})
+		}),
+		tauri: {
+			execute: async () => {
+				nativeCalls += 1;
+				return recovered;
+			}
+		}
 	};
 	const wait = controlledWait();
 
@@ -160,4 +213,5 @@ test('times out with workspace diagnostics instead of accepting a replacement wi
 			timeoutMs: 3
 		})
 	).rejects.toThrow('workspace=missing');
+	expect(nativeCalls).toBe(0);
 });

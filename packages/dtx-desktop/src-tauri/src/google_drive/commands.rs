@@ -697,7 +697,9 @@ fn map_local_upload_error(error: DesktopError) -> DriveUploadFailure {
         DesktopError::Message(message) if message == "NO_VALID_SONG_FILES" => {
             upload_failure(DriveApiError::NoValidSongFiles)
         }
-        DesktopError::Io(error) if matches!(error.raw_os_error(), Some(28 | 112)) => {
+        // 28 = ENOSPC (POSIX), 112 = ERROR_DISK_FULL (Windows),
+        // 122 = EDQUOT (Linux quota exceeded).
+        DesktopError::Io(error) if matches!(error.raw_os_error(), Some(28 | 112 | 122)) => {
             upload_failure(DriveApiError::InsufficientDiskSpace)
         }
         _ => upload_failure(DriveApiError::LocalState),
@@ -1593,13 +1595,18 @@ mod tests {
             map_local_upload_error(DesktopError::Message("NO_VALID_SONG_FILES".to_string())).error,
             DriveApiError::NoValidSongFiles
         );
-        // ENOSPC (28) and EDQUOT (112) → InsufficientDiskSpace.
+        // 28 = ENOSPC (POSIX), 112 = ERROR_DISK_FULL (Windows),
+        // 122 = EDQUOT (Linux quota) → InsufficientDiskSpace.
         assert_eq!(
             map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(28))).error,
             DriveApiError::InsufficientDiskSpace
         );
         assert_eq!(
             map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(112))).error,
+            DriveApiError::InsufficientDiskSpace
+        );
+        assert_eq!(
+            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(122))).error,
             DriveApiError::InsufficientDiskSpace
         );
         // EACCES (13) → LocalState (not disk space).

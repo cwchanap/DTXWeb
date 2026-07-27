@@ -905,6 +905,12 @@ impl Permission {
     fn is_public(&self) -> bool {
         // `id` and `allow_file_discovery` remain in the response shape for
         // validation but are not part of the public-permission predicate.
+        // `view` is only populated for "view" permissions: `published`
+        // (Publish-to-web, role `publishedReader`) or `metadata` (folder
+        // metadata visibility). Requiring `view.is_none()` ensures we only
+        // count a plain "anyone with the link" grant — the role check below
+        // already excludes `publishedReader`, but the explicit `view` guard
+        // documents intent and defends against future role/edge cases.
         self.permission_type == "anyone"
             && self.view.is_none()
             && matches!(self.role.as_str(), "reader" | "commenter" | "writer")

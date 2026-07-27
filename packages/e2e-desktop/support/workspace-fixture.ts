@@ -39,14 +39,14 @@ export const createWorkspaceFixture = ({
 	const fixtureParent = realpathSync(parentPath);
 	const workspaceRoot = join(fixtureParent, 'workspace');
 	const outsideRoot = join(fixtureParent, 'outside');
-	mkdirSync(workspaceRoot);
-	mkdirSync(outsideRoot);
+	mkdirSync(workspaceRoot, { recursive: true });
+	mkdirSync(outsideRoot, { recursive: true });
 	const songFolder = join(workspaceRoot, fixtureFolderName);
 	const exportRoot = join(workspaceRoot, 'exports');
 	const escapeLinkPath = join(workspaceRoot, fixtureEscapeLinkName);
 	let resolvedEscapeLinkPath: string | null = escapeLinkPath;
 	let escapeLinkUnavailableReason: string | undefined;
-	mkdirSync(exportRoot);
+	mkdirSync(exportRoot, { recursive: true });
 
 	if (includeSong) {
 		mkdirSync(songFolder);

@@ -44,6 +44,7 @@ const makeTreeNode = (name: string, path: string, children = []) => ({
 
 describe('workspaceStore', () => {
 	beforeEach(() => {
+		window.localStorage.clear();
 		vi.clearAllMocks();
 		(linkageCacheService.getLinkage as ReturnType<typeof vi.fn>).mockReturnValue(null);
 		workspaceStore.reset();

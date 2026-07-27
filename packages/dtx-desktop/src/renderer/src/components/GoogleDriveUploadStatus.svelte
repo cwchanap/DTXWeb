@@ -140,7 +140,9 @@
 			class="border-hairline bg-surface-1 space-y-2 rounded-lg border p-4"
 			aria-live="polite"
 		>
-			<p class="text-base-text text-sm">{$_(stageKey[operation.stage])}</p>
+			<p class="text-base-text text-sm">
+				{$_(stageKey[operation.stage] ?? 'googleDrive.upload.unknown')}
+			</p>
 			{#if operation.percentage !== undefined}
 				<p class="text-dim text-sm">{operation.percentage}%</p>
 			{/if}
@@ -178,7 +180,7 @@
 		>
 			<p class="text-yellow text-sm">{$_(errorMessageKey(visibleOutcome.errorCode))}</p>
 			{#each actionsFor(visibleOutcome.errorCode) as action}
-				{#if action === 'retry'}
+				{#if action === 'retry' && onRetry}
 					<button class="text-dim text-sm" onclick={onRetry}
 						>{$_('googleDrive.upload.retry')}</button
 					>
@@ -198,7 +200,7 @@
 					<button class="text-dim text-sm" onclick={handleRecheckSharing}
 						>{$_('googleDrive.recheckSharing')}</button
 					>
-				{:else if action === 'replace'}
+				{:else if action === 'replace' && onCreateReplacement}
 					<button class="text-dim text-sm" onclick={onCreateReplacement}
 						>{$_('googleDrive.upload.replace')}</button
 					>

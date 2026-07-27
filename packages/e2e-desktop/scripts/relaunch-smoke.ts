@@ -219,7 +219,12 @@ const pruneRelaunchDiagnostics = (diagnosticsRoot: string): void => {
 	const cutoff = Date.now() - MAX_RELAUNCH_LOG_AGE_MS;
 	try {
 		const entries = readdirSync(diagnosticsRoot, { withFileTypes: true })
-			.filter((entry) => entry.isDirectory() && entry.name.startsWith('relaunch-'))
+			.filter(
+				(entry) =>
+					entry.isDirectory() &&
+					entry.name.startsWith('relaunch-') &&
+					entry.name !== PRUNE_LOCK_FILE
+			)
 			.flatMap((entry) => {
 				const path = join(diagnosticsRoot, entry.name);
 				try {

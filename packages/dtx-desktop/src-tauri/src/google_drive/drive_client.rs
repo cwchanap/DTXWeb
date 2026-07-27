@@ -18,6 +18,7 @@ const FINAL_FILE_FIELDS: &str = "id,name,mimeType,webContentLink,capabilities(ca
 const PERMISSION_FIELDS: &str = "permissions(id,type,role,view,allowFileDiscovery),nextPageToken";
 const MAX_PERMISSION_PAGES: usize = 100;
 const MAX_PAGE_TOKEN_BYTES: usize = 8 * 1024;
+const MAX_FILE_ID_BYTES: usize = 256;
 const MAX_SESSION_URI_BYTES: usize = 16 * 1024;
 const ZIP_MIME_TYPE: &str = "application/zip";
 
@@ -888,6 +889,7 @@ struct PermissionPage {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Permission {
+    #[allow(dead_code)]
     id: String,
     #[serde(rename = "type")]
     permission_type: String,
@@ -895,12 +897,14 @@ struct Permission {
     #[serde(default)]
     view: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     allow_file_discovery: Option<bool>,
 }
 
 impl Permission {
     fn is_public(&self) -> bool {
-        let _complete_response_fields = (&self.id, self.allow_file_discovery);
+        // `id` and `allow_file_discovery` remain in the response shape for
+        // validation but are not part of the public-permission predicate.
         self.permission_type == "anyone"
             && self.view.is_none()
             && matches!(self.role.as_str(), "reader" | "commenter" | "writer")
@@ -972,7 +976,7 @@ fn usable_generated_id(ids: Vec<String>) -> Result<String, GoogleDriveValidation
         .next()
         .ok_or(GoogleDriveValidationError::InvalidResponse)?;
     let trimmed = id.trim();
-    if trimmed.is_empty() || trimmed.len() > MAX_PAGE_TOKEN_BYTES {
+    if trimmed.is_empty() || trimmed.len() > MAX_FILE_ID_BYTES {
         return Err(GoogleDriveValidationError::InvalidResponse);
     }
     Ok(trimmed.to_string())

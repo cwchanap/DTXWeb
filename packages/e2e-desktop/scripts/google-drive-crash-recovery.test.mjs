@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test';
 
-const { assertRecoveredDriveSnapshot, waitForReloadedWorkspace } =
-	await import('./google-drive-crash-recovery.ts');
+import {
+	assertRecoveredDriveSnapshot,
+	waitForReloadedWorkspace
+} from './google-drive-crash-recovery.ts';
 
 const recovered = {
 	owner: {
@@ -214,9 +216,11 @@ test('bounds a native bridge probe that never settles', async () => {
 			}
 		}
 	};
+	const wait = controlledWait();
 
 	await expect(
 		waitForReloadedWorkspace(session, oldDocument.documentToken, {
+			...wait,
 			intervalMs: 1,
 			timeoutMs: 5
 		})

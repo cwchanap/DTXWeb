@@ -94,6 +94,8 @@ struct InFlightUpload {
 struct PersistentDriveState {
     next_id: u64,
     objects: HashMap<String, PersistentDriveObject>,
+    #[serde(default)]
+    lifetime_create_count: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,6 +275,7 @@ impl E2eGoogleDriveFake {
         transaction.next = PersistentDriveState {
             next_id: 1,
             objects: HashMap::new(),
+            lifetime_create_count: 0,
         };
         self.commit_persistent_transaction(transaction)?;
         *self.lock_runtime() = RuntimeState {
@@ -301,7 +304,7 @@ impl E2eGoogleDriveFake {
             })
             .collect::<Vec<_>>();
         objects.sort_by(|left, right| left.file_id.cmp(&right.file_id));
-        let lifetime_create_count = objects.iter().map(|object| object.creation_count).sum();
+        let lifetime_create_count = transaction.next.lifetime_create_count;
         Ok(E2eDriveSnapshot {
             owner: seed_from_owner(&runtime.scenario.owner),
             objects,
@@ -474,6 +477,8 @@ impl E2eGoogleDriveFake {
             return Err(DriveApiError::InvalidGeneratedId);
         }
         let creation_count = if upload.create {
+            transaction.next.lifetime_create_count =
+                transaction.next.lifetime_create_count.saturating_add(1);
             1
         } else {
             transaction
@@ -701,6 +706,7 @@ fn restore_persistent_state(data_dir: &Path) -> Result<PersistentDriveState> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(PersistentDriveState {
             next_id: 1,
             objects: HashMap::new(),
+            lifetime_create_count: 0,
         }),
         Err(error) => Err(error.into()),
     }

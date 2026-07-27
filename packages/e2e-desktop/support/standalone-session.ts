@@ -627,7 +627,12 @@ export const startStandaloneTauriSession = async (
 
 	for (let attempt = 0; attempt < EMBEDDED_PORT_ATTEMPTS && lease === null; attempt += 1) {
 		reservation = await reservePort();
-		lease = acquirePortLease(reservation.port, sessionNonce, clock, rename, platform);
+		try {
+			lease = acquirePortLease(reservation.port, sessionNonce, clock, rename, platform);
+		} catch (error) {
+			await reservation.release();
+			throw error;
+		}
 		if (lease === null) await reservation.release();
 	}
 	if (!reservation || !lease)

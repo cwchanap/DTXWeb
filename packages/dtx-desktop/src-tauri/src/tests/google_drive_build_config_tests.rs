@@ -92,6 +92,15 @@ fn rejects_a_client_environment_marker_that_differs_from_the_build_environment()
 }
 
 #[test]
+fn rejects_an_unrecognized_declared_build_environment() {
+    let mut config = input();
+    config.declared_environment = Some("prod");
+
+    let error = parse_drive_build_mode(config).expect_err("unrecognized environment must error");
+    assert!(error.contains("DTX_DESKTOP_BUILD_ENV"));
+}
+
+#[test]
 fn rejects_e2e_without_the_e2e_feature() {
     let mut config = input();
     config.google_drive_feature = false;

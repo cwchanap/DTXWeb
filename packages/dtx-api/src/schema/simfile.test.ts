@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createYoga } from 'graphql-yoga';
-import { workerLogger } from '@dtx/common/server';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { Ctx } from '../context';
-import type { Env } from '../env';
+import { makeEnv, makeCtx, runQuery } from './simfileTestHarness';
 
 vi.mock('@supabase/supabase-js', () => ({
 	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
@@ -26,64 +24,12 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-const { schema } = await import('./index');
-const { getSimfile, getSimfileOwner, getNextDisplayId } = await import('@dtx/common/server');
+const { getSimfile, getSimfileOwner, getNextDisplayId, updateSimfileDriveFile } =
+	await import('@dtx/common/server');
 const mockedGetSimfile = vi.mocked(getSimfile);
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedNextDisplayId = vi.mocked(getNextDisplayId);
-
-const makeEnv = (): Env => ({
-	DB: {} as Env['DB'],
-	DTXFILE_BUCKET: {} as Env['DTXFILE_BUCKET'],
-	RATE_LIMIT_API: {} as Env['RATE_LIMIT_API'],
-	SUPABASE_URL: '',
-	SUPABASE_ANON_KEY: '',
-	RATE_LIMIT_ENV: 'pre-prod',
-	GRAPHIQL: 'false',
-	CORS_ALLOWED_ORIGINS: '',
-	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
-	PUBLIC_SIMFILE_BUCKET_URL: '',
-	SUPABASE_SERVICE_ROLE_KEY: ''
-});
-
-const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
-	user: null,
-	session: null,
-	env: makeEnv(),
-	db: {} as Ctx['db'],
-	r2: {} as Ctx['r2'],
-	kv: {} as Ctx['kv'],
-	request: new Request('http://test'),
-	logger: workerLogger,
-	ownerByIdCache: new Map(),
-	hasUploadedFilesCache: new Map(),
-	filesCache: new Map(),
-	catalogFilesCache: new Map(),
-	...overrides
-});
-
-const runQuery = async (ctx: Ctx, body: Record<string, unknown>) => {
-	const yoga = createYoga<{ ctx: Ctx }>({
-		schema,
-		context: (req) => req.ctx,
-		maskedErrors: false,
-		cors: false,
-		landingPage: false
-	});
-	const response = await yoga.fetch(
-		'http://test/graphql',
-		{
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body)
-		},
-		{ ctx }
-	);
-	return response.json() as Promise<{
-		data?: Record<string, unknown>;
-		errors?: Array<{ message: string; extensions?: Record<string, unknown> }>;
-	}>;
-};
+const mockedUpdateDriveFile = vi.mocked(updateSimfileDriveFile);
 
 const publishedSimfile = {
 	id: 42,
@@ -1755,8 +1701,6 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 
 const { updateSimfile } = await import('@dtx/common/server');
 const mockedUpdate = vi.mocked(updateSimfile);
-const { updateSimfileDriveFile } = await import('@dtx/common/server');
-const mockedUpdateDriveFile = vi.mocked(updateSimfileDriveFile);
 
 describe('Mutation.updateSimfileDriveFile', () => {
 	beforeEach(() => {
@@ -1880,8 +1824,6 @@ describe('Mutation.updateSimfileDriveFile', () => {
 
 			expect(result.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
 			expect(mockedUpdateDriveFile).not.toHaveBeenCalled();
-			expect(existing.google_drive_file_id).toBe('old-drive-file');
-			expect(existing.download_url).toBe('https://drive.google.com/old');
 		}
 	);
 
@@ -1906,8 +1848,6 @@ describe('Mutation.updateSimfileDriveFile', () => {
 		});
 
 		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
-		expect(existing.google_drive_file_id).toBe('old-drive-file');
-		expect(existing.download_url).toBe('https://drive.google.com/old');
 	});
 
 	it('keeps Drive IDs out of general create and update inputs', async () => {

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -16,12 +16,20 @@ Object.defineProperty(window, 'matchMedia', {
 	}))
 });
 
-// Mock localStorage
+// Mock localStorage with an in-memory backing store so values written
+// through setItem remain observable from getItem within the same test.
+const localStorageStore = new Map<string, string>();
 const localStorageMock = {
-	getItem: vi.fn(),
-	setItem: vi.fn(),
-	removeItem: vi.fn(),
-	clear: vi.fn(),
+	getItem: vi.fn((key: string) => localStorageStore.get(key) ?? null),
+	setItem: vi.fn((key: string, value: string) => {
+		localStorageStore.set(key, String(value));
+	}),
+	removeItem: vi.fn((key: string) => {
+		localStorageStore.delete(key);
+	}),
+	clear: vi.fn(() => {
+		localStorageStore.clear();
+	}),
 	length: 0,
 	key: vi.fn()
 };
@@ -48,3 +56,9 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
 	unobserve: vi.fn(),
 	disconnect: vi.fn()
 }));
+
+// Reset the stateful localStorage backing store between tests so seeded
+// values from one test do not leak into another.
+afterEach(() => {
+	window.localStorage.clear();
+});

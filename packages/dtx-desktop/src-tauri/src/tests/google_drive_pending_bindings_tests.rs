@@ -132,9 +132,14 @@ fn pending_store_rejects_wrong_schema_redundant_keys_and_malformed_ids() {
             serde_json::to_vec(&invalid).expect("invalid document"),
         )
         .expect("seed invalid document");
-        assert_eq!(
-            store.get("user-42", "42"),
-            Err(PendingBindingStoreError::LocalState)
+        // Malformed or unknown-schema documents are quarantined to a .corrupt
+        // sibling and the store recovers with an empty default state, so reads
+        // return Ok(None) instead of surfacing a LocalState error. The original
+        // file is no longer present at the expected path.
+        assert_eq!(store.get("user-42", "42"), Ok(None));
+        assert!(
+            !path.exists(),
+            "malformed pending-bindings file should be quarantined, not left in place"
         );
     }
 }

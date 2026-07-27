@@ -7,7 +7,7 @@ use encoding_rs::{Encoding, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{copy, ErrorKind, Read, Write};
+use std::io::{copy, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::ops::Deref;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -197,7 +197,7 @@ pub(crate) async fn export_song_to_zip_with_workspace_root(
         .filter(|title| !title.trim().is_empty())
         .unwrap_or("song");
 
-    match export_song_folder_to_zip_in_workspace(
+    match export_song_folder_to_zip_inner(
         &canonical_song_path,
         song_title,
         &export_directory,
@@ -223,21 +223,11 @@ pub async fn export_song_folder_to_zip(
     // workspace state. The IPC command above supplies the managed workspace
     // root. Keeping this wrapper preserves its existing behavior while all
     // collection still flows through the same symlink-safe helper.
-    match export_song_folder_to_zip_in_workspace(song_path, song_title, export_directory, song_path)
-        .await
+    match export_song_folder_to_zip_inner(song_path, song_title, export_directory, song_path).await
     {
         Ok(result) => Ok(result),
         Err(error) => Ok(ExportSongResult::failure(error.to_string())),
     }
-}
-
-async fn export_song_folder_to_zip_in_workspace(
-    song_path: &Path,
-    song_title: &str,
-    export_directory: &Path,
-    workspace_root: &Path,
-) -> Result<ExportSongResult> {
-    export_song_folder_to_zip_inner(song_path, song_title, export_directory, workspace_root).await
 }
 
 #[tauri::command]
@@ -531,7 +521,11 @@ pub(crate) struct ValidatedSongFile {
 
 impl ValidatedSongFile {
     fn open_reader(&self) -> Result<std::fs::File> {
-        Ok(self.source.try_clone()?)
+        let mut source = self.source.try_clone()?;
+        // `try_clone` shares the source cursor position; rewind so every reader
+        // starts at offset zero regardless of prior reads or identity probes.
+        source.seek(SeekFrom::Start(0))?;
+        Ok(source)
     }
 }
 

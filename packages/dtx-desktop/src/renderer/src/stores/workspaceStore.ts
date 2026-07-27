@@ -73,14 +73,16 @@ function updateTreeNodeRecursive(
 function createWorkspaceStore() {
 	const { subscribe, set, update } = writable<WorkspaceState>(initialState);
 
+	const applyPath = (state: WorkspaceState, path: string | null): WorkspaceState => ({
+		...state,
+		path,
+		error: null
+	});
+
 	return {
 		subscribe,
-		setPath: (path: string) => {
-			update((state) => ({ ...state, path, error: null }));
-		},
-		hydratePath: (path: string | null) => {
-			update((state) => ({ ...state, path, error: null }));
-		},
+		setPath: (path: string) => update((state) => applyPath(state, path)),
+		hydratePath: (path: string | null) => update((state) => applyPath(state, path)),
 		setCurrentSubWorkspace: (subWorkspace: string | null) => {
 			update((state) => ({ ...state, currentSubWorkspace: subWorkspace }));
 		},

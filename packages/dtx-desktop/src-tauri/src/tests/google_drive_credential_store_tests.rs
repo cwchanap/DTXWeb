@@ -185,6 +185,30 @@ async fn credential_access_runs_blocking_backend_calls_off_the_runtime_thread_an
         caller_thread
     );
     assert_eq!(store.max_active.load(Ordering::SeqCst), 1);
+
+    // Different Drumery accounts use independent per-user locks, so two
+    // concurrent calls for distinct users proceed in parallel rather than
+    // serializing behind the same mutex.
+    let (first, second) = tokio::join!(
+        access.get_refresh_token("user-a"),
+        access.get_refresh_token("user-b")
+    );
+
+    assert_eq!(
+        first
+            .expect("first distinct-user result")
+            .as_ref()
+            .map(|token| token.as_str()),
+        Some("refresh-token")
+    );
+    assert_eq!(
+        second
+            .expect("second distinct-user result")
+            .as_ref()
+            .map(|token| token.as_str()),
+        Some("refresh-token")
+    );
+    assert_eq!(store.max_active.load(Ordering::SeqCst), 2);
 }
 
 #[derive(Default)]

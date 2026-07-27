@@ -165,7 +165,7 @@ describe('Desktop native filesystem boundary', () => {
 		}
 
 		await expectOutsideWorkspaceRead(
-			join(fixture.workspaceRoot, 'FixtureSong', '..\\..\\outside', 'private.dtx')
+			fixture.workspaceRoot + '\\FixtureSong\\..\\..\\outside\\private.dtx'
 		);
 	});
 

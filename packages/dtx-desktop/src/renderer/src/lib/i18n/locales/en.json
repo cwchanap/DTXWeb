@@ -1,4 +1,7 @@
 {
+	"app": {
+		"loadingWorkspace": "Loading workspace\u2026"
+	},
 	"score": {
 		"title": "Scores",
 		"choose_db": "Choose songs.db",
@@ -110,6 +113,7 @@
 			"cancel": "Cancel upload",
 			"retry": "Retry Google Drive upload",
 			"replace": "Create a replacement upload",
+			"unknown": "Google Drive upload status is unknown",
 			"browserLink": "The download link opens in Google Drive and may redirect or show an interstitial.",
 			"openLink": "Open Google Drive download"
 		},
@@ -119,7 +123,8 @@
 			"linkedWarning": "This song is linked to a Google Drive file. The next successful Drive upload will replace the download URL with Google's current download link.",
 			"draftSaved": "Song saved successfully.",
 			"published": "Song published successfully.",
-			"previousDownloadPreserved": "Google Drive upload failed. Your previous download remains available."
+			"previousDownloadPreserved": "Google Drive upload failed. Your previous download remains available.",
+			"uploadWarningsHeading": "Song uploaded, but some preview files could not be uploaded:"
 		},
 		"error": {
 			"FILE_NOT_FOUND": "The previously linked Google Drive file is no longer available.",

@@ -309,7 +309,7 @@
 		return action;
 	};
 
-	const finishLocalSongAction = (key: string, action: LocalSongAction) => {
+	const finishLocalSongAction = (key: string, action: LocalSongAction): void => {
 		if (localSongActions.get(key) !== action) return;
 		const nextActions = new Map(localSongActions);
 		nextActions.delete(key);
@@ -348,7 +348,7 @@
 		targetPath: string,
 		simfileId: string,
 		outcome: SongSaveOutcome['driveUpload']
-	) => {
+	): void => {
 		if (outcome.status !== 'success') return;
 
 		const fields = {
@@ -576,7 +576,14 @@
 					source: 'automatic'
 				};
 			}
-			mergeSuccessfulDriveFields(targetSong, targetPath, savedSimfileId, outcome.driveUpload);
+			if (savedSimfileId) {
+				mergeSuccessfulDriveFields(
+					targetSong,
+					targetPath,
+					savedSimfileId,
+					outcome.driveUpload
+				);
+			}
 		} catch (error) {
 			console.error('Error uploading song:', error);
 			const uploadErrorOutcome = {
@@ -881,7 +888,7 @@
 		}
 	};
 
-	const handleDriveUpload = async (forceCreateReplacement = false) => {
+	const handleDriveUpload = async (forceCreateReplacement = false): Promise<void> => {
 		if (
 			currentDriveOperation ||
 			!song.path ||
@@ -925,12 +932,12 @@
 		}
 	};
 
-	const handleRetryDriveUpload = () => {
+	const handleRetryDriveUpload = (): void => {
 		if (!currentDriveOutcome || currentDriveOutcome.simfileId !== song.linkedSimFileId) return;
 		void handleDriveUpload(false);
 	};
 
-	const handleCreateReplacementDriveFile = () => {
+	const handleCreateReplacementDriveFile = (): void => {
 		if (!currentDriveOutcome || currentDriveOutcome.simfileId !== song.linkedSimFileId) return;
 		void handleDriveUpload(true);
 	};
@@ -1074,7 +1081,7 @@
 	<div class="border-amber/40 bg-amber/10 m-4 rounded-lg border p-3">
 		<div class="flex flex-col gap-1">
 			<span class="text-amber text-sm font-medium">
-				Song uploaded, but some preview files could not be uploaded:
+				{$_('googleDrive.songDetails.uploadWarningsHeading')}
 			</span>
 			{#each uploadWarnings as warning}
 				<span class="text-amber text-xs">{warning}</span>

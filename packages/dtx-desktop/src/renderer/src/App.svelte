@@ -14,6 +14,7 @@
 	import { desktopHost } from './services/desktopHost';
 	import { storeSessionData } from './services/supabaseService';
 	import { onMount, onDestroy } from 'svelte';
+	import { _ } from 'svelte-i18n';
 	import type { Session } from '@supabase/supabase-js';
 	import type { SimfileWithDtx } from '@dtx/common';
 
@@ -238,7 +239,7 @@
 	{/if}
 {:else}
 	<div class="bg-base flex min-h-screen items-center justify-center" role="status">
-		Loading workspace…
+		{$_('app.loadingWorkspace')}
 	</div>
 {/if}
 

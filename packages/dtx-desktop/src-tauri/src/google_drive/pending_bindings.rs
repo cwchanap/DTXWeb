@@ -108,6 +108,15 @@ impl GoogleDrivePendingBindingStore {
         user_id: &str,
         simfile_id: &str,
     ) -> Result<Option<PendingGoogleDriveBinding>, PendingBindingStoreError> {
+        // Reads take the same exclusive `pending_bindings_write_lock()` as
+        // writes. `write_json_atomic` already does an atomic temp-file +
+        // rename, so this is not about torn reads at the FS level; it
+        // serializes against the read-modify-write transactions in `replace`
+        // and `remove_if_matches` so a reader sees a consistent snapshot
+        // rather than a state mid-transaction. The store is a low-volume
+        // local-state file (one entry per pending upload), so the contention
+        // cost of an exclusive lock is negligible versus the complexity of a
+        // read/write lock split.
         let _guard = lock_unpoisoned(pending_bindings_write_lock());
         let bindings = self.read_validated()?;
         Ok(bindings
@@ -118,6 +127,7 @@ impl GoogleDrivePendingBindingStore {
     }
 
     pub(crate) fn all(&self) -> Result<Vec<PendingGoogleDriveBinding>, PendingBindingStoreError> {
+        // See `get` for why reads take the exclusive write lock.
         let _guard = lock_unpoisoned(pending_bindings_write_lock());
         let bindings = self.read_validated()?;
         let mut result = bindings
@@ -264,7 +274,10 @@ fn validate_identifier(value: &str) -> Result<(), PendingBindingStoreError> {
 
 fn classify_persistence_error(error: DesktopError) -> PendingBindingStoreError {
     match error {
-        DesktopError::Io(error) if matches!(error.raw_os_error(), Some(28 | 112)) => {
+        // 28 = ENOSPC (POSIX), 112 = ERROR_DISK_FULL (Windows),
+        // 122 = EDQUOT (Linux quota exceeded). All surface as
+        // InsufficientDiskSpace so the desktop UX can prompt cleanup.
+        DesktopError::Io(error) if matches!(error.raw_os_error(), Some(28 | 112 | 122)) => {
             PendingBindingStoreError::InsufficientDiskSpace
         }
         _ => PendingBindingStoreError::LocalState,

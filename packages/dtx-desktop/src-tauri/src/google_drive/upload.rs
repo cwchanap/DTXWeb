@@ -876,6 +876,13 @@ where
         .map_err(pending_store_failure)?;
     let had_pending_binding = pending.is_some();
 
+    // Re-fetch owner metadata inside the transaction lock. The caller
+    // (commands.rs) already fetched this to choose between Update and Create,
+    // but that read happened before lock acquisition. Re-validating here is
+    // intentional defense-in-depth: it guards against the owner row changing
+    // between the routing decision and the critical section, and lets us
+    // re-check `owner.id == request.simfile_id` and run
+    // `compensate_lost_owner` on `DefinitiveUnavailable` while holding the lock.
     let owner = match metadata_client
         .fetch_owner_simfile(auth, &request.simfile_id)
         .await

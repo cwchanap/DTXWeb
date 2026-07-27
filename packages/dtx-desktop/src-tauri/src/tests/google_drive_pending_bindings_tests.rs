@@ -262,6 +262,19 @@ fn pending_store_maps_disk_full_separately_from_other_local_failures() {
         )),
         PendingBindingStoreError::InsufficientDiskSpace
     );
+    // 112 = ERROR_DISK_FULL (Windows), 122 = EDQUOT (Linux quota).
+    assert_eq!(
+        classify_persistence_error(crate::error::DesktopError::Io(
+            std::io::Error::from_raw_os_error(112)
+        )),
+        PendingBindingStoreError::InsufficientDiskSpace
+    );
+    assert_eq!(
+        classify_persistence_error(crate::error::DesktopError::Io(
+            std::io::Error::from_raw_os_error(122)
+        )),
+        PendingBindingStoreError::InsufficientDiskSpace
+    );
     assert_eq!(
         classify_persistence_error(crate::error::DesktopError::Io(
             std::io::Error::from_raw_os_error(13)

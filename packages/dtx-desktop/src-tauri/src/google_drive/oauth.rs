@@ -595,6 +595,14 @@ pub(crate) async fn persist_validated_connection(
     refresh_token: Zeroizing<String>,
     folder: GoogleDriveFolderSetting,
 ) -> Result<(), GoogleDriveOAuthError> {
+    // Two-phase persist: the refresh token and folder live in separate
+    // stores with no cross-store atomic commit, so there is a window where
+    // the token is updated but the folder is not. We write the token first
+    // because a stale token is recoverable (reconnect re-issues it) while a
+    // stale folder silently points uploads at the wrong Drive location. If
+    // the folder write fails we roll the token back to `prior_token` and
+    // return `LocalState` (or `CredentialStore` if the rollback itself
+    // fails); the user re-runs the picker to re-establish both halves.
     let prior_token = credentials
         .get_refresh_token(user_id)
         .await

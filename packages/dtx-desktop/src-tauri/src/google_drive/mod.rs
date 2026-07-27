@@ -144,8 +144,6 @@ struct CachedAccessToken {
 /// constructor so production can use the platform keyring while E2E supplies
 /// deterministic fakes without exposing credentials to the renderer.
 pub(crate) struct GoogleDriveState {
-    #[allow(dead_code)]
-    credential_store: Arc<dyn GoogleDriveCredentialStore>,
     pub(crate) credentials: GoogleDriveCredentialAccess,
     pub(crate) metadata_client: Arc<dyn DriveMetadataClient>,
     pub(crate) settings: Arc<dyn GoogleDriveSettingsAccess>,
@@ -196,8 +194,7 @@ impl GoogleDriveState {
         picker_config: PickerProtocolConfig,
     ) -> Self {
         Self {
-            credentials: GoogleDriveCredentialAccess::new(credential_store.clone()),
-            credential_store,
+            credentials: GoogleDriveCredentialAccess::new(credential_store),
             metadata_client,
             settings,
             oauth_provider,
@@ -668,8 +665,8 @@ impl GoogleDriveState {
     }
 }
 
-/// E2E uses this until its deterministic Drive API fake arrives in Tasks 8–9.
-/// It guarantees no accidental network metadata calls during setup.
+/// An always-failing metadata client used by adapter-only tests to guarantee
+/// no accidental network metadata calls during setup.
 pub(crate) struct UnavailableDriveMetadataClient;
 
 #[async_trait]

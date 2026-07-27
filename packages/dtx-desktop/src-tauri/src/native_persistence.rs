@@ -49,7 +49,14 @@ where
                 T::default()
             }
         },
-        Err(_) => T::default(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => T::default(),
+        Err(error) => {
+            eprintln!(
+                "[{label}] failed to read {}: {error} — using defaults",
+                path.display()
+            );
+            T::default()
+        }
     }
 }
 

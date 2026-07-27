@@ -181,16 +181,24 @@ impl GoogleDrivePendingBindingStore {
 
     fn read_validated(&self) -> Result<GoogleDrivePendingBindings, PendingBindingStoreError> {
         let path = google_drive_pending_bindings_path(&self.data_dir);
-        let contents = match fs::read_to_string(path) {
+        let contents = match fs::read_to_string(&path) {
             Ok(contents) => contents,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(GoogleDrivePendingBindings::default());
             }
             Err(_) => return Err(PendingBindingStoreError::LocalState),
         };
-        let bindings: GoogleDrivePendingBindings =
-            serde_json::from_str(&contents).map_err(|_| PendingBindingStoreError::LocalState)?;
-        validate_document(&bindings)?;
+        let bindings: GoogleDrivePendingBindings = match serde_json::from_str(&contents) {
+            Ok(bindings) => bindings,
+            Err(_) => {
+                quarantine_corrupt_pending_bindings(&path);
+                return Ok(GoogleDrivePendingBindings::default());
+            }
+        };
+        if validate_document(&bindings).is_err() {
+            quarantine_corrupt_pending_bindings(&path);
+            return Ok(GoogleDrivePendingBindings::default());
+        }
         Ok(bindings)
     }
 
@@ -201,6 +209,11 @@ impl GoogleDrivePendingBindingStore {
         )
         .map_err(classify_persistence_error)
     }
+}
+
+fn quarantine_corrupt_pending_bindings(path: &Path) {
+    let corrupt_path = path.with_extension("json.corrupt");
+    let _ = fs::rename(path, &corrupt_path);
 }
 
 fn validate_document(

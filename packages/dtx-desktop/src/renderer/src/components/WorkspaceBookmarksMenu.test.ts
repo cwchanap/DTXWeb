@@ -159,7 +159,6 @@ describe('WorkspaceBookmarksMenu', () => {
 		});
 
 		it('explains that bookmarks must be reselected before they become the active workspace', async () => {
-			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
 
 			render(WorkspaceBookmarksMenu);

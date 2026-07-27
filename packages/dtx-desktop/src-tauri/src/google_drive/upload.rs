@@ -29,6 +29,11 @@ const MAX_UPLOAD_RETRIES: usize = 4;
 const MAX_FINAL_METADATA_ATTEMPTS: usize = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
+/// Provider-requested Retry-After delays are honored up to this ceiling, which
+/// is intentionally larger than `MAX_RETRY_DELAY`: the server explicitly asked
+/// us to wait, so we respect that up to a safety bound rather than collapsing
+/// it onto the exponential-backoff cap.
+const MAX_PROVIDER_RETRY_DELAY: Duration = Duration::from_secs(60);
 const MAX_DOWNLOAD_URL_BYTES: usize = 8 * 1024;
 
 pub(crate) const DRIVE_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
@@ -1224,9 +1229,15 @@ where
             }
             Err(_) => return Err(create_failure(DriveApiError::MetadataSync)),
         }
-        if attempt == 0 {
+        let transient = matches!(
+            patch_result,
+            Err(DriveMetadataError::Network | DriveMetadataError::ServiceUnavailable)
+        );
+        if attempt == 0 && transient {
             maybe_inject_crash(crash_at, CreateCrashPoint::BeforeMetadataPatchRetry)?;
+            continue;
         }
+        break;
     }
 
     if owner_references_pending_file(prior_owner, pending) {
@@ -2106,8 +2117,12 @@ pub(crate) fn bounded_retry_delay(attempt: usize, retry_after: Option<Duration>)
                 .checked_shl(attempt.min(31) as u32)
                 .unwrap_or(u32::MAX),
         )
-        .unwrap_or(MAX_RETRY_DELAY);
-    retry_after.unwrap_or(exponential).min(MAX_RETRY_DELAY)
+        .unwrap_or(MAX_RETRY_DELAY)
+        .min(MAX_RETRY_DELAY);
+    match retry_after {
+        Some(provider) => provider.min(MAX_PROVIDER_RETRY_DELAY),
+        None => exponential,
+    }
 }
 
 /// A native-only upload staging location. Its constructor intentionally takes

@@ -265,7 +265,7 @@ async fn callback_read_uses_the_attempt_deadline_not_a_fresh_timeout_per_byte() 
     let (mut stream, _) = listener.accept().await.expect("accept callback");
 
     let result =
-        read_callback_target(&mut stream, Instant::now() + Duration::from_millis(25)).await;
+        read_callback_target(&mut stream, Instant::now() + Duration::from_millis(100)).await;
 
     assert_eq!(result, Err(GoogleDriveOAuthError::Canceled));
     writer.abort();
@@ -919,7 +919,14 @@ async fn concurrent_cache_misses_single_flight_one_refresh_per_user() {
     provider.wait_until_refresh_started().await;
     let second_state = state.clone();
     let second = tokio::spawn(async move { second_state.access_token_for_user("user-42").await });
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // Give the second task enough scheduling rounds to reach the single-flight
+    // wait (it must observe the in-flight refresh and join it rather than
+    // starting a second refresh). A fixed sleep is non-deterministic; a bounded
+    // yield_now loop provides deterministic scheduling within the current-thread
+    // runtime.
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
 
     assert_eq!(provider.refresh_calls.load(Ordering::SeqCst), 1);
     provider.release_refresh.add_permits(2);
@@ -957,7 +964,13 @@ async fn disconnect_waits_for_in_flight_refresh_then_removes_rotated_state() {
     provider.wait_until_refresh_started().await;
     let disconnect_state = state.clone();
     let disconnect = tokio::spawn(async move { disconnect_state.disconnect_user("user-42").await });
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // Give the disconnect task enough scheduling rounds to reach the
+    // per-user lock wait (it must serialize behind the in-flight refresh).
+    // A fixed sleep is non-deterministic; a bounded yield_now loop provides
+    // deterministic scheduling within the current-thread runtime.
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
     assert!(
         !disconnect.is_finished(),
         "disconnect must serialize behind the in-flight refresh"

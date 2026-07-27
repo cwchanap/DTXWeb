@@ -634,6 +634,9 @@ async fn drive_metadata_graphql_data(
     if status.is_server_error() {
         return Err(DriveMetadataError::ServiceUnavailable);
     }
+    if matches!(status.as_u16(), 429 | 408) {
+        return Err(DriveMetadataError::ServiceUnavailable);
+    }
     if !status.is_success() {
         return Err(DriveMetadataError::InvalidResponse);
     }

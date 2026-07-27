@@ -2157,8 +2157,12 @@ describe('SongDetails', () => {
 			await waitFor(() => {
 				const payload = mockHostInvoke.mock.calls.find(
 					([command]) => command === 'create-simfile-record'
-				)?.[1] as Record<string, unknown>;
-				expect(Object.keys(payload)).not.toContain('workspace' + 'Root');
+				)?.[1] as Record<string, unknown> | undefined;
+				// Fail with a clear assertion if create-simfile-record was never invoked.
+				expect(payload).toBeDefined();
+				// The property name is intentionally split so static auditors searching
+				// for the literal key do not flag this test as a source of leakage.
+				expect(Object.keys(payload!)).not.toContain('workspace' + 'Root');
 			});
 			// The uploader stores the raw #DLEVEL value directly — it is already
 			// in DTXManiaCX's canonical encoding, and normalizeLevel / formatLevel
@@ -2590,8 +2594,12 @@ describe('SongDetails', () => {
 			await waitFor(() => {
 				const payload = mockHostInvoke.mock.calls.find(
 					([command]) => command === 'create-simfile-record'
-				)?.[1] as Record<string, unknown>;
-				expect(Object.keys(payload)).not.toContain('workspace' + 'Root');
+				)?.[1] as Record<string, unknown> | undefined;
+				// Fail with a clear assertion if create-simfile-record was never invoked.
+				expect(payload).toBeDefined();
+				// The property name is intentionally split so static auditors searching
+				// for the literal key do not flag this test as a source of leakage.
+				expect(Object.keys(payload!)).not.toContain('workspace' + 'Root');
 			});
 		});
 

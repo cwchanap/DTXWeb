@@ -142,6 +142,46 @@ describe('updateSimfileDriveFile', () => {
 			download_url: downloadUrl
 		});
 	});
+
+	it('rejects a non-numeric server id with "Invalid simfile id"', async () => {
+		requestMock.mockResolvedValue({
+			updateSimfileDriveFile: {
+				id: 'abc',
+				googleDriveFileId: 'drive-file-123',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-file-123'
+			}
+		});
+
+		await expect(
+			updateSimfileDriveFile(
+				'abc',
+				'drive-file-123',
+				'https://drive.google.com/uc?id=drive-file-123'
+			)
+		).rejects.toThrow('Invalid simfile id: abc');
+	});
+
+	it('maps null googleDriveFileId/downloadUrl to null fields', async () => {
+		requestMock.mockResolvedValue({
+			updateSimfileDriveFile: {
+				id: '9',
+				googleDriveFileId: null,
+				downloadUrl: null
+			}
+		});
+
+		const result = await updateSimfileDriveFile(
+			'9',
+			'drive-file-123',
+			'https://drive.google.com/uc?id=drive-file-123'
+		);
+
+		expect(result).toEqual({
+			id: 9,
+			google_drive_file_id: null,
+			download_url: null
+		});
+	});
 });
 
 describe('deleteSimfile', () => {

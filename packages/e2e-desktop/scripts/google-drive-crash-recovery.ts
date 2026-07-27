@@ -340,12 +340,30 @@ const waitForReconciliation = async (session: WebdriverIO.Browser): Promise<E2eD
 	const deadline = Date.now() + 20_000;
 	let latest: E2eDriveSnapshot | undefined;
 	while (Date.now() < deadline) {
-		latest = await readSnapshot(session);
-		if (
-			latest.owner.googleDriveFileId === expectedDriveFileId &&
-			latest.owner.downloadUrl === expectedDownloadUrl
-		) {
-			return latest;
+		const outcome = await runBeforeDeadline(
+			async () => await readSnapshot(session),
+			Math.max(1, deadline - Date.now())
+		);
+		if (outcome.kind === 'deadline') break;
+		if (outcome.kind === 'error') {
+			if (!isRetryableReloadProbeError(outcome.error)) {
+				throw new Error(
+					`Crash-recovery reconciliation snapshot failed: ${
+						outcome.error instanceof Error
+							? outcome.error.message
+							: String(outcome.error)
+					}`,
+					{ cause: outcome.error }
+				);
+			}
+		} else {
+			latest = outcome.value;
+			if (
+				latest.owner.googleDriveFileId === expectedDriveFileId &&
+				latest.owner.downloadUrl === expectedDownloadUrl
+			) {
+				return latest;
+			}
 		}
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}

@@ -65,7 +65,20 @@ const linkedSimfile = ({
 	downloadUrl?: string | null;
 	googleDriveFileId?: string | null;
 	rendererTitle?: string;
-} = {}) => ({
+} = {}): {
+	id: number;
+	title: string;
+	artist: string;
+	bpm: number;
+	is_published: boolean;
+	publish_date: string;
+	display_id: number;
+	download_url: string | null;
+	google_drive_file_id: string | null;
+	preview_url: string | null;
+	video_preview_url: string | null;
+	dtx_files: never[];
+} => ({
 	id: Number(simfileId),
 	title: rendererTitle,
 	artist: 'Integration Test',
@@ -161,7 +174,9 @@ const waitForSnapshot = async (
 	return latest;
 };
 
-const expectedZipEntries = (fixture: WorkspaceFixture) =>
+const expectedZipEntries = (
+	fixture: WorkspaceFixture
+): { name: string; size: number; sha256: string }[] =>
 	readdirSync(fixture.songFolder)
 		.map((name) => {
 			const contents = readFileSync(join(fixture.songFolder, name));

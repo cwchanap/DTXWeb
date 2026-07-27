@@ -282,16 +282,18 @@ impl TryFrom<OAuthTokenResponse> for ValidatedPickerTokens {
         });
         if access_token.trim().is_empty()
             || access_token.len() > MAX_AUTH_ARTIFACT_BYTES
-            || refresh_token.is_none()
             || !has_scope
             || response.expires_in == 0
         {
             return Err(GoogleDriveOAuthError::InvalidResponse);
         }
+        let Some(refresh_token) = refresh_token else {
+            return Err(GoogleDriveOAuthError::InvalidResponse);
+        };
 
         Ok(Self {
             access_token,
-            refresh_token: refresh_token.unwrap_or_default(),
+            refresh_token,
             expires_in: response.expires_in,
         })
     }

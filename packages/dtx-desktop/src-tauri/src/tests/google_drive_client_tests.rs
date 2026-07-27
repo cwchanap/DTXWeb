@@ -714,6 +714,27 @@ async fn resumable_chunks_use_put_and_authoritative_range_then_probe_with_empty_
 }
 
 #[tokio::test]
+async fn resumable_status_probe_maps_a_404_to_session_expired() {
+    let server = MockServer::start().await;
+    let session =
+        ResumableUploadSession::for_test(&format!("{}/session", server.uri())).expect("session");
+    Mock::given(method("PUT"))
+        .and(path("/session"))
+        .and(header("authorization", format!("Bearer {ACCESS_TOKEN}")))
+        .and(header("content-length", "0"))
+        .and(header("content-range", "bytes */10"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::query_session_status(&client(&server), ACCESS_TOKEN, &session, 10).await,
+        Err(DriveApiError::SessionExpired)
+    );
+}
+
+#[tokio::test]
 async fn resumable_308_without_range_confirms_zero_bytes_not_the_attempted_chunk() {
     let server = MockServer::start().await;
     let session =

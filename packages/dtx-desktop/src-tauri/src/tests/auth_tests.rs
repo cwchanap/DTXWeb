@@ -1626,7 +1626,7 @@ fn resolve_auth_config_returns_none_in_test_environment() {
     // process-global env mutation that could race with parallel tests.
     let _guard = crate::auth::auth_config_env_lock()
         .lock()
-        .expect("auth config env lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     assert!(resolve_auth_config().is_none());
 }
 
@@ -2230,7 +2230,7 @@ async fn try_refresh_session_refreshes_and_stores_new_session_on_success() {
 fn resolve_auth_config_returns_some_when_env_vars_are_set() {
     let _guard = crate::auth::auth_config_env_lock()
         .lock()
-        .expect("auth config env lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let saved_url = std::env::var_os("PUBLIC_SUPABASE_URL");
     let saved_key = std::env::var_os("PUBLIC_SUPABASE_ANON_KEY");
     std::env::set_var("PUBLIC_SUPABASE_URL", "https://example.supabase.co");
@@ -2257,7 +2257,7 @@ fn resolve_auth_config_returns_some_when_env_vars_are_set() {
 fn resolve_auth_config_returns_none_when_env_vars_are_blank() {
     let _guard = crate::auth::auth_config_env_lock()
         .lock()
-        .expect("auth config env lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let saved_url = std::env::var_os("PUBLIC_SUPABASE_URL");
     let saved_key = std::env::var_os("PUBLIC_SUPABASE_ANON_KEY");
     std::env::set_var("PUBLIC_SUPABASE_URL", "   ");
@@ -2338,7 +2338,7 @@ fn magic_link_result_from_verify_response_includes_user_from_session_when_absent
 async fn verify_magic_link_succeeds_when_configured_and_server_responds() {
     let _guard = crate::auth::auth_config_env_lock()
         .lock()
-        .expect("auth config env lock");
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let saved_url = std::env::var_os("PUBLIC_SUPABASE_URL");
     let saved_key = std::env::var_os("PUBLIC_SUPABASE_ANON_KEY");
 

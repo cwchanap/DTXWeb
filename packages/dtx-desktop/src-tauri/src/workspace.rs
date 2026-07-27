@@ -172,12 +172,11 @@ fn canonical_workspace_directory(path: &Path) -> Option<PathBuf> {
         return None;
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o111 == 0 {
-            return None;
-        }
+    // Probe read/list access on the canonical directory instead of relying on
+    // a Unix-only permission-bit heuristic. If we cannot enumerate entries, the
+    // directory is not usable as a workspace root.
+    if fs::read_dir(&canonical).is_err() {
+        return None;
     }
 
     Some(canonical)

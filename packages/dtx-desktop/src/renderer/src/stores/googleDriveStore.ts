@@ -108,19 +108,29 @@ export const createGoogleDriveStore = () => {
 			update((state) => ({ ...state, error }));
 		},
 		beginOperation: (operationId: string, simfileId: string) =>
-			update((state) => ({
-				...state,
-				operations: {
-					...state.operations,
-					[operationId]: { operationId, simfileId, stage: 'waiting-for-upload-slot' }
-				},
-				error: null
-			})),
+			update((state) => {
+				// Remove terminal operations for the same simfile so completed
+				// entries do not accumulate across repeated uploads in a session.
+				const cleanedOperations = Object.fromEntries(
+					Object.entries(state.operations).filter(
+						([, op]) => op.simfileId !== simfileId || !terminalStages.has(op.stage)
+					)
+				);
+				return {
+					...state,
+					operations: {
+						...cleanedOperations,
+						[operationId]: { operationId, simfileId, stage: 'waiting-for-upload-slot' }
+					},
+					error: null
+				};
+			}),
 		applyProgress: (progress: GoogleDriveUploadProgress) =>
 			update((state) => {
 				const operation = state.operations[progress.operationId];
 				if (
 					!operation ||
+					!(progress.stage in stageRank) ||
 					operation.simfileId !== progress.simfileId ||
 					terminalStages.has(operation.stage) ||
 					stageRank[progress.stage] < stageRank[operation.stage]

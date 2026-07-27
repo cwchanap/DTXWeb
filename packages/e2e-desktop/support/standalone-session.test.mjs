@@ -162,7 +162,7 @@ test('observes the exact owned native process exit code before cleanup', async (
 		code: 'ECONNREFUSED'
 	});
 	const dependencies = makeDependencies({
-		port: 46_017,
+		port: 46_021,
 		exitError: connectionRefused,
 		onExit: () => undefined
 	});
@@ -172,7 +172,7 @@ test('observes the exact owned native process exit code before cleanup', async (
 		await expect(waitForStandaloneTauriSessionExit(browser, 86)).resolves.toBeUndefined();
 		await terminateStandaloneTauriSession(browser, 86);
 	} finally {
-		cleanupLease(46_017);
+		cleanupLease(46_021);
 	}
 });
 

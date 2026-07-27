@@ -4,6 +4,7 @@ import { linkingService } from './linkingService';
 import { linkageCacheService } from './linkageCacheService';
 import type { WorkspaceBookmark } from '../stores/bookmarkStore';
 import { desktopHost } from './desktopHost';
+import { get } from 'svelte/store';
 
 let switchOwner: number | null = null;
 let nextSwitchOwner = 0;
@@ -52,67 +53,42 @@ const finishLoading = (generation: number): void => {
 	}
 };
 
-const queueTrustTransition = <T>(
+const queueTransition = <T>(
 	operation: (generation: number) => Promise<T>,
-	onDiscarded: () => T
+	onDiscarded: () => T,
+	startLoading: boolean
 ): Promise<T> => {
 	const lifecycle = operationLifecycle;
-	const queued = trustTransitionQueue.then(
-		() => {
-			if (lifecycle !== operationLifecycle) return onDiscarded();
-			const generation = beginWorkspaceTransition();
-			beginLoading(generation);
-			return operation(generation);
-		},
-		() => {
-			if (lifecycle !== operationLifecycle) return onDiscarded();
-			const generation = beginWorkspaceTransition();
-			beginLoading(generation);
-			return operation(generation);
-		}
-	);
+	const run = (): T | Promise<T> => {
+		if (lifecycle !== operationLifecycle) return onDiscarded();
+		const generation = beginWorkspaceTransition();
+		if (startLoading) beginLoading(generation);
+		return operation(generation);
+	};
+	const queued = trustTransitionQueue.then(run, run);
 	trustTransitionQueue = queued.then(
 		() => undefined,
 		() => undefined
 	);
 	return queued;
 };
+
+const queueTrustTransition = <T>(
+	operation: (generation: number) => Promise<T>,
+	onDiscarded: () => T
+): Promise<T> => queueTransition(operation, onDiscarded, true);
 
 const queueViewTransition = <T>(
 	operation: (generation: number) => Promise<T>,
 	onDiscarded: () => T
-): Promise<T> => {
-	const lifecycle = operationLifecycle;
-	const queued = trustTransitionQueue.then(
-		() => {
-			if (lifecycle !== operationLifecycle) return onDiscarded();
-			return operation(beginWorkspaceTransition());
-		},
-		() => {
-			if (lifecycle !== operationLifecycle) return onDiscarded();
-			return operation(beginWorkspaceTransition());
-		}
-	);
-	trustTransitionQueue = queued.then(
-		() => undefined,
-		() => undefined
-	);
-	return queued;
-};
+): Promise<T> => queueTransition(operation, onDiscarded, false);
 
 const getWorkspaceSnapshot = (): Pick<WorkspaceState, 'path' | 'currentSubWorkspace'> => {
-	let snapshot: Pick<WorkspaceState, 'path' | 'currentSubWorkspace'> = {
-		path: null,
-		currentSubWorkspace: null
+	const state = get(workspaceStore);
+	return {
+		path: state.path,
+		currentSubWorkspace: state.currentSubWorkspace
 	};
-	const unsubscribe = workspaceStore.subscribe((state) => {
-		snapshot = {
-			path: state.path,
-			currentSubWorkspace: state.currentSubWorkspace
-		};
-	});
-	unsubscribe();
-	return snapshot;
 };
 
 const isWorkspaceSnapshotCurrent = (
@@ -474,6 +450,9 @@ export const workspaceService = {
 			// If children are already loaded, just expand
 			if (currentNode.children.length > 0) {
 				workspaceStore.updateTreeNode(nodePath, { isExpanded: true });
+				if (expandRequests.get(nodePath) === request) {
+					expandRequests.delete(nodePath);
+				}
 				return;
 			}
 
@@ -503,6 +482,10 @@ export const workspaceService = {
 				children: enrichedChildren,
 				hasChildren: enrichedChildren.length > 0
 			});
+
+			if (expandRequests.get(nodePath) === request) {
+				expandRequests.delete(nodePath);
+			}
 
 			// Trigger auto-linking for newly loaded children (more efficient than full tree scan)
 			workspaceService.triggerAutoLinkingForNewNodes(enrichedChildren);

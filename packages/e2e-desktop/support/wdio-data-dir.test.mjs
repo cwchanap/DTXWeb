@@ -6,13 +6,20 @@ import { join } from 'node:path';
 const { allocateWdioDataDirectory, cleanupWdioDataDirectory } = await import('./wdio-data-dir.ts');
 
 test('cleans a data directory created for the current WDIO run', () => {
-	const allocation = allocateWdioDataDirectory();
-	writeFileSync(join(allocation.path, 'owned-sentinel.txt'), 'owned');
+	const previousDataDir = process.env.DTX_E2E_DATA_DIR;
+	delete process.env.DTX_E2E_DATA_DIR;
+	try {
+		const allocation = allocateWdioDataDirectory();
+		writeFileSync(join(allocation.path, 'owned-sentinel.txt'), 'owned');
 
-	cleanupWdioDataDirectory(allocation);
+		cleanupWdioDataDirectory(allocation);
 
-	expect(allocation.owned).toBeTrue();
-	expect(existsSync(allocation.path)).toBeFalse();
+		expect(allocation.owned).toBeTrue();
+		expect(existsSync(allocation.path)).toBeFalse();
+	} finally {
+		if (previousDataDir === undefined) delete process.env.DTX_E2E_DATA_DIR;
+		else process.env.DTX_E2E_DATA_DIR = previousDataDir;
+	}
 });
 
 test('preserves an externally supplied data directory and unrelated sentinel files', () => {

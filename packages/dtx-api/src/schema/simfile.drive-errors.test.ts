@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createYoga } from 'graphql-yoga';
-import { workerLogger } from '@dtx/common/server';
 import type { Ctx } from '../context';
-import type { Env } from '../env';
+import { makeCtx, runQuery } from './simfileTestHarness';
 
 vi.mock('@supabase/supabase-js', () => ({
 	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
@@ -18,64 +16,10 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-const { schema } = await import('./index');
 const { getSimfile, getSimfileOwner, updateSimfileDriveFile } = await import('@dtx/common/server');
 const mockedGetSimfile = vi.mocked(getSimfile);
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedUpdateDriveFile = vi.mocked(updateSimfileDriveFile);
-
-const makeEnv = (): Env => ({
-	DB: {} as Env['DB'],
-	DTXFILE_BUCKET: {} as Env['DTXFILE_BUCKET'],
-	RATE_LIMIT_API: {} as Env['RATE_LIMIT_API'],
-	SUPABASE_URL: '',
-	SUPABASE_ANON_KEY: '',
-	RATE_LIMIT_ENV: 'pre-prod',
-	GRAPHIQL: 'false',
-	CORS_ALLOWED_ORIGINS: '',
-	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
-	PUBLIC_SIMFILE_BUCKET_URL: '',
-	SUPABASE_SERVICE_ROLE_KEY: ''
-});
-
-const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
-	user: null,
-	session: null,
-	env: makeEnv(),
-	db: {} as Ctx['db'],
-	r2: {} as Ctx['r2'],
-	kv: {} as Ctx['kv'],
-	request: new Request('http://test'),
-	logger: workerLogger,
-	ownerByIdCache: new Map(),
-	hasUploadedFilesCache: new Map(),
-	filesCache: new Map(),
-	catalogFilesCache: new Map(),
-	...overrides
-});
-
-const runQuery = async (ctx: Ctx, body: Record<string, unknown>) => {
-	const yoga = createYoga<{ ctx: Ctx }>({
-		schema,
-		context: (req) => req.ctx,
-		maskedErrors: false,
-		cors: false,
-		landingPage: false
-	});
-	const response = await yoga.fetch(
-		'http://test/graphql',
-		{
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body)
-		},
-		{ ctx }
-	);
-	return response.json() as Promise<{
-		data?: Record<string, unknown> | null;
-		errors?: Array<{ message: string; extensions?: Record<string, unknown> }>;
-	}>;
-};
 
 const ownedSimfile = {
 	id: 42,
@@ -166,6 +110,11 @@ describe('Mutation.updateSimfileDriveFile error paths', () => {
 		const result = await executeUpdate(makeCtx({ user: { id: 'u1' } as Ctx['user'] }));
 
 		expect(result.errors).toHaveLength(1);
+		// The unexpected failure must surface unchanged — neither relabeled
+		// as NOT_FOUND (the "not found" substring is absent) nor FORBIDDEN.
+		expect(result.errors?.[0]?.message).toBe('database unavailable');
+		expect(result.errors?.[0]?.extensions?.code).not.toBe('NOT_FOUND');
+		expect(result.errors?.[0]?.extensions?.code).not.toBe('FORBIDDEN');
 		expect(mockedUpdateDriveFile).toHaveBeenCalledOnce();
 	});
 

@@ -64,6 +64,11 @@ describe('googleDriveStore', () => {
 		store.beginOperation('op-current', 'simfile-current');
 		store.setUploadError('op-old', 'simfile-old', 'UNKNOWN');
 
+		// The error is recorded on the superseded operation's errorCode (the
+		// UI-facing field) but does not surface to the replacement operation
+		// or the store-level error value.
+		expect(get(store).operations['op-old']?.errorCode).toBe('UNKNOWN');
+		expect(get(store).operations['op-current']?.errorCode).toBeUndefined();
 		expect(get(store).error).toBeNull();
 	});
 

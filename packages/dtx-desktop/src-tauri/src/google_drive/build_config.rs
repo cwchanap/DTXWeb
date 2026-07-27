@@ -123,7 +123,7 @@ fn has_value(value: Option<&str>) -> bool {
 }
 
 fn drive_configuration_error(detail: &str) -> String {
-    format!("Invalid GOOGLE_DRIVE_OAUTH_CLIENT_ID configuration: {detail}")
+    format!("Invalid Google Drive configuration: {detail}")
 }
 
 #[cfg(test)]

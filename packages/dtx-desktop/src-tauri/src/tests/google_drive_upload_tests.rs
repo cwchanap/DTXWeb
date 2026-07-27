@@ -1475,7 +1475,7 @@ async fn transient_rate_limits_use_bounded_backoff_without_reporting_unaccepted_
     assert_eq!(progress, vec![3]);
     assert_eq!(
         sleeper.delays.lock().unwrap().as_slice(),
-        &[Duration::from_millis(100), Duration::from_secs(5)]
+        &[Duration::from_millis(100), Duration::from_secs(30)]
     );
 }
 
@@ -1608,7 +1608,7 @@ async fn resumable_session_initiation_retries_transient_and_rate_limited_respons
     assert_eq!(api.create_metadata.lock().unwrap().len(), 3);
     assert_eq!(
         sleeper.delays.lock().unwrap().as_slice(),
-        &[Duration::from_secs(2), Duration::from_secs(5)]
+        &[Duration::from_secs(2), Duration::from_secs(30)]
     );
 }
 
@@ -2677,7 +2677,14 @@ async fn concurrent_direct_creates_serialize_the_complete_binding_lifecycle() {
             .await
         })
     };
-    tokio::task::yield_now().await;
+    // Give the second task enough scheduling rounds to progress through
+    // ensure_not_canceled, auth.current_user_id, and reach the
+    // transaction-lock wait before we release the first fetch. A single
+    // yield_now is not enough because current_user_id is async and needs at
+    // least one additional scheduling round to resolve.
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
     metadata.first_fetch_release.add_permits(1);
 
     let results = [

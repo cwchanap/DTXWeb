@@ -225,11 +225,14 @@ describe('GoogleDriveUploadStatus', () => {
 				outcome: {
 					simfileId: 'simfile-id',
 					result: { status: 'failed', errorCode }
-				}
+				},
+				onRetry: () => {},
+				onCreateReplacement: () => {}
 			}
 		});
 
 		expect(screen.getByText(resolve(`googleDrive.error.${errorCode}`))).toBeInTheDocument();
+		expect(screen.queryAllByRole('button')).toHaveLength(actionNames.length);
 		for (const actionName of actionNames) {
 			expect(screen.getByRole('button', { name: actionName })).toBeInTheDocument();
 		}

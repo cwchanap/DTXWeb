@@ -69,7 +69,18 @@ jobs:
         run: cargo fmt --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --locked -- -D warnings 2>&1 | tee clippy.log
+
+      - name: Upload clippy diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tauri-clippy-log
+          path: packages/dtx-desktop/src-tauri/clippy.log
+          if-no-files-found: error
 
       - name: Build
         run: cargo build --locked

@@ -1,3 +1,6 @@
+#[path = "google_drive_commands_integration_tests.rs"]
+mod google_drive_commands_integration_tests;
+
 use std::sync::{Mutex, OnceLock};
 
 fn env_lock() -> &'static Mutex<()> {

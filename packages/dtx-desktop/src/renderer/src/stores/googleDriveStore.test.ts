@@ -164,4 +164,46 @@ describe('googleDriveStore', () => {
 		store.setConnectionIfCurrent(generation, { connected: true }, 'connect');
 		expect(get(store).revocationUnconfirmed).toBe(false);
 	});
+
+	it('beginConnectionRequest gives each action its own generation so a stale refresh cannot overwrite a newer connect', () => {
+		// Regression: when refresh and connect shared a single generation counter,
+		// a slow refresh that resolved after a faster connect would overwrite the
+		// connect's result because both actions compared equal to the current
+		// generation. beginConnectionRequest bumps the generation up-front so
+		// only the most recently begun action's result is applied.
+		const store = createGoogleDriveStore();
+		const refreshGeneration = store.beginConnectionRequest();
+		const connectGeneration = store.beginConnectionRequest();
+
+		expect(connectGeneration).toBeGreaterThan(refreshGeneration);
+
+		// The connect resolves first.
+		store.setConnectionIfCurrent(
+			connectGeneration,
+			{ connected: true, folder: { id: 'folder-1', name: 'Uploads' } },
+			'connect'
+		);
+		expect(get(store).connection).toEqual({
+			connected: true,
+			folder: { id: 'folder-1', name: 'Uploads' }
+		});
+
+		// The stale refresh resolves later — it must NOT overwrite the connect.
+		store.setConnectionIfCurrent(refreshGeneration, { connected: false }, 'refresh');
+		expect(get(store).connection).toEqual({
+			connected: true,
+			folder: { id: 'folder-1', name: 'Uploads' }
+		});
+	});
+
+	it('beginConnectionRequest still allows reset to invalidate in-flight actions', () => {
+		const store = createGoogleDriveStore();
+		const generation = store.beginConnectionRequest();
+		store.reset();
+		store.setConnectionIfCurrent(generation, {
+			connected: true,
+			folder: { id: 'folder-id', name: 'Exports' }
+		});
+		expect(get(store).connection).toBeNull();
+	});
 });

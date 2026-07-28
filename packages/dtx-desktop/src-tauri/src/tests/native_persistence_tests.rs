@@ -256,3 +256,78 @@ fn resolve_dirs_ignores_the_e2e_data_directory_without_the_feature() {
         )
     );
 }
+
+#[test]
+fn read_json_or_default_returns_default_when_read_fails_for_a_non_notfound_reason() {
+    // Reading a directory path fails with "Is a directory" (not NotFound), so
+    // the generic-IO-error branch must fall back to the default instead of
+    // propagating the error.
+    let dir = TempDir::new().unwrap();
+
+    assert_eq!(
+        read_json_or_default::<TestRecord>(dir.path(), "directory-read test"),
+        TestRecord::default()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn write_json_atomic_errors_when_the_path_has_no_parent_directory() {
+    // The root path "/" has no parent (Path::parent returns None), so
+    // ensure_private_parent must reject it before any filesystem mutation.
+    let root = std::path::Path::new("/");
+
+    let result = write_json_atomic(root, &TestRecord::default());
+
+    let error = result.expect_err("root path should have no parent");
+    assert!(
+        error
+            .to_string()
+            .contains("Could not resolve a parent directory"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn write_json_atomic_errors_when_the_resolved_parent_is_not_a_directory() {
+    // A bare relative filename has an empty-string parent. create_dir_all("")
+    // is a no-op (Ok), but "" is not a directory, so ensure_private_parent
+    // must reject it. No file is written because the check runs before temp
+    // file creation.
+    let bare = std::path::PathBuf::from("native_persistence_bare_filename_test.json");
+
+    let result = write_json_atomic(&bare, &TestRecord::default());
+
+    let error = result.expect_err("bare filename parent is not a directory");
+    assert!(
+        error
+            .to_string()
+            .contains("Persistence parent is not a directory"),
+        "unexpected error: {error}"
+    );
+    assert!(!bare.exists(), "no file should have been written");
+}
+
+#[cfg(unix)]
+#[test]
+fn write_json_atomic_errors_when_the_file_name_is_not_valid_utf8() {
+    // write_json_atomic resolves the file name via Path::file_name + to_str.
+    // A non-UTF-8 file name (valid on Unix but not convertible to &str)
+    // must be rejected at the file-name resolution step, after
+    // ensure_private_parent succeeds on the writable parent directory.
+    use std::os::unix::ffi::OsStrExt;
+
+    let dir = TempDir::new().unwrap();
+    let subdir = dir.path().join("writable_parent");
+    fs::create_dir(&subdir).unwrap();
+    let non_utf8_name = std::ffi::OsStr::from_bytes(b"\xff\xfe.json");
+    let path = subdir.join(non_utf8_name);
+
+    let result = write_json_atomic(&path, &TestRecord::default());
+
+    let error = result.expect_err("non-UTF-8 file name should be rejected");
+    assert!(
+        error.to_string().contains("Could not resolve a file name"),
+        "unexpected error: {error}"
+    );
+}

@@ -4,7 +4,9 @@ use crate::google_drive::drive_client::{
     DriveApiError, DriveChunkResult, DriveCreateMetadata, DriveFile, DriveUpdateMetadata,
     GoogleDriveApi, PublicPermissionStatus, ResumableUploadSession, ValidatedFolder,
 };
-use crate::google_drive::pending_bindings::{GoogleDrivePendingBindingStore, PendingBindingKind};
+use crate::google_drive::pending_bindings::{
+    ExpectedPreviousDriveFile, GoogleDrivePendingBindingStore, PendingBindingKind,
+};
 use crate::google_drive::{DriveMetadataClient, DriveMetadataError, OwnerDriveSimfile};
 use async_trait::async_trait;
 use std::collections::VecDeque;
@@ -331,6 +333,7 @@ impl DriveMetadataClient for ScriptedMetadataClient {
         _simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
+        _expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         self.patch_inputs
             .lock()
@@ -385,6 +388,7 @@ impl DriveMetadataClient for BlockingStatefulMetadataClient {
         simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
+        _expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         self.patch_count.fetch_add(1, Ordering::SeqCst);
         let updated =
@@ -420,6 +424,7 @@ impl DriveMetadataClient for ProductionOwnerMetadataClient {
         _simfile_id: &str,
         _drive_file_id: &str,
         _download_url: &str,
+        _expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         Err(DriveMetadataError::LocalState)
     }
@@ -1961,6 +1966,7 @@ fn seed_pending_binding_for(
                 drive_file_id: drive_file_id.to_string(),
                 kind,
                 created_at: "2026-07-26T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
             },
         )
         .expect("pending binding");
@@ -2911,6 +2917,7 @@ async fn reconciliation_binds_an_existing_public_zip_and_never_starts_a_duplicat
                 drive_file_id: "generated-existing".to_string(),
                 kind: PendingBindingKind::FirstUpload,
                 created_at: "2000-01-01T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
             },
         )
         .expect("old pending binding");
@@ -3123,6 +3130,7 @@ async fn reconciliation_retains_on_403_network_and_other_indeterminate_file_prob
                     drive_file_id: "possibly-created".to_string(),
                     kind: PendingBindingKind::FirstUpload,
                     created_at: "1999-01-01T00:00:00Z".to_string(),
+                    expected_previous_drive_file: None,
                 },
             )
             .expect("pending binding");
@@ -3182,6 +3190,7 @@ async fn definitive_invalid_generated_id_rotates_once_only_after_a_confirmed_404
                 drive_file_id: "expired-generated-id".to_string(),
                 kind: PendingBindingKind::FirstUpload,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
             },
         )
         .expect("pending binding");
@@ -3265,6 +3274,7 @@ async fn fresh_id_rewrite_is_durable_before_the_replacement_create_can_start() {
                 drive_file_id: "expired-generated-id".to_string(),
                 kind: PendingBindingKind::ExplicitReplacement,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
             },
         )
         .expect("pending binding");
@@ -3859,6 +3869,7 @@ async fn lost_owner_is_compensated_but_never_bound_and_is_retained_until_absence
                 drive_file_id: "orphan-candidate".to_string(),
                 kind: PendingBindingKind::FirstUpload,
                 created_at: "2026-07-26T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
             },
         )
         .expect("pending");
@@ -3944,6 +3955,7 @@ async fn ambiguous_owner_metadata_failures_retain_direct_reconciliation_bindings
                     drive_file_id: "retain-on-ambiguous-owner".to_string(),
                     kind: PendingBindingKind::FirstUpload,
                     created_at: "2026-07-26T00:00:00Z".to_string(),
+                    expected_previous_drive_file: None,
                 },
             )
             .expect("pending");
@@ -4059,6 +4071,7 @@ async fn ambiguous_owner_metadata_failures_retain_auth_sweep_bindings() {
                     drive_file_id: "retain-on-ambiguous-owner".to_string(),
                     kind: PendingBindingKind::FirstUpload,
                     created_at: "2026-07-26T00:00:00Z".to_string(),
+                    expected_previous_drive_file: None,
                 },
             )
             .expect("pending");
@@ -4098,6 +4111,7 @@ async fn malformed_owner_identity_never_triggers_compensation() {
                     drive_file_id: "retain-on-wrong-owner-id".to_string(),
                     kind: PendingBindingKind::FirstUpload,
                     created_at: "2026-07-26T00:00:00Z".to_string(),
+                    expected_previous_drive_file: None,
                 },
             )
             .expect("pending");
@@ -4163,6 +4177,7 @@ async fn reconciliation_auth_restore_sweeps_only_the_current_user_without_creati
             drive_file_id: "created-41".to_string(),
             kind: PendingBindingKind::FirstUpload,
             created_at: "2026-07-01T00:00:00Z".to_string(),
+            expected_previous_drive_file: None,
         },
         crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
             user_id: "user-42".to_string(),
@@ -4170,6 +4185,7 @@ async fn reconciliation_auth_restore_sweeps_only_the_current_user_without_creati
             drive_file_id: "unused-42".to_string(),
             kind: PendingBindingKind::ExplicitReplacement,
             created_at: "2001-01-01T00:00:00Z".to_string(),
+            expected_previous_drive_file: None,
         },
         crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
             user_id: "other-user".to_string(),
@@ -4177,6 +4193,7 @@ async fn reconciliation_auth_restore_sweeps_only_the_current_user_without_creati
             drive_file_id: "other-users-file".to_string(),
             kind: PendingBindingKind::FirstUpload,
             created_at: "2026-07-01T00:00:00Z".to_string(),
+            expected_previous_drive_file: None,
         },
     ] {
         store.replace(binding).expect("pending binding");
@@ -4960,4 +4977,98 @@ async fn run_crash_safe_create_delegates_to_chunk_size_variant_with_default_chun
     );
     assert_eq!(*api.generated_count.lock().unwrap(), 1);
     assert_eq!(store.get("user-42", "42").unwrap(), None);
+}
+
+#[tokio::test]
+async fn reconciliation_does_not_overwrite_a_newer_drive_binding_established_by_another_device() {
+    // Cross-device race: Device A uploaded file X as a FirstUpload (expected
+    // the owner row to have no Drive binding), but its metadata patch never
+    // committed and left a pending record. Device B later uploaded and
+    // successfully bound file Y. When Device A relaunches and reconciles, it
+    // must NOT overwrite the newer Y binding with the stale X file. The
+    // optimistic-concurrency guard (expectedPreviousDriveFile = None) makes
+    // the patch fail; recovery then treats the pending file as superseded
+    // and compensates by deleting the orphaned Drive file X.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "device-a-file-x".to_string(),
+                kind: PendingBindingKind::FirstUpload,
+                created_at: "2026-07-01T00:00:00Z".to_string(),
+                expected_previous_drive_file: Some(ExpectedPreviousDriveFile::None),
+            },
+        )
+        .expect("pending binding");
+
+    let api = ScriptedDriveApi::default();
+    // The pending Drive file X still exists on Drive.
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "device-a-file-x",
+            Some("https://drive.google.com/uc?id=device-a-file-x"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    // Reconciliation fetches the owner and sees Device B's newer binding (file Y).
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        // First fetch: owner now references Device B's file Y (not NULL).
+        Ok(ScriptedMetadataClient::owner_for(
+            "42",
+            Some("device-b-file-y"),
+            Some("https://drive.google.com/uc?id=device-b-file-y"),
+        )),
+        // After the guarded patch fails, patch_and_finish re-fetches the owner
+        // to decide what to do. The owner still references Y (not prior_owner,
+        // which was also Y in this FirstUpload case where prior_owner is the
+        // current row). The Ok(_) arm with a non-matching binding triggers
+        // compensation.
+        Ok(ScriptedMetadataClient::owner_for(
+            "42",
+            Some("device-b-file-y"),
+            Some("https://drive.google.com/uc?id=device-b-file-y"),
+        )),
+    ]);
+    // The guarded patch must fail because the server-side binding is Y, not NULL.
+    metadata
+        .patches
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveMetadataError::DefinitiveUnavailable));
+    // Compensation deletes the orphaned Device A file X.
+    api.deletes.lock().unwrap().push_back(Ok(()));
+
+    reconcile_pending_bindings_for_current_user(
+        &api,
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+    )
+    .await;
+
+    // The pending binding is removed (compensated, not retried).
+    assert_eq!(store.get("user-42", "42").expect("pending"), None);
+    // The orphaned Device A file X was deleted.
+    assert_eq!(
+        api.delete_ids.lock().unwrap().as_slice(),
+        &["device-a-file-x".to_string()],
+        "the superseded pending file must be deleted, not left as an orphan"
+    );
+    // No new Drive file was created during reconciliation.
+    assert!(api.create_metadata.lock().unwrap().is_empty());
+    // The patch was attempted exactly once with the optimistic guard.
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
+    assert_eq!(
+        metadata.patch_inputs.lock().unwrap()[0].0,
+        "device-a-file-x"
+    );
 }

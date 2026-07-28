@@ -18,7 +18,9 @@ use super::oauth::{
     PickerFolderValidator, TokenExchangeRequest, GOOGLE_DRIVE_FILE_SCOPE,
 };
 use super::settings::GoogleDriveFolderSetting;
-use super::{DriveMetadataClient, DriveMetadataError, OwnerDriveSimfile};
+use super::{
+    DriveMetadataClient, DriveMetadataError, ExpectedPreviousDriveFile, OwnerDriveSimfile,
+};
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
 use crate::models::{
@@ -733,10 +735,21 @@ impl DriveMetadataClient for E2eGoogleDriveFake {
         simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
+        expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         let mut runtime = self.lock_runtime();
         if runtime.scenario.owner.id != simfile_id {
             return Err(DriveMetadataError::DefinitiveUnavailable);
+        }
+        if let Some(expected) = expected_previous {
+            let current_id = runtime.scenario.owner.google_drive_file_id.as_deref();
+            let matches = match expected {
+                ExpectedPreviousDriveFile::None => current_id.is_none(),
+                ExpectedPreviousDriveFile::DriveFile(id) => current_id == Some(id.as_str()),
+            };
+            if !matches {
+                return Err(DriveMetadataError::DefinitiveUnavailable);
+            }
         }
         if runtime.scenario.terminate_before_metadata_patch {
             // Intentional process-level crash seam. It is compiled only into
@@ -1039,6 +1052,7 @@ mod tests {
                 SIMFILE_ID,
                 "e2e-drive-file-0001",
                 "https://drive.google.test/download/e2e-drive-file-0001",
+                None,
             )
             .await
             .unwrap();

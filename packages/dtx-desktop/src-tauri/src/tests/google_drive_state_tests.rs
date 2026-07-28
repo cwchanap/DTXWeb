@@ -73,6 +73,7 @@ async fn logout_clear_removes_only_volatile_drive_state_and_visible_operations()
             drive_file_id: "pending-file".to_string(),
             kind: PendingBindingKind::FirstUpload,
             created_at: "1".to_string(),
+            expected_previous_drive_file: None,
         })
         .expect("pending binding");
     state.cache_access_token("user-1", "access-token").await;
@@ -142,7 +143,7 @@ async fn unavailable_metadata_client_always_reports_service_unavailable() {
     );
     assert_eq!(
         UnavailableDriveMetadataClient
-            .update_drive_file(&auth, "sim-1", "file-1", "https://example.test")
+            .update_drive_file(&auth, "sim-1", "file-1", "https://example.test", None)
             .await,
         Err(DriveMetadataError::ServiceUnavailable)
     );

@@ -1777,7 +1777,9 @@ describe('Mutation.updateSimfileDriveFile', () => {
 
 		expect(mockedUpdateDriveFile).toHaveBeenCalledWith(expect.anything(), 42, 'u1', {
 			googleDriveFileId: 'drive-file-456',
-			downloadUrl: url
+			downloadUrl: url,
+			expectedPreviousDriveFileId: undefined,
+			expectNoExistingDriveFile: undefined
 		});
 		expect(result.data?.updateSimfileDriveFile).toEqual({
 			id: '42',

@@ -78,6 +78,75 @@ fn settings_serialization_never_contains_a_refresh_token() {
     assert!(!serialized.contains("refreshToken"));
 }
 
+#[test]
+fn clear_folder_for_user_removes_only_the_targeted_users_folder() {
+    let data_dir = tempdir().expect("data dir");
+    let store = GoogleDriveSettingsStore::new(data_dir.path().to_path_buf());
+    store
+        .set_folder_for_user("user-a", folder("folder-a", "A uploads"))
+        .expect("save user a folder");
+    store
+        .set_folder_for_user("user-b", folder("folder-b", "B uploads"))
+        .expect("save user b folder");
+
+    store.clear_folder_for_user("user-a").expect("clear user a");
+
+    assert_eq!(store.folder_for_user("user-a"), None);
+    assert_eq!(
+        store.folder_for_user("user-b"),
+        Some(folder("folder-b", "B uploads"))
+    );
+}
+
+#[test]
+fn clear_folder_for_user_succeeds_when_no_folder_was_saved() {
+    // Clearing a user that never had a folder is a no-op rather than an
+    // error — logout flows call this unconditionally and must not fail.
+    let data_dir = tempdir().expect("data dir");
+    let store = GoogleDriveSettingsStore::new(data_dir.path().to_path_buf());
+
+    store
+        .clear_folder_for_user("never-set")
+        .expect("clear absent user");
+
+    assert_eq!(store.folder_for_user("never-set"), None);
+}
+
+#[test]
+fn clear_folder_for_user_persists_removal_across_a_reopened_store() {
+    let data_dir = tempdir().expect("data dir");
+    let path = google_drive_settings_path(data_dir.path());
+    let store = GoogleDriveSettingsStore::new(data_dir.path().to_path_buf());
+    store
+        .set_folder_for_user("user-a", folder("folder-a", "A uploads"))
+        .expect("save user a folder");
+    assert!(path.is_file());
+
+    store.clear_folder_for_user("user-a").expect("clear user a");
+
+    let reopened = GoogleDriveSettingsStore::new(data_dir.path().to_path_buf());
+    assert_eq!(reopened.folder_for_user("user-a"), None);
+}
+
+#[test]
+fn settings_access_trait_delegates_clear_to_the_store_impl() {
+    // The trait impls forward to the inherent methods. Exercise the trait
+    // path so the vtable dispatch (used by Drive state through the trait
+    // object) is covered, not just the concrete method.
+    let data_dir = tempdir().expect("data dir");
+    let store = GoogleDriveSettingsStore::new(data_dir.path().to_path_buf());
+    let access: &dyn GoogleDriveSettingsAccess = &store;
+    access
+        .set_folder_for_user("user-a", folder("folder-a", "A uploads"))
+        .expect("trait set");
+    assert_eq!(
+        access.folder_for_user("user-a"),
+        Some(folder("folder-a", "A uploads"))
+    );
+    access.clear_folder_for_user("user-a").expect("trait clear");
+    assert_eq!(access.folder_for_user("user-a"), None);
+}
+
 fn folder(id: &str, name: &str) -> GoogleDriveFolderSetting {
     GoogleDriveFolderSetting {
         id: id.to_string(),

@@ -343,8 +343,13 @@ impl GoogleDriveClient {
             .map(|prefix| format!("{prefix}/upload/drive/v3/"))
             .ok_or(GoogleDriveValidationError::InvalidResponse)?;
         upload_base_url.set_path(&upload_path);
+        // Use connect_timeout rather than a full request timeout: resumable
+        // chunk PUTs carry up to 8 MiB and on slow uplinks can legitimately
+        // exceed 30s of pure transfer. Bounding only the connection setup
+        // preserves the "no network" guard while not aborting in-flight
+        // uploads that are still making progress.
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(30))
             .build()
             .map_err(|_| GoogleDriveValidationError::Network)?;
         Ok(Self {

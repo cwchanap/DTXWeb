@@ -535,6 +535,7 @@ async fn google_drive_update_sends_only_the_drive_binding_values() {
         "drive-file-42",
         "https://drive.google.com/uc?id=drive-file-42",
         "user-1",
+        None,
     )
     .await
     .expect("updated drive metadata");
@@ -553,7 +554,9 @@ async fn google_drive_update_sends_only_the_drive_binding_values() {
         json!({
             "id": "42",
             "googleDriveFileId": "drive-file-42",
-            "downloadUrl": "https://drive.google.com/uc?id=drive-file-42"
+            "downloadUrl": "https://drive.google.com/uc?id=drive-file-42",
+            "expectedPreviousDriveFileId": null,
+            "expectNoExistingDriveFile": null
         })
     );
     assert!(body["query"]
@@ -600,6 +603,7 @@ async fn google_drive_update_rejects_a_mismatched_server_binding_response() {
             "drive-file-42",
             "https://drive.google.com/uc?id=drive-file-42",
             "user-1",
+            None,
         )
         .await
         .expect_err("server response must match the requested Drive binding");
@@ -2622,6 +2626,7 @@ async fn update_drive_file_impl_returns_definitive_unavailable_for_null_response
         "drive-file-42",
         "https://drive.google.com/uc?id=drive-file-42",
         "user-1",
+        None,
     )
     .await
     .expect_err("null mutation response is definitive loss");

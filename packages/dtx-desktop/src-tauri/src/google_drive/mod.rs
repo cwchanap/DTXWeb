@@ -30,6 +30,7 @@ use self::oauth::{
 };
 #[cfg(feature = "google-drive")]
 use self::oauth::{ReqwestGoogleOAuthProvider, TauriPickerBrowser};
+pub(crate) use self::pending_bindings::ExpectedPreviousDriveFile;
 use self::pending_bindings::GoogleDrivePendingBindingStore;
 use self::settings::GoogleDriveSettingsAccess;
 #[cfg(any(feature = "google-drive", feature = "e2e"))]
@@ -88,6 +89,7 @@ pub(crate) trait DriveMetadataClient: Send + Sync {
         simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
+        expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError>;
 }
 
@@ -118,9 +120,17 @@ impl<R: Runtime> DriveMetadataClient for ApiDriveMetadataClient<R> {
         simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
+        expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
-        crate::api::update_drive_file(auth, &self.app, simfile_id, drive_file_id, download_url)
-            .await
+        crate::api::update_drive_file(
+            auth,
+            &self.app,
+            simfile_id,
+            drive_file_id,
+            download_url,
+            expected_previous,
+        )
+        .await
     }
 }
 
@@ -555,6 +565,14 @@ impl GoogleDriveState {
         let lifecycle = self.lifecycle_lock_for_user(user_id);
         let _guard = lifecycle.lock().await;
         self.invalidate_user_lifecycle(user_id);
+        // Cancel and hide active operations immediately after invalidating the
+        // lifecycle, BEFORE any awaited network request. The revocation call
+        // below has a 30-second timeout; without this ordering, an in-flight
+        // upload could advance to finalization and patch Drumery metadata
+        // after the user has selected Disconnect. Cancelling here ensures the
+        // upload's cancellation token fires and its visible state is cleared
+        // before we wait on the network.
+        self.operation_manager.clear_user_visible_state(user_id);
         let refresh_token = self.credentials.get_refresh_token(user_id).await;
         let mut revocation_unconfirmed = false;
         match refresh_token.as_ref() {
@@ -575,7 +593,6 @@ impl GoogleDriveState {
         let delete_result = self.credentials.delete_refresh_token(user_id).await;
         let settings_result = self.settings.clear_folder_for_user(user_id);
         self.clear_user_memory_locked(user_id).await;
-        self.operation_manager.clear_user_visible_state(user_id);
         self.set_requires_reconnect(user_id, false).await;
         delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
         settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
@@ -685,6 +702,7 @@ impl DriveMetadataClient for UnavailableDriveMetadataClient {
         _simfile_id: &str,
         _drive_file_id: &str,
         _download_url: &str,
+        _expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         Err(DriveMetadataError::ServiceUnavailable)
     }

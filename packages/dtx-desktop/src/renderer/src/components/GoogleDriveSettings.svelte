@@ -44,28 +44,30 @@
 			<p class="text-dim text-sm">{$_('googleDrive.disconnected')}</p>
 		{/if}
 
-		{#if $googleDriveStore.connection?.requiresReconnect}
-			<p class="text-yellow text-sm">{$_('googleDrive.warning.reconnect')}</p>
-		{/if}
-		{#if $googleDriveStore.connection?.credentialStoreUnavailable}
-			<p class="text-yellow text-sm">{$_('googleDrive.warning.credentialStore')}</p>
-		{/if}
-		{#if $googleDriveStore.connection?.requiresPublicSharing}
-			<p class="text-yellow text-sm">{$_('googleDrive.warning.privateSharing')}</p>
-		{/if}
-		{#if $googleDriveStore.connection?.sharingCheckUnavailable}
-			<p class="text-yellow text-sm">{$_('googleDrive.warning.sharingCheck')}</p>
-		{/if}
-		{#if $googleDriveStore.connection?.connected && $googleDriveStore.publicDownloadVerified}
-			<p class="text-green text-sm">{$_('googleDrive.verifiedPublic')}</p>
-		{/if}
-		{#if $googleDriveStore.connection?.connected && !$googleDriveStore.connection.credentialStoreUnavailable}
-			<p class="text-dim text-sm">{$_('googleDrive.warning.existingFileAccess')}</p>
-			<p class="text-dim text-sm">{$_('googleDrive.folderConsent')}</p>
-		{/if}
-		{#if $googleDriveStore.revocationUnconfirmed}
-			<p class="text-yellow text-sm">{$_('googleDrive.revocationUnconfirmed')}</p>
-		{/if}
+		<div aria-live="polite" class="space-y-1">
+			{#if $googleDriveStore.connection?.requiresReconnect}
+				<p class="text-yellow text-sm">{$_('googleDrive.warning.reconnect')}</p>
+			{/if}
+			{#if $googleDriveStore.connection?.credentialStoreUnavailable}
+				<p class="text-yellow text-sm">{$_('googleDrive.warning.credentialStore')}</p>
+			{/if}
+			{#if $googleDriveStore.connection?.requiresPublicSharing}
+				<p class="text-yellow text-sm">{$_('googleDrive.warning.privateSharing')}</p>
+			{/if}
+			{#if $googleDriveStore.connection?.sharingCheckUnavailable}
+				<p class="text-yellow text-sm">{$_('googleDrive.warning.sharingCheck')}</p>
+			{/if}
+			{#if $googleDriveStore.connection?.connected && $googleDriveStore.publicDownloadVerified}
+				<p class="text-green text-sm">{$_('googleDrive.verifiedPublic')}</p>
+			{/if}
+			{#if $googleDriveStore.connection?.connected && !$googleDriveStore.connection.credentialStoreUnavailable}
+				<p class="text-dim text-sm">{$_('googleDrive.warning.existingFileAccess')}</p>
+				<p class="text-dim text-sm">{$_('googleDrive.folderConsent')}</p>
+			{/if}
+			{#if $googleDriveStore.revocationUnconfirmed}
+				<p class="text-yellow text-sm">{$_('googleDrive.revocationUnconfirmed')}</p>
+			{/if}
+		</div>
 
 		<div class="flex flex-wrap gap-2">
 			{#if $googleDriveStore.connection?.credentialStoreUnavailable}

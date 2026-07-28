@@ -136,14 +136,13 @@ jobs:
 
       - name: Run default and E2E-feature tests with coverage
         shell: bash
-        env:
-          DTX_DESKTOP_BUILD_ENV: e2e
-          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ''
-          GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ''
         run: |
           cargo llvm-cov clean --workspace
           cargo llvm-cov --no-report --locked
-          cargo llvm-cov --no-report --no-clean --locked --no-default-features --features e2e
+          DTX_DESKTOP_BUILD_ENV=e2e \
+            GOOGLE_DRIVE_OAUTH_CLIENT_ID='' \
+            GOOGLE_DRIVE_OAUTH_CLIENT_ENV='' \
+            cargo llvm-cov --no-report --locked --no-default-features --features e2e
           cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Verify generated TypeScript types are in sync

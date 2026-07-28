@@ -2,6 +2,9 @@
 mod macros;
 
 mod api;
+// Auth tests deliberately hold a process-global environment lock across async
+// requests so no parallel test can observe partially updated configuration.
+#[cfg_attr(test, allow(clippy::await_holding_lock))]
 mod auth;
 mod error;
 mod filesystem;

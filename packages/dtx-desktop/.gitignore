@@ -3,6 +3,7 @@ dist
 
 # Tauri generated files
 src-tauri/gen/
+src-tauri/lcov.info
 out
 .DS_Store
 .eslintcache

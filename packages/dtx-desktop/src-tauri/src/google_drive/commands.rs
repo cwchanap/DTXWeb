@@ -273,9 +273,12 @@ pub(crate) async fn cancel_google_drive_upload<R: Runtime>(
     if !is_uuid_v4(operation_id) {
         return Ok(false);
     }
-    let Some(user_id) = app.state::<AuthState>().current_user_id().await else {
-        return Ok(false);
-    };
+    // Distinguish "no authenticated session" (a typed error) from "operation
+    // not found" (a valid Ok(false) — nothing to cancel). The no-session case
+    // is a genuine error: the renderer should not be issuing Drive commands
+    // without a session. Ok(false) is reserved for "the operation doesn't
+    // exist, isn't visible, or isn't cancellable in its current phase."
+    let user_id = current_user_id(&app).await?;
     Ok(app
         .state::<GoogleDriveState>()
         .operation_manager
@@ -709,6 +712,7 @@ fn map_local_upload_error(error: DesktopError) -> DriveUploadFailure {
 fn metadata_error(error: super::DriveMetadataError) -> DriveApiError {
     match error {
         super::DriveMetadataError::DefinitiveUnavailable => DriveApiError::SimfileUnavailable,
+        super::DriveMetadataError::BindingMismatch => DriveApiError::MetadataSync,
         super::DriveMetadataError::Authentication => DriveApiError::TokenExpired,
         super::DriveMetadataError::Network => DriveApiError::Network,
         super::DriveMetadataError::ServiceUnavailable => DriveApiError::MetadataSync,
@@ -1567,6 +1571,10 @@ mod tests {
                 DriveApiError::SimfileUnavailable,
             ),
             (
+                DriveMetadataError::BindingMismatch,
+                DriveApiError::MetadataSync,
+            ),
+            (
                 DriveMetadataError::Authentication,
                 DriveApiError::TokenExpired,
             ),
@@ -1750,13 +1758,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_google_drive_upload_returns_false_without_session() {
+    async fn cancel_google_drive_upload_errors_without_session() {
         let (_credentials, drive) = connected_drive();
         let app = build_test_app(AuthState::default(), drive);
-        let canceled = cancel_google_drive_upload(app, Uuid::new_v4())
+        // No session is a typed error, not Ok(false): the renderer should not
+        // issue Drive commands without an authenticated session.
+        let error = cancel_google_drive_upload(app, Uuid::new_v4())
             .await
-            .expect("cancel result");
-        assert!(!canceled);
+            .expect_err("no session is a typed error");
+        assert!(
+            matches!(error, crate::error::DesktopError::Message(ref msg)
+                if msg == GoogleDriveOAuthError::NotConnected.code()),
+            "expected NOT_CONNECTED error, got: {error:?}"
+        );
     }
 
     #[tokio::test]

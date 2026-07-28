@@ -47,6 +47,7 @@ pub(crate) struct OwnerDriveSimfile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DriveMetadataError {
     DefinitiveUnavailable,
+    BindingMismatch,
     Authentication,
     Network,
     ServiceUnavailable,
@@ -58,6 +59,7 @@ impl DriveMetadataError {
     pub(crate) fn code(self) -> &'static str {
         match self {
             Self::DefinitiveUnavailable => "SIMFILE_UNAVAILABLE",
+            Self::BindingMismatch => "DRIVE_BINDING_MISMATCH",
             Self::Authentication => "AUTHENTICATION",
             Self::Network => "NETWORK",
             Self::ServiceUnavailable => "SERVICE_UNAVAILABLE",
@@ -562,18 +564,45 @@ impl GoogleDriveState {
         &self,
         user_id: &str,
     ) -> std::result::Result<GoogleDriveDisconnectResult, GoogleDriveOAuthError> {
-        let lifecycle = self.lifecycle_lock_for_user(user_id);
-        let _guard = lifecycle.lock().await;
-        self.invalidate_user_lifecycle(user_id);
-        // Cancel and hide active operations immediately after invalidating the
-        // lifecycle, BEFORE any awaited network request. The revocation call
-        // below has a 30-second timeout; without this ordering, an in-flight
-        // upload could advance to finalization and patch Drumery metadata
-        // after the user has selected Disconnect. Cancelling here ensures the
-        // upload's cancellation token fires and its visible state is cleared
-        // before we wait on the network.
-        self.operation_manager.clear_user_visible_state(user_id);
-        let refresh_token = self.credentials.get_refresh_token(user_id).await;
+        // Phase 1 (under the lifecycle lock): invalidate the lifecycle,
+        // cancel in-flight operations, and remove all local credentials and
+        // folder state. This ensures no new upload can obtain an access
+        // token or find a folder after the lock is released.
+        let refresh_token = {
+            let lifecycle = self.lifecycle_lock_for_user(user_id);
+            let _guard = lifecycle.lock().await;
+            self.invalidate_user_lifecycle(user_id);
+            // Cancel and hide active operations immediately after invalidating
+            // the lifecycle, BEFORE any awaited network request. The
+            // revocation call below has a 30-second timeout; without this
+            // ordering, an in-flight upload could advance to finalization and
+            // patch Drumery metadata after the user has selected Disconnect.
+            // Cancelling here ensures the upload's cancellation token fires
+            // and its visible state is cleared before we wait on the network.
+            self.operation_manager.clear_user_visible_state(user_id);
+            let token = self.credentials.get_refresh_token(user_id).await;
+            // Delete the refresh token and clear folder state BEFORE releasing
+            // the lock and before the revocation call. Once the lock is
+            // released, a new upload that doesn't check the lifecycle
+            // generation could start; deleting the token and clearing the
+            // folder first ensures it cannot obtain an access token or find a
+            // folder to upload to.
+            let delete_result = self.credentials.delete_refresh_token(user_id).await;
+            let settings_result = self.settings.clear_folder_for_user(user_id);
+            self.clear_user_memory_locked(user_id).await;
+            self.set_requires_reconnect(user_id, false).await;
+            delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
+            settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
+            token
+        };
+
+        // Phase 2 (outside the lifecycle lock): revoke the refresh token on
+        // Google's side. This is a best-effort network call with a 30-second
+        // timeout. Holding the lifecycle lock across it would block
+        // reconnect/recheck for up to 30 seconds; releasing it here lets the
+        // user reconnect immediately while revocation proceeds in the
+        // background. The token is already deleted locally, so no new
+        // upload can use it regardless of the revocation outcome.
         let mut revocation_unconfirmed = false;
         match refresh_token.as_ref() {
             Ok(Some(token)) => {
@@ -589,13 +618,6 @@ impl GoogleDriveState {
             Ok(None) => {}
             Err(_) => revocation_unconfirmed = true,
         }
-
-        let delete_result = self.credentials.delete_refresh_token(user_id).await;
-        let settings_result = self.settings.clear_folder_for_user(user_id);
-        self.clear_user_memory_locked(user_id).await;
-        self.set_requires_reconnect(user_id, false).await;
-        delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
-        settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
 
         Ok(GoogleDriveDisconnectResult {
             connection: self.connection_state_for_user(user_id).await,

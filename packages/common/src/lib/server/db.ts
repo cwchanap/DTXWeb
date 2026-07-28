@@ -397,7 +397,23 @@ export const updateSimfile = async (
 	addField('bpm', data.bpm);
 	addField('is_published', data.is_published);
 	addField('display_id', data.display_id);
-	addField('download_url', data.download_url);
+	// Drive URL invariant: when google_drive_file_id is non-NULL the
+	// download_url is owned by updateSimfileDriveFile (which atomically
+	// updates both fields with optimistic-concurrency guards). A generic
+	// updateSimfile call must not overwrite it — otherwise a cross-device
+	// race where Device A reads the row before Device B binds a Drive file
+	// would let Device A's stale cached URL clobber Device B's binding URL
+	// without touching the file ID. The resolver drops downloadUrl when
+	// its read sees a binding, but that check and this UPDATE are separate
+	// operations; the CASE expression makes the SQL statement itself
+	// preserve the current download_url whenever a binding exists,
+	// closing the TOCTOU window. Other metadata fields still update.
+	if (data.download_url !== undefined) {
+		fields.push(
+			'download_url = CASE WHEN google_drive_file_id IS NULL THEN ? ELSE download_url END'
+		);
+		params.push(data.download_url);
+	}
 	addField('preview_url', data.preview_url);
 	addField('video_preview_url', data.video_preview_url);
 	addField('publish_date', data.publish_date);
@@ -439,6 +455,8 @@ export const updateSimfileDriveFile = async (
 		id,
 		ownerUserId
 	];
+	const hasGuard =
+		data.expectNoExistingDriveFile === true || data.expectedPreviousDriveFileId != null;
 	if (data.expectNoExistingDriveFile === true) {
 		whereClauses.push('google_drive_file_id IS NULL');
 	} else if (data.expectedPreviousDriveFileId != null) {
@@ -452,8 +470,24 @@ export const updateSimfileDriveFile = async (
 		.bind(...params)
 		.first<SimfileRow>();
 
-	if (!result) throw new Error('Simfile not found');
-	return result;
+	if (result) return result;
+
+	// UPDATE matched no rows. When an optimistic-concurrency guard was
+	// applied, the row may still exist (and be owned by this user) but with
+	// a different google_drive_file_id than expected — a concurrent
+	// replacement won the race. Re-read to distinguish this from a genuine
+	// deletion so callers can re-fetch ownership and retry instead of
+	// treating the simfile as deleted.
+	if (hasGuard) {
+		const existing = await db
+			.prepare('SELECT id FROM simfiles WHERE id = ? AND user_id = ?')
+			.bind(id, ownerUserId)
+			.first<{ id: number }>();
+		if (existing) {
+			throw new Error('Drive binding mismatch');
+		}
+	}
+	throw new Error('Simfile not found');
 };
 
 export const deleteSimfile = async (db: D1Database, id: number): Promise<void> => {

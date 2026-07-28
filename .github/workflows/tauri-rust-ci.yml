@@ -151,6 +151,12 @@ jobs:
           set -o pipefail
           {
             cargo llvm-cov clean --workspace
+            # The real-platform keyring smoke tests are `#[ignore]`'d
+            # because they touch the host OS credential store (and the
+            # headless Ubuntu runner lacks an interactive credential
+            # service). `cargo test` skips them by default, so no
+            # --skip filter is needed. The injected keyring adapter
+            # round-trip remains covered in CI.
             cargo llvm-cov --no-report --locked
             DTX_DESKTOP_BUILD_ENV=e2e \
               GOOGLE_DRIVE_OAUTH_CLIENT_ID='' \

@@ -841,6 +841,12 @@ builder.mutationField('updateSimfileDriveFile', (t) =>
 					expectNoExistingDriveFile: expectNoExistingDriveFile ?? undefined
 				});
 			} catch (error) {
+				if (error instanceof Error && error.message.includes('Drive binding mismatch')) {
+					throw new GraphQLError(
+						'Simfile Drive binding changed since the expected previous value',
+						{ extensions: { code: 'DRIVE_BINDING_MISMATCH' } }
+					);
+				}
 				if (error instanceof Error && error.message.includes('not found')) {
 					throw new GraphQLError('Simfile not found', {
 						extensions: { code: 'NOT_FOUND' }

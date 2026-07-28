@@ -82,6 +82,16 @@ fn zip_variant_converts_from_zip_error() {
 }
 
 #[test]
+fn dialog_plugin_variant_serializes_to_a_distinct_message() {
+    // A dropped oneshot sender (dialog plugin panic) must surface as a
+    // typed error, not a generic Message, so the renderer can distinguish
+    // a plugin failure from a user cancel.
+    let error = DesktopError::DialogPlugin;
+    let json = serde_json::to_value(error).unwrap();
+    assert_eq!(json, serde_json::json!("Dialog plugin closed unexpectedly"));
+}
+
+#[test]
 fn desktop_error_implements_send_and_sync() {
     // Tauri commands are async, so the error type must be Send + Sync to
     // cross the async boundary. This is a compile-time assertion; if it

@@ -209,7 +209,7 @@ pub async fn select_workspace_folder(
 
     let selected = receiver
         .await
-        .map_err(|error| DesktopError::Message(error.to_string()))?
+        .map_err(|_| DesktopError::DialogPlugin)?
         .map(dialog_file_path_into_path)
         .transpose()?;
     selection_result(&state, selected)

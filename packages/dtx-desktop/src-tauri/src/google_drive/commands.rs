@@ -11,7 +11,7 @@ use super::drive_client::DriveApiError;
 use super::oauth::{
     GoogleDriveConnectionState, GoogleDriveDisconnectResult, GoogleDriveOAuthError,
 };
-use super::pending_bindings::PendingBindingKind;
+use super::pending_bindings::{is_insufficient_disk_space, PendingBindingKind};
 use super::upload::{
     create_upload_archive, patch_existing_upload, run_crash_safe_create_cancelable,
     run_resumable_upload_cancelable, run_with_single_access_token_refresh, CrashSafeCreateRequest,
@@ -700,9 +700,10 @@ fn map_local_upload_error(error: DesktopError) -> DriveUploadFailure {
         DesktopError::Message(message) if message == "NO_VALID_SONG_FILES" => {
             upload_failure(DriveApiError::NoValidSongFiles)
         }
-        // 28 = ENOSPC (POSIX), 112 = ERROR_DISK_FULL (Windows),
-        // 122 = EDQUOT (Linux quota exceeded).
-        DesktopError::Io(error) if matches!(error.raw_os_error(), Some(28 | 112 | 122)) => {
+        // Disk-full errno codes are platform-specific (see
+        // is_insufficient_disk_space); a single cross-platform match would
+        // misclassify unrelated errnos.
+        DesktopError::Io(error) if is_insufficient_disk_space(&error) => {
             upload_failure(DriveApiError::InsufficientDiskSpace)
         }
         _ => upload_failure(DriveApiError::LocalState),
@@ -1603,20 +1604,45 @@ mod tests {
             map_local_upload_error(DesktopError::Message("NO_VALID_SONG_FILES".to_string())).error,
             DriveApiError::NoValidSongFiles
         );
-        // 28 = ENOSPC (POSIX), 112 = ERROR_DISK_FULL (Windows),
-        // 122 = EDQUOT (Linux quota) → InsufficientDiskSpace.
-        assert_eq!(
-            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(28))).error,
-            DriveApiError::InsufficientDiskSpace
-        );
-        assert_eq!(
-            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(112))).error,
-            DriveApiError::InsufficientDiskSpace
-        );
-        assert_eq!(
-            map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(122))).error,
-            DriveApiError::InsufficientDiskSpace
-        );
+        // Disk-full errno codes are platform-specific (see
+        // is_insufficient_disk_space), so each assertion is gated to the
+        // platform that defines it.
+        #[cfg(unix)]
+        {
+            // ENOSPC (28) is POSIX.
+            assert_eq!(
+                map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(28)))
+                    .error,
+                DriveApiError::InsufficientDiskSpace
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // EDQUOT is 122 on Linux.
+            assert_eq!(
+                map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(122)))
+                    .error,
+                DriveApiError::InsufficientDiskSpace
+            );
+        }
+        #[cfg(all(unix, not(target_os = "linux")))]
+        {
+            // EDQUOT is 69 on macOS/BSD.
+            assert_eq!(
+                map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(69)))
+                    .error,
+                DriveApiError::InsufficientDiskSpace
+            );
+        }
+        #[cfg(windows)]
+        {
+            // ERROR_DISK_FULL is 112 on Windows.
+            assert_eq!(
+                map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(112)))
+                    .error,
+                DriveApiError::InsufficientDiskSpace
+            );
+        }
         // EACCES (13) → LocalState (not disk space).
         assert_eq!(
             map_local_upload_error(DesktopError::Io(std::io::Error::from_raw_os_error(13))).error,

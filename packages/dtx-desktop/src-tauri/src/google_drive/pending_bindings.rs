@@ -296,14 +296,38 @@ fn validate_identifier(value: &str) -> Result<(), PendingBindingStoreError> {
 
 fn classify_persistence_error(error: DesktopError) -> PendingBindingStoreError {
     match error {
-        // 28 = ENOSPC (POSIX), 112 = ERROR_DISK_FULL (Windows),
-        // 122 = EDQUOT (Linux quota exceeded). All surface as
-        // InsufficientDiskSpace so the desktop UX can prompt cleanup.
-        DesktopError::Io(error) if matches!(error.raw_os_error(), Some(28 | 112 | 122)) => {
+        DesktopError::Io(error) if is_insufficient_disk_space(&error) => {
             PendingBindingStoreError::InsufficientDiskSpace
         }
         _ => PendingBindingStoreError::LocalState,
     }
+}
+
+// Disk-full errno codes are platform-specific: a single cross-platform
+// match would misclassify unrelated errnos (e.g. 112 is ERROR_DISK_FULL on
+// Windows but EHOSTUNREACH on Linux). Gate each code to the platform that
+// actually defines it as a storage-exhaustion signal.
+#[cfg(windows)]
+pub(crate) fn is_insufficient_disk_space(error: &std::io::Error) -> bool {
+    // ERROR_DISK_FULL
+    matches!(error.raw_os_error(), Some(112))
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn is_insufficient_disk_space(error: &std::io::Error) -> bool {
+    // ENOSPC (28) and EDQUOT (122) on Linux.
+    matches!(error.raw_os_error(), Some(28) | Some(122))
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) fn is_insufficient_disk_space(error: &std::io::Error) -> bool {
+    // ENOSPC (28) is POSIX; EDQUOT is 69 on macOS/BSD.
+    matches!(error.raw_os_error(), Some(28) | Some(69))
+}
+
+#[cfg(not(any(windows, unix)))]
+pub(crate) fn is_insufficient_disk_space(_error: &std::io::Error) -> bool {
+    false
 }
 
 #[cfg(test)]

@@ -53,6 +53,7 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			'@': path.resolve(__dirname, './src/renderer/src'),
+			$lib: path.resolve(__dirname, './src/renderer/src'),
 			'svelte-i18n': path.resolve(__dirname, './src/tests/svelte-i18n-mock.ts'),
 			'@dtx/common/game': path.resolve(__dirname, '../../packages/common/src/lib/game.ts'),
 			'@dtx/common/server': path.resolve(

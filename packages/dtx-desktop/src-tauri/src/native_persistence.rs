@@ -176,6 +176,40 @@ pub(crate) fn lock_unpoisoned(lock: &'static OnceLock<Mutex<()>>) -> MutexGuard<
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+// Shared test support for tests that mutate DTX_E2E_DATA_DIR. The env var is
+// process-global, so a private per-module lock does not protect a concurrent
+// test in another module; both workspace_tests and native_persistence_tests
+// serialize through this single lock and restore the env on drop.
+#[cfg(test)]
+pub(crate) fn native_persistence_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(test)]
+pub(crate) struct NativePersistenceEnvGuard {
+    saved: Option<std::ffi::OsString>,
+}
+
+#[cfg(test)]
+impl NativePersistenceEnvGuard {
+    pub(crate) fn replace(value: &std::path::Path) -> Self {
+        let saved = std::env::var_os("DTX_E2E_DATA_DIR");
+        std::env::set_var("DTX_E2E_DATA_DIR", value);
+        Self { saved }
+    }
+}
+
+#[cfg(test)]
+impl Drop for NativePersistenceEnvGuard {
+    fn drop(&mut self) {
+        match self.saved.take() {
+            Some(value) => std::env::set_var("DTX_E2E_DATA_DIR", value),
+            None => std::env::remove_var("DTX_E2E_DATA_DIR"),
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "tests/native_persistence_tests.rs"]
 mod tests;

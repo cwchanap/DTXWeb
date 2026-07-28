@@ -1,24 +1,24 @@
 <script lang="ts">
 	import { Music, X, Link, Search, Upload } from '@lucide/svelte';
 	import { _ } from 'svelte-i18n';
-	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
-	import { settingsStore } from '../stores/settingsStore';
-	import { editorMappingStore } from '../stores/editorMappingStore';
-	import { authStore } from '../stores/authStore';
+	import { workspaceStore, type TreeNode } from '$lib/stores/workspaceStore';
+	import { settingsStore } from '$lib/stores/settingsStore';
+	import { editorMappingStore } from '$lib/stores/editorMappingStore';
+	import { authStore } from '$lib/stores/authStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
 	import type { SimfileWithDtx, DtxFileRow } from '@dtx/common';
 	import { onMount } from 'svelte';
-	import CloudSongAutocomplete from './CloudSongAutocomplete.svelte';
-	import { simFileService } from '../services/simFileService';
-	import { desktopHost } from '../services/desktopHost';
-	import type { FetchCloudSongResult } from '../lib/scoreTypes';
-	import { googleDriveService, type SongSaveOutcome } from '../services/googleDriveService';
+	import CloudSongAutocomplete from '$lib/components/CloudSongAutocomplete.svelte';
+	import { simFileService } from '$lib/services/simFileService';
+	import { desktopHost } from '$lib/services/desktopHost';
+	import type { FetchCloudSongResult } from '$lib/lib/scoreTypes';
+	import { googleDriveService, type SongSaveOutcome } from '$lib/services/googleDriveService';
 	import {
 		getActiveGoogleDriveOperationForSimfile,
 		googleDriveStore
-	} from '../stores/googleDriveStore';
-	import GoogleDriveUploadStatus from './GoogleDriveUploadStatus.svelte';
+	} from '$lib/stores/googleDriveStore';
+	import GoogleDriveUploadStatus from '$lib/components/GoogleDriveUploadStatus.svelte';
 
 	interface Props {
 		song: TreeNode;
@@ -138,7 +138,7 @@
 		window.dispatchEvent(new HashChangeEvent('hashchange'));
 	};
 
-	import { toBlobPart, type FileContent } from '../utils/fileUtils';
+	import { toBlobPart, type FileContent } from '$lib/utils/fileUtils';
 
 	// Helper function to create File object with custom properties
 

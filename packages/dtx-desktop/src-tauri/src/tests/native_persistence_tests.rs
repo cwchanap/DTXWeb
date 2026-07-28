@@ -1,7 +1,7 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::sync::{Arc, Barrier, Mutex, OnceLock};
+use std::sync::{Arc, Barrier};
 use tempfile::TempDir;
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -9,33 +9,6 @@ use tempfile::TempDir;
 struct TestRecord {
     value: String,
     count: u32,
-}
-
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct EnvVarGuard {
-    name: &'static str,
-    saved: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    fn replace(name: &'static str, value: &std::path::Path) -> Self {
-        let saved = std::env::var_os(name);
-        std::env::set_var(name, value);
-        Self { name, saved }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.saved.take() {
-            Some(value) => std::env::set_var(self.name, value),
-            None => std::env::remove_var(self.name),
-        }
-    }
 }
 
 fn temp_prefix(file_name: &str) -> String {
@@ -224,11 +197,11 @@ fn failed_replacement_removes_only_its_own_temporary_file() {
 #[cfg(feature = "e2e")]
 #[test]
 fn resolve_dirs_uses_the_e2e_data_directory_when_the_feature_is_enabled() {
-    let _lock = env_lock()
+    let _lock = super::native_persistence_env_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = TempDir::new().unwrap();
-    let _env = EnvVarGuard::replace("DTX_E2E_DATA_DIR", dir.path());
+    let _env = super::NativePersistenceEnvGuard::replace(dir.path());
 
     assert_eq!(
         resolve_dirs(),
@@ -242,12 +215,11 @@ fn resolve_dirs_uses_the_e2e_data_directory_when_the_feature_is_enabled() {
 #[cfg(not(feature = "e2e"))]
 #[test]
 fn resolve_dirs_ignores_the_e2e_data_directory_without_the_feature() {
-    let _lock = env_lock()
+    let _lock = super::native_persistence_env_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = TempDir::new().unwrap();
-    let _env = EnvVarGuard::replace("DTX_E2E_DATA_DIR", dir.path());
-
+    let _env = super::NativePersistenceEnvGuard::replace(dir.path());
     assert_ne!(
         resolve_dirs(),
         (

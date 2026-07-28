@@ -37,7 +37,15 @@ export const makeCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	...overrides
 });
 
-export const runQuery = async (ctx: Ctx, body: Record<string, unknown>) => {
+type GraphQLTestResponse = {
+	data?: Record<string, unknown> | null;
+	errors?: Array<{ message: string; extensions?: Record<string, unknown> }>;
+};
+
+export const runQuery = async (
+	ctx: Ctx,
+	body: Record<string, unknown>
+): Promise<GraphQLTestResponse> => {
 	const yoga = createYoga<{ ctx: Ctx }>({
 		schema,
 		context: (req) => req.ctx,
@@ -54,8 +62,5 @@ export const runQuery = async (ctx: Ctx, body: Record<string, unknown>) => {
 		},
 		{ ctx }
 	);
-	return response.json() as Promise<{
-		data?: Record<string, unknown> | null;
-		errors?: Array<{ message: string; extensions?: Record<string, unknown> }>;
-	}>;
+	return response.json() as Promise<GraphQLTestResponse>;
 };

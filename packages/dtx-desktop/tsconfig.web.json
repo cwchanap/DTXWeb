@@ -27,6 +27,7 @@
 		"baseUrl": ".",
 		"paths": {
 			"@/*": ["src/renderer/src/*"],
+			"$lib/*": ["src/renderer/src/*"],
 			"@dtx/ui-components/*": ["../ui-components/src/lib/*"]
 		},
 		"types": ["vite/client"]

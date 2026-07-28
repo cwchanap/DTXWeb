@@ -1,6 +1,6 @@
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -188,10 +188,17 @@ async fn credential_access_runs_blocking_backend_calls_off_the_runtime_thread_an
 
     // Different Drumery accounts use independent per-user locks, so two
     // concurrent calls for distinct users proceed in parallel rather than
-    // serializing behind the same mutex.
+    // serializing behind the same mutex. A fresh store with a 2-way barrier
+    // rendezvous makes the overlap deterministic: both calls register as
+    // active before either proceeds, so max_active reliably reaches 2. The
+    // barrier is intentionally not used for the same-user phase above, where
+    // per-user serialization would deadlock a 2-way rendezvous.
+    let rendezvous = Arc::new(Barrier::new(2));
+    let store_b = Arc::new(BlockingStore::with_rendezvous(Arc::clone(&rendezvous)));
+    let access_b = GoogleDriveCredentialAccess::new(store_b.clone());
     let (first, second) = tokio::join!(
-        access.get_refresh_token("user-a"),
-        access.get_refresh_token("user-b")
+        access_b.get_refresh_token("user-a"),
+        access_b.get_refresh_token("user-b")
     );
 
     assert_eq!(
@@ -208,7 +215,7 @@ async fn credential_access_runs_blocking_backend_calls_off_the_runtime_thread_an
             .map(|token| token.as_str()),
         Some("refresh-token")
     );
-    assert_eq!(store.max_active.load(Ordering::SeqCst), 2);
+    assert_eq!(store_b.max_active.load(Ordering::SeqCst), 2);
 }
 
 #[derive(Default)]
@@ -348,6 +355,16 @@ struct BlockingStore {
     active: AtomicUsize,
     max_active: AtomicUsize,
     first_thread: Mutex<Option<thread::ThreadId>>,
+    rendezvous: Mutex<Option<Arc<Barrier>>>,
+}
+
+impl BlockingStore {
+    fn with_rendezvous(barrier: Arc<Barrier>) -> Self {
+        Self {
+            rendezvous: Mutex::new(Some(barrier)),
+            ..Default::default()
+        }
+    }
 }
 
 impl GoogleDriveCredentialStore for BlockingStore {
@@ -358,6 +375,16 @@ impl GoogleDriveCredentialStore for BlockingStore {
         *self.first_thread.lock().expect("thread") = Some(thread::current().id());
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.max_active.fetch_max(active, Ordering::SeqCst);
+        // Rendezvous after registering as active so concurrent distinct-user
+        // calls are guaranteed to overlap (max_active reaches 2). Same-user
+        // calls use a store without a barrier, so this is a no-op there. The
+        // cloned barrier is bound first so the rendezvous MutexGuard drops
+        // before barrier.wait() — otherwise the guard's temporary lifetime
+        // would hold the lock across the blocking wait and deadlock the peer.
+        let rendezvous = self.rendezvous.lock().expect("rendezvous").clone();
+        if let Some(barrier) = rendezvous {
+            barrier.wait();
+        }
         thread::sleep(Duration::from_millis(25));
         self.active.fetch_sub(1, Ordering::SeqCst);
         Ok(Some("refresh-token".to_string()))

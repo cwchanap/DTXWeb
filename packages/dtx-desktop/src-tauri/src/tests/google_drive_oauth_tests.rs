@@ -1791,7 +1791,9 @@ async fn disconnect_cancels_active_operations_before_awaiting_oauth_revocation()
             _refresh_token: &str,
         ) -> std::result::Result<(), OAuthProviderError> {
             self.revoke_calls.fetch_add(1, Ordering::SeqCst);
-            self.revoke_entered.notify_waiters();
+            // notify_one stores a permit, so the handoff cannot be lost to a
+            // scheduling race even if the receiver has not yet polled.
+            self.revoke_entered.notify_one();
             self.release_revoke.notified().await;
             Ok(())
         }
@@ -1825,13 +1827,19 @@ async fn disconnect_cancels_active_operations_before_awaiting_oauth_revocation()
     assert!(lease.is_visible());
     assert!(!lease.cancellation().is_cancelled());
 
+    // Pre-register the notified future before spawning disconnect_user so the
+    // revoke_entered handoff cannot be lost to a scheduling race. notify_one
+    // stores a permit, so even if the provider signals before this future is
+    // polled, the await completes immediately.
+    let mut revoke_entered_wait = Box::pin(revoke_entered.notified());
+
     // Start disconnect in a spawned task — it will block on revocation.
     let disconnect = tokio::spawn(async move { state.disconnect_user("user-42").await });
 
     // Wait for the revocation provider to be entered — this confirms
     // disconnect_user has progressed past the cancellation step and is
     // now waiting on the network.
-    revoke_entered.notified().await;
+    revoke_entered_wait.as_mut().await;
 
     // The operation must already be cancelled and hidden BEFORE the
     // revocation network request returns.
@@ -1844,8 +1852,10 @@ async fn disconnect_cancels_active_operations_before_awaiting_oauth_revocation()
         "active upload must be hidden before revocation awaits"
     );
 
-    // Release the revocation so disconnect can complete.
-    release_revoke.notify_waiters();
+    // Release the revocation so disconnect can complete. notify_one stores a
+    // permit so the provider's release_revoke.notified() await completes even
+    // if it has not yet been polled when we signal.
+    release_revoke.notify_one();
     disconnect
         .await
         .expect("disconnect task")

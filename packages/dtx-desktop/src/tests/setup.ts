@@ -20,14 +20,14 @@ Object.defineProperty(window, 'matchMedia', {
 // through setItem remain observable from getItem within the same test.
 const localStorageStore = new Map<string, string>();
 const localStorageMock = {
-	getItem: vi.fn((key: string) => localStorageStore.get(key) ?? null),
-	setItem: vi.fn((key: string, value: string) => {
+	getItem: vi.fn((key: string): string | null => localStorageStore.get(key) ?? null),
+	setItem: vi.fn((key: string, value: string): void => {
 		localStorageStore.set(key, String(value));
 	}),
-	removeItem: vi.fn((key: string) => {
+	removeItem: vi.fn((key: string): void => {
 		localStorageStore.delete(key);
 	}),
-	clear: vi.fn(() => {
+	clear: vi.fn((): void => {
 		localStorageStore.clear();
 	}),
 	length: 0,
@@ -59,6 +59,6 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
 
 // Reset the stateful localStorage backing store between tests so seeded
 // values from one test do not leak into another.
-afterEach(() => {
+afterEach((): void => {
 	window.localStorage.clear();
 });

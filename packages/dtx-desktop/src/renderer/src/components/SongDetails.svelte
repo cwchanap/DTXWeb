@@ -749,13 +749,20 @@
 
 		try {
 			// Build update data object
+			// Omit download_url for Drive-bound records: the Drive upload flow
+			// owns the URL via the guarded updateSimfileDriveFile mutation.
+			// Sending a cached download_url here would reintroduce the
+			// cross-device race where a stale URL overwrites a newer binding.
+			const isDriveBound = Boolean(targetSong.linkedSimFile?.google_drive_file_id);
 			const updateData: Record<string, unknown> = {
 				display_id: Number(event.detail.displayId),
 				publish_date: String(event.detail.publishDate),
 				is_published: Boolean(event.detail.isPublished),
-				download_url: String(event.detail.downloadUrl),
 				video_preview_url: String(event.detail.videoPreviewUrl)
 			};
+			if (!isDriveBound) {
+				updateData.download_url = String(event.detail.downloadUrl);
+			}
 
 			// Add parsed local data if available (BPM, artist, title)
 			if (parsedLocalData.bpm) {

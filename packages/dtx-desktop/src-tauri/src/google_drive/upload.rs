@@ -823,6 +823,53 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
             Ok(file) => file,
             Err(_) => continue,
         };
+        // Resolve the optimistic-concurrency guard for the metadata patch.
+        // Legacy pending bindings (persisted before the
+        // `expected_previous_drive_file` field existed) have `None` here.
+        // For legacy FirstUpload records, safely infer `None` (expect no
+        // existing Drive file ID). For legacy ExplicitReplacement records,
+        // the original file ID cannot be reconstructed in general, so we
+        // cannot guard the patch — fail closed by compensating (delete the
+        // orphaned Drive file and remove the pending binding) rather than
+        // issuing an unconditional patch that could overwrite a newer binding
+        // established by another device.
+        //
+        // Exception: when the owner's current `google_drive_file_id` already
+        // matches the pending `drive_file_id`, the replacement already
+        // happened (possibly on another device) and the file is actively
+        // referenced. Deleting it would break the existing binding. In that
+        // case, infer the guard as `DriveFile(pending.drive_file_id)` — the
+        // patch only succeeds if the server's binding still matches, making
+        // it a safe URL-only update. If the binding changed in the meantime,
+        // the guarded patch fails and `patch_and_finish` compensates.
+        let inferred_none = ExpectedPreviousDriveFile::None;
+        let inferred_already_referenced = owner_references_pending_file(&owner, &pending)
+            .then(|| ExpectedPreviousDriveFile::DriveFile(pending.drive_file_id.clone()));
+        let resolved_expected_previous: Option<&ExpectedPreviousDriveFile> =
+            match pending.expected_previous_drive_file.as_ref() {
+                Some(expected) => Some(expected),
+                None => match pending.kind {
+                    PendingBindingKind::FirstUpload => Some(&inferred_none),
+                    PendingBindingKind::ExplicitReplacement => match &inferred_already_referenced {
+                        Some(referenced) => Some(referenced),
+                        None => {
+                            let _ = compensate_pending_failure(
+                                api,
+                                pending_store,
+                                access_token,
+                                &pending,
+                                DriveApiError::MetadataSync,
+                                Some((auth, expected_epoch)),
+                            )
+                            .await;
+                            if !auth.matches_session_epoch(expected_epoch).await {
+                                return;
+                            }
+                            continue;
+                        }
+                    },
+                },
+            };
         let _ = finish_existing_pending_file(
             api,
             pending_store,
@@ -832,7 +879,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
             &pending.simfile_id,
             &pending,
             &owner,
-            pending.expected_previous_drive_file.as_ref(),
+            resolved_expected_previous,
             file,
             None,
             Some((auth, expected_epoch)),

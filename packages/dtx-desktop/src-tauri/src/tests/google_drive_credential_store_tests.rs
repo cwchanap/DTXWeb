@@ -378,3 +378,61 @@ impl GoogleDriveCredentialStore for BlockingStore {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage tests for previously uncovered lines.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "google-drive")]
+#[test]
+fn map_keyring_error_classifies_no_entry_as_missing() {
+    assert_eq!(
+        map_keyring_error(keyring::Error::NoEntry),
+        KeyringOperationError::Missing,
+    );
+}
+
+#[cfg(feature = "google-drive")]
+#[test]
+fn platform_keyring_factory_creates_and_deletes_entries() {
+    let factory = PlatformKeyringEntryFactory;
+    let account = format!("coverage-test-{}", std::process::id());
+    let entry = factory
+        .entry(GOOGLE_DRIVE_CREDENTIAL_SERVICE, &account)
+        .expect("platform factory should create an entry");
+    // Clean up any pre-existing password for this account.
+    let _ = entry.delete_password();
+}
+
+#[cfg(feature = "google-drive")]
+#[test]
+fn platform_keyring_entry_round_trips_password() {
+    let factory = PlatformKeyringEntryFactory;
+    let account = format!("coverage-roundtrip-{}", std::process::id());
+    let entry = factory
+        .entry(GOOGLE_DRIVE_CREDENTIAL_SERVICE, &account)
+        .expect("platform factory should create an entry");
+
+    // Clean up before and after.
+    let _ = entry.delete_password();
+
+    // Initially the password should be missing.
+    assert!(entry.get_password().is_err());
+
+    // Set a password.
+    entry
+        .set_password("coverage-test-token")
+        .expect("set password");
+
+    // Get it back.
+    assert_eq!(
+        entry.get_password().expect("get password"),
+        "coverage-test-token",
+    );
+
+    // Delete it.
+    entry.delete_password().expect("delete password");
+
+    // Should be missing again.
+    assert!(entry.get_password().is_err());
+}

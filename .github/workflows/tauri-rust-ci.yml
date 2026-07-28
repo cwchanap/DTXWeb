@@ -151,7 +151,11 @@ jobs:
           set -o pipefail
           {
             cargo llvm-cov clean --workspace
-            cargo llvm-cov --no-report --locked
+            # This real-platform smoke test needs an interactive OS credential
+            # service, which the headless Ubuntu runner intentionally lacks.
+            # The injected keyring adapter round-trip remains covered in CI.
+            cargo llvm-cov --no-report --locked -- \
+              --skip google_drive::credential_store::tests::platform_keyring_entry_round_trips_password
             DTX_DESKTOP_BUILD_ENV=e2e \
               GOOGLE_DRIVE_OAUTH_CLIENT_ID='' \
               GOOGLE_DRIVE_OAUTH_CLIENT_ENV='' \

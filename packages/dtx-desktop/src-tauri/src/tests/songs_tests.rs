@@ -1684,3 +1684,113 @@ fn parse_set_def_labels_skips_label_without_matching_file_directive() {
     assert!(!labels.contains_key("orphan"));
     assert_eq!(labels.get("real.dtx"), Some(&"Real".to_string()));
 }
+
+// ---------------------------------------------------------------------------
+// create_song_with_workspace_state — template copy success through the
+// managed workspace (patch lines 106-119). The existing template-copy test
+// calls create_song_folder directly; this test routes through the workspace-
+// state wrapper so the template_folder_path canonicalization (Some branch)
+// is exercised end-to-end.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_song_with_workspace_state_copies_template_from_within_workspace() {
+    let workspace = tempdir().expect("workspace");
+    let selected = workspace.path().join("Songs");
+    let template = workspace.path().join("Template");
+    fs::create_dir(&selected).await.expect("selected directory");
+    fs::create_dir(&template).await.expect("template directory");
+    fs::write(template.join("chart.dtx"), b"#TITLE: Template")
+        .await
+        .expect("template dtx");
+    fs::write(template.join("kick.wav"), b"audio")
+        .await
+        .expect("template wav");
+
+    let state = managed_workspace_state(workspace.path());
+    let result = create_song_with_workspace_state(
+        CreateSongOptions {
+            selected_path: selected.to_string_lossy().into_owned(),
+            sanitized_folder_name: "NewSong".to_string(),
+            sanitized_song_name: "My Song".to_string(),
+            template_folder_path: Some(template.to_string_lossy().into_owned()),
+        },
+        &state,
+    )
+    .await
+    .expect("create song with in-workspace template");
+
+    assert!(result.success);
+    let song_folder = std::fs::canonicalize(&selected)
+        .expect("canonical selected")
+        .join("NewSong");
+    assert!(song_folder.join("chart.dtx").is_file());
+    assert!(song_folder.join("kick.wav").is_file());
+    assert!(song_folder.join("SET.def").is_file());
+}
+
+// ---------------------------------------------------------------------------
+// create_song_with_workspace_root — direct test with template_folder_path
+// None branch (patch line 114). Ensures the None arm of the match produces
+// a correct canonicalized selected_path without attempting template copy.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_song_with_workspace_root_canonicalizes_selected_path_without_template() {
+    let workspace = tempdir().expect("workspace");
+    let selected = workspace.path().join("Songs");
+    fs::create_dir(&selected).await.expect("selected directory");
+
+    let result = create_song_with_workspace_root(
+        CreateSongOptions {
+            selected_path: selected.to_string_lossy().into_owned(),
+            sanitized_folder_name: "SoloSong".to_string(),
+            sanitized_song_name: "Solo".to_string(),
+            template_folder_path: None,
+        },
+        workspace.path(),
+    )
+    .await
+    .expect("create song without template");
+
+    assert!(result.success);
+    let canonical_selected = std::fs::canonicalize(&selected).expect("canonical");
+    assert!(canonical_selected
+        .join("SoloSong")
+        .join("SET.def")
+        .is_file());
+}
+
+// ---------------------------------------------------------------------------
+// export_song_to_zip_with_workspace_root — success envelope (patch lines
+// 200-213). The existing test covers the failure envelope (invalid title)
+// and the rejection (outside workspace); this test verifies the Ok(result)
+// arm returns a success envelope with zip_path and files_count.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn export_song_to_zip_with_workspace_root_returns_success_envelope() {
+    let workspace = tempdir().expect("workspace");
+    let song = workspace.path().join("Song");
+    let export = workspace.path().join("Export");
+    fs::create_dir(&song).await.expect("song dir");
+    fs::create_dir(&export).await.expect("export dir");
+    fs::write(song.join("main.dtx"), b"#TITLE: Song")
+        .await
+        .expect("dtx");
+
+    let result = export_song_to_zip_with_workspace_root(
+        song.to_string_lossy().into_owned(),
+        Some("MySong".to_string()),
+        Some(export.to_string_lossy().into_owned()),
+        workspace.path(),
+    )
+    .await
+    .expect("export envelope");
+
+    assert!(result.success);
+    assert!(result.zip_path.is_some());
+    assert_eq!(result.files_count, Some(1));
+    assert!(result.error.is_none());
+    assert!(export.join("MySong.zip").is_file());
+}

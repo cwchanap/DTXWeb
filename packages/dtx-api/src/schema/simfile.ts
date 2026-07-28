@@ -906,7 +906,19 @@ builder.mutationField('updateSimfile', (t) =>
 			}
 			if (input.isPublished != null) updateData.is_published = input.isPublished ? 1 : 0;
 			if (input.displayId !== undefined) updateData.display_id = input.displayId;
-			if (input.downloadUrl !== undefined)
+			// When the row is Drive-bound (google_drive_file_id is set), the
+			// download_url is owned by the `updateSimfileDriveFile` mutation,
+			// which atomically updates both fields with optimistic-concurrency
+			// guards.  Allowing a generic `updateSimfile` call to independently
+			// overwrite download_url would break the invariant
+			// (file_id <-> url) and reintroduce the cross-device race where a
+			// stale cached URL overwrites a newer binding URL without
+			// touching the file ID.  Silently drop the field here so existing
+			// clients (web chart editor, desktop generic saves) that still send
+			// a cached downloadUrl do not corrupt the pair.  An intentional
+			// switch to a manually managed URL must go through an explicit
+			// operation that atomically clears google_drive_file_id.
+			if (input.downloadUrl !== undefined && !existing.google_drive_file_id)
 				updateData.download_url = filterDownloadUrl(
 					input.downloadUrl,
 					ctx.env.PUBLIC_SIMFILE_BUCKET_URL

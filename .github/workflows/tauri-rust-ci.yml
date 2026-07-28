@@ -134,21 +134,30 @@ jobs:
           [ -f ../dist/index.html ] || \
             printf '<!DOCTYPE html><html><head></head><body></body></html>' > ../dist/index.html
 
-      - name: Run unit tests with coverage
-        run: cargo llvm-cov --locked --lcov --output-path lcov.info
-
-      - name: Regenerate TypeScript types with the E2E feature
+      - name: Run default and E2E-feature tests with coverage
+        shell: bash
         env:
           DTX_DESKTOP_BUILD_ENV: e2e
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ''
           GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ''
-        run: cargo test --locked --no-default-features --features e2e --lib export_bindings
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --no-report --locked
+          cargo llvm-cov --no-report --no-clean --locked --no-default-features --features e2e
+          cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Verify generated TypeScript types are in sync
         working-directory: ${{ github.workspace }}
         run: |
           git ls-files --error-unmatch -- packages/e2e-desktop/support/generated/native-types.ts
           git diff --exit-code -- packages/e2e-desktop/support/generated/native-types.ts
+
+      - name: Upload Rust coverage report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tauri-rust-lcov
+          path: packages/dtx-desktop/src-tauri/lcov.info
+          if-no-files-found: error
 
       - name: Upload coverage to Codecov
         # Codecov merges this Rust upload with the TypeScript coverage uploaded

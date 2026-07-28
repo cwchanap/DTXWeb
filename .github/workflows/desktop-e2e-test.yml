@@ -65,6 +65,13 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
+        with:
+          tool: cargo-llvm-cov
 
       - name: Rust Cache
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -81,11 +88,49 @@ jobs:
       - name: Build shared packages
         run: bun run --filter=@dtx/common build && bun run --filter=@dtx/ui-components build
 
+      - name: Configure Rust coverage instrumentation
+        shell: bash
+        working-directory: packages/dtx-desktop/src-tauri
+        run: |
+          export CARGO_TARGET_DIR="$PWD/target-e2e"
+          cargo llvm-cov show-env --sh > coverage-env.sh
+          source coverage-env.sh
+          cargo llvm-cov clean --workspace
+
       - name: Build test-enabled desktop app
-        run: bun run --filter=dtx-e2e-desktop e2e:build
+        shell: bash
+        run: |
+          source packages/dtx-desktop/src-tauri/coverage-env.sh
+          bun run --filter=dtx-e2e-desktop e2e:build
 
       - name: Run desktop integration and relaunch tests
-        run: xvfb-run -a bun run --filter=dtx-e2e-desktop e2e:run
+        shell: bash
+        run: |
+          source packages/dtx-desktop/src-tauri/coverage-env.sh
+          mkdir -p packages/e2e-desktop/logs
+          set -o pipefail
+          xvfb-run -a bun run --filter=dtx-e2e-desktop e2e:run 2>&1 | tee packages/e2e-desktop/logs/runner.log
+
+      - name: Generate desktop E2E Rust coverage
+        shell: bash
+        working-directory: packages/dtx-desktop/src-tauri
+        run: |
+          source coverage-env.sh
+          cargo llvm-cov report --lcov --output-path e2e-lcov.info
+
+      - name: Upload desktop E2E Rust coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-e2e-rust-lcov
+          path: packages/dtx-desktop/src-tauri/e2e-lcov.info
+          if-no-files-found: error
+
+      - name: Upload desktop E2E Rust coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/dtx-desktop/src-tauri/e2e-lcov.info
+          fail_ci_if_error: true
 
       - name: Upload desktop e2e logs
         if: failure()

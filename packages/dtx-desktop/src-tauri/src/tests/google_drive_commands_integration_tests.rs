@@ -121,7 +121,10 @@ async fn upload_command_updates_an_existing_drive_object_and_metadata() {
     assert_eq!(snapshot.update_count, 1);
     assert_eq!(snapshot.create_count, 0);
     assert_eq!(snapshot.metadata_mutations.len(), 1);
-    assert_eq!(snapshot.owner.google_drive_file_id.as_deref(), Some(EXISTING_FILE_ID));
+    assert_eq!(
+        snapshot.owner.google_drive_file_id.as_deref(),
+        Some(EXISTING_FILE_ID)
+    );
 }
 
 #[tokio::test]
@@ -176,5 +179,5 @@ async fn connection_command_wrappers_preserve_adapter_results() {
         .await
         .expect("sharing recheck");
     assert!(connection.connected);
-    assert!(connection.folder_is_public);
+    assert!(!connection.requires_public_sharing);
 }

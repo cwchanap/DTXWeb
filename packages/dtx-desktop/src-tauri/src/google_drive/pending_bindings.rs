@@ -23,6 +23,21 @@ pub(crate) enum PendingBindingKind {
     ExplicitReplacement,
 }
 
+/// The Drive file ID the owner row was expected to reference (or not
+/// reference) at the time a pending binding was created. Used as an
+/// optimistic-concurrency guard when the binding is later reconciled: the
+/// metadata mutation only applies when the server-side row still matches
+/// this expectation, preventing a stale recovery from overwriting a newer
+/// binding established by another device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) enum ExpectedPreviousDriveFile {
+    /// Expect `google_drive_file_id` to be NULL (FirstUpload).
+    None,
+    /// Expect `google_drive_file_id` to equal this ID (ExplicitReplacement).
+    DriveFile(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PendingGoogleDriveBinding {
@@ -31,6 +46,10 @@ pub(crate) struct PendingGoogleDriveBinding {
     pub(crate) drive_file_id: String,
     pub(crate) kind: PendingBindingKind,
     pub(crate) created_at: String,
+    /// When `None` (legacy bindings persisted before this field existed), no
+    /// optimistic-concurrency guard is applied. New bindings always set this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) expected_previous_drive_file: Option<ExpectedPreviousDriveFile>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -255,6 +274,9 @@ fn validate_binding(binding: &PendingGoogleDriveBinding) -> Result<(), PendingBi
         || binding.created_at.chars().any(char::is_control)
     {
         return Err(PendingBindingStoreError::LocalState);
+    }
+    if let Some(ExpectedPreviousDriveFile::DriveFile(id)) = &binding.expected_previous_drive_file {
+        validate_identifier(id)?;
     }
     Ok(())
 }

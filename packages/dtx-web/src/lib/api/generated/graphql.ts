@@ -103,6 +103,8 @@ export type MutationUpdateSimfileArgs = {
 
 export type MutationUpdateSimfileDriveFileArgs = {
   downloadUrl: Scalars['String']['input'];
+  expectNoExistingDriveFile?: InputMaybe<Scalars['Boolean']['input']>;
+  expectedPreviousDriveFileId?: InputMaybe<Scalars['String']['input']>;
   googleDriveFileId: Scalars['String']['input'];
   id: Scalars['ID']['input'];
 };

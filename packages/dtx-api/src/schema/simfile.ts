@@ -794,10 +794,22 @@ builder.mutationField('updateSimfileDriveFile', (t) =>
 		args: {
 			id: t.arg.id({ required: true }),
 			googleDriveFileId: t.arg.string({ required: true }),
-			downloadUrl: t.arg.string({ required: true })
+			downloadUrl: t.arg.string({ required: true }),
+			expectedPreviousDriveFileId: t.arg.string({ required: false }),
+			expectNoExistingDriveFile: t.arg.boolean({ required: false })
 		},
 		authScopes: (_root, args) => ({ owner: { simfileId: String(args.id) } }),
-		resolve: async (_root, { id, googleDriveFileId, downloadUrl }, ctx) => {
+		resolve: async (
+			_root,
+			{
+				id,
+				googleDriveFileId,
+				downloadUrl,
+				expectedPreviousDriveFileId,
+				expectNoExistingDriveFile
+			},
+			ctx
+		) => {
 			const numeric = Number(id);
 			if (!Number.isSafeInteger(numeric)) {
 				throw new GraphQLError('Invalid simfile id', {
@@ -824,7 +836,9 @@ builder.mutationField('updateSimfileDriveFile', (t) =>
 			try {
 				await updateSimfileDriveFile(ctx.db, numeric, ctx.user!.id, {
 					googleDriveFileId: normalizedDriveFileId,
-					downloadUrl: normalizedDownloadUrl
+					downloadUrl: normalizedDownloadUrl,
+					expectedPreviousDriveFileId: expectedPreviousDriveFileId ?? undefined,
+					expectNoExistingDriveFile: expectNoExistingDriveFile ?? undefined
 				});
 			} catch (error) {
 				if (error instanceof Error && error.message.includes('not found')) {

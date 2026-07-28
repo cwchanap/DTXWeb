@@ -168,7 +168,7 @@
 					class="text-cyan text-sm underline"
 					href={visibleOutcome.downloadUrl}
 					target="_blank"
-					rel="noreferrer">{$_('googleDrive.upload.openLink')}</a
+					rel="noopener noreferrer">{$_('googleDrive.upload.openLink')}</a
 				>
 				<p class="text-dim text-sm">{$_('googleDrive.upload.browserLink')}</p>
 			{/if}

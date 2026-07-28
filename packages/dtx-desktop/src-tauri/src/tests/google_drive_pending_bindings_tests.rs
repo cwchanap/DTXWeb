@@ -17,6 +17,7 @@ fn binding(
         drive_file_id: drive_file_id.to_string(),
         kind,
         created_at: created_at.to_string(),
+        expected_previous_drive_file: None,
     }
 }
 

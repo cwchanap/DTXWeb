@@ -209,6 +209,81 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 		expect(row).toEqual({ google_drive_file_id: null, download_url: null });
 	});
 
+	it('applies the patch when expectNoExistingDriveFile matches a NULL binding', async () => {
+		const updated = await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'first-upload-file',
+			downloadUrl: 'https://drive.google.com/uc?id=first-upload-file',
+			expectNoExistingDriveFile: true
+		});
+		expect(updated.google_drive_file_id).toBe('first-upload-file');
+	});
+
+	it('rejects a FirstUpload guard when the row already has a Drive binding', async () => {
+		// Simulate another device having already established a binding.
+		await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'device-b-file-y',
+			downloadUrl: 'https://drive.google.com/uc?id=device-b-file-y'
+		});
+		// A FirstUpload guard (expectNoExistingDriveFile) must fail because the
+		// binding is no longer NULL.
+		await expect(
+			updateSimfileDriveFile(db, 1, 'user-1', {
+				googleDriveFileId: 'stale-device-a-file',
+				downloadUrl: 'https://drive.google.com/uc?id=stale-device-a-file',
+				expectNoExistingDriveFile: true
+			})
+		).rejects.toThrow('Simfile not found');
+
+		// The newer binding is preserved.
+		const row = await db
+			.prepare('SELECT google_drive_file_id FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{ google_drive_file_id: string | null }>();
+		expect(row?.google_drive_file_id).toBe('device-b-file-y');
+	});
+
+	it('applies the patch when expectedPreviousDriveFileId matches the current binding', async () => {
+		// Establish an initial binding.
+		await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'initial-file',
+			downloadUrl: 'https://drive.google.com/uc?id=initial-file'
+		});
+		// An ExplicitReplacement guard expecting that exact ID must succeed.
+		const updated = await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'replacement-file',
+			downloadUrl: 'https://drive.google.com/uc?id=replacement-file',
+			expectedPreviousDriveFileId: 'initial-file'
+		});
+		expect(updated.google_drive_file_id).toBe('replacement-file');
+	});
+
+	it('rejects an ExplicitReplacement guard when the binding changed to a different file', async () => {
+		// Establish an initial binding.
+		await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'initial-file',
+			downloadUrl: 'https://drive.google.com/uc?id=initial-file'
+		});
+		// Another device replaces the file.
+		await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'device-b-file-y',
+			downloadUrl: 'https://drive.google.com/uc?id=device-b-file-y'
+		});
+		// A guard expecting the stale 'initial-file' must fail.
+		await expect(
+			updateSimfileDriveFile(db, 1, 'user-1', {
+				googleDriveFileId: 'stale-device-a-file',
+				downloadUrl: 'https://drive.google.com/uc?id=stale-device-a-file',
+				expectedPreviousDriveFileId: 'initial-file'
+			})
+		).rejects.toThrow('Simfile not found');
+
+		const row = await db
+			.prepare('SELECT google_drive_file_id FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{ google_drive_file_id: string | null }>();
+		expect(row?.google_drive_file_id).toBe('device-b-file-y');
+	});
+
 	it('rejects a second direct application of 0006 because Wrangler records applied migrations', async () => {
 		const migration = MIGRATIONS.find(
 			(candidate) => candidate.fileName === '0006_google_drive_file_id.sql'

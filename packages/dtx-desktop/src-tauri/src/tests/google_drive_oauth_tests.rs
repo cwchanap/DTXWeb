@@ -1757,3 +1757,97 @@ fn reqwest_oauth_provider_accepts_valid_client_id() {
         "client-id-42.apps.googleusercontent.com"
     );
 }
+
+#[tokio::test]
+async fn disconnect_cancels_active_operations_before_awaiting_oauth_revocation() {
+    use uuid::Uuid;
+
+    // Regression: disconnect_user must cancel and hide active operations
+    // BEFORE awaiting the OAuth revocation request. The revocation provider
+    // blocks until released; if cancellation only happened after revocation,
+    // an in-flight upload could finalize and patch metadata during the wait.
+    struct BlockingRevokeProvider {
+        revoke_entered: Arc<Notify>,
+        release_revoke: Arc<Notify>,
+        revoke_calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl GoogleOAuthProvider for BlockingRevokeProvider {
+        async fn exchange_code(
+            &self,
+            _request: TokenExchangeRequest,
+        ) -> std::result::Result<OAuthTokenResponse, OAuthProviderError> {
+            Err(OAuthProviderError::InvalidResponse)
+        }
+        async fn refresh_access_token(
+            &self,
+            _refresh_token: &str,
+        ) -> std::result::Result<OAuthTokenResponse, OAuthProviderError> {
+            Err(OAuthProviderError::InvalidResponse)
+        }
+        async fn revoke_refresh_token(
+            &self,
+            _refresh_token: &str,
+        ) -> std::result::Result<(), OAuthProviderError> {
+            self.revoke_calls.fetch_add(1, Ordering::SeqCst);
+            self.revoke_entered.notify_waiters();
+            self.release_revoke.notified().await;
+            Ok(())
+        }
+    }
+
+    let revoke_entered = Arc::new(Notify::new());
+    let release_revoke = Arc::new(Notify::new());
+    let provider = Arc::new(BlockingRevokeProvider {
+        revoke_entered: Arc::clone(&revoke_entered),
+        release_revoke: Arc::clone(&release_revoke),
+        revoke_calls: AtomicUsize::new(0),
+    });
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let settings = Arc::new(FakeSettings::with_folder("folder-42", "Uploads"));
+    let state = oauth_state(
+        credential_store.clone(),
+        settings.clone(),
+        provider as Arc<dyn GoogleOAuthProvider>,
+        Arc::new(CallbackBrowser::new("unused")),
+    );
+
+    // Register an active upload operation for this user.
+    let operation_id = Uuid::new_v4();
+    let lease = state
+        .operation_manager
+        .register("user-42", operation_id, "sim-42")
+        .expect("register operation");
+    assert!(lease.is_visible());
+    assert!(!lease.cancellation().is_cancelled());
+
+    // Start disconnect in a spawned task — it will block on revocation.
+    let disconnect = tokio::spawn(async move { state.disconnect_user("user-42").await });
+
+    // Wait for the revocation provider to be entered — this confirms
+    // disconnect_user has progressed past the cancellation step and is
+    // now waiting on the network.
+    revoke_entered.notified().await;
+
+    // The operation must already be cancelled and hidden BEFORE the
+    // revocation network request returns.
+    assert!(
+        lease.cancellation().is_cancelled(),
+        "active upload must be cancelled before revocation awaits"
+    );
+    assert!(
+        !lease.is_visible(),
+        "active upload must be hidden before revocation awaits"
+    );
+
+    // Release the revocation so disconnect can complete.
+    release_revoke.notify_waiters();
+    disconnect
+        .await
+        .expect("disconnect task")
+        .expect("disconnect succeeds");
+}

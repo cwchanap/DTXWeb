@@ -142,19 +142,15 @@ export const workspaceService = {
 				let nativeMutationCommitted = false;
 				try {
 					// This dialog establishes the native managed workspace root.
-					console.log('Invoking select-workspace-folder dialog');
 					const result = await desktopHost.selectWorkspaceFolder();
-					console.log('Dialog result:', result);
 					nativeMutationCommitted = !result.canceled && Boolean(result.filePaths[0]);
 					if (!workspaceService.isTransitionCurrent(transition)) return;
 
 					if (result.canceled) {
-						console.log('Dialog was canceled');
 						return;
 					}
 
 					const selectedPath = result.filePaths[0];
-					console.log('Selected path:', selectedPath);
 					workspaceStore.reset();
 					restoreLoading(transition);
 					workspaceStore.setPath(selectedPath);

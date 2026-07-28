@@ -81,6 +81,17 @@ export const createGoogleDriveStore = () => {
 	return {
 		subscribe,
 		captureGeneration: (): number => generation,
+		// Each connection-related action (refresh, connect, change-folder,
+		// recheck-sharing, disconnect) must reserve its OWN generation before
+		// awaiting the native call. Sharing a single generation across
+		// concurrent actions lets a stale result from the earlier action
+		// overwrite the newer one because both compare equal to the current
+		// generation. Bumping the generation up-front ensures only the most
+		// recently begun action's result is applied.
+		beginConnectionRequest: (): number => {
+			generation += 1;
+			return generation;
+		},
 		setConnection: (
 			connection: GoogleDriveConnectionState,
 			source: GoogleDriveConnectionSource = 'refresh'

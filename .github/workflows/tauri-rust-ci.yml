@@ -66,7 +66,18 @@ jobs:
             printf '<!DOCTYPE html><html><head></head><body></body></html>' > ../dist/index.html
 
       - name: Check formatting
-        run: cargo fmt --check
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fmt --check 2>&1 | tee fmt.log
+
+      - name: Upload formatting diagnostics
+        if: failure() && hashFiles('packages/dtx-desktop/src-tauri/fmt.log') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tauri-fmt-log
+          path: packages/dtx-desktop/src-tauri/fmt.log
+          if-no-files-found: error
 
       - name: Run clippy
         shell: bash
@@ -75,7 +86,7 @@ jobs:
           cargo clippy --all-targets --locked -- -D warnings 2>&1 | tee clippy.log
 
       - name: Upload clippy diagnostics
-        if: failure()
+        if: failure() && hashFiles('packages/dtx-desktop/src-tauri/clippy.log') != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tauri-clippy-log
@@ -137,13 +148,24 @@ jobs:
       - name: Run default and E2E-feature tests with coverage
         shell: bash
         run: |
-          cargo llvm-cov clean --workspace
-          cargo llvm-cov --no-report --locked
-          DTX_DESKTOP_BUILD_ENV=e2e \
-            GOOGLE_DRIVE_OAUTH_CLIENT_ID='' \
-            GOOGLE_DRIVE_OAUTH_CLIENT_ENV='' \
-            cargo llvm-cov --no-report --locked --no-default-features --features e2e
-          cargo llvm-cov report --lcov --output-path lcov.info
+          set -o pipefail
+          {
+            cargo llvm-cov clean --workspace
+            cargo llvm-cov --no-report --locked
+            DTX_DESKTOP_BUILD_ENV=e2e \
+              GOOGLE_DRIVE_OAUTH_CLIENT_ID='' \
+              GOOGLE_DRIVE_OAUTH_CLIENT_ENV='' \
+              cargo llvm-cov --no-report --locked --no-default-features --features e2e
+            cargo llvm-cov report --lcov --output-path lcov.info
+          } 2>&1 | tee coverage.log
+
+      - name: Upload coverage test diagnostics
+        if: failure() && hashFiles('packages/dtx-desktop/src-tauri/coverage.log') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tauri-coverage-log
+          path: packages/dtx-desktop/src-tauri/coverage.log
+          if-no-files-found: error
 
       - name: Verify generated TypeScript types are in sync
         working-directory: ${{ github.workspace }}

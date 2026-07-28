@@ -1,6 +1,6 @@
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
-use crate::google_drive::{DriveMetadataError, OwnerDriveSimfile};
+use crate::google_drive::{DriveMetadataError, ExpectedPreviousDriveFile, OwnerDriveSimfile};
 use crate::workspace::WorkspaceRootState;
 use reqwest::multipart::{Form, Part};
 use serde_json::{json, Map, Value};
@@ -130,11 +130,13 @@ query OwnerDriveSimfile($id: ID!) {
 "#;
 
 const UPDATE_SIMFILE_DRIVE_FILE_MUTATION: &str = r#"
-mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!) {
+mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!, $expectedPreviousDriveFileId: String, $expectNoExistingDriveFile: Boolean) {
   updateSimfileDriveFile(
     id: $id
     googleDriveFileId: $googleDriveFileId
     downloadUrl: $downloadUrl
+    expectedPreviousDriveFileId: $expectedPreviousDriveFileId
+    expectNoExistingDriveFile: $expectNoExistingDriveFile
   ) {
     id
     title
@@ -522,7 +524,13 @@ pub(crate) async fn update_drive_file_impl(
     drive_file_id: &str,
     download_url: &str,
     authenticated_user_id: &str,
+    expected_previous: Option<&ExpectedPreviousDriveFile>,
 ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
+    let (expected_previous_drive_file_id, expect_no_existing_drive_file) = match expected_previous {
+        Some(ExpectedPreviousDriveFile::None) => (None, Some(true)),
+        Some(ExpectedPreviousDriveFile::DriveFile(id)) => (Some(id.as_str()), None),
+        None => (None, None),
+    };
     let data = drive_metadata_graphql_data(
         base_url,
         token,
@@ -531,6 +539,8 @@ pub(crate) async fn update_drive_file_impl(
             "id": simfile_id,
             "googleDriveFileId": drive_file_id,
             "downloadUrl": download_url,
+            "expectedPreviousDriveFileId": expected_previous_drive_file_id,
+            "expectNoExistingDriveFile": expect_no_existing_drive_file,
         }),
     )
     .await?;
@@ -584,6 +594,7 @@ pub(crate) async fn update_drive_file<R: Runtime>(
     simfile_id: &str,
     drive_file_id: &str,
     download_url: &str,
+    expected_previous: Option<&ExpectedPreviousDriveFile>,
 ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
     let base_url = api_base_url_from_env().map_err(|_| DriveMetadataError::LocalState)?;
     let token = access_token_from_auth_state(auth, Some(app))
@@ -597,6 +608,7 @@ pub(crate) async fn update_drive_file<R: Runtime>(
         drive_file_id,
         download_url,
         &user_id,
+        expected_previous,
     )
     .await
 }
@@ -905,27 +917,43 @@ async fn read_preview_within_workspace(
     if workspace_root.trim().is_empty() {
         return Err("A workspace root is required to upload previews".to_string());
     }
-    let canonical_root = fs::canonicalize(workspace_root)
-        .await
-        .map_err(|_| format!("Workspace root not found: {workspace_root}"))?;
-    let canonical_song = fs::canonicalize(song_path)
-        .await
-        .map_err(|_| format!("Song folder not found: {song_path}"))?;
-    if !canonical_song.starts_with(&canonical_root) {
-        return Err("Song folder is outside the workspace".to_string());
+    // Verify root exists with an actionable message before routing the
+    // containment check through canonicalize_within_workspace (which would
+    // surface a generic I/O error otherwise).
+    if fs::canonicalize(workspace_root).await.is_err() {
+        return Err(format!("Workspace root not found: {workspace_root}"));
     }
-    // Canonicalize the preview file itself (resolving symlinks) before
-    // reading, so a symlinked preview.jpg/mp3 cannot exfiltrate bytes from
-    // outside the workspace. If the file doesn't exist, canonicalize fails
-    // and we return Ok(None) — no preview to upload, not an error.
+    // Route the song-folder containment check through the canonical primitive
+    // so the symlink-safe invariant lives in one tested place.
+    let canonical_song =
+        match crate::filesystem::canonicalize_within_workspace(song_path, Some(workspace_root))
+            .await
+        {
+            Ok(path) => path,
+            Err(DesktopError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(format!("Song folder not found: {song_path}"));
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+    // Canonicalize the preview file through the same primitive so a symlinked
+    // preview.jpg/mp3 cannot exfiltrate bytes from outside the workspace. A
+    // missing preview is not an error — map NotFound to Ok(None).
     let preview_path = canonical_song.join(file_name);
-    let canonical_preview = match fs::canonicalize(&preview_path).await {
+    let preview_path_str = preview_path
+        .to_str()
+        .ok_or_else(|| "Preview path is not valid UTF-8".to_string())?;
+    let canonical_preview = match crate::filesystem::canonicalize_within_workspace(
+        preview_path_str,
+        Some(workspace_root),
+    )
+    .await
+    {
         Ok(path) => path,
-        Err(_) => return Ok(None),
+        Err(DesktopError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(error) => return Err(error.to_string()),
     };
-    if !canonical_preview.starts_with(&canonical_root) {
-        return Err("Preview file is outside the workspace".to_string());
-    }
     match fs::read(&canonical_preview).await {
         Ok(bytes) => Ok(Some(bytes)),
         Err(_) => Ok(None),

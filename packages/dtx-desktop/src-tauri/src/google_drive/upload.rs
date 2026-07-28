@@ -18,8 +18,8 @@ use super::drive_client::{
     GoogleDriveApi, PublicPermissionStatus,
 };
 use super::pending_bindings::{
-    GoogleDrivePendingBindingStore, PendingBindingKind, PendingBindingStoreError,
-    PendingGoogleDriveBinding,
+    ExpectedPreviousDriveFile, GoogleDrivePendingBindingStore, PendingBindingKind,
+    PendingBindingStoreError, PendingGoogleDriveBinding,
 };
 use super::{DriveMetadataClient, DriveMetadataError, OwnerDriveSimfile};
 
@@ -832,6 +832,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
             &pending.simfile_id,
             &pending,
             &owner,
+            pending.expected_previous_drive_file.as_ref(),
             file,
             None,
             Some((auth, expected_epoch)),
@@ -912,12 +913,21 @@ where
                 .await
                 .map_err(create_failure)?;
             ensure_not_canceled(cancellation).map_err(create_failure)?;
+            let expected_previous_drive_file = match request.kind {
+                PendingBindingKind::FirstUpload => Some(ExpectedPreviousDriveFile::None),
+                PendingBindingKind::ExplicitReplacement => owner
+                    .google_drive_file_id
+                    .as_deref()
+                    .filter(|id| !id.trim().is_empty())
+                    .map(|id| ExpectedPreviousDriveFile::DriveFile(id.to_string())),
+            };
             let pending = PendingGoogleDriveBinding {
                 user_id: user_id.clone(),
                 simfile_id: request.simfile_id.clone(),
                 drive_file_id: generated_id,
                 kind: request.kind,
                 created_at: pending_created_at(),
+                expected_previous_drive_file,
             };
             pending_store
                 .replace(pending.clone())
@@ -958,6 +968,7 @@ where
                     &request.simfile_id,
                     &pending,
                     &owner,
+                    pending.expected_previous_drive_file.as_ref(),
                     file,
                     crash_at,
                     None,
@@ -1053,6 +1064,7 @@ where
                             &request.simfile_id,
                             &pending,
                             &owner,
+                            pending.expected_previous_drive_file.as_ref(),
                             file,
                             crash_at,
                             None,
@@ -1095,6 +1107,7 @@ where
             &request.simfile_id,
             &pending,
             &owner,
+            pending.expected_previous_drive_file.as_ref(),
             outcome,
             crash_at,
             None,
@@ -1113,6 +1126,7 @@ async fn finish_existing_pending_file<A>(
     simfile_id: &str,
     pending: &PendingGoogleDriveBinding,
     prior_owner: &OwnerDriveSimfile,
+    expected_previous: Option<&ExpectedPreviousDriveFile>,
     file: DriveFile,
     crash_at: Option<CreateCrashPoint>,
     reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
@@ -1160,6 +1174,7 @@ where
         simfile_id,
         pending,
         prior_owner,
+        expected_previous,
         DriveUploadOutcome {
             file_id: pending.drive_file_id.clone(),
             file_name: file.name,
@@ -1181,6 +1196,7 @@ async fn patch_and_finish<A>(
     simfile_id: &str,
     pending: &PendingGoogleDriveBinding,
     prior_owner: &OwnerDriveSimfile,
+    expected_previous: Option<&ExpectedPreviousDriveFile>,
     outcome: DriveUploadOutcome,
     crash_at: Option<CreateCrashPoint>,
     reconciliation_session: Option<(&AuthState, &AuthSessionEpoch)>,
@@ -1191,7 +1207,13 @@ where
     for attempt in 0..2 {
         ensure_reconciliation_session(reconciliation_session).await?;
         let patch_result = metadata_client
-            .update_drive_file(auth, simfile_id, &outcome.file_id, &outcome.download_url)
+            .update_drive_file(
+                auth,
+                simfile_id,
+                &outcome.file_id,
+                &outcome.download_url,
+                expected_previous,
+            )
             .await;
         ensure_reconciliation_session(reconciliation_session).await?;
         if patch_result.as_ref().is_ok_and(|updated| {
@@ -1220,7 +1242,22 @@ where
                 return Ok(outcome);
             }
             Ok(current) if owner_binding_matches(&current, prior_owner) => {}
-            Ok(_) => return Err(create_failure(DriveApiError::MetadataSync)),
+            Ok(_) => {
+                // The owner's Drive binding changed since prior_owner was
+                // fetched — another device established a newer binding. The
+                // pending file is superseded; compensate (delete the orphaned
+                // Drive file and remove the pending binding) rather than
+                // overwriting the newer binding.
+                return compensate_pending_failure(
+                    api,
+                    pending_store,
+                    access_token,
+                    pending,
+                    DriveApiError::MetadataSync,
+                    reconciliation_session,
+                )
+                .await;
+            }
             Err(DriveMetadataError::DefinitiveUnavailable) => {
                 if owner_references_pending_file(prior_owner, pending) {
                     return Err(create_failure(DriveApiError::SimfileUnavailable));
@@ -1267,6 +1304,16 @@ pub(crate) async fn patch_existing_upload(
     prior_owner: &OwnerDriveSimfile,
     outcome: DriveUploadOutcome,
 ) -> std::result::Result<DriveUploadOutcome, DriveUploadFailure> {
+    // Guard the in-place update against a concurrent replacement: only
+    // apply the patch if the server-side Drive binding still matches what
+    // we observed before the upload. Without this, a second device that
+    // replaced the file while we were uploading would have its newer
+    // binding overwritten by our stale download URL.
+    let expected_previous = prior_owner
+        .google_drive_file_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+        .map(|id| ExpectedPreviousDriveFile::DriveFile(id.to_string()));
     for attempt in 0..2 {
         let patch = metadata_client
             .update_drive_file(
@@ -1274,6 +1321,7 @@ pub(crate) async fn patch_existing_upload(
                 &prior_owner.id,
                 &outcome.file_id,
                 &outcome.download_url,
+                expected_previous.as_ref(),
             )
             .await;
         if patch.as_ref().is_ok_and(|updated| {

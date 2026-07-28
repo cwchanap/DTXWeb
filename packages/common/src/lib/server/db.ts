@@ -423,16 +423,33 @@ export const updateSimfileDriveFile = async (
 	db: D1Database,
 	id: number,
 	ownerUserId: string,
-	data: { googleDriveFileId: string; downloadUrl: string }
+	data: {
+		googleDriveFileId: string;
+		downloadUrl: string;
+		expectedPreviousDriveFileId?: string;
+		expectNoExistingDriveFile?: boolean;
+	}
 ): Promise<SimfileRow> => {
+	const setClauses = ['google_drive_file_id = ?', 'download_url = ?', 'updated_at = ?'];
+	const whereClauses = ['id = ?', 'user_id = ?'];
+	const params: (string | number | boolean)[] = [
+		data.googleDriveFileId,
+		data.downloadUrl,
+		new Date().toISOString(),
+		id,
+		ownerUserId
+	];
+	if (data.expectNoExistingDriveFile === true) {
+		whereClauses.push('google_drive_file_id IS NULL');
+	} else if (data.expectedPreviousDriveFileId != null) {
+		whereClauses.push('google_drive_file_id = ?');
+		params.push(data.expectedPreviousDriveFileId);
+	}
 	const result = await db
 		.prepare(
-			`UPDATE simfiles
-			 SET google_drive_file_id = ?, download_url = ?, updated_at = ?
-			 WHERE id = ? AND user_id = ?
-			 RETURNING *`
+			`UPDATE simfiles\n\t\t\t SET ${setClauses.join(', ')}\n\t\t\t WHERE ${whereClauses.join(' AND ')}\n\t\t\t RETURNING *`
 		)
-		.bind(data.googleDriveFileId, data.downloadUrl, new Date().toISOString(), id, ownerUserId)
+		.bind(...params)
 		.first<SimfileRow>();
 
 	if (!result) throw new Error('Simfile not found');

@@ -167,7 +167,7 @@ const saveAndUpload = async (request: SaveAndUploadRequest): Promise<SongSaveOut
 
 export const googleDriveService = {
 	refreshConnection: async (): Promise<GoogleDriveConnectionState | null> => {
-		const generation = googleDriveStore.captureGeneration();
+		const generation = googleDriveStore.beginConnectionRequest();
 		try {
 			const connection = await desktopHost.getGoogleDriveConnectionState();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'refresh');
@@ -178,7 +178,7 @@ export const googleDriveService = {
 		}
 	},
 	connectAndChooseFolder: async (): Promise<GoogleDriveConnectionState | null> => {
-		const generation = googleDriveStore.captureGeneration();
+		const generation = googleDriveStore.beginConnectionRequest();
 		try {
 			const connection = await desktopHost.connectGoogleDriveAndChooseFolder();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'connect');
@@ -189,7 +189,7 @@ export const googleDriveService = {
 		}
 	},
 	changeFolder: async (): Promise<GoogleDriveConnectionState | null> => {
-		const generation = googleDriveStore.captureGeneration();
+		const generation = googleDriveStore.beginConnectionRequest();
 		try {
 			const connection = await desktopHost.changeGoogleDriveFolder();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'change-folder');
@@ -200,7 +200,7 @@ export const googleDriveService = {
 		}
 	},
 	recheckSharing: async (): Promise<GoogleDriveConnectionState | null> => {
-		const generation = googleDriveStore.captureGeneration();
+		const generation = googleDriveStore.beginConnectionRequest();
 		try {
 			const connection = await desktopHost.recheckGoogleDriveSharing();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'recheck-sharing');
@@ -211,7 +211,7 @@ export const googleDriveService = {
 		}
 	},
 	disconnect: async (): Promise<void> => {
-		const generation = googleDriveStore.captureGeneration();
+		const generation = googleDriveStore.beginConnectionRequest();
 		try {
 			const result = await desktopHost.disconnectGoogleDrive();
 			googleDriveStore.setDisconnectIfCurrent(generation, result);

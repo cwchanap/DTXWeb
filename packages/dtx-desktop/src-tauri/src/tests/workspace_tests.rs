@@ -344,3 +344,168 @@ fn concurrent_trust_transitions_recover_when_the_operation_lock_is_poisoned() {
     state.clear().expect("clear after poisoned operation lock");
     assert_eq!(state.current_optional(), None);
 }
+
+#[test]
+fn set_from_dialog_selection_rejects_a_nonexistent_directory() {
+    // canonical_workspace_directory returns None for a path that cannot be
+    // canonicalized (doesn't exist), so set_from_dialog_selection must
+    // surface the "accessible directory" error without touching persistence.
+    let data_dir = TempDir::new().expect("data dir");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+    let missing = data_dir.path().join("does-not-exist");
+
+    let error = state
+        .set_from_dialog_selection(&missing)
+        .expect_err("missing directory should be rejected");
+
+    assert!(
+        error
+            .to_string()
+            .contains("The selected workspace must be an accessible directory"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(state.current_optional(), None);
+}
+
+#[test]
+fn set_from_dialog_selection_rejects_a_file_instead_of_a_directory() {
+    // canonical_workspace_directory returns None when the canonical path is
+    // not a directory, so selecting a file must be rejected.
+    let data_dir = TempDir::new().expect("data dir");
+    let file = data_dir.path().join("not-a-dir.txt");
+    fs::write(&file, "contents").expect("write file");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+
+    let error = state
+        .set_from_dialog_selection(&file)
+        .expect_err("file should be rejected as workspace");
+
+    assert!(
+        error
+            .to_string()
+            .contains("The selected workspace must be an accessible directory"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn persist_errors_when_no_settings_path_is_configured() {
+    // A WorkspaceRootState constructed without a settings_path (e.g. via
+    // test_support::managed_workspace_state) cannot persist transitions.
+    // commit_transition must surface the "Could not resolve app data
+    // directory" error without updating the in-memory root.
+    let data_dir = TempDir::new().expect("data dir");
+    let original = data_dir.path().join("original");
+    fs::create_dir(&original).expect("original directory");
+    let replacement = data_dir.path().join("replacement");
+    fs::create_dir(&replacement).expect("replacement directory");
+
+    let state = test_support::managed_workspace_state(&original);
+    let canonical_original = fs::canonicalize(&original).expect("canonical original");
+
+    let error = state
+        .set_from_dialog_selection(&replacement)
+        .expect_err("replacement should fail without a settings path");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Could not resolve app data directory"),
+        "unexpected error: {error}"
+    );
+    // The in-memory root must be unchanged because persist failed before
+    // the root replacement.
+    assert_eq!(state.current_optional(), Some(canonical_original));
+}
+
+#[test]
+fn selection_result_returns_the_canonical_path_for_a_valid_selection() {
+    // The success branch of selection_result canonicalizes the selected
+    // path, persists it, and returns a DialogResult with canceled=false.
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+    let canonical = fs::canonicalize(&root).expect("canonical root");
+
+    let result = selection_result(&state, Some(root)).expect("selection result");
+
+    assert!(!result.canceled);
+    assert_eq!(result.file_paths.len(), 1);
+    assert_eq!(std::path::PathBuf::from(&result.file_paths[0]), canonical);
+    assert_eq!(state.current_optional(), Some(canonical));
+}
+
+#[cfg(feature = "e2e")]
+#[test]
+fn load_reads_workspace_settings_from_the_e2e_data_directory() {
+    // With the e2e feature, resolve_dirs honors DTX_E2E_DATA_DIR. load()
+    // must read workspace.json from that directory and canonicalize the
+    // saved root. This covers the public load() entry point (which
+    // delegates to load_from_path) end-to-end.
+    let _lock = NATIVE_PERSISTENCE_ENV_LOCK.lock().unwrap();
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let canonical = fs::canonicalize(&root).expect("canonical root");
+
+    let settings = data_dir.path().join("dtxweb").join("workspace.json");
+    fs::create_dir_all(settings.parent().expect("settings parent")).expect("settings parent");
+    fs::write(
+        &settings,
+        format!(
+            r#"{{"workspaceRoot":{}}}"#,
+            serde_json::to_string(&canonical.to_str().expect("UTF-8 path")).unwrap()
+        ),
+    )
+    .expect("write settings");
+
+    let _env = NativePersistenceEnvGuard::replace("DTX_E2E_DATA_DIR", data_dir.path());
+
+    let state = WorkspaceRootState::load();
+    assert_eq!(state.current_optional(), Some(canonical));
+}
+
+#[cfg(feature = "e2e")]
+#[test]
+fn load_returns_default_when_the_e2e_data_directory_has_no_settings() {
+    // load() must return a default (empty) state when the resolved data
+    // directory has no workspace.json, covering the NotFound branch of
+    // read_json_or_default through the public load() entry point.
+    let _lock = NATIVE_PERSISTENCE_ENV_LOCK.lock().unwrap();
+    let data_dir = TempDir::new().expect("data dir");
+    let _env = NativePersistenceEnvGuard::replace("DTX_E2E_DATA_DIR", data_dir.path());
+
+    let state = WorkspaceRootState::load();
+    assert_eq!(state.current_optional(), None);
+}
+
+// Shared env lock so e2e-gated workspace load tests don't race with
+// native_persistence tests that also touch DTX_E2E_DATA_DIR.
+#[cfg(feature = "e2e")]
+static NATIVE_PERSISTENCE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(feature = "e2e")]
+struct NativePersistenceEnvGuard {
+    name: &'static str,
+    saved: Option<std::ffi::OsString>,
+}
+
+#[cfg(feature = "e2e")]
+impl NativePersistenceEnvGuard {
+    fn replace(name: &'static str, value: &std::path::Path) -> Self {
+        let saved = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self { name, saved }
+    }
+}
+
+#[cfg(feature = "e2e")]
+impl Drop for NativePersistenceEnvGuard {
+    fn drop(&mut self) {
+        match self.saved.take() {
+            Some(value) => std::env::set_var(self.name, value),
+            None => std::env::remove_var(self.name),
+        }
+    }
+}

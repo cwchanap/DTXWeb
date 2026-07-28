@@ -517,29 +517,8 @@ async fn recheck_propagates_unclassified_validation_errors() {
         "user": { "id": "user-42" }
     })))
     .await;
-    let credentials = Arc::new(InMemoryGoogleDriveCredentialStore::default());
-    credentials
-        .set_refresh_token("user-42", "refresh-token")
-        .expect("seed credential");
-    let state = GoogleDriveState::with_oauth_adapters(
-        credentials,
-        Arc::new(UnavailableDriveMetadataClient),
-        Arc::new(FakeSettingsFolder::with_folder("folder-42", "Uploads")),
-        Arc::new(QueuedRefreshProvider::new(vec![Ok(token_response_with(
-            "access-token",
-            3600,
-            Some(GOOGLE_DRIVE_FILE_SCOPE),
-        ))])),
-        Arc::new(StaticFolderValidator(folder_setting(
-            "folder-42",
-            "Uploads",
-        ))),
-        Arc::new(UnavailablePickerBrowser),
-        PickerProtocolConfig::new(String::new(), Duration::from_secs(5 * 60)),
-    );
-    state.cache_access_token("user-42", "access-token").await;
-    // The validator returns a folder with the right id, but we inject a
-    // generic error by using a validator that always fails with Network.
+    // A validator that always fails with Network exercises the
+    // unclassified-error propagation path through recheck_google_drive_sharing.
     let state2 = GoogleDriveState::with_oauth_adapters(
         Arc::new(InMemoryGoogleDriveCredentialStore::default()),
         Arc::new(UnavailableDriveMetadataClient),

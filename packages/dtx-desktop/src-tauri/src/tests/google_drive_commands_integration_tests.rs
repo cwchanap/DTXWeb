@@ -174,12 +174,35 @@ async fn upload_command_preserves_the_existing_binding_when_replacement_is_not_a
 async fn connection_command_wrappers_preserve_adapter_results() {
     let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
 
-    assert!(connect_google_drive_and_choose_folder(fixture.app.clone())
-        .await
-        .is_err());
-    assert!(change_google_drive_folder(fixture.app.clone())
-        .await
-        .is_err());
+    // The e2e fixture authenticates a user but configures the picker with
+    // an empty OAuth client id, so connect_and_choose_folder fails inside
+    // authorization_url with InvalidResponse. The command wrappers must
+    // preserve that specific adapter classification rather than collapsing
+    // it to a generic error.
+    let connect_error = match connect_google_drive_and_choose_folder(fixture.app.clone()).await {
+        Err(error) => error,
+        Ok(_) => panic!("connect must fail without a configured OAuth client"),
+    };
+    assert!(
+        matches!(
+            connect_error,
+            crate::error::DesktopError::Message(ref message)
+                if message == "INVALID_RESPONSE"
+        ),
+        "connect wrapper must preserve the InvalidResponse adapter error, got {connect_error:?}"
+    );
+    let change_error = match change_google_drive_folder(fixture.app.clone()).await {
+        Err(error) => error,
+        Ok(_) => panic!("change folder must fail without a configured OAuth client"),
+    };
+    assert!(
+        matches!(
+            change_error,
+            crate::error::DesktopError::Message(ref message)
+                if message == "INVALID_RESPONSE"
+        ),
+        "change folder wrapper must preserve the InvalidResponse adapter error, got {change_error:?}"
+    );
     let connection = recheck_google_drive_sharing(fixture.app)
         .await
         .expect("sharing recheck");

@@ -28,6 +28,7 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: {
+			$lib: path.resolve(__dirname, 'src/renderer/src'),
 			'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib'),
 			'@dtx/common/components': path.resolve(__dirname, '../common/src/lib/components.ts'),
 			'@dtx/common/game': path.resolve(__dirname, '../common/src/lib/game.ts'),

@@ -256,26 +256,50 @@ async fn transaction_locks_are_shared_by_clones_and_independent_across_keys() {
 #[test]
 fn pending_store_maps_disk_full_separately_from_other_local_failures() {
     // Break caught: collapsing ENOSPC into LOCAL_STATE, which hides the
-    // actionable storage-exhaustion outcome from the desktop UX.
-    assert_eq!(
-        classify_persistence_error(crate::error::DesktopError::Io(
-            std::io::Error::from_raw_os_error(28)
-        )),
-        PendingBindingStoreError::InsufficientDiskSpace
-    );
-    // 112 = ERROR_DISK_FULL (Windows), 122 = EDQUOT (Linux quota).
-    assert_eq!(
-        classify_persistence_error(crate::error::DesktopError::Io(
-            std::io::Error::from_raw_os_error(112)
-        )),
-        PendingBindingStoreError::InsufficientDiskSpace
-    );
-    assert_eq!(
-        classify_persistence_error(crate::error::DesktopError::Io(
-            std::io::Error::from_raw_os_error(122)
-        )),
-        PendingBindingStoreError::InsufficientDiskSpace
-    );
+    // actionable storage-exhaustion outcome from the desktop UX. The
+    // recognized codes are platform-specific (see is_insufficient_disk_space),
+    // so each assertion is gated to the platform that defines it.
+    #[cfg(unix)]
+    {
+        // ENOSPC (28) is POSIX.
+        assert_eq!(
+            classify_persistence_error(crate::error::DesktopError::Io(
+                std::io::Error::from_raw_os_error(28)
+            )),
+            PendingBindingStoreError::InsufficientDiskSpace
+        );
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // EDQUOT is 122 on Linux.
+        assert_eq!(
+            classify_persistence_error(crate::error::DesktopError::Io(
+                std::io::Error::from_raw_os_error(122)
+            )),
+            PendingBindingStoreError::InsufficientDiskSpace
+        );
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        // EDQUOT is 69 on macOS/BSD.
+        assert_eq!(
+            classify_persistence_error(crate::error::DesktopError::Io(
+                std::io::Error::from_raw_os_error(69)
+            )),
+            PendingBindingStoreError::InsufficientDiskSpace
+        );
+    }
+    #[cfg(windows)]
+    {
+        // ERROR_DISK_FULL is 112 on Windows.
+        assert_eq!(
+            classify_persistence_error(crate::error::DesktopError::Io(
+                std::io::Error::from_raw_os_error(112)
+            )),
+            PendingBindingStoreError::InsufficientDiskSpace
+        );
+    }
+    // A non-disk errno must still collapse to LocalState on every platform.
     assert_eq!(
         classify_persistence_error(crate::error::DesktopError::Io(
             std::io::Error::from_raw_os_error(13)

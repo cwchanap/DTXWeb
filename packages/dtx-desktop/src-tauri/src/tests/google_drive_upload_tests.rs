@@ -286,7 +286,7 @@ impl GoogleDriveApi for ScriptedDriveApi {
 struct ScriptedMetadataClient {
     fetches: Mutex<VecDeque<std::result::Result<OwnerDriveSimfile, DriveMetadataError>>>,
     patches: Mutex<VecDeque<std::result::Result<OwnerDriveSimfile, DriveMetadataError>>>,
-    patch_inputs: Mutex<Vec<(String, String)>>,
+    patch_inputs: Mutex<Vec<(String, String, Option<ExpectedPreviousDriveFile>)>>,
 }
 
 impl ScriptedMetadataClient {
@@ -334,12 +334,13 @@ impl DriveMetadataClient for ScriptedMetadataClient {
         _simfile_id: &str,
         drive_file_id: &str,
         download_url: &str,
-        _expected_previous: Option<&ExpectedPreviousDriveFile>,
+        expected_previous: Option<&ExpectedPreviousDriveFile>,
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
-        self.patch_inputs
-            .lock()
-            .expect("patch inputs")
-            .push((drive_file_id.to_string(), download_url.to_string()));
+        self.patch_inputs.lock().expect("patch inputs").push((
+            drive_file_id.to_string(),
+            download_url.to_string(),
+            expected_previous.cloned(),
+        ));
         Self::take(&self.patches)
     }
 }
@@ -5067,11 +5068,12 @@ async fn reconciliation_does_not_overwrite_a_newer_drive_binding_established_by_
     // No new Drive file was created during reconciliation.
     assert!(api.create_metadata.lock().unwrap().is_empty());
     // The patch was attempted exactly once with the optimistic guard.
-    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
-    assert_eq!(
-        metadata.patch_inputs.lock().unwrap()[0].0,
-        "device-a-file-x"
-    );
+    let patch_inputs = metadata.patch_inputs.lock().unwrap();
+    assert_eq!(patch_inputs.len(), 1);
+    assert_eq!(patch_inputs[0].0, "device-a-file-x");
+    // The optimistic-concurrency guard must be Some(ExpectedPreviousDriveFile::None),
+    // not None, so the patch rejects any server-side binding that isn't NULL.
+    assert_eq!(patch_inputs[0].2, Some(ExpectedPreviousDriveFile::None));
 }
 
 #[tokio::test]
@@ -5158,7 +5160,11 @@ async fn reconciliation_infers_expected_previous_none_for_legacy_first_upload() 
     // The patch was attempted (with the inferred guard), proving the legacy
     // FirstUpload was treated as ExpectedPreviousDriveFile::None rather than
     // skipped or patched unconditionally.
-    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
+    let patch_inputs = metadata.patch_inputs.lock().unwrap();
+    assert_eq!(patch_inputs.len(), 1);
+    // The legacy `None` guard is inferred as Some(ExpectedPreviousDriveFile::None)
+    // for a FirstUpload, matching the explicit-guard cross-device behavior.
+    assert_eq!(patch_inputs[0].2, Some(ExpectedPreviousDriveFile::None));
 }
 
 #[tokio::test]

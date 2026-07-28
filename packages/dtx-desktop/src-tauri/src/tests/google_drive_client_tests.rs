@@ -1768,3 +1768,277 @@ async fn validate_public_permission_trait_403_is_check_unavailable() {
         Ok(PublicPermissionStatus::CheckUnavailable)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage tests for previously uncovered lines.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "google-drive")]
+#[test]
+fn production_client_builds_successfully() {
+    assert!(GoogleDriveClient::production().is_ok());
+}
+
+#[tokio::test]
+async fn validate_file_before_update_rejects_id_mismatch() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "different-id",
+            "trashed": false
+        })))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_file_before_update(ACCESS_TOKEN, "file-1")
+            .await,
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn validate_file_before_update_returns_download_not_public() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "file-1",
+            "trashed": false
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "permissions": []
+        })))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_file_before_update(ACCESS_TOKEN, "file-1")
+            .await,
+        Err(GoogleDriveValidationError::DownloadNotPublic)
+    );
+}
+
+#[tokio::test]
+async fn validate_file_before_update_returns_sharing_check_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "file-1",
+            "trashed": false
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1/permissions"))
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_file_before_update(ACCESS_TOKEN, "file-1")
+            .await,
+        Err(GoogleDriveValidationError::SharingCheckUnavailable)
+    );
+}
+
+#[tokio::test]
+async fn folder_validation_maps_500_to_invalid_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/folder-42"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        client(&server)
+            .validate_folder(ACCESS_TOKEN, "folder-42")
+            .await,
+        Err(GoogleDriveValidationError::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn trait_validate_folder_maps_404_to_drive_api_folder_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/missing-folder"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::validate_folder(&client(&server), ACCESS_TOKEN, "missing-folder").await,
+        Err(DriveApiError::FolderUnavailable)
+    );
+}
+
+#[tokio::test]
+async fn trait_validate_public_permission_maps_401_to_token_expired() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1/permissions"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    assert_eq!(
+        GoogleDriveApi::validate_public_permission(&client(&server), ACCESS_TOKEN, "file-1").await,
+        Err(DriveApiError::TokenExpired)
+    );
+}
+
+#[tokio::test]
+async fn picker_folder_validator_returns_folder_setting_on_success() {
+    let server = MockServer::start().await;
+    mount_valid_folder(&server, "folder-42").await;
+    mount_public_permissions(&server, "folder-42").await;
+
+    let c = client(&server);
+    let result = PickerFolderValidator::validate_folder(&c, ACCESS_TOKEN, "folder-42").await;
+    assert_eq!(
+        result,
+        Ok(GoogleDriveFolderSetting {
+            id: "folder-42".to_string(),
+            name: "Public uploads".to_string(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn picker_folder_validator_execute_validation_maps_token_expired() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/folder-42"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let c = client(&server);
+    let result = PickerFolderValidator::execute_validation(&c, ACCESS_TOKEN, "folder-42").await;
+    assert_eq!(result, Err(AuthorizedDriveRequestError::TokenExpired));
+}
+
+#[tokio::test]
+async fn picker_folder_validator_execute_validation_maps_other_errors_to_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/folder-42"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let c = client(&server);
+    let result = PickerFolderValidator::execute_validation(&c, ACCESS_TOKEN, "folder-42").await;
+    assert_eq!(
+        result,
+        Err(AuthorizedDriveRequestError::Request(
+            GoogleDriveOAuthError::FolderUnavailable
+        ))
+    );
+}
+
+#[tokio::test]
+async fn trait_start_resumable_create_success_parses_session_location() {
+    let server = MockServer::start().await;
+    let session_url = format!("{}/upload-session/trait-create", server.uri());
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .and(query_param("uploadType", "resumable"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", format!("Bearer {ACCESS_TOKEN}")))
+        .and(header("x-upload-content-type", "application/zip"))
+        .and(header("x-upload-content-length", "7"))
+        .and(body_json(json!({
+            "id": "generated-file-id",
+            "name": "AC-DC.zip",
+            "mimeType": "application/zip",
+            "parents": ["folder-42"]
+        })))
+        .respond_with(ResponseTemplate::new(200).insert_header("location", session_url.as_str()))
+        .mount(&server)
+        .await;
+
+    let session = GoogleDriveApi::start_resumable_create(
+        &client(&server),
+        ACCESS_TOKEN,
+        &DriveCreateMetadata {
+            id: "generated-file-id".to_string(),
+            parent_id: "folder-42".to_string(),
+            name: "AC-DC.zip".to_string(),
+        },
+        7,
+    )
+    .await
+    .expect("create session via trait");
+
+    assert_eq!(session.as_str(), session_url);
+}
+
+#[tokio::test]
+async fn trait_start_resumable_update_success_parses_session_location() {
+    let server = MockServer::start().await;
+    let session_url = format!("{}/upload-session/trait-update", server.uri());
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/existing-file"))
+        .and(query_param("uploadType", "resumable"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", format!("Bearer {ACCESS_TOKEN}")))
+        .and(header("x-upload-content-type", "application/zip"))
+        .and(header("x-upload-content-length", "11"))
+        .and(body_json(json!({
+            "name": "Song: Reprise.zip",
+            "mimeType": "application/zip"
+        })))
+        .respond_with(ResponseTemplate::new(200).insert_header("location", session_url.as_str()))
+        .mount(&server)
+        .await;
+
+    let session = GoogleDriveApi::start_resumable_update(
+        &client(&server),
+        ACCESS_TOKEN,
+        "existing-file",
+        &DriveUpdateMetadata {
+            name: "Song: Reprise.zip".to_string(),
+        },
+        11,
+    )
+    .await
+    .expect("update session via trait");
+
+    assert_eq!(session.as_str(), session_url);
+}
+
+#[tokio::test]
+async fn trait_start_resumable_create_rejects_missing_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let result = GoogleDriveApi::start_resumable_create(
+        &client(&server),
+        ACCESS_TOKEN,
+        &DriveCreateMetadata {
+            id: "gen-id".to_string(),
+            parent_id: "folder-1".to_string(),
+            name: "song.zip".to_string(),
+        },
+        4,
+    )
+    .await;
+
+    assert!(matches!(result, Err(DriveApiError::InvalidResponse)));
+}

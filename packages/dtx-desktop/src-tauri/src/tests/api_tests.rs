@@ -2909,3 +2909,124 @@ async fn create_simfile_record_impl_returns_failure_on_graphql_error() {
     assert_eq!(result["success"], serde_json::json!(false));
     assert!(result["error"].as_str().unwrap().contains("forbidden"));
 }
+
+// ---------------------------------------------------------------------------
+// update_drive_file_impl — ExpectedPreviousDriveFile variants (patch lines
+// 529-533). Each variant must serialize the correct optimistic-concurrency
+// variables so the server can reject stale cross-device overwrites.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn update_drive_file_impl_sends_expect_no_existing_drive_file_for_none_variant() {
+    // ExpectedPreviousDriveFile::None → expectNoExistingDriveFile: true,
+    // expectedPreviousDriveFileId: null. This guards FirstUpload against
+    // racing with another device that already bound a Drive file.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(body_partial_json(serde_json::json!({
+            "variables": {
+                "expectNoExistingDriveFile": true,
+                "expectedPreviousDriveFileId": null
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "updateSimfileDriveFile": owner_drive_simfile() }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = update_drive_file_impl(
+        &server.uri(),
+        "token-1",
+        "42",
+        "drive-file-42",
+        "https://drive.google.com/uc?id=drive-file-42",
+        "user-1",
+        Some(&ExpectedPreviousDriveFile::None),
+    )
+    .await
+    .expect("updated drive metadata");
+
+    assert_eq!(result.id, "42");
+
+    let requests = server.received_requests().await.expect("received request");
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
+    assert_eq!(body["variables"]["expectNoExistingDriveFile"], true);
+    assert!(body["variables"]["expectedPreviousDriveFileId"].is_null());
+}
+
+#[tokio::test]
+async fn update_drive_file_impl_sends_expected_previous_drive_file_id_for_drive_file_variant() {
+    // ExpectedPreviousDriveFile::DriveFile("prev-id") →
+    // expectedPreviousDriveFileId: "prev-id", expectNoExistingDriveFile: null.
+    // This guards ExplicitReplacement against overwriting a newer binding.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(body_partial_json(serde_json::json!({
+            "variables": {
+                "expectedPreviousDriveFileId": "prev-drive-file",
+                "expectNoExistingDriveFile": null
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "updateSimfileDriveFile": owner_drive_simfile() }
+        })))
+        .mount(&server)
+        .await;
+
+    let result = update_drive_file_impl(
+        &server.uri(),
+        "token-1",
+        "42",
+        "drive-file-42",
+        "https://drive.google.com/uc?id=drive-file-42",
+        "user-1",
+        Some(&ExpectedPreviousDriveFile::DriveFile(
+            "prev-drive-file".to_string(),
+        )),
+    )
+    .await
+    .expect("updated drive metadata");
+
+    assert_eq!(result.id, "42");
+
+    let requests = server.received_requests().await.expect("received request");
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
+    assert_eq!(
+        body["variables"]["expectedPreviousDriveFileId"],
+        "prev-drive-file"
+    );
+    assert!(body["variables"]["expectNoExistingDriveFile"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// read_preview_within_workspace — "Song folder not found" error path (patch
+// line 934). When the workspace root exists but the song folder does not,
+// the refactored containment check surfaces a clear NotFound message rather
+// than a generic I/O error.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn read_preview_within_workspace_rejects_nonexistent_song_folder() {
+    let workspace = tempfile::tempdir().expect("workspace");
+
+    // The nonexistent song folder must have an existing ancestor inside the
+    // workspace so the containment check passes and surfaces NotFound for the
+    // missing target itself (rather than rejecting it as outside the workspace).
+    let result = read_preview_within_workspace(
+        &format!(
+            "{}/nonexistent-song-folder-12345",
+            workspace.path().to_str().unwrap()
+        ),
+        workspace.path().to_str().unwrap(),
+        "preview.jpg",
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Song folder not found"));
+}

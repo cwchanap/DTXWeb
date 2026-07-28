@@ -1851,3 +1851,356 @@ async fn disconnect_cancels_active_operations_before_awaiting_oauth_revocation()
         .expect("disconnect task")
         .expect("disconnect succeeds");
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage tests for previously uncovered lines.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn callback_rejects_oversized_target() {
+    let now = Instant::now();
+    let picker_attempt = attempt(now);
+    // A target exceeding MAX_CALLBACK_TARGET_BYTES is rejected before parsing.
+    let oversized_code = "a".repeat(MAX_CALLBACK_TARGET_BYTES + 1);
+    let target = format!(
+        "{}?state={}&code={}&picked_file_ids=folder-42",
+        GOOGLE_DRIVE_CALLBACK_PATH,
+        picker_attempt.oauth_state(),
+        oversized_code,
+    );
+    assert_eq!(
+        picker_attempt.validate_callback_target(&target, "drumery-user", now),
+        Err(GoogleDriveOAuthError::InvalidResponse),
+    );
+}
+
+#[test]
+fn callback_rejects_folder_id_containing_comma() {
+    let now = Instant::now();
+    let picker_attempt = attempt(now);
+    let target = format!(
+        "{}?state={}&code=authorization-code&picked_file_ids=folder-a,folder-b",
+        GOOGLE_DRIVE_CALLBACK_PATH,
+        picker_attempt.oauth_state(),
+    );
+    assert_eq!(
+        picker_attempt.validate_callback_target(&target, "drumery-user", now),
+        Err(GoogleDriveOAuthError::InvalidResponse),
+    );
+}
+
+#[test]
+fn picker_callback_debug_redacts_secrets() {
+    let callback = PickerCallback::AuthorizationCode {
+        code: Zeroizing::new("secret-auth-code".to_string()),
+        folder_id: "secret-folder-id".to_string(),
+    };
+    let debug = format!("{callback:?}");
+    assert!(!debug.contains("secret-auth-code"));
+    assert!(!debug.contains("secret-folder-id"));
+    assert!(debug.contains("redacted"));
+}
+
+#[test]
+fn validated_picker_tokens_debug_redacts_secrets() {
+    let tokens = ValidatedPickerTokens {
+        access_token: Zeroizing::new("secret-access-token".to_string()),
+        refresh_token: Zeroizing::new("secret-refresh-token".to_string()),
+        expires_in: 3600,
+    };
+    let debug = format!("{tokens:?}");
+    assert!(!debug.contains("secret-access-token"));
+    assert!(!debug.contains("secret-refresh-token"));
+    assert!(debug.contains("redacted"));
+}
+
+#[tokio::test]
+async fn decode_token_response_success_parses_valid_token() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+            "expires_in": 3600,
+            "scope": GOOGLE_DRIVE_FILE_SCOPE,
+        })))
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, false).await;
+    assert!(result.is_ok());
+    let token = result.expect("token");
+    assert_eq!(token.access_token, "access-token");
+    assert_eq!(token.refresh_token.as_deref(), Some("refresh-token"));
+}
+
+#[tokio::test]
+async fn decode_token_response_success_with_invalid_json_is_invalid_response() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, false).await;
+    assert!(matches!(result, Err(OAuthProviderError::InvalidResponse)));
+}
+
+#[tokio::test]
+async fn decode_token_response_non_success_without_grant_classification_is_invalid() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(serde_json::json!({"error": "bad_request"})),
+        )
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, false).await;
+    assert!(matches!(result, Err(OAuthProviderError::InvalidResponse)));
+}
+
+#[tokio::test]
+async fn decode_token_response_classifies_invalid_grant_when_enabled() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(serde_json::json!({"error": "invalid_grant"})),
+        )
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, true).await;
+    assert!(matches!(result, Err(OAuthProviderError::InvalidGrant)));
+}
+
+#[tokio::test]
+async fn decode_token_response_invalid_grant_not_classified_when_disabled() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(serde_json::json!({"error": "invalid_grant"})),
+        )
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, false).await;
+    assert!(matches!(result, Err(OAuthProviderError::InvalidResponse)));
+}
+
+#[tokio::test]
+async fn decode_token_response_non_invalid_grant_error_with_classification_enabled() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(serde_json::json!({"error": "bad_request"})),
+        )
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, true).await;
+    assert!(matches!(result, Err(OAuthProviderError::InvalidResponse)));
+}
+
+#[tokio::test]
+async fn decode_token_response_non_success_with_unparseable_body_is_invalid() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("not json"))
+        .mount(&server)
+        .await;
+
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(server.uri()).send().await.expect("send");
+    let result = ReqwestGoogleOAuthProvider::decode_token_response(response, true).await;
+    assert!(matches!(result, Err(OAuthProviderError::InvalidResponse)));
+}
+
+/// A credential store whose `set_refresh_token` succeeds on the first call
+/// but fails on subsequent calls, used to exercise the rollback error path
+/// (line 626) in `persist_validated_connection`.
+struct FailOnRollbackCredentialStore {
+    set_calls: AtomicUsize,
+    stored: Mutex<Option<String>>,
+}
+
+impl GoogleDriveCredentialStore for FailOnRollbackCredentialStore {
+    fn get_refresh_token(
+        &self,
+        _user_id: &str,
+    ) -> std::result::Result<
+        Option<String>,
+        crate::google_drive::credential_store::CredentialStoreError,
+    > {
+        Ok(self.stored.lock().expect("stored").clone())
+    }
+
+    fn set_refresh_token(
+        &self,
+        _user_id: &str,
+        token: &str,
+    ) -> std::result::Result<(), crate::google_drive::credential_store::CredentialStoreError> {
+        let calls = self.set_calls.fetch_add(1, Ordering::SeqCst);
+        if calls == 0 {
+            *self.stored.lock().expect("stored") = Some(token.to_string());
+            Ok(())
+        } else {
+            Err(crate::google_drive::credential_store::CredentialStoreError::CredentialStore)
+        }
+    }
+
+    fn delete_refresh_token(
+        &self,
+        _user_id: &str,
+    ) -> std::result::Result<(), crate::google_drive::credential_store::CredentialStoreError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn persist_validated_connection_returns_credential_store_when_rollback_fails() {
+    let store = Arc::new(FailOnRollbackCredentialStore {
+        set_calls: AtomicUsize::new(0),
+        stored: Mutex::new(Some("old-refresh-token".to_string())),
+    });
+    let credentials = GoogleDriveCredentialAccess::new(store);
+    let settings = FakeSettings::with_folder("old-folder", "Old folder");
+    settings.fail_next_set.store(true, Ordering::SeqCst);
+
+    assert_eq!(
+        persist_validated_connection(
+            &credentials,
+            &settings,
+            "user-42",
+            Zeroizing::new("new-refresh-token".to_string()),
+            folder("new-folder", "New folder"),
+        )
+        .await,
+        Err(GoogleDriveOAuthError::CredentialStore),
+    );
+}
+
+#[tokio::test]
+async fn picker_rejects_second_concurrent_attempt_with_already_in_progress() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let state = Arc::new(GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(SilentBrowser {
+            opened: Arc::new(AtomicBool::new(false)),
+        }),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    ));
+
+    // Pre-populate the active picker attempt slot to simulate an in-progress attempt.
+    let pre_attempt = PickerAttempt::new(
+        "user-42".to_string(),
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 49152),
+        Instant::now(),
+        Duration::from_secs(60),
+    );
+    *state.active_picker_attempt.lock().await = Some(pre_attempt);
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::AlreadyInProgress),
+    ));
+}
+
+#[tokio::test]
+async fn picker_returns_browser_error_when_open_fails() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let state = GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(UnavailablePickerBrowser),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    );
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::InvalidResponse),
+    ));
+}
+
+#[tokio::test]
+async fn picker_cancels_when_no_callback_arrives_before_deadline() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let opened = Arc::new(AtomicBool::new(false));
+    let state = GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(SilentBrowser {
+            opened: opened.clone(),
+        }),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_millis(100),
+        ),
+    );
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::Canceled),
+    ));
+}

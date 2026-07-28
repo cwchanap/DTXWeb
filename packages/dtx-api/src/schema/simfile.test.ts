@@ -2023,6 +2023,44 @@ describe('Mutation.updateSimfile', () => {
 		});
 	});
 
+	it('drops downloadUrl when the row is Drive-bound (google_drive_file_id set)', async () => {
+		// Invariant: when google_drive_file_id is set, download_url is owned by
+		// the guarded updateSimfileDriveFile mutation.  A generic updateSimfile
+		// call that sends a cached downloadUrl must not independently overwrite
+		// it — that would break the file_id <-> url pair and reintroduce the
+		// cross-device race where a stale URL overwrites a newer binding.
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedUpdate.mockResolvedValue({} as Awaited<ReturnType<typeof updateSimfile>>);
+		mockedGetSimfile.mockResolvedValue({
+			...publishedSimfile,
+			google_drive_file_id: 'drive-file-abc',
+			download_url: 'https://drive.google.com/uc?id=drive-file-abc'
+		});
+
+		await runQuery(
+			makeCtx({
+				user: { id: 'u1' } as Ctx['user'],
+				env: { ...makeEnv(), PUBLIC_SIMFILE_BUCKET_URL: 'https://chart.hapadona.com' }
+			}),
+			{
+				query: `mutation {
+					updateSimfile(
+						id: "42",
+						input: {
+							title: "New Title",
+							downloadUrl: "https://stale.example/old-url"
+						}
+					) { id }
+				}`
+			}
+		);
+
+		// download_url must NOT be in the update payload; only title is applied.
+		expect(mockedUpdate).toHaveBeenCalledWith(expect.anything(), 42, {
+			title: 'New Title'
+		});
+	});
+
 	it('rejects empty input with BAD_USER_INPUT', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
 		mockedGetSimfile.mockResolvedValue(publishedSimfile);

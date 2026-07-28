@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::{tempdir, TempDir};
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 use zeroize::Zeroizing;
@@ -5071,4 +5072,1022 @@ async fn reconciliation_does_not_overwrite_a_newer_drive_binding_established_by_
         metadata.patch_inputs.lock().unwrap()[0].0,
         "device-a-file-x"
     );
+}
+
+#[tokio::test]
+async fn reconciliation_infers_expected_previous_none_for_legacy_first_upload() {
+    // Legacy pending bindings persisted before the
+    // `expected_previous_drive_file` field existed have `None` for that
+    // field. For a legacy FirstUpload, the guard is safely inferable as
+    // `ExpectedPreviousDriveFile::None` (expect no existing Drive file ID).
+    // This test mirrors
+    // `reconciliation_does_not_overwrite_a_newer_drive_binding_established_by_another_device`
+    // but uses a legacy `None` guard instead of an explicit
+    // `Some(ExpectedPreviousDriveFile::None)`. The behavior must be
+    // identical: the guarded patch fails against Device B's newer binding,
+    // and the orphaned Device A file is compensated.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "device-a-file-x".to_string(),
+                kind: PendingBindingKind::FirstUpload,
+                created_at: "2026-06-01T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
+            },
+        )
+        .expect("pending binding");
+
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "device-a-file-x",
+            Some("https://drive.google.com/uc?id=device-a-file-x"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let metadata = ScriptedMetadataClient::default();
+    metadata.fetches.lock().unwrap().extend([
+        // Owner now references Device B's file Y (not NULL).
+        Ok(ScriptedMetadataClient::owner_for(
+            "42",
+            Some("device-b-file-y"),
+            Some("https://drive.google.com/uc?id=device-b-file-y"),
+        )),
+        // After the guarded patch fails, patch_and_finish re-fetches the
+        // owner. The binding still references Y (matches prior_owner), so
+        // the loop retries once and then falls through to compensation.
+        Ok(ScriptedMetadataClient::owner_for(
+            "42",
+            Some("device-b-file-y"),
+            Some("https://drive.google.com/uc?id=device-b-file-y"),
+        )),
+    ]);
+    // The guarded patch fails because the server-side binding is Y, not NULL.
+    metadata
+        .patches
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveMetadataError::DefinitiveUnavailable));
+    api.deletes.lock().unwrap().push_back(Ok(()));
+
+    reconcile_pending_bindings_for_current_user(
+        &api,
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+    )
+    .await;
+
+    // The pending binding is removed (compensated, not retried).
+    assert_eq!(store.get("user-42", "42").expect("pending"), None);
+    // The orphaned Device A file X was deleted.
+    assert_eq!(
+        api.delete_ids.lock().unwrap().as_slice(),
+        &["device-a-file-x".to_string()],
+        "the superseded pending file must be deleted, not left as an orphan"
+    );
+    // The patch was attempted (with the inferred guard), proving the legacy
+    // FirstUpload was treated as ExpectedPreviousDriveFile::None rather than
+    // skipped or patched unconditionally.
+    assert_eq!(metadata.patch_inputs.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn reconciliation_fails_closed_for_legacy_explicit_replacement() {
+    // Legacy ExplicitReplacement pending bindings have `None` for
+    // `expected_previous_drive_file`, and the original file ID cannot be
+    // reconstructed. Rather than issuing an unconditional metadata patch
+    // that could overwrite a newer binding established by another device,
+    // reconciliation must fail closed: compensate (delete the orphaned
+    // Drive file and remove the pending binding) without attempting any
+    // patch at all.
+    let data_dir = tempdir().expect("data dir");
+    let store = pending_store(&data_dir);
+    store
+        .replace(
+            crate::google_drive::pending_bindings::PendingGoogleDriveBinding {
+                user_id: "user-42".to_string(),
+                simfile_id: "42".to_string(),
+                drive_file_id: "device-a-file-x".to_string(),
+                kind: PendingBindingKind::ExplicitReplacement,
+                created_at: "2026-06-01T00:00:00Z".to_string(),
+                expected_previous_drive_file: None,
+            },
+        )
+        .expect("pending binding");
+
+    let api = ScriptedDriveApi::default();
+    // The pending Drive file X still exists on Drive.
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "device-a-file-x",
+            Some("https://drive.google.com/uc?id=device-a-file-x"),
+        )));
+    let metadata = ScriptedMetadataClient::default();
+    // Owner references Device B's newer binding (file Y). Reconciliation
+    // fetches the owner, then fail-closed compensation deletes the
+    // orphaned file X.
+    metadata
+        .fetches
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedMetadataClient::owner_for(
+            "42",
+            Some("device-b-file-y"),
+            Some("https://drive.google.com/uc?id=device-b-file-y"),
+        )));
+    // Compensation deletes the orphaned Device A file X.
+    api.deletes.lock().unwrap().push_back(Ok(()));
+
+    reconcile_pending_bindings_for_current_user(
+        &api,
+        &store,
+        &metadata,
+        &authenticated_user("user-42").await,
+        ACCESS_TOKEN,
+    )
+    .await;
+
+    // The pending binding is removed (compensated).
+    assert_eq!(store.get("user-42", "42").expect("pending"), None);
+    // The orphaned Device A file X was deleted.
+    assert_eq!(
+        api.delete_ids.lock().unwrap().as_slice(),
+        &["device-a-file-x".to_string()],
+        "the legacy pending file must be compensated, not left as an orphan"
+    );
+    // No metadata patch was attempted — fail closed, not unconditional patch.
+    assert!(
+        metadata.patch_inputs.lock().unwrap().is_empty(),
+        "legacy ExplicitReplacement must not issue an unguarded metadata patch"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Pure-function coverage tests for upload.rs helpers.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sanitize_drive_zip_name_falls_back_to_simfile_id_for_empty_title() {
+    assert_eq!(sanitize_drive_zip_name("", "abc"), "simfile-abc.zip");
+}
+
+#[test]
+fn sanitize_drive_zip_name_falls_back_for_whitespace_only_title() {
+    assert_eq!(sanitize_drive_zip_name("   \t\n  ", "42"), "simfile-42.zip");
+}
+
+#[test]
+fn sanitize_drive_zip_name_preserves_printable_punctuation() {
+    // Printable punctuation like `:` is valid in Drive display names.
+    assert_eq!(
+        sanitize_drive_zip_name("Song: Reprise", "1"),
+        "Song: Reprise.zip"
+    );
+}
+
+#[test]
+fn sanitize_drive_zip_name_collapses_path_separators_to_hyphen() {
+    assert_eq!(
+        sanitize_drive_zip_name("AC/DC\\Live", "1"),
+        "AC-DC-Live.zip"
+    );
+}
+
+#[test]
+fn sanitize_drive_zip_name_collapses_control_chars_to_single_hyphen() {
+    // Multiple consecutive control characters collapse to a single hyphen.
+    assert_eq!(sanitize_drive_zip_name("a\x01\x02b", "1"), "a-b.zip");
+}
+
+#[test]
+fn sanitize_drive_zip_name_trims_leading_and_trailing_whitespace() {
+    assert_eq!(sanitize_drive_zip_name("  My Song  ", "1"), "My Song.zip");
+}
+
+#[test]
+fn validated_download_url_none_returns_none() {
+    assert_eq!(validated_download_url(None), Ok(None));
+}
+
+#[test]
+fn validated_download_url_empty_returns_none() {
+    assert_eq!(validated_download_url(Some("")), Ok(None));
+}
+
+#[test]
+fn validated_download_url_whitespace_only_returns_none() {
+    assert_eq!(validated_download_url(Some("   ")), Ok(None));
+}
+
+#[test]
+fn validated_download_url_rejects_non_https_scheme() {
+    assert_eq!(
+        validated_download_url(Some("http://example.com/file")),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validated_download_url_rejects_unparseable_url() {
+    assert_eq!(
+        validated_download_url(Some("not a url at all")),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validated_download_url_rejects_oversized_url() {
+    let long = format!("https://example.com/{}", "a".repeat(MAX_DOWNLOAD_URL_BYTES));
+    assert_eq!(
+        validated_download_url(Some(&long)),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validated_download_url_accepts_valid_https_url() {
+    let url = "https://drive.google.com/uc?id=file-1";
+    assert_eq!(validated_download_url(Some(url)), Ok(Some(url.to_string())));
+}
+
+#[test]
+fn validated_download_url_trims_whitespace_before_validating() {
+    assert_eq!(
+        validated_download_url(Some("  https://example.com/x  ")),
+        Ok(Some("https://example.com/x".to_string()))
+    );
+}
+
+#[test]
+fn validate_final_file_shape_rejects_mismatched_id() {
+    let file = ScriptedDriveApi::valid_file("wrong-id", None);
+    assert_eq!(
+        validate_final_file_shape(&file, "intended-id"),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validate_final_file_shape_rejects_wrong_mime_type() {
+    let mut file = ScriptedDriveApi::valid_file("file-1", None);
+    file.mime_type = "text/plain".to_string();
+    assert_eq!(
+        validate_final_file_shape(&file, "file-1"),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validate_final_file_shape_rejects_trashed_file() {
+    let mut file = ScriptedDriveApi::valid_file("file-1", None);
+    file.trashed = true;
+    assert_eq!(
+        validate_final_file_shape(&file, "file-1"),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validate_final_file_shape_rejects_non_downloadable_file() {
+    let mut file = ScriptedDriveApi::valid_file("file-1", None);
+    file.can_download = false;
+    assert_eq!(
+        validate_final_file_shape(&file, "file-1"),
+        Err(DriveApiError::InvalidResponse)
+    );
+}
+
+#[test]
+fn validate_final_file_shape_accepts_valid_file() {
+    let file = ScriptedDriveApi::valid_file("file-1", Some("https://example.com/x"));
+    assert_eq!(validate_final_file_shape(&file, "file-1"), Ok(()));
+}
+
+#[test]
+fn bounded_retry_delay_exponential_growth_capped_at_max() {
+    // attempt 0: 100ms, attempt 1: 200ms, attempt 2: 400ms...
+    assert_eq!(bounded_retry_delay(0, None), Duration::from_millis(100));
+    assert_eq!(bounded_retry_delay(1, None), Duration::from_millis(200));
+    assert_eq!(bounded_retry_delay(2, None), Duration::from_millis(400));
+    // Large attempt should be capped at MAX_RETRY_DELAY (5s).
+    assert_eq!(bounded_retry_delay(20, None), MAX_RETRY_DELAY);
+}
+
+#[test]
+fn bounded_retry_delay_honors_provider_retry_after_capped() {
+    // Provider retry-after is honored but capped at MAX_PROVIDER_RETRY_DELAY.
+    assert_eq!(
+        bounded_retry_delay(0, Some(Duration::from_secs(10))),
+        Duration::from_secs(10)
+    );
+    // Above the provider ceiling.
+    assert_eq!(
+        bounded_retry_delay(0, Some(Duration::from_secs(120))),
+        MAX_PROVIDER_RETRY_DELAY
+    );
+}
+
+#[test]
+fn bounded_retry_delay_exponential_overflows_safely() {
+    // Very large attempt should not panic; saturates to MAX_RETRY_DELAY.
+    let delay = bounded_retry_delay(100, None);
+    assert_eq!(delay, MAX_RETRY_DELAY);
+}
+
+#[test]
+fn monotonic_progress_skips_zero_total() {
+    let mut progress = MonotonicDriveProgress::default();
+    assert!(!progress.should_emit(0, 0));
+}
+
+#[test]
+fn monotonic_progress_skips_accepted_greater_than_total() {
+    let mut progress = MonotonicDriveProgress::default();
+    assert!(!progress.should_emit(10, 5));
+}
+
+#[test]
+fn monotonic_progress_emits_first_valid_sample() {
+    let mut progress = MonotonicDriveProgress::default();
+    assert!(progress.should_emit(0, 100));
+}
+
+#[test]
+fn monotonic_progress_skips_non_increasing_accepted() {
+    let mut progress = MonotonicDriveProgress::default();
+    assert!(progress.should_emit(50, 100));
+    assert!(
+        !progress.should_emit(50, 100),
+        "same accepted must be skipped"
+    );
+    assert!(
+        !progress.should_emit(40, 100),
+        "lower accepted must be skipped"
+    );
+}
+
+#[test]
+fn monotonic_progress_skips_when_total_changes() {
+    let mut progress = MonotonicDriveProgress::default();
+    assert!(progress.should_emit(50, 100));
+    assert!(
+        !progress.should_emit(60, 200),
+        "different total must be skipped"
+    );
+}
+
+#[test]
+fn monotonic_progress_emits_strictly_increasing_accepted() {
+    let mut progress = MonotonicDriveProgress::default();
+    assert!(progress.should_emit(0, 100));
+    assert!(progress.should_emit(1, 100));
+    assert!(progress.should_emit(99, 100));
+    assert!(progress.should_emit(100, 100));
+}
+
+#[test]
+fn upload_failure_create_target_retains_pending_binding() {
+    let target = DriveUploadTarget::Create {
+        generated_id: "gen-1".to_string(),
+        folder_id: "folder-1".to_string(),
+    };
+    let failure = upload_failure(DriveApiError::Network, &target);
+    assert_eq!(failure.error, DriveApiError::Network);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+}
+
+#[test]
+fn upload_failure_update_target_is_not_applicable() {
+    let target = DriveUploadTarget::Update {
+        file_id: "file-1".to_string(),
+    };
+    let failure = upload_failure(DriveApiError::Network, &target);
+    assert_eq!(failure.error, DriveApiError::Network);
+    assert_eq!(
+        failure.pending_binding,
+        PendingBindingDisposition::NotApplicable
+    );
+}
+
+#[test]
+fn ensure_not_canceled_returns_ok_when_no_token() {
+    assert_eq!(ensure_not_canceled(None), Ok(()));
+}
+
+#[test]
+fn ensure_not_canceled_returns_ok_when_token_not_cancelled() {
+    let token = CancellationToken::new();
+    assert_eq!(ensure_not_canceled(Some(&token)), Ok(()));
+}
+
+#[test]
+fn ensure_not_canceled_returns_canceled_when_token_cancelled() {
+    let token = CancellationToken::new();
+    token.cancel();
+    assert_eq!(
+        ensure_not_canceled(Some(&token)),
+        Err(DriveApiError::Canceled)
+    );
+}
+
+#[test]
+fn enter_finalization_without_gate_delegates_to_cancellation_check() {
+    let token = CancellationToken::new();
+    assert_eq!(enter_finalization(None, Some(&token)), Ok(()));
+    token.cancel();
+    assert_eq!(
+        enter_finalization(None, Some(&token)),
+        Err(DriveApiError::Canceled)
+    );
+}
+
+#[test]
+fn enter_finalization_without_gate_and_no_token_returns_ok() {
+    assert_eq!(enter_finalization(None, None), Ok(()));
+}
+
+#[tokio::test]
+async fn operation_completion_wait_returns_true_when_already_finished() {
+    let completion = Arc::new(DriveOperationCompletion::default());
+    completion.finish();
+    assert!(completion.wait(Duration::from_millis(10)).await);
+}
+
+#[tokio::test]
+async fn operation_completion_wait_times_out_when_not_finished() {
+    let completion = Arc::new(DriveOperationCompletion::default());
+    assert!(!completion.wait(Duration::from_millis(10)).await);
+}
+
+#[tokio::test]
+async fn operation_completion_wait_returns_true_after_concurrent_finish() {
+    let completion = Arc::new(DriveOperationCompletion::default());
+    let c = completion.clone();
+    let handle = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        c.finish();
+    });
+    assert!(completion.wait(Duration::from_secs(1)).await);
+    handle.await.unwrap();
+}
+
+#[test]
+fn operation_manager_cancel_returns_false_for_unknown_operation_id() {
+    let manager = Arc::new(DriveOperationManager::default());
+    assert!(!manager.cancel("user-1", Uuid::new_v4()));
+}
+
+#[tokio::test]
+async fn operation_manager_cancel_returns_false_for_wrong_user_id() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let operation = manager
+        .register("user-1", operation_id, "sim-1")
+        .expect("operation");
+    assert!(!manager.cancel("user-2", operation_id));
+    drop(operation);
+}
+
+#[tokio::test]
+async fn operation_manager_cancel_returns_false_for_finalizing_phase() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let operation = manager
+        .register("user-1", operation_id, "sim-1")
+        .expect("operation");
+    operation.set_phase(DriveOperationPhase::Finalizing);
+    assert!(!manager.cancel("user-1", operation_id));
+    drop(operation);
+}
+
+#[tokio::test]
+async fn operation_manager_cancel_and_wait_returns_false_for_unknown_id() {
+    let manager = Arc::new(DriveOperationManager::default());
+    assert!(
+        !manager
+            .cancel_and_wait("user-1", Uuid::new_v4(), Duration::from_millis(10))
+            .await
+    );
+}
+
+#[tokio::test]
+async fn operation_manager_cancel_and_wait_returns_false_for_wrong_user() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let operation = manager
+        .register("user-1", operation_id, "sim-1")
+        .expect("operation");
+    assert!(
+        !manager
+            .cancel_and_wait("user-2", operation_id, Duration::from_millis(10))
+            .await
+    );
+    drop(operation);
+}
+
+#[tokio::test]
+async fn operation_manager_clear_user_visible_state_hides_and_cancels_allowed_phases() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let operation_id = Uuid::new_v4();
+    let operation = manager
+        .register("user-1", operation_id, "sim-1")
+        .expect("operation");
+    assert!(operation.is_visible());
+    manager.clear_user_visible_state("user-1");
+    assert!(!operation.is_visible());
+    // The cancellation token should be cancelled (Waiting phase is cancellable).
+    assert!(operation.cancellation().is_cancelled());
+    drop(operation);
+}
+
+#[tokio::test]
+async fn operation_manager_clear_user_visible_state_skips_other_users() {
+    let manager = Arc::new(DriveOperationManager::default());
+    let op_a = manager
+        .register("user-a", Uuid::new_v4(), "sim-1")
+        .expect("op a");
+    let op_b = manager
+        .register("user-b", Uuid::new_v4(), "sim-2")
+        .expect("op b");
+    manager.clear_user_visible_state("user-a");
+    assert!(!op_a.is_visible());
+    assert!(op_b.is_visible(), "other user's state must be untouched");
+}
+
+#[tokio::test]
+async fn disk_archive_source_open_rejects_symlink() {
+    #[cfg(unix)]
+    {
+        let dir = tempdir().expect("temp dir");
+        let real = dir.path().join("real.zip");
+        std::fs::write(&real, b"data").expect("write real");
+        let link = dir.path().join("link.zip");
+        symlink(&real, &link).expect("symlink");
+        assert_eq!(
+            DiskArchiveSource::open(&link).await.err(),
+            Some(DriveApiError::LocalState)
+        );
+    }
+}
+
+#[tokio::test]
+async fn disk_archive_source_open_rejects_directory() {
+    let dir = tempdir().expect("temp dir");
+    let subdir = dir.path().join("not-a-file.zip");
+    std::fs::create_dir(&subdir).expect("create dir");
+    assert_eq!(
+        DiskArchiveSource::open(&subdir).await.err(),
+        Some(DriveApiError::LocalState)
+    );
+}
+
+#[tokio::test]
+async fn disk_archive_source_open_rejects_empty_file() {
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("empty.zip");
+    std::fs::write(&path, b"").expect("write empty");
+    assert_eq!(
+        DiskArchiveSource::open(&path).await.err(),
+        Some(DriveApiError::LocalState)
+    );
+}
+
+#[tokio::test]
+async fn disk_archive_source_open_rejects_missing_file() {
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("nope.zip");
+    assert_eq!(
+        DiskArchiveSource::open(&path).await.err(),
+        Some(DriveApiError::LocalState)
+    );
+}
+
+#[tokio::test]
+async fn disk_archive_source_open_and_read_chunk_succeeds() {
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("archive.zip");
+    let payload = b"hello world archive";
+    std::fs::write(&path, payload).expect("write archive");
+    let mut source = DiskArchiveSource::open(&path).await.expect("open");
+    assert_eq!(source.len(), payload.len() as u64);
+    let chunk = source.read_chunk(0, payload.len()).await.expect("read");
+    assert_eq!(chunk, payload);
+}
+
+#[tokio::test]
+async fn disk_archive_source_read_chunk_rejects_zero_chunk_size() {
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("archive.zip");
+    std::fs::write(&path, b"abc").expect("write");
+    let mut source = DiskArchiveSource::open(&path).await.expect("open");
+    assert_eq!(
+        source.read_chunk(0, 0).await.err(),
+        Some(DriveApiError::LocalState)
+    );
+}
+
+#[tokio::test]
+async fn disk_archive_source_read_chunk_rejects_offset_beyond_end() {
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("archive.zip");
+    std::fs::write(&path, b"abc").expect("write");
+    let mut source = DiskArchiveSource::open(&path).await.expect("open");
+    assert_eq!(
+        source.read_chunk(100, 10).await.err(),
+        Some(DriveApiError::LocalState)
+    );
+}
+
+#[tokio::test]
+async fn disk_archive_source_read_chunk_returns_partial_at_end() {
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("archive.zip");
+    std::fs::write(&path, b"abcdef").expect("write");
+    let mut source = DiskArchiveSource::open(&path).await.expect("open");
+    // Request 100 bytes from offset 4; only 2 remain.
+    let chunk = source.read_chunk(4, 100).await.expect("read");
+    assert_eq!(chunk, b"ef");
+}
+
+#[test]
+fn create_upload_archive_allocates_unique_directories() {
+    let cache = tempdir().expect("cache dir");
+    let archive_a = create_upload_archive(cache.path()).expect("archive a");
+    let archive_b = create_upload_archive(cache.path()).expect("archive b");
+    assert_ne!(archive_a.zip_path(), archive_b.zip_path());
+    assert!(archive_a.zip_path().parent().unwrap().is_dir());
+    assert!(archive_b.zip_path().parent().unwrap().is_dir());
+}
+
+#[test]
+fn create_upload_archive_cleanup_removes_directory() {
+    let cache = tempdir().expect("cache dir");
+    let mut archive = create_upload_archive(cache.path()).expect("archive");
+    let dir = archive.zip_path().parent().unwrap().to_path_buf();
+    assert!(dir.is_dir());
+    archive.cleanup();
+    assert!(!dir.exists());
+}
+
+#[test]
+fn create_upload_archive_drop_runs_cleanup() {
+    let cache = tempdir().expect("cache dir");
+    let dir = {
+        let archive = create_upload_archive(cache.path()).expect("archive");
+        archive.zip_path().parent().unwrap().to_path_buf()
+    };
+    assert!(!dir.exists(), "drop must clean up the directory");
+}
+
+#[test]
+fn cleanup_stale_upload_archives_removes_subdirectories() {
+    let cache = tempdir().expect("cache dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    std::fs::create_dir_all(&namespace).expect("namespace");
+    std::fs::create_dir(namespace.join("stale-1")).expect("stale-1");
+    std::fs::write(namespace.join("stray.txt"), b"x").expect("stray file");
+    cleanup_stale_upload_archives(cache.path());
+    assert!(!namespace.join("stale-1").exists());
+    assert!(!namespace.join("stray.txt").exists());
+}
+
+#[test]
+fn cleanup_stale_upload_archives_noop_when_namespace_missing() {
+    let cache = tempdir().expect("cache dir");
+    // No namespace created — should not panic.
+    cleanup_stale_upload_archives(cache.path());
+}
+
+#[test]
+fn validated_upload_namespace_returns_none_when_missing_and_not_creating() {
+    let cache = tempdir().expect("cache dir");
+    let result = validated_upload_namespace(cache.path(), false).expect("ok");
+    assert_eq!(result, None);
+}
+
+#[test]
+fn validated_upload_namespace_creates_when_requested() {
+    let cache = tempdir().expect("cache dir");
+    let result = validated_upload_namespace(cache.path(), true).expect("ok");
+    assert!(result.is_some());
+    assert!(result.unwrap().is_dir());
+}
+
+#[tokio::test]
+async fn require_public_permission_returns_ok_for_public() {
+    let api = ScriptedDriveApi::default();
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    assert_eq!(
+        require_public_permission(&api, ACCESS_TOKEN, "file-1").await,
+        Ok(())
+    );
+}
+
+#[tokio::test]
+async fn require_public_permission_returns_download_not_public() {
+    let api = ScriptedDriveApi::default();
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::NotPublic));
+    assert_eq!(
+        require_public_permission(&api, ACCESS_TOKEN, "file-1").await,
+        Err(DriveApiError::DownloadNotPublic)
+    );
+}
+
+#[tokio::test]
+async fn require_public_permission_returns_sharing_check_unavailable() {
+    let api = ScriptedDriveApi::default();
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::CheckUnavailable));
+    assert_eq!(
+        require_public_permission(&api, ACCESS_TOKEN, "file-1").await,
+        Err(DriveApiError::SharingCheckUnavailable)
+    );
+}
+
+#[tokio::test]
+async fn compensate_after_final_validation_token_expired_create_returns_retain() {
+    let api = ScriptedDriveApi::default();
+    let target = DriveUploadTarget::Create {
+        generated_id: "gen-1".to_string(),
+        folder_id: "folder-1".to_string(),
+    };
+    let failure = compensate_after_final_validation(
+        &api,
+        ACCESS_TOKEN,
+        &target,
+        "file-1",
+        DriveApiError::TokenExpired,
+    )
+    .await;
+    assert_eq!(failure.error, DriveApiError::TokenExpired);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+    // No delete should be attempted for token-expired.
+    assert_eq!(*api.delete_count.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn compensate_after_final_validation_update_target_no_delete() {
+    let api = ScriptedDriveApi::default();
+    let target = DriveUploadTarget::Update {
+        file_id: "file-1".to_string(),
+    };
+    let failure = compensate_after_final_validation(
+        &api,
+        ACCESS_TOKEN,
+        &target,
+        "file-1",
+        DriveApiError::InvalidResponse,
+    )
+    .await;
+    assert_eq!(failure.error, DriveApiError::InvalidResponse);
+    assert_eq!(
+        failure.pending_binding,
+        PendingBindingDisposition::NotApplicable
+    );
+    assert_eq!(*api.delete_count.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn compensate_after_final_validation_create_delete_confirmed() {
+    let api = ScriptedDriveApi::default();
+    api.deletes.lock().unwrap().push_back(Ok(()));
+    let target = DriveUploadTarget::Create {
+        generated_id: "gen-1".to_string(),
+        folder_id: "folder-1".to_string(),
+    };
+    let failure = compensate_after_final_validation(
+        &api,
+        ACCESS_TOKEN,
+        &target,
+        "file-1",
+        DriveApiError::InvalidResponse,
+    )
+    .await;
+    assert_eq!(failure.error, DriveApiError::InvalidResponse);
+    assert_eq!(
+        failure.pending_binding,
+        PendingBindingDisposition::DeleteConfirmed
+    );
+    assert_eq!(*api.delete_count.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn compensate_after_final_validation_create_delete_not_found_confirms() {
+    let api = ScriptedDriveApi::default();
+    api.deletes
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::NotFound));
+    let target = DriveUploadTarget::Create {
+        generated_id: "gen-1".to_string(),
+        folder_id: "folder-1".to_string(),
+    };
+    let failure = compensate_after_final_validation(
+        &api,
+        ACCESS_TOKEN,
+        &target,
+        "file-1",
+        DriveApiError::InvalidResponse,
+    )
+    .await;
+    assert_eq!(
+        failure.pending_binding,
+        PendingBindingDisposition::DeleteConfirmed
+    );
+}
+
+#[tokio::test]
+async fn compensate_after_final_validation_create_delete_failure_retains() {
+    let api = ScriptedDriveApi::default();
+    api.deletes
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::Network));
+    let target = DriveUploadTarget::Create {
+        generated_id: "gen-1".to_string(),
+        folder_id: "folder-1".to_string(),
+    };
+    let failure = compensate_after_final_validation(
+        &api,
+        ACCESS_TOKEN,
+        &target,
+        "file-1",
+        DriveApiError::InvalidResponse,
+    )
+    .await;
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+}
+
+#[tokio::test]
+async fn validate_final_file_retries_on_network_then_succeeds() {
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::Network));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "file-1",
+            Some("https://example.com/x"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Ok("https://example.com/x".to_string()));
+    assert!(
+        !sleeper.delays.lock().unwrap().is_empty(),
+        "slept between retries"
+    );
+}
+
+#[tokio::test]
+async fn validate_final_file_retries_when_download_url_missing() {
+    let api = ScriptedDriveApi::default();
+    // First attempt: valid file but no web_content_link yet.
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file("file-1", None)));
+    // Second attempt: now has the link.
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "file-1",
+            Some("https://example.com/y"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Ok("https://example.com/y".to_string()));
+}
+
+#[tokio::test]
+async fn validate_final_file_returns_invalid_response_after_exhausting_attempts() {
+    let api = ScriptedDriveApi::default();
+    // All attempts return a valid file but never with a download URL.
+    for _ in 0..MAX_FINAL_METADATA_ATTEMPTS {
+        api.files
+            .lock()
+            .unwrap()
+            .push_back(Ok(ScriptedDriveApi::valid_file("file-1", None)));
+    }
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Err(DriveApiError::InvalidResponse));
+}
+
+#[tokio::test]
+async fn validate_final_file_propagates_non_retryable_error() {
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::TokenExpired));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Err(DriveApiError::TokenExpired));
+}
+
+#[tokio::test]
+async fn validate_final_file_retries_on_transient_then_succeeds() {
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::Transient(None)));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "file-1",
+            Some("https://example.com/z"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Ok("https://example.com/z".to_string()));
+}
+
+#[tokio::test]
+async fn validate_final_file_retries_on_rate_limited_then_succeeds() {
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Err(DriveApiError::RateLimited(Some(
+            Duration::from_millis(5),
+        ))));
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "file-1",
+            Some("https://example.com/r"),
+        )));
+    api.permissions
+        .lock()
+        .unwrap()
+        .push_back(Ok(PublicPermissionStatus::Public));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Ok("https://example.com/r".to_string()));
+}
+
+#[tokio::test]
+async fn validate_final_file_rejects_mismatched_id_immediately() {
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file("other-id", None)));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Err(DriveApiError::InvalidResponse));
+}
+
+#[tokio::test]
+async fn validate_final_file_rejects_invalid_download_url() {
+    let api = ScriptedDriveApi::default();
+    api.files
+        .lock()
+        .unwrap()
+        .push_back(Ok(ScriptedDriveApi::valid_file(
+            "file-1",
+            Some("http://not-https.com"),
+        )));
+    let sleeper = RecordingSleeper::default();
+    let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
+    assert_eq!(result, Err(DriveApiError::InvalidResponse));
 }

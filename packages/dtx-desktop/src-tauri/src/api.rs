@@ -667,6 +667,7 @@ async fn drive_metadata_graphql_data(
             .unwrap_or_default();
         return Err(match code {
             "NOT_FOUND" => DriveMetadataError::DefinitiveUnavailable,
+            "DRIVE_BINDING_MISMATCH" => DriveMetadataError::BindingMismatch,
             "FORBIDDEN" | "UNAUTHENTICATED" => DriveMetadataError::Authentication,
             "INTERNAL_SERVER_ERROR" | "SERVICE_UNAVAILABLE" => {
                 DriveMetadataError::ServiceUnavailable

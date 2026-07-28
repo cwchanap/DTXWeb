@@ -19,6 +19,8 @@ pub enum DesktopError {
     Zip(#[from] zip::result::ZipError),
     #[error("SQLite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("Dialog plugin closed unexpectedly")]
+    DialogPlugin,
 }
 
 impl Serialize for DesktopError {

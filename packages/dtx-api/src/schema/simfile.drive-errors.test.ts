@@ -129,4 +129,15 @@ describe('Mutation.updateSimfileDriveFile error paths', () => {
 		expect(result.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
 		expect(mockedUpdateDriveFile).toHaveBeenCalledOnce();
 	});
+
+	it('returns DRIVE_BINDING_MISMATCH when the optimistic-concurrency guard fails', async () => {
+		mockedGetSimfile.mockResolvedValue(ownedSimfile);
+		mockedUpdateDriveFile.mockRejectedValue(new Error('Drive binding mismatch'));
+
+		const result = await executeUpdate(makeCtx({ user: { id: 'u1' } as Ctx['user'] }));
+
+		expect(result.errors?.[0]?.extensions?.code).toBe('DRIVE_BINDING_MISMATCH');
+		expect(result.errors?.[0]?.message).toContain('Drive binding changed');
+		expect(mockedUpdateDriveFile).toHaveBeenCalledOnce();
+	});
 });

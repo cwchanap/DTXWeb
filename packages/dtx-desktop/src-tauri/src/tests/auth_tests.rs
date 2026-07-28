@@ -2377,3 +2377,71 @@ async fn verify_magic_link_succeeds_when_configured_and_server_responds() {
         "access"
     );
 }
+
+// ---------------------------------------------------------------------------
+// session_user_id — direct unit tests for the pure helper extracted from
+// current_user_id (patch line 258). The trim + non-empty filter is tested
+// indirectly through current_user_id, but direct tests pin the function's
+// contract independently of the AuthState async wrapper.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn session_user_id_returns_none_for_none_input() {
+    assert_eq!(session_user_id(None), None);
+}
+
+#[test]
+fn session_user_id_returns_none_when_user_key_is_absent() {
+    let session = serde_json::json!({ "access_token": "tok" });
+    assert_eq!(session_user_id(Some(&session)), None);
+}
+
+#[test]
+fn session_user_id_returns_none_when_id_is_blank_after_trim() {
+    let session = serde_json::json!({ "user": { "id": "   " } });
+    assert_eq!(session_user_id(Some(&session)), None);
+}
+
+#[test]
+fn session_user_id_trims_whitespace_from_user_id() {
+    let session = serde_json::json!({ "user": { "id": "  user-42  " } });
+    assert_eq!(session_user_id(Some(&session)), Some("user-42".to_string()));
+}
+
+#[test]
+fn session_user_id_returns_none_for_non_string_id() {
+    let session = serde_json::json!({ "user": { "id": 42 } });
+    assert_eq!(session_user_id(Some(&session)), None);
+}
+
+// ---------------------------------------------------------------------------
+// current_session_epoch — returns None when no session is set (patch line
+// 229). The existing epoch test only covers the Some case.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn current_session_epoch_returns_none_when_no_session() {
+    let state = AuthState::default();
+    assert!(state.current_session_epoch().await.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// matches_session_epoch — returns false when session is cleared after an
+// epoch was captured (patch line 237). The existing test covers the
+// mismatched-user and same-user-relogin cases but not the None-session case.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn matches_session_epoch_returns_false_when_session_cleared() {
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "user": { "id": "user-a" },
+            "access_token": "tok"
+        })))
+        .await;
+    let epoch = state.current_session_epoch().await.expect("epoch");
+
+    state.set_current_session(None).await;
+    assert!(!state.matches_session_epoch(&epoch).await);
+}

@@ -39,6 +39,7 @@ describe('GoogleDriveUploadStatus', () => {
 		vi.clearAllMocks();
 		googleDriveStore.reset();
 		authStore.setUser({ id: 'user-id', email: 'user@example.com' });
+		mockService.cancelUpload.mockResolvedValue(true);
 	});
 
 	afterEach(() => cleanup());

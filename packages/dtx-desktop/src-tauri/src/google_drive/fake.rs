@@ -748,7 +748,7 @@ impl DriveMetadataClient for E2eGoogleDriveFake {
                 ExpectedPreviousDriveFile::DriveFile(id) => current_id == Some(id.as_str()),
             };
             if !matches {
-                return Err(DriveMetadataError::DefinitiveUnavailable);
+                return Err(DriveMetadataError::BindingMismatch);
             }
         }
         if runtime.scenario.terminate_before_metadata_patch {

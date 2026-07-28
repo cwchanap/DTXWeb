@@ -114,7 +114,9 @@
 		`googleDrive.error.${errorCodeFor(value)}`;
 
 	const handleCancel = async (operationId: string) => {
-		await googleDriveService.cancelUpload(operationId);
+		// Cancel is best-effort: if the session is gone or the operation
+		// already completed, the rejection is expected and not surfaced.
+		await googleDriveService.cancelUpload(operationId).catch(() => undefined);
 	};
 	const handleReconnect = async () => {
 		if (!visibleOutcome) return;

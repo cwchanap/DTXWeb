@@ -17,6 +17,7 @@ import {
 	listUserScoredSimfiles,
 	listUserChartScores,
 	getChartVisibilityBatch,
+	updateSimfile,
 	updateSimfileDriveFile
 } from './db';
 import type { D1Database } from '@cloudflare/workers-types';
@@ -225,14 +226,15 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 			downloadUrl: 'https://drive.google.com/uc?id=device-b-file-y'
 		});
 		// A FirstUpload guard (expectNoExistingDriveFile) must fail because the
-		// binding is no longer NULL.
+		// binding is no longer NULL. The row still exists, so the guard
+		// failure is distinguishable from a genuine deletion.
 		await expect(
 			updateSimfileDriveFile(db, 1, 'user-1', {
 				googleDriveFileId: 'stale-device-a-file',
 				downloadUrl: 'https://drive.google.com/uc?id=stale-device-a-file',
 				expectNoExistingDriveFile: true
 			})
-		).rejects.toThrow('Simfile not found');
+		).rejects.toThrow('Drive binding mismatch');
 
 		// The newer binding is preserved.
 		const row = await db
@@ -268,14 +270,16 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 			googleDriveFileId: 'device-b-file-y',
 			downloadUrl: 'https://drive.google.com/uc?id=device-b-file-y'
 		});
-		// A guard expecting the stale 'initial-file' must fail.
+		// A guard expecting the stale 'initial-file' must fail. The row
+		// still exists with a different binding, so the guard failure is
+		// distinguishable from a genuine deletion.
 		await expect(
 			updateSimfileDriveFile(db, 1, 'user-1', {
 				googleDriveFileId: 'stale-device-a-file',
 				downloadUrl: 'https://drive.google.com/uc?id=stale-device-a-file',
 				expectedPreviousDriveFileId: 'initial-file'
 			})
-		).rejects.toThrow('Simfile not found');
+		).rejects.toThrow('Drive binding mismatch');
 
 		const row = await db
 			.prepare('SELECT google_drive_file_id FROM simfiles WHERE id = ?')
@@ -290,6 +294,86 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 		);
 		expect(migration).toBeDefined();
 		await expect(runMigration(migration!.statements)).rejects.toThrow(/duplicate column name/);
+	});
+});
+
+// Regression test for the cross-device race where Device A reads a row with
+// no Drive binding, Device B atomically binds file Y / URL-Y, and Device A
+// then runs a generic updateSimfile containing a stale URL-X. The SQL
+// UPDATE must preserve URL-Y when google_drive_file_id is non-NULL, while
+// still applying the other metadata fields Device A sent.
+describe('updateSimfile preserves the Drive URL invariant (real D1)', () => {
+	it('does not overwrite a Drive-bound download_url with a stale URL from a generic update', async () => {
+		// Device B establishes a Drive binding (file Y / URL-Y).
+		await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'device-b-file-y',
+			downloadUrl: 'https://drive.google.com/uc?id=device-b-file-y'
+		});
+
+		// Device A's already-prepared generic update carries a stale URL-X
+		// (cached from before the binding existed) plus a real metadata
+		// change. The CASE expression in updateSimfile must keep URL-Y.
+		const updated = await updateSimfile(db, 1, {
+			title: 'Updated Title',
+			download_url: 'https://ext.example/stale-url-x'
+		});
+
+		expect(updated.title).toBe('Updated Title');
+		expect(updated.google_drive_file_id).toBe('device-b-file-y');
+		expect(updated.download_url).toBe('https://drive.google.com/uc?id=device-b-file-y');
+
+		// Verify persistence — the binding pair is intact.
+		const persisted = await db
+			.prepare('SELECT google_drive_file_id, download_url, title FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{
+				google_drive_file_id: string | null;
+				download_url: string | null;
+				title: string;
+			}>();
+		expect(persisted).toEqual({
+			google_drive_file_id: 'device-b-file-y',
+			download_url: 'https://drive.google.com/uc?id=device-b-file-y',
+			title: 'Updated Title'
+		});
+	});
+
+	it('still applies download_url when the row has no Drive binding', async () => {
+		// No binding exists — the CASE branch assigns the supplied URL.
+		const updated = await updateSimfile(db, 1, {
+			download_url: 'https://ext.example/manual-url'
+		});
+		expect(updated.download_url).toBe('https://ext.example/manual-url');
+		expect(updated.google_drive_file_id).toBeNull();
+
+		const persisted = await db
+			.prepare('SELECT google_drive_file_id, download_url FROM simfiles WHERE id = ?')
+			.bind(1)
+			.first<{ google_drive_file_id: string | null; download_url: string | null }>();
+		expect(persisted).toEqual({
+			google_drive_file_id: null,
+			download_url: 'https://ext.example/manual-url'
+		});
+	});
+
+	it('clears download_url via a generic update only when no binding exists', async () => {
+		// No binding — explicitly clearing download_url is permitted.
+		const updated = await updateSimfile(db, 1, { download_url: null });
+		expect(updated.download_url).toBeNull();
+		expect(updated.google_drive_file_id).toBeNull();
+	});
+
+	it('does not clear a Drive-bound download_url via a generic update sending null', async () => {
+		// Establish a binding, then attempt to null out download_url with a
+		// generic update. The CASE expression must preserve the Drive URL.
+		await updateSimfileDriveFile(db, 1, 'user-1', {
+			googleDriveFileId: 'device-b-file-y',
+			downloadUrl: 'https://drive.google.com/uc?id=device-b-file-y'
+		});
+
+		const updated = await updateSimfile(db, 1, { download_url: null });
+		expect(updated.google_drive_file_id).toBe('device-b-file-y');
+		expect(updated.download_url).toBe('https://drive.google.com/uc?id=device-b-file-y');
 	});
 });
 

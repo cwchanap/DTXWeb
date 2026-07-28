@@ -1198,6 +1198,52 @@ describe('updateSimfileDriveFile', () => {
 			})
 		).rejects.toThrow('Simfile not found');
 	});
+
+	it('distinguishes a guard mismatch from a genuine deletion when expectedPreviousDriveFileId is set', async () => {
+		const db = createMockDb((sql) => {
+			if (sql.startsWith('UPDATE')) {
+				return createMockStmt(null);
+			}
+			return createMockStmt({ id: 1 });
+		});
+
+		await expect(
+			updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+				googleDriveFileId: 'drive-file-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-file-new',
+				expectedPreviousDriveFileId: 'drive-file-old'
+			})
+		).rejects.toThrow('Drive binding mismatch');
+	});
+
+	it('distinguishes a guard mismatch from a genuine deletion when expectNoExistingDriveFile is set', async () => {
+		const db = createMockDb((sql) => {
+			if (sql.startsWith('UPDATE')) {
+				return createMockStmt(null);
+			}
+			return createMockStmt({ id: 1 });
+		});
+
+		await expect(
+			updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+				googleDriveFileId: 'drive-file-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-file-new',
+				expectNoExistingDriveFile: true
+			})
+		).rejects.toThrow('Drive binding mismatch');
+	});
+
+	it('still returns not-found when the guard fails and the row is genuinely gone', async () => {
+		const db = createMockDb(() => createMockStmt(null));
+
+		await expect(
+			updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+				googleDriveFileId: 'drive-file-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-file-new',
+				expectedPreviousDriveFileId: 'drive-file-old'
+			})
+		).rejects.toThrow('Simfile not found');
+	});
 });
 
 describe('general simfile write types', () => {

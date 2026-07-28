@@ -378,3 +378,111 @@ impl GoogleDriveCredentialStore for BlockingStore {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage tests for previously uncovered lines.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "google-drive")]
+#[test]
+fn map_keyring_error_classifies_no_entry_as_missing() {
+    assert_eq!(
+        map_keyring_error(keyring::Error::NoEntry),
+        KeyringOperationError::Missing,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Real-OS-credential-store smoke tests.
+//
+// These touch the developer's actual Keychain / Credential Manager / Secret
+// Service, so they are `#[ignore]`'d by default — an ordinary `cargo test`
+// run never executes them. Run them explicitly with:
+//
+//   cargo test -- --ignored platform_keyring
+//
+// or via the dedicated `cargo test -- --ignored` target. They are gated to
+// opt-in because:
+//   - they can prompt for keychain access on macOS,
+//   - they fail on headless CI runners that lack an interactive credential
+//     service, and
+//   - a crash or assertion failure before cleanup would leave a stray
+//     entry in the production service name.
+//
+// To avoid that last risk the tests use a test-only service name
+// (`TEST_CREDENTIAL_SERVICE`) and an RAII guard that deletes the entry on
+// drop, so even a panic between set_password and the explicit delete
+// removes the entry. The injected keyring adapter tests above cover the
+// normal unit behaviour without touching the host credential store.
+const TEST_CREDENTIAL_SERVICE: &str = "com.hapadona.drumery.test";
+
+/// RAII guard that deletes the password for `entry` when dropped, ensuring
+/// no test credential survives a panic or assertion failure.
+struct CredentialGuard {
+    entry: Box<dyn KeyringEntry>,
+}
+
+impl CredentialGuard {
+    fn new(entry: Box<dyn KeyringEntry>) -> Self {
+        // Clean up any pre-existing password for this account before the
+        // test body runs.
+        let _ = entry.delete_password();
+        Self { entry }
+    }
+
+    fn entry(&self) -> &dyn KeyringEntry {
+        self.entry.as_ref()
+    }
+}
+
+impl Drop for CredentialGuard {
+    fn drop(&mut self) {
+        let _ = self.entry.delete_password();
+    }
+}
+
+#[cfg(feature = "google-drive")]
+#[test]
+#[ignore = "touches the real OS credential store; run with --ignored"]
+fn platform_keyring_factory_creates_and_deletes_entries() {
+    let factory = PlatformKeyringEntryFactory;
+    let account = format!("coverage-test-{}", std::process::id());
+    let entry = factory
+        .entry(TEST_CREDENTIAL_SERVICE, &account)
+        .expect("platform factory should create an entry");
+    let _guard = CredentialGuard::new(entry);
+}
+
+#[cfg(feature = "google-drive")]
+#[test]
+#[ignore = "touches the real OS credential store; run with --ignored"]
+fn platform_keyring_entry_round_trips_password() {
+    let factory = PlatformKeyringEntryFactory;
+    let account = format!("coverage-roundtrip-{}", std::process::id());
+    let entry = factory
+        .entry(TEST_CREDENTIAL_SERVICE, &account)
+        .expect("platform factory should create an entry");
+    let guard = CredentialGuard::new(entry);
+    let entry = guard.entry();
+
+    // Initially the password should be missing (guard cleaned up any
+    // pre-existing entry).
+    assert!(entry.get_password().is_err());
+
+    // Set a password.
+    entry
+        .set_password("coverage-test-token")
+        .expect("set password");
+
+    // Get it back.
+    assert_eq!(
+        entry.get_password().expect("get password"),
+        "coverage-test-token",
+    );
+
+    // Delete it explicitly; the guard also deletes on drop as a backstop.
+    entry.delete_password().expect("delete password");
+
+    // Should be missing again.
+    assert!(entry.get_password().is_err());
+}

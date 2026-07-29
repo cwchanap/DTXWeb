@@ -730,6 +730,7 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
     metadata_client: &dyn DriveMetadataClient,
     auth: &AuthState,
     access_token: &str,
+    cancellation: &CancellationToken,
 ) where
     A: GoogleDriveApi + ?Sized,
 {
@@ -743,6 +744,7 @@ pub(crate) async fn reconcile_pending_bindings_for_current_user<A>(
         auth,
         &expected_epoch,
         access_token,
+        cancellation,
     )
     .await;
 }
@@ -754,10 +756,11 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
     auth: &AuthState,
     expected_epoch: &AuthSessionEpoch,
     access_token: &str,
+    cancellation: &CancellationToken,
 ) where
     A: GoogleDriveApi + ?Sized,
 {
-    if !auth.matches_session_epoch(expected_epoch).await {
+    if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled() {
         return;
     }
     let user_id = expected_epoch.user_id();
@@ -771,7 +774,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
         let transaction_lock =
             pending_store.transaction_lock(&pending.user_id, &pending.simfile_id);
         let _transaction_guard = transaction_lock.lock().await;
-        if !auth.matches_session_epoch(expected_epoch).await {
+        if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled() {
             return;
         }
         let pending = match pending_store.get(&pending.user_id, &pending.simfile_id) {
@@ -781,7 +784,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
         let owner_result = metadata_client
             .fetch_owner_simfile(auth, &pending.simfile_id)
             .await;
-        if !auth.matches_session_epoch(expected_epoch).await {
+        if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled() {
             return;
         }
         let owner = match owner_result {
@@ -796,7 +799,8 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
                     Some((auth, expected_epoch)),
                 )
                 .await;
-                if !auth.matches_session_epoch(expected_epoch).await {
+                if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled()
+                {
                     return;
                 }
                 continue;
@@ -808,7 +812,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
             && validated_download_url(owner.download_url.as_deref())
                 .is_ok_and(|value| value.is_some())
         {
-            if !auth.matches_session_epoch(expected_epoch).await {
+            if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled() {
                 return;
             }
             let _ = remove_pending_binding(pending_store, &pending);
@@ -816,7 +820,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
         }
 
         let file_result = api.get_file(access_token, &pending.drive_file_id).await;
-        if !auth.matches_session_epoch(expected_epoch).await {
+        if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled() {
             return;
         }
         let file = match file_result {
@@ -862,7 +866,9 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
                                 Some((auth, expected_epoch)),
                             )
                             .await;
-                            if !auth.matches_session_epoch(expected_epoch).await {
+                            if !auth.matches_session_epoch(expected_epoch).await
+                                || cancellation.is_cancelled()
+                            {
                                 return;
                             }
                             continue;
@@ -885,7 +891,7 @@ pub(crate) async fn reconcile_pending_bindings_for_session<A>(
             Some((auth, expected_epoch)),
         )
         .await;
-        if !auth.matches_session_epoch(expected_epoch).await {
+        if !auth.matches_session_epoch(expected_epoch).await || cancellation.is_cancelled() {
             return;
         }
     }

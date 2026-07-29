@@ -307,19 +307,16 @@ async fn refresh_response_with_blank_rotated_refresh_token_is_rejected_as_invali
 }
 
 #[tokio::test]
-async fn refresh_response_without_scope_is_accepted() {
-    // A response with no scope field is treated as valid (the provider did not
-    // narrow the grant). This exercises the `None => true` arm.
+async fn refresh_response_without_scope_is_rejected_as_invalid_response() {
+    // A refresh response with no scope field is rejected, mirroring the
+    // initial-token-exchange scope check (oauth.rs). Google always returns
+    // scope on refresh, so a missing scope indicates a malformed response.
     let state = state_with_provider(Arc::new(QueuedRefreshProvider::new(vec![Ok(
         token_response_with("scopeless-access-token", 3600, None),
     )])));
     assert_eq!(
-        state
-            .access_token_for_user("user-42")
-            .await
-            .expect("scopeless token")
-            .as_str(),
-        "scopeless-access-token"
+        state.access_token_for_user("user-42").await,
+        Err(GoogleDriveOAuthError::InvalidResponse)
     );
 }
 

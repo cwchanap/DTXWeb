@@ -260,16 +260,16 @@ const seedRendererState = async (
 				'dtx_linkage_cache',
 				JSON.stringify({
 					[songPath]: {
-						linkedSimFileId: '311001',
+						linkedSimFileId: simfileId,
 						linkedAt: '2026-07-25T00:00:00.000Z',
 						cloudSongData: {
-							id: 311001,
+							id: Number(simfileId),
 							title: 'Critical Workspace Song',
 							artist: 'Integration Test',
 							bpm: 120,
 							is_published: false,
 							publish_date: '2026-07-25',
-							display_id: 311001,
+							display_id: Number(simfileId),
 							download_url: null,
 							google_drive_file_id: null,
 							preview_url: null,

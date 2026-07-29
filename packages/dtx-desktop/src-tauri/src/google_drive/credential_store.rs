@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use thiserror::Error;
 use tokio::sync::Mutex as AsyncMutex;
@@ -205,10 +205,15 @@ impl GoogleDriveCredentialStore for InMemoryGoogleDriveCredentialStore {
 /// Async boundary for the synchronous keyring API. Each user credential gets
 /// one mutex, preventing unsafe concurrent keyring/DBus operations while
 /// allowing unrelated Drumery accounts to proceed independently.
+///
+/// Locks are held as `Weak` references and GC'd via `retain` on each lookup,
+/// mirroring the pattern in `pending_bindings::BindingTransactionLockRegistry`
+/// — without this, one `AsyncMutex` per distinct user accumulates unboundedly
+/// over the process lifetime.
 #[derive(Clone)]
 pub(crate) struct GoogleDriveCredentialAccess {
     store: Arc<dyn GoogleDriveCredentialStore>,
-    credential_locks: Arc<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
+    credential_locks: Arc<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>>,
 }
 
 impl GoogleDriveCredentialAccess {
@@ -264,12 +269,20 @@ impl GoogleDriveCredentialAccess {
     }
 
     fn lock_for_user(&self, user_id: &str) -> Arc<AsyncMutex<()>> {
-        self.credential_locks
+        let key = credential_account(user_id);
+        let mut locks = self
+            .credential_locks
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .entry(credential_account(user_id))
-            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-            .clone()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+            return lock;
+        }
+        // GC: drop entries whose last strong reference was released, so the
+        // registry does not grow unboundedly as distinct users log in.
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        let lock = Arc::new(AsyncMutex::new(()));
+        locks.insert(key, Arc::downgrade(&lock));
+        lock
     }
 }
 

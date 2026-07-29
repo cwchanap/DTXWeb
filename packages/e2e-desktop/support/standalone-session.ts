@@ -1,3 +1,33 @@
+/**
+ * Standalone Tauri WDIO session — a custom alternative to the
+ * `@wdio/tauri-service` standalone exports.
+ *
+ * Why not use `@wdio/tauri-service`'s standalone API here?
+ *
+ * The crash-recovery and relaunch-smoke scripts need to start, stop, and
+ * re-start the Tauri binary multiple times within a single test run, and they
+ * must prove that each WDIO `remote()` session is driving the *exact* binary
+ * they spawned (not a stale instance from a previous iteration). The
+ * `@wdio/tauri-service` standalone exports do not expose a per-session
+ * ownership handshake: they spawn the binary and return a browser handle, but
+ * there is no round-trip nonce or port-reservation mechanism that ties the
+ * WDIO session to a specific PID.
+ *
+ * This module fills that gap by:
+ * 1. Reserving a free TCP port and writing an ownership record (PID + nonce)
+ *    to a well-known path before spawning.
+ * 2. Spawning the Tauri binary with that port in its environment.
+ * 3. Connecting a WDIO `remote()` session to the WebDriver endpoint on that
+ *    port and round-tripping the nonce through the app's devtools protocol to
+ *    confirm the session drives the freshly-spawned binary, not a leftover.
+ * 4. Exposing `terminateStandaloneTauriSession` / `waitForStandaloneTauriSessionExit`
+ *    so callers can drive controlled crash/relaunch sequences.
+ *
+ * The deviation is deliberate and documented here so future readers do not
+ * "simplify" this back to the service's standalone exports and silently lose
+ * the ownership guarantee.
+ */
+
 import { randomBytes } from 'node:crypto';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import {

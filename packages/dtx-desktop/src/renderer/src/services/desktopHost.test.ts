@@ -382,20 +382,10 @@ describe('desktopHost', () => {
 			operationId: 'f5ca4b7c-c7bb-4f01-a9f4-e42b6b3043a8'
 		});
 
-		for (const [, payload] of runtime.invoke.mock.calls) {
-			expect(Object.keys((payload as Record<string, unknown>) ?? {})).not.toEqual(
-				expect.arrayContaining([
-					'userId',
-					'workspaceRoot',
-					'absolutePath',
-					'folderId',
-					'title',
-					'existingDriveId',
-					'downloadUrl',
-					'credential'
-				])
-			);
-		}
+		// No forbidden-key sweep needed: toHaveBeenNthCalledWith above asserts
+		// the exact payload shape for every invoke call in this test, so any
+		// leaked key (userId, workspaceRoot, absolutePath, folderId, title,
+		// existingDriveId, downloadUrl, credential) would already fail.
 	});
 
 	it('maps multi-part pathExists arguments for Tauri', async () => {
@@ -644,7 +634,7 @@ describe('desktopHost', () => {
 			content: '#TITLE Test'
 		});
 
-		const result = await desktopHost.readFile('/songs/a.dtx', '/songs');
+		const result = await desktopHost.readFile('/songs/a.dtx');
 		expect(result.kind).toBe('text');
 		expect(result.content).toBe('#TITLE Test');
 	});
@@ -657,7 +647,7 @@ describe('desktopHost', () => {
 			content: ''
 		});
 
-		const result = await desktopHost.readFile('/songs/a.dtx', '/songs');
+		const result = await desktopHost.readFile('/songs/a.dtx');
 		expect(result.kind).toBe('error');
 		expect(result.error).toBe('permission-denied');
 	});

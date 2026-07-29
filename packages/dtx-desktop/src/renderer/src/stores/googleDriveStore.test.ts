@@ -58,20 +58,6 @@ describe('googleDriveStore', () => {
 		});
 	});
 
-	it('ignores an upload error from an operation replaced by a newer operation', () => {
-		const store = createGoogleDriveStore();
-		store.beginOperation('op-old', 'simfile-old');
-		store.beginOperation('op-current', 'simfile-current');
-		store.setUploadError('op-old', 'simfile-old', 'UNKNOWN');
-
-		// The error is recorded on the superseded operation's errorCode (the
-		// UI-facing field) but does not surface to the replacement operation
-		// or the store-level error value.
-		expect(get(store).operations['op-old']?.errorCode).toBe('UNKNOWN');
-		expect(get(store).operations['op-current']?.errorCode).toBeUndefined();
-		expect(get(store).error).toBeNull();
-	});
-
 	it('keeps two uploads independently addressable and rejects out-of-order stages', () => {
 		const store = createGoogleDriveStore();
 		store.beginOperation('op-a', 'simfile-a');

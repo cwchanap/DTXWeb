@@ -191,6 +191,9 @@ fn non_blank_bounded(value: Option<&String>, maximum: usize) -> Option<String> {
 const MAX_CALLBACK_TARGET_BYTES: usize = 8 * 1024;
 const MAX_AUTH_ARTIFACT_BYTES: usize = 4 * 1024;
 
+/// Single-variant enum today (only the authorization-code flow is wired up),
+/// but kept as an enum so a future token-bearer or service-account callback
+/// variant can be added without churning every match site.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum PickerCallback {
     AuthorizationCode {

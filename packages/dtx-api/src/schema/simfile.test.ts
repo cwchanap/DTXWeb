@@ -1777,9 +1777,7 @@ describe('Mutation.updateSimfileDriveFile', () => {
 
 		expect(mockedUpdateDriveFile).toHaveBeenCalledWith(expect.anything(), 42, 'u1', {
 			googleDriveFileId: 'drive-file-456',
-			downloadUrl: url,
-			expectedPreviousDriveFileId: undefined,
-			expectNoExistingDriveFile: undefined
+			downloadUrl: url
 		});
 		expect(result.data?.updateSimfileDriveFile).toEqual({
 			id: '42',
@@ -1794,6 +1792,7 @@ describe('Mutation.updateSimfileDriveFile', () => {
 		['blank URL', 'drive-file', '   '],
 		['non-HTTPS URL', 'drive-file', 'http://drive.google.com/uc?id=file'],
 		['overlong URL', 'drive-file', `https://drive.google.com/${'x'.repeat(2049)}`],
+		['non-Drive host', 'drive-file', 'https://evil.example/download?id=file'],
 		['R2 bucket URL', 'drive-file', 'https://bucket.example/42/chart.zip'],
 		['R2 bucket prefix collision URL', 'drive-file', 'https://bucket.example.evil/42/chart.zip']
 	])(

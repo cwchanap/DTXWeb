@@ -154,18 +154,6 @@ export const createGoogleDriveStore = () => {
 					operations: { ...state.operations, [progress.operationId]: progress }
 				};
 			}),
-		setUploadError: (operationId: string, simfileId: string, errorCode: string) =>
-			update((state) => {
-				const operation = state.operations[operationId];
-				if (!operation || operation.simfileId !== simfileId) return state;
-				return {
-					...state,
-					operations: {
-						...state.operations,
-						[operationId]: { ...operation, errorCode }
-					}
-				};
-			}),
 		reset: () => {
 			generation += 1;
 			set(initialState());

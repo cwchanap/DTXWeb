@@ -16,6 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -42,6 +43,7 @@ pub(crate) struct PickerAttempt {
     callback_addr: SocketAddrV4,
     callback_path: String,
     deadline: Instant,
+    cancellation: CancellationToken,
 }
 
 impl PickerAttempt {
@@ -59,11 +61,20 @@ impl PickerAttempt {
             callback_addr,
             callback_path: GOOGLE_DRIVE_CALLBACK_PATH.to_string(),
             deadline: now + timeout,
+            cancellation: CancellationToken::new(),
         }
     }
 
     pub(crate) fn attempt_id(&self) -> Uuid {
         self.attempt_id
+    }
+
+    pub(crate) fn user_id(&self) -> &str {
+        &self.user_id
+    }
+
+    pub(crate) fn cancellation(&self) -> &CancellationToken {
+        &self.cancellation
     }
 
     pub(crate) fn oauth_state(&self) -> &str {
@@ -685,6 +696,7 @@ impl GoogleDriveState {
         );
         let attempt_id = attempt.attempt_id();
         let callback_deadline = attempt.deadline();
+        let cancellation = attempt.cancellation().clone();
         let authorization_url =
             Zeroizing::new(attempt.authorization_url(&self.picker_config.client_id)?);
 
@@ -703,10 +715,23 @@ impl GoogleDriveState {
             return Err(error);
         }
 
-        let accepted = timeout(remaining_until(callback_deadline)?, listener.accept()).await;
-        let (mut stream, _) = match accepted {
-            Ok(Ok(accepted)) => accepted,
-            _ => {
+        // Select between the callback arriving and the picker being
+        // cancelled (logout / disconnect / user switch). Without the
+        // cancellation branch, an abandoned picker would hold the global
+        // `active_picker_attempt` slot until its callback arrives or the
+        // five-minute timeout expires, blocking other users' Connect
+        // commands with `AlreadyInProgress`.
+        let (mut stream, _) = tokio::select! {
+            result = timeout(remaining_until(callback_deadline)?, listener.accept()) => {
+                match result {
+                    Ok(Ok(accepted)) => accepted,
+                    _ => {
+                        active_attempt.clear().await;
+                        return Err(GoogleDriveOAuthError::Canceled);
+                    }
+                }
+            }
+            _ = cancellation.cancelled() => {
                 active_attempt.clear().await;
                 return Err(GoogleDriveOAuthError::Canceled);
             }
@@ -751,6 +776,17 @@ impl GoogleDriveState {
         let expires_at = Instant::now()
             .checked_add(Duration::from_secs(tokens.expires_in))
             .ok_or(GoogleDriveOAuthError::InvalidResponse)?;
+        // Acquire the revocation barrier before the lifecycle lock. If a
+        // prior disconnect is still revoking the old grant, this blocks
+        // until revocation completes — Google's /revoke invalidates ALL
+        // tokens under the same user+project grant, so persisting a new
+        // refresh token before the old revocation finishes would result
+        // in the new token also being invalidated. The barrier is
+        // acquired before the lifecycle lock to avoid a deadlock with
+        // `disconnect_user`, which acquires the lifecycle lock first and
+        // the revocation barrier second (but never holds both at once).
+        let revocation_barrier = self.revocation_barrier_for_user(user_id);
+        let _revocation_guard = revocation_barrier.lock().await;
         let lifecycle = self.lifecycle_lock_for_user(user_id);
         let _guard = lifecycle.lock().await;
         if self.user_lifecycle_generation(user_id) != picker_generation

@@ -2431,3 +2431,279 @@ async fn active_picker_attempt_guard_take_returns_canceled_when_slot_is_empty() 
         Err(GoogleDriveOAuthError::Canceled)
     ));
 }
+
+// ---------------------------------------------------------------------------
+// P1: Revocation barrier — reconnect persist must wait for in-flight
+// revocation to complete. Google's /revoke invalidates ALL tokens under
+// the same user+project grant, so persisting a new refresh token before
+// the old revocation finishes would result in the new token also being
+// invalidated.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn reconnect_persist_waits_for_in_flight_revocation() {
+    struct BlockingRevokeWithExchangeProvider {
+        revoke_entered: Arc<Notify>,
+        release_revoke: Arc<Notify>,
+        exchange_response: OAuthTokenResponse,
+    }
+
+    #[async_trait]
+    impl GoogleOAuthProvider for BlockingRevokeWithExchangeProvider {
+        async fn exchange_code(
+            &self,
+            _request: TokenExchangeRequest,
+        ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+            Ok(self.exchange_response.clone())
+        }
+        async fn refresh_access_token(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+            Err(OAuthProviderError::InvalidResponse)
+        }
+        async fn revoke_refresh_token(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<(), OAuthProviderError> {
+            self.revoke_entered.notify_one();
+            self.release_revoke.notified().await;
+            Ok(())
+        }
+    }
+
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+
+    let revoke_entered = Arc::new(Notify::new());
+    let release_revoke = Arc::new(Notify::new());
+    let provider = Arc::new(BlockingRevokeWithExchangeProvider {
+        revoke_entered: Arc::clone(&revoke_entered),
+        release_revoke: Arc::clone(&release_revoke),
+        exchange_response: token_response("new-access-token", Some("new-refresh-token")),
+    });
+
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "old-refresh-token")
+        .expect("seed credential");
+    let settings = Arc::new(FakeSettings::with_folder("old-folder", "Old folder"));
+
+    let state = Arc::new(GoogleDriveState::with_oauth_adapters(
+        credential_store.clone(),
+        Arc::new(UnavailableDriveMetadataClient),
+        settings.clone(),
+        provider as Arc<dyn GoogleOAuthProvider>,
+        Arc::new(AcceptFolder),
+        Arc::new(CallbackBrowser::new("new-folder")),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    ));
+
+    // Start disconnect — it will block on revocation while holding the
+    // revocation barrier.
+    let disconnect_state = state.clone();
+    let mut revoke_entered_wait = Box::pin(revoke_entered.notified());
+    let disconnect = tokio::spawn(async move { disconnect_state.disconnect_user("user-42").await });
+
+    // Wait for revocation to be entered — confirms disconnect has released
+    // the lifecycle lock and is now holding the revocation barrier.
+    revoke_entered_wait.as_mut().await;
+
+    // Start a reconnect. It should proceed through the picker flow
+    // (browser, callback, token exchange, folder validation) but block at
+    // the persist step waiting for the revocation barrier.
+    let connect_state = state.clone();
+    let connect_auth = auth.clone();
+    let connect =
+        tokio::spawn(async move { connect_state.connect_and_choose_folder(&connect_auth).await });
+
+    // Give the connect task enough scheduling rounds to proceed through
+    // the picker flow and reach the revocation barrier wait.
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+
+    // The connect must still be waiting — it cannot have completed because
+    // the revocation barrier is held by disconnect.
+    assert!(
+        !connect.is_finished(),
+        "reconnect must block at persist until revocation completes"
+    );
+
+    // Release the revocation. Both disconnect and connect should complete.
+    release_revoke.notify_one();
+    disconnect
+        .await
+        .expect("disconnect task")
+        .expect("disconnect succeeds");
+    let connection = connect
+        .await
+        .expect("connect task")
+        .expect("connect succeeds");
+
+    assert!(connection.connected);
+    assert_eq!(
+        settings.folder_for_user("user-42"),
+        Some(folder("new-folder", "Public uploads"))
+    );
+    assert_eq!(
+        credential_store
+            .get_refresh_token("user-42")
+            .expect("read credential"),
+        Some("new-refresh-token".to_string())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P2: Picker cancellation on logout/disconnect. The global
+// active_picker_attempt slot must be freed when the owning user logs out
+// or disconnects, so a different user's Connect is not blocked with
+// AlreadyInProgress.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn clear_user_memory_cancels_active_picker_for_user() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let opened = Arc::new(AtomicBool::new(false));
+    let state = Arc::new(GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(SilentBrowser {
+            opened: opened.clone(),
+        }),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    ));
+
+    // Start a picker — it will block waiting for a callback.
+    let picker_state = state.clone();
+    let picker_auth = auth.clone();
+    let picker =
+        tokio::spawn(async move { picker_state.connect_and_choose_folder(&picker_auth).await });
+    while !opened.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    assert!(state.active_picker_attempt.lock().await.is_some());
+
+    // Logout (clear_user_memory) should cancel the picker.
+    state.clear_user_memory("user-42").await;
+
+    assert!(matches!(
+        picker.await,
+        Ok(Err(GoogleDriveOAuthError::Canceled))
+    ));
+    assert!(state.active_picker_attempt.lock().await.is_none());
+}
+
+#[tokio::test]
+async fn disconnect_user_cancels_active_picker_for_user() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let opened = Arc::new(AtomicBool::new(false));
+    let credential_store = Arc::new(InMemoryGoogleDriveCredentialStore::default());
+    credential_store
+        .set_refresh_token("user-42", "refresh-token")
+        .expect("seed credential");
+    let state = Arc::new(GoogleDriveState::with_oauth_adapters(
+        credential_store,
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::with_folder("folder-42", "Uploads")),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(SilentBrowser {
+            opened: opened.clone(),
+        }),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    ));
+
+    // Start a picker — it will block waiting for a callback.
+    let picker_state = state.clone();
+    let picker_auth = auth.clone();
+    let picker =
+        tokio::spawn(async move { picker_state.connect_and_choose_folder(&picker_auth).await });
+    while !opened.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    assert!(state.active_picker_attempt.lock().await.is_some());
+
+    // Disconnect should cancel the picker.
+    state
+        .disconnect_user("user-42")
+        .await
+        .expect("disconnect succeeds");
+
+    assert!(matches!(
+        picker.await,
+        Ok(Err(GoogleDriveOAuthError::Canceled))
+    ));
+    assert!(state.active_picker_attempt.lock().await.is_none());
+}
+
+#[tokio::test]
+async fn clear_user_memory_does_not_cancel_picker_for_different_user() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-A" }
+    })))
+    .await;
+    let opened = Arc::new(AtomicBool::new(false));
+    let state = Arc::new(GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(SilentBrowser {
+            opened: opened.clone(),
+        }),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    ));
+
+    // User A starts a picker — it will block waiting for a callback.
+    let picker_state = state.clone();
+    let picker_auth = auth.clone();
+    let picker =
+        tokio::spawn(async move { picker_state.connect_and_choose_folder(&picker_auth).await });
+    while !opened.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    assert!(state.active_picker_attempt.lock().await.is_some());
+
+    // User B logs out — this must NOT cancel User A's picker.
+    state.clear_user_memory("user-B").await;
+
+    // User A's picker should still be active.
+    assert!(state.active_picker_attempt.lock().await.is_some());
+    assert!(!picker.is_finished());
+
+    // Clean up: cancel User A's picker to avoid a hanging task.
+    state.clear_user_memory("user-A").await;
+    assert!(matches!(
+        picker.await,
+        Ok(Err(GoogleDriveOAuthError::Canceled))
+    ));
+}

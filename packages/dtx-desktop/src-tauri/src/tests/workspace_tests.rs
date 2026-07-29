@@ -851,3 +851,146 @@ fn get_current_workspace_root_id_command_wrapper_returns_the_bookmark_id() {
 
     assert_eq!(id.as_deref(), Some(bookmark.id.as_str()));
 }
+
+#[test]
+fn bookmark_current_root_returns_the_existing_entry_without_persisting_when_the_name_is_unchanged()
+{
+    // Re-bookmarking the current root with the same display name must return
+    // the existing entry without re-persisting (the `changed == false` path).
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+
+    let first = state.bookmark_current_root("Same").expect("first bookmark");
+    let settings_path = settings_path(data_dir.path());
+    let persisted_before = fs::metadata(&settings_path)
+        .expect("settings file")
+        .modified()
+        .expect("mtime");
+
+    // Wait briefly so a re-persist would produce a different mtime.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    let second = state
+        .bookmark_current_root("Same")
+        .expect("re-bookmark same name");
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(second.name, "Same");
+    assert_eq!(state.list_bookmarks().len(), 1);
+    // The settings file must not have been rewritten.
+    let persisted_after = fs::metadata(&settings_path)
+        .expect("settings file")
+        .modified()
+        .expect("mtime");
+    assert_eq!(
+        persisted_before, persisted_after,
+        "re-bookmarking with the same name must not persist"
+    );
+}
+
+#[test]
+fn rename_bookmark_defaults_to_basename_when_the_new_name_is_blank() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Old").expect("bookmark");
+
+    state
+        .rename_bookmark(&bookmark.id, "   ")
+        .expect("rename to blank");
+
+    let updated = state
+        .list_bookmarks()
+        .into_iter()
+        .find(|b| b.id == bookmark.id)
+        .expect("bookmark present");
+    // The basename of the canonical workspace path is the last path component.
+    let expected = canonical
+        .file_name()
+        .expect("basename")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(updated.name, expected);
+}
+
+#[test]
+fn rename_bookmark_is_a_no_op_when_the_name_is_unchanged() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Keep").expect("bookmark");
+
+    // Renaming to the same name must succeed without persisting.
+    state
+        .rename_bookmark(&bookmark.id, "Keep")
+        .expect("rename same name");
+
+    let updated = state
+        .list_bookmarks()
+        .into_iter()
+        .find(|b| b.id == bookmark.id)
+        .expect("bookmark present");
+    assert_eq!(updated.name, "Keep");
+}
+
+#[test]
+fn bookmark_current_root_command_wrapper_records_the_current_root() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let state = app.state::<WorkspaceRootState>();
+    state.set_from_dialog_selection(&root).expect("select");
+
+    let bookmark = bookmark_current_root("Mine".to_string(), app.state::<WorkspaceRootState>())
+        .expect("bookmark command");
+
+    assert_eq!(bookmark.name, "Mine");
+    assert!(!bookmark.id.is_empty());
+    assert_eq!(app.state::<WorkspaceRootState>().list_bookmarks().len(), 1);
+}
+
+#[test]
+fn rename_bookmark_command_wrapper_updates_the_display_name() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let state = app.state::<WorkspaceRootState>();
+    state.set_from_dialog_selection(&root).expect("select");
+    let bookmark = bookmark_current_root("Old".to_string(), app.state::<WorkspaceRootState>())
+        .expect("bookmark");
+
+    rename_bookmark(
+        bookmark.id.clone(),
+        "New".to_string(),
+        app.state::<WorkspaceRootState>(),
+    )
+    .expect("rename command");
+
+    let updated = app
+        .state::<WorkspaceRootState>()
+        .list_bookmarks()
+        .into_iter()
+        .find(|b| b.id == bookmark.id)
+        .expect("bookmark present");
+    assert_eq!(updated.name, "New");
+}
+
+#[test]
+fn remove_bookmark_command_wrapper_drops_the_entry() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let state = app.state::<WorkspaceRootState>();
+    state.set_from_dialog_selection(&root).expect("select");
+    let bookmark = bookmark_current_root("Drop".to_string(), app.state::<WorkspaceRootState>())
+        .expect("bookmark");
+
+    remove_bookmark(bookmark.id.clone(), app.state::<WorkspaceRootState>())
+        .expect("remove command");
+
+    assert!(app
+        .state::<WorkspaceRootState>()
+        .list_bookmarks()
+        .is_empty());
+}

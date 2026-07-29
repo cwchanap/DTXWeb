@@ -1374,5 +1374,95 @@ describe('WorkspaceService', () => {
 			}
 			expect(workspaceStore.reset).not.toHaveBeenCalled();
 		});
+
+		it('returns superseded when the transition is invalidated after hydrateRootId', async () => {
+			const rootIdDeferred = createDeferred<string | null>();
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [], error: null });
+				return vi.fn();
+			});
+			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ userSimFiles: [] });
+				return vi.fn();
+			});
+			host.switchTrustedWorkspace.mockResolvedValue({
+				outcome: 'ok',
+				path: '/canonical/path'
+			});
+			host.getCurrentWorkspaceRootId.mockReturnValue(rootIdDeferred.promise);
+			host.getWorkspaceRoot.mockResolvedValue(null);
+
+			const pending = workspaceService.switchToBookmark({
+				id: 'bm-id',
+				path: '/bm/path',
+				name: 'BM'
+			});
+
+			// Wait until the native switch succeeds and hydrateRootId is awaiting.
+			await vi.waitFor(() => {
+				expect(host.getCurrentWorkspaceRootId).toHaveBeenCalledOnce();
+			});
+			// Supersede the transition while hydrateRootId is pending.
+			workspaceService.disposeOperations();
+			rootIdDeferred.resolve('bm-id');
+
+			const result = await pending;
+
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error).toBe('Workspace selection was superseded');
+				expect('path' in result).toBe(false);
+			}
+			// loadSubWorkspaces must not have been called after the supersede.
+			expect(host.listDirectories).not.toHaveBeenCalled();
+		});
+
+		it('returns superseded when the transition is invalidated after loadSubWorkspaces', async () => {
+			const listDeferred = createDeferred<string[]>();
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({
+					path: '/canonical/path',
+					currentSubWorkspace: null,
+					subWorkspaces: [],
+					error: null
+				});
+				return vi.fn();
+			});
+			(simFileStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ userSimFiles: [] });
+				return vi.fn();
+			});
+			host.switchTrustedWorkspace.mockResolvedValue({
+				outcome: 'ok',
+				path: '/canonical/path'
+			});
+			host.getCurrentWorkspaceRootId.mockResolvedValue('bm-id');
+			host.listDirectories.mockReturnValue(listDeferred.promise);
+			host.getWorkspaceRoot.mockResolvedValue(null);
+
+			const pending = workspaceService.switchToBookmark({
+				id: 'bm-id',
+				path: '/bm/path',
+				name: 'BM'
+			});
+
+			// Wait until loadSubWorkspaces' listDirectories call is in flight.
+			await vi.waitFor(() => {
+				expect(host.listDirectories).toHaveBeenCalledOnce();
+			});
+			// Supersede the transition while sub-workspace loading is pending.
+			workspaceService.disposeOperations();
+			listDeferred.resolve(['DTXFiles.Songs']);
+
+			const result = await pending;
+
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error).toBe('Workspace selection was superseded');
+				expect('path' in result).toBe(false);
+			}
+			// loadTreeStructure must not have been called after the supersede.
+			expect(host.loadTreeStructure).not.toHaveBeenCalled();
+		});
 	});
 });

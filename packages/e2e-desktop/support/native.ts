@@ -39,7 +39,10 @@ const waitForAppHydration = async (): Promise<void> => {
 		async () =>
 			await browser.execute(() => {
 				const app = document.querySelector('#app');
-				return Boolean(app?.firstElementChild) && app?.querySelector('[role="status"]') === null;
+				return (
+					Boolean(app?.firstElementChild) &&
+					app?.querySelector('[role="status"]') === null
+				);
 			}),
 		{ timeoutMsg: 'Expected desktop app hydration to finish before native IPC' }
 	);

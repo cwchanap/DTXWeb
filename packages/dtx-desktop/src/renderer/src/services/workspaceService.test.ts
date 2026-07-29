@@ -1323,5 +1323,38 @@ describe('WorkspaceService', () => {
 			}
 			expect(workspaceStore.reset).not.toHaveBeenCalled();
 		});
+
+		it('returns a path-scoped error when setWorkspaceRoot resolves canceled', async () => {
+			host.setWorkspaceRoot.mockResolvedValue({ canceled: true, filePaths: [] });
+
+			const result = await workspaceService.switchToBookmark({
+				path: '/bm/path',
+				name: 'BM'
+			});
+
+			expect(result).toEqual({
+				ok: false,
+				error: 'The bookmarked folder could not be opened',
+				path: '/bm/path'
+			});
+			expect(workspaceStore.reset).not.toHaveBeenCalled();
+			expect(workspaceStore.setPath).not.toHaveBeenCalled();
+		});
+
+		it('returns a path-scoped error when setWorkspaceRoot resolves with no file path', async () => {
+			host.setWorkspaceRoot.mockResolvedValue({ canceled: false, filePaths: [] });
+
+			const result = await workspaceService.switchToBookmark({
+				path: '/bm/path',
+				name: 'BM'
+			});
+
+			expect(result).toEqual({
+				ok: false,
+				error: 'The bookmarked folder could not be opened',
+				path: '/bm/path'
+			});
+			expect(workspaceStore.reset).not.toHaveBeenCalled();
+		});
 	});
 });

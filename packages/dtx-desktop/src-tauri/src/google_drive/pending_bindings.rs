@@ -242,6 +242,10 @@ impl GoogleDrivePendingBindingStore {
 
 fn quarantine_corrupt_pending_bindings(path: &Path) {
     let corrupt_path = path.with_extension("json.corrupt");
+    // fs::rename fails on Windows when the target already exists, so remove a
+    // previously quarantined file first. Both calls are best-effort: if they
+    // fail the corrupt payload is left in place and the next load will retry.
+    let _ = fs::remove_file(&corrupt_path);
     let _ = fs::rename(path, &corrupt_path);
 }
 

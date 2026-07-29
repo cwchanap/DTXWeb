@@ -1244,6 +1244,111 @@ describe('updateSimfileDriveFile', () => {
 			})
 		).rejects.toThrow('Simfile not found');
 	});
+
+	// Cross-layer TOCTOU guard: verify the SQL WHERE clause actually includes
+	// the optimistic-concurrency guard. Without this, a refactor that drops
+	// the guard from the SQL would still pass the logic tests above (which
+	// mock the UPDATE result) while silently re-opening the TOCTOU window.
+	it('includes expectedPreviousDriveFileId in the UPDATE WHERE clause', async () => {
+		let capturedSql = '';
+		const db = createMockDb((sql) => {
+			capturedSql = sql;
+			return createMockStmt({
+				id: 1,
+				title: 'Song',
+				artist: 'Artist',
+				bpm: 120,
+				user_id: 'user-1',
+				is_published: 0,
+				display_id: 1,
+				download_url: 'https://drive.google.com/new',
+				google_drive_file_id: 'drive-file-new',
+				preview_url: null,
+				video_preview_url: null,
+				publish_date: '2026-01-01',
+				created_at: '2026-01-01',
+				updated_at: '2026-01-01'
+			});
+		});
+
+		await updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+			googleDriveFileId: 'drive-file-new',
+			downloadUrl: 'https://drive.google.com/uc?id=drive-file-new',
+			expectedPreviousDriveFileId: 'drive-file-old'
+		});
+
+		expect(capturedSql).toMatch(/WHERE.*google_drive_file_id = \?/s);
+		expect(capturedSql).toMatch(
+			/WHERE.*id = \?.*AND.*user_id = \?.*AND.*google_drive_file_id = \?/s
+		);
+	});
+
+	it('includes expectNoExistingDriveFile as a NULL check in the UPDATE WHERE clause', async () => {
+		let capturedSql = '';
+		const db = createMockDb((sql) => {
+			capturedSql = sql;
+			return createMockStmt({
+				id: 1,
+				title: 'Song',
+				artist: 'Artist',
+				bpm: 120,
+				user_id: 'user-1',
+				is_published: 0,
+				display_id: 1,
+				download_url: 'https://drive.google.com/new',
+				google_drive_file_id: 'drive-file-new',
+				preview_url: null,
+				video_preview_url: null,
+				publish_date: '2026-01-01',
+				created_at: '2026-01-01',
+				updated_at: '2026-01-01'
+			});
+		});
+
+		await updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+			googleDriveFileId: 'drive-file-new',
+			downloadUrl: 'https://drive.google.com/uc?id=drive-file-new',
+			expectNoExistingDriveFile: true
+		});
+
+		expect(capturedSql).toMatch(/google_drive_file_id IS NULL/);
+		expect(capturedSql).toMatch(
+			/WHERE.*id = \?.*AND.*user_id = \?.*AND.*google_drive_file_id IS NULL/s
+		);
+	});
+
+	it('omits the guard from the WHERE clause when no guard args are provided', async () => {
+		let capturedSql = '';
+		const db = createMockDb((sql) => {
+			capturedSql = sql;
+			return createMockStmt({
+				id: 1,
+				title: 'Song',
+				artist: 'Artist',
+				bpm: 120,
+				user_id: 'user-1',
+				is_published: 0,
+				display_id: 1,
+				download_url: 'https://drive.google.com/new',
+				google_drive_file_id: 'drive-file-new',
+				preview_url: null,
+				video_preview_url: null,
+				publish_date: '2026-01-01',
+				created_at: '2026-01-01',
+				updated_at: '2026-01-01'
+			});
+		});
+
+		await updateSimfileDriveFile(db as unknown as D1Database, 1, 'user-1', {
+			googleDriveFileId: 'drive-file-new',
+			downloadUrl: 'https://drive.google.com/uc?id=drive-file-new'
+		});
+
+		// The SET clause always contains `google_drive_file_id = ?`, so scope
+		// the negative assertion to the WHERE clause only.
+		expect(capturedSql).not.toMatch(/WHERE.*google_drive_file_id = \?/s);
+		expect(capturedSql).not.toMatch(/WHERE.*google_drive_file_id IS NULL/s);
+	});
 });
 
 describe('general simfile write types', () => {

@@ -157,14 +157,14 @@ pub(crate) async fn connect_google_drive_and_choose_folder<R: Runtime>(
         .map_err(sanitized_oauth_error)
 }
 
+// Kept as a separate Tauri command so the renderer can express intent
+// ("change folder" vs "initial connect") at the IPC boundary, but the
+// implementation is identical — both drive the same OAuth + picker flow.
 #[tauri::command]
 pub(crate) async fn change_google_drive_folder<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<GoogleDriveConnectionState> {
-    app.state::<GoogleDriveState>()
-        .connect_and_choose_folder(&app.state::<AuthState>())
-        .await
-        .map_err(sanitized_oauth_error)
+    connect_google_drive_and_choose_folder(app).await
 }
 
 #[tauri::command]
@@ -314,6 +314,9 @@ async fn run_upload_transaction<R: Runtime>(
         .current()
         .map_err(|_| upload_failure(DriveApiError::WorkspaceRequired))?;
     let joined = workspace_root.join(relative_path);
+    // to_string_lossy is safe here: the renderer only ever sends UTF-8 paths
+    // (it reads them from Tauri filesystem commands, which surface OS paths as
+    // UTF-8). A non-UTF-8 path would indicate a renderer bug, not user input.
     let canonical_song = crate::filesystem::canonicalize_within_workspace(
         &joined.to_string_lossy(),
         Some(&workspace_root.to_string_lossy()),

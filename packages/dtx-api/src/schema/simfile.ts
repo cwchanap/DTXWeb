@@ -199,13 +199,25 @@ const normalizeGoogleDriveDownloadUrl = (value: string, bucketUrl: string | unde
 	const trimmed = value.trim();
 	if (!trimmed) badDriveInput('Download URL is required');
 	if (trimmed.length > 2048) badDriveInput('Download URL is too long');
+	let parsed: URL;
 	try {
-		if (new URL(trimmed).protocol !== 'https:') {
-			badDriveInput('Download URL must use HTTPS');
-		}
+		parsed = new URL(trimmed);
 	} catch (error) {
 		if (error instanceof GraphQLError) throw error;
 		badDriveInput('Download URL must be a valid HTTPS URL');
+	}
+	if (parsed.protocol !== 'https:') {
+		badDriveInput('Download URL must use HTTPS');
+	}
+	// Restrict to known Google Drive download hosts so a malicious owner
+	// cannot publish an arbitrary HTTPS URL as the simfile download target.
+	// `drive.google.com` covers the /uc?id=… redirect form;
+	// `drive.usercontent.google.com` covers the direct download endpoint.
+	if (
+		parsed.hostname !== 'drive.google.com' &&
+		parsed.hostname !== 'drive.usercontent.google.com'
+	) {
+		badDriveInput('Download URL must point to Google Drive');
 	}
 	if (filterDownloadUrl(trimmed, bucketUrl) == null) {
 		badDriveInput('Download URL must not point to the simfile bucket');
@@ -789,6 +801,76 @@ builder.mutationField('createSimfile', (t) =>
 // --- Mutation.updateSimfileDriveFile ---
 
 builder.mutationField('updateSimfileDriveFile', (t) =>
+	t.field({
+		type: SimfileRef,
+		args: {
+			id: t.arg.id({ required: true }),
+			googleDriveFileId: t.arg.string({ required: true }),
+			downloadUrl: t.arg.string({ required: true })
+		},
+		authScopes: (_root, args) => ({ owner: { simfileId: String(args.id) } }),
+		resolve: async (_root, { id, googleDriveFileId, downloadUrl }, ctx) => {
+			const numeric = Number(id);
+			if (!Number.isSafeInteger(numeric)) {
+				throw new GraphQLError('Invalid simfile id', {
+					extensions: { code: 'BAD_USER_INPUT' }
+				});
+			}
+
+			const existing = await getSimfile(ctx.db, numeric);
+			if (!existing) {
+				throw new GraphQLError('Simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+			if (existing.user_id !== ctx.user!.id) {
+				throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
+			}
+
+			const normalizedDriveFileId = normalizeGoogleDriveFileId(googleDriveFileId);
+			const normalizedDownloadUrl = normalizeGoogleDriveDownloadUrl(
+				downloadUrl,
+				ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+			);
+
+			try {
+				await updateSimfileDriveFile(ctx.db, numeric, ctx.user!.id, {
+					googleDriveFileId: normalizedDriveFileId,
+					downloadUrl: normalizedDownloadUrl
+				});
+			} catch (error) {
+				if (error instanceof Error && error.message.includes('not found')) {
+					throw new GraphQLError('Simfile not found', {
+						extensions: { code: 'NOT_FOUND' }
+					});
+				}
+				throw error;
+			}
+
+			const full = await getSimfile(ctx.db, numeric);
+			if (!full) {
+				throw new GraphQLError('Simfile not found', {
+					extensions: { code: 'NOT_FOUND' }
+				});
+			}
+			return full;
+		}
+	})
+);
+
+// --- Mutation.updateSimfileDriveFileGuarded ---
+//
+// Desktop-only variant of `updateSimfileDriveFile` that adds
+// optimistic-concurrency guard arguments (`expectedPreviousDriveFileId` /
+// `expectNoExistingDriveFile`). The desktop Tauri client uses these to
+// prevent a TOCTOU race where a concurrent replacement on another device
+// could be silently overwritten. The web client does not participate in
+// Drive binding ownership and therefore calls the base
+// `updateSimfileDriveFile` mutation instead. Splitting the two keeps the
+// guard surface out of the public web schema while keeping it in the shared
+// API service for the desktop client.
+
+builder.mutationField('updateSimfileDriveFileGuarded', (t) =>
 	t.field({
 		type: SimfileRef,
 		args: {

@@ -130,8 +130,8 @@ query OwnerDriveSimfile($id: ID!) {
 "#;
 
 const UPDATE_SIMFILE_DRIVE_FILE_MUTATION: &str = r#"
-mutation UpdateSimfileDriveFile($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!, $expectedPreviousDriveFileId: String, $expectNoExistingDriveFile: Boolean) {
-  updateSimfileDriveFile(
+mutation UpdateSimfileDriveFileGuarded($id: ID!, $googleDriveFileId: String!, $downloadUrl: String!, $expectedPreviousDriveFileId: String, $expectNoExistingDriveFile: Boolean) {
+  updateSimfileDriveFileGuarded(
     id: $id
     googleDriveFileId: $googleDriveFileId
     downloadUrl: $downloadUrl
@@ -545,7 +545,7 @@ pub(crate) async fn update_drive_file_impl(
     )
     .await?;
     let value = data
-        .get("updateSimfileDriveFile")
+        .get("updateSimfileDriveFileGuarded")
         .ok_or(DriveMetadataError::InvalidResponse)?;
     if value.is_null() {
         return Err(DriveMetadataError::DefinitiveUnavailable);

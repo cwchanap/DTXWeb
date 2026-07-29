@@ -80,6 +80,7 @@ export type Mutation = {
   generateMagicLink: MagicLinkResult;
   updateSimfile: Simfile;
   updateSimfileDriveFile: Simfile;
+  updateSimfileDriveFileGuarded: Simfile;
   uploadScores: UploadScoresResult;
   upsertUserProfile: UserProfile;
 };
@@ -102,6 +103,13 @@ export type MutationUpdateSimfileArgs = {
 
 
 export type MutationUpdateSimfileDriveFileArgs = {
+  downloadUrl: Scalars['String']['input'];
+  googleDriveFileId: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationUpdateSimfileDriveFileGuardedArgs = {
   downloadUrl: Scalars['String']['input'];
   expectNoExistingDriveFile?: InputMaybe<Scalars['Boolean']['input']>;
   expectedPreviousDriveFileId?: InputMaybe<Scalars['String']['input']>;

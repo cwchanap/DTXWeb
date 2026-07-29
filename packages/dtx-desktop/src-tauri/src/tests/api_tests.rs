@@ -523,7 +523,7 @@ async fn google_drive_update_sends_only_the_drive_binding_values() {
     Mock::given(method("POST"))
         .and(path("/graphql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": { "updateSimfileDriveFile": owner_drive_simfile() }
+            "data": { "updateSimfileDriveFileGuarded": owner_drive_simfile() }
         })))
         .mount(&server)
         .await;
@@ -562,7 +562,7 @@ async fn google_drive_update_sends_only_the_drive_binding_values() {
     assert!(body["query"]
         .as_str()
         .expect("query")
-        .contains("updateSimfileDriveFile"));
+        .contains("updateSimfileDriveFileGuarded"));
 }
 
 #[tokio::test]
@@ -591,7 +591,7 @@ async fn google_drive_update_rejects_a_mismatched_server_binding_response() {
         Mock::given(method("POST"))
             .and(path("/graphql"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data": { "updateSimfileDriveFile": changed_response }
+                "data": { "updateSimfileDriveFileGuarded": changed_response }
             })))
             .mount(&server)
             .await;
@@ -2614,7 +2614,7 @@ async fn update_drive_file_impl_returns_definitive_unavailable_for_null_response
     Mock::given(method("POST"))
         .and(path("/graphql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": { "updateSimfileDriveFile": null }
+            "data": { "updateSimfileDriveFileGuarded": null }
         })))
         .mount(&server)
         .await;
@@ -2955,7 +2955,7 @@ async fn update_drive_file_impl_sends_expect_no_existing_drive_file_for_none_var
             }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": { "updateSimfileDriveFile": owner_drive_simfile() }
+            "data": { "updateSimfileDriveFileGuarded": owner_drive_simfile() }
         })))
         .mount(&server)
         .await;
@@ -2996,7 +2996,7 @@ async fn update_drive_file_impl_sends_expected_previous_drive_file_id_for_drive_
             }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": { "updateSimfileDriveFile": owner_drive_simfile() }
+            "data": { "updateSimfileDriveFileGuarded": owner_drive_simfile() }
         })))
         .mount(&server)
         .await;

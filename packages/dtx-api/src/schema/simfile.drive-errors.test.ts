@@ -51,6 +51,22 @@ const mutation = `mutation UpdateDrive(
 	) { id }
 }`;
 
+const guardedMutation = `mutation UpdateDriveGuarded(
+	$id: ID!
+	$googleDriveFileId: String!
+	$downloadUrl: String!
+	$expectedPreviousDriveFileId: String
+	$expectNoExistingDriveFile: Boolean
+) {
+	updateSimfileDriveFileGuarded(
+		id: $id
+		googleDriveFileId: $googleDriveFileId
+		downloadUrl: $downloadUrl
+		expectedPreviousDriveFileId: $expectedPreviousDriveFileId
+		expectNoExistingDriveFile: $expectNoExistingDriveFile
+	) { id }
+}`;
+
 const executeUpdate = (
 	ctx: Ctx,
 	overrides: Partial<{ id: string; googleDriveFileId: string; downloadUrl: string }> = {}
@@ -134,7 +150,16 @@ describe('Mutation.updateSimfileDriveFile error paths', () => {
 		mockedGetSimfile.mockResolvedValue(ownedSimfile);
 		mockedUpdateDriveFile.mockRejectedValue(new Error('Drive binding mismatch'));
 
-		const result = await executeUpdate(makeCtx({ user: { id: 'u1' } as Ctx['user'] }));
+		const result = await runQuery(makeCtx({ user: { id: 'u1' } as Ctx['user'] }), {
+			query: guardedMutation,
+			variables: {
+				id: '42',
+				googleDriveFileId: 'drive-file-123',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-file-123',
+				expectedPreviousDriveFileId: 'old-drive-file',
+				expectNoExistingDriveFile: null
+			}
+		});
 
 		expect(result.errors?.[0]?.extensions?.code).toBe('DRIVE_BINDING_MISMATCH');
 		expect(result.errors?.[0]?.message).toContain('Drive binding changed');

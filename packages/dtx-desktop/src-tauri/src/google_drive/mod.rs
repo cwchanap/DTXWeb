@@ -10,6 +10,7 @@ use crate::native_persistence::resolve_dirs;
 use async_trait::async_trait;
 use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::Mutex as AsyncMutex;
+use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 #[cfg(all(feature = "e2e", debug_assertions))]
@@ -409,12 +410,15 @@ impl GoogleDriveState {
 
         let access_token = Zeroizing::new(response.access_token);
         let replacement_refresh_token = response.refresh_token.map(Zeroizing::new);
-        let scope_is_valid = match response.scope.as_deref() {
-            None => true,
-            Some(scope) => scope
+        // Mirror the initial-token-exchange scope check (oauth.rs): a missing
+        // scope is treated as invalid rather than silently accepted. Google
+        // always returns scope on refresh today, so this closes a latent
+        // asymmetry where a malformed/empty-scope refresh would be honored.
+        let scope_is_valid = response.scope.as_deref().is_some_and(|scope| {
+            scope
                 .split_ascii_whitespace()
-                .any(|candidate| candidate == GOOGLE_DRIVE_FILE_SCOPE),
-        };
+                .any(|candidate| candidate == GOOGLE_DRIVE_FILE_SCOPE)
+        });
         if access_token.trim().is_empty()
             || response.expires_in == 0
             || !scope_is_valid
@@ -636,6 +640,14 @@ impl GoogleDriveState {
     /// Reconciliation is deliberately detached from session restoration. It
     /// is owner-scoped, best effort, and never delays the renderer becoming
     /// authenticated.
+    ///
+    /// A `CancellationToken` is created and handed to the reconciliation so
+    /// that a session change (logout / user switch) can interrupt the loop
+    /// mid-phase rather than waiting for the current HTTP retry chain to
+    /// exhaust (which can run tens of seconds). A watcher task polls the
+    /// session epoch and cancels the token on change; the `tokio::select!`
+    /// then drops the in-flight reconciliation future, aborting any pending
+    /// HTTP call.
     pub(crate) fn spawn_current_user_reconciliation(app: AppHandle) {
         tauri::async_runtime::spawn(async move {
             let drive = app.state::<GoogleDriveState>();
@@ -656,15 +668,38 @@ impl GoogleDriveState {
             if !auth.matches_session_epoch(&session_epoch).await {
                 return;
             }
-            upload::reconcile_pending_bindings_for_session(
-                api,
-                pending_store,
-                drive.metadata_client.as_ref(),
-                &auth,
-                &session_epoch,
-                &access_token,
-            )
-            .await;
+            let cancellation = CancellationToken::new();
+            // Watcher: poll the session epoch and cancel the token when it
+            // changes (logout / user switch). The 1s poll cadence is the
+            // upper bound on how long an in-flight HTTP call runs after a
+            // session change before being dropped by the select below.
+            let watcher = {
+                let cancellation = cancellation.clone();
+                let auth_owned = app.state::<AuthState>().inner().clone();
+                let expected_epoch = session_epoch.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        if !auth_owned.matches_session_epoch(&expected_epoch).await {
+                            cancellation.cancel();
+                            return;
+                        }
+                    }
+                })
+            };
+            tokio::select! {
+                _ = cancellation.cancelled() => {}
+                _ = upload::reconcile_pending_bindings_for_session(
+                    api,
+                    pending_store,
+                    drive.metadata_client.as_ref(),
+                    &auth,
+                    &session_epoch,
+                    &access_token,
+                    &cancellation,
+                ) => {}
+            }
+            watcher.abort();
         });
     }
 

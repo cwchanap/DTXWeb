@@ -2779,6 +2779,7 @@ async fn direct_create_and_auth_sweep_share_the_same_binding_lifecycle_lock() {
                 metadata.as_ref(),
                 auth.as_ref(),
                 ACCESS_TOKEN,
+                &CancellationToken::new(),
             )
             .await;
         })
@@ -3013,6 +3014,7 @@ async fn already_referenced_pending_file_is_retained_when_drive_validation_fails
                 &metadata,
                 &auth,
                 ACCESS_TOKEN,
+                &CancellationToken::new(),
             )
             .await;
         } else {
@@ -3088,6 +3090,7 @@ async fn already_referenced_pending_file_is_retained_after_repeated_patch_failur
                 &metadata,
                 &auth,
                 ACCESS_TOKEN,
+                &CancellationToken::new(),
             )
             .await;
         } else {
@@ -4087,6 +4090,7 @@ async fn ambiguous_owner_metadata_failures_retain_auth_sweep_bindings() {
             &metadata,
             &authenticated_user("user-42").await,
             ACCESS_TOKEN,
+            &CancellationToken::new(),
         )
         .await;
 
@@ -4137,6 +4141,7 @@ async fn malformed_owner_identity_never_triggers_compensation() {
                 &metadata,
                 &auth,
                 ACCESS_TOKEN,
+                &CancellationToken::new(),
             )
             .await;
         } else {
@@ -4237,6 +4242,7 @@ async fn reconciliation_auth_restore_sweeps_only_the_current_user_without_creati
         &metadata,
         &authenticated_user("user-42").await,
         ACCESS_TOKEN,
+        &CancellationToken::new(),
     )
     .await;
 
@@ -4293,6 +4299,7 @@ async fn reconciliation_aborts_after_blocked_owner_fetch_when_user_switches() {
         let metadata = Arc::clone(&metadata);
         let auth = Arc::clone(&auth);
         tokio::spawn(async move {
+            let cancellation = CancellationToken::new();
             reconcile_pending_bindings_for_session(
                 api.as_ref(),
                 store.as_ref(),
@@ -4300,6 +4307,7 @@ async fn reconciliation_aborts_after_blocked_owner_fetch_when_user_switches() {
                 auth.as_ref(),
                 &epoch,
                 "access-token-a",
+                &cancellation,
             )
             .await;
         })
@@ -4368,6 +4376,7 @@ async fn reconciliation_aborts_after_blocked_drive_fetch_on_same_user_relogin() 
         let metadata = Arc::clone(&metadata);
         let auth = Arc::clone(&auth);
         tokio::spawn(async move {
+            let cancellation = CancellationToken::new();
             reconcile_pending_bindings_for_session(
                 api.as_ref(),
                 store.as_ref(),
@@ -4375,6 +4384,7 @@ async fn reconciliation_aborts_after_blocked_drive_fetch_on_same_user_relogin() 
                 auth.as_ref(),
                 &epoch,
                 "access-token-a",
+                &cancellation,
             )
             .await;
         })
@@ -5054,6 +5064,7 @@ async fn reconciliation_does_not_overwrite_a_newer_drive_binding_established_by_
         &metadata,
         &authenticated_user("user-42").await,
         ACCESS_TOKEN,
+        &CancellationToken::new(),
     )
     .await;
 
@@ -5146,6 +5157,7 @@ async fn reconciliation_infers_expected_previous_none_for_legacy_first_upload() 
         &metadata,
         &authenticated_user("user-42").await,
         ACCESS_TOKEN,
+        &CancellationToken::new(),
     )
     .await;
 
@@ -5222,6 +5234,7 @@ async fn reconciliation_fails_closed_for_legacy_explicit_replacement() {
         &metadata,
         &authenticated_user("user-42").await,
         ACCESS_TOKEN,
+        &CancellationToken::new(),
     )
     .await;
 

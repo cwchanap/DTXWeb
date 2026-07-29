@@ -16,7 +16,7 @@
 		clampWidth as clampDetailWidth
 	} from '../../stores/preferencesStore';
 	import { resolveShellMode } from '../../lib/shellMode';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	let width = $state(typeof window !== 'undefined' ? window.innerWidth : 1280);
 	let paletteOpen = $state(false);
@@ -46,10 +46,20 @@
 	// Auto-reveal the detail pane when a song is selected from the library or
 	// cloud list. Without this, clicking a song while the pane was previously
 	// hidden leaves the selection silently invisible until the user toggles the
-	// pane back open. setDetailVisible is a no-op before preferences have
-	// loaded and only persists when visibility actually changes.
+	// pane back open. The reveal fires only on a genuinely new selection: the
+	// effect does not subscribe to detailPaneVisible (read via untrack), so
+	// hiding the pane while a song stays selected doesn't immediately re-trigger
+	// it. setDetailVisible is a no-op before preferences have loaded.
+	let prevSelectionKey: string | number | null = null;
 	$effect(() => {
-		if (isListSection && hasSelection && !$preferencesStore.detailPaneVisible) {
+		const selectionKey =
+			$workspaceStore.selectedSong?.path ?? $workspaceStore.selectedCloudSimFile?.id ?? null;
+		if (!$preferencesStore.loaded) return;
+		const isNewSelection =
+			isListSection && selectionKey !== null && selectionKey !== prevSelectionKey;
+		prevSelectionKey = selectionKey;
+		if (!isNewSelection) return;
+		if (!untrack(() => $preferencesStore.detailPaneVisible)) {
 			preferencesStore.setDetailVisible(true);
 		}
 	});

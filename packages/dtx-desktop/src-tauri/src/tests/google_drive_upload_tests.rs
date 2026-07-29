@@ -5054,7 +5054,7 @@ async fn reconciliation_does_not_overwrite_a_newer_drive_binding_established_by_
         .patches
         .lock()
         .unwrap()
-        .push_back(Err(DriveMetadataError::DefinitiveUnavailable));
+        .push_back(Err(DriveMetadataError::BindingMismatch));
     // Compensation deletes the orphaned Device A file X.
     api.deletes.lock().unwrap().push_back(Ok(()));
 
@@ -5148,7 +5148,7 @@ async fn reconciliation_infers_expected_previous_none_for_legacy_first_upload() 
         .patches
         .lock()
         .unwrap()
-        .push_back(Err(DriveMetadataError::DefinitiveUnavailable));
+        .push_back(Err(DriveMetadataError::BindingMismatch));
     api.deletes.lock().unwrap().push_back(Ok(()));
 
     reconcile_pending_bindings_for_current_user(

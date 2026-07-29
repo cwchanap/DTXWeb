@@ -202,9 +202,10 @@ const normalizeGoogleDriveDownloadUrl = (value: string, bucketUrl: string | unde
 	let parsed: URL;
 	try {
 		parsed = new URL(trimmed);
-	} catch (error) {
-		if (error instanceof GraphQLError) throw error;
-		badDriveInput('Download URL must be a valid HTTPS URL');
+	} catch {
+		throw new GraphQLError('Download URL must be a valid HTTPS URL', {
+			extensions: { code: 'BAD_USER_INPUT' }
+		});
 	}
 	if (parsed.protocol !== 'https:') {
 		badDriveInput('Download URL must use HTTPS');
@@ -800,6 +801,67 @@ builder.mutationField('createSimfile', (t) =>
 
 // --- Mutation.updateSimfileDriveFile ---
 
+const resolveUpdateSimfileDriveFile = async (
+	ctx: Ctx,
+	id: string,
+	googleDriveFileId: string,
+	downloadUrl: string,
+	guards?: { expectedPreviousDriveFileId?: string; expectNoExistingDriveFile?: boolean }
+): Promise<SimfileWithDtxFiles> => {
+	const numeric = Number(id);
+	if (!Number.isSafeInteger(numeric)) {
+		throw new GraphQLError('Invalid simfile id', {
+			extensions: { code: 'BAD_USER_INPUT' }
+		});
+	}
+
+	const existing = await getSimfile(ctx.db, numeric);
+	if (!existing) {
+		throw new GraphQLError('Simfile not found', {
+			extensions: { code: 'NOT_FOUND' }
+		});
+	}
+	if (existing.user_id !== ctx.user!.id) {
+		throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
+	}
+
+	const normalizedDriveFileId = normalizeGoogleDriveFileId(googleDriveFileId);
+	const normalizedDownloadUrl = normalizeGoogleDriveDownloadUrl(
+		downloadUrl,
+		ctx.env.PUBLIC_SIMFILE_BUCKET_URL
+	);
+
+	try {
+		await updateSimfileDriveFile(ctx.db, numeric, ctx.user!.id, {
+			googleDriveFileId: normalizedDriveFileId,
+			downloadUrl: normalizedDownloadUrl,
+			expectedPreviousDriveFileId: guards?.expectedPreviousDriveFileId,
+			expectNoExistingDriveFile: guards?.expectNoExistingDriveFile
+		});
+	} catch (error) {
+		if (guards && error instanceof Error && error.message.includes('Drive binding mismatch')) {
+			throw new GraphQLError(
+				'Simfile Drive binding changed since the expected previous value',
+				{ extensions: { code: 'DRIVE_BINDING_MISMATCH' } }
+			);
+		}
+		if (error instanceof Error && error.message.includes('not found')) {
+			throw new GraphQLError('Simfile not found', {
+				extensions: { code: 'NOT_FOUND' }
+			});
+		}
+		throw error;
+	}
+
+	const full = await getSimfile(ctx.db, numeric);
+	if (!full) {
+		throw new GraphQLError('Simfile not found', {
+			extensions: { code: 'NOT_FOUND' }
+		});
+	}
+	return full;
+};
+
 builder.mutationField('updateSimfileDriveFile', (t) =>
 	t.field({
 		type: SimfileRef,
@@ -809,52 +871,8 @@ builder.mutationField('updateSimfileDriveFile', (t) =>
 			downloadUrl: t.arg.string({ required: true })
 		},
 		authScopes: (_root, args) => ({ owner: { simfileId: String(args.id) } }),
-		resolve: async (_root, { id, googleDriveFileId, downloadUrl }, ctx) => {
-			const numeric = Number(id);
-			if (!Number.isSafeInteger(numeric)) {
-				throw new GraphQLError('Invalid simfile id', {
-					extensions: { code: 'BAD_USER_INPUT' }
-				});
-			}
-
-			const existing = await getSimfile(ctx.db, numeric);
-			if (!existing) {
-				throw new GraphQLError('Simfile not found', {
-					extensions: { code: 'NOT_FOUND' }
-				});
-			}
-			if (existing.user_id !== ctx.user!.id) {
-				throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
-			}
-
-			const normalizedDriveFileId = normalizeGoogleDriveFileId(googleDriveFileId);
-			const normalizedDownloadUrl = normalizeGoogleDriveDownloadUrl(
-				downloadUrl,
-				ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-			);
-
-			try {
-				await updateSimfileDriveFile(ctx.db, numeric, ctx.user!.id, {
-					googleDriveFileId: normalizedDriveFileId,
-					downloadUrl: normalizedDownloadUrl
-				});
-			} catch (error) {
-				if (error instanceof Error && error.message.includes('not found')) {
-					throw new GraphQLError('Simfile not found', {
-						extensions: { code: 'NOT_FOUND' }
-					});
-				}
-				throw error;
-			}
-
-			const full = await getSimfile(ctx.db, numeric);
-			if (!full) {
-				throw new GraphQLError('Simfile not found', {
-					extensions: { code: 'NOT_FOUND' }
-				});
-			}
-			return full;
-		}
+		resolve: async (_root, { id, googleDriveFileId, downloadUrl }, ctx) =>
+			resolveUpdateSimfileDriveFile(ctx, String(id), googleDriveFileId, downloadUrl)
 	})
 );
 
@@ -891,60 +909,19 @@ builder.mutationField('updateSimfileDriveFileGuarded', (t) =>
 				expectNoExistingDriveFile
 			},
 			ctx
-		) => {
-			const numeric = Number(id);
-			if (!Number.isSafeInteger(numeric)) {
-				throw new GraphQLError('Invalid simfile id', {
-					extensions: { code: 'BAD_USER_INPUT' }
-				});
-			}
-
-			const existing = await getSimfile(ctx.db, numeric);
-			if (!existing) {
-				throw new GraphQLError('Simfile not found', {
-					extensions: { code: 'NOT_FOUND' }
-				});
-			}
-			if (existing.user_id !== ctx.user!.id) {
-				throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
-			}
-
-			const normalizedDriveFileId = normalizeGoogleDriveFileId(googleDriveFileId);
-			const normalizedDownloadUrl = normalizeGoogleDriveDownloadUrl(
+		) =>
+			resolveUpdateSimfileDriveFile(
+				ctx,
+				String(id),
+				googleDriveFileId,
 				downloadUrl,
-				ctx.env.PUBLIC_SIMFILE_BUCKET_URL
-			);
-
-			try {
-				await updateSimfileDriveFile(ctx.db, numeric, ctx.user!.id, {
-					googleDriveFileId: normalizedDriveFileId,
-					downloadUrl: normalizedDownloadUrl,
-					expectedPreviousDriveFileId: expectedPreviousDriveFileId ?? undefined,
-					expectNoExistingDriveFile: expectNoExistingDriveFile ?? undefined
-				});
-			} catch (error) {
-				if (error instanceof Error && error.message.includes('Drive binding mismatch')) {
-					throw new GraphQLError(
-						'Simfile Drive binding changed since the expected previous value',
-						{ extensions: { code: 'DRIVE_BINDING_MISMATCH' } }
-					);
-				}
-				if (error instanceof Error && error.message.includes('not found')) {
-					throw new GraphQLError('Simfile not found', {
-						extensions: { code: 'NOT_FOUND' }
-					});
-				}
-				throw error;
-			}
-
-			const full = await getSimfile(ctx.db, numeric);
-			if (!full) {
-				throw new GraphQLError('Simfile not found', {
-					extensions: { code: 'NOT_FOUND' }
-				});
-			}
-			return full;
-		}
+				expectedPreviousDriveFileId != null || expectNoExistingDriveFile != null
+					? {
+							expectedPreviousDriveFileId: expectedPreviousDriveFileId ?? undefined,
+							expectNoExistingDriveFile: expectNoExistingDriveFile ?? undefined
+						}
+					: undefined
+			)
 	})
 );
 

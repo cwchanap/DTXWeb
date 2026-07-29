@@ -750,6 +750,39 @@ impl GoogleDriveState {
         let _ = write_callback_response(&mut stream).await;
         let PickerCallback::AuthorizationCode { code, folder_id } = callback?;
 
+        // Acquire the revocation barrier BEFORE exchanging the authorisation
+        // code. `disconnect_user` acquires this same barrier before the
+        // lifecycle lock and holds it across the entire remote /revoke call.
+        // Google's /revoke invalidates ALL tokens under the same user+project
+        // grant, not just the supplied token, so exchanging (or persisting)
+        // a replacement token while a prior grant's revocation is in flight
+        // would yield tokens that are already invalidated. Acquiring the
+        // barrier here — before exchange — closes both races:
+        //   1. If disconnect has already acquired the barrier, this blocks
+        //      until revocation completes, then the recheck below bails out
+        //      because the lifecycle generation no longer matches.
+        //   2. If this picker acquires the barrier first, disconnect blocks
+        //      on the barrier until exchange/validate/persist complete; the
+        //      replacement token is therefore issued and stored before the
+        //      old revocation runs, so it is not invalidated.
+        // The barrier is held across exchange, validation, and persist, then
+        // released when `_revocation_guard` goes out of scope. The lifecycle
+        // lock is acquired in the same order (barrier → lifecycle) as in
+        // `disconnect_user`, so there is no deadlock.
+        let revocation_barrier = self.revocation_barrier_for_user(user_id);
+        let _revocation_guard = revocation_barrier.lock().await;
+        // Recheck the lifecycle generation and authenticated user after
+        // acquiring the barrier. A disconnect may have invalidated the
+        // lifecycle and cancelled this picker while it was waiting for the
+        // barrier; the cancellation token is no longer observed (the picker
+        // has left the `select!`), so an explicit recheck is required to
+        // avoid exchanging a code for a grant that is being revoked.
+        if self.user_lifecycle_generation(user_id) != picker_generation
+            || auth.current_user_id().await.as_deref() != Some(user_id)
+        {
+            return Err(GoogleDriveOAuthError::Canceled);
+        }
+
         let redirect_uri = attempt.redirect_uri();
         let token_response = self
             .oauth_provider
@@ -776,17 +809,6 @@ impl GoogleDriveState {
         let expires_at = Instant::now()
             .checked_add(Duration::from_secs(tokens.expires_in))
             .ok_or(GoogleDriveOAuthError::InvalidResponse)?;
-        // Acquire the revocation barrier before the lifecycle lock. If a
-        // prior disconnect is still revoking the old grant, this blocks
-        // until revocation completes — Google's /revoke invalidates ALL
-        // tokens under the same user+project grant, so persisting a new
-        // refresh token before the old revocation finishes would result
-        // in the new token also being invalidated. The barrier is
-        // acquired before the lifecycle lock to avoid a deadlock with
-        // `disconnect_user`, which acquires the lifecycle lock first and
-        // the revocation barrier second (but never holds both at once).
-        let revocation_barrier = self.revocation_barrier_for_user(user_id);
-        let _revocation_guard = revocation_barrier.lock().await;
         let lifecycle = self.lifecycle_lock_for_user(user_id);
         let _guard = lifecycle.lock().await;
         if self.user_lifecycle_generation(user_id) != picker_generation

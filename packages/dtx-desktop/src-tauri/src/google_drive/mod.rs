@@ -578,6 +578,27 @@ impl GoogleDriveState {
         &self,
         user_id: &str,
     ) -> std::result::Result<GoogleDriveDisconnectResult, GoogleDriveOAuthError> {
+        // The revocation barrier is acquired BEFORE the lifecycle lock and
+        // held across the entire disconnect (local cleanup + remote
+        // revocation). `run_picker_attempt` uses the same lock order
+        // (barrier → lifecycle) and acquires the barrier before exchanging
+        // the authorisation code, so a reconnect that races with disconnect
+        // cannot exchange, validate, or persist a replacement token until
+        // revocation has completed. Google's /revoke invalidates ALL tokens
+        // under the same user+project grant, not just the supplied token,
+        // so any replacement token persisted (or even exchanged) before the
+        // old revocation finishes would also be invalidated. Holding the
+        // barrier from the start closes both races:
+        //   1. A fast reconnect can no longer acquire the barrier first,
+        //      persist a new token, and then have it invalidated by the
+        //      old revocation — disconnect now wins the barrier because it
+        //      acquires it before releasing any prior lock.
+        //   2. A reconnect can no longer exchange its authorisation code
+        //      concurrently with revocation and then persist already-
+        //      invalidated tokens — the barrier blocks exchange itself.
+        let revocation_barrier = self.revocation_barrier_for_user(user_id);
+        let _revocation_guard = revocation_barrier.lock().await;
+
         // Phase 1 (under the lifecycle lock): invalidate the lifecycle,
         // cancel in-flight operations and the active OAuth picker, and remove
         // all local credentials and folder state. This ensures no new upload
@@ -615,43 +636,34 @@ impl GoogleDriveState {
             delete_result.map_err(|_| GoogleDriveOAuthError::CredentialStore)?;
             settings_result.map_err(|_| GoogleDriveOAuthError::LocalState)?;
             token
+            // The lifecycle guard is dropped here, but the revocation barrier
+            // remains held. Reconnect/recheck can proceed in parallel with
+            // revocation, but the picker's exchange/validate/persist steps
+            // remain blocked until revocation completes.
         };
 
-        // Phase 2 (outside the lifecycle lock): revoke the refresh token on
-        // Google's side. This is a best-effort network call with a 30-second
-        // timeout. Holding the lifecycle lock across it would block
-        // reconnect/recheck for up to 30 seconds; releasing it here lets the
-        // user reconnect immediately while revocation proceeds in the
-        // background. The token is already deleted locally, so no new
-        // upload can use it regardless of the revocation outcome.
-        //
-        // The revocation barrier IS held across the call, however. Google's
-        // /revoke endpoint invalidates ALL tokens under the same user+project
-        // grant — not just the specific token supplied — so a reconnect that
-        // persists a replacement refresh token before the old revocation
-        // completes would also have its new token invalidated. The barrier
-        // blocks only the persist step of a new connection (in
-        // `run_picker_attempt`); access-token refresh, cache operations, and
-        // the picker flow itself (browser, consent, callback, token exchange,
-        // folder validation) proceed in parallel with revocation.
+        // Phase 2 (outside the lifecycle lock, still under the revocation
+        // barrier): revoke the refresh token on Google's side. This is a
+        // best-effort network call with a 30-second timeout. Holding the
+        // lifecycle lock across it would block reconnect/recheck for up to
+        // 30 seconds; releasing it here lets the user reconnect immediately
+        // while revocation proceeds in the background. The token is already
+        // deleted locally, so no new upload can use it regardless of the
+        // revocation outcome.
         let mut revocation_unconfirmed = false;
-        {
-            let revocation_barrier = self.revocation_barrier_for_user(user_id);
-            let _revocation_guard = revocation_barrier.lock().await;
-            match refresh_token.as_ref() {
-                Ok(Some(token)) => {
-                    if self
-                        .oauth_provider
-                        .revoke_refresh_token(token)
-                        .await
-                        .is_err()
-                    {
-                        revocation_unconfirmed = true;
-                    }
+        match refresh_token.as_ref() {
+            Ok(Some(token)) => {
+                if self
+                    .oauth_provider
+                    .revoke_refresh_token(token)
+                    .await
+                    .is_err()
+                {
+                    revocation_unconfirmed = true;
                 }
-                Ok(None) => {}
-                Err(_) => revocation_unconfirmed = true,
             }
+            Ok(None) => {}
+            Err(_) => revocation_unconfirmed = true,
         }
 
         Ok(GoogleDriveDisconnectResult {
@@ -773,11 +785,23 @@ impl GoogleDriveState {
     /// slot — without this, a second user's Connect command would be
     /// rejected as `AlreadyInProgress` until the first user's callback
     /// arrives or the five-minute picker timeout expires.
+    ///
+    /// The matching attempt is removed from the slot SYNCHRONOUSLY while
+    /// holding the slot mutex, then the mutex is released and the removed
+    /// attempt's cancellation token is signalled. This guarantees that
+    /// once `clear_user_memory` / `disconnect_user` returns, the slot is
+    /// already empty — a different user's Connect issued immediately
+    /// afterward cannot observe a stale `AlreadyInProgress`. The picker
+    /// task's own `clear()`/`take()` calls become no-ops (the slot is
+    /// already empty), so the task observes `Canceled` and exits.
     async fn cancel_active_picker_for_user(&self, user_id: &str) {
         let token = {
-            let active = self.active_picker_attempt.lock().await;
+            let mut active = self.active_picker_attempt.lock().await;
             match active.as_ref() {
-                Some(attempt) if attempt.user_id() == user_id => attempt.cancellation().clone(),
+                Some(attempt) if attempt.user_id() == user_id => {
+                    let removed = active.take().expect("attempt matched above");
+                    removed.cancellation().clone()
+                }
                 _ => return,
             }
         };

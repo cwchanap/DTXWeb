@@ -2433,18 +2433,20 @@ async fn active_picker_attempt_guard_take_returns_canceled_when_slot_is_empty() 
 }
 
 // ---------------------------------------------------------------------------
-// P1: Revocation barrier — reconnect persist must wait for in-flight
-// revocation to complete. Google's /revoke invalidates ALL tokens under
-// the same user+project grant, so persisting a new refresh token before
-// the old revocation finishes would result in the new token also being
-// invalidated.
+// P1: Revocation barrier — a reconnect racing with a disconnect must not
+// exchange its authorisation code (let alone persist a replacement token)
+// until the in-flight revocation has completed. Google's /revoke
+// invalidates ALL tokens under the same user+project grant, so exchanging
+// or persisting a replacement token before the old revocation finishes
+// would yield tokens that are already invalidated.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn reconnect_persist_waits_for_in_flight_revocation() {
+async fn reconnect_exchange_waits_for_in_flight_revocation() {
     struct BlockingRevokeWithExchangeProvider {
         revoke_entered: Arc<Notify>,
         release_revoke: Arc<Notify>,
+        exchange_calls: Arc<AtomicUsize>,
         exchange_response: OAuthTokenResponse,
     }
 
@@ -2454,6 +2456,7 @@ async fn reconnect_persist_waits_for_in_flight_revocation() {
             &self,
             _request: TokenExchangeRequest,
         ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+            self.exchange_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.exchange_response.clone())
         }
         async fn refresh_access_token(
@@ -2480,9 +2483,11 @@ async fn reconnect_persist_waits_for_in_flight_revocation() {
 
     let revoke_entered = Arc::new(Notify::new());
     let release_revoke = Arc::new(Notify::new());
+    let exchange_calls = Arc::new(AtomicUsize::new(0));
     let provider = Arc::new(BlockingRevokeWithExchangeProvider {
         revoke_entered: Arc::clone(&revoke_entered),
         release_revoke: Arc::clone(&release_revoke),
+        exchange_calls: Arc::clone(&exchange_calls),
         exchange_response: token_response("new-access-token", Some("new-refresh-token")),
     });
 
@@ -2505,26 +2510,27 @@ async fn reconnect_persist_waits_for_in_flight_revocation() {
         ),
     ));
 
-    // Start disconnect — it will block on revocation while holding the
-    // revocation barrier.
+    // Start disconnect — it acquires the revocation barrier first, then the
+    // lifecycle lock, performs local cleanup, releases the lifecycle lock,
+    // and blocks on the remote /revoke call while still holding the barrier.
     let disconnect_state = state.clone();
     let mut revoke_entered_wait = Box::pin(revoke_entered.notified());
     let disconnect = tokio::spawn(async move { disconnect_state.disconnect_user("user-42").await });
 
-    // Wait for revocation to be entered — confirms disconnect has released
-    // the lifecycle lock and is now holding the revocation barrier.
+    // Wait for revocation to be entered — confirms disconnect holds the
+    // revocation barrier and is blocked on the network.
     revoke_entered_wait.as_mut().await;
 
-    // Start a reconnect. It should proceed through the picker flow
-    // (browser, callback, token exchange, folder validation) but block at
-    // the persist step waiting for the revocation barrier.
+    // Start a reconnect. Its callback arrives immediately (CallbackBrowser
+    // connects synchronously), so it reaches the revocation barrier wait
+    // before exchange_code is ever called.
     let connect_state = state.clone();
     let connect_auth = auth.clone();
     let connect =
         tokio::spawn(async move { connect_state.connect_and_choose_folder(&connect_auth).await });
 
-    // Give the connect task enough scheduling rounds to proceed through
-    // the picker flow and reach the revocation barrier wait.
+    // Give the connect task enough scheduling rounds to proceed through the
+    // picker flow and reach the revocation barrier wait.
     for _ in 0..20 {
         tokio::task::yield_now().await;
     }
@@ -2533,7 +2539,13 @@ async fn reconnect_persist_waits_for_in_flight_revocation() {
     // the revocation barrier is held by disconnect.
     assert!(
         !connect.is_finished(),
-        "reconnect must block at persist until revocation completes"
+        "reconnect must block at the revocation barrier until revocation completes"
+    );
+    // exchange_code must NOT have been called while revocation is in flight.
+    assert_eq!(
+        exchange_calls.load(Ordering::SeqCst),
+        0,
+        "exchange_code must not be called before revocation completes"
     );
 
     // Release the revocation. Both disconnect and connect should complete.
@@ -2548,6 +2560,11 @@ async fn reconnect_persist_waits_for_in_flight_revocation() {
         .expect("connect succeeds");
 
     assert!(connection.connected);
+    assert_eq!(
+        exchange_calls.load(Ordering::SeqCst),
+        1,
+        "exchange_code must be called exactly once after revocation completes"
+    );
     assert_eq!(
         settings.folder_for_user("user-42"),
         Some(folder("new-folder", "Public uploads"))
@@ -2704,6 +2721,100 @@ async fn clear_user_memory_does_not_cancel_picker_for_different_user() {
     state.clear_user_memory("user-A").await;
     assert!(matches!(
         picker.await,
+        Ok(Err(GoogleDriveOAuthError::Canceled))
+    ));
+}
+
+#[tokio::test]
+async fn clear_user_memory_frees_picker_slot_before_picker_task_exits() {
+    // Regression: `cancel_active_picker_for_user` must remove the matching
+    // attempt from the global slot SYNCHRONOUSLY (while holding the slot
+    // mutex), not merely signal its cancellation token and leave the slot
+    // populated for the picker task to clear later. If the slot is left
+    // populated, a different user's Connect issued immediately after
+    // `clear_user_memory` returns — before the cancelled picker task has
+    // been scheduled — would be rejected as `AlreadyInProgress`. The
+    // sibling tests above await the cancelled picker task before asserting
+    // the slot is empty, so they do not cover this boundary.
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-A" }
+    })))
+    .await;
+    let opened_a = Arc::new(AtomicBool::new(false));
+    let state = Arc::new(GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(SilentBrowser {
+            opened: opened_a.clone(),
+        }),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    ));
+
+    // User A starts a picker — it blocks waiting for a callback.
+    let picker_state = state.clone();
+    let picker_auth = auth.clone();
+    let picker_a =
+        tokio::spawn(async move { picker_state.connect_and_choose_folder(&picker_auth).await });
+    while !opened_a.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    assert!(state.active_picker_attempt.lock().await.is_some());
+
+    // Logout User A. `clear_user_memory` must take the slot out
+    // synchronously so it is empty by the time the call returns.
+    state.clear_user_memory("user-A").await;
+    assert!(
+        state.active_picker_attempt.lock().await.is_none(),
+        "picker slot must be empty immediately after clear_user_memory returns"
+    );
+
+    // Switch the authenticated user to User B and start their picker
+    // IMMEDIATELY — without awaiting User A's cancelled picker task. This
+    // must not be rejected as `AlreadyInProgress`; User B's picker must
+    // occupy the slot. We assert on the slot directly rather than on a
+    // browser-opened flag because the state's `PickerBrowser` is shared
+    // and already consumed by User A's picker.
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-B" }
+    })))
+    .await;
+    let picker_b_state = state.clone();
+    let picker_b_auth = auth.clone();
+    let picker_b = tokio::spawn(async move {
+        picker_b_state
+            .connect_and_choose_folder(&picker_b_auth)
+            .await
+    });
+    // Yield enough rounds for User B's picker to either install its
+    // attempt or return `AlreadyInProgress`. It must install it.
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        state.active_picker_attempt.lock().await.is_some(),
+        "User B's picker must occupy the slot immediately after User A's logout, \
+         without awaiting User A's cancelled picker task"
+    );
+    assert!(
+        !picker_b.is_finished(),
+        "User B's picker must be running (waiting for callback), not rejected"
+    );
+
+    // Clean up both picker tasks.
+    state.clear_user_memory("user-B").await;
+    assert!(matches!(
+        picker_b.await,
+        Ok(Err(GoogleDriveOAuthError::Canceled))
+    ));
+    assert!(matches!(
+        picker_a.await,
         Ok(Err(GoogleDriveOAuthError::Canceled))
     ));
 }

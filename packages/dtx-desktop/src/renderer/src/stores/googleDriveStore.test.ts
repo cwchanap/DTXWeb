@@ -151,7 +151,7 @@ describe('googleDriveStore', () => {
 		expect(get(store).revocationUnconfirmed).toBe(false);
 	});
 
-	it('beginConnectionRequest gives each action its own generation so a stale refresh cannot overwrite a newer connect', () => {
+	it('beginConnectionRequest gives each action its own generation so a stale refresh cannot overwrite a newer connect', (): void => {
 		// Regression: when refresh and connect shared a single generation counter,
 		// a slow refresh that resolved after a faster connect would overwrite the
 		// connect's result because both actions compared equal to the current
@@ -182,7 +182,7 @@ describe('googleDriveStore', () => {
 		});
 	});
 
-	it('beginConnectionRequest still allows reset to invalidate in-flight actions', () => {
+	it('beginConnectionRequest still allows reset to invalidate in-flight actions', (): void => {
 		const store = createGoogleDriveStore();
 		const generation = store.beginConnectionRequest();
 		store.reset();

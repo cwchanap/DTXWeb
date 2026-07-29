@@ -2060,8 +2060,8 @@ async fn decode_token_response_non_success_with_unparseable_body_is_invalid() {
 }
 
 /// A credential store whose `set_refresh_token` succeeds on the first call
-/// but fails on subsequent calls, used to exercise the rollback error path
-/// (line 626) in `persist_validated_connection`.
+/// but fails on subsequent calls, used to exercise the rollback failure path
+/// in `persist_validated_connection`.
 struct FailOnRollbackCredentialStore {
     set_calls: AtomicUsize,
     stored: Mutex<Option<String>>,
@@ -2106,7 +2106,7 @@ async fn persist_validated_connection_returns_credential_store_when_rollback_fai
         set_calls: AtomicUsize::new(0),
         stored: Mutex::new(Some("old-refresh-token".to_string())),
     });
-    let credentials = GoogleDriveCredentialAccess::new(store);
+    let credentials = GoogleDriveCredentialAccess::new(store.clone());
     let settings = FakeSettings::with_folder("old-folder", "Old folder");
     settings.fail_next_set.store(true, Ordering::SeqCst);
 
@@ -2120,6 +2120,15 @@ async fn persist_validated_connection_returns_credential_store_when_rollback_fai
         )
         .await,
         Err(GoogleDriveOAuthError::CredentialStore),
+    );
+
+    // The new token was written successfully on the first set_refresh_token
+    // call, and the rollback (which would have restored the prior token)
+    // failed, so the new token remains permanently stored.
+    assert_eq!(
+        store.get_refresh_token("user-42").expect("read credential"),
+        Some("new-refresh-token".to_string()),
+        "rollback failure must leave the new token in the store"
     );
 }
 
@@ -2529,9 +2538,17 @@ async fn reconnect_exchange_waits_for_in_flight_revocation() {
     let connect =
         tokio::spawn(async move { connect_state.connect_and_choose_folder(&connect_auth).await });
 
-    // Give the connect task enough scheduling rounds to proceed through the
-    // picker flow and reach the revocation barrier wait.
-    for _ in 0..20 {
+    // Deterministically wait for the connect task to reach the revocation
+    // barrier. The connect task acquires the active_picker_attempt slot
+    // before the callback, then clears it (via take()) after processing the
+    // callback — right before awaiting the revocation barrier. Observing the
+    // slot transition Some → None confirms the connect task has completed
+    // the picker flow and is now blocked at the barrier (the next await
+    // point), rather than relying on a fixed number of yield rounds.
+    while state.active_picker_attempt.lock().await.is_none() {
+        tokio::task::yield_now().await;
+    }
+    while state.active_picker_attempt.lock().await.is_some() {
         tokio::task::yield_now().await;
     }
 

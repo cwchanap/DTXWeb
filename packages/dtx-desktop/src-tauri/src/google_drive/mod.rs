@@ -166,6 +166,15 @@ pub(crate) struct GoogleDriveState {
     picker_config: PickerProtocolConfig,
     lifecycle_locks_by_user: StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     lifecycle_generations_by_user: StdMutex<HashMap<String, u64>>,
+    /// Per-user revocation barrier. `disconnect_user` holds this lock
+    /// across the Google /revoke network call, and `run_picker_attempt`
+    /// acquires it before persisting a new connection. This prevents a
+    /// reconnect from persisting a replacement refresh token while the
+    /// previous grant's revocation is still in flight — Google's /revoke
+    /// invalidates ALL tokens under the same user+project grant, not just
+    /// the specific token supplied, so a new token persisted before the
+    /// old revocation completes would also be invalidated.
+    revocation_barrier_by_user: StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     access_tokens_by_user: AsyncMutex<HashMap<String, CachedAccessToken>>,
     requires_reconnect_by_user: AsyncMutex<HashSet<String>>,
     pub(crate) folder_validation_cache_by_user: AsyncMutex<HashMap<String, PublicPermissionStatus>>,
@@ -216,6 +225,7 @@ impl GoogleDriveState {
             picker_config,
             lifecycle_locks_by_user: StdMutex::new(HashMap::new()),
             lifecycle_generations_by_user: StdMutex::new(HashMap::new()),
+            revocation_barrier_by_user: StdMutex::new(HashMap::new()),
             access_tokens_by_user: AsyncMutex::new(HashMap::new()),
             requires_reconnect_by_user: AsyncMutex::new(HashSet::new()),
             folder_validation_cache_by_user: AsyncMutex::new(HashMap::new()),
@@ -569,13 +579,20 @@ impl GoogleDriveState {
         user_id: &str,
     ) -> std::result::Result<GoogleDriveDisconnectResult, GoogleDriveOAuthError> {
         // Phase 1 (under the lifecycle lock): invalidate the lifecycle,
-        // cancel in-flight operations, and remove all local credentials and
-        // folder state. This ensures no new upload can obtain an access
-        // token or find a folder after the lock is released.
+        // cancel in-flight operations and the active OAuth picker, and remove
+        // all local credentials and folder state. This ensures no new upload
+        // can obtain an access token or find a folder after the lock is
+        // released.
         let refresh_token = {
             let lifecycle = self.lifecycle_lock_for_user(user_id);
             let _guard = lifecycle.lock().await;
             self.invalidate_user_lifecycle(user_id);
+            // Cancel the active OAuth picker for this user so the global
+            // `active_picker_attempt` slot is freed immediately. Without this,
+            // a reconnect (or a different user's Connect) would be rejected as
+            // `AlreadyInProgress` until the abandoned picker's callback arrives
+            // or its five-minute timeout expires.
+            self.cancel_active_picker_for_user(user_id).await;
             // Cancel and hide active operations immediately after invalidating
             // the lifecycle, BEFORE any awaited network request. The
             // revocation call below has a 30-second timeout; without this
@@ -607,20 +624,34 @@ impl GoogleDriveState {
         // user reconnect immediately while revocation proceeds in the
         // background. The token is already deleted locally, so no new
         // upload can use it regardless of the revocation outcome.
+        //
+        // The revocation barrier IS held across the call, however. Google's
+        // /revoke endpoint invalidates ALL tokens under the same user+project
+        // grant — not just the specific token supplied — so a reconnect that
+        // persists a replacement refresh token before the old revocation
+        // completes would also have its new token invalidated. The barrier
+        // blocks only the persist step of a new connection (in
+        // `run_picker_attempt`); access-token refresh, cache operations, and
+        // the picker flow itself (browser, consent, callback, token exchange,
+        // folder validation) proceed in parallel with revocation.
         let mut revocation_unconfirmed = false;
-        match refresh_token.as_ref() {
-            Ok(Some(token)) => {
-                if self
-                    .oauth_provider
-                    .revoke_refresh_token(token)
-                    .await
-                    .is_err()
-                {
-                    revocation_unconfirmed = true;
+        {
+            let revocation_barrier = self.revocation_barrier_for_user(user_id);
+            let _revocation_guard = revocation_barrier.lock().await;
+            match refresh_token.as_ref() {
+                Ok(Some(token)) => {
+                    if self
+                        .oauth_provider
+                        .revoke_refresh_token(token)
+                        .await
+                        .is_err()
+                    {
+                        revocation_unconfirmed = true;
+                    }
                 }
+                Ok(None) => {}
+                Err(_) => revocation_unconfirmed = true,
             }
-            Ok(None) => {}
-            Err(_) => revocation_unconfirmed = true,
         }
 
         Ok(GoogleDriveDisconnectResult {
@@ -630,6 +661,13 @@ impl GoogleDriveState {
     }
 
     pub(crate) async fn clear_user_memory(&self, user_id: &str) {
+        // Cancel the active OAuth picker for this user before acquiring the
+        // lifecycle lock. The picker's `select!` on the cancellation token
+        // does not need the lifecycle lock, so cancelling here frees the
+        // global `active_picker_attempt` slot immediately — a different user
+        // logging in afterward can start their own Connect without waiting
+        // for the abandoned picker's callback or five-minute timeout.
+        self.cancel_active_picker_for_user(user_id).await;
         let lifecycle = self.lifecycle_lock_for_user(user_id);
         let _guard = lifecycle.lock().await;
         self.invalidate_user_lifecycle(user_id);
@@ -718,6 +756,32 @@ impl GoogleDriveState {
             .entry(user_id.to_string())
             .or_insert_with(|| Arc::new(AsyncMutex::new(())))
             .clone()
+    }
+
+    fn revocation_barrier_for_user(&self, user_id: &str) -> Arc<AsyncMutex<()>> {
+        self.revocation_barrier_by_user
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .entry(user_id.to_string())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
+    }
+
+    /// Cancels the active OAuth picker if it belongs to `user_id`. Called
+    /// from `clear_user_memory` (logout) and `disconnect_user` so an
+    /// abandoned picker does not hold the global `active_picker_attempt`
+    /// slot — without this, a second user's Connect command would be
+    /// rejected as `AlreadyInProgress` until the first user's callback
+    /// arrives or the five-minute picker timeout expires.
+    async fn cancel_active_picker_for_user(&self, user_id: &str) {
+        let token = {
+            let active = self.active_picker_attempt.lock().await;
+            match active.as_ref() {
+                Some(attempt) if attempt.user_id() == user_id => attempt.cancellation().clone(),
+                _ => return,
+            }
+        };
+        token.cancel();
     }
 
     fn user_lifecycle_generation(&self, user_id: &str) -> u64 {

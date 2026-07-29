@@ -1414,3 +1414,133 @@ async fn canonicalize_existing_ancestor_returns_not_found_when_path_has_no_paren
         "expected NotFound, got {result:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #[tauri::command] wrappers — exercise the State<'_, WorkspaceRootState>
+// extraction path via tauri::test::mock_app(). The underlying
+// *_with_workspace_state functions are already tested above; these tests
+// cover the thin wrapper bodies (State deref + return wrapping).
+// ---------------------------------------------------------------------------
+
+fn mock_app_with_workspace(root: &std::path::Path) -> tauri::App<tauri::test::MockRuntime> {
+    let app = tauri::test::mock_app();
+    app.manage(managed_workspace_state(root));
+    app
+}
+
+#[tokio::test]
+async fn path_exists_command_wrapper_confirms_existing_file() {
+    let root = tempdir().expect("tempdir");
+    fs::write(root.path().join("song.dtx"), "#TITLE: Song")
+        .await
+        .expect("write");
+    let app = mock_app_with_workspace(root.path());
+    let state = app.state::<WorkspaceRootState>();
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let result = path_exists(state, root_path, vec!["song.dtx".to_string()])
+        .await
+        .expect("command result");
+
+    assert!(result.exists);
+    assert_eq!(result.error, None);
+}
+
+#[tokio::test]
+async fn list_directories_command_wrapper_returns_sorted_names() {
+    let root = tempdir().expect("tempdir");
+    fs::create_dir(root.path().join("b"))
+        .await
+        .expect("mkdir b");
+    fs::create_dir(root.path().join("a"))
+        .await
+        .expect("mkdir a");
+    let app = mock_app_with_workspace(root.path());
+    let state = app.state::<WorkspaceRootState>();
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let result = list_directories(state, root_path)
+        .await
+        .expect("directories");
+
+    assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
+}
+
+#[tokio::test]
+async fn list_directory_command_wrapper_returns_entries_envelope() {
+    let root = tempdir().expect("tempdir");
+    fs::create_dir(root.path().join("sub"))
+        .await
+        .expect("mkdir");
+    fs::write(root.path().join("a.dtx"), "#TITLE: A")
+        .await
+        .expect("write");
+    let app = mock_app_with_workspace(root.path());
+    let state = app.state::<WorkspaceRootState>();
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let result = list_directory(state, root_path)
+        .await
+        .expect("directory envelope");
+
+    let files = result["files"].as_array().expect("files array");
+    assert_eq!(files.len(), 2);
+    assert_eq!(result["error"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn list_files_command_wrapper_returns_files_envelope() {
+    let root = tempdir().expect("tempdir");
+    fs::write(root.path().join("song.dtx"), "#TITLE: Song")
+        .await
+        .expect("write");
+    let app = mock_app_with_workspace(root.path());
+    let state = app.state::<WorkspaceRootState>();
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let result = list_files(state, root_path).await.expect("files envelope");
+
+    assert_eq!(result.files.len(), 1);
+    assert_eq!(result.files[0].file_name, "song.dtx");
+    assert_eq!(result.error, None);
+}
+
+#[tokio::test]
+async fn read_file_command_wrapper_returns_text_for_dtx_file() {
+    let root = tempdir().expect("tempdir");
+    let file = root.path().join("song.dtx");
+    let content = "#TITLE: Test Song\n#BPM: 120\n";
+    fs::write(&file, content).await.expect("write");
+    let app = mock_app_with_workspace(root.path());
+    let state = app.state::<WorkspaceRootState>();
+
+    let result = read_file(state, file.to_string_lossy().into_owned())
+        .await
+        .expect("command result");
+
+    match result {
+        ReadFileResult::Text { content: actual } => assert_eq!(actual, content),
+        other => panic!("expected text result, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn load_tree_structure_command_wrapper_returns_dtx_folders() {
+    let root = tempdir().expect("tempdir");
+    let song = root.path().join("DTXFiles.Test");
+    fs::create_dir(&song).await.expect("mkdir");
+    fs::write(song.join("main.dtx"), "#TITLE: Chart")
+        .await
+        .expect("dtx");
+    let app = mock_app_with_workspace(root.path());
+    let state = app.state::<WorkspaceRootState>();
+    let root_path = root.path().to_string_lossy().into_owned();
+
+    let result = load_tree_structure(state, root_path, vec![])
+        .await
+        .expect("tree");
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, "DTXFiles.Test");
+    assert!(result[0].contains_dtx_files);
+}

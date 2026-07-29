@@ -6110,3 +6110,315 @@ async fn validate_final_file_rejects_invalid_download_url() {
     let result = validate_final_file(&api, &sleeper, ACCESS_TOKEN, "file-1").await;
     assert_eq!(result, Err(DriveApiError::InvalidResponse));
 }
+
+// ---------------------------------------------------------------------------
+// Helper-function mapping tests: pending_store_failure & metadata_error
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pending_store_failure_maps_insufficient_disk_space() {
+    let failure = pending_store_failure(PendingBindingStoreError::InsufficientDiskSpace);
+    assert_eq!(failure.error, DriveApiError::InsufficientDiskSpace);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+}
+
+#[test]
+fn pending_store_failure_maps_local_state() {
+    let failure = pending_store_failure(PendingBindingStoreError::LocalState);
+    assert_eq!(failure.error, DriveApiError::LocalState);
+    assert_eq!(failure.pending_binding, PendingBindingDisposition::Retain);
+}
+
+#[test]
+fn metadata_error_maps_definitive_unavailable() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::DefinitiveUnavailable),
+        DriveApiError::SimfileUnavailable
+    );
+}
+
+#[test]
+fn metadata_error_maps_binding_mismatch() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::BindingMismatch),
+        DriveApiError::MetadataSync
+    );
+}
+
+#[test]
+fn metadata_error_maps_authentication() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::Authentication),
+        DriveApiError::TokenExpired
+    );
+}
+
+#[test]
+fn metadata_error_maps_network() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::Network),
+        DriveApiError::Network
+    );
+}
+
+#[test]
+fn metadata_error_maps_service_unavailable() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::ServiceUnavailable),
+        DriveApiError::MetadataSync
+    );
+}
+
+#[test]
+fn metadata_error_maps_invalid_response() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::InvalidResponse),
+        DriveApiError::InvalidResponse
+    );
+}
+
+#[test]
+fn metadata_error_maps_local_state() {
+    assert_eq!(
+        metadata_error(DriveMetadataError::LocalState),
+        DriveApiError::LocalState
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Retry-loop exhaustion tests: start_update_with_retry
+// ---------------------------------------------------------------------------
+
+fn push_start_errors(api: &ScriptedDriveApi, error: DriveApiError, count: usize) {
+    let mut starts = api.starts.lock().expect("start responses");
+    for _ in 0..count {
+        starts.push_back(Err(error.clone()));
+    }
+}
+
+#[tokio::test]
+async fn start_update_with_retry_exhausts_network_retries() {
+    let api = ScriptedDriveApi::default();
+    push_start_errors(&api, DriveApiError::Network, MAX_UPLOAD_RETRIES + 1);
+    let sleeper = RecordingSleeper::default();
+    let metadata = DriveUpdateMetadata {
+        name: "test.zip".to_string(),
+    };
+    let result = start_update_with_retry(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        "file-1",
+        &metadata,
+        1024,
+        None,
+    )
+    .await;
+    assert!(matches!(result, Err(DriveApiError::Network)));
+    assert_eq!(
+        api.start_tokens.lock().expect("start tokens").len(),
+        MAX_UPLOAD_RETRIES + 1
+    );
+    assert_eq!(
+        sleeper.delays.lock().expect("delays").len(),
+        MAX_UPLOAD_RETRIES
+    );
+}
+
+#[tokio::test]
+async fn start_update_with_retry_exhausts_transient_retries() {
+    let api = ScriptedDriveApi::default();
+    push_start_errors(&api, DriveApiError::Transient(None), MAX_UPLOAD_RETRIES + 1);
+    let sleeper = RecordingSleeper::default();
+    let metadata = DriveUpdateMetadata {
+        name: "test.zip".to_string(),
+    };
+    let result = start_update_with_retry(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        "file-1",
+        &metadata,
+        1024,
+        None,
+    )
+    .await;
+    assert!(matches!(result, Err(DriveApiError::Transient(None))));
+    assert_eq!(
+        sleeper.delays.lock().expect("delays").len(),
+        MAX_UPLOAD_RETRIES
+    );
+}
+
+#[tokio::test]
+async fn start_update_with_retry_exhausts_rate_limited_retries() {
+    let api = ScriptedDriveApi::default();
+    push_start_errors(
+        &api,
+        DriveApiError::RateLimited(None),
+        MAX_UPLOAD_RETRIES + 1,
+    );
+    let sleeper = RecordingSleeper::default();
+    let metadata = DriveUpdateMetadata {
+        name: "test.zip".to_string(),
+    };
+    let result = start_update_with_retry(
+        &api,
+        &sleeper,
+        ACCESS_TOKEN,
+        "file-1",
+        &metadata,
+        1024,
+        None,
+    )
+    .await;
+    assert!(matches!(result, Err(DriveApiError::RateLimited(None))));
+    assert_eq!(
+        sleeper.delays.lock().expect("delays").len(),
+        MAX_UPLOAD_RETRIES
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Retry-loop exhaustion tests: query_status_with_retry
+// ---------------------------------------------------------------------------
+
+fn push_status_errors(api: &ScriptedDriveApi, error: DriveApiError, count: usize) {
+    let mut statuses = api.statuses.lock().expect("status responses");
+    for _ in 0..count {
+        statuses.push_back(Err(error.clone()));
+    }
+}
+
+#[tokio::test]
+async fn query_status_with_retry_exhausts_network_retries() {
+    let api = ScriptedDriveApi::default();
+    push_status_errors(&api, DriveApiError::Network, MAX_UPLOAD_RETRIES + 1);
+    let sleeper = RecordingSleeper::default();
+    let session = ResumableUploadSession::for_test("https://upload.test/session").unwrap();
+    let result = query_status_with_retry(&api, &sleeper, ACCESS_TOKEN, &session, 1024, None).await;
+    assert!(matches!(result, Err(DriveApiError::Network)));
+    assert_eq!(
+        sleeper.delays.lock().expect("delays").len(),
+        MAX_UPLOAD_RETRIES
+    );
+}
+
+#[tokio::test]
+async fn query_status_with_retry_exhausts_transient_retries() {
+    let api = ScriptedDriveApi::default();
+    push_status_errors(&api, DriveApiError::Transient(None), MAX_UPLOAD_RETRIES + 1);
+    let sleeper = RecordingSleeper::default();
+    let session = ResumableUploadSession::for_test("https://upload.test/session").unwrap();
+    let result = query_status_with_retry(&api, &sleeper, ACCESS_TOKEN, &session, 1024, None).await;
+    assert!(matches!(result, Err(DriveApiError::Transient(None))));
+    assert_eq!(
+        sleeper.delays.lock().expect("delays").len(),
+        MAX_UPLOAD_RETRIES
+    );
+}
+
+#[tokio::test]
+async fn query_status_with_retry_exhausts_rate_limited_retries() {
+    let api = ScriptedDriveApi::default();
+    push_status_errors(
+        &api,
+        DriveApiError::RateLimited(None),
+        MAX_UPLOAD_RETRIES + 1,
+    );
+    let sleeper = RecordingSleeper::default();
+    let session = ResumableUploadSession::for_test("https://upload.test/session").unwrap();
+    let result = query_status_with_retry(&api, &sleeper, ACCESS_TOKEN, &session, 1024, None).await;
+    assert!(matches!(result, Err(DriveApiError::RateLimited(None))));
+    assert_eq!(
+        sleeper.delays.lock().expect("delays").len(),
+        MAX_UPLOAD_RETRIES
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Cache namespace function tests (complementing existing coverage)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cleanup_stale_upload_archives_preserves_files_outside_namespace() {
+    let cache = tempdir().expect("cache dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    std::fs::create_dir_all(&namespace).expect("create namespace");
+
+    let stale_dir = namespace.join("stale-session");
+    std::fs::create_dir_all(&stale_dir).expect("create stale dir");
+    std::fs::write(stale_dir.join("upload.zip"), b"data").expect("write stale zip");
+
+    let outside_file = cache.path().join("outside.txt");
+    std::fs::write(&outside_file, b"outside").expect("write outside file");
+
+    cleanup_stale_upload_archives(cache.path());
+
+    assert!(!stale_dir.exists());
+    assert!(outside_file.exists(), "file outside namespace must survive");
+    assert!(namespace.exists(), "namespace itself must survive");
+}
+
+#[test]
+fn remove_upload_directory_removes_directory_within_namespace() {
+    let cache = tempdir().expect("cache dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    std::fs::create_dir_all(&namespace).expect("create namespace");
+
+    let target = namespace.join("session-to-remove");
+    std::fs::create_dir_all(&target).expect("create target dir");
+    std::fs::write(target.join("upload.zip"), b"data").expect("write zip");
+
+    remove_upload_directory(&target);
+    assert!(
+        !target.exists(),
+        "directory within namespace should be removed"
+    );
+}
+
+#[test]
+fn remove_upload_directory_refuses_to_remove_outside_namespace() {
+    let cache = tempdir().expect("cache dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    std::fs::create_dir_all(&namespace).expect("create namespace");
+
+    let outside = cache.path().join("outside-dir");
+    std::fs::create_dir_all(&outside).expect("create outside dir");
+
+    remove_upload_directory(&outside);
+    assert!(outside.exists(), "directory outside namespace must survive");
+}
+
+#[test]
+fn validated_upload_namespace_errors_when_namespace_is_file() {
+    let cache = tempdir().expect("cache dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    std::fs::write(&namespace, b"not a dir").expect("create file");
+
+    let result = validated_upload_namespace(cache.path(), false);
+    assert!(result.is_err(), "file in place of namespace should error");
+}
+
+#[test]
+fn validated_upload_namespace_errors_when_namespace_is_file_even_if_create_requested() {
+    let cache = tempdir().expect("cache dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    std::fs::write(&namespace, b"not a dir").expect("create file");
+
+    let result = validated_upload_namespace(cache.path(), true);
+    assert!(result.is_err(), "existing file should not be overwritten");
+}
+
+#[cfg(unix)]
+#[test]
+fn validated_upload_namespace_errors_when_namespace_is_symlink() {
+    let cache = tempdir().expect("cache dir");
+    let real_dir = cache.path().join("real-dir");
+    std::fs::create_dir_all(&real_dir).expect("create real dir");
+    let namespace = cache.path().join(UPLOAD_CACHE_NAMESPACE);
+    symlink(&real_dir, &namespace).expect("create symlink");
+
+    let result = validated_upload_namespace(cache.path(), false);
+    assert!(result.is_err(), "symlink namespace should be rejected");
+}

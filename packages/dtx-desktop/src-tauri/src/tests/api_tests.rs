@@ -3054,3 +3054,165 @@ async fn read_preview_within_workspace_rejects_nonexistent_song_folder() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Song folder not found"));
 }
+
+// ---------------------------------------------------------------------------
+// drive_metadata_graphql_data — HTTP status classification branches.
+// `fetch_owner_drive_simfile_impl` routes through `drive_metadata_graphql_data`,
+// so these tests exercise the status-code branches indirectly (as the
+// production callers do) rather than touching the private helper directly.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn drive_metadata_classifies_429_status_as_service_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(429).set_body_json(json!({ "error": "rate limited" })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("429 should be service unavailable");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::ServiceUnavailable
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_408_status_as_service_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(
+            ResponseTemplate::new(408).set_body_json(json!({ "error": "request timeout" })),
+        )
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("408 should be service unavailable");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::ServiceUnavailable
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_400_status_as_invalid_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({ "error": "bad request" })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("400 should be invalid response");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::InvalidResponse
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_404_status_as_invalid_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({ "error": "not found" })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("404 should be invalid response");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::InvalidResponse
+    );
+}
+
+#[tokio::test]
+async fn drive_metadata_classifies_422_status_as_invalid_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(422).set_body_json(json!({ "error": "unprocessable" })))
+        .mount(&server)
+        .await;
+
+    let error = fetch_owner_drive_simfile_impl(&server.uri(), "token-1", "42", "user-1")
+        .await
+        .expect_err("422 should be invalid response");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::InvalidResponse
+    );
+}
+
+// ---------------------------------------------------------------------------
+// authenticated_user_id — derives the Drumery user id from the native
+// AuthState session. It must surface an Authentication error whenever the
+// session is missing, lacks a user id, or carries a blank id, so that Drive
+// commands never operate on an unauthenticated identity.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn authenticated_user_id_errors_when_session_is_absent() {
+    let state = AuthState::default();
+
+    let error = authenticated_user_id(&state)
+        .await
+        .expect_err("missing session is unauthenticated");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::Authentication
+    );
+}
+
+#[tokio::test]
+async fn authenticated_user_id_errors_when_session_lacks_user_id() {
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(json!({ "access_token": "tok-1" })))
+        .await;
+
+    let error = authenticated_user_id(&state)
+        .await
+        .expect_err("session without user.id is unauthenticated");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::Authentication
+    );
+}
+
+#[tokio::test]
+async fn authenticated_user_id_errors_when_user_id_is_empty() {
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(json!({
+            "access_token": "tok-1",
+            "user": { "id": "" }
+        })))
+        .await;
+
+    let error = authenticated_user_id(&state)
+        .await
+        .expect_err("blank user id is unauthenticated");
+
+    assert_eq!(
+        error,
+        crate::google_drive::DriveMetadataError::Authentication
+    );
+}

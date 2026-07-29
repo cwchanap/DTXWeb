@@ -2445,3 +2445,127 @@ async fn matches_session_epoch_returns_false_when_session_cleared() {
     state.set_current_session(None).await;
     assert!(!state.matches_session_epoch(&epoch).await);
 }
+
+// ---------------------------------------------------------------------------
+// refresh_session_with_client — the SUCCESS branch. The existing
+// refresh_session_* tests only cover failure cases (empty token, network
+// error, non-success status, invalid JSON, missing tokens). This pins the
+// happy path: a successful refresh stores the new session and returns true.
+// `app` is `None` so no AppHandle is required.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn refresh_session_succeeds_and_stores_new_session() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .and(wiremock::matchers::body_json(serde_json::json!({
+            "refresh_token": "refresh-old"
+        })))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "access-new",
+                "refresh_token": "refresh-new",
+                "user": { "id": "user-1" }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+
+    let is_valid = refresh_session_with_client(
+        &reqwest::Client::new(),
+        &state,
+        &server.uri(),
+        "anon",
+        Some("refresh-old".to_string()),
+        None,
+    )
+    .await;
+
+    assert!(is_valid);
+    let session = state.current_session().await.expect("stored session");
+    assert_eq!(
+        session.get("access_token").and_then(|v| v.as_str()),
+        Some("access-new")
+    );
+    assert_eq!(
+        session.get("refresh_token").and_then(|v| v.as_str()),
+        Some("refresh-new")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// validate_session_with_client — the 401 -> refresh SUCCESS path. When the
+// initial /auth/v1/user lookup rejects the access token (401),
+// validate_session falls back to refresh_session_with_client. If the refresh
+// succeeds, validate_session must return true and persist the refreshed
+// session. Existing tests only cover the 401 -> refresh FAILURE path.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn validate_session_refreshes_and_succeeds_when_access_token_rejected() {
+    let server = wiremock::MockServer::start().await;
+
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/auth/v1/user"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer stale-access",
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/auth/v1/token"))
+        .and(wiremock::matchers::query_param(
+            "grant_type",
+            "refresh_token",
+        ))
+        .and(wiremock::matchers::body_json(serde_json::json!({
+            "refresh_token": "refresh-old"
+        })))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "access-new",
+                "refresh_token": "refresh-new",
+                "user": { "id": "user-1" }
+            })),
+        )
+        .mount(&server)
+        .await;
+
+    let state = AuthState::default();
+    let session_data = SessionData {
+        access_token: Some("stale-access".to_string()),
+        refresh_token: Some("refresh-old".to_string()),
+        user: None,
+    };
+
+    let is_valid = validate_session_with_client(
+        reqwest::Client::new(),
+        &state,
+        &server.uri(),
+        "anon",
+        session_data,
+        None,
+    )
+    .await;
+
+    assert!(is_valid);
+    let session = state.current_session().await.expect("stored session");
+    assert_eq!(
+        session.get("access_token").and_then(|v| v.as_str()),
+        Some("access-new")
+    );
+    assert_eq!(
+        session.get("refresh_token").and_then(|v| v.as_str()),
+        Some("refresh-new")
+    );
+}

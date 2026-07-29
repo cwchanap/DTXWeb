@@ -116,11 +116,13 @@ describe('Workspace – empty state', () => {
 		vi.mocked(workspaceStore).reset();
 	});
 
-	it('shows select folder button when no workspace path is set', () => {
+	it('does not render a standalone Select Folder button when no workspace path is set', () => {
+		// The empty state only shows the WorkspaceBookmarksMenu dropdown; the
+		// browse action lives inside that menu's "Browse for folder…" entry.
 		render(Workspace);
 		expect(
-			screen.getByRole('button', { name: /select workspace folder/i })
-		).toBeInTheDocument();
+			screen.queryByRole('button', { name: /select workspace folder/i })
+		).not.toBeInTheDocument();
 	});
 
 	it('does not show New Song or Refresh buttons when no workspace is set', () => {
@@ -252,13 +254,6 @@ describe('Workspace – button interactions', () => {
 	afterEach(() => {
 		cleanup();
 		vi.mocked(workspaceStore).reset();
-	});
-
-	it('calls workspaceService.selectWorkspace when Select Folder button is clicked', async () => {
-		const { workspaceService } = await import('../services/workspaceService');
-		render(Workspace);
-		await fireEvent.click(screen.getByRole('button', { name: /select workspace folder/i }));
-		expect(workspaceService.selectWorkspace).toHaveBeenCalledOnce();
 	});
 
 	it('calls workspaceStore.showNewSongForm when New Song is clicked', async () => {

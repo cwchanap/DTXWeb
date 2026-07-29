@@ -72,6 +72,16 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenNthCalledWith(2, 'clear_workspace_root');
 	});
 
+	it('maps setWorkspaceRoot to the Tauri command with the bookmark path', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ canceled: false, filePaths: ['/canonical'] });
+
+		await desktopHost.setWorkspaceRoot('/bookmark/path');
+
+		expect(runtime.invoke).toHaveBeenLastCalledWith('set_workspace_root', {
+			path: '/bookmark/path'
+		});
+	});
+
 	it('maps checkForUpdate to the Tauri command and returns an update when available', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({
 			success: true,

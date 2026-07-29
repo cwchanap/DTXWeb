@@ -161,18 +161,7 @@
 			<p class="text-dim mb-6 text-center">
 				Select a root folder for your DTX files workspace
 			</p>
-			<div class="flex items-center gap-3">
-				<button
-					class="bg-magenta font-display flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold text-[#16001a]"
-					style="box-shadow:0 0 22px -6px var(--color-magenta)"
-					onclick={handleSelectWorkspace}
-					aria-label="Select workspace folder"
-				>
-					<Folder size={18} />
-					Select Folder
-				</button>
-				<WorkspaceBookmarksMenu />
-			</div>
+			<WorkspaceBookmarksMenu />
 		</div>
 	{:else}
 		<!-- Workspace Content -->

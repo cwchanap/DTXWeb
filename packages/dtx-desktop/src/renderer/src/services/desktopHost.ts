@@ -245,6 +245,11 @@ export const desktopHost = {
 	selectWorkspaceFolder: async (): Promise<SelectFolderResult> =>
 		await invokeHost<SelectFolderResult>('select_workspace_folder'),
 
+	// Trusts a bookmark path directly as the workspace root without showing a
+	// folder picker. The Rust side canonicalizes and verifies the directory.
+	setWorkspaceRoot: async (path: string): Promise<SelectFolderResult> =>
+		await invokeHost<SelectFolderResult>('set_workspace_root', { path }),
+
 	getWorkspaceRoot: async (): Promise<string | null> =>
 		await invokeHost<string | null>('get_workspace_root'),
 

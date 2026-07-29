@@ -178,16 +178,17 @@ export const workspaceService = {
 		),
 
 	/**
-	 * Re-selects a saved workspace bookmark through the native trust-establishing dialog.
-	 * A bookmark is only a convenience label; its stored path is never trusted directly.
+	 * Switches to a saved workspace bookmark by trusting its stored path
+	 * directly through the native canonicalization/verification layer (no
+	 * folder picker). If the bookmarked directory no longer exists or is not
+	 * accessible, the error includes the bookmark path so the UI can offer to
+	 * remove the stale bookmark.
 	 */
 	switchToBookmark: async (
 		bookmark: WorkspaceBookmark
 	): Promise<
 		{ ok: true } | { ok: false; error: string; path: string } | { ok: false; error: string }
 	> => {
-		// The bookmark remains part of the UI contract, but its stored path is never trusted.
-		void bookmark;
 		// Guard against concurrent switches
 		if (switchOwner !== null) {
 			return { ok: false, error: 'A workspace switch is already in progress' };
@@ -198,22 +199,27 @@ export const workspaceService = {
 			if (switchOwner !== owner) return;
 			switchOwner = null;
 		};
-		return queueTrustTransition(
+		return queueTrustTransition<
+			{ ok: true } | { ok: false; error: string; path: string } | { ok: false; error: string }
+		>(
 			async (transition) => {
 				let nativeMutationCommitted = false;
 				try {
 					try {
-						const selection = await desktopHost.selectWorkspaceFolder();
-						nativeMutationCommitted =
-							!selection.canceled && Boolean(selection.filePaths[0]);
+						const result = await desktopHost.setWorkspaceRoot(bookmark.path);
+						nativeMutationCommitted = !result.canceled && Boolean(result.filePaths[0]);
 						if (!workspaceService.isTransitionCurrent(transition)) {
 							return { ok: false, error: 'Workspace selection was superseded' };
 						}
-						if (selection.canceled || !selection.filePaths[0]) {
-							return { ok: false, error: 'Workspace selection was canceled' };
+						if (result.canceled || !result.filePaths[0]) {
+							return {
+								ok: false,
+								error: 'The bookmarked folder could not be opened',
+								path: bookmark.path
+							};
 						}
 
-						const selectedPath = selection.filePaths[0];
+						const selectedPath = result.filePaths[0];
 						workspaceStore.reset();
 						restoreLoading(transition);
 						workspaceStore.setPath(selectedPath);
@@ -225,7 +231,8 @@ export const workspaceService = {
 					} catch {
 						return {
 							ok: false,
-							error: 'Failed to select workspace directory'
+							error: 'The bookmarked folder is missing or not accessible. Remove it and re-add the folder.',
+							path: bookmark.path
 						};
 					}
 

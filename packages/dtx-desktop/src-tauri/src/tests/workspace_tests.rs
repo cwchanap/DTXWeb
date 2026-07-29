@@ -4,6 +4,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{mpsc, Arc, TryLockError};
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tauri::Manager;
 use tempfile::TempDir;
 
 const TEST_COORDINATION_TIMEOUT: Duration = Duration::from_secs(1);
@@ -482,4 +483,63 @@ fn load_returns_default_when_the_e2e_data_directory_has_no_settings() {
 
     let state = WorkspaceRootState::load();
     assert_eq!(state.current_optional(), None);
+}
+
+// ---------------------------------------------------------------------------
+// set_workspace_root command wrapper — exercises the State<'_, WorkspaceRootState>
+// extraction path via tauri::test::mock_app(). The underlying selection_result
+// logic is already tested above; these tests cover the thin command wrapper
+// body (State deref + PathBuf conversion + return wrapping).
+// ---------------------------------------------------------------------------
+
+fn mock_app_with_persistable_workspace(
+    data_dir: &std::path::Path,
+) -> tauri::App<tauri::test::MockRuntime> {
+    let app = tauri::test::mock_app();
+    app.manage(WorkspaceRootState::load_from_path(settings_path(data_dir)));
+    app
+}
+
+#[test]
+fn set_workspace_root_command_wrapper_trusts_a_bookmark_path() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let canonical = fs::canonicalize(&root).expect("canonical root");
+
+    let result = set_workspace_root(
+        root.to_string_lossy().into_owned(),
+        app.state::<WorkspaceRootState>(),
+    )
+    .expect("command result");
+
+    assert!(!result.canceled);
+    assert_eq!(result.file_paths.len(), 1);
+    assert_eq!(std::path::PathBuf::from(&result.file_paths[0]), canonical);
+    assert_eq!(
+        app.state::<WorkspaceRootState>().current_optional(),
+        Some(canonical)
+    );
+}
+
+#[test]
+fn set_workspace_root_command_wrapper_rejects_a_missing_path() {
+    let data_dir = TempDir::new().expect("data dir");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let missing = data_dir.path().join("does-not-exist");
+
+    let error = set_workspace_root(
+        missing.to_string_lossy().into_owned(),
+        app.state::<WorkspaceRootState>(),
+    )
+    .expect_err("missing directory should be rejected");
+
+    assert!(
+        error
+            .to_string()
+            .contains("The selected workspace must be an accessible directory"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(app.state::<WorkspaceRootState>().current_optional(), None);
 }

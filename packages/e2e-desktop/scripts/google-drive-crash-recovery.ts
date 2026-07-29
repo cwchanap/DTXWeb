@@ -240,7 +240,7 @@ const seedRendererState = async (
 ): Promise<void> => {
 	const previousDocumentToken = `drive-crash-${randomUUID()}`;
 	const installedDocumentToken = await session.execute(
-		({ documentToken, songPath, userId }) => {
+		({ documentToken, simfileId, songPath, userId }) => {
 			const e2eWindow = window as typeof window & {
 				__dtxE2eReloadDocumentToken?: string;
 			};
@@ -282,7 +282,12 @@ const seedRendererState = async (
 			window.location.hash = '';
 			return e2eWindow.__dtxE2eReloadDocumentToken;
 		},
-		{ documentToken: previousDocumentToken, songPath: fixture.songFolder, userId: e2eUserId }
+		{
+			documentToken: previousDocumentToken,
+			simfileId,
+			songPath: fixture.songFolder,
+			userId: e2eUserId
+		}
 	);
 	if (installedDocumentToken !== previousDocumentToken) {
 		throw new Error('Failed to install the crash-recovery pre-refresh document token');

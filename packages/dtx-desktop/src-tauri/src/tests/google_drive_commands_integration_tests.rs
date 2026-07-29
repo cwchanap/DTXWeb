@@ -438,3 +438,255 @@ async fn fake_snapshot_returns_empty_zip_entries_when_the_object_file_is_missing
     assert_eq!(snapshot.objects.len(), 1);
     assert!(snapshot.objects[0].zip_entries.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Indirect coverage for private helper functions in `google_drive::commands`.
+//
+// `validate_song_relative_path`, `replacement_is_explicitly_allowed`, and
+// `is_uuid_v4` are private to the `commands` module and cannot be imported
+// directly from this external test file. The tests below exercise them
+// through the public `upload_song_zip_to_google_drive` command, which calls
+// all three during input validation and upload-transaction branching.
+// ---------------------------------------------------------------------------
+
+fn input_with_operation_id(operation_id: Uuid) -> UploadSongZipToGoogleDriveInput {
+    serde_json::from_value(json!({
+        "operationId": operation_id,
+        "simfileId": SIMFILE_ID,
+        "songRelativePath": "pack/song",
+        "forceCreateReplacement": false
+    }))
+    .expect("valid upload command input")
+}
+
+fn input_with_song_relative_path(relative_path: &str) -> UploadSongZipToGoogleDriveInput {
+    serde_json::from_value(json!({
+        "operationId": Uuid::new_v4(),
+        "simfileId": SIMFILE_ID,
+        "songRelativePath": relative_path,
+        "forceCreateReplacement": false
+    }))
+    .expect("valid upload command input")
+}
+
+// --- is_uuid_v4 -----------------------------------------------------------
+
+#[tokio::test]
+async fn upload_command_rejects_a_uuid_v3_operation_id() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+    let v3 = Uuid::parse_str("a3bb189e-8bf9-3388-8c89-0123456789ab").expect("valid v3 uuid");
+
+    let result = upload_song_zip_to_google_drive(fixture.app.clone(), input_with_operation_id(v3))
+        .await
+        .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_uuid_v5_operation_id() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+    let v5 = Uuid::parse_str("a3bb189e-8bf9-53d1-8b89-0123456789ab").expect("valid v5 uuid");
+
+    let result = upload_song_zip_to_google_drive(fixture.app.clone(), input_with_operation_id(v5))
+        .await
+        .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_nil_uuid_operation_id() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result =
+        upload_song_zip_to_google_drive(fixture.app.clone(), input_with_operation_id(Uuid::nil()))
+            .await
+            .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+// --- validate_song_relative_path ------------------------------------------
+
+#[tokio::test]
+async fn upload_command_rejects_an_empty_song_relative_path() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result =
+        upload_song_zip_to_google_drive(fixture.app.clone(), input_with_song_relative_path(""))
+            .await
+            .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_song_relative_path_with_a_backslash() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("foo\\bar"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_song_relative_path_with_a_null_byte() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("foo\0bar"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_song_relative_path_with_a_dot_component() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("foo/./bar"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_song_relative_path_with_a_parent_directory_component() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("foo/../bar"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_song_relative_path_with_an_empty_component() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("foo//bar"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_a_song_relative_path_with_a_windows_drive_letter() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("C:song"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn upload_command_rejects_an_absolute_song_relative_path() {
+    let fixture = CommandFixture::new(None, E2eExistingFileFailure::None).await;
+
+    let result = upload_song_zip_to_google_drive(
+        fixture.app.clone(),
+        input_with_song_relative_path("/foo/bar"),
+    )
+    .await
+    .expect("upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::InvalidResponse)
+    );
+}
+
+// --- replacement_is_explicitly_allowed ------------------------------------
+
+#[tokio::test]
+async fn upload_command_preserves_binding_when_permission_denied_and_force_is_false() {
+    let fixture = CommandFixture::new(
+        Some(EXISTING_FILE_ID),
+        E2eExistingFileFailure::PermissionDenied,
+    )
+    .await;
+
+    let result = upload_song_zip_to_google_drive(fixture.app.clone(), CommandFixture::input(false))
+        .await
+        .expect("failed upload result");
+
+    assert!(!result.success);
+    assert_eq!(
+        result.error_code,
+        Some(GoogleDriveErrorCode::FilePermissionDenied)
+    );
+    let snapshot = fixture.fake.snapshot().await.expect("Drive snapshot");
+    assert_eq!(snapshot.create_count, 0);
+    assert!(snapshot.metadata_mutations.is_empty());
+    assert_eq!(
+        snapshot.owner.google_drive_file_id.as_deref(),
+        Some(EXISTING_FILE_ID)
+    );
+}

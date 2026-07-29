@@ -2214,3 +2214,220 @@ async fn picker_cancels_when_no_callback_arrives_before_deadline() {
         Err(GoogleDriveOAuthError::Canceled),
     ));
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage for previously uncovered lines in oauth.rs.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn authorization_url_rejects_empty_client_id() {
+    let picker_attempt = attempt(Instant::now());
+    assert_eq!(
+        picker_attempt.authorization_url(""),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+}
+
+#[test]
+fn authorization_url_rejects_whitespace_only_client_id() {
+    let picker_attempt = attempt(Instant::now());
+    assert_eq!(
+        picker_attempt.authorization_url("  \t\n "),
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    );
+}
+
+/// A picker browser that connects to the callback listener and sends a
+/// malformed (POST) request, causing `read_callback_target` to fail with
+/// `InvalidResponse`.
+struct MalformedCallbackBrowser;
+
+impl PickerBrowser for MalformedCallbackBrowser {
+    fn open(&self, authorization_url: &str) -> Result<(), GoogleDriveOAuthError> {
+        let authorization_url =
+            Url::parse(authorization_url).map_err(|_| GoogleDriveOAuthError::InvalidResponse)?;
+        let redirect_uri = authorization_url
+            .query_pairs()
+            .find(|(key, _)| key == "redirect_uri")
+            .map(|(_, value)| value.into_owned())
+            .ok_or(GoogleDriveOAuthError::InvalidResponse)?;
+        let redirect =
+            Url::parse(&redirect_uri).map_err(|_| GoogleDriveOAuthError::InvalidResponse)?;
+        let addr = format!(
+            "{}:{}",
+            redirect.host_str().unwrap_or_default(),
+            redirect.port().unwrap_or_default()
+        );
+        let mut stream =
+            std::net::TcpStream::connect(addr).map_err(|_| GoogleDriveOAuthError::Network)?;
+        write!(
+            stream,
+            "POST {} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            redirect.path()
+        )
+        .map_err(|_| GoogleDriveOAuthError::Network)?;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn picker_returns_error_when_callback_sends_malformed_request() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let state = GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![])),
+        Arc::new(AcceptFolder),
+        Arc::new(MalformedCallbackBrowser),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    );
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::InvalidResponse)
+    ));
+}
+
+/// An OAuth provider that switches the authenticated user during
+/// `exchange_code`, exercising the post-exchange user-identity check.
+struct UserSwitchingExchangeProvider {
+    auth: AuthState,
+    response: OAuthTokenResponse,
+}
+
+#[async_trait]
+impl GoogleOAuthProvider for UserSwitchingExchangeProvider {
+    async fn exchange_code(
+        &self,
+        _request: TokenExchangeRequest,
+    ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+        self.auth
+            .set_current_session(Some(serde_json::json!({
+                "user": { "id": "other-user" }
+            })))
+            .await;
+        Ok(self.response.clone())
+    }
+
+    async fn refresh_access_token(
+        &self,
+        _refresh_token: &str,
+    ) -> Result<OAuthTokenResponse, OAuthProviderError> {
+        Err(OAuthProviderError::InvalidResponse)
+    }
+
+    async fn revoke_refresh_token(&self, _refresh_token: &str) -> Result<(), OAuthProviderError> {
+        Err(OAuthProviderError::Network)
+    }
+}
+
+#[tokio::test]
+async fn picker_cancels_when_user_switches_after_token_exchange() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let state = GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(UserSwitchingExchangeProvider {
+            auth: auth.clone(),
+            response: token_response("access-token", Some("refresh-token")),
+        }),
+        Arc::new(AcceptFolder),
+        Arc::new(CallbackBrowser::new("folder-42")),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    );
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::Canceled)
+    ));
+}
+
+/// A folder validator that switches the authenticated user during
+/// `validate_folder`, exercising the post-validation user-identity check.
+struct UserSwitchingValidator {
+    auth: AuthState,
+}
+
+#[async_trait]
+impl PickerFolderValidator for UserSwitchingValidator {
+    async fn validate_folder(
+        &self,
+        _access_token: &str,
+        folder_id: &str,
+    ) -> Result<GoogleDriveFolderSetting, GoogleDriveOAuthError> {
+        self.auth
+            .set_current_session(Some(serde_json::json!({
+                "user": { "id": "other-user" }
+            })))
+            .await;
+        Ok(folder(folder_id, "Uploads"))
+    }
+}
+
+#[tokio::test]
+async fn picker_cancels_when_user_switches_after_folder_validation() {
+    let auth = AuthState::default();
+    auth.set_current_session(Some(serde_json::json!({
+        "user": { "id": "user-42" }
+    })))
+    .await;
+    let state = GoogleDriveState::with_oauth_adapters(
+        Arc::new(InMemoryGoogleDriveCredentialStore::default()),
+        Arc::new(UnavailableDriveMetadataClient),
+        Arc::new(FakeSettings::default()),
+        Arc::new(FakeOAuthProvider::with_exchanges(vec![token_response(
+            "access-token",
+            Some("refresh-token"),
+        )])),
+        Arc::new(UserSwitchingValidator { auth: auth.clone() }),
+        Arc::new(CallbackBrowser::new("folder-42")),
+        PickerProtocolConfig::new(
+            "desktop-client.apps.googleusercontent.com".to_string(),
+            Duration::from_secs(60),
+        ),
+    );
+
+    assert!(matches!(
+        state.connect_and_choose_folder(&auth).await,
+        Err(GoogleDriveOAuthError::Canceled)
+    ));
+}
+
+#[tokio::test]
+async fn active_picker_attempt_guard_take_returns_canceled_when_id_mismatches() {
+    let slot = Arc::new(tokio::sync::Mutex::new(Some(attempt(Instant::now()))));
+    let wrong_id = uuid::Uuid::new_v4();
+    let mut guard = ActivePickerAttemptGuard::new(slot, wrong_id);
+    assert!(matches!(
+        guard.take().await,
+        Err(GoogleDriveOAuthError::Canceled)
+    ));
+}
+
+#[tokio::test]
+async fn active_picker_attempt_guard_take_returns_canceled_when_slot_is_empty() {
+    let slot: Arc<tokio::sync::Mutex<Option<PickerAttempt>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+    let picker_attempt = attempt(Instant::now());
+    let mut guard = ActivePickerAttemptGuard::new(slot, picker_attempt.attempt_id());
+    assert!(matches!(
+        guard.take().await,
+        Err(GoogleDriveOAuthError::Canceled)
+    ));
+}

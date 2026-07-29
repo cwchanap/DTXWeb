@@ -144,12 +144,36 @@ describe('AppShell', () => {
 		selectAnySong();
 		render(AppShell);
 		const handle = await screen.findByRole('button', { name: /Resize details panel/i });
-		await waitFor(() => expect(handle.parentElement?.style.width).toBe('420px'));
-		expect(get(preferencesStore).detailPaneVisible).toBe(true);
-		expect(savePreferences).toHaveBeenCalledWith({
-			detailPaneWidth: 420,
-			detailPaneVisible: true
+		await waitFor(() => {
+			expect(handle.parentElement?.style.width).toBe('420px');
+			expect(get(preferencesStore).detailPaneVisible).toBe(true);
+			expect(savePreferences).toHaveBeenCalledWith({
+				detailPaneWidth: 420,
+				detailPaneVisible: true
+			});
 		});
+	});
+
+	it('does not re-reveal the detail pane after the user hides it while a song stays selected', async () => {
+		// Regression: the auto-reveal effect must fire only on a new selection,
+		// not when detailPaneVisible changes. Otherwise hiding the pane while a
+		// song stays selected would immediately flip it back open.
+		vi.mocked(loadPreferences).mockResolvedValue({
+			detailPaneWidth: 420,
+			detailPaneVisible: false
+		});
+		window.innerWidth = 1400;
+		selectAnySong();
+		render(AppShell);
+		await screen.findByRole('button', { name: /Resize details panel/i });
+		await waitFor(() => expect(get(preferencesStore).detailPaneVisible).toBe(true));
+
+		// User hides the pane while the same song stays selected.
+		preferencesStore.setDetailVisible(false);
+		await tick();
+
+		expect(get(preferencesStore).detailPaneVisible).toBe(false);
+		expect(screen.queryByRole('button', { name: /Resize details panel/i })).toBeNull();
 	});
 
 	it('ArrowLeft on the handle widens the pane and persists', async () => {
